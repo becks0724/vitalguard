@@ -1,0 +1,6 @@
+# 생성 산출물 — project.yml 이 source of truth (xcodegen generate 로 재생성)
+*.xcodeproj/
+build/
+build_device/
+DerivedData/
+.DS_Store

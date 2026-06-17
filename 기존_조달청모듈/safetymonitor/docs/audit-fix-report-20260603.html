@@ -1,0 +1,243 @@
+<!doctype html>
+<!-- SafetyMonitor 코드베이스 Audit 조치(remediation) 분석 보고서 (PDF 변환용 HTML) -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SafetyMonitor Audit 조치 분석 보고서</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Apple SD Gothic Neo", -apple-system, "Helvetica Neue", sans-serif; color: #1a1f29; font-size: 10.5px; line-height: 1.55; margin: 0; }
+  code, .mono { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+
+  .cover { padding: 56px 8px 28px; border-bottom: 3px solid #059669; margin-bottom: 24px; }
+  .cover .kicker { color: #059669; font-weight: 700; letter-spacing: 2px; font-size: 11px; text-transform: uppercase; }
+  .cover h1 { font-size: 28px; margin: 12px 0 6px; letter-spacing: -0.5px; }
+  .cover .sub { font-size: 13px; color: #4b5563; }
+  .cover .meta { margin-top: 20px; font-size: 11px; color: #6b7280; }
+  .cover .meta b { color: #1a1f29; }
+
+  h2 { font-size: 16px; margin: 26px 0 10px; padding-bottom: 6px; border-bottom: 2px solid #e5e7eb; }
+  h3 { font-size: 12.5px; margin: 16px 0 5px; color: #111827; }
+  p { margin: 6px 0; }
+  ul, ol { margin: 6px 0 6px 18px; padding: 0; }
+  li { margin: 3px 0; }
+  .small { font-size: 9.5px; color: #6b7280; }
+  .lead { font-size: 11.5px; color: #374151; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 10px; }
+  th, td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f3f4f6; font-weight: 700; }
+  td.num, th.num { text-align: center; white-space: nowrap; }
+  td.ok { color: #059669; font-weight: 700; text-align: center; }
+
+  .sev { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 9px; font-weight: 700; color: #fff; white-space: nowrap; }
+  .sev.MED { background: #d97706; } .sev.LOW { background: #6b7280; } .sev.DONE { background: #059669; }
+
+  .fix { border: 1px solid #e5e7eb; border-left: 4px solid #059669; border-radius: 6px; padding: 10px 12px; margin: 10px 0; page-break-inside: avoid; }
+  .fix .ftitle { font-weight: 700; font-size: 11.5px; margin: 0 0 5px; }
+  .fix .ftitle .id { color: #059669; }
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0; }
+  .ba .col { border-radius: 5px; padding: 7px 9px; font-size: 9.3px; }
+  .ba .before { background: #fef2f2; border: 1px solid #fecaca; }
+  .ba .after { background: #ecfdf5; border: 1px solid #a7f3d0; }
+  .ba .lbl { font-weight: 700; font-size: 9px; letter-spacing: 0.5px; margin-bottom: 3px; text-transform: uppercase; }
+  .ba .before .lbl { color: #b91c1c; } .ba .after .lbl { color: #047857; }
+  pre { background: #0d1117; color: #e6edf3; border-radius: 5px; padding: 7px 9px; overflow-x: auto; font-size: 8.6px; line-height: 1.4; margin: 4px 0; white-space: pre-wrap; word-break: break-word; }
+  pre .cm { color: #8b949e; }
+  .note { margin: 4px 0; font-size: 10px; }
+  .note b { color: #047857; }
+
+  .box { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin: 10px 0; }
+  .box.good { background: #ecfdf5; border-color: #a7f3d0; }
+  .box.warn { background: #fffbeb; border-color: #fde68a; }
+  .pagebreak { page-break-before: always; }
+  .tag { display:inline-block; background:#eef2ff; color:#3730a3; border-radius:4px; padding:1px 6px; font-size:9px; font-weight:600; }
+  footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 9px; color: #9ca3af; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="kicker">Audit Remediation Report</div>
+  <h1>SafetyMonitor Audit 조치<br>분석 보고서</h1>
+  <div class="sub">코드베이스 종합 Audit 발견 23건 조치 결과 (산업현장 작업자 생체 모니터링 프로토타입)</div>
+  <div class="meta">
+    <b>작성일</b> 2026-06-03 &nbsp;·&nbsp; <b>대상</b> monorepo @ <code>06.safetymonitor</code> &nbsp;·&nbsp; <b>선행</b> 종합 Audit(MEDIUM 5 / LOW 18)<br>
+    <b>조치 범위</b> 그룹 A(보안) → C(단일 source·타입) → 정확성 → 테스트 → 위생 &nbsp;·&nbsp; <b>커밋</b> 5건 (main ahead 58)<br>
+    <b>검증</b> 전체 typecheck ✓ · 단위 테스트 38/38 ✓ · dev 런타임 GET / 200 + PII redact live ✓
+  </div>
+</div>
+
+<h2>1. 개요 (Executive Summary)</h2>
+<p class="lead">선행 종합 Audit이 확정한 <b>23건(MEDIUM 5 / LOW 18)</b>을 우선순위(공개 터널 전 PII 차단 → 발표 전 단일 source → 정확성 → 테스트 → 위생) 순으로 <b>전부 조치</b>했다. 모든 변경은 전체 typecheck·단위 테스트·dev 런타임으로 검증했고, 5개 semantic commit으로 분리해 기록했다.</p>
+
+<table>
+  <tr><th>구분</th><th class="num">대상</th><th class="num">조치</th><th>핵심 효과</th></tr>
+  <tr><td>🟡 MEDIUM</td><td class="num">5</td><td class="ok">5</td><td>PII 미인증 노출·기본 비밀번호·핵심 테스트·tsconfig 플래그·임계 단일 source</td></tr>
+  <tr><td>⚪ LOW</td><td class="num">18</td><td class="ok">18</td><td>정확성 2 · 테스트 2 · dead code 6 · 의존성 1 · 타입 2 · 문서 4 · 세션토큰 1</td></tr>
+  <tr><td><b>합계</b></td><td class="num"><b>23</b></td><td class="ok"><b>23</b></td><td>전 항목 적용 + 검증</td></tr>
+</table>
+
+<div class="box good">
+<b>검증 결과 (모두 통과).</b>
+<ul>
+  <li><b>typecheck</b> — schemas · analyzers · dashboard 전체 <code>tsc --noEmit</code> exit 0</li>
+  <li><b>단위 테스트 38/38</b> — analyzers 15 · schemas 9(신규) · dashboard 14(신규), fail 0</li>
+  <li><b>dev 런타임</b> — <code>GET /</code> HTTP 200 · <code>GET /api/mock/vital</code> 200 <code>{ "piiRedacted": true }</code> → M1 PII 차단이 실제 동작함을 라이브 확인</li>
+</ul>
+</div>
+
+<h3>조치 우선순위 그룹</h3>
+<table>
+  <tr><th class="num">순위</th><th>그룹</th><th>항목</th><th class="num">커밋</th></tr>
+  <tr><td class="num">A</td><td><b>공개 터널 전 PII 차단</b></td><td>M1 GET PII · M2 비밀번호 · L3 세션토큰 (+L9·L18)</td><td class="mono">648d942</td></tr>
+  <tr><td class="num">C+정확성</td><td>단일 source · 타입 강화 · 정확성</td><td>M5 · M4(28건) · L1 · L2 · L6/L7/L8 · L17</td><td class="mono">fcc74d0</td></tr>
+  <tr><td class="num">D</td><td>테스트 부채</td><td>M3 · L4 · L5 (+러너)</td><td class="mono">417cd09</td></tr>
+  <tr><td class="num">E</td><td>위생 (worker-phone·schemas)</td><td>L10 · L11 · L12</td><td class="mono">c09c76e</td></tr>
+  <tr><td class="num">E</td><td>문서 정합 + 기록</td><td>L13 · L14 · L15 · L16 + 세션17 기록</td><td class="mono">f981265</td></tr>
+</table>
+
+<!-- ===================== A ===================== -->
+<h2 class="pagebreak">2. 그룹 A — 공개 터널 전 PII 차단 (보안)</h2>
+
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">M1</span> 미인증 GET <code>/api/mock/vital</code> PII 유출 차단</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div>GET이 <code>latestByWorker()</code>를 그대로 반환 → 보호자 이름·전화, 위·경도가 무인증으로 공개 터널에 노출</div>
+    <div class="col after"><div class="lbl">After</div><code>redactPii</code>로 PII 4필드 <b>기본 제거</b>. <code>MOCK_VITAL_EXPOSE_PII=true</code>로만 신뢰 환경 opt-in. 응답에 <code>piiRedacted</code> 플래그</div>
+  </div>
+<pre>const EXPOSE_PII = process.env.MOCK_VITAL_EXPOSE_PII === "true";
+function redactPii(s) {
+  if (EXPOSE_PII) return s;
+  const { guardianName, guardianPhone, latitude, longitude, ...rest } = s;
+  return rest;   <span class="cm">// 기본: 민감 PII 비노출(fail-safe)</span>
+}</pre>
+  <div class="note"><b>런타임 검증</b> — <code>GET /api/mock/vital → 200, "piiRedacted": true</code> 확인.</div>
+</div>
+
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">M2</span> 기본 관리자 비밀번호(동작 default) 제거 — fail-closed</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div><code>ADMIN_PASSWORD ?? "safety2026"</code> — 미설정 시 소스에 적힌 비밀번호로 PII export 접근 가능. <code>.env.example</code>도 실동작값 출하</div>
+    <div class="col after"><div class="lbl">After</div><code>?? ""</code> + 미설정 시 <b>인증 항상 거부</b>(경고 로그). <code>.env.example</code> 빈 placeholder + 강한 비번 설정 안내</div>
+  </div>
+<pre>const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
+export function verifyCredentials(id, password) {
+  if (!ADMIN_PASSWORD) { console.warn("...fail-closed..."); return false; }
+  return safeEqual(id, ADMIN_ID) &amp;&amp; safeEqual(password, ADMIN_PASSWORD);
+}</pre>
+</div>
+
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">L3</span> 세션 토큰을 비밀번호와 분리</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div>토큰 = <code>base64(id:password)</code> — 가역(평문 비밀번호), 만료 없음. XSS 시 비밀번호 영구 노출</div>
+    <div class="col after"><div class="lbl">After</div>로그인 시 <b>랜덤 불투명 토큰 + 서버측 8h TTL</b> 발급(<code>createSession</code>/<code>validateSession</code>). 클라이언트·6개 admin 라우트 무변경(하위호환)</div>
+  </div>
+  <div class="note"><b>+ L9</b> 미사용 <code>ADMIN_ID_HINT</code> export 제거 · <b>+ L18</b> <code>catch (error: unknown)</code>로 전환</div>
+</div>
+
+<!-- ===================== C ===================== -->
+<h2 class="pagebreak">3. 그룹 C — 단일 source 복구 + 타입 강화</h2>
+
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">M5</span> vital 임계 분류 로직 단일 source 복구</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div><code>DemoDashboard.tsx</code>가 <code>heartRateStatus/spo2Status/coreTempStatus</code>를 매직넘버(130/40/110/50, 88/92)로 중복 정의 → <code>THRESHOLDS</code> 변경이 카드 색칠에 전파 안 됨</div>
+    <div class="col after"><div class="lbl">After</div>로컬 정의 삭제 후 <code>lib/severity.ts</code>(analyzers <code>THRESHOLDS</code> 단일 source)에서 import. <b>거동 동일</b>, 임계 단일화</div>
+  </div>
+  <div class="note"><b>검증</b> — <code>severity.test.ts</code>가 <code>THRESHOLDS</code> 기준 경계(매직넘버 아님)로 8건 통과.</div>
+</div>
+
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">M4</span> dashboard tsconfig <code>noUncheckedIndexedAccess</code> 활성 + 28건 가드</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div>dashboard tsconfig가 base 미상속 → 플래그 누락. 최대 런타임 표면(데모 렌더)에서 배열 인덱스 접근 전부 미검사</div>
+    <div class="col after"><div class="lbl">After</div><code>noUncheckedIndexedAccess</code>+<code>noImplicitOverride</code> 활성. 노출된 <b>28건(10파일)</b> 미검사 접근을 전부 안전 가드</div>
+  </div>
+  <table>
+    <tr><th>파일</th><th class="num">건수</th><th>대표 가드</th></tr>
+    <tr><td class="mono">app/lib/typhoon.ts</td><td class="num">8</td><td>최신 태풍 <code>head</code> undefined 가드</td></tr>
+    <tr><td class="mono">VitalHistoryPanel.tsx</td><td class="num">4</td><td><code>points[idx]</code> 가드 후 렌더</td></tr>
+    <tr><td class="mono">kma.ts / WidgetCarousel / WeatherStrip / WeatherRuleModal / SiteSafetyTables / AdminExportModal / DemoDashboard / weather route</td><td class="num">16</td><td>시·도 fallback · 캐러셀 <code>cur</code> · 예보 배열 · 정규식 그룹 등</td></tr>
+  </table>
+</div>
+
+<h2>4. 정확성 패치</h2>
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">L1</span> sticky <code>latestByWorker</code> ts 역행 방지 + 순수 함수 추출</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div>삽입 순서 last-writer로 <code>ts</code> 무조건 갱신 → 워치 backlog(역순 수신) 시 ts 역행·신선도 바 stale</div>
+    <div class="col after"><div class="lbl">After</div>수집시각(<code>ts</code>) 기준 <b>최신 우선</b>(역순 샘플은 gap만 보강). 순수 함수 <code>mergeLatestByWorker</code> 추출 → 테스트 가능</div>
+  </div>
+  <div class="note"><b>검증</b> — <code>store.test.ts</code> "backlog 역순 삽입 시 ts 역행하지 않는다(L1)" 케이스 통과.</div>
+</div>
+<div class="fix">
+  <div class="ftitle"><span class="sev DONE">조치</span> <span class="id">L2</span> weather route <code>workerCount=0</code> 오기록 차단</div>
+  <div class="ba">
+    <div class="col before"><div class="lbl">Before</div><code>Number(url.searchParams.get("workers"))</code> — 파라미터 부재 시 <code>Number(null)===0</code>이 finite라 <code>weather_log</code>에 0 기록</div>
+    <div class="col after"><div class="lbl">After</div>raw <code>null</code>을 먼저 검사 → 부재 시 <code>undefined</code> 기록(의도대로)</div>
+  </div>
+</div>
+
+<!-- ===================== D ===================== -->
+<h2 class="pagebreak">5. 테스트 부채 (신규 23건 + 러너)</h2>
+<table>
+  <tr><th class="num">ID</th><th>파일</th><th class="num">건수</th><th>커버</th></tr>
+  <tr><td class="num">L4</td><td class="mono">schemas/vital-stream.test.ts</td><td class="num">9</td><td>수신 스키마 경계값(workerId·ts·hr·spo2·temp·GPS). <b>no-op이던 <code>test</code> 스크립트 실동작화</b></td></tr>
+  <tr><td class="num">L5</td><td class="mono">dashboard/lib/severity.test.ts</td><td class="num">8</td><td>위험도 판정 경계 — <code>THRESHOLDS</code> 기준(매직넘버 아님) + overallStatus 낙상/SOS</td></tr>
+  <tr><td class="num">M3</td><td class="mono">dashboard/app/api/mock/store.test.ts</td><td class="num">6</td><td>reserved 필터 + sticky carry-forward + <b>L1 ts 역행 가드</b> + 이벤트 비-sticky + 정렬</td></tr>
+</table>
+<p class="small">인프라: dashboard에 <code>tsx --test</code> 러너(+tsx devDep) 추가, 루트 <code>pnpm test</code>가 dashboard 포함, analyzers/schemas exports에 <code>default</code> 조건 추가(node/tsx resolution). 전체 <b>38/38 통과</b>(analyzers 15 · schemas 9 · dashboard 14).</p>
+
+<h2>6. 위생 정리</h2>
+<table>
+  <tr><th class="num">ID</th><th>조치</th></tr>
+  <tr><td class="num">L6/L7/L8</td><td>dead code 제거 — <code>SafetyMonitorLogo</code> 컴포넌트 · <code>SEVERITY_TEXT_CLASS</code> · <code>persistedByWorker</code>(+ 전용 <code>countByWorker</code> prepared stmt)</td></tr>
+  <tr><td class="num">L17</td><td><code>db.ts</code> <code>persistSiteInfoDaily</code>의 <code>.get()</code> 결과 nullable 처리(강제 캐스트 제거)</td></tr>
+  <tr><td class="num">L12</td><td><code>pubspec.yaml</code> geolocator 중복 platform 핀 제거(umbrella 가 endorsed 로 포함) — <span class="tag">다음 Flutter 빌드 전 flutter pub get 필요</span></td></tr>
+  <tr><td class="num">L10/L11</td><td>의도된 스캐폴딩 명시 — Flutter MQTT 경로·schemas Worker에 "미연결(발표 후 AWS/백엔드)" 주석</td></tr>
+  <tr><td class="num">L13~L16</td><td>문서 정합 — CLAUDE.md turbo→pnpm 주석 · backend README stale 상태→canonical 포인터 · "4 worker"→5 · CLAUDE.md 코드트리 미존재 경로 명시</td></tr>
+</table>
+
+<!-- ===================== 검증/사고 ===================== -->
+<h2>7. 검증 &amp; 빌드 사고 처리</h2>
+<div class="box warn">
+<b>⚠️ 검증 중 사고와 복구.</b> 추가 검증으로 <code>next build</code>를 실행했으나, 이 프로젝트는 <code>next build</code>를 쓰지 않고(AWS 배포 보류 → <code>next dev</code>만 운용) 구동 중인 dev 서버와 <code>.next</code> 디렉터리를 공유해 충돌, dev가 HTTP 500으로 오염됐다. <b>원인은 코드가 아닌 dev+build 동시 실행 artifact</b>(CLAUDE.md에 기록된 ".next stale chunk 500" 패턴). 조치: 멈춘 build 종료 → <code>.next</code> 삭제 → dev 동일 바인딩(127.0.0.1:3000)으로 재기동 → <code>GET / 200</code> 회복(cloudflared 터널·URL 보존). 이후 <code>next build</code>는 비표준이라 제거. <b>이로 인한 코드 변경 0.</b>
+</div>
+<table>
+  <tr><th>검증 항목</th><th>결과</th></tr>
+  <tr><td>전체 typecheck (<code>pnpm typecheck</code>)</td><td class="ok">exit 0 — schemas·analyzers·dashboard</td></tr>
+  <tr><td>단위 테스트 (<code>pnpm test</code>)</td><td class="ok">38/38 pass (15+9+14), fail 0</td></tr>
+  <tr><td>dev 런타임 <code>GET /</code></td><td class="ok">HTTP 200 (1.45s 컴파일)</td></tr>
+  <tr><td>dev 런타임 <code>GET /api/mock/vital</code></td><td class="ok">200 · <code>piiRedacted: true</code> (M1 live)</td></tr>
+</table>
+
+<h2>8. 커밋 내역 (main, ahead 58 · push 보류)</h2>
+<table>
+  <tr><th class="num">SHA</th><th>메시지</th></tr>
+  <tr><td class="mono">648d942</td><td>fix(security): 공개 터널 PII/인증 차단 (audit A: M1·M2·L3)</td></tr>
+  <tr><td class="mono">fcc74d0</td><td>refactor(dashboard): THRESHOLDS 단일 source + 타입 강화 + 정확성/dead code</td></tr>
+  <tr><td class="mono">417cd09</td><td>test: dashboard/schemas 단위 테스트 추가 + 러너 (M3·L4·L5)</td></tr>
+  <tr><td class="mono">c09c76e</td><td>chore(worker-phone, schemas): 위생 정리 (L10·L11·L12)</td></tr>
+  <tr><td class="mono">f981265</td><td>docs: 종합 audit 기록·트래커 + 문서 정합 (세션17 + L13~L16)</td></tr>
+</table>
+
+<h2>9. 남은 사용자 액션 (코드 외, 발표 전 권장)</h2>
+<ol>
+  <li><b><code>.env.local</code>의 <code>ADMIN_PASSWORD</code> 회전</b> — 기존 <code>safety2026</code>은 audit으로 공개됨. 강한 값으로 교체(미설정 시 fail-closed라 관리자 메뉴 인증 거부).</li>
+  <li><b>데모 SOS 보호자 연락/지도가 필요하면 <code>.env.local</code>에 <code>MOCK_VITAL_EXPOSE_PII=true</code></b> — 기본값(미설정)에서는 PII가 가려져 SOS 모달의 보호자 전화·GPS 지도가 빈 상태가 된다. 신뢰된 로컬/터널 데모에서만 활성.</li>
+  <li><b>Flutter 재빌드 전 <code>flutter pub get</code></b> — geolocator platform 핀 제거 반영(lock 갱신).</li>
+</ol>
+
+<h2>10. 결론</h2>
+<p class="lead">선행 Audit 발견 <b>23건 전부 조치</b>했고, 전체 typecheck·단위 테스트 38건·dev 런타임으로 검증을 완료했다. 보안 측면에서 <b>공개 터널 데모의 PII·관리자 인증 표면이 fail-safe로 닫혔고</b>(M1·M2·L3), 코드 품질 측면에서 <b>임계 단일 source가 복구</b>(M5)되고 <b>타입 안전성이 모노레포 기준에 정렬</b>(M4)됐다. 핵심 수신 경로와 위험도 판정에 회귀 방지 테스트가 도입돼, 발표 후 실서비스화 트랙으로의 진입 기반이 마련됐다.</p>
+
+<footer>
+  SafetyMonitor / IndusView — Audit 조치(remediation) 분석 보고서 · 발견 23건(MEDIUM 5/LOW 18) 전부 조치 · 검증 typecheck✓·test 38/38✓·dev 200✓ · 5 commits(ahead 58, push 보류) · 2026-06-03
+</footer>
+
+</body>
+</html>

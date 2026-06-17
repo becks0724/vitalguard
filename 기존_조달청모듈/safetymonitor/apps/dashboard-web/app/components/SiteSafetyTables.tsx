@@ -1,0 +1,1069 @@
+// 현장 안전 설비 모니터링 샘플 표 — 가스 누출 감지기 / 심장 제세동기(AED). 작업자 표와 동일 타입(세로 표).
+// 실 센서 데이터 소스는 발표 후 연동. 현재는 가상 샘플 + 수동 스크롤만(자동 상하 슬라이딩 없음).
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
+import { AED_DEVICES, normalizeAedItems, type AedDevice, type AedItem } from "../../lib/aed-devices";
+import { getSessionToken } from "./LoginGate";
+
+export type Sev = "normal" | "caution" | "danger";
+
+// 선택된 설비 메트릭(가스 측정값/제세동기 배터리) — 하단 추세 그래프용. 작업자 그래프와 동일 차트 재사용.
+export type SiteMetric = {
+  key: string;
+  title: string;
+  unit: string;
+  color: string;
+  value: number;
+  decimals: number;
+  kind: "gas" | "battery";
+  threshold?: { value: number; label: string }; // 가스 임계값 — 그래프 기준선용.
+};
+
+const DOT: Record<Sev, string> = {
+  normal: "bg-semantic-up",
+  caution: "bg-amber-500 vital-blink-caution",
+  danger: "bg-semantic-down vital-blink-danger",
+};
+const TONE: Record<Sev, string> = {
+  normal: "text-semantic-up",
+  caution: "text-amber-600 vital-blink-caution dark:text-amber-300",
+  danger: "text-semantic-down vital-blink-danger",
+};
+
+// 신호등 점 — 작업자 표와 동일(정상 정적 / 주의·위험 블링크).
+function SignalDot({ sev }: { sev: Sev }) {
+  return <span className={`inline-block h-2.5 w-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/20 ${DOT[sev]}`} />;
+}
+
+// 제세동기 배터리 게이지 — 텍스트 % 대체용 원형 링(레퍼런스 Gauge 축약, 의존성 0).
+// 36px 고정이라 행 높이(h-12=48px) 불변. 색=배터리 임계(≤20 위험/≤50 주의/그 외 정상).
+function BatteryGauge({ pct }: { pct: number }) {
+  const v = Math.max(0, Math.min(100, Math.round(pct)));
+  const color = v <= 20 ? "#dc2626" : v <= 50 ? "#f59e0b" : "#16a34a";
+  const radius = 15.5;
+  const circ = 2 * Math.PI * radius;
+  const dash = (v / 100) * circ;
+  return (
+    <span
+      className="relative inline-flex h-9 w-9 items-center justify-center"
+      role="img"
+      aria-label={`배터리 ${v}%`}
+    >
+      <svg viewBox="0 0 36 36" className="h-9 w-9 -rotate-90">
+        <circle
+          cx="18"
+          cy="18"
+          r={radius}
+          fill="none"
+          strokeWidth="3.5"
+          className="stroke-zinc-200 dark:stroke-white/10"
+        />
+        <circle
+          cx="18"
+          cy="18"
+          r={radius}
+          fill="none"
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          stroke={color}
+          strokeDasharray={`${dash} ${circ}`}
+        />
+      </svg>
+      <span className="absolute text-[9px] font-semibold tabular-nums" style={{ color }}>
+        {v}
+      </span>
+    </span>
+  );
+}
+
+// 공통 외곽 — 헤더(카운트·샘플 표기) + 표 헤더 행 + 수동 스크롤 본문(자동 슬라이딩 없음).
+function TableShell({
+  count,
+  header,
+  children,
+  minWidthClass = "min-w-[760px]",
+}: {
+  count: number;
+  header: React.ReactNode;
+  children: React.ReactNode;
+  minWidthClass?: string;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-4 py-2 dark:border-white/10">
+        <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-xs font-medium text-body dark:bg-surface-dark dark:text-on-dark-soft">
+          {count}개소
+        </span>
+        <span className="text-[11px] text-muted dark:text-on-dark-soft">
+          샘플 · 자체 디바이스 연동 시 실시간 · 수동 스크롤
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-x-auto">
+        <div className={`flex h-full ${minWidthClass} flex-col`}>
+          {header}
+          {/* 수동 스크롤 전용(오토 상하 슬라이딩 없음) */}
+          <div className="wx-cards-scroll min-h-0 flex-1 overflow-y-auto">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 가스 누출 감지기 ──────────────────────────────────────────────
+const GAS_GRID =
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(8rem,1.5fr)_minmax(6rem,1fr)_5rem_6rem_4rem_5rem]";
+
+type GasRow = {
+  loc: string;
+  gas: string;
+  val: string;
+  unit: string;
+  thr: string;
+  sev: Sev;
+  recv: string;
+};
+
+const GAS_ROWS: GasRow[] = [
+  { loc: "지하 1층 펌프실", gas: "CH₄ 메탄", val: "0.3", unit: "%LEL", thr: "≥5 %LEL", sev: "normal", recv: "5초 전" },
+  { loc: "B2 집수정", gas: "H₂S 황화수소", val: "8", unit: "ppm", thr: "≥10 ppm", sev: "caution", recv: "4초 전" },
+  { loc: "탱크 야드", gas: "CO 일산화탄소", val: "52", unit: "ppm", thr: "≥30 ppm", sev: "danger", recv: "6초 전" },
+  { loc: "배관 트렌치", gas: "O₂ 산소", val: "20.9", unit: "%", thr: "<18 %", sev: "normal", recv: "5초 전" },
+  { loc: "도장 작업장", gas: "VOC 휘발성유기", val: "120", unit: "ppm", thr: "≥200 ppm", sev: "caution", recv: "7초 전" },
+  { loc: "보일러실", gas: "CH₄ 메탄", val: "0.1", unit: "%LEL", thr: "≥5 %LEL", sev: "normal", recv: "5초 전" },
+  { loc: "폐수 처리조", gas: "H₂S 황화수소", val: "3", unit: "ppm", thr: "≥10 ppm", sev: "normal", recv: "5초 전" },
+  { loc: "지하 전기실", gas: "CO 일산화탄소", val: "12", unit: "ppm", thr: "≥30 ppm", sev: "normal", recv: "5초 전" },
+];
+
+function gasMetric(r: GasRow): SiteMetric {
+  const value = Number(r.val);
+  const thrMatch = r.thr.match(/[\d.]+/); // "≥5 %LEL" / "<18 %" → 숫자 추출
+  const thrValue = thrMatch ? Number(thrMatch[0]) : NaN;
+  return {
+    key: `gas-${r.loc}`,
+    title: `가스 측정값 — ${r.loc} · ${r.gas}`,
+    unit: r.unit,
+    color: "#f59e0b",
+    value: Number.isFinite(value) ? value : 0,
+    decimals: r.val.includes(".") ? 1 : 0,
+    kind: "gas",
+    threshold: Number.isFinite(thrValue) ? { value: thrValue, label: `임계 ${r.thr}` } : undefined,
+  };
+}
+
+export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => void }) {
+  const header = (
+    <div className={`${GAS_GRID} shrink-0 border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}>
+      <div />
+      <div>설치 위치</div>
+      <div>가스 종류</div>
+      <div className="text-center">측정값</div>
+      <div className="text-center">임계</div>
+      <div className="text-center">상태</div>
+      <div className="text-center">최근수신</div>
+    </div>
+  );
+  return (
+    <TableShell count={GAS_ROWS.length} header={header}>
+      {GAS_ROWS.map((r) => (
+        <div
+          key={r.loc}
+          className={`${GAS_GRID} h-12 border-b border-hairline px-3 text-xs text-ink dark:border-white/5 dark:text-on-dark ${
+            r.sev !== "normal" ? "ring-1 ring-inset ring-red-500/50" : ""
+          }`}
+        >
+          <div className="flex justify-center">
+            <SignalDot sev={r.sev} />
+          </div>
+          <div className="truncate font-medium">{r.loc}</div>
+          <div className="truncate text-body dark:text-on-dark-soft">{r.gas}</div>
+          <button
+            type="button"
+            onClick={() => onSelect?.(gasMetric(r))}
+            title="클릭 → 측정값 추세 그래프"
+            className="mx-auto rounded px-1 text-center font-mono font-semibold tabular-nums hover:bg-primary/10 hover:underline"
+          >
+            {r.val}
+            <span className="ml-0.5 text-[10px] font-normal text-muted">{r.unit}</span>
+          </button>
+          <div className="text-center font-mono text-[11px] text-muted dark:text-on-dark-soft">{r.thr}</div>
+          <div className={`text-center font-semibold ${TONE[r.sev]}`}>
+            {r.sev === "normal" ? "정상" : r.sev === "caution" ? "주의" : "위험"}
+          </div>
+          <div className="text-center text-[11px] text-muted dark:text-on-dark-soft">{r.recv}</div>
+        </div>
+      ))}
+    </TableShell>
+  );
+}
+
+// ── 심장 제세동기(AED) 알림 ──────────────────────────────────────
+// 현실 모델: AED 본체 배터리·전극패드는 실시간 상태 측정 불가 → 제조사 권장 "교환 주기"로만 관리(임박/경과 알림).
+// 실시간 배터리(%)는 'AED 알림 단말'(우리 IoT 장비) 자체 배터리 → "배터리 부족" 알림은 단말 한정.
+// 갱신은 관제 센터가 아니라 현장: 관리자(여러 명)가 배터리·패드 교체·점검 후 장비의 'NFC 태그를 폰으로 태깅'하면
+//   점검 페이지가 열리고(점검자·항목 입력) 관제 웹으로 전송됨 → 이력 기록·최근 교환 갱신. 관제 웹은 '표시만'.
+// 「응급의료에 관한 법률」 제47조의2(설치·관리)·제62조(미설치 과태료)·시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보).
+const AED_GRID =
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7rem,1.3fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_6.5rem]";
+
+// 표시·계산용 런타임 행 — 장비 레지스트리(AED_DEVICES) + 병합 이력. history = DB 점검(NFC) + seed.
+type AedHistRecord = { daysAgo: number; items: AedItem[]; by: string; ts?: string };
+type AedRow = {
+  id: string;
+  loc: string;
+  manager: string;
+  devBatt: number; // 알림 단말 배터리 %(실시간 — "배터리 부족"은 이것만)
+  battCycleMonths: number;
+  padCycleMonths: number;
+  history: AedHistRecord[]; // 최신(작은 경과일) 먼저. 최근 배터리/패드 교체일이 교환 주기 기준.
+};
+
+// GET /api/aed/inspections 응답 1건.
+type AedInspectionDTO = { aed_id: string; inspector: string; items: string | null; ts: string };
+
+// 폴링으로 채워지는 점검 기록 캐시 — aedDetail(통합 신호등)과 표가 공유. SSR/첫 렌더엔 빈 배열(하이드레이션 안전).
+let aedInspectionsCache: AedInspectionDTO[] = [];
+// 폴링 소유권 가드 — 다중 AedAlertTable 인스턴스가 동시에 모듈 캐시를 덮어쓰지 않도록 한 번에 한 인스턴스만 폴링.
+let aedPollingOwned = false;
+
+function tsToDaysAgo(ts: string): number {
+  const t = Date.parse(ts);
+  if (Number.isNaN(t)) return 0;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
+}
+
+// 장비 + 점검 기록 → 런타임 행. 이력 = DB 점검(NFC 태깅) + seed, 최신 먼저.
+function buildAedRow(d: AedDevice, inspections: AedInspectionDTO[]): AedRow {
+  const scanned: AedHistRecord[] = inspections
+    .filter((i) => i.aed_id === d.id)
+    .map((i) => ({ daysAgo: tsToDaysAgo(i.ts), items: normalizeAedItems(i.items), by: i.inspector, ts: i.ts }));
+  const seed: AedHistRecord[] = d.seedHistory.map((s) => ({ daysAgo: s.daysAgo, items: s.items, by: s.by }));
+  const history = [...scanned, ...seed].sort((a, b) => a.daysAgo - b.daysAgo);
+  return {
+    id: d.id,
+    loc: d.loc,
+    manager: d.manager,
+    devBatt: d.devBatt,
+    battCycleMonths: d.battCycleMonths,
+    padCycleMonths: d.padCycleMonths,
+    history,
+  };
+}
+
+function buildAedRows(): AedRow[] {
+  return AED_DEVICES.map((d) => buildAedRow(d, aedInspectionsCache));
+}
+
+// ── 통합 안전 신호등용 상세(worst-of + 도메인 안내) ───────────────
+const SEV_RANK: Record<Sev, number> = { normal: 0, caution: 1, danger: 2 };
+const SEV_KO: Record<Sev, string> = { normal: "정상", caution: "주의", danger: "위험" };
+
+function worstSev(sevs: Sev[]): Sev {
+  return sevs.reduce<Sev>((acc, s) => (SEV_RANK[s] > SEV_RANK[acc] ? s : acc), "normal");
+}
+
+// 통합 신호등 상세 팝업 본문 구조(클릭 시 표시).
+export type LampDetail = { title: string; lines: { label: string; text: string }[]; location: string; note?: string };
+// 보드 2줄(summary + short) + 상세(detail).
+export type CategorySignal = { sev: Sev; summary: string; short: string; detail: LampDetail };
+
+// 가스 종류별 작업자 영향 · 노출 기준(참고) · 권장 대응(골든타임). 수치는 KOSHA/NIOSH 참고값(법적 단정 아님).
+const GAS_INFO: Record<string, { name: string; effect: string; exposure: string; action: string; short: string }> = {
+  "CH₄": {
+    name: "메탄(CH₄)",
+    effect: "단순 질식제이자 폭발성 가스. 고농도 시 산소를 밀어내 질식 위험.",
+    exposure: "폭발하한 LEL 5%vol · 표시값 %LEL 은 LEL 대비 비율 (참고)",
+    action: "즉시 환기 + 화기 엄금. 25%LEL 이상 시 작업 중지·대피.",
+    short: "폭발성·질식 위험 — 화기 엄금·즉시 환기",
+  },
+  "H₂S": {
+    name: "황화수소(H₂S)",
+    effect: "썩은 달걀 냄새(고농도 시 후각 마비). 점막 자극, 고농도 의식상실·호흡정지.",
+    exposure: "TWA 10ppm · STEL 15ppm · IDLH 100ppm (참고)",
+    action: "즉시 대피·환기. 100ppm↑ 단독 진입 금지, 의식저하 시 119.",
+    short: "고농도 후각마비·호흡정지 — 즉시 대피",
+  },
+  "CO": {
+    name: "일산화탄소(CO)",
+    effect: "무색·무취. 헤모글로빈과 결합해 산소 운반을 방해. 50ppm↑ 두통·어지러움, 800ppm↑ 의식상실.",
+    exposure: "TWA 30ppm(8h) · STEL 200ppm · IDLH 1200ppm (참고)",
+    action: "강제 환기 + 작업자 대피, 고농도 구역 진입 금지. 증상자 신선한 공기 후 119 (저산소 뇌손상 4~6분 내 시작).",
+    short: "산소운반 방해 — 두통·어지러움, 즉시 환기·대피",
+  },
+  "O₂": {
+    name: "산소(O₂)",
+    effect: "18% 미만 산소결핍(판단력 저하·의식상실), 23.5% 초과 화재·폭발 위험.",
+    exposure: "적정 19.5~23.5% · 18%↓ 산소결핍 위험작업 (참고)",
+    action: "18% 미만 즉시 대피·환기. 밀폐공간 진입 전 농도 측정·송기마스크.",
+    short: "산소결핍/과잉 — 18%↓ 즉시 대피",
+  },
+  "VOC": {
+    name: "휘발성유기화합물(VOC)",
+    effect: "두통·현기증·점막 자극, 고농도 마취작용·의식저하. 일부 발암성·인화성.",
+    exposure: "물질별 상이 · 화기 엄금 (참고)",
+    action: "국소배기·환기 강화, 방독마스크 착용, 화기 엄금.",
+    short: "마취작용·인화성 — 환기·방독마스크",
+  },
+};
+
+// 가스 감지기 worst-of + 상세. 현재는 가상 샘플 기준(발표 후 실센서).
+export function gasDetail(): CategorySignal {
+  const sev = worstSev(GAS_ROWS.map((r) => r.sev));
+  if (sev === "normal") {
+    return {
+      sev,
+      summary: `정상 ${GAS_ROWS.length}개소`,
+      short: "전 구역 기준치 이내",
+      detail: { title: "가스 누출 감지기 정상", location: "전 구역", lines: [{ label: "상태", text: `${GAS_ROWS.length}개소 전부 기준치 이내` }] },
+    };
+  }
+  const row = GAS_ROWS.find((r) => r.sev === sev) ?? GAS_ROWS[0]!;
+  const sym = row.gas.split(" ")[0] ?? row.gas;
+  const info = GAS_INFO[sym];
+  return {
+    sev,
+    summary: `${sym} ${row.val}${row.unit} · ${row.loc}`,
+    short: info?.short ?? `${SEV_KO[sev]} — 즉시 확인`,
+    detail: {
+      title: `가스 ${SEV_KO[sev]} — ${info?.name ?? sym}`,
+      location: `${row.loc} · 최근 수신 ${row.recv}`,
+      lines: [
+        { label: "측정", text: `${row.val}${row.unit} · 임계 ${row.thr} ${sev === "danger" ? "초과" : "근접"}` },
+        ...(info
+          ? [
+              { label: "작업자 영향", text: info.effect },
+              { label: "노출 기준", text: info.exposure },
+              { label: "권장 대응(골든타임)", text: info.action },
+            ]
+          : []),
+      ],
+      note: "노출 기준은 KOSHA/NIOSH 참고값 · 법적 단정 아님",
+    },
+  };
+}
+
+// ── AED 관리 임계·교환 주기 ───────────────────────────────────────
+// 단말(알림 장비) 배터리 — 유일하게 실시간 측정 가능.
+const AED_DEV_BATT_DANGER = 20; // 단말 배터리 부족
+const AED_DEV_BATT_CAUTION = 50; // 단말 배터리 주의
+// AED 본체 배터리·전극패드 — 실시간 상태 측정 불가 → 교환 주기로만 관리.
+const AED_SWAP_DUE_SOON_DAYS = 90; // 교환 임박(주의) — 잔여 90일 이내
+function fmtYMD(d: Date): string {
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
+}
+function dateDaysAgo(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return fmtYMD(d);
+}
+
+// 교환 경과일 — history(현장 단말 기록)에서 해당 항목의 가장 최근 교체일을 파생. 관제 웹은 표시 전용(직접 갱신 없음).
+function recentSwapDaysAgo(r: AedRow, item: "battery" | "pad"): number {
+  const recs = r.history.filter((h) => h.items.includes(item)).map((h) => h.daysAgo);
+  return recs.length ? Math.min(...recs) : 0; // 기록 없으면 신규 설치로 간주(오탐 방지)
+}
+function battDaysSince(r: AedRow): number {
+  return recentSwapDaysAgo(r, "battery");
+}
+function padDaysSince(r: AedRow): number {
+  return recentSwapDaysAgo(r, "pad");
+}
+// 최근 교환(점검)일 = 가장 최근 이력.
+function aedLastSwap(r: AedRow): { date: string; daysAgo: number } {
+  const all = r.history.map((h) => h.daysAgo);
+  const daysAgo = all.length ? Math.min(...all) : 0;
+  return { date: dateDaysAgo(daysAgo), daysAgo };
+}
+// 교환까지 잔여일(음수 = 권장 주기 경과).
+function battDueDays(r: AedRow): number {
+  return r.battCycleMonths * 30 - battDaysSince(r);
+}
+function padDueDays(r: AedRow): number {
+  return r.padCycleMonths * 30 - padDaysSince(r);
+}
+
+function aedDevBattSev(b: number): Sev {
+  return b <= AED_DEV_BATT_DANGER ? "danger" : b <= AED_DEV_BATT_CAUTION ? "caution" : "normal";
+}
+function aedCycleSev(dueDays: number): Sev {
+  return dueDays < 0 ? "danger" : dueDays <= AED_SWAP_DUE_SOON_DAYS ? "caution" : "normal";
+}
+// 교환 셀 짧은 표기.
+function dueShort(dueDays: number): string {
+  if (dueDays < 0) return `경과 ${-dueDays}일`;
+  if (dueDays <= AED_SWAP_DUE_SOON_DAYS) return `임박 D-${dueDays}`;
+  return `~${Math.round(dueDays / 30)}개월`;
+}
+
+type AedDim = "device" | "battery" | "pad";
+type AedIssue = { dim: AedDim; sev: Sev; label: string; text: string; basis?: string };
+
+// 관리 차원별 비정상 항목 + 근거. 정상이면 빈 배열.
+function aedIssues(r: AedRow): AedIssue[] {
+  const out: AedIssue[] = [];
+  const ds = aedDevBattSev(r.devBatt);
+  if (ds !== "normal") {
+    out.push({
+      dim: "device",
+      sev: ds,
+      label: ds === "danger" ? "단말 배터리 부족" : "단말 배터리 주의",
+      text: `알림 단말 배터리 ${r.devBatt}% (${AED_DEV_BATT_DANGER}%↓ 부족 · ${AED_DEV_BATT_CAUTION}%↓ 주의)`,
+      basis: "AED 알림 단말 자체 배터리 — 방전 시 AED 상태 감시 중단(AED 본체 배터리와 별개)",
+    });
+  }
+  const bDue = battDueDays(r);
+  const bs = aedCycleSev(bDue);
+  if (bs !== "normal") {
+    out.push({
+      dim: "battery",
+      sev: bs,
+      label: bs === "danger" ? "AED 배터리 교환 필요" : "AED 배터리 교환 임박",
+      text:
+        bDue < 0
+          ? `교환 주기 ${-bDue}일 경과 (권장 ${r.battCycleMonths}개월 · 최근 교환 ${dateDaysAgo(battDaysSince(r))})`
+          : `교환까지 ${bDue}일 (권장 주기 ${r.battCycleMonths}개월)`,
+      basis: "AED 본체 배터리는 실시간 상태 확인 불가 → 제조사 권장 교환 주기로 관리",
+    });
+  }
+  const pDue = padDueDays(r);
+  const ps = aedCycleSev(pDue);
+  if (ps !== "normal") {
+    out.push({
+      dim: "pad",
+      sev: ps,
+      label: ps === "danger" ? "전극패드 교환 필요" : "전극패드 교환 임박",
+      text:
+        pDue < 0
+          ? `교환 주기 ${-pDue}일 경과 (권장 ${r.padCycleMonths}개월 · 최근 교환 ${dateDaysAgo(padDaysSince(r))})`
+          : `교환까지 ${pDue}일 (권장 주기 ${r.padCycleMonths}개월)`,
+      basis: "전극패드 유효기간 경과 시 점착력·전도 저하 → 제세동 정확도 하락",
+    });
+  }
+  return out;
+}
+
+const AED_DIM_ORDER: Record<AedDim, number> = { battery: 0, pad: 1, device: 2 };
+
+// 행 종합 상태 — worst-of(단말 배터리·AED 배터리 교환·패드 교환). 헤드라인은 가장 심각한 차원(동률 시 AED 가용성 우선).
+function aedStatus(r: AedRow): { sev: Sev; label: string; issues: AedIssue[] } {
+  const issues = aedIssues(r);
+  if (issues.length === 0) return { sev: "normal", label: "정상", issues };
+  const headline = [...issues].sort(
+    (a, b) => SEV_RANK[b.sev] - SEV_RANK[a.sev] || AED_DIM_ORDER[a.dim] - AED_DIM_ORDER[b.dim],
+  )[0]!;
+  return { sev: worstSev(issues.map((i) => i.sev)), label: headline.label, issues };
+}
+
+// AED worst-of + 통합 신호등 상세. 관리 차원·관리책임자·교환 안내·법적 근거 포함. 현재는 가상 샘플 기준.
+export function aedDetail(): CategorySignal {
+  const statuses = buildAedRows().map((r) => ({ r, s: aedStatus(r) }));
+  const sev = worstSev(statuses.map((x) => x.s.sev));
+  if (sev === "normal") {
+    return {
+      sev,
+      summary: `정상 ${AED_DEVICES.length}대`,
+      short: "단말 배터리·AED 배터리·패드 교환주기 모두 정상",
+      detail: {
+        title: "자동심장충격기(AED) 정상",
+        location: "전 구역",
+        lines: [
+          { label: "관리 상태", text: `${AED_DEVICES.length}대 전부 단말 배터리 양호 · AED 배터리·전극패드 교환 주기 이내` },
+          { label: "법적 근거", text: "「응급의료에 관한 법률」 제47조의2 · 시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보)" },
+        ],
+        note: "AED 본체 배터리·패드는 실시간 확인 불가 → 권장 교환 주기로 관리 · 현장 단말 교체·점검 시 이력 자동 기록",
+      },
+    };
+  }
+  const { r, s } = statuses.find((x) => x.s.sev === sev) ?? statuses[0]!;
+  const last = aedLastSwap(r);
+  const lines: { label: string; text: string }[] = s.issues.map((i) => ({
+    label: i.label,
+    text: i.basis ? `${i.text} · ${i.basis}` : i.text,
+  }));
+  lines.push({ label: "관리책임자", text: `${r.manager} · 최근 교환/점검 ${last.date} (${last.daysAgo}일 경과)` });
+  lines.push({
+    label: "권장 대응",
+    text:
+      sev === "danger"
+        ? "현장에서 즉시 조치(단말 충전 · AED 배터리/패드 교체). 현장 단말 리셋 시 이력 기록·최근 교환 갱신 · 관할 지자체 통보."
+        : "교환 임박분 사전 확보·교체. 현장 단말 리셋 시 교체 이력 기록·주기 재카운팅.",
+  });
+  return {
+    sev,
+    summary: `${s.label} · ${r.loc}`,
+    short: s.issues.length > 1 ? `${s.label} 외 ${s.issues.length - 1}건 · ${r.loc}` : `${s.label} · ${r.loc}`,
+    detail: {
+      title: `AED ${SEV_KO[sev]} — ${r.loc}`,
+      location: `${r.loc} · 관리책임자 ${r.manager}`,
+      lines,
+      note: "AED 배터리·패드는 권장 교환 주기 기준(실시간 측정 불가) · 단말 배터리만 실시간",
+    },
+  };
+}
+
+function aedDevBattPct(r: AedRow): number {
+  return Math.max(0, Math.min(100, r.devBatt));
+}
+
+function aedDevBattMetric(r: AedRow): SiteMetric {
+  return {
+    key: `aed-${r.loc}`,
+    title: `AED 알림 단말 배터리 — ${r.loc}`,
+    unit: "%",
+    color: "#22d3ee",
+    value: aedDevBattPct(r),
+    decimals: 0,
+    kind: "battery",
+  };
+}
+
+// 교환 셀 정적 색(블링크 없음 — 표 가독성). 신호등 점·상태 칩이 블링크를 담당.
+function cycleStaticTone(sev: Sev): string {
+  return sev === "danger"
+    ? "text-semantic-down"
+    : sev === "caution"
+      ? "text-amber-600 dark:text-amber-300"
+      : "text-muted dark:text-on-dark-soft";
+}
+
+const SWAP_ITEM_KO: Record<"battery" | "pad", string> = { battery: "배터리", pad: "전극패드" };
+
+// 장비 NFC 점검 모달 — NFC 태그(점검 URL) 발급/쓰기 + 교체·점검 이력(표시 전용). ESC/배경 닫기.
+function AedDeviceModal({ row, onClose }: { row: AedRow; onClose: () => void }) {
+  const [nfcMsg, setNfcMsg] = useState("");
+  const [url, setUrl] = useState("");
+  const [nfcSupported, setNfcSupported] = useState(true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    setNfcSupported("NDEFReader" in window);
+    const base = `${window.location.origin}/aed/inspect?id=${encodeURIComponent(row.id)}`;
+    setUrl(base);
+    let active = true;
+    // 관리자(로그인 상태)만 서명을 발급받아 태그 URL 에 ?sig= 를 붙인다 → 서명된 태그에서 온 제출만 수락.
+    (async () => {
+      try {
+        const token = getSessionToken();
+        const res = await fetch(`/api/aed/inspect?aedId=${encodeURIComponent(row.id)}`, {
+          headers: token ? { authorization: `Bearer ${token}` } : undefined,
+        });
+        const j = (await res.json()) as { ok?: boolean; sig?: string };
+        if (active && res.ok && j.sig) setUrl(`${base}&sig=${encodeURIComponent(j.sig)}`);
+      } catch {
+        /* 서명 발급 실패 시 base URL 유지(제출은 서버에서 401 처리) */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [row.id]);
+
+  const writeNfc = async () => {
+    if (!("NDEFReader" in window)) {
+      setNfcMsg("이 브라우저는 Web NFC 미지원 — Android Chrome에서 쓰거나 위 URL을 NFC 쓰기 앱으로 태그에 기록하세요.");
+      return;
+    }
+    try {
+      setNfcMsg("빈 NFC 태그를 폰 뒷면에 대세요…");
+      const Reader = (window as unknown as { NDEFReader: new () => { write: (m: unknown) => Promise<void> } }).NDEFReader;
+      await new Reader().write({ records: [{ recordType: "url", data: url }] });
+      setNfcMsg("NFC 태그에 점검 URL을 기록했습니다. 해당 AED에 부착하세요.");
+    } catch (e) {
+      setNfcMsg(`쓰기 실패: ${e instanceof Error ? e.message : "오류"}`);
+    }
+  };
+
+  const last = aedLastSwap(row);
+  const records = [...row.history].sort((a, b) => a.daysAgo - b.daysAgo); // 최신(작은 경과일) 먼저
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-surface-soft px-5 py-3 dark:bg-surface-dark-elevated">
+          <span className="text-sm font-bold text-ink dark:text-on-dark">AED 점검 관리 — {row.loc}</span>
+          <div className="text-[11px] text-muted dark:text-on-dark-soft">장비 {row.id} · 관리책임자 {row.manager}</div>
+        </div>
+        <div className="px-5 py-4 text-sm text-ink dark:text-on-dark">
+          <div className="mb-4 rounded-lg border border-hairline px-3 py-3 dark:border-white/10">
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-ink dark:text-on-dark">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 text-primary" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12a7 7 0 0 1 14 0" />
+                <path d="M8.5 12a3.5 3.5 0 0 1 7 0" />
+                <circle cx="12" cy="12" r="1" />
+              </svg>
+              NFC 점검 태그
+            </div>
+            <p className="mb-2 text-[11px] leading-relaxed text-body dark:text-on-dark-soft">
+              현장 AED에 부착 · 관리자(여러 명)가 폰을 태깅하면 점검 기록 페이지가 열립니다.
+            </p>
+            <div className="mb-2 break-all rounded bg-surface-soft px-2 py-1.5 font-mono text-[10px] text-body dark:bg-surface-dark-elevated dark:text-on-dark-soft">
+              {url}
+            </div>
+            <button
+              type="button"
+              onClick={writeNfc}
+              className="w-full rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+            >
+              NFC 태그에 쓰기
+            </button>
+            {!nfcSupported && (
+              <p className="mt-1.5 text-[10px] text-muted dark:text-on-dark-soft">
+                ※ Web NFC 쓰기는 Android Chrome 전용. 그 외 기기는 위 URL을 NFC 쓰기 앱으로 태그에 기록하세요.
+              </p>
+            )}
+            {nfcMsg && <p className="mt-1.5 text-[11px] text-body dark:text-on-dark-soft">{nfcMsg}</p>}
+          </div>
+
+          <p className="mb-2 text-xs font-semibold text-ink dark:text-on-dark">
+            교체·점검 이력{" "}
+            <span className="font-normal text-muted dark:text-on-dark-soft">· 최근 {last.date} ({last.daysAgo}일 경과)</span>
+          </p>
+          <ul className="space-y-2">
+            {records.map((rec, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2 rounded-lg border border-hairline px-3 py-2 text-xs dark:border-white/10"
+              >
+                <span className="w-20 shrink-0 font-mono text-body dark:text-on-dark-soft">{dateDaysAgo(rec.daysAgo)}</span>
+                <span className="flex flex-1 flex-wrap gap-1">
+                  {rec.items.length === 0 ? (
+                    <span className="rounded-pill bg-surface-strong px-1.5 py-0.5 text-[10px] font-medium text-body dark:bg-surface-dark dark:text-on-dark-soft">
+                      점검(교체 없음)
+                    </span>
+                  ) : (
+                    rec.items.map((it) => (
+                      <span
+                        key={it}
+                        className="rounded-pill bg-surface-strong px-1.5 py-0.5 text-[10px] font-medium text-body dark:bg-surface-dark dark:text-on-dark-soft"
+                      >
+                        {SWAP_ITEM_KO[it]} 교체
+                      </span>
+                    ))
+                  )}
+                </span>
+                <span className="shrink-0 text-[11px] text-muted dark:text-on-dark-soft">점검 {rec.by}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 rounded-lg bg-surface-soft px-3 py-2 text-[11px] leading-relaxed text-muted dark:bg-surface-dark-elevated dark:text-on-dark-soft">
+            점검·교체 시각은 현장 NFC 태깅(점검 페이지 전송) 시 기록됩니다. 관제 센터는 이력을 표시만 하며 직접 수정·갱신하지
+            않습니다.
+          </div>
+        </div>
+        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-hairline bg-canvas px-5 py-3 dark:border-white/10 dark:bg-surface-dark">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// AED 관리 알림 모달 — 발생한 모든 관리 항목(단말 배터리·AED 배터리·패드 교환) + 관리책임자 + 교환·법적 근거. ESC/배경 닫기.
+function AedManagementModal({
+  row,
+  status,
+  onClose,
+}: {
+  row: AedRow;
+  status: ReturnType<typeof aedStatus>;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const isDanger = status.sev === "danger";
+  const accent = isDanger ? "border-semantic-down" : "border-amber-500";
+  const headBg = isDanger ? "bg-semantic-down/15" : "bg-amber-500/15";
+  const headText = isDanger ? "text-semantic-down" : "text-amber-600 dark:text-amber-300";
+  const headDot = isDanger ? "bg-semantic-down vital-blink-danger" : "bg-amber-500 vital-blink-caution";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas shadow-2xl dark:bg-surface-dark`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className={`flex items-center gap-2 px-5 py-3 ${headBg}`}>
+          <span className={`inline-block h-3 w-3 shrink-0 rounded-full ${headDot}`} />
+          <span className={`text-sm font-bold ${headText}`}>제세동기(AED) 관리 알림 — {status.label}</span>
+        </div>
+        <div className="px-5 py-4 text-sm text-ink dark:text-on-dark">
+          <p className="mb-3 leading-relaxed">
+            <span className="font-semibold">{row.loc}</span> · 관리책임자{" "}
+            <span className="font-semibold">{row.manager}</span>
+          </p>
+          <ul className="mb-3 space-y-2">
+            {status.issues.map((i) => (
+              <li key={i.dim} className="rounded-lg border border-hairline px-3 py-2 dark:border-white/10">
+                <div className={`mb-0.5 flex items-center gap-1.5 text-xs font-semibold ${TONE[i.sev]}`}>
+                  <span className={`inline-block h-2 w-2 rounded-full ${DOT[i.sev]}`} />
+                  {i.label}
+                </div>
+                <div className="text-xs leading-relaxed text-body dark:text-on-dark-soft">{i.text}</div>
+                {i.basis && (
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-muted dark:text-on-dark-soft">└ {i.basis}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="rounded-lg bg-surface-soft px-3 py-2 text-[11px] leading-relaxed text-body dark:bg-surface-dark-elevated dark:text-on-dark-soft">
+            <div className="mb-1 font-semibold text-ink dark:text-on-dark">관리 의무 (법적 근거)</div>
+            <ul className="space-y-0.5">
+              <li>· 관리책임자 지정 + <b>월 1회 이상 점검</b> 및 결과 관할 지자체 통보 (시행규칙 제38조의3)</li>
+              <li>· 공개된 장소의 전용 보관함 보관 · 도난방지 설비 · 즉시 개방 가능 상태</li>
+              <li>· 사용·이전·폐기 등 변경 시 신고 / 미점검·표지 미부착 시 과태료 대상</li>
+            </ul>
+          </div>
+          <div className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
+            단말 배터리 {row.devBatt}% · AED 배터리 {dueShort(battDueDays(row))}(주기 {row.battCycleMonths}개월) · 패드{" "}
+            {dueShort(padDueDays(row))}(주기 {row.padCycleMonths}개월) · 최근 교환 {aedLastSwap(row).date}
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 ${
+              isDanger ? "bg-semantic-down" : "bg-amber-500"
+            }`}
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void }) {
+  // 행 맵에서 이미 계산한 status 를 함께 보관 → 모달에서 aedStatus 재계산 안 함.
+  const [alert, setAlert] = useState<{ row: AedRow; status: ReturnType<typeof aedStatus> } | null>(null);
+  const [deviceRow, setDeviceRow] = useState<AedRow | null>(null);
+  const [, setTick] = useState(0);
+
+  // 점검 기록 폴링 → 모듈 캐시 갱신(통합 신호등과 공유) + 표 리렌더.
+  // 한 번에 한 인스턴스만 폴링·캐시 쓰기(aedPollingOwned) → 다중 인스턴스 경합 방지.
+  useEffect(() => {
+    if (aedPollingOwned) return; // 다른 인스턴스가 이미 폴링 중 → 공유 캐시 그대로 사용(중복 폴 방지).
+    aedPollingOwned = true;
+    let alive = true;
+    const load = () =>
+      fetch("/api/aed/inspections")
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; inspections?: AedInspectionDTO[] }) => {
+          if (alive && j.ok && Array.isArray(j.inspections)) {
+            aedInspectionsCache = j.inspections;
+            setTick((t) => t + 1);
+          }
+        })
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 12000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      aedPollingOwned = false; // 소유권 반납 → 다음 마운트 인스턴스가 폴링 인계.
+    };
+  }, []);
+
+  const rows = buildAedRows();
+
+  const header = (
+    <div className={`${AED_GRID} shrink-0 border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}>
+      <div />
+      <div>설치 위치</div>
+      <div>관리책임자</div>
+      <div className="text-center">상태</div>
+      <div className="text-center">단말</div>
+      <div className="text-center">AED 배터리</div>
+      <div className="text-center">패드</div>
+      <div className="text-center">최근 교환</div>
+    </div>
+  );
+  return (
+    <TableShell count={AED_DEVICES.length} header={header} minWidthClass="min-w-[920px]">
+      {rows.map((r) => {
+        const st = aedStatus(r);
+        const bDue = battDueDays(r);
+        const pDue = padDueDays(r);
+        const last = aedLastSwap(r);
+        return (
+          <div
+            key={r.id}
+            className={`${AED_GRID} h-12 border-b border-hairline px-3 text-xs text-ink dark:border-white/5 dark:text-on-dark`}
+          >
+            <div className="flex justify-center">
+              <SignalDot sev={st.sev} />
+            </div>
+            <div className="truncate font-medium">{r.loc}</div>
+            <div className="truncate text-body dark:text-on-dark-soft">{r.manager}</div>
+            <div className="text-center">
+              {st.sev === "normal" ? (
+                <span className={`font-semibold ${TONE.normal}`}>정상</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAlert({ row: r, status: st })}
+                  title="클릭 → 관리 알림 상세"
+                  className={`rounded px-1 font-semibold hover:underline ${TONE[st.sev]}`}
+                >
+                  {st.label}
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => onSelect?.(aedDevBattMetric(r))}
+              title={`알림 단말 배터리 ${r.devBatt}% · 클릭 → 추세 그래프`}
+              className="mx-auto inline-flex items-center justify-center rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-white/10"
+            >
+              <BatteryGauge pct={aedDevBattPct(r)} />
+            </button>
+            <div className={`text-center font-mono text-[11px] ${cycleStaticTone(aedCycleSev(bDue))}`} title={`AED 배터리 — 권장 교환 주기 ${r.battCycleMonths}개월`}>
+              {dueShort(bDue)}
+            </div>
+            <div className={`text-center font-mono text-[11px] ${cycleStaticTone(aedCycleSev(pDue))}`} title={`전극패드 — 권장 교환 주기 ${r.padCycleMonths}개월`}>
+              {dueShort(pDue)}
+            </div>
+            <div className="flex items-center justify-center gap-1.5 font-mono text-[10px] text-muted dark:text-on-dark-soft">
+              <span>{last.date}</span>
+              <button
+                type="button"
+                onClick={() => setDeviceRow(r)}
+                title="NFC 점검 태그 · 교체·점검 이력"
+                aria-label={`${r.loc} NFC 점검·이력`}
+                className="inline-flex items-center justify-center rounded border border-hairline p-0.5 text-primary hover:bg-zinc-100 dark:border-white/10 dark:hover:bg-white/10"
+              >
+                <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12a7 7 0 0 1 14 0" />
+                  <path d="M8.5 12a3.5 3.5 0 0 1 7 0" />
+                  <circle cx="12" cy="12" r="1" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        );
+      })}
+      {alert &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AedManagementModal row={alert.row} status={alert.status} onClose={() => setAlert(null)} />,
+          document.body,
+        )}
+      {deviceRow &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AedDeviceModal row={deviceRow} onClose={() => setDeviceRow(null)} />,
+          document.body,
+        )}
+    </TableShell>
+  );
+}
+
+// ── 설비 메트릭 추세 그래프 (작업자 생체 그래프와 동일 차트 컴포넌트 재사용) ──
+type ChartType = "line" | "bar";
+const SITE_RANGES: { value: number; label: string }[] = [
+  { value: 1, label: "24시간" },
+  { value: 7, label: "1주일" },
+  { value: 30, label: "30일" },
+  { value: 60, label: "60일" },
+  { value: 365, label: "1년" },
+];
+
+function strHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function labelDaysAgo(k: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - k);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+// 1년(월별) 라벨 — k개월 전 "YY/M".
+function labelMonthsAgo(k: number): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - k);
+  return `${`${d.getFullYear()}`.slice(2)}/${d.getMonth() + 1}`;
+}
+
+// 실 이력이 없어 현재값+seed 기반 결정적 합성 시계열 생성(마지막 점=현재 실측값).
+// 배터리: 외부 충전 없음 가정 → 단조 감소(상승 구간 절대 없음). 과거가 높고 현재값으로 하락.
+// 가스: 측정값 주변 자연 변동(상하 변동 정상).
+function buildSeries(m: SiteMetric, days: number) {
+  // 1년은 12 월별 포인트(일별 365점은 막대·도트가 겹쳐 가독성 저하).
+  const count = days === 1 ? 24 : days === 365 ? 12 : days;
+  const seed = strHash(m.key);
+  const mkLabel = (i: number) =>
+    days === 1 ? `${i}시` : days === 365 ? labelMonthsAgo(count - 1 - i) : labelDaysAgo(count - 1 - i);
+  const points: { date: string; label: string; value: number }[] = [];
+
+  if (m.kind === "battery") {
+    // 단조 감소 — 각 구간 감소량을 양수 가중치로 배분(누적이라 절대 상승하지 않음).
+    const desiredDrop = days === 1 ? 2 : days * 0.8; // 하루 ~0.8% 방전 가정
+    const start = Math.min(100, m.value + desiredDrop);
+    const totalDrop = start - m.value;
+    const weights: number[] = [];
+    let wsum = 0;
+    for (let s = 0; s < count - 1; s++) {
+      const raw = Math.sin(seed * 13.7 + s * 7.31) * 43758.5453;
+      const w = 0.5 + (raw - Math.floor(raw)); // [0.5,1.5) — 항상 양수
+      weights.push(w);
+      wsum += w;
+    }
+    let acc = start;
+    for (let i = 0; i < count; i++) {
+      if (i > 0) acc -= ((weights[i - 1] ?? 0) / (wsum || 1)) * totalDrop;
+      points.push({ date: mkLabel(i), label: mkLabel(i), value: Math.max(0, acc) });
+    }
+  } else {
+    const amp = Math.max(Math.abs(m.value) * 0.3, m.decimals === 0 ? 1 : 0.3);
+    for (let i = 0; i < count; i++) {
+      const raw = Math.sin(seed * 97.13 + i * 12.9898) * 43758.5453;
+      const r = raw - Math.floor(raw); // [0,1)
+      points.push({ date: mkLabel(i), label: mkLabel(i), value: Math.max(0, m.value + (r - 0.5) * 2 * amp) });
+    }
+  }
+  const last = points[count - 1];
+  if (last) points[count - 1] = { ...last, value: m.value }; // 마지막=현재 실측값
+
+  const vals = points.map((p) => p.value);
+  return {
+    points,
+    summary: {
+      min: Math.min(...vals),
+      max: Math.max(...vals),
+      avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+    },
+  };
+}
+
+export function SiteMetricChartPanel({
+  metric,
+  onClose,
+}: {
+  metric: SiteMetric;
+  onClose: () => void;
+}) {
+  const [range, setRange] = useState(7);
+  const [chartType, setChartType] = useState<ChartType>("line");
+  const { points, summary } = useMemo(() => buildSeries(metric, range), [metric, range]);
+  // 가스 임계값을 그래프 기준선(빨강 점선)으로 표시. 배터리 등 임계 없는 메트릭은 미표시.
+  const referenceLines = metric.threshold
+    ? [{ value: metric.threshold.value, label: metric.threshold.label, color: "#ef4444" }]
+    : undefined;
+
+  return (
+    <section className="rounded-md border border-cyan-500/40 bg-cyan-50 dark:border-cyan-400/30 dark:bg-cyan-400/[0.03]">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-white/10">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-semibold text-ink dark:text-on-dark">{metric.title}</span>
+          <span className="text-xs text-zinc-600 dark:text-zinc-400">누적 추세 · 샘플</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
+            {(["line", "bar"] as ChartType[]).map((ct) => (
+              <button
+                key={ct}
+                type="button"
+                onClick={() => setChartType(ct)}
+                aria-pressed={chartType === ct}
+                className={`px-3 py-1 text-xs ${
+                  chartType === ct
+                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
+                }`}
+              >
+                {ct === "line" ? "📈 라인" : "📊 막대"}
+              </button>
+            ))}
+          </div>
+          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
+            {SITE_RANGES.map((r) => (
+              <button
+                key={r.value}
+                type="button"
+                onClick={() => setRange(r.value)}
+                className={`px-3 py-1 text-xs ${
+                  range === r.value
+                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
+                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="닫기"
+            className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-white/5"
+          >
+            닫기
+          </button>
+        </div>
+      </header>
+      <div className="px-4 py-4">
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          <SummaryCell label="평균" value={summary.avg} unit={metric.unit} decimals={metric.decimals} color={metric.color} />
+          <SummaryCell label="최저" value={summary.min} unit={metric.unit} decimals={metric.decimals} color={metric.color} />
+          <SummaryCell label="최고" value={summary.max} unit={metric.unit} decimals={metric.decimals} color={metric.color} />
+        </div>
+        {chartType === "bar" ? (
+          <BarChart
+            points={points}
+            color={metric.color}
+            unit={metric.unit}
+            decimals={metric.decimals}
+            referenceLines={referenceLines}
+          />
+        ) : (
+          <LineChart
+            points={points}
+            color={metric.color}
+            unit={metric.unit}
+            decimals={metric.decimals}
+            referenceLines={referenceLines}
+          />
+        )}
+      </div>
+    </section>
+  );
+}

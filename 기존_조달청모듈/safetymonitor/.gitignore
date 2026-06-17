@@ -1,0 +1,113 @@
+# SafetyMonitor 루트 .gitignore — Node / iOS / AWS CDK 공통 패턴
+
+# ─── Node / pnpm ──────────────────────────────
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.yarn/
+
+# ─── TypeScript / 빌드 산출물 ─────────────────
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+.turbo/
+
+# ─── 테스트 / 커버리지 ────────────────────────
+coverage/
+.nyc_output/
+
+# ─── 환경변수 / 비밀 ──────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.cer
+*.p12
+*.mobileprovision
+credentials.json
+secrets.json
+
+# ─── iOS / Xcode ──────────────────────────────
+xcuserdata/
+DerivedData/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+build/
+.swiftpm/
+Package.resolved
+Pods/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# ─── AWS CDK ──────────────────────────────────
+cdk.out/
+cdk.context.json
+.cdk.staging/
+
+# ─── Flutter / Dart ───────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+.fvm/
+build/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+android/.gradle/
+android/local.properties
+android/captures/
+android/key.properties
+*.g.dart
+*.freezed.dart
+
+# ─── Python / ML (ml/) ────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# ─── 에디터 / OS ──────────────────────────────
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+Thumbs.db
+
+# ─── Claude Code 개인 설정 ─────────────────────
+# 팀 공유 권한(.claude/settings.json)은 추적, 개인 권한(.local.json)은 제외
+.claude/settings.local.json
+# 로컬 Claude Code 스킬(도구 디렉터리) — 프로젝트 코드와 무관, 추적 제외
+.claude/skills/
+
+# ─── 런타임 영속 데이터 (mock receiver SQLite + dev/cloudflared log) ──
+.runtime/
+*.sqlite
+*.sqlite-journal
+safetymonitor.db
+safetymonitor.db-shm
+safetymonitor.db-wal
+
+# ─── 검증 산출물 (Playwright MCP 스냅샷/스크린샷/콘솔 로그) ──
+.playwright-mcp/
+
+# ─── 외형 스냅샷 HTML (SingleFile 팀 공유용 정지 산출물) ──
+# 세션마다 재생성되는 일회성 공유물 — 소스 아님, 히스토리 누적 방지 (로컬 보존)
+demo/

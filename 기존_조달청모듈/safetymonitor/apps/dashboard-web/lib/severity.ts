@@ -1,0 +1,104 @@
+// vital sample → 위험도 판정. analyzers THRESHOLDS 단일 source.
+// DB row(snake_case) 와 VitalSample(camelCase) 둘 다 받기 위해 raw 필드를 받는 함수로 분리.
+import {
+  THRESHOLDS,
+  estimateCoreTempC,
+  classifyActivity,
+  type ActivityState,
+} from "@safetymonitor/analyzers";
+
+export type Status = "idle" | "normal" | "caution" | "danger";
+
+export const STATUS_LABEL: Record<Status, string> = {
+  idle: "대기",
+  normal: "정상",
+  caution: "주의",
+  danger: "위험",
+};
+
+// ── 작업 중 심박 작업부하 밴드 (활동 게이트 — 카드·차트 공유 단일 source) ──
+// 육체노동으로 구조적으로 상승한 심박을 안정 임계(110/130)로 오경보하지 않도록,
+// 활동이 '작업 중(heavy)'으로 분류될 때만 작업부하 밴드를 적용한다(ISO 8996·ACGIH 참고·튜닝 가능).
+// 안전 불변식: 활동 데이터 없음/안정이면 안정 임계(보수적), 완화만 하고 강화는 없음,
+// 과부하(overload)·급락(collapse)은 작업 중에도 위험. SpO₂·체온은 활동 무관(미적용).
+export const WORK_HR = { heavyBpm: 135, overloadBpm: 155, collapseBpm: 45 } as const;
+
+// 활동 인자(rest/light/heavy/null) 가 '작업 중'인지. 기본은 heavy 만 완화(가장 안전).
+export function isWorking(activity: ActivityState | null | undefined): boolean {
+  return activity === "heavy";
+}
+
+// VitalSample 형태(활동 필드)에서 활동 상태 분류 — classifyActivity 단일 source 재사용.
+export function workActivity(inputs: {
+  activeEnergyKcal?: number | null;
+  steps?: number | null;
+  flightsClimbed?: number | null;
+}): ActivityState | null {
+  return classifyActivity({
+    activeEnergyKcal: inputs.activeEnergyKcal ?? undefined,
+    steps: inputs.steps ?? undefined,
+    flightsClimbed: inputs.flightsClimbed ?? undefined,
+  });
+}
+
+// 무조건 작업부하 밴드 판정 — 차트 추세 전용(집계 버킷이라 per-점 활동맥락이 없어 작업기준 고정).
+export function workHeartRateStatus(hr: number | null | undefined): Status {
+  if (hr === null || hr === undefined) return "idle";
+  if (hr >= WORK_HR.overloadBpm || hr <= WORK_HR.collapseBpm) return "danger";
+  if (hr >= WORK_HR.heavyBpm) return "caution";
+  return "normal";
+}
+
+// 심박 위험도 — 활동 미지정/안정: danger ≥130·≤40, caution 110~129·41~50 (안정 임계, 의료 reference).
+// 활동 '작업 중(heavy)': danger ≥155(과부하)·≤45(급락), caution 135~154(고강도) (작업부하 밴드).
+export function heartRateStatus(
+  hr: number | null | undefined,
+  activity?: ActivityState | null,
+): Status {
+  if (hr === null || hr === undefined) return "idle";
+  if (isWorking(activity)) return workHeartRateStatus(hr);
+  if (hr >= THRESHOLDS.heartRate.highBpm || hr <= THRESHOLDS.heartRate.lowBpm) {
+    return "danger";
+  }
+  if (hr >= 110 || hr <= 50) return "caution";
+  return "normal";
+}
+
+export function spo2Status(spo2: number | null | undefined): Status {
+  if (spo2 === null || spo2 === undefined) return "idle";
+  if (spo2 < THRESHOLDS.spo2.dangerPct) return "danger";
+  if (spo2 < THRESHOLDS.spo2.cautionPct) return "caution";
+  return "normal";
+}
+
+// 손목 온도 → 추정 심부 체온 변환 후 판정
+export function coreTempStatus(skinTempC: number | null | undefined): Status {
+  if (skinTempC === null || skinTempC === undefined) return "idle";
+  const core = estimateCoreTempC(skinTempC);
+  if (core >= THRESHOLDS.coreTemp.dangerC) return "danger";
+  if (core >= THRESHOLDS.coreTemp.cautionC) return "caution";
+  return "normal";
+}
+
+export type StatusInputs = {
+  heart_rate: number | null;
+  spo2: number | null;
+  skin_temp_c: number | null;
+  manual_sos: number | null;
+  fall_detected: number | null;
+};
+
+// 종합: 낙상 또는 SOS 가 트리거되면 즉시 danger, 아니면 3 메트릭 worst-of
+export function overallStatus(row: StatusInputs): Status {
+  if (row.fall_detected === 1) return "danger";
+  if (row.manual_sos === 1) return "danger";
+  const statuses: Status[] = [
+    heartRateStatus(row.heart_rate),
+    spo2Status(row.spo2),
+    coreTempStatus(row.skin_temp_c),
+  ];
+  if (statuses.includes("danger")) return "danger";
+  if (statuses.includes("caution")) return "caution";
+  if (statuses.includes("normal")) return "normal";
+  return "idle";
+}

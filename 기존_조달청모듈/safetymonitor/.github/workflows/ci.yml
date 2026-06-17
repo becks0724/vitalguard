@@ -1,0 +1,49 @@
+# SafetyMonitor CI — TS 모노레포(빌드·테스트)와 worker-phone(Flutter 분석·테스트)를 PR마다 검증
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# PR에 새 푸시가 오면 진행 중이던 이전 실행은 취소(루프 중 중복 실행 누적 방지)
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  node:
+    name: TS 빌드·테스트
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # packageManager 필드(pnpm@11.1.3)를 읽어 동일 버전 설치
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm test
+
+  flutter:
+    name: Flutter 분석·테스트
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/worker-phone
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

@@ -1,0 +1,28 @@
+{
+  "name": "@safetymonitor/infrastructure",
+  "version": "0.0.1",
+  "private": true,
+  "bin": {
+    "infrastructure": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json -w",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "test": "echo 'CDK 단위 테스트 D2 이후 추가'",
+    "lint": "echo 'lint placeholder'"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.166.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "aws-cdk": "^2.166.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.0"
+  }
+}

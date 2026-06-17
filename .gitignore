@@ -1,0 +1,40 @@
+# === VitAlGuard / 조달청 제출 리포 — gitignore ===
+
+# 의존성
+node_modules/
+.pnpm-store/
+
+# 빌드 산출물
+.next/
+out/
+dist/
+build/
+build_device/
+.dart_tool/
+*.tsbuildinfo
+
+# 런타임·데이터 (생체·GPS·PII — 절대 커밋 금지)
+.runtime/
+
+# 환경변수·시크릿 (API 키 — 절대 커밋 금지)
+.env
+.env.*
+!.env.example
+
+# iOS / Flutter 사용자별 산출물
+ios/Pods/
+**/xcuserdata/
+*.mode1v3
+*.pbxuser
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+
+# 무거운 일회성 산출물
+demo/
+*.zip
+*.mp4

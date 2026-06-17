@@ -1,0 +1,372 @@
+// 관제 대시보드 진입 로그인 화면 — 반투명 글래스 카드(셰이더 배경 비침) 안에 좌측 현장 사진 + 우측 폼 2분할(데스크톱). 브랜드 로고/슬로건 + 토글 + 관리자 로그인 + 구글/스토어 배지.
+"use client";
+
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+
+import type { SiteInfo } from "./AdminExportModal";
+import { LiquidMetalButton } from "./LiquidMetalButton";
+import { LoginShaderBackground } from "./LoginShaderBackground";
+import { LoginSiteSelect } from "./LoginSiteSelect";
+import { StoreBadges } from "./StoreBadges";
+import { ThemeToggle } from "./ThemeToggle";
+
+type Lang = "ko" | "en";
+
+// 명시적 키 타입 — noUncheckedIndexedAccess 하에서 인덱스 접근이 undefined 로 넓어지지 않도록.
+type Strings = {
+  slogan: string;
+  line1: string;
+  line2: string;
+  subtitle: string;
+  idLabel: string;
+  idPlaceholder: string;
+  pwLabel: string;
+  pwPlaceholder: string;
+  submit: string;
+  submitting: string;
+  google: string;
+  googleSoon: string;
+  error: string;
+  networkError: string;
+  footer: string;
+};
+
+const LANG_KEY = "safetymonitor.lang.v1";
+
+// 로그인 화면 텍스트만 한·영 전환(대시보드 본문은 한국어 유지 — 다국어는 발표 후 로드맵).
+const T: Record<Lang, Strings> = {
+  ko: {
+    slogan: "OPEN SAFETY · NEVER ALONE",
+    line1: "보이지 않는 위험은 없습니다. 혼자가 아니기 때문입니다",
+    line2:
+      "모든 생체 신호와 현장 환경을 투명하게 — 이상 징후를 발견하는 즉시 대응합니다.",
+    subtitle: "관제 대시보드 로그인",
+    idLabel: "관리자 ID",
+    idPlaceholder: "관리자 ID",
+    pwLabel: "비밀번호",
+    pwPlaceholder: "비밀번호",
+    submit: "로그인",
+    submitting: "확인 중…",
+    google: "구글로 계속하기",
+    googleSoon: "구글 로그인은 준비 중입니다.",
+    error: "아이디 또는 비밀번호가 일치하지 않습니다.",
+    networkError: "로그인 요청 중 오류가 발생했습니다. 다시 시도하세요.",
+    footer: "발표용 프로토타입 · (주)바이탈가드",
+  },
+  en: {
+    slogan: "OPEN SAFETY · NEVER ALONE",
+    line1: "No risk stays unseen — because you are never alone.",
+    line2:
+      "Every vital sign and site condition, fully transparent — we act the moment an anomaly appears.",
+    subtitle: "Sign in to the control dashboard",
+    idLabel: "Admin ID",
+    idPlaceholder: "Admin ID",
+    pwLabel: "Password",
+    pwPlaceholder: "Password",
+    submit: "Sign in",
+    submitting: "Signing in…",
+    google: "Continue with Google",
+    googleSoon: "Google sign-in is coming soon.",
+    error: "ID or password does not match.",
+    networkError: "An error occurred while signing in. Please try again.",
+    footer: "Demo prototype · VitAlGuard Inc.",
+  },
+};
+
+// 셰이더 배경 위 글래스 입력 — 박스 없이 배경과 조화(반투명 흰색 + backdrop-blur).
+const INPUT_CLASS =
+  "mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm text-white outline-none backdrop-blur-md transition placeholder:text-white/50 focus:border-white/70 focus:bg-white/15";
+
+// 구글 'G' 4색 공식 로고.
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#FFC107"
+        d="M43.611 20.083H42V20H24v8h11.303c-1.649 4.657-6.08 8-11.303 8-6.627 0-12-5.373-12-12s5.373-12 12-12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 12.955 4 4 12.955 4 24s8.955 20 20 20 20-8.955 20-20c0-1.341-.138-2.65-.389-3.917z"
+      />
+      <path
+        fill="#FF3D00"
+        d="M6.306 14.691l6.571 4.819C14.655 15.108 18.961 12 24 12c3.059 0 5.842 1.154 7.961 3.039l5.657-5.657C34.046 6.053 29.268 4 24 4 16.318 4 9.656 8.337 6.306 14.691z"
+      />
+      <path
+        fill="#4CAF50"
+        d="M24 44c5.166 0 9.86-1.977 13.409-5.192l-6.19-5.238C29.211 35.091 26.715 36 24 36c-5.202 0-9.619-3.317-11.283-7.946l-6.522 5.025C9.505 39.556 16.227 44 24 44z"
+      />
+      <path
+        fill="#1976D2"
+        d="M43.611 20.083H42V20H24v8h11.303c-0.792 2.237-2.231 4.166-4.087 5.571l.003-.002 6.19 5.238C36.971 39.205 44 34 44 24c0-1.341-.138-2.65-.389-3.917z"
+      />
+    </svg>
+  );
+}
+
+function LangToggle({
+  lang,
+  onChange,
+}: {
+  lang: Lang;
+  onChange: (next: Lang) => void;
+}) {
+  // 라이트/다크 토글(ThemeToggle)과 동일한 알약 슬라이딩 스위치 — 썸이 현재 언어를 표시하며 좌(한)↔우(EN) 슬라이드.
+  const isEn = lang === "en";
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(isEn ? "ko" : "en")}
+      aria-label={isEn ? "한국어로 전환" : "Switch to English"}
+      title={isEn ? "한국어로 전환" : "Switch to English"}
+      className="flex h-8 w-16 shrink-0 cursor-pointer rounded-full border border-hairline bg-surface-strong p-1 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:border-white/10 dark:bg-surface-dark-elevated"
+    >
+      <div className="flex w-full items-center justify-between">
+        {/* 슬롯 A — 채워진 썸: 현재 언어 */}
+        <div
+          className={`flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white transition-transform duration-300 ${
+            isEn ? "translate-x-8" : "translate-x-0"
+          }`}
+        >
+          {isEn ? "EN" : "한"}
+        </div>
+        {/* 슬롯 B — 흐린 대체 언어 */}
+        <div
+          className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-body transition-transform duration-300 dark:text-on-dark-soft ${
+            isEn ? "-translate-x-8" : ""
+          }`}
+        >
+          {isEn ? "한" : "EN"}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
+  const [lang, setLang] = useState<Lang>("ko");
+  const [id, setId] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [googleInfo, setGoogleInfo] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰(null = 아직 로그인 폼 단계).
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(LANG_KEY);
+      if (stored === "en" || stored === "ko") setLang(stored);
+    } catch {
+      // localStorage 불가 환경은 기본값(ko) 유지
+    }
+  }, []);
+
+  const changeLang = useCallback((next: Lang) => {
+    setLang(next);
+    try {
+      window.localStorage.setItem(LANG_KEY, next);
+    } catch {
+      // 저장 실패는 조용히 무시
+    }
+  }, []);
+
+  const t = T[lang];
+
+  const handleSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (submitting) return;
+      setSubmitting(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/admin/login", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, password }),
+        });
+        const json = (await res.json()) as { ok?: boolean; token?: string };
+        if (!res.ok || !json.ok || !json.token) {
+          setError(t.error);
+          return;
+        }
+        // 로그인 성공 → 바로 입장하지 않고 현장 선택 단계로 전환.
+        setPendingToken(json.token);
+      } catch {
+        setError(t.networkError);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [id, password, submitting, t],
+  );
+
+  // 현장 선택 완료 → 선택한 현장정보를 저장하고 대시보드 입장.
+  const handleSiteConfirm = useCallback(
+    (info: SiteInfo) => {
+      try {
+        window.localStorage.setItem(
+          "safetymonitor.site-info.v1",
+          JSON.stringify(info),
+        );
+      } catch {
+        // localStorage 불가 환경은 저장 생략(대시보드 기본 현장정보 유지)
+      }
+      if (pendingToken) onLogin(pendingToken);
+    },
+    [pendingToken, onLogin],
+  );
+
+  return (
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4 py-8 text-ink dark:bg-surface-dark dark:text-on-dark">
+      {/* 배경 — MeshGradient 셰이더(콘텐츠 뒤 고정 레이어) */}
+      <LoginShaderBackground />
+
+      {/* 우상단 — 한·영 + 라이트/다크 토글 */}
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+        <LangToggle lang={lang} onChange={changeLang} />
+        <ThemeToggle />
+      </div>
+
+      {/* 로그인 카드(레드박스) — 반투명 글래스. overflow 는 풀어 현장 콤보박스 드롭다운이 잘리지 않게(모서리 클리핑은 이미지 컬럼만). */}
+      <div className="relative z-10 flex w-full max-w-5xl rounded-3xl border border-white/15 bg-white/5 shadow-2xl backdrop-blur-md">
+        {/* 좌측 — 현장 사진(데스크톱 전용, 폼과 1:1 동일 비율로 꽉 채움). 파일: public/brand/mainpic0.jpg (없으면 네이비 폴백). */}
+        <div className="relative hidden w-1/2 overflow-hidden rounded-l-3xl md:block">
+          <div
+            className="h-full w-full bg-cover"
+            style={{
+              backgroundColor: "#13243f",
+              backgroundImage: "url(/brand/mainpic0.jpg)",
+              // 중앙 정렬 구도(안전모·상단 문구가 가운데) → 중앙 크롭으로 좌우 균등 노출
+              backgroundPosition: "50% 50%",
+            }}
+          />
+        </div>
+
+        {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
+        <div className="flex w-full flex-col items-center px-6 py-10 md:w-1/2">
+          <div className="relative z-10 flex w-full flex-col items-center">
+        {/* 중앙 로고 — Three.js 사전 렌더 3D 베벨 유리 배지 (라이트/다크) */}
+        <div className="logo3d-stage">
+          <img
+            src="/brand/vitalguard-logo-3d-light.png"
+            alt="VitAlGuard Industrial Safety OS"
+            className="logo3d-badge dark:hidden"
+          />
+          <img
+            src="/brand/vitalguard-logo-3d-dark.png"
+            alt="VitAlGuard Industrial Safety OS"
+            className="logo3d-badge hidden dark:block"
+          />
+        </div>
+
+        {/* 슬로건 + 문구 — 현장 선택 단계에선 숨김(로고만 유지) */}
+        {pendingToken === null && (
+          <>
+        <p
+          className="mt-6 text-sm uppercase tracking-wide text-sky-100 drop-shadow"
+          style={{ fontFamily: "'Archivo Black', system-ui, sans-serif" }}
+        >
+          {t.slogan}
+        </p>
+        {/* 한↔영 전환 시 레이아웃 높이 고정 — min-h 로 영역 예약 + 영문은 폰트 축소해 1줄 유지(한글과 동일 높이). */}
+        <h1
+          className={`mt-2.5 flex min-h-[30px] flex-col items-center justify-center text-center leading-snug tracking-[-0.4px] text-white drop-shadow-lg ${
+            lang === "en" ? "text-[15px]" : "text-[22px]"
+          }`}
+          style={{ fontFamily: "'Archivo Black', 'Do Hyeon', system-ui, sans-serif" }}
+        >
+          {t.line1}
+        </h1>
+        <p
+          className={`mt-3 flex min-h-[20px] flex-col items-center justify-center text-center leading-5 text-white/85 drop-shadow ${
+            lang === "en" ? "text-[10px]" : "text-sm"
+          }`}
+        >
+          {t.line2}
+        </p>
+          </>
+        )}
+
+        {pendingToken === null ? (
+          <>
+        {/* 로그인 폼 */}
+        <form onSubmit={handleSubmit} className="mt-8 w-full max-w-sm space-y-3">
+          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
+            {t.subtitle}
+          </p>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.idLabel}
+            </span>
+            <input
+              type="text"
+              value={id}
+              onChange={(e) => setId(e.target.value)}
+              placeholder={t.idPlaceholder}
+              autoComplete="username"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.pwLabel}
+            </span>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={t.pwPlaceholder}
+              autoComplete="current-password"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+
+          {error && (
+            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
+              {error}
+            </p>
+          )}
+
+          <LiquidMetalButton
+            type="submit"
+            disabled={submitting || !password}
+            label={submitting ? t.submitting : t.submit}
+            className="w-full"
+          />
+
+          {/* 구글로 계속하기 — 로그인 버튼 하단 (OAuth 연동은 발표 후, 현재는 안내만) */}
+          <button
+            type="button"
+            onClick={() => setGoogleInfo(t.googleSoon)}
+            className="flex w-full items-center justify-center gap-2.5 rounded-pill bg-white/95 px-4 py-3 text-sm font-semibold text-zinc-700 shadow-lg transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          >
+            <GoogleIcon className="h-5 w-5" />
+            {t.google}
+          </button>
+
+          {googleInfo && (
+            <p className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-center text-xs text-white/90 backdrop-blur-md">
+              {googleInfo}
+            </p>
+          )}
+        </form>
+
+        <p className="mt-8 text-xs text-white/70 drop-shadow">{t.footer}</p>
+
+        {/* 스토어 다운로드 배지 — 중앙 정렬(App Store / Google Play) */}
+        <StoreBadges />
+          </>
+        ) : (
+          /* 현장 선택 단계 — 로그인 성공 후 */
+          <LoginSiteSelect
+            lang={lang}
+            onConfirm={handleSiteConfirm}
+            onBack={() => setPendingToken(null)}
+          />
+        )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,133 @@
+/* 대시보드 전역 스타일 — Tailwind 기본 레이어 + 라이트/다크 테마 토글 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #0052ff;
+  --color-primary-active: #003ecc;
+  --color-primary-disabled: #a8b8cc;
+  --color-accent-yellow: #f4b000;
+  --color-canvas: #ffffff;
+  --color-surface-soft: #f7f7f7;
+  --color-surface-strong: #eef0f3;
+  --color-surface-dark: #0a0b0d;
+  --color-surface-dark-elevated: #16181c;
+  --color-hairline: #dee1e6;
+  --color-hairline-soft: #eef0f3;
+  --color-ink: #0a0b0d;
+  --color-body: #5b616e;
+  --color-body-strong: #0a0b0d;
+  --color-muted: #7c828a;
+  --color-muted-soft: #a8acb3;
+  --color-on-primary: #ffffff;
+  --color-on-dark: #ffffff;
+  --color-on-dark-soft: #a8acb3;
+  --color-semantic-up: #05b169;
+  --color-semantic-down: #cf202f;
+  --font-display: Inter, -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-sans: Inter, -apple-system, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --rounded-xl: 24px;
+  --rounded-pill: 100px;
+}
+
+html,
+body {
+  background: var(--color-surface-soft);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+html.dark,
+html.dark body {
+  background: var(--color-surface-dark);
+  color: var(--color-on-dark);
+}
+
+/* 생체 데이터 값 블링크 — opacity 강하게 1→0.15→1 (Tailwind 기본 pulse 0.5 보다 visible) */
+@keyframes vital-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.15; }
+}
+
+.vital-blink-normal {
+  animation: vital-blink 2.2s ease-in-out infinite;
+}
+.vital-blink-caution {
+  animation: vital-blink 1.1s ease-in-out infinite;
+}
+.vital-blink-danger {
+  animation: vital-blink 0.55s ease-in-out infinite;
+}
+
+/* 현장 환경 — 디지털 액정(LCD) 글자: 등폭 + 글로우. 색은 위험도 그대로(정상=녹색/주의=amber/위험=red),
+   글로우는 currentColor 라 색을 따라간다(녹색 LCD 느낌, 경고 색은 유지). */
+.lcd-digital {
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 6px currentColor, 0 0 1px currentColor;
+}
+
+/* 가로 티커 슬라이딩은 useMarqueeScroll 훅(rAF scrollLeft)으로 처리 → CSS 마퀴 제거.
+   현장 환경·산업재해 속보·작업자 카드 모두 .wx-cards-scroll 스크롤바 스타일 공유. */
+/* 작업자 카드 캐러셀 — 하단 가로 스크롤바 항상 표시(수동 슬라이딩용) */
+.wx-cards-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 124, 138, 0.6) transparent;
+}
+.wx-cards-scroll::-webkit-scrollbar {
+  height: 9px;
+}
+.wx-cards-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wx-cards-scroll::-webkit-scrollbar-thumb {
+  background: rgba(120, 124, 138, 0.55);
+  border-radius: 9999px;
+}
+.wx-cards-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 124, 138, 0.8);
+}
+
+/* 스크롤바 예약 공간 제거(자동·휠·터치 스크롤은 유지) — 산업재해 속보처럼 한 줄 높이라
+   하단 9px 스크롤바가 여백·상단 쏠림으로 보이는 티커에 사용. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 로그인 로고 — Three.js 로 사전 렌더한 3D 베벨 유리 배지(PNG). CSS 는 띄움 그림자/호버만. */
+.logo3d-stage {
+  display: flex;
+  justify-content: center;
+}
+.logo3d-badge {
+  width: 136px;
+  height: 136px;
+  object-fit: contain;
+  filter: drop-shadow(0 18px 26px rgba(15, 30, 70, 0.32));
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.35s ease;
+}
+.logo3d-badge:hover {
+  transform: translateY(-5px) scale(1.04);
+  filter: drop-shadow(0 28px 38px rgba(15, 30, 70, 0.4));
+}
+.dark .logo3d-badge {
+  filter: drop-shadow(0 20px 30px rgba(0, 0, 0, 0.6));
+}
+.dark .logo3d-badge:hover {
+  filter: drop-shadow(0 30px 42px rgba(0, 0, 0, 0.72));
+}
+@media (prefers-reduced-motion: reduce) {
+  .logo3d-badge {
+    transition: none;
+  }
+}
