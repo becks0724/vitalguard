@@ -33,6 +33,7 @@ export type SiteInfo = {
   address: string;
   startDate: string;
   completionDate: string;
+  noticeId?: string; // 안전관리비 실집행 검증 데이터(g2b-mock) 매칭 키 — 현장 선택 시 부여.
 };
 
 const TOKEN_KEY = "safetymonitor.admin.token.v1";

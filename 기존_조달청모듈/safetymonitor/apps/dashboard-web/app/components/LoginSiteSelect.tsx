@@ -14,6 +14,7 @@ const MAIN_SITE: SiteOption = {
   id: "main",
   label: "광주 스마트인재개발원 신축 공사",
   info: {
+    noticeId: "SITE-SMARTHRD-2026",
     companyName: "스마트인재개발원",
     siteName: "스마트인재개발원 신축 공사",
     constructionType: "건축 (신축)",
@@ -29,6 +30,7 @@ const DEMO_SITES: SiteOption[] = [
     id: "demo-gwangju",
     label: "광주 첨단3지구 물류센터 신축",
     info: {
+      noticeId: "SITE-GWANGJU-LOGI",
       companyName: "(주)스마트건설",
       siteName: "광주 첨단3지구 물류센터 신축공사",
       constructionType: "건축 (물류창고)",
@@ -41,6 +43,7 @@ const DEMO_SITES: SiteOption[] = [
     id: "demo-pyeongtaek",
     label: "평택 반도체 FAB 증설",
     info: {
+      noticeId: "SITE-PYEONGTAEK-FAB",
       companyName: "(주)대성플랜트",
       siteName: "평택 반도체 P4 FAB 증설공사",
       constructionType: "플랜트 (반도체)",
@@ -53,6 +56,7 @@ const DEMO_SITES: SiteOption[] = [
     id: "demo-busan",
     label: "부산 해운대 주상복합 신축",
     info: {
+      noticeId: "SITE-BUSAN-RESI",
       companyName: "(주)해성건설",
       siteName: "부산 해운대 마린시티 주상복합 신축공사",
       constructionType: "건축 (주상복합)",
@@ -65,6 +69,7 @@ const DEMO_SITES: SiteOption[] = [
     id: "demo-incheon",
     label: "인천 송도 오피스타워 신축",
     info: {
+      noticeId: "SITE-INCHEON-OFFICE",
       companyName: "(주)대륙건설",
       siteName: "인천 송도 국제업무지구 오피스타워 신축공사",
       constructionType: "건축 (업무시설)",
@@ -77,6 +82,7 @@ const DEMO_SITES: SiteOption[] = [
     id: "demo-sejong",
     label: "세종 행복도시 공동주택 신축",
     info: {
+      noticeId: "SITE-SEJONG-APT",
       companyName: "(주)한울종합건설",
       siteName: "세종 행복도시 6-3생활권 공동주택 신축공사",
       constructionType: "건축 (공동주택)",

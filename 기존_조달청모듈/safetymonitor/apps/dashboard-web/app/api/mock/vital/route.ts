@@ -11,6 +11,7 @@ import {
   totalPersisted,
   workerProfiles,
 } from "../store";
+import { recentZoneHazards } from "../../cctv/ingest";
 
 // GET 응답은 공개 cloudflared 터널로 노출될 수 있다(작업자 폰/워치의 POST 와 같은 경로).
 // 따라서 민감 PII(보호자 이름·전화, 위·경도)는 기본 비노출(fail-safe). PII 노출은 두 조건 동시 충족 시에만:
@@ -37,6 +38,8 @@ export async function GET(request: Request) {
     totalPersisted: totalPersisted(),
     countsByWorker: countsByWorker(),
     workerProfiles: workerProfiles(),
+    // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
+    zoneHazards: recentZoneHazards(),
     piiRedacted: !exposePii,
   });
 }

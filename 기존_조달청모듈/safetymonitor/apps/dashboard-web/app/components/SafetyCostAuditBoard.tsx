@@ -6,6 +6,23 @@ import { useEffect, useState } from "react";
 import BusinessVerifyCard from "./BusinessVerifyCard";
 import SafetyIncreaseAuditCard from "./SafetyIncreaseAuditCard";
 
+// 실집행 검증은 "현재 선택된 현장" 1곳만 노출 — 현장 선택 드롭다운(LoginSiteSelect)이
+// site-info.noticeId 를 저장하면 그 현장 검증을 보여준다(없으면 메인 현장 기본).
+const MAIN_SITE_ID = "SITE-SMARTHRD-2026";
+
+function currentSiteNoticeId(): string {
+  try {
+    const raw = window.localStorage.getItem("safetymonitor.site-info.v1");
+    if (raw) {
+      const info = JSON.parse(raw) as { noticeId?: string };
+      if (info.noticeId) return info.noticeId;
+    }
+  } catch {
+    // localStorage 불가/파싱 실패 → 메인 현장 기본
+  }
+  return MAIN_SITE_ID;
+}
+
 type Notice = { id: string; title: string; agency: string; region?: string; estimatedPrice: number | null };
 type Audit = {
   requiredCost: number;
@@ -44,9 +61,12 @@ export default function SafetyCostAuditBoard() {
         if (!r.ok) throw new Error(`현장(계약) 목록 조회 실패 (${r.status})`);
         const j = (await r.json()) as { source: "live" | "mock"; items: Notice[] };
         if (!alive) return;
-        setNotices(j.items);
+        // 현재 선택된 현장만 실집행 검증 목록에 노출.
+        const siteId = currentSiteNoticeId();
+        const items = j.items.filter((n) => n.id === siteId);
+        setNotices(items);
         setSource(j.source);
-        setSelected(j.items[0]?.id ?? null);
+        setSelected(items[0]?.id ?? null);
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : "불러오기 실패");
       } finally {
@@ -176,7 +196,7 @@ export default function SafetyCostAuditBoard() {
                 </div>
 
                 {/* ④ 증액 검증 — 실인원 대비 과다 산정 */}
-                <SafetyIncreaseAuditCard distinctWorkers={a.distinctWorkers} />
+                <SafetyIncreaseAuditCard distinctWorkers={a.distinctWorkers} noticeId={selected ?? undefined} />
 
                 <p className="text-[10px] text-muted dark:text-on-dark-soft">
                   ※ 계상액은 추정가격×법정요율 근사이며, 실집행은 워치 출역 물증입니다. 적정성의 법적 판정은 발주처·감독기관의 권한입니다.

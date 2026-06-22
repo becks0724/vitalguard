@@ -10,29 +10,97 @@ import { useMemo } from "react";
 type Item = { name: string; qty: number; unit: number };
 type Verdict = "정상" | "주의" | "의심" | "검증불가";
 
-// 시공사 제출 청구 내역(데모 고정) — 실제로는 시공사 업로드/전자세금계산서 연동으로 수신.
-const SUBMITTED = {
-  supplier: "대한안전산업(주)",
-  invoiceNo: "전자세금계산서 2026-0617-014",
-  items: [
-    { name: "안전모", qty: 10, unit: 25000 },
-    { name: "안전화", qty: 10, unit: 60000 },
-  ] as Item[],
-  hasEvidence: true,
+type SubmittedClaim = { supplier: string; invoiceNo: string; items: Item[]; hasEvidence: boolean };
+
+// 현장 id별 시공사 제출 청구 내역 — 현장 성격·규모에 맞게 품목·수량·공급사를 차별화. 전부 [데모값].
+// 실제로는 시공사 업로드/전자세금계산서 연동으로 현장별 수신. 판정 = 청구수량 ÷ 워치 실측인원 비율.
+const CLAIMS_BY_SITE: Record<string, SubmittedClaim> = {
+  "SITE-SMARTHRD-2026": {
+    supplier: "대한안전산업(주)",
+    invoiceNo: "전자세금계산서 2026-0617-014",
+    items: [
+      { name: "안전모", qty: 14, unit: 25000 },
+      { name: "안전화", qty: 12, unit: 60000 },
+      { name: "안전대", qty: 8, unit: 80000 },
+    ],
+    hasEvidence: true,
+  },
+  "SITE-GWANGJU-LOGI": {
+    supplier: "호남세이프티(주)",
+    invoiceNo: "전자세금계산서 2026-0614-022",
+    items: [
+      { name: "안전모", qty: 11, unit: 25000 },
+      { name: "안전화", qty: 9, unit: 60000 },
+      { name: "보안경", qty: 10, unit: 12000 },
+    ],
+    hasEvidence: true,
+  },
+  "SITE-PYEONGTAEK-FAB": {
+    supplier: "대성안전산업(주)",
+    invoiceNo: "전자세금계산서 2026-0612-118",
+    items: [
+      { name: "안전모", qty: 22, unit: 25000 },
+      { name: "안전화", qty: 20, unit: 60000 },
+      { name: "방진마스크", qty: 22, unit: 5000 },
+    ],
+    hasEvidence: true,
+  },
+  "SITE-BUSAN-RESI": {
+    supplier: "부산종합안전(주)",
+    invoiceNo: "전자세금계산서 2026-0610-070",
+    items: [
+      { name: "안전모", qty: 16, unit: 25000 },
+      { name: "안전대", qty: 24, unit: 80000 },
+      { name: "안전화", qty: 15, unit: 60000 },
+    ],
+    hasEvidence: true,
+  },
+  "SITE-INCHEON-OFFICE": {
+    supplier: "송도안전기술(주)",
+    invoiceNo: "전자세금계산서 2026-0609-045",
+    items: [
+      { name: "안전모", qty: 14, unit: 25000 },
+      { name: "안전화", qty: 12, unit: 60000 },
+      { name: "안전조끼", qty: 13, unit: 18000 },
+    ],
+    hasEvidence: true,
+  },
+  "SITE-SEJONG-APT": {
+    supplier: "세종건설안전(주)",
+    invoiceNo: "전자세금계산서 2026-0604-031",
+    items: [
+      { name: "안전모", qty: 17, unit: 25000 },
+      { name: "안전화", qty: 16, unit: 60000 },
+      { name: "각반", qty: 18, unit: 15000 },
+    ],
+    hasEvidence: true,
+  },
 };
+
+const DEFAULT_CLAIM: SubmittedClaim = {
+  supplier: "—",
+  invoiceNo: "청구 내역 미제출",
+  items: [],
+  hasEvidence: false,
+};
+
+function claimFor(noticeId?: string): SubmittedClaim {
+  return (noticeId && CLAIMS_BY_SITE[noticeId]) || DEFAULT_CLAIM;
+}
 
 function won(n: number): string {
   return `${Math.round(n).toLocaleString("ko-KR")}원`;
 }
 
-export default function SafetyIncreaseAuditCard({ distinctWorkers }: { distinctWorkers: number }) {
+export default function SafetyIncreaseAuditCard({ distinctWorkers, noticeId }: { distinctWorkers: number; noticeId?: string }) {
+  const submitted = claimFor(noticeId);
   const calc = useMemo(() => {
     const N = Math.max(0, distinctWorkers);
     let totalClaim = 0;
     let totalLegit = 0;
     let totalExcess = 0;
     let maxRatio = 0;
-    const rows = SUBMITTED.items.map((it) => {
+    const rows = submitted.items.map((it) => {
       const claim = it.qty * it.unit;
       const legit = Math.min(it.qty, N) * it.unit;
       const excessQty = Math.max(0, it.qty - N);
@@ -50,7 +118,7 @@ export default function SafetyIncreaseAuditCard({ distinctWorkers }: { distinctW
     if (N <= 0) {
       verdict = "검증불가";
       reason = "워치 출역 실측 인원이 없습니다 (③실집행 데이터 필요)";
-    } else if (!SUBMITTED.hasEvidence) {
+    } else if (!submitted.hasEvidence) {
       verdict = "검증불가";
       reason = "증빙(세금계산서) 미제출";
     } else if (maxRatio > 1.5) {
@@ -64,7 +132,7 @@ export default function SafetyIncreaseAuditCard({ distinctWorkers }: { distinctW
       reason = "실측 인원과 청구 수량이 부합";
     }
     return { N, rows, totalClaim, totalLegit, totalExcess, verdict, reason };
-  }, [distinctWorkers]);
+  }, [distinctWorkers, submitted]);
 
   const badge: Record<Verdict, string> = {
     정상: "bg-[#05b169]/10 text-[#05b169]",
@@ -87,7 +155,7 @@ export default function SafetyIncreaseAuditCard({ distinctWorkers }: { distinctW
       <div className="mt-2 rounded-md border border-hairline bg-surface-soft p-2 dark:border-white/10 dark:bg-surface-dark-elevated">
         <div className="flex items-center justify-between text-[10px] text-muted dark:text-on-dark-soft">
           <span>시공사 제출 청구 내역 (읽기 전용)</span>
-          <span>{SUBMITTED.supplier}</span>
+          <span>{submitted.supplier}</span>
         </div>
         <div className="mt-1 space-y-0.5">
           {calc.rows.map((r) => (
@@ -99,7 +167,7 @@ export default function SafetyIncreaseAuditCard({ distinctWorkers }: { distinctW
             </div>
           ))}
         </div>
-        <div className="mt-1 text-[9px] text-muted dark:text-on-dark-soft">{SUBMITTED.invoiceNo} · 증빙 제출됨</div>
+        <div className="mt-1 text-[9px] text-muted dark:text-on-dark-soft">{submitted.invoiceNo}{submitted.hasEvidence ? " · 증빙 제출됨" : ""}</div>
       </div>
 
       {/* 실측 인원 — 워치 출역 자동(편집 불가) */}

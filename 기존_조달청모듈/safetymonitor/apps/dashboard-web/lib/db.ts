@@ -3,7 +3,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import Database from "better-sqlite3";
-import type { VitalSample } from "@safetymonitor/schemas";
+import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
 type DbBundle = {
   db: Database.Database;
@@ -29,6 +29,8 @@ type DbBundle = {
   fallStats: Database.Statement<[]>;
   setFallLabelStmt: Database.Statement;
   updateFallCandidateState: Database.Statement;
+  insertCctvEvent: Database.Statement;
+  recentCctvEventsStmt: Database.Statement;
 };
 
 // CSV 내보내기 행 형식 — DB 컬럼명 그대로 (관제자가 엑셀에서 인식하기 쉽게).
@@ -299,6 +301,26 @@ function init(): DbBundle {
     );
   `);
 
+  // 영상(CCTV YOLOv8-pose) 낙상 이벤트 — 폴링 어댑터/푸시 수신분. worker_id 없음(카메라/존 단위).
+  // fusion 의 영상 입력 + 감사 이력(raw_json). 워치(vital_samples)와 별개 경로.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cctv_fall_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      camera_id TEXT NOT NULL,
+      zone TEXT,
+      ts TEXT NOT NULL,
+      status TEXT NOT NULL,
+      fallen_count INTEGER,
+      total INTEGER,
+      confidence REAL,
+      source TEXT,
+      received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      raw_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cfe_camera_ts ON cctv_fall_events(camera_id, ts);
+    CREATE INDEX IF NOT EXISTS idx_cfe_ts ON cctv_fall_events(ts);
+  `);
+
   const insert = db.prepare(`
     INSERT INTO vital_samples (
       worker_id, worker_name, employee_id, job_title, guardian_name, guardian_phone,
@@ -439,6 +461,18 @@ function init(): DbBundle {
       labeled_at = excluded.labeled_at
   `);
 
+  // 영상(CCTV) 낙상 이벤트 적재/조회.
+  const insertCctvEvent = db.prepare(`
+    INSERT INTO cctv_fall_events (
+      camera_id, zone, ts, status, fallen_count, total, confidence, source, raw_json
+    ) VALUES (
+      @camera_id, @zone, @ts, @status, @fallen_count, @total, @confidence, @source, @raw_json
+    )
+  `);
+  const recentCctvEventsStmt = db.prepare(
+    "SELECT * FROM cctv_fall_events ORDER BY ts DESC, id DESC LIMIT @limit",
+  );
+
   const count = db.prepare<[]>("SELECT COUNT(*) AS n FROM vital_samples");
 
   // 관리자 내보내기 — 워커 목록 + 샘플 수 + 시계 범위 (드롭다운 채움용)
@@ -540,12 +574,14 @@ function init(): DbBundle {
     fallStats,
     setFallLabelStmt,
     updateFallCandidateState,
+    insertCctvEvent,
+    recentCctvEventsStmt,
   };
 }
 
 export function getDb(): DbBundle {
   // 캐시 가드는 가장 최근 추가된 statement 로 검사 — HMR 로 남은 옛 번들(신규 필드 없음)을 재초기화.
-  if (!globalForDb.__safetyMonitorDb?.updateFallCandidateState) {
+  if (!globalForDb.__safetyMonitorDb?.recentCctvEventsStmt) {
     globalForDb.__safetyMonitorDb = init();
   }
   return globalForDb.__safetyMonitorDb;
@@ -1054,4 +1090,38 @@ export function listReportSubmissions(contractId?: string, limit = 20): ReportSu
   return db
     .prepare("SELECT * FROM weekly_report_submissions ORDER BY submitted_at DESC, id DESC LIMIT ?")
     .all(limit) as ReportSubmission[];
+}
+
+// ── 영상(CCTV) 낙상 이벤트 — 폴링 어댑터/푸시 수신분(fusion 영상 입력 + 감사 이력) ──────────
+export type CctvFallEventRow = {
+  id: number;
+  camera_id: string;
+  zone: string | null;
+  ts: string;
+  status: string;
+  fallen_count: number | null;
+  total: number | null;
+  confidence: number | null;
+  source: string | null;
+  received_at: string;
+  raw_json: string;
+};
+
+// 영상 이벤트 1건 적재 — event 는 zod 검증 통과한 정상 값.
+export function persistCctvEvent(event: CctvFallEvent): void {
+  getDb().insertCctvEvent.run({
+    camera_id: event.cameraId,
+    zone: event.zone ?? null,
+    ts: event.ts,
+    status: event.status,
+    fallen_count: event.fallenCount ?? null,
+    total: event.total ?? null,
+    confidence: event.confidence ?? null,
+    source: event.source ?? null,
+    raw_json: JSON.stringify(event),
+  });
+}
+
+export function recentCctvEvents(limit = 200): CctvFallEventRow[] {
+  return getDb().recentCctvEventsStmt.all({ limit }) as CctvFallEventRow[];
 }
