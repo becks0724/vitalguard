@@ -14,11 +14,22 @@ import { LoginScreen } from "./LoginScreen";
 
 // 대시보드 보기 권한 토큰 — 관리자 export(safetymonitor.admin.token.v1)와 별도 키로 보기/내보내기 권한 분리.
 const SESSION_KEY = "safetymonitor.session.v1";
+// 로그인 역할(owner=env 관리자 / admin=승인된 가입자) — owner 전용 "사용자 관리" 노출 판정용.
+const ROLE_KEY = "safetymonitor.role.v1";
 
 // 보호된 API 호출(예: PII 포함 GET) 시 Authorization 헤더로 동봉할 로그인 세션 토큰을 읽는다.
 export function getSessionToken(): string | null {
   try {
     return window.sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+// 현재 로그인 역할 — owner 만 사용자 관리(승인/거절) UI 노출.
+export function getSessionRole(): string | null {
+  try {
+    return window.sessionStorage.getItem(ROLE_KEY);
   } catch {
     return null;
   }
@@ -51,6 +62,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     try {
       window.sessionStorage.removeItem(SESSION_KEY);
+      window.sessionStorage.removeItem(ROLE_KEY);
     } catch {
       // sessionStorage 불가 환경은 메모리 상태만 초기화
     }
@@ -80,9 +92,10 @@ export function LoginGate({ children }: { children: ReactNode }) {
   if (!authed) {
     return (
       <LoginScreen
-        onLogin={(token) => {
+        onLogin={(token, role) => {
           try {
             window.sessionStorage.setItem(SESSION_KEY, token);
+            if (role) window.sessionStorage.setItem(ROLE_KEY, role);
           } catch {
             // sessionStorage 불가 환경은 메모리 상태로만 진입 유지
           }

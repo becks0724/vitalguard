@@ -29,6 +29,29 @@ type Strings = {
   error: string;
   networkError: string;
   footer: string;
+  // 회원가입(승인제)
+  signupTitle: string;
+  companyLabel: string;
+  companyPlaceholder: string;
+  nameLabel: string;
+  namePlaceholder: string;
+  phoneLabel: string;
+  phonePlaceholder: string;
+  emailLabel: string;
+  emailPlaceholder: string;
+  pwConfirmLabel: string;
+  pwConfirmPlaceholder: string;
+  signupSubmit: string;
+  signupSubmitting: string;
+  toSignup: string;
+  toLogin: string;
+  noAccount: string;
+  haveAccount: string;
+  pwMismatch: string;
+  pwTooShort: string;
+  fillAll: string;
+  invalidEmail: string;
+  signupSuccess: string;
 };
 
 const LANG_KEY = "safetymonitor.lang.v1";
@@ -52,6 +75,28 @@ const T: Record<Lang, Strings> = {
     error: "아이디 또는 비밀번호가 일치하지 않습니다.",
     networkError: "로그인 요청 중 오류가 발생했습니다. 다시 시도하세요.",
     footer: "발표용 프로토타입 · (주)바이탈가드",
+    signupTitle: "관리자 회원가입",
+    companyLabel: "회사(상호)",
+    companyPlaceholder: "(주)바이탈가드",
+    nameLabel: "이름",
+    namePlaceholder: "홍길동",
+    phoneLabel: "연락처",
+    phonePlaceholder: "010-1234-5678",
+    emailLabel: "관리자 이메일",
+    emailPlaceholder: "admin@company.com",
+    pwConfirmLabel: "비밀번호 확인",
+    pwConfirmPlaceholder: "비밀번호 재입력",
+    signupSubmit: "가입 신청",
+    signupSubmitting: "신청 중…",
+    toSignup: "회원가입",
+    toLogin: "로그인으로 돌아가기",
+    noAccount: "계정이 없으신가요?",
+    haveAccount: "이미 계정이 있으신가요?",
+    pwMismatch: "비밀번호가 일치하지 않습니다.",
+    pwTooShort: "비밀번호는 8자 이상이어야 합니다.",
+    fillAll: "모든 항목을 입력해주세요.",
+    invalidEmail: "이메일 형식이 올바르지 않습니다.",
+    signupSuccess: "가입 신청이 완료됐습니다. 관리자 승인 후 로그인할 수 있습니다.",
   },
   en: {
     slogan: "OPEN SAFETY · NEVER ALONE",
@@ -70,6 +115,28 @@ const T: Record<Lang, Strings> = {
     error: "ID or password does not match.",
     networkError: "An error occurred while signing in. Please try again.",
     footer: "Demo prototype · VitAlGuard Inc.",
+    signupTitle: "Admin sign-up",
+    companyLabel: "Company",
+    companyPlaceholder: "VitAlGuard Inc.",
+    nameLabel: "Name",
+    namePlaceholder: "Jane Doe",
+    phoneLabel: "Phone",
+    phonePlaceholder: "+82 10-1234-5678",
+    emailLabel: "Admin email",
+    emailPlaceholder: "admin@company.com",
+    pwConfirmLabel: "Confirm password",
+    pwConfirmPlaceholder: "Re-enter password",
+    signupSubmit: "Request sign-up",
+    signupSubmitting: "Submitting…",
+    toSignup: "Sign up",
+    toLogin: "Back to sign in",
+    noAccount: "No account?",
+    haveAccount: "Already have an account?",
+    pwMismatch: "Passwords do not match.",
+    pwTooShort: "Password must be at least 8 characters.",
+    fillAll: "Please fill in all fields.",
+    invalidEmail: "Invalid email format.",
+    signupSuccess: "Sign-up requested. You can sign in after admin approval.",
   },
 };
 
@@ -140,15 +207,30 @@ function LangToggle({
   );
 }
 
-export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
+export function LoginScreen({
+  onLogin,
+}: {
+  onLogin: (token: string, role?: string) => void;
+}) {
   const [lang, setLang] = useState<Lang>("ko");
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [googleInfo, setGoogleInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰(null = 아직 로그인 폼 단계).
+  // 회원가입 입력(6항목 전부 필수) + 가입 성공 안내(로그인 모드 상단에 표시).
+  const [sCompany, setSCompany] = useState("");
+  const [sId, setSId] = useState("");
+  const [sName, setSName] = useState("");
+  const [sPhone, setSPhone] = useState("");
+  const [sEmail, setSEmail] = useState("");
+  const [sPw, setSPw] = useState("");
+  const [sPw2, setSPw2] = useState("");
+  const [signupMsg, setSignupMsg] = useState<string | null>(null);
+  // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰/역할(null = 아직 로그인 폼 단계).
   const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [pendingRole, setPendingRole] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -182,13 +264,20 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id, password }),
         });
-        const json = (await res.json()) as { ok?: boolean; token?: string };
+        const json = (await res.json()) as {
+          ok?: boolean;
+          token?: string;
+          role?: string;
+          error?: string;
+        };
         if (!res.ok || !json.ok || !json.token) {
-          setError(t.error);
+          // 서버 안내(승인 대기·거절 등)가 있으면 그대로, 없으면 기본 메시지.
+          setError(json.error || t.error);
           return;
         }
-        // 로그인 성공 → 바로 입장하지 않고 현장 선택 단계로 전환.
+        // 로그인 성공 → 바로 입장하지 않고 현장 선택 단계로 전환(역할도 보류).
         setPendingToken(json.token);
+        setPendingRole(json.role ?? null);
       } catch {
         setError(t.networkError);
       } finally {
@@ -196,6 +285,76 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
       }
     },
     [id, password, submitting, t],
+  );
+
+  // 회원가입 — /api/admin/register 로 가입 신청(승인제). 성공 시 로그인 모드로 전환하고 안내.
+  const handleSignup = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (submitting) return;
+      setError(null);
+      setSignupMsg(null);
+      // 6항목 전부 필수.
+      if (
+        !sCompany.trim() ||
+        !sId.trim() ||
+        !sName.trim() ||
+        !sPhone.trim() ||
+        !sEmail.trim() ||
+        !sPw ||
+        !sPw2
+      ) {
+        setError(t.fillAll);
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sEmail.trim())) {
+        setError(t.invalidEmail);
+        return;
+      }
+      if (sPw.length < 8) {
+        setError(t.pwTooShort);
+        return;
+      }
+      if (sPw !== sPw2) {
+        setError(t.pwMismatch);
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const res = await fetch("/api/admin/register", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            company: sCompany.trim(),
+            username: sId.trim(),
+            name: sName.trim(),
+            phone: sPhone.trim(),
+            email: sEmail.trim(),
+            password: sPw,
+          }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          setError(json.error || t.networkError);
+          return;
+        }
+        // 성공 → 로그인 모드로 돌아가 안내 노출, 입력 초기화.
+        setMode("login");
+        setSignupMsg(t.signupSuccess);
+        setSCompany("");
+        setSId("");
+        setSName("");
+        setSPhone("");
+        setSEmail("");
+        setSPw("");
+        setSPw2("");
+      } catch {
+        setError(t.networkError);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [sCompany, sId, sName, sPhone, sEmail, sPw, sPw2, submitting, t],
   );
 
   // 현장 선택 완료 → 선택한 현장정보를 저장하고 대시보드 입장.
@@ -209,9 +368,9 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
       } catch {
         // localStorage 불가 환경은 저장 생략(대시보드 기본 현장정보 유지)
       }
-      if (pendingToken) onLogin(pendingToken);
+      if (pendingToken) onLogin(pendingToken, pendingRole ?? undefined);
     },
-    [pendingToken, onLogin],
+    [pendingToken, pendingRole, onLogin],
   );
 
   return (
@@ -286,6 +445,7 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
         )}
 
         {pendingToken === null ? (
+          mode === "login" ? (
           <>
         {/* 로그인 폼 */}
         <form onSubmit={handleSubmit} className="mt-8 w-full max-w-sm space-y-3">
@@ -321,6 +481,11 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
             />
           </label>
 
+          {signupMsg && (
+            <p className="rounded-xl border border-emerald-300/50 bg-emerald-500/25 px-3 py-2 text-xs text-emerald-50 backdrop-blur-md">
+              {signupMsg}
+            </p>
+          )}
           {error && (
             <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
               {error}
@@ -349,6 +514,23 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
               {googleInfo}
             </p>
           )}
+
+          {/* 회원가입 전환 */}
+          <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
+            {t.noAccount}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode("signup");
+                setError(null);
+                setGoogleInfo(null);
+                setSignupMsg(null);
+              }}
+              className="font-semibold text-white underline underline-offset-2 hover:text-sky-200"
+            >
+              {t.toSignup}
+            </button>
+          </p>
         </form>
 
         <p className="mt-8 text-xs text-white/70 drop-shadow">{t.footer}</p>
@@ -356,6 +538,151 @@ export function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
         {/* 스토어 다운로드 배지 — 중앙 정렬(App Store / Google Play) */}
         <StoreBadges />
           </>
+          ) : (
+          <>
+        {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능 */}
+        <form onSubmit={handleSignup} className="mt-8 w-full max-w-sm space-y-3">
+          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
+            {t.signupTitle}
+          </p>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.companyLabel}
+            </span>
+            <input
+              type="text"
+              value={sCompany}
+              onChange={(e) => setSCompany(e.target.value)}
+              placeholder={t.companyPlaceholder}
+              autoComplete="organization"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.idLabel}
+            </span>
+            <input
+              type="text"
+              value={sId}
+              onChange={(e) => setSId(e.target.value)}
+              placeholder={t.idPlaceholder}
+              autoComplete="username"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.nameLabel}
+            </span>
+            <input
+              type="text"
+              value={sName}
+              onChange={(e) => setSName(e.target.value)}
+              placeholder={t.namePlaceholder}
+              autoComplete="name"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.phoneLabel}
+            </span>
+            <input
+              type="tel"
+              value={sPhone}
+              onChange={(e) => setSPhone(e.target.value)}
+              placeholder={t.phonePlaceholder}
+              autoComplete="tel"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.emailLabel}
+            </span>
+            <input
+              type="email"
+              value={sEmail}
+              onChange={(e) => setSEmail(e.target.value)}
+              placeholder={t.emailPlaceholder}
+              autoComplete="email"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.pwLabel}
+            </span>
+            <input
+              type="password"
+              value={sPw}
+              onChange={(e) => setSPw(e.target.value)}
+              placeholder={t.pwPlaceholder}
+              autoComplete="new-password"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.pwConfirmLabel}
+            </span>
+            <input
+              type="password"
+              value={sPw2}
+              onChange={(e) => setSPw2(e.target.value)}
+              placeholder={t.pwConfirmPlaceholder}
+              autoComplete="new-password"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+
+          {error && (
+            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
+              {error}
+            </p>
+          )}
+
+          <LiquidMetalButton
+            type="submit"
+            disabled={
+              submitting ||
+              !sCompany ||
+              !sId ||
+              !sName ||
+              !sPhone ||
+              !sEmail ||
+              !sPw ||
+              !sPw2
+            }
+            label={submitting ? t.signupSubmitting : t.signupSubmit}
+            className="w-full"
+          />
+
+          {/* 로그인 전환 */}
+          <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
+            {t.haveAccount}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setError(null);
+              }}
+              className="font-semibold text-white underline underline-offset-2 hover:text-sky-200"
+            >
+              {t.toLogin}
+            </button>
+          </p>
+        </form>
+          </>
+          )
         ) : (
           /* 현장 선택 단계 — 로그인 성공 후 */
           <LoginSiteSelect

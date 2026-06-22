@@ -7,6 +7,8 @@ import {
   recordLoginResult,
   verifyCredentials,
 } from "../../../../lib/admin-auth";
+import { findUserByUsername } from "../../../../lib/db";
+import { verifyPassword } from "../../../../lib/password";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -52,16 +54,44 @@ export async function POST(request: Request) {
     );
   }
 
-  const ok = verifyCredentials(id, password);
-  recordLoginResult(lockKey, ok);
-  if (!ok) {
+  // 1) env owner(최초 승인자) 우선 — 일치 시 owner 세션 발급.
+  if (verifyCredentials(id, password)) {
+    recordLoginResult(lockKey, true);
+    return NextResponse.json({
+      ok: true,
+      token: createSession("owner", id),
+      role: "owner",
+    });
+  }
+
+  // 2) DB 가입 관리자 — 비번 검증 후 승인 상태에 따라 분기.
+  const user = await findUserByUsername(id);
+  const pwOk = user ? await verifyPassword(password, user.password_hash) : false;
+  // 비번 일치=잠금 리셋(미승인이라도 brute-force 아님), 불일치=실패 누적.
+  recordLoginResult(lockKey, pwOk);
+  if (!user || !pwOk) {
     return NextResponse.json(
       { ok: false, error: "관리자 ID 또는 비밀번호가 일치하지 않습니다." },
       { status: 401 },
     );
   }
+  if (user.status === "pending") {
+    return NextResponse.json(
+      { ok: false, error: "가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다." },
+      { status: 403 },
+    );
+  }
+  if (user.status !== "approved") {
+    return NextResponse.json(
+      { ok: false, error: "가입이 거절된 계정입니다. 관리자에게 문의하세요." },
+      { status: 403 },
+    );
+  }
 
-  // 비밀번호와 무관한 랜덤 세션 토큰(서버측 TTL) — sessionStorage 저장 후 Authorization 헤더로 재사용.
-  const token = createSession();
-  return NextResponse.json({ ok: true, token });
+  // 승인된 관리자 — admin 역할 세션 발급(비밀번호 무관 랜덤 토큰, 서버측 TTL).
+  return NextResponse.json({
+    ok: true,
+    token: createSession("admin", user.username),
+    role: "admin",
+  });
 }

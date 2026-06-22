@@ -287,6 +287,26 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_cfe_camera_ts ON cctv_fall_events(camera_id, ts);
     CREATE INDEX IF NOT EXISTS idx_cfe_ts ON cctv_fall_events(ts);
+
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      name TEXT,
+      company TEXT,
+      phone TEXT,
+      email TEXT,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      approved_at TEXT,
+      approved_by TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+    -- 기존 설치 호환 — 회원가입 추가 항목(회사·연락처·이메일) 컬럼 보강(앱 레벨 필수 검증).
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
   `);
 }
 
@@ -999,4 +1019,74 @@ export async function recentCctvEvents(limit = 200): Promise<CctvFallEventRow[]>
     [limit],
   );
   return rows;
+}
+
+// ── 관리자 계정(회원가입·승인제) ──────────────────────────────────────────────
+export type UserRow = {
+  id: number;
+  username: string;
+  name: string | null;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  password_hash: string;
+  role: string;
+  status: string; // pending | approved | rejected
+  created_at: string;
+  approved_at: string | null;
+  approved_by: string | null;
+};
+
+// 신규 관리자 가입 — status=pending(기본값)으로 저장. username 중복 시 null(UNIQUE 위반 → 호출부 409).
+export async function createUser(input: {
+  username: string;
+  name: string | null;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  passwordHash: string;
+}): Promise<UserRow | null> {
+  const { text, values } = buildInsert("users", {
+    username: input.username,
+    name: input.name,
+    company: input.company,
+    phone: input.phone,
+    email: input.email,
+    password_hash: input.passwordHash,
+  });
+  const { rows } = await q<UserRow>(
+    `${text} ON CONFLICT (username) DO NOTHING RETURNING *`,
+    values,
+  );
+  return rows[0] ?? null;
+}
+
+export async function findUserByUsername(username: string): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>("SELECT * FROM users WHERE username = $1", [
+    username,
+  ]);
+  return rows[0] ?? null;
+}
+
+// 사용자 관리 목록(owner UI) — 대기 → 승인 → 거절 순, 최신 가입 우선.
+export async function listUsers(): Promise<UserRow[]> {
+  const { rows } = await q<UserRow>(
+    `SELECT * FROM users
+     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+              created_at DESC`,
+  );
+  return rows;
+}
+
+export async function setUserStatus(
+  id: number,
+  status: "approved" | "rejected",
+  approvedBy: string,
+): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users SET status = $1, approved_at = ${NOW_ISO}, approved_by = $2
+     WHERE id = $3 RETURNING *`,
+    [status, approvedBy, id],
+  );
+  return rows[0] ?? null;
 }

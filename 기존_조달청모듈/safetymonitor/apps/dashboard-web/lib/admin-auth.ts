@@ -102,7 +102,11 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
 
 const MAX_SESSION_ENTRIES = 10000; // 24/7 누수 방지 상한
 
-type SessionStore = Map<string, number>; // token → expiresAt(ms)
+// owner = env 관리자(최초 승인자, 사용자 관리 권한), admin = 가입 후 승인된 관리자.
+export type SessionRole = "owner" | "admin";
+export type SessionInfo = { expiresAt: number; role: SessionRole; username: string };
+
+type SessionStore = Map<string, SessionInfo>; // token → 세션 정보(만료·역할·아이디)
 const globalForSessions = globalThis as typeof globalThis & {
   __safetyMonitorAdminSessions?: SessionStore;
 };
@@ -113,8 +117,8 @@ const sessions: SessionStore =
 // 만료 토큰 일괄 정리 + 상한 초과 시 오래된 토큰 제거(lazy 삭제만으로는 24/7 누수).
 function sweepSessions(): void {
   const now = Date.now();
-  for (const [token, expiresAt] of sessions) {
-    if (now > expiresAt) sessions.delete(token);
+  for (const [token, info] of sessions) {
+    if (now > info.expiresAt) sessions.delete(token);
   }
   while (sessions.size > MAX_SESSION_ENTRIES) {
     const oldest = sessions.keys().next().value;
@@ -123,21 +127,30 @@ function sweepSessions(): void {
   }
 }
 
-export function createSession(): string {
+// 역할·아이디를 담아 세션 발급(기본은 env owner — 기존 호출 호환).
+export function createSession(
+  role: SessionRole = "owner",
+  username: string = ADMIN_ID,
+): string {
   sweepSessions();
   const token = randomBytes(32).toString("base64url");
-  sessions.set(token, Date.now() + SESSION_TTL_MS);
+  sessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS, role, username });
   return token;
 }
 
-function validateSession(token: string): boolean {
-  const expiresAt = sessions.get(token);
-  if (expiresAt === undefined) return false;
-  if (Date.now() > expiresAt) {
+// 유효 세션 정보 반환(만료 시 삭제 후 null).
+function getValidSession(token: string): SessionInfo | null {
+  const info = sessions.get(token);
+  if (!info) return null;
+  if (Date.now() > info.expiresAt) {
     sessions.delete(token);
-    return false;
+    return null;
   }
-  return true;
+  return info;
+}
+
+function validateSession(token: string): boolean {
+  return getValidSession(token) !== null;
 }
 
 // Authorization 헤더 검증 — 보호된 API route 에서 호출. 스킴별로 받는 자격을 분리한다.
@@ -166,4 +179,44 @@ export function verifyBasicAuth(request: Request): boolean {
   } catch {
     return false;
   }
+}
+
+// Authorization 헤더에서 유효 세션 정보(역할 포함) 추출 — owner 전용 API 게이트용.
+// 세션 토큰(Bearer/Basic) 우선, 없으면 Basic base64(id:pw) 직접 자격을 env owner 로 인정.
+export function getSession(request: Request): SessionInfo | null {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+  const match = header.match(/^(basic|bearer)\s+(.+)$/i);
+  if (!match) return null;
+  const value = match[2]?.trim();
+  if (!value) return null;
+
+  const info = getValidSession(value);
+  if (info) return info;
+
+  // base64(id:pw) 직접 자격은 Basic 에서만 — 일치 시 env owner 세션으로 취급(저장은 안 함).
+  if (match[1]?.toLowerCase() === "basic") {
+    try {
+      const decoded = Buffer.from(value, "base64").toString("utf8");
+      const sep = decoded.indexOf(":");
+      if (
+        sep >= 0 &&
+        verifyCredentials(decoded.slice(0, sep), decoded.slice(sep + 1))
+      ) {
+        return {
+          expiresAt: Date.now() + SESSION_TTL_MS,
+          role: "owner",
+          username: ADMIN_ID,
+        };
+      }
+    } catch {
+      // 무시 — 아래에서 null
+    }
+  }
+  return null;
+}
+
+// owner(env 관리자) 권한 확인 — 사용자 관리(승인/거절) API 보호용.
+export function verifyOwner(request: Request): boolean {
+  return getSession(request)?.role === "owner";
 }
