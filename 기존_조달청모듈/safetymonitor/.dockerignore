@@ -1,0 +1,25 @@
+# Cloud Build 컨텍스트 제외 — 빌드 불필요/민감/대용량.
+# ★ .env* 제외로 DB 비번·관리자 비번이 이미지에 baked 되는 것 차단(런타임 env 는 Cloud Run Secret).
+**/node_modules
+**/.next
+**/dist
+**/*.log
+**/.DS_Store
+.git
+.gitignore
+.runtime
+.env
+.env.*
+**/.env
+**/.env.*
+.dockerignore
+Dockerfile
+
+# 빌드에 불필요한 다른 앱/산출물(Flutter·watchOS·ML·문서·데모)
+apps/worker-phone
+apps/worker-watch-poc
+ml
+demo
+docs
+.playwright-mcp
+.claude
