@@ -1,6 +1,10 @@
 # SafetyMonitor — Context Notes
 
-> **현재 상태 (2026-06-09 세션28)** — 트랙: 프로토타입 (D0~D4) · 현재 위치: **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행**. 최근 작업(세션28, 5커밋): ① **로그인 사진 → mainpic0.jpg**(`9cdf09e`, 중앙 구도라 `background-position 50%`) ② **네트워크 재연결**(새 터널 `undertaken-best-communist-release`, LAN `192.168.219.221`) ③ **★ 외형 스냅샷 HTML 2개**(SingleFile, `demo/`, 셰이더 PNG 박제·정지 스냅샷·팀원 공유용) ④ **★ 현장환경 InfiniteSlider 재디자인 + 모노톤 아이콘**(`3d2408d`, 호버 감속·mask 페이드·WeatherIcons 신규) ⑤ **★ 헤더 ExpandableTabs 호버 확장**(`a950ef4`, 4버튼 알약바·테마토글 제외·GradientIconButton 삭제) ⑥ **★ 자동슬라이딩 복제행 생체 셀 선택 수정**(`9d88d55`, pointer-events 허용) ⑦ **★ SOS·낙상 알림 이력 Alert 카드 재디자인**(`48d99f4`, 소프트 컬러 카드+모노톤 아이콘) ⑧ **상태 점검**(EMP-1234 실시간 연결·GPS 현장날씨 Open-Meteo LIVE·현장날씨 미표시는 dev 재시작 세션무효→재로그인). **레퍼런스 디자인 전부 신규 의존성 0**. main **`ahead 113`**(5커밋), push 보류, working tree `demo/`만 untracked. 블로커(누적): push 결정(113)·demo/ 커밋·폰 인앱 URL 갱신·기상특보 KMA NO_DATA·YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설. 상세 [progress.md](./progress.md#quick-summary-30초-안에-읽기)
+> **현재 상태 (2026-06-22 — [changwoojin 클론·`feat/gcp-postgres-cloudrun`] GCP Cloud Run 배포)** — 팀원 push분(`e93db68`) 클론을 changwoojin 머신에서 검토 → 관제웹 로컬 구동 → **GCP 서버 이전 완료(2커밋, 미push·미merge)**. ① pull 코드(CCTV·fusion·안전관리비) 정적+런타임 검증(`setWorkerZone` 미시딩·`cctv-poller` 미연결 = 의도된 미완 배관 발견) ② **DB SQLite→PostgreSQL(pg) 이전**(`a766ae7`) — 29함수 async·DDL Postgres화·int8→number 파서, DB=캠퍼스 공유 `project-db-campus.smhrd.com:3310`(PG14.5, **SSL 미지원→sslmode=disable**) ③ **Cloud Run 배포**(`9a59f36`) — standalone Dockerfile·프로젝트 `safetymonitor-498508`(기존·결제 활성)·Secret Manager → **고정 HTTPS `vitalguard-dashboard-569797426568.asia-northeast3.run.app`**(admin/safety2026, cloudflared 회전 종료). 라이브 = egress 적재·fusion·로그인·외부 API live. 결정 상세 아래 `## 2026-06-22` 참조. main 미merge·미push. 상세 [progress.md](./progress.md#quick-summary-30초-안에-읽기)·[gcp-migration/](./gcp-migration/context-notes.md)
+
+---
+
+> **이전 (2026-06-09 세션28)** — 트랙: 프로토타입 (D0~D4) · 현재 위치: **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행**. 최근 작업(세션28, 5커밋): ① **로그인 사진 → mainpic0.jpg**(`9cdf09e`, 중앙 구도라 `background-position 50%`) ② **네트워크 재연결**(새 터널 `undertaken-best-communist-release`, LAN `192.168.219.221`) ③ **★ 외형 스냅샷 HTML 2개**(SingleFile, `demo/`, 셰이더 PNG 박제·정지 스냅샷·팀원 공유용) ④ **★ 현장환경 InfiniteSlider 재디자인 + 모노톤 아이콘**(`3d2408d`, 호버 감속·mask 페이드·WeatherIcons 신규) ⑤ **★ 헤더 ExpandableTabs 호버 확장**(`a950ef4`, 4버튼 알약바·테마토글 제외·GradientIconButton 삭제) ⑥ **★ 자동슬라이딩 복제행 생체 셀 선택 수정**(`9d88d55`, pointer-events 허용) ⑦ **★ SOS·낙상 알림 이력 Alert 카드 재디자인**(`48d99f4`, 소프트 컬러 카드+모노톤 아이콘) ⑧ **상태 점검**(EMP-1234 실시간 연결·GPS 현장날씨 Open-Meteo LIVE·현장날씨 미표시는 dev 재시작 세션무효→재로그인). **레퍼런스 디자인 전부 신규 의존성 0**. main **`ahead 113`**(5커밋), push 보류, working tree `demo/`만 untracked. 블로커(누적): push 결정(113)·demo/ 커밋·폰 인앱 URL 갱신·기상특보 KMA NO_DATA·YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설. 상세 [progress.md](./progress.md#quick-summary-30초-안에-읽기)
 
 ---
 
@@ -29,6 +33,17 @@
 > 4. 코드 위치 변경·리팩토링 등 *코드 읽으면 알 수 있는 것* 은 여기 안 적음
 
 ---
+
+## 2026-06-22 — GCP Cloud Run 배포 + DB SQLite→PostgreSQL 이전 (changwoojin 클론·`feat/gcp-postgres-cloudrun` 브랜치)
+
+- **GCP 이전 목적 = 발표용 고정 HTTPS 서버(겸 상용화 기반)** — 사용자 선택. cloudflared quick tunnel 의 세션마다 URL 회전(폰·워치 재입력) 고질병을 Cloud Run 고정 HTTPS 로 종결. 데모가 곧 상용화 기반.
+- **★ 컴퓨트 = Cloud Run 단일 Next.js 서비스 / DB = 캠퍼스 공유 Postgres(자체 Cloud SQL 안 씀)** — 사용자가 PostgreSQL 서버 보유(`project-db-campus.smhrd.com:3310`, 스마트인재개발원 캠퍼스 DB). 프론트/백 분리 안 함(현 코드가 Next.js UI+API 한 몸). Cloud SQL 프로비저닝 Phase 삭제. 대안(VM+SQLite 그대로)은 발표만 빠르게엔 더 간단하나 상용화 기반이 안 됨 → Cloud Run+Postgres 채택.
+- **★ better-sqlite3→pg = 동기→비동기 전환(불가피)** — Node 에 프로덕션급 동기 Postgres 드라이버 없음. [lib/db.ts](../apps/dashboard-web/lib/db.ts) 29함수 전부 async + 호출처 await 전파가 작업의 80%. **교훈: tsc 는 `NextResponse.json(asyncFn())` 처럼 Promise 를 `any` 로 넘기는 자리를 못 잡는다**(7개만 탐지) → 함수명 grep 전수로 ~20개 라우트 await 보강(런타임 `{}` 직렬화 버그 차단). int8(BIGINT/COUNT/SUM)은 pg 가 문자열 반환 → `pg.types.setTypeParser(20, parseInt)` 로 number 화(금액·집계 누출 방지).
+- **★ 평문 DB 구간 = 발표 데모 수용** — 캠퍼스 Postgres 가 SSL 미지원(SSLRequest 응답 'N') → `sslmode=disable` 필수. Cloud Run↔DB 가 인터넷에서 비암호화(자격증명+PII). 발표 단기 데모는 수용, **상용화 시 SSL DB 또는 SSH/stunnel 터널**. 즉시 터널은 발표 범위 초과로 보류.
+- **★ monorepo standalone = 워크스페이스 패키지를 transpilePackages 로 번들** — `output:standalone`+`outputFileTracingRoot`(레포 루트)만으로는 `@safetymonitor/analyzers` dist 가 standalone 에 안 들어가(package.json 만 복사) fusion `decideFusion` 런타임 실패. schemas 처럼 **analyzers 도 transpilePackages 에 추가**해 빌드에 번들(standalone 로컬 실행으로 검증).
+- **★ Cloud Run egress 로 캠퍼스 DB 직접 도달(VPC 커넥터 불필요)** — 캠퍼스 DB 가 공개 IP(49.171.84.3)+IP 허용목록 없음(이 Mac·Cloud Run 둘 다 등록 없이 접속) → Cloud Run 기본 인터넷 egress 로 충분. 허용목록 있었으면 고정 egress IP(VPC커넥터+Cloud NAT) 필요했을 것.
+- **★ 관리자 인증 = fail-closed(`admin/safety2026` 소스 기본값 제거됨)** — 현 [admin-auth.ts](../apps/dashboard-web/lib/admin-auth.ts) 는 `ADMIN_PASSWORD ?? ""` 로 미설정 시 로그인 거부. 과거 문서의 `admin/safety2026` "기본값"은 보안 강화로 stale → `.env.local`/Secret Manager 의 `ADMIN_PASSWORD` 설정 필수.
+- **시크릿 = Secret Manager(코드/이미지 미포함)** — `DATABASE_URL`(DB 비번 포함)·`ADMIN_PASSWORD`+외부 API 키 5종(G2B/KMA/KOSHA/YOUTUBE). `.dockerignore` 가 `.env*` 제외 → 빌더 이미지에도 시크릿 baked 안 됨. 외부키 추가로 KOSHA/KMA/유튜브/g2b `source:live` 확인(날씨는 Open-Meteo 무키라 이미 live). `PPS_SERVICE_KEY` 는 코드 미사용이라 제외.
 
 ## 2026-06-09 세션28 — 디자인 재작업(현장환경·헤더·알림이력) + 외형 스냅샷 + 자동슬라이딩 선택 수정
 

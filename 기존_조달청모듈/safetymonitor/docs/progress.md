@@ -12,7 +12,16 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-13 세션38 — DB 추천 + 코드베이스 종합 audit 60건 + Tier 0~2 전수 수정·push, 18커밋)
+### ★ 최신 (2026-06-22 — [changwoojin 클론·`feat/gcp-postgres-cloudrun`] GCP Cloud Run 배포 + DB SQLite→PostgreSQL 이전, 2커밋 미push)
+
+- **★ 고정 HTTPS 서버 확보** — `https://vitalguard-dashboard-569797426568.asia-northeast3.run.app`(admin/safety2026). 38세션 내내 골치던 **cloudflared URL 회전 영구 종료**. 워치도 정식 HTTPS라 ATS 예외 불필요.
+- **★ DB SQLite→PostgreSQL(pg) 이전**(`a766ae7`) — `better-sqlite3`(동기)→`pg`(비동기) 전면 재작성. [lib/db.ts](../apps/dashboard-web/lib/db.ts) 29함수 async·DDL Postgres화(SERIAL·DOUBLE PRECISION·BIGINT 금액·`to_char` ISO 기본값·int8→number 파서)·첫 쿼리 멱등 `ensureSchema`. store.ts+라우트 ~20개 await 전파 — **tsc는 7개만 탐지, 나머지 `NextResponse.json(Promise)` 런타임 자리는 grep 전수**로 처리. `ingestCctvEvent` async화. DB = **캠퍼스 공유 Postgres** `project-db-campus.smhrd.com:3310`(vitalguard, PG14.5, **SSL 미지원→sslmode=disable**, 빈 DB·CREATE).
+- **★ 컨테이너화·배포**(`9a59f36`) — next.config `output:standalone`+`outputFileTracingRoot`+transpilePackages에 **analyzers 추가**(standalone dist 누락→fusion 실패 회피). pnpm 멀티스테이지 Dockerfile(비루트)+.dockerignore(`.env*` 제외). Cloud Build 2m21s→Artifact Registry. 프로젝트 **`safetymonitor-498508`**(기존·결제 활성)·`asia-northeast3`·Secret Manager(DATABASE_URL·ADMIN_PASSWORD+외부키 5종). `gcloud run deploy`(min-1·512Mi).
+- **라이브 검증** — Cloud Run→캠퍼스 Postgres 적재 201(**egress 통과·IP 허용목록 없음**)·fusion·로그인·KOSHA/KMA/유튜브/g2b `source:live`·날씨 live. tsc 0·테스트 101/101·10테이블 생성.
+- **상태** — `feat/gcp-postgres-cloudrun` 브랜치 2커밋, **main 미merge·origin 미push**. Cloud Run 리비전 00002 라이브. `.env.local`(gitignore)에 DATABASE_URL+키.
+- **다음** — **Phase 5 = 폰 인앱 URL·워치 `defaultURLString`을 Cloud Run 주소로 전환** · 브랜치 push/PR/merge 결정 · 상용화 시 DB SSL · 재배포 `gcloud builds submit`+`run deploy`. 상세 [gcp-migration/checklist.md](./gcp-migration/checklist.md).
+
+### (2026-06-13 세션38 — DB 추천 + 코드베이스 종합 audit 60건 + Tier 0~2 전수 수정·push, 18커밋)
 
 - **★ DB 추천**(상담·코드 0) — vital_samples 시계열 + GPS lat/lon + raw_json audit 기준 = **PostgreSQL 권장**(TimescaleDB·PostGIS·JSONB·RLS). AWS=RDS/Aurora, **GCP=AlloyDB**(Cloud SQL은 PG/MySQL만 — Oracle·MariaDB 관리형 없음). MySQL 조건부(8.0+·ts 파티셔닝·요약테이블·POINT SPATIAL·앱레이어 테넌트격리). 발표후 전환.
 - **★ 종합 audit(9차원·읽기전용)** — **bounded 파일그룹 워크플로**(15그룹 scan + 그룹별 적대적 검증)로 **60건 확정**(CRIT 0/HIGH 1/MED 10/LOW 49, 아키텍처 0 클린). PDF 12쪽. unbounded 차원별 스캔 2회 실패(rate-limit·컨텍스트 269KB stall)→bounded로 완주(false positive 3 제거).
