@@ -12,7 +12,16 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-22 — [changwoojin 클론·`feat/gcp-postgres-cloudrun`] GCP Cloud Run 배포 + DB SQLite→PostgreSQL 이전, 2커밋 미push)
+### ★ 최신 (2026-06-22 — 레이아웃 2페이지 페이저 + 관리자 회원가입(승인제) + Google 로그인(OAuth) + GitHub remote 정정 / 레이아웃·회원가입 main 병합·재배포 = 라이브, Google 은 로컬만)
+
+- **★ GitHub remote 정정** — 작업분이 잘못된 `rlaxorhs77-eng` repo로 가던 것을 **`VitAlGuard-jodal/vitalguard-jodalcheong`(SSH·becks0724 키)** 로 origin 교체 후 main push. (증거: `git ls-remote` HEAD=`f67b1d4`→`40d5511`)
+- **★ 관제 레이아웃 2페이지 페이저**(`f67b1d4`) — [DemoDashboard](../apps/dashboard-web/app/components/DemoDashboard.tsx)를 상단 `‹ 제목 N/M ›` 좌우 슬라이드 2페이지로 재구성([SectionPager](../apps/dashboard-web/app/components/SectionPager.tsx) 신규 — WidgetCarousel 과 달리 활성 페이지 높이 자동 동기화). 1p=실시간 현장 관제(신호등·현황·작업자 모니터링), 2p=안전관리비 검증. **main 병합·Cloud Run rev 00003 재배포**. 증거: tsc 0·테스트 40/40·로컬+라이브 Playwright 좌표 전환 검증·스크린샷 2장.
+- **★ 관리자 회원가입(승인제)**(`40d5511`) — 단일 env 관리자 → 다중 가입/승인. [users 테이블](../apps/dashboard-web/lib/db.ts)·scrypt 해시([password.ts](../apps/dashboard-web/lib/password.ts), 의존성0)·세션 role(owner/admin)·`/api/admin/register|login|users`(owner 전용 승인). **가입 6항목 필수**(회사·아이디·이름·연락처·이메일·비번). env admin(`admin`/`safety2026`)=owner(최초 승인자), 가입자 pending→승인 후 로그인. LoginScreen 회원가입 폼 + owner 전용 [사용자 관리 모달](../apps/dashboard-web/app/components/UserManagementModal.tsx). **main 병합·rev 00004 재배포 = 라이브**. 증거: tsc 0·테스트 44/44·실DB E2E(가입201→미승인403→틀린비번401→승인200→승인후 role=admin→owner전용 401)·라이브 검증·DB 6항목 적재 확인.
+- **★ Google 로그인(OAuth)**(`41f2f3c`, 브랜치 `feat/google-oauth`, **로컬만·미병합·라이브 미반영**) — 수동 OAuth(의존성0)·기존 세션 재사용(Auth.js 미도입)·승인제 유지. [google-oauth.ts](../apps/dashboard-web/lib/google-oauth.ts)+`/api/auth/google|callback|complete|handoff`, users.`google_sub`·`auth_provider`·password_hash nullable, 구글 인증 후 **회사·연락처 추가정보 폼→pending**. 증거: tsc 0·테스트 44/44·서버측(시작 307·추가정보 201·DB 적재·잘못된쿠키 400). **구글 동의 화면은 사용자 인터랙티브 테스트 영역.**
+- **상태** — `main = 40d5511`(레이아웃+회원가입 라이브, Cloud Run rev 00004), `feat/google-oauth = 41f2f3c`(미병합). origin = **VitAlGuard-jodal**. `GOOGLE_CLIENT_ID/SECRET` = `.env.local`(gitignore). 로컬 dev `:3000` 가동 중.
+- **다음** — ① **로컬 구글 로그인 인터랙티브 확인**(콘솔 테스트 사용자 추가 필수) ② push·main 병합 ③ **Secret Manager** GOOGLE_CLIENT_ID/SECRET + Cloud Run `--set-secrets` 재배포 ④ (선택) 콘솔 앱 게시·이메일 UNIQUE·DB 세션 저장·상용 DB SSL. **Phase 5(폰·워치 URL→Cloud Run 전환) 여전히 미완.** 상세 [auth-signup/checklist.md](./auth-signup/checklist.md).
+
+### (2026-06-22 — [changwoojin 클론·`feat/gcp-postgres-cloudrun`] GCP Cloud Run 배포 + DB SQLite→PostgreSQL 이전, 2커밋 — 이후 main 병합·push 완료)
 
 - **★ 고정 HTTPS 서버 확보** — `https://vitalguard-dashboard-569797426568.asia-northeast3.run.app`(admin/safety2026). 38세션 내내 골치던 **cloudflared URL 회전 영구 종료**. 워치도 정식 HTTPS라 ATS 예외 불필요.
 - **★ DB SQLite→PostgreSQL(pg) 이전**(`a766ae7`) — `better-sqlite3`(동기)→`pg`(비동기) 전면 재작성. [lib/db.ts](../apps/dashboard-web/lib/db.ts) 29함수 async·DDL Postgres화(SERIAL·DOUBLE PRECISION·BIGINT 금액·`to_char` ISO 기본값·int8→number 파서)·첫 쿼리 멱등 `ensureSchema`. store.ts+라우트 ~20개 await 전파 — **tsc는 7개만 탐지, 나머지 `NextResponse.json(Promise)` 런타임 자리는 grep 전수**로 처리. `ingestCctvEvent` async화. DB = **캠퍼스 공유 Postgres** `project-db-campus.smhrd.com:3310`(vitalguard, PG14.5, **SSL 미지원→sslmode=disable**, 빈 DB·CREATE).
