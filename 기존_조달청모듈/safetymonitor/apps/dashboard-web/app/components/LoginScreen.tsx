@@ -301,7 +301,6 @@ export function LoginScreen({
       if (msg) setError(msg);
     }
     if (gsignup || gmsg) window.history.replaceState({}, "", "/");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSubmit = useCallback(
