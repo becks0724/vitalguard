@@ -52,6 +52,13 @@ type Strings = {
   fillAll: string;
   invalidEmail: string;
   signupSuccess: string;
+  // 구글 가입 추가정보 + 콜백 메시지
+  gcompleteTitle: string;
+  gcompleteDesc: string;
+  googleMsgPending: string;
+  googleMsgRejected: string;
+  googleMsgFailed: string;
+  googleMsgUnconfigured: string;
 };
 
 const LANG_KEY = "safetymonitor.lang.v1";
@@ -97,6 +104,12 @@ const T: Record<Lang, Strings> = {
     fillAll: "모든 항목을 입력해주세요.",
     invalidEmail: "이메일 형식이 올바르지 않습니다.",
     signupSuccess: "가입 신청이 완료됐습니다. 관리자 승인 후 로그인할 수 있습니다.",
+    gcompleteTitle: "구글 계정 추가 정보",
+    gcompleteDesc: "승인을 위해 회사(상호)와 연락처를 입력해주세요.",
+    googleMsgPending: "가입 승인 대기 중입니다. 관리자 승인 후 구글 로그인으로 입장할 수 있습니다.",
+    googleMsgRejected: "가입이 거절된 계정입니다. 관리자에게 문의하세요.",
+    googleMsgFailed: "구글 로그인에 실패했습니다. 다시 시도해주세요.",
+    googleMsgUnconfigured: "구글 로그인이 아직 설정되지 않았습니다.",
   },
   en: {
     slogan: "OPEN SAFETY · NEVER ALONE",
@@ -137,8 +150,31 @@ const T: Record<Lang, Strings> = {
     fillAll: "Please fill in all fields.",
     invalidEmail: "Invalid email format.",
     signupSuccess: "Sign-up requested. You can sign in after admin approval.",
+    gcompleteTitle: "Complete your Google sign-up",
+    gcompleteDesc: "Enter your company and phone for approval.",
+    googleMsgPending: "Sign-up pending approval. You can sign in with Google after an admin approves.",
+    googleMsgRejected: "This account was rejected. Please contact an administrator.",
+    googleMsgFailed: "Google sign-in failed. Please try again.",
+    googleMsgUnconfigured: "Google sign-in is not configured yet.",
   },
 };
+
+// 구글 콜백 ?gmsg= 코드 → 현지화 메시지.
+function googleMsgText(code: string, t: Strings): string | null {
+  switch (code) {
+    case "pending":
+      return t.googleMsgPending;
+    case "rejected":
+      return t.googleMsgRejected;
+    case "google_failed":
+    case "google_state":
+      return t.googleMsgFailed;
+    case "google_unconfigured":
+      return t.googleMsgUnconfigured;
+    default:
+      return null;
+  }
+}
 
 // 셰이더 배경 위 글래스 입력 — 박스 없이 배경과 조화(반투명 흰색 + backdrop-blur).
 const INPUT_CLASS =
@@ -213,11 +249,10 @@ export function LoginScreen({
   onLogin: (token: string, role?: string) => void;
 }) {
   const [lang, setLang] = useState<Lang>("ko");
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "gcomplete">("login");
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [googleInfo, setGoogleInfo] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // 회원가입 입력(6항목 전부 필수) + 가입 성공 안내(로그인 모드 상단에 표시).
   const [sCompany, setSCompany] = useState("");
@@ -228,6 +263,9 @@ export function LoginScreen({
   const [sPw, setSPw] = useState("");
   const [sPw2, setSPw2] = useState("");
   const [signupMsg, setSignupMsg] = useState<string | null>(null);
+  // 구글 가입 추가정보(회사·연락처) — 구글 인증 후 입력 단계.
+  const [gCompany, setGCompany] = useState("");
+  const [gPhone, setGPhone] = useState("");
   // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰/역할(null = 아직 로그인 폼 단계).
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<string | null>(null);
@@ -251,6 +289,20 @@ export function LoginScreen({
   }, []);
 
   const t = T[lang];
+
+  // 구글 콜백 복귀 처리 — ?gsignup(추가정보 단계) / ?gmsg(안내). 처리 후 URL 정리.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gsignup = params.get("gsignup");
+    const gmsg = params.get("gmsg");
+    if (gsignup === "1") setMode("gcomplete");
+    if (gmsg) {
+      const msg = googleMsgText(gmsg, t);
+      if (msg) setError(msg);
+    }
+    if (gsignup || gmsg) window.history.replaceState({}, "", "/");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSubmit = useCallback(
     async (e: FormEvent) => {
@@ -355,6 +407,41 @@ export function LoginScreen({
       }
     },
     [sCompany, sId, sName, sPhone, sEmail, sPw, sPw2, submitting, t],
+  );
+
+  // 구글 가입 추가정보 제출 — 회사·연락처 → /api/auth/google/complete (pending 생성).
+  const handleGoogleComplete = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (submitting) return;
+      setError(null);
+      if (!gCompany.trim() || !gPhone.trim()) {
+        setError(t.fillAll);
+        return;
+      }
+      setSubmitting(true);
+      try {
+        const res = await fetch("/api/auth/google/complete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ company: gCompany.trim(), phone: gPhone.trim() }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          setError(json.error || t.networkError);
+          return;
+        }
+        setMode("login");
+        setSignupMsg(t.signupSuccess);
+        setGCompany("");
+        setGPhone("");
+      } catch {
+        setError(t.networkError);
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [gCompany, gPhone, submitting, t],
   );
 
   // 현장 선택 완료 → 선택한 현장정보를 저장하고 대시보드 입장.
@@ -499,21 +586,17 @@ export function LoginScreen({
             className="w-full"
           />
 
-          {/* 구글로 계속하기 — 로그인 버튼 하단 (OAuth 연동은 발표 후, 현재는 안내만) */}
+          {/* 구글로 계속하기 — OAuth 시작(서버 /api/auth/google 로 이동) */}
           <button
             type="button"
-            onClick={() => setGoogleInfo(t.googleSoon)}
+            onClick={() => {
+              window.location.href = "/api/auth/google";
+            }}
             className="flex w-full items-center justify-center gap-2.5 rounded-pill bg-white/95 px-4 py-3 text-sm font-semibold text-zinc-700 shadow-lg transition hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             <GoogleIcon className="h-5 w-5" />
             {t.google}
           </button>
-
-          {googleInfo && (
-            <p className="rounded-xl border border-white/25 bg-white/10 px-3 py-2 text-center text-xs text-white/90 backdrop-blur-md">
-              {googleInfo}
-            </p>
-          )}
 
           {/* 회원가입 전환 */}
           <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
@@ -523,7 +606,6 @@ export function LoginScreen({
               onClick={() => {
                 setMode("signup");
                 setError(null);
-                setGoogleInfo(null);
                 setSignupMsg(null);
               }}
               className="font-semibold text-white underline underline-offset-2 hover:text-sky-200"
@@ -538,7 +620,7 @@ export function LoginScreen({
         {/* 스토어 다운로드 배지 — 중앙 정렬(App Store / Google Play) */}
         <StoreBadges />
           </>
-          ) : (
+          ) : mode === "signup" ? (
           <>
         {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능 */}
         <form onSubmit={handleSignup} className="mt-8 w-full max-w-sm space-y-3">
@@ -669,6 +751,72 @@ export function LoginScreen({
           {/* 로그인 전환 */}
           <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
             {t.haveAccount}{" "}
+            <button
+              type="button"
+              onClick={() => {
+                setMode("login");
+                setError(null);
+              }}
+              className="font-semibold text-white underline underline-offset-2 hover:text-sky-200"
+            >
+              {t.toLogin}
+            </button>
+          </p>
+        </form>
+          </>
+          ) : (
+          <>
+        {/* 구글 가입 추가정보 폼 — 구글 인증 후 회사·연락처 입력 → pending 생성(승인제) */}
+        <form onSubmit={handleGoogleComplete} className="mt-8 w-full max-w-sm space-y-3">
+          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
+            {t.gcompleteTitle}
+          </p>
+          <p className="text-center text-[11px] leading-relaxed text-white/70 drop-shadow">
+            {t.gcompleteDesc}
+          </p>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.companyLabel}
+            </span>
+            <input
+              type="text"
+              value={gCompany}
+              onChange={(e) => setGCompany(e.target.value)}
+              placeholder={t.companyPlaceholder}
+              autoComplete="organization"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.phoneLabel}
+            </span>
+            <input
+              type="tel"
+              value={gPhone}
+              onChange={(e) => setGPhone(e.target.value)}
+              placeholder={t.phonePlaceholder}
+              autoComplete="tel"
+              required
+              className={INPUT_CLASS}
+            />
+          </label>
+
+          {error && (
+            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
+              {error}
+            </p>
+          )}
+
+          <LiquidMetalButton
+            type="submit"
+            disabled={submitting || !gCompany || !gPhone}
+            label={submitting ? t.signupSubmitting : t.signupSubmit}
+            className="w-full"
+          />
+
+          <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
             <button
               type="button"
               onClick={() => {

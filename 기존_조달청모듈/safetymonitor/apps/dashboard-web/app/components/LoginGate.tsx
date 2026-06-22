@@ -52,6 +52,29 @@ export function LoginGate({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState<boolean | null>(null);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // 구글 로그인 콜백 핸드오프 — httpOnly 쿠키의 세션 토큰을 sessionStorage 로 옮긴 뒤 입장.
+    if (params.get("gauth") === "1") {
+      fetch("/api/auth/handoff")
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; token?: string; role?: string }) => {
+          try {
+            if (j.ok && j.token) {
+              window.sessionStorage.setItem(SESSION_KEY, j.token);
+              if (j.role) window.sessionStorage.setItem(ROLE_KEY, j.role);
+            }
+          } catch {
+            // sessionStorage 불가 환경 무시
+          }
+          window.history.replaceState({}, "", "/");
+          setAuthed(Boolean(j.ok && j.token));
+        })
+        .catch(() => {
+          window.history.replaceState({}, "", "/");
+          setAuthed(false);
+        });
+      return;
+    }
     try {
       setAuthed(Boolean(window.sessionStorage.getItem(SESSION_KEY)));
     } catch {

@@ -153,6 +153,11 @@ function validateSession(token: string): boolean {
   return getValidSession(token) !== null;
 }
 
+// 토큰 문자열로 직접 세션 정보 조회 — OAuth 핸드오프(쿠키→sessionStorage)에서 role 확인용.
+export function sessionInfoForToken(token: string): SessionInfo | null {
+  return getValidSession(token);
+}
+
 // Authorization 헤더 검증 — 보호된 API route 에서 호출. 스킴별로 받는 자격을 분리한다.
 //  - Bearer <token> : 로그인 발급 불투명 세션 토큰만(비밀번호 미포함). base64(id:pw) 는 거부.
 //  - Basic <value>  : 세션 토큰(AdminExportModal 이 Basic 으로 전송) 또는 base64(id:pw)(curl 등 직접 호출).

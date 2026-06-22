@@ -20,7 +20,11 @@
 - [x] DemoDashboard — owner 만 "사용자 관리" 탭 노출 + 모달 연결
 - [x] 검증 — tsc 0 · 테스트 44/44 · 브라우저 E2E(가입→미승인차단→owner승인→승인계정 로그인→역할별 탭 노출)
 
-## Phase C — Google OAuth (이후)
-- [ ] GCP OAuth Client ID/Secret 발급 + redirect URI + Secret Manager
-- [ ] /api/auth/google + 콜백(code 교환·id_token 검증·users upsert·기존 세션 재사용)
-- [ ] users 테이블 google_sub 연동
+## Phase C — Google OAuth ✅ 구현 완료 (2026-06-22, 라이브 시크릿만 남음)
+- [x] GCP OAuth Client ID/Secret 발급(사용자) + redirect URI 2개(local·run.app) → `.env.local`
+- [x] `lib/google-oauth.ts` — 동의 URL·code 교환·id_token 파싱(의존성 0) + HMAC 서명 쿠키
+- [x] `/api/auth/google`(state 발급·redirect) · `/callback`(검증·교환·분기) · `/complete`(추가정보→pending) · `/handoff`(세션 쿠키→sessionStorage)
+- [x] users 테이블 `google_sub`·`auth_provider` + `password_hash` nullable + findUserByGoogleSub·createGoogleUser
+- [x] LoginScreen 구글 버튼 실연결 + 추가정보(회사·연락처) 폼 + 콜백 메시지 / LoginGate 핸드오프
+- [x] 검증 — tsc 0 · 테스트 44/44 · 서버측(시작 307·추가정보 201·DB 적재·잘못된쿠키 400). 구글 동의 화면은 사용자 수동 테스트.
+- [ ] (라이브) Secret Manager 에 GOOGLE_CLIENT_ID/SECRET 등록 + Cloud Run --set-secrets 재배포

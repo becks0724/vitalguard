@@ -295,7 +295,9 @@ async function initSchema(): Promise<void> {
       company TEXT,
       phone TEXT,
       email TEXT,
-      password_hash TEXT NOT NULL,
+      password_hash TEXT,
+      auth_provider TEXT NOT NULL DEFAULT 'password',
+      google_sub TEXT,
       role TEXT NOT NULL DEFAULT 'admin',
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
@@ -303,10 +305,14 @@ async function initSchema(): Promise<void> {
       approved_by TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
-    -- 기존 설치 호환 — 회원가입 추가 항목(회사·연락처·이메일) 컬럼 보강(앱 레벨 필수 검증).
+    -- 기존 설치 호환 — 회원가입 추가 항목(회사·연락처·이메일) + Google 연동 컬럼 보강(앱 레벨 필수 검증).
     ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'password';
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
+    ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL;
   `);
 }
 
@@ -1029,7 +1035,9 @@ export type UserRow = {
   company: string | null;
   phone: string | null;
   email: string | null;
-  password_hash: string;
+  password_hash: string | null; // Google 전용 계정은 null
+  auth_provider: string; // 'password' | 'google'
+  google_sub: string | null;
   role: string;
   status: string; // pending | approved | rejected
   created_at: string;
@@ -1087,6 +1095,36 @@ export async function setUserStatus(
     `UPDATE users SET status = $1, approved_at = ${NOW_ISO}, approved_by = $2
      WHERE id = $3 RETURNING *`,
     [status, approvedBy, id],
+  );
+  return rows[0] ?? null;
+}
+
+// Google 연동 계정 조회(google_sub 기준).
+export async function findUserByGoogleSub(sub: string): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>("SELECT * FROM users WHERE google_sub = $1", [sub]);
+  return rows[0] ?? null;
+}
+
+// Google 가입 — 추가정보(회사·연락처) 입력 후 호출. username=email, provider=google, status=pending.
+export async function createGoogleUser(input: {
+  googleSub: string;
+  email: string;
+  name: string | null;
+  company: string;
+  phone: string;
+}): Promise<UserRow | null> {
+  const { text, values } = buildInsert("users", {
+    username: input.email,
+    name: input.name,
+    company: input.company,
+    phone: input.phone,
+    email: input.email,
+    auth_provider: "google",
+    google_sub: input.googleSub,
+  });
+  const { rows } = await q<UserRow>(
+    `${text} ON CONFLICT DO NOTHING RETURNING *`,
+    values,
   );
   return rows[0] ?? null;
 }

@@ -40,6 +40,16 @@ approved_by TEXT                   -- 승인한 owner username
 - 이메일: 형식만 검증(a@b.c), **UNIQUE 미적용**(요건은 "필수"이지 유일성 아님). username 만 UNIQUE.
 - 연락처: 숫자·+·-·공백 7~20자.
 
+## Phase C — Google OAuth (2026-06-22)
+- **수동 OAuth(Authorization Code), 의존성 0** — code 를 서버에서 구글과 직접 교환 → id_token 은 신뢰 채널 수신이라 페이로드 디코드만으로 sub/email/name 추출(서명 재검증 라이브러리 불필요).
+- **기존 세션 재사용** — Auth.js 미도입. 콜백이 createSession 으로 토큰 발급 → httpOnly 쿠키(vg_handoff)로 잠깐 넘긴 뒤 /api/auth/handoff 가 sessionStorage 로 옮김(Authorization: Bearer 모델 유지).
+- **승인제 유지** — 구글 신규도 status=pending. 단 구글은 회사·연락처를 안 주므로 **인증 후 추가정보 입력 폼**(사용자 선택)에서 받아 createGoogleUser. 신원은 HMAC 서명 쿠키(vg_gsignup, 10분)로 무상태 전달.
+- **CSRF** — state 를 vg_oauth_state 쿠키(sameSite=lax, https면 secure)로 더블서밋 검증.
+- **계정 모델** — users.auth_provider('password'|'google'), google_sub UNIQUE(부분 인덱스), password_hash nullable(구글 전용은 null → 비번 로그인 차단). username=email(구글).
+- **role** — 구글 로그인은 항상 'admin'. owner 는 env 계정 전용(구글로 owner 안 됨).
+- 리다이렉트 URI(콘솔 등록): `…run.app/api/auth/google/callback`, `http://localhost:3000/api/auth/google/callback`. origin 은 host 헤더+x-forwarded-proto 로 추정(local=http, run.app=https).
+- 남은 것: 라이브용 GOOGLE_CLIENT_ID/SECRET 을 Secret Manager + Cloud Run --set-secrets 로 주입 후 재배포.
+
 ## 로그인 판정 순서 (login route)
 1. env owner 일치 → 세션(role owner) 발급, 200.
 2. 아니면 DB findUserByUsername.

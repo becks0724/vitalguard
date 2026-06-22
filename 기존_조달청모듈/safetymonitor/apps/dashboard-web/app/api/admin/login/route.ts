@@ -66,7 +66,11 @@ export async function POST(request: Request) {
 
   // 2) DB 가입 관리자 — 비번 검증 후 승인 상태에 따라 분기.
   const user = await findUserByUsername(id);
-  const pwOk = user ? await verifyPassword(password, user.password_hash) : false;
+  // Google 전용 계정(password_hash null)은 비번 로그인 불가 → pwOk false.
+  const pwOk =
+    user && user.password_hash
+      ? await verifyPassword(password, user.password_hash)
+      : false;
   // 비번 일치=잠금 리셋(미승인이라도 brute-force 아님), 불일치=실패 누적.
   recordLoginResult(lockKey, pwOk);
   if (!user || !pwOk) {
