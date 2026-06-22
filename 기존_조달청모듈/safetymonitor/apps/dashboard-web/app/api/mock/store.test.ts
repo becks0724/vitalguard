@@ -95,12 +95,13 @@ test("vitalDanger — 정상치/undefined 는 위험 아님", () => {
   assert.equal(vitalDanger(undefined), false);
 });
 
-test("addSample — reserved 워커 입력은 null 반환(DB 미접근)", () => {
-  // 스키마는 통과하지만 예약 ID 이므로 persist 전에 차단되어 .runtime DB 를 건드리지 않는다.
-  assert.equal(addSample({ workerId: "smoke_x", ts: TS, heartRate: 80 }), null);
+test("addSample — reserved 워커 입력은 null 반환(DB 미접근)", async () => {
+  // 스키마는 통과하지만 예약 ID 이므로 persist 전에 차단되어 DB 를 건드리지 않는다(쿼리 0).
+  assert.equal(await addSample({ workerId: "smoke_x", ts: TS, heartRate: 80 }), null);
 });
 
-test("addSample — 스키마 위반 입력은 throw(persist 도달 전 거부)", () => {
-  assert.throws(() => addSample({ ts: TS })); // workerId 누락
-  assert.throws(() => addSample({ workerId: "", ts: TS })); // 빈 workerId(min 1)
+test("addSample — 스키마 위반 입력은 reject(persist 도달 전 거부)", async () => {
+  // async 함수 안의 동기 throw(Zod parse 실패)는 reject 로 전파된다(DB 도달 전).
+  await assert.rejects(addSample({ ts: TS })); // workerId 누락
+  await assert.rejects(addSample({ workerId: "", ts: TS })); // 빈 workerId(min 1)
 });

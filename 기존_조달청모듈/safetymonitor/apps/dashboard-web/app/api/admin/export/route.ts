@@ -136,9 +136,9 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = exportSamples({ workerId, from, to });
-  const siteInfoRows = exportSiteInfoLogs({ from, to });
-  const csv = toCsv(rows, siteInfoRows, getWorkerProfiles());
+  const rows = await exportSamples({ workerId, from, to });
+  const siteInfoRows = await exportSiteInfoLogs({ from, to });
+  const csv = toCsv(rows, siteInfoRows, await getWorkerProfiles());
 
   // 한국어 엑셀 호환을 위해 UTF-8 BOM prefix — 엑셀이 ANSI 로 오인하는 문제 회피
   const bom = "﻿";

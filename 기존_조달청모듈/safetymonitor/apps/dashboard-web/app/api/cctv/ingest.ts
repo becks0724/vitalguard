@@ -82,8 +82,8 @@ function matchWatch(event: CctvFallEvent): FusionInputs["watch"] {
 }
 
 // 영상 이벤트 1건 수신 → 저장(감사) → fusion 판정 → 경보 라우팅. 판정 결과 반환.
-export function ingestCctvEvent(event: CctvFallEvent): FusionDecision {
-  persistCctvEvent(event); // DB 감사 이력
+export async function ingestCctvEvent(event: CctvFallEvent): Promise<FusionDecision> {
+  await persistCctvEvent(event); // DB 감사 이력
 
   const vision: FusionInputs["vision"] = {
     fallen: event.status === "fallen" || (event.fallenCount ?? 0) > 0,
@@ -104,7 +104,7 @@ export function ingestCctvEvent(event: CctvFallEvent): FusionDecision {
     // 영상이 워치를 확증 — worker 경보 1건. alert ts 는 (영상 시각이 아니라) 매칭된 워치 샘플 ts 를 쓴다:
     // 워치 확정(fallDetected) 경로가 이미 만든 alert(같은 worker/fall/워치ts)와 UNIQUE 로 dedup 되어
     // 같은 낙상이 영상 확증으로 중복 알림되지 않는다. 후보 조기격상은 워치가 아직 alert 를 안 만들었으므로 신규 1건.
-    recordAlert({
+    await recordAlert({
       workerId: decision.target.workerId,
       type: "fall",
       ts: watch.ts ?? event.ts,

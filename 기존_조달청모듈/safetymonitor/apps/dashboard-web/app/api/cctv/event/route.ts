@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       for (const item of body) {
         try {
           const event = CctvFallEventSchema.parse(item);
-          decisions.push(ingestCctvEvent(event));
+          decisions.push(await ingestCctvEvent(event));
           accepted += 1;
         } catch (itemError: unknown) {
           if (itemError instanceof ZodError) {
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     }
 
     const event = CctvFallEventSchema.parse(body);
-    const decision = ingestCctvEvent(event);
+    const decision = await ingestCctvEvent(event);
     return NextResponse.json({ ok: true, decision }, { status: 201 });
   } catch (error: unknown) {
     if (error instanceof ZodError) {
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 // 최근 영상 이벤트(감사) + 대상 미특정 zone 위험(관제 표시용).
 export async function GET() {
   return NextResponse.json({
-    cctvEvents: recentCctvEvents(100),
+    cctvEvents: await recentCctvEvents(100),
     zoneHazards: recentZoneHazards(50),
   });
 }

@@ -29,6 +29,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
   }
 
-  const changed = ackAlert(id, ackBy || "관제자");
+  const changed = await ackAlert(id, ackBy || "관제자");
   return NextResponse.json({ ok: true, acked: changed > 0 });
 }

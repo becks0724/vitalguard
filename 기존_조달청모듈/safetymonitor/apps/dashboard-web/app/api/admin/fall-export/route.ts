@@ -107,7 +107,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = exportFallDataset({ from, to });
+  const rows = await exportFallDataset({ from, to });
   const lines: string[] = [CSV_HEADER.join(",")];
   for (const row of rows) {
     const record = rowToRecord(row);

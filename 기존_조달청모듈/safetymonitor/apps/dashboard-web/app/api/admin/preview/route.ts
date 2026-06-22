@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const all = exportSamples({ workerId, from, to });
+  const all = await exportSamples({ workerId, from, to });
   // 미리보기 — 가장 최근 N건 우선 표시 (역순). 다운로드는 항상 전체 + 시간 오름차순
   const recentSlice = all.slice(-PREVIEW_LIMIT).reverse();
 

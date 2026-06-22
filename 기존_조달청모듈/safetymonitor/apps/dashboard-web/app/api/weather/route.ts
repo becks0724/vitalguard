@@ -117,7 +117,7 @@ export async function GET(request: Request) {
     const workersParam = url.searchParams.get("workers");
     const workerCountRaw = workersParam === null ? NaN : Number(workersParam);
     try {
-      persistWeather({
+      await persistWeather({
         lat,
         lon,
         workerCount: Number.isFinite(workerCountRaw) ? workerCountRaw : undefined,

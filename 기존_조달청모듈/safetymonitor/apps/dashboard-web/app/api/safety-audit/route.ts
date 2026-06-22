@@ -28,7 +28,7 @@ export async function GET(req: Request) {
 
     // 현장별 격리 — 메인 관제 현장만 실 워치 출역(vital_samples), 그 외는 현장별 가상 출역.
     const isMainSite = id === MAIN_SITE_ID;
-    const wd = isMainSite ? auditWorkerDays({ from, to }) : mockWorkerDayAudit(id);
+    const wd = isMainSite ? await auditWorkerDays({ from, to }) : mockWorkerDayAudit(id);
     const audit = buildExecutionAudit(detail.notice, wd);
     if (!isMainSite && wd.totalWorkerDays > 0) {
       audit.note = `[가상 출역 데모] ${audit.note}`;

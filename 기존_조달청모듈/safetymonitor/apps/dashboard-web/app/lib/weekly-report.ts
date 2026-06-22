@@ -52,10 +52,10 @@ export async function buildWeeklyReport(contractId: string): Promise<WeeklyRepor
   const now = new Date();
   const from = new Date(now.getTime() - 90 * 86400000).toISOString();
   const to = now.toISOString();
-  const wd = auditWorkerDays({ from, to });
+  const wd = await auditWorkerDays({ from, to });
   const audit = buildExecutionAudit(detail.notice, wd);
 
-  const saved = getReportInputs(contractId);
+  const saved = await getReportInputs(contractId);
   const uploadedPhotos = countPhotos(contractId); // 실제 업로드된 사진 파일 수(있으면 우선)
   const inputs: ReportInputsResolved = {
     supplier: saved?.supplier ?? DEFAULT_INPUTS.supplier,

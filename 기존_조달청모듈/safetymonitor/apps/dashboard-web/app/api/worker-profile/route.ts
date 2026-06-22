@@ -30,6 +30,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "workerId required" }, { status: 400 });
   }
 
-  setWorkerJobTitle(workerId, jobTitle);
+  await setWorkerJobTitle(workerId, jobTitle);
   return NextResponse.json({ ok: true, workerId, jobTitle: jobTitle.trim() });
 }

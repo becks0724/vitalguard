@@ -35,9 +35,9 @@ export async function GET(request: Request) {
   return NextResponse.json({
     latest: latestByWorker().map((s) => redactPii(s, exposePii)),
     recent: recentSamples().map((s) => redactPii(s, exposePii)),
-    totalPersisted: totalPersisted(),
-    countsByWorker: countsByWorker(),
-    workerProfiles: workerProfiles(),
+    totalPersisted: await totalPersisted(),
+    countsByWorker: await countsByWorker(),
+    workerProfiles: await workerProfiles(),
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
     zoneHazards: recentZoneHazards(),
     piiRedacted: !exposePii,
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
         // 실패 항목만 dropped 로 세고 건너뛰며 나머지는 계속 처리.
         let sample;
         try {
-          sample = addSample(item);
+          sample = await addSample(item);
         } catch (itemError: unknown) {
           if (itemError instanceof ZodError) {
             dropped += 1;
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const sample = addSample(body);
+    const sample = await addSample(body);
     if (sample === null) {
       return NextResponse.json(
         { ok: true, dropped: "reserved_test_worker" },

@@ -1,37 +1,12 @@
-// SQLite 영속 저장소 — vital sample 무한 축적용 (산업재해 자료 제출 대비)
-// 단일 file `.runtime/safetymonitor.db` 자동 생성. HMR 안전 — globalThis 캐시
-import path from "node:path";
-import fs from "node:fs";
-import Database from "better-sqlite3";
+// PostgreSQL 영속 저장소 — vital sample 무한 축적 + CCTV·안전관리비 데이터 (산업재해 자료 제출 대비).
+// 캠퍼스 Postgres(DATABASE_URL). better-sqlite3(동기) → pg(비동기) 전환 — GCP Cloud Run 대비.
+// 모든 공개 함수는 async. 스키마는 첫 쿼리 시 멱등 생성(ensureSchema, CREATE TABLE IF NOT EXISTS).
+import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
-type DbBundle = {
-  db: Database.Database;
-  insert: Database.Statement;
-  count: Database.Statement<[]>;
-  listWorkers: Database.Statement<[]>;
-  exportAll: Database.Statement;
-  exportFiltered: Database.Statement;
-  insertWeather: Database.Statement;
-  exportWeather: Database.Statement;
-  upsertSiteInfoDaily: Database.Statement;
-  getLatestSiteInfo: Database.Statement<[]>;
-  exportSiteInfo: Database.Statement;
-  upsertWorkerProfile: Database.Statement;
-  listWorkerProfiles: Database.Statement<[]>;
-  insertAlert: Database.Statement;
-  listAlerts: Database.Statement;
-  ackAlert: Database.Statement;
-  insertAedInspection: Database.Statement;
-  listAedInspectionsStmt: Database.Statement;
-  exportFallDataset: Database.Statement;
-  listFallCandidates: Database.Statement;
-  fallStats: Database.Statement<[]>;
-  setFallLabelStmt: Database.Statement;
-  updateFallCandidateState: Database.Statement;
-  insertCctvEvent: Database.Statement;
-  recentCctvEventsStmt: Database.Statement;
-};
+// int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
+// 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
+pg.types.setTypeParser(20, (v) => parseInt(v, 10));
 
 // CSV 내보내기 행 형식 — DB 컬럼명 그대로 (관제자가 엑셀에서 인식하기 쉽게).
 export type ExportRow = {
@@ -114,66 +89,109 @@ export type SiteInfoRow = {
 };
 
 const globalForDb = globalThis as typeof globalThis & {
-  __safetyMonitorDb?: DbBundle;
+  __safetyMonitorPgPool?: Pool;
+  __safetyMonitorSchemaReady?: Promise<void>;
 };
 
-function init(): DbBundle {
-  // dev 서버 cwd 는 apps/dashboard-web — 모노레포 루트의 .runtime 에 저장
-  const runtimeDir = path.resolve(process.cwd(), "..", "..", ".runtime");
-  fs.mkdirSync(runtimeDir, { recursive: true });
-  const dbPath = path.join(runtimeDir, "safetymonitor.db");
+// 단일 Pool(HMR/serverless 안전) — DATABASE_URL 의 sslmode=disable 를 pg 가 존중(캠퍼스 DB는 SSL 미지원).
+function getPool(): Pool {
+  if (!globalForDb.__safetyMonitorPgPool) {
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error("DATABASE_URL 미설정 — apps/dashboard-web/.env.local 확인");
+    }
+    globalForDb.__safetyMonitorPgPool = new Pool({ connectionString, max: 8 });
+  }
+  return globalForDb.__safetyMonitorPgPool;
+}
 
-  const db = new Database(dbPath);
-  // WAL 모드 — 읽기/쓰기 동시성 향상, dev 서버 + 백그라운드 polling 가정
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
+// Postgres 의 UTC ISO8601(밀리초) 문자열 — SQLite strftime('%Y-%m-%dT%H:%M:%fZ','now') 동일 포맷.
+const NOW_ISO =
+  `to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
-  db.exec(`
+// 스키마 멱등 생성 — 첫 쿼리 시 1회(메모이즈). 실패 시 캐시 해제해 다음 호출이 재시도.
+async function ensureSchema(): Promise<void> {
+  if (!globalForDb.__safetyMonitorSchemaReady) {
+    globalForDb.__safetyMonitorSchemaReady = initSchema().catch((e) => {
+      globalForDb.__safetyMonitorSchemaReady = undefined;
+      throw e;
+    });
+  }
+  return globalForDb.__safetyMonitorSchemaReady;
+}
+
+async function initSchema(): Promise<void> {
+  const pool = getPool();
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS vital_samples (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       worker_id TEXT NOT NULL,
       worker_name TEXT,
       employee_id TEXT,
+      job_title TEXT,
       guardian_name TEXT,
       guardian_phone TEXT,
       ts TEXT NOT NULL,
-      heart_rate REAL,
-      spo2 REAL,
-      skin_temp_c REAL,
-      ambient_temp_c REAL,
+      heart_rate DOUBLE PRECISION,
+      spo2 DOUBLE PRECISION,
+      skin_temp_c DOUBLE PRECISION,
+      ambient_temp_c DOUBLE PRECISION,
       battery_pct INTEGER,
       manual_sos INTEGER,
       fall_detected INTEGER,
-      latitude REAL,
-      longitude REAL,
-      received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      latitude DOUBLE PRECISION,
+      longitude DOUBLE PRECISION,
+      hrv_sdnn_ms DOUBLE PRECISION,
+      resting_heart_rate DOUBLE PRECISION,
+      active_energy_kcal DOUBLE PRECISION,
+      steps INTEGER,
+      walking_heart_rate DOUBLE PRECISION,
+      flights_climbed INTEGER,
+      respiratory_rate DOUBLE PRECISION,
+      accel_magnitude_g DOUBLE PRECISION,
+      motion_still_sec DOUBLE PRECISION,
+      fall_candidate INTEGER,
+      freefall_preceded INTEGER,
+      peak_rotation_rad_s DOUBLE PRECISION,
+      fall_decision TEXT,
+      fall_candidate_id TEXT,
+      fall_update_phase TEXT,
+      fall_prompt_outcome TEXT,
+      fall_prompt_response_sec DOUBLE PRECISION,
+      hr_pre_mean_10s DOUBLE PRECISION,
+      hr_at_impact DOUBLE PRECISION,
+      hr_post_mean_30s DOUBLE PRECISION,
+      hr_post_peak_30s DOUBLE PRECISION,
+      hr_delta_mean DOUBLE PRECISION,
+      hr_delta_peak DOUBLE PRECISION,
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
       raw_json TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_vs_worker_ts ON vital_samples(worker_id, ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts ON vital_samples(ts);
 
     CREATE TABLE IF NOT EXISTS weather_log (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      lat REAL NOT NULL,
-      lon REAL NOT NULL,
+      id SERIAL PRIMARY KEY,
+      lat DOUBLE PRECISION NOT NULL,
+      lon DOUBLE PRECISION NOT NULL,
       worker_count INTEGER,
       weather_code INTEGER,
-      temperature_c REAL,
-      apparent_temp_c REAL,
-      humidity_pct REAL,
-      wind_kmh REAL,
-      precipitation_mm REAL,
-      uv_index REAL,
-      pm10 REAL,
-      pm25 REAL,
+      temperature_c DOUBLE PRECISION,
+      apparent_temp_c DOUBLE PRECISION,
+      humidity_pct DOUBLE PRECISION,
+      wind_kmh DOUBLE PRECISION,
+      precipitation_mm DOUBLE PRECISION,
+      uv_index DOUBLE PRECISION,
+      pm10 DOUBLE PRECISION,
+      pm25 DOUBLE PRECISION,
       sunrise TEXT,
       sunset TEXT,
-      recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_wl_recorded ON weather_log(recorded_at);
 
     CREATE TABLE IF NOT EXISTS site_info_daily (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       snapshot_date TEXT NOT NULL UNIQUE,
       company_name TEXT,
       site_name TEXT,
@@ -181,19 +199,19 @@ function init(): DbBundle {
       address TEXT,
       start_date TEXT,
       completion_date TEXT,
-      recorded_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_sid_snapshot ON site_info_daily(snapshot_date);
 
     -- SOS/낙상 알림 이력 — 발생/대응(ack) 시각·대응자 보존(산업재해 자료 "알림→대응 시각" 첨부).
     -- (worker_id, type, ts) UNIQUE 로 폰 재전송·backlog flush 시 중복 방지.
     CREATE TABLE IF NOT EXISTS alerts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       worker_id TEXT NOT NULL,
       worker_name TEXT,
       type TEXT NOT NULL,
       ts TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
       ack_at TEXT,
       ack_by TEXT,
       UNIQUE(worker_id, type, ts)
@@ -201,396 +219,104 @@ function init(): DbBundle {
     CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 
     CREATE TABLE IF NOT EXISTS aed_inspections (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       aed_id TEXT NOT NULL,
       loc TEXT,
       inspector TEXT NOT NULL,
       items TEXT,
       ts TEXT NOT NULL,
       source TEXT,
-      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_aed_insp ON aed_inspections(aed_id, ts);
 
     -- 주간 검증 보고서(④ 종합) — 시공사 제출 입력(세금계산서·계좌·대장·사진 집계).
-    -- contract_id 단일행 upsert. 검증자는 수정 불가(피검증자 제출분), 워치 실측과 대조 전용.
+    -- contract_id 단일행 upsert. 금액은 BIGINT(원화 큰 금액 대비).
     CREATE TABLE IF NOT EXISTS weekly_report_inputs (
       contract_id TEXT PRIMARY KEY,
       supplier TEXT,
       supplier_bno TEXT,
       claimed_headcount INTEGER,
-      invoice_total INTEGER,
-      paid_total INTEGER,
+      invoice_total BIGINT,
+      paid_total BIGINT,
       ledger_headcount INTEGER,
       photo_count INTEGER,
-      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
     -- 주간보고서 제출 이력 — 감독관 발송 시 1행(감사 추적).
     CREATE TABLE IF NOT EXISTS weekly_report_submissions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       contract_id TEXT NOT NULL,
       period TEXT,
       verdict TEXT,
       suspect_count INTEGER,
-      submitted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      submitted_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_wrs_submitted ON weekly_report_submissions(submitted_at);
-  `);
 
-  // 멱등 마이그레이션 — 기존 DB 에 신규 컬럼(스트레스 입력 + 직급)이 없으면 ADD COLUMN.
-  // CREATE TABLE IF NOT EXISTS 는 기존 테이블을 건드리지 않으므로 별도 패치 필요.
-  // 컬럼명은 코드 내 리터럴 상수 (사용자 입력 아님 — SQL injection 무관).
-  const migrationColumns: Array<{ name: string; type: string }> = [
-    { name: "hrv_sdnn_ms", type: "REAL" },
-    { name: "resting_heart_rate", type: "REAL" },
-    { name: "active_energy_kcal", type: "REAL" },
-    { name: "steps", type: "INTEGER" },
-    { name: "walking_heart_rate", type: "REAL" },
-    { name: "flights_climbed", type: "INTEGER" },
-    { name: "respiratory_rate", type: "REAL" },
-    { name: "job_title", type: "TEXT" }, // 직급/직책 — 폰 ⚙️ 발신값
-    // 낙상 ML 데이터 수집(fall-ml) — 충격/정지는 종전 raw_json 에만 있었으나 ML 질의·통계를 위해
-    // 전용 컬럼화. 레거시 행은 NULL 이지만 export 시 raw_json COALESCE 로 백필한다.
-    { name: "accel_magnitude_g", type: "REAL" },
-    { name: "motion_still_sec", type: "REAL" },
-    { name: "fall_candidate", type: "INTEGER" },
-    { name: "freefall_preceded", type: "INTEGER" },
-    { name: "peak_rotation_rad_s", type: "REAL" },
-    { name: "fall_decision", type: "TEXT" },
-    { name: "fall_candidate_id", type: "TEXT" },
-    { name: "fall_update_phase", type: "TEXT" },
-    { name: "fall_prompt_outcome", type: "TEXT" },
-    { name: "fall_prompt_response_sec", type: "REAL" },
-    { name: "hr_pre_mean_10s", type: "REAL" },
-    { name: "hr_at_impact", type: "REAL" },
-    { name: "hr_post_mean_30s", type: "REAL" },
-    { name: "hr_post_peak_30s", type: "REAL" },
-    { name: "hr_delta_mean", type: "REAL" },
-    { name: "hr_delta_peak", type: "REAL" },
-  ];
-  const existingCols = new Set(
-    (db.prepare("PRAGMA table_info(vital_samples)").all() as { name: string }[]).map(
-      (c) => c.name,
-    ),
-  );
-  for (const col of migrationColumns) {
-    if (!existingCols.has(col.name)) {
-      db.exec(`ALTER TABLE vital_samples ADD COLUMN ${col.name} ${col.type}`);
-    }
-  }
-
-  // 직급/직책 관제 웹 오버라이드 — workerId 키 단일행 upsert. 폰 발신값(vital_samples.job_title)보다 우선.
-  db.exec(`
+    -- 직급/직책 관제 웹 오버라이드 — workerId 키 단일행 upsert. 폰 발신값보다 우선.
     CREATE TABLE IF NOT EXISTS worker_profile (
       worker_id TEXT PRIMARY KEY,
       job_title TEXT,
-      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
-  `);
 
-  // 낙상 ML 정답 라벨 — 관제자가 각 후보 샘플에 실제 낙상 여부를 수기 라벨링(지도학습 정답).
-  // sample_id = vital_samples.id 단일행 upsert. label ∈ {true_fall, false_positive, unsure}.
-  db.exec(`
+    -- 낙상 ML 정답 라벨 — 관제자가 각 후보 샘플에 실제 낙상 여부를 수기 라벨링(지도학습 정답).
     CREATE TABLE IF NOT EXISTS fall_labels (
       sample_id INTEGER PRIMARY KEY,
       label TEXT,
       note TEXT,
       labeled_by TEXT,
-      labeled_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      labeled_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
-  `);
 
-  // 영상(CCTV YOLOv8-pose) 낙상 이벤트 — 폴링 어댑터/푸시 수신분. worker_id 없음(카메라/존 단위).
-  // fusion 의 영상 입력 + 감사 이력(raw_json). 워치(vital_samples)와 별개 경로.
-  db.exec(`
+    -- 영상(CCTV YOLOv8-pose) 낙상 이벤트 — 폴링 어댑터/푸시 수신분. worker_id 없음(카메라/존 단위).
     CREATE TABLE IF NOT EXISTS cctv_fall_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      id SERIAL PRIMARY KEY,
       camera_id TEXT NOT NULL,
       zone TEXT,
       ts TEXT NOT NULL,
       status TEXT NOT NULL,
       fallen_count INTEGER,
       total INTEGER,
-      confidence REAL,
+      confidence DOUBLE PRECISION,
       source TEXT,
-      received_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
       raw_json TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_cfe_camera_ts ON cctv_fall_events(camera_id, ts);
     CREATE INDEX IF NOT EXISTS idx_cfe_ts ON cctv_fall_events(ts);
   `);
-
-  const insert = db.prepare(`
-    INSERT INTO vital_samples (
-      worker_id, worker_name, employee_id, job_title, guardian_name, guardian_phone,
-      ts, heart_rate, spo2, skin_temp_c, ambient_temp_c, battery_pct,
-      manual_sos, fall_detected, latitude, longitude,
-      hrv_sdnn_ms, resting_heart_rate, active_energy_kcal, steps,
-      walking_heart_rate, flights_climbed, respiratory_rate,
-      accel_magnitude_g, motion_still_sec, fall_candidate,
-      freefall_preceded, peak_rotation_rad_s, fall_decision,
-      fall_candidate_id, fall_update_phase, fall_prompt_outcome, fall_prompt_response_sec,
-      hr_pre_mean_10s, hr_at_impact, hr_post_mean_30s, hr_post_peak_30s,
-      hr_delta_mean, hr_delta_peak, raw_json
-    ) VALUES (
-      @worker_id, @worker_name, @employee_id, @job_title, @guardian_name, @guardian_phone,
-      @ts, @heart_rate, @spo2, @skin_temp_c, @ambient_temp_c, @battery_pct,
-      @manual_sos, @fall_detected, @latitude, @longitude,
-      @hrv_sdnn_ms, @resting_heart_rate, @active_energy_kcal, @steps,
-      @walking_heart_rate, @flights_climbed, @respiratory_rate,
-      @accel_magnitude_g, @motion_still_sec, @fall_candidate,
-      @freefall_preceded, @peak_rotation_rad_s, @fall_decision,
-      @fall_candidate_id, @fall_update_phase, @fall_prompt_outcome, @fall_prompt_response_sec,
-      @hr_pre_mean_10s, @hr_at_impact, @hr_post_mean_30s, @hr_post_peak_30s,
-      @hr_delta_mean, @hr_delta_peak, @raw_json
-    )
-  `);
-
-  const updateFallCandidateState = db.prepare(`
-    UPDATE vital_samples
-    SET
-      fall_update_phase = COALESCE(@fall_update_phase, fall_update_phase),
-      fall_prompt_outcome = COALESCE(@fall_prompt_outcome, fall_prompt_outcome),
-      fall_prompt_response_sec = COALESCE(@fall_prompt_response_sec, fall_prompt_response_sec),
-      hr_post_mean_30s = COALESCE(@hr_post_mean_30s, hr_post_mean_30s),
-      hr_post_peak_30s = COALESCE(@hr_post_peak_30s, hr_post_peak_30s),
-      hr_delta_mean = COALESCE(@hr_delta_mean, hr_delta_mean),
-      hr_delta_peak = COALESCE(@hr_delta_peak, hr_delta_peak),
-      raw_json = CASE
-        WHEN raw_json IS NULL OR raw_json = '' THEN @raw_json
-        ELSE raw_json
-      END
-    WHERE fall_candidate_id = @fall_candidate_id AND fall_candidate = 1
-  `);
-
-  // 직급 오버라이드 upsert + 조회 — 관제 웹 입력용.
-  const upsertWorkerProfile = db.prepare(`
-    INSERT INTO worker_profile (worker_id, job_title, updated_at)
-    VALUES (@worker_id, @job_title, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(worker_id) DO UPDATE SET
-      job_title = excluded.job_title,
-      updated_at = excluded.updated_at
-  `);
-  const listWorkerProfiles = db.prepare<[]>(
-    "SELECT worker_id, job_title FROM worker_profile WHERE job_title IS NOT NULL AND job_title != ''",
-  );
-
-  // 알림 이력 — SOS/낙상. 중복(같은 worker/type/ts)은 무시.
-  const insertAlert = db.prepare(`
-    INSERT OR IGNORE INTO alerts (worker_id, worker_name, type, ts)
-    VALUES (@worker_id, @worker_name, @type, @ts)
-  `);
-  const listAlerts = db.prepare(
-    "SELECT * FROM alerts ORDER BY ts DESC, id DESC LIMIT @limit",
-  );
-  const ackAlert = db.prepare(`
-    UPDATE alerts
-    SET ack_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'), ack_by = @ack_by
-    WHERE id = @id AND ack_at IS NULL
-  `);
-
-  // AED NFC 점검 기록 — 현장 관리자 태깅 시 1행. items = 교체 항목 JSON(빈 배열 = 점검만).
-  const insertAedInspection = db.prepare(`
-    INSERT INTO aed_inspections (aed_id, loc, inspector, items, ts, source)
-    VALUES (@aed_id, @loc, @inspector, @items, @ts, @source)
-  `);
-  const listAedInspectionsStmt = db.prepare(
-    "SELECT * FROM aed_inspections ORDER BY ts DESC, id DESC LIMIT @limit",
-  );
-
-  // ── 낙상 ML(fall-ml) ──────────────────────────────────────────────────────
-  // 후보 필터 — 신규 후보(fall_candidate=1) + 레거시 양성(fall_detected=1, candidateId 없는 구버전 행).
-  // 새 프롬프트 흐름은 실제 낙상 알림을 별도 이벤트 행으로 적재하므로, candidateId 가 있는 경보행은
-  // 후보 목록/학습셋에서 제외해 중복 샘플을 막는다. 충격G/정지초는 전용 컬럼이 비면 raw_json 백필.
-  const FALL_WHERE =
-    "(v.fall_candidate = 1 OR (v.fall_detected = 1 AND v.fall_candidate_id IS NULL))";
-  const FALL_SELECT = `
-    SELECT
-      v.id, v.worker_id, v.worker_name, v.employee_id, v.ts, v.received_at,
-      v.fall_detected, v.fall_candidate, v.fall_decision,
-      COALESCE(v.accel_magnitude_g, json_extract(v.raw_json,'$.accelMagnitudeG')) AS accel_magnitude_g,
-      COALESCE(v.motion_still_sec, json_extract(v.raw_json,'$.motionStillSec'))  AS motion_still_sec,
-      v.freefall_preceded, v.peak_rotation_rad_s,
-      v.fall_candidate_id, v.fall_update_phase,
-      v.fall_prompt_outcome, v.fall_prompt_response_sec,
-      v.hr_pre_mean_10s, v.hr_at_impact, v.hr_post_mean_30s, v.hr_post_peak_30s,
-      v.hr_delta_mean, v.hr_delta_peak,
-      v.heart_rate, v.spo2, v.battery_pct, v.latitude, v.longitude,
-      fl.label AS ground_truth_label, fl.note AS label_note,
-      fl.labeled_by, fl.labeled_at
-    FROM vital_samples v
-    LEFT JOIN fall_labels fl ON fl.sample_id = v.id
-  `;
-  const exportFallDataset = db.prepare(
-    `${FALL_SELECT} WHERE ${FALL_WHERE} AND v.ts >= @from AND v.ts <= @to ORDER BY v.ts ASC`,
-  );
-  const listFallCandidates = db.prepare(
-    `${FALL_SELECT} WHERE ${FALL_WHERE} ORDER BY v.ts DESC LIMIT @limit`,
-  );
-  const fallStats = db.prepare<[]>(`
-    SELECT
-      COUNT(*) AS total,
-      SUM(
-        CASE
-          WHEN v.fall_decision = 'fall'
-            OR (v.fall_detected = 1 AND v.fall_candidate_id IS NULL)
-          THEN 1
-          ELSE 0
-        END
-      ) AS positives,
-      SUM(
-        CASE
-          WHEN v.fall_candidate = 1 AND COALESCE(v.fall_decision, '') != 'fall'
-          THEN 1
-          ELSE 0
-        END
-      ) AS negatives,
-      SUM(CASE WHEN fl.label IS NOT NULL AND fl.label != '' THEN 1 ELSE 0 END) AS labeled
-    FROM vital_samples v
-    LEFT JOIN fall_labels fl ON fl.sample_id = v.id
-    WHERE ${FALL_WHERE}
-  `);
-  const setFallLabelStmt = db.prepare(`
-    INSERT INTO fall_labels (sample_id, label, note, labeled_by, labeled_at)
-    VALUES (@sample_id, @label, @note, @labeled_by, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-    ON CONFLICT(sample_id) DO UPDATE SET
-      label = excluded.label,
-      note = excluded.note,
-      labeled_by = excluded.labeled_by,
-      labeled_at = excluded.labeled_at
-  `);
-
-  // 영상(CCTV) 낙상 이벤트 적재/조회.
-  const insertCctvEvent = db.prepare(`
-    INSERT INTO cctv_fall_events (
-      camera_id, zone, ts, status, fallen_count, total, confidence, source, raw_json
-    ) VALUES (
-      @camera_id, @zone, @ts, @status, @fallen_count, @total, @confidence, @source, @raw_json
-    )
-  `);
-  const recentCctvEventsStmt = db.prepare(
-    "SELECT * FROM cctv_fall_events ORDER BY ts DESC, id DESC LIMIT @limit",
-  );
-
-  const count = db.prepare<[]>("SELECT COUNT(*) AS n FROM vital_samples");
-
-  // 관리자 내보내기 — 워커 목록 + 샘플 수 + 시계 범위 (드롭다운 채움용)
-  const listWorkers = db.prepare<[]>(`
-    SELECT
-      worker_id,
-      MAX(worker_name) AS worker_name,
-      MAX(employee_id) AS employee_id,
-      MAX(job_title) AS job_title,
-      COUNT(*) AS sample_count,
-      MIN(ts) AS first_ts,
-      MAX(ts) AS last_ts
-    FROM vital_samples
-    GROUP BY worker_id
-    ORDER BY worker_id
-  `);
-
-  // 전체 내보내기 (기간만 필터). workerId 별 내보내기는 exportFiltered 사용
-  const exportAll = db.prepare(`
-    SELECT * FROM vital_samples
-    WHERE ts >= @from AND ts <= @to
-    ORDER BY ts ASC
-  `);
-
-  const exportFiltered = db.prepare(`
-    SELECT * FROM vital_samples
-    WHERE worker_id = @worker_id AND ts >= @from AND ts <= @to
-    ORDER BY ts ASC
-  `);
-
-  const insertWeather = db.prepare(`
-    INSERT INTO weather_log (
-      lat, lon, worker_count, weather_code, temperature_c, apparent_temp_c,
-      humidity_pct, wind_kmh, precipitation_mm, uv_index, pm10, pm25, sunrise, sunset
-    ) VALUES (
-      @lat, @lon, @worker_count, @weather_code, @temperature_c, @apparent_temp_c,
-      @humidity_pct, @wind_kmh, @precipitation_mm, @uv_index, @pm10, @pm25, @sunrise, @sunset
-    )
-  `);
-
-  const exportWeather = db.prepare(`
-    SELECT * FROM weather_log
-    WHERE recorded_at >= @from AND recorded_at <= @to
-    ORDER BY recorded_at ASC
-  `);
-
-  const upsertSiteInfoDaily = db.prepare(`
-    INSERT INTO site_info_daily (
-      snapshot_date, company_name, site_name, construction_type,
-      address, start_date, completion_date, recorded_at
-    ) VALUES (
-      @snapshot_date, @company_name, @site_name, @construction_type,
-      @address, @start_date, @completion_date,
-      strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    )
-    ON CONFLICT(snapshot_date) DO UPDATE SET
-      company_name = excluded.company_name,
-      site_name = excluded.site_name,
-      construction_type = excluded.construction_type,
-      address = excluded.address,
-      start_date = excluded.start_date,
-      completion_date = excluded.completion_date,
-      recorded_at = excluded.recorded_at
-  `);
-
-  const getLatestSiteInfo = db.prepare<[]>(`
-    SELECT * FROM site_info_daily
-    ORDER BY snapshot_date DESC, recorded_at DESC
-    LIMIT 1
-  `);
-
-  const exportSiteInfo = db.prepare(`
-    SELECT * FROM site_info_daily
-    WHERE snapshot_date >= @from_date AND snapshot_date <= @to_date
-    ORDER BY snapshot_date ASC
-  `);
-
-  return {
-    db,
-    insert,
-    count,
-    listWorkers,
-    exportAll,
-    exportFiltered,
-    insertWeather,
-    exportWeather,
-    upsertSiteInfoDaily,
-    getLatestSiteInfo,
-    exportSiteInfo,
-    upsertWorkerProfile,
-    listWorkerProfiles,
-    insertAlert,
-    listAlerts,
-    ackAlert,
-    insertAedInspection,
-    listAedInspectionsStmt,
-    exportFallDataset,
-    listFallCandidates,
-    fallStats,
-    setFallLabelStmt,
-    updateFallCandidateState,
-    insertCctvEvent,
-    recentCctvEventsStmt,
-  };
 }
 
-export function getDb(): DbBundle {
-  // 캐시 가드는 가장 최근 추가된 statement 로 검사 — HMR 로 남은 옛 번들(신규 필드 없음)을 재초기화.
-  if (!globalForDb.__safetyMonitorDb?.recentCctvEventsStmt) {
-    globalForDb.__safetyMonitorDb = init();
-  }
-  return globalForDb.__safetyMonitorDb;
+// 쿼리 헬퍼 — 스키마 보장 후 실행. rows + rowCount 반환.
+async function q<T = Record<string, unknown>>(
+  text: string,
+  params?: unknown[],
+): Promise<{ rows: T[]; rowCount: number }> {
+  await ensureSchema();
+  const res = await getPool().query(text, params as unknown[] | undefined);
+  return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+}
+
+// 동적 INSERT 빌더 — 컬럼 수 많은 insert(miscount 방지).
+function buildInsert(
+  table: string,
+  cols: Record<string, unknown>,
+  returning?: string,
+): { text: string; values: unknown[] } {
+  const keys = Object.keys(cols);
+  const placeholders = keys.map((_, i) => `$${i + 1}`).join(", ");
+  const text = `INSERT INTO ${table} (${keys.join(", ")}) VALUES (${placeholders})${
+    returning ? ` RETURNING ${returning}` : ""
+  }`;
+  return { text, values: keys.map((k) => cols[k]) };
 }
 
 // 단건 insert — sample 은 zod 검증 통과한 정상 값
-export function persistSample(sample: VitalSample): void {
-  const { insert } = getDb();
-  insert.run({
+export async function persistSample(sample: VitalSample): Promise<void> {
+  const cols: Record<string, unknown> = {
     worker_id: sample.workerId,
     worker_name: sample.workerName ?? null,
     employee_id: sample.employeeId ?? null,
@@ -606,6 +332,15 @@ export function persistSample(sample: VitalSample): void {
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,
     fall_detected:
       sample.fallDetected === true ? 1 : sample.fallDetected === false ? 0 : null,
+    latitude: sample.latitude ?? null,
+    longitude: sample.longitude ?? null,
+    hrv_sdnn_ms: sample.hrvSdnnMs ?? null,
+    resting_heart_rate: sample.restingHeartRate ?? null,
+    active_energy_kcal: sample.activeEnergyKcal ?? null,
+    steps: sample.steps ?? null,
+    walking_heart_rate: sample.walkingHeartRate ?? null,
+    flights_climbed: sample.flightsClimbed ?? null,
+    respiratory_rate: sample.respiratoryRate ?? null,
     // 낙상 ML 활성화 요소 — 후보 샘플에만 채워지는 sparse 필드(일반 폴은 전부 null).
     accel_magnitude_g: sample.accelMagnitudeG ?? null,
     motion_still_sec: sample.motionStillSec ?? null,
@@ -624,42 +359,64 @@ export function persistSample(sample: VitalSample): void {
     hr_post_peak_30s: sample.hrPostPeak30s ?? null,
     hr_delta_mean: sample.hrDeltaMean ?? null,
     hr_delta_peak: sample.hrDeltaPeak ?? null,
-    latitude: sample.latitude ?? null,
-    longitude: sample.longitude ?? null,
-    hrv_sdnn_ms: sample.hrvSdnnMs ?? null,
-    resting_heart_rate: sample.restingHeartRate ?? null,
-    active_energy_kcal: sample.activeEnergyKcal ?? null,
-    steps: sample.steps ?? null,
-    walking_heart_rate: sample.walkingHeartRate ?? null,
-    flights_climbed: sample.flightsClimbed ?? null,
-    respiratory_rate: sample.respiratoryRate ?? null,
     raw_json: JSON.stringify(sample),
-  });
+  };
+  const { text, values } = buildInsert("vital_samples", cols);
+  await q(text, values);
 }
 
-export function updateFallCandidateState(sample: VitalSample): boolean {
-  const info = getDb().updateFallCandidateState.run({
-    fall_candidate_id: sample.fallCandidateId,
-    fall_update_phase: sample.fallUpdatePhase ?? null,
-    fall_prompt_outcome: sample.fallPromptOutcome ?? null,
-    fall_prompt_response_sec: sample.fallPromptResponseSec ?? null,
-    hr_post_mean_30s: sample.hrPostMean30s ?? null,
-    hr_post_peak_30s: sample.hrPostPeak30s ?? null,
-    hr_delta_mean: sample.hrDeltaMean ?? null,
-    hr_delta_peak: sample.hrDeltaPeak ?? null,
-    raw_json: JSON.stringify(sample),
-  });
-  return info.changes > 0;
+export async function updateFallCandidateState(sample: VitalSample): Promise<boolean> {
+  const { rowCount } = await q(
+    `UPDATE vital_samples
+       SET
+         fall_update_phase = COALESCE($2, fall_update_phase),
+         fall_prompt_outcome = COALESCE($3, fall_prompt_outcome),
+         fall_prompt_response_sec = COALESCE($4, fall_prompt_response_sec),
+         hr_post_mean_30s = COALESCE($5, hr_post_mean_30s),
+         hr_post_peak_30s = COALESCE($6, hr_post_peak_30s),
+         hr_delta_mean = COALESCE($7, hr_delta_mean),
+         hr_delta_peak = COALESCE($8, hr_delta_peak),
+         raw_json = CASE
+           WHEN raw_json IS NULL OR raw_json = '' THEN $9
+           ELSE raw_json
+         END
+       WHERE fall_candidate_id = $1 AND fall_candidate = 1`,
+    [
+      sample.fallCandidateId,
+      sample.fallUpdatePhase ?? null,
+      sample.fallPromptOutcome ?? null,
+      sample.fallPromptResponseSec ?? null,
+      sample.hrPostMean30s ?? null,
+      sample.hrPostPeak30s ?? null,
+      sample.hrDeltaMean ?? null,
+      sample.hrDeltaPeak ?? null,
+      JSON.stringify(sample),
+    ],
+  );
+  return rowCount > 0;
 }
 
-export function totalPersisted(): number {
-  const row = getDb().count.get() as { n: number };
-  return row.n;
+export async function totalPersisted(): Promise<number> {
+  const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM vital_samples");
+  return rows[0]?.n ?? 0;
 }
 
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위
-export function listAllWorkers(): WorkerSummary[] {
-  return getDb().listWorkers.all() as WorkerSummary[];
+export async function listAllWorkers(): Promise<WorkerSummary[]> {
+  const { rows } = await q<WorkerSummary>(`
+    SELECT
+      worker_id,
+      MAX(worker_name) AS worker_name,
+      MAX(employee_id) AS employee_id,
+      MAX(job_title) AS job_title,
+      COUNT(*) AS sample_count,
+      MIN(ts) AS first_ts,
+      MAX(ts) AS last_ts
+    FROM vital_samples
+    GROUP BY worker_id
+    ORDER BY worker_id
+  `);
+  return rows;
 }
 
 // ── 안전관리비 실집행(③) — 워치 출역 worker-day 집계 ──────────────────────
@@ -678,21 +435,19 @@ function isSafetyRole(jobTitle: string | null): boolean {
   return !!jobTitle && /안전|신호|감시|관리자|보건/.test(jobTitle);
 }
 
-export function auditWorkerDays(opts: { from: string; to: string }): WorkerDayAudit {
-  const { db } = getDb();
+export async function auditWorkerDays(opts: {
+  from: string;
+  to: string;
+}): Promise<WorkerDayAudit> {
   // (작업자, 날짜) 단위로 접어 worker-day 산출. 테스트/예약 워커(reserved_/test_ 등)는 제외.
-  const rows = db
-    .prepare(
-      `SELECT substr(ts, 1, 10) AS day, worker_id, MAX(job_title) AS job_title
+  const { rows } = await q<{ day: string; worker_id: string; job_title: string | null }>(
+    `SELECT substr(ts, 1, 10) AS day, worker_id, MAX(job_title) AS job_title
        FROM vital_samples
-       WHERE ts >= @from AND ts <= @to
-         AND worker_id NOT LIKE 'reserved\\_%' ESCAPE '\\'
-         AND worker_id NOT LIKE 'test\\_%' ESCAPE '\\'
-         AND worker_id NOT LIKE 'smoke\\_%' ESCAPE '\\'
-         AND worker_id NOT LIKE 'infra\\_%' ESCAPE '\\'
-       GROUP BY day, worker_id`,
-    )
-    .all({ from: opts.from, to: opts.to }) as { day: string; worker_id: string; job_title: string | null }[];
+       WHERE ts >= $1 AND ts <= $2
+         AND worker_id !~ '^(reserved|test|smoke|infra)_'
+       GROUP BY substr(ts, 1, 10), worker_id`,
+    [opts.from, opts.to],
+  );
 
   const byDayMap = new Map<string, { workers: number; safetyWorkers: number }>();
   const workerSet = new Set<string>();
@@ -720,19 +475,22 @@ export function auditWorkerDays(opts: { from: string; to: string }): WorkerDayAu
 }
 
 // 직급/직책 관제 웹 오버라이드 저장 — workerId 키. 빈 문자열은 오버라이드 해제(폰 발신값으로 복귀).
-export function setWorkerJobTitle(workerId: string, jobTitle: string): void {
-  getDb().upsertWorkerProfile.run({
-    worker_id: workerId,
-    job_title: jobTitle.trim() || null,
-  });
+export async function setWorkerJobTitle(workerId: string, jobTitle: string): Promise<void> {
+  await q(
+    `INSERT INTO worker_profile (worker_id, job_title, updated_at)
+       VALUES ($1, $2, ${NOW_ISO})
+       ON CONFLICT (worker_id) DO UPDATE SET
+         job_title = excluded.job_title,
+         updated_at = excluded.updated_at`,
+    [workerId, jobTitle.trim() || null],
+  );
 }
 
 // 직급 오버라이드 맵(workerId → 직급) — GET 응답에 동봉, 대시보드가 폰 발신값보다 우선 적용.
-export function getWorkerProfiles(): Record<string, string> {
-  const rows = getDb().listWorkerProfiles.all() as {
-    worker_id: string;
-    job_title: string;
-  }[];
+export async function getWorkerProfiles(): Promise<Record<string, string>> {
+  const { rows } = await q<{ worker_id: string; job_title: string }>(
+    "SELECT worker_id, job_title FROM worker_profile WHERE job_title IS NOT NULL AND job_title <> ''",
+  );
   const out: Record<string, string> = {};
   for (const r of rows) out[r.worker_id] = r.job_title;
   return out;
@@ -753,28 +511,35 @@ export type AlertRow = {
 };
 
 // SOS/낙상 발생 기록 — 중복(worker/type/ts)은 무시. addSample 에서 호출.
-export function recordAlert(input: {
+export async function recordAlert(input: {
   workerId: string;
   workerName?: string | null;
   type: AlertType;
   ts: string;
-}): void {
-  getDb().insertAlert.run({
-    worker_id: input.workerId,
-    worker_name: input.workerName ?? null,
-    type: input.type,
-    ts: input.ts,
-  });
+}): Promise<void> {
+  await q(
+    `INSERT INTO alerts (worker_id, worker_name, type, ts)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (worker_id, type, ts) DO NOTHING`,
+    [input.workerId, input.workerName ?? null, input.type, input.ts],
+  );
 }
 
-export function listAlerts(limit = 100): AlertRow[] {
-  return getDb().listAlerts.all({ limit }) as AlertRow[];
+export async function listAlerts(limit = 100): Promise<AlertRow[]> {
+  const { rows } = await q<AlertRow>(
+    "SELECT * FROM alerts ORDER BY ts DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
 }
 
 // 대응 확인 — 미대응 알림만 ack(대응자·시각 기록). 변경 행 수 반환.
-export function ackAlert(id: number, ackBy: string): number {
-  const info = getDb().ackAlert.run({ id, ack_by: ackBy });
-  return info.changes;
+export async function ackAlert(id: number, ackBy: string): Promise<number> {
+  const { rowCount } = await q(
+    `UPDATE alerts SET ack_at = ${NOW_ISO}, ack_by = $1 WHERE id = $2 AND ack_at IS NULL`,
+    [ackBy, id],
+  );
+  return rowCount;
 }
 
 // ── AED NFC 점검 기록 ──────────────────────────────────────────────────────
@@ -790,26 +555,34 @@ export type AedInspectionRow = {
 };
 
 // 현장 NFC 태깅 점검 1건 기록. items 는 교체 항목(빈 배열 = 점검만).
-export function recordAedInspection(input: {
+export async function recordAedInspection(input: {
   aedId: string;
   loc?: string | null;
   inspector: string;
   items: string[];
   ts: string;
   source?: string;
-}): void {
-  getDb().insertAedInspection.run({
-    aed_id: input.aedId,
-    loc: input.loc ?? null,
-    inspector: input.inspector,
-    items: JSON.stringify(input.items ?? []),
-    ts: input.ts,
-    source: input.source ?? "nfc",
-  });
+}): Promise<void> {
+  await q(
+    `INSERT INTO aed_inspections (aed_id, loc, inspector, items, ts, source)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.aedId,
+      input.loc ?? null,
+      input.inspector,
+      JSON.stringify(input.items ?? []),
+      input.ts,
+      input.source ?? "nfc",
+    ],
+  );
 }
 
-export function listAedInspections(limit = 500): AedInspectionRow[] {
-  return getDb().listAedInspectionsStmt.all({ limit }) as AedInspectionRow[];
+export async function listAedInspections(limit = 500): Promise<AedInspectionRow[]> {
+  const { rows } = await q<AedInspectionRow>(
+    "SELECT * FROM aed_inspections ORDER BY ts DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
 }
 
 // ── 낙상 ML 데이터 수집(fall-ml) ──────────────────────────────────────────────
@@ -856,62 +629,128 @@ export type FallStats = {
   labeled: number;
 };
 
+// 후보 필터 — 신규 후보(fall_candidate=1) + 레거시 양성(fall_detected=1, candidateId 없는 구버전 행).
+const FALL_WHERE =
+  "(v.fall_candidate = 1 OR (v.fall_detected = 1 AND v.fall_candidate_id IS NULL))";
+// 충격G/정지초는 전용 컬럼이 비면 raw_json(jsonb) 백필.
+const FALL_SELECT = `
+  SELECT
+    v.id, v.worker_id, v.worker_name, v.employee_id, v.ts, v.received_at,
+    v.fall_detected, v.fall_candidate, v.fall_decision,
+    COALESCE(v.accel_magnitude_g, (v.raw_json::jsonb ->> 'accelMagnitudeG')::double precision) AS accel_magnitude_g,
+    COALESCE(v.motion_still_sec, (v.raw_json::jsonb ->> 'motionStillSec')::double precision)  AS motion_still_sec,
+    v.freefall_preceded, v.peak_rotation_rad_s,
+    v.fall_candidate_id, v.fall_update_phase,
+    v.fall_prompt_outcome, v.fall_prompt_response_sec,
+    v.hr_pre_mean_10s, v.hr_at_impact, v.hr_post_mean_30s, v.hr_post_peak_30s,
+    v.hr_delta_mean, v.hr_delta_peak,
+    v.heart_rate, v.spo2, v.battery_pct, v.latitude, v.longitude,
+    fl.label AS ground_truth_label, fl.note AS label_note,
+    fl.labeled_by, fl.labeled_at
+  FROM vital_samples v
+  LEFT JOIN fall_labels fl ON fl.sample_id = v.id
+`;
+
 // 라벨링용 — 최근 후보 목록(기간 무관, 최신 우선). UI 가 라벨 입력 동선에 사용.
-export function listFallCandidates(limit = 200): FallDatasetRow[] {
-  return getDb().listFallCandidates.all({ limit }) as FallDatasetRow[];
+export async function listFallCandidates(limit = 200): Promise<FallDatasetRow[]> {
+  const { rows } = await q<FallDatasetRow>(
+    `${FALL_SELECT} WHERE ${FALL_WHERE} ORDER BY v.ts DESC LIMIT $1`,
+    [limit],
+  );
+  return rows;
 }
 
 // 내보내기용 — 기간 필터로 후보 전체(학습 데이터셋).
-export function exportFallDataset(opts: { from: string; to: string }): FallDatasetRow[] {
-  return getDb().exportFallDataset.all(opts) as FallDatasetRow[];
+export async function exportFallDataset(opts: {
+  from: string;
+  to: string;
+}): Promise<FallDatasetRow[]> {
+  const { rows } = await q<FallDatasetRow>(
+    `${FALL_SELECT} WHERE ${FALL_WHERE} AND v.ts >= $1 AND v.ts <= $2 ORDER BY v.ts ASC`,
+    [opts.from, opts.to],
+  );
+  return rows;
 }
 
 // 수집 통계 — 총 후보 / 양성 / 음성 / 라벨됨.
-export function fallCollectionStats(): FallStats {
-  const row = getDb().fallStats.get() as {
+export async function fallCollectionStats(): Promise<FallStats> {
+  const { rows } = await q<{
     total: number | null;
     positives: number | null;
     negatives: number | null;
     labeled: number | null;
-  };
+  }>(`
+    SELECT
+      COUNT(*) AS total,
+      SUM(
+        CASE
+          WHEN v.fall_decision = 'fall'
+            OR (v.fall_detected = 1 AND v.fall_candidate_id IS NULL)
+          THEN 1 ELSE 0
+        END
+      ) AS positives,
+      SUM(
+        CASE
+          WHEN v.fall_candidate = 1 AND COALESCE(v.fall_decision, '') <> 'fall'
+          THEN 1 ELSE 0
+        END
+      ) AS negatives,
+      SUM(CASE WHEN fl.label IS NOT NULL AND fl.label <> '' THEN 1 ELSE 0 END) AS labeled
+    FROM vital_samples v
+    LEFT JOIN fall_labels fl ON fl.sample_id = v.id
+    WHERE ${FALL_WHERE}
+  `);
+  const row = rows[0];
   return {
-    total: row.total ?? 0,
-    positives: row.positives ?? 0,
-    negatives: row.negatives ?? 0,
-    labeled: row.labeled ?? 0,
+    total: row?.total ?? 0,
+    positives: row?.positives ?? 0,
+    negatives: row?.negatives ?? 0,
+    labeled: row?.labeled ?? 0,
   };
 }
 
 // 정답 라벨 저장 — sample_id 단일행 upsert. 빈 라벨은 미지정으로 저장(해제).
-export function setFallLabel(input: {
+export async function setFallLabel(input: {
   sampleId: number;
   label: string;
   note?: string | null;
   labeledBy: string;
-}): void {
-  getDb().setFallLabelStmt.run({
-    sample_id: input.sampleId,
-    label: input.label.trim() || null,
-    note: input.note?.trim() || null,
-    labeled_by: input.labeledBy,
-  });
+}): Promise<void> {
+  await q(
+    `INSERT INTO fall_labels (sample_id, label, note, labeled_by, labeled_at)
+       VALUES ($1, $2, $3, $4, ${NOW_ISO})
+       ON CONFLICT (sample_id) DO UPDATE SET
+         label = excluded.label,
+         note = excluded.note,
+         labeled_by = excluded.labeled_by,
+         labeled_at = excluded.labeled_at`,
+    [input.sampleId, input.label.trim() || null, input.note?.trim() || null, input.labeledBy],
+  );
 }
 
 // 관리자 내보내기 — 기간 (+ 선택적 workerId) 필터로 모든 컬럼 조회
-export function exportSamples(opts: {
+export async function exportSamples(opts: {
   workerId?: string;
   from: string;
   to: string;
-}): ExportRow[] {
+}): Promise<ExportRow[]> {
   const { workerId, from, to } = opts;
-  const stmt = workerId ? getDb().exportFiltered : getDb().exportAll;
-  return stmt.all(
-    workerId ? { worker_id: workerId, from, to } : { from, to },
-  ) as ExportRow[];
+  if (workerId) {
+    const { rows } = await q<ExportRow>(
+      "SELECT * FROM vital_samples WHERE worker_id = $1 AND ts >= $2 AND ts <= $3 ORDER BY ts ASC",
+      [workerId, from, to],
+    );
+    return rows;
+  }
+  const { rows } = await q<ExportRow>(
+    "SELECT * FROM vital_samples WHERE ts >= $1 AND ts <= $2 ORDER BY ts ASC",
+    [from, to],
+  );
+  return rows;
 }
 
 // 현장 환경 snapshot 저장 — weather API fresh fetch 시 (캐시 hit 제외) 1회 기록
-export function persistWeather(input: {
+export async function persistWeather(input: {
   lat: number;
   lon: number;
   workerCount?: number;
@@ -926,8 +765,8 @@ export function persistWeather(input: {
   pm25?: number;
   sunrise?: string;
   sunset?: string;
-}): void {
-  getDb().insertWeather.run({
+}): Promise<void> {
+  const cols: Record<string, unknown> = {
     lat: input.lat,
     lon: input.lon,
     worker_count: input.workerCount ?? null,
@@ -942,11 +781,20 @@ export function persistWeather(input: {
     pm25: input.pm25 ?? null,
     sunrise: input.sunrise ?? null,
     sunset: input.sunset ?? null,
-  });
+  };
+  const { text, values } = buildInsert("weather_log", cols);
+  await q(text, values);
 }
 
-export function exportWeatherLogs(opts: { from: string; to: string }): WeatherLogRow[] {
-  return getDb().exportWeather.all(opts) as WeatherLogRow[];
+export async function exportWeatherLogs(opts: {
+  from: string;
+  to: string;
+}): Promise<WeatherLogRow[]> {
+  const { rows } = await q<WeatherLogRow>(
+    "SELECT * FROM weather_log WHERE recorded_at >= $1 AND recorded_at <= $2 ORDER BY recorded_at ASC",
+    [opts.from, opts.to],
+  );
+  return rows;
 }
 
 function ymdInKst(date = new Date()): string {
@@ -960,32 +808,53 @@ function isoToYmdInKst(iso: string): string {
   return ymdInKst(d);
 }
 
-export function persistSiteInfoDaily(input: SiteInfoInput): SiteInfoRow {
-  const db = getDb();
+export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteInfoRow> {
   const snapshotDate = ymdInKst();
-  db.upsertSiteInfoDaily.run({
-    snapshot_date: snapshotDate,
-    company_name: input.companyName || null,
-    site_name: input.siteName || null,
-    construction_type: input.constructionType || null,
-    address: input.address || null,
-    start_date: input.startDate || null,
-    completion_date: input.completionDate || null,
-  });
-  const row = db.getLatestSiteInfo.get() as SiteInfoRow | undefined;
+  const { rows } = await q<SiteInfoRow>(
+    `INSERT INTO site_info_daily (
+       snapshot_date, company_name, site_name, construction_type,
+       address, start_date, completion_date, recorded_at
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, ${NOW_ISO})
+     ON CONFLICT (snapshot_date) DO UPDATE SET
+       company_name = excluded.company_name,
+       site_name = excluded.site_name,
+       construction_type = excluded.construction_type,
+       address = excluded.address,
+       start_date = excluded.start_date,
+       completion_date = excluded.completion_date,
+       recorded_at = excluded.recorded_at
+     RETURNING *`,
+    [
+      snapshotDate,
+      input.companyName || null,
+      input.siteName || null,
+      input.constructionType || null,
+      input.address || null,
+      input.startDate || null,
+      input.completionDate || null,
+    ],
+  );
+  const row = rows[0];
   if (!row) throw new Error("site_info upsert 직후 조회 실패");
   return row;
 }
 
-export function getLatestSiteInfo(): SiteInfoRow | null {
-  return (getDb().getLatestSiteInfo.get() as SiteInfoRow | undefined) ?? null;
+export async function getLatestSiteInfo(): Promise<SiteInfoRow | null> {
+  const { rows } = await q<SiteInfoRow>(
+    "SELECT * FROM site_info_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
+  );
+  return rows[0] ?? null;
 }
 
-export function exportSiteInfoLogs(opts: { from: string; to: string }): SiteInfoRow[] {
-  return getDb().exportSiteInfo.all({
-    from_date: isoToYmdInKst(opts.from),
-    to_date: isoToYmdInKst(opts.to),
-  }) as SiteInfoRow[];
+export async function exportSiteInfoLogs(opts: {
+  from: string;
+  to: string;
+}): Promise<SiteInfoRow[]> {
+  const { rows } = await q<SiteInfoRow>(
+    "SELECT * FROM site_info_daily WHERE snapshot_date >= $1 AND snapshot_date <= $2 ORDER BY snapshot_date ASC",
+    [isoToYmdInKst(opts.from), isoToYmdInKst(opts.to)],
+  );
+  return rows;
 }
 
 // ── 주간 검증 보고서(④ 종합) — 시공사 제출 입력 + 제출 이력 ──────────────────
@@ -1001,10 +870,12 @@ export type ReportInputs = {
   photoCount: number | null;
 };
 
-export function getReportInputs(contractId: string): ReportInputs | null {
-  const row = getDb()
-    .db.prepare("SELECT * FROM weekly_report_inputs WHERE contract_id = ?")
-    .get(contractId) as Record<string, unknown> | undefined;
+export async function getReportInputs(contractId: string): Promise<ReportInputs | null> {
+  const { rows } = await q<Record<string, unknown>>(
+    "SELECT * FROM weekly_report_inputs WHERE contract_id = $1",
+    [contractId],
+  );
+  const row = rows[0];
   if (!row) return null;
   const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
   const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
@@ -1019,31 +890,32 @@ export function getReportInputs(contractId: string): ReportInputs | null {
   };
 }
 
-export function upsertReportInputs(contractId: string, input: Partial<ReportInputs>): void {
+export async function upsertReportInputs(
+  contractId: string,
+  input: Partial<ReportInputs>,
+): Promise<void> {
   // 부분 병합 — 제출 폼이 일부 필드만 보내도 기존 값 보존(input 우선, 없으면 현재값).
-  const cur = getReportInputs(contractId);
-  getDb()
-    .db.prepare(
-      `INSERT INTO weekly_report_inputs
-         (contract_id, supplier, supplier_bno, claimed_headcount, invoice_total, paid_total, ledger_headcount, photo_count, updated_at)
-       VALUES
-         (@contract_id, @supplier, @supplier_bno, @claimed_headcount, @invoice_total, @paid_total, @ledger_headcount, @photo_count, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-       ON CONFLICT(contract_id) DO UPDATE SET
-         supplier=excluded.supplier, supplier_bno=excluded.supplier_bno,
-         claimed_headcount=excluded.claimed_headcount, invoice_total=excluded.invoice_total,
-         paid_total=excluded.paid_total, ledger_headcount=excluded.ledger_headcount,
-         photo_count=excluded.photo_count, updated_at=excluded.updated_at`,
-    )
-    .run({
-      contract_id: contractId,
-      supplier: input.supplier ?? cur?.supplier ?? null,
-      supplier_bno: input.supplierBno ?? cur?.supplierBno ?? null,
-      claimed_headcount: input.claimedHeadcount ?? cur?.claimedHeadcount ?? null,
-      invoice_total: input.invoiceTotal ?? cur?.invoiceTotal ?? null,
-      paid_total: input.paidTotal ?? cur?.paidTotal ?? null,
-      ledger_headcount: input.ledgerHeadcount ?? cur?.ledgerHeadcount ?? null,
-      photo_count: input.photoCount ?? cur?.photoCount ?? null,
-    });
+  const cur = await getReportInputs(contractId);
+  await q(
+    `INSERT INTO weekly_report_inputs
+       (contract_id, supplier, supplier_bno, claimed_headcount, invoice_total, paid_total, ledger_headcount, photo_count, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${NOW_ISO})
+     ON CONFLICT (contract_id) DO UPDATE SET
+       supplier = excluded.supplier, supplier_bno = excluded.supplier_bno,
+       claimed_headcount = excluded.claimed_headcount, invoice_total = excluded.invoice_total,
+       paid_total = excluded.paid_total, ledger_headcount = excluded.ledger_headcount,
+       photo_count = excluded.photo_count, updated_at = excluded.updated_at`,
+    [
+      contractId,
+      input.supplier ?? cur?.supplier ?? null,
+      input.supplierBno ?? cur?.supplierBno ?? null,
+      input.claimedHeadcount ?? cur?.claimedHeadcount ?? null,
+      input.invoiceTotal ?? cur?.invoiceTotal ?? null,
+      input.paidTotal ?? cur?.paidTotal ?? null,
+      input.ledgerHeadcount ?? cur?.ledgerHeadcount ?? null,
+      input.photoCount ?? cur?.photoCount ?? null,
+    ],
+  );
 }
 
 export type ReportSubmission = {
@@ -1055,41 +927,36 @@ export type ReportSubmission = {
   submitted_at: string;
 };
 
-export function recordReportSubmission(input: {
+export async function recordReportSubmission(input: {
   contractId: string;
   period?: string;
   verdict?: string;
   suspectCount?: number;
-}): ReportSubmission {
-  const db = getDb().db;
-  const info = db
-    .prepare(
-      `INSERT INTO weekly_report_submissions (contract_id, period, verdict, suspect_count)
-       VALUES (@contract_id, @period, @verdict, @suspect_count)`,
-    )
-    .run({
-      contract_id: input.contractId,
-      period: input.period ?? null,
-      verdict: input.verdict ?? null,
-      suspect_count: input.suspectCount ?? null,
-    });
-  return db
-    .prepare("SELECT * FROM weekly_report_submissions WHERE id = ?")
-    .get(Number(info.lastInsertRowid)) as ReportSubmission;
+}): Promise<ReportSubmission> {
+  const { rows } = await q<ReportSubmission>(
+    `INSERT INTO weekly_report_submissions (contract_id, period, verdict, suspect_count)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+    [input.contractId, input.period ?? null, input.verdict ?? null, input.suspectCount ?? null],
+  );
+  return rows[0]!;
 }
 
-export function listReportSubmissions(contractId?: string, limit = 20): ReportSubmission[] {
-  const db = getDb().db;
+export async function listReportSubmissions(
+  contractId?: string,
+  limit = 20,
+): Promise<ReportSubmission[]> {
   if (contractId) {
-    return db
-      .prepare(
-        "SELECT * FROM weekly_report_submissions WHERE contract_id = ? ORDER BY submitted_at DESC, id DESC LIMIT ?",
-      )
-      .all(contractId, limit) as ReportSubmission[];
+    const { rows } = await q<ReportSubmission>(
+      "SELECT * FROM weekly_report_submissions WHERE contract_id = $1 ORDER BY submitted_at DESC, id DESC LIMIT $2",
+      [contractId, limit],
+    );
+    return rows;
   }
-  return db
-    .prepare("SELECT * FROM weekly_report_submissions ORDER BY submitted_at DESC, id DESC LIMIT ?")
-    .all(limit) as ReportSubmission[];
+  const { rows } = await q<ReportSubmission>(
+    "SELECT * FROM weekly_report_submissions ORDER BY submitted_at DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
 }
 
 // ── 영상(CCTV) 낙상 이벤트 — 폴링 어댑터/푸시 수신분(fusion 영상 입력 + 감사 이력) ──────────
@@ -1108,20 +975,28 @@ export type CctvFallEventRow = {
 };
 
 // 영상 이벤트 1건 적재 — event 는 zod 검증 통과한 정상 값.
-export function persistCctvEvent(event: CctvFallEvent): void {
-  getDb().insertCctvEvent.run({
-    camera_id: event.cameraId,
-    zone: event.zone ?? null,
-    ts: event.ts,
-    status: event.status,
-    fallen_count: event.fallenCount ?? null,
-    total: event.total ?? null,
-    confidence: event.confidence ?? null,
-    source: event.source ?? null,
-    raw_json: JSON.stringify(event),
-  });
+export async function persistCctvEvent(event: CctvFallEvent): Promise<void> {
+  await q(
+    `INSERT INTO cctv_fall_events (camera_id, zone, ts, status, fallen_count, total, confidence, source, raw_json)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      event.cameraId,
+      event.zone ?? null,
+      event.ts,
+      event.status,
+      event.fallenCount ?? null,
+      event.total ?? null,
+      event.confidence ?? null,
+      event.source ?? null,
+      JSON.stringify(event),
+    ],
+  );
 }
 
-export function recentCctvEvents(limit = 200): CctvFallEventRow[] {
-  return getDb().recentCctvEventsStmt.all({ limit }) as CctvFallEventRow[];
+export async function recentCctvEvents(limit = 200): Promise<CctvFallEventRow[]> {
+  const { rows } = await q<CctvFallEventRow>(
+    "SELECT * FROM cctv_fall_events ORDER BY ts DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
 }

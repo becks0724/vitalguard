@@ -42,7 +42,7 @@ export function vitalDanger(s: VitalSample | undefined): boolean {
   );
 }
 
-export function addSample(input: unknown) {
+export async function addSample(input: unknown): Promise<VitalSample | null> {
   const normalized =
     typeof input === "object" && input !== null && "hr" in input
       ? {
@@ -63,7 +63,7 @@ export function addSample(input: unknown) {
     (sample.fallUpdatePhase === "post_impact_followup" ||
       sample.fallUpdatePhase === "prompt_result")
   ) {
-    updateFallCandidateState(sample);
+    await updateFallCandidateState(sample);
     if (!sample.fallDetected && !sample.manualSos) return sample;
   }
   // 생체 위험 전이 감지용 — 추가 전 이 워커의 병합(sticky) 상태.
@@ -75,10 +75,10 @@ export function addSample(input: unknown) {
   // 화면 갱신용 in-memory ring (최근 500). DB 는 무한 축적 (산업재해 자료 대비).
   mockStore.samples = [...mockStore.samples, sample].slice(-500);
   try {
-    persistSample(sample);
+    await persistSample(sample);
     // SOS/낙상 이벤트는 알림 이력에 기록(중복은 DB UNIQUE 로 무시) — AF4.
     if (sample.manualSos) {
-      recordAlert({
+      await recordAlert({
         workerId: sample.workerId,
         workerName: sample.workerName ?? null,
         type: "sos",
@@ -86,7 +86,7 @@ export function addSample(input: unknown) {
       });
     }
     if (sample.fallDetected) {
-      recordAlert({
+      await recordAlert({
         workerId: sample.workerId,
         workerName: sample.workerName ?? null,
         type: "fall",
@@ -99,7 +99,7 @@ export function addSample(input: unknown) {
       // 추가 후 상태 = 추가 전 워커 샘플 + 이번 sample (ring 재필터 없이 재사용).
       const curMerged = mergeLatestByWorker([...prevWorkerSamples, sample])[0];
       if (!vitalDanger(prevMerged) && vitalDanger(curMerged)) {
-        recordAlert({
+        await recordAlert({
           workerId: sample.workerId,
           workerName: sample.workerName ?? null,
           type: "vital",
@@ -114,15 +114,15 @@ export function addSample(input: unknown) {
 }
 
 // DB 에 누적된 총 sample 건수 — UI 라벨 "DB 영속 N건 누적" 표시용
-export function totalPersisted(): number {
+export async function totalPersisted(): Promise<number> {
   return dbTotalPersisted();
 }
 
 // 워커별 DB 누적 건수 — 각 작업자 카드의 "실시간 수집 DB 누적 N건" 표시용.
 // 기존 관리자용 GROUP BY 집계(listAllWorkers)를 재사용한다.
-export function countsByWorker(): Record<string, number> {
+export async function countsByWorker(): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const w of listAllWorkers()) {
+  for (const w of await listAllWorkers()) {
     if (isReservedTestWorker(w.worker_id)) continue;
     out[w.worker_id] = w.sample_count;
   }
@@ -131,8 +131,8 @@ export function countsByWorker(): Record<string, number> {
 
 // 직급/직책 관제 웹 오버라이드 맵(workerId → 직급) — 대시보드가 폰 발신값보다 우선 적용.
 // 예약 워커는 대시보드에 안 뜨므로 함께 제외.
-export function workerProfiles(): Record<string, string> {
-  const all = getWorkerProfiles();
+export async function workerProfiles(): Promise<Record<string, string>> {
+  const all = await getWorkerProfiles();
   const out: Record<string, string> = {};
   for (const [id, title] of Object.entries(all)) {
     if (isReservedTestWorker(id)) continue;

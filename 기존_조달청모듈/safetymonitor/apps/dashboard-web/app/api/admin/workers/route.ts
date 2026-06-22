@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    total: totalPersisted(),
-    workers: listAllWorkers(),
+    total: await totalPersisted(),
+    workers: await listAllWorkers(),
   });
 }

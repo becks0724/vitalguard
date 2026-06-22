@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     );
   }
 
-  setFallLabel({
+  await setFallLabel({
     sampleId: sampleId as number,
     label,
     // note 길이 제한(inspector/ackBy 40자와 일관되게 과대 입력 방지) — 500자 컷.

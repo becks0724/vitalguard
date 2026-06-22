@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    stats: fallCollectionStats(),
-    candidates: listFallCandidates(limit),
+    stats: await fallCollectionStats(),
+    candidates: await listFallCandidates(limit),
   });
 }

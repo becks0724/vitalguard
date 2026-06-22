@@ -9,7 +9,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   return NextResponse.json(
-    { ok: true, alerts: listAlerts(100) },
+    { ok: true, alerts: await listAlerts(100) },
     { headers: { "cache-control": "no-store" } },
   );
 }

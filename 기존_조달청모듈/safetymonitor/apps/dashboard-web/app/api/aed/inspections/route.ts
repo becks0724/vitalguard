@@ -5,7 +5,7 @@ import { listAedInspections } from "../../../../lib/db";
 
 export async function GET() {
   return NextResponse.json(
-    { ok: true, inspections: listAedInspections(500) },
+    { ok: true, inspections: await listAedInspections(500) },
     { headers: { "cache-control": "no-store" } },
   );
 }

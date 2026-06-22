@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   if (!contractId) {
     return NextResponse.json({ error: { code: "BAD", message: "contractId가 필요합니다" } }, { status: 400 });
   }
-  return NextResponse.json({ inputs: getReportInputs(contractId) });
+  return NextResponse.json({ inputs: await getReportInputs(contractId) });
 }
 
 export async function POST(req: Request) {
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
     if (!body.contractId) {
       return NextResponse.json({ error: { code: "BAD", message: "contractId가 필요합니다" } }, { status: 400 });
     }
-    upsertReportInputs(body.contractId, {
+    await upsertReportInputs(body.contractId, {
       supplier: body.supplier,
       supplierBno: body.supplierBno,
       claimedHeadcount: body.claimedHeadcount,
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
       paidTotal: body.paidTotal,
       ledgerHeadcount: body.ledgerHeadcount,
     });
-    return NextResponse.json({ ok: true, inputs: getReportInputs(body.contractId) });
+    return NextResponse.json({ ok: true, inputs: await getReportInputs(body.contractId) });
   } catch (err) {
     console.error("[api/weekly-report/inputs]", err);
     return NextResponse.json({ error: { code: "INTERNAL", message: "제출 실패" } }, { status: 500 });

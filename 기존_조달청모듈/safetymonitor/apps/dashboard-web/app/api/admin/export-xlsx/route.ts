@@ -255,17 +255,17 @@ export async function GET(request: Request) {
     );
   }
 
-  const vitalRows = exportSamples({ workerId, from, to });
+  const vitalRows = await exportSamples({ workerId, from, to });
   // 현장 환경은 워커 무관 (현장 공통) — 기간만 필터
-  const weatherRows = exportWeatherLogs({ from, to });
+  const weatherRows = await exportWeatherLogs({ from, to });
   // 현장 정보는 관리자 저장 시 하루 1회 snapshot 으로 보존
-  const siteInfoRows = exportSiteInfoLogs({ from, to });
+  const siteInfoRows = await exportSiteInfoLogs({ from, to });
 
   const wb = new ExcelJS.Workbook();
   wb.creator = "SafetyMonitor";
   wb.created = now;
   buildSiteInfoSheet(wb, siteInfoRows);
-  buildVitalSheet(wb, vitalRows, getWorkerProfiles());
+  buildVitalSheet(wb, vitalRows, await getWorkerProfiles());
   buildWeatherSheet(wb, weatherRows);
 
   const buffer = await wb.xlsx.writeBuffer();

@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     );
   }
 
-  return NextResponse.json({ ok: true, siteInfo: getLatestSiteInfo() });
+  return NextResponse.json({ ok: true, siteInfo: await getLatestSiteInfo() });
 }
 
 export async function PUT(request: Request) {
@@ -60,6 +60,6 @@ export async function PUT(request: Request) {
     );
   }
 
-  const saved = persistSiteInfoDaily(siteInfo);
+  const saved = await persistSiteInfoDaily(siteInfo);
   return NextResponse.json({ ok: true, siteInfo: saved });
 }

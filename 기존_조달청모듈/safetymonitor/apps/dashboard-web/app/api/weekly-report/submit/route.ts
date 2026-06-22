@@ -17,13 +17,13 @@ export async function POST(req: Request) {
     if (!body.contractId) {
       return NextResponse.json({ error: { code: "BAD", message: "contractId가 필요합니다" } }, { status: 400 });
     }
-    const submission = recordReportSubmission({
+    const submission = await recordReportSubmission({
       contractId: body.contractId,
       period: body.period,
       verdict: body.verdict,
       suspectCount: typeof body.suspectCount === "number" ? body.suspectCount : undefined,
     });
-    return NextResponse.json({ ok: true, submission, history: listReportSubmissions(body.contractId, 10) });
+    return NextResponse.json({ ok: true, submission, history: await listReportSubmissions(body.contractId, 10) });
   } catch (err) {
     console.error("[api/weekly-report/submit]", err);
     return NextResponse.json({ error: { code: "INTERNAL", message: "제출 실패" } }, { status: 500 });

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   const ts =
     typeof b.ts === "string" && !Number.isNaN(Date.parse(b.ts)) ? b.ts : new Date().toISOString();
 
-  recordAedInspection({ aedId, loc: device.loc, inspector, items, ts });
+  await recordAedInspection({ aedId, loc: device.loc, inspector, items, ts });
 
   return NextResponse.json(
     { ok: true, loc: device.loc, inspector, items, ts },
