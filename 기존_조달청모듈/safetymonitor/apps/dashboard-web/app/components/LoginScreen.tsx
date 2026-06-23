@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { ALLOWED_COMPANIES } from "../../lib/companies";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { LoginShaderBackground } from "./LoginShaderBackground";
@@ -33,6 +34,7 @@ type Strings = {
   signupTitle: string;
   companyLabel: string;
   companyPlaceholder: string;
+  companySelect: string;
   nameLabel: string;
   namePlaceholder: string;
   phoneLabel: string;
@@ -110,6 +112,7 @@ const T: Record<Lang, Strings> = {
     signupTitle: "관리자 회원가입",
     companyLabel: "회사(상호)",
     companyPlaceholder: "(주)바이탈가드",
+    companySelect: "회사(상호) 선택",
     nameLabel: "이름",
     namePlaceholder: "홍길동",
     phoneLabel: "연락처",
@@ -178,6 +181,7 @@ const T: Record<Lang, Strings> = {
     signupTitle: "Admin sign-up",
     companyLabel: "Company",
     companyPlaceholder: "VitAlGuard Inc.",
+    companySelect: "Select company",
     nameLabel: "Name",
     namePlaceholder: "Jane Doe",
     phoneLabel: "Phone",
@@ -889,15 +893,22 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
-            <input
-              type="text"
+            <select
               value={sCompany}
               onChange={(e) => setSCompany(e.target.value)}
-              placeholder={t.companyPlaceholder}
-              autoComplete="organization"
               required
-              className={INPUT_CLASS}
-            />
+              style={SELECT_CHEVRON}
+              className={SELECT_CLASS}
+            >
+              <option value="" className="text-black">
+                {t.companySelect}
+              </option>
+              {ALLOWED_COMPANIES.map((c) => (
+                <option key={c} value={c} className="text-black">
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
           <div>
             <span className="text-xs font-semibold text-white/90 drop-shadow">
@@ -1244,15 +1255,22 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
-            <input
-              type="text"
+            <select
               value={gCompany}
               onChange={(e) => setGCompany(e.target.value)}
-              placeholder={t.companyPlaceholder}
-              autoComplete="organization"
               required
-              className={INPUT_CLASS}
-            />
+              style={SELECT_CHEVRON}
+              className={SELECT_CLASS}
+            >
+              <option value="" className="text-black">
+                {t.companySelect}
+              </option>
+              {ALLOWED_COMPANIES.map((c) => (
+                <option key={c} value={c} className="text-black">
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">

@@ -56,6 +56,7 @@ import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
+import { MyProfileModal } from "./MyProfileModal";
 import { UserManagementModal } from "./UserManagementModal";
 
 type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "fall";
@@ -524,6 +525,7 @@ export function DemoDashboard() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   // 로그인 역할 — owner 만 "사용자 관리" 탭 노출. sessionStorage 는 클라이언트에서만 접근.
   const [role, setRole] = useState<string | null>(null);
   useEffect(() => {
@@ -1192,6 +1194,23 @@ export function DemoDashboard() {
                     },
                   ]
                 : []),
+              // 가입 회원(admin)만 노출 — 내 가입 정보 수정.
+              ...(role === "admin"
+                ? [
+                    {
+                      title: "내 정보",
+                      tooltip: "내 가입 정보 수정 (이름·회사·연락처·비밀번호)",
+                      onSelect: () => setProfileOpen(true),
+                      icon: (
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                          <circle cx="12" cy="7" r="4" />
+                          <path d="m18.5 2.5 3 3L17 10l-3 .5.5-3z" />
+                        </svg>
+                      ),
+                    },
+                  ]
+                : []),
               {
                 title: "사이렌",
                 tooltip: sirenEnabled
@@ -1549,6 +1568,7 @@ export function DemoDashboard() {
       {alertsOpen && <AlertHistoryModal onClose={() => setAlertsOpen(false)} />}
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
+      {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
 
       {jobTitleEdit && (
         <JobTitleEditModal
