@@ -2,9 +2,14 @@
 import { NextResponse } from "next/server";
 
 import { getSession, verifyOwner } from "../../../../lib/admin-auth";
-import { listUsers, setUserStatus, type UserRow } from "../../../../lib/db";
+import {
+  deleteUser,
+  listUsers,
+  setUserStatus,
+  type UserRow,
+} from "../../../../lib/db";
 
-// password_hash 는 응답에서 제외.
+// password_hash·google_sub(민감/불필요) 만 제외하고 DB 스키마 그대로 반환.
 function publicUser(u: UserRow) {
   return {
     id: u.id,
@@ -12,7 +17,10 @@ function publicUser(u: UserRow) {
     name: u.name,
     company: u.company,
     phone: u.phone,
+    carrier: u.carrier,
     email: u.email,
+    email_verified: u.email_verified,
+    auth_provider: u.auth_provider,
     role: u.role,
     status: u.status,
     created_at: u.created_at,
@@ -42,11 +50,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
-  if (typeof id !== "number" || (action !== "approve" && action !== "reject")) {
+  if (
+    typeof id !== "number" ||
+    (action !== "approve" && action !== "reject" && action !== "delete")
+  ) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete) 이 필요합니다." },
       { status: 400 },
     );
+  }
+
+  // 탈퇴(하드 삭제) — owner 전용. 행 제거 후 성공 반환.
+  if (action === "delete") {
+    const removed = await deleteUser(id);
+    if (!removed) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, deleted: id });
   }
 
   const updated = await setUserStatus(
