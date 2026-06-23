@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { createUser } from "../../../../lib/db";
+import { consumeVerified, isVerified } from "../../../../lib/email-verify";
 import { hashPassword } from "../../../../lib/password";
 
 // env owner 와 혼동되는 아이디는 가입 차단(로그인 1순위가 env owner 라 그림자 계정 방지).
@@ -18,12 +19,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "입력 형식 오류" }, { status: 400 });
   }
 
-  const { username, password, name, company, phone, email } = body as {
+  const { username, password, name, company, phone, carrier, email } = body as {
     username?: unknown;
     password?: unknown;
     name?: unknown;
     company?: unknown;
     phone?: unknown;
+    carrier?: unknown;
     email?: unknown;
   };
   // 6개 항목 전부 필수 — 회사·아이디·비밀번호·이름·연락처·이메일.
@@ -84,6 +86,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  // ★ 이메일 인증 강제 — 인증 완료된 이메일만 가입 허용(가짜 이메일 차단).
+  if (!isVerified(mail)) {
+    return NextResponse.json(
+      { ok: false, error: "이메일 인증을 먼저 완료해주세요." },
+      { status: 403 },
+    );
+  }
+
+  const carrierName = typeof carrier === "string" ? carrier.trim().slice(0, 20) : "";
 
   const passwordHash = await hashPassword(password);
   const user = await createUser({
@@ -91,7 +102,9 @@ export async function POST(request: Request) {
     name: personName.slice(0, 60),
     company: coName.slice(0, 100),
     phone: tel.slice(0, 20),
+    carrier: carrierName || null,
     email: mail.slice(0, 120),
+    emailVerified: true,
     passwordHash,
   });
   if (!user) {
@@ -100,6 +113,8 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
+  // 가입 성공 — 인증 기록 소비(동일 인증 재사용 방지).
+  consumeVerified(mail);
 
   return NextResponse.json(
     {
