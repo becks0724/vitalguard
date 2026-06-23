@@ -63,3 +63,29 @@ approved_by TEXT                   -- 승인한 owner username
 - 세션 메모리 보관 — 인스턴스 1개라 데모 OK. 재시작·스케일 시 로그인 유실 → 다중 사용자 운영 시 DB 세션 검토.
 - 캠퍼스 DB 평문 연결(sslmode=disable) — 해시 저장이라 평문 비번은 안 새지만 전송 구간 비암호화. 상용화 시 SSL.
 - 가입 자체에도 rate limit 검토(현재 로그인만 잠금).
+
+## 회원가입 보안 강화 (2026-06-23)
+
+사용자 요청 7항목 — ① 비번 8자 경고 잔존 버그 ② ID 중복확인 ③ 연락처 3박스+통신사 ④ 이메일 id+도메인 선택 ⑤ 이메일 인증 발송·확인 ⑥ 인증번호 입력란(이메일 하단) ⑦(=①).
+
+### 결정
+1. **비번 8자 버그 원인 = 잔존(stale) error** — 검증이 제출 시 `setError`인데 입력 onChange가 error 미클리어 → 8자 미만으로 한 번 제출하면 8자 채워도 메시지 잔존. **수정 = 입력값 기반 라이브 판정**(`pwTooShortLive`/`pwMismatchLive`, 8자 채우면 즉시 사라짐) + pw onChange 에서 `setError(null)`.
+2. **이메일 인증 발송 = Resend HTTP API**(사용자 선택) — 의존성 0(fetch), `RESEND_API_KEY`+`EMAIL_FROM`. 키 미설정 시 **개발 폴백**(콘솔+`devCode` 반환, NODE_ENV!=production 한정). Cloud Run 은 HTTPS 아웃바운드라 동작 확실.
+3. **인증 강제 = 인증 완료해야 가입**(사용자 선택) — 클라 제출 게이트 + **서버 register 가 `isVerified(email)` 미충족 시 403**(방어 다중화). 이메일 변경 시 클라가 emailVerify 리셋 + 서버는 합성 이메일 재검증.
+4. **인증코드 저장 = 메모리**(`lib/email-verify.ts`, 세션 Map 과 동일 모델) — 코드 TTL 10분·재발송 쿨다운 60초·시도 5회·인증완료 TTL 30분·가입 성공 시 `consumeVerified`. 다중 인스턴스 운영 시 DB 백엔드 검토.
+5. **ID 중복확인** = `GET /api/admin/check-username?u=`(형식·예약어·중복), per-IP 30/분 스로틀(enumeration 완화). 서버 register 도 동일 검증 유지(클라 우회 차단).
+6. **연락처** = `[010▾][0000][0000]` + 통신사(SKT/KT/LG U+/알뜰폰). 합성 `010-0000-0000` 저장, **carrier 컬럼 신규**. 기존 phone regex(`[0-9+\-\s]{7,20}`) 통과.
+7. **이메일** = 로컬부 입력 + 도메인 셀렉트(naver/gmail/daum/hanmail/nate/kakao/직접입력). 합성 `id@domain`.
+8. **DB** = users 에 `carrier TEXT`·`email_verified BOOLEAN DEFAULT false` 추가(멱등 ALTER). 가입 성공 시 email_verified=true.
+
+### 신규/수정 파일
+- 신규 — `lib/email.ts`(Resend 발송), `lib/email-verify.ts`(코드 저장), `app/api/admin/email/send-code/route.ts`, `app/api/admin/email/verify-code/route.ts`, `app/api/admin/check-username/route.ts`
+- 수정 — `lib/db.ts`(컬럼·createUser), `app/api/admin/register/route.ts`(인증 강제·carrier), `app/components/LoginScreen.tsx`(폼 재구성·라이브검증), `.env.example`(RESEND)
+
+### 검증
+tsc 0 · 단위 44/44 · API e2e(:3100)= 중복확인(admin→reserved/신규→ok) · 발송(devCode) · **미인증 register 403** · 틀린코드 거부 · 인증 후 register 201 · DB carrier=SKT·email_verified=true·status=pending · dev-browser UI(폼 필드·옵션 렌더 + **비번 7자 경고→8자 사라짐 버그수정 확인**).
+
+### 남은 것(라이브 반영 시)
+- `RESEND_API_KEY`+`EMAIL_FROM` 을 `.env.local` 설정 + Secret Manager 등록 → Cloud Run `--update-secrets` 재배포. (미설정이면 운영에서 발송 실패 — 데모는 dev 폴백.)
+- Resend 임의 수신자 발송은 **발신 도메인 검증** 필요(미검증 시 onboarding@resend.dev 로 가입 계정 본인 메일에만).
+- (선택) 인증코드/세션 DB 백엔드(현재 메모리 — 인스턴스1 데모 OK).

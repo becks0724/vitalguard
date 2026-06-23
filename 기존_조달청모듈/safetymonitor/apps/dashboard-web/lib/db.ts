@@ -294,7 +294,9 @@ async function initSchema(): Promise<void> {
       name TEXT,
       company TEXT,
       phone TEXT,
+      carrier TEXT,
       email TEXT,
+      email_verified BOOLEAN NOT NULL DEFAULT false,
       password_hash TEXT,
       auth_provider TEXT NOT NULL DEFAULT 'password',
       google_sub TEXT,
@@ -308,7 +310,9 @@ async function initSchema(): Promise<void> {
     -- 기존 설치 호환 — 회원가입 추가 항목(회사·연락처·이메일) + Google 연동 컬럼 보강(앱 레벨 필수 검증).
     ALTER TABLE users ADD COLUMN IF NOT EXISTS company TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS carrier TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'password';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
@@ -1034,7 +1038,9 @@ export type UserRow = {
   name: string | null;
   company: string | null;
   phone: string | null;
+  carrier: string | null;
   email: string | null;
+  email_verified: boolean;
   password_hash: string | null; // Google 전용 계정은 null
   auth_provider: string; // 'password' | 'google'
   google_sub: string | null;
@@ -1051,7 +1057,9 @@ export async function createUser(input: {
   name: string | null;
   company: string | null;
   phone: string | null;
+  carrier: string | null;
   email: string | null;
+  emailVerified: boolean;
   passwordHash: string;
 }): Promise<UserRow | null> {
   const { text, values } = buildInsert("users", {
@@ -1059,7 +1067,9 @@ export async function createUser(input: {
     name: input.name,
     company: input.company,
     phone: input.phone,
+    carrier: input.carrier,
     email: input.email,
+    email_verified: input.emailVerified,
     password_hash: input.passwordHash,
   });
   const { rows } = await q<UserRow>(
@@ -1097,6 +1107,42 @@ export async function setUserStatus(
     [status, approvedBy, id],
   );
   return rows[0] ?? null;
+}
+
+// 회원 본인 정보 수정 — 로그인한 사용자가 자기 가입 정보를 갱신(username 기준). passwordHash 는 제공 시에만 변경.
+export async function updateUserProfile(
+  username: string,
+  input: {
+    name: string | null;
+    company: string | null;
+    phone: string | null;
+    carrier: string | null;
+    passwordHash?: string;
+  },
+): Promise<UserRow | null> {
+  if (input.passwordHash !== undefined) {
+    const { rows } = await q<UserRow>(
+      `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, password_hash = $5
+       WHERE username = $6 RETURNING *`,
+      [input.name, input.company, input.phone, input.carrier, input.passwordHash, username],
+    );
+    return rows[0] ?? null;
+  }
+  const { rows } = await q<UserRow>(
+    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4
+     WHERE username = $5 RETURNING *`,
+    [input.name, input.company, input.phone, input.carrier, username],
+  );
+  return rows[0] ?? null;
+}
+
+// 사용자 탈퇴(하드 삭제) — owner UI 에서 계정 제거. 삭제된 행이 있으면 true.
+export async function deleteUser(id: number): Promise<boolean> {
+  const { rows } = await q<{ id: number }>(
+    "DELETE FROM users WHERE id = $1 RETURNING id",
+    [id],
+  );
+  return rows.length > 0;
 }
 
 // Google 연동 계정 조회(google_sub 기준).

@@ -6,7 +6,8 @@
       "Bash(flutter test)",
       "Bash(flutter test *)",
       "Bash(xcrun xcresulttool get *)",
-      "Bash(xcodebuild -showdestinations *)"
+      "Bash(xcodebuild -showdestinations *)",
+      "Bash(dev-browser *)"
     ]
   }
 }

@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { ALLOWED_COMPANIES } from "../../lib/companies";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { LoginShaderBackground } from "./LoginShaderBackground";
@@ -33,6 +34,7 @@ type Strings = {
   signupTitle: string;
   companyLabel: string;
   companyPlaceholder: string;
+  companySelect: string;
   nameLabel: string;
   namePlaceholder: string;
   phoneLabel: string;
@@ -52,6 +54,31 @@ type Strings = {
   fillAll: string;
   invalidEmail: string;
   signupSuccess: string;
+  // ID 중복 확인
+  idCheckBtn: string;
+  idChecking: string;
+  idAvailable: string;
+  idTaken: string;
+  idInvalid: string;
+  idReserved: string;
+  idNeedCheck: string;
+  // 연락처(3박스 + 통신사)
+  carrierLabel: string;
+  carrierSelect: string;
+  // 이메일(아이디 + 도메인 선택 + 인증)
+  emailLocalPlaceholder: string;
+  emailDomainCustom: string;
+  emailDomainPlaceholder: string;
+  emailVerifyBtn: string;
+  emailResendBtn: string;
+  emailSending: string;
+  emailSentMsg: string;
+  codeLabel: string;
+  codePlaceholder: string;
+  codeVerifyBtn: string;
+  codeVerifiedMsg: string;
+  needEmailVerify: string;
+  demoCodePrefix: string;
   // 구글 가입 추가정보 + 콜백 메시지
   gcompleteTitle: string;
   gcompleteDesc: string;
@@ -85,6 +112,7 @@ const T: Record<Lang, Strings> = {
     signupTitle: "관리자 회원가입",
     companyLabel: "회사(상호)",
     companyPlaceholder: "(주)바이탈가드",
+    companySelect: "회사(상호) 선택",
     nameLabel: "이름",
     namePlaceholder: "홍길동",
     phoneLabel: "연락처",
@@ -104,6 +132,28 @@ const T: Record<Lang, Strings> = {
     fillAll: "모든 항목을 입력해주세요.",
     invalidEmail: "이메일 형식이 올바르지 않습니다.",
     signupSuccess: "가입 신청이 완료됐습니다. 관리자 승인 후 로그인할 수 있습니다.",
+    idCheckBtn: "중복 확인",
+    idChecking: "확인 중…",
+    idAvailable: "사용 가능한 ID입니다.",
+    idTaken: "이미 사용 중인 ID입니다.",
+    idInvalid: "3~40자의 영문·숫자·. _ - 만 사용할 수 있습니다.",
+    idReserved: "사용할 수 없는 ID입니다.",
+    idNeedCheck: "ID 중복 확인을 해주세요.",
+    carrierLabel: "통신사",
+    carrierSelect: "통신사 선택",
+    emailLocalPlaceholder: "이메일 아이디",
+    emailDomainCustom: "직접 입력",
+    emailDomainPlaceholder: "도메인 입력 (예: company.com)",
+    emailVerifyBtn: "인증번호 받기",
+    emailResendBtn: "재발송",
+    emailSending: "발송 중…",
+    emailSentMsg: "인증번호를 메일로 보냈습니다. (유효 10분)",
+    codeLabel: "인증번호",
+    codePlaceholder: "6자리 숫자",
+    codeVerifyBtn: "확인",
+    codeVerifiedMsg: "이메일 인증 완료",
+    needEmailVerify: "이메일 인증을 완료해주세요.",
+    demoCodePrefix: "데모 코드: ",
     gcompleteTitle: "구글 계정 추가 정보",
     gcompleteDesc: "승인을 위해 회사(상호)와 연락처를 입력해주세요.",
     googleMsgPending: "가입 승인 대기 중입니다. 관리자 승인 후 구글 로그인으로 입장할 수 있습니다.",
@@ -131,6 +181,7 @@ const T: Record<Lang, Strings> = {
     signupTitle: "Admin sign-up",
     companyLabel: "Company",
     companyPlaceholder: "VitAlGuard Inc.",
+    companySelect: "Select company",
     nameLabel: "Name",
     namePlaceholder: "Jane Doe",
     phoneLabel: "Phone",
@@ -150,6 +201,28 @@ const T: Record<Lang, Strings> = {
     fillAll: "Please fill in all fields.",
     invalidEmail: "Invalid email format.",
     signupSuccess: "Sign-up requested. You can sign in after admin approval.",
+    idCheckBtn: "Check",
+    idChecking: "Checking…",
+    idAvailable: "ID is available.",
+    idTaken: "ID is already taken.",
+    idInvalid: "3–40 chars: letters, digits, . _ - only.",
+    idReserved: "This ID is reserved.",
+    idNeedCheck: "Please check ID availability.",
+    carrierLabel: "Carrier",
+    carrierSelect: "Select carrier",
+    emailLocalPlaceholder: "email id",
+    emailDomainCustom: "Custom",
+    emailDomainPlaceholder: "domain (e.g. company.com)",
+    emailVerifyBtn: "Send code",
+    emailResendBtn: "Resend",
+    emailSending: "Sending…",
+    emailSentMsg: "Verification code sent. (valid 10 min)",
+    codeLabel: "Verification code",
+    codePlaceholder: "6-digit code",
+    codeVerifyBtn: "Verify",
+    codeVerifiedMsg: "Email verified",
+    needEmailVerify: "Please verify your email.",
+    demoCodePrefix: "Demo code: ",
     gcompleteTitle: "Complete your Google sign-up",
     gcompleteDesc: "Enter your company and phone for approval.",
     googleMsgPending: "Sign-up pending approval. You can sign in with Google after an admin approves.",
@@ -177,8 +250,41 @@ function googleMsgText(code: string, t: Strings): string | null {
 }
 
 // 셰이더 배경 위 글래스 입력 — 박스 없이 배경과 조화(반투명 흰색 + backdrop-blur).
-const INPUT_CLASS =
-  "mt-1 w-full rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm text-white outline-none backdrop-blur-md transition placeholder:text-white/50 focus:border-white/70 focus:bg-white/15";
+const FIELD_BASE =
+  "rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm text-white outline-none backdrop-blur-md transition placeholder:text-white/50 focus:border-white/70 focus:bg-white/15";
+const INPUT_CLASS = `mt-1 w-full ${FIELD_BASE}`;
+
+// 셀렉트(통신사·이메일 도메인) — INPUT_CLASS 톤 통일. 옵션은 네이티브 메뉴라 text-black 지정.
+// appearance-none 으로 네이티브 셀렉트 렌더(사각·기본 화살표)를 끄고 입력 박스와 동일한 둥근 글래스로 통일.
+const SELECT_BASE =
+  "appearance-none rounded-xl border border-white/25 bg-white/10 py-3 pl-4 pr-9 text-sm text-white outline-none backdrop-blur-md transition focus:border-white/70 focus:bg-white/15";
+const SELECT_CLASS = `mt-1 w-full ${SELECT_BASE}`;
+
+// appearance-none 으로 사라진 드롭다운 화살표를 흰색 SVG 배경으로 대체(우측).
+const SELECT_CHEVRON = {
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23ffffff' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M6 9l6 6 6-6'/%3E%3C/svg%3E\")",
+  backgroundRepeat: "no-repeat",
+  backgroundPosition: "right 0.625rem center",
+  backgroundSize: "1.1rem 1.1rem",
+};
+
+// 인라인 보조 버튼(중복 확인·인증번호 받기·확인).
+const MINI_BTN =
+  "shrink-0 rounded-xl border border-white/30 bg-white/15 px-3 py-3 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-white/25 disabled:opacity-50";
+
+// 통신사·이메일 도메인 옵션.
+const CARRIERS = ["SKT", "KT", "LG U+", "알뜰폰"];
+const EMAIL_DOMAINS = [
+  "naver.com",
+  "gmail.com",
+  "daum.net",
+  "hanmail.net",
+  "nate.com",
+  "kakao.com",
+];
+const CUSTOM_DOMAIN = "__custom__";
+const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 
 // 구글 'G' 4색 공식 로고.
 function GoogleIcon({ className }: { className?: string }) {
@@ -258,11 +364,28 @@ export function LoginScreen({
   const [sCompany, setSCompany] = useState("");
   const [sId, setSId] = useState("");
   const [sName, setSName] = useState("");
-  const [sPhone, setSPhone] = useState("");
-  const [sEmail, setSEmail] = useState("");
   const [sPw, setSPw] = useState("");
   const [sPw2, setSPw2] = useState("");
   const [signupMsg, setSignupMsg] = useState<string | null>(null);
+  // ID 중복 확인 상태(sId 변경 시 idle 로 리셋).
+  const [idCheck, setIdCheck] = useState<
+    "idle" | "checking" | "available" | "taken" | "invalid" | "reserved"
+  >("idle");
+  // 연락처 — 010 / 0000 / 0000 3박스 + 통신사.
+  const [phonePrefix, setPhonePrefix] = useState("010");
+  const [phoneMid, setPhoneMid] = useState("");
+  const [phoneLast, setPhoneLast] = useState("");
+  const [carrier, setCarrier] = useState("");
+  // 이메일 — 아이디 + 도메인(선택/직접입력) + 인증.
+  const [emailLocal, setEmailLocal] = useState("");
+  const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]!);
+  const [emailDomainCustom, setEmailDomainCustom] = useState("");
+  const [emailVerify, setEmailVerify] = useState<
+    "idle" | "sending" | "sent" | "verifying" | "verified"
+  >("idle");
+  const [emailCode, setEmailCode] = useState("");
+  const [emailMsg, setEmailMsg] = useState<string | null>(null);
+  const [devCode, setDevCode] = useState<string | null>(null);
   // 구글 가입 추가정보(회사·연락처) — 구글 인증 후 입력 단계.
   const [gCompany, setGCompany] = useState("");
   const [gPhone, setGPhone] = useState("");
@@ -289,6 +412,16 @@ export function LoginScreen({
   }, []);
 
   const t = T[lang];
+
+  // 회원가입 파생값 — 합성 이메일/연락처 + 라이브 검증.
+  const emailDomainFinal =
+    emailDomain === CUSTOM_DOMAIN ? emailDomainCustom.trim() : emailDomain;
+  const composedEmail = `${emailLocal.trim()}@${emailDomainFinal}`;
+  const composedPhone = `${phonePrefix}-${phoneMid}-${phoneLast}`;
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composedEmail);
+  const phoneValid = /^\d{3,4}$/.test(phoneMid) && /^\d{4}$/.test(phoneLast);
+  const pwTooShortLive = sPw.length > 0 && sPw.length < 8;
+  const pwMismatchLive = sPw2.length > 0 && sPw !== sPw2;
 
   // 구글 콜백 복귀 처리 — ?gsignup(추가정보 단계) / ?gmsg(안내). 처리 후 URL 정리.
   useEffect(() => {
@@ -345,21 +478,31 @@ export function LoginScreen({
       if (submitting) return;
       setError(null);
       setSignupMsg(null);
-      // 6항목 전부 필수.
+      // 필수 항목 + 보안 게이트(ID 중복확인·이메일 인증·비번 규칙) 전부 충족해야 제출.
       if (
         !sCompany.trim() ||
         !sId.trim() ||
         !sName.trim() ||
-        !sPhone.trim() ||
-        !sEmail.trim() ||
+        !phoneValid ||
+        !carrier ||
+        !emailLocal.trim() ||
+        !emailDomainFinal ||
         !sPw ||
         !sPw2
       ) {
         setError(t.fillAll);
         return;
       }
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sEmail.trim())) {
+      if (idCheck !== "available") {
+        setError(t.idNeedCheck);
+        return;
+      }
+      if (!emailValid) {
         setError(t.invalidEmail);
+        return;
+      }
+      if (emailVerify !== "verified") {
+        setError(t.needEmailVerify);
         return;
       }
       if (sPw.length < 8) {
@@ -379,8 +522,9 @@ export function LoginScreen({
             company: sCompany.trim(),
             username: sId.trim(),
             name: sName.trim(),
-            phone: sPhone.trim(),
-            email: sEmail.trim(),
+            phone: composedPhone,
+            carrier,
+            email: composedEmail,
             password: sPw,
           }),
         });
@@ -389,14 +533,24 @@ export function LoginScreen({
           setError(json.error || t.networkError);
           return;
         }
-        // 성공 → 로그인 모드로 돌아가 안내 노출, 입력 초기화.
+        // 성공 → 로그인 모드로 돌아가 안내 노출, 입력 전부 초기화.
         setMode("login");
         setSignupMsg(t.signupSuccess);
         setSCompany("");
         setSId("");
         setSName("");
-        setSPhone("");
-        setSEmail("");
+        setPhonePrefix("010");
+        setPhoneMid("");
+        setPhoneLast("");
+        setCarrier("");
+        setEmailLocal("");
+        setEmailDomain(EMAIL_DOMAINS[0]!);
+        setEmailDomainCustom("");
+        setEmailVerify("idle");
+        setEmailCode("");
+        setEmailMsg(null);
+        setDevCode(null);
+        setIdCheck("idle");
         setSPw("");
         setSPw2("");
       } catch {
@@ -405,8 +559,117 @@ export function LoginScreen({
         setSubmitting(false);
       }
     },
-    [sCompany, sId, sName, sPhone, sEmail, sPw, sPw2, submitting, t],
+    [
+      sCompany,
+      sId,
+      sName,
+      phoneValid,
+      carrier,
+      emailLocal,
+      emailDomainFinal,
+      composedPhone,
+      composedEmail,
+      emailValid,
+      idCheck,
+      emailVerify,
+      sPw,
+      sPw2,
+      submitting,
+      t,
+    ],
   );
+
+  // ID 중복 확인 — /api/admin/check-username.
+  const handleCheckId = useCallback(async () => {
+    const u = sId.trim();
+    if (!/^[a-zA-Z0-9._-]{3,40}$/.test(u)) {
+      setIdCheck("invalid");
+      return;
+    }
+    setIdCheck("checking");
+    try {
+      const res = await fetch(`/api/admin/check-username?u=${encodeURIComponent(u)}`);
+      const j = (await res.json()) as {
+        ok?: boolean;
+        available?: boolean;
+        reason?: string;
+        error?: string;
+      };
+      if (!res.ok || !j.ok) {
+        setIdCheck("idle");
+        setError(j.error || t.networkError);
+        return;
+      }
+      if (j.available) setIdCheck("available");
+      else
+        setIdCheck(
+          j.reason === "reserved"
+            ? "reserved"
+            : j.reason === "invalid"
+              ? "invalid"
+              : "taken",
+        );
+    } catch {
+      setIdCheck("idle");
+      setError(t.networkError);
+    }
+  }, [sId, t]);
+
+  // 이메일 인증번호 발송 — /api/admin/email/send-code.
+  const handleSendCode = useCallback(async () => {
+    if (!emailValid) {
+      setError(t.invalidEmail);
+      return;
+    }
+    setEmailVerify("sending");
+    setEmailMsg(null);
+    setDevCode(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/email/send-code", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: composedEmail }),
+      });
+      const j = (await res.json()) as { ok?: boolean; devCode?: string; error?: string };
+      if (!res.ok || !j.ok) {
+        setEmailVerify("idle");
+        setError(j.error || t.networkError);
+        return;
+      }
+      setEmailVerify("sent");
+      setEmailMsg(t.emailSentMsg);
+      if (j.devCode) setDevCode(j.devCode);
+    } catch {
+      setEmailVerify("idle");
+      setError(t.networkError);
+    }
+  }, [emailValid, composedEmail, t]);
+
+  // 이메일 인증번호 확인 — /api/admin/email/verify-code.
+  const handleVerifyCode = useCallback(async () => {
+    setEmailVerify("verifying");
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/email/verify-code", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email: composedEmail, code: emailCode.trim() }),
+      });
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setEmailVerify("sent");
+        setError(j.error || t.networkError);
+        return;
+      }
+      setEmailVerify("verified");
+      setEmailMsg(null);
+      setDevCode(null);
+    } catch {
+      setEmailVerify("sent");
+      setError(t.networkError);
+    }
+  }, [composedEmail, emailCode, t]);
 
   // 구글 가입 추가정보 제출 — 회사·연락처 → /api/auth/google/complete (pending 생성).
   const handleGoogleComplete = useCallback(
@@ -630,30 +893,66 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
-            <input
-              type="text"
+            <select
               value={sCompany}
               onChange={(e) => setSCompany(e.target.value)}
-              placeholder={t.companyPlaceholder}
-              autoComplete="organization"
               required
-              className={INPUT_CLASS}
-            />
+              style={SELECT_CHEVRON}
+              className={SELECT_CLASS}
+            >
+              <option value="" className="text-black">
+                {t.companySelect}
+              </option>
+              {ALLOWED_COMPANIES.map((c) => (
+                <option key={c} value={c} className="text-black">
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
-          <label className="block">
+          <div>
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.idLabel}
             </span>
-            <input
-              type="text"
-              value={sId}
-              onChange={(e) => setSId(e.target.value)}
-              placeholder={t.idPlaceholder}
-              autoComplete="username"
-              required
-              className={INPUT_CLASS}
-            />
-          </label>
+            <div className="mt-1 flex items-stretch gap-2">
+              <input
+                type="text"
+                value={sId}
+                onChange={(e) => {
+                  setSId(e.target.value);
+                  setIdCheck("idle");
+                }}
+                placeholder={t.idPlaceholder}
+                autoComplete="username"
+                required
+                className={`${FIELD_BASE} flex-1`}
+              />
+              <button
+                type="button"
+                onClick={handleCheckId}
+                disabled={idCheck === "checking" || !sId.trim()}
+                className={MINI_BTN}
+              >
+                {idCheck === "checking" ? t.idChecking : t.idCheckBtn}
+              </button>
+            </div>
+            {idCheck === "available" && (
+              <p className="mt-1 text-[11px] font-semibold text-emerald-200 drop-shadow">
+                {t.idAvailable}
+              </p>
+            )}
+            {(idCheck === "taken" ||
+              idCheck === "invalid" ||
+              idCheck === "reserved") && (
+              <p className="mt-1 text-[11px] font-semibold text-red-200 drop-shadow">
+                {idCheck === "taken"
+                  ? t.idTaken
+                  : idCheck === "reserved"
+                    ? t.idReserved
+                    : t.idInvalid}
+              </p>
+            )}
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.nameLabel}
@@ -668,34 +967,190 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          <label className="block">
+          <div>
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.phoneLabel}
             </span>
-            <input
-              type="tel"
-              value={sPhone}
-              onChange={(e) => setSPhone(e.target.value)}
-              placeholder={t.phonePlaceholder}
-              autoComplete="tel"
-              required
-              className={INPUT_CLASS}
-            />
-          </label>
+            <div className="mt-1 flex items-center gap-1.5">
+              <select
+                value={phonePrefix}
+                onChange={(e) => setPhonePrefix(e.target.value)}
+                style={SELECT_CHEVRON}
+                className={`${SELECT_BASE} w-24`}
+              >
+                {PHONE_PREFIXES.map((p) => (
+                  <option key={p} value={p} className="text-black">
+                    {p}
+                  </option>
+                ))}
+              </select>
+              <span className="text-white/50">-</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={4}
+                value={phoneMid}
+                onChange={(e) =>
+                  setPhoneMid(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                placeholder="0000"
+                required
+                className={`${FIELD_BASE} w-full flex-1 text-center`}
+              />
+              <span className="text-white/50">-</span>
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={4}
+                value={phoneLast}
+                onChange={(e) =>
+                  setPhoneLast(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                placeholder="0000"
+                required
+                className={`${FIELD_BASE} w-full flex-1 text-center`}
+              />
+            </div>
+          </div>
           <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.carrierLabel}
+            </span>
+            <select
+              value={carrier}
+              onChange={(e) => setCarrier(e.target.value)}
+              required
+              style={SELECT_CHEVRON}
+              className={SELECT_CLASS}
+            >
+              <option value="" className="text-black">
+                {t.carrierSelect}
+              </option>
+              {CARRIERS.map((c) => (
+                <option key={c} value={c} className="text-black">
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.emailLabel}
             </span>
-            <input
-              type="email"
-              value={sEmail}
-              onChange={(e) => setSEmail(e.target.value)}
-              placeholder={t.emailPlaceholder}
-              autoComplete="email"
-              required
-              className={INPUT_CLASS}
-            />
-          </label>
+            <div className="mt-1 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={emailLocal}
+                onChange={(e) => {
+                  setEmailLocal(e.target.value.replace(/[\s@]/g, ""));
+                  setEmailVerify("idle");
+                  setEmailCode("");
+                  setEmailMsg(null);
+                  setDevCode(null);
+                }}
+                placeholder={t.emailLocalPlaceholder}
+                autoComplete="email"
+                required
+                className={`${FIELD_BASE} w-full flex-1`}
+              />
+              <span className="text-white/60">@</span>
+              <select
+                value={emailDomain}
+                onChange={(e) => {
+                  setEmailDomain(e.target.value);
+                  setEmailVerify("idle");
+                  setEmailCode("");
+                  setEmailMsg(null);
+                  setDevCode(null);
+                }}
+                style={SELECT_CHEVRON}
+                className={`${SELECT_BASE} flex-1`}
+              >
+                {EMAIL_DOMAINS.map((d) => (
+                  <option key={d} value={d} className="text-black">
+                    {d}
+                  </option>
+                ))}
+                <option value={CUSTOM_DOMAIN} className="text-black">
+                  {t.emailDomainCustom}
+                </option>
+              </select>
+            </div>
+            {emailDomain === CUSTOM_DOMAIN && (
+              <input
+                type="text"
+                value={emailDomainCustom}
+                onChange={(e) => {
+                  setEmailDomainCustom(e.target.value.replace(/[\s@]/g, ""));
+                  setEmailVerify("idle");
+                  setEmailCode("");
+                  setEmailMsg(null);
+                  setDevCode(null);
+                }}
+                placeholder={t.emailDomainPlaceholder}
+                className={INPUT_CLASS}
+              />
+            )}
+
+            {/* 이메일 인증 — 코드 발송 → 입력 → 확인. 인증 완료해야 가입 가능. */}
+            {emailVerify === "verified" ? (
+              <p className="mt-2 text-[11px] font-semibold text-emerald-200 drop-shadow">
+                ✓ {t.codeVerifiedMsg}
+              </p>
+            ) : emailVerify === "sent" || emailVerify === "verifying" ? (
+              <div className="mt-2 space-y-1.5">
+                <span className="text-xs font-semibold text-white/90 drop-shadow">
+                  {t.codeLabel}
+                </span>
+                <div className="flex items-stretch gap-2">
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={emailCode}
+                    onChange={(e) =>
+                      setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder={t.codePlaceholder}
+                    className={`${FIELD_BASE} flex-1 text-center tracking-widest`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleVerifyCode}
+                    disabled={emailVerify === "verifying" || emailCode.length < 6}
+                    className={MINI_BTN}
+                  >
+                    {t.codeVerifyBtn}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSendCode}
+                  className="text-[11px] font-semibold text-white/80 underline underline-offset-2 hover:text-sky-200"
+                >
+                  {t.emailResendBtn}
+                </button>
+                {emailMsg && (
+                  <p className="text-[11px] text-emerald-100/90 drop-shadow">{emailMsg}</p>
+                )}
+                {devCode && (
+                  <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
+                    {t.demoCodePrefix}
+                    {devCode}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={emailVerify === "sending" || !emailValid}
+                className={`${MINI_BTN} mt-2 w-full`}
+              >
+                {emailVerify === "sending" ? t.emailSending : t.emailVerifyBtn}
+              </button>
+            )}
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.pwLabel}
@@ -703,13 +1158,22 @@ export function LoginScreen({
             <input
               type="password"
               value={sPw}
-              onChange={(e) => setSPw(e.target.value)}
+              onChange={(e) => {
+                setSPw(e.target.value);
+                setError(null);
+              }}
               placeholder={t.pwPlaceholder}
               autoComplete="new-password"
               required
               className={INPUT_CLASS}
             />
           </label>
+          {/* 비밀번호 길이 — 입력값 기반 라이브 판정(8자 채우면 즉시 사라짐). */}
+          {pwTooShortLive && (
+            <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
+              {t.pwTooShort}
+            </p>
+          )}
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.pwConfirmLabel}
@@ -717,13 +1181,21 @@ export function LoginScreen({
             <input
               type="password"
               value={sPw2}
-              onChange={(e) => setSPw2(e.target.value)}
+              onChange={(e) => {
+                setSPw2(e.target.value);
+                setError(null);
+              }}
               placeholder={t.pwConfirmPlaceholder}
               autoComplete="new-password"
               required
               className={INPUT_CLASS}
             />
           </label>
+          {pwMismatchLive && (
+            <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
+              {t.pwMismatch}
+            </p>
+          )}
 
           {error && (
             <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
@@ -738,10 +1210,16 @@ export function LoginScreen({
               !sCompany ||
               !sId ||
               !sName ||
-              !sPhone ||
-              !sEmail ||
+              !phoneValid ||
+              !carrier ||
+              !emailLocal ||
+              !emailDomainFinal ||
               !sPw ||
-              !sPw2
+              !sPw2 ||
+              idCheck !== "available" ||
+              emailVerify !== "verified" ||
+              sPw.length < 8 ||
+              sPw !== sPw2
             }
             label={submitting ? t.signupSubmitting : t.signupSubmit}
             className="w-full"
@@ -777,15 +1255,22 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
-            <input
-              type="text"
+            <select
               value={gCompany}
               onChange={(e) => setGCompany(e.target.value)}
-              placeholder={t.companyPlaceholder}
-              autoComplete="organization"
               required
-              className={INPUT_CLASS}
-            />
+              style={SELECT_CHEVRON}
+              className={SELECT_CLASS}
+            >
+              <option value="" className="text-black">
+                {t.companySelect}
+              </option>
+              {ALLOWED_COMPANIES.map((c) => (
+                <option key={c} value={c} className="text-black">
+                  {c}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
