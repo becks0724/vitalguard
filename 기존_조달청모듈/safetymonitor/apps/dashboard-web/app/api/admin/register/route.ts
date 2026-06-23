@@ -1,6 +1,7 @@
 // 관리자 회원가입 — 신규 계정을 status=pending 으로 저장(승인제). 승인 전엔 로그인 불가.
 import { NextResponse } from "next/server";
 
+import { isAllowedCompany } from "../../../../lib/companies";
 import { createUser } from "../../../../lib/db";
 import { consumeVerified, isVerified } from "../../../../lib/email-verify";
 import { hashPassword } from "../../../../lib/password";
@@ -51,6 +52,13 @@ export async function POST(request: Request) {
   if (!coName || !personName || !tel || !mail) {
     return NextResponse.json(
       { ok: false, error: "모든 항목을 입력해주세요." },
+      { status: 400 },
+    );
+  }
+  // B2B — 승인된 기업(상호)만 가입 허용.
+  if (!isAllowedCompany(coName)) {
+    return NextResponse.json(
+      { ok: false, error: "승인되지 않은 회사(상호)입니다." },
       { status: 400 },
     );
   }
