@@ -491,6 +491,215 @@ function workerCell(sample: VitalSample) {
   return name ?? empId ?? sample.workerId;
 }
 
+const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
+
+function calendarSameDay(a: Date, b: Date) {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function HeaderCalendarPopup({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [viewDate, setViewDate] = useState(() => new Date());
+  const [selected, setSelected] = useState(() => new Date());
+
+  useEffect(() => {
+    if (!open) return;
+    const now = new Date();
+    setViewDate(now);
+    setSelected(now);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const today = new Date();
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstWeekday = new Date(year, month, 1).getDay();
+
+  const cells: (number | null)[] = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const monthLabel = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+  }).format(viewDate);
+
+  const selectedLabel = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "long",
+  }).format(selected);
+
+  const goPrevMonth = () => setViewDate(new Date(year, month - 1, 1));
+  const goNextMonth = () => setViewDate(new Date(year, month + 1, 1));
+  const goToday = () => {
+    const now = new Date();
+    setViewDate(now);
+    setSelected(now);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-end bg-black/25 p-4 pt-[4.5rem] backdrop-blur-[2px] sm:pt-20"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="일정 캘린더"
+    >
+      <div
+        className="w-full max-w-[320px] overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-hairline bg-gradient-to-r from-[#0052ff]/10 via-transparent to-transparent px-4 py-3 dark:border-white/10">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0052ff]/12 text-primary">
+              <svg
+                viewBox="0 0 24 24"
+                width="18"
+                height="18"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </span>
+            <div>
+              <p className="text-sm font-bold text-ink dark:text-on-dark">일정 캘린더</p>
+              <p className="text-[11px] text-muted dark:text-on-dark-soft">날짜를 선택하세요</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+            aria-label="캘린더 닫기"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-4 pb-4 pt-3">
+          <div className="mb-3 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={goPrevMonth}
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+              aria-label="이전 달"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+            <p className="text-sm font-semibold tabular-nums text-ink dark:text-on-dark">{monthLabel}</p>
+            <button
+              type="button"
+              onClick={goNextMonth}
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+              aria-label="다음 달"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          <div className="mb-1.5 grid grid-cols-7 gap-1">
+            {CALENDAR_WEEKDAYS.map((label, i) => (
+              <div
+                key={label}
+                className={[
+                  "py-1 text-center text-[11px] font-semibold",
+                  i === 0 ? "text-red-500 dark:text-red-400" : "",
+                  i === 6 ? "text-blue-600 dark:text-blue-400" : "",
+                  i > 0 && i < 6 ? "text-muted dark:text-on-dark-soft" : "",
+                ].join(" ")}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-7 gap-1">
+            {cells.map((day, idx) => {
+              if (day === null) {
+                return <div key={`empty-${idx}`} className="aspect-square" />;
+              }
+              const cellDate = new Date(year, month, day);
+              const isToday = calendarSameDay(cellDate, today);
+              const isSelected = calendarSameDay(cellDate, selected);
+              const weekday = cellDate.getDay();
+
+              return (
+                <button
+                  key={`${year}-${month}-${day}`}
+                  type="button"
+                  onClick={() => setSelected(cellDate)}
+                  className={[
+                    "aspect-square rounded-lg text-sm font-medium tabular-nums transition",
+                    isSelected
+                      ? "bg-[#0052ff] text-white shadow-sm shadow-[#0052ff]/30"
+                      : isToday
+                        ? "bg-[#0052ff]/12 font-semibold text-primary ring-1 ring-[#0052ff]/30"
+                        : "text-ink hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10",
+                    !isSelected && weekday === 0 ? "text-red-500 dark:text-red-400" : "",
+                    !isSelected && weekday === 6 ? "text-blue-600 dark:text-blue-400" : "",
+                  ].join(" ")}
+                  aria-label={`${year}년 ${month + 1}월 ${day}일`}
+                  aria-pressed={isSelected}
+                >
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+            <p className="min-w-0 truncate text-xs text-muted dark:text-on-dark-soft">{selectedLabel}</p>
+            <button
+              type="button"
+              onClick={goToday}
+              className="shrink-0 rounded-lg bg-[#0052ff]/10 px-2.5 py-1 text-xs font-semibold text-primary transition hover:bg-[#0052ff]/20"
+            >
+              오늘
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DemoDashboard() {
   const { logout } = useSession();
   const [data, setData] = useState<MockVitalResponse>({
@@ -523,6 +732,7 @@ export function DemoDashboard() {
   const [queueModalSlot, setQueueModalSlot] = useState<number | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [usersOpen, setUsersOpen] = useState(false);
   // 로그인 역할 — owner 만 "사용자 관리" 탭 노출. sessionStorage 는 클라이언트에서만 접근.
   const [role, setRole] = useState<string | null>(null);
@@ -1164,6 +1374,19 @@ export function DemoDashboard() {
                 ),
               },
               {
+                title: "캘린더",
+                tooltip: "일정 캘린더 — 날짜 선택",
+                onSelect: () => setCalendarOpen(true),
+                icon: (
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="3" y="4" width="18" height="18" rx="2" />
+                    <line x1="16" y1="2" x2="16" y2="6" />
+                    <line x1="8" y1="2" x2="8" y2="6" />
+                    <line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                ),
+              },
+              {
                 title: "관리자",
                 tooltip: "관리자 메뉴 (CSV 내보내기 등)",
                 onSelect: () => setAdminOpen(true),
@@ -1578,6 +1801,8 @@ export function DemoDashboard() {
       )}
 
       {alertsOpen && <AlertHistoryModal onClose={() => setAlertsOpen(false)} />}
+
+      <HeaderCalendarPopup open={calendarOpen} onClose={() => setCalendarOpen(false)} />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
 
