@@ -54,7 +54,7 @@ import { WeatherStrip } from "./WeatherStrip";
 import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
-import SafetyCostAuditBoard from "./SafetyCostAuditBoard";
+import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import { UserManagementModal } from "./UserManagementModal";
 
@@ -1492,38 +1492,7 @@ export function DemoDashboard() {
           },
           {
             title: "안전관리비 검증",
-            content: (
-              <div className="flex flex-col gap-4">
-                {/* VitAlGuard 진입 메뉴 — 검증/보고서/제출 화면 */}
-                <nav className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline bg-canvas px-4 py-3 dark:border-white/10 dark:bg-surface-dark">
-                  <span className="mr-1 text-xs font-bold text-ink dark:text-on-dark">VitAlGuard 안전관리비 검증</span>
-                  <a
-                    href="/weekly-report"
-                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
-                  >
-                    주간 검증 보고서
-                  </a>
-                  <a
-                    href="/contractor"
-                    className="rounded-md border border-hairline px-3 py-1.5 text-xs font-semibold text-body transition hover:border-primary dark:border-white/10 dark:text-on-dark-soft"
-                  >
-                    시공사 청구 제출
-                  </a>
-                  <a
-                    href="/safety-audit"
-                    className="rounded-md border border-hairline px-3 py-1.5 text-xs font-semibold text-body transition hover:border-primary dark:border-white/10 dark:text-on-dark-soft"
-                  >
-                    실집행 검증 전체화면
-                  </a>
-                </nav>
-
-                {/* VitAlGuard — 안전관리비 실집행 검증(①계상=조달 × ③실집행=워치 출역).
-                    (착공 전 발주 위험선별 ProcureRiskBoard 는 /safeprocure 부가 페이지로 이동.) */}
-                <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
-                  <SafetyCostAuditBoard />
-                </section>
-              </div>
-            ),
+            content: <SafetyVerificationTabs />,
           },
         ]}
       />
