@@ -12,7 +12,18 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-22 — 레이아웃 2페이지 페이저 + 관리자 회원가입(승인제) + Google 로그인(OAuth) + GitHub remote 정정 / 레이아웃·회원가입 main 병합·재배포 = 라이브, Google 은 로컬만)
+### ★ 최신 (2026-06-23 — 회원가입 보안 강화 + 회사(상호) B2B 선택 + 사용자 관리 확장 + 내 정보 수정 + dev-browser / origin push 완료·라이브 미반영)
+
+- **★ 회원가입 보안 강화**(`7c10ec6`) — 비번 8자 경고 잔존 버그 수정(제출 setError 잔존→입력값 라이브 판정) · ID 중복확인 버튼(`/api/admin/check-username`) · 연락처 3박스+통신사(carrier 컬럼) · 이메일 로컬부+도메인 선택박스 · **이메일 인증(Resend HTTP API, 의존성0)** — 인증완료해야 가입(서버 isVerified 403 이중방어, 키없으면 dev devCode 폴백). [lib/email.ts](../apps/dashboard-web/lib/email.ts)·[lib/email-verify.ts](../apps/dashboard-web/lib/email-verify.ts).
+- **★ 회사(상호) B2B 선택**(`ff6887f`) — 자유입력→승인 기업 드롭다운([lib/companies.ts](../apps/dashboard-web/lib/companies.ts) **단일소스**: (주)바이탈가드·VitAlGuard·스마트인재개발원·조달청·고용노동부, 개발사가 배열 편집으로 추가/삭제). 서버 검증(register·google/complete 목록 외 400).
+- **★ 사용자 관리 확장**(`4aba061`, owner) — 카드→DB 스키마 전체 컬럼 테이블(통신사·인증·경로) + **탈퇴**(하드삭제 deleteUser+확인창) + **DB 실시간 5초 폴링**·새로고침([UserManagementModal](../apps/dashboard-web/app/components/UserManagementModal.tsx)).
+- **★ 내 정보 수정**(`4aba061`, admin '내 정보' 탭) — [MyProfileModal](../apps/dashboard-web/app/components/MyProfileModal.tsx) 이름·회사·연락처·통신사 + 비번변경(현재비번 검증). `/api/admin/profile` GET·POST — **세션 username 기준 본인 행만**(클라 id 불신뢰), 아이디·이메일 읽기전용.
+- **★ dev-browser**(`62e1c02`) — SawyerHood 브라우저 자동화(QuickJS WASM 샌드박스) 로컬 설치(npm 없는 pnpm 전용이라 데몬런타임 직접 구성·`.claude/skills/dev-browser/SKILL.md` 환경노트) + `.claude/settings.json` 자동승인. 라이브 관제웹 검증 도구.
+- **DB** — users `carrier`·`email_verified` 멱등 ALTER(옛 가입분 null/false·신규만 채워짐). (★ UI 교훈) **셀렉트 `appearance-none`+커스텀화살표 없으면 macOS 네이티브 각짐**(headless 미재현, 로그인·내정보 모달 통일) · 전화 3박스 `flex-1`+`min-width:auto` 모달 가로 오버플로→**고정폭**.
+- **상태** — origin/main = `4aba061`(이번 4커밋 `62e1c02`·`7c10ec6`·`ff6887f`·`4aba061` push 완료), working tree clean. 세션 중 팀원 `47dd027`(db/integrated) pull 병합. **라이브(Cloud Run) 미반영 = GitHub 만 반영.** 증거: tsc 0·테스트 44/44·next lint 에러0·API e2e 다수(미인증403/401·미승인회사400·비번변경 현재비번검증)·dev-browser UI 스크린샷.
+- **다음** — **이메일 실발송**=`RESEND_API_KEY`+`EMAIL_FROM` Secret Manager 등록+재배포(미설정 시 로컬 devCode·운영 발송실패) · Google OAuth 라이브 시크릿 · `gcloud builds submit`+`run deploy --update-secrets` 로 이번 세션 기능 라이브 반영 · **Phase 5(폰·워치 수신 URL→Cloud Run) 여전히 미완**. 상세 [auth-signup/checklist.md](./auth-signup/checklist.md).
+
+### (2026-06-22 — 레이아웃 2페이지 페이저 + 관리자 회원가입(승인제) + Google 로그인(OAuth) + GitHub remote 정정 / 레이아웃·회원가입 main 병합·재배포 = 라이브, Google 은 로컬만)
 
 - **★ GitHub remote 정정** — 작업분이 잘못된 `rlaxorhs77-eng` repo로 가던 것을 **`VitAlGuard-jodal/vitalguard-jodalcheong`(SSH·becks0724 키)** 로 origin 교체 후 main push. (증거: `git ls-remote` HEAD=`f67b1d4`→`40d5511`)
 - **★ 관제 레이아웃 2페이지 페이저**(`f67b1d4`) — [DemoDashboard](../apps/dashboard-web/app/components/DemoDashboard.tsx)를 상단 `‹ 제목 N/M ›` 좌우 슬라이드 2페이지로 재구성([SectionPager](../apps/dashboard-web/app/components/SectionPager.tsx) 신규 — WidgetCarousel 과 달리 활성 페이지 높이 자동 동기화). 1p=실시간 현장 관제(신호등·현황·작업자 모니터링), 2p=안전관리비 검증. **main 병합·Cloud Run rev 00003 재배포**. 증거: tsc 0·테스트 40/40·로컬+라이브 Playwright 좌표 전환 검증·스크린샷 2장.
