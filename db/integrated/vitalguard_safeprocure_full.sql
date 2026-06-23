@@ -213,7 +213,7 @@ SET search_path TO safeprocure, public;
 DROP TABLE IF EXISTS risk_profile, risk_tag, safety_cost_check,
                      safety_cost_rate, notice CASCADE;
 
--- 공고/계약 (G2B 나라장터) — 자연키(조달청 공고번호) PK
+-- ── 공고/계약 (G2B 나라장터) — 자연키(조달청 공고번호) PK ──────────────
 CREATE TABLE notice (
   notice_id            VARCHAR(50)   PRIMARY KEY,                 -- 조달청 공고번호(bidNtceNo)
   title                VARCHAR(500)  NOT NULL,                    -- 공고명/공사명
@@ -240,8 +240,9 @@ CREATE INDEX idx_notice_region  ON notice(region);
 CREATE INDEX idx_notice_kind    ON notice(kind);
 CREATE INDEX idx_notice_created ON notice(created_at DESC);
 
--- 안전관리비 요율 기준표 (정적 참조)
+-- ── 안전관리비 요율 기준표 (정적 참조) ───────────────────────────────
 -- ⚠ 요율 출처: 고용노동부 고시 별표1 정리본. 현행 고시(제2025-11호, ~19% 인상)로 교차검증 필요.
+--   엔진 로직은 수치와 독립 — 값만 갱신하면 됨.
 CREATE TABLE safety_cost_rate (
   construction_type VARCHAR(40)   NOT NULL,
   bracket           VARCHAR(10)   NOT NULL,
@@ -259,7 +260,7 @@ INSERT INTO safety_cost_rate(construction_type,bracket,rate,base_added) VALUES
  ('철도·궤도신설공사','under5',0.0245,0),('철도·궤도신설공사','mid',0.0157,4411000),('철도·궤도신설공사','over50',0.0166,0),
  ('특수·기타건설공사','under5',0.0185,0),('특수·기타건설공사','mid',0.0120,3250000),('특수·기타건설공사','over50',0.0127,0);
 
--- 안전관리비 검증 (공고당 1건)
+-- ── 안전관리비 검증 (공고당 1건) ─────────────────────────────────────
 CREATE TABLE safety_cost_check (
   check_id          BIGSERIAL     PRIMARY KEY,
   notice_id         VARCHAR(50)   NOT NULL UNIQUE REFERENCES notice(notice_id) ON DELETE CASCADE,
@@ -283,7 +284,7 @@ CREATE TABLE safety_cost_check (
 COMMENT ON TABLE safety_cost_check IS '안전관리비 기준액 산정·판정 (공고당 1건)';
 CREATE INDEX idx_scc_verdict ON safety_cost_check(verdict);
 
--- 위험작업 태그 (공고당 N건)
+-- ── 위험작업 태그 (공고당 N건) ───────────────────────────────────────
 CREATE TABLE risk_tag (
   tag_id       BIGSERIAL    PRIMARY KEY,
   notice_id    VARCHAR(50)  NOT NULL REFERENCES notice(notice_id) ON DELETE CASCADE,
@@ -299,7 +300,7 @@ COMMENT ON TABLE risk_tag IS '공고문에서 추출한 위험작업 태그';
 CREATE INDEX idx_rt_notice ON risk_tag(notice_id);
 CREATE INDEX idx_rt_tag    ON risk_tag(tag);
 
--- 종합 위험 프로파일 (공고당 1건)
+-- ── 종합 위험 프로파일 (공고당 1건) ──────────────────────────────────
 CREATE TABLE risk_profile (
   profile_id               BIGSERIAL   PRIMARY KEY,
   notice_id                VARCHAR(50) NOT NULL UNIQUE REFERENCES notice(notice_id) ON DELETE CASCADE,
