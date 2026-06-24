@@ -62,7 +62,7 @@ export default function AedInspectPage() {
       <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-hairline bg-surface-soft shadow-xl dark:border-white/10 dark:bg-surface-dark-elevated">
         <div className="bg-primary px-5 py-4 text-white">
           <div className="text-[11px] font-semibold uppercase tracking-wide opacity-80">VitAlGuard · AED 점검</div>
-          <div className="mt-0.5 text-lg font-bold">제세동기 점검 기록</div>
+          <div className="mt-0.5 text-lg font-bold">제세동기(AED) 점검 기록</div>
         </div>
 
         {phase === "loading" ? (
@@ -90,7 +90,7 @@ export default function AedInspectPage() {
         ) : (
           <div className="px-5 py-5">
             <div className="mb-4 rounded-lg bg-canvas px-3 py-2 text-xs dark:bg-surface-dark">
-              <div className="text-muted dark:text-on-dark-soft">제세동기 위치</div>
+              <div className="text-muted dark:text-on-dark-soft">제세동기(AED) 위치</div>
               <div className="text-sm font-semibold text-ink dark:text-on-dark">{loc}</div>
               <div className="mt-0.5 font-mono text-[10px] text-muted dark:text-on-dark-soft">{aedId}</div>
             </div>

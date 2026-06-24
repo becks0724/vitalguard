@@ -27,7 +27,7 @@
 - [x] users 테이블 `google_sub`·`auth_provider` + `password_hash` nullable + findUserByGoogleSub·createGoogleUser
 - [x] LoginScreen 구글 버튼 실연결 + 추가정보(회사·연락처) 폼 + 콜백 메시지 / LoginGate 핸드오프
 - [x] 검증 — tsc 0 · 테스트 44/44 · 서버측(시작 307·추가정보 201·DB 적재·잘못된쿠키 400). 구글 동의 화면은 사용자 수동 테스트.
-- [ ] (라이브) Secret Manager 에 GOOGLE_CLIENT_ID/SECRET 등록 + Cloud Run --set-secrets 재배포
+- [x] (라이브) Secret Manager 에 GOOGLE_CLIENT_ID/SECRET 등록 + Cloud Run 배포 (rev 00007-7n7 에 9 시크릿 연결, 2026-06-23)
 
 ## Phase D — 회원가입 보안 강화 ✅ 완료 (2026-06-23, 커밋 `7c10ec6`)
 - [x] 비밀번호 8자 경고 잔존 버그 수정 — 제출 setError 잔존 → 입력값 라이브 판정(8자 채우면 사라짐)
@@ -38,7 +38,7 @@
 - [x] `lib/email.ts`(발송·키없으면 devCode 폴백)·`lib/email-verify.ts`(코드 메모리·TTL·쿨다운·시도제한)
 - [x] users 테이블 `carrier`·`email_verified` 컬럼 멱등 ALTER
 - [x] 검증 — tsc 0·테스트 44/44·API e2e(중복확인·발송·미인증403·인증·201·DB)·UI 라이브
-- [ ] (라이브) `RESEND_API_KEY`+`EMAIL_FROM` Secret Manager 등록 + Cloud Run 재배포(실발송)
+- [x] (라이브) `RESEND_API_KEY` Secret Manager 등록 + Cloud Run 재배포 (rev 00007-7n7, 2026-06-23). `EMAIL_FROM`=onboarding@resend.dev 기본값(도메인 미보유 → Resend 계정 본인 이메일만 발송). 도메인 인증 후 `services update --update-env-vars EMAIL_FROM=…`(재빌드 불필요)로 실발송 전환 예정.
 
 ## Phase E — 회사(상호) B2B 승인 기업 선택 ✅ 완료 (2026-06-23, 커밋 `ff6887f`)
 - [x] 자유 입력 → 승인 기업 드롭다운 / `lib/companies.ts` 단일 소스(개발사 편집) + isAllowedCompany
@@ -54,6 +54,7 @@
 - [x] `/api/admin/profile` GET·POST — 세션 username 기준 본인 행만 / 비번변경은 현재 비번 검증
 - [x] `updateUserProfile`(db) / 검증 — tsc 0·API e2e(조회·수정·비번변경·owner403·비인증401)·UI
 
-## 라이브 배포(공통 남은 것)
-- [ ] `RESEND_API_KEY`·`EMAIL_FROM`·`GOOGLE_CLIENT_ID/SECRET` Secret Manager 등록
-- [ ] `gcloud builds submit` + `gcloud run deploy`(--update-secrets) → 이번 세션 기능 라이브 반영
+## 라이브 배포 ✅ 완료 (2026-06-23, rev 00007-7n7)
+- [x] `RESEND_API_KEY`·`GOOGLE_CLIENT_ID/SECRET` Secret Manager 등록 (`EMAIL_FROM`은 onboarding 기본값 유지 — 도메인 미보유)
+- [x] `gcloud builds submit`(Cloud Build 2m58s) + `gcloud run deploy --update-secrets RESEND_API_KEY` → 이번 세션 기능 라이브 반영 (시크릿 9종·env 보존, 라이브 검증 = HTTP 200·check-username·로그인 401·회원가입 폼 캡처)
+- [ ] (선택, 도메인 확보 후) Resend 도메인 인증 + `EMAIL_FROM` 갱신 → 임의 가입자 실발송
