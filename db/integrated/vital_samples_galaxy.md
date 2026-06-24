@@ -56,6 +56,18 @@ Galaxy Watch ──(Samsung Health)──▶ Android Health Connect
 - **낙상 / 가속도 / EDA / ECG / 체성분(BIA)** — Health Connect 에 없음(Samsung Health Sensor SDK 영역, Wear OS 앱 + 일부 삼성 승인 필요).
   - **낙상감지는 별도 알고리즘 모듈로 분리 예정** — **가스포드(ESP32 가스검출) 알고리즘과 함께 알고리즘 모듈군**으로 관리한다. 본 스키마는 "센서 raw 수신"만 담당하고, 낙상 판정 로직은 모듈에서 별도 처리.
 
+> **아키텍처 경계 — 수신(스키마) vs 판정(알고리즘 모듈).**
+> 이 스키마는 raw 생체데이터 적재만 담당하고, 위험 판정/추론은 별도 모듈군에서 수행한다(스키마↔알고리즘 분리 → drift 방지·재사용).
+>
+> | 계층 | 담당 | 위치 |
+> |---|---|---|
+> | 수신(이 스키마) | Health Connect raw 적재 | `vital_samples_galaxy` |
+> | 알고리즘 ① 스트레스 | 스트레스 지수 산출 | `packages/analyzers` `computeStressIndex` (기존 코드) |
+> | 알고리즘 ② 낙상 | 가속도 → 낙상 판정 | **별도 모듈 예정** |
+> | 알고리즘 ③ 가스 | 가스농도 → 위험 판정 | **가스포드(ESP32), 별도** |
+>
+> `vital_samples_galaxy`(또는 Sensor SDK 원시 가속도)는 ②의 입력이 될 수 있으나, 판정 로직은 모듈에 둔다.
+
 ## 5. 통합 조회 뷰 `v_vital_samples_all` (선택)
 
 분리 테이블을 대시보드가 플랫폼 무관하게 읽도록, Apple `vital_samples` + 갤럭시 `vital_samples_galaxy` 를
@@ -78,3 +90,11 @@ Galaxy Watch ──(Samsung Health)──▶ Android Health Connect
 
 - 로컬 미러에서 `BEGIN … (DDL) … ROLLBACK` 실행 → **29컬럼 생성 성공, 뷰 생성 성공, 롤백 후 잔존 없음(DB 무변경)**.
 - 멱등(`CREATE TABLE IF NOT EXISTS` · `CREATE INDEX IF NOT EXISTS` · `CREATE OR REPLACE VIEW`).
+
+## 각주 (footnotes)
+
+1. **HRV 지표 불일치** — Apple=SDNN, 갤럭시(HC)=RMSSD. 둘 다 ms 단위지만 계산식이 달라 값 분포가 다르다. SDNN 기준 baseline(50ms)에 RMSSD를 넣으면 스트레스 지수가 왜곡 → 컬럼 분리(`hrv_rmssd_ms`) + 알고리즘에서 RMSSD 전용 처리 필요.
+2. **피부온도 delta** — HC `SkinTemperatureRecord`는 baseline 대비 변화량만 제공. 절대온도가 필요하면 `skin_temp_baseline_c + skin_temp_delta_c`로 복원. baseline 미제공 시 delta만 저장.
+3. **SpO₂ 단위** — HC 명세는 0~100 %지만 Flutter `health` 패키지가 0~1 분율로 줄 때가 있어 적재 전 `*100`. `ck_vsg_spo2`(0~100 CHECK)로 이중 방어.
+4. **`health` 패키지 권한 함정** — 미지원 타입(`WALKING_HEART_RATE`·`HEART_RATE_VARIABILITY_SDNN`·`SLEEP_WRIST_TEMPERATURE` 등)이 권한 목록에 하나라도 섞이면 `preparePermissionsList`가 null → `requestAuthorization` 전체 false. 갤럭시는 **HC 지원 타입만** 요청해야 기존 권한까지 막히지 않는다.
+5. **낙상·가스 = 별도 모듈** — 본 스키마는 raw 수신 전용. 낙상감지·가스포드 가스검출은 알고리즘 모듈군으로 분리(위 "아키텍처 경계" 표 참조).
