@@ -73,7 +73,7 @@ export function KoshaAccidentCaseCard({
                   className="mb-1 flex w-full items-center gap-1.5 rounded-lg bg-canvas px-2.5 py-1 text-left transition hover:ring-1 hover:ring-primary/40 dark:bg-surface-dark"
                 >
                   {it.business && (
-                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                    <span className="shrink-0 rounded bg-surface-card px-1.5 py-0.5 text-[10px] font-semibold text-ink">
                       {it.business}
                     </span>
                   )}

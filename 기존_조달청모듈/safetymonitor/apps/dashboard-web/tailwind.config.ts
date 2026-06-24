@@ -1,4 +1,4 @@
-// Tailwind 3.x 스캔 경로 설정 — App Router 디렉터리만 사용
+// Tailwind 3.x — Cal.com-inspired design tokens
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -10,12 +10,15 @@ const config: Config = {
         primary: "var(--color-primary)",
         "primary-active": "var(--color-primary-active)",
         "primary-disabled": "var(--color-primary-disabled)",
+        "brand-accent": "var(--color-brand-accent)",
         canvas: "var(--color-canvas)",
         "surface-soft": "var(--color-surface-soft)",
+        "surface-card": "var(--color-surface-card)",
         "surface-strong": "var(--color-surface-strong)",
         "surface-dark": "var(--color-surface-dark)",
         "surface-dark-elevated": "var(--color-surface-dark-elevated)",
         hairline: "var(--color-hairline)",
+        "hairline-soft": "var(--color-hairline-soft)",
         ink: "var(--color-ink)",
         body: "var(--color-body)",
         muted: "var(--color-muted)",
@@ -25,10 +28,10 @@ const config: Config = {
         "on-dark-soft": "var(--color-on-dark-soft)",
         "semantic-up": "var(--color-semantic-up)",
         "semantic-down": "var(--color-semantic-down)",
+        warning: "var(--color-warning)",
       },
       borderRadius: {
-        xl: "24px",
-        pill: "100px",
+        pill: "9999px",
       },
       fontFamily: {
         display: ["var(--font-display)"],
@@ -36,7 +39,8 @@ const config: Config = {
         mono: ["var(--font-mono)"],
       },
       boxShadow: {
-        coinbase: "0 4px 12px rgba(0, 0, 0, 0.04)",
+        card: "0 1px 2px rgba(0, 0, 0, 0.05)",
+        "card-hover": "0 4px 12px rgba(0, 0, 0, 0.08)",
       },
     },
   },

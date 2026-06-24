@@ -27,7 +27,7 @@ export function ExpandableTabs({
 
   return (
     <div
-      className={`inline-flex items-center gap-1 rounded-2xl border border-hairline bg-canvas p-1 shadow-sm dark:border-white/10 dark:bg-surface-dark-elevated ${className ?? ""}`}
+      className={`inline-flex items-center gap-1 rounded-pill bg-surface-soft p-1.5 dark:bg-surface-dark-elevated ${className ?? ""}`}
     >
       {tabs.map((tab, i) => {
         const isOpen = open === i;
@@ -49,7 +49,11 @@ export function ExpandableTabs({
             ].join(" ")}
             style={
               isOpen
-                ? { backgroundColor: "rgba(0,82,255,0.12)", color: "var(--color-primary)" }
+                ? {
+                    backgroundColor: "var(--color-canvas)",
+                    color: "var(--color-ink)",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                  }
                 : undefined
             }
           >

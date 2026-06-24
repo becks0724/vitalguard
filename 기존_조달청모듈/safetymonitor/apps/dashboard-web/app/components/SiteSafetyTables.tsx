@@ -25,13 +25,18 @@ export type SiteMetric = {
 
 const DOT: Record<Sev, string> = {
   normal: "bg-semantic-up",
-  caution: "bg-amber-500 vital-blink-caution",
+  caution: "bg-orange-400/90 vital-blink-caution",
   danger: "bg-semantic-down vital-blink-danger",
 };
 const TONE: Record<Sev, string> = {
   normal: "text-semantic-up",
-  caution: "text-amber-600 vital-blink-caution dark:text-amber-300",
+  caution: "text-orange-700/90 vital-blink-caution dark:text-orange-400/85",
   danger: "text-semantic-down vital-blink-danger",
+};
+const SEV_ROW_BG: Record<Sev, string> = {
+  normal: "",
+  caution: "bg-orange-50/90 dark:bg-orange-500/8",
+  danger: "bg-red-100 dark:bg-red-500/12",
 };
 
 // 신호등 점 — 작업자 표와 동일(정상 정적 / 주의·위험 블링크).
@@ -171,9 +176,7 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
       {GAS_ROWS.map((r) => (
         <div
           key={r.loc}
-          className={`${GAS_GRID} h-12 border-b border-hairline px-3 text-xs text-ink dark:border-white/5 dark:text-on-dark ${
-            r.sev !== "normal" ? "ring-1 ring-inset ring-red-500/50" : ""
-          }`}
+          className={`${GAS_GRID} h-12 border-b border-hairline px-3 text-xs text-ink dark:border-white/5 dark:text-on-dark ${SEV_ROW_BG[r.sev]}`}
         >
           <div className="flex justify-center">
             <SignalDot sev={r.sev} />
@@ -619,7 +622,7 @@ function AedDeviceModal({ row, onClose }: { row: AedRow; onClose: () => void }) 
             <button
               type="button"
               onClick={writeNfc}
-              className="w-full rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              className="w-full rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary hover:bg-primary-active"
             >
               NFC 태그에 쓰기
             </button>
@@ -671,7 +674,7 @@ function AedDeviceModal({ row, onClose }: { row: AedRow; onClose: () => void }) 
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active"
           >
             확인
           </button>
@@ -756,7 +759,7 @@ function AedManagementModal({
           <button
             type="button"
             onClick={onClose}
-            className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 ${
+            className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active ${
               isDanger ? "bg-semantic-down" : "bg-amber-500"
             }`}
           >

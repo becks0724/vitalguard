@@ -465,7 +465,7 @@ function TickerSegment({
       title={`${label} 정책 근거 보기`}
       aria-hidden={duplicate || undefined}
       tabIndex={duplicate ? -1 : undefined}
-      className="me-2.5 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-hairline/70 bg-surface-soft/70 px-3.5 py-1.5 align-middle transition-colors hover:border-[#0052ff]/30 hover:bg-[#0052ff]/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#0052ff] dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
+      className="me-2.5 inline-flex shrink-0 items-center gap-1.5 rounded-full border border-hairline/70 bg-surface-soft/70 px-3.5 py-1.5 align-middle transition-colors hover:border-ink/20 hover:bg-surface-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ink dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
     >
       <WeatherIcon
         name={icon ?? "cloud"}

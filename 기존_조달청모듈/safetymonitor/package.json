@@ -13,7 +13,8 @@
     "lint": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web lint",
     "typecheck": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web typecheck",
     "dev:web": "pnpm --filter @safetymonitor/dashboard-web dev",
-    "mock:publish": "node scripts/mock-publish.mjs"
+    "mock:publish": "node scripts/mock-publish.mjs",
+    "prepare:packages": "pnpm --filter @safetymonitor/schemas build && pnpm --filter @safetymonitor/analyzers build"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

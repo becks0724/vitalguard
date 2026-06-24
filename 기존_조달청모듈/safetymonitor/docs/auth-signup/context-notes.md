@@ -89,3 +89,33 @@ tsc 0 · 단위 44/44 · API e2e(:3100)= 중복확인(admin→reserved/신규→
 - `RESEND_API_KEY`+`EMAIL_FROM` 을 `.env.local` 설정 + Secret Manager 등록 → Cloud Run `--update-secrets` 재배포. (미설정이면 운영에서 발송 실패 — 데모는 dev 폴백.)
 - Resend 임의 수신자 발송은 **발신 도메인 검증** 필요(미검증 시 onboarding@resend.dev 로 가입 계정 본인 메일에만).
 - (선택) 인증코드/세션 DB 백엔드(현재 메모리 — 인스턴스1 데모 OK).
+
+## 회사(상호) B2B 승인 기업 선택 (2026-06-23)
+- 자유 입력 → **승인 기업 드롭다운**(B2B — 승인된 기업만 가입). `lib/companies.ts` `ALLOWED_COMPANIES` **단일 소스**(개발사가 배열 편집으로 추가/삭제) + `isAllowedCompany`.
+- 목록 = (주)바이탈가드·VitAlGuard·스마트인재개발원·조달청·고용노동부.
+- **서버 검증** — `register`·`google/complete` 가 목록 외 회사 거부(400) → API 직접 호출 우회 차단. 일반·구글 가입 폼 둘 다 셀렉트.
+- 향후 owner가 화면에서 기업 추가/삭제하려면 DB 테이블+관리 UI 필요(현재는 코드 관리). 커밋 `ff6887f`.
+
+## 사용자 관리 모달 확장 (2026-06-23, owner)
+- 카드형 → **DB 스키마 그대로 전체 컬럼 테이블**(ID·아이디·이름·회사·연락처·통신사·이메일·인증·경로·역할·상태·가입일·승인일·승인자). password_hash·google_sub 만 제외.
+- **사용자 탈퇴(하드 삭제)** — `deleteUser`(DELETE) + 확인창, owner 전용 `POST action:'delete'`. owner(env)는 DB 행 없어 락아웃 위험 0.
+- **DB 실시간 동기화** — 5초 폴링 + 새로고침 버튼 + 최근 갱신 시각.
+- users API `publicUser` 에 carrier·email_verified·auth_provider 추가. 커밋 `4aba061`.
+
+## 내 정보 수정 (2026-06-23, 가입 회원=admin)
+- 헤더 '내 정보' 탭(role==admin 전용) → `MyProfileModal`. 이름·회사(승인목록)·연락처(3박스)·통신사 수정 + **비밀번호 변경**(현재 비번 검증 후).
+- 아이디·이메일은 **읽기 전용**(식별·인증 정보 — 이메일 변경은 재인증 필요, v1 제외).
+- `/api/admin/profile` GET(프리필)·POST(수정) — **세션 username 기준 본인 행만**(클라가 보낸 id 신뢰 안 함). owner는 DB 행 없어 자가 수정 대상 아님(403/editable:false). `updateUserProfile`(db). 커밋 `4aba061`.
+- (★ UI 교훈) 셀렉트는 `appearance-none`+커스텀 화살표 없으면 macOS 네이티브로 각지게 렌더(로그인 폼·내 정보 모달 둘 다 동일 패턴으로 통일). 전화 3박스는 `flex-1`+`min-width:auto` 로 모달 가로 오버플로 → **고정 폭**(prefix w-20/mid·last w-24)으로 해결.
+
+## DB 컬럼 추가 (2026-06-23)
+- users 테이블 `carrier TEXT`·`email_verified BOOLEAN DEFAULT false` 멱등 ALTER. 기존 가입분(옛 폼)은 carrier=null·email_verified=false, 신규 가입분만 채워짐(정상).
+
+## 검증 도구 (2026-06-23)
+- **dev-browser**(SawyerHood) 로컬 설치·적용(커밋 `62e1c02`, `.claude/settings.json` 자동승인). 이 머신은 npm 없는 pnpm 전용이라 데몬 런타임을 `pnpm -C ~/.dev-browser install` + `playwright install chromium` 로 직접 구성(`.claude/skills/dev-browser/SKILL.md` 환경 노트). 라이브 관제웹 검증에 사용.
+
+## 현재 상태 / 다음 (2026-06-23 종합)
+- **전부 origin/main 푸시 완료**(`ff6887f`·`4aba061` + 직전 `7c10ec6` 회원가입 보안·`62e1c02` dev-browser). tsc 0·테스트 44/44·lint 에러 0.
+- **라이브(Cloud Run) 미반영** — GitHub 만 반영. 라이브 배포 시 `gcloud builds submit`+`run deploy` 필요.
+- **이메일 실발송**은 `RESEND_API_KEY`(+`EMAIL_FROM`) Secret Manager 등록 후 재배포해야 동작(미설정 시 로컬은 devCode 폴백·운영은 발송 실패).
+- 기존 보류 — Google OAuth 라이브 시크릿(GOOGLE_CLIENT_ID/SECRET), Phase 5(폰·워치 수신 URL → Cloud Run).

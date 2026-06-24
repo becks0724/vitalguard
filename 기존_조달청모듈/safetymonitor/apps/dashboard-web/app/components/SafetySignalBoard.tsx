@@ -192,7 +192,7 @@ export function SafetySignalBoard({
   const gasRow: LampRow = { icon: "gas", label: "가스 감지", sev: gas.sev, summary: gas.summary, short: gas.short, detail: gas.detail };
 
   const aed = useMemo(() => aedDetail(), []);
-  const aedRow: LampRow = { icon: "aed", label: "제세동기", sev: aed.sev, summary: aed.summary, short: aed.short, detail: aed.detail };
+  const aedRow: LampRow = { icon: "aed", label: "AED", sev: aed.sev, summary: aed.summary, short: aed.short, detail: aed.detail };
 
   const rows: LampRow[] = [weatherRow, workerRow, gasRow, aedRow];
   const overall = worst(rows.map((r) => r.sev));
@@ -217,7 +217,7 @@ export function SafetySignalBoard({
               type="button"
               onClick={() => setOpenRow(r)}
               title={`${r.summary} · ${r.short} — 클릭 시 상세`}
-              className="flex w-full items-center gap-2 rounded-lg bg-canvas px-2 py-1.5 text-left transition hover:ring-1 hover:ring-primary/30 dark:bg-surface-dark"
+              className="flex w-full items-center gap-2 rounded-lg bg-canvas px-2 py-1.5 text-left transition hover:ring-1 hover:ring-ink/15 dark:bg-surface-dark"
             >
               <BoardIcon name={r.icon} className="h-[18px] w-[18px] shrink-0 text-body dark:text-on-dark-soft" />
               <span className="w-14 shrink-0 text-[11px] font-semibold text-ink dark:text-on-dark">{r.label}</span>

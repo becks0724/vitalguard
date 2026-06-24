@@ -118,12 +118,12 @@ export function AdminExportModal({
       {token !== null ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-zinc-200 bg-white shadow-xl dark:border-white/10 dark:bg-[#0d1117]"
+          className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-hairline bg-canvas shadow-xl dark:border-white/10 dark:bg-surface-dark"
         >
-          <header className="flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50/70 px-5 py-3 dark:border-white/10 dark:bg-white/[0.02]">
-            <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-              <span className="font-semibold text-zinc-900 dark:text-zinc-100">관리자</span>
-              <span className="text-zinc-300 dark:text-zinc-600">/</span>
+          <header className="flex items-center justify-between gap-3 border-b border-hairline bg-surface-card/70 px-5 py-3 dark:border-white/10 dark:bg-canvas/[0.02]">
+            <div className="flex items-center gap-2 text-sm text-muted dark:text-muted-soft">
+              <span className="font-semibold text-ink dark:text-zinc-100">관리자</span>
+              <span className="text-zinc-300 dark:text-muted">/</span>
               <span>산업재해 자료</span>
               <span className="ml-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 vital-blink-caution" />
@@ -134,7 +134,7 @@ export function AdminExportModal({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-zinc-600 transition hover:bg-zinc-200/70 dark:text-zinc-400 dark:hover:bg-white/10"
+                className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs text-muted transition hover:bg-zinc-200/70 dark:text-muted-soft dark:hover:bg-canvas/10"
               >
                 <AdminIcon name="logout" className="h-4 w-4" />
                 로그아웃
@@ -143,7 +143,7 @@ export function AdminExportModal({
                 type="button"
                 onClick={onClose}
                 aria-label="닫기"
-                className="rounded-md p-1.5 text-zinc-500 transition hover:bg-zinc-200/70 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+                className="rounded-md p-1.5 text-muted transition hover:bg-zinc-200/70 hover:text-body dark:text-muted-soft dark:hover:bg-canvas/10 dark:hover:text-zinc-200"
               >
                 <AdminIcon name="close" className="h-4 w-4" />
               </button>
@@ -226,18 +226,18 @@ function LoginCard({
   }
 
   const inputClass =
-    "w-full rounded-md border border-zinc-300 bg-white px-3.5 py-2.5 text-sm text-zinc-900 outline-none transition placeholder:text-zinc-400 focus:border-[#0052ff] focus:ring-2 focus:ring-[#0052ff]/25 dark:border-white/15 dark:bg-white/[0.03] dark:text-zinc-100 dark:placeholder:text-zinc-500";
+    "w-full rounded-lg border border-hairline bg-canvas px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-muted-soft focus:border-ink focus:ring-2 focus:ring-ink/20 dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark dark:placeholder:text-muted-soft";
 
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="relative flex w-full max-w-sm flex-col items-center gap-y-7 rounded-2xl border border-zinc-200 bg-white px-7 py-10 shadow-xl dark:border-white/10 dark:bg-[#0d1117]"
+      className="relative flex w-full max-w-sm flex-col items-center gap-y-7 rounded-2xl border border-hairline bg-canvas px-7 py-10 shadow-card-hover dark:border-white/10 dark:bg-surface-dark"
     >
       <button
         type="button"
         onClick={onClose}
         aria-label="닫기"
-        className="absolute right-3.5 top-3.5 rounded-md p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-white/10 dark:hover:text-zinc-200"
+        className="absolute right-3.5 top-3.5 rounded-lg p-1 text-muted-soft transition hover:bg-surface-soft hover:text-ink dark:hover:bg-canvas/10 dark:hover:text-on-dark"
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
           <path d="M6 6l12 12M18 6 6 18" />
@@ -248,7 +248,7 @@ function LoginCard({
       <div className="flex flex-col items-center gap-y-3">
         <img src="/brand/vitalguard-logo-light.png" alt="VitalGuard" className="h-9 dark:hidden" />
         <img src="/brand/vitalguard-logo-dark.png" alt="VitalGuard" className="hidden h-9 dark:block" />
-        <p className="max-w-[17rem] text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+        <p className="max-w-[17rem] text-center text-xs leading-relaxed text-muted dark:text-on-dark-soft">
           산업재해 자료 제출용 vital 데이터 내보내기 메뉴입니다. 관리자 ID/비밀번호를 입력하세요.
         </p>
       </div>
@@ -282,7 +282,7 @@ function LoginCard({
           </p>
         )}
         {info && (
-          <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-white/10 dark:bg-white/[0.04] dark:text-zinc-300">
+          <p className="rounded-md border border-hairline bg-surface-card px-3 py-2 text-xs text-muted dark:border-white/10 dark:bg-canvas/[0.04] dark:text-zinc-300">
             {info}
           </p>
         )}
@@ -290,14 +290,14 @@ function LoginCard({
         <button
           type="submit"
           disabled={busy || !password}
-          className="mt-1 w-full rounded-md bg-[#0052ff] px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0040cc] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-1 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-on-primary shadow-card transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
         >
           {busy ? "확인 중..." : "로그인"}
         </button>
         <button
           type="button"
           onClick={() => setInfo("구글 로그인은 준비 중입니다.")}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 py-2.5 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-white/15 dark:bg-white/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-hairline bg-canvas px-3 py-2.5 text-sm font-medium text-body transition hover:bg-surface-card dark:border-white/15 dark:bg-canvas/[0.03] dark:text-zinc-200 dark:hover:bg-canvas/[0.06]"
         >
           <GoogleIcon className="size-5" />
           구글로 계속하기
@@ -305,12 +305,12 @@ function LoginCard({
       </form>
 
       {/* 푸터 */}
-      <div className="flex justify-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
+      <div className="flex justify-center gap-1 text-sm text-muted dark:text-muted-soft">
         <p>관리자 계정 문의는</p>
         <button
           type="button"
           onClick={() => setInfo("관리자 계정은 시스템 관리자에게 문의하세요.")}
-          className="font-medium text-[#0052ff] hover:underline"
+          className="font-medium text-brand-accent hover:underline"
         >
           시스템 관리자
         </button>
@@ -537,10 +537,10 @@ function ExportPanel({
     <div className="space-y-6 px-6 py-6">
       {/* 타이틀 + 메타(레퍼런스 메타 그리드 축약) */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
+        <h1 className="text-2xl font-bold tracking-tight text-ink dark:text-zinc-100">
           산업재해 자료 관리
         </h1>
-        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted dark:text-muted-soft">
           <span className="inline-flex items-center gap-1.5">
             <AdminIcon name="building" className="h-4 w-4" />
             {siteInfo.siteName?.trim() || "현장 미설정"}
@@ -548,7 +548,7 @@ function ExportPanel({
           <span className="inline-flex items-center gap-1.5">
             <AdminIcon name="database" className="h-4 w-4" />
             DB 영속{" "}
-            <span className="font-mono text-zinc-700 dark:text-zinc-300">{total.toLocaleString()}</span>
+            <span className="font-mono text-body dark:text-zinc-300">{total.toLocaleString()}</span>
             건 누적
           </span>
         </div>
@@ -557,22 +557,22 @@ function ExportPanel({
       <SiteInfoPanel token={token} siteInfo={siteInfo} onSave={onSiteInfoSave} />
 
       {/* 섹션: 데이터 내보내기 */}
-      <section className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+      <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
         <div className="mb-3 flex items-center gap-2">
-          <AdminIcon name="download" className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
-          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">데이터 내보내기</h3>
-          <span className="ml-auto rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:border-white/15 dark:bg-white/5 dark:text-zinc-300">
+          <AdminIcon name="download" className="h-5 w-5 text-muted dark:text-muted-soft" />
+          <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">데이터 내보내기</h3>
+          <span className="ml-auto rounded-full border border-hairline bg-canvas px-2 py-0.5 text-[10px] font-medium text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-300">
             워커 + 기간 선택 후 CSV
           </span>
         </div>
 
         <div className="space-y-3">
           <label className="block">
-            <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">작업자</span>
+            <span className="text-xs font-semibold text-body dark:text-zinc-300">작업자</span>
         <select
           value={selectedWorker}
           onChange={(e) => setSelectedWorker(e.target.value)}
-          className="mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
+          className="mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
         >
           <option value="">전체 ({total.toLocaleString()}건)</option>
           {(workers ?? []).map((w) => {
@@ -591,21 +591,21 @@ function ExportPanel({
 
       <div className="grid grid-cols-2 gap-2">
         <label className="block">
-          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">시작 일자</span>
+          <span className="text-xs font-semibold text-body dark:text-zinc-300">시작 일자</span>
           <input
             type="date"
             value={from}
             onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
+            className="mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
           />
         </label>
         <label className="block">
-          <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">종료 일자</span>
+          <span className="text-xs font-semibold text-body dark:text-zinc-300">종료 일자</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
+            className="mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
           />
         </label>
       </div>
@@ -621,7 +621,7 @@ function ExportPanel({
           type="button"
           onClick={handlePreview}
           disabled={previewBusy || !from || !to}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-white/[0.03] dark:text-zinc-200 dark:hover:bg-white/[0.06]"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-md border border-hairline bg-canvas px-4 py-2.5 text-sm font-semibold text-body shadow-sm transition hover:bg-surface-card disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/15 dark:bg-canvas/[0.03] dark:text-zinc-200 dark:hover:bg-canvas/[0.06]"
         >
           <AdminIcon name="eye" className="h-4 w-4" />
           {previewBusy ? "조회 중..." : "위험도 미리보기"}
@@ -650,7 +650,7 @@ function ExportPanel({
 
           {preview && <PreviewTable preview={preview} />}
 
-          <p className="text-[10px] text-zinc-500">
+          <p className="text-[10px] text-muted">
             XLSX — 시트1 "현장정보" 일 1회 snapshot + 시트2 이상치 색 적용 + 시트3 "현장환경" 이력.
             CSV — 현장정보 snapshot 블록 + 생체데이터 위험도 4 컬럼. KOSHA 보고용 보존 권장 3년.
           </p>
@@ -712,10 +712,10 @@ function SiteInfoPanel({
   }
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-zinc-50/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+    <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
       <div className="mb-3 flex items-center gap-2">
-        <AdminIcon name="building" className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">현장 정보</h3>
+        <AdminIcon name="building" className="h-5 w-5 text-muted dark:text-muted-soft" />
+        <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">현장 정보</h3>
         {saved && (
           <span className="ml-auto inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300">
             저장됨
@@ -773,7 +773,7 @@ function SiteInfoPanel({
         <AdminIcon name="save" className="h-4 w-4" />
         {busy ? "저장 중..." : "현장 정보 저장"}
       </button>
-      <p className="mt-2 text-[10px] text-zinc-500">
+      <p className="mt-2 text-[10px] text-muted">
         저장 시 서버 DB에 오늘 날짜 기준 1회 현장정보 snapshot 으로 기록되며,
         XLSX/CSV 자료에 포함됩니다.
       </p>
@@ -794,12 +794,12 @@ function SiteInfoInput({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">{label}</span>
+      <span className="text-xs font-semibold text-body dark:text-zinc-300">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
+        className="mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
       />
     </label>
   );
@@ -812,14 +812,14 @@ function PreviewTable({ preview }: { preview: PreviewState }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded border border-zinc-300 bg-zinc-100 px-2 py-0.5 text-zinc-700 dark:border-white/15 dark:bg-white/5 dark:text-zinc-200">
+        <span className="rounded border border-hairline bg-surface-soft px-2 py-0.5 text-body dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-200">
           전체 일치 <span className="font-mono">{totalMatched.toLocaleString()}</span>건
         </span>
         <span
           className={`rounded border px-2 py-0.5 font-semibold ${
             dangerCount > 0
               ? "border-red-500/60 bg-red-100 text-red-700 dark:border-red-400/50 dark:bg-red-400/10 dark:text-red-200"
-              : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-white/15 dark:bg-white/5 dark:text-zinc-500"
+              : "border-hairline bg-surface-soft text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-muted"
           }`}
         >
           위험 <span className="font-mono">{dangerCount.toLocaleString()}</span>건
@@ -828,22 +828,22 @@ function PreviewTable({ preview }: { preview: PreviewState }) {
           className={`rounded border px-2 py-0.5 font-semibold ${
             cautionCount > 0
               ? "border-amber-500/60 bg-amber-100 text-amber-700 dark:border-amber-400/50 dark:bg-amber-400/10 dark:text-amber-200"
-              : "border-zinc-300 bg-zinc-100 text-zinc-500 dark:border-white/15 dark:bg-white/5 dark:text-zinc-500"
+              : "border-hairline bg-surface-soft text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-muted"
           }`}
         >
           주의 <span className="font-mono">{cautionCount.toLocaleString()}</span>건
         </span>
-        <span className="text-zinc-500">표시 최근 {shown}건 (역순)</span>
+        <span className="text-muted">표시 최근 {shown}건 (역순)</span>
       </div>
 
       {rows.length === 0 ? (
-        <p className="rounded border border-dashed border-zinc-300 px-3 py-6 text-center text-xs text-zinc-500 dark:border-white/10">
+        <p className="rounded border border-dashed border-hairline px-3 py-6 text-center text-xs text-muted dark:border-white/10">
           해당 조건에 일치하는 sample 이 없습니다.
         </p>
       ) : (
-        <div className="max-h-[40vh] overflow-auto rounded-lg border border-zinc-200 dark:border-white/10">
+        <div className="max-h-[40vh] overflow-auto rounded-lg border border-hairline dark:border-white/10">
           <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-zinc-100 text-[10px] uppercase tracking-wide text-zinc-600 dark:bg-[#0b0f17] dark:text-zinc-400">
+            <thead className="sticky top-0 bg-surface-soft text-[10px] uppercase tracking-wide text-muted dark:bg-surface-dark-elevated dark:text-muted-soft">
               <tr>
                 <th className="px-2 py-2">시각</th>
                 <th className="px-2 py-2">작업자</th>
@@ -877,8 +877,8 @@ const ROW_BG: Record<Status, string> = {
 };
 
 const CELL_TONE: Record<Status, string> = {
-  idle: "text-zinc-500",
-  normal: "text-zinc-700 dark:text-zinc-300",
+  idle: "text-muted",
+  normal: "text-body dark:text-zinc-300",
   caution: "text-amber-700 font-semibold dark:text-amber-300",
   danger: "text-red-700 font-bold dark:text-red-300",
 };
@@ -913,13 +913,13 @@ function decisionBadge(row: FallDatasetRow): { ko: string; cls: string } {
   if (row.fall_decision === "rejected_timeout") return { ko: "음성·정지미충족", cls: amber };
   return {
     ko: "후보",
-    cls: "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-white/15 dark:bg-white/5 dark:text-zinc-400",
+    cls: "border-hairline bg-surface-soft text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-muted-soft",
   };
 }
 
 function promptOutcomeBadge(row: FallDatasetRow): { ko: string; cls: string } {
   const zinc =
-    "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-white/15 dark:bg-white/5 dark:text-zinc-400";
+    "border-hairline bg-surface-soft text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-muted-soft";
   const amber =
     "border-amber-500/50 bg-amber-100 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200";
   const red =
@@ -1048,13 +1048,13 @@ function FallMlPanel({
     <section className="rounded-xl border border-indigo-300/60 bg-indigo-50/50 p-4 dark:border-indigo-400/20 dark:bg-indigo-400/[0.04]">
       <div className="mb-2 flex items-center gap-2">
         <AdminIcon name="activity" className="h-5 w-5 text-indigo-500 dark:text-indigo-300" />
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">낙상 감지 ML 데이터 수집</h3>
+        <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">낙상 감지 ML 데이터 수집</h3>
         <span className="ml-auto rounded-full border border-indigo-400/50 bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:border-indigo-400/40 dark:bg-indigo-400/10 dark:text-indigo-200">
           임계 최적화 학습용
         </span>
       </div>
 
-      <p className="mb-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+      <p className="mb-2 text-[10px] text-muted dark:text-muted-soft">
         워치 낙상 디텍터 후보(양성 발화 + 음성 거부)의 활성화 요소(충격G·정지초·자유낙하·회전)를
         수집합니다. 각 후보에 실제 낙상 여부를 라벨링하면 지도학습 데이터셋이 됩니다.
       </p>
@@ -1068,21 +1068,21 @@ function FallMlPanel({
 
       <div className="mb-2 grid grid-cols-[1fr_1fr_auto] items-end gap-2">
         <label className="block">
-          <span className="text-[10px] font-semibold text-zinc-700 dark:text-zinc-300">시작</span>
+          <span className="text-[10px] font-semibold text-body dark:text-zinc-300">시작</span>
           <input
             type="date"
             value={from}
             onChange={(e) => setRange((prev) => ({ ...prev, from: e.target.value }))}
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900 outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100"
+            className="mt-1 w-full rounded border border-hairline bg-canvas px-2 py-1.5 text-xs text-ink outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100"
           />
         </label>
         <label className="block">
-          <span className="text-[10px] font-semibold text-zinc-700 dark:text-zinc-300">종료</span>
+          <span className="text-[10px] font-semibold text-body dark:text-zinc-300">종료</span>
           <input
             type="date"
             value={to}
             onChange={(e) => setRange((prev) => ({ ...prev, to: e.target.value }))}
-            className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1.5 text-xs text-zinc-900 outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-white/[0.02] dark:text-zinc-100"
+            className="mt-1 w-full rounded border border-hairline bg-canvas px-2 py-1.5 text-xs text-ink outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100"
           />
         </label>
         <button
@@ -1104,7 +1104,7 @@ function FallMlPanel({
 
       <FallCandidateTable candidates={candidates} onLabel={handleLabel} />
 
-      <p className="mt-2 text-[10px] text-zinc-500">
+      <p className="mt-2 text-[10px] text-muted">
         라벨은 관제자 수기 판단(정답)입니다 — CCTV·현장 대조 권장. 음성 샘플은 거부된 작업충격으로
         임계 최적화 학습에 필수입니다. 모델 학습은 발표 후 트랙.
       </p>
@@ -1122,7 +1122,7 @@ function StatBadge({
   tone: "zinc" | "red" | "amber" | "emerald";
 }) {
   const cls: Record<typeof tone, string> = {
-    zinc: "border-zinc-300 bg-zinc-100 text-zinc-700 dark:border-white/15 dark:bg-white/5 dark:text-zinc-200",
+    zinc: "border-hairline bg-surface-soft text-body dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-200",
     red: "border-red-500/50 bg-red-100 text-red-700 dark:border-red-400/40 dark:bg-red-400/10 dark:text-red-200",
     amber:
       "border-amber-500/50 bg-amber-100 text-amber-700 dark:border-amber-400/40 dark:bg-amber-400/10 dark:text-amber-200",
@@ -1144,19 +1144,19 @@ function FallCandidateTable({
   onLabel: (sampleId: number, label: string) => void;
 }) {
   if (candidates === null) {
-    return <p className="px-1 py-3 text-[10px] text-zinc-500">불러오는 중...</p>;
+    return <p className="px-1 py-3 text-[10px] text-muted">불러오는 중...</p>;
   }
   if (candidates.length === 0) {
     return (
-      <p className="rounded border border-dashed border-zinc-300 px-3 py-5 text-center text-[10px] text-zinc-500 dark:border-white/10">
+      <p className="rounded border border-dashed border-hairline px-3 py-5 text-center text-[10px] text-muted dark:border-white/10">
         수집된 낙상 후보가 없습니다. 워치 재빌드·설치 후 누적됩니다.
       </p>
     );
   }
   return (
-    <div className="max-h-[36vh] overflow-auto rounded-lg border border-zinc-200 dark:border-white/10">
+    <div className="max-h-[36vh] overflow-auto rounded-lg border border-hairline dark:border-white/10">
       <table className="w-full text-left text-[11px]">
-        <thead className="sticky top-0 bg-zinc-100 text-[9px] uppercase tracking-wide text-zinc-600 dark:bg-[#0b0f17] dark:text-zinc-400">
+        <thead className="sticky top-0 bg-surface-soft text-[9px] uppercase tracking-wide text-muted dark:bg-surface-dark-elevated dark:text-muted-soft">
           <tr>
             <th className="px-2 py-1.5">시각</th>
             <th className="px-2 py-1.5">작업자</th>
@@ -1176,26 +1176,26 @@ function FallCandidateTable({
             const prompt = promptOutcomeBadge(row);
             const worker = row.worker_name ?? row.worker_id;
             return (
-              <tr key={row.id} className="border-t border-zinc-200 dark:border-white/5">
-                <td className="px-2 py-1.5 font-mono text-[9px] text-zinc-600 dark:text-zinc-400">
+              <tr key={row.id} className="border-t border-hairline dark:border-white/5">
+                <td className="px-2 py-1.5 font-mono text-[9px] text-muted dark:text-muted-soft">
                   {row.ts.slice(5, 19).replace("T", " ")}
                 </td>
-                <td className="px-2 py-1.5 text-zinc-800 dark:text-zinc-200">{worker}</td>
+                <td className="px-2 py-1.5 text-body dark:text-zinc-200">{worker}</td>
                 <td className="px-2 py-1.5 text-center">
                   <span className={`rounded border px-1.5 py-0.5 text-[9px] font-semibold ${badge.cls}`}>
                     {badge.ko}
                   </span>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                <td className="px-2 py-1.5 text-right tabular-nums text-body dark:text-zinc-300">
                   {row.accel_magnitude_g != null ? row.accel_magnitude_g.toFixed(2) : "--"}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                <td className="px-2 py-1.5 text-right tabular-nums text-body dark:text-zinc-300">
                   {row.motion_still_sec != null ? row.motion_still_sec.toFixed(1) : "--"}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                <td className="px-2 py-1.5 text-right tabular-nums text-body dark:text-zinc-300">
                   {row.peak_rotation_rad_s != null ? row.peak_rotation_rad_s.toFixed(1) : "--"}
                 </td>
-                <td className="px-2 py-1.5 text-center text-zinc-600 dark:text-zinc-400">
+                <td className="px-2 py-1.5 text-center text-muted dark:text-muted-soft">
                   {row.freefall_preceded === 1 ? "○" : row.freefall_preceded === 0 ? "×" : "--"}
                 </td>
                 <td className="px-2 py-1.5 text-center">
@@ -1205,7 +1205,7 @@ function FallCandidateTable({
                     {prompt.ko}
                   </span>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-zinc-700 dark:text-zinc-300">
+                <td className="px-2 py-1.5 text-right tabular-nums text-body dark:text-zinc-300">
                   {row.fall_prompt_response_sec != null
                     ? row.fall_prompt_response_sec.toFixed(1)
                     : "--"}
@@ -1214,7 +1214,7 @@ function FallCandidateTable({
                   <select
                     value={row.ground_truth_label ?? ""}
                     onChange={(e) => onLabel(row.id, e.target.value)}
-                    className="w-full rounded border border-zinc-300 bg-white px-1.5 py-1 text-[10px] text-zinc-900 outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-white/[0.03] dark:text-zinc-100"
+                    className="w-full rounded border border-hairline bg-canvas px-1.5 py-1 text-[10px] text-ink outline-none focus:border-indigo-500 dark:border-white/10 dark:bg-canvas/[0.03] dark:text-zinc-100"
                   >
                     {FALL_LABEL_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -1240,12 +1240,12 @@ function PreviewRowItem({ row }: { row: PreviewRow }) {
 
   return (
     <tr
-      className={`border-t border-zinc-200 dark:border-white/5 ${ROW_BG[row.overall_status]}`}
+      className={`border-t border-hairline dark:border-white/5 ${ROW_BG[row.overall_status]}`}
     >
-      <td className="px-2 py-1.5 font-mono text-[10px] text-zinc-600 dark:text-zinc-400">
+      <td className="px-2 py-1.5 font-mono text-[10px] text-muted dark:text-muted-soft">
         {row.ts.slice(5, 19).replace("T", " ")}
       </td>
-      <td className="px-2 py-1.5 text-zinc-800 dark:text-zinc-200">{workerLabel}</td>
+      <td className="px-2 py-1.5 text-body dark:text-zinc-200">{workerLabel}</td>
       <td className={`px-2 py-1.5 text-right tabular-nums ${CELL_TONE[row.hr_status]}`}>
         {row.heart_rate ?? "--"}
       </td>
@@ -1261,7 +1261,7 @@ function PreviewRowItem({ row }: { row: PreviewRow }) {
             SOS
           </span>
         ) : (
-          <span className="text-zinc-400">·</span>
+          <span className="text-muted-soft">·</span>
         )}
       </td>
       <td className="px-2 py-1.5 text-center">
@@ -1270,7 +1270,7 @@ function PreviewRowItem({ row }: { row: PreviewRow }) {
             낙상
           </span>
         ) : (
-          <span className="text-zinc-400">·</span>
+          <span className="text-muted-soft">·</span>
         )}
       </td>
       <td className={`px-2 py-1.5 text-center text-[10px] font-bold ${CELL_TONE[row.overall_status]}`}>

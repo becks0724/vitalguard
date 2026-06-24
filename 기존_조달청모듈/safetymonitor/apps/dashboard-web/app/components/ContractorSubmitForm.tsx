@@ -187,7 +187,7 @@ export default function ContractorSubmitForm() {
       </div>
 
       <div className="mt-5 flex items-center gap-2">
-        <button onClick={save} disabled={saving} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <button onClick={save} disabled={saving} className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted">
           {saving ? "제출 중…" : "청구 내역 제출"}
         </button>
         <a href="/weekly-report" className="rounded-md border border-hairline px-4 py-2 text-sm font-semibold text-body dark:border-white/10 dark:text-on-dark-soft">

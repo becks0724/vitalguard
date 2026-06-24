@@ -75,7 +75,7 @@ export default function ProcureRiskBoard() {
           <h2 className="text-base font-semibold text-ink dark:text-on-dark">안전조달 · 발주 단계 안전 리스크</h2>
           <p className="text-xs text-body dark:text-on-dark-soft">나라장터 조달 공고를 AI로 분석해 착공 전 위험을 선별합니다.</p>
         </div>
-        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${source === "live" ? "bg-[#0052ff]/10 text-primary dark:bg-[#0052ff]/20" : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"}`}>
+        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${source === "live" ? "bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark" : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"}`}>
           {source === "live" ? "G2B 실시간" : "샘플 데이터"}
         </span>
       </div>
@@ -95,7 +95,7 @@ export default function ProcureRiskBoard() {
                     onClick={() => setSelected(d.notice.id)}
                     className={`w-full rounded-xl border p-3 text-left transition ${
                       isSel
-                        ? "border-primary bg-[#0052ff]/[0.08] ring-1 ring-primary dark:bg-[#0052ff]/20"
+                        ? "border-ink/20 bg-surface-card ring-1 ring-hairline dark:bg-white/10"
                         : "border-hairline bg-canvas hover:border-muted-soft dark:border-white/10 dark:bg-surface-dark dark:hover:border-white/20"
                     }`}
                   >
