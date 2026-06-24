@@ -497,7 +497,7 @@ const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as c
 type ScheduleLabel = "red" | "yellow" | "green" | "blue";
 type ScheduleType = "plan" | "important";
 
-const SCHEDULE_LABEL_OPTIONS: ScheduleLabel[] = ["red", "yellow", "green"];
+const SCHEDULE_LABEL_OPTIONS: ScheduleLabel[] = ["red", "yellow", "green", "blue"];
 
 type CalendarEvent = {
   id: string;
@@ -513,25 +513,25 @@ const SCHEDULE_LABEL_META: Record<
   { name: string; chip: string; dot: string; band: string }
 > = {
   red: {
-    name: "빨강",
+    name: "중요일정",
     chip: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200",
     dot: "bg-red-500",
     band: "bg-red-500/12 border-red-500/20 text-red-900 dark:bg-red-500/15 dark:text-red-100",
   },
   yellow: {
-    name: "노랑",
+    name: "발주계획",
     chip: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
     dot: "bg-amber-400",
     band: "bg-amber-400/15 border-amber-400/25 text-amber-950 dark:bg-amber-500/15 dark:text-amber-100",
   },
   blue: {
-    name: "파랑",
+    name: "기타",
     chip: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200",
     dot: "bg-blue-500",
     band: "bg-blue-500/12 border-blue-500/20 text-blue-900 dark:bg-blue-500/15 dark:text-blue-100",
   },
   green: {
-    name: "초록",
+    name: "착수계획",
     chip: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
     dot: "bg-emerald-500",
     band: "bg-emerald-500/12 border-emerald-500/20 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100",
@@ -554,7 +554,11 @@ function toDateKey(d: Date) {
 }
 
 function normalizeScheduleLabel(label: ScheduleLabel): ScheduleLabel {
-  return label === "blue" ? "green" : label;
+  return label;
+}
+
+function scheduleTypeFromLabel(label: ScheduleLabel): ScheduleType {
+  return normalizeScheduleLabel(label) === "red" ? "important" : "plan";
 }
 
 function weekDateKeys(anchor: Date): string[] {
@@ -609,6 +613,25 @@ function toTime24(period: "오전" | "오후", hour12: number, minute: number) {
   return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function formatTimeInputDigits(raw: string) {
+  const digits = raw.replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function parseFormattedTime12(text: string) {
+  if (!/^\d{2}:\d{2}$/.test(text)) return null;
+  const [hStr, mStr] = text.split(":");
+  const hour12 = Number(hStr);
+  const minute = Number(mStr);
+  if (hour12 < 1 || hour12 > 12 || minute < 0 || minute > 59) return null;
+  return { hour12, minute };
+}
+
+function toDisplayTime12(hour12: number, minute: number) {
+  return `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
 function ScheduleTimePicker({
   value,
   onChange,
@@ -616,102 +639,83 @@ function ScheduleTimePicker({
   value: string;
   onChange: (next: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
   const parsed = value ? parseTime24(value) : null;
   const [period, setPeriod] = useState<"오전" | "오후">(parsed?.period ?? "오전");
-  const [hour12, setHour12] = useState(parsed?.hour12 ?? 9);
-  const [minute, setMinute] = useState(parsed?.minute ?? 0);
+  const [timeText, setTimeText] = useState(parsed ? toDisplayTime12(parsed.hour12, parsed.minute) : "");
 
   useEffect(() => {
-    if (!value) return;
+    if (!value) {
+      setTimeText("");
+      return;
+    }
     const next = parseTime24(value);
     if (!next) return;
     setPeriod(next.period);
-    setHour12(next.hour12);
-    setMinute(next.minute);
+    setTimeText(toDisplayTime12(next.hour12, next.minute));
   }, [value]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
-  const minutes = Array.from({ length: 60 }, (_, i) => i);
-  const periods: ("오전" | "오후")[] = ["오전", "오후"];
-
-  const pickClass = (selected: boolean) =>
-    [
-      "w-full rounded-xl px-2 py-1.5 text-center text-sm font-medium transition outline-none",
-      selected
-        ? "bg-brand-accent text-on-primary"
-        : "text-ink hover:bg-surface-soft dark:text-on-dark dark:hover:bg-white/10",
-    ].join(" ");
-
-  const apply = (p: "오전" | "오후", h: number, m: number) => {
-    setPeriod(p);
-    setHour12(h);
-    setMinute(m);
-    onChange(toTime24(p, h, m));
+  const emitTime = (p: "오전" | "오후", text: string) => {
+    const manual = parseFormattedTime12(text);
+    if (!manual) return;
+    onChange(toTime24(p, manual.hour12, manual.minute));
   };
 
+  const periodBtnClass = (selected: boolean) =>
+    [
+      "rounded-xl border-2 px-3 py-2 text-sm font-semibold text-ink transition outline-none dark:text-on-dark",
+      selected
+        ? "border-brand-accent bg-blue-50/60 dark:border-blue-400 dark:bg-blue-500/10"
+        : "border-hairline bg-surface-soft hover:border-ink/15 dark:border-white/10 dark:bg-surface-dark-elevated dark:hover:border-white/20",
+    ].join(" ");
+
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-2xl border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none transition hover:bg-surface-card focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
-      >
-        <span className={value ? "text-ink dark:text-on-dark" : "text-muted dark:text-on-dark-soft"}>
-          {value ? formatKoreanTime(value) : "시간 선택"}
-        </span>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M12 7v5l3 2" />
-        </svg>
-      </button>
-      {open && (
-        <>
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        {(["오전", "오후"] as const).map((p) => (
           <button
+            key={p}
             type="button"
-            className="fixed inset-0 z-10 cursor-default"
-            aria-label="시간 선택 닫기"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute left-0 right-0 top-full z-20 mt-1 flex gap-1 rounded-2xl border border-hairline bg-canvas p-2 shadow-card-hover dark:border-white/10 dark:bg-surface-dark">
-            <div className="max-h-44 flex-1 overflow-y-auto">
-              {periods.map((p) => (
-                <button key={p} type="button" onClick={() => apply(p, hour12, minute)} className={pickClass(period === p)}>
-                  {p}
-                </button>
-              ))}
-            </div>
-            <div className="max-h-44 flex-1 overflow-y-auto">
-              {hours.map((h) => (
-                <button key={h} type="button" onClick={() => apply(period, h, minute)} className={pickClass(hour12 === h)}>
-                  {h}
-                </button>
-              ))}
-            </div>
-            <div className="max-h-44 flex-1 overflow-y-auto">
-              {minutes.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => apply(period, hour12, m)}
-                  className={pickClass(minute === m)}
-                >
-                  {String(m).padStart(2, "0")}
-                </button>
-              ))}
-            </div>
-          </div>
-        </>
-      )}
+            onClick={() => {
+              setPeriod(p);
+              if (parseFormattedTime12(timeText)) emitTime(p, timeText);
+            }}
+            className={periodBtnClass(period === p)}
+            aria-pressed={period === p}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={timeText}
+        maxLength={5}
+        onChange={(e) => {
+          const formatted = formatTimeInputDigits(e.target.value);
+          setTimeText(formatted);
+          if (parseFormattedTime12(formatted)) emitTime(period, formatted);
+          else if (!formatted) onChange("");
+        }}
+        onBlur={() => {
+          const manual = parseFormattedTime12(timeText);
+          if (!manual) {
+            if (value) {
+              const next = parseTime24(value);
+              if (next) setTimeText(toDisplayTime12(next.hour12, next.minute));
+              else setTimeText("");
+            } else {
+              setTimeText("");
+            }
+            return;
+          }
+          const normalized = toDisplayTime12(manual.hour12, manual.minute);
+          setTimeText(normalized);
+          emitTime(period, normalized);
+        }}
+        placeholder="00:00"
+        className="w-full rounded-2xl border border-hairline bg-surface-soft px-3 py-2 text-sm tabular-nums text-ink outline-none transition focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+      />
     </div>
   );
 }
@@ -735,14 +739,15 @@ function CalendarEventChip({
   inverted?: boolean;
 }) {
   const meta = SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)];
+  const isImportant = normalizeScheduleLabel(event.label) === "red";
   const title = event.title.trim();
   const timeSuffix =
-    !compact && event.time && event.type === "important"
+    !compact && event.time && isImportant
       ? ` · ${formatKoreanTime(event.time)}`
       : "";
   const fullTitle = event.time ? `${title} · ${formatKoreanTime(event.time)}` : title;
 
-  if (event.type === "important") {
+  if (isImportant) {
     return (
       <div
         className={[
@@ -784,25 +789,21 @@ function ScheduleEventFormModal({
   onClose,
 }: {
   events: CalendarEvent[];
-  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">, applyWeek?: boolean) => void;
+  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">) => void;
   onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<ScheduleType>("plan");
   const [label, setLabel] = useState<ScheduleLabel>("green");
   const [time, setTime] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [applyWeek, setApplyWeek] = useState(false);
 
   const resetForm = () => {
     setTitle("");
-    setType("plan");
     setLabel("green");
     setTime("");
     setEditingId(null);
-    setApplyWeek(false);
   };
 
   useEffect(() => {
@@ -816,7 +817,6 @@ function ScheduleEventFormModal({
   const startEdit = (event: CalendarEvent) => {
     setEditingId(event.id);
     setTitle(event.title);
-    setType(event.type);
     setLabel(normalizeScheduleLabel(event.label));
     setTime(event.time ?? "");
   };
@@ -824,16 +824,17 @@ function ScheduleEventFormModal({
   const handleSubmit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
+    const normalizedLabel = normalizeScheduleLabel(label);
     const draft = {
       title: trimmed,
-      type,
-      label: normalizeScheduleLabel(label),
+      type: scheduleTypeFromLabel(normalizedLabel),
+      label: normalizedLabel,
       time: time.trim() || undefined,
     };
     if (editingId) {
       onUpdate(editingId, draft);
     } else {
-      onAdd(draft, applyWeek && type === "plan");
+      onAdd(draft);
     }
     resetForm();
   };
@@ -886,9 +887,6 @@ function ScheduleEventFormModal({
                       >
                         {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name}
                       </span>
-                      <span className="text-[10px] text-muted dark:text-on-dark-soft">
-                        {event.type === "plan" ? "착수계획" : "중요일정"}
-                      </span>
                     </div>
                     <CalendarEventChip event={event} />
                   </div>
@@ -918,38 +916,6 @@ function ScheduleEventFormModal({
         )}
 
         <div className="space-y-3 px-4 py-3">
-          <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 유형</p>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  ["plan", "착수계획"],
-                  ["important", "중요일정"],
-                ] as const
-              ).map(([value, name]) => (
-                <label
-                  key={value}
-                  className={[
-                    "cursor-pointer rounded-xl border px-2.5 py-2 transition",
-                    type === value
-                      ? "border-ink/20 bg-surface-card ring-1 ring-hairline"
-                      : "border-hairline hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
-                  ].join(" ")}
-                >
-                  <input
-                    type="radio"
-                    name="schedule-type"
-                    value={value}
-                    checked={type === value}
-                    onChange={() => setType(value)}
-                    className="sr-only"
-                  />
-                  <p className="text-xs font-semibold text-ink dark:text-on-dark">{name}</p>
-                </label>
-              ))}
-            </div>
-          </div>
-
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               일정 제목
@@ -997,24 +963,10 @@ function ScheduleEventFormModal({
 
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
-              시간 {type === "important" ? "(권장)" : "(선택)"}
+              시간 {label === "red" ? "(권장)" : "(선택)"}
             </label>
             <ScheduleTimePicker value={time} onChange={setTime} />
           </div>
-
-          {type === "plan" && !editingId && (
-            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-hairline px-3 py-2.5 transition hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5">
-              <input
-                type="checkbox"
-                checked={applyWeek}
-                onChange={(e) => setApplyWeek(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-hairline accent-primary"
-              />
-              <span className="text-xs font-medium text-ink dark:text-on-dark">
-                주간 적용 (월~일) — 이번 주 7일에 동일 일정 등록
-              </span>
-            </label>
-          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-hairline px-4 py-3 dark:border-white/10">
@@ -1115,9 +1067,7 @@ function HeaderCalendarPopup({
   }, {});
 
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
-  const selectedDateKey = toDateKey(selected);
   const weekKeys = weekDateKeys(selected);
-  const dailyPlanEvents = eventsByDate[selectedDateKey] ?? [];
   const weeklyPlanEvents = weekKeys.flatMap((key) =>
     (eventsByDate[key] ?? []).map((e) => ({ ...e, dateKey: key })),
   );
@@ -1135,18 +1085,18 @@ function HeaderCalendarPopup({
     setFormDate(cellDate);
   };
 
-  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">, applyWeek?: boolean) => {
+  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">) => {
     if (!formDate) return;
-    const targetKeys =
-      applyWeek && draft.type === "plan" ? weekDateKeys(formDate) : [toDateKey(formDate)];
+    const dateKey = toDateKey(formDate);
     setEvents((prev) => [
       ...prev,
-      ...targetKeys.map((dateKey) => ({
+      {
         ...draft,
         label: normalizeScheduleLabel(draft.label),
+        type: scheduleTypeFromLabel(draft.label),
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
         dateKey,
-      })),
+      },
     ]);
   };
 
@@ -1156,7 +1106,16 @@ function HeaderCalendarPopup({
 
   const handleUpdateEvent = (id: string, draft: Omit<CalendarEvent, "id" | "dateKey">) => {
     setEvents((prev) =>
-      prev.map((event) => (event.id === id ? { ...event, ...draft, label: normalizeScheduleLabel(draft.label) } : event)),
+      prev.map((event) =>
+        event.id === id
+          ? {
+              ...event,
+              ...draft,
+              label: normalizeScheduleLabel(draft.label),
+              type: scheduleTypeFromLabel(draft.label),
+            }
+          : event,
+      ),
     );
   };
 
@@ -1172,7 +1131,7 @@ function HeaderCalendarPopup({
         className="relative w-full max-w-[580px] overflow-visible rounded-2xl border border-hairline bg-canvas shadow-card-hover ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
+        <div className="flex items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-card text-ink">
               <svg
@@ -1227,59 +1186,37 @@ function HeaderCalendarPopup({
 
         {planOpen && (
           <div className="border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
-            <div className="space-y-3">
-              <div>
-                <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">일간</p>
-                {dailyPlanEvents.length === 0 ? (
-                  <p className="text-[11px] text-muted dark:text-on-dark-soft">선택 날짜에 등록된 일정이 없습니다.</p>
-                ) : (
-                  <ul className="space-y-1">
-                    {dailyPlanEvents.map((event) => (
-                      <li
-                        key={event.id}
-                        className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
-                      >
-                        <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
-                        <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">{event.title}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <div>
-                <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간</p>
-                {weeklyPlanEvents.length === 0 ? (
-                  <p className="text-[11px] text-muted dark:text-on-dark-soft">이번 주(월~일)에 등록된 일정이 없습니다.</p>
-                ) : (
-                  <ul className="max-h-40 space-y-2 overflow-y-auto">
-                    {weekKeys.map((key) => {
-                      const dayPlans = weeklyPlanEvents.filter((e) => e.dateKey === key);
-                      if (dayPlans.length === 0) return null;
-                      return (
-                        <li key={key}>
-                          <p className="mb-1 text-[10px] font-medium text-muted dark:text-on-dark-soft">
-                            {formatDateKeyLabel(key)}
-                          </p>
-                          <ul className="space-y-1">
-                            {dayPlans.map((event) => (
-                              <li
-                                key={event.id}
-                                className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
-                              >
-                                <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
-                                <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">
-                                  {event.title}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
+            <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간 일정</p>
+            {weeklyPlanEvents.length === 0 ? (
+              <p className="text-[11px] text-muted dark:text-on-dark-soft">이번 주(월~일)에 등록된 일정이 없습니다.</p>
+            ) : (
+              <ul className="max-h-40 space-y-2 overflow-y-auto">
+                {weekKeys.map((key) => {
+                  const dayPlans = weeklyPlanEvents.filter((e) => e.dateKey === key);
+                  if (dayPlans.length === 0) return null;
+                  return (
+                    <li key={key}>
+                      <p className="mb-1 text-[10px] font-medium text-muted dark:text-on-dark-soft">
+                        {formatDateKeyLabel(key)}
+                      </p>
+                      <ul className="space-y-1">
+                        {dayPlans.map((event) => (
+                          <li
+                            key={event.id}
+                            className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
+                          >
+                            <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
+                            <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">
+                              {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name} · {event.title}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
         )}
 
