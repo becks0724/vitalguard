@@ -1,0 +1,133 @@
+SafeProcure 라이브 introspection 원시 결과 — 2026-06-24
+대상: campus PostgreSQL · schema safeprocure (읽기전용 SELECT)
+생성도구: db/integrated/safeprocure-introspect.js (DSN은 env SRC_DSN로만 주입)
+========================================================================
+=== COLUMNS (safeprocure) ===
+
+## notice (17 cols)
+  notice_id : varchar NOT NULL
+  title : varchar NOT NULL
+  kind : varchar NOT NULL DEFAULT '공사'::character varying
+  agency : varchar NOT NULL
+  region : varchar
+  estimated_price : bigint
+  start_date : date
+  end_date : date
+  licenses : [] NOT NULL DEFAULT '{}'::text[]
+  task_text : text
+  contract_amount : bigint
+  win_rate : numeric
+  target_amount : bigint
+  declared_safety_cost : bigint
+  source : varchar NOT NULL DEFAULT 'mock'::character varying
+  created_at : tstz NOT NULL DEFAULT now()
+  cached_until : tstz
+
+## safety_cost_rate (4 cols)
+  construction_type : varchar NOT NULL
+  bracket : varchar NOT NULL
+  rate : numeric NOT NULL
+  base_added : bigint NOT NULL DEFAULT 0
+
+## safety_cost_check (14 cols)
+  check_id : bigint NOT NULL DEFAULT nextval('safeprocure.safety_co
+  notice_id : varchar NOT NULL
+  construction_type : varchar NOT NULL
+  base_amount : bigint NOT NULL
+  bracket : varchar NOT NULL
+  rate_applied : numeric NOT NULL
+  base_added : bigint NOT NULL DEFAULT 0
+  required_cost : bigint NOT NULL
+  formula : text NOT NULL
+  input_sufficiency : varchar NOT NULL
+  declared_cost : bigint
+  verdict : varchar NOT NULL
+  rate_note : text
+  calculated_at : tstz NOT NULL DEFAULT now()
+
+## risk_tag (7 cols)
+  tag_id : bigint NOT NULL DEFAULT nextval('safeprocure.risk_tag_
+  notice_id : varchar NOT NULL
+  tag : varchar NOT NULL
+  severity : smallint NOT NULL
+  evidence : text NOT NULL
+  source : varchar NOT NULL
+  extracted_at : tstz NOT NULL DEFAULT now()
+
+## risk_profile (11 cols)
+  profile_id : bigint NOT NULL DEFAULT nextval('safeprocure.risk_prof
+  notice_id : varchar NOT NULL
+  score : smallint NOT NULL
+  breakdown_risk_works : smallint NOT NULL DEFAULT 0
+  breakdown_safety_cost : smallint NOT NULL DEFAULT 0
+  breakdown_win_rate : smallint NOT NULL DEFAULT 0
+  breakdown_disaster_stats : smallint NOT NULL DEFAULT 0
+  top_factors : [] NOT NULL DEFAULT '{}'::text[]
+  recommendations : [] NOT NULL DEFAULT '{}'::text[]
+  calculated_at : tstz NOT NULL DEFAULT now()
+  cache_expiry : tstz
+
+=== CONSTRAINTS (PK=p / FK=f / CHECK=c / UNIQUE=u) ===
+  [c] safeprocure.notice :: ck_notice_source -> CHECK (((source)::text = ANY ((ARRAY['live'::character varying, 'mock'::character varying])::text[])))
+  [c] safeprocure.notice :: ck_notice_kind -> CHECK (((kind)::text = ANY ((ARRAY['공사'::character varying, '용역'::character varying, '물품'::character varying])::text[])))
+  [p] safeprocure.notice :: notice_pkey -> PRIMARY KEY (notice_id)
+  [c] safeprocure.risk_profile :: ck_rp_score -> CHECK (((score >= 0) AND (score <= 100)))
+  [f] safeprocure.risk_profile :: risk_profile_notice_id_fkey -> FOREIGN KEY (notice_id) REFERENCES safeprocure.notice(notice_id) ON DELETE CASCADE
+  [p] safeprocure.risk_profile :: risk_profile_pkey -> PRIMARY KEY (profile_id)
+  [u] safeprocure.risk_profile :: risk_profile_notice_id_key -> UNIQUE (notice_id)
+  [c] safeprocure.risk_tag :: ck_rt_source -> CHECK (((source)::text = ANY ((ARRAY['ai'::character varying, 'rule'::character varying, 'mock'::character varying])::text[])))
+  [c] safeprocure.risk_tag :: ck_rt_severity -> CHECK (((severity >= 1) AND (severity <= 3)))
+  [f] safeprocure.risk_tag :: risk_tag_notice_id_fkey -> FOREIGN KEY (notice_id) REFERENCES safeprocure.notice(notice_id) ON DELETE CASCADE
+  [p] safeprocure.risk_tag :: risk_tag_pkey -> PRIMARY KEY (tag_id)
+  [c] safeprocure.safety_cost_check :: ck_scc_input -> CHECK (((input_sufficiency)::text = ANY ((ARRAY['full'::character varying, 'partial'::character varying])::text[])))
+  [c] safeprocure.safety_cost_check :: ck_scc_verdict -> CHECK (((verdict)::text = ANY ((ARRAY['정상'::character varying, '과소계상_의심'::character varying, '검토필요'::character varying])::text[])))
+  [f] safeprocure.safety_cost_check :: fk_scc_ctype_rate -> FOREIGN KEY (construction_type, bracket) REFERENCES safeprocure.safety_cost_rate(construction_type, bracket)
+  [f] safeprocure.safety_cost_check :: safety_cost_check_notice_id_fkey -> FOREIGN KEY (notice_id) REFERENCES safeprocure.notice(notice_id) ON DELETE CASCADE
+  [p] safeprocure.safety_cost_check :: safety_cost_check_pkey -> PRIMARY KEY (check_id)
+  [u] safeprocure.safety_cost_check :: safety_cost_check_notice_id_key -> UNIQUE (notice_id)
+  [c] safeprocure.safety_cost_rate :: ck_rate_ctype -> CHECK (((construction_type)::text = ANY ((ARRAY['일반건설공사(갑)'::character varying, '일반건설공사(을)'::character varying, '중건설공사'::character varying, '철도·궤도신설공사'::character varying, '특수·기타건설공사'::character varying])::text[])))
+  [c] safeprocure.safety_cost_rate :: ck_rate_bracket -> CHECK (((bracket)::text = ANY ((ARRAY['under5'::character varying, 'mid'::character varying, 'over50'::character varying])::text[])))
+  [p] safeprocure.safety_cost_rate :: safety_cost_rate_pkey -> PRIMARY KEY (construction_type, bracket)
+
+=== INDEXES ===
+  notice . idx_notice_created
+  notice . idx_notice_kind
+  notice . idx_notice_region
+  notice . notice_pkey
+  risk_profile . idx_rp_score
+  risk_profile . risk_profile_notice_id_key
+  risk_profile . risk_profile_pkey
+  risk_tag . idx_rt_notice
+  risk_tag . idx_rt_tag
+  risk_tag . risk_tag_pkey
+  safety_cost_check . idx_scc_verdict
+  safety_cost_check . safety_cost_check_notice_id_key
+  safety_cost_check . safety_cost_check_pkey
+  safety_cost_rate . safety_cost_rate_pkey
+
+=== ROW COUNTS ===
+  notice = 0
+  safety_cost_rate = 15
+  safety_cost_check = 0
+  risk_tag = 0
+  risk_profile = 0
+
+=== SEED: safety_cost_rate (expect 15) ===
+  중건설공사 | mid | rate=0.023500 | base_added=5400000
+  중건설공사 | over50 | rate=0.024400 | base_added=0
+  중건설공사 | under5 | rate=0.034300 | base_added=0
+  일반건설공사(갑) | mid | rate=0.018600 | base_added=5349000
+  일반건설공사(갑) | over50 | rate=0.019700 | base_added=0
+  일반건설공사(갑) | under5 | rate=0.029300 | base_added=0
+  일반건설공사(을) | mid | rate=0.019900 | base_added=5499000
+  일반건설공사(을) | over50 | rate=0.021000 | base_added=0
+  일반건설공사(을) | under5 | rate=0.030900 | base_added=0
+  철도·궤도신설공사 | mid | rate=0.015700 | base_added=4411000
+  철도·궤도신설공사 | over50 | rate=0.016600 | base_added=0
+  철도·궤도신설공사 | under5 | rate=0.024500 | base_added=0
+  특수·기타건설공사 | mid | rate=0.012000 | base_added=3250000
+  특수·기타건설공사 | over50 | rate=0.012700 | base_added=0
+  특수·기타건설공사 | under5 | rate=0.018500 | base_added=0
+
+=== CALC CHECK: 일반건설공사(갑) mid, 대상액 1,450,000,000 (expect 32,319,000) ===
+  computed required_cost = 32319000
