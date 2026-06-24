@@ -41,7 +41,7 @@ export function WidgetCarousel({
 
   return (
     <div
-      className={`flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface-soft dark:border-white/10 dark:bg-surface-dark-elevated ${className ?? ""}`}
+      className={`flex flex-col overflow-hidden rounded-xl border border-hairline bg-surface-card shadow-card dark:border-white/10 dark:bg-surface-dark-elevated ${className ?? ""}`}
       onMouseEnter={() => {
         hovered.current = true;
       }}

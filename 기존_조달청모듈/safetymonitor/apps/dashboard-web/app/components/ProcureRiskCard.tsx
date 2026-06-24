@@ -78,7 +78,7 @@ export default function ProcureRiskCard({ data }: { data: ProcureRiskDetail }) {
         <span
           className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${
             data.source === "live"
-              ? "bg-[#0052ff]/10 text-primary dark:bg-[#0052ff]/20"
+              ? "bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark"
               : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"
           }`}
         >

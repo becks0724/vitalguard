@@ -108,7 +108,7 @@ export default function SafetyCostAuditBoard() {
           <h2 className="text-base font-semibold text-ink dark:text-on-dark">안전관리비 실집행 검증</h2>
           <p className="text-xs text-body dark:text-on-dark-soft">조달 계상액과 워치 출역(실집행)을 교차해 안전예산이 현장 작업자에게 실제 도달했는지 검증합니다.</p>
         </div>
-        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${source === "live" ? "bg-[#0052ff]/10 text-primary dark:bg-[#0052ff]/20" : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"}`}>
+        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${source === "live" ? "bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark" : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"}`}>
           {source === "live" ? "G2B 실시간" : "샘플 데이터"}
         </span>
       </div>
@@ -128,7 +128,7 @@ export default function SafetyCostAuditBoard() {
                     onClick={() => setSelected(n.id)}
                     className={`w-full rounded-xl border p-3 text-left transition ${
                       sel
-                        ? "border-primary bg-[#0052ff]/[0.08] ring-1 ring-primary dark:bg-[#0052ff]/20"
+                        ? "border-ink/20 bg-surface-card ring-1 ring-hairline dark:bg-white/10"
                         : "border-hairline bg-canvas hover:border-muted-soft dark:border-white/10 dark:bg-surface-dark dark:hover:border-white/20"
                     }`}
                   >
@@ -161,7 +161,7 @@ export default function SafetyCostAuditBoard() {
                 {/* 3축 */}
                 <div className="grid gap-2 sm:grid-cols-3">
                   <div className="rounded-lg border border-hairline bg-canvas p-3 dark:border-white/10 dark:bg-surface-dark">
-                    <div className="text-[10px] font-semibold text-primary">① 계상(예산)</div>
+                    <div className="text-[10px] font-semibold text-ink">① 계상(예산)</div>
                     <div className="mt-1 text-base font-bold tabular-nums text-ink dark:text-on-dark">{won(a.requiredCost)}</div>
                     <div className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">{a.constructionType}</div>
                   </div>

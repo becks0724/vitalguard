@@ -56,7 +56,7 @@ function ContractorAuthGate({ onPass }: { onPass: () => void }) {
       <button
         type="submit"
         disabled={loading || !id || !pw}
-        className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+        className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-on-primary transition hover:bg-primary-active disabled:opacity-50"
       >
         {loading ? "확인 중…" : "확인"}
       </button>
@@ -78,7 +78,7 @@ export default function SafetyVerificationTabs() {
             onClick={() => setTab(t.id)}
             className={
               tab === t.id
-                ? "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white transition hover:opacity-90"
+                ? "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition hover:bg-primary-active"
                 : "rounded-md border border-hairline px-3 py-1.5 text-xs font-semibold text-body transition hover:border-primary dark:border-white/10 dark:text-on-dark-soft"
             }
           >

@@ -173,7 +173,7 @@ export default function WeeklyReportBoard() {
         <button
           onClick={submit}
           disabled={submitting}
-          className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
         >
           {submitting ? "발송 중…" : "감독관에게 주간보고서 제출"}
         </button>

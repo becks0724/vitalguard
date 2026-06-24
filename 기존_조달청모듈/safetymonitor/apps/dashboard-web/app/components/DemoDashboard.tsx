@@ -494,8 +494,10 @@ function workerCell(sample: VitalSample) {
 
 const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
-type ScheduleLabel = "red" | "yellow" | "blue" | "green";
+type ScheduleLabel = "red" | "yellow" | "green" | "blue";
 type ScheduleType = "plan" | "important";
+
+const SCHEDULE_LABEL_OPTIONS: ScheduleLabel[] = ["red", "yellow", "green"];
 
 type CalendarEvent = {
   id: string;
@@ -551,6 +553,35 @@ function toDateKey(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+function normalizeScheduleLabel(label: ScheduleLabel): ScheduleLabel {
+  return label === "blue" ? "green" : label;
+}
+
+function weekDateKeys(anchor: Date): string[] {
+  const start = new Date(anchor);
+  start.setHours(0, 0, 0, 0);
+  const day = start.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + mondayOffset);
+  const keys: string[] = [];
+  for (let i = 0; i < 7; i++) {
+    const cur = new Date(start);
+    cur.setDate(start.getDate() + i);
+    keys.push(toDateKey(cur));
+  }
+  return keys;
+}
+
+function formatDateKeyLabel(dateKey: string) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return dateKey;
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(new Date(y, m - 1, d));
+}
+
 function formatKoreanTime(time: string) {
   const [hRaw, mRaw] = time.split(":");
   const h = Number(hRaw);
@@ -559,6 +590,130 @@ function formatKoreanTime(time: string) {
   const period = h < 12 ? "오전" : "오후";
   const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
   return `${period} ${hour12}:${String(m).padStart(2, "0")}`;
+}
+
+function parseTime24(value: string) {
+  const [hRaw, mRaw] = value.split(":");
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  const period: "오전" | "오후" = h < 12 ? "오전" : "오후";
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h === 12 ? 12 : h;
+  return { period, hour12, minute: m };
+}
+
+function toTime24(period: "오전" | "오후", hour12: number, minute: number) {
+  let h = hour12 % 12;
+  if (period === "오후") h += 12;
+  if (period === "오전" && hour12 === 12) h = 0;
+  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function ScheduleTimePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const parsed = value ? parseTime24(value) : null;
+  const [period, setPeriod] = useState<"오전" | "오후">(parsed?.period ?? "오전");
+  const [hour12, setHour12] = useState(parsed?.hour12 ?? 9);
+  const [minute, setMinute] = useState(parsed?.minute ?? 0);
+
+  useEffect(() => {
+    if (!value) return;
+    const next = parseTime24(value);
+    if (!next) return;
+    setPeriod(next.period);
+    setHour12(next.hour12);
+    setMinute(next.minute);
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
+  const minutes = Array.from({ length: 60 }, (_, i) => i);
+  const periods: ("오전" | "오후")[] = ["오전", "오후"];
+
+  const pickClass = (selected: boolean) =>
+    [
+      "w-full rounded-xl px-2 py-1.5 text-center text-sm font-medium transition outline-none",
+      selected
+        ? "bg-brand-accent text-on-primary"
+        : "text-ink hover:bg-surface-soft dark:text-on-dark dark:hover:bg-white/10",
+    ].join(" ");
+
+  const apply = (p: "오전" | "오후", h: number, m: number) => {
+    setPeriod(p);
+    setHour12(h);
+    setMinute(m);
+    onChange(toTime24(p, h, m));
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between rounded-2xl border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none transition hover:bg-surface-card focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+      >
+        <span className={value ? "text-ink dark:text-on-dark" : "text-muted dark:text-on-dark-soft"}>
+          {value ? formatKoreanTime(value) : "시간 선택"}
+        </span>
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3 2" />
+        </svg>
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10 cursor-default"
+            aria-label="시간 선택 닫기"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 flex gap-1 rounded-2xl border border-hairline bg-canvas p-2 shadow-card-hover dark:border-white/10 dark:bg-surface-dark">
+            <div className="max-h-44 flex-1 overflow-y-auto">
+              {periods.map((p) => (
+                <button key={p} type="button" onClick={() => apply(p, hour12, minute)} className={pickClass(period === p)}>
+                  {p}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-44 flex-1 overflow-y-auto">
+              {hours.map((h) => (
+                <button key={h} type="button" onClick={() => apply(period, h, minute)} className={pickClass(hour12 === h)}>
+                  {h}
+                </button>
+              ))}
+            </div>
+            <div className="max-h-44 flex-1 overflow-y-auto">
+              {minutes.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => apply(period, hour12, m)}
+                  className={pickClass(minute === m)}
+                >
+                  {String(m).padStart(2, "0")}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 function ScheduleLabelDot({ label, className }: { label: ScheduleLabel; className?: string }) {
@@ -579,11 +734,15 @@ function CalendarEventChip({
   compact?: boolean;
   inverted?: boolean;
 }) {
-  const meta = SCHEDULE_LABEL_META[event.label];
+  const meta = SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)];
   const title = event.title.trim();
+  const timeSuffix =
+    !compact && event.time && event.type === "important"
+      ? ` · ${formatKoreanTime(event.time)}`
+      : "";
+  const fullTitle = event.time ? `${title} · ${formatKoreanTime(event.time)}` : title;
 
   if (event.type === "important") {
-    const prefix = event.time ? `${formatKoreanTime(event.time)} - ` : "";
     return (
       <div
         className={[
@@ -591,12 +750,12 @@ function CalendarEventChip({
           compact ? "text-[8px] leading-tight" : "text-[10px] leading-snug",
           inverted ? "text-white/95" : "text-ink dark:text-on-dark",
         ].join(" ")}
-        title={`${prefix}${title}`}
+        title={fullTitle}
       >
-        <ScheduleLabelDot label={event.label} />
+        <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} />
         <span className="truncate">
-          {prefix}
           {title}
+          {timeSuffix}
         </span>
       </div>
     );
@@ -611,36 +770,40 @@ function CalendarEventChip({
       ].join(" ")}
       title={title}
     >
-      <ScheduleLabelDot label={event.label} />
+      <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} />
       <span className="truncate font-medium">{title}</span>
     </div>
   );
 }
 
 function ScheduleEventFormModal({
-  date,
   events,
   onAdd,
+  onUpdate,
   onDelete,
   onClose,
 }: {
-  date: Date;
   events: CalendarEvent[];
-  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">) => void;
+  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">, applyWeek?: boolean) => void;
+  onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [type, setType] = useState<ScheduleType>("plan");
-  const [label, setLabel] = useState<ScheduleLabel>("blue");
+  const [label, setLabel] = useState<ScheduleLabel>("green");
   const [time, setTime] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [applyWeek, setApplyWeek] = useState(false);
 
-  const dateLabel = new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  }).format(date);
+  const resetForm = () => {
+    setTitle("");
+    setType("plan");
+    setLabel("green");
+    setTime("");
+    setEditingId(null);
+    setApplyWeek(false);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -650,19 +813,29 @@ function ScheduleEventFormModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const startEdit = (event: CalendarEvent) => {
+    setEditingId(event.id);
+    setTitle(event.title);
+    setType(event.type);
+    setLabel(normalizeScheduleLabel(event.label));
+    setTime(event.time ?? "");
+  };
+
   const handleSubmit = () => {
     const trimmed = title.trim();
     if (!trimmed) return;
-    onAdd({
+    const draft = {
       title: trimmed,
       type,
-      label,
+      label: normalizeScheduleLabel(label),
       time: time.trim() || undefined,
-    });
-    setTitle("");
-    setTime("");
-    setType("plan");
-    setLabel("blue");
+    };
+    if (editingId) {
+      onUpdate(editingId, draft);
+    } else {
+      onAdd(draft, applyWeek && type === "plan");
+    }
+    resetForm();
   };
 
   return (
@@ -674,14 +847,11 @@ function ScheduleEventFormModal({
       aria-label="일정 등록"
     >
       <div
-        className="max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline bg-canvas shadow-xl dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline bg-canvas shadow-card-hover dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3 dark:border-white/10">
-          <div>
-            <p className="text-sm font-bold text-ink dark:text-on-dark">일정 등록</p>
-            <p className="text-[11px] text-muted dark:text-on-dark-soft">{dateLabel}</p>
-          </div>
+          <p className="text-sm font-bold text-ink dark:text-on-dark">일정 등록</p>
           <button
             type="button"
             onClick={onClose}
@@ -702,14 +872,19 @@ function ScheduleEventFormModal({
               {events.map((event) => (
                 <li
                   key={event.id}
-                  className="flex items-start justify-between gap-2 rounded-xl border border-hairline bg-surface-soft px-2.5 py-2 dark:border-white/10 dark:bg-surface-dark-elevated"
+                  className={[
+                    "flex items-start justify-between gap-2 rounded-xl border px-2.5 py-2",
+                    editingId === event.id
+                      ? "border-ink/20 bg-surface-card dark:border-white/20 dark:bg-surface-dark-elevated"
+                      : "border-hairline bg-surface-soft dark:border-white/10 dark:bg-surface-dark-elevated",
+                  ].join(" ")}
                 >
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex flex-wrap items-center gap-1.5">
                       <span
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${SCHEDULE_LABEL_META[event.label].chip}`}
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].chip}`}
                       >
-                        {SCHEDULE_LABEL_META[event.label].name}
+                        {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name}
                       </span>
                       <span className="text-[10px] text-muted dark:text-on-dark-soft">
                         {event.type === "plan" ? "착수계획" : "중요일정"}
@@ -717,13 +892,25 @@ function ScheduleEventFormModal({
                     </div>
                     <CalendarEventChip event={event} />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onDelete(event.id)}
-                    className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                  >
-                    삭제
-                  </button>
+                  <div className="flex shrink-0 flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(event)}
+                      className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink transition hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10"
+                    >
+                      수정
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDelete(event.id);
+                        if (editingId === event.id) resetForm();
+                      }}
+                      className="rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                    >
+                      삭제
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -736,16 +923,16 @@ function ScheduleEventFormModal({
             <div className="grid grid-cols-2 gap-2">
               {(
                 [
-                  ["plan", "착수계획", "날짜 칸에 띠 형태로 표시"],
-                  ["important", "중요일정", "시간과 제목 함께 표시"],
+                  ["plan", "착수계획"],
+                  ["important", "중요일정"],
                 ] as const
-              ).map(([value, name, hint]) => (
+              ).map(([value, name]) => (
                 <label
                   key={value}
                   className={[
                     "cursor-pointer rounded-xl border px-2.5 py-2 transition",
                     type === value
-                      ? "border-[#0052ff]/40 bg-[#0052ff]/8 ring-1 ring-[#0052ff]/25"
+                      ? "border-ink/20 bg-surface-card ring-1 ring-hairline"
                       : "border-hairline hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
                   ].join(" ")}
                 >
@@ -758,7 +945,6 @@ function ScheduleEventFormModal({
                     className="sr-only"
                   />
                   <p className="text-xs font-semibold text-ink dark:text-on-dark">{name}</p>
-                  <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">{hint}</p>
                 </label>
               ))}
             </div>
@@ -776,21 +962,21 @@ function ScheduleEventFormModal({
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleSubmit();
               }}
-              placeholder={type === "plan" ? "예: 레미콘 작업-A구역" : "예: 조달청 안전관리 검시"}
-              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-[#0052ff]/40 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+              placeholder=""
+              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
             />
           </div>
 
           <div>
             <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 라벨</p>
             <div className="flex flex-wrap gap-2">
-              {(Object.keys(SCHEDULE_LABEL_META) as ScheduleLabel[]).map((key) => (
+              {SCHEDULE_LABEL_OPTIONS.map((key) => (
                 <label
                   key={key}
                   className={[
                     "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition",
                     label === key
-                      ? "border-[#0052ff]/40 bg-[#0052ff]/8 text-primary"
+                      ? "border-ink/20 bg-surface-card text-ink"
                       : "border-hairline text-muted hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
                   ].join(" ")}
                 >
@@ -813,16 +999,34 @@ function ScheduleEventFormModal({
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               시간 {type === "important" ? "(권장)" : "(선택)"}
             </label>
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-[#0052ff]/40 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
-            />
+            <ScheduleTimePicker value={time} onChange={setTime} />
           </div>
+
+          {type === "plan" && !editingId && (
+            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-hairline px-3 py-2.5 transition hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5">
+              <input
+                type="checkbox"
+                checked={applyWeek}
+                onChange={(e) => setApplyWeek(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-hairline accent-primary"
+              />
+              <span className="text-xs font-medium text-ink dark:text-on-dark">
+                주간 적용 (월~일) — 이번 주 7일에 동일 일정 등록
+              </span>
+            </label>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 border-t border-hairline px-4 py-3 dark:border-white/10">
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:bg-surface-strong dark:hover:bg-white/10"
+            >
+              수정 취소
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -834,9 +1038,9 @@ function ScheduleEventFormModal({
             type="button"
             onClick={handleSubmit}
             disabled={!title.trim()}
-            className="rounded-lg bg-[#0052ff] px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
           >
-            일정 추가
+            {editingId ? "수정 완료" : "일정 추가"}
           </button>
         </div>
       </div>
@@ -855,6 +1059,8 @@ function HeaderCalendarPopup({
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [formDate, setFormDate] = useState<Date | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -862,6 +1068,8 @@ function HeaderCalendarPopup({
     setViewDate(now);
     setSelected(now);
     setFormDate(null);
+    setPlanOpen(false);
+    setHoverDateKey(null);
   }, [open]);
 
   useEffect(() => {
@@ -907,6 +1115,12 @@ function HeaderCalendarPopup({
   }, {});
 
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
+  const selectedDateKey = toDateKey(selected);
+  const weekKeys = weekDateKeys(selected);
+  const dailyPlanEvents = eventsByDate[selectedDateKey] ?? [];
+  const weeklyPlanEvents = weekKeys.flatMap((key) =>
+    (eventsByDate[key] ?? []).map((e) => ({ ...e, dateKey: key })),
+  );
 
   const goPrevMonth = () => setViewDate(new Date(year, month - 1, 1));
   const goNextMonth = () => setViewDate(new Date(year, month + 1, 1));
@@ -921,20 +1135,29 @@ function HeaderCalendarPopup({
     setFormDate(cellDate);
   };
 
-  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">) => {
+  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">, applyWeek?: boolean) => {
     if (!formDate) return;
+    const targetKeys =
+      applyWeek && draft.type === "plan" ? weekDateKeys(formDate) : [toDateKey(formDate)];
     setEvents((prev) => [
       ...prev,
-      {
+      ...targetKeys.map((dateKey) => ({
         ...draft,
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        dateKey: toDateKey(formDate),
-      },
+        label: normalizeScheduleLabel(draft.label),
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
+        dateKey,
+      })),
     ]);
   };
 
   const handleDeleteEvent = (id: string) => {
     setEvents((prev) => prev.filter((event) => event.id !== id));
+  };
+
+  const handleUpdateEvent = (id: string, draft: Omit<CalendarEvent, "id" | "dateKey">) => {
+    setEvents((prev) =>
+      prev.map((event) => (event.id === id ? { ...event, ...draft, label: normalizeScheduleLabel(draft.label) } : event)),
+    );
   };
 
   return (
@@ -946,12 +1169,12 @@ function HeaderCalendarPopup({
       aria-label="일정 캘린더"
     >
       <div
-        className="relative w-full max-w-[360px] overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10"
+        className="relative w-full max-w-[580px] overflow-visible rounded-2xl border border-hairline bg-canvas shadow-card-hover ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-hairline bg-gradient-to-r from-[#0052ff]/10 via-transparent to-transparent px-4 py-3 dark:border-white/10">
+        <div className="flex items-center justify-between border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#0052ff]/12 text-primary">
+            <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-card text-ink">
               <svg
                 viewBox="0 0 24 24"
                 width="18"
@@ -974,6 +1197,20 @@ function HeaderCalendarPopup({
               <p className="text-[11px] text-muted dark:text-on-dark-soft">날짜를 클릭해 일정을 등록하세요</p>
             </div>
           </div>
+          <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setPlanOpen((v) => !v)}
+            aria-expanded={planOpen}
+            className={[
+              "rounded-lg px-2.5 py-1.5 text-xs font-semibold transition",
+              planOpen
+                ? "bg-primary text-on-primary"
+                : "bg-surface-card text-ink hover:bg-surface-strong dark:bg-surface-dark-elevated dark:text-on-dark dark:hover:bg-white/10",
+            ].join(" ")}
+          >
+            Plan
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -985,7 +1222,66 @@ function HeaderCalendarPopup({
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
+          </div>
         </div>
+
+        {planOpen && (
+          <div className="border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+            <div className="space-y-3">
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">일간</p>
+                {dailyPlanEvents.length === 0 ? (
+                  <p className="text-[11px] text-muted dark:text-on-dark-soft">선택 날짜에 등록된 일정이 없습니다.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {dailyPlanEvents.map((event) => (
+                      <li
+                        key={event.id}
+                        className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
+                      >
+                        <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
+                        <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">{event.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간</p>
+                {weeklyPlanEvents.length === 0 ? (
+                  <p className="text-[11px] text-muted dark:text-on-dark-soft">이번 주(월~일)에 등록된 일정이 없습니다.</p>
+                ) : (
+                  <ul className="max-h-40 space-y-2 overflow-y-auto">
+                    {weekKeys.map((key) => {
+                      const dayPlans = weeklyPlanEvents.filter((e) => e.dateKey === key);
+                      if (dayPlans.length === 0) return null;
+                      return (
+                        <li key={key}>
+                          <p className="mb-1 text-[10px] font-medium text-muted dark:text-on-dark-soft">
+                            {formatDateKeyLabel(key)}
+                          </p>
+                          <ul className="space-y-1">
+                            {dayPlans.map((event) => (
+                              <li
+                                key={event.id}
+                                className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
+                              >
+                                <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
+                                <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">
+                                  {event.title}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="px-3 pb-4 pt-3">
           <div className="mb-3 flex items-center justify-between px-1">
@@ -1028,7 +1324,7 @@ function HeaderCalendarPopup({
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-0.5">
+          <div className="grid grid-cols-7 gap-0.5 overflow-visible">
             {cells.map((day, idx) => {
               if (day === null) {
                 return <div key={`empty-${idx}`} className="min-h-[4.5rem]" />;
@@ -1045,24 +1341,50 @@ function HeaderCalendarPopup({
                   key={`${year}-${month}-${day}`}
                   type="button"
                   onClick={() => handleDateClick(cellDate)}
+                  onMouseEnter={() => {
+                    if (dayEvents.length > 0) setHoverDateKey(dateKey);
+                  }}
+                  onMouseLeave={() => setHoverDateKey(null)}
                   className={[
-                    "flex min-h-[4.5rem] flex-col rounded-lg p-0.5 text-left transition",
+                    "relative flex min-h-[4.5rem] flex-col rounded-lg p-0.5 text-left transition",
                     isSelected
-                      ? "bg-[#0052ff] text-white shadow-sm shadow-[#0052ff]/30"
+                      ? "bg-primary text-on-primary shadow-sm shadow-black/10"
                       : isToday
-                        ? "bg-[#0052ff]/12 ring-1 ring-[#0052ff]/30"
+                        ? "bg-surface-card ring-1 ring-hairline"
                         : "hover:bg-surface-strong dark:hover:bg-white/10",
                   ].join(" ")}
                   aria-label={`${year}년 ${month + 1}월 ${day}일`}
                   aria-pressed={isSelected}
                 >
+                  {hoverDateKey === dateKey && dayEvents.length > 0 && (
+                    <div
+                      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 w-[10.5rem] -translate-x-1/2 rounded-lg bg-primary px-2.5 py-2 shadow-card-hover"
+                      role="tooltip"
+                    >
+                      <p className="mb-1 text-[10px] font-semibold text-on-primary/80">{day}일</p>
+                      <ul className="space-y-1">
+                        {dayEvents.map((event) => (
+                          <li key={event.id} className="flex min-w-0 items-center gap-1">
+                            <ScheduleLabelDot
+                              label={normalizeScheduleLabel(event.label)}
+                              className="h-1.5 w-1.5 shrink-0 ring-1 ring-white/30"
+                            />
+                            <span className="min-w-0 truncate text-[10px] text-on-primary">
+                              {event.title.trim()}
+                              {event.time ? ` · ${formatKoreanTime(event.time)}` : ""}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   <span
                     className={[
                       "px-0.5 text-[11px] font-semibold tabular-nums",
                       isSelected
                         ? "text-white"
                         : isToday
-                          ? "text-primary"
+                          ? "font-bold text-ink dark:text-on-dark"
                           : weekday === 0
                             ? "text-red-500 dark:text-red-400"
                             : weekday === 6
@@ -1098,7 +1420,7 @@ function HeaderCalendarPopup({
               <button
                 type="button"
                 onClick={goToday}
-                className="shrink-0 rounded-lg bg-[#0052ff]/10 px-2.5 py-1 text-xs font-semibold text-primary transition hover:bg-[#0052ff]/20"
+                className="shrink-0 rounded-lg bg-surface-card px-2.5 py-1 text-xs font-semibold text-ink transition hover:bg-surface-strong"
               >
                 오늘
               </button>
@@ -1119,9 +1441,9 @@ function HeaderCalendarPopup({
 
         {formDate && (
           <ScheduleEventFormModal
-            date={formDate}
             events={eventsByDate[toDateKey(formDate)] ?? []}
             onAdd={handleAddEvent}
+            onUpdate={handleUpdateEvent}
             onDelete={handleDeleteEvent}
             onClose={() => setFormDate(null)}
           />
@@ -1763,7 +2085,7 @@ export function DemoDashboard() {
           SOS 경보음 활성화 — 한 번 클릭하면 이후 SOS 시 자동으로 사이렌이 울립니다
         </button>
       )}
-      <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl bg-canvas px-6 py-3 dark:bg-surface-dark">
+      <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline bg-canvas px-6 py-3 shadow-card dark:border-white/10 dark:bg-surface-dark">
         <div className="flex items-center gap-3">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-strong dark:bg-surface-dark-elevated">
             <img
@@ -1778,7 +2100,7 @@ export function DemoDashboard() {
             />
           </div>
           <div className="min-w-0">
-            <h1 className="truncate font-display text-[24px] font-normal leading-none tracking-[-0.4px] text-primary">
+            <h1 className="truncate font-display text-[24px] font-semibold leading-none tracking-[-0.4px] text-ink dark:text-on-dark">
               VitAlGuard
             </h1>
             <p className="mt-1 truncate text-xs text-body dark:text-on-dark-soft">
@@ -1916,7 +2238,7 @@ export function DemoDashboard() {
             title: "실시간 현장 관제",
             content: (
               <div className="flex flex-col gap-4">
-      <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
+      <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink shadow-card dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch">
           {/* 좌측 — 히어로 카피 + 안전 신호등 + 현장정보/재해사례 캐러셀 */}
           <div className="flex min-w-0 flex-col gap-4">
@@ -1934,7 +2256,7 @@ export function DemoDashboard() {
                   content: (
                     <div className="grid h-full w-full grid-cols-3 gap-1 p-1.5 max-[640px]:grid-cols-2">
                       {siteInfoRows(siteInfo).map((item) => (
-                        <div key={item.label} className="flex min-w-0 flex-col justify-center rounded-lg bg-canvas px-2.5 py-0.5 dark:bg-surface-dark">
+                        <div key={item.label} className="flex min-w-0 flex-col justify-center rounded-lg bg-surface-card px-2.5 py-0.5 dark:bg-surface-dark-elevated">
                           <div className="text-[10px] leading-tight text-body dark:text-on-dark-soft">{item.label}</div>
                           <div className="truncate text-[13px] font-semibold leading-tight text-ink dark:text-on-dark">
                             {item.value}
@@ -2054,7 +2376,7 @@ export function DemoDashboard() {
 
                 {filledSlots.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted dark:text-on-dark-soft">
-                    등록된 작업자가 없습니다. 우측 상단 <b className="text-primary">+ 작업자 등록</b> 으로 추가하세요.
+                    등록된 작업자가 없습니다. 우측 상단 <b className="text-ink dark:text-on-dark">+ 작업자 등록</b> 으로 추가하세요.
                   </p>
                 ) : (
                   <div className="min-h-0 flex-1 overflow-x-auto">
@@ -2670,7 +2992,7 @@ function JobTitleEditModal({
               if (e.key === "Enter") onSave(workerId, value);
             }}
             placeholder="예: 현장소장 · 안전관리자 · 철근공"
-            className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-[#0052ff]/40 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+            className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
           />
           <p className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
             비우고 저장하면 폰 발신값으로 복귀합니다.
@@ -2687,7 +3009,7 @@ function JobTitleEditModal({
           <button
             type="button"
             onClick={() => onSave(workerId, value)}
-            className="rounded-lg bg-[#0052ff] px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90"
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active"
           >
             저장
           </button>

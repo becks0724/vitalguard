@@ -330,7 +330,7 @@ function LangToggle({
       <div className="flex w-full items-center justify-between">
         {/* 슬롯 A — 채워진 썸: 현재 언어 */}
         <div
-          className={`flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-white transition-transform duration-300 ${
+          className={`flex h-6 w-6 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-on-primary transition-transform duration-300 ${
             isEn ? "translate-x-8" : "translate-x-0"
           }`}
         >

@@ -35,7 +35,7 @@ export function SectionPager({ pages }: { pages: PagerPage[] }) {
   return (
     <div className="flex flex-col gap-4">
       {/* 컨트롤 바 — ‹ 제목 N/M › (대시보드 바 스타일과 통일) */}
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline bg-canvas px-4 py-2 dark:border-white/10 dark:bg-surface-dark">
+      <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline bg-canvas px-4 py-2 shadow-card dark:border-white/10 dark:bg-surface-dark">
         <button type="button" onClick={() => go(-1)} aria-label="이전 페이지" disabled={n <= 1} className={arrowClass}>
           ‹
         </button>

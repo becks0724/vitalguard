@@ -19,11 +19,11 @@ export default function RootLayout({
   return (
     <html lang="ko" className="dark">
       <head>
-        {/* 로그인 디스플레이 폰트 — Archivo Black(라틴) + Do Hyeon(한글). 생체 추세 차트 = Lato. Google Fonts CDN. */}
+        {/* Cal.com-inspired typography — Inter (UI + display substitute) + Lato (차트). */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Do+Hyeon&family=Lato:wght@400;700;900&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lato:wght@400;700;900&display=swap"
           rel="stylesheet"
         />
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />

@@ -59,7 +59,7 @@ export default function BusinessVerifyCard() {
         <button
           onClick={check}
           disabled={loading}
-          className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+          className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
         >
           {loading ? "…" : "조회"}
         </button>

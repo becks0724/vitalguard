@@ -110,7 +110,7 @@ export default function AedInspectPage() {
                 type="button"
                 onClick={() => setBattery((v) => !v)}
                 aria-pressed={battery}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${battery ? "border-primary bg-[#0052ff]/10 text-primary" : "border-hairline text-body dark:border-white/10 dark:text-on-dark-soft"}`}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${battery ? "border-ink bg-surface-card text-ink" : "border-hairline text-body dark:border-white/10 dark:text-on-dark-soft"}`}
               >
                 배터리 교체
               </button>
@@ -118,7 +118,7 @@ export default function AedInspectPage() {
                 type="button"
                 onClick={() => setPad((v) => !v)}
                 aria-pressed={pad}
-                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${pad ? "border-primary bg-[#0052ff]/10 text-primary" : "border-hairline text-body dark:border-white/10 dark:text-on-dark-soft"}`}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${pad ? "border-ink bg-surface-card text-ink" : "border-hairline text-body dark:border-white/10 dark:text-on-dark-soft"}`}
               >
                 전극패드 교체
               </button>
