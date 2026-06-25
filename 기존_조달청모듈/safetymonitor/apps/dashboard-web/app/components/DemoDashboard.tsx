@@ -1000,6 +1000,91 @@ function ScheduleEventFormModal({
   );
 }
 
+function getKoreanHolidays(year: number): Record<string, string> {
+  const y = year;
+  const fixed: Record<string, string> = {
+    [`${y}-01-01`]: "신정",
+    [`${y}-03-01`]: "삼일절",
+    [`${y}-05-05`]: "어린이날",
+    [`${y}-06-06`]: "현충일",
+    [`${y}-08-15`]: "광복절",
+    [`${y}-10-03`]: "개천절",
+    [`${y}-10-09`]: "한글날",
+    [`${y}-12-25`]: "성탄절",
+  };
+  const variable: Record<number, Record<string, string>> = {
+    2024: {
+      "2024-02-09": "설 연휴",
+      "2024-02-10": "설날",
+      "2024-02-11": "설 연휴",
+      "2024-02-12": "대체공휴일",
+      "2024-05-15": "부처님오신날",
+      "2024-09-16": "추석 연휴",
+      "2024-09-17": "추석",
+      "2024-09-18": "추석 연휴",
+    },
+    2025: {
+      "2025-01-28": "설 연휴",
+      "2025-01-29": "설날",
+      "2025-01-30": "설 연휴",
+      "2025-05-06": "부처님오신날",
+      "2025-10-05": "추석 연휴",
+      "2025-10-06": "추석",
+      "2025-10-07": "추석 연휴",
+      "2025-10-08": "대체공휴일",
+    },
+    2026: {
+      "2026-02-16": "설 연휴",
+      "2026-02-17": "설날",
+      "2026-02-18": "설 연휴",
+      "2026-05-24": "부처님오신날",
+      "2026-05-25": "대체공휴일",
+      "2026-09-24": "추석 연휴",
+      "2026-09-25": "추석",
+      "2026-09-26": "추석 연휴",
+    },
+    2027: {
+      "2027-02-05": "설 연휴",
+      "2027-02-06": "설날",
+      "2027-02-07": "설 연휴",
+      "2027-02-08": "대체공휴일",
+      "2027-05-13": "부처님오신날",
+      "2027-09-14": "추석 연휴",
+      "2027-09-15": "추석",
+      "2027-09-16": "추석 연휴",
+    },
+    2028: {
+      "2028-01-25": "설 연휴",
+      "2028-01-26": "설날",
+      "2028-01-27": "설 연휴",
+      "2028-05-02": "부처님오신날",
+      "2028-10-02": "추석 연휴",
+      "2028-10-03": "추석",
+      "2028-10-04": "추석 연휴",
+    },
+    2029: {
+      "2029-02-12": "설 연휴",
+      "2029-02-13": "설날",
+      "2029-02-14": "설 연휴",
+      "2029-05-20": "부처님오신날",
+      "2029-05-21": "대체공휴일",
+      "2029-09-21": "추석 연휴",
+      "2029-09-22": "추석",
+      "2029-09-23": "추석 연휴",
+    },
+    2030: {
+      "2030-02-02": "설 연휴",
+      "2030-02-03": "설날",
+      "2030-02-04": "설 연휴",
+      "2030-05-09": "부처님오신날",
+      "2030-09-11": "추석 연휴",
+      "2030-09-12": "추석",
+      "2030-09-13": "추석 연휴",
+    },
+  };
+  return { ...(variable[y] ?? {}), ...fixed };
+}
+
 function HeaderCalendarPopup({
   open,
   onClose,
@@ -1036,6 +1121,15 @@ function HeaderCalendarPopup({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, formDate]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const today = new Date();
@@ -1059,6 +1153,8 @@ function HeaderCalendarPopup({
     day: "numeric",
     weekday: "long",
   }).format(selected);
+
+  const holidayMap = getKoreanHolidays(year);
 
   const eventsByDate = events.reduce<Record<string, CalendarEvent[]>>((acc, event) => {
     const bucket = acc[event.dateKey] ?? (acc[event.dateKey] = []);
@@ -1121,17 +1217,17 @@ function HeaderCalendarPopup({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-end bg-black/25 p-4 pt-[4.5rem] backdrop-blur-[2px] sm:pt-20"
+      className="fixed inset-0 z-50 overflow-hidden bg-black/25 backdrop-blur-[2px]"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
       aria-label="일정 캘린더"
     >
       <div
-        className="relative w-full max-w-[580px] overflow-visible rounded-2xl border border-hairline bg-canvas shadow-card-hover ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10"
+        className="absolute bottom-4 right-4 top-[4.5rem] flex w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-card-hover ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10 sm:top-20"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
+        <div className="flex shrink-0 items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-card text-ink">
               <svg
@@ -1184,13 +1280,14 @@ function HeaderCalendarPopup({
           </div>
         </div>
 
+        <div className="flex-1 overflow-y-auto overscroll-y-contain" onWheel={(e) => e.stopPropagation()}>
         {planOpen && (
           <div className="border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
             <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간 일정</p>
             {weeklyPlanEvents.length === 0 ? (
               <p className="text-[11px] text-muted dark:text-on-dark-soft">이번 주(월~일)에 등록된 일정이 없습니다.</p>
             ) : (
-              <ul className="max-h-40 space-y-2 overflow-y-auto">
+              <ul className="space-y-2">
                 {weekKeys.map((key) => {
                   const dayPlans = weeklyPlanEvents.filter((e) => e.dateKey === key);
                   if (dayPlans.length === 0) return null;
@@ -1272,6 +1369,7 @@ function HeaderCalendarPopup({
               const isToday = calendarSameDay(cellDate, today);
               const isSelected = calendarSameDay(cellDate, selected);
               const weekday = cellDate.getDay();
+              const holiday = holidayMap[dateKey];
 
               return (
                 <button
@@ -1315,22 +1413,38 @@ function HeaderCalendarPopup({
                       </ul>
                     </div>
                   )}
-                  <span
-                    className={[
-                      "px-0.5 text-[11px] font-semibold tabular-nums",
-                      isSelected
-                        ? "text-white"
-                        : isToday
-                          ? "font-bold text-ink dark:text-on-dark"
-                          : weekday === 0
-                            ? "text-red-500 dark:text-red-400"
-                            : weekday === 6
-                              ? "text-blue-600 dark:text-blue-400"
-                              : "text-ink dark:text-on-dark",
-                    ].join(" ")}
-                  >
-                    {day}
-                  </span>
+                  {holiday && !isSelected ? (
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 px-0.5 text-[11px] font-semibold tabular-nums text-red-600 dark:bg-red-500/20 dark:text-red-400">
+                      {day}
+                    </span>
+                  ) : (
+                    <span
+                      className={[
+                        "px-0.5 text-[11px] font-semibold tabular-nums",
+                        isSelected
+                          ? "text-white"
+                          : isToday
+                            ? "font-bold text-ink dark:text-on-dark"
+                            : weekday === 0
+                              ? "text-red-500 dark:text-red-400"
+                              : weekday === 6
+                                ? "text-blue-600 dark:text-blue-400"
+                                : "text-ink dark:text-on-dark",
+                      ].join(" ")}
+                    >
+                      {day}
+                    </span>
+                  )}
+                  {holiday && (
+                    <span
+                      className={[
+                        "truncate px-0.5 text-[7px] font-medium leading-tight",
+                        isSelected ? "text-white/80" : "text-red-500 dark:text-red-400",
+                      ].join(" ")}
+                    >
+                      {holiday}
+                    </span>
+                  )}
                   <div className="mt-0.5 flex flex-1 flex-col gap-0.5 overflow-hidden">
                     {dayEvents.slice(0, 2).map((event) => (
                       <CalendarEventChip key={event.id} event={event} compact inverted={isSelected} />
@@ -1374,6 +1488,7 @@ function HeaderCalendarPopup({
               </div>
             )}
           </div>
+        </div>
         </div>
 
         {formDate && (
