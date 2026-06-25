@@ -12,7 +12,16 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-23 — 회원가입 보안 강화 + 회사(상호) B2B 선택 + 사용자 관리 확장 + 내 정보 수정 + dev-browser + 팀 캘린더·안전관리비 탭 pull 통합 + Cloud Run 라이브 배포 / origin push 완료·라이브 반영 rev 00007-7n7)
+### ★ 최신 (2026-06-24 — 설계·타당성 검토 세션: 온프레미스 LLM 생체 모니터링 + 앱 OCR 캘린더 미디어 브리지 / 코드 변경 0, 계획 문서화)
+
+- **★ 코드 변경 0 — 설계·타당성 검토 + 문서화.** 상세 = [llm-media-features-plan.md](./llm-media-features-plan.md). 두 기능 모두 **발표 후 2차 트랙**.
+- **★ 기능 #2 = 온프레미스 LLM 생체 모니터링/보고서** — DB 생체데이터 → 비식별 피처(기존 analyzers 재사용) → **로컬 LLM**(Ollama/vLLM) → 한국어 보고서. **결정 = 온프레미스**(사용자 최우선 제약 "보고서 어떤 경유로도 외부 유출 금지" → 외부 API·Cloud Run 경유 배제). 원시 PII 미투입(이름·사원번호·GPS 제거), 의학진단 아님·작업 적합성 참고·투입/보류 human-in-the-loop. 하드웨어 = 사무 PC 직접구동 비현실 → **추론 전용 1대(본사 GPU)+사무PC 브라우저**, 발표는 Mac 통합메모리 7~14B.
+- **★ 기능 #1 = 앱 OCR + 캘린더 미디어 브리지** — iOS 앱 OCR/촬영(독립 개발 완료·사진첩 저장만) → **클라우드 → 관제웹 캘린더 촬영일시 자동 배치**. 캘린더 UI·사진대지 업로드 라우트(로컬디스크 `.runtime`=Cloud Run 휘발)는 기존, 신규 = 클라우드 저장+`calendar_media` 테이블+자동배치. 날짜=EXIF·태그=OCR. 저장 후보 리서치 = 발표 GCS 서울 / 상용화 R2(zero egress) / 국내 레지던시 네이버. 비용(1개소 1TB) R2 ~₩21k 고정 vs 네이버 ~₩31k+아웃바운드(추정).
+- **★ 라이브 이슈 진단 = 현장 위치 날씨 미작동** — 생체 정상인데 GPS만 redaction → 날씨 "0명 대기". 원인 = 3중 게이트 중 ②세션 토큰(rev 00007 재배포로 인메모리 소멸) 또는 ③폰 GPS 권한(①env=true 확인). 조치 = **로그아웃→재로그인**(새로고침 X), 안되면 아이폰 위치 항상허용. 구조적 = 세션 인메모리라 재배포마다 재발(발표후 스테이트리스 전환).
+- **검토·미도입** — ponytail 플러그인(보안 무해하나 전역 CLAUDE.md와 철학 중복 → 미설치).
+- **다음** — #2 먼저(하드웨어 확정→비식별 피처+로컬 추론 셋업) → #1(저장 선택→앱 업로드→테이블→캘린더). 상세 [llm-media-features-plan.md](./llm-media-features-plan.md).
+
+### (2026-06-23 — 회원가입 보안 강화 + 회사(상호) B2B 선택 + 사용자 관리 확장 + 내 정보 수정 + dev-browser + 팀 캘린더·안전관리비 탭 pull 통합 + Cloud Run 라이브 배포 / origin push 완료·라이브 반영 rev 00007-7n7)
 
 - **★ 회원가입 보안 강화**(`7c10ec6`) — 비번 8자 경고 잔존 버그 수정(제출 setError 잔존→입력값 라이브 판정) · ID 중복확인 버튼(`/api/admin/check-username`) · 연락처 3박스+통신사(carrier 컬럼) · 이메일 로컬부+도메인 선택박스 · **이메일 인증(Resend HTTP API, 의존성0)** — 인증완료해야 가입(서버 isVerified 403 이중방어, 키없으면 dev devCode 폴백). [lib/email.ts](../apps/dashboard-web/lib/email.ts)·[lib/email-verify.ts](../apps/dashboard-web/lib/email-verify.ts).
 - **★ 회사(상호) B2B 선택**(`ff6887f`) — 자유입력→승인 기업 드롭다운([lib/companies.ts](../apps/dashboard-web/lib/companies.ts) **단일소스**: (주)바이탈가드·VitAlGuard·스마트인재개발원·조달청·고용노동부, 개발사가 배열 편집으로 추가/삭제). 서버 검증(register·google/complete 목록 외 400).
