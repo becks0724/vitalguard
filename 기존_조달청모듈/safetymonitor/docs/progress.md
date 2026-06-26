@@ -12,7 +12,21 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-26 — 한국공휴일 라이브 배포(rev 00008) + 캘린더 클라우드 아이콘·다크모드 헤더 수정 + 팀원 스타일 리팩터 안전병합 + 라이브 배포(rev 00009-8nx))
+### ★ 최신 (2026-06-26 — 캘린더 대규모 개편 5종 + 관리자 권한제어 [전부 로컬 커밋·미배포])
+
+이번 세션 = 캘린더/프로필/권한 기능 5종 신규·개편. 전부 **tsc=0·next build=0·Playwright 검증 통과**, **로컬 커밋만(미푸시·미배포)**. 상세 근거는 컨텍스트 노트 3종 참조.
+
+1. **일정 라벨 커스터마이징 + 시작/종료 시간** (`57592b6`+`c3bd7e7`) — 고정 4라벨→동적(추가/삭제·이름·8색 팔레트), 단일 시간→시작/종료, localStorage 영속. → [calendar-schedule-custom-context.md](./calendar-schedule-custom-context.md)
+2. **날짜별 날씨 아이콘** (`f41b433`+`25d6a79`) — 기존 Open-Meteo 7일 예보(daily7) 재사용해 셀 우상단 아이콘(예보창 오늘~+6일만 표시). 기상청 `KMA_SERVICE_KEY` 미발급이라 Open-Meteo 채택(사용자 확정).
+3. **클라우드 브릿지 Phase 1** (`6963cb2`+`139d55e`) — `calendar_media` 테이블 + `/api/calendar/media`(GET/POST/PATCH/DELETE) + 셀 배지·선택일 미디어 섹션(썸네일·OCR·설명). 스토리지 비종속(media_url만으로 동작). → [cloud-bridge-context.md](./cloud-bridge-context.md)
+4. **미디어 댓글 + 날짜선택 UX 개편** (`b381b13`+`89de2ad`) — 날짜 클릭=선택만(일정 추가는 (+)버튼), 미디어 카드 제목/내용 분리, '현장 미디어'→'현장 이미지/미디어', 관리자 단일 설명→댓글 스레드(`calendar_media_comment`).
+5. **프로필 부서/직책 + 관리자 메뉴 권한제어 + 댓글 작성자 상세** (`bcb17fe`+`71ac4fd`) — users +department/job_title/admin_access. **owner 개별 부여**(직책=권한 자가취득 방지) + **서버 강제**(hasAdminMenuAccess, 관리자 데이터 8엔드포인트). 댓글에 이름·직책·사번·시각. → [profile-access-context.md](./profile-access-context.md)
+
+- **검증 증거** — 권한 부여/회수(실 가입사용자 admin3470 대상 grant→true/revoke→false/원복), 서버 `/api/admin/workers` 미인증=401·owner=200, 댓글 직책 '시스템 관리자' 표시 Playwright 통과. 데모 미디어 6건(`site_id=DEMO-SEED`)+샘플 댓글 시드.
+- **현재 상태** — HEAD=`71ac4fd`, 로컬 main이 팀원 작업(병합 `8b03bf5`) 포함 **origin/main보다 11커밋 앞섬(미푸시)**. **라이브=여전히 rev `00009-8nx`** (이번 세션 기능 전부 **미반영**). 로컬 dev 가동 중(localhost:3000).
+- **다음 액션** — ① 푸시 + Cloud Run 배포(지시 시, 원격 분기 확인 후) ② 클라우드 브릿지 Phase 2(스토리지 백엔드 GCS/R2/네이버 결정 + 프리사인 업로드 URL) → Phase 3(앱 OCR→업로드 연동) ③ (선택) 관리자 사번 필드, 비-관리자 권한차단 E2E(가입 이메일인증 때문에 보류).
+
+### (2026-06-26 — 한국공휴일 라이브 배포(rev 00008) + 캘린더 클라우드 아이콘·다크모드 헤더 수정 + 팀원 스타일 리팩터 안전병합 + 라이브 배포(rev 00009-8nx))
 
 - **★ Cloud Run 재배포 rev `00008-m2w`**(2026-06-25) — 팀 pull(한국 공휴일 캘린더 `7bc9b4d` 등) 라이브 반영 위해 `gcloud builds submit`(3분16초)+`gcloud run deploy --image`(env·9시크릿 보존). 라이브 검증 = HTTP 200·`check-username`(reserved)·로그인 401·JS 청크에 공휴일 데이터 확인. 라이브 리비전 `00007-7n7`→**`00008-m2w`**. (Galaxy 스키마 `vital_samples_galaxy`는 앱 미참조·라이브 DB 미적용 = 배포 무관.)
 - **★ 캘린더 헤더 아이콘 = 클라우드+캘린더 결합**(`1cdd2c2`) — [DemoDashboard.tsx:2186](../apps/dashboard-web/app/components/DemoDashboard.tsx#L2186) 단순 달력 → 결합 라인 아이콘(기능 #1 미디어 캘린더 방향 신호). 단독 렌더 검증.
