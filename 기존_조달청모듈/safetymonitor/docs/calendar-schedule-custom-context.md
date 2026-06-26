@@ -31,3 +31,24 @@
 
 ## 주의
 - dev 서버 콜드 컴파일이 이 머신에서 매우 느림(첫 네비게이션/API 30~120s+). 잔여 `next dev` 프로세스 정리 후 정상화. E2E 시 단일 네비게이션 + sessionStorage 시드(`add_init_script`)로 우회.
+- dev 서버 가동 중 `next build`를 같은 `.next`에 돌리면 dev 청크가 깨짐("Cannot find module './NNNN.js'"). 빌드 후엔 `.next` 삭제 + dev 재기동.
+
+---
+
+# 추가 기능 — 날짜별 날씨 아이콘 (2026-06-26)
+
+## 요청·결정
+- 각 날짜 셀에 날씨 상태를 작은 아이콘으로 표시. "기상청 API 연결" 요청이었으나 `.env.local`의 `KMA_SERVICE_KEY`가 비어 있어(미발급) 즉시 불가. 사용자 확정 = **기존 Open-Meteo 7일 예보(daily7) 재사용**.
+
+## 구현
+- `HeaderCalendarPopup`에 `lat/lon/workerCount` prop 추가 → 호출부에서 `fieldCoords` 전달(WeatherStrip과 동일 좌표원).
+- 팝업 오픈 시 `/api/weather?lat=&lon=&workers=`(서버 캐시 엔드포인트)에서 `daily7.time[]/weatherCode[]` → `weatherByDate(dateKey→코드)` 맵.
+- 각 날짜 셀 우상단에 `WeatherIcon name={weatherIconKey(code)}`(absolute, h-3.5). `weatherLabel`을 WeatherStrip에서 export해 title/aria-label 재사용.
+
+## 제약(불가피)
+- 예보 창 = 오늘~+6일만 아이콘. 과거·먼 미래·예보창 밖은 아이콘 없음.
+- 위치 의존 — 작업자 GPS 좌표(`fieldCoords`)가 있어야 동작. 가상작업자(VW-*)는 GPS 없음 → 폰 미연동 시 아이콘 없음(기존 WeatherStrip과 동일 전제).
+
+## 검증 결과 (모두 통과)
+- tsc=0, next build=0.
+- Playwright(GPS 작업자 1명·슬롯·고정 daily7 주입) — 6월 뷰에서 예보 5일(06-26~06-30) 아이콘 정확 렌더, 라벨 맑음/대체로 맑음/구름 조금/흐림/비, 다음 달(07-01·02) 미표시, 다크모드 가독성 양호.
