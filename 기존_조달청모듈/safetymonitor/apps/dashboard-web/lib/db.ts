@@ -317,19 +317,6 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL;
-
-    -- 낙상 ML 학습용 raw 6축 IMU 윈도 — 워치가 후보 구간 시계열(가속도xyz+자이로xyz) 전송.
-    -- vital_samples(feature 요약)과 별도. work_veto/impact/recovery 모델 학습 입력.
-    CREATE TABLE IF NOT EXISTS imu_window (
-      id SERIAL PRIMARY KEY,
-      worker_id TEXT NOT NULL,
-      family TEXT,                         -- 라벨(예: true_fall/false_positive/work_veto)
-      fs INTEGER,                          -- 샘플링레이트(Hz)
-      impact_index INTEGER,                -- 윈도 내 충격 샘플 인덱스
-      axes JSONB NOT NULL,                 -- [[ax,ay,az,gx,gy,gz], …]
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
-    CREATE INDEX IF NOT EXISTS idx_imu_worker ON imu_window(worker_id);
   `);
 }
 
@@ -722,53 +709,53 @@ export async function exportFallDataset(opts: {
   return rows;
 }
 
-// ── raw IMU 윈도 (낙상 ML 학습 입력) ──────────────────────────────
+// ── A3 raw 6축 IMU 임시 수집 버퍼 (imu_window) ─────────────────────
+// ⚠️ 임시 버퍼. 본 파이프라인(fall_events/vital_samples)과 미연결 · FK·뷰·트리거 없음.
+//    수집→export(NDJSON)→DROP. 전역 ensureSchema 에 넣지 않고 지연 생성해 격리 유지.
 export type ImuWindowRow = {
-  id: number;
   worker_id: string;
   family: string | null;
   fs: number | null;
   impact_index: number | null;
   axes: number[][];
-  created_at: string;
 };
 
-// 워치 → raw 6축 윈도 단건 적재. axes 는 jsonb 라 JSON.stringify (배열을 PG array 로 오인 방지).
-export async function insertImuWindow(w: {
-  workerId: string;
-  family?: string | null;
-  fs?: number | null;
-  impactIndex?: number | null;
-  axes: number[][];
-}): Promise<{ id: number }> {
-  const { text, values } = buildInsert(
-    "imu_window",
-    {
-      worker_id: w.workerId,
-      family: w.family ?? null,
-      fs: w.fs ?? null,
-      impact_index: w.impactIndex ?? null,
-      axes: JSON.stringify(w.axes),
-    },
-    "id",
-  );
-  const { rows } = await q<{ id: number }>(text, values);
-  const id = rows[0]?.id;
-  if (id == null) throw new Error("insert imu_window: id 반환 실패");
-  return { id };
+// 없으면 생성(하드닝 정의: CHECK·DEFAULT·INDEX 포함). insert/export 전에 한 번 보장.
+// db/imu_window/imu_window.sql 과 한 글자도 다르지 않게 동기화할 것.
+export async function ensureImuWindowTable(): Promise<void> {
+  await q(`CREATE TABLE IF NOT EXISTS imu_window (
+    id            BIGSERIAL    PRIMARY KEY,
+    worker_id     TEXT         NOT NULL DEFAULT 'UNSET',
+    family        TEXT,
+    fs            INTEGER,
+    impact_index  INTEGER,
+    axes          JSONB        NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT chk_imu_family CHECK (family IS NULL OR family IN ('fall','hammer','pound','throw','walk','sit')),
+    CONSTRAINT chk_imu_axes   CHECK (jsonb_typeof(axes) = 'array' AND jsonb_array_length(axes) >= 1),
+    CONSTRAINT chk_imu_fs     CHECK (fs IS NULL OR fs BETWEEN 1 AND 1000),
+    CONSTRAINT chk_imu_impact CHECK (impact_index IS NULL OR impact_index >= 0)
+  )`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_imu_worker ON imu_window (worker_id, id)`);
 }
 
-// 관리자 내보내기 — 기간 필터로 윈도 조회(NDJSON 라우트가 직렬화).
-export async function exportImuWindows(opts: {
-  from: string;
-  to: string;
-}): Promise<ImuWindowRow[]> {
+// 워치 윈도 1건 INSERT. axes 는 ::jsonb 캐스트로 명시 직렬화(배열 오해석 방지).
+export async function insertImuWindow(rec: ImuWindowRow): Promise<void> {
+  await ensureImuWindowTable();
+  await q(
+    `INSERT INTO imu_window (worker_id, family, fs, impact_index, axes)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [rec.worker_id, rec.family, rec.fs, rec.impact_index, JSON.stringify(rec.axes)],
+  );
+}
+
+// 전체 회수(워커별·이벤트순). export route 가 NDJSON 으로 내보낸다.
+export async function exportImuWindows(): Promise<ImuWindowRow[]> {
+  await ensureImuWindowTable();
   const { rows } = await q<ImuWindowRow>(
-    `SELECT id, worker_id, family, fs, impact_index, axes, created_at
+    `SELECT worker_id, family, fs, impact_index, axes
        FROM imu_window
-      WHERE created_at >= $1 AND created_at <= $2
-      ORDER BY created_at ASC`,
-    [opts.from, opts.to],
+      ORDER BY worker_id, id`,
   );
   return rows;
 }
