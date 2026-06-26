@@ -596,6 +596,15 @@ function formatKoreanTime(time: string) {
   return `${period} ${hour12}:${String(m).padStart(2, "0")}`;
 }
 
+function sortCalendarEventsByTime(events: CalendarEvent[]) {
+  return [...events].sort((a, b) => {
+    if (!a.time && !b.time) return 0;
+    if (!a.time) return 1;
+    if (!b.time) return -1;
+    return a.time.localeCompare(b.time);
+  });
+}
+
 function parseTime24(value: string) {
   const [hRaw, mRaw] = value.split(":");
   const h = Number(hRaw);
@@ -664,7 +673,7 @@ function ScheduleTimePicker({
     [
       "rounded-xl border-2 px-3 py-2 text-sm font-semibold text-ink transition outline-none dark:text-on-dark",
       selected
-        ? "border-brand-accent bg-blue-50/60 dark:border-blue-400 dark:bg-blue-500/10"
+        ? "border-brand-accent bg-primary-subtle dark:border-primary dark:bg-primary-subtle"
         : "border-hairline bg-surface-soft hover:border-ink/15 dark:border-white/10 dark:bg-surface-dark-elevated dark:hover:border-white/20",
     ].join(" ");
 
@@ -738,45 +747,37 @@ function CalendarEventChip({
   compact?: boolean;
   inverted?: boolean;
 }) {
-  const meta = SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)];
-  const isImportant = normalizeScheduleLabel(event.label) === "red";
+  const label = normalizeScheduleLabel(event.label);
+  const meta = SCHEDULE_LABEL_META[label];
   const title = event.title.trim();
-  const timeSuffix =
-    !compact && event.time && isImportant
-      ? ` · ${formatKoreanTime(event.time)}`
-      : "";
+  const timeSuffix = !compact && event.time ? ` · ${formatKoreanTime(event.time)}` : "";
   const fullTitle = event.time ? `${title} · ${formatKoreanTime(event.time)}` : title;
 
-  if (isImportant) {
+  if (compact) {
     return (
       <div
         className={[
-          "flex min-w-0 items-center gap-0.5 truncate rounded px-1 py-0.5 text-left",
-          compact ? "text-[8px] leading-tight" : "text-[10px] leading-snug",
+          "flex min-w-0 items-center gap-0.5 truncate text-left text-[8px] leading-tight",
           inverted ? "text-white/95" : "text-ink dark:text-on-dark",
         ].join(" ")}
         title={fullTitle}
       >
-        <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} />
-        <span className="truncate">
-          {title}
-          {timeSuffix}
-        </span>
+        <ScheduleLabelDot label={label} className="h-1.5 w-1.5" />
+        <span className="truncate">{title}</span>
       </div>
     );
   }
 
   return (
     <div
-      className={[
-        "flex min-w-0 items-center gap-0.5 truncate rounded border px-1 py-0.5 text-left",
-        compact ? "text-[8px] leading-tight" : "text-[10px] leading-snug",
-        inverted ? "border-white/25 bg-white/15 text-white" : meta.band,
-      ].join(" ")}
-      title={title}
+      className={["flex min-w-0 items-center gap-1 truncate rounded px-2 py-1 text-left text-[10px] leading-snug", meta.chip].join(" ")}
+      title={fullTitle}
     >
-      <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} />
-      <span className="truncate font-medium">{title}</span>
+      <ScheduleLabelDot label={label} className="h-2 w-2" />
+      <span className="truncate font-medium">
+        {title}
+        {timeSuffix}
+      </span>
     </div>
   );
 }
@@ -848,7 +849,7 @@ function ScheduleEventFormModal({
       aria-label="일정 등록"
     >
       <div
-        className="max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline bg-canvas shadow-card-hover dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3 dark:border-white/10">
@@ -1224,7 +1225,7 @@ function HeaderCalendarPopup({
       aria-label="일정 캘린더"
     >
       <div
-        className="absolute bottom-4 right-4 top-[4.5rem] flex w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-card-hover ring-1 ring-black/5 dark:border-white/10 dark:bg-surface-dark dark:ring-white/10 sm:top-20"
+        className="absolute bottom-4 right-4 top-[4.5rem] flex w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark sm:top-20"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10">
@@ -1297,7 +1298,7 @@ function HeaderCalendarPopup({
                         {formatDateKeyLabel(key)}
                       </p>
                       <ul className="space-y-1">
-                        {dayPlans.map((event) => (
+                        {sortCalendarEventsByTime(dayPlans).map((event) => (
                           <li
                             key={event.id}
                             className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
@@ -1305,6 +1306,7 @@ function HeaderCalendarPopup({
                             <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
                             <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">
                               {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name} · {event.title}
+                              {event.time ? ` · ${formatKoreanTime(event.time)}` : ""}
                             </span>
                           </li>
                         ))}
@@ -1383,7 +1385,7 @@ function HeaderCalendarPopup({
                   className={[
                     "relative flex min-h-[4.5rem] flex-col rounded-lg p-0.5 text-left transition",
                     isSelected
-                      ? "bg-primary text-on-primary shadow-sm shadow-black/10"
+                      ? "bg-primary text-on-primary"
                       : isToday
                         ? "bg-surface-card ring-1 ring-hairline"
                         : "hover:bg-surface-strong dark:hover:bg-white/10",
@@ -1393,12 +1395,12 @@ function HeaderCalendarPopup({
                 >
                   {hoverDateKey === dateKey && dayEvents.length > 0 && (
                     <div
-                      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 w-[10.5rem] -translate-x-1/2 rounded-lg bg-primary px-2.5 py-2 shadow-card-hover"
+                      className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 w-[10.5rem] -translate-x-1/2 rounded-lg border border-primary-ring bg-primary px-2.5 py-2"
                       role="tooltip"
                     >
                       <p className="mb-1 text-[10px] font-semibold text-on-primary/80">{day}일</p>
                       <ul className="space-y-1">
-                        {dayEvents.map((event) => (
+                        {sortCalendarEventsByTime(dayEvents).map((event) => (
                           <li key={event.id} className="flex min-w-0 items-center gap-1">
                             <ScheduleLabelDot
                               label={normalizeScheduleLabel(event.label)}
@@ -1446,7 +1448,7 @@ function HeaderCalendarPopup({
                     </span>
                   )}
                   <div className="mt-0.5 flex flex-1 flex-col gap-0.5 overflow-hidden">
-                    {dayEvents.slice(0, 2).map((event) => (
+                    {sortCalendarEventsByTime(dayEvents).slice(0, 2).map((event) => (
                       <CalendarEventChip key={event.id} event={event} compact inverted={isSelected} />
                     ))}
                     {dayEvents.length > 2 && (
@@ -1481,7 +1483,7 @@ function HeaderCalendarPopup({
               <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
                 <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">선택 날짜 일정</p>
                 <div className="space-y-1">
-                  {selectedEvents.map((event) => (
+                  {sortCalendarEventsByTime(selectedEvents).map((event) => (
                     <CalendarEventChip key={event.id} event={event} />
                   ))}
                 </div>
@@ -2130,14 +2132,14 @@ export function DemoDashboard() {
         <button
           type="button"
           onClick={armAudio}
-          className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/60 bg-amber-100 px-6 py-3 text-sm font-semibold text-amber-900 shadow-sm transition hover:bg-amber-200 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25"
+          className="flex items-center justify-center gap-2 rounded-xl border border-amber-400/60 bg-amber-100 px-6 py-3 text-sm font-semibold text-amber-900 transition hover:bg-amber-200 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-100 dark:hover:bg-amber-500/25"
           title="브라우저 정책상 한 번 클릭해야 SOS 경보음을 재생할 수 있습니다"
         >
           <span aria-hidden className="text-base">🔔</span>
           SOS 경보음 활성화 — 한 번 클릭하면 이후 SOS 시 자동으로 사이렌이 울립니다
         </button>
       )}
-      <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline bg-canvas px-6 py-3 shadow-card dark:border-white/10 dark:bg-surface-dark">
+      <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
         <div className="flex items-center gap-3">
           <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-strong dark:bg-surface-dark-elevated">
             <img
@@ -2290,7 +2292,7 @@ export function DemoDashboard() {
             title: "실시간 현장 관제",
             content: (
               <div className="flex flex-col gap-4">
-      <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink shadow-card dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
+      <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch">
           {/* 좌측 — 히어로 카피 + 안전 신호등 + 현장정보/재해사례 캐러셀 */}
           <div className="flex min-w-0 flex-col gap-4">
@@ -2790,7 +2792,7 @@ function WorkerTableRow({
       title={title}
       className={`flex h-9 items-center justify-center rounded-md px-1 text-center transition ${
         sel(metric)
-          ? "bg-surface-soft shadow-sm ring-1 ring-inset ring-hairline dark:bg-[#1c1f26] dark:shadow-[0_2px_8px_rgba(0,0,0,0.45)] dark:ring-white/15"
+          ? "bg-primary-subtle ring-1 ring-inset ring-primary-ring"
           : "hover:bg-surface-strong/60 dark:hover:bg-white/5"
       } ${FOCUS_CLASS}`}
     >
@@ -3023,7 +3025,7 @@ function JobTitleEditModal({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        className="w-full max-w-sm overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-hairline px-5 py-3 dark:border-white/10">
@@ -3170,7 +3172,7 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
       aria-modal="true"
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        className="flex max-h-[80vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-3 dark:border-white/10">

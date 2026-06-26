@@ -53,7 +53,7 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, durationMs = 6000
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md overflow-hidden rounded-lg border ${borderTone} bg-white shadow-2xl dark:bg-[#0d1117]`}
+        className={`w-full max-w-md overflow-hidden rounded-lg border ${borderTone} bg-canvas dark:bg-surface-dark`}
       >
         {/* 헤더 — 위험 빨강 / 주의 amber */}
         <div className={`flex items-center justify-between gap-2 px-3 py-2 ${headerTone}`}>

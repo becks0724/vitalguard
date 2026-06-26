@@ -549,7 +549,7 @@ function CctvModal({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-hairline bg-zinc-900 shadow-2xl dark:border-white/10"
+        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-hairline-strong bg-surface-dark dark:border-white/10"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 — 위치 + ID + (AI) 연결 토글 + 닫기 */}

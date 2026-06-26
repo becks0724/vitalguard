@@ -121,7 +121,7 @@ function AccidentCaseDetailModal({ item, onClose }: { item: Item; onClose: () =>
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-amber-500/70 bg-white shadow-2xl dark:border-amber-500/50 dark:bg-[#0d1117]"
+        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-lg border border-amber-500/70 bg-canvas dark:border-amber-500/50 dark:bg-surface-dark"
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-100 px-5 py-3 dark:bg-amber-500/10">
           <div className="flex items-center gap-2">

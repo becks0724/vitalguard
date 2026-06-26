@@ -1,4 +1,4 @@
-// Tailwind 3.x — Cal.com-inspired design tokens
+// Tailwind 3.x — Expo-inspired editorial design tokens
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -10,8 +10,12 @@ const config: Config = {
         primary: "var(--color-primary)",
         "primary-active": "var(--color-primary-active)",
         "primary-disabled": "var(--color-primary-disabled)",
+        "primary-subtle": "var(--color-primary-subtle)",
+        "primary-ring": "var(--color-primary-ring)",
         "brand-accent": "var(--color-brand-accent)",
+        "text-link": "var(--color-text-link)",
         canvas: "var(--color-canvas)",
+        "canvas-soft": "var(--color-canvas-soft)",
         "surface-soft": "var(--color-surface-soft)",
         "surface-card": "var(--color-surface-card)",
         "surface-strong": "var(--color-surface-strong)",
@@ -19,8 +23,10 @@ const config: Config = {
         "surface-dark-elevated": "var(--color-surface-dark-elevated)",
         hairline: "var(--color-hairline)",
         "hairline-soft": "var(--color-hairline-soft)",
+        "hairline-strong": "var(--color-hairline-strong)",
         ink: "var(--color-ink)",
         body: "var(--color-body)",
+        "body-strong": "var(--color-body-strong)",
         muted: "var(--color-muted)",
         "muted-soft": "var(--color-muted-soft)",
         "on-primary": "var(--color-on-primary)",
@@ -39,8 +45,8 @@ const config: Config = {
         mono: ["var(--font-mono)"],
       },
       boxShadow: {
-        card: "0 1px 2px rgba(0, 0, 0, 0.05)",
-        "card-hover": "0 4px 12px rgba(0, 0, 0, 0.08)",
+        card: "none",
+        "card-hover": "0 4px 12px rgba(0, 0, 0, 0.04)",
       },
     },
   },

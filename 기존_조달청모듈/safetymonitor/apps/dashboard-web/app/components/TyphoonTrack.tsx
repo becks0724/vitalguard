@@ -638,7 +638,7 @@ function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void })
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-hairline bg-white shadow-2xl dark:border-white/10 dark:bg-[#0d1117]"
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2.5 dark:border-white/10">
           <div className="flex min-w-0 items-center gap-2">

@@ -51,8 +51,8 @@ export function ExpandableTabs({
               isOpen
                 ? {
                     backgroundColor: "var(--color-canvas)",
-                    color: "var(--color-ink)",
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                    color: "var(--color-primary)",
+                    border: "1px solid var(--color-hairline-strong)",
                   }
                 : undefined
             }

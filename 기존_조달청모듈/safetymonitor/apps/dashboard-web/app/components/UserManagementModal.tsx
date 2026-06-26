@@ -139,7 +139,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        className="flex max-h-[85vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}

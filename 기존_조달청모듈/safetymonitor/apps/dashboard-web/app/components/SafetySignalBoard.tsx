@@ -7,6 +7,15 @@ import { createPortal } from "react-dom";
 
 import { aedDetail, gasDetail, type LampDetail } from "./SiteSafetyTables";
 
+function formatTodayBoardDate() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const weekday = ["일", "월", "화", "수", "목", "금", "토"][now.getDay()];
+  return `${y}.${m}.${d} (${weekday})`;
+}
+
 // 통합 안전 신호등 카테고리 아이콘 — 이모지 대체 모노톤 라인 SVG(관제 BIZ 톤). currentColor 상속, 의존성 0.
 // weather=cloud-sun · worker=hard-hat(안전모) · gas=wind(가스 확산) · aed=heart-pulse(AED).
 function BoardIcon({ name, className = "h-[18px] w-[18px]" }: { name: string; className?: string }) {
@@ -201,7 +210,9 @@ export function SafetySignalBoard({
   return (
     <div className="flex h-full flex-col rounded-xl border border-hairline bg-surface-soft px-3 py-2 dark:border-white/10 dark:bg-surface-dark-elevated">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-body dark:text-on-dark-soft">현장 통합 안전 신호등</span>
+        <span className="text-xs font-semibold text-body dark:text-on-dark-soft">
+          현장 통합 안전 신호등 — {formatTodayBoardDate()}
+        </span>
         <span className="flex items-center gap-1">
           <span className="text-[10px] text-muted dark:text-on-dark-soft">종합</span>
           <span className={`inline-block h-2 w-2 rounded-full ring-1 ring-hairline dark:ring-white/20 ${o.dot} ${o.blink}`} />
@@ -261,7 +272,7 @@ function SignalDetailModal({ row, onClose }: { row: LampRow; onClose: () => void
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose} role="dialog" aria-modal="true">
       <div
-        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas shadow-2xl dark:bg-surface-dark`}
+        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas dark:bg-surface-dark`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-5 py-3" style={{ background: "color-mix(in srgb, currentColor 10%, transparent)" }}>

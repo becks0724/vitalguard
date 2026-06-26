@@ -56,18 +56,18 @@ export function ThemeToggle() {
       onClick={toggle}
       aria-label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
       title={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
-      className={`flex h-8 w-16 shrink-0 cursor-pointer rounded-full p-1 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
-        isDark ? "border border-zinc-800 bg-zinc-950" : "border border-zinc-200 bg-white"
+      className={`flex h-8 w-16 shrink-0 cursor-pointer rounded-full border border-hairline-strong p-1 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+        isDark ? "bg-surface-dark-elevated" : "bg-canvas"
       }`}
     >
       <div className="flex w-full items-center justify-between">
         {/* 슬롯 A — 채워진 썸: 현재 테마 아이콘 */}
         <div
           className={`flex h-6 w-6 items-center justify-center rounded-full transition-transform duration-300 ${
-            isDark ? "translate-x-0 bg-zinc-800" : "translate-x-8 bg-gray-200"
+            isDark ? "translate-x-0 bg-surface-strong" : "translate-x-8 bg-surface-strong"
           }`}
         >
-          {isDark ? <MoonIcon className="text-white" /> : <SunIcon className="text-gray-700" />}
+          {isDark ? <MoonIcon className="text-on-dark" /> : <SunIcon className="text-ink" />}
         </div>
         {/* 슬롯 B — 흐린 대체 아이콘 */}
         <div
@@ -75,7 +75,7 @@ export function ThemeToggle() {
             isDark ? "bg-transparent" : "-translate-x-8"
           }`}
         >
-          {isDark ? <SunIcon className="text-gray-500" /> : <MoonIcon className="text-black" />}
+          {isDark ? <SunIcon className="text-muted" /> : <MoonIcon className="text-muted" />}
         </div>
       </div>
     </button>

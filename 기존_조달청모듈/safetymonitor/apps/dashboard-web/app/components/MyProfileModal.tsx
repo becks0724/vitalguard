@@ -177,7 +177,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-3 dark:border-white/10">

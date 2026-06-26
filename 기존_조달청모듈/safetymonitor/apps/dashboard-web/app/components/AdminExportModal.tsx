@@ -118,7 +118,7 @@ export function AdminExportModal({
       {token !== null ? (
         <div
           onClick={(e) => e.stopPropagation()}
-          className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-hairline bg-canvas shadow-xl dark:border-white/10 dark:bg-surface-dark"
+          className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         >
           <header className="flex items-center justify-between gap-3 border-b border-hairline bg-surface-card/70 px-5 py-3 dark:border-white/10 dark:bg-canvas/[0.02]">
             <div className="flex items-center gap-2 text-sm text-muted dark:text-muted-soft">
@@ -231,7 +231,7 @@ function LoginCard({
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className="relative flex w-full max-w-sm flex-col items-center gap-y-7 rounded-2xl border border-hairline bg-canvas px-7 py-10 shadow-card-hover dark:border-white/10 dark:bg-surface-dark"
+      className="relative flex w-full max-w-sm flex-col items-center gap-y-7 rounded-2xl border border-hairline-strong bg-canvas px-7 py-10 dark:border-white/10 dark:bg-surface-dark"
     >
       <button
         type="button"
@@ -290,7 +290,7 @@ function LoginCard({
         <button
           type="submit"
           disabled={busy || !password}
-          className="mt-1 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-on-primary shadow-card transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
+          className="mt-1 w-full rounded-lg bg-primary px-3 py-2.5 text-sm font-semibold text-on-primary transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
         >
           {busy ? "확인 중..." : "로그인"}
         </button>

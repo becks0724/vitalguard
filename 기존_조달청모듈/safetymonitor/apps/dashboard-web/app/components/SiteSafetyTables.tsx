@@ -596,7 +596,7 @@ function AedDeviceModal({ row, onClose }: { row: AedRow; onClose: () => void }) 
       aria-modal="true"
     >
       <div
-        className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-surface-soft px-5 py-3 dark:bg-surface-dark-elevated">
@@ -716,7 +716,7 @@ function AedManagementModal({
       aria-modal="true"
     >
       <div
-        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas shadow-2xl dark:bg-surface-dark`}
+        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas dark:bg-surface-dark`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`flex items-center gap-2 px-5 py-3 ${headBg}`}>
