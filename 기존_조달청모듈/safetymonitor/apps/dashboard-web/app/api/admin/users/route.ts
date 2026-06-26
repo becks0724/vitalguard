@@ -7,6 +7,7 @@ import {
   listUsers,
   setUserStatus,
   setUserAdminAccess,
+  setUserProfileFields,
   type UserRow,
 } from "../../../../lib/db";
 
@@ -54,12 +55,30 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
-  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin"];
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "set_profile"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|set_profile) 이 필요합니다." },
       { status: 400 },
     );
+  }
+
+  // 부서/직책 직접 수정 — owner 가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
+  if (action === "set_profile") {
+    const { department, jobTitle } = (body ?? {}) as {
+      department?: unknown;
+      jobTitle?: unknown;
+    };
+    const norm = (v: unknown): string | null => {
+      if (typeof v !== "string") return null;
+      const t = v.trim();
+      return t.length > 0 ? t : null;
+    };
+    const updated = await setUserProfileFields(id, norm(department), norm(jobTitle));
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated) });
   }
 
   // 관리자 메뉴 접근 권한 부여/회수 — owner 전용(자가취득 불가).

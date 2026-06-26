@@ -65,6 +65,10 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // 부서/직책 인라인 편집(owner가 각 사용자 값 직접 수정). 편집 중 행은 폴링이 덮어쓰지 않도록 별도 draft 보관.
+  const [editProfileId, setEditProfileId] = useState<number | null>(null);
+  const [deptDraft, setDeptDraft] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -133,6 +137,47 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
       }
     },
     [load, users],
+  );
+
+  const startEditProfile = useCallback((u: User) => {
+    setEditProfileId(u.id);
+    setDeptDraft(u.department ?? "");
+    setTitleDraft(u.job_title ?? "");
+    setError(null);
+  }, []);
+
+  const saveProfile = useCallback(
+    async (id: number) => {
+      setBusyId(id);
+      setError(null);
+      try {
+        const res = await fetch("/api/admin/users", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${getSessionToken() ?? ""}`,
+          },
+          body: JSON.stringify({
+            id,
+            action: "set_profile",
+            department: deptDraft.trim() || null,
+            jobTitle: titleDraft.trim() || null,
+          }),
+        });
+        const json = (await res.json()) as { ok?: boolean; error?: string };
+        if (!res.ok || !json.ok) {
+          setError(json.error || "부서/직책 저장에 실패했습니다.");
+          return;
+        }
+        setEditProfileId(null);
+        await load();
+      } catch {
+        setError("네트워크 오류로 저장에 실패했습니다.");
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [deptDraft, titleDraft, load],
   );
 
   const pending = users?.filter((u) => u.status === "pending").length ?? 0;
@@ -248,8 +293,75 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       </td>
                       <td className={TD}>{u.name ?? "-"}</td>
                       <td className={TD}>{u.company ?? "-"}</td>
-                      <td className={TD}>{u.department ?? "-"}</td>
-                      <td className={TD}>{u.job_title ?? "-"}</td>
+                      {editProfileId === u.id ? (
+                        <>
+                          <td className={TD}>
+                            <input
+                              value={deptDraft}
+                              onChange={(e) => setDeptDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveProfile(u.id);
+                                if (e.key === "Escape") setEditProfileId(null);
+                              }}
+                              placeholder="부서"
+                              autoFocus
+                              className="w-20 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
+                            />
+                          </td>
+                          <td className={TD}>
+                            <div className="flex items-center gap-1">
+                              <input
+                                value={titleDraft}
+                                onChange={(e) => setTitleDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveProfile(u.id);
+                                  if (e.key === "Escape") setEditProfileId(null);
+                                }}
+                                placeholder="직책"
+                                className="w-20 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => saveProfile(u.id)}
+                                disabled={busyId === u.id}
+                                className="rounded-md bg-primary px-1.5 py-0.5 text-[11px] font-semibold text-on-primary active:scale-95 disabled:opacity-40"
+                              >
+                                저장
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditProfileId(null)}
+                                className="rounded-md border border-hairline px-1.5 py-0.5 text-[11px] font-semibold text-body dark:border-white/15 dark:text-on-dark-soft"
+                              >
+                                취소
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className={TD}>
+                            <button
+                              type="button"
+                              onClick={() => startEditProfile(u)}
+                              title="부서/직책 수정"
+                              className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
+                            >
+                              {u.department ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
+                            </button>
+                          </td>
+                          <td className={TD}>
+                            <button
+                              type="button"
+                              onClick={() => startEditProfile(u)}
+                              title="부서/직책 수정"
+                              className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
+                            >
+                              {u.job_title ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
+                            </button>
+                          </td>
+                        </>
+                      )}
                       <td className={TD}>{u.phone ?? "-"}</td>
                       <td className={TD}>{u.carrier ?? "-"}</td>
                       <td className={TD}>{u.email ?? "-"}</td>

@@ -1194,6 +1194,19 @@ export async function setUserAdminAccess(
   return rows[0] ?? null;
 }
 
+// 부서/직책 직접 수정 — owner 가 사용자 관리에서 각 사용자 값을 편집(id 기준). 본인 자가입력과 별개.
+export async function setUserProfileFields(
+  id: number,
+  department: string | null,
+  jobTitle: string | null,
+): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    "UPDATE users SET department = $1, job_title = $2 WHERE id = $3 RETURNING *",
+    [department, jobTitle, id],
+  );
+  return rows[0] ?? null;
+}
+
 // 사용자 탈퇴(하드 삭제) — owner UI 에서 계정 제거. 삭제된 행이 있으면 true.
 export async function deleteUser(id: number): Promise<boolean> {
   const { rows } = await q<{ id: number }>(
