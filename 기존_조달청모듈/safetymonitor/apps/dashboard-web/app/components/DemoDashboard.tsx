@@ -600,16 +600,27 @@ const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
 const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
 
 // 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정(localStorage)과 별개 레이어.
+type CalendarMediaComment = {
+  id: string;
+  authorName: string | null;
+  authorId: string | null;
+  authorRole: string | null;
+  body: string;
+  createdAt: string;
+  updatedAt: string | null;
+};
 type CalendarMedia = {
   id: string;
   dateKey: string;
   capturedAt: string | null;
   mediaType: string;
+  title: string | null;
   mediaUrl: string | null;
   thumbnailUrl: string | null;
   ocrText: string | null;
   description: string | null;
   uploader: string | null;
+  comments: CalendarMediaComment[];
 };
 
 function findLabelDef(labels: ScheduleLabelDef[], labelId: string): ScheduleLabelDef {
@@ -749,6 +760,19 @@ function sortCalendarEventsByTime(events: CalendarEvent[]) {
     if (!b.startTime) return -1;
     return a.startTime.localeCompare(b.startTime);
   });
+}
+
+// 댓글 작성 시각(ISO) → "MM/DD 오후 2:31" 표시.
+function formatCommentTime(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(d);
 }
 
 // 시작/종료 시간을 "오전 9:00 ~ 오전 11:00" 형태로 — 종료는 선택, 둘 다 없으면 빈 문자열
@@ -1373,9 +1397,10 @@ function HeaderCalendarPopup({
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
   // 현장 GPS 좌표 기반 일일 예보 — dateKey(YYYY-MM-DD) → WMO weatherCode. 예보 창(오늘~+6일)만 채워짐.
   const [weatherByDate, setWeatherByDate] = useState<Record<string, number>>({});
-  // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 설명 편집 드래프트(mediaId → 입력값).
+  // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 댓글 작성 드래프트(mediaId→입력값) + 편집 중 댓글.
   const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
-  const [mediaDraft, setMediaDraft] = useState<Record<string, string>>({});
+  const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
+  const [editingComment, setEditingComment] = useState<{ id: string; body: string } | null>(null);
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
   const [hydrated, setHydrated] = useState(false);
 
@@ -1392,10 +1417,9 @@ function HeaderCalendarPopup({
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (!res.ok) return;
-      const json = (await res.json()) as {
-        ok?: boolean;
-        media?: Array<Record<string, string | null>>;
-      };
+      type RawComment = Record<string, string | null>;
+      type RawMedia = Record<string, string | null> & { comments?: RawComment[] };
+      const json = (await res.json()) as { ok?: boolean; media?: RawMedia[] };
       if (!json.ok || !Array.isArray(json.media)) return;
       const map: Record<string, CalendarMedia[]> = {};
       for (const r of json.media) {
@@ -1406,11 +1430,21 @@ function HeaderCalendarPopup({
           dateKey,
           capturedAt: r.captured_at ?? null,
           mediaType: r.media_type ?? "image",
+          title: r.title ?? null,
           mediaUrl: r.media_url ?? null,
           thumbnailUrl: r.thumbnail_url ?? null,
           ocrText: r.ocr_text ?? null,
           description: r.description ?? null,
           uploader: r.uploader ?? null,
+          comments: (r.comments ?? []).map((c) => ({
+            id: c.id ?? "",
+            authorName: c.author_name ?? null,
+            authorId: c.author_id ?? null,
+            authorRole: c.author_role ?? null,
+            body: c.body ?? "",
+            createdAt: c.created_at ?? "",
+            updatedAt: c.updated_at ?? null,
+          })),
         });
       }
       setMediaByDate(map);
@@ -1424,19 +1458,61 @@ function HeaderCalendarPopup({
     fetchMedia(viewDate);
   }, [open, viewDate, fetchMedia]);
 
-  const saveMediaDescription = async (id: string) => {
-    const description = mediaDraft[id] ?? "";
+  const authHeaders = (json: boolean) => {
     const token = getSessionToken();
+    return {
+      ...(json ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+  };
+
+  const addComment = async (mediaId: string) => {
+    const body = (commentDraft[mediaId] ?? "").trim();
+    if (!body) return;
     try {
-      const res = await fetch("/api/calendar/media", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ id, description }),
+      const res = await fetch("/api/calendar/media/comment", {
+        method: "POST",
+        headers: authHeaders(true),
+        body: JSON.stringify({ mediaId, body }),
       });
-      if (res.ok) fetchMedia(viewDate);
+      if (res.ok) {
+        setCommentDraft((prev) => ({ ...prev, [mediaId]: "" }));
+        fetchMedia(viewDate);
+      }
+    } catch {
+      // 무시
+    }
+  };
+
+  const saveCommentEdit = async () => {
+    if (!editingComment) return;
+    const body = editingComment.body.trim();
+    if (!body) return;
+    try {
+      const res = await fetch("/api/calendar/media/comment", {
+        method: "PATCH",
+        headers: authHeaders(true),
+        body: JSON.stringify({ id: editingComment.id, body }),
+      });
+      if (res.ok) {
+        setEditingComment(null);
+        fetchMedia(viewDate);
+      }
+    } catch {
+      // 무시
+    }
+  };
+
+  const removeComment = async (id: string) => {
+    try {
+      const res = await fetch(`/api/calendar/media/comment?id=${id}`, {
+        method: "DELETE",
+        headers: authHeaders(false),
+      });
+      if (res.ok) {
+        if (editingComment?.id === id) setEditingComment(null);
+        fetchMedia(viewDate);
+      }
     } catch {
       // 무시
     }
@@ -1581,9 +1657,9 @@ function HeaderCalendarPopup({
     setSelected(now);
   };
 
+  // 날짜 클릭 = 선택만(하단에 해당 날짜 일정·미디어 표시). 일정 추가는 하단 (+) 버튼으로.
   const handleDateClick = (cellDate: Date) => {
     setSelected(cellDate);
-    setFormDate(cellDate);
   };
 
   const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">) => {
@@ -1808,7 +1884,7 @@ function HeaderCalendarPopup({
                           ? "bg-white/20 text-white"
                           : "bg-primary/15 text-primary dark:bg-primary/25 dark:text-on-dark",
                       ].join(" ")}
-                      title={`현장 미디어 ${dayMedia.length}건`}
+                      title={`현장 이미지/미디어 ${dayMedia.length}건`}
                     >
                       <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -1909,9 +1985,22 @@ function HeaderCalendarPopup({
               </button>
             </div>
 
-            {selectedEvents.length > 0 && (
-              <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
-                <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">선택 날짜 일정</p>
+            <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold text-muted dark:text-on-dark-soft">선택 날짜 일정</p>
+                <button
+                  type="button"
+                  onClick={() => setFormDate(selected)}
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
+                >
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  일정 추가
+                </button>
+              </div>
+              {selectedEvents.length > 0 ? (
                 <div className="space-y-1">
                   {sortCalendarEventsByTime(selectedEvents).map((event) => (
                     <CalendarEventChip
@@ -1921,8 +2010,10 @@ function HeaderCalendarPopup({
                     />
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-[11px] text-muted dark:text-on-dark-soft">등록된 일정이 없습니다.</p>
+              )}
+            </div>
 
             {selectedMedia.length > 0 && (
               <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
@@ -1931,19 +2022,20 @@ function HeaderCalendarPopup({
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                     <circle cx="12" cy="13" r="4" />
                   </svg>
-                  현장 미디어 {selectedMedia.length}건
+                  현장 이미지/미디어 {selectedMedia.length}건
                 </p>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {selectedMedia.map((m) => (
                     <div
                       key={m.id}
                       className="rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
                     >
+                      {/* 제목 영역 — 썸네일 + 제목/메타 + 삭제 */}
                       <div className="flex gap-2">
                         {m.thumbnailUrl || m.mediaUrl ? (
                           <img
                             src={m.thumbnailUrl ?? m.mediaUrl ?? ""}
-                            alt={m.ocrText ?? "현장 미디어"}
+                            alt={m.title ?? "현장 이미지"}
                             className="h-14 w-14 shrink-0 rounded-md object-cover"
                           />
                         ) : (
@@ -1952,16 +2044,13 @@ function HeaderCalendarPopup({
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
+                          <p className="truncate text-[12px] font-bold text-ink dark:text-on-dark">
+                            {m.title ?? (m.mediaType === "video" ? "현장 영상" : "현장 이미지")}
+                          </p>
                           {m.capturedAt && (
-                            <p className="text-[10px] text-muted dark:text-on-dark-soft">
+                            <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
                               {formatKoreanTime(m.capturedAt.slice(11, 16))}
                               {m.uploader ? ` · ${m.uploader}` : ""}
-                            </p>
-                          )}
-                          {m.ocrText && (
-                            <p className="mt-0.5 line-clamp-2 text-[11px] text-ink dark:text-on-dark">
-                              <span className="font-semibold">OCR </span>
-                              {m.ocrText}
                             </p>
                           )}
                         </div>
@@ -1973,23 +2062,120 @@ function HeaderCalendarPopup({
                           삭제
                         </button>
                       </div>
-                      <div className="mt-1.5 flex items-end gap-1.5">
-                        <textarea
-                          value={mediaDraft[m.id] ?? m.description ?? ""}
-                          onChange={(e) =>
-                            setMediaDraft((prev) => ({ ...prev, [m.id]: e.target.value }))
-                          }
-                          placeholder="관리자 설명 입력"
-                          rows={2}
-                          className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-soft px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => saveMediaDescription(m.id)}
-                          className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
-                        >
-                          저장
-                        </button>
+
+                      {/* 내용 영역 — OCR 인식 내용(제목과 구분) */}
+                      {m.ocrText && (
+                        <div className="mt-1.5 rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated">
+                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">
+                            OCR 인식 내용
+                          </p>
+                          <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-ink dark:text-on-dark">
+                            {m.ocrText}
+                          </p>
+                        </div>
+                      )}
+
+                      {/* 댓글 스레드 — 작성자·시각 + 수정/삭제, 하단 입력 */}
+                      <div className="mt-2 space-y-1.5 border-t border-hairline pt-2 dark:border-white/10">
+                        {m.comments.map((c) => (
+                          <div
+                            key={c.id}
+                            className="rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="min-w-0 truncate text-[10px] font-semibold text-ink dark:text-on-dark">
+                                {c.authorName ?? "관리자"}
+                                {c.authorId && (
+                                  <span className="font-normal text-muted dark:text-on-dark-soft">
+                                    {" "}· {c.authorId}
+                                  </span>
+                                )}
+                                <span className="font-normal text-muted dark:text-on-dark-soft">
+                                  {" "}· {formatCommentTime(c.createdAt)}
+                                  {c.updatedAt ? " (수정됨)" : ""}
+                                </span>
+                              </p>
+                              {editingComment?.id !== c.id && (
+                                <span className="flex shrink-0 items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditingComment({ id: c.id, body: c.body })}
+                                    title="수정"
+                                    aria-label="댓글 수정"
+                                    className="grid h-6 w-6 place-items-center rounded text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+                                  >
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <path d="M12 20h9" />
+                                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                    </svg>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeComment(c.id)}
+                                    title="삭제"
+                                    aria-label="댓글 삭제"
+                                    className="grid h-6 w-6 place-items-center rounded text-muted transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                  >
+                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                      <path d="M3 6h18" />
+                                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                    </svg>
+                                  </button>
+                                </span>
+                              )}
+                            </div>
+                            {editingComment?.id === c.id ? (
+                              <div className="mt-1 flex items-end gap-1.5">
+                                <textarea
+                                  value={editingComment.body}
+                                  onChange={(e) =>
+                                    setEditingComment({ id: c.id, body: e.target.value })
+                                  }
+                                  rows={2}
+                                  className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-canvas px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark dark:text-on-dark"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={saveCommentEdit}
+                                  className="shrink-0 rounded-lg bg-primary px-2 py-1.5 text-[10px] font-semibold text-on-primary transition hover:bg-primary-active"
+                                >
+                                  저장
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingComment(null)}
+                                  className="shrink-0 rounded-lg px-2 py-1.5 text-[10px] font-medium text-muted transition hover:bg-surface-strong dark:hover:bg-white/10"
+                                >
+                                  취소
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-muted dark:text-on-dark-soft">
+                                {c.body}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* 새 댓글 입력 */}
+                        <div className="flex items-end gap-1.5">
+                          <textarea
+                            value={commentDraft[m.id] ?? ""}
+                            onChange={(e) =>
+                              setCommentDraft((prev) => ({ ...prev, [m.id]: e.target.value }))
+                            }
+                            placeholder="설명·댓글 입력"
+                            rows={2}
+                            className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-soft px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addComment(m.id)}
+                            className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
+                          >
+                            저장
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

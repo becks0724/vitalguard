@@ -325,6 +325,7 @@ async function initSchema(): Promise<void> {
       date_key TEXT NOT NULL,
       captured_at TEXT,
       media_type TEXT NOT NULL DEFAULT 'image',
+      title TEXT,
       storage_provider TEXT,
       storage_key TEXT,
       media_url TEXT,
@@ -335,7 +336,21 @@ async function initSchema(): Promise<void> {
       uploader TEXT,
       created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS title TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_date ON calendar_media(date_key);
+
+    -- 미디어 댓글(작성자 이름·식별자·시각) — 관리자/작업자 코멘트 스레드.
+    CREATE TABLE IF NOT EXISTS calendar_media_comment (
+      id TEXT PRIMARY KEY,
+      media_id TEXT NOT NULL,
+      author_name TEXT,
+      author_id TEXT,
+      author_role TEXT,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
   `);
 }
 
@@ -1200,6 +1215,7 @@ export type CalendarMediaRow = {
   date_key: string;
   captured_at: string | null;
   media_type: string;
+  title: string | null;
   storage_provider: string | null;
   storage_key: string | null;
   media_url: string | null;
@@ -1209,6 +1225,17 @@ export type CalendarMediaRow = {
   site_id: string | null;
   uploader: string | null;
   created_at: string;
+};
+
+export type CalendarMediaCommentRow = {
+  id: string;
+  media_id: string;
+  author_name: string | null;
+  author_id: string | null;
+  author_role: string | null;
+  body: string;
+  created_at: string;
+  updated_at: string | null;
 };
 
 // 날짜 범위(YYYY-MM-DD, 포함)로 미디어 조회 — 캘린더 월 단위 표시용.
@@ -1230,6 +1257,7 @@ export async function insertCalendarMedia(input: {
   dateKey: string;
   capturedAt?: string | null;
   mediaType?: string;
+  title?: string | null;
   storageProvider?: string | null;
   storageKey?: string | null;
   mediaUrl?: string | null;
@@ -1246,6 +1274,7 @@ export async function insertCalendarMedia(input: {
       date_key: input.dateKey,
       captured_at: input.capturedAt ?? null,
       media_type: input.mediaType ?? "image",
+      title: input.title ?? null,
       storage_provider: input.storageProvider ?? null,
       storage_key: input.storageKey ?? null,
       media_url: input.mediaUrl ?? null,
@@ -1259,6 +1288,63 @@ export async function insertCalendarMedia(input: {
   );
   const { rows } = await q<CalendarMediaRow>(text, values);
   return rows[0]!;
+}
+
+// 여러 미디어의 댓글을 한 번에 — GET 응답에 묶어서 내려줌.
+export async function listCommentsForMedia(
+  mediaIds: string[],
+): Promise<CalendarMediaCommentRow[]> {
+  if (mediaIds.length === 0) return [];
+  const { rows } = await q<CalendarMediaCommentRow>(
+    `SELECT * FROM calendar_media_comment
+       WHERE media_id = ANY($1)
+       ORDER BY created_at ASC`,
+    [mediaIds],
+  );
+  return rows;
+}
+
+export async function insertCalendarMediaComment(input: {
+  id: string;
+  mediaId: string;
+  authorName?: string | null;
+  authorId?: string | null;
+  authorRole?: string | null;
+  body: string;
+}): Promise<CalendarMediaCommentRow> {
+  const { text, values } = buildInsert(
+    "calendar_media_comment",
+    {
+      id: input.id,
+      media_id: input.mediaId,
+      author_name: input.authorName ?? null,
+      author_id: input.authorId ?? null,
+      author_role: input.authorRole ?? null,
+      body: input.body,
+    },
+    "*",
+  );
+  const { rows } = await q<CalendarMediaCommentRow>(text, values);
+  return rows[0]!;
+}
+
+export async function updateCalendarMediaComment(
+  id: string,
+  body: string,
+): Promise<boolean> {
+  const { rowCount } = await q(
+    `UPDATE calendar_media_comment SET body = $2, updated_at = ${NOW_ISO} WHERE id = $1`,
+    [id, body],
+  );
+  return rowCount > 0;
+}
+
+export async function deleteCalendarMediaComment(id: string): Promise<boolean> {
+  const { rowCount } = await q(
+    "DELETE FROM calendar_media_comment WHERE id = $1",
+    [id],
+  );
+  return rowCount > 0;
 }
 
 // 관리자 설명 메모 수정.

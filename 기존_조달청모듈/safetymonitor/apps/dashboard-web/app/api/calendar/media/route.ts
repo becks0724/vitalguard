@@ -4,9 +4,11 @@ import { NextResponse } from "next/server";
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import {
   listCalendarMedia,
+  listCommentsForMedia,
   insertCalendarMedia,
   updateCalendarMediaDescription,
   deleteCalendarMedia,
+  type CalendarMediaCommentRow,
 } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +31,18 @@ export async function GET(request: Request) {
     );
   }
   const media = await listCalendarMedia(from, to);
-  return NextResponse.json({ ok: true, media });
+  const comments = await listCommentsForMedia(media.map((m) => m.id));
+  const byMedia = new Map<string, CalendarMediaCommentRow[]>();
+  for (const c of comments) {
+    const list = byMedia.get(c.media_id) ?? [];
+    list.push(c);
+    byMedia.set(c.media_id, list);
+  }
+  const withComments = media.map((m) => ({
+    ...m,
+    comments: byMedia.get(m.id) ?? [],
+  }));
+  return NextResponse.json({ ok: true, media: withComments });
 }
 
 export async function POST(request: Request) {
@@ -54,6 +67,7 @@ export async function POST(request: Request) {
     dateKey,
     capturedAt: str(body.capturedAt),
     mediaType: str(body.mediaType) ?? "image",
+    title: str(body.title),
     storageProvider: str(body.storageProvider),
     storageKey: str(body.storageKey),
     mediaUrl: str(body.mediaUrl),
