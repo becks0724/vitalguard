@@ -82,4 +82,11 @@ CREATE VIEW fall_ml.v_fall_all AS
 --     hr_pre_mean_10s,hr_at_impact,hr_post_mean_30s,hr_post_peak_30s,hr_delta_mean,hr_delta_peak,
 --     heart_rate,spo2,battery_pct,latitude,longitude,ground_truth_label,label_note,labeled_by,labeled_at)
 --     FROM '2ndHammer1personTest.csv' WITH (FORMAT csv, HEADER true, NULL '');
+
+-- ─── ③ 기능 설명 주석 + ④ 추가분(6축) 기능·의도 (COMMENT ON, \d+ 로 노출) ───
+COMMENT ON TABLE fall_ml.fall_events_2nd IS '낙상 ML 2차(Hammer·phase=2) 라벨 데이터셋. ground_truth_label(true_fall/false_positive) 채워진 알고리즘 정교화 세트. CSV 34행.';
+COMMENT ON VIEW  fall_ml.v_fall_all      IS '1·2차 통합 조회 뷰(phase 로 구분, UNION ALL). 핵심 feature + 라벨 + 6축 컬럼 노출.';
+COMMENT ON COLUMN fall_ml.fall_events_2nd.fs           IS '[6축추가] IMU 샘플레이트(Hz). 의도: imu_collect.imu_window 와 표현 통일. 미수집 NULL.';
+COMMENT ON COLUMN fall_ml.fall_events_2nd.impact_index IS '[6축추가] 윈도 내 충격 샘플 인덱스. 미측정 NULL.';
+COMMENT ON COLUMN fall_ml.fall_events_2nd.axes         IS '[6축추가] raw 6축 시계열. 의도: 라벨된 2차 세트의 원시 시계열 → 시간열 정교화. 미수집 NULL.';
 -- =====================================================================

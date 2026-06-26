@@ -87,3 +87,9 @@ CREATE INDEX idx_fe_phase     ON fall_ml.fall_events (phase);
 --     hr_pre_mean_10s,hr_at_impact,hr_post_mean_30s,hr_post_peak_30s,hr_delta_mean,hr_delta_peak,
 --     heart_rate,spo2,battery_pct,latitude,longitude,ground_truth_label,label_note,labeled_by,labeled_at)
 --     FROM '1stTestDBdata.csv' WITH (FORMAT csv, HEADER true, NULL '');
+
+-- ─── ③ 기능 설명 주석 + ④ 추가분(6축) 기능·의도 (COMMENT ON, \d+ 로 노출) ───
+COMMENT ON TABLE fall_ml.fall_events IS '낙상 ML 1차 데이터셋(WATCH_TEST·phase=1). 센서 feature 4종 적재, 라벨·심박은 2상. CSV 20행.';
+COMMENT ON COLUMN fall_ml.fall_events.fs           IS '[6축추가] IMU 샘플레이트(Hz). 의도: imu_collect.imu_window 와 표현 통일 — 향후 raw 6축 수집 시 채움. CSV 미수집분 NULL.';
+COMMENT ON COLUMN fall_ml.fall_events.impact_index IS '[6축추가] 윈도 내 충격 샘플 인덱스. 의도: raw 시계열 충격 위치 표시. 미측정 NULL.';
+COMMENT ON COLUMN fall_ml.fall_events.axes         IS '[6축추가] raw 6축 시계열 [[ax,ay,az,gx,gy,gz],…]. 의도: feature 요약(accel/freefall/rotation)과 별도로 원시 시계열 보관 → 시간열 알고리즘 정교화. 미수집 NULL.';
