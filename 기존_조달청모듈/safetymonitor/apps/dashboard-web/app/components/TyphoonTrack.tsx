@@ -272,7 +272,8 @@ function SlippyMap({
           : undefined
       }
     >
-      {/* 위성 + 라벨 타일 */}
+      {/* 위성 + 라벨 타일. maxWidth:none — Tailwind preflight 의 img{max-width:100%} 가 좁은
+          컨테이너(<256px)에서 256px 타일을 컨테이너 폭으로 압축해 타일 사이 틈(어두운 띠)을 만드는 것 방지. */}
       {tiles.map((t) => (
         <img
           key={`s-${t.key}`}
@@ -280,7 +281,7 @@ function SlippyMap({
           alt=""
           aria-hidden
           draggable={false}
-          style={{ position: "absolute", left: t.left, top: t.top, width: TILE, height: TILE }}
+          style={{ position: "absolute", left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" }}
         />
       ))}
       {tiles.map((t) => (
@@ -290,7 +291,7 @@ function SlippyMap({
           alt=""
           aria-hidden
           draggable={false}
-          style={{ position: "absolute", left: t.left, top: t.top, width: TILE, height: TILE }}
+          style={{ position: "absolute", left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" }}
         />
       ))}
 
