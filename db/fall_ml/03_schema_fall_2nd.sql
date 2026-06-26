@@ -9,6 +9,7 @@
 --   · 별개 테이블(요청). 단 구조 동일 + phase=2 → v_fall_all 뷰로 1차↔2차 비교 가능.
 --   · ground_truth_label = 'true_fall' / 'false_positive' (CHECK) — 1차는 비었음.
 --   · 낙상후보 라벨 = TP(true_fall) / FP(false_positive) 두 값(후보 테이블이라 TN/FN 없음).
+--   · 6축 IMU raw(fs/impact_index/axes) 추가 — imu_window 와 통일, CSV 미수집분 NULL. v_fall_all 도 노출.
 -- =====================================================================
 
 CREATE SCHEMA IF NOT EXISTS fall_ml;
@@ -47,6 +48,10 @@ CREATE TABLE fall_ml.fall_events_2nd (
     battery_pct               NUMERIC(5,2),
     latitude                  NUMERIC(9,6),
     longitude                 NUMERIC(9,6),
+    -- 6축 IMU raw (imu_window 와 동일 표현 · 현재 CSV 미수집 → NULL = 측정 안 됨)
+    fs                        INTEGER,                           -- 샘플링레이트(Hz), 미측정 NULL
+    impact_index              INTEGER,                           -- 충격 샘플의 윈도 내 인덱스, 미측정 NULL
+    axes                      JSONB,                             -- raw 시계열 [[ax,ay,az,gx,gy,gz],…], 미측정 NULL
     -- ★ 2차 핵심: 정답 라벨(채워짐) — 알고리즘 정교화 기준
     ground_truth_label        TEXT         CHECK (ground_truth_label IN ('true_fall','false_positive')),
     label_note                TEXT,
@@ -61,11 +66,13 @@ CREATE INDEX idx_f2_seq   ON fall_ml.fall_events_2nd (id);     -- 시간열(이�
 -- 1차 + 2차 비교 뷰 (테이블은 별개 유지, 조회만 통합) ------------------
 CREATE VIEW fall_ml.v_fall_all AS
     SELECT phase, id, worker_id, accel_magnitude_g, motion_still_sec,
-           freefall_preceded, peak_rotation_rad_s, ground_truth_label
+           freefall_preceded, peak_rotation_rad_s, ground_truth_label,
+           fs, impact_index, axes
     FROM fall_ml.fall_events
     UNION ALL
     SELECT phase, id, worker_id, accel_magnitude_g, motion_still_sec,
-           freefall_preceded, peak_rotation_rad_s, ground_truth_label
+           freefall_preceded, peak_rotation_rad_s, ground_truth_label,
+           fs, impact_index, axes
     FROM fall_ml.fall_events_2nd;
 
 -- 적재(psql, CSV 31컬럼 → phase/loaded_at default):
