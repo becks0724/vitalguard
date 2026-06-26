@@ -709,9 +709,9 @@ export async function exportFallDataset(opts: {
   return rows;
 }
 
-// ── A3 raw 6축 IMU 임시 수집 버퍼 (imu_window) ─────────────────────
-// ⚠️ 임시 버퍼. 본 파이프라인(fall_events/vital_samples)과 미연결 · FK·뷰·트리거 없음.
-//    수집→export(NDJSON)→DROP. 전역 ensureSchema 에 넣지 않고 지연 생성해 격리 유지.
+// ── A3 raw 6축 IMU 임시 수집 버퍼 (독립 스키마 imu_collect.imu_window) ──
+// ⚠️ 임시 버퍼. 본 파이프라인(public.vital_samples 등)과 별도 스키마로 격리 · FK·뷰·트리거 없음.
+//    수집→export(NDJSON)→DROP. 전역 ensureSchema 밖 지연 생성. 정리: DROP SCHEMA imu_collect CASCADE.
 export type ImuWindowRow = {
   worker_id: string;
   family: string | null;
@@ -720,10 +720,11 @@ export type ImuWindowRow = {
   axes: number[][];
 };
 
-// 없으면 생성(하드닝 정의: CHECK·DEFAULT·INDEX 포함). insert/export 전에 한 번 보장.
-// db/imu_window/imu_window.sql 과 한 글자도 다르지 않게 동기화할 것.
+// 없으면 생성(독립 스키마 imu_collect + 하드닝: CHECK·DEFAULT·INDEX). insert/export 전에 보장.
+// db/imu_collect/imu_window.sql 과 한 글자도 다르지 않게 동기화할 것.
 export async function ensureImuWindowTable(): Promise<void> {
-  await q(`CREATE TABLE IF NOT EXISTS imu_window (
+  await q(`CREATE SCHEMA IF NOT EXISTS imu_collect`);
+  await q(`CREATE TABLE IF NOT EXISTS imu_collect.imu_window (
     id            BIGSERIAL    PRIMARY KEY,
     worker_id     TEXT         NOT NULL DEFAULT 'UNSET',
     family        TEXT,
@@ -736,14 +737,14 @@ export async function ensureImuWindowTable(): Promise<void> {
     CONSTRAINT chk_imu_fs     CHECK (fs IS NULL OR fs BETWEEN 1 AND 1000),
     CONSTRAINT chk_imu_impact CHECK (impact_index IS NULL OR impact_index >= 0)
   )`);
-  await q(`CREATE INDEX IF NOT EXISTS idx_imu_worker ON imu_window (worker_id, id)`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_imu_worker ON imu_collect.imu_window (worker_id, id)`);
 }
 
 // 워치 윈도 1건 INSERT. axes 는 ::jsonb 캐스트로 명시 직렬화(배열 오해석 방지).
 export async function insertImuWindow(rec: ImuWindowRow): Promise<void> {
   await ensureImuWindowTable();
   await q(
-    `INSERT INTO imu_window (worker_id, family, fs, impact_index, axes)
+    `INSERT INTO imu_collect.imu_window (worker_id, family, fs, impact_index, axes)
      VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [rec.worker_id, rec.family, rec.fs, rec.impact_index, JSON.stringify(rec.axes)],
   );
@@ -754,7 +755,7 @@ export async function exportImuWindows(): Promise<ImuWindowRow[]> {
   await ensureImuWindowTable();
   const { rows } = await q<ImuWindowRow>(
     `SELECT worker_id, family, fs, impact_index, axes
-       FROM imu_window
+       FROM imu_collect.imu_window
       ORDER BY worker_id, id`,
   );
   return rows;
