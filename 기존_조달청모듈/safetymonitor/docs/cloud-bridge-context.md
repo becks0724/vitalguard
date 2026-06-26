@@ -27,6 +27,19 @@ App OCR → 클라우드(이미지/미디어) + PostgreSQL(로그기록) → 관
 - tsc=0, next build=0(`/api/calendar/media` 동적 라우트 등록).
 - Playwright 실 API+DB 왕복 — 미디어 2건 POST → GET 2건 확인 → 캘린더 셀 배지 2개 + 선택일 '현장 미디어' 섹션 표시 + OCR 노출 → 설명 PATCH가 DB에 반영 확인 → 테스트 행 DELETE로 정리(잔여 0). 페이지 에러 없음, 다크모드 가독성 양호.
 
+## Phase 1.5 — UX 개편 + 댓글 (2026-06-26, 통과)
+사용자 요청 6건 반영.
+1. 날짜 클릭 = **선택만**(일정등록 폼 미오픈). `handleDateClick`에서 `setFormDate` 제거.
+2. 선택 날짜의 일정·미디어를 하단 선택영역에서 확인.
+3. 선택영역에 **(+) 일정 추가** 버튼 → `setFormDate(selected)`로 폼 오픈.
+4. 문구 "현장 미디어" → **"현장 이미지/미디어"**(섹션·셀 배지 title).
+5. 미디어 카드 **제목/내용 분리** — `title` 컬럼 신설(ALTER 포함), 제목(굵게) + "OCR 인식 내용" 박스.
+6. 관리자 단일 설명 → **댓글 스레드**(`calendar_media_comment`): 작성자 이름·식별자(사번 대용 username)·시각 표시, 저장 후 회색 본문 + 수정/삭제 아이콘, 신규 입력 컴포저. **작성자는 인증 세션(getSession)에서 서버가 도출**(클라이언트 신뢰 X). users.name 조회, env 관리자는 "관리자". 작업자 댓글은 Phase 3에서 author_role로 유입 가능.
+
+- API 추가 — `/api/calendar/media/comment`(POST/PATCH/DELETE), media GET이 각 미디어에 `comments[]` 번들.
+- 검증 — tsc=0, build=0, Playwright 전수(클릭=선택 폼0 / +버튼 폼1 / 문구 / 제목·OCR라벨 / 시드댓글·작성자 / UI 댓글추가) 통과.
+- 데모 시드 6건(제목·샘플 댓글 4개) 유지 — `site_id=DEMO-SEED`, ID `/tmp/seed_ids.txt`.
+
 ## 다음(Phase 2) — 결정/자격증명 필요
 - 스토리지 백엔드 확정(GCS 서울 권장: 동일 GCP 프로젝트·최소 통합). 버킷 생성 + 서비스계정 키 또는 워크로드 자격 → `.env`/Cloud Run 시크릿.
 - 프리사인 업로드 URL 발급 API(`POST /api/calendar/media/upload-url`) + 등록 API에 storage_provider/storage_key 채움.
