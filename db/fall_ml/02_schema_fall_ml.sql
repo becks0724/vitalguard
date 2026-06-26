@@ -8,6 +8,7 @@
 --   2) phase 컬럼 추가 — PART1=1, 이후 2~N 데이터셋을 같은 테이블에 누적/비교
 --   3) PK (phase, id) 복합키 — PART 별 id 공간 독립
 --   4) loaded_at — 적재 시각 추적
+--   5) 6축 IMU raw(fs/impact_index/axes JSONB) — imu_window 와 통일. 현 CSV 미수집 → NULL.
 --   ※ 1상: 적재만 목적. enum/CHECK/검증쿼리는 2상 이후(01 TODO 유지).
 -- =====================================================================
 
@@ -57,6 +58,11 @@ CREATE TABLE fall_ml.fall_events (
     battery_pct               NUMERIC(5,2),
     latitude                  NUMERIC(9,6),
     longitude                 NUMERIC(9,6),
+
+    -- 6축 IMU raw (imu_window 와 동일 표현 · 현재 CSV 미수집 → NULL = 측정 안 됨) ----
+    fs                        INTEGER,                          -- 샘플링레이트(Hz), 미측정 NULL
+    impact_index              INTEGER,                          -- 충격 샘플의 윈도 내 인덱스, 미측정 NULL
+    axes                      JSONB,                            -- raw 시계열 [[ax,ay,az,gx,gy,gz],…], 미측정 NULL
 
     -- 정답 라벨링 ----------------------------------------------------
     ground_truth_label        TEXT,                             -- FALL/NO_FALL (2상 enum)

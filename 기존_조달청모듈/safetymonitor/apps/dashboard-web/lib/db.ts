@@ -400,8 +400,15 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,
+    // 확정 낙상은 워치가 fallDecision='fall' 후보행으로 보냄(fallDetected 미설정 — 폰 Health API 는
+    // 낙상 미노출). 코드 전반이 'fall_decision=fall OR fall_detected=1'을 양성 표준으로 쓰므로
+    // fallDecision='fall' 도 fall_detected=1 로 파생해 일관화. 둘 다 없으면 null(평상 폴) 보존.
     fall_detected:
-      sample.fallDetected === true ? 1 : sample.fallDetected === false ? 0 : null,
+      sample.fallDetected === true || sample.fallDecision === "fall"
+        ? 1
+        : sample.fallDetected === false
+          ? 0
+          : null,
     latitude: sample.latitude ?? null,
     longitude: sample.longitude ?? null,
     hrv_sdnn_ms: sample.hrvSdnnMs ?? null,
@@ -738,6 +745,58 @@ export async function exportFallDataset(opts: {
   const { rows } = await q<FallDatasetRow>(
     `${FALL_SELECT} WHERE ${FALL_WHERE} AND v.ts >= $1 AND v.ts <= $2 ORDER BY v.ts ASC`,
     [opts.from, opts.to],
+  );
+  return rows;
+}
+
+// ── A3 raw 6축 IMU 임시 수집 버퍼 (독립 스키마 imu_collect.imu_window) ──
+// ⚠️ 임시 버퍼. 본 파이프라인(public.vital_samples 등)과 별도 스키마로 격리 · FK·뷰·트리거 없음.
+//    수집→export(NDJSON)→DROP. 전역 ensureSchema 밖 지연 생성. 정리: DROP SCHEMA imu_collect CASCADE.
+export type ImuWindowRow = {
+  worker_id: string;
+  family: string | null;
+  fs: number | null;
+  impact_index: number | null;
+  axes: number[][];
+};
+
+// 없으면 생성(독립 스키마 imu_collect + 하드닝: CHECK·DEFAULT·INDEX). insert/export 전에 보장.
+// db/imu_collect/imu_window.sql 과 한 글자도 다르지 않게 동기화할 것.
+export async function ensureImuWindowTable(): Promise<void> {
+  await q(`CREATE SCHEMA IF NOT EXISTS imu_collect`);
+  await q(`CREATE TABLE IF NOT EXISTS imu_collect.imu_window (
+    id            BIGSERIAL    PRIMARY KEY,
+    worker_id     TEXT         NOT NULL DEFAULT 'UNSET',
+    family        TEXT,
+    fs            INTEGER,
+    impact_index  INTEGER,
+    axes          JSONB        NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT chk_imu_family CHECK (family IS NULL OR family IN ('fall','hammer','pound','throw','walk','sit')),
+    CONSTRAINT chk_imu_axes   CHECK (jsonb_typeof(axes) = 'array' AND jsonb_array_length(axes) >= 1),
+    CONSTRAINT chk_imu_fs     CHECK (fs IS NULL OR fs BETWEEN 1 AND 1000),
+    CONSTRAINT chk_imu_impact CHECK (impact_index IS NULL OR impact_index >= 0)
+  )`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_imu_worker ON imu_collect.imu_window (worker_id, id)`);
+}
+
+// 워치 윈도 1건 INSERT. axes 는 ::jsonb 캐스트로 명시 직렬화(배열 오해석 방지).
+export async function insertImuWindow(rec: ImuWindowRow): Promise<void> {
+  await ensureImuWindowTable();
+  await q(
+    `INSERT INTO imu_collect.imu_window (worker_id, family, fs, impact_index, axes)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [rec.worker_id, rec.family, rec.fs, rec.impact_index, JSON.stringify(rec.axes)],
+  );
+}
+
+// 전체 회수(워커별·이벤트순). export route 가 NDJSON 으로 내보낸다.
+export async function exportImuWindows(): Promise<ImuWindowRow[]> {
+  await ensureImuWindowTable();
+  const { rows } = await q<ImuWindowRow>(
+    `SELECT worker_id, family, fs, impact_index, axes
+       FROM imu_collect.imu_window
+      ORDER BY worker_id, id`,
   );
   return rows;
 }
