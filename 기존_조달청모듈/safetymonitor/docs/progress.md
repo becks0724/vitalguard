@@ -12,7 +12,16 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-24 — 설계·타당성 검토 세션: 온프레미스 LLM 생체 모니터링 + 앱 OCR 캘린더 미디어 브리지 / 코드 변경 0, 계획 문서화)
+### ★ 최신 (2026-06-26 — 캘린더 한국공휴일 라이브 배포(rev 00008) + 캘린더 아이콘 클라우드+캘린더 결합 교체 + 다크모드 헤더 가독성 수정)
+
+- **★ Cloud Run 재배포 rev `00008-m2w`**(2026-06-25) — 팀 pull(한국 공휴일 캘린더 `7bc9b4d` 등) 라이브 반영 위해 `gcloud builds submit`(3분16초)+`gcloud run deploy --image`(env·9시크릿 보존). 라이브 검증 = HTTP 200·`check-username`(reserved)·로그인 401·JS 청크에 공휴일 데이터 확인. 라이브 리비전 `00007-7n7`→**`00008-m2w`**. (Galaxy 스키마 `vital_samples_galaxy`는 앱 미참조·라이브 DB 미적용 = 배포 무관.)
+- **★ 캘린더 헤더 아이콘 교체**(미커밋) — [DemoDashboard.tsx:2186](../apps/dashboard-web/app/components/DemoDashboard.tsx#L2186) 단순 달력 → **클라우드+캘린더 결합 라인 아이콘**(기능 #1 미디어 캘린더 방향 신호). 단독 렌더로 시각 검증. tsc 0.
+- **★ 다크모드 캘린더 팝업 헤더 가독성 수정**(미커밋) — [DemoDashboard.tsx:1230](../apps/dashboard-web/app/components/DemoDashboard.tsx#L1230) 헤더 바가 `bg-surface-soft`에 `dark:bg-*` 누락 → 밝은 글자가 밝은 배경에 묻힘. `dark:bg-surface-dark-elevated`(헤더 바)+`dark:bg-white/10 dark:text-on-dark`(아이콘 칩) 추가. 다크모드 실캡처로 "일정 캘린더" 제목·안내 또렷이 보임 확인. tsc 0.
+- **로컬 dev 서버 가동 중**(`0.0.0.0:3000` LAN, Ready 1.2초) — 위 두 변경 HMR 검증에 사용.
+- **상태** — origin/main=`d519c3f`(동기화), **미커밋 = `DemoDashboard.tsx`(아이콘+다크수정 2건)**. 라이브 = rev `00008-m2w`(미커밋 2건 미반영). dev 서버 가동 중.
+- **다음** — ① 아이콘+다크수정 커밋/배포(리허설 묶음 배포 가능) ② 캘린더 OCR 미디어 기능(#1) 착수 여부 + 저장 백엔드(GCS/R2/네이버) 결정 ③ dev 서버 유지/종료 ④ (선택) 팝업 내부 헤더 아이콘도 결합 아이콘으로 통일. 상세 [llm-media-features-plan.md](./llm-media-features-plan.md).
+
+### (2026-06-24 — 설계·타당성 검토 세션: 온프레미스 LLM 생체 모니터링 + 앱 OCR 캘린더 미디어 브리지 / 코드 변경 0, 계획 문서화)
 
 - **★ 코드 변경 0 — 설계·타당성 검토 + 문서화.** 상세 = [llm-media-features-plan.md](./llm-media-features-plan.md). 두 기능 모두 **발표 후 2차 트랙**.
 - **★ 기능 #2 = 온프레미스 LLM 생체 모니터링/보고서** — DB 생체데이터 → 비식별 피처(기존 analyzers 재사용) → **로컬 LLM**(Ollama/vLLM) → 한국어 보고서. **결정 = 온프레미스**(사용자 최우선 제약 "보고서 어떤 경유로도 외부 유출 금지" → 외부 API·Cloud Run 경유 배제). 원시 PII 미투입(이름·사원번호·GPS 제거), 의학진단 아님·작업 적합성 참고·투입/보류 human-in-the-loop. 하드웨어 = 사무 PC 직접구동 비현실 → **추론 전용 1대(본사 GPU)+사무PC 브라우저**, 발표는 Mac 통합메모리 7~14B.
