@@ -22,6 +22,14 @@
 - Client — MyProfileModal 부서/직책 입력(본인); UserManagementModal '부서/직책' 컬럼 **인라인 편집**(셀 클릭→input→저장/취소, owner가 각 사용자 값 직접 수정·폴링 중 draft 보존) + '관리자권한' 컬럼 부여/회수 토글; DemoDashboard 마운트 시 /api/admin/profile로 adminAccess 받아 `canAdminMenu`(owner||adminAccess)로 관리자 dock 항목 게이팅; 댓글 표시에 직책 + "사번" 라벨.
 - 부서/직책 입력 경로 2가지(2026-06-26 추가) — ① 사용자 본인 '내 정보 수정' ② owner가 '사용자 관리'에서 직접. 둘 다 같은 users.department/job_title 갱신.
 
+## 2026-06-26 후반 추가 (로그인 칩·사원번호·비밀번호 게이트·한화면 모달 — 라이브 `00011`~`00013`)
+
+- **헤더 로그인 상태 칩**(DemoDashboard) — 'POST /api/mock/vital' 개발용 라벨 자리. **표시 전용 div(클릭 없음)** — 칩 클릭으로 내 정보 직접 진입하던 보안문제 해소. 접속점(초록 ping) + 이름/직책/사번/아이디(owner는 '관리자·소유자'). 마운트 시 /api/admin/profile 응답에서 loginInfo(name/job_title/employee_id/username) 캡처.
+- **사원번호(`users.employee_id`)** 신규 — ALTER 추가 + UserRow + updateUserProfile + /api/admin/profile GET/POST. MyProfileModal에 '사원번호' 입력칸(아이디와 2열). (기존 "사번=username 대용"에서 실제 필드로 승격.)
+- **비밀번호 게이트(step-up 인증)** — dock '내 정보' 클릭 → `ProfileGateModal`에서 비번 재확인 후 진입. `/api/admin/verify-password`(POST, Bearer) — 현재 세션 사용자 비번 재확인(owner=verifyCredentials, admin=verifyPassword 해시), **새 토큰 미발급**. 공용 관제 화면 무단 조회·수정 방지.
+- **내 정보 모달 한 화면** — 비밀번호 변경 섹션 기본 접힘(펼치기 토글) + 아이디·사번 2열 → 662px(<720px viewport) 적합. + (버그수정) `save` useCallback 의존성에 employeeId 포함.
+- 게이트 적용 대상 = role=admin만(dock '내 정보'는 admin 전용 노출). owner는 자가수정 비대상이라 게이트 불필요.
+
 ## 검증 결과 (통과)
 - tsc=0, next build=0.
 - 댓글 author_title "시스템 관리자" 캡처 + 화면 표시(이름·직책·사번·시각).
@@ -31,4 +39,4 @@
 
 ## 한계(코드/빌드로만 확인)
 - 가입이 **이메일 인증 게이트**라 스크립트로 비-관리자 브라우저 세션 생성 불가 → "비-관리자가 메뉴 안 보임 / 게이트 엔드포인트 403" 거부 경로는 build+tsc+로직(hasAdminMenuAccess가 admin_access=false면 false 반환)으로 확인. MyProfileModal 부서/직책 자가저장도 role=admin 계정 필요(owner는 모달 비대상)라 build로 확인.
-- "사번"은 관리자 계정에 실제 사번이 없어 username을 식별자로 표시. 별도 사번 필드가 필요하면 프로필에 추가 가능.
+- ~~"사번"은 관리자 계정에 실제 사번이 없어 username을 식별자로 표시~~ → **해소(2026-06-26): `users.employee_id` 사원번호 필드 추가, 내 정보 수정에서 입력.** 댓글 표시는 여전히 author_id(username) 기준.

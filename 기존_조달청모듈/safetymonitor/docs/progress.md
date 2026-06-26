@@ -12,14 +12,19 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-26 — 사용자 관리 부서/직책 인라인 편집 + 내 정보 수정 3건 버그/UX + **라이브 배포 rev `00010-8sp`**)
+### ★ 최신 (2026-06-26 세션 후반 — 프로필/보안/버그 수정 5건 + 라이브 4회 배포 `00010`→**`00013-p28`**)
 
-직전 세션(아래 5종) + 추가 작업을 **GitHub push 완료 + Cloud Run 배포 완료**. 라이브 `00009-8nx`→**`00010-8sp`**(이번 세션 기능 전부 반영, 검증 통과).
+직전 5종(아래) 이후 추가 작업을 전부 **push + Cloud Run 배포 완료**. 라이브 `00009-8nx`→`00010-8sp`→`00011-r2d`→`00012-j8l`→**`00013-p28`**.
 
-1. **사용자 관리 부서/직책 인라인 편집** (`dd32828`) — 기존: 본인 '내 정보 수정'에서만 입력→관리자 화면 읽기전용. 추가: owner가 사용자 관리 테이블에서 각 사용자 부서/직책을 셀 클릭→input→저장(액션 `set_profile`, owner전용·빈값 null·폴링 중 draft 보존). `setUserProfileFields(id,…)`. → [profile-access-context.md](./profile-access-context.md)
-2. **내 정보 수정 3건** (`3190704`) — ① **(버그)** 부서/직책 저장 후 재진입 공란 — `save` useCallback 의존성에 `department`/`jobTitle` 누락→부서/직책만 바꾸면 옛 클로저 값(빈값) 전송→DB에 빈값 저장. 의존성 추가로 수정. ② 팝업 한 화면에(패딩·간격 컴팩트+max-h 92vh). ③ 배경 스크롤 전파 차단(body overflow 잠금+`overscroll-contain`).
-- **검증/배포** — tsc=0, 클라이언트 바인딩 E2E(LOAD/SAVE 입력값 전송), 인라인 편집 E2E(반영·DB영속·원복·미인증 401). **Cloud Build 3m11s(SUCCESS)→`run deploy --image`(env·9시크릿 보존) rev `00010-8sp` 100% 트래픽**. 라이브 검증 HTTP200·사용자 관리 부서/직책/관리자권한 컬럼 표시 확인.
-- **현재 상태** — **origin/main=`3190704`(완전 동기화)**, working tree clean, **라이브=rev `00010-8sp`**(GitHub 일치, 이번 세션 기능 반영). 로컬 dev 가동 중.
+1. **내 정보 수정 3건** (`3190704` → `00010-8sp`) — ① **(버그)** 부서/직책 저장 후 재진입 공란 = `save` useCallback 의존성에 `department`/`jobTitle` 누락(stale-closure로 빈값 저장) → 의존성 추가. ② 팝업 한 화면(패딩·간격 컴팩트+max-h 92vh). ③ 배경 스크롤 전파 차단(body overflow 잠금+`overscroll-contain`).
+2. **사용자 관리 부서/직책 인라인 편집** (`dd32828` → `00010-8sp`) — owner가 사용자 관리 테이블에서 각 사용자 부서/직책 직접 수정(액션 `set_profile` owner전용·빈값 null·폴링 중 draft 보존, `setUserProfileFields(id,…)`). 본인 자가입력과 별개 경로. → [profile-access-context.md](./profile-access-context.md)
+3. **헤더 로그인 상태 칩** (`a9b7ee3` → `00011-r2d`) — 'POST /api/mock/vital'(개발용 라벨) 자리에 로그인 확인 칩(접속점+이름+역할배지). 로그인 상태 가시화.
+4. **로그인 칩 보안 개편 + 사원번호 + 비밀번호 게이트 + 한화면 모달** (`b601c37` → `00012-j8l`) — ① 칩 클릭 제거(표시 전용 div) → 칩으로 내 정보 직접 진입하던 보안 문제 해소, 표기 이름/직책/사번/아이디. ② 내 정보 진입 시 **비밀번호 재확인(step-up 인증, `/api/admin/verify-password`)**. ③ `users.employee_id`(사원번호) 신규 — 내 정보 입력칸+칩. ④ 내 정보 모달 비번섹션 접기+아이디·사번 2열 → 662px 한화면. → [profile-access-context.md](./profile-access-context.md)
+5. **태풍 진로 카드 위성지도 짤림 수정** (`48926c0` → `00013-p28`) — Tailwind preflight `img{max-width:100%}` 가 좁은 카드(<256px)에서 256px 위성타일을 컨테이너 폭으로 압축(w256→188)→타일 간 틈에 배경 노출(어두운 띠). 타일 `<img>`에 `maxWidth:"none"` 추가로 해소. 모달(>256px)은 무관해 정상이었음.
+
+- **검증** — 전부 tsc=0 + Playwright 라우트목/E2E(프로필 LOAD/SAVE 바인딩·인라인편집 DB영속·미인증401·칩 표시/클릭불가·게이트 선차단·한화면·태풍 타일 w256 복구). 각 배포마다 라이브 HTTP200+리비전 100% 확인.
+- **현재 상태** — **origin/main=`48926c0`(완전 동기화)**, working tree clean, **라이브=rev `00013-p28`**(GitHub 일치). 로컬 dev 종료.
+- **다음 액션** — ① 클라우드 브릿지 Phase 2(스토리지 백엔드 GCS/R2/네이버 결정 + 프리사인 업로드 URL) → Phase 3(앱 OCR→업로드 연동) ② (선택) 비-관리자 권한차단 E2E(가입 이메일인증 때문에 보류). ✅[완료] 관리자 사원번호 필드(`b601c37`).
 
 ### (2026-06-26 — 캘린더 대규모 개편 5종 + 관리자 권한제어)
 
