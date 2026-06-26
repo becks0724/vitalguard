@@ -504,7 +504,7 @@ function weatherIcon(code: number): string {
 }
 
 // WMO weather code → 한국어 간단 라벨
-function weatherLabel(code: number): string {
+export function weatherLabel(code: number): string {
   if (code === 0) return "맑음";
   if (code === 1) return "대체로 맑음";
   if (code === 2) return "구름 조금";

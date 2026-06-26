@@ -50,7 +50,8 @@ import {
 import { SosAlertModal } from "./SosAlertModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
-import { WeatherStrip } from "./WeatherStrip";
+import { WeatherStrip, weatherLabel } from "./WeatherStrip";
+import { WeatherIcon, weatherIconKey } from "./WeatherIcons";
 import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
@@ -1340,9 +1341,15 @@ function getKoreanHolidays(year: number): Record<string, string> {
 function HeaderCalendarPopup({
   open,
   onClose,
+  lat,
+  lon,
+  workerCount,
 }: {
   open: boolean;
   onClose: () => void;
+  lat?: number;
+  lon?: number;
+  workerCount: number;
 }) {
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -1351,8 +1358,42 @@ function HeaderCalendarPopup({
   const [formDate, setFormDate] = useState<Date | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
+  // 현장 GPS 좌표 기반 일일 예보 — dateKey(YYYY-MM-DD) → WMO weatherCode. 예보 창(오늘~+6일)만 채워짐.
+  const [weatherByDate, setWeatherByDate] = useState<Record<string, number>>({});
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
   const [hydrated, setHydrated] = useState(false);
+
+  // 팝업이 열리고 현장 좌표가 있을 때 7일 예보를 받아 날짜별 날씨코드 맵 구성(WeatherStrip과 동일 캐시 엔드포인트).
+  useEffect(() => {
+    if (!open || lat === undefined || lon === undefined) return;
+    let active = true;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/weather?lat=${lat}&lon=${lon}&workers=${workerCount}`,
+          { cache: "no-store" },
+        );
+        if (!active || !res.ok) return;
+        const json = (await res.json()) as {
+          ok?: boolean;
+          daily7?: { time?: string[]; weatherCode?: number[] };
+        };
+        if (!active || !json.ok || !json.daily7?.time || !json.daily7.weatherCode) return;
+        const { time, weatherCode } = json.daily7;
+        const map: Record<string, number> = {};
+        time.forEach((t, i) => {
+          const code = weatherCode[i];
+          if (typeof t === "string" && typeof code === "number") map[t] = code;
+        });
+        setWeatherByDate(map);
+      } catch {
+        // 날씨 조회 실패는 조용히 무시 — 아이콘만 생략, 캘린더 본기능은 유지
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, lat, lon, workerCount]);
 
   useEffect(() => {
     setLabels(loadCalendarLabels());
@@ -1631,6 +1672,7 @@ function HeaderCalendarPopup({
               const isSelected = calendarSameDay(cellDate, selected);
               const weekday = cellDate.getDay();
               const holiday = holidayMap[dateKey];
+              const dayWeatherCode = weatherByDate[dateKey];
 
               return (
                 <button
@@ -1652,6 +1694,18 @@ function HeaderCalendarPopup({
                   aria-label={`${year}년 ${month + 1}월 ${day}일`}
                   aria-pressed={isSelected}
                 >
+                  {dayWeatherCode !== undefined && (
+                    <span
+                      className={[
+                        "pointer-events-none absolute right-0.5 top-0.5 z-10",
+                        isSelected ? "text-white/90" : "text-muted dark:text-on-dark-soft",
+                      ].join(" ")}
+                      title={weatherLabel(dayWeatherCode)}
+                      aria-label={`날씨: ${weatherLabel(dayWeatherCode)}`}
+                    >
+                      <WeatherIcon name={weatherIconKey(dayWeatherCode)} className="h-3.5 w-3.5" />
+                    </span>
+                  )}
                   {hoverDateKey === dateKey && dayEvents.length > 0 && (
                     <div
                       className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1 w-[10.5rem] -translate-x-1/2 rounded-lg border border-primary-ring bg-primary px-2.5 py-2"
@@ -2866,7 +2920,13 @@ export function DemoDashboard() {
 
       {alertsOpen && <AlertHistoryModal onClose={() => setAlertsOpen(false)} />}
 
-      <HeaderCalendarPopup open={calendarOpen} onClose={() => setCalendarOpen(false)} />
+      <HeaderCalendarPopup
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        lat={fieldCoords.lat}
+        lon={fieldCoords.lon}
+        workerCount={fieldCoords.count}
+      />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
       {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
