@@ -2252,6 +2252,8 @@ export function DemoDashboard() {
   const [role, setRole] = useState<string | null>(null);
   // 관리자 메뉴(CSV 등) 접근 권한 — owner 거나 owner가 부여한 admin_access. 서버에서도 강제.
   const [adminAccess, setAdminAccess] = useState(false);
+  // 로그인 상태 표시용 이름 — 가입 관리자는 이름(없으면 아이디), 환경 관리자(owner)는 프로필이 없어 null("관리자"로 표시).
+  const [loginName, setLoginName] = useState<string | null>(null);
   useEffect(() => {
     setRole(getSessionRole());
     const token = getSessionToken();
@@ -2260,7 +2262,10 @@ export function DemoDashboard() {
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
-        if (j?.ok) setAdminAccess(!!j.adminAccess);
+        if (j?.ok) {
+          setAdminAccess(!!j.adminAccess);
+          setLoginName(j.profile?.name ?? j.profile?.username ?? null);
+        }
       })
       .catch(() => {});
   }, []);
@@ -2881,9 +2886,33 @@ export function DemoDashboard() {
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-2">
-          <div className="hidden h-8 items-center rounded-lg bg-surface-strong px-3 font-mono text-xs text-body dark:bg-surface-dark-elevated dark:text-on-dark-soft sm:inline-flex">
-            POST /api/mock/vital
-          </div>
+          {/* 로그인 상태 칩 — 접속점(접속중) + 이름 + 역할 배지. 가입 관리자는 클릭 시 '내 정보'. */}
+          {role && (
+            <button
+              type="button"
+              onClick={role === "admin" ? () => setProfileOpen(true) : undefined}
+              disabled={role !== "admin"}
+              title={role === "admin" ? "내 정보 보기·수정" : "로그인 계정 (환경 관리자)"}
+              className="hidden h-8 items-center gap-2 rounded-lg bg-surface-strong px-3 text-xs text-body transition enabled:hover:brightness-95 disabled:cursor-default dark:bg-surface-dark-elevated dark:text-on-dark-soft sm:inline-flex"
+            >
+              <span className="relative flex h-2 w-2" aria-hidden="true">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              </span>
+              <span className="max-w-[10rem] truncate font-semibold text-ink dark:text-on-dark">
+                {loginName ?? "관리자"}
+              </span>
+              <span
+                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                  role === "owner"
+                    ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
+                    : "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
+                }`}
+              >
+                {role === "owner" ? "소유자" : "관리자"}
+              </span>
+            </button>
+          )}
           {/* 헤더 액션 버튼 — 아이콘만 보이다 선택 시 라벨이 펼쳐지는 확장 탭(ExpandableTabs).
               라이트/다크 토글은 제외하고 그대로 유지. */}
           <ExpandableTabs
