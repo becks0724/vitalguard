@@ -317,6 +317,25 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL;
+
+    -- 클라우드 브릿지 — 앱 OCR 미디어(이미지/영상)를 날짜에 매칭해 캘린더에 표시.
+    -- 스토리지 비종속: media_url(표시용)만 채워도 동작, provider/key는 Phase 2(오브젝트 스토리지) 보강.
+    CREATE TABLE IF NOT EXISTS calendar_media (
+      id TEXT PRIMARY KEY,
+      date_key TEXT NOT NULL,
+      captured_at TEXT,
+      media_type TEXT NOT NULL DEFAULT 'image',
+      storage_provider TEXT,
+      storage_key TEXT,
+      media_url TEXT,
+      thumbnail_url TEXT,
+      ocr_text TEXT,
+      description TEXT,
+      site_id TEXT,
+      uploader TEXT,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_calmedia_date ON calendar_media(date_key);
   `);
 }
 
@@ -1173,4 +1192,88 @@ export async function createGoogleUser(input: {
     values,
   );
   return rows[0] ?? null;
+}
+
+// ─── 클라우드 브릿지: 캘린더 미디어(앱 OCR 이미지/영상) ───
+export type CalendarMediaRow = {
+  id: string;
+  date_key: string;
+  captured_at: string | null;
+  media_type: string;
+  storage_provider: string | null;
+  storage_key: string | null;
+  media_url: string | null;
+  thumbnail_url: string | null;
+  ocr_text: string | null;
+  description: string | null;
+  site_id: string | null;
+  uploader: string | null;
+  created_at: string;
+};
+
+// 날짜 범위(YYYY-MM-DD, 포함)로 미디어 조회 — 캘린더 월 단위 표시용.
+export async function listCalendarMedia(
+  fromKey: string,
+  toKey: string,
+): Promise<CalendarMediaRow[]> {
+  const { rows } = await q<CalendarMediaRow>(
+    `SELECT * FROM calendar_media
+       WHERE date_key >= $1 AND date_key <= $2
+       ORDER BY date_key ASC, captured_at ASC NULLS LAST, created_at ASC`,
+    [fromKey, toKey],
+  );
+  return rows;
+}
+
+export async function insertCalendarMedia(input: {
+  id: string;
+  dateKey: string;
+  capturedAt?: string | null;
+  mediaType?: string;
+  storageProvider?: string | null;
+  storageKey?: string | null;
+  mediaUrl?: string | null;
+  thumbnailUrl?: string | null;
+  ocrText?: string | null;
+  description?: string | null;
+  siteId?: string | null;
+  uploader?: string | null;
+}): Promise<CalendarMediaRow> {
+  const { text, values } = buildInsert(
+    "calendar_media",
+    {
+      id: input.id,
+      date_key: input.dateKey,
+      captured_at: input.capturedAt ?? null,
+      media_type: input.mediaType ?? "image",
+      storage_provider: input.storageProvider ?? null,
+      storage_key: input.storageKey ?? null,
+      media_url: input.mediaUrl ?? null,
+      thumbnail_url: input.thumbnailUrl ?? null,
+      ocr_text: input.ocrText ?? null,
+      description: input.description ?? null,
+      site_id: input.siteId ?? null,
+      uploader: input.uploader ?? null,
+    },
+    "*",
+  );
+  const { rows } = await q<CalendarMediaRow>(text, values);
+  return rows[0]!;
+}
+
+// 관리자 설명 메모 수정.
+export async function updateCalendarMediaDescription(
+  id: string,
+  description: string,
+): Promise<boolean> {
+  const { rowCount } = await q(
+    "UPDATE calendar_media SET description = $2 WHERE id = $1",
+    [id, description],
+  );
+  return rowCount > 0;
+}
+
+export async function deleteCalendarMedia(id: string): Promise<boolean> {
+  const { rowCount } = await q("DELETE FROM calendar_media WHERE id = $1", [id]);
+  return rowCount > 0;
 }

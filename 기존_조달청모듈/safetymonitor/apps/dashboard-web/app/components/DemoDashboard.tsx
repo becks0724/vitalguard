@@ -599,6 +599,19 @@ type CalendarEvent = {
 const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
 const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
 
+// 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정(localStorage)과 별개 레이어.
+type CalendarMedia = {
+  id: string;
+  dateKey: string;
+  capturedAt: string | null;
+  mediaType: string;
+  mediaUrl: string | null;
+  thumbnailUrl: string | null;
+  ocrText: string | null;
+  description: string | null;
+  uploader: string | null;
+};
+
 function findLabelDef(labels: ScheduleLabelDef[], labelId: string): ScheduleLabelDef {
   return (
     labels.find((l) => l.id === labelId) ?? {
@@ -1360,8 +1373,87 @@ function HeaderCalendarPopup({
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
   // 현장 GPS 좌표 기반 일일 예보 — dateKey(YYYY-MM-DD) → WMO weatherCode. 예보 창(오늘~+6일)만 채워짐.
   const [weatherByDate, setWeatherByDate] = useState<Record<string, number>>({});
+  // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 설명 편집 드래프트(mediaId → 입력값).
+  const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
+  const [mediaDraft, setMediaDraft] = useState<Record<string, string>>({});
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
   const [hydrated, setHydrated] = useState(false);
+
+  // 보이는 달(viewDate) 범위의 미디어를 서버에서 조회 — 관리자 세션 토큰 동봉.
+  const fetchMedia = useCallback(async (d: Date) => {
+    const y = d.getFullYear();
+    const mo = d.getMonth();
+    const from = toDateKey(new Date(y, mo, 1));
+    const to = toDateKey(new Date(y, mo + 1, 0));
+    const token = getSessionToken();
+    try {
+      const res = await fetch(`/api/calendar/media?from=${from}&to=${to}`, {
+        cache: "no-store",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as {
+        ok?: boolean;
+        media?: Array<Record<string, string | null>>;
+      };
+      if (!json.ok || !Array.isArray(json.media)) return;
+      const map: Record<string, CalendarMedia[]> = {};
+      for (const r of json.media) {
+        const dateKey = r.date_key ?? "";
+        if (!dateKey) continue;
+        (map[dateKey] ??= []).push({
+          id: r.id ?? "",
+          dateKey,
+          capturedAt: r.captured_at ?? null,
+          mediaType: r.media_type ?? "image",
+          mediaUrl: r.media_url ?? null,
+          thumbnailUrl: r.thumbnail_url ?? null,
+          ocrText: r.ocr_text ?? null,
+          description: r.description ?? null,
+          uploader: r.uploader ?? null,
+        });
+      }
+      setMediaByDate(map);
+    } catch {
+      // 미디어 조회 실패는 조용히 무시 — 캘린더 본기능 유지
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    fetchMedia(viewDate);
+  }, [open, viewDate, fetchMedia]);
+
+  const saveMediaDescription = async (id: string) => {
+    const description = mediaDraft[id] ?? "";
+    const token = getSessionToken();
+    try {
+      const res = await fetch("/api/calendar/media", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ id, description }),
+      });
+      if (res.ok) fetchMedia(viewDate);
+    } catch {
+      // 무시
+    }
+  };
+
+  const deleteMedia = async (id: string) => {
+    const token = getSessionToken();
+    try {
+      const res = await fetch(`/api/calendar/media?id=${id}`, {
+        method: "DELETE",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.ok) fetchMedia(viewDate);
+    } catch {
+      // 무시
+    }
+  };
 
   // 팝업이 열리고 현장 좌표가 있을 때 7일 예보를 받아 날짜별 날씨코드 맵 구성(WeatherStrip과 동일 캐시 엔드포인트).
   useEffect(() => {
@@ -1475,6 +1567,7 @@ function HeaderCalendarPopup({
   }, {});
 
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
+  const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
   const weekKeys = weekDateKeys(selected);
   const weeklyPlanEvents = weekKeys.flatMap((key) =>
     (eventsByDate[key] ?? []).map((e) => ({ ...e, dateKey: key })),
@@ -1673,6 +1766,7 @@ function HeaderCalendarPopup({
               const weekday = cellDate.getDay();
               const holiday = holidayMap[dateKey];
               const dayWeatherCode = weatherByDate[dateKey];
+              const dayMedia = mediaByDate[dateKey] ?? [];
 
               return (
                 <button
@@ -1704,6 +1798,23 @@ function HeaderCalendarPopup({
                       aria-label={`날씨: ${weatherLabel(dayWeatherCode)}`}
                     >
                       <WeatherIcon name={weatherIconKey(dayWeatherCode)} className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  {dayMedia.length > 0 && (
+                    <span
+                      className={[
+                        "pointer-events-none absolute bottom-0.5 right-0.5 z-10 inline-flex items-center gap-0.5 rounded px-1 text-[8px] font-bold leading-none",
+                        isSelected
+                          ? "bg-white/20 text-white"
+                          : "bg-primary/15 text-primary dark:bg-primary/25 dark:text-on-dark",
+                      ].join(" ")}
+                      title={`현장 미디어 ${dayMedia.length}건`}
+                    >
+                      <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                      {dayMedia.length}
                     </span>
                   )}
                   {hoverDateKey === dateKey && dayEvents.length > 0 && (
@@ -1808,6 +1919,79 @@ function HeaderCalendarPopup({
                       event={event}
                       color={findLabelDef(labels, event.labelId).color}
                     />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedMedia.length > 0 && (
+              <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+                <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  현장 미디어 {selectedMedia.length}건
+                </p>
+                <div className="space-y-2">
+                  {selectedMedia.map((m) => (
+                    <div
+                      key={m.id}
+                      className="rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
+                    >
+                      <div className="flex gap-2">
+                        {m.thumbnailUrl || m.mediaUrl ? (
+                          <img
+                            src={m.thumbnailUrl ?? m.mediaUrl ?? ""}
+                            alt={m.ocrText ?? "현장 미디어"}
+                            className="h-14 w-14 shrink-0 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="grid h-14 w-14 shrink-0 place-items-center rounded-md bg-surface-strong text-[9px] text-muted dark:bg-white/10 dark:text-on-dark-soft">
+                            {m.mediaType === "video" ? "영상" : "이미지"}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          {m.capturedAt && (
+                            <p className="text-[10px] text-muted dark:text-on-dark-soft">
+                              {formatKoreanTime(m.capturedAt.slice(11, 16))}
+                              {m.uploader ? ` · ${m.uploader}` : ""}
+                            </p>
+                          )}
+                          {m.ocrText && (
+                            <p className="mt-0.5 line-clamp-2 text-[11px] text-ink dark:text-on-dark">
+                              <span className="font-semibold">OCR </span>
+                              {m.ocrText}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => deleteMedia(m.id)}
+                          className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                      <div className="mt-1.5 flex items-end gap-1.5">
+                        <textarea
+                          value={mediaDraft[m.id] ?? m.description ?? ""}
+                          onChange={(e) =>
+                            setMediaDraft((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          placeholder="관리자 설명 입력"
+                          rows={2}
+                          className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-soft px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveMediaDescription(m.id)}
+                          className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
+                        >
+                          저장
+                        </button>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
