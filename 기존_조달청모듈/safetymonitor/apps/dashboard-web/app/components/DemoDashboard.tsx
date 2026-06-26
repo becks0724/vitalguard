@@ -494,49 +494,189 @@ function workerCell(sample: VitalSample) {
 
 const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
-type ScheduleLabel = "red" | "yellow" | "green" | "blue";
-type ScheduleType = "plan" | "important";
+// 일정 라벨 색상 — 8색 프리셋 팔레트(라이트/다크 모드 모두 가독성 보장하는 Tailwind 토큰)
+type LabelColor =
+  | "red"
+  | "orange"
+  | "amber"
+  | "emerald"
+  | "teal"
+  | "blue"
+  | "violet"
+  | "slate";
 
-const SCHEDULE_LABEL_OPTIONS: ScheduleLabel[] = ["red", "yellow", "green", "blue"];
+const LABEL_COLOR_ORDER: LabelColor[] = [
+  "red",
+  "orange",
+  "amber",
+  "emerald",
+  "teal",
+  "blue",
+  "violet",
+  "slate",
+];
+
+const LABEL_COLOR_META: Record<
+  LabelColor,
+  { swatch: string; chip: string; dot: string; band: string }
+> = {
+  red: {
+    swatch: "bg-red-500",
+    chip: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200",
+    dot: "bg-red-500",
+    band: "bg-red-500/12 border-red-500/20 text-red-900 dark:bg-red-500/15 dark:text-red-100",
+  },
+  orange: {
+    swatch: "bg-orange-500",
+    chip: "bg-orange-100 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200",
+    dot: "bg-orange-500",
+    band: "bg-orange-500/12 border-orange-500/20 text-orange-900 dark:bg-orange-500/15 dark:text-orange-100",
+  },
+  amber: {
+    swatch: "bg-amber-400",
+    chip: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
+    dot: "bg-amber-400",
+    band: "bg-amber-400/15 border-amber-400/25 text-amber-950 dark:bg-amber-500/15 dark:text-amber-100",
+  },
+  emerald: {
+    swatch: "bg-emerald-500",
+    chip: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
+    dot: "bg-emerald-500",
+    band: "bg-emerald-500/12 border-emerald-500/20 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100",
+  },
+  teal: {
+    swatch: "bg-teal-500",
+    chip: "bg-teal-100 text-teal-800 dark:bg-teal-500/20 dark:text-teal-200",
+    dot: "bg-teal-500",
+    band: "bg-teal-500/12 border-teal-500/20 text-teal-900 dark:bg-teal-500/15 dark:text-teal-100",
+  },
+  blue: {
+    swatch: "bg-blue-500",
+    chip: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200",
+    dot: "bg-blue-500",
+    band: "bg-blue-500/12 border-blue-500/20 text-blue-900 dark:bg-blue-500/15 dark:text-blue-100",
+  },
+  violet: {
+    swatch: "bg-violet-500",
+    chip: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
+    dot: "bg-violet-500",
+    band: "bg-violet-500/12 border-violet-500/20 text-violet-900 dark:bg-violet-500/15 dark:text-violet-100",
+  },
+  slate: {
+    swatch: "bg-slate-500",
+    chip: "bg-slate-200 text-slate-700 dark:bg-slate-500/25 dark:text-slate-200",
+    dot: "bg-slate-500",
+    band: "bg-slate-500/12 border-slate-500/20 text-slate-800 dark:bg-slate-500/15 dark:text-slate-100",
+  },
+};
+
+const FALLBACK_LABEL_COLOR: LabelColor = "slate";
+
+// 사용자 정의 일정 라벨 — 이름·색상 편집 및 추가/삭제 가능, localStorage 영속
+type ScheduleLabelDef = {
+  id: string;
+  name: string;
+  color: LabelColor;
+};
+
+const DEFAULT_LABELS: ScheduleLabelDef[] = [
+  { id: "lbl_important", name: "중요일정", color: "red" },
+  { id: "lbl_order", name: "발주계획", color: "amber" },
+  { id: "lbl_start", name: "착수계획", color: "emerald" },
+  { id: "lbl_etc", name: "기타", color: "blue" },
+];
 
 type CalendarEvent = {
   id: string;
   dateKey: string;
   title: string;
-  type: ScheduleType;
-  label: ScheduleLabel;
-  time?: string;
+  labelId: string;
+  startTime?: string;
+  endTime?: string;
 };
 
-const SCHEDULE_LABEL_META: Record<
-  ScheduleLabel,
-  { name: string; chip: string; dot: string; band: string }
-> = {
-  red: {
-    name: "중요일정",
-    chip: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200",
-    dot: "bg-red-500",
-    band: "bg-red-500/12 border-red-500/20 text-red-900 dark:bg-red-500/15 dark:text-red-100",
-  },
-  yellow: {
-    name: "발주계획",
-    chip: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100",
-    dot: "bg-amber-400",
-    band: "bg-amber-400/15 border-amber-400/25 text-amber-950 dark:bg-amber-500/15 dark:text-amber-100",
-  },
-  blue: {
-    name: "기타",
-    chip: "bg-blue-100 text-blue-800 dark:bg-blue-500/20 dark:text-blue-200",
-    dot: "bg-blue-500",
-    band: "bg-blue-500/12 border-blue-500/20 text-blue-900 dark:bg-blue-500/15 dark:text-blue-100",
-  },
-  green: {
-    name: "착수계획",
-    chip: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
-    dot: "bg-emerald-500",
-    band: "bg-emerald-500/12 border-emerald-500/20 text-emerald-900 dark:bg-emerald-500/15 dark:text-emerald-100",
-  },
-};
+const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
+const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
+
+function findLabelDef(labels: ScheduleLabelDef[], labelId: string): ScheduleLabelDef {
+  return (
+    labels.find((l) => l.id === labelId) ?? {
+      id: labelId,
+      name: "삭제된 라벨",
+      color: FALLBACK_LABEL_COLOR,
+    }
+  );
+}
+
+function isLabelColor(value: unknown): value is LabelColor {
+  return typeof value === "string" && (LABEL_COLOR_ORDER as string[]).includes(value);
+}
+
+function loadCalendarLabels(): ScheduleLabelDef[] {
+  if (typeof window === "undefined") return DEFAULT_LABELS;
+  try {
+    const raw = window.localStorage.getItem(CALENDAR_LABELS_STORAGE_KEY);
+    if (!raw) return DEFAULT_LABELS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_LABELS;
+    const cleaned = parsed
+      .filter(
+        (l): l is ScheduleLabelDef =>
+          l && typeof l.id === "string" && typeof l.name === "string" && isLabelColor(l.color),
+      )
+      .map((l) => ({ id: l.id, name: l.name, color: l.color }));
+    return cleaned.length > 0 ? cleaned : DEFAULT_LABELS;
+  } catch {
+    return DEFAULT_LABELS;
+  }
+}
+
+function saveCalendarLabels(labels: ScheduleLabelDef[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CALENDAR_LABELS_STORAGE_KEY, JSON.stringify(labels));
+  } catch {
+    // localStorage 사용 불가 환경은 조용히 무시
+  }
+}
+
+function loadCalendarEvents(): CalendarEvent[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(CALENDAR_EVENTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (e): e is CalendarEvent =>
+          e &&
+          typeof e.id === "string" &&
+          typeof e.dateKey === "string" &&
+          typeof e.title === "string" &&
+          typeof e.labelId === "string",
+      )
+      .map((e) => ({
+        id: e.id,
+        dateKey: e.dateKey,
+        title: e.title,
+        labelId: e.labelId,
+        startTime: typeof e.startTime === "string" ? e.startTime : undefined,
+        endTime: typeof e.endTime === "string" ? e.endTime : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveCalendarEvents(events: CalendarEvent[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(CALENDAR_EVENTS_STORAGE_KEY, JSON.stringify(events));
+  } catch {
+    // localStorage 사용 불가 환경은 조용히 무시
+  }
+}
 
 function calendarSameDay(a: Date, b: Date) {
   return (
@@ -551,14 +691,6 @@ function toDateKey(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function normalizeScheduleLabel(label: ScheduleLabel): ScheduleLabel {
-  return label;
-}
-
-function scheduleTypeFromLabel(label: ScheduleLabel): ScheduleType {
-  return normalizeScheduleLabel(label) === "red" ? "important" : "plan";
 }
 
 function weekDateKeys(anchor: Date): string[] {
@@ -598,11 +730,21 @@ function formatKoreanTime(time: string) {
 
 function sortCalendarEventsByTime(events: CalendarEvent[]) {
   return [...events].sort((a, b) => {
-    if (!a.time && !b.time) return 0;
-    if (!a.time) return 1;
-    if (!b.time) return -1;
-    return a.time.localeCompare(b.time);
+    if (!a.startTime && !b.startTime) return 0;
+    if (!a.startTime) return 1;
+    if (!b.startTime) return -1;
+    return a.startTime.localeCompare(b.startTime);
   });
+}
+
+// 시작/종료 시간을 "오전 9:00 ~ 오전 11:00" 형태로 — 종료는 선택, 둘 다 없으면 빈 문자열
+function formatScheduleTime(event: CalendarEvent): string {
+  if (event.startTime && event.endTime) {
+    return `${formatKoreanTime(event.startTime)} ~ ${formatKoreanTime(event.endTime)}`;
+  }
+  if (event.startTime) return formatKoreanTime(event.startTime);
+  if (event.endTime) return `~ ${formatKoreanTime(event.endTime)}`;
+  return "";
 }
 
 function parseTime24(value: string) {
@@ -729,10 +871,10 @@ function ScheduleTimePicker({
   );
 }
 
-function ScheduleLabelDot({ label, className }: { label: ScheduleLabel; className?: string }) {
+function ScheduleLabelDot({ color, className }: { color: LabelColor; className?: string }) {
   return (
     <span
-      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${SCHEDULE_LABEL_META[label].dot} ${className ?? ""}`}
+      className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${LABEL_COLOR_META[color].dot} ${className ?? ""}`}
       aria-hidden="true"
     />
   );
@@ -740,18 +882,20 @@ function ScheduleLabelDot({ label, className }: { label: ScheduleLabel; classNam
 
 function CalendarEventChip({
   event,
+  color,
   compact,
   inverted,
 }: {
   event: CalendarEvent;
+  color: LabelColor;
   compact?: boolean;
   inverted?: boolean;
 }) {
-  const label = normalizeScheduleLabel(event.label);
-  const meta = SCHEDULE_LABEL_META[label];
+  const meta = LABEL_COLOR_META[color];
   const title = event.title.trim();
-  const timeSuffix = !compact && event.time ? ` · ${formatKoreanTime(event.time)}` : "";
-  const fullTitle = event.time ? `${title} · ${formatKoreanTime(event.time)}` : title;
+  const timeText = formatScheduleTime(event);
+  const timeSuffix = !compact && timeText ? ` · ${timeText}` : "";
+  const fullTitle = timeText ? `${title} · ${timeText}` : title;
 
   if (compact) {
     return (
@@ -762,7 +906,7 @@ function CalendarEventChip({
         ].join(" ")}
         title={fullTitle}
       >
-        <ScheduleLabelDot label={label} className="h-1.5 w-1.5" />
+        <ScheduleLabelDot color={color} className="h-1.5 w-1.5" />
         <span className="truncate">{title}</span>
       </div>
     );
@@ -773,7 +917,7 @@ function CalendarEventChip({
       className={["flex min-w-0 items-center gap-1 truncate rounded px-2 py-1 text-left text-[10px] leading-snug", meta.chip].join(" ")}
       title={fullTitle}
     >
-      <ScheduleLabelDot label={label} className="h-2 w-2" />
+      <ScheduleLabelDot color={color} className="h-2 w-2" />
       <span className="truncate font-medium">
         {title}
         {timeSuffix}
@@ -784,26 +928,33 @@ function CalendarEventChip({
 
 function ScheduleEventFormModal({
   events,
+  labels,
+  onLabelsChange,
   onAdd,
   onUpdate,
   onDelete,
   onClose,
 }: {
   events: CalendarEvent[];
+  labels: ScheduleLabelDef[];
+  onLabelsChange: (labels: ScheduleLabelDef[]) => void;
   onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">) => void;
   onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
-  const [label, setLabel] = useState<ScheduleLabel>("green");
-  const [time, setTime] = useState("");
+  const [labelId, setLabelId] = useState<string>(labels[0]?.id ?? "");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [labelEditOpen, setLabelEditOpen] = useState(false);
 
   const resetForm = () => {
     setTitle("");
-    setLabel("green");
-    setTime("");
+    setLabelId(labels[0]?.id ?? "");
+    setStartTime("");
+    setEndTime("");
     setEditingId(null);
   };
 
@@ -815,22 +966,29 @@ function ScheduleEventFormModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // 선택된 라벨이 삭제되면 첫 라벨로 되돌림
+  useEffect(() => {
+    if (!labels.some((l) => l.id === labelId)) {
+      setLabelId(labels[0]?.id ?? "");
+    }
+  }, [labels, labelId]);
+
   const startEdit = (event: CalendarEvent) => {
     setEditingId(event.id);
     setTitle(event.title);
-    setLabel(normalizeScheduleLabel(event.label));
-    setTime(event.time ?? "");
+    setLabelId(labels.some((l) => l.id === event.labelId) ? event.labelId : labels[0]?.id ?? "");
+    setStartTime(event.startTime ?? "");
+    setEndTime(event.endTime ?? "");
   };
 
   const handleSubmit = () => {
     const trimmed = title.trim();
-    if (!trimmed) return;
-    const normalizedLabel = normalizeScheduleLabel(label);
+    if (!trimmed || !labelId) return;
     const draft = {
       title: trimmed,
-      type: scheduleTypeFromLabel(normalizedLabel),
-      label: normalizedLabel,
-      time: time.trim() || undefined,
+      labelId,
+      startTime: startTime.trim() || undefined,
+      endTime: endTime.trim() || undefined,
     };
     if (editingId) {
       onUpdate(editingId, draft);
@@ -838,6 +996,27 @@ function ScheduleEventFormModal({
       onAdd(draft);
     }
     resetForm();
+  };
+
+  const addLabel = () => {
+    const used = new Set(labels.map((l) => l.color));
+    const nextColor = LABEL_COLOR_ORDER.find((c) => !used.has(c)) ?? LABEL_COLOR_ORDER[0]!;
+    const id = `lbl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    onLabelsChange([...labels, { id, name: "새 라벨", color: nextColor }]);
+    setLabelId(id);
+  };
+
+  const renameLabel = (id: string, name: string) => {
+    onLabelsChange(labels.map((l) => (l.id === id ? { ...l, name } : l)));
+  };
+
+  const recolorLabel = (id: string, color: LabelColor) => {
+    onLabelsChange(labels.map((l) => (l.id === id ? { ...l, color } : l)));
+  };
+
+  const removeLabel = (id: string) => {
+    if (labels.length <= 1) return; // 최소 1개는 유지
+    onLabelsChange(labels.filter((l) => l.id !== id));
   };
 
   return (
@@ -884,12 +1063,12 @@ function ScheduleEventFormModal({
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex flex-wrap items-center gap-1.5">
                       <span
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].chip}`}
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${LABEL_COLOR_META[findLabelDef(labels, event.labelId).color].chip}`}
                       >
-                        {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name}
+                        {findLabelDef(labels, event.labelId).name}
                       </span>
                     </div>
-                    <CalendarEventChip event={event} />
+                    <CalendarEventChip event={event} color={findLabelDef(labels, event.labelId).color} />
                   </div>
                   <div className="flex shrink-0 flex-col gap-1">
                     <button
@@ -935,38 +1114,110 @@ function ScheduleEventFormModal({
           </div>
 
           <div>
-            <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 라벨</p>
+            <div className="mb-1.5 flex items-center justify-between">
+              <p className="text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 라벨</p>
+              <button
+                type="button"
+                onClick={() => setLabelEditOpen((v) => !v)}
+                className="rounded-lg px-2 py-0.5 text-[11px] font-medium text-brand-accent transition hover:bg-surface-strong dark:text-primary dark:hover:bg-white/10"
+                aria-expanded={labelEditOpen}
+              >
+                {labelEditOpen ? "편집 완료" : "라벨 편집"}
+              </button>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {SCHEDULE_LABEL_OPTIONS.map((key) => (
+              {labels.map((l) => (
                 <label
-                  key={key}
+                  key={l.id}
                   className={[
                     "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition",
-                    label === key
-                      ? "border-ink/20 bg-surface-card text-ink"
+                    labelId === l.id
+                      ? "border-ink/20 bg-surface-card text-ink dark:border-white/20 dark:bg-surface-dark-elevated dark:text-on-dark"
                       : "border-hairline text-muted hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
                   ].join(" ")}
                 >
                   <input
                     type="radio"
                     name="schedule-label"
-                    value={key}
-                    checked={label === key}
-                    onChange={() => setLabel(key)}
+                    value={l.id}
+                    checked={labelId === l.id}
+                    onChange={() => setLabelId(l.id)}
                     className="sr-only"
                   />
-                  <ScheduleLabelDot label={key} className="h-2 w-2" />
-                  {SCHEDULE_LABEL_META[key].name}
+                  <ScheduleLabelDot color={l.color} className="h-2 w-2" />
+                  {l.name.trim() || "(이름 없음)"}
                 </label>
               ))}
             </div>
+
+            {labelEditOpen && (
+              <div className="mt-2 space-y-2 rounded-xl border border-hairline bg-surface-soft p-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+                {labels.map((l) => (
+                  <div
+                    key={l.id}
+                    className="space-y-1.5 rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={l.name}
+                        maxLength={20}
+                        onChange={(e) => renameLabel(l.id, e.target.value)}
+                        placeholder="라벨 이름"
+                        className="min-w-0 flex-1 rounded-lg border border-hairline bg-surface-soft px-2 py-1 text-xs text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeLabel(l.id)}
+                        disabled={labels.length <= 1}
+                        className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {LABEL_COLOR_ORDER.map((c) => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => recolorLabel(l.id, c)}
+                          aria-label={`색상 ${c}`}
+                          aria-pressed={l.color === c}
+                          className={[
+                            "h-5 w-5 rounded-full transition",
+                            LABEL_COLOR_META[c].swatch,
+                            l.color === c
+                              ? "ring-2 ring-ink/50 ring-offset-1 ring-offset-canvas dark:ring-white/70 dark:ring-offset-surface-dark"
+                              : "opacity-50 hover:opacity-100",
+                          ].join(" ")}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addLabel}
+                  className="w-full rounded-lg border border-dashed border-hairline-strong px-2 py-1.5 text-xs font-medium text-muted transition hover:bg-surface-strong dark:border-white/15 dark:text-on-dark-soft dark:hover:bg-white/10"
+                >
+                  + 라벨 추가
+                </button>
+              </div>
+            )}
           </div>
 
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
-              시간 {label === "red" ? "(권장)" : "(선택)"}
+              시작 시간 (선택)
             </label>
-            <ScheduleTimePicker value={time} onChange={setTime} />
+            <ScheduleTimePicker value={startTime} onChange={setStartTime} />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              종료 시간 (선택)
+            </label>
+            <ScheduleTimePicker value={endTime} onChange={setEndTime} />
           </div>
         </div>
 
@@ -1096,9 +1347,28 @@ function HeaderCalendarPopup({
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [labels, setLabels] = useState<ScheduleLabelDef[]>(DEFAULT_LABELS);
   const [formDate, setFormDate] = useState<Date | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
+  // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setLabels(loadCalendarLabels());
+    setEvents(loadCalendarEvents());
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveCalendarLabels(labels);
+  }, [labels, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveCalendarEvents(events);
+  }, [events, hydrated]);
 
   useEffect(() => {
     if (!open) return;
@@ -1189,8 +1459,6 @@ function HeaderCalendarPopup({
       ...prev,
       {
         ...draft,
-        label: normalizeScheduleLabel(draft.label),
-        type: scheduleTypeFromLabel(draft.label),
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
         dateKey,
       },
@@ -1203,16 +1471,7 @@ function HeaderCalendarPopup({
 
   const handleUpdateEvent = (id: string, draft: Omit<CalendarEvent, "id" | "dateKey">) => {
     setEvents((prev) =>
-      prev.map((event) =>
-        event.id === id
-          ? {
-              ...event,
-              ...draft,
-              label: normalizeScheduleLabel(draft.label),
-              type: scheduleTypeFromLabel(draft.label),
-            }
-          : event,
-      ),
+      prev.map((event) => (event.id === id ? { ...event, ...draft } : event)),
     );
   };
 
@@ -1303,10 +1562,10 @@ function HeaderCalendarPopup({
                             key={event.id}
                             className="flex items-center gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
                           >
-                            <ScheduleLabelDot label={normalizeScheduleLabel(event.label)} className="h-2 w-2" />
+                            <ScheduleLabelDot color={findLabelDef(labels, event.labelId).color} className="h-2 w-2" />
                             <span className="min-w-0 flex-1 truncate text-xs text-ink dark:text-on-dark">
-                              {SCHEDULE_LABEL_META[normalizeScheduleLabel(event.label)].name} · {event.title}
-                              {event.time ? ` · ${formatKoreanTime(event.time)}` : ""}
+                              {findLabelDef(labels, event.labelId).name} · {event.title}
+                              {formatScheduleTime(event) ? ` · ${formatScheduleTime(event)}` : ""}
                             </span>
                           </li>
                         ))}
@@ -1403,12 +1662,12 @@ function HeaderCalendarPopup({
                         {sortCalendarEventsByTime(dayEvents).map((event) => (
                           <li key={event.id} className="flex min-w-0 items-center gap-1">
                             <ScheduleLabelDot
-                              label={normalizeScheduleLabel(event.label)}
+                              color={findLabelDef(labels, event.labelId).color}
                               className="h-1.5 w-1.5 shrink-0 ring-1 ring-white/30"
                             />
                             <span className="min-w-0 truncate text-[10px] text-on-primary">
                               {event.title.trim()}
-                              {event.time ? ` · ${formatKoreanTime(event.time)}` : ""}
+                              {formatScheduleTime(event) ? ` · ${formatScheduleTime(event)}` : ""}
                             </span>
                           </li>
                         ))}
@@ -1449,7 +1708,13 @@ function HeaderCalendarPopup({
                   )}
                   <div className="mt-0.5 flex flex-1 flex-col gap-0.5 overflow-hidden">
                     {sortCalendarEventsByTime(dayEvents).slice(0, 2).map((event) => (
-                      <CalendarEventChip key={event.id} event={event} compact inverted={isSelected} />
+                      <CalendarEventChip
+                        key={event.id}
+                        event={event}
+                        color={findLabelDef(labels, event.labelId).color}
+                        compact
+                        inverted={isSelected}
+                      />
                     ))}
                     {dayEvents.length > 2 && (
                       <span
@@ -1484,7 +1749,11 @@ function HeaderCalendarPopup({
                 <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">선택 날짜 일정</p>
                 <div className="space-y-1">
                   {sortCalendarEventsByTime(selectedEvents).map((event) => (
-                    <CalendarEventChip key={event.id} event={event} />
+                    <CalendarEventChip
+                      key={event.id}
+                      event={event}
+                      color={findLabelDef(labels, event.labelId).color}
+                    />
                   ))}
                 </div>
               </div>
@@ -1496,6 +1765,8 @@ function HeaderCalendarPopup({
         {formDate && (
           <ScheduleEventFormModal
             events={eventsByDate[toDateKey(formDate)] ?? []}
+            labels={labels}
+            onLabelsChange={setLabels}
             onAdd={handleAddEvent}
             onUpdate={handleUpdateEvent}
             onDelete={handleDeleteEvent}
