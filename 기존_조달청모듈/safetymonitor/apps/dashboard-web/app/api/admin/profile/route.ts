@@ -41,6 +41,7 @@ export async function GET(request: Request) {
       auth_provider: u.auth_provider,
       department: u.department,
       job_title: u.job_title,
+      employee_id: u.employee_id,
       admin_access: u.admin_access,
     },
   });
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { name, company, phone, carrier, department, jobTitle, currentPassword, newPassword } =
+  const { name, company, phone, carrier, department, jobTitle, employeeId, currentPassword, newPassword } =
     (body ?? {}) as {
       name?: unknown;
       company?: unknown;
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
       carrier?: unknown;
       department?: unknown;
       jobTitle?: unknown;
+      employeeId?: unknown;
       currentPassword?: unknown;
       newPassword?: unknown;
     };
@@ -142,6 +144,7 @@ export async function POST(request: Request) {
 
   const dept = typeof department === "string" ? department.trim() : "";
   const title = typeof jobTitle === "string" ? jobTitle.trim() : "";
+  const empId = typeof employeeId === "string" ? employeeId.trim() : "";
   const updated = await updateUserProfile(session.username, {
     name: personName.slice(0, 60),
     company: coName.slice(0, 100),
@@ -149,6 +152,7 @@ export async function POST(request: Request) {
     carrier: carrierName ? carrierName.slice(0, 20) : null,
     department: dept ? dept.slice(0, 40) : null,
     jobTitle: title ? title.slice(0, 40) : null,
+    employeeId: empId ? empId.slice(0, 40) : null,
     passwordHash,
   });
   if (!updated) {

@@ -58,6 +58,7 @@ import { WorkerQueueModal } from "./WorkerQueueModal";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import { MyProfileModal } from "./MyProfileModal";
+import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
 
 type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "fall";
@@ -2252,8 +2253,15 @@ export function DemoDashboard() {
   const [role, setRole] = useState<string | null>(null);
   // 관리자 메뉴(CSV 등) 접근 권한 — owner 거나 owner가 부여한 admin_access. 서버에서도 강제.
   const [adminAccess, setAdminAccess] = useState(false);
-  // 로그인 상태 표시용 이름 — 가입 관리자는 이름(없으면 아이디), 환경 관리자(owner)는 프로필이 없어 null("관리자"로 표시).
-  const [loginName, setLoginName] = useState<string | null>(null);
+  // 로그인 상태 칩 표시용 — 이름/직책/사번/아이디. 환경 관리자(owner)는 프로필이 없어 null("관리자"로 표시).
+  const [loginInfo, setLoginInfo] = useState<{
+    name: string | null;
+    jobTitle: string | null;
+    employeeId: string | null;
+    username: string | null;
+  } | null>(null);
+  // 내 정보 수정 진입 전 비밀번호 게이트(step-up 인증) — 공용 관제 화면 무단 조회·수정 방지.
+  const [profileGateOpen, setProfileGateOpen] = useState(false);
   useEffect(() => {
     setRole(getSessionRole());
     const token = getSessionToken();
@@ -2264,7 +2272,17 @@ export function DemoDashboard() {
       .then((j) => {
         if (j?.ok) {
           setAdminAccess(!!j.adminAccess);
-          setLoginName(j.profile?.name ?? j.profile?.username ?? null);
+          const p = j.profile;
+          setLoginInfo(
+            p
+              ? {
+                  name: p.name ?? null,
+                  jobTitle: p.job_title ?? null,
+                  employeeId: p.employee_id ?? null,
+                  username: p.username ?? null,
+                }
+              : null,
+          );
         }
       })
       .catch(() => {});
@@ -2886,32 +2904,37 @@ export function DemoDashboard() {
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-2">
-          {/* 로그인 상태 칩 — 접속점(접속중) + 이름 + 역할 배지. 가입 관리자는 클릭 시 '내 정보'. */}
+          {/* 로그인 상태 칩 — 표시 전용(클릭 없음). 접속점 + 이름/직책/사번/아이디.
+              내 정보 수정 진입은 dock '내 정보' 아이콘 + 비밀번호 게이트로만(보안). */}
           {role && (
-            <button
-              type="button"
-              onClick={role === "admin" ? () => setProfileOpen(true) : undefined}
-              disabled={role !== "admin"}
-              title={role === "admin" ? "내 정보 보기·수정" : "로그인 계정 (환경 관리자)"}
-              className="hidden h-8 items-center gap-2 rounded-lg bg-surface-strong px-3 text-xs text-body transition enabled:hover:brightness-95 disabled:cursor-default dark:bg-surface-dark-elevated dark:text-on-dark-soft sm:inline-flex"
+            <div
+              title="로그인 계정"
+              className="hidden h-8 max-w-[24rem] items-center gap-1.5 overflow-hidden rounded-lg bg-surface-strong px-3 text-xs text-body dark:bg-surface-dark-elevated dark:text-on-dark-soft sm:inline-flex"
             >
-              <span className="relative flex h-2 w-2" aria-hidden="true">
+              <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
               </span>
-              <span className="max-w-[10rem] truncate font-semibold text-ink dark:text-on-dark">
-                {loginName ?? "관리자"}
-              </span>
-              <span
-                className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-                  role === "owner"
-                    ? "bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
-                    : "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
-                }`}
-              >
-                {role === "owner" ? "소유자" : "관리자"}
-              </span>
-            </button>
+              {role === "owner" ? (
+                <>
+                  <span className="font-semibold text-ink dark:text-on-dark">관리자</span>
+                  <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200">
+                    소유자
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="shrink-0 truncate font-semibold text-ink dark:text-on-dark">
+                    {loginInfo?.name ?? loginInfo?.username ?? "관리자"}
+                    {loginInfo?.jobTitle ? ` ${loginInfo.jobTitle}` : ""}
+                  </span>
+                  <span className="truncate text-muted dark:text-on-dark-soft">
+                    {loginInfo?.employeeId ? `· 사번 ${loginInfo.employeeId} ` : ""}
+                    {loginInfo?.username ? `· ${loginInfo.username}` : ""}
+                  </span>
+                </>
+              )}
+            </div>
           )}
           {/* 헤더 액션 버튼 — 아이콘만 보이다 선택 시 라벨이 펼쳐지는 확장 탭(ExpandableTabs).
               라이트/다크 토글은 제외하고 그대로 유지. */}
@@ -2980,7 +3003,7 @@ export function DemoDashboard() {
                     {
                       title: "내 정보",
                       tooltip: "내 가입 정보 수정 (이름·회사·연락처·비밀번호)",
-                      onSelect: () => setProfileOpen(true),
+                      onSelect: () => setProfileGateOpen(true),
                       icon: (
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
@@ -3356,6 +3379,15 @@ export function DemoDashboard() {
       />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
+      {profileGateOpen && (
+        <ProfileGateModal
+          onClose={() => setProfileGateOpen(false)}
+          onVerified={() => {
+            setProfileGateOpen(false);
+            setProfileOpen(true);
+          }}
+        />
+      )}
       {profileOpen && <MyProfileModal onClose={() => setProfileOpen(false)} />}
 
       {jobTitleEdit && (

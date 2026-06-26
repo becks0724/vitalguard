@@ -38,6 +38,7 @@ type Profile = {
   auth_provider: string;
   department: string | null;
   job_title: string | null;
+  employee_id: string | null;
 };
 
 // 저장된 연락처를 3박스로 역분해(숫자만 추출 → 접두 3 / 끝 4 / 중간).
@@ -61,6 +62,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [company, setCompany] = useState("");
   const [department, setDepartment] = useState("");
   const [jobTitle, setJobTitle] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
   const [prefix, setPrefix] = useState("010");
   const [mid, setMid] = useState("");
   const [last, setLast] = useState("");
@@ -68,6 +70,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
+  const [pwOpen, setPwOpen] = useState(false); // 비밀번호 변경 섹션 접기(기본 접힘) — 한 화면 레이아웃.
 
   // 모달 열려 있는 동안 배경(관제웹) 스크롤 잠금 — 팝업 스크롤이 뒤로 전파되는 현상 방지.
   useEffect(() => {
@@ -109,6 +112,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setCompany(p.company ?? "");
         setDepartment(p.department ?? "");
         setJobTitle(p.job_title ?? "");
+        setEmployeeId(p.employee_id ?? "");
         setCarrier(p.carrier ?? "");
         const sp = splitPhone(p.phone);
         setPrefix(sp.prefix);
@@ -169,6 +173,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           carrier,
           department: department.trim(),
           jobTitle: jobTitle.trim(),
+          employeeId: employeeId.trim(),
           ...(newPw ? { currentPassword: curPw, newPassword: newPw } : {}),
         }),
       });
@@ -186,7 +191,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrier, department, jobTitle, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrier, department, jobTitle, employeeId, curPw, newPw, newPw2]);
 
   return (
     <div
@@ -235,10 +240,21 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                 </p>
               )}
 
-              <label className="block">
-                <span className={LBL}>아이디</span>
-                <input value={username} readOnly className={FIELD_RO} />
-              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className={LBL}>아이디</span>
+                  <input value={username} readOnly className={FIELD_RO} />
+                </label>
+                <label className="block">
+                  <span className={LBL}>사원번호</span>
+                  <input
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="예) 2024-0042"
+                    className={FIELD}
+                  />
+                </label>
+              </div>
               <label className="block">
                 <span className={LBL}>
                   이메일{" "}
@@ -345,44 +361,55 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
               </label>
 
               <div className="rounded-lg border border-hairline p-2.5 dark:border-white/10">
-                <p className="mb-1.5 text-xs font-semibold text-ink dark:text-on-dark">
-                  비밀번호 변경{" "}
-                  <span className="font-normal text-muted dark:text-on-dark-soft">
-                    (선택)
+                {/* 비밀번호 변경 — 기본 접힘(선택 항목이라 한 화면 레이아웃 위해 펼침 토글). */}
+                <button
+                  type="button"
+                  onClick={() => setPwOpen((v) => !v)}
+                  className="flex w-full items-center justify-between text-xs font-semibold text-ink dark:text-on-dark"
+                >
+                  <span>
+                    비밀번호 변경{" "}
+                    <span className="font-normal text-muted dark:text-on-dark-soft">
+                      (선택)
+                    </span>
                   </span>
-                </p>
-                {provider !== "password" ? (
-                  <p className="text-[11px] text-muted dark:text-on-dark-soft">
-                    구글 로그인 계정은 비밀번호를 변경할 수 없습니다.
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    <input
-                      type="password"
-                      value={curPw}
-                      onChange={(e) => setCurPw(e.target.value)}
-                      placeholder="현재 비밀번호"
-                      autoComplete="current-password"
-                      className={FIELD}
-                    />
-                    <input
-                      type="password"
-                      value={newPw}
-                      onChange={(e) => setNewPw(e.target.value)}
-                      placeholder="새 비밀번호 (8자 이상)"
-                      autoComplete="new-password"
-                      className={FIELD}
-                    />
-                    <input
-                      type="password"
-                      value={newPw2}
-                      onChange={(e) => setNewPw2(e.target.value)}
-                      placeholder="새 비밀번호 확인"
-                      autoComplete="new-password"
-                      className={FIELD}
-                    />
-                  </div>
-                )}
+                  <span className="text-[10px] text-muted dark:text-on-dark-soft">
+                    {pwOpen ? "접기 ▲" : "펼치기 ▼"}
+                  </span>
+                </button>
+                {pwOpen &&
+                  (provider !== "password" ? (
+                    <p className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
+                      구글 로그인 계정은 비밀번호를 변경할 수 없습니다.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-1.5">
+                      <input
+                        type="password"
+                        value={curPw}
+                        onChange={(e) => setCurPw(e.target.value)}
+                        placeholder="현재 비밀번호"
+                        autoComplete="current-password"
+                        className={FIELD}
+                      />
+                      <input
+                        type="password"
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        placeholder="새 비밀번호 (8자 이상)"
+                        autoComplete="new-password"
+                        className={FIELD}
+                      />
+                      <input
+                        type="password"
+                        value={newPw2}
+                        onChange={(e) => setNewPw2(e.target.value)}
+                        placeholder="새 비밀번호 확인"
+                        autoComplete="new-password"
+                        className={FIELD}
+                      />
+                    </div>
+                  ))}
               </div>
 
               <button

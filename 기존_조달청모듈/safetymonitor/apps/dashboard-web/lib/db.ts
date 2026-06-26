@@ -317,9 +317,10 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL;
-    -- 부서/직책(본인 편집, 표시용) + 관리자메뉴 접근 권한(owner만 부여, 자가취득 불가).
+    -- 부서/직책/사원번호(본인 편집, 표시용) + 관리자메뉴 접근 권한(owner만 부여, 자가취득 불가).
     ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
 
     -- 클라우드 브릿지 — 앱 OCR 미디어(이미지/영상)를 날짜에 매칭해 캘린더에 표시.
@@ -1147,6 +1148,7 @@ export type UserRow = {
   status: string; // pending | approved | rejected
   department: string | null;
   job_title: string | null;
+  employee_id: string | null;
   admin_access: boolean;
   created_at: string;
   approved_at: string | null;
@@ -1221,22 +1223,23 @@ export async function updateUserProfile(
     carrier: string | null;
     department: string | null;
     jobTitle: string | null;
+    employeeId: string | null;
     passwordHash?: string;
   },
 ): Promise<UserRow | null> {
   if (input.passwordHash !== undefined) {
     const { rows } = await q<UserRow>(
       `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4,
-         department = $5, job_title = $6, password_hash = $7
-       WHERE username = $8 RETURNING *`,
-      [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.passwordHash, username],
+         department = $5, job_title = $6, employee_id = $7, password_hash = $8
+       WHERE username = $9 RETURNING *`,
+      [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, input.passwordHash, username],
     );
     return rows[0] ?? null;
   }
   const { rows } = await q<UserRow>(
-    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, department = $5, job_title = $6
-     WHERE username = $7 RETURNING *`,
-    [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, username],
+    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, department = $5, job_title = $6, employee_id = $7
+     WHERE username = $8 RETURNING *`,
+    [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, username],
   );
   return rows[0] ?? null;
 }
