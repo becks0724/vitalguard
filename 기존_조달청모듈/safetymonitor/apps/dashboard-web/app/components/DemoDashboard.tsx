@@ -609,6 +609,7 @@ type CalendarMediaComment = {
   authorName: string | null;
   authorId: string | null;
   authorRole: string | null;
+  authorTitle: string | null;
   body: string;
   createdAt: string;
   updatedAt: string | null;
@@ -1445,6 +1446,7 @@ function HeaderCalendarPopup({
             authorName: c.author_name ?? null,
             authorId: c.author_id ?? null,
             authorRole: c.author_role ?? null,
+            authorTitle: c.author_title ?? null,
             body: c.body ?? "",
             createdAt: c.created_at ?? "",
             updatedAt: c.updated_at ?? null,
@@ -2089,9 +2091,14 @@ function HeaderCalendarPopup({
                             <div className="flex items-start justify-between gap-2">
                               <p className="min-w-0 truncate text-[10px] font-semibold text-ink dark:text-on-dark">
                                 {c.authorName ?? "관리자"}
+                                {c.authorTitle && (
+                                  <span className="font-normal text-muted dark:text-on-dark-soft">
+                                    {" "}· {c.authorTitle}
+                                  </span>
+                                )}
                                 {c.authorId && (
                                   <span className="font-normal text-muted dark:text-on-dark-soft">
-                                    {" "}· {c.authorId}
+                                    {" "}· 사번 {c.authorId}
                                   </span>
                                 )}
                                 <span className="font-normal text-muted dark:text-on-dark-soft">
@@ -2243,9 +2250,21 @@ export function DemoDashboard() {
   const [profileOpen, setProfileOpen] = useState(false);
   // 로그인 역할 — owner 만 "사용자 관리" 탭 노출. sessionStorage 는 클라이언트에서만 접근.
   const [role, setRole] = useState<string | null>(null);
+  // 관리자 메뉴(CSV 등) 접근 권한 — owner 거나 owner가 부여한 admin_access. 서버에서도 강제.
+  const [adminAccess, setAdminAccess] = useState(false);
   useEffect(() => {
     setRole(getSessionRole());
+    const token = getSessionToken();
+    fetch("/api/admin/profile", {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (j?.ok) setAdminAccess(!!j.adminAccess);
+      })
+      .catch(() => {});
   }, []);
+  const canAdminMenu = role === "owner" || adminAccess;
   const [siteInfo, setSiteInfo] = useState<SiteInfo>(DEFAULT_SITE_INFO);
   const [lastAccidentTs, setLastAccidentTs] = useState<string | null>(null);
   // 작업자 표 슬라이딩 모드 — auto: 세로 자동 슬라이딩 / manual: 정지 + 드래그 정렬
@@ -2892,17 +2911,22 @@ export function DemoDashboard() {
                   </svg>
                 ),
               },
-              {
-                title: "관리자",
-                tooltip: "관리자 메뉴 (CSV 내보내기 등)",
-                onSelect: () => setAdminOpen(true),
-                icon: (
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" />
-                    <path d="M4 21v-1c0-3.31 3.58-6 8-6s8 2.69 8 6v1" />
-                  </svg>
-                ),
-              },
+              // 관리자 메뉴 — owner 거나 admin_access 부여받은 사용자만 노출(서버에서도 강제).
+              ...(canAdminMenu
+                ? [
+                    {
+                      title: "관리자",
+                      tooltip: "관리자 메뉴 (CSV 내보내기 등)",
+                      onSelect: () => setAdminOpen(true),
+                      icon: (
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M12 11c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" />
+                          <path d="M4 21v-1c0-3.31 3.58-6 8-6s8 2.69 8 6v1" />
+                        </svg>
+                      ),
+                    },
+                  ]
+                : []),
               // owner(env 관리자)만 노출 — 가입 신청 승인/거절.
               ...(role === "owner"
                 ? [

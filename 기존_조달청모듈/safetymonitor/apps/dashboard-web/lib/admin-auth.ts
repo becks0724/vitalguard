@@ -2,6 +2,8 @@
 // 발표용 프로토타입 한정. 실 서비스 화 시 NextAuth + Cognito + httpOnly cookie + CSRF 토큰 도입 필요.
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
+import { findUserByUsername } from "./db";
+
 const ADMIN_ID = process.env.ADMIN_ID ?? "admin";
 // 소스에 동작하는 기본 비밀번호를 넣지 않는다(fail-closed). 미설정 시 관리자 인증은 항상 거부.
 // 데모/운영자는 .env.local 에 ADMIN_PASSWORD 를 직접 설정한다.
@@ -224,4 +226,14 @@ export function getSession(request: Request): SessionInfo | null {
 // owner(env 관리자) 권한 확인 — 사용자 관리(승인/거절) API 보호용.
 export function verifyOwner(request: Request): boolean {
   return getSession(request)?.role === "owner";
+}
+
+// 관리자 메뉴(CSV 내보내기·데이터 조회) 접근 — owner 거나 owner가 admin_access 부여한 가입 사용자만.
+// UI 숨김만이 아니라 서버 데이터 엔드포인트에서 실제 차단(자가취득 불가).
+export async function hasAdminMenuAccess(request: Request): Promise<boolean> {
+  const session = getSession(request);
+  if (!session) return false;
+  if (session.role === "owner") return true;
+  const user = await findUserByUsername(session.username).catch(() => null);
+  return !!user?.admin_access;
 }

@@ -1,7 +1,7 @@
 // 관리자 — 낙상 ML 학습 데이터셋 CSV 내보내기 (활성화 요소 전부 + 알고리즘 판정 + 정답 라벨)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { exportFallDataset, type FallDatasetRow } from "../../../../lib/db";
 
 // 한 행 = 낙상 디텍터 후보 1건. feature(충격/정지/자유낙하/회전) + 알고리즘 판정 + 관제자 정답 라벨.
@@ -83,7 +83,7 @@ function rowToRecord(row: FallDatasetRow): Record<string, unknown> {
 }
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

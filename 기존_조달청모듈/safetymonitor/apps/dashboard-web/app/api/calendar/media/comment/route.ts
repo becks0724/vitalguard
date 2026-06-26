@@ -11,22 +11,23 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// 세션 → 작성자 표시정보(이름·식별자·역할). 가입 사용자는 users.name, env 관리자는 "관리자".
+// 세션 → 작성자 표시정보(이름·직책·식별자·역할). 가입 사용자는 users.name/job_title,
+// env 관리자(owner)는 이름 "관리자"·직책 "시스템 관리자". author_id 는 사번 대용 username.
 async function resolveAuthor(request: Request) {
   const session = getSession(request);
   const username = session?.username ?? "admin";
   const role = session?.role ?? "owner";
-  let name: string | null = null;
+  let user = null;
   try {
-    const user = await findUserByUsername(username);
-    name = user?.name ?? null;
+    user = await findUserByUsername(username);
   } catch {
-    name = null;
+    user = null;
   }
   return {
-    authorName: name ?? (role === "owner" ? "관리자" : username),
+    authorName: user?.name ?? (role === "owner" ? "관리자" : username),
     authorId: username,
     authorRole: role,
+    authorTitle: user?.job_title ?? (role === "owner" ? "시스템 관리자" : null),
   };
 }
 

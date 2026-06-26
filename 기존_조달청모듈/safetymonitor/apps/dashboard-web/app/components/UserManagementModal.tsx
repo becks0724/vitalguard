@@ -17,6 +17,9 @@ type User = {
   auth_provider: string;
   role: string;
   status: string;
+  department: string | null;
+  job_title: string | null;
+  admin_access: boolean;
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -95,7 +98,10 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   }, []);
 
   const act = useCallback(
-    async (id: number, action: "approve" | "reject" | "delete") => {
+    async (
+      id: number,
+      action: "approve" | "reject" | "delete" | "grant_admin" | "revoke_admin",
+    ) => {
       if (action === "delete") {
         const u = users?.find((x) => x.id === id);
         const ok = window.confirm(
@@ -210,6 +216,8 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                     <th className={TH}>아이디</th>
                     <th className={TH}>이름</th>
                     <th className={TH}>회사</th>
+                    <th className={TH}>부서</th>
+                    <th className={TH}>직책</th>
                     <th className={TH}>연락처</th>
                     <th className={TH}>통신사</th>
                     <th className={TH}>이메일</th>
@@ -217,6 +225,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                     <th className={TH}>경로</th>
                     <th className={TH}>역할</th>
                     <th className={TH}>상태</th>
+                    <th className={TH}>관리자권한</th>
                     <th className={TH}>가입일</th>
                     <th className={TH}>승인일</th>
                     <th className={TH}>승인자</th>
@@ -239,6 +248,8 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       </td>
                       <td className={TD}>{u.name ?? "-"}</td>
                       <td className={TD}>{u.company ?? "-"}</td>
+                      <td className={TD}>{u.department ?? "-"}</td>
+                      <td className={TD}>{u.job_title ?? "-"}</td>
                       <td className={TD}>{u.phone ?? "-"}</td>
                       <td className={TD}>{u.carrier ?? "-"}</td>
                       <td className={TD}>{u.email ?? "-"}</td>
@@ -257,6 +268,28 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       <td className={TD}>{u.role}</td>
                       <td className={TD}>
                         <StatusBadge status={u.status} />
+                      </td>
+                      <td className={TD}>
+                        {u.role === "owner" ? (
+                          <span className="text-muted dark:text-on-dark-soft">owner</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              act(u.id, u.admin_access ? "revoke_admin" : "grant_admin")
+                            }
+                            disabled={busyId === u.id}
+                            title={u.admin_access ? "관리자 메뉴 접근 회수" : "관리자 메뉴 접근 부여"}
+                            className={[
+                              "rounded-md px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50",
+                              u.admin_access
+                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                : "border border-hairline text-muted hover:bg-surface-strong dark:border-white/15 dark:hover:bg-white/10",
+                            ].join(" ")}
+                          >
+                            {u.admin_access ? "권한있음 ✓" : "권한없음"}
+                          </button>
+                        )}
                       </td>
                       <td className={TD}>{fmt(u.created_at)}</td>
                       <td className={TD}>{fmt(u.approved_at)}</td>

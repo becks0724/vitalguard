@@ -12,17 +12,25 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 });
   }
-  // env owner 는 DB 행이 없어 자가 수정 대상 아님.
+  // env owner 는 DB 행이 없어 자가 수정 대상 아님 — 단 관리자메뉴 접근은 항상 허용(owner).
   if (session.role !== "admin") {
-    return NextResponse.json({ ok: true, editable: false, profile: null });
+    return NextResponse.json({
+      ok: true,
+      editable: false,
+      profile: null,
+      role: session.role,
+      adminAccess: true,
+    });
   }
   const u = await findUserByUsername(session.username);
   if (!u) {
-    return NextResponse.json({ ok: true, editable: false, profile: null });
+    return NextResponse.json({ ok: true, editable: false, profile: null, role: "admin", adminAccess: false });
   }
   return NextResponse.json({
     ok: true,
     editable: true,
+    role: "admin",
+    adminAccess: u.admin_access,
     profile: {
       username: u.username,
       name: u.name,
@@ -31,6 +39,9 @@ export async function GET(request: Request) {
       carrier: u.carrier,
       email: u.email,
       auth_provider: u.auth_provider,
+      department: u.department,
+      job_title: u.job_title,
+      admin_access: u.admin_access,
     },
   });
 }
@@ -58,12 +69,14 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { name, company, phone, carrier, currentPassword, newPassword } =
+  const { name, company, phone, carrier, department, jobTitle, currentPassword, newPassword } =
     (body ?? {}) as {
       name?: unknown;
       company?: unknown;
       phone?: unknown;
       carrier?: unknown;
+      department?: unknown;
+      jobTitle?: unknown;
       currentPassword?: unknown;
       newPassword?: unknown;
     };
@@ -127,11 +140,15 @@ export async function POST(request: Request) {
     passwordHash = await hashPassword(newPassword);
   }
 
+  const dept = typeof department === "string" ? department.trim() : "";
+  const title = typeof jobTitle === "string" ? jobTitle.trim() : "";
   const updated = await updateUserProfile(session.username, {
     name: personName.slice(0, 60),
     company: coName.slice(0, 100),
     phone: tel.slice(0, 20),
     carrier: carrierName ? carrierName.slice(0, 20) : null,
+    department: dept ? dept.slice(0, 40) : null,
+    jobTitle: title ? title.slice(0, 40) : null,
     passwordHash,
   });
   if (!updated) {

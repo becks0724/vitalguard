@@ -1,14 +1,14 @@
 // 관리자 — 낙상 ML 후보에 정답 라벨 저장(지도학습 ground truth)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { setFallLabel } from "../../../../lib/db";
 
 // 허용 라벨 — 실제 낙상 / 오탐(거짓 양성) / 미상. 빈 문자열은 미지정(라벨 해제).
 const ALLOWED = new Set(["true_fall", "false_positive", "unsure", ""]);
 
 export async function POST(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

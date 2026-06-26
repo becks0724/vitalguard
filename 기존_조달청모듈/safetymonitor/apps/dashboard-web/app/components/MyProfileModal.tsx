@@ -36,6 +36,8 @@ type Profile = {
   carrier: string | null;
   email: string | null;
   auth_provider: string;
+  department: string | null;
+  job_title: string | null;
 };
 
 // 저장된 연락처를 3박스로 역분해(숫자만 추출 → 접두 3 / 끝 4 / 중간).
@@ -57,6 +59,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [provider, setProvider] = useState("password");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
+  const [department, setDepartment] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [prefix, setPrefix] = useState("010");
   const [mid, setMid] = useState("");
   const [last, setLast] = useState("");
@@ -94,6 +98,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setProvider(p.auth_provider);
         setName(p.name ?? "");
         setCompany(p.company ?? "");
+        setDepartment(p.department ?? "");
+        setJobTitle(p.job_title ?? "");
         setCarrier(p.carrier ?? "");
         const sp = splitPhone(p.phone);
         setPrefix(sp.prefix);
@@ -152,6 +158,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           company,
           phone: composedPhone,
           carrier,
+          department: department.trim(),
+          jobTitle: jobTitle.trim(),
           ...(newPw ? { currentPassword: curPw, newPassword: newPw } : {}),
         }),
       });
@@ -253,6 +261,26 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                   ))}
                 </select>
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block">
+                  <span className={LBL}>부서</span>
+                  <input
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="예) 안전관리팀"
+                    className={FIELD}
+                  />
+                </label>
+                <label className="block">
+                  <span className={LBL}>직책</span>
+                  <input
+                    value={jobTitle}
+                    onChange={(e) => setJobTitle(e.target.value)}
+                    placeholder="예) 결제권자"
+                    className={FIELD}
+                  />
+                </label>
+              </div>
               <div>
                 <span className={LBL}>연락처</span>
                 <div className="mt-1 flex items-center gap-1.5">

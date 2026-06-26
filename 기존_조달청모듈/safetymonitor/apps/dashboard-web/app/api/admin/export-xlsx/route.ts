@@ -3,7 +3,7 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import {
   exportSamples,
   exportSiteInfoLogs,
@@ -230,7 +230,7 @@ function buildSiteInfoSheet(wb: ExcelJS.Workbook, rows: SiteInfoRow[]) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

@@ -1,7 +1,7 @@
 // 관리자 — 현장정보 + vital_samples 를 기간/워커 필터로 CSV 스트리밍 다운로드
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import {
   exportSamples,
   exportSiteInfoLogs,
@@ -110,7 +110,7 @@ function filenameFor(workerId: string | undefined, from: string, to: string) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

@@ -1,7 +1,7 @@
 // 관리자 — CSV 다운로드 전 위험도 미리보기 (최근 N건, 이상 row 강조용)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { exportSamples, type ExportRow } from "../../../../lib/db";
 import {
   coreTempStatus,
@@ -30,7 +30,7 @@ export type PreviewResponse = {
 const PREVIEW_LIMIT = 50;
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

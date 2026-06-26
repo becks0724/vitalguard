@@ -317,6 +317,10 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_sub TEXT;
     ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL;
+    -- 부서/직책(본인 편집, 표시용) + 관리자메뉴 접근 권한(owner만 부여, 자가취득 불가).
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
 
     -- 클라우드 브릿지 — 앱 OCR 미디어(이미지/영상)를 날짜에 매칭해 캘린더에 표시.
     -- 스토리지 비종속: media_url(표시용)만 채워도 동작, provider/key는 Phase 2(오브젝트 스토리지) 보강.
@@ -346,10 +350,12 @@ async function initSchema(): Promise<void> {
       author_name TEXT,
       author_id TEXT,
       author_role TEXT,
+      author_title TEXT,
       body TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
       updated_at TEXT
     );
+    ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS author_title TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
   `);
 }
@@ -1080,6 +1086,9 @@ export type UserRow = {
   google_sub: string | null;
   role: string;
   status: string; // pending | approved | rejected
+  department: string | null;
+  job_title: string | null;
+  admin_access: boolean;
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -1151,21 +1160,36 @@ export async function updateUserProfile(
     company: string | null;
     phone: string | null;
     carrier: string | null;
+    department: string | null;
+    jobTitle: string | null;
     passwordHash?: string;
   },
 ): Promise<UserRow | null> {
   if (input.passwordHash !== undefined) {
     const { rows } = await q<UserRow>(
-      `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, password_hash = $5
-       WHERE username = $6 RETURNING *`,
-      [input.name, input.company, input.phone, input.carrier, input.passwordHash, username],
+      `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4,
+         department = $5, job_title = $6, password_hash = $7
+       WHERE username = $8 RETURNING *`,
+      [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.passwordHash, username],
     );
     return rows[0] ?? null;
   }
   const { rows } = await q<UserRow>(
-    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4
-     WHERE username = $5 RETURNING *`,
-    [input.name, input.company, input.phone, input.carrier, username],
+    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, department = $5, job_title = $6
+     WHERE username = $7 RETURNING *`,
+    [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, username],
+  );
+  return rows[0] ?? null;
+}
+
+// 관리자 메뉴 접근 권한 부여/회수 — owner 전용(자가취득 불가).
+export async function setUserAdminAccess(
+  id: number,
+  value: boolean,
+): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    "UPDATE users SET admin_access = $1 WHERE id = $2 RETURNING *",
+    [value, id],
   );
   return rows[0] ?? null;
 }
@@ -1233,6 +1257,7 @@ export type CalendarMediaCommentRow = {
   author_name: string | null;
   author_id: string | null;
   author_role: string | null;
+  author_title: string | null;
   body: string;
   created_at: string;
   updated_at: string | null;
@@ -1310,6 +1335,7 @@ export async function insertCalendarMediaComment(input: {
   authorName?: string | null;
   authorId?: string | null;
   authorRole?: string | null;
+  authorTitle?: string | null;
   body: string;
 }): Promise<CalendarMediaCommentRow> {
   const { text, values } = buildInsert(
@@ -1320,6 +1346,7 @@ export async function insertCalendarMediaComment(input: {
       author_name: input.authorName ?? null,
       author_id: input.authorId ?? null,
       author_role: input.authorRole ?? null,
+      author_title: input.authorTitle ?? null,
       body: input.body,
     },
     "*",

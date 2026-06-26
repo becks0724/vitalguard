@@ -6,6 +6,7 @@ import {
   deleteUser,
   listUsers,
   setUserStatus,
+  setUserAdminAccess,
   type UserRow,
 } from "../../../../lib/db";
 
@@ -23,6 +24,9 @@ function publicUser(u: UserRow) {
     auth_provider: u.auth_provider,
     role: u.role,
     status: u.status,
+    department: u.department,
+    job_title: u.job_title,
+    admin_access: u.admin_access,
     created_at: u.created_at,
     approved_at: u.approved_at,
     approved_by: u.approved_by,
@@ -50,14 +54,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
-  if (
-    typeof id !== "number" ||
-    (action !== "approve" && action !== "reject" && action !== "delete")
-  ) {
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin"];
+  if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin) 이 필요합니다." },
       { status: 400 },
     );
+  }
+
+  // 관리자 메뉴 접근 권한 부여/회수 — owner 전용(자가취득 불가).
+  if (action === "grant_admin" || action === "revoke_admin") {
+    const updated = await setUserAdminAccess(id, action === "grant_admin");
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated) });
   }
 
   // 탈퇴(하드 삭제) — owner 전용. 행 제거 후 성공 반환.
