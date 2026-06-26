@@ -109,3 +109,8 @@ CREATE TRIGGER trg_sync_resolve BEFORE INSERT OR UPDATE ON doc_media.media_cloud
 --     · sync_state='conflict' → 정책(최신 우선/수동) 후 한쪽 덮어쓰기 → 재평가
 --   트리거가 상태전이를 보장하므로 워커는 'I/O + 해시 기록'만 담당.
 -- =====================================================================
+
+-- ─── ③ 기능 설명 주석 (함수·트리거, \df+ / \d+ 로 노출) ─────────────────
+COMMENT ON FUNCTION doc_media.fn_haversine_m(numeric,numeric,numeric,numeric) IS 'PostGIS 없는 환경용 haversine 거리(m). GPS 대조(②④)에 사용.';
+COMMENT ON FUNCTION doc_media.fn_integrity_autofill()  IS '트리거 함수 — media_integrity BEFORE INSERT/UPDATE. dt/gps/hash/site 대조 후 verdict·reasons·checks 자동 채움.';
+COMMENT ON FUNCTION doc_media.fn_sync_resolve()        IS '트리거 함수 — media_cloud_sync BEFORE INSERT/UPDATE. local↔cloud sha256 비교로 sync_state 자동전이.';

@@ -164,3 +164,31 @@ LEFT JOIN LATERAL (SELECT * FROM doc_media.media_cloud_sync WHERE asset_id=a.ass
 --  5) verdict=tampered 알림·감사로그(조달 증빙 신뢰성)
 --  6) doc_type/backend 값 확장 필요 시 코드테이블화
 -- =====================================================================
+
+-- ─── ③ 기능 설명 주석 + ④ 추가 의도 (COMMENT ON, \d+ 로 노출) ───────────
+COMMENT ON TABLE  doc_media.media_asset IS '① 미디어 자산 — 파일+EXIF+해시. 무결성 검증 기준선. 캘린더 배치(capture_ts)의 소스.';
+COMMENT ON COLUMN doc_media.media_asset.doc_type      IS 'A3 문서종류 CHECK: 사진대지/현장사진/검측사진/안전점검(지오태그·무결성O) · 세금계산서/계좌이체/근로자대장(종이·무결성N).';
+COMMENT ON COLUMN doc_media.media_asset.has_geo_stamp IS 'A3 하단 지오태그 스탬프 有 여부 → 무결성 검증 대상 구분(false=종이문서, verdict=no_metadata).';
+COMMENT ON COLUMN doc_media.media_asset.file_sha256   IS '원본 파일 sha256 = 무결성 기준선(변조 탐지의 비교 대상).';
+COMMENT ON COLUMN doc_media.media_asset.capture_ts    IS 'EXIF 촬영시각 = v_calendar_media 캘린더 배치 키.';
+COMMENT ON COLUMN doc_media.media_asset.status        IS '라이프사이클: uploaded/ocr_done/verified/synced/failed.';
+COMMENT ON TABLE  doc_media.media_ocr IS '② OCR 판독 — 사진 하단 스탬프(일시·GPS·현장·공종) + 전체 텍스트. 엔진 clova/vision/tesseract.';
+COMMENT ON COLUMN doc_media.media_ocr.stamp_datetime IS '하단 스탬프 판독 일시 → media_integrity 가 EXIF 일시와 대조(①).';
+COMMENT ON COLUMN doc_media.media_ocr.stamp_lat      IS '하단 스탬프 GPS 위도 → EXIF/등록현장과 대조(②④).';
+COMMENT ON COLUMN doc_media.media_ocr.stamp_lon      IS '하단 스탬프 GPS 경도 → EXIF/등록현장과 대조(②④).';
+COMMENT ON TABLE  doc_media.media_integrity IS '③ 메타데이터 무결성 검증(A2) — 스탬프↔EXIF↔해시↔현장 4대조. verdict 는 트리거 fn_integrity_autofill 자동판정.';
+COMMENT ON COLUMN doc_media.media_integrity.verdict        IS 'A2 판정 CHECK(verified/mismatch/tampered/no_metadata/pending). 트리거 자동: 메타없음→변조(hash≠)→정상→불일치 우선순위.';
+COMMENT ON COLUMN doc_media.media_integrity.dt_match       IS '① 스탬프일시 ↔ EXIF일시 일치(허용 ±120s).';
+COMMENT ON COLUMN doc_media.media_integrity.gps_match      IS '② 스탬프GPS ↔ EXIF GPS 일치(허용 ±50m, haversine).';
+COMMENT ON COLUMN doc_media.media_integrity.hash_match     IS '③ asset.file_sha256 불변(변조 탐지).';
+COMMENT ON COLUMN doc_media.media_integrity.site_gps_match IS '④ 스탬프/EXIF GPS ↔ 등록 현장좌표 교차검증(반경 200m, 조달 증빙 신뢰성).';
+COMMENT ON COLUMN doc_media.media_integrity.checks         IS '개별 검사 결과·허용오차 JSONB.';
+COMMENT ON COLUMN doc_media.media_integrity.reasons        IS '불일치 근거 배열 JSONB(verdict≠verified 일 때).';
+COMMENT ON TABLE  doc_media.media_cloud_sync IS '④ 클라우드 2way(양방향) 동기화(A1·A4) — 해시 대조 충돌탐지. sync_state 는 트리거 fn_sync_resolve 자동전이.';
+COMMENT ON COLUMN doc_media.media_cloud_sync.backend        IS 'A4 S3호환 교체식 CHECK(gcs/r2/naver/local), 기본 gcs. UNIQUE(asset_id,backend)로 백엔드별 1행.';
+COMMENT ON COLUMN doc_media.media_cloud_sync.sync_direction IS 'A1 2way CHECK(up/down/both).';
+COMMENT ON COLUMN doc_media.media_cloud_sync.sync_state     IS 'CHECK(pending/synced/conflict/error). 트리거가 local↔cloud sha256 비교로 자동전이(같으면 synced, 다르면 conflict).';
+COMMENT ON COLUMN doc_media.media_cloud_sync.local_sha256   IS '로컬/DB 기준 해시(=asset.file_sha256). cloud_sha256 과 비교.';
+COMMENT ON COLUMN doc_media.media_cloud_sync.cloud_sha256   IS '클라우드 객체 해시. local 과 다르면 conflict.';
+COMMENT ON COLUMN doc_media.media_cloud_sync.conflict_reason IS '양쪽 해시 다름 등 충돌 사유.';
+COMMENT ON VIEW doc_media.v_calendar_media IS '관제웹 캘린더용 평탄화 뷰 — capture_ts 기준 자산 + 최신 OCR/무결성/동기화 LATERAL 조인.';
