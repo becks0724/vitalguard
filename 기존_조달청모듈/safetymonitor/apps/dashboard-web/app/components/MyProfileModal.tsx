@@ -11,13 +11,13 @@ const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 
 const LBL = "text-xs font-semibold text-muted dark:text-on-dark-soft";
 const FIELD_BASE =
-  "rounded-lg border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none transition focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
+  "rounded-lg border border-hairline bg-canvas px-3 py-1.5 text-sm text-ink outline-none transition focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
 const FIELD = `mt-1 w-full ${FIELD_BASE}`;
 const FIELD_RO =
-  "mt-1 w-full rounded-lg border border-hairline bg-surface-strong px-3 py-2 text-sm text-muted dark:border-white/10 dark:bg-white/5 dark:text-on-dark-soft";
+  "mt-1 w-full rounded-lg border border-hairline bg-surface-strong px-3 py-1.5 text-sm text-muted dark:border-white/10 dark:bg-white/5 dark:text-on-dark-soft";
 // 셀렉트 — appearance-none 으로 네이티브 위젯(사각·기본 화살표) 끄고 입력 박스와 동일한 둥근 모양으로 통일.
 const SELECT_BASE =
-  "appearance-none rounded-lg border border-hairline bg-canvas py-2 pl-3 pr-9 text-sm text-ink outline-none transition focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
+  "appearance-none rounded-lg border border-hairline bg-canvas py-1.5 pl-3 pr-9 text-sm text-ink outline-none transition focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
 const SELECT_FULL = `mt-1 w-full ${SELECT_BASE}`;
 // 드롭다운 화살표 — 라이트/다크 공통으로 보이는 회색(gray-400) SVG 배경.
 const SELECT_CHEVRON = {
@@ -68,6 +68,15 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
+
+  // 모달 열려 있는 동안 배경(관제웹) 스크롤 잠금 — 팝업 스크롤이 뒤로 전파되는 현상 방지.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -177,7 +186,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrier, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrier, department, jobTitle, curPw, newPw, newPw2]);
 
   return (
     <div
@@ -185,7 +194,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-3 dark:border-white/10">
@@ -204,7 +213,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-5 py-3">
           {!loaded ? (
             <p className="py-6 text-center text-sm text-muted dark:text-on-dark-soft">
               불러오는 중…
@@ -335,8 +344,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                 </select>
               </label>
 
-              <div className="rounded-lg border border-hairline p-3 dark:border-white/10">
-                <p className="mb-2 text-xs font-semibold text-ink dark:text-on-dark">
+              <div className="rounded-lg border border-hairline p-2.5 dark:border-white/10">
+                <p className="mb-1.5 text-xs font-semibold text-ink dark:text-on-dark">
                   비밀번호 변경{" "}
                   <span className="font-normal text-muted dark:text-on-dark-soft">
                     (선택)
@@ -347,7 +356,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                     구글 로그인 계정은 비밀번호를 변경할 수 없습니다.
                   </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     <input
                       type="password"
                       value={curPw}
@@ -380,7 +389,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                 type="button"
                 onClick={save}
                 disabled={saving}
-                className="w-full rounded-pill bg-primary py-2.5 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
+                className="w-full rounded-pill bg-primary py-2 text-sm font-semibold text-on-primary active:scale-95 disabled:opacity-40"
               >
                 {saving ? "저장 중…" : "저장"}
               </button>
