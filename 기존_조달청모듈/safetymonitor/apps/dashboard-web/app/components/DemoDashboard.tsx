@@ -144,14 +144,18 @@ function formatTime(ts?: string) {
   }).format(new Date(ts));
 }
 
-function formatTemp(value?: number) {
-  return value === undefined ? "--" : value.toFixed(1);
+function formatTemp(value?: number | null) {
+  return value == null ? "--" : value.toFixed(1);
 }
 
 // HR/SpO2 는 의학 표준 정수 표시 (폰이 raw double 보내도 round)
-function formatInt(value?: number) {
-  return value === undefined ? "--" : Math.round(value).toString();
+function formatInt(value?: number | null) {
+  return value == null ? "--" : Math.round(value).toString();
 }
+
+// 체온 미수신(기기 미전송) 안내 — 애플워치 등 일부 기기는 작업 중 체온을 전송하지 않음.
+// store sticky-carry 로 한번이라도 값이 오면 유지되므로, 남아있는 null/undefined ≈ "미수신".
+const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데이터가 들어오지 않습니다";
 
 // 누적 추세 차트는 자체 웨어러블 디바이스가 실측한 메트릭에만 표시.
 // 폰 측 store 에 해당 metric 값이 실시간 들어와 있는 경우만 live 로 판정.
@@ -3371,9 +3375,14 @@ export function DemoDashboard() {
                     <td className="px-4 py-3">{workerCell(sample)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
-                    <td className="px-4 py-3 font-mono">{formatTemp(sample.skinTempC)}</td>
+                    <td
+                      className="px-4 py-3 font-mono"
+                      title={sample.skinTempC == null ? TEMP_UNAVAILABLE_TITLE : undefined}
+                    >
+                      {formatTemp(sample.skinTempC)}
+                    </td>
                     <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
-                      {sample.skinTempC === undefined
+                      {sample.skinTempC == null
                         ? "--"
                         : formatTemp(estimateCoreTempC(sample.skinTempC))}
                     </td>
@@ -3475,7 +3484,7 @@ function WorkerTableRow({
       : overall === "caution"
         ? "border-l-amber-400"
         : "border-l-transparent";
-  const core = sample?.skinTempC === undefined ? undefined : estimateCoreTempC(sample.skinTempC);
+  const core = sample?.skinTempC == null ? undefined : estimateCoreTempC(sample.skinTempC);
   const fallRecent =
     fallTs !== undefined && Date.now() - new Date(fallTs).getTime() < 5 * 60 * 1000;
 
@@ -3587,20 +3596,29 @@ function WorkerTableRow({
         "산소포화도 — 클릭 시 누적 추세",
       )}
 
-      {/* 6 체온 — 손목 + 추정 */}
+      {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}
       {metricCell(
         "skinTempC",
-        <span className="leading-tight">
-          <span className="font-mono text-sm tabular-nums">
-            <span className={STATUS_CLASS[coreTempStatus(sample?.skinTempC)]}>
-              {sample?.skinTempC === undefined ? "--" : formatTemp(sample.skinTempC)}
+        sample?.skinTempC == null ? (
+          <span className="leading-tight" title={TEMP_UNAVAILABLE_TITLE}>
+            <span className="font-mono text-sm tabular-nums text-muted">
+              --<span className="ml-0.5 text-[10px]">℃</span>
             </span>
-            <span className="ml-0.5 text-[10px] text-muted">℃</span>
+            <span className="block text-[9px] leading-none text-muted">미수신</span>
           </span>
-          <span className="block text-[9px] leading-none text-muted">
-            추정 {core === undefined ? "--" : formatTemp(core)}℃
+        ) : (
+          <span className="leading-tight">
+            <span className="font-mono text-sm tabular-nums">
+              <span className={STATUS_CLASS[coreTempStatus(sample.skinTempC)]}>
+                {formatTemp(sample.skinTempC)}
+              </span>
+              <span className="ml-0.5 text-[10px] text-muted">℃</span>
+            </span>
+            <span className="block text-[9px] leading-none text-muted">
+              추정 {core == null ? "--" : formatTemp(core)}℃
+            </span>
           </span>
-        </span>,
+        ),
         "손목온도 / 추정체온 — 클릭 시 누적 추세",
       )}
 
