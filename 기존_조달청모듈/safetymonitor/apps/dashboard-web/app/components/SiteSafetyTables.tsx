@@ -35,8 +35,10 @@ const TONE: Record<Sev, string> = {
 };
 const SEV_ROW_BG: Record<Sev, string> = {
   normal: "",
-  caution: "bg-orange-50/90 dark:bg-orange-500/8",
-  danger: "bg-red-100 dark:bg-red-500/12",
+  // 다크모드 — 라이트 배경(orange-50/red-100)에 흰 글씨가 얹혀 가독성 저하. 어두운 틴트로 교정.
+  // /8·/12 는 Tailwind 기본 opacity 스케일 밖이라 클래스 미생성 → 다크 변형이 무효였음. 스케일 내 /20 사용.
+  caution: "bg-orange-50/90 dark:bg-amber-500/20",
+  danger: "bg-red-100 dark:bg-red-500/20",
 };
 
 // 신호등 점 — 작업자 표와 동일(정상 정적 / 주의·위험 블링크).
