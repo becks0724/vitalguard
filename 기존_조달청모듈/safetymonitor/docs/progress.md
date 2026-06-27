@@ -12,7 +12,36 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-27 — 기능/UX/인프라 7건 · 라이브 `00013-p28`→**`00018-5tn`** + CCTV AI 서버 신규 Cloud Run, **CAM-01 실 YOLOv8n**)
+### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 8단계 고도화 · 단일 출처)
+
+> cctv-ai = 대시보드 CCTV 관제 3타일에 MJPEG/스냅샷 + 감지통계를 주는 **별도 Cloud Run 서비스**. 기술 상세 → [cctv-ai/README.md](../cctv-ai/README.md).
+
+**지금까지 작업 (리비전 체인)**
+1. `00001-4d4` — 합성 3타일(MJPEG 3·통계 3, 대시보드 계약 정확 일치). 대시보드 `NEXT_PUBLIC_AI_CCTV_API` 빌드타임 주입(localhost 폴백 해소).
+2. `00002~00003-mvw` — **CAM-01 실 YOLOv8n**(홍대 거리 라이브캠 클립). **근본원인=Cloud Run 기본 CPU 스로틀링**이 요청 밖 백그라운드 추론 스레드를 굶김 → **`--no-cpu-throttling`**(+2Gi).
+3. `00004-dlk` — CAM-01 **차량 속도추정**(ByteTrack). `lap` 의존 Dockerfile 명시.
+4. `00005-vpw` — **429 'no available instance' 장애 복구**: `maxScale=3` 포화(MJPEG 연결당 슬롯 점유 + 대시보드 1.2s 재연결 폭주, 429 346회/5분) → `maxScale 3→10·concurrency 200`.
+5. `00006-svz` — **단발 JPEG 스냅샷 엔드포인트**(`/cctv/snapshot[|2|3]`) — MJPEG 장기연결 근본대응(폴링용·서버 준비됨).
+6. `00007-4b6` — CAM-01 **인식률↑·한글·720p**: imgsz 640→960·conf 0.25(사람 2.8→11/frame, ~4배), 720p 신선 클립, **PIL+NanumGothic 한글 라벨**, 출력 1280x720.
+7. `00008-8m5` — `YOLO_IMGSZ=800` env(fps 4-5→6-7, 인식률 유지).
+8. **`00009-vz5`(현재)** — **CAM-01 = Roboflow supervision 원근보정 속도**(ByteTrack + `ViewTransformer` 호모그래피 → 거리 무관 km/h) + **CAM-03 = YOLO-World PPE**(오픈보캐 안전모·조끼·작업자, 건설현장 클립). CLIP은 빌드타임 이미지 캐시. 두 모델 경합 → **`--cpu 4 --memory 4Gi`**.
+
+**현재 상태**
+- 라이브 = 대시보드 `00018-5tn`(아직 **MJPEG** 사용) + **cctv-ai `00009-vz5`**. CAM-01=YOLOv8n+supervision 속도+한글 · CAM-02=합성 낙상 · CAM-03=YOLO-World PPE+한글.
+- 라이브 검증 — CAM-01 차량 32/8/5km/h·보행자 다수, CAM-03 작업자2·안전모·조끼. 스냅샷 엔드포인트 준비(대시보드 미전환).
+- 운영 플래그(필수): `--no-cpu-throttling --cpu 4 --memory 4Gi --min-instances 1 --max-instances 10 --concurrency 200 --update-env-vars YOLO_IMGSZ=800`.
+- **GitHub origin/main = `a0957bc` 동기화.** 바이너리(`.pt`·`samples/*.mp4`·`NanumGothic`·`weights/`)는 git 미추적(`.gcloudignore`로 빌드 포함, `weights/`는 빌드타임 다운로드).
+
+**다음 할 일**
+- **(대시보드) MJPEG→스냅샷 폴링 전환** — `CctvQuadView` AiLiveScreen `<img stream>`→`/cctv/snapshot` 200~300ms 폴링(429 근본 대응). Next.js 통짜 재빌드라 팀원 SafeProcure(`cf404ee`)와 같이 나감 — **단 대시보드는 요율을 코드값으로 읽어 DB 재시드와는 decoupled**(별개 트랙 가능).
+- **(CAM-01)** fps 개선(`PPE_IMGSZ`↓ 또는 cpu↑) · 속도 절대정확도는 실측 캘리브 필요 · 헤더 '@960' 동적화(경미).
+- **(CAM-03)** PPE 정밀도 — 오픈보캐 신뢰도 낮음(조끼 0.16)·준수율 출렁임 → 전용 학습 PPE 모델 검토.
+- **(CAM-02)** 낙상 실모델(포즈) 미적용.
+- **(비용)** `--no-cpu-throttling`+`min1`+`cpu4` = 상시 과금. 발표 외 `gcloud run services update cctv-ai --min-instances 0`.
+
+---
+
+### ★ 기능/UX/인프라 (2026-06-27 — 7건 · 라이브 `00013-p28`→**`00018-5tn`** + CCTV AI 서버 신규 Cloud Run)
 
 1. **내 정보 저장 완료 다이얼로그** (`2728879` → `00014-kg5`) — 저장 후 인라인 메시지만 떠 2차로 직접 닫아야 하던 불편 해소. 성공 시 '변경이 완료되었습니다' 다이얼로그(카드 오버레이)→'예' 클릭으로 모달 전체 닫기. 라이브 라우트목 E2E 6단계 PASS.
 2. **클라우드 브릿지 Phase 2a — Cloudflare R2 어댑터** (`2dad666` → `00015` 번들 포함, **단 R2 자격증명 미설정이라 런타임 비활성**) — `lib/storage.ts`(S3호환 presignUpload/presignDownload/isR2Configured) + `POST /api/calendar/media/upload-url`(프리사인 PUT, 미설정 시 503) + GET 표시 경로 만료형 GET URL. 비공개 버킷·서버 API만. **Phase 2b(R2 버킷·토큰 셋업)** 남음. → [cloud-bridge-context.md](./cloud-bridge-context.md)
@@ -25,10 +54,8 @@
 - **검증** — 전부 tsc=0 + next build=0. 1·3·4·5·6·7 라이브 검증 완료. 2(R2)는 코드 배포·런타임 비활성.
 - **배포 체인** — 대시보드 `00013-p28`→`00014-kg5`(다이얼로그)→`00015-swq`(R2+슬롯)→`00016-frj`(캐러셀)→`00017-cj8`(다크모드)→**`00018-5tn`**(CCTV AI). cctv-ai `00001-4d4`(합성)→`00002-666`(2Gi)→`00003-mvw`(no-throttle·CAM-01 실추론)→`00004-dlk`(+속도추정)→`00005-vpw`(429 복구·maxScale10)→`00006-svz`(스냅샷)→`00007-4b6`(인식률↑·한글·720p)→`00008-8m5`(IMGSZ=800)→**`00009-vz5`**(CAM-01 supervision 속도·CAM-03 YOLO-World PPE·cpu4).
 - **현재 상태** — **라이브 = 대시보드 `00018-5tn` + `cctv-ai-00009-vz5`**(CAM-01 객체+supervision 원근보정 속도 + CAM-03 YOLO-World PPE + 단발 스냅샷). 바이너리(`yolov8n.pt`·`yolov8s-worldv2.pt`·`samples/cam0{1,3}.mp4`·`NanumGothic`·`weights/`)는 git 미추적. 로컬 dev 종료.
-- **CAM-01·03 모델 교체(00009-vz5)** — 사용자가 HF Spaces에서 선정. CAM-01 = **Roboflow supervision**(ByteTrack + `ViewTransformer` 원근보정) 속도로 교체 — 도로 평면 호모그래피(추정 캘리브 TW35·TH25)로 거리 무관 일관 km/h(라이브 차량 32·8·5km/h). CAM-03 = 합성→**YOLO-World 오픈보캐**(`"hard hat"·"safety vest"·"person"` 프롬프트, 건설현장 클립 GFqz3KRo2bc 30초)로 안전모·안전조끼·작업자 실감지+준수율(라이브 작업자2·안전모·조끼 검출). 한글 라벨. 컨테이너 — supervision·CLIP(ultralytics 포크·git·ftfy) 추가, CLIP(ViT-B-32 352MB)은 빌드타임에 이미지 weights/clip 캐시(런타임 다운로드 0). 두 실모델 경합 → **--cpu 4 --memory 4Gi**. CAM-01 fps ~4(두 모델 경합·YOLO-World가 무거움).
-- **CAM-01 정밀 개선(00007-4b6)** — 신고: 군중 많은데 인식 낮음·실시간 미반영·라벨 영문. 정밀진단 결과 원인=저해상도/고conf(현재 사람 2.8/frame). 조치 = ⓐ **imgsz 640→960·conf 0.35→0.25**(사람 ~4배 11/frame) ⓑ **720p 신선 클립**(format 300·75초)으로 교체·출력 1280x720 ⓒ **한글 라벨**(cv2 한글 미지원 → PIL+NanumGothic, `보행자`·`차량 28km/h`) ⓓ 속도계수 0.15→**0.33** 재보정(720p·p95≈50km/h)·5km/h 미만 숫자 생략. 라이브 stats 보행자 10-11·차량3·자전거1·max~29km/h, 한글·고해상도 시각확인. fps 트레이드오프 → **라이브는 `YOLO_IMGSZ=800` env 운영(`00008-8m5`)**: fps 4-5→**6-7**, 인식률 거의 동일(보행자 9-11). 코드 기본은 960 유지(env 미설정 시), 배포 명령에 env 명시. (헤더 오버레이의 '@960' 표기는 다음 재빌드 때 동적 반영 예정 — 경미.)
-- **⚠️ 429 장애 복구(22:53경)** — CAM-01 검은화면·"총0" 신고. 원인 = `maxScale=3` 인스턴스 포화(MJPEG 연결당 슬롯 장기점유 + 누적 + 대시보드 1.2s 재연결 폭주 → 429 346회/5분). OOM/크래시 아님. 조치 = `maxScale 3→10`·`concurrency→200` + 새 리비전(연결 초기화) `00004-dlk`→`00005-vpw`. 복구 검증 stats 8/8 200·실검출·실프레임. **MJPEG 장기연결 근본취약** → 발표 신뢰성 더 필요하면 단발 JPEG 스냅샷 폴링으로 전환(`/cctv/snapshot`+대시보드 폴링) 권장. README 배포 플래그 4종 필수화.
-- **다음 액션** — ① ✅ 완료 — 7번 커밋·push 동기화(`cef10eb`) + 단발 스냅샷 서버 엔드포인트 배포(`00006-svz`). **남은 절반 = 대시보드 폴링 전환**(`CctvQuadView` AiLiveScreen `<img stream>`→`/cctv/snapshot` 200~300ms 폴링) — Next.js 통짜 재빌드라 팀원 SafeProcure(`cf404ee`)·DB 재시드와 묶어서 진행 권장. ② **R2 Phase 2b** — R2 버킷·토큰 생성 + `.env.local`(R2_* 4키) + Cloud Run 시크릿 → 클라우드 브릿지 업로드 활성화(현재 upload-url 503). ③ (선택) CAM-02 낙상·CAM-03 PPE도 실모델 교체(영상/가중치 추가 필요). ④ (선택) `/cctv/connection` 서버구현 → AI 타일 ON/OFF 토글 활성화(현재 404 무시·무해). ⑤ (선택) 비-관리자 권한차단 E2E(가입 이메일인증 때문에 보류). ⑥ 비용 — `cctv-ai` 는 `--no-cpu-throttling`+`min-instances 1` 로 **상시 CPU 과금**. 발표 외 시간엔 `gcloud run services update cctv-ai --min-instances 0` 으로 절약(첫 접속 콜드스타트·모델로드 지연 감수).
+  (CCTV 7번 이후 고도화 8단계 = 상단 **'★ CCTV AI 서버 현황'** 섹션으로 통합.)
+- **다음 액션(비-CCTV)** — ① **R2 Phase 2b** — R2 버킷·토큰 생성 + `.env.local`(R2_* 4키) + Cloud Run 시크릿 → 클라우드 브릿지 업로드 활성화(현재 upload-url 503). ② (선택) `/cctv/connection` 서버구현 → AI 타일 ON/OFF 토글 활성화(현재 404 무시·무해). ③ (선택) 비-관리자 권한차단 E2E(가입 이메일인증 때문에 보류). (CCTV 다음 할 일 → 상단 섹션.)
 
 ### (2026-06-26 세션 후반 — 프로필/보안/버그 수정 5건 + 라이브 4회 배포 `00010`→**`00013-p28`**)
 
