@@ -15,9 +15,10 @@
 .dockerignore
 Dockerfile
 
-# 빌드에 불필요한 다른 앱/산출물(Flutter·watchOS·ML·문서·데모)
+# 빌드에 불필요한 다른 앱/산출물(Flutter·watchOS·ML·문서·데모·AI서버)
 apps/worker-phone
 apps/worker-watch-poc
+cctv-ai
 ml
 demo
 docs
