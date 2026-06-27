@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 // AI 감지 백엔드(YOLOv8 MJPEG 스트림 + 감지 통계/연결 API) 주소.
-const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API ?? "http://localhost:8000";
+// 빌드타임 주입(Dockerfile build-arg). 미주입/빈값이면 로컬 데모 기본값으로 폴백(|| — 빈 문자열도 폴백).
+const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || "http://localhost:8000";
 // 카메라 이름 오버라이드 로컬 저장 키.
 const NAMES_KEY = "safetymonitor.cctv.names.v1";
 
