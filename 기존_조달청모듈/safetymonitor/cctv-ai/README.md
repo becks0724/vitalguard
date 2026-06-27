@@ -3,14 +3,15 @@
 대시보드 **CCTV 관제**의 AI 타일 3종(CAM-01 객체감지·CAM-02 낙상감지·CAM-03 PPE 안전모)에
 MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포용.
 
-- **CAM-01 객체감지 = 실제 YOLOv8n 추론 + 차량 속도추정 + 한글 라벨**(CPU). 번들 샘플영상(`samples/cam01.mp4`,
-  홍대 거리 라이브캠 **720p·75초**)을 루프 재생, 프레임마다 **imgsz 960·conf 0.25** 추론 → 보행자·자전거·차량·버스·
-  트럭·오토바이 실박스 + 실통계. 출력 **1280x720**. imgsz 640→960 으로 원거리 군중 인식률 약 4배(사람 2.8→11/frame).
-  **라벨은 한글**(`보행자`·`차량 30km/h` …) — cv2 는 한글 미지원이라 **PIL+NanumGothic** 로 렌더(폰트 없으면 영문 폴백).
-  **ByteTrack** 으로 ID별 픽셀이동→**추정 km/h**(움직이는 차량만 표기, 5km/h 미만 생략). 카메라 실측보정 없는 단일평면
-  근사(보정계수 `SPEED_KMH_PER_PXPS` 기본 0.33 = 720p 클립 차량 p95≈50km/h). env 조정.
-- **CAM-02 낙상·CAM-03 PPE = 합성 시뮬레이션**(OpenCV). 통계는 한글 라벨 JSON 으로 대시보드 strip 에 전달.
-- 모델(`yolov8n.pt`)·영상이 없거나 ultralytics 미설치면 CAM-01 도 **합성으로 자동 폴백**(배포 견고성).
+- **CAM-01 객체감지 = YOLOv8n + 차량 속도추정 + 한글 라벨**(CPU). 번들 `samples/cam01.mp4`(홍대 720p·75초) 루프,
+  프레임마다 imgsz(env 800·기본960)·conf 0.25 추론 → 보행자·자전거·차량·버스·트럭·오토바이 실박스(출력 **1280x720**).
+  한글 라벨은 **PIL+NanumGothic**(cv2 한글 미지원). **속도 = Roboflow supervision**(ByteTrack + `ViewTransformer`
+  **원근보정**) — 도로 평면 호모그래피로 **거리 무관 일관 km/h**(움직이는 차량만·5km/h 미만 생략). 실측 없는 추정(`SPEED_TARGET_W/H` env).
+- **CAM-03 PPE = YOLO-World(오픈보캐) + 한글 라벨**(CPU). 번들 `samples/cam03.mp4`(건설현장 30초) 루프,
+  `"hard hat"·"safety vest"·"person"` 프롬프트로 **안전모·안전조끼·작업자** 감지 → 준수율 통계. 모델 `yolov8s-worldv2.pt`
+  + `set_classes`(CLIP 텍스트 인코더 — 이미지 `weights/clip` 캐시 번들로 런타임 다운로드 없음). 출력 640x360.
+- **CAM-02 낙상 = 합성 시뮬레이션**(OpenCV).
+- 영상·모델·의존성이 없으면 해당 카메라는 **합성으로 자동 폴백**(배포 견고성).
 
 ## 엔드포인트 계약 (대시보드가 거는 것)
 
@@ -24,9 +25,9 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
 
 ## 번들 바이너리 (git 미추적 — 재취득 절차)
 
-`yolov8n.pt`·`samples/cam01.mp4`·`NanumGothic-Regular.ttf` 는 용량 때문에 git 에 올리지 않는다(`.gitignore`).
-단 `.gcloudignore` 가 있어 **Cloud Build 업로드 컨텍스트·도커 이미지에는 포함**된다(아래 배포 항목).
-새 머신에서 재생성하려면.
+`yolov8n.pt`·`yolov8s-worldv2.pt`·`samples/cam0{1,3}.mp4`·`NanumGothic-Regular.ttf`·`weights/`(CLIP) 는 용량 때문에
+git 에 올리지 않는다(`.gitignore`). 단 `.gcloudignore` 가 빌드 컨텍스트 포함을 보장한다(`weights/`는 제외 — CLIP 은
+빌드타임에 이미지 안에서 재다운로드). 새 머신에서 재생성하려면.
 
 ```bash
 pip install yt-dlp opencv-python-headless certifi ultralytics
@@ -53,6 +54,26 @@ while w < SEC*FPS:
     wr.write(cv2.resize(f,(OW,OH))); w+=1
 wr.release(); cap.release(); print("written", w)
 PY
+
+# 4) YOLO-World 모델(~25MB). 최초 set_classes 시 CLIP(ViT-B-32)이 weights/clip 에 자동 다운로드.
+python -c "from ultralytics import YOLOWorld; YOLOWorld('yolov8s-worldv2.pt')"
+
+# 5) CAM-03 건설현장 PPE 클립(GFqz3KRo2bc 30초 → 640x360)
+python - <<'PY'
+import cv2, yt_dlp
+with yt_dlp.YoutubeDL({"quiet": True, "format": "best[height<=720]/best"}) as y:
+    url = y.extract_info("https://www.youtube.com/watch?v=GFqz3KRo2bc", download=False)["url"]
+cap = cv2.VideoCapture(url); fps = cap.get(cv2.CAP_PROP_FPS) or 30; keep = max(1, round(fps / 15))
+wr = cv2.VideoWriter("samples/cam03.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 15, (640, 360))
+r = w = 0
+while True:
+    ok, f = cap.read()
+    if not ok: break
+    r += 1
+    if r % keep: continue
+    wr.write(cv2.resize(f, (640, 360))); w += 1
+wr.release(); cap.release(); print("cam03", w)
+PY
 ```
 
 ## 로컬 실행
@@ -61,10 +82,11 @@ PY
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install ultralytics "lap>=0.5.12"        # CAM-01 실추론+ByteTrack 속도추정(미설치면 합성 폴백)
+pip install ultralytics "lap>=0.5.12" "supervision==0.29.1" ftfy regex   # CAM-01 속도(supervision) + CAM-03(YOLO-World)
+pip install "git+https://github.com/ultralytics/CLIP.git"                # YOLO-World set_classes 용 CLIP
 uvicorn main:app --reload --port 8000
-# 확인: curl localhost:8000/        → {"cam01":"yolov8n"|"synthetic", ...}
-#       curl localhost:8000/cctv/stats ; 브라우저로 localhost:8000/cctv/stream
+# 확인: curl localhost:8000/   → {"cam01":"yolo+bytetrack","cam03":"yolo-world", ...}
+#       curl localhost:8000/cctv/stats(속도) ; /cctv/stats3(PPE) ; 브라우저로 /cctv/stream·/cctv/stream3
 ```
 
 ## Cloud Run 배포 (대시보드와 동일 프로젝트)
@@ -75,10 +97,11 @@ PROJECT=safetymonitor-498508 ; REGION=asia-northeast3
 IMG=asia-northeast3-docker.pkg.dev/$PROJECT/vitalguard/cctv-ai:latest
 gcloud builds submit --tag $IMG .
 gcloud run deploy cctv-ai --image $IMG --region $REGION \
-  --allow-unauthenticated --cpu 2 --memory 2Gi --timeout 3600 \
+  --allow-unauthenticated --cpu 4 --memory 4Gi --timeout 3600 \
   --min-instances 1 --max-instances 10 --concurrency 200 --no-cpu-throttling \
   --update-env-vars YOLO_IMGSZ=800
 # → 서비스 URL(https://cctv-ai-xxxxx.run.app) 확보
+# --cpu 4 --memory 4Gi : CAM-01(YOLOv8n) + CAM-03(YOLO-World) 두 실모델 동시 추론 경합 대응.
 ```
 
 `YOLO_IMGSZ=800` — 추론 해상도. 코드 기본 960(인식률 최대·CPU fps~4-5)이나 라이브는 **800**(인식률 거의 동일·fps~6-7)로 운영.

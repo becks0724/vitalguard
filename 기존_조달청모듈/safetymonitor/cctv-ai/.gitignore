@@ -3,3 +3,4 @@
 yolov8*.pt
 samples/*.mp4
 NanumGothic-Regular.ttf
+weights/

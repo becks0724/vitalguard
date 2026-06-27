@@ -1,7 +1,7 @@
 # VitAlGuard CCTV AI 데모 서버 — 대시보드 CCTV 관제 3타일(객체/낙상/PPE)에 MJPEG 스트림 + 감지 통계 제공.
-# CAM-01(객체)=실제 YOLOv8n 추론(번들 샘플영상 samples/cam01.mp4), CAM-02/03=합성 시뮬레이션.
-# 모델·영상이 없거나 ultralytics 미설치면 CAM-01 도 합성으로 자동 폴백(배포 견고성).
-# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/stats=객체 /cctv/stats2=낙상 /cctv/stats3=PPE.
+# CAM-01(객체)=YOLOv8n + Roboflow supervision(ByteTrack+원근보정 속도), CAM-03(PPE)=YOLO-World(안전모/조끼), CAM-02(낙상)=합성.
+# 모델·영상·의존성이 없으면 해당 카메라는 합성으로 자동 폴백(배포 견고성).
+# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/snapshot[|2|3]=단발 JPEG, /cctv/stats=객체 /stats2=낙상 /stats3=PPE.
 import asyncio
 import os
 import threading
@@ -30,16 +30,16 @@ app.add_middleware(
 W, H = 640, 360
 FPS = 12
 
-# ── CAM-01 실제 YOLOv8n 추론 설정 ────────────────────────────────────────────────────────
+# ── CAM-01 객체+속도 설정 ────────────────────────────────────────────────────────────────
 MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 VIDEO_PATH = os.environ.get("CAM01_VIDEO", "samples/cam01.mp4")
 PLAYBACK_FPS = 15  # 샘플영상 캡처 fps(실시간 속도 유지)
-CONF = float(os.environ.get("YOLO_CONF", "0.25"))   # 군중 인식률 위해 0.35→0.25
-IMGSZ = int(os.environ.get("YOLO_IMGSZ", "960"))    # 추론 해상도 — 원거리 군중(작은 객체) 검출에 결정적(640→960=사람 4배)
-OW, OH = 1280, 720  # CAM-01 출력 해상도(고해상도). 합성 CAM-02/03 은 W,H=640,360 유지.
+CONF = float(os.environ.get("YOLO_CONF", "0.25"))
+IMGSZ = int(os.environ.get("YOLO_IMGSZ", "960"))    # 추론 해상도(640→960=원거리 군중 사람 4배). 라이브는 env 800.
+OW, OH = 1280, 720  # CAM-01 출력 해상도(고해상도). 합성 CAM-02 은 W,H=640,360.
 FONT_PATH = os.environ.get("LABEL_FONT", "NanumGothic-Regular.ttf")  # 한글 라벨용(cv2 한글 미지원 → PIL)
 
-# COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·자전거·차량류)만 그린다(가방·신호등 등 노이즈 제외).
+# COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·자전거·차량류)만 그린다.
 COCO_KO = {
     "person": "보행자", "bicycle": "자전거", "car": "차량",
     "motorcycle": "오토바이", "bus": "버스", "truck": "트럭",
@@ -48,88 +48,120 @@ CLASS_COLOR = {
     "보행자": (80, 200, 255), "자전거": (255, 200, 80), "차량": (120, 220, 120),
     "오토바이": (200, 160, 255), "버스": (240, 200, 120), "트럭": (60, 160, 240),
 }
-# 속도 추정 대상(차량류). 사람·자전거는 탐지만.
 VEHICLE_KO = {"차량", "버스", "트럭", "오토바이"}
-# 픽셀속도(px/s)→추정 km/h 보정계수. 카메라 실측보정이 없어 단일 평면 가정의 근사치.
-# 0.33 = 720p(1280px) 신 클립 움직이는 차량 p95≈50km/h 가 되도록 백분위로 보정(주간 교차로=정지多·분포넓음). env 로 조정.
-SPEED_KMH_PER_PXPS = float(os.environ.get("SPEED_KMH_PER_PXPS", "0.33"))
 SPEED_MAX_KMH = 120.0   # ID 스왑 텔레포트 클램프
-SPEED_SHOW_MIN = 5      # 이 미만(km/h)은 숫자 생략 — 정지/서행 차량은 '차량'만 표기(깔끔)
+SPEED_SHOW_MIN = 5      # 이 미만(km/h)은 숫자 생략 — 정지/서행 차량은 '차량'만
+
+# 속도 원근 보정(Roboflow supervision ViewTransformer) — 이미지 도로 평면 4점 → 실세계 직사각형(m).
+# 실측이 아닌 도로 기하 추정값(절대값은 근사·원근 일관성↑). env(SPEED_TARGET_W/H) 로 배율 조정.
+CALIB_SOURCE = np.array([[430, 300], [1010, 300], [1280, 700], [60, 700]], np.float32)  # 1280x720 기준
+SPEED_TARGET_W = float(os.environ.get("SPEED_TARGET_W", "35"))  # m, 가로(진행방향)
+SPEED_TARGET_H = float(os.environ.get("SPEED_TARGET_H", "25"))  # m, 깊이
+CALIB_TARGET = np.array([[0, 0], [SPEED_TARGET_W, 0], [SPEED_TARGET_W, SPEED_TARGET_H], [0, SPEED_TARGET_H]], np.float32)
+
+# ── CAM-03 PPE(YOLO-World 오픈보캐) 설정 ────────────────────────────────────────────────
+PPE_VIDEO = os.environ.get("CAM03_VIDEO", "samples/cam03.mp4")
+# worldv2(25MB) + CLIP 캐시(weights/clip)를 번들 → 런타임 set_classes 가 캐시 사용(다운로드 없음).
+PPE_MODEL = os.environ.get("YOLO_WORLD_MODEL", "yolov8s-worldv2.pt")
+PPE_CONF = float(os.environ.get("PPE_CONF", "0.05"))   # 오픈보캐는 신뢰도 낮아 임계 낮춤
+PPE_IMGSZ = int(os.environ.get("PPE_IMGSZ", "640"))
+PPE_CLASSES = ["hard hat", "safety vest", "person"]    # YOLO-World 텍스트 프롬프트
+PPE_KO = {"hard hat": "안전모", "safety vest": "안전조끼", "person": "작업자"}
+PPE_COLOR = {"안전모": (120, 220, 120), "안전조끼": (80, 200, 255), "작업자": (240, 200, 120)}
+OW3, OH3 = 640, 360  # CAM-03 출력 해상도
 
 _obj_lock = threading.Lock()
 _obj = {"frame": b"", "stats": None}
-OBJECT_REAL = False  # startup 에서 모델·영상 로드 성공 시 True
+OBJECT_REAL = False  # CAM-01 실모델 가동 여부
+
+_ppe_lock = threading.Lock()
+_ppe = {"frame": b"", "stats": None}
+PPE_REAL = False     # CAM-03 실모델 가동 여부
+
+
+class _ViewTransformer:
+    # 이미지 평면 → 실세계 평면 호모그래피(원근 보정).
+    def __init__(self, source, target):
+        self._m = cv2.getPerspectiveTransform(source, target)
+
+    def transform(self, points):
+        if points is None or len(points) == 0:
+            return np.empty((0, 2), np.float32)
+        p = points.reshape(-1, 1, 2).astype(np.float32)
+        return cv2.perspectiveTransform(p, self._m).reshape(-1, 2)
 
 
 def _object_worker():
-    # 백그라운드 스레드: 샘플영상 루프 → YOLOv8n 트래킹(ByteTrack) → 실박스 + 차량 속도추정 + 실통계 → 전역 갱신.
+    # CAM-01: YOLOv8n 검출 → supervision ByteTrack → ViewTransformer 원근보정 실세계 좌표로 속도 추정 → 전역 갱신.
     global OBJECT_REAL
     try:
-        from ultralytics import YOLO  # 지연 임포트(폴백 시 미설치여도 무방)
+        from collections import defaultdict, deque
+
+        import supervision as sv
+        from ultralytics import YOLO
         model = YOLO(MODEL_PATH)
         cap = cv2.VideoCapture(VIDEO_PATH)
         if not cap.isOpened():
             raise RuntimeError(f"cannot open {VIDEO_PATH}")
-        # 속도 시간기준 = 영상(클립) fps. 워커 처리속도와 무관하게 인접 프레임=1/clip_fps 초.
         clip_fps = cap.get(cv2.CAP_PROP_FPS) or float(PLAYBACK_FPS)
-    except Exception as e:  # 로드 실패 → CAM-01 합성 폴백
+        tracker = sv.ByteTrack(frame_rate=max(1, int(round(clip_fps))))
+        view = _ViewTransformer(CALIB_SOURCE, CALIB_TARGET)
+    except Exception as e:
         print(f"[cctv-ai] CAM-01 real worker init failed ({e}); falling back to synthetic")
         OBJECT_REAL = False
         return
 
+    win = max(2, int(round(clip_fps)))                 # 1초 윈도우(속도 평활)
+    coords = defaultdict(lambda: deque(maxlen=win))    # tid -> 실세계 좌표(m) 이력
     target_dt = 1.0 / PLAYBACK_FPS
     fps_ema = float(PLAYBACK_FPS)
-    tracks = {}      # tid -> {"cx","cy","idx","kmh"} : ID 별 centroid 이력 + 평활 속도
-    frame_idx = 0
     while True:
         t0 = time.time()
         try:
             ok, frame = cap.read()
-            if not ok:  # 영상 끝 → 처음으로 루프(경계 텔레포트 속도 방지 위해 이력 초기화)
+            if not ok:  # 영상 끝 → 루프(경계 텔레포트 방지 위해 이력 초기화)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                tracks.clear()
+                coords.clear()
                 continue
             if frame.shape[1] != OW or frame.shape[0] != OH:
                 frame = cv2.resize(frame, (OW, OH))
-            frame_idx += 1
-            res = model.track(frame, imgsz=IMGSZ, persist=True, tracker="bytetrack.yaml",
-                              verbose=False, conf=CONF)[0]
-            boxes = res.boxes
-            ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(boxes)
+            res = model(frame, imgsz=IMGSZ, conf=CONF, verbose=False)[0]
+            det = sv.Detections.from_ultralytics(res)
+            if len(det):
+                keep = np.array([model.names[int(c)] in COCO_KO for c in det.class_id], bool)
+                det = det[keep]
+            det = tracker.update_with_detections(det)
+            anchors = det.get_anchors_coordinates(sv.Position.BOTTOM_CENTER) if len(det) else np.empty((0, 2))
+            world = view.transform(anchors)
 
-            header = "CAM-01  Hongdae St.  YOLOv8n@960 + speed"
+            header = "CAM-01  Hongdae St.  YOLO + ByteTrack speed"
             by = {}
-            speeds = []  # 움직이는 차량 추정 km/h(통계용)
+            speeds = []
             dets = []
-            for b, tid in zip(boxes, ids):
-                en = model.names[int(b.cls)]
+            for i in range(len(det)):
+                en = model.names[int(det.class_id[i])]
                 ko = COCO_KO.get(en)
                 if not ko:
                     continue
-                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
+                x1, y1, x2, y2 = (int(v) for v in det.xyxy[i])
+                tid = int(det.tracker_id[i]) if det.tracker_id is not None else None
                 by[ko] = by.get(ko, 0) + 1
                 ko_label, en_label = ko, en
-                # 차량류 + 트래킹 ID 있으면 속도 추정.
+                # 차량류 + ID 있으면 원근보정 속도(실세계 변위/시간).
                 if ko in VEHICLE_KO and tid is not None:
-                    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-                    prev = tracks.get(tid)
-                    kmh = prev["kmh"] if prev else 0.0
-                    if prev:
-                        df = frame_idx - prev["idx"]
-                        if df > 0:
-                            dpx = ((cx - prev["cx"]) ** 2 + (cy - prev["cy"]) ** 2) ** 0.5 / df
-                            inst = min(dpx * clip_fps * SPEED_KMH_PER_PXPS, SPEED_MAX_KMH)
-                            kmh = 0.6 * prev["kmh"] + 0.4 * inst if prev["kmh"] > 0 else inst
-                    tracks[tid] = {"cx": cx, "cy": cy, "idx": frame_idx, "kmh": kmh}
-                    if kmh >= 1:
-                        speeds.append(kmh)
-                    if kmh >= SPEED_SHOW_MIN:  # 서행/정지는 숫자 생략
-                        ko_label, en_label = f"{ko} {kmh:.0f}km/h", f"{en} {kmh:.0f}km/h"
+                    coords[tid].append(world[i])
+                    dq = coords[tid]
+                    if len(dq) >= max(2, win // 2):
+                        p0, p1 = dq[0], dq[-1]
+                        dist = float(np.hypot(p1[0] - p0[0], p1[1] - p0[1]))  # m
+                        dts = (len(dq) - 1) / clip_fps
+                        kmh = min(dist / dts * 3.6, SPEED_MAX_KMH) if dts > 0 else 0.0
+                        if kmh >= 1:
+                            speeds.append(kmh)
+                        if kmh >= SPEED_SHOW_MIN:
+                            ko_label, en_label = f"{ko} {kmh:.0f}km/h", f"{en} {kmh:.0f}km/h"
                 dets.append((x1, y1, x2, y2, CLASS_COLOR.get(ko, (80, 200, 255)), ko_label, en_label))
-            img = draw_cam01(frame, dets, header)
-            # 오래 안 보인 트랙 정리.
-            for tid in [t for t, v in tracks.items() if frame_idx - v["idx"] > 30]:
-                tracks.pop(tid, None)
+            img = draw_pil(frame, dets, header)
             okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
 
             dt = max(time.time() - t0, 1e-3)
@@ -153,10 +185,70 @@ def _object_worker():
             time.sleep(rem)
 
 
-# ── 장면 상태(시뮬레이션) — render 와 stats 가 같은 함수를 써서 영상·통계가 일치 ──────────────
+def _ppe_worker():
+    # CAM-03: YOLO-World 오픈보캐로 안전모/조끼/작업자 감지 → 준수율 통계 → 전역 갱신.
+    global PPE_REAL
+    try:
+        from ultralytics import YOLOWorld
+        model = YOLOWorld(PPE_MODEL)
+        cur = [str(v).lower() for v in (model.names.values() if isinstance(model.names, dict) else model.names)]
+        if cur != [c.lower() for c in PPE_CLASSES]:  # 베이크 안 된 모델만 set_classes(CLIP 다운로드 필요)
+            model.set_classes(PPE_CLASSES)
+        cap = cv2.VideoCapture(PPE_VIDEO)
+        if not cap.isOpened():
+            raise RuntimeError(f"cannot open {PPE_VIDEO}")
+    except Exception as e:
+        print(f"[cctv-ai] CAM-03 PPE worker init failed ({e}); falling back to synthetic")
+        PPE_REAL = False
+        return
+
+    target_dt = 1.0 / PLAYBACK_FPS
+    while True:
+        t0 = time.time()
+        try:
+            ok, frame = cap.read()
+            if not ok:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            if frame.shape[1] != OW3 or frame.shape[0] != OH3:
+                frame = cv2.resize(frame, (OW3, OH3))
+            res = model.predict(frame, imgsz=PPE_IMGSZ, conf=PPE_CONF, verbose=False)[0]
+            cnt = {"안전모": 0, "안전조끼": 0, "작업자": 0}
+            dets = []
+            for b in res.boxes:
+                en = PPE_CLASSES[int(b.cls)]
+                ko = PPE_KO.get(en, en)
+                cnt[ko] = cnt.get(ko, 0) + 1
+                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
+                dets.append((x1, y1, x2, y2, PPE_COLOR.get(ko, (200, 200, 200)), ko, en))
+            img = draw_pil(frame, dets, "CAM-03  Worksite  YOLO-World PPE")
+            okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+            # 준수율(근사 — 검출 카운트 기반, 박스-인물 매칭은 안 함).
+            person = cnt["작업자"]
+            hard = min(cnt["안전모"], person) if person else cnt["안전모"]
+            vest = min(cnt["안전조끼"], person) if person else cnt["안전조끼"]
+            no_hard, no_vest = max(0, person - hard), max(0, person - vest)
+            violations = max(no_hard, no_vest)
+            rate = round(100 * (person - violations) / person) if person else 100
+            stats = {"violation_count": violations, "compliance_rate": rate,
+                     "no_hardhat_count": no_hard, "no_vest_count": no_vest,
+                     "hardhat_count": hard, "vest_count": vest, "person_count": person}
+            with _ppe_lock:
+                if okj:
+                    _ppe["frame"] = buf.tobytes()
+                _ppe["stats"] = stats
+        except Exception as e:
+            print(f"[cctv-ai] CAM-03 frame error ({e})")
+            time.sleep(0.2)
+            continue
+        rem = target_dt - (time.time() - t0)
+        if rem > 0:
+            time.sleep(rem)
+
+
+# ── 장면 상태(시뮬레이션) — 합성 폴백(CAM-02 낙상 상시, CAM-01/03 모델 실패 시) ─────────────────
 
 def object_state(t: float):
-    # 정문 출입구 — 보행자/차량/트럭이 화면을 가로지른다.
     tracks = [("보행자", "person", 22), ("보행자", "person", 30), ("차량", "car", 64), ("트럭", "truck", 44)]
     out = []
     for i, (ko, en, speed) in enumerate(tracks):
@@ -168,7 +260,6 @@ def object_state(t: float):
 
 
 def fall_state(t: float):
-    # 지하 기계실 — 작업자 4명. 1명이 20초 주기로 5초간 낙상.
     base = [("정상", 90), ("정상", 250), ("정상", 420), ("불안정", 540)]
     fallen = (int(t) % 20) < 5
     out = []
@@ -186,7 +277,6 @@ def fall_state(t: float):
 
 
 def ppe_state(t: float):
-    # 현장 작업구역(GoPro) — 작업자 4명, 안전모/조끼 착용. 1명이 24초 주기로 8초간 추가 위반.
     workers = [(70, True, True), (210, True, True), (350, False, True), (500, True, False)]
     extra = (int(t) % 24) < 8
     out = []
@@ -200,7 +290,7 @@ def ppe_state(t: float):
     return out
 
 
-# ── 통계(JSON) — 대시보드 strip 형식 정확 일치 ──────────────────────────────────────────
+# ── 통계(JSON) 합성 폴백 ─────────────────────────────────────────────────────────────────
 
 def object_stats(t):
     a = object_state(t)
@@ -234,7 +324,7 @@ def ppe_stats(t):
             "hardhat_count": hard, "vest_count": vest, "person_count": person}
 
 
-# ── 렌더(MJPEG 프레임) — OpenCV(영문 라벨; 한글은 stats JSON 으로 전달) ─────────────────────
+# ── 렌더(합성 프레임) + 그리기 헬퍼 ──────────────────────────────────────────────────────
 
 def base_frame(cam_label: str):
     img = np.full((H, W, 3), 26, np.uint8)
@@ -257,29 +347,30 @@ def draw_box(img, box, color, label):
     cv2.putText(img, label, (x + 3, max(11, y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (20, 20, 20), 1, cv2.LINE_AA)
 
 
-# ── 한글 라벨(PIL) — cv2 는 한글 폰트 미지원이라 CAM-01 박스/라벨/헤더를 PIL 로 그린다 ──────────────
+# 한글 라벨(PIL) — cv2 는 한글 미지원이라 CAM-01/03 박스·라벨·헤더를 PIL 로 그린다. 폰트 없으면 영문 cv2 폴백.
 try:
     _FONT = ImageFont.truetype(FONT_PATH, 20)
     _FONT_SM = ImageFont.truetype(FONT_PATH, 17)
-except Exception as e:  # 폰트 없으면 영문 cv2 폴백
-    print(f"[cctv-ai] 한글 폰트 로드 실패({e}) — CAM-01 영문 라벨 폴백")
+except Exception as e:
+    print(f"[cctv-ai] 한글 폰트 로드 실패({e}) — 영문 라벨 폴백")
     _FONT = _FONT_SM = None
 
 
-def draw_cam01(frame, dets, header):
-    # frame(BGR)에 박스 + 한글 라벨 + 헤더를 그려 BGR 반환. dets=[(x1,y1,x2,y2,color_bgr,ko,en)].
+def draw_pil(frame, dets, header):
+    # frame(BGR)에 박스 + 한글 라벨 + 헤더. dets=[(x1,y1,x2,y2,color_bgr,ko,en)]. 너비는 frame 에서 추론.
+    w = frame.shape[1]
     if _FONT is None:  # 폰트 없을 때 cv2 영문 폴백
-        cv2.rectangle(frame, (0, 0), (OW, 30), (18, 18, 20), -1)
+        cv2.rectangle(frame, (0, 0), (w, 30), (18, 18, 20), -1)
         cv2.putText(frame, header, (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1, cv2.LINE_AA)
         for x1, y1, x2, y2, color, ko, en in dets:
             draw_box(frame, (x1, y1, x2 - x1, y2 - y1), color, en)
         return frame
     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     d = ImageDraw.Draw(img)
-    d.rectangle((0, 0, OW, 30), fill=(20, 18, 18))
+    d.rectangle((0, 0, w, 30), fill=(20, 18, 18))
     d.text((10, 5), header, font=_FONT, fill=(225, 225, 225))
-    d.ellipse((OW - 116, 11, OW - 108, 19), fill=(239, 60, 60))
-    d.text((OW - 100, 6), time.strftime("%H:%M:%S"), font=_FONT_SM, fill=(190, 190, 190))
+    d.ellipse((w - 116, 11, w - 108, 19), fill=(239, 60, 60))
+    d.text((w - 100, 6), time.strftime("%H:%M:%S"), font=_FONT_SM, fill=(190, 190, 190))
     for x1, y1, x2, y2, color, ko, en in dets:
         rgb = (color[2], color[1], color[0])  # BGR→RGB
         d.rectangle((x1, y1, x2, y2), outline=rgb, width=2)
@@ -308,6 +399,15 @@ def render(cam: str, t: float):
     return buf.tobytes() if ok else b""
 
 
+def _live_frame(real, store, lock, cam):
+    # 실모델 가동 시 전역 프레임, 아니면(워밍업·폴백) 합성 render.
+    frame = b""
+    if real:
+        with lock:
+            frame = store["frame"]
+    return frame or render(cam, time.time())
+
+
 async def mjpeg(cam: str):
     while True:
         frame = render(cam, time.time())
@@ -317,14 +417,16 @@ async def mjpeg(cam: str):
 
 
 async def mjpeg_object():
-    # CAM-01: 실추론 프레임(전역) 우선, 워밍업/폴백 시 합성 프레임.
     while True:
-        frame = b""
-        if OBJECT_REAL:
-            with _obj_lock:
-                frame = _obj["frame"]
-        if not frame:
-            frame = render("object", time.time())
+        frame = _live_frame(OBJECT_REAL, _obj, _obj_lock, "object")
+        if frame:
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+        await asyncio.sleep(1.0 / FPS)
+
+
+async def mjpeg_ppe():
+    while True:
+        frame = _live_frame(PPE_REAL, _ppe, _ppe_lock, "ppe")
         if frame:
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         await asyncio.sleep(1.0 / FPS)
@@ -332,29 +434,41 @@ async def mjpeg_object():
 
 # ── 라우트 ─────────────────────────────────────────────────────────────────────────────
 MJPEG_MT = "multipart/x-mixed-replace; boundary=frame"
+SNAPSHOT_HEADERS = {"Cache-Control": "no-store"}
 
 
 @app.on_event("startup")
 def _startup():
-    # 모델·영상 존재 + ultralytics 임포트 가능하면 CAM-01 실추론 워커 기동, 아니면 합성 유지.
-    global OBJECT_REAL
-    if not os.path.exists(VIDEO_PATH):
-        print(f"[cctv-ai] CAM-01 video not found ({VIDEO_PATH}); CAM-01 synthetic")
-        return
-    try:
-        import ultralytics  # noqa: F401
-    except Exception as e:
-        print(f"[cctv-ai] ultralytics unavailable ({e}); CAM-01 synthetic")
-        return
-    OBJECT_REAL = True
-    threading.Thread(target=_object_worker, daemon=True).start()
-    print("[cctv-ai] CAM-01 real YOLOv8n worker started")
+    # 영상 존재 + 의존성 임포트 가능하면 실모델 워커 기동, 아니면 합성 유지(각 카메라 독립).
+    global OBJECT_REAL, PPE_REAL
+    if os.path.exists(VIDEO_PATH):
+        try:
+            import supervision  # noqa: F401
+            import ultralytics  # noqa: F401
+            OBJECT_REAL = True
+            threading.Thread(target=_object_worker, daemon=True).start()
+            print("[cctv-ai] CAM-01 real worker started (YOLO + supervision ByteTrack)")
+        except Exception as e:
+            print(f"[cctv-ai] CAM-01 deps unavailable ({e}); synthetic")
+    else:
+        print(f"[cctv-ai] CAM-01 video not found ({VIDEO_PATH}); synthetic")
+    if os.path.exists(PPE_VIDEO):
+        try:
+            from ultralytics import YOLOWorld  # noqa: F401
+            PPE_REAL = True
+            threading.Thread(target=_ppe_worker, daemon=True).start()
+            print("[cctv-ai] CAM-03 real worker started (YOLO-World PPE)")
+        except Exception as e:
+            print(f"[cctv-ai] CAM-03 deps unavailable ({e}); synthetic")
+    else:
+        print(f"[cctv-ai] CAM-03 video not found ({PPE_VIDEO}); synthetic")
 
 
 @app.get("/")
 def health():
     return {"ok": True, "service": "vitalguard-cctv-ai",
-            "cam01": "yolov8n" if OBJECT_REAL else "synthetic",
+            "cam01": "yolo+bytetrack" if OBJECT_REAL else "synthetic",
+            "cam03": "yolo-world" if PPE_REAL else "synthetic",
             "cams": ["object", "fall", "ppe"]}
 
 
@@ -370,7 +484,7 @@ def stream_fall():
 
 @app.get("/cctv/stream3")
 def stream_ppe():
-    return StreamingResponse(mjpeg("ppe"), media_type=MJPEG_MT)
+    return StreamingResponse(mjpeg_ppe(), media_type=MJPEG_MT)
 
 
 @app.get("/cctv/stats")
@@ -390,23 +504,18 @@ def stats_fall():
 
 @app.get("/cctv/stats3")
 def stats_ppe():
+    if PPE_REAL:
+        with _ppe_lock:
+            s = _ppe["stats"]
+        if s:
+            return JSONResponse(s)
     return JSONResponse(ppe_stats(time.time()))
-
-
-# ── 단발 JPEG 스냅샷(폴링용·MJPEG 대안) — 슬롯 즉시 반환으로 동시성 점유 회피 ──────────────
-SNAPSHOT_HEADERS = {"Cache-Control": "no-store"}
 
 
 @app.get("/cctv/snapshot")
 def snapshot_object():
-    # CAM-01 객체: 실추론 프레임(전역) 우선, 없으면 합성. mjpeg_object 와 동일 패턴.
-    frame = b""
-    if OBJECT_REAL:
-        with _obj_lock:
-            frame = _obj["frame"]
-    if not frame:
-        frame = render("object", time.time())
-    return Response(content=frame, media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+    return Response(content=_live_frame(OBJECT_REAL, _obj, _obj_lock, "object"),
+                    media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
 
 
 @app.get("/cctv/snapshot2")
@@ -416,4 +525,5 @@ def snapshot_fall():
 
 @app.get("/cctv/snapshot3")
 def snapshot_ppe():
-    return Response(content=render("ppe", time.time()), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+    return Response(content=_live_frame(PPE_REAL, _ppe, _ppe_lock, "ppe"),
+                    media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
