@@ -3,8 +3,10 @@
 대시보드 **CCTV 관제**의 AI 타일 3종(CAM-01 객체감지·CAM-02 낙상감지·CAM-03 PPE 안전모)에
 MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포용.
 
-- **CAM-01 객체감지 = 실제 YOLOv8n 추론**(CPU). 번들 샘플영상(`samples/cam01.mp4`, 홍대 거리 라이브캠 40초)을
-  루프 재생하며 프레임마다 추론 → 보행자·차량·자전거 등 실박스. 통계도 실검출 집계.
+- **CAM-01 객체감지 = 실제 YOLOv8n 추론 + 차량 속도추정**(CPU). 번들 샘플영상(`samples/cam01.mp4`, 홍대 거리
+  라이브캠 40초)을 루프 재생하며 프레임마다 추론 → 보행자·자전거·차량·버스·트럭·오토바이 실박스 + 실통계.
+  **ByteTrack 트래킹**으로 ID별 픽셀이동을 클립 fps 기준 px/s→**추정 km/h**(차량류 박스에 표기). 카메라 실측보정이
+  없어 단일평면 근사치(보정계수 `SPEED_KMH_PER_PXPS`, 기본 0.15 = 본 클립 차량 median≈24km/h). env 로 조정.
 - **CAM-02 낙상·CAM-03 PPE = 합성 시뮬레이션**(OpenCV). 통계는 한글 라벨 JSON 으로 대시보드 strip 에 전달.
 - 모델(`yolov8n.pt`)·영상이 없거나 ultralytics 미설치면 CAM-01 도 **합성으로 자동 폴백**(배포 견고성).
 
@@ -13,7 +15,7 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
 | 경로 | 형식 | 비고 |
 |---|---|---|
 | `GET /cctv/stream` `/cctv/stream2` `/cctv/stream3` | `multipart/x-mixed-replace` MJPEG | 객체/낙상/PPE |
-| `GET /cctv/stats` | `{fps,total,byClass:[{label,count}],alertsLastMinute}` | 객체 |
+| `GET /cctv/stats` | `{fps,total,byClass:[{label,count}],alertsLastMinute, vehicleCount,maxSpeedKmh,avgSpeedKmh}` | 객체+속도(뒤 3필드는 실모델 전용·대시보드는 미사용 시 무시) |
 | `GET /cctv/stats2` | `{total,fallen,byStatus:[{status,label,count}]}` | 낙상 |
 | `GET /cctv/stats3` | `{violation_count,compliance_rate,no_hardhat_count,no_vest_count,hardhat_count,vest_count,person_count}` | PPE |
 
@@ -52,7 +54,7 @@ PY
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install ultralytics                      # CAM-01 실추론용(미설치면 CAM-01 합성 폴백)
+pip install ultralytics "lap>=0.5.12"        # CAM-01 실추론+ByteTrack 속도추정(미설치면 합성 폴백)
 uvicorn main:app --reload --port 8000
 # 확인: curl localhost:8000/        → {"cam01":"yolov8n"|"synthetic", ...}
 #       curl localhost:8000/cctv/stats ; 브라우저로 localhost:8000/cctv/stream
@@ -94,9 +96,10 @@ gcloud builds submit --config cloudbuild.dashboard.yaml \
 
 ## 실모델 적용 현황
 
-- **CAM-01 = 실제 YOLOv8n 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
-  루프 읽어 `YOLO('yolov8n.pt')(frame)` 추론 → 화이트리스트(보행자·자전거·차량·오토바이·버스·트럭)만
-  실박스로 그리고 통계 집계. `/cctv/stream`·`/cctv/stats` 가 전역(워커 갱신)을 읽는다.
+- **CAM-01 = 실제 YOLOv8n + 차량 속도추정 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
+  루프 읽어 `model.track(persist=True, tracker='bytetrack.yaml')` → 화이트리스트(보행자·자전거·차량·오토바이·버스·트럭)
+  실박스 + 통계. 차량류는 ID별 centroid 이동(클립 fps 기준)을 px/s→추정 km/h(EMA 평활·SPEED_MAX_KMH 클램프)로
+  박스에 표기, stats 에 `vehicleCount/maxSpeedKmh/avgSpeedKmh` 추가. `/cctv/stream`·`/cctv/stats` 가 전역을 읽는다.
 - **CAM-02·CAM-03 = 합성 유지.** 실모델 전환 시 같은 패턴으로 `*_state()`/`*_stats()` 를 추론 결과로 교체하고,
   낙상용 영상(또는 포즈 모델)·PPE 용 영상(또는 안전모/조끼 커스텀 가중치)을 번들하면 된다.
 - Cloud Run 엔 카메라가 없으므로 **번들 샘플영상** 또는 인터넷 RTSP 만 가능(로컬 웹캠 불가).

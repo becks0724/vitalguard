@@ -35,7 +35,7 @@ VIDEO_PATH = os.environ.get("CAM01_VIDEO", "samples/cam01.mp4")
 PLAYBACK_FPS = 15  # 샘플영상 캡처 fps(실시간 속도 유지)
 CONF = 0.35
 
-# COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·차량류)만 그린다(가방·신호등 등 노이즈 제외).
+# COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·자전거·차량류)만 그린다(가방·신호등 등 노이즈 제외).
 COCO_KO = {
     "person": "보행자", "bicycle": "자전거", "car": "차량",
     "motorcycle": "오토바이", "bus": "버스", "truck": "트럭",
@@ -44,6 +44,12 @@ CLASS_COLOR = {
     "보행자": (80, 200, 255), "자전거": (255, 200, 80), "차량": (120, 220, 120),
     "오토바이": (200, 160, 255), "버스": (240, 200, 120), "트럭": (60, 160, 240),
 }
+# 속도 추정 대상(차량류). 사람·자전거는 탐지만.
+VEHICLE_KO = {"차량", "버스", "트럭", "오토바이"}
+# 픽셀속도(px/s)→추정 km/h 보정계수. 카메라 실측보정이 없어 단일 평면 가정의 근사치.
+# 0.15 = 본 클립(홍대) 움직이는 차량 median≈24·p90≈47km/h 가 되도록 데이터로 보정. env 로 조정.
+SPEED_KMH_PER_PXPS = float(os.environ.get("SPEED_KMH_PER_PXPS", "0.15"))
+SPEED_MAX_KMH = 120.0  # ID 스왑 텔레포트 클램프
 
 _obj_lock = threading.Lock()
 _obj = {"frame": b"", "stats": None}
@@ -51,7 +57,7 @@ OBJECT_REAL = False  # startup 에서 모델·영상 로드 성공 시 True
 
 
 def _object_worker():
-    # 백그라운드 스레드: 샘플영상 루프 → YOLOv8n 추론 → 실박스 그리기 + 실통계 산출 → 전역 갱신.
+    # 백그라운드 스레드: 샘플영상 루프 → YOLOv8n 트래킹(ByteTrack) → 실박스 + 차량 속도추정 + 실통계 → 전역 갱신.
     global OBJECT_REAL
     try:
         from ultralytics import YOLO  # 지연 임포트(폴백 시 미설치여도 무방)
@@ -59,6 +65,8 @@ def _object_worker():
         cap = cv2.VideoCapture(VIDEO_PATH)
         if not cap.isOpened():
             raise RuntimeError(f"cannot open {VIDEO_PATH}")
+        # 속도 시간기준 = 영상(클립) fps. 워커 처리속도와 무관하게 인접 프레임=1/clip_fps 초.
+        clip_fps = cap.get(cv2.CAP_PROP_FPS) or float(PLAYBACK_FPS)
     except Exception as e:  # 로드 실패 → CAM-01 합성 폴백
         print(f"[cctv-ai] CAM-01 real worker init failed ({e}); falling back to synthetic")
         OBJECT_REAL = False
@@ -66,44 +74,70 @@ def _object_worker():
 
     target_dt = 1.0 / PLAYBACK_FPS
     fps_ema = float(PLAYBACK_FPS)
+    tracks = {}      # tid -> {"cx","cy","idx","kmh"} : ID 별 centroid 이력 + 평활 속도
+    frame_idx = 0
     while True:
         t0 = time.time()
         try:
             ok, frame = cap.read()
-            if not ok:  # 영상 끝 → 처음으로 루프
+            if not ok:  # 영상 끝 → 처음으로 루프(경계 텔레포트 속도 방지 위해 이력 초기화)
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                tracks.clear()
                 continue
             if frame.shape[1] != W or frame.shape[0] != H:
                 frame = cv2.resize(frame, (W, H))
-            res = model(frame, verbose=False, conf=CONF)[0]
-            dets = []
-            for b in res.boxes:
-                en = model.names[int(b.cls)]
-                ko = COCO_KO.get(en)
-                if not ko:
-                    continue
-                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
-                dets.append((ko, en, x1, y1, x2 - x1, y2 - y1))
+            frame_idx += 1
+            res = model.track(frame, persist=True, tracker="bytetrack.yaml",
+                              verbose=False, conf=CONF)[0]
+            boxes = res.boxes
+            ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(boxes)
 
             img = frame.copy()
             cv2.rectangle(img, (0, 0), (W, 26), (18, 18, 20), -1)
-            cv2.putText(img, "CAM-01  Hongdae St. (YOLOv8n)", (8, 18),
+            cv2.putText(img, "CAM-01  Hongdae St. (YOLOv8n + speed)", (8, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
             cv2.circle(img, (W - 112, 13), 4, (60, 60, 239), -1)
             cv2.putText(img, time.strftime("%H:%M:%S"), (W - 98, 18),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
             by = {}
-            for ko, en, x, y, w, h in dets:
-                # 라벨은 영문(cv2 한글 미지원). 통계 JSON 으로 한글 전달.
-                draw_box(img, (x, y, w, h), CLASS_COLOR.get(ko, (80, 200, 255)), en)
+            speeds = []  # 움직이는 차량 추정 km/h
+            for b, tid in zip(boxes, ids):
+                en = model.names[int(b.cls)]
+                ko = COCO_KO.get(en)
+                if not ko:
+                    continue
+                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
                 by[ko] = by.get(ko, 0) + 1
+                label = en  # 라벨은 영문(cv2 한글 미지원). 통계 JSON 으로 한글 전달.
+                # 차량류 + 트래킹 ID 있으면 속도 추정.
+                if ko in VEHICLE_KO and tid is not None:
+                    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+                    prev = tracks.get(tid)
+                    kmh = prev["kmh"] if prev else 0.0
+                    if prev:
+                        df = frame_idx - prev["idx"]
+                        if df > 0:
+                            dpx = ((cx - prev["cx"]) ** 2 + (cy - prev["cy"]) ** 2) ** 0.5 / df
+                            inst = min(dpx * clip_fps * SPEED_KMH_PER_PXPS, SPEED_MAX_KMH)
+                            kmh = 0.6 * prev["kmh"] + 0.4 * inst if prev["kmh"] > 0 else inst
+                    tracks[tid] = {"cx": cx, "cy": cy, "idx": frame_idx, "kmh": kmh}
+                    if kmh >= 1:
+                        speeds.append(kmh)
+                        label = f"{en} {kmh:.0f}km/h"
+                draw_box(img, (x1, y1, x2 - x1, y2 - y1), CLASS_COLOR.get(ko, (80, 200, 255)), label)
+            # 오래 안 보인 트랙 정리.
+            for tid in [t for t, v in tracks.items() if frame_idx - v["idx"] > 30]:
+                tracks.pop(tid, None)
             okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
 
             dt = max(time.time() - t0, 1e-3)
             fps_ema = 0.8 * fps_ema + 0.2 * (1.0 / dt)
-            stats = {"fps": round(fps_ema), "total": len(dets),
+            stats = {"fps": round(fps_ema), "total": sum(by.values()),
                      "byClass": [{"label": k, "count": v} for k, v in by.items()],
-                     "alertsLastMinute": 0}
+                     "alertsLastMinute": 0,
+                     "vehicleCount": sum(by.get(k, 0) for k in VEHICLE_KO),
+                     "maxSpeedKmh": round(max(speeds)) if speeds else 0,
+                     "avgSpeedKmh": round(sum(speeds) / len(speeds)) if speeds else 0}
             with _obj_lock:
                 if okj:
                     _obj["frame"] = buf.tobytes()
