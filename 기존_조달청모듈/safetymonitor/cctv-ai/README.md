@@ -68,12 +68,18 @@ PROJECT=safetymonitor-498508 ; REGION=asia-northeast3
 IMG=asia-northeast3-docker.pkg.dev/$PROJECT/vitalguard/cctv-ai:latest
 gcloud builds submit --tag $IMG .
 gcloud run deploy cctv-ai --image $IMG --region $REGION \
-  --allow-unauthenticated --cpu 2 --memory 2Gi --timeout 3600 --min-instances 1
+  --allow-unauthenticated --cpu 2 --memory 2Gi --timeout 3600 \
+  --min-instances 1 --max-instances 10 --concurrency 200 --no-cpu-throttling
 # → 서비스 URL(https://cctv-ai-xxxxx.run.app) 확보
 ```
 
-`--memory 2Gi` — torch+YOLOv8n 상주 메모리(합성 전용이던 1Gi 에서 상향).
-`--min-instances 1` 로 콜드스타트(첫 연결 지연·모델 로드) 방지. MJPEG 는 장시간 연결이라 타임아웃 3600s.
+플래그(전부 필수 — 빠지면 동작/안정성 저하).
+- `--memory 2Gi` — torch+YOLOv8n 상주 메모리(합성 전용이던 1Gi 에서 상향).
+- `--no-cpu-throttling` — **요청 밖 백그라운드 추론 스레드에 CPU 상시 할당**(기본 스로틀링이면 워커가 굶어 stats 가 합성으로 폴백).
+- `--min-instances 1` — 콜드스타트(첫 연결 지연·모델 로드) 방지. MJPEG 는 장시간 연결이라 타임아웃 3600s.
+- `--max-instances 10 --concurrency 200` — **MJPEG 는 연결당 동시성 슬롯을 장시간 점유**. maxScale 가 낮으면(예: 3) 누적 연결+대시보드 재연결 폭주로 슬롯 고갈→`429 "no available instance"`→검은 화면. 여유 확보.
+
+> MJPEG 장기연결의 근본 취약성. 더 견고하게 하려면 **단발 JPEG 스냅샷 폴링**(클라가 `/cctv/snapshot` 을 N ms 마다 짧게 요청 → 슬롯 즉시 반환)으로 전환(서버 `/cctv/snapshot` 추가 + 대시보드 `<img stream>`→폴링). 현재는 헤드룸 확보로 단일 발표 시나리오 대응.
 
 ## 대시보드 연결 (빌드타임 URL 주입)
 
