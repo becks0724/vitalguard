@@ -12,7 +12,7 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 8단계 고도화 · 단일 출처)
+### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 9단계 고도화 · 단일 출처)
 
 > cctv-ai = 대시보드 CCTV 관제 3타일에 MJPEG/스냅샷 + 감지통계를 주는 **별도 Cloud Run 서비스**. 기술 상세 → [cctv-ai/README.md](../cctv-ai/README.md).
 
@@ -24,19 +24,20 @@
 5. `00006-svz` — **단발 JPEG 스냅샷 엔드포인트**(`/cctv/snapshot[|2|3]`) — MJPEG 장기연결 근본대응(폴링용·서버 준비됨).
 6. `00007-4b6` — CAM-01 **인식률↑·한글·720p**: imgsz 640→960·conf 0.25(사람 2.8→11/frame, ~4배), 720p 신선 클립, **PIL+NanumGothic 한글 라벨**, 출력 1280x720.
 7. `00008-8m5` — `YOLO_IMGSZ=800` env(fps 4-5→6-7, 인식률 유지).
-8. **`00009-vz5`(현재)** — **CAM-01 = Roboflow supervision 원근보정 속도**(ByteTrack + `ViewTransformer` 호모그래피 → 거리 무관 km/h) + **CAM-03 = YOLO-World PPE**(오픈보캐 안전모·조끼·작업자, 건설현장 클립). CLIP은 빌드타임 이미지 캐시. 두 모델 경합 → **`--cpu 4 --memory 4Gi`**.
+8. `00009-vz5` — CAM-01 = Roboflow supervision 원근보정 속도(ByteTrack + `ViewTransformer` 호모그래피) + CAM-03 = YOLO-World PPE(오픈보캐, CLIP 빌드타임 캐시). 두 모델 경합 → **`--cpu 4 --memory 4Gi`**.
+9. **`00010~00011-pvq`(현재)** — **CAM-03 = Hexmon vyra-yolo-ppe(YOLOv8m 14클래스) 듀얼소스 + 폰 라이브**. 번들 클립(OFF) 추론이 기본, **폰이 `/cam3/capture`로 카메라를 `/cctv/ingest3`에 POST → 그 프레임 추론으로 override**(3초 무수신 시 클립 복귀·Start/Stop·Wake Lock). **NO-* 미착용(위반) 직접 탐지**(휴리스틱 제거). YOLO-World+CLIP 의존 삭제(이미지 경량·CAM-03 단독 ~11fps vs 이전 ~4fps). **캐치 — 인메모리 override 상태라 `--max-instances 1` 필수**(다중 인스턴스면 폰 POST와 대시보드 조회가 갈려 불일치).
 
 **현재 상태**
-- 라이브 = 대시보드 `00018-5tn`(아직 **MJPEG** 사용) + **cctv-ai `00009-vz5`**. CAM-01=YOLOv8n+supervision 속도+한글 · CAM-02=합성 낙상 · CAM-03=YOLO-World PPE+한글.
-- 라이브 검증 — CAM-01 차량 32/8/5km/h·보행자 다수, CAM-03 작업자2·안전모·조끼. 스냅샷 엔드포인트 준비(대시보드 미전환).
-- 운영 플래그(필수): `--no-cpu-throttling --cpu 4 --memory 4Gi --min-instances 1 --max-instances 10 --concurrency 200 --update-env-vars YOLO_IMGSZ=800`.
-- **GitHub origin/main = `a0957bc` 동기화.** 바이너리(`.pt`·`samples/*.mp4`·`NanumGothic`·`weights/`)는 git 미추적(`.gcloudignore`로 빌드 포함, `weights/`는 빌드타임 다운로드).
+- 라이브 = 대시보드 `00018-5tn`(아직 **MJPEG** 사용·무변경) + **cctv-ai `00011-pvq`**. CAM-01=YOLOv8n+supervision 속도+한글 · CAM-02=합성 낙상 · CAM-03=**Hexmon PPE 듀얼소스(클립/폰 라이브)**+한글.
+- 라이브 검증 — CAM-03 5fps 송출 모사 source phone-live 12/12·3초 후 클립 복귀·스냅샷 한글 '안전모' 박스 육안 확인. 회귀 CAM-01 속도·CAM-02 정상.
+- 운영 플래그(필수): `--no-cpu-throttling --cpu 4 --memory 4Gi --min-instances 1 --max-instances 1 --concurrency 200 --update-env-vars YOLO_IMGSZ=800` (**max 1 = 인메모리 override 일관성**).
+- 바이너리(`.pt`·`samples/*.mp4`·`NanumGothic`)는 git 미추적(`.gcloudignore`로 빌드 포함). CLIP/`weights/`·worldv2 의존은 제거됨.
 
 **다음 할 일**
 - **(대시보드) MJPEG→스냅샷 폴링 전환** — `CctvQuadView` AiLiveScreen `<img stream>`→`/cctv/snapshot` 200~300ms 폴링(429 근본 대응). Next.js 통짜 재빌드라 팀원 SafeProcure(`cf404ee`)와 같이 나감 — **단 대시보드는 요율을 코드값으로 읽어 DB 재시드와는 decoupled**(별개 트랙 가능).
 - **(CAM-01)** fps 개선(`PPE_IMGSZ`↓ 또는 cpu↑) · 속도 절대정확도는 실측 캘리브 필요 · 헤더 '@960' 동적화(경미).
-- **(CAM-03)** PPE 정밀도 — 오픈보캐 신뢰도 낮음(조끼 0.16)·준수율 출렁임 → 전용 학습 PPE 모델 검토.
-- **(CAM-02)** 낙상 실모델(포즈) 미적용.
+- **(CAM-03)** ✅ 전용 PPE 모델(Hexmon)·폰 라이브 적용 완료. 잔여 — 조끼/Person 검출이 프레임별 출렁(conf 0.25), 필요시 `PPE_CONF` 0.3~0.35 상향. 발표 시 발표자가 `/cam3/capture` 열어 Start.
+- **(CAM-02)** 낙상 실모델(포즈) 미적용 — 후보 `melihuzunoglu/human-fall-detection`(ultralytics) 같은 패턴으로 이식 가능.
 - **(비용)** `--no-cpu-throttling`+`min1`+`cpu4` = 상시 과금. 발표 외 `gcloud run services update cctv-ai --min-instances 0`.
 
 ---

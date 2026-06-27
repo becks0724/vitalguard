@@ -1,7 +1,8 @@
 # VitAlGuard CCTV AI 데모 서버 — 대시보드 CCTV 관제 3타일(객체/낙상/PPE)에 MJPEG 스트림 + 감지 통계 제공.
-# CAM-01(객체)=YOLOv8n + Roboflow supervision(ByteTrack+원근보정 속도), CAM-03(PPE)=YOLO-World(안전모/조끼), CAM-02(낙상)=합성.
+# CAM-01(객체)=YOLOv8n + Roboflow supervision(ByteTrack+원근보정 속도), CAM-03(PPE)=Hexmon vyra-yolo-ppe(YOLOv8m 14클래스), CAM-02(낙상)=합성.
+# CAM-03 은 듀얼소스 — 기본은 번들 cam03.mp4 를 Hexmon 으로 추론(OFF), 폰이 /cctv/ingest3 로 프레임을 보내면 그 프레임을 추론해 덮어씀(ON·3초 무수신 시 클립 복귀).
 # 모델·영상·의존성이 없으면 해당 카메라는 합성으로 자동 폴백(배포 견고성).
-# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/snapshot[|2|3]=단발 JPEG, /cctv/stats=객체 /stats2=낙상 /stats3=PPE.
+# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/snapshot[|2|3]=단발 JPEG, /cctv/stats=객체 /stats2=낙상 /stats3=PPE. POST /cctv/ingest3=폰 프레임 수신, GET /cam3/capture=폰 캡처 페이지.
 import asyncio
 import os
 import threading
@@ -10,9 +11,10 @@ import time
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 app = FastAPI(title="VitAlGuard CCTV AI (demo)")
 
@@ -23,7 +25,7 @@ app.add_middleware(
         "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app",
         "http://localhost:3000",
     ],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
@@ -59,15 +61,37 @@ SPEED_TARGET_W = float(os.environ.get("SPEED_TARGET_W", "35"))  # m, 가로(진�
 SPEED_TARGET_H = float(os.environ.get("SPEED_TARGET_H", "25"))  # m, 깊이
 CALIB_TARGET = np.array([[0, 0], [SPEED_TARGET_W, 0], [SPEED_TARGET_W, SPEED_TARGET_H], [0, SPEED_TARGET_H]], np.float32)
 
-# ── CAM-03 PPE(YOLO-World 오픈보캐) 설정 ────────────────────────────────────────────────
-PPE_VIDEO = os.environ.get("CAM03_VIDEO", "samples/cam03.mp4")
-# worldv2(25MB) + CLIP 캐시(weights/clip)를 번들 → 런타임 set_classes 가 캐시 사용(다운로드 없음).
-PPE_MODEL = os.environ.get("YOLO_WORLD_MODEL", "yolov8s-worldv2.pt")
-PPE_CONF = float(os.environ.get("PPE_CONF", "0.05"))   # 오픈보캐는 신뢰도 낮아 임계 낮춤
+# ── CAM-03 PPE(Hexmon vyra-yolo-ppe-detection · YOLOv8m 14클래스) 설정 ──────────────────
+# 전용 finetune 모델(안전모/조끼/작업자 + NO-* 위반 클래스 직접 탐지). YOLO-World+CLIP 의존 제거.
+PPE_VIDEO = os.environ.get("CAM03_VIDEO", "samples/cam03.mp4")  # OFF 기본 폴백 클립
+PPE_MODEL = os.environ.get("PPE_MODEL", "vyra_ppe.pt")
+PPE_CONF = float(os.environ.get("PPE_CONF", "0.25"))   # 전용모델 — 임계 정상값
 PPE_IMGSZ = int(os.environ.get("PPE_IMGSZ", "640"))
-PPE_CLASSES = ["hard hat", "safety vest", "person"]    # YOLO-World 텍스트 프롬프트
-PPE_KO = {"hard hat": "안전모", "safety vest": "안전조끼", "person": "작업자"}
-PPE_COLOR = {"안전모": (120, 220, 120), "안전조끼": (80, 200, 255), "작업자": (240, 200, 120)}
+PPE_LIVE_TTL = float(os.environ.get("PPE_LIVE_TTL", "3.0"))  # 폰 마지막 프레임 후 이 시간(초) 지나면 클립으로 복귀
+# Hexmon 14클래스(en) → 한글. NO-* 는 미착용(위반).
+PPE_KO = {
+    "Hardhat": "안전모", "Safety Vest": "안전조끼", "Person": "작업자",
+    "NO-Hardhat": "안전모 미착용", "NO-Safety Vest": "조끼 미착용",
+    "Mask": "마스크", "NO-Mask": "마스크 미착용",
+    "Gloves": "장갑", "NO-Gloves": "장갑 미착용",
+    "Goggles": "보안경", "NO-Goggles": "보안경 미착용",
+    "Fall-Detected": "낙상", "Ladder": "사다리", "Safety Cone": "안전콘",
+}
+PPE_VIOLATION_KO = {"안전모 미착용", "조끼 미착용", "마스크 미착용", "장갑 미착용", "보안경 미착용", "낙상"}
+PPE_COMPLIANT_KO = {"안전모", "안전조끼", "마스크", "장갑", "보안경"}
+GREEN, RED, BLUE, GRAY = (120, 220, 120), (60, 60, 239), (240, 200, 120), (170, 170, 170)  # BGR
+
+
+def _ppe_color(ko: str):
+    if ko in PPE_VIOLATION_KO:
+        return RED
+    if ko in PPE_COMPLIANT_KO:
+        return GREEN
+    if ko == "작업자":
+        return BLUE
+    return GRAY
+
+
 OW3, OH3 = 640, 360  # CAM-03 출력 해상도
 
 _obj_lock = threading.Lock()
@@ -75,8 +99,61 @@ _obj = {"frame": b"", "stats": None}
 OBJECT_REAL = False  # CAM-01 실모델 가동 여부
 
 _ppe_lock = threading.Lock()
-_ppe = {"frame": b"", "stats": None}
-PPE_REAL = False     # CAM-03 실모델 가동 여부
+_ppe = {"frame": b"", "stats": None}          # 클립(OFF 기본) 추론 결과
+PPE_REAL = False     # CAM-03 실모델(Hexmon) 로드 여부
+
+# 폰 라이브(ON override) — /cctv/ingest3 가 갱신. ts 기준 PPE_LIVE_TTL 내면 클립 대신 이걸 노출.
+_ppe_live_lock = threading.Lock()
+_ppe_live = {"frame": b"", "stats": None, "ts": 0.0}
+
+# Hexmon 모델 단일 인스턴스 — 클립 워커와 인제스트 핸들러가 공유(추론 직렬화).
+_ppe_model = None
+_ppe_model_lock = threading.Lock()
+
+
+def _ppe_is_live() -> bool:
+    return (time.time() - _ppe_live["ts"]) < PPE_LIVE_TTL
+
+
+def _ensure_ppe_model():
+    # Hexmon best.pt 지연 로드(최초 호출 시 수 초). 성공 시 PPE_REAL=True.
+    global _ppe_model, PPE_REAL
+    if _ppe_model is not None:
+        return _ppe_model
+    with _ppe_model_lock:
+        if _ppe_model is None:
+            from ultralytics import YOLO
+            _ppe_model = YOLO(PPE_MODEL)
+            PPE_REAL = True
+            print(f"[cctv-ai] CAM-03 Hexmon model loaded ({PPE_MODEL}, {len(_ppe_model.names)} classes)")
+    return _ppe_model
+
+
+def _ppe_infer(frame, header):
+    # 한 프레임 → Hexmon 추론 → (jpeg bytes, stats3). 클립 워커·폰 인제스트 공용.
+    model = _ensure_ppe_model()
+    with _ppe_model_lock:
+        res = model.predict(frame, imgsz=PPE_IMGSZ, conf=PPE_CONF, verbose=False)[0]
+    cnt = {}
+    dets = []
+    for b in res.boxes:
+        en = model.names[int(b.cls)]
+        ko = PPE_KO.get(en, en)
+        cnt[en] = cnt.get(en, 0) + 1
+        x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
+        dets.append((x1, y1, x2, y2, _ppe_color(ko), ko, en))
+    img = draw_pil(frame, dets, header)
+    okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+    # 준수율 — NO-* 위반 클래스를 직접 카운트(휴리스틱 아님).
+    hard, no_hard = cnt.get("Hardhat", 0), cnt.get("NO-Hardhat", 0)
+    vest, no_vest = cnt.get("Safety Vest", 0), cnt.get("NO-Safety Vest", 0)
+    person = cnt.get("Person", 0)
+    total_ppe = hard + no_hard + vest + no_vest
+    rate = round(100 * (hard + vest) / total_ppe) if total_ppe else 100
+    stats = {"violation_count": no_hard + no_vest, "compliance_rate": rate,
+             "no_hardhat_count": no_hard, "no_vest_count": no_vest,
+             "hardhat_count": hard, "vest_count": vest, "person_count": person}
+    return (buf.tobytes() if okj else b""), stats
 
 
 class _ViewTransformer:
@@ -186,56 +263,39 @@ def _object_worker():
 
 
 def _ppe_worker():
-    # CAM-03: YOLO-World 오픈보캐로 안전모/조끼/작업자 감지 → 준수율 통계 → 전역 갱신.
+    # CAM-03 클립 워커(OFF 기본): Hexmon 으로 cam03.mp4 를 추론 → 전역 갱신. 폰 override 중이면 추론을 건너뛰어 CPU 양보.
     global PPE_REAL
     try:
-        from ultralytics import YOLOWorld
-        model = YOLOWorld(PPE_MODEL)
-        cur = [str(v).lower() for v in (model.names.values() if isinstance(model.names, dict) else model.names)]
-        if cur != [c.lower() for c in PPE_CLASSES]:  # 베이크 안 된 모델만 set_classes(CLIP 다운로드 필요)
-            model.set_classes(PPE_CLASSES)
-        cap = cv2.VideoCapture(PPE_VIDEO)
-        if not cap.isOpened():
-            raise RuntimeError(f"cannot open {PPE_VIDEO}")
+        _ensure_ppe_model()  # 모델 로드(인제스트도 이걸 공유) — 실패 시 합성 폴백
     except Exception as e:
-        print(f"[cctv-ai] CAM-03 PPE worker init failed ({e}); falling back to synthetic")
+        print(f"[cctv-ai] CAM-03 Hexmon load failed ({e}); falling back to synthetic")
         PPE_REAL = False
+        return
+    if not os.path.exists(PPE_VIDEO):
+        print(f"[cctv-ai] CAM-03 fallback clip not found ({PPE_VIDEO}); 폰 인제스트만 활성")
+        return  # 모델은 떴으니 /cctv/ingest3 는 동작, 클립 폴백만 없음
+    cap = cv2.VideoCapture(PPE_VIDEO)
+    if not cap.isOpened():
+        print(f"[cctv-ai] CAM-03 cannot open {PPE_VIDEO}; 폰 인제스트만 활성")
         return
 
     target_dt = 1.0 / PLAYBACK_FPS
     while True:
         t0 = time.time()
         try:
+            if _ppe_is_live():       # 폰 라이브 중 — 클립 추론 스킵(폰에 CPU 양보)
+                time.sleep(0.2)
+                continue
             ok, frame = cap.read()
             if not ok:
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 continue
             if frame.shape[1] != OW3 or frame.shape[0] != OH3:
                 frame = cv2.resize(frame, (OW3, OH3))
-            res = model.predict(frame, imgsz=PPE_IMGSZ, conf=PPE_CONF, verbose=False)[0]
-            cnt = {"안전모": 0, "안전조끼": 0, "작업자": 0}
-            dets = []
-            for b in res.boxes:
-                en = PPE_CLASSES[int(b.cls)]
-                ko = PPE_KO.get(en, en)
-                cnt[ko] = cnt.get(ko, 0) + 1
-                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
-                dets.append((x1, y1, x2, y2, PPE_COLOR.get(ko, (200, 200, 200)), ko, en))
-            img = draw_pil(frame, dets, "CAM-03  Worksite  YOLO-World PPE")
-            okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
-            # 준수율(근사 — 검출 카운트 기반, 박스-인물 매칭은 안 함).
-            person = cnt["작업자"]
-            hard = min(cnt["안전모"], person) if person else cnt["안전모"]
-            vest = min(cnt["안전조끼"], person) if person else cnt["안전조끼"]
-            no_hard, no_vest = max(0, person - hard), max(0, person - vest)
-            violations = max(no_hard, no_vest)
-            rate = round(100 * (person - violations) / person) if person else 100
-            stats = {"violation_count": violations, "compliance_rate": rate,
-                     "no_hardhat_count": no_hard, "no_vest_count": no_vest,
-                     "hardhat_count": hard, "vest_count": vest, "person_count": person}
+            jpg, stats = _ppe_infer(frame, "CAM-03  Worksite  PPE (Hexmon)")
             with _ppe_lock:
-                if okj:
-                    _ppe["frame"] = buf.tobytes()
+                if jpg:
+                    _ppe["frame"] = jpg
                 _ppe["stats"] = stats
         except Exception as e:
             print(f"[cctv-ai] CAM-03 frame error ({e})")
@@ -408,6 +468,35 @@ def _live_frame(real, store, lock, cam):
     return frame or render(cam, time.time())
 
 
+def _ppe_current_frame():
+    # 폰 라이브(최근 PPE_LIVE_TTL) > 클립 추론 > 합성 폴백.
+    if _ppe_is_live():
+        with _ppe_live_lock:
+            f = _ppe_live["frame"]
+        if f:
+            return f
+    if PPE_REAL:
+        with _ppe_lock:
+            f = _ppe["frame"]
+        if f:
+            return f
+    return render("ppe", time.time())
+
+
+def _ppe_current_stats():
+    if _ppe_is_live():
+        with _ppe_live_lock:
+            s = _ppe_live["stats"]
+        if s:
+            return s
+    if PPE_REAL:
+        with _ppe_lock:
+            s = _ppe["stats"]
+        if s:
+            return s
+    return ppe_stats(time.time())
+
+
 async def mjpeg(cam: str):
     while True:
         frame = render(cam, time.time())
@@ -426,7 +515,7 @@ async def mjpeg_object():
 
 async def mjpeg_ppe():
     while True:
-        frame = _live_frame(PPE_REAL, _ppe, _ppe_lock, "ppe")
+        frame = _ppe_current_frame()
         if frame:
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
         await asyncio.sleep(1.0 / FPS)
@@ -435,6 +524,82 @@ async def mjpeg_ppe():
 # ── 라우트 ─────────────────────────────────────────────────────────────────────────────
 MJPEG_MT = "multipart/x-mixed-replace; boundary=frame"
 SNAPSHOT_HEADERS = {"Cache-Control": "no-store"}
+
+# 폰/노트북 카메라 캡처 페이지 — getUserMedia 프레임을 /cctv/ingest3 로 ~5fps POST. Start/Stop·Wake Lock.
+CAPTURE_HTML = """<!DOCTYPE html>
+<html lang="ko"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>CAM-03 폰 카메라 송출</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0d0f12; color:#e6e6e6; font-family:-apple-system,system-ui,sans-serif; text-align:center; }
+  h1 { font-size:16px; font-weight:600; padding:12px 0 4px; margin:0; }
+  .sub { font-size:12px; color:#8a8f98; margin-bottom:10px; }
+  #wrap { position:relative; width:100%; max-width:480px; margin:0 auto; }
+  video { width:100%; background:#000; border-radius:10px; display:block; }
+  #btn { width:90%; max-width:440px; margin:14px auto; padding:16px; font-size:18px; font-weight:700;
+         border:0; border-radius:12px; color:#fff; background:#2563eb; }
+  #btn.on { background:#dc2626; }
+  #stat { font-size:13px; color:#9aa0a6; min-height:40px; padding:0 16px 24px; line-height:1.5; }
+  .big { font-size:15px; color:#e6e6e6; }
+</style></head>
+<body>
+  <h1>VitAlGuard · CAM-03 PPE 송출</h1>
+  <div class="sub">이 폰 카메라가 관제 CAM-03 타일로 실시간 전송됩니다. (가로로 들면 화면비가 맞습니다)</div>
+  <div id="wrap"><video id="v" autoplay muted playsinline></video></div>
+  <button id="btn">▶ 송출 시작</button>
+  <div id="stat">대기 중 — '송출 시작'을 누르세요.</div>
+<script>
+const FPS = 5, QUALITY = 0.5, CW = 640, CH = 360;
+const v = document.getElementById('v'), btn = document.getElementById('btn'), stat = document.getElementById('stat');
+const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
+const ctx = canvas.getContext('2d');
+let stream = null, timer = null, running = false, sending = false, sent = 0, wakeLock = null;
+
+async function lockScreen() {
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+function unlockScreen() { try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {} }
+document.addEventListener('visibilitychange', () => { if (running && document.visibilityState === 'visible') lockScreen(); });
+
+function tick() {
+  if (!running || sending || !v.videoWidth) return;
+  const scale = Math.max(CW / v.videoWidth, CH / v.videoHeight);
+  const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
+  ctx.drawImage(v, (CW - dw) / 2, (CH - dh) / 2, dw, dh);
+  sending = true;
+  canvas.toBlob(async (blob) => {
+    if (!blob) { sending = false; return; }
+    try {
+      const r = await fetch('/cctv/ingest3', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+      const j = await r.json();
+      sent++;
+      if (j.ok) stat.innerHTML = '<span class="big">송출 중 · ' + sent + ' 프레임</span><br>작업자 ' + j.persons + ' · 위반 ' + j.violations + ' · 준수율 ' + j.compliance + '%';
+      else stat.textContent = '서버 응답: ' + (j.error || '오류') + ' (재시도 중)';
+    } catch (e) { stat.textContent = '전송 오류 — 네트워크 확인 (재시도 중)'; }
+    sending = false;
+  }, 'image/jpeg', QUALITY);
+}
+
+async function start() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 } }, audio: false });
+  } catch (e) { stat.textContent = '카메라 접근 실패 — 권한을 허용하고 HTTPS 인지 확인하세요. (' + e.name + ')'; return; }
+  v.srcObject = stream; await v.play();
+  await lockScreen();
+  running = true; sent = 0; timer = setInterval(tick, Math.round(1000 / FPS));
+  btn.textContent = '■ 송출 중지'; btn.classList.add('on'); stat.textContent = '카메라 시작 — 전송 준비 중...';
+}
+function stop() {
+  running = false; if (timer) { clearInterval(timer); timer = null; }
+  unlockScreen();
+  btn.textContent = '▶ 송출 시작'; btn.classList.remove('on');
+  stat.textContent = '송출 중지 — 3초 뒤 CAM-03 은 기본 클립으로 복귀합니다.';
+}
+btn.addEventListener('click', () => running ? stop() : start());
+</script>
+</body></html>"""
 
 
 @app.on_event("startup")
@@ -452,23 +617,24 @@ def _startup():
             print(f"[cctv-ai] CAM-01 deps unavailable ({e}); synthetic")
     else:
         print(f"[cctv-ai] CAM-01 video not found ({VIDEO_PATH}); synthetic")
-    if os.path.exists(PPE_VIDEO):
+    # CAM-03: Hexmon 모델 로드 + 클립 폴백 워커(폰 인제스트는 모델만 뜨면 동작).
+    if os.path.exists(PPE_MODEL):
         try:
-            from ultralytics import YOLOWorld  # noqa: F401
-            PPE_REAL = True
+            import ultralytics  # noqa: F401
             threading.Thread(target=_ppe_worker, daemon=True).start()
-            print("[cctv-ai] CAM-03 real worker started (YOLO-World PPE)")
+            print("[cctv-ai] CAM-03 worker starting (Hexmon PPE, clip fallback + phone ingest)")
         except Exception as e:
             print(f"[cctv-ai] CAM-03 deps unavailable ({e}); synthetic")
     else:
-        print(f"[cctv-ai] CAM-03 video not found ({PPE_VIDEO}); synthetic")
+        print(f"[cctv-ai] CAM-03 model not found ({PPE_MODEL}); synthetic")
 
 
 @app.get("/")
 def health():
     return {"ok": True, "service": "vitalguard-cctv-ai",
             "cam01": "yolo+bytetrack" if OBJECT_REAL else "synthetic",
-            "cam03": "yolo-world" if PPE_REAL else "synthetic",
+            "cam03": ("hexmon-ppe" if PPE_REAL else "synthetic"),
+            "cam03_source": ("phone-live" if _ppe_is_live() else "clip"),
             "cams": ["object", "fall", "ppe"]}
 
 
@@ -504,12 +670,7 @@ def stats_fall():
 
 @app.get("/cctv/stats3")
 def stats_ppe():
-    if PPE_REAL:
-        with _ppe_lock:
-            s = _ppe["stats"]
-        if s:
-            return JSONResponse(s)
-    return JSONResponse(ppe_stats(time.time()))
+    return JSONResponse(_ppe_current_stats())
 
 
 @app.get("/cctv/snapshot")
@@ -525,5 +686,36 @@ def snapshot_fall():
 
 @app.get("/cctv/snapshot3")
 def snapshot_ppe():
-    return Response(content=_live_frame(PPE_REAL, _ppe, _ppe_lock, "ppe"),
-                    media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+    return Response(content=_ppe_current_frame(), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+
+
+@app.post("/cctv/ingest3")
+async def ingest_ppe(request: Request):
+    # 폰 캡처 페이지가 JPEG 프레임(raw body)을 POST → Hexmon 추론 → 폰 라이브 슬롯 갱신(클립 override).
+    data = await request.body()
+    if not data:
+        return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
+    arr = np.frombuffer(data, np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return JSONResponse({"ok": False, "error": "decode failed"}, status_code=400)
+    if frame.shape[1] != OW3 or frame.shape[0] != OH3:
+        frame = cv2.resize(frame, (OW3, OH3))
+    try:
+        jpg, stats = await run_in_threadpool(_ppe_infer, frame, "CAM-03  Live (Phone)  PPE (Hexmon)")
+    except Exception as e:
+        print(f"[cctv-ai] ingest3 inference error ({e})")
+        return JSONResponse({"ok": False, "error": "model not ready"}, status_code=503)
+    with _ppe_live_lock:
+        if jpg:
+            _ppe_live["frame"] = jpg
+        _ppe_live["stats"] = stats
+        _ppe_live["ts"] = time.time()
+    return JSONResponse({"ok": True, "persons": stats["person_count"],
+                         "violations": stats["violation_count"], "compliance": stats["compliance_rate"]})
+
+
+@app.get("/cam3/capture", response_class=HTMLResponse)
+def cam3_capture():
+    # 폰(또는 노트북 웹캠)으로 여는 캡처 페이지 — 카메라 프레임을 /cctv/ingest3 로 ~5fps POST. Start/Stop + Wake Lock.
+    return HTMLResponse(CAPTURE_HTML)
