@@ -76,9 +76,13 @@ IMG=asia-northeast3-docker.pkg.dev/$PROJECT/vitalguard/cctv-ai:latest
 gcloud builds submit --tag $IMG .
 gcloud run deploy cctv-ai --image $IMG --region $REGION \
   --allow-unauthenticated --cpu 2 --memory 2Gi --timeout 3600 \
-  --min-instances 1 --max-instances 10 --concurrency 200 --no-cpu-throttling
+  --min-instances 1 --max-instances 10 --concurrency 200 --no-cpu-throttling \
+  --update-env-vars YOLO_IMGSZ=800
 # → 서비스 URL(https://cctv-ai-xxxxx.run.app) 확보
 ```
+
+`YOLO_IMGSZ=800` — 추론 해상도. 코드 기본 960(인식률 최대·CPU fps~4-5)이나 라이브는 **800**(인식률 거의 동일·fps~6-7)로 운영.
+더 빠르게=값↓(640), 더 정밀=값↑(960). `--cpu 4` 로 올리면 960 도 ~8-10fps.
 
 플래그(전부 필수 — 빠지면 동작/안정성 저하).
 - `--memory 2Gi` — torch+YOLOv8n 상주 메모리(합성 전용이던 1Gi 에서 상향).
