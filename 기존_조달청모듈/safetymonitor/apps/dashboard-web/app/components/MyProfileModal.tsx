@@ -52,7 +52,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [editable, setEditable] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false); // 저장 성공 → '변경 완료' 확인 다이얼로그 표시(예 클릭 시 모달 닫기).
   const [saving, setSaving] = useState(false);
 
   const [username, setUsername] = useState("");
@@ -131,7 +131,6 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
 
   const save = useCallback(async () => {
     setError(null);
-    setSuccess(null);
     if (!name.trim()) {
       setError("이름을 입력해주세요.");
       return;
@@ -182,7 +181,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setError(j.error || "수정에 실패했습니다.");
         return;
       }
-      setSuccess(j.message || "수정됐습니다.");
+      setSaved(true);
       setCurPw("");
       setNewPw("");
       setNewPw2("");
@@ -199,7 +198,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="relative flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-3 dark:border-white/10">
@@ -232,11 +231,6 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
               {error && (
                 <p className="rounded-lg border border-red-300/50 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200">
                   {error}
-                </p>
-              )}
-              {success && (
-                <p className="rounded-lg border border-emerald-300/50 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-emerald-200">
-                  {success}
                 </p>
               )}
 
@@ -423,6 +417,35 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
             </>
           )}
         </div>
+
+        {/* 저장 완료 확인 — 성공 시 카드 위에 오버레이. '예' 클릭 시 모달 전체 닫기(2차 닫기 불필요). */}
+        {saved && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 p-6">
+            <div className="w-full max-w-xs rounded-2xl border border-hairline-strong bg-canvas p-5 text-center shadow-xl dark:border-white/10 dark:bg-surface-dark">
+              <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-500/20">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2.5}
+                  className="h-6 w-6 text-emerald-600 dark:text-emerald-300"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <p className="text-sm font-bold text-ink dark:text-on-dark">
+                변경이 완료되었습니다.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="mt-4 w-full rounded-pill bg-primary py-2 text-sm font-semibold text-on-primary active:scale-95"
+              >
+                예
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
