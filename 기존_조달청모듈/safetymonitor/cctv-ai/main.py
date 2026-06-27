@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 app = FastAPI(title="VitAlGuard CCTV AI (demo)")
 
@@ -355,3 +355,29 @@ def stats_fall():
 @app.get("/cctv/stats3")
 def stats_ppe():
     return JSONResponse(ppe_stats(time.time()))
+
+
+# ── 단발 JPEG 스냅샷(폴링용·MJPEG 대안) — 슬롯 즉시 반환으로 동시성 점유 회피 ──────────────
+SNAPSHOT_HEADERS = {"Cache-Control": "no-store"}
+
+
+@app.get("/cctv/snapshot")
+def snapshot_object():
+    # CAM-01 객체: 실추론 프레임(전역) 우선, 없으면 합성. mjpeg_object 와 동일 패턴.
+    frame = b""
+    if OBJECT_REAL:
+        with _obj_lock:
+            frame = _obj["frame"]
+    if not frame:
+        frame = render("object", time.time())
+    return Response(content=frame, media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+
+
+@app.get("/cctv/snapshot2")
+def snapshot_fall():
+    return Response(content=render("fall", time.time()), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+
+
+@app.get("/cctv/snapshot3")
+def snapshot_ppe():
+    return Response(content=render("ppe", time.time()), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
