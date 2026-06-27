@@ -1,0 +1,16 @@
+# 대시보드 Cloud Build — AI CCTV 서버 URL 을 빌드타임 주입(NEXT_PUBLIC_*=빌드 시 인라인).
+# 사용: gcloud builds submit --config cloudbuild.dashboard.yaml --substitutions=_AI_URL=https://cctv-ai-xxxxx.run.app .
+# _AI_URL 미지정 시 빈값 → 코드가 http://localhost:8000 로 폴백(현행 동작).
+substitutions:
+  _AI_URL: ""
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --build-arg
+      - NEXT_PUBLIC_AI_CCTV_API=${_AI_URL}
+      - -t
+      - asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard:latest
+      - .
+images:
+  - asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard:latest
