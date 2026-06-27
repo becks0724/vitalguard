@@ -10,6 +10,7 @@ import {
   deleteCalendarMedia,
   type CalendarMediaCommentRow,
 } from "../../../../lib/db";
+import { isR2Configured, presignDownload } from "../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,22 @@ export async function GET(request: Request) {
     list.push(c);
     byMedia.set(c.media_id, list);
   }
-  const withComments = media.map((m) => ({
-    ...m,
-    comments: byMedia.get(m.id) ?? [],
-  }));
+  // 비공개 R2 저장분(storage_provider=r2 + storage_key)은 표시 시점에 만료형 GET URL 발급.
+  // 발급 실패 시 기존 media_url 유지(렌더 깨짐 방지). 리터럴 media_url(더미/시드)은 그대로.
+  const r2On = isR2Configured();
+  const withComments = await Promise.all(
+    media.map(async (m) => {
+      let mediaUrl = m.media_url;
+      if (r2On && m.storage_provider === "r2" && m.storage_key) {
+        try {
+          mediaUrl = await presignDownload(m.storage_key);
+        } catch {
+          /* 발급 실패 — 기존 media_url 유지 */
+        }
+      }
+      return { ...m, media_url: mediaUrl, comments: byMedia.get(m.id) ?? [] };
+    }),
+  );
   return NextResponse.json({ ok: true, media: withComments });
 }
 

@@ -40,7 +40,21 @@ App OCR → 클라우드(이미지/미디어) + PostgreSQL(로그기록) → 관
 - 검증 — tsc=0, build=0, Playwright 전수(클릭=선택 폼0 / +버튼 폼1 / 문구 / 제목·OCR라벨 / 시드댓글·작성자 / UI 댓글추가) 통과.
 - 데모 시드 6건(제목·샘플 댓글 4개) 유지 — `site_id=DEMO-SEED`, ID `/tmp/seed_ids.txt`.
 
-## 다음(Phase 2) — 결정/자격증명 필요
-- 스토리지 백엔드 확정(GCS 서울 권장: 동일 GCP 프로젝트·최소 통합). 버킷 생성 + 서비스계정 키 또는 워크로드 자격 → `.env`/Cloud Run 시크릿.
-- 프리사인 업로드 URL 발급 API(`POST /api/calendar/media/upload-url`) + 등록 API에 storage_provider/storage_key 채움.
-- 앱(Phase 3): OCR → 프리사인 PUT 업로드 → 등록 API(앱 토큰).
+## Phase 2 — 스토리지 백엔드 = Cloudflare R2 (2026-06-27)
+
+사용자 결정 — 백엔드 **R2**(egress 영구 무료, S3호환). 접근 모델 **프리사인 GET(비공개 버킷)**. 이번 범위 **서버 API/어댑터만**(관리자 업로드 UI 없음, 앱 업로드는 Phase 3).
+
+### Phase 2a 완료 (코드, 자격증명 무관)
+- `lib/storage.ts` — R2 S3호환 어댑터. `presignUpload(key, contentType)`(PUT 10분) · `presignDownload(key)`(GET 1시간) · `isR2Configured()`. 클라이언트 지연 생성(빌드 시 env 불필요). region='auto', endpoint=`https://<accountId>.r2.cloudflarestorage.com`.
+- `POST /api/calendar/media/upload-url` — 관리자 인증 + R2 미설정 시 503. contentType 화이트리스트(jpg/png/webp/heic/mp4/mov)만, 키=`calendar-media/{dateKey|undated}/{uuid}.{ext}`. 반환 `{ok, provider:"r2", key, uploadUrl}`.
+- `GET /api/calendar/media` — `storage_provider=r2`+`storage_key` 행은 표시 시점에 `presignDownload`로 만료형 URL 발급(실패 시 기존 media_url 유지). 리터럴 media_url(더미/시드)은 그대로.
+- 의존성 `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner` 추가. 검증 tsc=0, next build=0(신규 라우트 등록 확인).
+- 등록 API(POST)는 무변경 — 앱이 `storageProvider:"r2"`+`storageKey`만 보내면 됨(mediaUrl 생략, 조회 시 발급).
+
+### Phase 2b 남음 (자격증명 + 라이브 — 사용자 R2 셋업 필요)
+- R2 버킷(비공개) + API 토큰(Object R/W, 버킷 스코프) 생성.
+- env 키 4개를 `apps/dashboard-web/.env.local`에 기입 — `R2_ACCOUNT_ID` · `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_BUCKET`. (공개 베이스 URL 불필요 — 프리사인 방식.)
+- Cloud Run 시크릿 4개 등록(argv 미노출, 파일 경유) → 배포 → 라이브 업로드 1건 왕복 검증.
+
+### Phase 3 (별도) — Flutter 앱
+- OCR → `upload-url`로 프리사인 PUT → 등록 API(앱 토큰 경로 추가 필요).
