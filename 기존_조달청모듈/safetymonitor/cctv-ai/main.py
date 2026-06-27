@@ -1,7 +1,10 @@
 # VitAlGuard CCTV AI 데모 서버 — 대시보드 CCTV 관제 3타일(객체/낙상/PPE)에 MJPEG 스트림 + 감지 통계 제공.
-# 자체완결 시뮬레이션(YOLO/torch/GPU/영상자산 불필요 → Cloud Run 즉시 배포). 실모델 전환은 README 참조.
+# CAM-01(객체)=실제 YOLOv8n 추론(번들 샘플영상 samples/cam01.mp4), CAM-02/03=합성 시뮬레이션.
+# 모델·영상이 없거나 ultralytics 미설치면 CAM-01 도 합성으로 자동 폴백(배포 견고성).
 # 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/stats=객체 /cctv/stats2=낙상 /cctv/stats3=PPE.
 import asyncio
+import os
+import threading
 import time
 
 import cv2
@@ -25,6 +28,94 @@ app.add_middleware(
 
 W, H = 640, 360
 FPS = 12
+
+# ── CAM-01 실제 YOLOv8n 추론 설정 ────────────────────────────────────────────────────────
+MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
+VIDEO_PATH = os.environ.get("CAM01_VIDEO", "samples/cam01.mp4")
+PLAYBACK_FPS = 15  # 샘플영상 캡처 fps(실시간 속도 유지)
+CONF = 0.35
+
+# COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·차량류)만 그린다(가방·신호등 등 노이즈 제외).
+COCO_KO = {
+    "person": "보행자", "bicycle": "자전거", "car": "차량",
+    "motorcycle": "오토바이", "bus": "버스", "truck": "트럭",
+}
+CLASS_COLOR = {
+    "보행자": (80, 200, 255), "자전거": (255, 200, 80), "차량": (120, 220, 120),
+    "오토바이": (200, 160, 255), "버스": (240, 200, 120), "트럭": (60, 160, 240),
+}
+
+_obj_lock = threading.Lock()
+_obj = {"frame": b"", "stats": None}
+OBJECT_REAL = False  # startup 에서 모델·영상 로드 성공 시 True
+
+
+def _object_worker():
+    # 백그라운드 스레드: 샘플영상 루프 → YOLOv8n 추론 → 실박스 그리기 + 실통계 산출 → 전역 갱신.
+    global OBJECT_REAL
+    try:
+        from ultralytics import YOLO  # 지연 임포트(폴백 시 미설치여도 무방)
+        model = YOLO(MODEL_PATH)
+        cap = cv2.VideoCapture(VIDEO_PATH)
+        if not cap.isOpened():
+            raise RuntimeError(f"cannot open {VIDEO_PATH}")
+    except Exception as e:  # 로드 실패 → CAM-01 합성 폴백
+        print(f"[cctv-ai] CAM-01 real worker init failed ({e}); falling back to synthetic")
+        OBJECT_REAL = False
+        return
+
+    target_dt = 1.0 / PLAYBACK_FPS
+    fps_ema = float(PLAYBACK_FPS)
+    while True:
+        t0 = time.time()
+        try:
+            ok, frame = cap.read()
+            if not ok:  # 영상 끝 → 처음으로 루프
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            if frame.shape[1] != W or frame.shape[0] != H:
+                frame = cv2.resize(frame, (W, H))
+            res = model(frame, verbose=False, conf=CONF)[0]
+            dets = []
+            for b in res.boxes:
+                en = model.names[int(b.cls)]
+                ko = COCO_KO.get(en)
+                if not ko:
+                    continue
+                x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
+                dets.append((ko, en, x1, y1, x2 - x1, y2 - y1))
+
+            img = frame.copy()
+            cv2.rectangle(img, (0, 0), (W, 26), (18, 18, 20), -1)
+            cv2.putText(img, "CAM-01  Hongdae St. (YOLOv8n)", (8, 18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
+            cv2.circle(img, (W - 112, 13), 4, (60, 60, 239), -1)
+            cv2.putText(img, time.strftime("%H:%M:%S"), (W - 98, 18),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
+            by = {}
+            for ko, en, x, y, w, h in dets:
+                # 라벨은 영문(cv2 한글 미지원). 통계 JSON 으로 한글 전달.
+                draw_box(img, (x, y, w, h), CLASS_COLOR.get(ko, (80, 200, 255)), en)
+                by[ko] = by.get(ko, 0) + 1
+            okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+
+            dt = max(time.time() - t0, 1e-3)
+            fps_ema = 0.8 * fps_ema + 0.2 * (1.0 / dt)
+            stats = {"fps": round(fps_ema), "total": len(dets),
+                     "byClass": [{"label": k, "count": v} for k, v in by.items()],
+                     "alertsLastMinute": 0}
+            with _obj_lock:
+                if okj:
+                    _obj["frame"] = buf.tobytes()
+                _obj["stats"] = stats
+        except Exception as e:
+            print(f"[cctv-ai] CAM-01 frame error ({e})")
+            time.sleep(0.2)
+            continue
+        rem = target_dt - (time.time() - t0)
+        if rem > 0:
+            time.sleep(rem)
+
 
 # ── 장면 상태(시뮬레이션) — render 와 stats 가 같은 함수를 써서 영상·통계가 일치 ──────────────
 
@@ -155,18 +246,51 @@ async def mjpeg(cam: str):
         await asyncio.sleep(1.0 / FPS)
 
 
+async def mjpeg_object():
+    # CAM-01: 실추론 프레임(전역) 우선, 워밍업/폴백 시 합성 프레임.
+    while True:
+        frame = b""
+        if OBJECT_REAL:
+            with _obj_lock:
+                frame = _obj["frame"]
+        if not frame:
+            frame = render("object", time.time())
+        if frame:
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+        await asyncio.sleep(1.0 / FPS)
+
+
 # ── 라우트 ─────────────────────────────────────────────────────────────────────────────
 MJPEG_MT = "multipart/x-mixed-replace; boundary=frame"
 
 
+@app.on_event("startup")
+def _startup():
+    # 모델·영상 존재 + ultralytics 임포트 가능하면 CAM-01 실추론 워커 기동, 아니면 합성 유지.
+    global OBJECT_REAL
+    if not os.path.exists(VIDEO_PATH):
+        print(f"[cctv-ai] CAM-01 video not found ({VIDEO_PATH}); CAM-01 synthetic")
+        return
+    try:
+        import ultralytics  # noqa: F401
+    except Exception as e:
+        print(f"[cctv-ai] ultralytics unavailable ({e}); CAM-01 synthetic")
+        return
+    OBJECT_REAL = True
+    threading.Thread(target=_object_worker, daemon=True).start()
+    print("[cctv-ai] CAM-01 real YOLOv8n worker started")
+
+
 @app.get("/")
 def health():
-    return {"ok": True, "service": "vitalguard-cctv-ai", "cams": ["object", "fall", "ppe"]}
+    return {"ok": True, "service": "vitalguard-cctv-ai",
+            "cam01": "yolov8n" if OBJECT_REAL else "synthetic",
+            "cams": ["object", "fall", "ppe"]}
 
 
 @app.get("/cctv/stream")
 def stream_object():
-    return StreamingResponse(mjpeg("object"), media_type=MJPEG_MT)
+    return StreamingResponse(mjpeg_object(), media_type=MJPEG_MT)
 
 
 @app.get("/cctv/stream2")
@@ -181,6 +305,11 @@ def stream_ppe():
 
 @app.get("/cctv/stats")
 def stats_object():
+    if OBJECT_REAL:
+        with _obj_lock:
+            s = _obj["stats"]
+        if s:
+            return JSONResponse(s)
     return JSONResponse(object_stats(time.time()))
 
 

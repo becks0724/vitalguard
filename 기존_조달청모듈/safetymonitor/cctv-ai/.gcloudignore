@@ -1,0 +1,12 @@
+# Cloud Build 업로드 컨텍스트 제외 목록.
+# ★ 이 파일이 존재하면 gcloud 는 .gitignore 를 폴백으로 쓰지 않는다 →
+#    git 미추적인 yolov8n.pt·samples/*.mp4 도 빌드 컨텍스트에는 포함되어 이미지에 COPY 된다.
+.git/
+.gitignore
+.gcloudignore
+__pycache__/
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store

@@ -2,3 +2,4 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
+# torch(CPU 전용 휠) + ultralytics 는 이미지 경량화 위해 Dockerfile 에서 별도 설치(여기 두면 CUDA torch 가 깔림).
