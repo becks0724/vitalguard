@@ -3118,9 +3118,10 @@ export function DemoDashboard() {
                 <SafetySignalBoard lat={fieldCoords.lat} lon={fieldCoords.lon} worker={workerSignal} />
               </div>
             </div>
-            {/* 현장정보 + 국내재해사례 — 좌우 화살표 캐러셀(‹ 제목 N/M ›) 같은 자리에서 전환 */}
+            {/* 현장정보 + 국내재해사례 — 좌우 화살표 캐러셀(‹ 제목 N/M ›). 자동회전 없음·수동 전환만 */}
             <WidgetCarousel
               className="h-[140px]"
+              autoRotate={false}
               pages={[
                 {
                   title: "현장정보",
@@ -3150,9 +3151,10 @@ export function DemoDashboard() {
             />
           </div>
 
-          {/* 우측 — 그룹 캐러셀: [현황 요약(공정률·무사고·수신요약) ↔ 실시간 레이더] */}
+          {/* 우측 — 그룹 캐러셀(현황 요약·실시간 레이더·태풍 진로·특보영상). 자동회전 없음·수동 전환만 */}
           <WidgetCarousel
             className="min-h-[300px]"
+            autoRotate={false}
             pages={[
               {
                 title: "현황 요약",
