@@ -11,7 +11,7 @@ export const MOCK_NOTICES: NoticeDetail[] = [
   //   targetAmount       : 안전관리비 대상액(직접공사비) ← 실제 대상액으로 교체(현재는 공사금액 근사)
   //   declaredSafetyCost : 공고/내역서 명시 안전관리비   ← 실제 계상액으로 교체
   //   winRate            : 낙찰률(%)                    ← 실제 낙찰률로 교체
-  // 현재 임시값은 "과소계상 의심" 시나리오용 — declared(1.2억) < 법정 약 2.36억(=120억×1.97%, 일반건설(갑) 50억초과 요율).
+  // 현재 임시값은 "과소계상 의심" 시나리오용 — declared(1.2억) < 법정 약 2.84억(=120억×2.37%, 건축공사 50억초과 요율).
   // 교체만 하면 안전관리비 예비검증·위험도·실집행(워치 35 worker-day) 전부 자동 재계산.
   // ───────────────────────────────────────────────────────────────────────────
   {
@@ -82,7 +82,7 @@ export const MOCK_NOTICES: NoticeDetail[] = [
     contractAmount: null,
     winRate: 79.6,
     targetAmount: 35_000_000_000,
-    declaredSafetyCost: 700_000_000, // 법정 약 6.9억 대비 정상
+    declaredSafetyCost: 850_000_000, // 법정 약 8.3억(건축 50억초과 2.37%) 대비 정상
   },
   {
     id: "SITE-INCHEON-OFFICE",

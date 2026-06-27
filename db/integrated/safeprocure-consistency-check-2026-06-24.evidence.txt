@@ -1,4 +1,5 @@
 SafeProcure 라이브 introspection 원시 결과 — 2026-06-24
+※ STALE: 구 요율(5공종·15행) 시점 로그. 2026-06-27 레포는 현행 신 4공종·12행으로 갱신됨 → 라이브 재시드 후 재생성 필요.
 대상: campus PostgreSQL · schema safeprocure (읽기전용 SELECT)
 생성도구: db/integrated/safeprocure-introspect.js (DSN은 env SRC_DSN로만 주입)
 ========================================================================

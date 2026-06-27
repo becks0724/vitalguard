@@ -41,15 +41,15 @@ const tabs = ["notice", "safety_cost_rate", "safety_cost_check", "risk_tag", "ri
     const n = (await c.query(`SELECT count(*)::int n FROM safeprocure.${t}`)).rows[0].n;
     console.log("  " + t + " = " + n);
   }
-  console.log("\n=== SEED: safety_cost_rate (expect 15) ===");
+  console.log("\n=== SEED: safety_cost_rate (expect 12) ===");
   const seed = (await c.query(
     `SELECT construction_type,bracket,rate,base_added FROM safeprocure.safety_cost_rate
       ORDER BY construction_type,bracket`)).rows;
   for (const r of seed) console.log("  " + r.construction_type + " | " + r.bracket + " | rate=" + r.rate + " | base_added=" + r.base_added);
-  console.log("\n=== CALC CHECK: 일반건설공사(갑) mid, 대상액 1,450,000,000 (expect 32,319,000) ===");
+  console.log("\n=== CALC CHECK: 건축공사 mid, 대상액 1,450,000,000 (expect 37,385,000) ===");
   const calc = (await c.query(
     `SELECT round(1450000000*rate+base_added) v FROM safeprocure.safety_cost_rate
-      WHERE construction_type='일반건설공사(갑)' AND bracket='mid'`)).rows[0];
+      WHERE construction_type='건축공사' AND bracket='mid'`)).rows[0];
   console.log("  computed required_cost = " + (calc ? calc.v : "(row missing)"));
   await c.end();
 })().catch(e => { console.error("ERR", e.message); process.exit(1); });

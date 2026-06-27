@@ -16,8 +16,8 @@
 --     · AMOUNT/QTY BIGINT + CHECK(≥0) · T_ALERT.RECEIVED_AT nullable + 수신 일관성 CHECK · IS_RECEIVED CHECK
 --     → 빈 DB뿐 아니라 실 데이터 적재에도 안전. (PK는 BIGSERIAL 유지)
 --     배포본(V2, safetymonitor backend/db/schema.sql)은 추가로 T_DEVICE·애플워치 v2·5초집계(T_SENSING_SUMMARY_5S 등) 보유.
---  ⚠ SafeProcure 5테이블 단독본은 db/schema.sql. 요율값은 현행 공개자료(고시 제2025-11호
---     시행 2025.2.12 / 제2024-53호 기준)와 15/15 일치 확인(2026-06-23) — 공식 별표1 첨부 최종 대조 권장.
+--  ⚠ SafeProcure 5테이블 단독본은 db/schema.sql. 요율값은 현행 고시 제2025-11호(시행 2025.2.12)
+--     별표1 신 4공종 12행(2026-06-27 갱신, HWPX·계산기·인포그래픽 3중 교차) — 공식 별표1 HWP 최종 대조 권장.
 --
 --  실행:  psql "$DSN" -v ON_ERROR_STOP=1 -f db/integrated/vitalguard_safeprocure_full.sql
 -- =====================================================================
@@ -246,7 +246,9 @@ CREATE INDEX idx_notice_kind    ON notice(kind);
 CREATE INDEX idx_notice_created ON notice(created_at DESC);
 
 -- ── 안전관리비 요율 기준표 (정적 참조) ───────────────────────────────
--- ⚠ 요율 출처: 고용노동부 고시 별표1. 현행 공개자료(고시 제2025-11호 시행 2025.2.12)와 15/15 일치 확인(2026-06-23) — 공식 별표1 HWP 최종 대조 권장.
+-- 요율 출처: 고용노동부 고시 제2025-11호(시행 2025.2.12) 별표1, 신 4공종(건축/토목/중건설/특수).
+--   HWPX 별표1 + 산업안전지원센터 계산기 + koit 인포그래픽 3중 교차검증(2026-06). 기초액 단위 '원'.
+--   별표1 '보건관리자 선임대상 적용비율' 열은 제외(타겟=소액 관급공사, 선임대상 비해당). 공식 별표1 HWP 최종 대조 권장.
 --   엔진 로직은 수치와 독립 — 값만 갱신하면 됨.
 CREATE TABLE safety_cost_rate (
   construction_type VARCHAR(40)   NOT NULL,
@@ -255,15 +257,14 @@ CREATE TABLE safety_cost_rate (
   base_added        BIGINT        NOT NULL DEFAULT 0,-- 기초액(원, mid 구간만)
   PRIMARY KEY (construction_type, bracket),
   CONSTRAINT ck_rate_ctype   CHECK (construction_type IN
-    ('일반건설공사(갑)','일반건설공사(을)','중건설공사','철도·궤도신설공사','특수·기타건설공사')),
+    ('건축공사','토목공사','중건설공사','특수건설공사')),
   CONSTRAINT ck_rate_bracket CHECK (bracket IN ('under5','mid','over50'))
 );
 INSERT INTO safety_cost_rate(construction_type,bracket,rate,base_added) VALUES
- ('일반건설공사(갑)','under5',0.0293,0),('일반건설공사(갑)','mid',0.0186,5349000),('일반건설공사(갑)','over50',0.0197,0),
- ('일반건설공사(을)','under5',0.0309,0),('일반건설공사(을)','mid',0.0199,5499000),('일반건설공사(을)','over50',0.0210,0),
- ('중건설공사','under5',0.0343,0),('중건설공사','mid',0.0235,5400000),('중건설공사','over50',0.0244,0),
- ('철도·궤도신설공사','under5',0.0245,0),('철도·궤도신설공사','mid',0.0157,4411000),('철도·궤도신설공사','over50',0.0166,0),
- ('특수·기타건설공사','under5',0.0185,0),('특수·기타건설공사','mid',0.0120,3250000),('특수·기타건설공사','over50',0.0127,0);
+ ('건축공사','under5',0.0311,0),('건축공사','mid',0.0228,4325000),('건축공사','over50',0.0237,0),
+ ('토목공사','under5',0.0315,0),('토목공사','mid',0.0253,3300000),('토목공사','over50',0.0260,0),
+ ('중건설공사','under5',0.0364,0),('중건설공사','mid',0.0305,2975000),('중건설공사','over50',0.0311,0),
+ ('특수건설공사','under5',0.0207,0),('특수건설공사','mid',0.0159,2450000),('특수건설공사','over50',0.0164,0);
 
 -- ── 안전관리비 검증 (공고당 1건) ─────────────────────────────────────
 CREATE TABLE safety_cost_check (
@@ -328,9 +329,9 @@ COMMIT;
 
 -- =====================================================================
 --  검증 쿼리(선택) — 실행 후 수동 확인용
---    SELECT count(*) FROM safeprocure.safety_cost_rate;            -- 기대 15
---    SELECT round(1450000000*rate+base_added)                     -- 기대 32319000
+--    SELECT count(*) FROM safeprocure.safety_cost_rate;            -- 기대 12
+--    SELECT round(1450000000*rate+base_added)                     -- 기대 37385000
 --      FROM safeprocure.safety_cost_rate
---     WHERE construction_type='일반건설공사(갑)' AND bracket='mid';
+--     WHERE construction_type='건축공사' AND bracket='mid';
 --    -- 충돌 0: public ∩ safeprocure 동명 테이블 없음
 -- =====================================================================
