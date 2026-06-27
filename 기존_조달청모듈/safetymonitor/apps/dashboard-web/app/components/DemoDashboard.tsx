@@ -132,6 +132,25 @@ function saveSlots(slots: SlotAssignments) {
   }
 }
 
+// 슬롯 등록을 서버(공유 관제 1벌)에도 반영 — 다른 기기·브라우저 공유. fire-and-forget(실패는 localStorage 폴백).
+function persistSlotsServer(slots: SlotAssignments) {
+  if (typeof window === "undefined") return;
+  try {
+    const token = getSessionToken();
+    void fetch("/api/monitor/slots", {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ slots }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* 무시 — 다음 변경 시 재시도 */
+  }
+}
+
 function formatTime(ts?: string) {
   if (!ts) {
     return "--:--:--";
@@ -2295,7 +2314,7 @@ export function DemoDashboard() {
   // 국내 재해사례 데이터 출처 — 캐러셀 헤더 배지(좌측 화살표 우측)로 표시. 카드가 fetch 후 통지.
   const [koshaSource, setKoshaSource] = useState<"live" | "mock" | null>(null);
 
-  // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드
+  // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드(빠른 페인트), 이어서 서버(공유 관제) 슬롯으로 덮어쓰기.
   useEffect(() => {
     setSlots(loadSlots());
     setSiteInfo(loadSiteInfo());
@@ -2307,6 +2326,27 @@ export function DemoDashboard() {
     } catch {
       /* localStorage 불가 환경 무시 */
     }
+    // 서버(공유 관제 1벌) 슬롯 로드 — 있으면 로컬보다 우선(다른 기기에서 등록한 것 반영). 실패 시 localStorage 유지.
+    (async () => {
+      try {
+        const token = getSessionToken();
+        const res = await fetch("/api/monitor/slots", {
+          headers: token ? { authorization: `Bearer ${token}` } : undefined,
+          cache: "no-store",
+        });
+        const j = (await res.json()) as { ok?: boolean; slots?: unknown };
+        if (res.ok && j.ok && Array.isArray(j.slots)) {
+          const server = j.slots;
+          const normalized = Array.from({ length: SLOT_COUNT }, (_, i) =>
+            typeof server[i] === "string" ? (server[i] as string) : null,
+          );
+          setSlots(normalized);
+          saveSlots(normalized); // 로컬 캐시도 서버와 동기화
+        }
+      } catch {
+        /* 서버 불가 — localStorage 값 유지 */
+      }
+    })();
   }, []);
 
   const handleSiteInfoSave = useCallback((next: SiteInfo) => {
@@ -2331,6 +2371,7 @@ export function DemoDashboard() {
       const next = prev.map((id) => (id === workerId ? null : id));
       next[slotIndex] = workerId;
       saveSlots(next);
+      persistSlotsServer(next);
       return next;
     });
     setQueueModalSlot(null);
@@ -2341,6 +2382,7 @@ export function DemoDashboard() {
       const next = [...prev];
       next[slotIndex] = null;
       saveSlots(next);
+      persistSlotsServer(next);
       return next;
     });
   }
@@ -2392,6 +2434,7 @@ export function DemoDashboard() {
         (_, i) => reordered[i] ?? null,
       );
       saveSlots(next);
+      persistSlotsServer(next);
       return next;
     });
   }, []);

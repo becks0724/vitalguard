@@ -12,7 +12,15 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-26 세션 후반 — 프로필/보안/버그 수정 5건 + 라이브 4회 배포 `00010`→**`00013-p28`**)
+### ★ 최신 (2026-06-27 — 저장 완료 다이얼로그 + 클라우드 브릿지 R2 Phase 2a + 작업자 슬롯 서버 영속)
+
+1. **내 정보 저장 완료 다이얼로그** (`2728879` → 라이브 `00014-kg5`) — 저장 후 인라인 메시지만 떠 2차로 직접 닫아야 하던 불편 해소. 성공 시 '변경이 완료되었습니다' 다이얼로그(카드 오버레이)→'예' 클릭으로 모달 전체 닫기. 라이브 라우트목 E2E 6단계 PASS.
+2. **클라우드 브릿지 Phase 2a — Cloudflare R2 어댑터** (`2dad666`, 미배포) — `lib/storage.ts`(S3호환 presignUpload/presignDownload/isR2Configured) + `POST /api/calendar/media/upload-url`(프리사인 PUT) + GET 표시 경로 만료형 GET URL. 비공개 버킷·서버 API만(업로드 UI 없음). 자격증명(R2_* env)은 Phase 2b(사용자 셋업). → [cloud-bridge-context.md](./cloud-bridge-context.md)
+3. **작업자 모니터링 슬롯 등록 서버(DB) 영속** (미배포) — 기존 브라우저 localStorage 영속을 **서버로 승격**: `monitor_slot_config`(단일행 JSON) + `GET/PUT /api/monitor/slots`(관리자 인증) + 클라 마운트 시 서버 로드(로컬보다 우선)·변경마다 PUT. 어느 기기·브라우저로 접속해도 등록 유지(localStorage는 빠른 페인트·폴백 유지). 로컬 라우트목 E2E — 빈 localStorage 브라우저에 서버 슬롯 복원(크로스기기) + 등록 시 PUT 발생 PASS.
+
+- **검증** — 전부 tsc=0 + next build=0. 1번은 라이브 검증 완료, 2·3번은 로컬 검증 완료(미배포).
+
+### (2026-06-26 세션 후반 — 프로필/보안/버그 수정 5건 + 라이브 4회 배포 `00010`→**`00013-p28`**)
 
 직전 5종(아래) 이후 추가 작업을 전부 **push + Cloud Run 배포 완료**. 라이브 `00009-8nx`→`00010-8sp`→`00011-r2d`→`00012-j8l`→**`00013-p28`**.
 

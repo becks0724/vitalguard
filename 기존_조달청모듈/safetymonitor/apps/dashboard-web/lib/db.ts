@@ -358,6 +358,14 @@ async function initSchema(): Promise<void> {
     );
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS author_title TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
+
+    -- 작업자 모니터링 슬롯 등록(공유 관제 1벌) — 단일행(id=1)에 슬롯 배열 JSON 보존.
+    -- 기존 브라우저 localStorage 영속을 서버로 승격: 어느 기기·브라우저로 접속해도 등록 유지.
+    CREATE TABLE IF NOT EXISTS monitor_slot_config (
+      id INTEGER PRIMARY KEY,
+      slots TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
   `);
 }
 
@@ -1464,4 +1472,29 @@ export async function updateCalendarMediaDescription(
 export async function deleteCalendarMedia(id: string): Promise<boolean> {
   const { rowCount } = await q("DELETE FROM calendar_media WHERE id = $1", [id]);
   return rowCount > 0;
+}
+
+// ── 작업자 모니터링 슬롯 등록(공유 관제 1벌, 단일행 id=1) ─────────────────────
+// 슬롯 배열((string|null)[])을 JSON 으로 통째 보존 — localStorage 와 동일 포맷. 없으면 null.
+export async function getMonitorSlots(): Promise<(string | null)[] | null> {
+  const { rows } = await q<{ slots: string }>(
+    "SELECT slots FROM monitor_slot_config WHERE id = 1",
+  );
+  if (!rows[0]) return null;
+  try {
+    const parsed = JSON.parse(rows[0].slots);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// 슬롯 배열 통째 저장(replace) — 단일행 upsert.
+export async function saveMonitorSlots(slots: (string | null)[]): Promise<void> {
+  await q(
+    `INSERT INTO monitor_slot_config (id, slots, updated_at)
+       VALUES (1, $1, ${NOW_ISO})
+       ON CONFLICT (id) DO UPDATE SET slots = excluded.slots, updated_at = excluded.updated_at`,
+    [JSON.stringify(slots)],
+  );
 }
