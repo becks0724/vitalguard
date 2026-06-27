@@ -3,10 +3,12 @@
 대시보드 **CCTV 관제**의 AI 타일 3종(CAM-01 객체감지·CAM-02 낙상감지·CAM-03 PPE 안전모)에
 MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포용.
 
-- **CAM-01 객체감지 = 실제 YOLOv8n 추론 + 차량 속도추정**(CPU). 번들 샘플영상(`samples/cam01.mp4`, 홍대 거리
-  라이브캠 40초)을 루프 재생하며 프레임마다 추론 → 보행자·자전거·차량·버스·트럭·오토바이 실박스 + 실통계.
-  **ByteTrack 트래킹**으로 ID별 픽셀이동을 클립 fps 기준 px/s→**추정 km/h**(차량류 박스에 표기). 카메라 실측보정이
-  없어 단일평면 근사치(보정계수 `SPEED_KMH_PER_PXPS`, 기본 0.15 = 본 클립 차량 median≈24km/h). env 로 조정.
+- **CAM-01 객체감지 = 실제 YOLOv8n 추론 + 차량 속도추정 + 한글 라벨**(CPU). 번들 샘플영상(`samples/cam01.mp4`,
+  홍대 거리 라이브캠 **720p·75초**)을 루프 재생, 프레임마다 **imgsz 960·conf 0.25** 추론 → 보행자·자전거·차량·버스·
+  트럭·오토바이 실박스 + 실통계. 출력 **1280x720**. imgsz 640→960 으로 원거리 군중 인식률 약 4배(사람 2.8→11/frame).
+  **라벨은 한글**(`보행자`·`차량 30km/h` …) — cv2 는 한글 미지원이라 **PIL+NanumGothic** 로 렌더(폰트 없으면 영문 폴백).
+  **ByteTrack** 으로 ID별 픽셀이동→**추정 km/h**(움직이는 차량만 표기, 5km/h 미만 생략). 카메라 실측보정 없는 단일평면
+  근사(보정계수 `SPEED_KMH_PER_PXPS` 기본 0.33 = 720p 클립 차량 p95≈50km/h). env 조정.
 - **CAM-02 낙상·CAM-03 PPE = 합성 시뮬레이션**(OpenCV). 통계는 한글 라벨 JSON 으로 대시보드 strip 에 전달.
 - 모델(`yolov8n.pt`)·영상이 없거나 ultralytics 미설치면 CAM-01 도 **합성으로 자동 폴백**(배포 견고성).
 
@@ -22,29 +24,33 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
 
 ## 번들 바이너리 (git 미추적 — 재취득 절차)
 
-`yolov8n.pt`·`samples/cam01.mp4` 는 용량 때문에 git 에 올리지 않는다(`.gitignore`).
+`yolov8n.pt`·`samples/cam01.mp4`·`NanumGothic-Regular.ttf` 는 용량 때문에 git 에 올리지 않는다(`.gitignore`).
 단 `.gcloudignore` 가 있어 **Cloud Build 업로드 컨텍스트·도커 이미지에는 포함**된다(아래 배포 항목).
 새 머신에서 재생성하려면.
 
 ```bash
-# 1) 모델 가중치(ultralytics 자동 다운로드 ~6MB)
+pip install yt-dlp opencv-python-headless certifi ultralytics
+export SSL_CERT_FILE="$(python -c 'import certifi; print(certifi.where())')"   # macOS CA 이슈 대비
+
+# 1) 모델 가중치(~6MB)
 python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"   # cwd 에 yolov8n.pt 저장
 
-# 2) 샘플영상 — 홍대 라이브캠(format 93=640x360) 40초를 cv2 로 떠서 굽기(ffmpeg 불필요)
-pip install yt-dlp opencv-python-headless certifi
-export SSL_CERT_FILE="$(python -c 'import certifi; print(certifi.where())')"   # macOS CA 이슈 대비
-URL93="$(yt-dlp -f 93 -g 'https://www.youtube.com/watch?v=iM1JSU1rl84')"
-python - "$URL93" <<'PY'
+# 2) 한글 라벨 폰트(NanumGothic, OFL ~2MB)
+python -c "import urllib.request as u; u.urlretrieve('https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf','NanumGothic-Regular.ttf')"
+
+# 3) 샘플영상 — 홍대 라이브캠(format 300=1280x720) 75초를 cv2 로 떠서 굽기(ffmpeg 불필요)
+URL="$(yt-dlp -f 300 -g 'https://www.youtube.com/watch?v=iM1JSU1rl84')"
+python - "$URL" <<'PY'
 import sys, cv2
-cap = cv2.VideoCapture(sys.argv[1]); W,H,FPS,SEC,KEEP=640,360,15,40,2
-wr = cv2.VideoWriter("samples/cam01.mp4", cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W,H))
+cap = cv2.VideoCapture(sys.argv[1]); OW,OH,FPS,SEC,KEEP=1280,720,15,75,4  # 60fps 소스 → 매 4번째 = 15fps
+wr = cv2.VideoWriter("samples/cam01.mp4", cv2.VideoWriter_fourcc(*"mp4v"), FPS, (OW,OH))
 read=w=0
 while w < SEC*FPS:
     ok,f=cap.read()
     if not ok: break
     read+=1
     if read%KEEP: continue
-    wr.write(cv2.resize(f,(W,H))); w+=1
+    wr.write(cv2.resize(f,(OW,OH))); w+=1
 wr.release(); cap.release(); print("written", w)
 PY
 ```

@@ -1,4 +1,5 @@
 # 번들 바이너리는 git 미추적(이미지·Cloud Build 컨텍스트엔 .gcloudignore 가 포함 보장).
 # 재취득 절차는 README 참조.
-yolov8n.pt
+yolov8*.pt
 samples/*.mp4
+NanumGothic-Regular.ttf

@@ -9,6 +9,7 @@ import time
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -33,7 +34,10 @@ FPS = 12
 MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 VIDEO_PATH = os.environ.get("CAM01_VIDEO", "samples/cam01.mp4")
 PLAYBACK_FPS = 15  # 샘플영상 캡처 fps(실시간 속도 유지)
-CONF = 0.35
+CONF = float(os.environ.get("YOLO_CONF", "0.25"))   # 군중 인식률 위해 0.35→0.25
+IMGSZ = int(os.environ.get("YOLO_IMGSZ", "960"))    # 추론 해상도 — 원거리 군중(작은 객체) 검출에 결정적(640→960=사람 4배)
+OW, OH = 1280, 720  # CAM-01 출력 해상도(고해상도). 합성 CAM-02/03 은 W,H=640,360 유지.
+FONT_PATH = os.environ.get("LABEL_FONT", "NanumGothic-Regular.ttf")  # 한글 라벨용(cv2 한글 미지원 → PIL)
 
 # COCO(en) → 대시보드 한글 라벨. 화이트리스트(사람·자전거·차량류)만 그린다(가방·신호등 등 노이즈 제외).
 COCO_KO = {
@@ -47,9 +51,10 @@ CLASS_COLOR = {
 # 속도 추정 대상(차량류). 사람·자전거는 탐지만.
 VEHICLE_KO = {"차량", "버스", "트럭", "오토바이"}
 # 픽셀속도(px/s)→추정 km/h 보정계수. 카메라 실측보정이 없어 단일 평면 가정의 근사치.
-# 0.15 = 본 클립(홍대) 움직이는 차량 median≈24·p90≈47km/h 가 되도록 데이터로 보정. env 로 조정.
-SPEED_KMH_PER_PXPS = float(os.environ.get("SPEED_KMH_PER_PXPS", "0.15"))
-SPEED_MAX_KMH = 120.0  # ID 스왑 텔레포트 클램프
+# 0.33 = 720p(1280px) 신 클립 움직이는 차량 p95≈50km/h 가 되도록 백분위로 보정(주간 교차로=정지多·분포넓음). env 로 조정.
+SPEED_KMH_PER_PXPS = float(os.environ.get("SPEED_KMH_PER_PXPS", "0.33"))
+SPEED_MAX_KMH = 120.0   # ID 스왑 텔레포트 클램프
+SPEED_SHOW_MIN = 5      # 이 미만(km/h)은 숫자 생략 — 정지/서행 차량은 '차량'만 표기(깔끔)
 
 _obj_lock = threading.Lock()
 _obj = {"frame": b"", "stats": None}
@@ -84,23 +89,18 @@ def _object_worker():
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 tracks.clear()
                 continue
-            if frame.shape[1] != W or frame.shape[0] != H:
-                frame = cv2.resize(frame, (W, H))
+            if frame.shape[1] != OW or frame.shape[0] != OH:
+                frame = cv2.resize(frame, (OW, OH))
             frame_idx += 1
-            res = model.track(frame, persist=True, tracker="bytetrack.yaml",
+            res = model.track(frame, imgsz=IMGSZ, persist=True, tracker="bytetrack.yaml",
                               verbose=False, conf=CONF)[0]
             boxes = res.boxes
             ids = boxes.id.int().tolist() if boxes.id is not None else [None] * len(boxes)
 
-            img = frame.copy()
-            cv2.rectangle(img, (0, 0), (W, 26), (18, 18, 20), -1)
-            cv2.putText(img, "CAM-01  Hongdae St. (YOLOv8n + speed)", (8, 18),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1, cv2.LINE_AA)
-            cv2.circle(img, (W - 112, 13), 4, (60, 60, 239), -1)
-            cv2.putText(img, time.strftime("%H:%M:%S"), (W - 98, 18),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1, cv2.LINE_AA)
+            header = "CAM-01  Hongdae St.  YOLOv8n@960 + speed"
             by = {}
-            speeds = []  # 움직이는 차량 추정 km/h
+            speeds = []  # 움직이는 차량 추정 km/h(통계용)
+            dets = []
             for b, tid in zip(boxes, ids):
                 en = model.names[int(b.cls)]
                 ko = COCO_KO.get(en)
@@ -108,7 +108,7 @@ def _object_worker():
                     continue
                 x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
                 by[ko] = by.get(ko, 0) + 1
-                label = en  # 라벨은 영문(cv2 한글 미지원). 통계 JSON 으로 한글 전달.
+                ko_label, en_label = ko, en
                 # 차량류 + 트래킹 ID 있으면 속도 추정.
                 if ko in VEHICLE_KO and tid is not None:
                     cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
@@ -123,8 +123,10 @@ def _object_worker():
                     tracks[tid] = {"cx": cx, "cy": cy, "idx": frame_idx, "kmh": kmh}
                     if kmh >= 1:
                         speeds.append(kmh)
-                        label = f"{en} {kmh:.0f}km/h"
-                draw_box(img, (x1, y1, x2 - x1, y2 - y1), CLASS_COLOR.get(ko, (80, 200, 255)), label)
+                    if kmh >= SPEED_SHOW_MIN:  # 서행/정지는 숫자 생략
+                        ko_label, en_label = f"{ko} {kmh:.0f}km/h", f"{en} {kmh:.0f}km/h"
+                dets.append((x1, y1, x2, y2, CLASS_COLOR.get(ko, (80, 200, 255)), ko_label, en_label))
+            img = draw_cam01(frame, dets, header)
             # 오래 안 보인 트랙 정리.
             for tid in [t for t, v in tracks.items() if frame_idx - v["idx"] > 30]:
                 tracks.pop(tid, None)
@@ -253,6 +255,40 @@ def draw_box(img, box, color, label):
     cv2.rectangle(img, (x, y), (x + w, y + h), color, 2)
     cv2.rectangle(img, (x, max(0, y - 16)), (x + max(34, len(label) * 9), y), color, -1)
     cv2.putText(img, label, (x + 3, max(11, y - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (20, 20, 20), 1, cv2.LINE_AA)
+
+
+# ── 한글 라벨(PIL) — cv2 는 한글 폰트 미지원이라 CAM-01 박스/라벨/헤더를 PIL 로 그린다 ──────────────
+try:
+    _FONT = ImageFont.truetype(FONT_PATH, 20)
+    _FONT_SM = ImageFont.truetype(FONT_PATH, 17)
+except Exception as e:  # 폰트 없으면 영문 cv2 폴백
+    print(f"[cctv-ai] 한글 폰트 로드 실패({e}) — CAM-01 영문 라벨 폴백")
+    _FONT = _FONT_SM = None
+
+
+def draw_cam01(frame, dets, header):
+    # frame(BGR)에 박스 + 한글 라벨 + 헤더를 그려 BGR 반환. dets=[(x1,y1,x2,y2,color_bgr,ko,en)].
+    if _FONT is None:  # 폰트 없을 때 cv2 영문 폴백
+        cv2.rectangle(frame, (0, 0), (OW, 30), (18, 18, 20), -1)
+        cv2.putText(frame, header, (8, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 1, cv2.LINE_AA)
+        for x1, y1, x2, y2, color, ko, en in dets:
+            draw_box(frame, (x1, y1, x2 - x1, y2 - y1), color, en)
+        return frame
+    img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    d = ImageDraw.Draw(img)
+    d.rectangle((0, 0, OW, 30), fill=(20, 18, 18))
+    d.text((10, 5), header, font=_FONT, fill=(225, 225, 225))
+    d.ellipse((OW - 116, 11, OW - 108, 19), fill=(239, 60, 60))
+    d.text((OW - 100, 6), time.strftime("%H:%M:%S"), font=_FONT_SM, fill=(190, 190, 190))
+    for x1, y1, x2, y2, color, ko, en in dets:
+        rgb = (color[2], color[1], color[0])  # BGR→RGB
+        d.rectangle((x1, y1, x2, y2), outline=rgb, width=2)
+        tb = d.textbbox((0, 0), ko, font=_FONT_SM)
+        tw, th = tb[2] - tb[0], tb[3] - tb[1]
+        ly = max(31, y1 - th - 7)
+        d.rectangle((x1, ly, x1 + tw + 8, ly + th + 7), fill=rgb)
+        d.text((x1 + 4, ly + 1), ko, font=_FONT_SM, fill=(20, 20, 20))
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
 
 def render(cam: str, t: float):
