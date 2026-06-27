@@ -242,7 +242,13 @@ export async function getContracts(opts: { region?: string; page?: number; rows?
     return { source: "mock", items, page, total: items.length, note: "샘플(계약) — G2B 인증키 연결 시 실데이터로 전환" };
   }
   try {
-    return await fetchList(G2B_PATH.contractListConstruction, `contracts:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeContractDetail, rows, page, "g2b-contract-raw");
+    const live = await fetchList(G2B_PATH.contractListConstruction, `contracts:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeContractDetail, rows, page, "g2b-contract-raw");
+    // 계약 실 API 필드 미확정 — 유효 계약명이 하나도 없으면(0건/전부 "(계약명 없음)") 데모용 샘플(가상 계약 현장)로 폴백.
+    const hasNamed = live.items.some((n) => n.title && n.title !== "(계약명 없음)" && n.id !== "(미상)");
+    if (!hasNamed) {
+      return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "계약 실데이터 미확보 — 샘플(가상 계약 현장) 표시" };
+    }
+    return live;
   } catch (err) {
     console.error("[g2b] getContracts fallback to mock:", err);
     return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "실 계약 API 응답 실패 — 샘플 데이터 표시" };

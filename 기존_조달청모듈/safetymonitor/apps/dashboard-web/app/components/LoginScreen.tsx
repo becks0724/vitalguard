@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
 import { ALLOWED_COMPANIES } from "../../lib/companies";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
@@ -273,8 +274,7 @@ const SELECT_CHEVRON = {
 const MINI_BTN =
   "shrink-0 rounded-xl border border-white/30 bg-white/15 px-3 py-3 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-white/25 disabled:opacity-50";
 
-// 통신사·이메일 도메인 옵션.
-const CARRIERS = ["SKT", "KT", "LG U+", "알뜰폰"];
+// 이메일 도메인 옵션. (통신사·알뜰폰 망 옵션은 lib/carriers)
 const EMAIL_DOMAINS = [
   "naver.com",
   "gmail.com",
@@ -375,7 +375,8 @@ export function LoginScreen({
   const [phonePrefix, setPhonePrefix] = useState("010");
   const [phoneMid, setPhoneMid] = useState("");
   const [phoneLast, setPhoneLast] = useState("");
-  const [carrier, setCarrier] = useState("");
+  const [carrierBase, setCarrierBase] = useState(""); // SKT/KT/LG U+/알뜰폰
+  const [mvno, setMvno] = useState(""); // 알뜰폰일 때 호스트망(KT/SKT/LG U+)
   // 이메일 — 아이디 + 도메인(선택/직접입력) + 인증.
   const [emailLocal, setEmailLocal] = useState("");
   const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]!);
@@ -484,7 +485,8 @@ export function LoginScreen({
         !sId.trim() ||
         !sName.trim() ||
         !phoneValid ||
-        !carrier ||
+        !carrierBase ||
+        (carrierBase === "알뜰폰" && !mvno) ||
         !emailLocal.trim() ||
         !emailDomainFinal ||
         !sPw ||
@@ -523,7 +525,7 @@ export function LoginScreen({
             username: sId.trim(),
             name: sName.trim(),
             phone: composedPhone,
-            carrier,
+            carrier: composeCarrier(carrierBase, mvno),
             email: composedEmail,
             password: sPw,
           }),
@@ -542,7 +544,8 @@ export function LoginScreen({
         setPhonePrefix("010");
         setPhoneMid("");
         setPhoneLast("");
-        setCarrier("");
+        setCarrierBase("");
+      setMvno("");
         setEmailLocal("");
         setEmailDomain(EMAIL_DOMAINS[0]!);
         setEmailDomainCustom("");
@@ -564,7 +567,8 @@ export function LoginScreen({
       sId,
       sName,
       phoneValid,
-      carrier,
+      carrierBase,
+      mvno,
       emailLocal,
       emailDomainFinal,
       composedPhone,
@@ -1016,22 +1020,46 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.carrierLabel}
             </span>
-            <select
-              value={carrier}
-              onChange={(e) => setCarrier(e.target.value)}
-              required
-              style={SELECT_CHEVRON}
-              className={SELECT_CLASS}
-            >
-              <option value="" className="text-black">
-                {t.carrierSelect}
-              </option>
-              {CARRIERS.map((c) => (
-                <option key={c} value={c} className="text-black">
-                  {c}
+            <div className="mt-1 flex gap-1.5">
+              <select
+                value={carrierBase}
+                onChange={(e) => {
+                  setCarrierBase(e.target.value);
+                  if (e.target.value !== "알뜰폰") setMvno(""); // 일반 3사로 바꾸면 망 선택 해제
+                }}
+                required
+                style={SELECT_CHEVRON}
+                className={`${SELECT_BASE} min-w-0 flex-1`}
+              >
+                <option value="" className="text-black">
+                  {t.carrierSelect}
                 </option>
-              ))}
-            </select>
+                {CARRIERS.map((c) => (
+                  <option key={c} value={c} className="text-black">
+                    {c}
+                  </option>
+                ))}
+              </select>
+              {carrierBase === "알뜰폰" && (
+                <select
+                  value={mvno}
+                  onChange={(e) => setMvno(e.target.value)}
+                  required
+                  style={SELECT_CHEVRON}
+                  className={`${SELECT_BASE} min-w-0 flex-1`}
+                  aria-label="알뜰폰 사용 망"
+                >
+                  <option value="" className="text-black">
+                    알뜰폰 통신사 선택
+                  </option>
+                  {MVNO_NETS.map((n) => (
+                    <option key={n} value={n} className="text-black">
+                      알뜰폰 {n}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </label>
           <div>
             <span className="text-xs font-semibold text-white/90 drop-shadow">
@@ -1211,7 +1239,8 @@ export function LoginScreen({
               !sId ||
               !sName ||
               !phoneValid ||
-              !carrier ||
+              !carrierBase ||
+              (carrierBase === "알뜰폰" && !mvno) ||
               !emailLocal ||
               !emailDomainFinal ||
               !sPw ||

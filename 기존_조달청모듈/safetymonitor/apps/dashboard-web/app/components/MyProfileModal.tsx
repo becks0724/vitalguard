@@ -3,10 +3,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { CARRIERS, MVNO_NETS, composeCarrier, parseCarrier } from "../../lib/carriers";
 import { ALLOWED_COMPANIES } from "../../lib/companies";
 import { getSessionToken } from "./LoginGate";
 
-const CARRIERS = ["SKT", "KT", "LG U+", "알뜰폰"];
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 
 const LBL = "text-xs font-semibold text-muted dark:text-on-dark-soft";
@@ -66,7 +66,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [prefix, setPrefix] = useState("010");
   const [mid, setMid] = useState("");
   const [last, setLast] = useState("");
-  const [carrier, setCarrier] = useState("");
+  const [carrierBase, setCarrierBase] = useState(""); // SKT/KT/LG U+/알뜰폰
+  const [mvno, setMvno] = useState(""); // 알뜰폰일 때 호스트망(KT/SKT/LG U+)
   const [curPw, setCurPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
@@ -113,7 +114,9 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setDepartment(p.department ?? "");
         setJobTitle(p.job_title ?? "");
         setEmployeeId(p.employee_id ?? "");
-        setCarrier(p.carrier ?? "");
+        const pc = parseCarrier(p.carrier);
+        setCarrierBase(pc.base);
+        setMvno(pc.mvno);
         const sp = splitPhone(p.phone);
         setPrefix(sp.prefix);
         setMid(sp.mid);
@@ -158,6 +161,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
       }
     }
     setSaving(true);
+    const carrier = composeCarrier(carrierBase, mvno);
     try {
       const res = await fetch("/api/admin/profile", {
         method: "POST",
@@ -190,7 +194,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrier, department, jobTitle, employeeId, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, curPw, newPw, newPw2]);
 
   return (
     <div
@@ -339,19 +343,40 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
               </div>
               <label className="block">
                 <span className={LBL}>통신사</span>
-                <select
-                  value={carrier}
-                  onChange={(e) => setCarrier(e.target.value)}
-                  style={SELECT_CHEVRON}
-                  className={SELECT_FULL}
-                >
-                  <option value="">통신사 선택</option>
-                  {CARRIERS.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                <div className="mt-1 flex gap-1.5">
+                  <select
+                    value={carrierBase}
+                    onChange={(e) => {
+                      setCarrierBase(e.target.value);
+                      if (e.target.value !== "알뜰폰") setMvno(""); // 일반 3사로 바꾸면 망 선택 해제
+                    }}
+                    style={SELECT_CHEVRON}
+                    className={`${SELECT_BASE} flex-1`}
+                  >
+                    <option value="">통신사 선택</option>
+                    {CARRIERS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  {carrierBase === "알뜰폰" && (
+                    <select
+                      value={mvno}
+                      onChange={(e) => setMvno(e.target.value)}
+                      style={SELECT_CHEVRON}
+                      className={`${SELECT_BASE} flex-1`}
+                      aria-label="알뜰폰 사용 망"
+                    >
+                      <option value="">알뜰폰 통신사 선택</option>
+                      {MVNO_NETS.map((n) => (
+                        <option key={n} value={n}>
+                          알뜰폰 {n}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </label>
 
               <div className="rounded-lg border border-hairline p-2.5 dark:border-white/10">

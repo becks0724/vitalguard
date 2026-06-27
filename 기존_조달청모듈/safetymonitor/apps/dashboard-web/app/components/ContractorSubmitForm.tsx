@@ -32,6 +32,7 @@ export default function ContractorSubmitForm() {
   });
   const [photoCount, setPhotoCount] = useState(0);
   const [files, setFiles] = useState<FileList | null>(null);
+  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -168,22 +169,60 @@ export default function ContractorSubmitForm() {
         <label className="block text-xs font-semibold text-body dark:text-on-dark-soft">
           사진대지 업로드 <span className="text-muted">(현재 {photoCount}장)</span>
         </label>
-        <div className="mt-1 flex items-center gap-2">
+        <p className="mt-0.5 text-[11px] leading-relaxed text-muted dark:text-on-dark-soft">
+          안전관리비를 실제로 집행한 <b>증빙 사진</b>을 올립니다 — 안전모·안전대 등 <b>보호구 지급</b>, 안전난간·방호망 등 <b>안전시설 설치</b>,
+          <b> 안전교육·점검</b> 활동 사진 등. 세금계산서·근로자 대장과 함께 실집행을 입증하며, 조달청 검증 화면에서 워치 실측과 대조됩니다.
+        </p>
+        <label
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) setFiles(e.dataTransfer.files);
+          }}
+          className={`mt-1.5 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed px-4 py-6 text-center transition dark:bg-surface-dark-elevated ${
+            dragging ? "border-primary bg-surface-soft" : "border-hairline bg-surface-soft hover:border-primary dark:border-white/15"
+          }`}
+        >
           <input
             type="file"
             multiple
             accept="image/*"
             onChange={(e: ChangeEvent<HTMLInputElement>) => setFiles(e.target.files)}
-            className="min-w-0 flex-1 text-xs text-body dark:text-on-dark-soft"
+            className="hidden"
           />
-          <button
-            onClick={uploadPhotos}
-            disabled={uploading || !files}
-            className="shrink-0 rounded-md border border-hairline px-3 py-1.5 text-xs font-semibold text-body disabled:opacity-50 dark:border-white/10 dark:text-on-dark-soft"
+          <svg
+            width="24"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={dragging ? "text-primary" : "text-muted"}
+            aria-hidden="true"
           >
-            {uploading ? "업로드 중…" : "업로드"}
-          </button>
-        </div>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <path d="M12 15V3" />
+            <path d="m7 8 5-5 5 5" />
+          </svg>
+          <span className="text-xs font-semibold text-body dark:text-on-dark-soft">
+            {files && files.length > 0 ? `사진 ${files.length}장 선택됨` : "이미지를 드래그하거나 클릭해 선택"}
+          </span>
+          <span className="text-[11px] text-muted dark:text-on-dark-soft">JPG · PNG 등 이미지 파일 · 여러 장 가능</span>
+        </label>
+        <button
+          onClick={uploadPhotos}
+          disabled={uploading || !files}
+          className="mt-2 w-full rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-on-primary transition hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
+        >
+          {uploading ? "업로드 중…" : files && files.length > 0 ? `${files.length}장 업로드` : "업로드"}
+        </button>
       </div>
 
       <div className="mt-5 flex items-center gap-2">

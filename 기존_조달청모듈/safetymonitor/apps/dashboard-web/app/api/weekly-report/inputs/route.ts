@@ -11,7 +11,13 @@ export async function GET(req: Request) {
   if (!contractId) {
     return NextResponse.json({ error: { code: "BAD", message: "contractId가 필요합니다" } }, { status: 400 });
   }
-  return NextResponse.json({ inputs: await getReportInputs(contractId) });
+  try {
+    return NextResponse.json({ inputs: await getReportInputs(contractId) });
+  } catch (err) {
+    // DB 미설정/연결 실패 등 — 빈 입력으로 graceful 강등(폼은 빈 값으로 시작, 클라 파싱 에러 방지).
+    console.error("[api/weekly-report/inputs GET]", err);
+    return NextResponse.json({ inputs: null });
+  }
 }
 
 export async function POST(req: Request) {
