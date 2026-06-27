@@ -12,13 +12,19 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ 최신 (2026-06-27 — 저장 완료 다이얼로그 + 클라우드 브릿지 R2 Phase 2a + 작업자 슬롯 서버 영속)
+### ★ 최신 (2026-06-27 — 기능/UX/인프라 6건 · 라이브 `00013-p28`→**`00018-5tn`** + CCTV AI 서버 신규 Cloud Run)
 
-1. **내 정보 저장 완료 다이얼로그** (`2728879` → 라이브 `00014-kg5`) — 저장 후 인라인 메시지만 떠 2차로 직접 닫아야 하던 불편 해소. 성공 시 '변경이 완료되었습니다' 다이얼로그(카드 오버레이)→'예' 클릭으로 모달 전체 닫기. 라이브 라우트목 E2E 6단계 PASS.
-2. **클라우드 브릿지 Phase 2a — Cloudflare R2 어댑터** (`2dad666`, 미배포) — `lib/storage.ts`(S3호환 presignUpload/presignDownload/isR2Configured) + `POST /api/calendar/media/upload-url`(프리사인 PUT) + GET 표시 경로 만료형 GET URL. 비공개 버킷·서버 API만(업로드 UI 없음). 자격증명(R2_* env)은 Phase 2b(사용자 셋업). → [cloud-bridge-context.md](./cloud-bridge-context.md)
-3. **작업자 모니터링 슬롯 등록 서버(DB) 영속** (미배포) — 기존 브라우저 localStorage 영속을 **서버로 승격**: `monitor_slot_config`(단일행 JSON) + `GET/PUT /api/monitor/slots`(관리자 인증) + 클라 마운트 시 서버 로드(로컬보다 우선)·변경마다 PUT. 어느 기기·브라우저로 접속해도 등록 유지(localStorage는 빠른 페인트·폴백 유지). 로컬 라우트목 E2E — 빈 localStorage 브라우저에 서버 슬롯 복원(크로스기기) + 등록 시 PUT 발생 PASS.
+1. **내 정보 저장 완료 다이얼로그** (`2728879` → `00014-kg5`) — 저장 후 인라인 메시지만 떠 2차로 직접 닫아야 하던 불편 해소. 성공 시 '변경이 완료되었습니다' 다이얼로그(카드 오버레이)→'예' 클릭으로 모달 전체 닫기. 라이브 라우트목 E2E 6단계 PASS.
+2. **클라우드 브릿지 Phase 2a — Cloudflare R2 어댑터** (`2dad666` → `00015` 번들 포함, **단 R2 자격증명 미설정이라 런타임 비활성**) — `lib/storage.ts`(S3호환 presignUpload/presignDownload/isR2Configured) + `POST /api/calendar/media/upload-url`(프리사인 PUT, 미설정 시 503) + GET 표시 경로 만료형 GET URL. 비공개 버킷·서버 API만. **Phase 2b(R2 버킷·토큰 셋업)** 남음. → [cloud-bridge-context.md](./cloud-bridge-context.md)
+3. **작업자 모니터링 슬롯 등록 서버(DB) 영속** (`20ad4e1` → `00015-swq`) — 브라우저 localStorage 영속을 **서버로 승격**: `monitor_slot_config`(단일행 JSON) + `GET/PUT /api/monitor/slots`(관리자 인증) + 클라 마운트 시 서버 로드(로컬 우선)·변경마다 PUT. 어느 기기·브라우저로 접속해도 등록 유지. 라우트목 E2E — 빈 localStorage 브라우저에 서버 슬롯 복원(크로스기기)+등록 시 PUT PASS. (라이브 `monitor_slot_config` 테이블 initSchema 자동 생성 확인.)
+4. **캐러셀 자동 슬라이딩 해제** (`9b0808f` → `00016-frj`) — 국내재해사례·우측 위젯(현황요약/레이더/태풍/특보) `WidgetCarousel`에 `autoRotate={false}` → 수동 ‹ ›만. 라이브 E2E 11초 경과 카운터 불변 PASS.
+5. **가스/설비 표 주의·위험 행 다크모드 가독성** (`b53fd34` → `00017-cj8`) — 다크모드에서 행 배경이 라이트(orange-50/red-100)+흰 글씨라 대비 0. 원인: `dark:bg-orange-500/8`·`red-500/12`의 `/8`·`/12`가 **Tailwind 기본 opacity 스케일 밖이라 클래스 미생성**(빌드 CSS 0회) → 다크 변형 무효. 스케일 내 `/20`(amber/red)으로 교체. 라이브 계산색 어두운 틴트 확인.
+6. **CCTV AI 서버 로컬→Google Cloud 이전** (`47f157b`+`bc97a33`+`c93b385` → 대시보드 `00018-5tn` + **신규 서비스 `cctv-ai`**) — CAM-01~03이 `http://localhost:8000`(빌드타임 env 미주입 폴백)을 찾아 '연결 대기'였음. ⓐ AI 서버([cctv-ai/](../cctv-ai/) FastAPI MJPEG 3종+통계 3종, opencv 합성, **계약 정확 일치**)를 Cloud Run 신규 배포(`cctv-ai-569797426568.asia-northeast3.run.app`, min0 scale-to-zero) ⓑ 대시보드 `NEXT_PUBLIC_AI_CCTV_API`를 **빌드타임 build-arg로 주입**(Dockerfile ARG/ENV + [cloudbuild.dashboard.yaml](../cloudbuild.dashboard.yaml), `.env.*`는 dockerignore라 빌드 누락→localhost 폴백이 원인이었음). 라이브 Playwright — AI타일 3개 클라우드 MJPEG **640×360 프레임 로드**·localhost호출0·연결대기0. 영상은 시뮬레이션(실 YOLOv8n 교체법 [cctv-ai/README.md](../cctv-ai/README.md)).
 
-- **검증** — 전부 tsc=0 + next build=0. 1번은 라이브 검증 완료, 2·3번은 로컬 검증 완료(미배포).
+- **검증** — 전부 tsc=0 + next build=0. 1·3·4·5·6 라이브 검증 완료. 2(R2)는 코드 배포·런타임 비활성.
+- **배포 체인** — `00013-p28`→`00014-kg5`(다이얼로그)→`00015-swq`(R2+슬롯)→`00016-frj`(캐러셀)→`00017-cj8`(다크모드)→**`00018-5tn`**(CCTV AI) + 신규 `cctv-ai-00001-4d4`.
+- **현재 상태** — **라이브=`00018-5tn`**(+ `cctv-ai`). **origin/main=`b53fd34`(5번까지 동기화)**, **6번 CCTV AI 3커밋(`47f157b`·`bc97a33`·`c93b385`) = 로컬만(ahead=3, 미푸시)** — 라이브엔 반영됐으나 GitHub 미반영. 로컬 dev 종료.
+- **다음 액션** — ① **GitHub push**(미푸시 ahead=3: CCTV AI). ② **R2 Phase 2b** — R2 버킷·토큰 생성 + `.env.local`(R2_* 4키) + Cloud Run 시크릿 → 클라우드 브릿지 업로드 활성화(현재 upload-url 503). ③ (선택) CCTV AI 실제 YOLOv8n+샘플영상 교체. ④ (선택) 비-관리자 권한차단 E2E(가입 이메일인증 때문에 보류).
 
 ### (2026-06-26 세션 후반 — 프로필/보안/버그 수정 5건 + 라이브 4회 배포 `00010`→**`00013-p28`**)
 
