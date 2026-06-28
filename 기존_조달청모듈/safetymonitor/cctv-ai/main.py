@@ -35,7 +35,7 @@ FPS = 12
 # ── CAM-01 객체+속도 설정 ────────────────────────────────────────────────────────────────
 MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
 VIDEO_PATH = os.environ.get("CAM01_VIDEO", "samples/cam01.mp4")
-PLAYBACK_FPS = 15  # 샘플영상 캡처 fps(실시간 속도 유지)
+PLAYBACK_FPS = int(os.environ.get("PLAYBACK_FPS", "6"))  # 워커 추론 cadence. 낮추면 추론 사이 sleep↑ → CPU 여유↑(요청 429 방지). 클립은 15fps 캡처라 6이면 0.4x 슬로모.
 CONF = float(os.environ.get("YOLO_CONF", "0.25"))
 IMGSZ = int(os.environ.get("YOLO_IMGSZ", "960"))    # 추론 해상도(640→960=원거리 군중 사람 4배). 라이브는 env 800.
 OW, OH = 1280, 720  # CAM-01 출력 해상도(고해상도). 합성 CAM-02 은 W,H=640,360.
@@ -260,8 +260,7 @@ def _object_worker():
             time.sleep(0.2)
             continue
         rem = target_dt - (time.time() - t0)
-        if rem > 0:
-            time.sleep(rem)
+        time.sleep(max(rem, 0.02))  # 최소 20ms 양보 — 추론이 길어도 HTTP 요청 처리에 CPU 확보(429 방지)
 
 
 def _ppe_worker():
@@ -304,8 +303,7 @@ def _ppe_worker():
             time.sleep(0.2)
             continue
         rem = target_dt - (time.time() - t0)
-        if rem > 0:
-            time.sleep(rem)
+        time.sleep(max(rem, 0.02))  # 최소 20ms 양보 — 추론이 길어도 HTTP 요청 처리에 CPU 확보(429 방지)
 
 
 # ── 장면 상태(시뮬레이션) — 합성 폴백(CAM-02 낙상 상시, CAM-01/03 모델 실패 시) ─────────────────

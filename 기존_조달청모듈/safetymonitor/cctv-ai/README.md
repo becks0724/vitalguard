@@ -100,10 +100,10 @@ IMG=asia-northeast3-docker.pkg.dev/$PROJECT/vitalguard/cctv-ai:latest
 gcloud builds submit --tag $IMG .
 gcloud run deploy cctv-ai --image $IMG --region $REGION \
   --allow-unauthenticated --cpu 4 --memory 4Gi --timeout 3600 \
-  --min-instances 1 --max-instances 1 --concurrency 200 --no-cpu-throttling \
-  --update-env-vars YOLO_IMGSZ=800
+  --min-instances 1 --max-instances 5 --concurrency 200 --no-cpu-throttling \
+  --update-env-vars YOLO_IMGSZ=800,PLAYBACK_FPS=6
 # → 서비스 URL(https://cctv-ai-xxxxx.run.app) 확보
-# --cpu 4 --memory 4Gi : CAM-01(YOLOv8n) + CAM-03(YOLO-World) 두 실모델 동시 추론 경합 대응.
+# --cpu 4 --memory 4Gi : CAM-01(YOLOv8n) + CAM-03(Hexmon PPE) 두 실모델 동시 추론 경합 대응.
 ```
 
 `YOLO_IMGSZ=800` — 추론 해상도. 코드 기본 960(인식률 최대·CPU fps~4-5)이나 라이브는 **800**(인식률 거의 동일·fps~6-7)로 운영.
@@ -113,9 +113,11 @@ gcloud run deploy cctv-ai --image $IMG --region $REGION \
 - `--memory 2Gi` — torch+YOLOv8n 상주 메모리(합성 전용이던 1Gi 에서 상향).
 - `--no-cpu-throttling` — **요청 밖 백그라운드 추론 스레드에 CPU 상시 할당**(기본 스로틀링이면 워커가 굶어 stats 가 합성으로 폴백).
 - `--min-instances 1` — 콜드스타트(첫 연결 지연·모델 로드) 방지. MJPEG 는 장시간 연결이라 타임아웃 3600s.
-- `--max-instances 1 --concurrency 200` — **단일 인스턴스 고정(필수)**. CAM-03 폰 라이브 override 상태(`_ppe_live`)가 인스턴스 메모리에 있어 **폰 송출과 대시보드 조회가 같은 인스턴스를 써야 한다**(다중 인스턴스면 요청이 갈려 override 가 안 맞음). concurrency 200 으로 단일 발표 동시성은 충분. (이전 maxScale 10 은 MJPEG 슬롯 고갈 429 대비였으나, 인메모리 인제스트 상태 일관성이 우선 — 발표 규모에선 1 인스턴스로 충분.)
+- `PLAYBACK_FPS=6` — 워커 추론 cadence. CAM-01+CAM-03 두 모델 연속 추론이 4코어를 점유해 **HTTP 요청이 굶어 429** 가 나므로 낮춰 추론 사이 sleep 확보(+워커 루프 최소 20ms yield). 높이면 영상 부드럽지만 429 위험↑.
+- `--max-instances 5 --concurrency 200` — **MJPEG 장기연결 대비 여유**. 대시보드가 CAM 3종을 MJPEG(`/cctv/stream*`)로 장시간 점유 → 단일 인스턴스면 CPU·슬롯 포화로 `429`(검은 화면). ≥3~5 로 분산.
+  - **⚠ 트레이드오프(중요)**: 다중 인스턴스면 **CAM-03 폰 라이브 override 가 불안정**해진다 — 폰 POST(`/cctv/ingest3`)와 대시보드 조회(`/cctv/stream3`)가 *다른* 인스턴스로 가면 인메모리 `_ppe_live` 가 안 맞아 클립만 보인다. **MJPEG 대시보드 ↔ 폰 override 는 동시 양립 불가**(전자는 다중 인스턴스, 후자는 단일 인스턴스 필요).
 
-> MJPEG 장기연결의 근본 취약성. 더 견고하게 하려면 **단발 JPEG 스냅샷 폴링**(클라가 `/cctv/snapshot` 을 N ms 마다 짧게 요청 → 슬롯 즉시 반환)으로 전환(서버 `/cctv/snapshot` 추가 + 대시보드 `<img stream>`→폴링). 현재는 헤드룸 확보로 단일 발표 시나리오 대응.
+> **근본 해결(택1)**. ⓐ **대시보드를 스냅샷 폴링으로 전환**(`<img stream>`→`/cctv/snapshot*` N ms 폴링) → 단발 요청이라 `--max-instances 1` 로도 429 없음 + 폰 override 복구(둘 다 작동). 단 Next.js 재빌드. ⓑ 폰 override 를 인스턴스 간 공유 저장소(Redis/GCS)로 — 과한 인프라. 현재는 ⓐ 전까지 max-instances 5 로 MJPEG 대시보드를 우선(폰 override 는 best-effort).
 
 ## 대시보드 연결 (빌드타임 URL 주입)
 
