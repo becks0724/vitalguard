@@ -119,6 +119,24 @@ gcloud run deploy cctv-ai --image $IMG --region $REGION \
 
 > (이전 시행착오) 스레드 무제한 + max-instances↑ 는 **각 인스턴스가 CPU 포화 + 콜드스타트 처닝**으로 더 불안정했다(000/429). 근본은 인스턴스 수가 아니라 **스레드 제한으로 HTTP 에 코어를 보장**하는 것. 더 견고히 하려면 대시보드를 스냅샷 폴링(`/cctv/snapshot*`)으로 — 단발 요청이라 장기연결 부담 자체가 사라짐(선택).
 
+## 정지/재개 (OFF / ON) — 삭제 없이 과금 토글
+
+`--min-instances 1 --no-cpu-throttling` 은 **상시 과금**(4코어 24시간). 발표·테스트가 아닐 땐 **서비스를 지우지 않고** OFF 로 내려 과금을 0 으로 만든다(이미지·구성 보존 → 즉시 재개).
+
+```bash
+# OFF (하드 — 외부 접근까지 차단. 브라우저가 못 닿아 안 깨고 과금 0)
+gcloud run services update cctv-ai --region asia-northeast3 \
+  --min-instances 0 --ingress internal
+
+# ON (재개 — 외부 접근 복구 + 상시 1대)
+gcloud run services update cctv-ai --region asia-northeast3 \
+  --min-instances 1 --ingress all
+```
+
+- `--min-instances 0` = 유휴 시 0대(과금 0). `--ingress internal` = 외부(브라우저/대시보드) 404 차단 → **깨어날 일 자체가 없음**(확실한 OFF). 검증: 외부에서 `/`·`/cctv/*` 가 404 면 OFF 성공.
+- soft-off 만 원하면 `--min-instances 0` 만(유휴 0대지만 누가 열면 잠깐 깸). 완전 차단은 `--ingress internal` 까지.
+- **삭제(`gcloud run services delete cctv-ai`) 아님** — 서비스 정의·트래픽·검증된 리비전 유지. ON 한 줄로 복귀(재빌드 불필요). 코드/이미지만 갱신하려면 OFF 플래그 그대로 `deploy` 하면 OFF 유지.
+
 ## 대시보드 연결 (빌드타임 URL 주입)
 
 대시보드는 `NEXT_PUBLIC_AI_CCTV_API` 를 빌드 시 인라인한다(`.env.*` 는 dockerignore 제외).

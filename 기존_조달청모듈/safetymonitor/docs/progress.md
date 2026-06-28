@@ -27,7 +27,7 @@
 8. `00009-vz5` — CAM-01 = Roboflow supervision 원근보정 속도(ByteTrack + `ViewTransformer` 호모그래피) + CAM-03 = YOLO-World PPE(오픈보캐, CLIP 빌드타임 캐시). 두 모델 경합 → **`--cpu 4 --memory 4Gi`**.
 9. `00010~00011-pvq` — **CAM-03 = Hexmon vyra-yolo-ppe(YOLOv8m 14클래스) 듀얼소스 + 폰 라이브**. 번들 클립(OFF) 추론이 기본, **폰이 `/cam3/capture`로 카메라를 `/cctv/ingest3`에 POST → 그 프레임 추론으로 override**(3초 무수신 시 클립 복귀·Start/Stop·Wake Lock). **NO-* 미착용(위반) 직접 탐지**(휴리스틱 제거). YOLO-World+CLIP 의존 삭제(이미지 경량·CAM-03 단독 ~11fps vs 이전 ~4fps). **캐치 — 인메모리 override 상태라 `--max-instances 1` 필수**(다중 인스턴스면 폰 POST와 대시보드 조회가 갈려 불일치).
 10. `00012-trf` — **CAM-01 클립 교체(로테르담 건설현장 부감 고정캠 60초)** — 객체 적음·연산 안정·안전 테마. 차량 한글 검출 양호(부감이라 주차 차량 위주→속도 거의 비표시, `CALIB_SOURCE` 지면 평면 재보정). 헤더 'Worksite (overhead)'. + **CAM-03 stats3 에 `fall_count` 추가** — Hexmon 이 낙상(`Fall-Detected`)+착용여부를 **한 모델 한 추론에 동시 출력**(낙상 0.84·안전모 0.54·조끼 0.60 검증), 박스는 이미 표시·이제 숫자도 노출(ingest3 응답·캡처페이지 표시 포함).
-11. **`00013-d5l`→`00015-pp4`(현재)** — **관제웹 연결 테스트 중 429 장애 → 해결**. 대시보드 MJPEG 3종 장기연결 + 두 모델 연속추론이 단일 인스턴스 **CPU 기아**(OOM 아님) → 전 요청 429/000(검은 화면). **핵심 해결 = `OMP_NUM_THREADS=1`/`MKL_NUM_THREADS=1` 로 torch 스레드 제한** → 추론 2코어 + HTTP 2코어 보장. + `PLAYBACK_FPS=6`·워커 20ms yield. (시행착오: `--max-instances↑` 는 콜드스타트 처닝으로 더 불안정 → 롤백.) 검증: MJPEG 3개 점유 상태 30/30 200·health 6/6·폰 override(source phone-live·`fall_count`) 동작·CORS OK. **결과 — `max-instances 1` 로 대시보드 MJPEG ↔ 폰 override 동시 양립(충돌 해소).**
+11. **`00013-d5l`→`00015-pp4`(기능 최종 · 이후 OFF)** — **관제웹 연결 테스트 중 429 장애 → 해결**. 대시보드 MJPEG 3종 장기연결 + 두 모델 연속추론이 단일 인스턴스 **CPU 기아**(OOM 아님) → 전 요청 429/000(검은 화면). **핵심 해결 = `OMP_NUM_THREADS=1`/`MKL_NUM_THREADS=1` 로 torch 스레드 제한** → 추론 2코어 + HTTP 2코어 보장. + `PLAYBACK_FPS=6`·워커 20ms yield. (시행착오: `--max-instances↑` 는 콜드스타트 처닝으로 더 불안정 → 롤백.) 검증: MJPEG 3개 점유 상태 30/30 200·health 6/6·폰 override(source phone-live·`fall_count`) 동작·CORS OK. **결과 — `max-instances 1` 로 대시보드 MJPEG ↔ 폰 override 동시 양립(충돌 해소).**
 
 **현재 상태**
 - **⏸ 2026-06-28 OFF(접근 차단·과금 0)** — CCTV 진행 보류 → `cctv-ai --min-instances 0 --ingress internal`(리비전 `00017-nld`). 외부(브라우저) 접근 **404 차단** → 깨어날 일 없음 = **과금 0**. **서비스·이미지·검증된 `00015-pp4` 구성 보존(삭제 아님 → 차후 즉시 수정/재개 가능).** **재개(ON)**: `gcloud run services update cctv-ai --region asia-northeast3 --min-instances 1 --ingress all`. (OFF 중 대시보드 CCTV 타일은 미표시/대기.)
@@ -41,7 +41,8 @@
 - **(CAM-01)** fps 개선(`PPE_IMGSZ`↓ 또는 cpu↑) · 속도 절대정확도는 실측 캘리브 필요 · 헤더 '@960' 동적화(경미).
 - **(CAM-03)** ✅ 전용 PPE 모델(Hexmon)·폰 라이브 적용 완료. 잔여 — 조끼/Person 검출이 프레임별 출렁(conf 0.25), 필요시 `PPE_CONF` 0.3~0.35 상향. 발표 시 발표자가 `/cam3/capture` 열어 Start.
 - **(CAM-02)** 낙상 실모델(포즈) 미적용 — 후보 `melihuzunoglu/human-fall-detection`(ultralytics) 같은 패턴으로 이식 가능.
-- **(비용)** `--no-cpu-throttling`+`min1`+`cpu4` = 상시 과금. 발표 외 `gcloud run services update cctv-ai --min-instances 0`.
+- **(비용)** 재개 시 `min1+cpu4+no-throttling` = 상시 과금. **현재는 하드 OFF(접근 차단)라 과금 0** — ON/OFF 토글은 위 **현재 상태 ⏸** 줄 참조(`--min-instances 0 --ingress internal` ↔ `--min-instances 1 --ingress all`).
+- **(재개 절차)** OFF→ON 후, 발표 전 한 번 열어 콜드스타트(모델 로드 ~20-30s) 미리 깨워두기. 발표자는 폰으로 `/cam3/capture` 열어 CAM-03 라이브 송출.
 
 ---
 
