@@ -100,8 +100,8 @@ IMG=asia-northeast3-docker.pkg.dev/$PROJECT/vitalguard/cctv-ai:latest
 gcloud builds submit --tag $IMG .
 gcloud run deploy cctv-ai --image $IMG --region $REGION \
   --allow-unauthenticated --cpu 4 --memory 4Gi --timeout 3600 \
-  --min-instances 1 --max-instances 5 --concurrency 200 --no-cpu-throttling \
-  --update-env-vars YOLO_IMGSZ=800,PLAYBACK_FPS=6
+  --min-instances 1 --max-instances 1 --concurrency 200 --no-cpu-throttling \
+  --update-env-vars YOLO_IMGSZ=800,PLAYBACK_FPS=6,OMP_NUM_THREADS=1,MKL_NUM_THREADS=1
 # → 서비스 URL(https://cctv-ai-xxxxx.run.app) 확보
 # --cpu 4 --memory 4Gi : CAM-01(YOLOv8n) + CAM-03(Hexmon PPE) 두 실모델 동시 추론 경합 대응.
 ```
@@ -113,11 +113,11 @@ gcloud run deploy cctv-ai --image $IMG --region $REGION \
 - `--memory 2Gi` — torch+YOLOv8n 상주 메모리(합성 전용이던 1Gi 에서 상향).
 - `--no-cpu-throttling` — **요청 밖 백그라운드 추론 스레드에 CPU 상시 할당**(기본 스로틀링이면 워커가 굶어 stats 가 합성으로 폴백).
 - `--min-instances 1` — 콜드스타트(첫 연결 지연·모델 로드) 방지. MJPEG 는 장시간 연결이라 타임아웃 3600s.
-- `PLAYBACK_FPS=6` — 워커 추론 cadence. CAM-01+CAM-03 두 모델 연속 추론이 4코어를 점유해 **HTTP 요청이 굶어 429** 가 나므로 낮춰 추론 사이 sleep 확보(+워커 루프 최소 20ms yield). 높이면 영상 부드럽지만 429 위험↑.
-- `--max-instances 5 --concurrency 200` — **MJPEG 장기연결 대비 여유**. 대시보드가 CAM 3종을 MJPEG(`/cctv/stream*`)로 장시간 점유 → 단일 인스턴스면 CPU·슬롯 포화로 `429`(검은 화면). ≥3~5 로 분산.
-  - **⚠ 트레이드오프(중요)**: 다중 인스턴스면 **CAM-03 폰 라이브 override 가 불안정**해진다 — 폰 POST(`/cctv/ingest3`)와 대시보드 조회(`/cctv/stream3`)가 *다른* 인스턴스로 가면 인메모리 `_ppe_live` 가 안 맞아 클립만 보인다. **MJPEG 대시보드 ↔ 폰 override 는 동시 양립 불가**(전자는 다중 인스턴스, 후자는 단일 인스턴스 필요).
+- **`OMP_NUM_THREADS=1` `MKL_NUM_THREADS=1` — ★ 429 핵심 해결**. CAM-01+CAM-03 두 모델이 각자 모든 코어로 추론하면 4코어가 통째로 점유돼 **uvicorn 이벤트 루프(HTTP)가 굶어 429/타임아웃**(검은 화면). torch 스레드를 op당 1개로 묶으면 **추론 2코어(워커 2×1) + HTTP 2코어 보장** → 단일 인스턴스가 대시보드 MJPEG 3종을 안정 서빙. 추론은 느려지나(슬로모) PLAYBACK_FPS=6 과 맞아 데모엔 충분.
+- `PLAYBACK_FPS=6` — 워커 추론 cadence(낮춰 사이 sleep 확보 + 워커 루프 최소 20ms yield). 스레드 제한과 함께 CPU 여유 이중 확보.
+- `--max-instances 1 --concurrency 200` — **단일 인스턴스**. 스레드 제한으로 1대가 대시보드+폰을 다 처리하므로 다중 인스턴스 불필요. **이게 핵심** — max 1 이면 CAM-03 폰 라이브 override 상태(`_ppe_live`)가 한 인스턴스 메모리에 모여 **MJPEG 대시보드와 폰 override 가 동시에** 된다(다중 인스턴스면 폰 POST·대시보드 조회가 갈려 클립만 보임).
 
-> **근본 해결(택1)**. ⓐ **대시보드를 스냅샷 폴링으로 전환**(`<img stream>`→`/cctv/snapshot*` N ms 폴링) → 단발 요청이라 `--max-instances 1` 로도 429 없음 + 폰 override 복구(둘 다 작동). 단 Next.js 재빌드. ⓑ 폰 override 를 인스턴스 간 공유 저장소(Redis/GCS)로 — 과한 인프라. 현재는 ⓐ 전까지 max-instances 5 로 MJPEG 대시보드를 우선(폰 override 는 best-effort).
+> (이전 시행착오) 스레드 무제한 + max-instances↑ 는 **각 인스턴스가 CPU 포화 + 콜드스타트 처닝**으로 더 불안정했다(000/429). 근본은 인스턴스 수가 아니라 **스레드 제한으로 HTTP 에 코어를 보장**하는 것. 더 견고히 하려면 대시보드를 스냅샷 폴링(`/cctv/snapshot*`)으로 — 단발 요청이라 장기연결 부담 자체가 사라짐(선택).
 
 ## 대시보드 연결 (빌드타임 URL 주입)
 
