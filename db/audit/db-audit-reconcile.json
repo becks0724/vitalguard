@@ -1,0 +1,75 @@
+{
+  "overall_health_score": 46,
+  "critical_count": 1,
+  "high_count": 9,
+  "medium_count": 22,
+  "total_effort_hours": 96,
+  "top5_priorities": [
+    {
+      "rank": 1,
+      "title_ko": "민감정보(건강·생체·위치) 평문 저장 + DB 계층 보호 전무 — 암호화·RLS·접근로그 동시 부재",
+      "why_ko": "10개 에이전트 중 5개(security·privacy·db7·app·maint)가 같은 뿌리를 가리켰고 grep 으로 입증됐다. 전 DDL 에 pgcrypto·encrypt·ENABLE ROW LEVEL SECURITY·CREATE POLICY·GRANT·REVOKE 가 0건이다. fall_ml.fall_events*·vital_samples_galaxy·vital_samples·T_SENSING 의 심박·SpO2·체온·혈액형·GPS 가 전부 평문이고, sslmode=disable(lib/db.ts:96)로 전송도 평문이다. 현재 테넌트 격리는 전적으로 앱 코드 단일 의존이라, DB 직접접속·신규 라우트 한 곳만 뚫려도 타사 작업자 건강정보 전체가 노출된다. 개인정보보호법 제23조(민감정보)·제29조 직결로 법적·평판 리스크가 가장 크다. 단 컬럼 암호화는 락·리라이트(downtime=true)와 앱 연결계층 수정(app.pii_key/app.company_idx 세션변수 주입)이 선행돼야 하므로, 1단계는 pgcrypto 설치+신규 암호화 컬럼 추가, 2단계 백필, 3단계 평문 컬럼 DROP 으로 점진 적용한다.",
+      "effort_hours": 26
+    },
+    {
+      "rank": 2,
+      "title_ko": "T_SAFEGUARD.SG_PWD 평문 가능 설계 — 관리자 자격 해시 강제 부재",
+      "why_ko": "4개 에이전트(SEC-PWD-001·PRIV-02·DB7-001·agent6 notes)가 중복 보고했고 소스에서 SG_PWD VARCHAR(255) NOT NULL + 주석 '관리자 비밀번호' 로 확인됐다. 앱 신규 인증경로(users 테이블)는 scrypt 해시·fail-closed·IP잠금으로 양호하나, 레거시 aquerytool T_SAFEGUARD 는 평문을 막는 CHECK 가 없다. DB·백업 유출 시 관리자 평문 비밀번호가 그대로 노출돼 전 시스템 장악으로 직결된다. 공수가 낮고(해시포맷 CHECK 1건) 효과가 커 최우선급이다. 단 기존 평문 행이 있으면 ADD CONSTRAINT 가 실패하므로 진단쿼리(SG_PWD 길이/접두사 분포)로 위반 0 확인 후 적용한다. 충돌 해소: agent7 의 char_length>=60 보다 security/privacy 의 해시접두사 정규식(^(scrypt$|$argon2|$2[aby]$))이 평문 60자 통과를 막아 더 정확하다.",
+      "effort_hours": 3
+    },
+    {
+      "rank": 3,
+      "title_ko": "백업/복구 기반 자체 부재 — pg_dump·WAL·PITR 미정의 (운영 데이터 영구손실 위험)",
+      "why_ko": "agent5 단독 영역이나 영향이 치명적이다. db/ 전체와 앱 코드 어디에도 백업 자동화·WAL 아카이빙·PITR·복제 구성이 없고, 유일한 백업 언급은 요율 마이그레이션의 1회 수동 pg_dump 뿐이다. 1인 자체서버에서 디스크 장애·실수 DELETE·랜섬웨어 시 작업자 생체·낙상·조달 증빙을 영구 손실하며 KOSHA 3년 보존 의무와도 충돌한다. SQL 로 푸는 항목이 아니라 cron+pg_dump+age암호화(즉시), 3-2-1(오프사이트 R2 어댑터 기존 존재), 월 1회 복구훈련 순으로 구축한다. 공수 대비 손실방어 효과가 압도적이라 상위에 둔다.",
+      "effort_hours": 8
+    },
+    {
+      "rank": 4,
+      "title_ko": "VITALGUARD 6개 FK 자식컬럼 + T_SENSING 시계열 인덱스 전무 — 풀스캔·삭제락",
+      "why_ko": "3개 에이전트(PERF-01/02·DB7-003·perf notes)가 일치 보고했고 소스에서 인덱스가 PK 뿐임을 확인했다(integrated 파일의 CREATE INDEX 는 safeprocure 영역만). 6개 FK 가 전부 ON DELETE/UPDATE RESTRICT 라 부모 1건 삭제/갱신마다 자식 풀스캔이고, 회사별·작업자별·센싱별 조인이 전부 시퀀셜스캔이 된다. 같은 역할 라이브 테이블 vital_samples 는 (worker_id,ts) 인덱스를 갖춘 것과 대조적이다. 공수 1시간(IF NOT EXISTS·트랜잭션·rollback 동반 멱등)에 누적 성능을 선형 개선한다. 대용량은 트랜잭션 밖 CREATE INDEX CONCURRENTLY 로 다운타임 회피.",
+      "effort_hours": 1.5
+    },
+    {
+      "rank": 5,
+      "title_ko": "시계열 테이블 리텐션·파티셔닝·정기 VACUUM/ANALYZE 자동화 부재 — 무한증식",
+      "why_ko": "4개 에이전트(PERF-10·SCHEMA-005·BR-03·MAINT-01/03·DB7-004)가 수렴한 구조적 리스크다. vital_samples 는 작업자당 수초 간격 append 인데(문서상 수만 건 누적) 리텐션·파티셔닝·ANALYZE 자동화·autovacuum 튜닝이 코드·DDL 0건이다. 누적 시 조회지연·디스크고갈·인덱스 bloat·통계노후로 대시보드가 느려지고, 개인정보 최소보관 의무(제21조)와도 충돌한다. 즉시 조치(autovacuum 임계 ALTER·보존 cron DELETE)는 저공수·무중단이나, 파티셔닝 전환은 ts TEXT→TIMESTAMPTZ 정규화 동반 재작성(downtime=true)이라 운영 규모 확인 후 단계 적용한다. 보존기간은 KOSHA 산재자료 보존의무와 합의 후 확정.",
+      "effort_hours": 6
+    }
+  ],
+  "duplicates_ko": [
+    "SG_PWD 평문 가능 설계 — SEC-PWD-001·PRIV-02·DB7-001 3건이 동일 결함(integrated:118-134). agent6 notes 도 동일 지적. 하나로 통합하고 remediation 은 해시접두사 정규식 CHECK 채택(char_length>=60 은 평문 60자 통과로 부정확).",
+    "FK 자식컬럼 인덱스 누락 — PERF-01 과 DB7-003 완전 동일(6개 FK, integrated:191-208). 인덱스명만 다른 같은 remediation.",
+    "시계열 파티셔닝·리텐션 부재 — PERF-10·SCHEMA-005·BR-03·MAINT-01·DB7-004 5건 중복. 같은 테이블군(vital_samples·T_SENSING·vital_samples_galaxy·cctv_fall_events).",
+    "ts/received_at TEXT 타입 — DI-04·SCHEMA-012·MAINT-02·DB7-004 부분 중복. 시간타입 비표준 + 파티션키 부적합 같은 뿌리.",
+    "민감정보 평문 저장 — SEC-PII-001·PRIV-01·PRIV-06·PRIV-07·APP-05·DB7-009 가 건강·위치·연락처로 분산됐으나 동일 '컬럼 암호화 부재' 근원. PRIV-01(Critical) 로 대표.",
+    "pgaudit 접근로그 부재 — PRIV-03·OBS-002 동일(접속기록 보관의무). pgcrypto 미설치는 SEC-PII-001·PRIV-01 와 겹침.",
+    "calendar_media_comment FK 미연동 — SCHEMA-007·DB7-005·APP-03 3건 동일(app db.ts:348-360 에 FK 없음, 마이그레이션 파일만 보강). 동일 DO 블록 remediation.",
+    "fall_ml 도메인 CHECK 부재 — DI-05·DB7-002 동일(spo2/hr/lat/lon 범위). agent4 SCHEMA-002 는 다른 각도(파생컬럼 3NF).",
+    "SECURITY DEFINER 없음 긍정소견 — SEC-FN-001·APP-09 동일 확인. 권한상승 위험 0 으로 합의.",
+    "SQL 인젝션 없음 긍정소견 — SEC-APP-001·APP-01 동일(전 경로 파라미터화). Info 로 합의.",
+    "T_SAFEGUARD PK 타입 불일치 — DI-09·SCHEMA-011 완전 동일(INT IDENTITY vs BIGSERIAL)."
+  ],
+  "conflicts": [
+    {
+      "topic_ko": "SG_PWD 해시 강제 CHECK 의 판별식",
+      "resolution_ko": "agent7(DB7-001)은 char_length(SG_PWD)>=60 을, security/privacy(SEC-PWD-001·PRIV-02)는 해시접두사 정규식(^(scrypt$|$argon2|$2[aby]$))을 제시했다. 길이만 보는 방식은 60자 이상 평문 비밀번호를 통과시켜 목적을 못 달성한다. 접두사 정규식이 평문 차단에 더 정확하므로 그것을 채택한다. 앱이 scrypt 자가기술 포맷을 쓰므로 'scrypt$' 접두를 반드시 허용집합에 포함한다."
+    },
+    {
+      "topic_ko": "ts 시각컬럼 TEXT 처리 방향",
+      "resolution_ko": "DI-04 는 '앱 vital_samples 와의 의도적 정합이라 즉시변경은 호환을 깸'을 들어 비파괴 옵션A(형식 게이트 CHECK)를 권한다. SCHEMA-012·MAINT-02 는 신규 TIMESTAMPTZ 컬럼 추가→백필→스왑의 점진 전환을 권한다. 두 권고는 상충이 아니라 단계로 통합된다. 1단계는 즉시 무중단인 ISO8601 형식 CHECK(잘못된 포맷 차단), 2단계는 파티셔닝 의사결정과 묶어 ts_tstz 생성열/컬럼 도입이다. 파티셔닝을 실제 적용할 때만 2단계가 필수가 된다."
+    },
+    {
+      "topic_ko": "fall_ml 1·2차 테이블 통합(SCHEMA-001) vs 별도유지(DI/DB7 의 개별 CHECK 보강)",
+      "resolution_ko": "agent4 는 fall_events/fall_events_2nd 통합(단일 phase 구분)을 권하고, agent3·agent7 은 두 테이블을 둔 채 각각 CHECK 를 거는 방향이다. 03 파일 주석이 '별개 테이블(요청)'로 의도된 분할임을 명시하므로, 1상 적재단계에선 통합을 강제하지 않고 양쪽에 동일 CHECK 를 먼저 거는 보수적 경로를 택한다(저위험·저공수). 통합은 phase 가 3차 이상으로 늘 때 재검토한다. 단 통합하든 유지하든 ground_truth_label enum 값 체계가 1차(FALL/NO_FALL)와 2차(true_fall/false_positive)로 달라 v_fall_all 통합조회 시 오해석 위험이 있으니 DOC-005 의 컬럼주석 명시를 동반한다."
+    },
+    {
+      "topic_ko": "doc_media 단일컬럼 asset_id 인덱스 제거(PERF-08) 시점",
+      "resolution_ko": "PERF-08 은 PERF-07 의 (asset_id, 정렬키 DESC) 복합인덱스 생성 이후에만 단일인덱스를 제거하라는 순서의존이 있다. 복합인덱스 없이 단일인덱스를 먼저 지우면 asset_id 조회가 퇴화한다. 적용 순서를 PERF-07→PERF-08 로 고정하고, 역순 실행을 금지한다. remediation_sql 자체에 그 전제가 주석으로 박혀 있어 안전하다."
+    },
+    {
+      "topic_ko": "SG_ID UNIQUE 범위 — 전역 단일 vs (COMPANY_IDX,SG_ID) 복합",
+      "resolution_ko": "DI-01 이 두 안을 모두 제시했다. CLAUDE.md 의 멀티테넌트 상용화 목표(SEC-RLS-001 과 정합)를 고려하면 같은 아이디를 다른 회사가 쓸 수 있어야 하므로 (COMPANY_IDX, SG_ID) 복합 UNIQUE 가 더 정확하다. 단 현 운영이 단일테넌트면 전역 UNIQUE 로도 충분하니, 테넌트 정책 확정 후 택일한다. 적용 전 SG_ID 중복 진단쿼리로 위반 0 확인 필수."
+    }
+  ],
+  "sql_validation_notes_ko": "전 에이전트 remediation_sql 의 트랜잭션 래핑·롤백·안전성을 점검한 결과다.\n\n[양호] security(SEC-*)·privacy(PRIV-*)·data-integrity(DI-*)·db7(DB7-*)·doc(DOC-*)·OBS-* 의 모든 remediation_sql 은 BEGIN;…COMMIT; 으로 감쌌고 대부분 rollback_sql 을 동반한다. 인덱스 생성(PERF-*)은 CREATE INDEX IF NOT EXISTS·DROP INDEX IF EXISTS 로 멱등이고 rollback 도 정확하다. CHECK/UNIQUE 추가형(DI-*·DB7-002)은 ADD CONSTRAINT…/DROP CONSTRAINT IF EXISTS… 대칭으로 안전하다. calendar_media FK 보강(DB7-005·APP-03)은 pg_constraint 존재체크 DO 블록으로 멱등·중복안전하다. 요율 마이그레이션(safeprocure/01)은 BEGIN;…자동검증 RAISE 게이트…COMMIT; 으로 검증 실패 시 COMMIT 차단되어 모범적이다(소스 확인).\n\n[주의 1 — NOT VALID 의 lock 회피 무력화] agent4 SCHEMA-001 은 동일 트랜잭션에서 ADD CONSTRAINT … NOT VALID 직후 VALIDATE CONSTRAINT 를 호출한다. 문법은 유효하나, 같은 트랜잭션 내 VALIDATE 는 NOT VALID 의 락회피 목적을 무력화한다(검증 스캔이 즉시 일어남). 1상 소량데이터(CSV 20·34행)라 실질 무해하나, 의도가 무중단이면 NOT VALID 와 VALIDATE 를 별도 트랜잭션으로 분리해야 한다. 또 이 SQL 은 fall_events_2nd 데이터 INSERT→DROP TABLE→DROP VIEW→CREATE VIEW 를 한 트랜잭션에 묶어 파괴적이므로 사전 pg_dump 백업이 rollback 으로 명시돼 있음을 반드시 준수한다.\n\n[주의 2 — VACUUM 은 트랜잭션 내 불가] agent8 MAINT-01·agent7 DB7-004 의 리텐션 DELETE 후 VACUUM 권고는 VACUUM 을 BEGIN/COMMIT 밖 별도 실행으로 올바르게 분리했다(주석 명시). DELETE 는 비가역이라 rollback_sql 대신 사전 pg_dump 를 요구한 점도 정확하다. 다만 ts TEXT 문자열 비교 DELETE(to_char 비교)는 포맷 흔들림 시 경계행을 놓칠 수 있어, 진단쿼리로 캐스팅 가능성 확인 후 실행 권장.\n\n[주의 3 — 확장 설치만으로 미작동] OBS-001(pg_stat_statements)·OBS-002(pgaudit)·SEC-PII-001/PRIV-01(pgcrypto) 의 CREATE EXTENSION 은 shared_preload_libraries 등록+재시작이 선행돼야 실제 수집/암호화가 동작한다. remediation 주석에 재시작 필요(downtime=true)가 명시돼 있어 적정하다. CREATE EXTENSION 자체는 멱등(IF NOT EXISTS)·롤백(DROP EXTENSION) 대칭이다.\n\n[주의 4 — ADD CONSTRAINT 선행 검증 필수] 모든 CHECK/UNIQUE 추가는 기존 데이터가 제약을 위반하면 ACCESS EXCLUSIVE 락 하에 ADD CONSTRAINT 가 실패한다. 각 에이전트가 대응 진단쿼리(위반 0 확인)를 제공했으므로, remediation 적용 전 반드시 해당 진단쿼리를 먼저 돌린다. 1인·자체서버·소량데이터 기준 ADD CONSTRAINT 의 순간 락은 무시 가능하나, INTEGER→BIGINT 타입확장(DI-06·DI-09·SCHEMA-011)은 테이블 리라이트를 동반할 수 있어 적재량이 커진 뒤에는 다운타임을 고려한다.\n\n[remediation 없음 — 적정] agent5(BR-*) 전체와 일부 Info/Low(PERF-03·05·SCHEMA-009·10·12·DB7-006·07·010·APP-02·04·05·06·07 등)는 코드·인프라 변경이라 SQL 미제공이 옳다. 단정하지 않고 diagnostic_queries 로 위임한 라이브 종속항목(슈퍼유저·SSL·pg_hba·bloat·실권한·평문 실데이터)도 적절히 분리됐다.\n\n[총평] 문법오류·미래시제 환각·트랜잭션 누락은 발견되지 않았다. 핵심 권고는 위 주의 1(NOT VALID 분리)·주의 4(선행 진단쿼리)뿐이며, 나머지는 1인 운영 기준 그대로 적용 가능하다."
+}

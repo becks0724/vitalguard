@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'><title>VITALGUARD DB 감사 요약</title><style>
+@page { size: A4; margin: 17mm 14mm; }
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; }
+body { font-family: -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  font-size: 10.5pt; line-height: 1.62; color: #1a1a1a; margin: 0; }
+h1 { font-size: 19pt; border-bottom: 3px solid #2c3e50; padding-bottom: 7px; margin-bottom: 4px; }
+h2 { font-size: 14.5pt; border-bottom: 1.5px solid #bdc3c7; padding-bottom: 4px; margin-top: 22px; page-break-after: avoid; }
+h3 { font-size: 12pt; color: #2c3e50; margin-top: 15px; page-break-after: avoid; }
+h4 { font-size: 11pt; color: #34495e; margin-top: 12px; page-break-after: avoid; }
+p { margin: 6px 0; }
+table { border-collapse: collapse; width: 100%; margin: 9px 0; font-size: 9.3pt; page-break-inside: avoid; }
+th, td { border: 1px solid #c2c8cf; padding: 5px 8px; text-align: left; vertical-align: top; }
+th { background: #2c3e50; color: #fff; font-weight: 600; }
+tr:nth-child(even) td { background: #f5f7fa; }
+code { background: #eef1f3; padding: 1px 4px; border-radius: 3px; font-family: 'SF Mono', Menlo, monospace; font-size: 8.8pt; color: #c0392b; }
+pre { background: #1e2127; color: #e6e6e6; padding: 10px 12px; border-radius: 5px;
+  font-size: 8.4pt; line-height: 1.45; page-break-inside: avoid; white-space: pre-wrap; word-wrap: break-word; }
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+blockquote { border-left: 4px solid #bdc3c7; margin-left: 0; padding: 2px 12px; color: #555; background: #fafbfc; }
+hr { border: none; border-top: 1px solid #ddd; margin: 16px 0; }
+ul, ol { margin: 6px 0; padding-left: 22px; }
+li { margin: 2px 0; }
+strong { color: #1a1a1a; }
+a { color: #2980b9; text-decoration: none; }
+</style></head><body><h1>VITALGUARD DB 감사 — 1페이지 경영요약</h1>
+<p><strong>감사일</strong> 2026-06-24 · <strong>대상</strong> 정적 DDL 11개 + 앱 DB 코드 · <strong>라이브 미연결</strong></p>
+<h2>한눈에 보기</h2>
+<table>
+<thead>
+<tr>
+<th>지표</th>
+<th>값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>전체 건강점수</td>
+<td><strong>46/100</strong> (상용화 전 시정 필수)</td>
+</tr>
+<tr>
+<td>컴플라이언스 점수</td>
+<td><strong>28/100</strong></td>
+</tr>
+<tr>
+<td>Critical / High / Medium</td>
+<td><strong>1 / 9 / 22</strong></td>
+</tr>
+<tr>
+<td>예상 총공수</td>
+<td><strong>약 96시간</strong> (P0~P2 약 2.5주)</td>
+</tr>
+</tbody>
+</table>
+<h2>핵심 메시지</h2>
+<p>DB 계층 방어(RLS·암호화·접속로그·GRANT/REVOKE)가 <strong>전부 0건</strong>이다. 현재 멀티테넌트 격리와 민감정보 보호가 <strong>전적으로 앱 코드 단일 의존</strong>이라, DB 직접접속·신규 라우트 한 곳만 우회하면 작업자 건강·생체·위치가 평문으로 노출된다. 이것이 최대 구조적 리스크다.</p>
+<p>긍정 소견. 앱 인증(users)은 scrypt 해시·fail-closed·IP 잠금 양호. 전 경로 파라미터라이즈드로 SQL 인젝션 표면 없음. 주민번호 컬럼 없음. SECURITY DEFINER 0건.</p>
+<h2>Top 5 우선순위</h2>
+<table>
+<thead>
+<tr>
+<th>순위</th>
+<th>항목</th>
+<th>심각도</th>
+<th>공수</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>민감정보(건강·생체·위치) 평문 + DB 보호 전무</td>
+<td>Critical</td>
+<td>26h</td>
+</tr>
+<tr>
+<td>2</td>
+<td>T_SAFEGUARD.SG_PWD 평문 가능 설계</td>
+<td>High</td>
+<td>3h</td>
+</tr>
+<tr>
+<td>3</td>
+<td>백업/복구 기반 자체 부재 (영구손실 위험)</td>
+<td>High</td>
+<td>8h</td>
+</tr>
+<tr>
+<td>4</td>
+<td>FK 6개 + T_SENSING 시계열 인덱스 전무</td>
+<td>High</td>
+<td>1.5h</td>
+</tr>
+<tr>
+<td>5</td>
+<td>시계열 리텐션·파티셔닝·VACUUM 자동화 부재</td>
+<td>Medium</td>
+<td>6h</td>
+</tr>
+</tbody>
+</table>
+<h2>컴플라이언스 (개인정보보호법)</h2>
+<p>민감정보 암호화·접속기록(pgaudit)·보유기간/파기·가명처리·동의기록·SSL — <strong>6개 영역 모두 미준수</strong>. 제23조·제29조 위반 시 과징금·형사처벌 대상. KOSHA 산재자료 보존(추정 3년)은 백업 부재로 충돌.</p>
+<h2>1주차 즉시 조치 (P0, 약 14.5h)</h2>
+<p>백업 자동화(4h) · SG_PWD 해시 CHECK(3h) · FK/시계열 인덱스(1.5h) · 풀 타임아웃(0.5h) · calendar FK(1h) · pgcrypto+암호화 컬럼 1단계(4.5h).</p>
+<blockquote>
+<p>모든 CHECK 추가 전 진단쿼리로 기존 데이터 위반 0 을 확인하고, 평문/SSL/권한 등 라이브 종속 항목은 운영 실태 확인 후 최종 결론을 낼 것.</p>
+</blockquote></body></html>
