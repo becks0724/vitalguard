@@ -12,7 +12,7 @@
 
 ## Quick Summary (30초 안에 읽기)
 
-### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 9단계 고도화 · 단일 출처)
+### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 10단계 고도화 · 단일 출처)
 
 > cctv-ai = 대시보드 CCTV 관제 3타일에 MJPEG/스냅샷 + 감지통계를 주는 **별도 Cloud Run 서비스**. 기술 상세 → [cctv-ai/README.md](../cctv-ai/README.md).
 
@@ -25,11 +25,12 @@
 6. `00007-4b6` — CAM-01 **인식률↑·한글·720p**: imgsz 640→960·conf 0.25(사람 2.8→11/frame, ~4배), 720p 신선 클립, **PIL+NanumGothic 한글 라벨**, 출력 1280x720.
 7. `00008-8m5` — `YOLO_IMGSZ=800` env(fps 4-5→6-7, 인식률 유지).
 8. `00009-vz5` — CAM-01 = Roboflow supervision 원근보정 속도(ByteTrack + `ViewTransformer` 호모그래피) + CAM-03 = YOLO-World PPE(오픈보캐, CLIP 빌드타임 캐시). 두 모델 경합 → **`--cpu 4 --memory 4Gi`**.
-9. **`00010~00011-pvq`(현재)** — **CAM-03 = Hexmon vyra-yolo-ppe(YOLOv8m 14클래스) 듀얼소스 + 폰 라이브**. 번들 클립(OFF) 추론이 기본, **폰이 `/cam3/capture`로 카메라를 `/cctv/ingest3`에 POST → 그 프레임 추론으로 override**(3초 무수신 시 클립 복귀·Start/Stop·Wake Lock). **NO-* 미착용(위반) 직접 탐지**(휴리스틱 제거). YOLO-World+CLIP 의존 삭제(이미지 경량·CAM-03 단독 ~11fps vs 이전 ~4fps). **캐치 — 인메모리 override 상태라 `--max-instances 1` 필수**(다중 인스턴스면 폰 POST와 대시보드 조회가 갈려 불일치).
+9. `00010~00011-pvq` — **CAM-03 = Hexmon vyra-yolo-ppe(YOLOv8m 14클래스) 듀얼소스 + 폰 라이브**. 번들 클립(OFF) 추론이 기본, **폰이 `/cam3/capture`로 카메라를 `/cctv/ingest3`에 POST → 그 프레임 추론으로 override**(3초 무수신 시 클립 복귀·Start/Stop·Wake Lock). **NO-* 미착용(위반) 직접 탐지**(휴리스틱 제거). YOLO-World+CLIP 의존 삭제(이미지 경량·CAM-03 단독 ~11fps vs 이전 ~4fps). **캐치 — 인메모리 override 상태라 `--max-instances 1` 필수**(다중 인스턴스면 폰 POST와 대시보드 조회가 갈려 불일치).
+10. **`00012-trf`(현재)** — **CAM-01 클립 교체(로테르담 건설현장 부감 고정캠 60초)** — 객체 적음·연산 안정·안전 테마. 차량 한글 검출 양호(부감이라 주차 차량 위주→속도 거의 비표시, `CALIB_SOURCE` 지면 평면 재보정). 헤더 'Worksite (overhead)'. + **CAM-03 stats3 에 `fall_count` 추가** — Hexmon 이 낙상(`Fall-Detected`)+착용여부를 **한 모델 한 추론에 동시 출력**(낙상 0.84·안전모 0.54·조끼 0.60 검증), 박스는 이미 표시·이제 숫자도 노출(ingest3 응답·캡처페이지 표시 포함).
 
 **현재 상태**
-- 라이브 = 대시보드 `00018-5tn`(아직 **MJPEG** 사용·무변경) + **cctv-ai `00011-pvq`**. CAM-01=YOLOv8n+supervision 속도+한글 · CAM-02=합성 낙상 · CAM-03=**Hexmon PPE 듀얼소스(클립/폰 라이브)**+한글.
-- 라이브 검증 — CAM-03 5fps 송출 모사 source phone-live 12/12·3초 후 클립 복귀·스냅샷 한글 '안전모' 박스 육안 확인. 회귀 CAM-01 속도·CAM-02 정상.
+- 라이브 = 대시보드 `00018-5tn`(아직 **MJPEG** 사용·무변경) + **cctv-ai `00012-trf`**. CAM-01=YOLOv8n 객체+한글(건설현장 부감 클립) · CAM-02=합성 낙상 · CAM-03=**Hexmon PPE 듀얼소스(클립/폰 라이브)+낙상**+한글.
+- 라이브 검증 — CAM-01 차량 한글검출·'Worksite' 헤더·속도0(주차) · CAM-03 낙상이미지 인제스트 시 `fall_count`+안전모 동시 노출·source phone-live · 회귀 CAM-02 정상.
 - 운영 플래그(필수): `--no-cpu-throttling --cpu 4 --memory 4Gi --min-instances 1 --max-instances 1 --concurrency 200 --update-env-vars YOLO_IMGSZ=800` (**max 1 = 인메모리 override 일관성**).
 - 바이너리(`.pt`·`samples/*.mp4`·`NanumGothic`)는 git 미추적(`.gcloudignore`로 빌드 포함). CLIP/`weights/`·worldv2 의존은 제거됨.
 

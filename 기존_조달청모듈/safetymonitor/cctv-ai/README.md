@@ -3,10 +3,11 @@
 대시보드 **CCTV 관제**의 AI 타일 3종(CAM-01 객체감지·CAM-02 낙상감지·CAM-03 PPE 안전모)에
 MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포용.
 
-- **CAM-01 객체감지 = YOLOv8n + 차량 속도추정 + 한글 라벨**(CPU). 번들 `samples/cam01.mp4`(홍대 720p·75초) 루프,
+- **CAM-01 객체감지 = YOLOv8n + 차량 속도추정 + 한글 라벨**(CPU). 번들 `samples/cam01.mp4`(로테르담 건설현장 부감 고정캠 720p·60초) 루프,
   프레임마다 imgsz(env 800·기본960)·conf 0.25 추론 → 보행자·자전거·차량·버스·트럭·오토바이 실박스(출력 **1280x720**).
   한글 라벨은 **PIL+NanumGothic**(cv2 한글 미지원). **속도 = Roboflow supervision**(ByteTrack + `ViewTransformer`
-  **원근보정**) — 도로 평면 호모그래피로 **거리 무관 일관 km/h**(움직이는 차량만·5km/h 미만 생략). 실측 없는 추정(`SPEED_TARGET_W/H` env).
+  **원근보정**) — 지면 평면 호모그래피로 **거리 무관 일관 km/h**(움직이는 차량만·5km/h 미만 생략). 실측 없는 추정(`SPEED_TARGET_W/H` env).
+  부감캠은 주차 차량 위주라 속도는 거의 비표시(움직일 때만 rough 추정).
 - **CAM-03 PPE = Hexmon vyra-yolo-ppe(YOLOv8m 14클래스) + 한글 라벨**(CPU). **듀얼소스** — 기본은 번들
   `samples/cam03.mp4` 를 추론(OFF), 폰이 `/cam3/capture` 로 카메라 프레임을 `/cctv/ingest3` 에 POST 하면 그 프레임을
   추론해 덮어씀(ON · 3초 무수신 시 클립 복귀). 안전모·안전조끼·작업자 + **NO-* 미착용(위반) 직접 탐지** → 준수율 통계. 출력 640x360.
@@ -21,7 +22,7 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
 | `GET /cctv/snapshot` `/cctv/snapshot2` `/cctv/snapshot3` | 단발 `image/jpeg` | 폴링용·MJPEG 대안(객체/낙상/PPE) |
 | `GET /cctv/stats` | `{fps,total,byClass:[{label,count}],alertsLastMinute, vehicleCount,maxSpeedKmh,avgSpeedKmh}` | 객체+속도(뒤 3필드는 실모델 전용·대시보드는 미사용 시 무시) |
 | `GET /cctv/stats2` | `{total,fallen,byStatus:[{status,label,count}]}` | 낙상 |
-| `GET /cctv/stats3` | `{violation_count,compliance_rate,no_hardhat_count,no_vest_count,hardhat_count,vest_count,person_count}` | PPE |
+| `GET /cctv/stats3` | `{violation_count,compliance_rate,no_hardhat_count,no_vest_count,hardhat_count,vest_count,person_count,fall_count}` | PPE + 낙상(`fall_count`) |
 | `POST /cctv/ingest3` | 폰 JPEG 프레임(raw body) 수신 → Hexmon 추론 → CAM-03 라이브 override(3초 TTL) | `{ok,persons,violations,compliance}` |
 | `GET /cam3/capture` | 폰/노트북 카메라 캡처 페이지(getUserMedia→ingest3 POST·Start/Stop·Wake Lock) | `text/html` |
 
@@ -40,11 +41,12 @@ python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"   # cwd 에 yolov8n
 # 2) 한글 라벨 폰트(NanumGothic, OFL ~2MB)
 python -c "import urllib.request as u; u.urlretrieve('https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf','NanumGothic-Regular.ttf')"
 
-# 3) 샘플영상 — 홍대 라이브캠(format 300=1280x720) 75초를 cv2 로 떠서 굽기(ffmpeg 불필요)
-URL="$(yt-dlp -f 300 -g 'https://www.youtube.com/watch?v=iM1JSU1rl84')"
+# 3) 샘플영상 — 로테르담 건설현장 라이브캠(부감 고정·1280x720) 60초를 cv2 로 떠서 굽기(ffmpeg 불필요)
+URL="$(yt-dlp -f 'best[height<=720]/best' -g 'https://www.youtube.com/watch?v=dmEq_ddk0kw')"
 python - "$URL" <<'PY'
 import sys, cv2
-cap = cv2.VideoCapture(sys.argv[1]); OW,OH,FPS,SEC,KEEP=1280,720,15,75,4  # 60fps 소스 → 매 4번째 = 15fps
+cap = cv2.VideoCapture(sys.argv[1]); OW,OH,FPS,SEC=1280,720,15,60
+KEEP=max(1,round((cap.get(cv2.CAP_PROP_FPS) or 30)/FPS))  # 소스 fps → 15fps
 wr = cv2.VideoWriter("samples/cam01.mp4", cv2.VideoWriter_fourcc(*"mp4v"), FPS, (OW,OH))
 read=w=0
 while w < SEC*FPS:

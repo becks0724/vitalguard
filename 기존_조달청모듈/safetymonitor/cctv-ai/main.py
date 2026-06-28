@@ -56,7 +56,7 @@ SPEED_SHOW_MIN = 5      # 이 미만(km/h)은 숫자 생략 — 정지/서행 �
 
 # 속도 원근 보정(Roboflow supervision ViewTransformer) — 이미지 도로 평면 4점 → 실세계 직사각형(m).
 # 실측이 아닌 도로 기하 추정값(절대값은 근사·원근 일관성↑). env(SPEED_TARGET_W/H) 로 배율 조정.
-CALIB_SOURCE = np.array([[430, 300], [1010, 300], [1280, 700], [60, 700]], np.float32)  # 1280x720 기준
+CALIB_SOURCE = np.array([[300, 330], [960, 330], [1240, 640], [40, 640]], np.float32)  # 1280x720 부감 — 하단 지면 평면 근사(좌우 도로)
 SPEED_TARGET_W = float(os.environ.get("SPEED_TARGET_W", "35"))  # m, 가로(진행방향)
 SPEED_TARGET_H = float(os.environ.get("SPEED_TARGET_H", "25"))  # m, 깊이
 CALIB_TARGET = np.array([[0, 0], [SPEED_TARGET_W, 0], [SPEED_TARGET_W, SPEED_TARGET_H], [0, SPEED_TARGET_H]], np.float32)
@@ -148,11 +148,13 @@ def _ppe_infer(frame, header):
     hard, no_hard = cnt.get("Hardhat", 0), cnt.get("NO-Hardhat", 0)
     vest, no_vest = cnt.get("Safety Vest", 0), cnt.get("NO-Safety Vest", 0)
     person = cnt.get("Person", 0)
+    fall = cnt.get("Fall-Detected", 0)
     total_ppe = hard + no_hard + vest + no_vest
     rate = round(100 * (hard + vest) / total_ppe) if total_ppe else 100
     stats = {"violation_count": no_hard + no_vest, "compliance_rate": rate,
              "no_hardhat_count": no_hard, "no_vest_count": no_vest,
-             "hardhat_count": hard, "vest_count": vest, "person_count": person}
+             "hardhat_count": hard, "vest_count": vest, "person_count": person,
+             "fall_count": fall}
     return (buf.tobytes() if okj else b""), stats
 
 
@@ -211,7 +213,7 @@ def _object_worker():
             anchors = det.get_anchors_coordinates(sv.Position.BOTTOM_CENTER) if len(det) else np.empty((0, 2))
             world = view.transform(anchors)
 
-            header = "CAM-01  Hongdae St.  YOLO + ByteTrack speed"
+            header = "CAM-01  Worksite (overhead)  YOLO + ByteTrack"
             by = {}
             speeds = []
             dets = []
@@ -381,7 +383,8 @@ def ppe_stats(t):
     rate = round(100 * (person - violations) / person) if person else 100
     return {"violation_count": violations, "compliance_rate": rate,
             "no_hardhat_count": person - hard, "no_vest_count": person - vest,
-            "hardhat_count": hard, "vest_count": vest, "person_count": person}
+            "hardhat_count": hard, "vest_count": vest, "person_count": person,
+            "fall_count": 0}
 
 
 # ── 렌더(합성 프레임) + 그리기 헬퍼 ──────────────────────────────────────────────────────
@@ -575,7 +578,7 @@ function tick() {
       const r = await fetch('/cctv/ingest3', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
       const j = await r.json();
       sent++;
-      if (j.ok) stat.innerHTML = '<span class="big">송출 중 · ' + sent + ' 프레임</span><br>작업자 ' + j.persons + ' · 위반 ' + j.violations + ' · 준수율 ' + j.compliance + '%';
+      if (j.ok) stat.innerHTML = '<span class="big">송출 중 · ' + sent + ' 프레임</span><br>작업자 ' + j.persons + ' · 위반 ' + j.violations + ' · 낙상 ' + j.fall + ' · 준수율 ' + j.compliance + '%';
       else stat.textContent = '서버 응답: ' + (j.error || '오류') + ' (재시도 중)';
     } catch (e) { stat.textContent = '전송 오류 — 네트워크 확인 (재시도 중)'; }
     sending = false;
@@ -711,7 +714,7 @@ async def ingest_ppe(request: Request):
             _ppe_live["frame"] = jpg
         _ppe_live["stats"] = stats
         _ppe_live["ts"] = time.time()
-    return JSONResponse({"ok": True, "persons": stats["person_count"],
+    return JSONResponse({"ok": True, "persons": stats["person_count"], "fall": stats["fall_count"],
                          "violations": stats["violation_count"], "compliance": stats["compliance_rate"]})
 
 
