@@ -30,7 +30,7 @@
 11. **`00013-d5l`→`00015-pp4`(현재)** — **관제웹 연결 테스트 중 429 장애 → 해결**. 대시보드 MJPEG 3종 장기연결 + 두 모델 연속추론이 단일 인스턴스 **CPU 기아**(OOM 아님) → 전 요청 429/000(검은 화면). **핵심 해결 = `OMP_NUM_THREADS=1`/`MKL_NUM_THREADS=1` 로 torch 스레드 제한** → 추론 2코어 + HTTP 2코어 보장. + `PLAYBACK_FPS=6`·워커 20ms yield. (시행착오: `--max-instances↑` 는 콜드스타트 처닝으로 더 불안정 → 롤백.) 검증: MJPEG 3개 점유 상태 30/30 200·health 6/6·폰 override(source phone-live·`fall_count`) 동작·CORS OK. **결과 — `max-instances 1` 로 대시보드 MJPEG ↔ 폰 override 동시 양립(충돌 해소).**
 
 **현재 상태**
-- **⏸ 2026-06-28 일시정지(과금 절감)** — CCTV 진행 보류 → `cctv-ai --min-instances 0`(리비전 `00016-d67`). 유휴 시 인스턴스 0대 = **상시 과금 중단**. **재개**: `gcloud run services update cctv-ai --region asia-northeast3 --min-instances 1`. (정지 중 대시보드 CCTV 타일은 콜드스타트로 느리게 뜨거나 대기 표시.)
+- **⏸ 2026-06-28 OFF(접근 차단·과금 0)** — CCTV 진행 보류 → `cctv-ai --min-instances 0 --ingress internal`(리비전 `00017-nld`). 외부(브라우저) 접근 **404 차단** → 깨어날 일 없음 = **과금 0**. **서비스·이미지·검증된 `00015-pp4` 구성 보존(삭제 아님 → 차후 즉시 수정/재개 가능).** **재개(ON)**: `gcloud run services update cctv-ai --region asia-northeast3 --min-instances 1 --ingress all`. (OFF 중 대시보드 CCTV 타일은 미표시/대기.)
 - (정지 전 검증된 상태) 대시보드 `00018-5tn`(MJPEG·무변경) + **cctv-ai `00015-pp4`**. CAM-01=YOLOv8n 객체+한글(건설현장 부감 클립) · CAM-02=합성 낙상 · CAM-03=**Hexmon PPE 듀얼소스(클립/폰 라이브)+낙상**+한글. **관제웹 연결 OK·안정(429 해소).**
 - 라이브 검증 — CAM-01 차량 한글검출·'Worksite' 헤더 · CAM-03 `fall_count`+안전모 동시 · MJPEG 3개 동시 부하 30/30 200·health 6/6 · 폰 override source phone-live · CORS OK.
 - 운영 플래그(재개 시): `--no-cpu-throttling --cpu 4 --memory 4Gi --min-instances 1 --max-instances 1 --concurrency 200 --update-env-vars YOLO_IMGSZ=800,PLAYBACK_FPS=6,OMP_NUM_THREADS=1,MKL_NUM_THREADS=1`. **★ OMP/MKL=1(스레드 제한)이 429 핵심 해결 — 단일 인스턴스로 MJPEG+폰 override 양립.**
