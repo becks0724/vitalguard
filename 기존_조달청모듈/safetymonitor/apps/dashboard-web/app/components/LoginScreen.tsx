@@ -377,16 +377,10 @@ export function LoginScreen({
   const [phoneLast, setPhoneLast] = useState("");
   const [carrierBase, setCarrierBase] = useState(""); // SKT/KT/LG U+/알뜰폰
   const [mvno, setMvno] = useState(""); // 알뜰폰일 때 호스트망(KT/SKT/LG U+)
-  // 이메일 — 아이디 + 도메인(선택/직접입력) + 인증.
+  // 이메일 — 아이디 + 도메인(선택/직접입력). 인증 제거 — 가입 신청 후 관리자 승인 구조.
   const [emailLocal, setEmailLocal] = useState("");
   const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]!);
   const [emailDomainCustom, setEmailDomainCustom] = useState("");
-  const [emailVerify, setEmailVerify] = useState<
-    "idle" | "sending" | "sent" | "verifying" | "verified"
-  >("idle");
-  const [emailCode, setEmailCode] = useState("");
-  const [emailMsg, setEmailMsg] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
   // 구글 가입 추가정보(회사·연락처) — 구글 인증 후 입력 단계.
   const [gCompany, setGCompany] = useState("");
   const [gPhone, setGPhone] = useState("");
@@ -503,10 +497,6 @@ export function LoginScreen({
         setError(t.invalidEmail);
         return;
       }
-      if (emailVerify !== "verified") {
-        setError(t.needEmailVerify);
-        return;
-      }
       if (sPw.length < 8) {
         setError(t.pwTooShort);
         return;
@@ -549,10 +539,6 @@ export function LoginScreen({
         setEmailLocal("");
         setEmailDomain(EMAIL_DOMAINS[0]!);
         setEmailDomainCustom("");
-        setEmailVerify("idle");
-        setEmailCode("");
-        setEmailMsg(null);
-        setDevCode(null);
         setIdCheck("idle");
         setSPw("");
         setSPw2("");
@@ -575,7 +561,6 @@ export function LoginScreen({
       composedEmail,
       emailValid,
       idCheck,
-      emailVerify,
       sPw,
       sPw2,
       submitting,
@@ -618,62 +603,6 @@ export function LoginScreen({
       setError(t.networkError);
     }
   }, [sId, t]);
-
-  // 이메일 인증번호 발송 — /api/admin/email/send-code.
-  const handleSendCode = useCallback(async () => {
-    if (!emailValid) {
-      setError(t.invalidEmail);
-      return;
-    }
-    setEmailVerify("sending");
-    setEmailMsg(null);
-    setDevCode(null);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/email/send-code", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: composedEmail }),
-      });
-      const j = (await res.json()) as { ok?: boolean; devCode?: string; error?: string };
-      if (!res.ok || !j.ok) {
-        setEmailVerify("idle");
-        setError(j.error || t.networkError);
-        return;
-      }
-      setEmailVerify("sent");
-      setEmailMsg(t.emailSentMsg);
-      if (j.devCode) setDevCode(j.devCode);
-    } catch {
-      setEmailVerify("idle");
-      setError(t.networkError);
-    }
-  }, [emailValid, composedEmail, t]);
-
-  // 이메일 인증번호 확인 — /api/admin/email/verify-code.
-  const handleVerifyCode = useCallback(async () => {
-    setEmailVerify("verifying");
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/email/verify-code", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: composedEmail, code: emailCode.trim() }),
-      });
-      const j = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !j.ok) {
-        setEmailVerify("sent");
-        setError(j.error || t.networkError);
-        return;
-      }
-      setEmailVerify("verified");
-      setEmailMsg(null);
-      setDevCode(null);
-    } catch {
-      setEmailVerify("sent");
-      setError(t.networkError);
-    }
-  }, [composedEmail, emailCode, t]);
 
   // 구글 가입 추가정보 제출 — 회사·연락처 → /api/auth/google/complete (pending 생성).
   const handleGoogleComplete = useCallback(
@@ -1069,13 +998,7 @@ export function LoginScreen({
               <input
                 type="text"
                 value={emailLocal}
-                onChange={(e) => {
-                  setEmailLocal(e.target.value.replace(/[\s@]/g, ""));
-                  setEmailVerify("idle");
-                  setEmailCode("");
-                  setEmailMsg(null);
-                  setDevCode(null);
-                }}
+                onChange={(e) => setEmailLocal(e.target.value.replace(/[\s@]/g, ""))}
                 placeholder={t.emailLocalPlaceholder}
                 autoComplete="email"
                 required
@@ -1084,13 +1007,7 @@ export function LoginScreen({
               <span className="text-white/60">@</span>
               <select
                 value={emailDomain}
-                onChange={(e) => {
-                  setEmailDomain(e.target.value);
-                  setEmailVerify("idle");
-                  setEmailCode("");
-                  setEmailMsg(null);
-                  setDevCode(null);
-                }}
+                onChange={(e) => setEmailDomain(e.target.value)}
                 style={SELECT_CHEVRON}
                 className={`${SELECT_BASE} flex-1`}
               >
@@ -1108,76 +1025,12 @@ export function LoginScreen({
               <input
                 type="text"
                 value={emailDomainCustom}
-                onChange={(e) => {
-                  setEmailDomainCustom(e.target.value.replace(/[\s@]/g, ""));
-                  setEmailVerify("idle");
-                  setEmailCode("");
-                  setEmailMsg(null);
-                  setDevCode(null);
-                }}
+                onChange={(e) => setEmailDomainCustom(e.target.value.replace(/[\s@]/g, ""))}
                 placeholder={t.emailDomainPlaceholder}
                 className={INPUT_CLASS}
               />
             )}
 
-            {/* 이메일 인증 — 코드 발송 → 입력 → 확인. 인증 완료해야 가입 가능. */}
-            {emailVerify === "verified" ? (
-              <p className="mt-2 text-[11px] font-semibold text-emerald-200 drop-shadow">
-                ✓ {t.codeVerifiedMsg}
-              </p>
-            ) : emailVerify === "sent" || emailVerify === "verifying" ? (
-              <div className="mt-2 space-y-1.5">
-                <span className="text-xs font-semibold text-white/90 drop-shadow">
-                  {t.codeLabel}
-                </span>
-                <div className="flex items-stretch gap-2">
-                  <input
-                    type="tel"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={emailCode}
-                    onChange={(e) =>
-                      setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    placeholder={t.codePlaceholder}
-                    className={`${FIELD_BASE} flex-1 text-center tracking-widest`}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleVerifyCode}
-                    disabled={emailVerify === "verifying" || emailCode.length < 6}
-                    className={MINI_BTN}
-                  >
-                    {t.codeVerifyBtn}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleSendCode}
-                  className="text-[11px] font-semibold text-white/80 underline underline-offset-2 hover:text-sky-200"
-                >
-                  {t.emailResendBtn}
-                </button>
-                {emailMsg && (
-                  <p className="text-[11px] text-emerald-100/90 drop-shadow">{emailMsg}</p>
-                )}
-                {devCode && (
-                  <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
-                    {t.demoCodePrefix}
-                    {devCode}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={handleSendCode}
-                disabled={emailVerify === "sending" || !emailValid}
-                className={`${MINI_BTN} mt-2 w-full`}
-              >
-                {emailVerify === "sending" ? t.emailSending : t.emailVerifyBtn}
-              </button>
-            )}
           </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
@@ -1246,7 +1099,6 @@ export function LoginScreen({
               !sPw ||
               !sPw2 ||
               idCheck !== "available" ||
-              emailVerify !== "verified" ||
               sPw.length < 8 ||
               sPw !== sPw2
             }

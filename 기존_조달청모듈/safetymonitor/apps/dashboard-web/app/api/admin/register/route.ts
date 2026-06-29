@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 
 import { isAllowedCompany } from "../../../../lib/companies";
 import { createUser } from "../../../../lib/db";
-import { consumeVerified, isVerified } from "../../../../lib/email-verify";
 import { hashPassword } from "../../../../lib/password";
 
 // env owner 와 혼동되는 아이디는 가입 차단(로그인 1순위가 env owner 라 그림자 계정 방지).
@@ -94,14 +93,6 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  // ★ 이메일 인증 강제 — 인증 완료된 이메일만 가입 허용(가짜 이메일 차단).
-  if (!isVerified(mail)) {
-    return NextResponse.json(
-      { ok: false, error: "이메일 인증을 먼저 완료해주세요." },
-      { status: 403 },
-    );
-  }
-
   const carrierName = typeof carrier === "string" ? carrier.trim().slice(0, 20) : "";
 
   const passwordHash = await hashPassword(password);
@@ -112,7 +103,7 @@ export async function POST(request: Request) {
     phone: tel.slice(0, 20),
     carrier: carrierName || null,
     email: mail.slice(0, 120),
-    emailVerified: true,
+    emailVerified: false,
     passwordHash,
   });
   if (!user) {
@@ -121,9 +112,6 @@ export async function POST(request: Request) {
       { status: 409 },
     );
   }
-  // 가입 성공 — 인증 기록 소비(동일 인증 재사용 방지).
-  consumeVerified(mail);
-
   return NextResponse.json(
     {
       ok: true,
