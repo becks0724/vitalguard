@@ -6,6 +6,7 @@ import {
   totalPersisted as dbTotalPersisted,
   listAllWorkers,
   getWorkerProfiles,
+  getWorkerAliasMap,
   recordAlert,
 } from "../../../lib/db";
 import { heartRateStatus, spo2Status, coreTempStatus } from "../../../lib/severity";
@@ -42,6 +43,22 @@ export function vitalDanger(s: VitalSample | undefined): boolean {
   );
 }
 
+// 작업자 ID 병합 별칭 캐시(secondary → primary) — 수신마다 DB 조회 회피(15s TTL).
+// owner 가 별칭 등록/해제하면 최대 15s 내 자동 반영. DB 실패 시 원본 ID 사용(폴백).
+let _aliasCache: { map: Record<string, string>; at: number } | null = null;
+const ALIAS_TTL_MS = 15000;
+async function resolvePrimaryWorkerId(workerId: string): Promise<string> {
+  const now = Date.now();
+  if (!_aliasCache || now - _aliasCache.at > ALIAS_TTL_MS) {
+    try {
+      _aliasCache = { map: await getWorkerAliasMap(), at: now };
+    } catch {
+      if (!_aliasCache) return workerId;
+    }
+  }
+  return _aliasCache.map[workerId] ?? workerId;
+}
+
 export async function addSample(input: unknown): Promise<VitalSample | null> {
   const normalized =
     typeof input === "object" && input !== null && "hr" in input
@@ -51,7 +68,9 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
         }
       : input;
 
-  const sample = VitalSampleSchema.parse(normalized);
+  const parsed = VitalSampleSchema.parse(normalized);
+  // 작업자 ID 병합 — 별칭(secondary)을 주 ID(primary)로 정규화해 같은 사람을 1카드로 합친다.
+  const sample = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
   if (isReservedTestWorker(sample.workerId)) {
     return null;
   }

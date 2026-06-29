@@ -658,7 +658,192 @@ function ExportPanel({
       </section>
 
       <FallMlPanel token={token} onAuthFail={onAuthFail} />
+      <WorkerMergePanel token={token} onAuthFail={onAuthFail} />
     </div>
+  );
+}
+
+// 작업자 ID 병합 — owner 가 주 ID + 별칭 ID 입력 → /api/admin/worker-alias. 수신 시 정규화돼 1인 1카드로 합쳐진다.
+function WorkerMergePanel({
+  token,
+  onAuthFail,
+}: {
+  token: string;
+  onAuthFail: () => void;
+}) {
+  const [primaryId, setPrimaryId] = useState("");
+  const [secondaryId, setSecondaryId] = useState("");
+  const [aliases, setAliases] = useState<
+    { secondary_worker_id: string; primary_worker_id: string }[]
+  >([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/worker-alias", {
+        headers: { authorization: `Basic ${token}` },
+      });
+      if (res.status === 401) {
+        onAuthFail();
+        return;
+      }
+      const j = (await res.json()) as {
+        ok?: boolean;
+        aliases?: { secondary_worker_id: string; primary_worker_id: string }[];
+      };
+      if (j.ok && j.aliases) setAliases(j.aliases);
+    } catch {
+      /* 표시 전용 — 무시 */
+    }
+  }, [token, onAuthFail]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleMerge = useCallback(async () => {
+    setError(null);
+    const p = primaryId.trim();
+    const s = secondaryId.trim();
+    if (!p || !s) {
+      setError("주 ID·별칭 ID를 모두 입력해주세요.");
+      return;
+    }
+    if (p === s) {
+      setError("같은 ID는 병합할 수 없습니다.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/worker-alias", {
+        method: "POST",
+        headers: { authorization: `Basic ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ primaryId: p, secondaryId: s }),
+      });
+      if (res.status === 401) {
+        onAuthFail();
+        return;
+      }
+      const j = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setError(j.error || "병합 등록 실패");
+        return;
+      }
+      setPrimaryId("");
+      setSecondaryId("");
+      await load();
+    } catch {
+      setError("네트워크 오류");
+    } finally {
+      setBusy(false);
+    }
+  }, [primaryId, secondaryId, token, onAuthFail, load]);
+
+  const handleRemove = useCallback(
+    async (sid: string) => {
+      try {
+        const res = await fetch("/api/admin/worker-alias", {
+          method: "DELETE",
+          headers: { authorization: `Basic ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({ secondaryId: sid }),
+        });
+        if (res.status === 401) {
+          onAuthFail();
+          return;
+        }
+        await load();
+      } catch {
+        /* 무시 */
+      }
+    },
+    [token, onAuthFail, load],
+  );
+
+  const inputCls =
+    "mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60";
+
+  return (
+    <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
+      <div className="mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">작업자 ID 병합</h3>
+        <span className="ml-auto rounded-full border border-hairline bg-canvas px-2 py-0.5 text-[10px] font-medium text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-300">
+          같은 사람 = 한 카드
+        </span>
+      </div>
+      <p className="mb-3 text-[11px] text-muted">
+        같은 작업자가 두 ID(예: 폰 EMP-6861 / 워치 EMP-admin6861)로 들어올 때, 별칭 ID를 주 ID로 합칩니다.
+        등록 후 수신부터 한 카드로 합쳐집니다(과거 카드는 행의 "해제"로 정리).
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-xs font-semibold text-body dark:text-zinc-300">주 ID (남길 ID)</span>
+          <input
+            type="text"
+            value={primaryId}
+            onChange={(e) => {
+              setPrimaryId(e.target.value);
+              setError(null);
+            }}
+            placeholder="EMP-6861"
+            className={inputCls}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs font-semibold text-body dark:text-zinc-300">별칭 ID (합칠 ID)</span>
+          <input
+            type="text"
+            value={secondaryId}
+            onChange={(e) => {
+              setSecondaryId(e.target.value);
+              setError(null);
+            }}
+            placeholder="EMP-admin6861"
+            className={inputCls}
+          />
+        </label>
+      </div>
+      {error && (
+        <p className="mt-2 rounded border border-red-400/40 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200">
+          {error}
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => void handleMerge()}
+        disabled={busy || !primaryId.trim() || !secondaryId.trim()}
+        className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-md border border-indigo-500 bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-indigo-400/60 dark:bg-indigo-500/30 dark:hover:bg-indigo-500/40"
+      >
+        {busy ? "등록 중..." : "병합 등록"}
+      </button>
+
+      {aliases.length > 0 && (
+        <div className="mt-3 space-y-1.5">
+          <span className="text-[11px] font-semibold text-body dark:text-zinc-300">
+            등록된 병합 ({aliases.length})
+          </span>
+          {aliases.map((a) => (
+            <div
+              key={a.secondary_worker_id}
+              className="flex items-center gap-2 rounded border border-hairline bg-canvas px-2.5 py-1.5 text-xs dark:border-white/10 dark:bg-canvas/[0.02]"
+            >
+              <span className="font-mono text-muted dark:text-zinc-400">{a.secondary_worker_id}</span>
+              <span className="text-muted">→</span>
+              <span className="font-mono font-semibold text-ink dark:text-zinc-100">
+                {a.primary_worker_id}
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleRemove(a.secondary_worker_id)}
+                className="ml-auto rounded px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-400/10"
+              >
+                해제
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

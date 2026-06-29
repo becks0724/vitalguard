@@ -262,6 +262,13 @@ async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
+    -- 작업자 ID 병합 별칭 — secondary(별칭) → primary(주 ID). 수신 시 정규화해 같은 사람을 1카드로 합친다.
+    CREATE TABLE IF NOT EXISTS worker_alias (
+      secondary_worker_id TEXT PRIMARY KEY,
+      primary_worker_id TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 낙상 ML 정답 라벨 — 관제자가 각 후보 샘플에 실제 낙상 여부를 수기 라벨링(지도학습 정답).
     CREATE TABLE IF NOT EXISTS fall_labels (
       sample_id INTEGER PRIMARY KEY,
@@ -580,6 +587,48 @@ export async function getWorkerProfiles(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const r of rows) out[r.worker_id] = r.job_title;
   return out;
+}
+
+// ── 작업자 ID 병합 별칭(secondary → primary) ───────────────────────────────
+export type WorkerAliasRow = {
+  secondary_worker_id: string;
+  primary_worker_id: string;
+  updated_at: string;
+};
+
+// 별칭 등록 — secondary(별칭) → primary(주 ID) upsert. self/유효성은 호출부에서 검증.
+export async function setWorkerAlias(secondaryId: string, primaryId: string): Promise<void> {
+  await q(
+    `INSERT INTO worker_alias (secondary_worker_id, primary_worker_id, updated_at)
+       VALUES ($1, $2, ${NOW_ISO})
+       ON CONFLICT (secondary_worker_id) DO UPDATE SET
+         primary_worker_id = excluded.primary_worker_id,
+         updated_at = excluded.updated_at`,
+    [secondaryId, primaryId],
+  );
+}
+
+// 별칭 해제.
+export async function deleteWorkerAlias(secondaryId: string): Promise<void> {
+  await q(`DELETE FROM worker_alias WHERE secondary_worker_id = $1`, [secondaryId]);
+}
+
+// 별칭 맵(secondary → primary) — 수신 정규화·GET 동봉용.
+export async function getWorkerAliasMap(): Promise<Record<string, string>> {
+  const { rows } = await q<{ secondary_worker_id: string; primary_worker_id: string }>(
+    "SELECT secondary_worker_id, primary_worker_id FROM worker_alias",
+  );
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.secondary_worker_id] = r.primary_worker_id;
+  return out;
+}
+
+// 별칭 목록(관리 UI 표시용).
+export async function listWorkerAliases(): Promise<WorkerAliasRow[]> {
+  const { rows } = await q<WorkerAliasRow>(
+    "SELECT secondary_worker_id, primary_worker_id, updated_at FROM worker_alias ORDER BY updated_at DESC",
+  );
+  return rows;
 }
 
 // ── 알림 이력(SOS/낙상/생체 위험) ──────────────────────────────────────────
