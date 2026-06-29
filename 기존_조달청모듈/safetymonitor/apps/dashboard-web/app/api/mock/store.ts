@@ -167,18 +167,24 @@ export function recentSamples(limit = 80) {
     .reverse();
 }
 
-export function latestByWorker() {
-  return mergeLatestByWorker(mockStore.samples);
+export function latestByWorker(aliasMap?: Record<string, string>) {
+  return mergeLatestByWorker(mockStore.samples, aliasMap);
 }
 
 // 순수 함수(I/O 없음) — 워커별 최신 샘플 병합. 단위 테스트 가능하도록 분리.
 // 수집시각(ts) 기준 최신 우선 + null 메트릭 sticky carry-forward + 이벤트 플래그 비-sticky.
-export function mergeLatestByWorker(samples: VitalSample[]): VitalSample[] {
+// aliasMap(secondary→primary) 가 있으면 표시 시점에 별칭을 주 ID로 접어 같은 사람을 한 카드로 병합한다
+// (인스턴스·캐시 타이밍 무관 — 매 GET 마다 DB 별칭으로 ring 을 재키잉).
+export function mergeLatestByWorker(
+  samples: VitalSample[],
+  aliasMap?: Record<string, string>,
+): VitalSample[] {
   const latest = new Map<string, VitalSample>();
 
   for (const sample of samples) {
     if (isReservedTestWorker(sample.workerId)) continue;
-    const previous = latest.get(sample.workerId);
+    const wid = aliasMap?.[sample.workerId] ?? sample.workerId;
+    const previous = latest.get(wid);
 
     // 삽입 순서가 아닌 수집시각(ts) 기준으로 최신을 판정 — 워치는 오프라인 backlog 를 fresh 배치
     // 성공 후 별도 POST 로 보내므로 더 오래된 샘플이 더 나중에 삽입될 수 있다. 이때 그냥 last-writer 로
@@ -192,9 +198,10 @@ export function mergeLatestByWorker(samples: VitalSample[]): VitalSample[] {
     // 카드가 마지막 실측값으로 살아있음). SOS/낙상 이벤트 샘플(생체 미동봉)도 동일하게 직전값 유지.
     // 센서가 아예 없는 메트릭(예: Apple Watch SE 의 SpO₂·손목온도)은 실측을 받은 적이 없어
     // older 도 undefined → "--" 유지(시연용 조작값은 폰 fallback 제거로 더 이상 안 들어옴).
-    latest.set(sample.workerId, {
+    latest.set(wid, {
       ...older,
       ...newer,
+      workerId: wid,
       workerName: newer.workerName ?? older?.workerName,
       employeeId: newer.employeeId ?? older?.employeeId,
       guardianName: newer.guardianName ?? older?.guardianName,
@@ -224,4 +231,13 @@ export function mergeLatestByWorker(samples: VitalSample[]): VitalSample[] {
   return Array.from(latest.values()).sort((a, b) =>
     a.workerId.localeCompare(b.workerId),
   );
+}
+
+// 별칭 맵(secondary→primary) — GET 핸들러가 표시 폴딩용으로 로드. DB 실패 시 빈 맵.
+export async function workerAliases(): Promise<Record<string, string>> {
+  try {
+    return await getWorkerAliasMap();
+  } catch {
+    return {};
+  }
 }

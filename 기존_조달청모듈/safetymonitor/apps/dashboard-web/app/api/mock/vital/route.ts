@@ -9,6 +9,7 @@ import {
   latestByWorker,
   recentSamples,
   totalPersisted,
+  workerAliases,
   workerProfiles,
 } from "../store";
 import { recentZoneHazards } from "../../cctv/ingest";
@@ -32,12 +33,14 @@ function redactPii(sample: VitalSample, exposePii: boolean): VitalSample {
 
 export async function GET(request: Request) {
   const exposePii = EXPOSE_PII && verifyBasicAuth(request);
+  const aliasMap = await workerAliases();
   return NextResponse.json({
-    latest: latestByWorker().map((s) => redactPii(s, exposePii)),
+    latest: latestByWorker(aliasMap).map((s) => redactPii(s, exposePii)),
     recent: recentSamples().map((s) => redactPii(s, exposePii)),
     totalPersisted: await totalPersisted(),
     countsByWorker: await countsByWorker(),
     workerProfiles: await workerProfiles(),
+    workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
     zoneHazards: recentZoneHazards(),
     piiRedacted: !exposePii,
