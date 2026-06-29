@@ -102,9 +102,11 @@ _ppe_lock = threading.Lock()
 _ppe = {"frame": b"", "stats": None}          # 클립(OFF 기본) 추론 결과
 PPE_REAL = False     # CAM-03 실모델(Hexmon) 로드 여부
 
-# 폰 라이브(ON override) — /cctv/ingest3 가 갱신. ts 기준 PPE_LIVE_TTL 내면 클립 대신 이걸 노출.
+# 폰/엣지 라이브(ON override) — /cctv/ingest3 가 갱신. ts 기준 PPE_LIVE_TTL 내면 클립 대신 이걸 노출.
+# 끊김 방지: 표시(매 프레임 캐시 박스 그리기)와 탐지(throttle Hexmon 백그라운드)를 분리한다. dets=캐시 박스, infering=추론 진행중.
 _ppe_live_lock = threading.Lock()
-_ppe_live = {"frame": b"", "stats": None, "ts": 0.0}
+_ppe_live = {"frame": b"", "dets": [], "stats": None, "ts": 0.0, "infer_ts": 0.0, "infering": False}
+PPE_LIVE_INFER_INTERVAL = float(os.environ.get("PPE_LIVE_INFER_INTERVAL", "0.3"))  # 라이브 탐지 cadence(초). 표시 fps와 무관(전체 품질 유지).
 
 # Hexmon 모델 단일 인스턴스 — 클립 워커와 인제스트 핸들러가 공유(추론 직렬화).
 _ppe_model = None
@@ -129,8 +131,8 @@ def _ensure_ppe_model():
     return _ppe_model
 
 
-def _ppe_infer(frame, header):
-    # 한 프레임 → Hexmon 추론 → (jpeg bytes, stats3). 클립 워커·폰 인제스트 공용.
+def _ppe_infer_dets(frame):
+    # 한 프레임 → Hexmon 추론 → (dets, stats3). 그리기는 분리한다(라이브 표시/탐지 디커플용).
     model = _ensure_ppe_model()
     with _ppe_model_lock:
         res = model.predict(frame, imgsz=PPE_IMGSZ, conf=PPE_CONF, verbose=False)[0]
@@ -142,8 +144,6 @@ def _ppe_infer(frame, header):
         cnt[en] = cnt.get(en, 0) + 1
         x1, y1, x2, y2 = (int(v) for v in b.xyxy[0])
         dets.append((x1, y1, x2, y2, _ppe_color(ko), ko, en))
-    img = draw_pil(frame, dets, header)
-    okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
     # 준수율 — NO-* 위반 클래스를 직접 카운트(휴리스틱 아님).
     hard, no_hard = cnt.get("Hardhat", 0), cnt.get("NO-Hardhat", 0)
     vest, no_vest = cnt.get("Safety Vest", 0), cnt.get("NO-Safety Vest", 0)
@@ -155,6 +155,14 @@ def _ppe_infer(frame, header):
              "no_hardhat_count": no_hard, "no_vest_count": no_vest,
              "hardhat_count": hard, "vest_count": vest, "person_count": person,
              "fall_count": fall}
+    return dets, stats
+
+
+def _ppe_infer(frame, header):
+    # 한 프레임 → Hexmon 추론 + 그리기 → (jpeg bytes, stats3). 클립 워커·폴백 공용.
+    dets, stats = _ppe_infer_dets(frame)
+    img = draw_pil(frame, dets, header)
+    okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
     return (buf.tobytes() if okj else b""), stats
 
 
@@ -690,9 +698,31 @@ def snapshot_ppe():
     return Response(content=_ppe_current_frame(), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
 
 
+def _draw_live(frame, dets):
+    # 캐시된 박스만 그려 JPEG(추론 없음 = 빠름). 매 프레임 표시용 → 끊김 없음.
+    img = draw_pil(frame, dets, "CAM-03  Live (Edge)  PPE (Hexmon)")
+    okj, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+    return buf.tobytes() if okj else b""
+
+
+async def _ppe_live_infer(frame, ts):
+    # 백그라운드 전체 Hexmon 추론 → 캐시 박스/통계 갱신(표시를 막지 않음 = 탐지 품질 그대로 유지).
+    try:
+        dets, stats = await run_in_threadpool(_ppe_infer_dets, frame)
+        with _ppe_live_lock:
+            _ppe_live["dets"] = dets
+            _ppe_live["stats"] = stats
+            _ppe_live["infer_ts"] = ts
+    except Exception as e:
+        print(f"[cctv-ai] live infer error ({e})")
+    finally:
+        with _ppe_live_lock:
+            _ppe_live["infering"] = False
+
+
 @app.post("/cctv/ingest3")
 async def ingest_ppe(request: Request):
-    # 폰 캡처 페이지가 JPEG 프레임(raw body)을 POST → Hexmon 추론 → 폰 라이브 슬롯 갱신(클립 override).
+    # 엣지/폰이 JPEG 프레임(raw body)을 POST. 표시=매 프레임 즉시(캐시 박스만 그리기), 탐지=throttle Hexmon(백그라운드, 전체 품질).
     data = await request.body()
     if not data:
         return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
@@ -702,18 +732,30 @@ async def ingest_ppe(request: Request):
         return JSONResponse({"ok": False, "error": "decode failed"}, status_code=400)
     if frame.shape[1] != OW3 or frame.shape[0] != OH3:
         frame = cv2.resize(frame, (OW3, OH3))
+    now = time.time()
+    with _ppe_live_lock:
+        dets = _ppe_live["dets"]
+        stats = _ppe_live["stats"]
+        need = (now - _ppe_live["infer_ts"] >= PPE_LIVE_INFER_INTERVAL) and not _ppe_live["infering"]
+        if need:
+            _ppe_live["infering"] = True
     try:
-        jpg, stats = await run_in_threadpool(_ppe_infer, frame, "CAM-03  Live (Phone)  PPE (Hexmon)")
+        jpg = await run_in_threadpool(_draw_live, frame, dets)
     except Exception as e:
-        print(f"[cctv-ai] ingest3 inference error ({e})")
-        return JSONResponse({"ok": False, "error": "model not ready"}, status_code=503)
+        print(f"[cctv-ai] live draw error ({e})")
+        with _ppe_live_lock:
+            if need:
+                _ppe_live["infering"] = False
+        return JSONResponse({"ok": False, "error": "draw failed"}, status_code=500)
     with _ppe_live_lock:
         if jpg:
             _ppe_live["frame"] = jpg
-        _ppe_live["stats"] = stats
-        _ppe_live["ts"] = time.time()
-    return JSONResponse({"ok": True, "persons": stats["person_count"], "fall": stats["fall_count"],
-                         "violations": stats["violation_count"], "compliance": stats["compliance_rate"]})
+        _ppe_live["ts"] = now
+    if need:
+        asyncio.create_task(_ppe_live_infer(frame.copy(), now))
+    s = stats or {"person_count": 0, "fall_count": 0, "violation_count": 0, "compliance_rate": 100}
+    return JSONResponse({"ok": True, "persons": s["person_count"], "fall": s["fall_count"],
+                        "violations": s["violation_count"], "compliance": s["compliance_rate"]})
 
 
 @app.get("/cam3/capture", response_class=HTMLResponse)
