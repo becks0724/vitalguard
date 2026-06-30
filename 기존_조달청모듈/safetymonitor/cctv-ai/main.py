@@ -2,7 +2,7 @@
 # CAM-01(객체)=YOLOv8n + Roboflow supervision(ByteTrack+원근보정 속도), CAM-03(PPE)=Hexmon vyra-yolo-ppe(YOLOv8m 14클래스), CAM-02(낙상)=합성.
 # CAM-03 은 듀얼소스 — 기본은 번들 cam03.mp4 를 Hexmon 으로 추론(OFF), 폰이 /cctv/ingest3 로 프레임을 보내면 그 프레임을 추론해 덮어씀(ON·3초 무수신 시 클립 복귀).
 # 모델·영상·의존성이 없으면 해당 카메라는 합성으로 자동 폴백(배포 견고성).
-# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/snapshot[|2|3]=단발 JPEG, /cctv/stats=객체 /stats2=낙상 /stats3=PPE. POST /cctv/ingest3=폰 프레임 수신, GET /cam3/capture=폰 캡처 페이지.
+# 계약(대시보드 CctvQuadView): GET /cctv/stream[|2|3]=MJPEG, /cctv/snapshot[|2|3]=단발 JPEG, /cctv/stats=객체 /stats2=낙상 /stats3=PPE. POST /cctv/ingest3=폰/엣지 PPE 프레임(서버 추론), POST /cctv/ingest2=엣지 낙상 프레임(display-only·서버 추론 없음), GET /cam3/capture=폰 캡처 페이지.
 import asyncio
 import os
 import threading
@@ -115,6 +115,17 @@ _ppe_model_lock = threading.Lock()
 
 def _ppe_is_live() -> bool:
     return (time.time() - _ppe_live["ts"]) < PPE_LIVE_TTL
+
+
+# CAM-02(낙상) 라이브 override — Jetson 이 낙상 박스를 그려 /cctv/ingest2 로 보낸 JPEG 를 그대로 표시(서버 추론 없음·display-only).
+# 단일 Cloud Run 인스턴스 CPU 보호 — 서버 추론은 CAM-03 PPE(Hexmon) 하나만 유지(2추론 동시 429 회피).
+CAM2_LIVE_TTL = float(os.environ.get("CAM2_LIVE_TTL", "3.0"))  # 마지막 프레임 후 이 시간(초) 지나면 합성으로 복귀
+_cam2_live = {"frame": b"", "stats": None, "ts": 0.0}
+_cam2_lock = threading.Lock()
+
+
+def _cam2_is_live() -> bool:
+    return (time.time() - _cam2_live["ts"]) < CAM2_LIVE_TTL
 
 
 def _ensure_ppe_model():
@@ -530,6 +541,33 @@ async def mjpeg_ppe():
         await asyncio.sleep(1.0 / FPS)
 
 
+def _cam2_current_frame():
+    # 엣지 라이브(최근 CAM2_LIVE_TTL) > 합성 낙상 폴백.
+    if _cam2_is_live():
+        with _cam2_lock:
+            f = _cam2_live["frame"]
+        if f:
+            return f
+    return render("fall", time.time())
+
+
+def _cam2_current_stats():
+    if _cam2_is_live():
+        with _cam2_lock:
+            s = _cam2_live["stats"]
+        if s:
+            return s
+    return fall_stats(time.time())
+
+
+async def mjpeg_cam2_live():
+    while True:
+        frame = _cam2_current_frame()
+        if frame:
+            yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
+        await asyncio.sleep(1.0 / FPS)
+
+
 # ── 라우트 ─────────────────────────────────────────────────────────────────────────────
 MJPEG_MT = "multipart/x-mixed-replace; boundary=frame"
 SNAPSHOT_HEADERS = {"Cache-Control": "no-store"}
@@ -644,6 +682,7 @@ def health():
             "cam01": "yolo+bytetrack" if OBJECT_REAL else "synthetic",
             "cam03": ("hexmon-ppe" if PPE_REAL else "synthetic"),
             "cam03_source": ("phone-live" if _ppe_is_live() else "clip"),
+            "cam02_source": ("edge-live" if _cam2_is_live() else "synthetic"),
             "cams": ["object", "fall", "ppe"]}
 
 
@@ -654,7 +693,7 @@ def stream_object():
 
 @app.get("/cctv/stream2")
 def stream_fall():
-    return StreamingResponse(mjpeg("fall"), media_type=MJPEG_MT)
+    return StreamingResponse(mjpeg_cam2_live(), media_type=MJPEG_MT)
 
 
 @app.get("/cctv/stream3")
@@ -674,7 +713,7 @@ def stats_object():
 
 @app.get("/cctv/stats2")
 def stats_fall():
-    return JSONResponse(fall_stats(time.time()))
+    return JSONResponse(_cam2_current_stats())
 
 
 @app.get("/cctv/stats3")
@@ -690,7 +729,7 @@ def snapshot_object():
 
 @app.get("/cctv/snapshot2")
 def snapshot_fall():
-    return Response(content=render("fall", time.time()), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
+    return Response(content=_cam2_current_frame(), media_type="image/jpeg", headers=SNAPSHOT_HEADERS)
 
 
 @app.get("/cctv/snapshot3")
@@ -756,6 +795,37 @@ async def ingest_ppe(request: Request):
     s = stats or {"person_count": 0, "fall_count": 0, "violation_count": 0, "compliance_rate": 100}
     return JSONResponse({"ok": True, "persons": s["person_count"], "fall": s["fall_count"],
                         "violations": s["violation_count"], "compliance": s["compliance_rate"]})
+
+
+@app.post("/cctv/ingest2")
+async def ingest_fall_live(request: Request):
+    # Jetson 이 낙상 박스를 그린 JPEG 프레임(raw body)을 POST → 서버 추론 없이 그대로 CAM-02 표시(display-only).
+    # 통계는 쿼리(persons, fall)로 동봉(없으면 0). 단일 인스턴스 CPU 보호 — CAM-03 PPE 만 서버 추론.
+    data = await request.body()
+    if not data:
+        return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
+    arr = np.frombuffer(data, np.uint8)
+    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        return JSONResponse({"ok": False, "error": "decode failed"}, status_code=400)
+    if frame.shape[1] != W or frame.shape[0] != H:
+        frame = cv2.resize(frame, (W, H))
+    okj, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+    qp = request.query_params
+    try:
+        persons = int(qp.get("persons", "0"))
+        fall = int(qp.get("fall", "0"))
+    except ValueError:
+        persons, fall = 0, 0
+    stats = {"total": persons, "fallen": fall,
+             "byStatus": [{"status": "normal", "label": "정상", "count": max(persons - fall, 0)},
+                          {"status": "fallen", "label": "낙상", "count": fall}]}
+    with _cam2_lock:
+        if okj:
+            _cam2_live["frame"] = buf.tobytes()
+        _cam2_live["stats"] = stats
+        _cam2_live["ts"] = time.time()
+    return JSONResponse({"ok": True, "persons": persons, "fall": fall})
 
 
 @app.get("/cam3/capture", response_class=HTMLResponse)
