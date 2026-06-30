@@ -23,7 +23,8 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
 | `GET /cctv/stats` | `{fps,total,byClass:[{label,count}],alertsLastMinute, vehicleCount,maxSpeedKmh,avgSpeedKmh}` | 객체+속도(뒤 3필드는 실모델 전용·대시보드는 미사용 시 무시) |
 | `GET /cctv/stats2` | `{total,fallen,byStatus:[{status,label,count}]}` | 낙상 |
 | `GET /cctv/stats3` | `{violation_count,compliance_rate,no_hardhat_count,no_vest_count,hardhat_count,vest_count,person_count,fall_count}` | PPE + 낙상(`fall_count`) |
-| `POST /cctv/ingest3` | 폰 JPEG 프레임(raw body) 수신 → Hexmon 추론 → CAM-03 라이브 override(3초 TTL) | `{ok,persons,violations,compliance}` |
+| `POST /cctv/ingest3` | 폰/엣지 JPEG 프레임(raw body) 수신 → Hexmon 추론 → CAM-03 라이브 override(3초 TTL) | `{ok,persons,violations,compliance}` |
+| `POST /cctv/ingest2` | 엣지가 낙상 박스를 그린 JPEG(raw body) 수신 → **서버 추론 없이** CAM-02 표시(display-only·3초 TTL). 쿼리 `?persons=&fall=` 로 stats2 동봉 | `{ok,persons,fall}` |
 | `GET /cam3/capture` | 폰/노트북 카메라 캡처 페이지(getUserMedia→ingest3 POST·Start/Stop·Wake Lock) | `text/html` |
 
 ## 번들 바이너리 (git 미추적 — 재취득 절차)
@@ -164,5 +165,50 @@ gcloud builds submit --config cloudbuild.dashboard.yaml \
   박스에 표기, stats 에 `vehicleCount/maxSpeedKmh/avgSpeedKmh` 추가. `/cctv/stream`·`/cctv/stats` 가 전역을 읽는다.
 - **CAM-03 = Hexmon PPE 실모델 적용 완료(듀얼소스).** `_ppe_worker()` 가 클립(OFF)을 추론, `/cctv/ingest3` 가 폰
   프레임(ON)을 추론해 override(3초 TTL 후 클립 복귀). `NO-Hardhat`·`NO-Safety Vest` 위반 클래스를 직접 카운트(휴리스틱 아님).
-- **CAM-02 = 합성 유지.** 실모델 전환 시 낙상 영상(또는 포즈 모델)을 번들하면 된다.
-- Cloud Run 엔 카메라가 없으므로 **번들 샘플영상**·**폰 인제스트(`/cam3/capture`)**·인터넷 RTSP 가능(로컬 웹캠 직접연결 불가).
+- **CAM-02 = 합성 + 엣지 라이브 override(`/cctv/ingest2`).** 기본은 합성 낙상, 엣지(Jetson)가 낙상 박스를 그려 보내면 그 프레임을 **display-only**로 표시(3초 TTL 후 합성 복귀). **서버 추론 없음** — 낙상 추론은 엣지가 수행(단일 인스턴스 CPU 보호). 상세는 아래 "관제웹 듀얼-캠 라이브 연결".
+- Cloud Run 엔 카메라가 없으므로 **번들 샘플영상**·**폰 인제스트(`/cam3/capture`)**·**엣지 푸시(`/cctv/ingest2|3`)**·인터넷 RTSP 가능(로컬 웹캠 직접연결 불가).
+
+## 관제웹 듀얼-캠 라이브 연결 (CAM-02 GoPro · CAM-03 G100) — 2026-06-30
+
+현장 엣지(Jetson Orin Nano `yahboom`)의 두 카메라를 관제웹 CCTV 타일에 동시 라이브로 띄운 구성. 엣지가 프레임을 cctv-ai 로 ~5fps POST → 대시보드가 cctv-ai MJPEG/snapshot 을 표시. 엣지 상세는 메모리 `jetson-edge-poc`.
+
+**구조 (왜 이렇게)** — 단일 Cloud Run 인스턴스에 **서버 추론 2개(PPE+낙상) 동시는 429 위험**(검증된 제약). 그래서 **서버 추론은 CAM-03 PPE 하나만** 두고, CAM-02 낙상은 **엣지가 박스를 그려 display-only 로 푸시**(`ingest2`). 보이는 결과(낙상 박스)는 동일하면서 첫 배포 성공률·안정성↑·과금↓.
+
+### CAM-02 = GoPro HERO9 (낙상 · 엣지 추론)
+- GoPro USB 웹캠(USB 2.0서도 480/720p clean) → 엣지가 **YOLOv11n-pose 낙상 추론 + 박스**(녹색=정상/빨강=낙상) 그려 `POST /cctv/ingest2?persons=N&fall=M` (~5fps).
+- cctv-ai 는 받은 JPEG 를 그대로 CAM-02 에 표시(`stream2`/`snapshot2`), `stats2` 는 쿼리값. **서버 추론 0.**
+- 검증: `snapshot2` = GoPro 영상 + "CAM-02 GoPro EDGE pose" 라벨 + 낙상 박스, health `cam02_source: edge-live`.
+
+### CAM-03 = Aqara G100 IP캠 (PPE · 서버 추론)
+- G100 RTSP(LAN) raw 프레임 640×360 → `POST /cctv/ingest3` (~5fps, 박스 없이 raw).
+- cctv-ai 가 **Hexmon PPE(YOLOv8m) 서버 추론** → CAM-03 라이브 override(`stream3`/`snapshot3`/`stats3`).
+- 검증: `snapshot3` = G100 영상 + "PPE (Hexmon)" + 「마스크 미착용」 등 위반 박스, health `cam03_source: phone-live`.
+- ★ **G100 IP 는 DHCP 라 재연결 시 변동**(예 `.107→.169`). "No route" 면 격리 아니라 IP 변경 의심 → 서브넷 8554 포트 스캔/Aqara MAC `54:ef:44:84:22:cf` 로 재탐색 → 엣지 `~/vg_edge_poc/g100_url.txt` 갱신 후 푸셔 재시작.
+
+### 엣지 푸셔 — `~/vg_edge_poc/dash_push.py` (Jetson, git 미추적·로컬)
+단일 프로세스·pose 모델 1개로 GoPro(낙상→ingest2) + G100(raw→ingest3) 둘 다 푸시. `detector.py`(자체 콘솔 :8090)와 **GoPro UDP 8554 충돌**이라 둘 중 하나만.
+```bash
+pkill -f detector.py     # 자체 콘솔 중지(UDP 충돌 해소)
+cd ~/vg_edge_poc
+CCTV_BASE=https://cctv-ai-7r2vb5q5qa-du.a.run.app GOPRO_RES=7 PUSH_FPS=5 \
+  setsid nohup python3 dash_push.py > dash.log 2>&1 < /dev/null &
+```
+
+### 서버 배포 (★ 사용자 직접 실행 — 분류기 차단)
+위 "Cloud Run 배포" 절차에 **CAM-01 추론 OFF**(CPU 확보)만 추가:
+```bash
+gcloud run deploy cctv-ai --image $IMG --region $REGION \
+  --allow-unauthenticated --cpu 4 --memory 4Gi --timeout 3600 \
+  --ingress all --min-instances 1 --max-instances 1 --concurrency 200 --no-cpu-throttling \
+  --update-env-vars CAM01_VIDEO=/none.mp4,PLAYBACK_FPS=2,OMP_NUM_THREADS=1,MKL_NUM_THREADS=1
+```
+
+### 종료 (데모 후 · 과금 0)
+```bash
+pkill -f dash_push.py    # 젯슨
+gcloud run services update cctv-ai --region asia-northeast3 --min-instances 0 --ingress internal
+```
+
+### 캐치
+- `pkill`(SIGTERM)은 `atexit` 미실행 → GoPro 웹캠 streaming 잔존 가능(새 grabber 의 stop→start 로 회복). 강제 종료 시 수동 `curl …/gopro/webcam/stop`.
+- `ingest2`/`ingest3` 무인증(공개 ingress) — 노출 주의. 무푸시 3초 후 각 타일은 합성/클립으로 복귀.
