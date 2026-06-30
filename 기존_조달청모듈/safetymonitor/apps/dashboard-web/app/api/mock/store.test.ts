@@ -68,6 +68,23 @@ test("mergeLatestByWorker — 여러 워커는 workerId 정렬로 반환", () =>
   assert.deepEqual(out.map((o) => o.workerId), ["EMP-1", "EMP-2"]);
 });
 
+test("mergeLatestByWorker — aliasMap 으로 secondary→primary 폴딩(같은 사람 다중 ID → 1카드·결합 메트릭)", () => {
+  // 장우진: 폰(EMP-6861) 손목온도 + 워치(EMP-admin6861) 심박/SpO₂. 별칭 EMP-6861→EMP-admin6861.
+  const phone = s({ workerId: "EMP-6861", ts: "2026-06-29T10:00:00.000Z", skinTempC: 36.2 });
+  const watch = s({ workerId: "EMP-admin6861", ts: "2026-06-29T10:00:05.000Z", heartRate: 88, spo2: 95 });
+
+  // 별칭 없으면 서로 다른 2카드.
+  assert.equal(mergeLatestByWorker([phone, watch]).length, 2);
+
+  // 별칭(secondary→primary)이면 primary 1카드로 접히고 메트릭이 결합된다.
+  const folded = mergeLatestByWorker([phone, watch], { "EMP-6861": "EMP-admin6861" });
+  assert.equal(folded.length, 1);
+  assert.equal(folded[0]?.workerId, "EMP-admin6861"); // 방향 = primary 가 살아남음
+  assert.equal(folded[0]?.heartRate, 88); // 워치 메트릭
+  assert.equal(folded[0]?.spo2, 95);
+  assert.equal(folded[0]?.skinTempC, 36.2); // 폰 메트릭(sticky 결합)
+});
+
 test("vitalDanger — 안정 임계로 판정(활동 메트릭 동봉해도 작업 게이트로 가려지지 않음)", () => {
   // 심박 140 은 작업 메트릭(고활동)을 동봉해도 안정 임계(≥130)로 danger — false-negative 0.
   assert.equal(
