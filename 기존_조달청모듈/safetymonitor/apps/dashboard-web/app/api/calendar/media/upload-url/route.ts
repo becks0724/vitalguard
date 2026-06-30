@@ -1,8 +1,9 @@
-// 클라우드 브릿지 — R2 프리사인 업로드 URL 발급(관리자 인증). 클라가 받은 URL로 직접 PUT 후 등록 API(/api/calendar/media POST) 호출.
+// 클라우드 브릿지 — Naver Object Storage 프리사인 업로드 URL 발급(관리자 세션 또는 앱 업로드 토큰).
+// 클라/앱이 받은 URL로 직접 PUT 후 등록 API(/api/calendar/media POST) 호출.
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../../lib/admin-auth";
-import { isR2Configured, presignUpload } from "../../../../../lib/storage";
+import { verifyAppUploadToken, verifyBasicAuth } from "../../../../../lib/admin-auth";
+import { isStorageConfigured, presignUpload } from "../../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +19,12 @@ const EXT_BY_TYPE: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
-  if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  // 관리자 세션(대시보드) 또는 앱 업로드 토큰(현장 단말) 중 하나면 허용.
+  if (!verifyBasicAuth(request) && !verifyAppUploadToken(request)) {
+    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
-  if (!isR2Configured()) {
-    return NextResponse.json({ ok: false, error: "스토리지(R2) 미설정" }, { status: 503 });
+  if (!isStorageConfigured()) {
+    return NextResponse.json({ ok: false, error: "스토리지(Object Storage) 미설정" }, { status: 503 });
   }
   let body: { contentType?: unknown; dateKey?: unknown };
   try {
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
   const key = `calendar-media/${dateKey}/${crypto.randomUUID()}.${ext}`;
   try {
     const uploadUrl = await presignUpload(key, contentType);
-    return NextResponse.json({ ok: true, provider: "r2", key, uploadUrl });
+    return NextResponse.json({ ok: true, provider: "naver", key, uploadUrl });
   } catch {
     return NextResponse.json({ ok: false, error: "프리사인 발급 실패" }, { status: 500 });
   }

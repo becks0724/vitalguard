@@ -1,13 +1,18 @@
-// Cloudflare R2(S3 호환) 오브젝트 스토리지 어댑터 — 비공개 버킷 전제. 프리사인 업로드(PUT)/조회(GET) URL 발급.
+// 네이버 클라우드 Object Storage(S3 호환) 어댑터 — 비공개 버킷 전제. 프리사인 업로드(PUT)/조회(GET) URL 발급.
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-type R2Env = {
-  accountId: string;
+type ObjectStorageEnv = {
+  endpoint: string;
+  region: string;
   accessKeyId: string;
   secretAccessKey: string;
   bucket: string;
 };
+
+// 네이버 Object Storage 기본값(한국 리전). 다른 리전·엔드포인트는 NCP_ENDPOINT/NCP_REGION 으로 덮어쓴다.
+const DEFAULT_ENDPOINT = "https://kr.object.ncloudstorage.com";
+const DEFAULT_REGION = "kr-standard";
 
 // 런타임에만 필요 — 빌드/임포트 시 env 없어도 통과하도록 클라이언트는 첫 호출 시 지연 생성(메모이즈).
 let client: S3Client | null = null;
@@ -15,34 +20,40 @@ let client: S3Client | null = null;
 const UPLOAD_TTL = 600; // 10분 — 발급 직후 PUT 전제.
 const DOWNLOAD_TTL = 3600; // 1시간 — 캘린더 조회 표시용 만료형 URL.
 
-// 키 4개가 모두 있어야 R2 사용 가능 — 미설정 시 라우트가 503 으로 명확히 응답.
-export function isR2Configured(): boolean {
+// 액세스키/시크릿/버킷이 모두 있어야 사용 가능 — 미설정 시 라우트가 503 으로 명확히 응답.
+export function isStorageConfigured(): boolean {
   return Boolean(
-    process.env.R2_ACCOUNT_ID &&
-      process.env.R2_ACCESS_KEY_ID &&
-      process.env.R2_SECRET_ACCESS_KEY &&
-      process.env.R2_BUCKET,
+    process.env.NCP_ACCESS_KEY &&
+      process.env.NCP_SECRET_KEY &&
+      process.env.NCP_BUCKET,
   );
 }
 
-function readEnv(): R2Env {
-  const accountId = process.env.R2_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  const bucket = process.env.R2_BUCKET;
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+function readEnv(): ObjectStorageEnv {
+  const accessKeyId = process.env.NCP_ACCESS_KEY;
+  const secretAccessKey = process.env.NCP_SECRET_KEY;
+  const bucket = process.env.NCP_BUCKET;
+  if (!accessKeyId || !secretAccessKey || !bucket) {
     throw new Error(
-      "R2 미설정 — R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET 확인",
+      "Object Storage 미설정 — NCP_ACCESS_KEY/NCP_SECRET_KEY/NCP_BUCKET 확인",
     );
   }
-  return { accountId, accessKeyId, secretAccessKey, bucket };
+  return {
+    endpoint: process.env.NCP_ENDPOINT ?? DEFAULT_ENDPOINT,
+    region: process.env.NCP_REGION ?? DEFAULT_REGION,
+    accessKeyId,
+    secretAccessKey,
+    bucket,
+  };
 }
 
-function getClient(env: R2Env): S3Client {
+function getClient(env: ObjectStorageEnv): S3Client {
   if (!client) {
     client = new S3Client({
-      region: "auto", // R2 는 region 개념이 없어 'auto'.
-      endpoint: `https://${env.accountId}.r2.cloudflarestorage.com`,
+      region: env.region,
+      endpoint: env.endpoint,
+      // 네이버 Object Storage 는 path-style 경로(<endpoint>/<bucket>/<key>) 사용.
+      forcePathStyle: true,
       credentials: { accessKeyId: env.accessKeyId, secretAccessKey: env.secretAccessKey },
     });
   }

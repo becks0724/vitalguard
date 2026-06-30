@@ -1,7 +1,7 @@
 // 클라우드 브릿지 — 캘린더 미디어(앱 OCR 이미지/영상) 조회·등록·설명수정·삭제 API (관리자 인증)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { verifyAppUploadToken, verifyBasicAuth } from "../../../../lib/admin-auth";
 import {
   listCalendarMedia,
   listCommentsForMedia,
@@ -10,7 +10,7 @@ import {
   deleteCalendarMedia,
   type CalendarMediaCommentRow,
 } from "../../../../lib/db";
-import { isR2Configured, presignDownload } from "../../../../lib/storage";
+import { isStorageConfigured, presignDownload } from "../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -39,13 +39,13 @@ export async function GET(request: Request) {
     list.push(c);
     byMedia.set(c.media_id, list);
   }
-  // 비공개 R2 저장분(storage_provider=r2 + storage_key)은 표시 시점에 만료형 GET URL 발급.
+  // 비공개 Object Storage 저장분(storage_provider=naver + storage_key)은 표시 시점에 만료형 GET URL 발급.
   // 발급 실패 시 기존 media_url 유지(렌더 깨짐 방지). 리터럴 media_url(더미/시드)은 그대로.
-  const r2On = isR2Configured();
+  const storageOn = isStorageConfigured();
   const withComments = await Promise.all(
     media.map(async (m) => {
       let mediaUrl = m.media_url;
-      if (r2On && m.storage_provider === "r2" && m.storage_key) {
+      if (storageOn && m.storage_provider === "naver" && m.storage_key) {
         try {
           mediaUrl = await presignDownload(m.storage_key);
         } catch {
@@ -59,8 +59,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  // 관리자 세션(대시보드) 또는 앱 업로드 토큰(현장 단말 등록) 중 하나면 허용.
+  if (!verifyBasicAuth(request) && !verifyAppUploadToken(request)) {
+    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
   let body: Record<string, unknown>;
   try {

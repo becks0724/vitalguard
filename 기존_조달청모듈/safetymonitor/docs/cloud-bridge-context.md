@@ -58,3 +58,22 @@ App OCR → 클라우드(이미지/미디어) + PostgreSQL(로그기록) → 관
 
 ### Phase 3 (별도) — Flutter 앱
 - OCR → `upload-url`로 프리사인 PUT → 등록 API(앱 토큰 경로 추가 필요).
+
+## Phase 2 정정 — 스토리지 백엔드 R2 → 네이버 Object Storage (2026-06-30)
+
+사용자 결정 — 백엔드를 **R2 → 네이버 클라우드 Object Storage**(S3 호환)로 변경. ("미디어는 구글 클라우드" 요청 → 질의 끝에 **Naver Object Storage** 로 확정.)
+
+- `lib/storage.ts` — R2 어댑터를 **NCP Object Storage** 로 교체. 엔드포인트 `https://kr.object.ncloudstorage.com`·리전 `kr-standard`·`forcePathStyle`. `isR2Configured()`→`isStorageConfigured()`, env `R2_*`→`NCP_ACCESS_KEY`/`NCP_SECRET_KEY`/`NCP_BUCKET`(+선택 `NCP_ENDPOINT`/`NCP_REGION`). 함수 시그니처(`presignUpload`/`presignDownload`)·동작 동일.
+- 라우트 provider 문자열 `"r2"`→`"naver"`(upload-url 반환·media GET 프리사인 조건). S3 호환이라 코드 변경은 어댑터+문자열 수준.
+
+## Phase 3 (이번) — 앱 업로드 계약 정의 (2026-06-30)
+
+팀원 iOS 앱(OCR/촬영 완성)이 미디어 업로드는 **미구현** → 내가 서버 계약을 정의하고 문서화([app-media-upload-contract.md](app-media-upload-contract.md)).
+
+- **앱 인증 = 공유 토큰** `APP_UPLOAD_TOKEN`(env). 앱은 `Authorization: Bearer <토큰>`. `admin-auth.ts` `verifyAppUploadToken`(미설정 시 fail-closed, 세션 토큰과 비충돌).
+- **업로드 2엔드포인트만 앱 토큰 허용** — `POST /api/calendar/media/upload-url`·`POST /api/calendar/media`. GET/PATCH/DELETE 는 관리자 세션 전용 유지.
+- **날짜/시간** — 캘린더 배치=`dateKey`(KST), 시각 표시=`capturedAt` HH:MM(앱은 KST 로컬 ISO `+09:00` 로 전송, UTC `Z` 금지). 표시부([DemoDashboard.tsx](../apps/dashboard-web/app/components/DemoDashboard.tsx) 선택일 미디어 섹션)는 이미 `captured_at` HH:MM 노출 → 추가 변경 없음.
+
+### Phase 2b 남음 (자격증명 + 라이브 — 서버 운영자 셋업)
+- NCP Object Storage 버킷(비공개) + API 인증키 생성 → `.env.local` 에 `NCP_*` 3개 + `APP_UPLOAD_TOKEN`.
+- Cloud Run 시크릿 등록(argv 미노출) → 배포 → 라이브 업로드 1건 왕복 검증(`upload-url` 200·PUT 200·등록 후 캘린더 표시).
