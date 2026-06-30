@@ -14,10 +14,11 @@ type Props = {
   alerts: RuleEvaluation[];
   onClose: () => void;
   onSelect?: (evaluation: RuleEvaluation) => void;
+  onAck?: (evaluation: RuleEvaluation, status: "확인" | "조치완료") => void;
   durationMs?: number;
 };
 
-export function WeatherAlertToast({ alerts, onClose, onSelect, durationMs = 60000 }: Props) {
+export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs = 60000 }: Props) {
   // 마운트 후 카운트다운 바를 100%→0% 로 durationMs 동안 줄임(남은 시간 시각화).
   const [shrunk, setShrunk] = useState(false);
   useEffect(() => {
@@ -77,11 +78,11 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, durationMs = 6000
         {/* 임계 항목 목록 */}
         <ul className="max-h-[50vh] divide-y divide-hairline overflow-y-auto dark:divide-white/10">
           {alerts.map((a) => (
-            <li key={a.itemKey}>
+            <li key={a.itemKey} className="px-3 py-2">
               <button
                 type="button"
                 onClick={() => onSelect?.(a)}
-                className="block w-full px-3 py-2 text-left hover:bg-surface-soft dark:hover:bg-white/5"
+                className="block w-full rounded text-left hover:bg-surface-soft dark:hover:bg-white/5"
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-ink dark:text-on-dark">
@@ -107,6 +108,27 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, durationMs = 6000
                   </>
                 )}
               </button>
+              {onAck && (
+                <div className="mt-2 flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onAck(a, "확인")}
+                    className="rounded border border-hairline px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft dark:border-white/15 dark:text-on-dark dark:hover:bg-white/5"
+                  >
+                    확인
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAck(a, "조치완료")}
+                    className="rounded bg-primary px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                  >
+                    조치완료
+                  </button>
+                  <span className="ml-auto text-[10px] text-muted dark:text-on-dark-soft">
+                    확인 시 악화 전까지 안 뜸
+                  </span>
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -119,7 +141,7 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, durationMs = 6000
           />
         </div>
         <p className="px-3 py-1 text-center text-[10px] text-muted dark:text-on-dark-soft">
-          1분 후 자동으로 닫힙니다 · 항목 클릭 시 정책 근거 보기
+          확인/조치완료 = DB 기록 후 팝업 억제 · 항목 클릭 = 정책 근거 · 1분 후 자동 닫힘
         </p>
       </div>
     </div>

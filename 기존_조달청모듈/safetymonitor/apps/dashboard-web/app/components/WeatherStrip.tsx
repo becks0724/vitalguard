@@ -2,7 +2,7 @@
 // 각 항목 클릭 시 정책 임계 단계 + 권고 조치 모달 표시. 정책 항목은 주의/위험 색상 자동 적용.
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useMarqueeScroll } from "../hooks/useMarqueeScroll";
 import {
@@ -18,6 +18,7 @@ import {
   type RuleEvaluation,
   type RuleSeverity,
 } from "../../lib/weather-rules";
+import { getSessionToken } from "./LoginGate";
 import { WeatherAlertToast } from "./WeatherAlertToast";
 import { WeatherIcon, weatherIconKey } from "./WeatherIcons";
 import {
@@ -87,6 +88,10 @@ type Props = {
   lon?: number;
   workerCount: number;
 };
+
+// 현장 환경 경보 확인/조치 → 억제 상태(항목→확인 시 심각도) localStorage 키. 리마운트·임계 흔들림에도 유지.
+const ENV_ACK_KEY = "safetymonitor.envAck.v1";
+const SEV_RANK: Record<RuleSeverity, number> = { normal: 0, caution: 1, danger: 2 };
 
 export function WeatherStrip({ lat, lon, workerCount }: Props) {
   // 호버 시 정지가 아니라 22% 속도로 감속(InfiniteSlider 방식) — 끊김 없이 흐르며 읽을 수 있게.
@@ -243,6 +248,21 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
   const [alerts, setAlerts] = useState<RuleEvaluation[]>([]);
   // 이미 알린 항목→심각도. 같은 상태로는 재알림 안 함(정상 복귀 후 재발·심각도 악화 시에만 재알림).
   const alertedRef = useRef<Map<string, RuleSeverity>>(new Map());
+  // 관리자가 확인/조치완료한 항목→그때 심각도. 같은-이하 심각도면 팝업 억제(악화 시에만 재팝업). localStorage 영속.
+  const ackedRef = useRef<Map<string, RuleSeverity>>(new Map());
+
+  // 억제 상태 hydrate(마운트 1회) — 리마운트(캐러셀 전환)·새로고침에도 확인 기록 유지.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(ENV_ACK_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw) as Record<string, RuleSeverity>;
+        ackedRef.current = new Map(Object.entries(obj));
+      }
+    } catch {
+      // localStorage 불가/파싱 실패 무시
+    }
+  }, []);
 
   useEffect(() => {
     if (!evaluations) return;
@@ -260,13 +280,55 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
     for (const key of [...alertedRef.current.keys()]) {
       if (!triggeredKeys.has(key)) alertedRef.current.delete(key);
     }
-    // 신규 발생 또는 심각도 변화(주의→위험) 항목이 있으면 현재 임계 전체로 팝업
-    const fresh = triggered.filter((e) => alertedRef.current.get(e.itemKey) !== e.currentSeverity);
+    // 확인/조치완료로 억제된 항목 제외 — acked 심각도보다 악화돼야(주의→위험) 다시 뜸.
+    const visible = triggered.filter((e) => {
+      const acked = ackedRef.current.get(e.itemKey);
+      return acked === undefined || SEV_RANK[e.currentSeverity] > SEV_RANK[acked];
+    });
+    // 신규 발생 또는 심각도 변화 항목이 있으면 억제 안 된 항목만 팝업
+    const fresh = visible.filter((e) => alertedRef.current.get(e.itemKey) !== e.currentSeverity);
     if (fresh.length > 0) {
       triggered.forEach((e) => alertedRef.current.set(e.itemKey, e.currentSeverity));
-      setAlerts(triggered);
+      setAlerts(visible);
     }
   }, [evaluations]);
+
+  // 확인/조치완료 — 즉시 억제(localStorage 영속) + 팝업에서 제거 + DB 감사 기록(세션 인증).
+  const handleAck = useCallback(
+    async (e: RuleEvaluation, status: "확인" | "조치완료") => {
+      ackedRef.current.set(e.itemKey, e.currentSeverity);
+      try {
+        window.localStorage.setItem(
+          ENV_ACK_KEY,
+          JSON.stringify(Object.fromEntries(ackedRef.current)),
+        );
+      } catch {
+        // localStorage 불가 무시(메모리 억제는 유지)
+      }
+      setAlerts((prev) => prev.filter((a) => a.itemKey !== e.itemKey));
+      try {
+        const token = getSessionToken();
+        await fetch("/api/env-alert/ack", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            itemKey: e.itemKey,
+            itemLabel: e.itemLabel,
+            value: e.currentValue,
+            severity: e.currentSeverity,
+            status,
+            ackBy: "관제자",
+          }),
+        });
+      } catch {
+        // 기록 실패해도 클라 억제는 유지(다음 폴에서 재시도 안 함 — 억제됨)
+      }
+    },
+    [],
+  );
 
   // 1분 후 자동 닫힘(새 경보가 뜨면 타이머 리셋)
   useEffect(() => {
@@ -425,6 +487,7 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
           alerts={alerts}
           durationMs={60000}
           onSelect={(e) => setSelected(e)}
+          onAck={handleAck}
           onClose={() => setAlerts([])}
         />
       )}

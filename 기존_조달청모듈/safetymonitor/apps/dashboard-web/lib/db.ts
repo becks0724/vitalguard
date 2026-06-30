@@ -269,6 +269,19 @@ async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
+    -- 현장 환경 경보 확인/조치 기록 — 관리자가 환경 경보 팝업을 '확인'/'조치완료' 할 때 1건 적재(감사 이력).
+    CREATE TABLE IF NOT EXISTS env_alert_ack (
+      id SERIAL PRIMARY KEY,
+      item_key TEXT NOT NULL,
+      item_label TEXT NOT NULL,
+      value TEXT,
+      severity TEXT NOT NULL,
+      status TEXT NOT NULL,
+      note TEXT,
+      ack_by TEXT NOT NULL,
+      ack_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 낙상 ML 정답 라벨 — 관제자가 각 후보 샘플에 실제 낙상 여부를 수기 라벨링(지도학습 정답).
     CREATE TABLE IF NOT EXISTS fall_labels (
       sample_id INTEGER PRIMARY KEY,
@@ -675,6 +688,52 @@ export async function ackAlert(id: number, ackBy: string): Promise<number> {
     [ackBy, id],
   );
   return rowCount;
+}
+
+// ── 현장 환경 경보 확인/조치 기록 ──────────────────────────────────────────
+export type EnvAlertAckRow = {
+  id: number;
+  item_key: string;
+  item_label: string;
+  value: string | null;
+  severity: string;
+  status: string; // '확인' | '조치완료'
+  note: string | null;
+  ack_by: string;
+  ack_at: string;
+};
+
+// 환경 경보 확인/조치 1건 기록(감사 이력) — 매 확인/조치마다 신규 행(append-only).
+export async function recordEnvAlertAck(input: {
+  itemKey: string;
+  itemLabel: string;
+  value?: string | null;
+  severity: string;
+  status: string;
+  note?: string | null;
+  ackBy: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO env_alert_ack (item_key, item_label, value, severity, status, note, ack_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      input.itemKey,
+      input.itemLabel,
+      input.value ?? null,
+      input.severity,
+      input.status,
+      input.note ?? null,
+      input.ackBy,
+    ],
+  );
+}
+
+export async function listEnvAlertAck(limit = 100): Promise<EnvAlertAckRow[]> {
+  const { rows } = await q<EnvAlertAckRow>(
+    "SELECT * FROM env_alert_ack ORDER BY ack_at DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
 }
 
 // ── AED NFC 점검 기록 ──────────────────────────────────────────────────────
