@@ -79,3 +79,15 @@ export async function presignDownload(key: string): Promise<string> {
     { expiresIn: DOWNLOAD_TTL },
   );
 }
+
+// 서버측 직접 업로드(PUT) — 앱이 바이트를 서버로 보내는 단일 엔드포인트(/api/app-media)에서 사용.
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+): Promise<void> {
+  const env = readEnv();
+  await getClient(env).send(
+    new PutObjectCommand({ Bucket: env.bucket, Key: key, Body: body, ContentType: contentType }),
+  );
+}

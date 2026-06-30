@@ -228,19 +228,19 @@ export function verifyOwner(request: Request): boolean {
   return getSession(request)?.role === "owner";
 }
 
-// 앱(현장 단말) 미디어 업로드 전용 토큰 — 관리자 세션이 없는 앱이 캘린더 미디어를 업로드할 때 사용.
-//  - Authorization: Bearer <APP_UPLOAD_TOKEN> (env 와 일치해야 통과).
+// 앱 업로드 토큰 일치 검사 — 어디서 온 토큰이든(헤더/폼 필드) env APP_UPLOAD_TOKEN 과 비교.
 //  - 미설정 시 항상 거부(fail-closed). 세션 토큰과 충돌하지 않음(세션은 발급분만 매칭).
-export function verifyAppUploadToken(request: Request): boolean {
+export function appUploadTokenMatches(token: string | null | undefined): boolean {
   const expected = process.env.APP_UPLOAD_TOKEN ?? "";
-  if (!expected) return false;
+  if (!expected || !token) return false;
+  return safeEqual(token.trim(), expected);
+}
+
+// 앱(현장 단말) 미디어 업로드 전용 토큰 — Authorization: Bearer <APP_UPLOAD_TOKEN>.
+export function verifyAppUploadToken(request: Request): boolean {
   const header = request.headers.get("authorization");
-  if (!header) return false;
-  const match = header.match(/^bearer\s+(.+)$/i);
-  if (!match) return false;
-  const value = match[1]?.trim();
-  if (!value) return false;
-  return safeEqual(value, expected);
+  const match = header?.match(/^bearer\s+(.+)$/i);
+  return appUploadTokenMatches(match?.[1] ?? null);
 }
 
 // 관리자 메뉴(CSV 내보내기·데이터 조회) 접근 — owner 거나 owner가 admin_access 부여한 가입 사용자만.
