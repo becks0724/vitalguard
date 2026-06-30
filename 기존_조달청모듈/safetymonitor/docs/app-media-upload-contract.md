@@ -7,9 +7,33 @@ iOS 앱(OCR/촬영)이 찍은 이미지/영상을 **네이버 클라우드 Objec
 - **인증** = 모든 요청에 `Authorization: Bearer <APP_UPLOAD_TOKEN>` 헤더(앱 빌드에 주입할 공유 토큰, 서버 `.env`/Secret 과 동일값).
 - **저장** = 바이트는 서버를 거치지 않고 앱이 프리사인 URL로 **Object Storage에 직접 PUT**. 서버에는 메타데이터만 등록.
 
-> ⚠️ 현재 앱이 가리키는 `/api/mock/vital` 은 **생체 전송 전용**이다. 미디어는 아래 별도 엔드포인트를 쓴다.
+> ⚠️ `/api/mock/vital` 은 **생체 전송 전용**이다. 미디어는 아래 엔드포인트를 쓴다.
 
-## 흐름 (3단계)
+## ✅ 실제 사용 = 단일 `POST /api/app-media` (서버 relay)
+
+팀원 앱은 **이 단일 엔드포인트**로 업로드한다(아래 2단계 프리사인은 대안). 앱이 이미지+메타를 한 번에 보내면 **서버가 Object Storage 업로드 + 캘린더 DB 등록**까지 처리한다.
+
+```
+POST /api/app-media
+Authorization: Bearer <APP_UPLOAD_TOKEN>
+Content-Type: multipart/form-data
+
+file=<이미지/영상 바이트>               ← 파일 파트(필드명 무관, 어떤 이름이든 인식)
+dateKey=2026-06-30                     ← (선택) 촬영 날짜 KST. 없으면 capturedAt/서버 KST 현재
+capturedAt=2026-06-30T14:23:00+09:00   ← (선택) 촬영 시각 KST. 없으면 서버 KST 현재 → 캘린더 시각
+ocrText=사진대지 … (앱 OCR 텍스트)      ← (선택)
+title=… / siteId=… / uploader=…        ← (선택)
+```
+
+응답 `{ "ok": true, "media": { "id": "...", ... } }`.
+
+- **파일** — multipart 의 파일 파트면 **필드명 무관**(`file`/`image`/`photo` 등 아무거나). 허용 = jpg/png/webp/heic/mp4/mov(파트 Content-Type 또는 파일명 확장자로 판별).
+- **인증** — `Authorization: Bearer <APP_UPLOAD_TOKEN>`(권장). 헤더 `x-app-upload-token` 또는 폼 필드 `token` 도 허용.
+- **메타 필드명 변형 수용** — `dateKey`/`date`, `capturedAt`/`captured_at`/`time`, `ocrText`/`ocr`/`text` 등. 미전송 시 날짜·시각은 **서버 KST 현재로 폴백**(= 업로드 시각으로 캘린더 배치).
+- 서버가 받은 요청 형식을 `console.warn("[app-media] …")` 로그에 남김 → 필드명 정밀 매핑·디버깅용(Cloud Run 로그에서 확인).
+- 트레이드오프 — 바이트가 **Cloud Run 경유**(프리사인 직PUT 아님). 이미지엔 무방, 대용량 영상이면 아래 2단계가 유리.
+
+## 대안 — 2단계 프리사인 직업로드 (바이트 서버 미경유)
 
 ```
 [앱] ──①프리사인 발급 요청── [서버]            (POST /api/calendar/media/upload-url)

@@ -77,3 +77,28 @@ App OCR → 클라우드(이미지/미디어) + PostgreSQL(로그기록) → 관
 ### Phase 2b 남음 (자격증명 + 라이브 — 서버 운영자 셋업)
 - NCP Object Storage 버킷(비공개) + API 인증키 생성 → `.env.local` 에 `NCP_*` 3개 + `APP_UPLOAD_TOKEN`.
 - Cloud Run 시크릿 등록(argv 미노출) → 배포 → 라이브 업로드 1건 왕복 검증(`upload-url` 200·PUT 200·등록 후 캘린더 표시).
+
+## 라이브 셋업 완료 + 실제 앱 계약 = 단일 `/api/app-media` (2026-06-30)
+
+Phase 2b 셋업과 라이브 배포 완료. **단 팀원 앱의 실제 업로드 경로가 내 2단계 계약과 달라** 서버에 단일 엔드포인트를 추가함.
+
+### 셋업·배포
+- 버킷 `vitalguard-media`(비공개·**암호화 OFF**). NCP 인증키 + `APP_UPLOAD_TOKEN`(64 hex) → Secret Manager 등록 + 런타임 SA(`569797426568-compute@…`) `secretAccessor`.
+- 라이브 = `vitalguard-dashboard-00028-jg2`. 검증 — Naver 연결 E2E(프리사인 PUT/GET 200·정리), `upload-url` 앱토큰 200(`provider:naver`·`kr.object.ncloudstorage.com`).
+
+### ★ 함정 2개 (재발 방지)
+- **`.env.local` 스토리지 블록 2회 중복** — 안내 `cat>>` + 스캐폴드가 둘 다 추가 → `grep|cut` 시크릿 등록이 값을 concat → 앱토큰 401. **append 전 중복 체크 필수.** 정리=키별 마지막 1줄.
+- **NCP 버킷 암호화 ON(NCP 관리형 키=Key Protect)** — API 키에 Key Protect 권한이 없으면 PUT이 `403 AccessDenied`(Server Side Encryption with Key Protect). **암호화 OFF 버킷**으로 회피(데모). 유지하려면 Key Protect 권한 부여(복잡).
+
+### ★ 실제 앱 계약 = 단일 `POST /api/app-media` (서버 relay)
+- 팀원 앱은 **단일 POST `/api/app-media`** 로 업로드(2단계 프리사인 아님) → 그 경로가 서버에 없어 **404**(Cloud Run 요청로그 `httpRequest.requestUrl`로 특정).
+- 해법 = [app/api/app-media/route.ts](../apps/dashboard-web/app/api/app-media/route.ts) 추가 — 이미지+메타 한 번에 받아 서버가 [lib/storage.ts](../apps/dashboard-web/lib/storage.ts) `putObject`로 Naver 업로드 + `insertCalendarMedia`로 DB 등록. **바이트가 Cloud Run 경유**(프리사인 직PUT 아님, 이미지엔 무방).
+- 관용 설계(앱 실제 형식 미상) — **파일은 필드명 무관 탐색**, 메타 필드명 변형 수용(`dateKey`/`date`·`capturedAt`/`captured_at`·`ocrText`/`ocr`/`text` 등), 인증 Bearer/`x-app-upload-token`/폼 토큰, 날짜·시각 미전송 시 **KST 현재 폴백**, `console.warn("[app-media] …")` 진단 로그로 실제 요청 형식 캡처.
+- 2단계 프리사인 라우트(`upload-url`+`media`)도 라이브 유지(대안). 상세 계약 = [app-media-upload-contract.md](app-media-upload-contract.md).
+
+### DB 비번 변경 복구 (병행 사건)
+- 작업 중 팀이 캠퍼스 공유 Postgres `vitalguard` 비번 변경 → `.env.local`·Cloud Run `DATABASE_URL` 둘 다 옛 비번 → `28P01` 전면 끊김(캘린더 등록 등 DB 작업 전부 실패, 페이지만 200).
+- 복구 = `.env.local` 새 비번 → 로컬 `pg SELECT 1` → Secret Manager `DATABASE_URL` 새 버전 + Cloud Run `--update-secrets`. 검증 `GET /api/mock/vital` `countsByWorker` 실데이터 + 로그 28P01 0. (교훈) **공유 DB 비번 교체 시 `.env.local`+Secret Manager 둘 다 갱신 후 재배포.**
+
+### 다음
+- 앱이 토큰 넣고 업로드 → Cloud Run 로그 `[app-media]`로 **실제 필드명·콘텐츠타입 확인** → 날짜/OCR 필드명 정밀 매핑(폴백 안 타게) → 캘린더 표시 E2E.
