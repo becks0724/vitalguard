@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   KeyboardSensor,
@@ -1426,6 +1427,8 @@ function HeaderCalendarPopup({
   const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [editingComment, setEditingComment] = useState<{ id: string; body: string } | null>(null);
+  // 사진 클릭 시 확대 팝업(라이트박스) 대상 미디어.
+  const [lightbox, setLightbox] = useState<CalendarMedia | null>(null);
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
   const [hydrated, setHydrated] = useState(false);
 
@@ -1556,6 +1559,37 @@ function HeaderCalendarPopup({
       // 무시
     }
   };
+
+  // 미디어 다운로드 — 서버가 attachment 프리사인 URL 발급 → 브라우저 저장 강제(서버 바이트 미경유).
+  const downloadMedia = async (m: CalendarMedia) => {
+    const token = getSessionToken();
+    try {
+      const res = await fetch(`/api/calendar/media/download-url?id=${m.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = (await res.json()) as { ok?: boolean; url?: string };
+      if (data?.ok && data.url) {
+        const a = document.createElement("a");
+        a.href = data.url;
+        a.rel = "noopener";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+    } catch {
+      // 무시
+    }
+  };
+
+  // 라이트박스 ESC 닫기.
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
 
   // 팝업이 열리고 현장 좌표가 있을 때 7일 예보를 받아 날짜별 날씨코드 맵 구성(WeatherStrip과 동일 캐시 엔드포인트).
   useEffect(() => {
@@ -2050,6 +2084,73 @@ function HeaderCalendarPopup({
                   </svg>
                   현장 이미지/미디어 {selectedMedia.length}건
                 </p>
+                {lightbox &&
+                  createPortal(
+                    <div
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="사진 크게 보기"
+                      onClick={() => setLightbox(null)}
+                      className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-black/80 p-4"
+                    >
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex max-h-[92vh] w-full max-w-3xl flex-col"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-3 text-white">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold">
+                              {lightbox.title ??
+                                (lightbox.mediaType === "video" ? "현장 영상" : "현장 이미지")}
+                            </p>
+                            <p className="text-[11px] text-white/70">
+                              {lightbox.dateKey}
+                              {lightbox.capturedAt
+                                ? ` ${formatKoreanTime(lightbox.capturedAt.slice(11, 16))}`
+                                : ""}
+                              {lightbox.uploader ? ` · ${lightbox.uploader}` : ""}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => downloadMedia(lightbox)}
+                              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                            >
+                              ⬇ 다운로드
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setLightbox(null)}
+                              className="rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                            >
+                              닫기 ✕
+                            </button>
+                          </div>
+                        </div>
+                        {lightbox.mediaType === "video" ? (
+                          <video
+                            src={lightbox.mediaUrl ?? ""}
+                            controls
+                            className="max-h-[80vh] w-full rounded-lg bg-black"
+                          />
+                        ) : (
+                          <img
+                            src={lightbox.mediaUrl ?? ""}
+                            alt={lightbox.title ?? "현장 이미지"}
+                            className="max-h-[80vh] w-full rounded-lg object-contain"
+                          />
+                        )}
+                        {lightbox.ocrText ? (
+                          <div className="mt-2 max-h-[16vh] overflow-y-auto rounded-lg bg-white/10 px-3 py-2 text-[11px] leading-relaxed text-white/90">
+                            <span className="mr-1 font-semibold text-white/70">OCR:</span>
+                            {lightbox.ocrText}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>,
+                    document.body,
+                  )}
                 <div className="space-y-2.5">
                   {selectedMedia.map((m) => (
                     <div
@@ -2059,11 +2160,21 @@ function HeaderCalendarPopup({
                       {/* 제목 영역 — 썸네일 + 제목/메타 + 삭제 */}
                       <div className="flex gap-2">
                         {m.thumbnailUrl || m.mediaUrl ? (
-                          <img
-                            src={m.thumbnailUrl ?? m.mediaUrl ?? ""}
-                            alt={m.title ?? "현장 이미지"}
-                            className="h-14 w-14 shrink-0 rounded-md object-cover"
-                          />
+                          <button
+                            type="button"
+                            onClick={() => setLightbox(m)}
+                            aria-label="사진 크게 보기"
+                            className="relative shrink-0 overflow-hidden rounded-md transition hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-primary"
+                          >
+                            <img
+                              src={m.thumbnailUrl ?? m.mediaUrl ?? ""}
+                              alt={m.title ?? "현장 이미지"}
+                              className="h-14 w-14 object-cover"
+                            />
+                            <span className="pointer-events-none absolute bottom-0.5 right-0.5 rounded bg-black/55 px-1 text-[8px] font-semibold text-white">
+                              🔍
+                            </span>
+                          </button>
                         ) : (
                           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-md bg-surface-strong text-[9px] text-muted dark:bg-white/10 dark:text-on-dark-soft">
                             {m.mediaType === "video" ? "영상" : "이미지"}

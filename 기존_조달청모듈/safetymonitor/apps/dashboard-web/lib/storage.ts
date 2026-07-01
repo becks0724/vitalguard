@@ -80,6 +80,19 @@ export async function presignDownload(key: string): Promise<string> {
   );
 }
 
+// 다운로드용 프리사인 GET URL — Content-Disposition: attachment 로 브라우저가 저장하게 강제.
+// 한글 파일명은 RFC5987(filename*)로 보존 + ASCII 폴백 동봉.
+export async function presignDownloadAttachment(key: string, filename: string): Promise<string> {
+  const env = readEnv();
+  const ascii = filename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+  const disposition = `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  return getSignedUrl(
+    getClient(env),
+    new GetObjectCommand({ Bucket: env.bucket, Key: key, ResponseContentDisposition: disposition }),
+    { expiresIn: DOWNLOAD_TTL },
+  );
+}
+
 // 서버측 직접 업로드(PUT) — 앱이 바이트를 서버로 보내는 단일 엔드포인트(/api/app-media)에서 사용.
 export async function putObject(
   key: string,

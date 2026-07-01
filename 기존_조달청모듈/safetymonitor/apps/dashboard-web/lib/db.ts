@@ -1468,6 +1468,15 @@ export async function listCalendarMedia(
   return rows;
 }
 
+// 단건 조회 — 다운로드 URL 발급 등에서 storage_key 등을 얻기 위해.
+export async function getCalendarMediaById(id: string): Promise<CalendarMediaRow | null> {
+  const { rows } = await q<CalendarMediaRow>(
+    "SELECT * FROM calendar_media WHERE id = $1",
+    [id],
+  );
+  return rows[0] ?? null;
+}
+
 export async function insertCalendarMedia(input: {
   id: string;
   dateKey: string;
