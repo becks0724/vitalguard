@@ -2881,8 +2881,14 @@ export function DemoDashboard() {
       .map((id) => (id ? latestMap.get(id) : undefined))
       .filter((s): s is VitalSample =>
         s !== undefined &&
-        typeof s.latitude === "number" &&
-        typeof s.longitude === "number",
+        Number.isFinite(s.latitude) &&
+        Number.isFinite(s.longitude) &&
+        // 한국 범위 게이트 — 위 32.5~39.5 / 경 123.5~132.5 밖 좌표(시뮬레이터 기본값·NaN·좌표 swap)는
+        // 현장 날씨 평균을 엉뚱한 지역으로 끌고 가는 오염원이라 제외한다. 국내 현장 전용 전제.
+        (s.latitude as number) >= 32.5 &&
+        (s.latitude as number) <= 39.5 &&
+        (s.longitude as number) >= 123.5 &&
+        (s.longitude as number) <= 132.5,
       );
     if (points.length === 0) return { lat: undefined, lon: undefined, count: 0 };
     const latSum = points.reduce((acc, p) => acc + (p.latitude as number), 0);
