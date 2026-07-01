@@ -1577,6 +1577,17 @@ function HeaderCalendarPopup({
     }
   }, [fetchMedia, viewDate]);
 
+  // 자동 폴링 — 팝업 열려 있는 동안 20초마다 현재 달 미디어를 조용히 재조회(스피너 없음).
+  // 탭 숨김 시엔 폴링하지 않아 백그라운드 DB 부하를 줄인다.
+  useEffect(() => {
+    if (!open) return;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetchMedia(viewDate);
+    }, 20000);
+    return () => clearInterval(id);
+  }, [open, viewDate, fetchMedia]);
+
   const authHeaders = (json: boolean) => {
     const token = getSessionToken();
     return {
