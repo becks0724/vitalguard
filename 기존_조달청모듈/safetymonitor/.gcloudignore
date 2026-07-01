@@ -1,0 +1,25 @@
+# Cloud Build 소스 업로드 제외 — .dockerignore 와 동일 집합(Docker 가 재빌드/미사용하는 산출물·타 앱).
+# 없으면 .next(수백 MB)·Flutter 앱까지 통째로 업로드돼 hang 위험. Dockerfile·cloudbuild yaml 은 Cloud Build 가 쓰므로 제외 안 함.
+# 주의: .gcloudignore 가 있으면 gcloud 는 .gitignore 를 자동 참조하지 않으므로 필요한 제외를 여기 명시한다.
+**/node_modules
+**/.next
+**/dist
+**/*.log
+**/.DS_Store
+.git
+.gitignore
+.runtime
+.env
+.env.*
+**/.env
+**/.env.*
+apps/worker-phone
+apps/worker-watch-poc
+
+# 대시보드 빌드에 불필요한 비-워크스페이스 디렉터리(특히 cctv-ai 모델 가중치 수백 MB → 업로드 hang의 실제 원인).
+# ★ backend/ 는 pnpm 워크스페이스 멤버라 제외 금지. cctv-ai 는 런타임 URL 참조라 소스 불필요.
+cctv-ai
+ml
+docs
+demo
+scripts
