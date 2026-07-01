@@ -102,3 +102,13 @@ Phase 2b 셋업과 라이브 배포 완료. **단 팀원 앱의 실제 업로드
 
 ### 다음
 - 앱이 토큰 넣고 업로드 → Cloud Run 로그 `[app-media]`로 **실제 필드명·콘텐츠타입 확인** → 날짜/OCR 필드명 정밀 매핑(폴백 안 타게) → 캘린더 표시 E2E.
+
+## 캘린더 미디어 뷰어 — 클릭 확대 + 다운로드 (2026-07-01)
+
+캘린더 "현장 이미지/미디어"에 뷰어 2기능 추가. 라이브 `00029-bfc`.
+
+- **라이트박스** — 썸네일(우하단 🔍) 클릭 → `createPortal` 전체화면 팝업. 제목·촬영시각·업로더·OCR 표시, 영상은 `<video controls>`. 배경/ESC/✕ 닫기. `createPortal` = 캘린더 팝업의 transform/overflow 클리핑 회피(세션 선례).
+- **다운로드** — 팝업 내 ⬇ 버튼 → `GET /api/calendar/media/download-url?id=`(관리자 인증)이 **attachment 프리사인 URL** 발급 → 프론트가 임시 `<a>` 클릭으로 저장 트리거.
+- **★ 다운로드 강제 = 프리사인 `ResponseContentDisposition`(NCP 지원 실측).** 별도 서버 프록시(바이트 Cloud Run 경유) 불필요 — NCP 가 `response-content-disposition` 쿼리를 헤더로 반영함을 실측 확인(테스트 객체 PUT→프리사인 GET→`Content-Disposition: attachment` 응답). CORS 불필요(네비게이션). 한글 파일명은 **RFC5987**(`filename*=UTF-8''…`) + ASCII 폴백.
+- 신규 = [lib/storage.ts](../apps/dashboard-web/lib/storage.ts) `presignDownloadAttachment` · [lib/db.ts](../apps/dashboard-web/lib/db.ts) `getCalendarMediaById` · [app/api/calendar/media/download-url/route.ts](../apps/dashboard-web/app/api/calendar/media/download-url/route.ts). 커밋 `1d53b66`.
+- (다음) 로그인 후 팝업 확대·다운로드 육안 확인. 다운로드가 저장 아닌 인라인 열림이면 서버 프록시(GetObject 스트리밍+attachment 헤더)로 폴백.
