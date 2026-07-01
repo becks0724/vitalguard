@@ -56,7 +56,7 @@ title=… / siteId=…                     ← (선택)
 응답 `{ "ok": true, "media": { "id": "...", ... } }`.
 
 - **파일** — multipart 의 파일 파트면 **필드명 무관**(`file`/`image`/`photo` 등 아무거나). 허용 = jpg/png/webp/heic/mp4/mov(파트 Content-Type 또는 파일명 확장자로 판별).
-- **인증** — `Authorization: Bearer <APP_UPLOAD_TOKEN>`(권장). 헤더 `x-app-upload-token` 또는 폼 필드 `token` 도 허용.
+- **인증** — 둘 중 하나. ① **로그인 JWT**(`Authorization: Bearer <로그인 토큰>`, [app-auth-contract.md](./app-auth-contract.md)) — 이 경우 **로그인한 작업자 신원(이름·workerId)이 업로드에 자동 연결**된다(폼 미전송 항목을 채움·폼 우선). ② 공유 **`APP_UPLOAD_TOKEN`**(`Authorization: Bearer <값>` · 헤더 `x-app-upload-token` · 폼 필드 `token`). 앱 로그인 연동을 쓰면 ①을 권장.
 - **★ 표시 정리** — 대시보드는 **촬영 시각·도로명 주소·GPS 좌표·작업자(이름·ID)** 4개 항목만 명시하고, `ocrText` 원문은 "원문 보기" 토글로 접어둔다. 이 4개 항목의 소스는 **① 앱 구조화 필드(있으면 우선) → ② `ocrText` 말미의 사진 하단 스탬프 파싱(폴백)** 순이다.
 - **구조화 메타(권장·정확)** — 오인식 없는 정확한 표시를 위해 사진 하단 스탬프 정보를 **별도 form 필드로도 전송**하면 좋다. GPS는 십진수 위/경도, 도로명 주소는 앱이 좌표를 역지오코딩해 완성된 문자열로 보낸다.
 - **스탬프 파싱(폴백)** — 구조화 필드 미전송 시 대시보드가 `ocrText` 말미의 카메라 스탬프에서 촬영시각(`[YYYY-MM-DD HH:MM:SS]`)·GPS(십진수 위/경도 쌍)·작업자ID(`EMP-####`)·도로명주소(시·도+구/동/로 줄)를 **best-effort 추출**한다([lib/ocr-stamp.ts](../apps/dashboard-web/lib/ocr-stamp.ts)). OCR 오인식이 잦으므로 정확도가 필요하면 구조화 필드 전송을 권장한다.
