@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { appUploadTokenMatches, verifyAppUploadToken } from "../../../lib/admin-auth";
+import { bearerToken, verifyAppJwt } from "../../../lib/app-jwt";
 import { insertCalendarMedia } from "../../../lib/db";
 import { isStorageConfigured, putObject } from "../../../lib/storage";
 
@@ -74,8 +75,10 @@ export async function POST(request: Request) {
     `[app-media] content-type=${ctype} fields=${JSON.stringify(fieldNames)} fileField=${fileEntry?.[0] ?? null} authHeader=${!!request.headers.get("authorization")}`,
   );
 
-  // 인증 — Bearer, x-app-upload-token 헤더, 또는 폼 필드(token 등) 중 하나라도 일치.
+  // 인증 — 앱 로그인 JWT(사용자별), 공유 APP_UPLOAD_TOKEN(Bearer/헤더/폼) 중 하나라도 유효.
+  const jwtClaims = verifyAppJwt(bearerToken(request));
   const authed =
+    jwtClaims != null ||
     verifyAppUploadToken(request) ||
     appUploadTokenMatches(request.headers.get("x-app-upload-token")) ||
     appUploadTokenMatches(pick(form, ["token", "appUploadToken", "app_upload_token", "APP_UPLOAD_TOKEN"]));
@@ -121,9 +124,10 @@ export async function POST(request: Request) {
   const ocrText = pick(form, ["ocrText", "ocr", "ocr_text", "text"]);
   const title = pick(form, ["title"]);
   const siteId = pick(form, ["siteId", "site", "site_id"]);
-  // 작업자 이름과 ID를 분리 수집(스탬프 정리 표시용). 도로명 주소·GPS는 앱이 구조화 필드로 전송.
-  const uploader = pick(form, ["uploader", "workerName", "worker", "name"]);
-  const workerId = pick(form, ["workerId", "worker_id", "employeeId", "empId", "empNo"]);
+  // 작업자 이름과 ID를 분리 수집(스탬프 정리 표시용). 폼 미전송 시 로그인 JWT 신원으로 자동 채움.
+  const uploader = pick(form, ["uploader", "workerName", "worker", "name"]) ?? jwtClaims?.name ?? null;
+  const workerId =
+    pick(form, ["workerId", "worker_id", "employeeId", "empId", "empNo"]) ?? jwtClaims?.workerId ?? null;
   const roadAddress = pick(form, ["roadAddress", "road_address", "address", "addr", "roadAddr"]);
   const latitude = toNum(pick(form, ["latitude", "lat", "gpsLat"]));
   const longitude = toNum(pick(form, ["longitude", "lng", "lon", "gpsLng", "gpsLon"]));

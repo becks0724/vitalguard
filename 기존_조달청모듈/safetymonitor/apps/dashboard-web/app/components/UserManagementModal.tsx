@@ -69,6 +69,13 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const [editProfileId, setEditProfileId] = useState<number | null>(null);
   const [deptDraft, setDeptDraft] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
+  // 근로자 계정 추가 폼(앱 로그인용, role=worker).
+  const [showAddWorker, setShowAddWorker] = useState(false);
+  const [wUsername, setWUsername] = useState("");
+  const [wName, setWName] = useState("");
+  const [wEmpId, setWEmpId] = useState("");
+  const [wPassword, setWPassword] = useState("");
+  const [addingWorker, setAddingWorker] = useState(false);
 
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -180,6 +187,47 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
     [deptDraft, titleDraft, load],
   );
 
+  // 근로자 로그인 계정 생성 — 앱이 관제웹 계정으로 로그인할 수 있게 owner 가 발급.
+  const createWorker = useCallback(async () => {
+    if (wUsername.trim().length < 3 || wPassword.length < 6) {
+      setError("아이디(3자 이상)와 비밀번호(6자 이상)를 입력하세요.");
+      return;
+    }
+    setAddingWorker(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${getSessionToken() ?? ""}`,
+        },
+        body: JSON.stringify({
+          action: "create_worker",
+          username: wUsername.trim(),
+          name: wName.trim() || null,
+          employeeId: wEmpId.trim() || null,
+          password: wPassword,
+        }),
+      });
+      const json = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok || !json.ok) {
+        setError(json.error || "근로자 계정 생성에 실패했습니다.");
+        return;
+      }
+      setWUsername("");
+      setWName("");
+      setWEmpId("");
+      setWPassword("");
+      setShowAddWorker(false);
+      await load();
+    } catch {
+      setError("네트워크 오류로 생성에 실패했습니다.");
+    } finally {
+      setAddingWorker(false);
+    }
+  }, [wUsername, wName, wEmpId, wPassword, load]);
+
   const pending = users?.filter((u) => u.status === "pending").length ?? 0;
   const approved = users?.filter((u) => u.status === "approved").length ?? 0;
   const rejected = users?.filter((u) => u.status === "rejected").length ?? 0;
@@ -233,6 +281,54 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             자동 갱신 5초{syncedAt ? ` · 최근 ${syncedAt}` : ""}
           </span>
+        </div>
+
+        {/* 근로자 계정 추가(owner) — 앱(iPhone/Apple Watch) 로그인용 role=worker 계정 생성 */}
+        <div className="border-b border-hairline px-5 py-2 dark:border-white/10">
+          <button
+            type="button"
+            onClick={() => setShowAddWorker((v) => !v)}
+            className="text-xs font-semibold text-primary hover:underline"
+          >
+            {showAddWorker ? "− 근로자 추가 닫기" : "+ 근로자 계정 추가 (앱 로그인용)"}
+          </button>
+          {showAddWorker && (
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              {(
+                [
+                  ["아이디*", wUsername, setWUsername, "worker01", "text"],
+                  ["이름", wName, setWName, "장우진", "text"],
+                  ["사번(workerId)", wEmpId, setWEmpId, "EMP-6861", "text"],
+                  ["비밀번호*", wPassword, setWPassword, "6자 이상", "password"],
+                ] as const
+              ).map(([label, value, setter, placeholder, type]) => (
+                <label
+                  key={label}
+                  className="flex flex-col gap-0.5 text-[10px] text-muted dark:text-on-dark-soft"
+                >
+                  {label}
+                  <input
+                    type={type}
+                    value={value}
+                    onChange={(e) => setter(e.target.value)}
+                    placeholder={placeholder}
+                    className="w-32 rounded-lg border border-hairline bg-canvas px-2 py-1 text-[12px] text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+                  />
+                </label>
+              ))}
+              <button
+                type="button"
+                onClick={createWorker}
+                disabled={addingWorker}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary active:scale-95 disabled:opacity-50"
+              >
+                {addingWorker ? "생성 중…" : "생성"}
+              </button>
+              <span className="text-[10px] text-muted dark:text-on-dark-soft">
+                생성 즉시 승인 · 앱에서 이 아이디/비번으로 로그인
+              </span>
+            </div>
+          )}
         </div>
 
         {/* 본문 — DB 스키마 테이블 */}

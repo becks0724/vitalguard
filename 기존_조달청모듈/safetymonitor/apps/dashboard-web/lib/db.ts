@@ -1307,6 +1307,31 @@ export async function createUser(input: {
   return rows[0] ?? null;
 }
 
+// 근로자 로그인 계정 생성(owner) — role=worker·즉시 승인·사번(employee_id) 매칭. 앱 로그인용.
+export async function createWorkerAccount(input: {
+  username: string;
+  name: string | null;
+  employeeId: string | null;
+  passwordHash: string;
+  approvedBy: string;
+}): Promise<UserRow | null> {
+  const { text, values } = buildInsert("users", {
+    username: input.username,
+    name: input.name,
+    password_hash: input.passwordHash,
+    auth_provider: "password",
+    role: "worker",
+    status: "approved",
+    employee_id: input.employeeId,
+    approved_by: input.approvedBy,
+  });
+  const { rows } = await q<UserRow>(
+    `${text} ON CONFLICT (username) DO NOTHING RETURNING *`,
+    values,
+  );
+  return rows[0] ?? null;
+}
+
 export async function findUserByUsername(username: string): Promise<UserRow | null> {
   const { rows } = await q<UserRow>("SELECT * FROM users WHERE username = $1", [
     username,
