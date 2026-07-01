@@ -35,6 +35,13 @@ function pick(form: FormData, keys: string[]): string | null {
   return null;
 }
 
+// 숫자 문자열 → number(유효할 때만), 아니면 null. GPS 좌표 파싱용.
+function toNum(v: string | null): number | null {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 // KST 기준 현재 시각/날짜 — 앱이 촬영시각을 안 보낼 때 폴백.
 function nowKstIso(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 19) + "+09:00";
@@ -114,7 +121,12 @@ export async function POST(request: Request) {
   const ocrText = pick(form, ["ocrText", "ocr", "ocr_text", "text"]);
   const title = pick(form, ["title"]);
   const siteId = pick(form, ["siteId", "site", "site_id"]);
-  const uploader = pick(form, ["uploader", "worker", "workerName", "employeeId", "worker_id"]);
+  // 작업자 이름과 ID를 분리 수집(스탬프 정리 표시용). 도로명 주소·GPS는 앱이 구조화 필드로 전송.
+  const uploader = pick(form, ["uploader", "workerName", "worker", "name"]);
+  const workerId = pick(form, ["workerId", "worker_id", "employeeId", "empId", "empNo"]);
+  const roadAddress = pick(form, ["roadAddress", "road_address", "address", "addr", "roadAddr"]);
+  const latitude = toNum(pick(form, ["latitude", "lat", "gpsLat"]));
+  const longitude = toNum(pick(form, ["longitude", "lng", "lon", "gpsLng", "gpsLon"]));
   const mediaType = contentType.startsWith("video/") ? "video" : "image";
 
   // Object Storage 업로드(서버측 PUT).
@@ -142,6 +154,10 @@ export async function POST(request: Request) {
     description: null,
     siteId,
     uploader,
+    workerId,
+    latitude,
+    longitude,
+    roadAddress,
   });
 
   return NextResponse.json({ ok: true, media: row });

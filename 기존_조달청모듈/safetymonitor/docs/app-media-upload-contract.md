@@ -21,15 +21,21 @@ Content-Type: multipart/form-data
 file=<이미지/영상 바이트>               ← 파일 파트(필드명 무관, 어떤 이름이든 인식)
 dateKey=2026-06-30                     ← (선택) 촬영 날짜 KST. 없으면 capturedAt/서버 KST 현재
 capturedAt=2026-06-30T14:23:00+09:00   ← (선택) 촬영 시각 KST. 없으면 서버 KST 현재 → 캘린더 시각
-ocrText=사진대지 … (앱 OCR 텍스트)      ← (선택)
-title=… / siteId=… / uploader=…        ← (선택)
+roadAddress=광주광역시 광산구 …          ← (선택) 도로명 주소(앱이 역지오코딩해 전송)
+latitude=35.169862                     ← (선택) GPS 위도(십진수)
+longitude=126.863702                   ← (선택) GPS 경도(십진수)
+workerName=장우진                       ← (선택) 작업자 이름
+workerId=EMP-6861                      ← (선택) 작업자 사번/ID
+ocrText=사진대지 … (앱 OCR 텍스트)      ← (선택) 원문 OCR 전체(대시보드에서 접어두기)
+title=… / siteId=…                     ← (선택)
 ```
 
 응답 `{ "ok": true, "media": { "id": "...", ... } }`.
 
 - **파일** — multipart 의 파일 파트면 **필드명 무관**(`file`/`image`/`photo` 등 아무거나). 허용 = jpg/png/webp/heic/mp4/mov(파트 Content-Type 또는 파일명 확장자로 판별).
 - **인증** — `Authorization: Bearer <APP_UPLOAD_TOKEN>`(권장). 헤더 `x-app-upload-token` 또는 폼 필드 `token` 도 허용.
-- **메타 필드명 변형 수용** — `dateKey`/`date`, `capturedAt`/`captured_at`/`time`, `ocrText`/`ocr`/`text` 등. 미전송 시 날짜·시각은 **서버 KST 현재로 폴백**(= 업로드 시각으로 캘린더 배치).
+- **★ 구조화 메타(권장)** — 사진 하단 스탬프에 찍는 정보(촬영시각·도로명주소·GPS·작업자)를 **OCR 텍스트에만 의존하지 말고 별도 form 필드로 전송**한다. 대시보드가 이 필드들을 **촬영 시각·도로명 주소·GPS 좌표·작업자(이름·ID)** 로 정리해 표시하고, `ocrText` 원문은 "원문 보기" 토글로 접어둔다. GPS는 십진수 위/경도, 도로명 주소는 앱이 좌표를 역지오코딩해 완성된 문자열로 보낸다.
+- **메타 필드명 변형 수용** — `dateKey`/`date`, `capturedAt`/`captured_at`/`time`, `roadAddress`/`address`/`addr`, `latitude`/`lat`, `longitude`/`lng`/`lon`, `workerName`/`uploader`/`name`, `workerId`/`worker_id`/`employeeId`, `ocrText`/`ocr`/`text` 등. 미전송 시 날짜·시각은 **서버 KST 현재로 폴백**(= 업로드 시각으로 캘린더 배치), 나머지 미전송 항목은 표시에서 생략.
 - 서버가 받은 요청 형식을 `console.warn("[app-media] …")` 로그에 남김 → 필드명 정밀 매핑·디버깅용(Cloud Run 로그에서 확인).
 - 트레이드오프 — 바이트가 **Cloud Run 경유**(프리사인 직PUT 아님). 이미지엔 무방, 대용량 영상이면 아래 2단계가 유리.
 
@@ -88,10 +94,14 @@ Content-Type: application/json
   "mediaType": "image",                          // "image" | "video"
   "storageProvider": "naver",                    // 고정
   "storageKey": "calendar-media/2026-06-30/<uuid>.jpg",  // ①의 key
-  "ocrText": "사진대지 ... (앱 OCR 인식 텍스트)",
+  "roadAddress": "광주광역시 광산구 ...",          // 선택. 도로명 주소(앱 역지오코딩)
+  "latitude": 35.169862,                          // 선택. GPS 위도(숫자)
+  "longitude": 126.863702,                        // 선택. GPS 경도(숫자)
+  "workerName": "장우진",                          // 선택. 작업자 이름(uploader 로도 인식)
+  "workerId": "EMP-6861",                          // 선택. 작업자 사번/ID
+  "ocrText": "사진대지 ... (앱 OCR 인식 텍스트)",     // 선택. 원문 전체(대시보드에서 접어두기)
   "title": "현장 점검 사진",                       // 선택
-  "siteId": "현장 식별자",                         // 선택
-  "uploader": "작업자 이름/사번"                    // 선택
+  "siteId": "현장 식별자"                          // 선택
 }
 ```
 

@@ -359,9 +359,17 @@ async function initSchema(): Promise<void> {
       description TEXT,
       site_id TEXT,
       uploader TEXT,
+      worker_id TEXT,
+      latitude DOUBLE PRECISION,
+      longitude DOUBLE PRECISION,
+      road_address TEXT,
       created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS title TEXT;
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS worker_id TEXT;
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS road_address TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_date ON calendar_media(date_key);
 
     -- 미디어 댓글(작성자 이름·식별자·시각) — 관리자/작업자 코멘트 스레드.
@@ -1439,6 +1447,10 @@ export type CalendarMediaRow = {
   description: string | null;
   site_id: string | null;
   uploader: string | null;
+  worker_id: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  road_address: string | null;
   created_at: string;
 };
 
@@ -1491,6 +1503,10 @@ export async function insertCalendarMedia(input: {
   description?: string | null;
   siteId?: string | null;
   uploader?: string | null;
+  workerId?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  roadAddress?: string | null;
 }): Promise<CalendarMediaRow> {
   const { text, values } = buildInsert(
     "calendar_media",
@@ -1508,6 +1524,10 @@ export async function insertCalendarMedia(input: {
       description: input.description ?? null,
       site_id: input.siteId ?? null,
       uploader: input.uploader ?? null,
+      worker_id: input.workerId ?? null,
+      latitude: input.latitude ?? null,
+      longitude: input.longitude ?? null,
+      road_address: input.roadAddress ?? null,
     },
     "*",
   );

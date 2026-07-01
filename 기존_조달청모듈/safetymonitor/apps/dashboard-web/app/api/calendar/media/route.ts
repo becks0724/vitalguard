@@ -17,6 +17,10 @@ export const dynamic = "force-dynamic";
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const str = (v: unknown): string | null =>
   typeof v === "string" && v.trim() ? v : null;
+const num = (v: unknown): number | null => {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : null;
+};
 
 export async function GET(request: Request) {
   if (!verifyBasicAuth(request)) {
@@ -90,6 +94,10 @@ export async function POST(request: Request) {
     description: str(body.description),
     siteId: str(body.siteId),
     uploader: str(body.uploader),
+    workerId: str(body.workerId),
+    latitude: num(body.latitude),
+    longitude: num(body.longitude),
+    roadAddress: str(body.roadAddress),
   });
   return NextResponse.json({ ok: true, media: row });
 }

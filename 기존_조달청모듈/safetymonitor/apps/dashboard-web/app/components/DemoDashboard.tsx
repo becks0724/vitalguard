@@ -646,6 +646,10 @@ type CalendarMedia = {
   ocrText: string | null;
   description: string | null;
   uploader: string | null;
+  workerId: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  roadAddress: string | null;
   comments: CalendarMediaComment[];
 };
 
@@ -799,6 +803,68 @@ function formatCommentTime(iso: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(d);
+}
+
+// 앱 OCR 미디어 촬영정보 정리 — 촬영시각·도로명주소·GPS·작업자만 명시(원문 OCR은 접어두기 토글).
+function MediaMetaBlock({ media, dark }: { media: CalendarMedia; dark?: boolean }) {
+  const [rawOpen, setRawOpen] = useState(false);
+  const capturedLabel = media.capturedAt
+    ? `${media.capturedAt.slice(0, 10)} ${formatKoreanTime(media.capturedAt.slice(11, 16))}`
+    : null;
+  const gpsLabel =
+    media.latitude != null && media.longitude != null
+      ? `${media.latitude.toFixed(6)}, ${media.longitude.toFixed(6)}`
+      : null;
+  const workerLabel =
+    media.uploader || media.workerId
+      ? `${media.uploader ?? "—"}${media.workerId ? ` · ${media.workerId}` : ""}`
+      : null;
+  const hasMeta = capturedLabel || media.roadAddress || gpsLabel || workerLabel;
+  if (!hasMeta && !media.ocrText) return null;
+
+  const wrapCls = dark
+    ? "mt-2 rounded-lg bg-white/10 px-3 py-2"
+    : "mt-1.5 rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated";
+  const labelCls = dark ? "text-white/60" : "text-muted dark:text-on-dark-soft";
+  const valueCls = dark ? "text-white/90" : "text-ink dark:text-on-dark";
+  const rows: Array<[string, string, boolean?]> = [];
+  if (capturedLabel) rows.push(["촬영 시각", capturedLabel]);
+  if (media.roadAddress) rows.push(["도로명 주소", media.roadAddress]);
+  if (gpsLabel) rows.push(["GPS 좌표", gpsLabel, true]);
+  if (workerLabel) rows.push(["작업자", workerLabel]);
+
+  return (
+    <div className={wrapCls}>
+      {rows.length > 0 && (
+        <dl className="space-y-0.5 text-[11px] leading-relaxed">
+          {rows.map(([label, value, mono]) => (
+            <div key={label} className="flex gap-1.5">
+              <dt className={`w-16 shrink-0 font-semibold ${labelCls}`}>{label}</dt>
+              <dd className={`${mono ? "tabular-nums " : ""}${valueCls}`}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {media.ocrText && (
+        <div className={rows.length > 0 ? "mt-1.5" : ""}>
+          <button
+            type="button"
+            onClick={() => setRawOpen((v) => !v)}
+            className={`text-[10px] font-medium underline-offset-2 hover:underline ${labelCls}`}
+          >
+            {rawOpen ? "원문 접기 ▴" : "원문 보기 ▾"}
+          </button>
+          {rawOpen && (
+            <p
+              className={`mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed ${valueCls}`}
+            >
+              {media.ocrText}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // 시작/종료 시간을 "오전 9:00 ~ 오전 11:00" 형태로 — 종료는 선택, 둘 다 없으면 빈 문자열
@@ -1464,6 +1530,10 @@ function HeaderCalendarPopup({
           ocrText: r.ocr_text ?? null,
           description: r.description ?? null,
           uploader: r.uploader ?? null,
+          workerId: r.worker_id ?? null,
+          latitude: r.latitude != null ? Number(r.latitude) : null,
+          longitude: r.longitude != null ? Number(r.longitude) : null,
+          roadAddress: r.road_address ?? null,
           comments: (r.comments ?? []).map((c) => ({
             id: c.id ?? "",
             authorName: c.author_name ?? null,
@@ -2095,7 +2165,7 @@ function HeaderCalendarPopup({
                     >
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="flex max-h-[92vh] w-full max-w-3xl flex-col"
+                        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-y-auto"
                       >
                         <div className="mb-2 flex items-center justify-between gap-3 text-white">
                           <div className="min-w-0">
@@ -2141,12 +2211,7 @@ function HeaderCalendarPopup({
                             className="max-h-[80vh] w-full rounded-lg object-contain"
                           />
                         )}
-                        {lightbox.ocrText ? (
-                          <div className="mt-2 max-h-[16vh] overflow-y-auto rounded-lg bg-white/10 px-3 py-2 text-[11px] leading-relaxed text-white/90">
-                            <span className="mr-1 font-semibold text-white/70">OCR:</span>
-                            {lightbox.ocrText}
-                          </div>
-                        ) : null}
+                        <MediaMetaBlock media={lightbox} dark />
                       </div>
                     </div>,
                     document.body,
@@ -2200,17 +2265,8 @@ function HeaderCalendarPopup({
                         </button>
                       </div>
 
-                      {/* 내용 영역 — OCR 인식 내용(제목과 구분) */}
-                      {m.ocrText && (
-                        <div className="mt-1.5 rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated">
-                          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">
-                            OCR 인식 내용
-                          </p>
-                          <p className="mt-0.5 whitespace-pre-wrap text-[11px] leading-relaxed text-ink dark:text-on-dark">
-                            {m.ocrText}
-                          </p>
-                        </div>
-                      )}
+                      {/* 내용 영역 — 촬영정보 정리(촬영시각·도로명주소·GPS·작업자), 원문 OCR은 접어두기 */}
+                      <MediaMetaBlock media={m} />
 
                       {/* 댓글 스레드 — 작성자·시각 + 수정/삭제, 하단 입력 */}
                       <div className="mt-2 space-y-1.5 border-t border-hairline pt-2 dark:border-white/10">
