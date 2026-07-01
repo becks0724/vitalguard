@@ -1499,6 +1499,8 @@ function HeaderCalendarPopup({
   const [weatherByDate, setWeatherByDate] = useState<Record<string, number>>({});
   // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 댓글 작성 드래프트(mediaId→입력값) + 편집 중 댓글.
   const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
+  // 현장 사진(앱 OCR) 수동 새로고침 진행 표시 — 아이콘 회전용.
+  const [mediaRefreshing, setMediaRefreshing] = useState(false);
   const [commentDraft, setCommentDraft] = useState<Record<string, string>>({});
   const [editingComment, setEditingComment] = useState<{ id: string; body: string } | null>(null);
   // 사진 클릭 시 확대 팝업(라이트박스) 대상 미디어.
@@ -1564,6 +1566,16 @@ function HeaderCalendarPopup({
     if (!open) return;
     fetchMedia(viewDate);
   }, [open, viewDate, fetchMedia]);
+
+  // 수동 새로고침 — 팝업을 닫지 않고 현재 달의 앱 OCR 사진을 다시 조회(실시간 반영 대체).
+  const refreshMedia = useCallback(async () => {
+    setMediaRefreshing(true);
+    try {
+      await fetchMedia(viewDate);
+    } finally {
+      setMediaRefreshing(false);
+    }
+  }, [fetchMedia, viewDate]);
 
   const authHeaders = (json: boolean) => {
     const token = getSessionToken();
@@ -1861,6 +1873,32 @@ function HeaderCalendarPopup({
             </div>
           </div>
           <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={refreshMedia}
+            disabled={mediaRefreshing}
+            aria-label="현장 사진 새로고침"
+            title="현장 사진 새로고침"
+            className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-on-dark"
+          >
+            <svg
+              className={mediaRefreshing ? "animate-spin" : ""}
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+              <path d="M8 16H3v5" />
+            </svg>
+          </button>
           <button
             type="button"
             onClick={() => setPlanOpen((v) => !v)}
