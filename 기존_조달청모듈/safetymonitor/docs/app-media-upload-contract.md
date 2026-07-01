@@ -34,7 +34,9 @@ title=… / siteId=…                     ← (선택)
 
 - **파일** — multipart 의 파일 파트면 **필드명 무관**(`file`/`image`/`photo` 등 아무거나). 허용 = jpg/png/webp/heic/mp4/mov(파트 Content-Type 또는 파일명 확장자로 판별).
 - **인증** — `Authorization: Bearer <APP_UPLOAD_TOKEN>`(권장). 헤더 `x-app-upload-token` 또는 폼 필드 `token` 도 허용.
-- **★ 구조화 메타(권장)** — 사진 하단 스탬프에 찍는 정보(촬영시각·도로명주소·GPS·작업자)를 **OCR 텍스트에만 의존하지 말고 별도 form 필드로 전송**한다. 대시보드가 이 필드들을 **촬영 시각·도로명 주소·GPS 좌표·작업자(이름·ID)** 로 정리해 표시하고, `ocrText` 원문은 "원문 보기" 토글로 접어둔다. GPS는 십진수 위/경도, 도로명 주소는 앱이 좌표를 역지오코딩해 완성된 문자열로 보낸다.
+- **★ 표시 정리** — 대시보드는 **촬영 시각·도로명 주소·GPS 좌표·작업자(이름·ID)** 4개 항목만 명시하고, `ocrText` 원문은 "원문 보기" 토글로 접어둔다. 이 4개 항목의 소스는 **① 앱 구조화 필드(있으면 우선) → ② `ocrText` 말미의 사진 하단 스탬프 파싱(폴백)** 순이다.
+- **구조화 메타(권장·정확)** — 오인식 없는 정확한 표시를 위해 사진 하단 스탬프 정보를 **별도 form 필드로도 전송**하면 좋다. GPS는 십진수 위/경도, 도로명 주소는 앱이 좌표를 역지오코딩해 완성된 문자열로 보낸다.
+- **스탬프 파싱(폴백)** — 구조화 필드 미전송 시 대시보드가 `ocrText` 말미의 카메라 스탬프에서 촬영시각(`[YYYY-MM-DD HH:MM:SS]`)·GPS(십진수 위/경도 쌍)·작업자ID(`EMP-####`)·도로명주소(시·도+구/동/로 줄)를 **best-effort 추출**한다([lib/ocr-stamp.ts](../apps/dashboard-web/lib/ocr-stamp.ts)). OCR 오인식이 잦으므로 정확도가 필요하면 구조화 필드 전송을 권장한다.
 - **메타 필드명 변형 수용** — `dateKey`/`date`, `capturedAt`/`captured_at`/`time`, `roadAddress`/`address`/`addr`, `latitude`/`lat`, `longitude`/`lng`/`lon`, `workerName`/`uploader`/`name`, `workerId`/`worker_id`/`employeeId`, `ocrText`/`ocr`/`text` 등. 미전송 시 날짜·시각은 **서버 KST 현재로 폴백**(= 업로드 시각으로 캘린더 배치), 나머지 미전송 항목은 표시에서 생략.
 - 서버가 받은 요청 형식을 `console.warn("[app-media] …")` 로그에 남김 → 필드명 정밀 매핑·디버깅용(Cloud Run 로그에서 확인).
 - 트레이드오프 — 바이트가 **Cloud Run 경유**(프리사인 직PUT 아님). 이미지엔 무방, 대용량 영상이면 아래 2단계가 유리.

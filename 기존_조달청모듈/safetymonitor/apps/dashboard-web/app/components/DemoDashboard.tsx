@@ -33,6 +33,7 @@ import {
 } from "@safetymonitor/analyzers";
 
 import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
+import { parseOcrStamp } from "../../lib/ocr-stamp";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
 import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
@@ -806,20 +807,27 @@ function formatCommentTime(iso: string): string {
 }
 
 // 앱 OCR 미디어 촬영정보 정리 — 촬영시각·도로명주소·GPS·작업자만 명시(원문 OCR은 접어두기 토글).
+// 소스 = 앱 구조화 필드 우선, 없으면 사진 하단 스탬프(OCR 텍스트 말미) 파싱.
 function MediaMetaBlock({ media, dark }: { media: CalendarMedia; dark?: boolean }) {
   const [rawOpen, setRawOpen] = useState(false);
-  const capturedLabel = media.capturedAt
-    ? `${media.capturedAt.slice(0, 10)} ${formatKoreanTime(media.capturedAt.slice(11, 16))}`
-    : null;
+  const stamp = parseOcrStamp(media.ocrText);
+
+  const capturedLabel = stamp.capturedAt
+    ? `${stamp.capturedAt.slice(0, 10)} ${formatKoreanTime(stamp.capturedAt.slice(11, 16))}`
+    : media.capturedAt
+      ? `${media.capturedAt.slice(0, 10)} ${formatKoreanTime(media.capturedAt.slice(11, 16))}`
+      : null;
   const gpsLabel =
     media.latitude != null && media.longitude != null
       ? `${media.latitude.toFixed(6)}, ${media.longitude.toFixed(6)}`
-      : null;
+      : stamp.gps;
+  const roadAddress = media.roadAddress ?? stamp.roadAddress;
+  const workerId = media.workerId ?? stamp.workerId;
   const workerLabel =
-    media.uploader || media.workerId
-      ? `${media.uploader ?? "—"}${media.workerId ? ` · ${media.workerId}` : ""}`
+    media.uploader || workerId
+      ? `${media.uploader ?? "—"}${workerId ? ` · ${workerId}` : ""}`
       : null;
-  const hasMeta = capturedLabel || media.roadAddress || gpsLabel || workerLabel;
+  const hasMeta = capturedLabel || roadAddress || gpsLabel || workerLabel;
   if (!hasMeta && !media.ocrText) return null;
 
   const wrapCls = dark
@@ -829,7 +837,7 @@ function MediaMetaBlock({ media, dark }: { media: CalendarMedia; dark?: boolean 
   const valueCls = dark ? "text-white/90" : "text-ink dark:text-on-dark";
   const rows: Array<[string, string, boolean?]> = [];
   if (capturedLabel) rows.push(["촬영 시각", capturedLabel]);
-  if (media.roadAddress) rows.push(["도로명 주소", media.roadAddress]);
+  if (roadAddress) rows.push(["도로명 주소", roadAddress]);
   if (gpsLabel) rows.push(["GPS 좌표", gpsLabel, true]);
   if (workerLabel) rows.push(["작업자", workerLabel]);
 
