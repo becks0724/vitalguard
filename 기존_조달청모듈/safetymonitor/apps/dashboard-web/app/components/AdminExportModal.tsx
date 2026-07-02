@@ -151,10 +151,7 @@ export function AdminExportModal({
               token={token}
               siteInfo={siteInfo}
               onSiteInfoSave={onSiteInfoSave}
-              onAuthFail={() => {
-                saveToken(null);
-                setToken(null);
-              }}
+              onAuthFail={handleLogout}
             />
           </div>
         </div>
@@ -727,7 +724,7 @@ function EnvAlertAckPanel({
           type="button"
           onClick={() => void load()}
           disabled={busy}
-          className="rounded border border-hairline px-2 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
+          className="min-w-[5rem] rounded border border-hairline px-2 py-1 text-center text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
         >
           {busy ? "불러오는 중…" : "새로고침"}
         </button>
