@@ -313,7 +313,7 @@ function CameraTile({
   );
 }
 
-// AI 감지 통계 스트립 — 팝업 영상 하단에 실시간 감지 내용(클래스별 카운트)을 1초 폴링으로 표시.
+// AI 감지 통계 스트립 — 팝업 영상 하단에 실시간 감지 내용(클래스별 카운트)을 60초 폴링으로 표시.
 // suffix 로 객체감지 소스 분기(CAM-01 /cctv/stats · CAM-03 /cctv/stats3).
 function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string }) {
   const [stats, setStats] = useState<{
@@ -336,7 +336,7 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
       }
     };
     poll();
-    const id = setInterval(poll, 1000);
+    const id = setInterval(poll, 60000);
     return () => {
       active = false;
       clearInterval(id);
@@ -384,7 +384,7 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
   );
 }
 
-// 낙상 감지 스트립 — 팝업 영상 하단에 상태별(정상/불안정/누움/낙상) 인원을 1초 폴링으로 표시.
+// 낙상 감지 스트립 — 팝업 영상 하단에 상태별(정상/불안정/누움/낙상) 인원을 60초 폴링으로 표시.
 function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: string }) {
   const [stats, setStats] = useState<{
     total: number;
@@ -405,7 +405,7 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
       }
     };
     poll();
-    const id = setInterval(poll, 1000);
+    const id = setInterval(poll, 60000);
     return () => {
       active = false;
       clearInterval(id);
@@ -453,7 +453,7 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
   );
 }
 
-// PPE(안전모) 감지 스트립 — 팝업 영상 하단에 준수율·안전모/조끼 착용 현황을 1초 폴링으로 표시.
+// PPE(안전모) 감지 스트립 — 팝업 영상 하단에 준수율·안전모/조끼 착용 현황을 60초 폴링으로 표시.
 function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: string }) {
   const [stats, setStats] = useState<{
     violation_count: number;
@@ -478,7 +478,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
       }
     };
     poll();
-    const id = setInterval(poll, 1000);
+    const id = setInterval(poll, 60000);
     return () => {
       active = false;
       clearInterval(id);
@@ -645,7 +645,7 @@ export function CctvQuadView() {
       );
     };
     poll();
-    const id = setInterval(poll, 5000);
+    const id = setInterval(poll, 60000);
     return () => {
       active = false;
       clearInterval(id);

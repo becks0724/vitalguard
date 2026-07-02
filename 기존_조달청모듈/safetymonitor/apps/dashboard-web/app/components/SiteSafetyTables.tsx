@@ -796,7 +796,7 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
         })
         .catch(() => {});
     load();
-    const id = setInterval(load, 12000);
+    const id = setInterval(load, 60000);
     return () => {
       alive = false;
       clearInterval(id);

@@ -31,7 +31,7 @@ function fmt(iso: string | null): string {
   return iso.replace("T", " ").slice(0, 16);
 }
 
-const POLL_MS = 5000; // DB 실시간 반영 — 5초 폴링
+const POLL_MS = 60000; // DB 반영 — 60초 폴링
 
 const TH = "whitespace-nowrap px-2 py-2 text-left font-semibold";
 const TD = "whitespace-nowrap px-2 py-1.5 text-body dark:text-on-dark-soft";
@@ -99,7 +99,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
-  // 최초 로드 + 5초 폴링(DB 변경 실시간 반영). 모달 닫히면 정리.
+  // 최초 로드 + 60초 폴링(DB 변경 반영). 모달 닫히면 정리.
   const loadRef = useRef(load);
   loadRef.current = load;
   useEffect(() => {
@@ -279,7 +279,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
           <span>거절 {rejected}</span>
           <span className="ml-auto inline-flex items-center gap-1">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            자동 갱신 5초{syncedAt ? ` · 최근 ${syncedAt}` : ""}
+            자동 갱신 60초{syncedAt ? ` · 최근 ${syncedAt}` : ""}
           </span>
         </div>
 
