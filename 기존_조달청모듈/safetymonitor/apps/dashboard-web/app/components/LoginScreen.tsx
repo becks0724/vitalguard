@@ -690,15 +690,15 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
         <div className="flex w-full flex-col items-center px-6 py-10 md:w-1/2">
           <div className="relative z-10 flex w-full flex-col items-center">
-        {/* 중앙 로고 — Three.js 사전 렌더 3D 베벨 유리 배지 (라이트/다크) */}
+        {/* 중앙 로고 — 표준 VitAlGuard 배지(라이트/다크). 헤더·관리자 모달·로그인 게이트와 동일 로고로 통일. */}
         <div className="logo3d-stage">
           <img
-            src="/brand/vitalguard-logo-3d-light.png"
+            src="/brand/vitalguard-logo-light.png"
             alt="VitAlGuard Industrial Safety OS"
             className="logo3d-badge dark:hidden"
           />
           <img
-            src="/brand/vitalguard-logo-3d-dark.png"
+            src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
             className="logo3d-badge hidden dark:block"
           />
