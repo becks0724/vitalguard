@@ -128,6 +128,16 @@ html.dark body {
   animation: vital-blink 0.55s ease-in-out infinite;
 }
 
+/* 헤더 라이브 시계 — 바뀐 글자만 아래에서 위로 롤링(슬라이드업 + 페이드) */
+@keyframes clock-roll-in {
+  0%   { opacity: 0; transform: translateY(0.6em); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.clock-roll-char {
+  display: inline-block;
+  animation: clock-roll-in 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .lcd-digital {
   font-family: var(--font-mono);
   letter-spacing: 0.04em;

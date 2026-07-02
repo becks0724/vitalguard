@@ -2459,6 +2459,42 @@ function HeaderCalendarPopup({
   );
 }
 
+// 헤더 중앙 라이브 시계 — yyyy/mm/dd(요일) hh:mm:ss. 매초 갱신, 바뀐 글자만 롤링(슬라이드업) 애니메이션.
+function HeaderClock() {
+  // SSR/하이드레이션 시각 불일치 방지 — 마운트 후에만 렌더(초기 null).
+  const [now, setNow] = useState<Date | null>(null);
+  useEffect(() => {
+    setNow(new Date());
+    const id = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+  if (!now) return null;
+
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const dow = ["일", "월", "화", "수", "목", "금", "토"][now.getDay()];
+  const text = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())}(${dow}) ${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+
+  return (
+    <div
+      aria-label={`현재 시각 ${text}`}
+      className="hidden select-none items-center gap-2 rounded-lg border border-hairline bg-surface-strong px-4 py-1.5 lg:flex dark:border-white/10 dark:bg-surface-dark-elevated"
+    >
+      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
+      </span>
+      {/* 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션 재생(변한 글자만 움직임). */}
+      <span className="font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark">
+        {text.split("").map((ch, i) => (
+          <span key={`${i}-${ch}`} className="clock-roll-char">
+            {ch === " " ? " " : ch}
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
 export function DemoDashboard() {
   const { logout } = useSession();
   const [data, setData] = useState<MockVitalResponse>({
@@ -3330,6 +3366,9 @@ export function DemoDashboard() {
             </p>
           </div>
         </div>
+
+        <HeaderClock />
+
         <div className="flex min-w-0 items-center gap-2">
           {/* 로그인 상태 칩 — 표시 전용(클릭 없음). 접속점 + 이름/직책/사번/아이디.
               내 정보 수정 진입은 dock '내 정보' 아이콘 + 비밀번호 게이트로만(보안). */}
