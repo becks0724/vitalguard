@@ -2491,12 +2491,8 @@ function HeaderClock() {
   return (
     <div
       aria-label={`현재 시각 ${text}`}
-      className="hidden select-none items-center gap-2 rounded-lg border border-hairline bg-surface-strong px-4 py-1.5 lg:flex dark:border-white/10 dark:bg-surface-dark-elevated"
+      className="hidden select-none items-center lg:flex"
     >
-      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden="true">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-60" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-      </span>
       {/* 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션 재생(변한 글자만 움직임). */}
       <span className="font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark">
         {text.split("").map((ch, i) => (
