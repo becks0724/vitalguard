@@ -2459,6 +2459,20 @@ function HeaderCalendarPopup({
   );
 }
 
+// 문자열을 글자 단위 span 으로 렌더 — key 에 글자값을 넣어 바뀐 글자만 remount → 롤링(슬라이드업) 애니메이션.
+// 헤더 시계와 DB 누적 숫자가 같은 애니메이션(.clock-roll-char)을 공유한다.
+function RollingChars({ text }: { text: string }) {
+  return (
+    <>
+      {text.split("").map((ch, i) => (
+        <span key={`${i}-${ch}`} className="clock-roll-char">
+          {ch === " " ? " " : ch}
+        </span>
+      ))}
+    </>
+  );
+}
+
 // 헤더 중앙 라이브 시계 — yyyy/mm/dd(요일) hh:mm:ss. 매초 갱신, 바뀐 글자만 롤링(슬라이드업) 애니메이션.
 function HeaderClock() {
   // SSR/하이드레이션 시각 불일치 방지 — 마운트 후에만 렌더(초기 null).
@@ -3362,7 +3376,11 @@ export function DemoDashboard() {
               VitAlGuard
             </h1>
             <p className="mt-1 truncate text-xs text-body dark:text-on-dark-soft">
-              관제 · 실시간 수집 · DB 영속 {(data.totalPersisted ?? 0).toLocaleString()}건 누적
+              관제 · 실시간 수집 · DB 영속{" "}
+              <span className="font-semibold tabular-nums text-ink dark:text-on-dark">
+                <RollingChars text={(data.totalPersisted ?? 0).toLocaleString()} />
+              </span>
+              건 누적
             </p>
           </div>
         </div>
