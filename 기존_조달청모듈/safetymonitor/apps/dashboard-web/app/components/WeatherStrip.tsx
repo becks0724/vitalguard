@@ -87,13 +87,26 @@ type Props = {
   lat?: number;
   lon?: number;
   workerCount: number;
+  // 현장 좌표 출처 — live: 작업자 실시간 GPS / cached: 연결 끊겨 캐시 좌표 / none: 좌표 없음. 우측 신호등 색.
+  coordSource?: "live" | "cached" | "none";
+  onRefresh?: () => void; // 수동 새로고침(좌표 재캡처 + 기상 재요청)
+  refreshing?: boolean; // 새로고침 진행 중(아이콘 회전)
+  refreshNonce?: number; // 증가 시 기상 재요청 트리거
 };
 
 // 현장 환경 경보 확인/조치 → 억제 상태(항목→확인 시 심각도) localStorage 키. 리마운트·임계 흔들림에도 유지.
 const ENV_ACK_KEY = "safetymonitor.envAck.v1";
 const SEV_RANK: Record<RuleSeverity, number> = { normal: 0, caution: 1, danger: 2 };
 
-export function WeatherStrip({ lat, lon, workerCount }: Props) {
+export function WeatherStrip({
+  lat,
+  lon,
+  workerCount,
+  coordSource = "none",
+  onRefresh,
+  refreshing,
+  refreshNonce,
+}: Props) {
   // 호버 시 정지가 아니라 22% 속도로 감속(InfiniteSlider 방식) — 끊김 없이 흐르며 읽을 수 있게.
   const scrollRef = useMarqueeScroll<HTMLDivElement>(0.5, "x", 0.22);
   const [data, setData] = useState<WeatherResponse | null>(null);
@@ -141,7 +154,8 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
       window.clearInterval(timer);
     };
     // workerCount 도 URL(workers=)에 포함되므로 deps 에 포함 — 작업자 수 변경 시 재요청해 weather_log 정확성 유지.
-  }, [lat, lon, workerCount]);
+    // refreshNonce — 수동 새로고침 시 증가해 기상 재요청.
+  }, [lat, lon, workerCount, refreshNonce]);
 
   // 기상특보 — 현장 GPS 시·도 발효 특보. 10분 주기 갱신.
   useEffect(() => {
@@ -166,7 +180,7 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
       active = false;
       window.clearInterval(timer);
     };
-  }, [lat, lon]);
+  }, [lat, lon, refreshNonce]);
 
   // 항목별 정책 평가 — current 데이터가 있을 때만
   const evaluations = useMemo(() => {
@@ -337,10 +351,62 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
     return () => window.clearTimeout(t);
   }, [alerts]);
 
+  // 우측 연결상태 신호등 + 수동 새로고침 — placeholder·오류·데이터 상태 공통.
+  const dotCls =
+    coordSource === "live"
+      ? "bg-semantic-up"
+      : coordSource === "cached"
+        ? "bg-amber-400 vital-blink-caution"
+        : "bg-muted/50 dark:bg-white/20";
+  const dotTitle =
+    coordSource === "live"
+      ? "작업자 GPS 실시간 수신 중 — 라이브 좌표"
+      : coordSource === "cached"
+        ? "작업자 연결 대기 — 마지막 캐시 좌표로 기상 표시"
+        : "현장 좌표 없음 — 작업자 GPS 최초 수신 대기";
+  const dotLabel = coordSource === "live" ? "실시간" : coordSource === "cached" ? "캐시" : "대기";
+  const statusControls = (
+    <div className="flex shrink-0 items-center gap-2">
+      <span className="inline-flex items-center gap-1.5" title={dotTitle}>
+        <span className={`h-2.5 w-2.5 rounded-full ring-1 ring-hairline ${dotCls}`} />
+        <span className="text-[11px] font-medium text-muted dark:text-on-dark-soft">{dotLabel}</span>
+      </span>
+      {onRefresh && (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          aria-label="현장 위치·기상 새로고침"
+          title="현장 위치·기상 새로고침"
+          className="rounded-md p-1 text-muted transition hover:bg-zinc-200/60 disabled:opacity-50 dark:text-on-dark-soft dark:hover:bg-white/10"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            width="15"
+            height="15"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={refreshing ? "animate-spin" : ""}
+            aria-hidden
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+
   if (lat === undefined || lon === undefined) {
     return (
-      <section className="rounded-xl border border-hairline bg-canvas px-6 py-4 text-sm text-body dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark-soft">
-        현장 위치 대기 중 — 등록된 작업자 {workerCount}명 · 폰 GPS 좌표 수신 시 자동 표시
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-hairline bg-canvas px-6 py-4 text-sm text-body dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark-soft">
+        <span className="min-w-0">
+          현장 위치 대기 중 — 등록된 작업자 {workerCount}명 · 폰 GPS 좌표 수신 시 자동 표시
+        </span>
+        {statusControls}
       </section>
     );
   }
@@ -349,8 +415,9 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
   // 첫 로드부터 실패해 표시할 데이터가 없을 때만 오류 박스를 띄운다.
   if (error && !data) {
     return (
-      <section className="rounded-xl border border-semantic-down bg-canvas px-6 py-4 text-sm text-semantic-down dark:bg-surface-dark-elevated">
-        날씨 조회 실패 — {error}
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-semantic-down bg-canvas px-6 py-4 text-sm text-semantic-down dark:bg-surface-dark-elevated">
+        <span className="min-w-0">날씨 조회 실패 — {error}</span>
+        {statusControls}
       </section>
     );
   }
@@ -438,9 +505,12 @@ export function WeatherStrip({ lat, lon, workerCount }: Props) {
               </span>
             )}
           </div>
-          <span className="text-body dark:text-on-dark-soft">
-            {data.cached ? "캐시" : "실시간"} · Open-Meteo · 클릭 → 정책 근거
-          </span>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-body dark:text-on-dark-soft">
+              {data.cached ? "캐시" : "실시간"} · Open-Meteo · 클릭 → 정책 근거
+            </span>
+            {statusControls}
+          </div>
         </div>
         {/* 무한 슬라이드 티커 — 끊김 없이 흐르고, 호버 시 정지가 아니라 감속(InfiniteSlider 방식).
             좌우 가장자리는 mask 로 자연스럽게 페이드(별도 그라데이션 오버레이 불필요). */}

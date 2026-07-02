@@ -2948,6 +2948,112 @@ export function DemoDashboard() {
     };
   }, [slots, latestMap]);
 
+  // ── 현장 좌표 캐시(서버 DB) ─────────────────────────────────────────────────
+  // 작업자 앱 연결이 끊겨도(라이브 좌표 0) 마지막으로 기억한 현장 좌표로 기상 유지.
+  // 하루 최초 라이브 좌표를 서버가 그날 1행으로 캡처(자동은 덮지 않음), 수동 새로고침 시 재캡처.
+  const [cachedCoord, setCachedCoord] = useState<{ lat: number; lon: number } | null>(null);
+  const [locRefreshing, setLocRefreshing] = useState(false);
+  // WeatherStrip 등 하위 기상 컴포넌트 재요청 트리거(수동 새로고침 시 증가).
+  const [weatherRefreshNonce, setWeatherRefreshNonce] = useState(0);
+  const coordCapturedRef = useRef(false);
+
+  // 유효 현장 좌표 — 라이브(count>0) 우선, 없으면 캐시 좌표 fallback → 연결 끊겨도 기상 표시.
+  const effLat = fieldCoords.count > 0 ? fieldCoords.lat : cachedCoord?.lat;
+  const effLon = fieldCoords.count > 0 ? fieldCoords.lon : cachedCoord?.lon;
+  const coordSource: "live" | "cached" | "none" =
+    fieldCoords.count > 0 ? "live" : cachedCoord ? "cached" : "none";
+
+  // mount 시 서버 캐시 좌표 로드(라이브 좌표 없을 때 기상 fallback 용).
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = getSessionToken();
+        if (!token) return;
+        const res = await fetch("/api/monitor/site-coord", {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          coord?: { lat: number; lon: number } | null;
+        };
+        if (res.ok && j.ok && j.coord) setCachedCoord({ lat: j.coord.lat, lon: j.coord.lon });
+      } catch {
+        /* 서버 불가 — 캐시 없음 */
+      }
+    })();
+  }, []);
+
+  // 라이브 좌표가 처음 잡히면 서버에 하루 최초 캡처(POST). 서버가 그날 1행만 유지(자동은 덮지 않음).
+  useEffect(() => {
+    if (
+      fieldCoords.count > 0 &&
+      fieldCoords.lat !== undefined &&
+      fieldCoords.lon !== undefined &&
+      !coordCapturedRef.current
+    ) {
+      coordCapturedRef.current = true;
+      const { lat, lon, count } = fieldCoords;
+      (async () => {
+        try {
+          const token = getSessionToken();
+          if (!token) return;
+          const res = await fetch("/api/monitor/site-coord", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ lat, lon, workerCount: count }),
+          });
+          const j = (await res.json()) as {
+            ok?: boolean;
+            coord?: { lat: number; lon: number } | null;
+          };
+          if (res.ok && j.ok && j.coord) setCachedCoord({ lat: j.coord.lat, lon: j.coord.lon });
+        } catch {
+          /* 서버 불가 — 라이브 좌표만으로 표시 */
+        }
+      })();
+    }
+  }, [fieldCoords.count, fieldCoords.lat, fieldCoords.lon]);
+
+  // 수동 새로고침 — 라이브 좌표 있으면 그날 좌표 재캡처(force), 캐시 재조회, 기상 재요청.
+  const refreshFieldWeather = useCallback(async () => {
+    setLocRefreshing(true);
+    try {
+      const token = getSessionToken();
+      if (
+        token &&
+        fieldCoords.count > 0 &&
+        fieldCoords.lat !== undefined &&
+        fieldCoords.lon !== undefined
+      ) {
+        await fetch("/api/monitor/site-coord", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+          body: JSON.stringify({
+            lat: fieldCoords.lat,
+            lon: fieldCoords.lon,
+            workerCount: fieldCoords.count,
+            manual: true,
+          }),
+        }).catch(() => {});
+      }
+      if (token) {
+        const res = await fetch("/api/monitor/site-coord", {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          coord?: { lat: number; lon: number } | null;
+        };
+        if (res.ok && j.ok && j.coord) setCachedCoord({ lat: j.coord.lat, lon: j.coord.lon });
+      }
+      setWeatherRefreshNonce((n) => n + 1); // WeatherStrip 등 기상 재요청
+    } finally {
+      setLocRefreshing(false);
+    }
+  }, [fieldCoords.count, fieldCoords.lat, fieldCoords.lon]);
+
   // 표 행 = 채워진 슬롯만(빈 슬롯 등록은 상단 버튼으로 분리). 표시 순서 = 슬롯 배열 순서.
   const filledSlots = useMemo(() => {
     const out: { workerId: string; slotIndex: number }[] = [];
@@ -3393,7 +3499,7 @@ export function DemoDashboard() {
           <div className="flex min-w-0 flex-col gap-4">
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="flex-1">
-                <SafetySignalBoard lat={fieldCoords.lat} lon={fieldCoords.lon} worker={workerSignal} />
+                <SafetySignalBoard lat={effLat} lon={effLon} worker={workerSignal} />
               </div>
             </div>
             {/* 현장정보 + 국내재해사례 — 좌우 화살표 캐러셀(‹ 제목 N/M ›). 자동회전 없음·수동 전환만 */}
@@ -3459,11 +3565,11 @@ export function DemoDashboard() {
               { title: "실시간 레이더", content: <RadarRealtime /> },
               {
                 title: "태풍 진로",
-                content: <TyphoonTrack lat={fieldCoords.lat} lon={fieldCoords.lon} />,
+                content: <TyphoonTrack lat={effLat} lon={effLon} />,
               },
               {
                 title: "특보 영상",
-                content: <WarningVideoPanel lat={fieldCoords.lat} lon={fieldCoords.lon} />,
+                content: <WarningVideoPanel lat={effLat} lon={effLon} />,
               },
             ]}
           />
@@ -3471,9 +3577,13 @@ export function DemoDashboard() {
       </section>
 
       <WeatherStrip
-        lat={fieldCoords.lat}
-        lon={fieldCoords.lon}
+        lat={effLat}
+        lon={effLon}
         workerCount={fieldCoords.count}
+        coordSource={coordSource}
+        onRefresh={refreshFieldWeather}
+        refreshing={locRefreshing}
+        refreshNonce={weatherRefreshNonce}
       />
 
       {/* 작업자 모니터링 + 가스 누출 감지기 + 심장 제세동기 알림 + CCTV 관제 — 4페이지 캐러셀(‹ › 수동 전환만, 자동회전 없음) */}
@@ -3696,8 +3806,8 @@ export function DemoDashboard() {
       <HeaderCalendarPopup
         open={calendarOpen}
         onClose={() => setCalendarOpen(false)}
-        lat={fieldCoords.lat}
-        lon={fieldCoords.lon}
+        lat={effLat}
+        lon={effLon}
         workerCount={fieldCoords.count}
       />
 

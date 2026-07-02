@@ -1,7 +1,7 @@
 // 위치 기반 날씨 + 대기질 — Open-Meteo (API key 불필요, 무료, CORS 허용)
 import { NextResponse } from "next/server";
 
-import { persistWeather } from "../../../lib/db";
+import { persistWeather, persistWeatherDaily } from "../../../lib/db";
 
 type CacheEntry = {
   ts: number;
@@ -116,23 +116,25 @@ export async function GET(request: Request) {
     // workers 파라미터 부재 시 Number(null)===0 이 finite 라 0 으로 오기록되던 버그 → raw null 먼저 차단.
     const workersParam = url.searchParams.get("workers");
     const workerCountRaw = workersParam === null ? NaN : Number(workersParam);
+    const snapshot = {
+      lat,
+      lon,
+      workerCount: Number.isFinite(workerCountRaw) ? workerCountRaw : undefined,
+      weatherCode: data.current.weatherCode,
+      temperatureC: data.current.temperatureC,
+      apparentTempC: data.current.apparentTempC,
+      humidityPct: data.current.humidityPct,
+      windKmh: data.current.windKmh,
+      precipitationMm: data.current.precipitationMm,
+      uvIndex: data.current.uvIndex,
+      pm10: data.current.pm10,
+      pm25: data.current.pm25,
+      sunrise: data.daily.sunrise,
+      sunset: data.daily.sunset,
+    };
     try {
-      await persistWeather({
-        lat,
-        lon,
-        workerCount: Number.isFinite(workerCountRaw) ? workerCountRaw : undefined,
-        weatherCode: data.current.weatherCode,
-        temperatureC: data.current.temperatureC,
-        apparentTempC: data.current.apparentTempC,
-        humidityPct: data.current.humidityPct,
-        windKmh: data.current.windKmh,
-        precipitationMm: data.current.precipitationMm,
-        uvIndex: data.current.uvIndex,
-        pm10: data.current.pm10,
-        pm25: data.current.pm25,
-        sunrise: data.daily.sunrise,
-        sunset: data.daily.sunset,
-      });
+      await persistWeather(snapshot); // 상세 이력(fresh fetch 마다)
+      await persistWeatherDaily(snapshot); // 일별 대표 snapshot(하루 1행 upsert, 당일 마지막값 유지)
     } catch (persistError) {
       console.error("[weather] persist failed:", persistError);
     }

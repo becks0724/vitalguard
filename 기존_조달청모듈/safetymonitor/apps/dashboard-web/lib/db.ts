@@ -203,6 +203,40 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_sid_snapshot ON site_info_daily(snapshot_date);
 
+    -- 현장 좌표 일별 캐시 — 작업자 GPS 평균(현장 좌표)을 하루 1행 보관.
+    -- 하루 최초 라이브 좌표를 자동 캡처 → 연결 끊겨도 이 좌표로 기상 유지, 수동 새로고침 시 재캡처.
+    CREATE TABLE IF NOT EXISTS site_coord_daily (
+      id SERIAL PRIMARY KEY,
+      snapshot_date TEXT NOT NULL UNIQUE,
+      lat DOUBLE PRECISION NOT NULL,
+      lon DOUBLE PRECISION NOT NULL,
+      worker_count INTEGER,
+      recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_scd_snapshot ON site_coord_daily(snapshot_date);
+
+    -- 현장 기상 일별 대표 snapshot — 하루 1행 upsert(당일 마지막 fresh fetch 값). weather_log(상세 이력)와 별도 보관.
+    CREATE TABLE IF NOT EXISTS weather_daily (
+      id SERIAL PRIMARY KEY,
+      snapshot_date TEXT NOT NULL UNIQUE,
+      lat DOUBLE PRECISION NOT NULL,
+      lon DOUBLE PRECISION NOT NULL,
+      worker_count INTEGER,
+      weather_code INTEGER,
+      temperature_c DOUBLE PRECISION,
+      apparent_temp_c DOUBLE PRECISION,
+      humidity_pct DOUBLE PRECISION,
+      wind_kmh DOUBLE PRECISION,
+      precipitation_mm DOUBLE PRECISION,
+      uv_index DOUBLE PRECISION,
+      pm10 DOUBLE PRECISION,
+      pm25 DOUBLE PRECISION,
+      sunrise TEXT,
+      sunset TEXT,
+      recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_wd_snapshot ON weather_daily(snapshot_date);
+
     -- SOS/낙상 알림 이력 — 발생/대응(ack) 시각·대응자 보존(산업재해 자료 "알림→대응 시각" 첨부).
     -- (worker_id, type, ts) UNIQUE 로 폰 재전송·backlog flush 시 중복 방지.
     CREATE TABLE IF NOT EXISTS alerts (
@@ -1098,6 +1132,105 @@ export async function getLatestSiteInfo(): Promise<SiteInfoRow | null> {
     "SELECT * FROM site_info_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
   );
   return rows[0] ?? null;
+}
+
+// ── 현장 좌표 일별 캐시(site_coord_daily) ─────────────────────────────────────
+export type SiteCoordRow = {
+  id: number;
+  snapshot_date: string;
+  lat: number;
+  lon: number;
+  worker_count: number | null;
+  recorded_at: string;
+};
+
+// 최신 캐시 좌표 — 오늘 것 있으면 오늘, 없으면 직전 날짜(다음날 최초 연결 전까지 안정 유지).
+export async function getLatestSiteCoord(): Promise<SiteCoordRow | null> {
+  const { rows } = await q<SiteCoordRow>(
+    "SELECT * FROM site_coord_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
+  );
+  return rows[0] ?? null;
+}
+
+// 현장 좌표를 그날(KST) 1행으로 캡처.
+// force=false(자동): 그날 행 없을 때만 INSERT = 하루 최초 캡처(이후 라이브 변동으로 덮지 않음).
+// force=true(수동 새로고침): 그날 행을 현재 좌표로 UPDATE(재캡처). 반환 = 그날 유효 행.
+export async function captureSiteCoordDaily(input: {
+  lat: number;
+  lon: number;
+  workerCount?: number;
+  force?: boolean;
+}): Promise<SiteCoordRow> {
+  const snapshotDate = ymdInKst();
+  const conflict = input.force
+    ? `DO UPDATE SET lat = excluded.lat, lon = excluded.lon,
+         worker_count = excluded.worker_count, recorded_at = excluded.recorded_at`
+    : "DO NOTHING";
+  await q(
+    `INSERT INTO site_coord_daily (snapshot_date, lat, lon, worker_count, recorded_at)
+     VALUES ($1, $2, $3, $4, ${NOW_ISO})
+     ON CONFLICT (snapshot_date) ${conflict}`,
+    [snapshotDate, input.lat, input.lon, input.workerCount ?? null],
+  );
+  // DO NOTHING 이면 RETURNING 이 비므로 그날 행을 별도 조회.
+  const { rows } = await q<SiteCoordRow>(
+    "SELECT * FROM site_coord_daily WHERE snapshot_date = $1",
+    [snapshotDate],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("site_coord 캡처 직후 조회 실패");
+  return row;
+}
+
+// 현장 기상 일별 대표 snapshot upsert — 당일 마지막 fresh fetch 값이 그날 대표로 유지. weather_log 상세 이력과 별도 보관.
+export async function persistWeatherDaily(input: {
+  lat: number;
+  lon: number;
+  workerCount?: number;
+  weatherCode?: number;
+  temperatureC?: number;
+  apparentTempC?: number;
+  humidityPct?: number;
+  windKmh?: number;
+  precipitationMm?: number;
+  uvIndex?: number;
+  pm10?: number;
+  pm25?: number;
+  sunrise?: string;
+  sunset?: string;
+}): Promise<void> {
+  const snapshotDate = ymdInKst();
+  await q(
+    `INSERT INTO weather_daily (
+       snapshot_date, lat, lon, worker_count, weather_code, temperature_c,
+       apparent_temp_c, humidity_pct, wind_kmh, precipitation_mm, uv_index,
+       pm10, pm25, sunrise, sunset, recorded_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, ${NOW_ISO})
+     ON CONFLICT (snapshot_date) DO UPDATE SET
+       lat = excluded.lat, lon = excluded.lon, worker_count = excluded.worker_count,
+       weather_code = excluded.weather_code, temperature_c = excluded.temperature_c,
+       apparent_temp_c = excluded.apparent_temp_c, humidity_pct = excluded.humidity_pct,
+       wind_kmh = excluded.wind_kmh, precipitation_mm = excluded.precipitation_mm,
+       uv_index = excluded.uv_index, pm10 = excluded.pm10, pm25 = excluded.pm25,
+       sunrise = excluded.sunrise, sunset = excluded.sunset, recorded_at = excluded.recorded_at`,
+    [
+      snapshotDate,
+      input.lat,
+      input.lon,
+      input.workerCount ?? null,
+      input.weatherCode ?? null,
+      input.temperatureC ?? null,
+      input.apparentTempC ?? null,
+      input.humidityPct ?? null,
+      input.windKmh ?? null,
+      input.precipitationMm ?? null,
+      input.uvIndex ?? null,
+      input.pm10 ?? null,
+      input.pm25 ?? null,
+      input.sunrise ?? null,
+      input.sunset ?? null,
+    ],
+  );
 }
 
 export async function exportSiteInfoLogs(opts: {
