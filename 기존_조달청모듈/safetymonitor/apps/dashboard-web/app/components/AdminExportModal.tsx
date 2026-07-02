@@ -3,8 +3,9 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import type { WorkerSummary, ExportRow } from "../../lib/db";
+import type { WorkerSummary, ExportRow, EnvAlertAckRow } from "../../lib/db";
 import type { Status } from "../../lib/severity";
+import { SEVERITY_BADGE_CLASS, SEVERITY_LABEL } from "../../lib/weather-rules";
 
 type PreviewRow = ExportRow & {
   hr_status: Status;
@@ -651,8 +652,128 @@ function ExportPanel({
         </div>
       </section>
 
+      <EnvAlertAckPanel token={token} onAuthFail={onAuthFail} />
+
       <WorkerMergePanel token={token} onAuthFail={onAuthFail} />
     </div>
+  );
+}
+
+// 확인/조치 기록 시각 표시 — ISO(KST) → "MM-DD HH:MM"(24h).
+function formatAckTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+// 현장 환경·기상특보 확인/조치 이력 — GET /api/env-alert/ack(최근 100건, 세션 인증) 열람 전용.
+// 낙상 ML 수집 패널 자리를 대체(2026-07-02). 관제자가 경보 팝업을 확인/조치한 감사 기록 표시.
+function EnvAlertAckPanel({
+  token,
+  onAuthFail,
+}: {
+  token: string;
+  onAuthFail: () => void;
+}) {
+  const [acks, setAcks] = useState<EnvAlertAckRow[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/env-alert/ack", {
+        headers: { authorization: `Basic ${token}` },
+      });
+      if (res.status === 401) {
+        onAuthFail();
+        return;
+      }
+      const j = (await res.json()) as { ok?: boolean; acks?: EnvAlertAckRow[] };
+      if (j.ok && j.acks) setAcks(j.acks);
+    } catch {
+      /* 표시 전용 — 무시 */
+    } finally {
+      setBusy(false);
+    }
+  }, [token, onAuthFail]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const sevLabel = (s: string) =>
+    s === "danger" ? SEVERITY_LABEL.danger : s === "caution" ? SEVERITY_LABEL.caution : s;
+  const sevCls = (s: string) =>
+    s === "danger"
+      ? SEVERITY_BADGE_CLASS.danger
+      : s === "caution"
+        ? SEVERITY_BADGE_CLASS.caution
+        : SEVERITY_BADGE_CLASS.normal;
+
+  return (
+    <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
+      <div className="mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">환경·기상특보 확인/조치 이력</h3>
+        <span className="ml-auto rounded-full border border-hairline bg-canvas px-2 py-0.5 text-[10px] font-medium text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-300">
+          최근 {acks.length}건
+        </span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={busy}
+          className="rounded border border-hairline px-2 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
+        >
+          {busy ? "불러오는 중…" : "새로고침"}
+        </button>
+      </div>
+      <p className="mb-3 text-[11px] text-muted">
+        관제자가 현장 환경 경보(체감온도·미세먼지 등)와 기상특보 팝업을 확인/조치한 기록입니다. KOSHA 보고·문제 추적용 감사 이력.
+      </p>
+      {acks.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted">확인/조치 기록이 없습니다.</p>
+      ) : (
+        <div className="max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
+          <table className="w-full text-left text-[11px]">
+            <thead className="sticky top-0 bg-surface-soft text-muted dark:bg-canvas/[0.04]">
+              <tr>
+                <th className="px-2 py-1.5 font-medium">시각</th>
+                <th className="px-2 py-1.5 font-medium">구분</th>
+                <th className="px-2 py-1.5 font-medium">항목</th>
+                <th className="px-2 py-1.5 font-medium">값</th>
+                <th className="px-2 py-1.5 font-medium">심각도</th>
+                <th className="px-2 py-1.5 font-medium">상태</th>
+                <th className="px-2 py-1.5 font-medium">확인자</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline dark:divide-white/10">
+              {acks.map((a) => (
+                <tr key={a.id} className="text-ink dark:text-zinc-200">
+                  <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">{formatAckTime(a.ack_at)}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    {a.item_key.startsWith("kma:") ? "기상특보" : "정책"}
+                  </td>
+                  <td className="px-2 py-1.5">{a.item_label}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">{a.value ?? "—"}</td>
+                  <td className="px-2 py-1.5">
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${sevCls(a.severity)}`}>
+                      {sevLabel(a.severity)}
+                    </span>
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-1.5">{a.status}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">{a.ack_by}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 

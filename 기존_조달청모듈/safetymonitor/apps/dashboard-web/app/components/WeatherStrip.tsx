@@ -17,6 +17,7 @@ import {
   infoEvaluation,
   type RuleEvaluation,
   type RuleSeverity,
+  type ThresholdStep,
 } from "../../lib/weather-rules";
 import { getSessionToken } from "./LoginGate";
 import { WeatherAlertToast } from "./WeatherAlertToast";
@@ -97,6 +98,50 @@ type Props = {
 // 현장 환경 경보 확인/조치 → 억제 상태(항목→확인 시 심각도) localStorage 키. 리마운트·임계 흔들림에도 유지.
 const ENV_ACK_KEY = "safetymonitor.envAck.v1";
 const SEV_RANK: Record<RuleSeverity, number> = { normal: 0, caution: 1, danger: 2 };
+
+// 기상특보 종류별 현장 대응 안내(확인/조치 팝업 currentStep.action). type 에 종류명이 포함되면 매칭.
+const KMA_WARN_ACTION: { match: string; action: string }[] = [
+  { match: "강풍", action: "비계·거푸집·크레인 등 고소·양중 작업 중지 검토. 자재 결박·낙하물 방지." },
+  { match: "태풍", action: "고소·양중·해안 작업 전면 중지 검토. 가설물 결박·대피 계획 점검." },
+  { match: "호우", action: "굴착·사면·지하 작업 침수·붕괴 주의. 배수·전기설비 감전 예방." },
+  { match: "대설", action: "지붕·고소 작업 중지. 제설·미끄럼 방지, 구조물 적설 하중 점검." },
+  { match: "폭염", action: "옥외 중작업 시간 조정·휴식 강화. 그늘·물·염분 비치(체감온도 항목 연동)." },
+  { match: "한파", action: "옥외 작업 시간 단축·온열 보호. 동결·미끄럼 주의." },
+  { match: "황사", action: "미세먼지 마스크 착용. 옥외 정밀·호흡 부담 작업 자제(미세먼지 항목 연동)." },
+  { match: "건조", action: "화기·용접 작업 주의. 소화기 비치·불티 비산 방지." },
+  { match: "풍랑", action: "해상·해안 인접 작업 중지 검토." },
+];
+function kmaWarnAction(type: string): string {
+  const hit = KMA_WARN_ACTION.find((k) => type.includes(k.match));
+  return hit ? hit.action : "기상청 특보 대응 지침에 따라 해당 작업 안전조치·중지를 검토하세요.";
+}
+
+// 기상청 발효 특보(경보/주의보) → 확인/조치 팝업용 RuleEvaluation 목록.
+// 경보=위험(danger)·주의보=주의(caution). itemKey=`kma:<종류>` 로 정책 경보와 같은 억제·DB 기록 파이프라인 재사용.
+function kmaToEvaluations(kma: KmaWarningResponse | null): RuleEvaluation[] {
+  if (!kma || kma.warnings.length === 0) return [];
+  return kma.warnings.map((w) => {
+    const severity: RuleSeverity = w.level === "경보" ? "danger" : "caution";
+    const regionText = w.regions.length > 0 ? w.regions.join(", ") : kma.sido;
+    const step: ThresholdStep = {
+      severity,
+      binding: "legal",
+      label: `${w.type} 발효 — ${regionText}`,
+      action: kmaWarnAction(w.type),
+      source: "기상청 기상특보 (WthrWrnInfoService)",
+    };
+    return {
+      itemKey: `kma:${w.type}`,
+      itemLabel: `기상특보 · ${w.type}`,
+      currentValue: w.level,
+      currentSeverity: severity,
+      currentStep: step,
+      steps: [step],
+      baseline: `${kma.sido} 발효 특보`,
+      notes: `현장 시·도(${kma.sido})에 발효 중인 기상청 ${w.type}. 확인/조치 시 악화 전까지 재알림이 억제됩니다.`,
+    };
+  });
+}
 
 export function WeatherStrip({
   lat,
@@ -279,16 +324,20 @@ export function WeatherStrip({
   }, []);
 
   useEffect(() => {
-    if (!evaluations) return;
-    const policy = [
-      evaluations.apparentTemp,
-      evaluations.discomfort,
-      evaluations.pm25,
-      evaluations.wind,
-      evaluations.uv,
-      evaluations.precipitation,
-    ];
-    const triggered = policy.filter((e) => e.currentSeverity !== "normal");
+    // 정책 경보(체감온도 등 6종) + KMA 발효 기상특보를 같은 확인/조치 팝업 대상으로 통합.
+    const policy = evaluations
+      ? [
+          evaluations.apparentTemp,
+          evaluations.discomfort,
+          evaluations.pm25,
+          evaluations.wind,
+          evaluations.uv,
+          evaluations.precipitation,
+        ]
+      : [];
+    const all = [...policy, ...kmaToEvaluations(kma)];
+    if (all.length === 0) return;
+    const triggered = all.filter((e) => e.currentSeverity !== "normal");
     const triggeredKeys = new Set(triggered.map((e) => e.itemKey));
     // 정상으로 돌아온 항목은 기록에서 제거 → 다음에 다시 임계면 재알림
     for (const key of [...alertedRef.current.keys()]) {
@@ -305,7 +354,7 @@ export function WeatherStrip({
       triggered.forEach((e) => alertedRef.current.set(e.itemKey, e.currentSeverity));
       setAlerts(visible);
     }
-  }, [evaluations]);
+  }, [evaluations, kma]);
 
   // 확인/조치완료 — 즉시 억제(localStorage 영속) + 팝업에서 제거 + DB 감사 기록(세션 인증).
   const handleAck = useCallback(
