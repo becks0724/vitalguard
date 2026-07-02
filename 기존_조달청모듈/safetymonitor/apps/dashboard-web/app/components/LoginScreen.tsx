@@ -639,16 +639,22 @@ export function LoginScreen({
     [gCompany, gPhone, submitting, t],
   );
 
-  // 현장 선택 완료 → 선택한 현장정보를 저장하고 대시보드 입장.
+  // 현장 선택 완료 → 대시보드 입장. 현장정보 프리셋은 "다른 현장으로 전환할 때만" 적용한다.
+  // 같은 현장(특히 메인) 재선택 시 프리셋으로 덮어쓰지 않아, 관리자 메뉴에서 저장한 값이
+  // 다음 로그인에 원복되지 않는다(진실 소스=서버 DB, 대시보드가 mount 시 우선 로드).
   const handleSiteConfirm = useCallback(
-    (info: SiteInfo) => {
+    (info: SiteInfo, siteId: string) => {
       try {
-        window.localStorage.setItem(
-          "safetymonitor.site-info.v1",
-          JSON.stringify(info),
-        );
+        const prevId = window.localStorage.getItem("safetymonitor.site-id.v1");
+        if (prevId !== siteId) {
+          window.localStorage.setItem(
+            "safetymonitor.site-info.v1",
+            JSON.stringify(info),
+          );
+        }
+        window.localStorage.setItem("safetymonitor.site-id.v1", siteId);
       } catch {
-        // localStorage 불가 환경은 저장 생략(대시보드 기본 현장정보 유지)
+        // localStorage 불가 환경은 저장 생략(대시보드 기본/서버 현장정보 유지)
       }
       if (pendingToken) onLogin(pendingToken, pendingRole ?? undefined);
     },

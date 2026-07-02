@@ -250,6 +250,8 @@ function workerStatus(sample?: VitalSample): WorkerStatus {
 const FOCUS_CLASS =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 const SITE_INFO_STORAGE_KEY = "safetymonitor.site-info.v1";
+// 로그인에서 선택한 현장 id("main" | "demo-…"). 메인 현장만 서버 DB(관리자 저장값)를 우선 로드한다.
+const SITE_ID_STORAGE_KEY = "safetymonitor.site-id.v1";
 // 마지막 사고 시각 — SOS 후 보호자/119 연락 시 기록. 무사고 카운터는 이 시각부터 다시 셈.
 const ACCIDENT_STORAGE_KEY = "safetymonitor.last-accident.v1";
 const DEFAULT_SITE_INFO: SiteInfo = {
@@ -2571,11 +2573,57 @@ export function DemoDashboard() {
         /* 서버 불가 — localStorage 값 유지 */
       }
     })();
+    // 현장정보 — 메인 현장이면 서버 DB(관리자 저장값)를 진실 소스로 우선 로드.
+    // 데모 현장은 로그인 프리셋 유지(DB 단일 snapshot 이 데모 선택을 덮어쓰지 않게).
+    (async () => {
+      try {
+        const siteId = window.localStorage.getItem(SITE_ID_STORAGE_KEY);
+        if (siteId && siteId !== "main") return; // 데모 현장 선택 시 DB 미적용
+        const token = getSessionToken();
+        if (!token) return; // 세션 없으면(비관리자 등) localStorage 유지
+        const res = await fetch("/api/admin/site-info", {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        if (!res.ok) return; // 401 등 → localStorage 유지
+        const j = (await res.json()) as {
+          ok?: boolean;
+          siteInfo?: {
+            company_name?: string;
+            site_name?: string;
+            construction_type?: string;
+            address?: string;
+            start_date?: string;
+            completion_date?: string;
+          } | null;
+        };
+        const s = j.siteInfo;
+        if (j.ok && s && (s.company_name || s.site_name || s.start_date)) {
+          const next: SiteInfo = {
+            companyName: s.company_name ?? "",
+            siteName: s.site_name ?? "",
+            constructionType: s.construction_type ?? "",
+            address: s.address ?? "",
+            startDate: s.start_date ?? "",
+            completionDate: s.completion_date ?? "",
+            noticeId: loadSiteInfo().noticeId, // DB 미저장 필드는 로컬 프리셋 값 보존
+          };
+          setSiteInfo(next);
+          saveSiteInfo(next); // 로컬 캐시도 서버와 동기화
+        }
+      } catch {
+        /* 서버 불가 — localStorage 값 유지 */
+      }
+    })();
   }, []);
 
   const handleSiteInfoSave = useCallback((next: SiteInfo) => {
-    setSiteInfo(next);
-    saveSiteInfo(next);
+    // 관리자 저장값(DB)은 noticeId 를 담지 않으므로 기존 값 보존(안전관리비 검증 매칭 키).
+    setSiteInfo((prev) => {
+      const merged: SiteInfo = { ...next, noticeId: next.noticeId ?? prev.noticeId };
+      saveSiteInfo(merged);
+      return merged;
+    });
   }, []);
 
   // SOS 후 보호자/119 연락 시 사고로 기록 → 무사고 카운터 초기화.

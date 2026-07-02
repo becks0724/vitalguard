@@ -127,7 +127,7 @@ export function LoginSiteSelect({
   onBack,
 }: {
   lang: Lang;
-  onConfirm: (info: SiteInfo) => void;
+  onConfirm: (info: SiteInfo, siteId: string) => void;
   onBack: () => void;
 }) {
   const t = TX[lang];
@@ -184,7 +184,7 @@ export function LoginSiteSelect({
         type="button"
         disabled={!chosen}
         onClick={() => {
-          if (chosen) onConfirm(chosen.info);
+          if (chosen) onConfirm(chosen.info, chosen.id);
         }}
         className="mt-7 w-full rounded-pill bg-white px-4 py-3 text-sm font-semibold text-primary shadow-lg transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-white/40 disabled:text-white/70"
       >
