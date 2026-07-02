@@ -29,7 +29,6 @@ type YtResp = {
 
 type Active = {
   type: string;
-  level?: "경보" | "주의보";
   kind: "warning" | "preliminary";
   severity: "danger" | "caution";
 };
@@ -38,9 +37,9 @@ type Active = {
 function pickActive(kma: KmaResp): Active | null {
   const w = kma.warnings ?? [];
   const danger = w.find((x) => x.level === "경보");
-  if (danger) return { type: danger.type, level: "경보", kind: "warning", severity: "danger" };
+  if (danger) return { type: danger.type, kind: "warning", severity: "danger" };
   const caution = w.find((x) => x.level === "주의보");
-  if (caution) return { type: caution.type, level: "주의보", kind: "warning", severity: "caution" };
+  if (caution) return { type: caution.type, kind: "warning", severity: "caution" };
   const p = (kma.preliminary ?? [])[0];
   if (p) return { type: p.type, kind: "preliminary", severity: "caution" };
   return null;
@@ -108,7 +107,6 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
           return;
         }
         const params = new URLSearchParams({ type: act.type, kind: act.kind });
-        if (act.level) params.set("level", act.level);
         const ytRes = await fetch(`/api/youtube-warning-videos?${params.toString()}`, {
           cache: "no-store",
         });
@@ -134,7 +132,7 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
     const label =
       active.kind === "preliminary"
         ? `${active.type} 예비특보`
-        : `${active.type}${active.level ?? ""}`;
+        : active.type;
     const cls =
       active.severity === "danger"
         ? "bg-red-500 text-white"

@@ -63,11 +63,11 @@ function matchesNews(channelTitle: string, names: string[]): boolean {
 // 예: 호우경보 / 강풍주의보 / 태풍 예비특보. 지역은 전국(regionCode=KR)으로 한정 안 함.
 export function buildQuery(
   type: string,
-  level?: string,
   kind: "warning" | "preliminary" = "warning",
 ): string {
   if (kind === "preliminary") return `${type} 예비특보`;
-  return `${type}${level ?? ""}`.trim();
+  // KMA type 은 이미 등급 포함(예: 강풍경보). 등급을 따로 붙이지 않는다(중복 방지).
+  return type.trim();
 }
 
 type SearchItem = {
