@@ -45,7 +45,7 @@ function coreSeverity(skinTempC?: number): Severity {
 }
 
 const TONE: Record<Severity, string> = {
-  idle: "text-zinc-500",
+  idle: "text-muted",
   normal: "text-emerald-600 dark:text-emerald-300",
   caution: "text-amber-600 vital-blink-caution dark:text-amber-300",
   danger: "text-red-600 vital-blink-danger dark:text-red-400",
@@ -200,12 +200,12 @@ export function SosAlertModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-lg border border-red-500/70 bg-canvas dark:border-red-500/60 dark:bg-surface-dark"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-red-500/60 bg-canvas shadow-xl dark:border-red-500/50 dark:bg-surface-dark"
       >
-        <header className="flex items-center justify-between gap-3 border-b border-red-500/40 bg-red-100 px-5 py-3 dark:bg-red-500/10">
+        <header className="flex items-center justify-between gap-3 border-b border-red-500/30 bg-red-50 px-5 py-3 dark:border-red-500/30 dark:bg-red-500/10">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-block h-3 w-3 shrink-0 rounded-full bg-red-500 vital-blink-danger ring-1 ring-red-300 dark:ring-white/30" />
-            <h2 className="truncate text-base font-bold text-red-700 dark:text-red-200">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 vital-blink-danger ring-1 ring-red-300 dark:ring-white/30" />
+            <h2 className="truncate font-display text-base font-bold tracking-tight text-red-700 dark:text-red-200">
               {reason === "fall" ? "낙상 긴급 알람" : reason === "vital" ? "생체 위험 경보" : "SOS 긴급 알람"}
             </h2>
           </div>
@@ -235,7 +235,7 @@ export function SosAlertModal({
               type="button"
               onClick={onDismiss}
               aria-label="닫기"
-              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-400 dark:hover:bg-white/10"
+              className="rounded-md border border-hairline px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-surface-strong dark:border-white/15 dark:text-on-dark-soft dark:hover:bg-white/10"
             >
               닫기
             </button>
@@ -244,22 +244,22 @@ export function SosAlertModal({
 
         <div className="space-y-4 px-5 py-4">
           <section>
-            <h3 className="text-xs text-zinc-600 dark:text-zinc-400">작업자</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">작업자</h3>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-2xl font-bold text-zinc-900 dark:text-white">
+              <span className="font-display text-2xl font-bold tracking-tight text-ink dark:text-on-dark">
                 {sample.workerName?.trim() || sample.workerId}
               </span>
               {sample.employeeId?.trim() && (
-                <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                  <span className="mr-1 text-zinc-500">사원번호</span>
+                <span className="text-sm text-muted dark:text-on-dark-soft">
+                  <span className="mr-1 text-muted-soft">사원번호</span>
                   <span className="font-mono">{sample.employeeId.trim()}</span>
                 </span>
               )}
             </div>
-            <p className="mt-1 text-xs text-zinc-500">
-              <span className="text-zinc-500">소속</span>{" "}
-              <span className="text-zinc-700 dark:text-zinc-300">{COMPANY_NAME}</span>
-              <span className="mx-2 text-zinc-400 dark:text-zinc-700">·</span>
+            <p className="mt-1 text-xs text-muted">
+              <span className="text-muted-soft">소속</span>{" "}
+              <span className="text-body dark:text-on-dark-soft">{COMPANY_NAME}</span>
+              <span className="mx-2 text-muted-soft">·</span>
               {reason === "fall" ? "낙상 감지 시각" : reason === "vital" ? "위험 감지 시각" : "SOS 발신 시각"}{" "}
               <span className="font-mono">{formatTime(sample.ts)}</span>
             </p>
@@ -271,8 +271,8 @@ export function SosAlertModal({
           </section>
 
           <section>
-            <h3 className="text-xs text-zinc-600 dark:text-zinc-400">최신 생체 데이터</h3>
-            <dl className="mt-2 grid grid-cols-3 gap-2 rounded border border-zinc-200 bg-zinc-50 p-3 text-center dark:border-white/10 dark:bg-white/[0.02]">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">최신 생체 데이터</h3>
+            <dl className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-hairline bg-surface-soft p-3 text-center dark:border-white/10 dark:bg-canvas/[0.02]">
               <MetricCell label="심박" value={sample.heartRate} unit="bpm" severity={hrSev} decimals={0} />
               <MetricCell label="산소포화도" value={sample.spo2} unit="%" severity={spo2Sev} decimals={0} />
               <MetricCell
@@ -291,25 +291,25 @@ export function SosAlertModal({
           </section>
 
           <section>
-            <h3 className="text-xs text-zinc-600 dark:text-zinc-400">
-              현장 위치 <span className="text-zinc-500">(작업자 GPS 좌표)</span>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">
+              현장 위치 <span className="font-normal normal-case tracking-normal text-muted-soft">(작업자 GPS 좌표)</span>
             </h3>
             {mapsLink ? (
               <div className="mt-1 flex flex-col gap-1">
-                <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300">
+                <span className="font-mono text-xs text-body dark:text-on-dark-soft">
                   위도 {sample.latitude!.toFixed(6)} · 경도 {sample.longitude!.toFixed(6)}
                 </span>
                 <a
                   href={mapsLink}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="text-xs text-cyan-700 underline decoration-cyan-500/60 underline-offset-2 hover:text-cyan-800 dark:text-cyan-300 dark:decoration-cyan-400/40 dark:hover:text-cyan-200"
+                  className="text-xs font-medium text-primary underline underline-offset-2 transition hover:opacity-80"
                 >
                   🗺️ 지도에서 보기 (Google Maps)
                 </a>
               </div>
             ) : (
-              <p className="mt-1 text-xs text-zinc-500">
+              <p className="mt-1 text-xs text-muted">
                 좌표 미확보 — 작업자 폰의 위치 권한 또는 GPS 수신 상태 확인 필요
               </p>
             )}
@@ -322,11 +322,11 @@ export function SosAlertModal({
           />
 
           <section>
-            <h3 className="text-xs text-zinc-600 dark:text-zinc-400">보호자 연락처</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">보호자 연락처</h3>
             <div className="mt-1 flex items-baseline justify-between gap-2">
-              <span className="text-sm text-zinc-900 dark:text-white">{guardianName}</span>
+              <span className="text-sm text-ink dark:text-on-dark">{guardianName}</span>
               {guardianPhone && (
-                <span className="font-mono text-sm text-zinc-700 dark:text-zinc-300">{guardianPhone}</span>
+                <span className="font-mono text-sm text-body dark:text-on-dark-soft">{guardianPhone}</span>
               )}
             </div>
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -349,8 +349,8 @@ export function SosAlertModal({
           </section>
 
           <section>
-            <h3 className="text-xs text-zinc-600 dark:text-zinc-400">119 신고</h3>
-            <p className="mt-1 text-xs text-zinc-500">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">119 신고</h3>
+            <p className="mt-1 text-xs text-muted">
               산업안전 사고 시 응급 의료 — 자동 119 연계는 2차 (현재는 수동)
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2">
@@ -405,13 +405,13 @@ function MetricCell({
 }) {
   return (
     <div>
-      <div className="text-[10px] text-zinc-600 dark:text-zinc-400">{label}</div>
+      <div className="text-[10px] text-muted dark:text-on-dark-soft">{label}</div>
       <div className={`mt-1 text-xl font-semibold tabular-nums ${TONE[severity]}`}>
         {value === undefined ? "--" : value.toFixed(decimals)}
-        <span className="ml-1 text-[10px] font-normal text-zinc-600 dark:text-zinc-400">{unit}</span>
+        <span className="ml-1 text-[10px] font-normal text-muted dark:text-on-dark-soft">{unit}</span>
       </div>
       {footnote && (
-        <div className="mt-0.5 text-[10px] text-zinc-500">{footnote}</div>
+        <div className="mt-0.5 text-[10px] text-muted-soft">{footnote}</div>
       )}
     </div>
   );
@@ -442,10 +442,10 @@ function ContactButton({
       ? `sms:${sanitized}?body=${encodeURIComponent(body)}`
       : `${kind}:${sanitized}`;
   const cls = disabled
-    ? "cursor-not-allowed border-zinc-200 bg-zinc-100 text-zinc-400 dark:border-white/10 dark:bg-white/5 dark:text-zinc-500"
+    ? "cursor-not-allowed border-hairline bg-surface-soft text-muted-soft dark:border-white/10 dark:bg-white/5 dark:text-muted"
     : emphasis
       ? "border-red-500/70 bg-red-100 text-red-800 hover:bg-red-200 dark:border-red-500/60 dark:bg-red-500/15 dark:text-red-100 dark:hover:bg-red-500/25"
-      : "border-cyan-500/60 bg-cyan-100 text-cyan-800 hover:bg-cyan-200 dark:border-cyan-400/50 dark:bg-cyan-400/10 dark:text-cyan-100 dark:hover:bg-cyan-400/20";
+      : "border-hairline bg-surface-strong text-body hover:bg-surface-card dark:border-white/15 dark:bg-white/5 dark:text-on-dark-soft dark:hover:bg-white/10";
 
   return (
     <a
@@ -453,7 +453,7 @@ function ContactButton({
       onClick={disabled ? (e) => e.preventDefault() : () => onContact?.()}
       aria-disabled={disabled}
       title={body ? `SMS 미리보기:\n\n${body}` : undefined}
-      className={`flex items-center justify-center gap-1 rounded border px-3 py-2 text-sm font-semibold transition ${cls}`}
+      className={`flex items-center justify-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${cls}`}
     >
       {label}
     </a>
