@@ -1,7 +1,7 @@
-// 네이버 지역검색(openapi.naver.com/v1/search/local) 클라이언트 — 현장 지역+진료과로 인근 병원 검색.
-// 정책: Client ID/Secret 서버 보관, 진료과별 검색(쿼리당 최대 5건)→현장 GPS 거리정렬·중복제거, 지역별 6h 캐시.
-//   - NAVER_SEARCH_CLIENT_ID/SECRET 미설정 → configured:false (대시보드 무중단, 패널이 키 미설정 안내).
-//   - 지역검색은 좌표를 안 받으므로 "지역명 진료과" 키워드로 검색하고 거리·반경은 반환 좌표로 계산.
+// 네이버 지역검색(NCP NAVER API HUB · naverapihub.apigw.ntruss.com/search/v1/local) — 현장 지역+진료과로 인근 병원 검색.
+// 정책: Client ID/Secret(NCP APIGW 키·헤더 X-NCP-APIGW-API-KEY-ID/KEY) 서버 보관, 진료과별 검색(쿼리당 최대 5건)→현장 GPS 거리정렬·중복제거, 지역별 6h 캐시.
+//   - NAVER_SEARCH_CLIENT_ID/SECRET(= NCP API HUB Client ID/Secret) 미설정 → configured:false (대시보드 무중단, 패널이 키 미설정 안내).
+//   - 지역검색은 좌표를 안 받으므로 "지역명 진료과" 키워드로 검색하고 거리·반경은 반환 좌표(mapx/mapy=WGS84×1e7)로 계산.
 import "server-only";
 
 import {
@@ -37,9 +37,9 @@ async function searchOne(
   query: string,
   headers: Record<string, string>,
 ): Promise<{ items: NaverLocalRaw[]; status: number }> {
-  const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(
+  const url = `https://naverapihub.apigw.ntruss.com/search/v1/local?query=${encodeURIComponent(
     query,
-  )}&display=${PER_DEPT}&sort=comment`;
+  )}&display=${PER_DEPT}&start=1&sort=comment&format=json`;
   try {
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
     if (!res.ok) return { items: [], status: res.status };
@@ -91,8 +91,8 @@ export async function searchNearbyHospitals(params: {
       ? [...EMERGENCY_DEPARTMENTS]
       : [...DEPARTMENTS];
   const headers = {
-    "X-Naver-Client-Id": c.id,
-    "X-Naver-Client-Secret": c.secret,
+    "X-NCP-APIGW-API-KEY-ID": c.id,
+    "X-NCP-APIGW-API-KEY": c.secret,
   };
   const origin =
     Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : undefined;
