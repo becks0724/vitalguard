@@ -32,12 +32,8 @@ export function WidgetCarousel({
     return () => window.clearInterval(t);
   }, [n, intervalMs, autoRotate]);
 
-  const go = (dir: 1 | -1) => setIdx((i) => (i + dir + n) % n);
   const cur = pages[idx];
   if (!cur) return null;
-
-  const arrowClass =
-    "flex h-6 w-6 shrink-0 items-center justify-center rounded-pill bg-surface-strong text-sm leading-none text-ink active:scale-90 disabled:opacity-30 dark:bg-surface-dark dark:text-on-dark";
 
   return (
     <div
@@ -49,22 +45,40 @@ export function WidgetCarousel({
         hovered.current = false;
       }}
     >
-      {/* 컨트롤 바 — ‹ 제목 N/M › */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-2 py-1 dark:border-white/10">
-        <button type="button" onClick={() => go(-1)} aria-label="이전 위젯" disabled={n <= 1} className={arrowClass}>
-          ‹
-        </button>
+      {/* 탭 바 — 튜브라이트: 각 페이지 클릭 탭 + 활성 탭 발광 인디케이터(레퍼런스 무의존성 재현) */}
+      <div className="flex shrink-0 items-center gap-1.5 border-b border-hairline px-1.5 py-1 dark:border-white/10">
         {cur.headerAccessory && <div className="shrink-0">{cur.headerAccessory}</div>}
-        <span className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-ink dark:text-on-dark">
-          {cur.title}
-        </span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className="font-mono text-[11px] text-muted dark:text-on-dark-soft">
-            {idx + 1}/{n}
-          </span>
-          <button type="button" onClick={() => go(1)} aria-label="다음 위젯" disabled={n <= 1} className={arrowClass}>
-            ›
-          </button>
+        <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto" role="tablist">
+          {pages.map((p, i) => {
+            const active = i === idx;
+            return (
+              <button
+                key={i}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={p.title}
+                onClick={() => setIdx(i)}
+                className={`relative shrink-0 rounded-pill px-2.5 py-1 text-xs font-semibold transition-colors ${
+                  active
+                    ? "text-primary"
+                    : "text-muted hover:text-ink dark:text-on-dark-soft dark:hover:text-on-dark"
+                }`}
+              >
+                {active && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute inset-0 rounded-pill bg-surface-strong dark:bg-white/10"
+                  >
+                    {/* 튜브라이트 램프 — 하단 중앙 발광 바 + 블러 글로우 */}
+                    <span className="absolute bottom-0 left-1/2 h-[3px] w-5 -translate-x-1/2 rounded-full bg-primary" />
+                    <span className="absolute bottom-0 left-1/2 h-[3px] w-6 -translate-x-1/2 rounded-full bg-primary opacity-60 blur-[4px]" />
+                  </span>
+                )}
+                <span className="relative">{p.title}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
       {/* 본문 — 좌우 슬라이드 전환 */}
