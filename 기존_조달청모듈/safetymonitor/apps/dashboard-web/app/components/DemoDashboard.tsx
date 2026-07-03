@@ -44,6 +44,7 @@ import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
 import { HospitalPanel } from "./HospitalPanel";
+import { NewsPanel } from "./NewsPanel";
 import { extractRegion } from "../lib/hospital";
 import {
   AedAlertTable,
@@ -3652,6 +3653,10 @@ export function DemoDashboard() {
                 content: (
                   <HospitalPanel lat={effLat} lon={effLon} region={siteRegion} />
                 ),
+              },
+              {
+                title: "산업 안전뉴스",
+                content: <NewsPanel />,
               },
             ]}
           />
