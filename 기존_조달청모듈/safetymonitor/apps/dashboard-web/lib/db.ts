@@ -1152,6 +1152,33 @@ export async function getLatestSiteCoord(): Promise<SiteCoordRow | null> {
   return rows[0] ?? null;
 }
 
+// 일별 대표 기상 행(weather_daily) — Open-Meteo 업스트림 장애 시 폴백 소스로 사용.
+export type WeatherDailyRow = {
+  snapshot_date: string;
+  lat: number;
+  lon: number;
+  weather_code: number | null;
+  temperature_c: number | null;
+  apparent_temp_c: number | null;
+  humidity_pct: number | null;
+  wind_kmh: number | null;
+  precipitation_mm: number | null;
+  uv_index: number | null;
+  pm10: number | null;
+  pm25: number | null;
+  sunrise: string | null;
+  sunset: string | null;
+  recorded_at: string;
+};
+
+// 마지막으로 저장된 일별 대표 기상 — 업스트림(Open-Meteo 예보) 장애+인메모리 캐시 소멸(재배포) 시 폴백.
+export async function getLatestWeatherDaily(): Promise<WeatherDailyRow | null> {
+  const { rows } = await q<WeatherDailyRow>(
+    "SELECT * FROM weather_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
+  );
+  return rows[0] ?? null;
+}
+
 // 현장 좌표를 그날(KST) 1행으로 캡처.
 // force=false(자동): 그날 행 없을 때만 INSERT = 하루 최초 캡처(이후 라이브 변동으로 덮지 않음).
 // force=true(수동 새로고침): 그날 행을 현재 좌표로 UPDATE(재캡처). 반환 = 그날 유효 행.

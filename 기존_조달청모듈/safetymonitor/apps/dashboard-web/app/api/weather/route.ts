@@ -1,7 +1,12 @@
 // 위치 기반 날씨 + 대기질 — Open-Meteo (API key 불필요, 무료, CORS 허용)
 import { NextResponse } from "next/server";
 
-import { persistWeather, persistWeatherDaily } from "../../../lib/db";
+import {
+  persistWeather,
+  persistWeatherDaily,
+  getLatestWeatherDaily,
+  type WeatherDailyRow,
+} from "../../../lib/db";
 
 type CacheEntry = {
   ts: number;
@@ -152,6 +157,25 @@ export async function GET(request: Request) {
         ...stale.data,
       });
     }
+
+    // 인메모리 캐시가 비었을 때(재배포·콜드스타트) DB 에 저장된 일별 대표 기상으로 폴백.
+    // Open-Meteo 예보 호스트 장애 등으로 fresh fetch 가 계속 실패해도 마지막 기상으로 graceful degrade
+    // (502 로 현장환경 패널을 통째로 깨뜨리지 않게). daily7/hourly(예보 모달)는 미보관이라 빈 값.
+    try {
+      const persisted = await getLatestWeatherDaily();
+      if (persisted && persisted.temperature_c !== null) {
+        return NextResponse.json({
+          ok: true,
+          cached: true,
+          stale: true,
+          persisted: true,
+          ...weatherPayloadFromDaily(persisted, lat, lon),
+        });
+      }
+    } catch (dbError) {
+      console.error("[weather] DB fallback failed:", dbError);
+    }
+
     return NextResponse.json(
       {
         ok: false,
@@ -161,6 +185,37 @@ export async function GET(request: Request) {
       { status: 502 },
     );
   }
+}
+
+// DB 일별 대표 기상 → WeatherPayload 재구성(폴백용). current+daily 는 복원, daily7/hourly 는 미보관→빈 값.
+function weatherPayloadFromDaily(
+  row: WeatherDailyRow,
+  lat: number,
+  lon: number,
+): WeatherPayload {
+  return {
+    source: "open-meteo",
+    lat,
+    lon,
+    current: {
+      weatherCode: row.weather_code ?? 0,
+      temperatureC: row.temperature_c ?? 0,
+      apparentTempC: row.apparent_temp_c ?? 0,
+      humidityPct: row.humidity_pct ?? 0,
+      windKmh: row.wind_kmh ?? 0,
+      precipitationMm: row.precipitation_mm ?? 0,
+      uvIndex: row.uv_index ?? 0,
+      pm10: row.pm10 ?? undefined,
+      pm25: row.pm25 ?? undefined,
+    },
+    daily: {
+      sunrise: row.sunrise ?? undefined,
+      sunset: row.sunset ?? undefined,
+    },
+    daily7: { time: [], weatherCode: [], tMax: [], tMin: [], precipProbMax: [] },
+    hourly: { time: [], temperatureC: [] },
+    fetchedAt: row.recorded_at,
+  };
 }
 
 async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
