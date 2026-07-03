@@ -19,7 +19,13 @@ function decodeExpMs(token: string | null): number | null {
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const json = atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4));
     const payload = JSON.parse(json) as { exp?: number };
-    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+    const exp = payload.exp;
+    // 표시용 디코드 — 비현실적/조작 exp 는 무시(오버플로·NaN 방지). 서버가 서명·만료를 실제 강제.
+    // 상한 4102444800 = 2100-01-01(초). 이 이상은 정수정밀 이탈 위험이라 미관리 처리.
+    if (typeof exp !== "number" || !Number.isFinite(exp) || exp <= 0 || exp > 4102444800) {
+      return null;
+    }
+    return exp * 1000;
   } catch {
     return null;
   }
@@ -41,6 +47,7 @@ export function SessionKeeper({
     expMsRef.current != null ? expMsRef.current - Date.now() : null,
   );
   const [extending, setExtending] = useState(false);
+  const [error, setError] = useState(false);
 
   // 매초 남은 시간 갱신.
   useEffect(() => {
@@ -58,6 +65,7 @@ export function SessionKeeper({
       return;
     }
     setExtending(true);
+    setError(false);
     try {
       const res = await fetch("/api/admin/session/refresh", {
         method: "POST",
@@ -77,6 +85,7 @@ export function SessionKeeper({
       }
     } catch {
       // 네트워크 일시 실패 — 팝업 유지(재시도 가능). 만료되면 아래 만료 상태로 전환.
+      setError(true);
     } finally {
       setExtending(false);
     }
@@ -158,6 +167,11 @@ export function SessionKeeper({
             </>
           )}
         </div>
+        {!expired && error && !extending && (
+          <p className="mt-2 text-[11px] text-semantic-down">
+            연장에 실패했습니다. 네트워크 상태를 확인하고 다시 시도해 주세요.
+          </p>
+        )}
       </div>
     </div>,
     document.body,

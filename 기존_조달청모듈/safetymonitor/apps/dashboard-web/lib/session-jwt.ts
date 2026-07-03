@@ -25,12 +25,23 @@ export function sessionTtlSec(): number {
 
 // 대시보드 세션 전용 서명 키 — APP_JWT_SECRET 파생(앱 토큰과 분리). 미설정 시 per-process 랜덤.
 let cachedKey: Buffer | null = null;
+let warnedNoSecret = false;
 function signingKey(): Buffer {
   if (cachedKey) return cachedKey;
   const base = process.env.APP_JWT_SECRET?.trim();
-  cachedKey = base
-    ? createHmac("sha256", base).update("vitalguard-dashboard-session-v1").digest()
-    : randomBytes(32);
+  if (base) {
+    cachedKey = createHmac("sha256", base).update("vitalguard-dashboard-session-v1").digest();
+  } else {
+    // 미설정 폴백 = per-process 랜덤. 단일 프로세스(로컬)엔 무해하나 다중 인스턴스 배포 시
+    // 인스턴스마다 키가 달라 세션 검증이 분절된다(로그인 후 간헐 401). 프로덕션은 APP_JWT_SECRET 필수.
+    if (!warnedNoSecret) {
+      console.warn(
+        "[session-jwt] APP_JWT_SECRET 미설정 — per-process 랜덤 키 폴백. 다중 인스턴스 배포 시 세션 검증 분절(프로덕션은 APP_JWT_SECRET 설정 필수).",
+      );
+      warnedNoSecret = true;
+    }
+    cachedKey = randomBytes(32);
+  }
   return cachedKey;
 }
 
