@@ -48,10 +48,10 @@ export function WidgetCarousel({
       {/* 탭 바 — 리퀴드글래스: 프로스티드 유리 필 컨테이너 + 활성 탭 raised 유리 필 + 튜브라이트 발광(무의존성 CSS) */}
       <div className="flex shrink-0 items-center gap-1.5 border-b border-hairline px-1.5 py-1 dark:border-white/10">
         {/* 프로스티드 유리 필 — 반투명 + backdrop-blur + 상단 스페큘러 하이라이트(inset shadow). 평면 배경 위라 은은. */}
-        {/* 탭은 좌측 클럼프 대신 justify-between 으로 폭 전체 균등 분배. */}
+        {/* 탭은 좌측 정렬(기본 justify-start). 컨테이너는 flex-1 이라 headerAccessory 배지는 우측 끝 고정(위치 불변). */}
         <div
           role="tablist"
-          className="no-scrollbar flex min-w-0 flex-1 items-center justify-between gap-0.5 overflow-x-auto rounded-pill border border-black/5 bg-white/50 px-1 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.06] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+          className="no-scrollbar flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-pill border border-black/5 bg-white/50 px-1 py-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.06] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
         >
           {pages.map((p, i) => {
             const active = i === idx;
