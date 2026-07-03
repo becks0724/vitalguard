@@ -36,17 +36,20 @@ export function isNaverSearchConfigured(): boolean {
 async function searchOne(
   query: string,
   headers: Record<string, string>,
-): Promise<NaverLocalRaw[]> {
+): Promise<{ items: NaverLocalRaw[]; status: number }> {
   const url = `https://openapi.naver.com/v1/search/local.json?query=${encodeURIComponent(
     query,
   )}&display=${PER_DEPT}&sort=comment`;
   try {
     const res = await fetch(url, { headers, signal: AbortSignal.timeout(5000) });
-    if (!res.ok) return [];
+    if (!res.ok) return { items: [], status: res.status };
     const json = (await res.json()) as { items?: NaverLocalRaw[] };
-    return Array.isArray(json.items) ? json.items : [];
+    return {
+      items: Array.isArray(json.items) ? json.items : [],
+      status: 200,
+    };
   } catch {
-    return []; // 개별 진료과 실패는 부분 격리(전체 무너지지 않게)
+    return { items: [], status: 0 }; // 개별 진료과 실패는 부분 격리(전체 무너지지 않게)
   }
 }
 
@@ -96,9 +99,11 @@ export async function searchNearbyHospitals(params: {
 
   const seen = new Set<string>(); // name|roadAddress — 진료과 간 중복 제거(같은 병원이 여러 과에 잡힘)
   const groups: HospitalGroup[] = [];
+  let authFailed = false; // 401/403 — 키는 있으나 인증 실패
 
   for (const dept of departments) {
-    const raws = await searchOne(`${region} ${dept}`, headers);
+    const { items: raws, status } = await searchOne(`${region} ${dept}`, headers);
+    if (status === 401 || status === 403) authFailed = true;
     let items: Hospital[] = raws.map((r) => parseNaverLocalItem(r, origin));
     // 거리순(좌표 유효 우선), 그다음 이름
     items.sort(
@@ -129,7 +134,14 @@ export async function searchNearbyHospitals(params: {
     region,
     groups,
     nearestEmergency,
+    ...(authFailed && groups.length === 0
+      ? {
+          authError: true,
+          note: "네이버 인증 실패(401/403) — 검색 API Client ID/Secret 확인",
+        }
+      : {}),
   };
-  cache.set(cacheKey, { ts: Date.now(), data });
+  // 인증 실패는 캐시하지 않는다(키 교정 즉시 반영되게).
+  if (!data.authError) cache.set(cacheKey, { ts: Date.now(), data });
   return data;
 }

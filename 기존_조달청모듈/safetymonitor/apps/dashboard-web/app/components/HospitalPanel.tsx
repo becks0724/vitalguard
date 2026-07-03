@@ -158,6 +158,10 @@ export function HospitalPanel({
           <div className="grid h-full place-items-center px-4 text-center text-xs text-muted dark:text-on-dark-soft">
             네이버 검색 API 키(NAVER_SEARCH_CLIENT_ID/SECRET) 미설정 — 발급 후 인근 병원이 표시됩니다.
           </div>
+        ) : data?.authError ? (
+          <div className="grid h-full place-items-center px-4 text-center text-xs text-semantic-down">
+            네이버 인증 실패 — 검색 API Client ID/Secret 을 확인하세요.
+          </div>
         ) : loading && !data ? (
           <div className="grid h-full place-items-center text-xs text-muted dark:text-on-dark-soft">
             불러오는 중…

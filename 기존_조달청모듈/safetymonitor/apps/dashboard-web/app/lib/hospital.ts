@@ -20,6 +20,7 @@ export type HospitalResult = {
   region: string; // 검색에 사용한 지역 키워드(예: "광주 동구")
   groups: HospitalGroup[]; // 진료과별 그룹
   nearestEmergency: Hospital[]; // 가장 가까운 응급실/종합병원 상위 N(거리순)
+  authError?: boolean; // 키는 있으나 네이버 인증 실패(401/403) — "결과 없음"과 구분
   note?: string;
 };
 
