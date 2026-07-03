@@ -690,17 +690,13 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
         <div className="flex w-full flex-col items-center px-6 py-10 md:w-1/2">
           <div className="relative z-10 flex w-full flex-col items-center">
-        {/* 중앙 로고 — 표준 VitAlGuard 배지(라이트/다크). 헤더·관리자 모달·로그인 게이트와 동일 로고로 통일. */}
+        {/* 중앙 로고 — 로그인 배경은 테마와 무관하게 항상 네이비 셰이더(LoginShaderBackground)라
+            화이트 로고 고정. 투명 로고라 라이트 테마의 블루 워드마크(검정 글자)는 네이비에 묻힘. */}
         <div className="logo3d-stage">
-          <img
-            src="/brand/vitalguard-logo-light.png"
-            alt="VitAlGuard Industrial Safety OS"
-            className="logo3d-badge dark:hidden"
-          />
           <img
             src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
-            className="logo3d-badge hidden dark:block"
+            className="logo3d-badge"
           />
         </div>
 
