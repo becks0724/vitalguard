@@ -1,133 +1,90 @@
 "use client";
 // 산업 안전뉴스 패널 — 산업현장·산업재해·산업안전 법규 관련 실시간 기사(네이버 뉴스검색).
-// /api/news 프록시에서 조회(서버 15분 캐시). 10분 폴링 + 수동 새로고침. 키 미설정·무결과는 graceful 안내.
+// 현장정보·국내 재해사례와 같은 좌측 캐러셀(h-140)에 들어가므로 국내 재해사례와 동형:
+//   외곽 박스·제목은 WidgetCarousel 헤더가 제공 → 내부 헤더 없이 리스트만(세로 자동 스크롤·호버 정지).
+// /api/news 프록시에서 조회(서버 15분 캐시) + 10분 폴링. 키 미설정·무결과는 graceful 안내.
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
+import { useMarqueeScroll } from "../hooks/useMarqueeScroll";
 import { formatRelativeTime, type NewsResult } from "../lib/news";
 
-function useNews(nonce: number) {
+export function NewsPanel() {
   const [data, setData] = useState<NewsResult | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  // 세로 자동 스크롤(느리게). 호버/터치 시 정지 → 수동 스크롤·클릭 우선(국내 재해사례와 동일).
+  const scrollRef = useMarqueeScroll<HTMLDivElement>(0.3, "y");
 
   useEffect(() => {
     let alive = true;
-    const ctrl = new AbortController();
-    setLoading(true);
-    setError(false);
-    fetch("/api/news", { signal: ctrl.signal })
-      .then((r) => r.json())
-      .then((json: NewsResult) => {
-        if (alive) setData(json);
-      })
-      .catch((e) => {
-        if (e?.name !== "AbortError" && alive) setError(true);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+    const load = () =>
+      fetch("/api/news")
+        .then((r) => r.json())
+        .then((j: NewsResult) => {
+          if (alive) {
+            setData(j);
+            setError(false);
+          }
+        })
+        .catch(() => {
+          if (alive) setError(true);
+        });
+    load();
+    // 10분마다 조용히 재조회(서버 15분 캐시라 대부분 캐시 반환·저비용). 탭 숨김 시 스킵.
+    const id = setInterval(() => {
+      if (!document.hidden) load();
+    }, 10 * 60 * 1000);
     return () => {
       alive = false;
-      ctrl.abort();
+      clearInterval(id);
     };
-  }, [nonce]);
-
-  return { data, loading, error };
-}
-
-export function NewsPanel() {
-  const [nonce, setNonce] = useState(0);
-  const { data, loading, error } = useNews(nonce);
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
-
-  // 10분마다 조용히 재조회(서버 15분 캐시라 대부분 캐시 반환·저비용). 탭 숨김 시 스킵.
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (!document.hidden) setNonce((n) => n + 1);
-    }, 10 * 60 * 1000);
-    return () => clearInterval(id);
   }, []);
 
   const items = data?.items ?? [];
   const nowMs = Date.now();
 
-  return (
-    <div className="flex h-full flex-col p-2">
-      <div className="flex items-center justify-between border-b border-hairline pb-1.5 dark:border-white/10">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold text-ink dark:text-on-dark">
-            산업 안전뉴스
-          </span>
-          <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
-            산업재해·안전법규
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={refresh}
-          disabled={loading}
-          className="grid h-6 w-6 place-items-center rounded-md text-muted transition hover:bg-surface-strong disabled:opacity-40 dark:hover:bg-white/10"
-          aria-label="뉴스 새로고침"
-          title="새로고침"
-        >
-          <svg
-            className={loading ? "animate-spin" : ""}
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-            <path d="M21 3v6h-6" />
-          </svg>
-        </button>
-      </div>
+  // 상태별 안내(키 미설정 / 인증 실패 / 오류 / 무결과 / 로딩)는 중앙 정렬 한 줄.
+  // 오류는 첫 로드 실패(데이터 없음) 때만 — 이후 폴링 실패는 기존 목록 유지(깜빡임 방지).
+  const notice =
+    data && !data.configured
+      ? "네이버 검색 API 키 미설정 — 발급 후 실시간 뉴스가 표시됩니다."
+      : data?.authError
+        ? "네이버 인증 실패 — 검색 API Client ID/Secret 확인."
+        : !data && error
+          ? "뉴스를 불러오지 못했습니다."
+          : !data
+            ? "불러오는 중…"
+            : items.length === 0
+              ? "표시할 뉴스가 없습니다."
+              : null;
 
-      <div className="mt-1.5 flex-1 overflow-y-auto pr-0.5">
-        {data && !data.configured ? (
-          <div className="grid h-full place-items-center px-4 text-center text-xs text-muted dark:text-on-dark-soft">
-            네이버 검색 API 키(NAVER_SEARCH_CLIENT_ID/SECRET) 미설정 — 발급 후 실시간 뉴스가 표시됩니다.
-          </div>
-        ) : data?.authError ? (
-          <div className="grid h-full place-items-center px-4 text-center text-xs text-semantic-down">
-            네이버 인증 실패 — 검색 API Client ID/Secret 을 확인하세요.
-          </div>
-        ) : loading && !data ? (
-          <div className="grid h-full place-items-center text-xs text-muted dark:text-on-dark-soft">
-            불러오는 중…
-          </div>
-        ) : error ? (
-          <div className="grid h-full place-items-center text-xs text-semantic-down">
-            뉴스를 불러오지 못했습니다.
-          </div>
-        ) : items.length === 0 ? (
-          <div className="grid h-full place-items-center px-4 text-center text-xs text-muted dark:text-on-dark-soft">
-            표시할 뉴스가 없습니다.
-          </div>
+  return (
+    <div className="flex h-full flex-col px-3 pb-3 pt-1.5">
+      <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+        {notice ? (
+          <p className="px-2 py-2 text-center text-xs text-muted dark:text-on-dark-soft">
+            {notice}
+          </p>
         ) : (
-          <ul className="flex flex-col">
-            {items.map((it, i) => (
-              <li
-                key={`${it.link}-${i}`}
-                className="border-b border-hairline py-1.5 last:border-0 dark:border-white/10"
-              >
+          // 2벌 복제 seamless 세로 스크롤(국내 재해사례와 동일). 복제본은 aria-hidden·클릭 비활성.
+          [0, 1].map((copy) => (
+            <div key={copy} className="flex flex-col" aria-hidden={copy === 1}>
+              {items.map((it, i) => (
                 <a
+                  key={`${copy}-${it.link}-${i}`}
                   href={it.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group block rounded-md px-1 py-0.5 transition hover:bg-surface-strong dark:hover:bg-white/5"
+                  tabIndex={copy === 1 ? -1 : undefined}
+                  title={it.title}
+                  className="group mb-1 block rounded-lg bg-canvas px-2.5 py-1 transition hover:ring-1 hover:ring-primary/40 dark:bg-surface-dark"
                 >
-                  <div className="line-clamp-2 text-[13px] font-semibold leading-snug text-ink group-hover:text-primary dark:text-on-dark">
+                  <div className="truncate text-xs font-semibold text-ink group-hover:text-primary dark:text-on-dark">
                     {it.title}
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted dark:text-on-dark-soft">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted dark:text-on-dark-soft">
                     {it.source && (
-                      <span className="truncate rounded bg-surface-card px-1.5 py-0.5 font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
+                      <span className="truncate rounded bg-surface-card px-1 py-0.5 font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
                         {it.source}
                       </span>
                     )}
@@ -138,9 +95,9 @@ export function NewsPanel() {
                     )}
                   </div>
                 </a>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+          ))
         )}
       </div>
     </div>

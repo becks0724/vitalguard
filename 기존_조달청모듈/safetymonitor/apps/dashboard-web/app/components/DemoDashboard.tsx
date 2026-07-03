@@ -3608,6 +3608,10 @@ export function DemoDashboard() {
                     </span>
                   ) : null,
                 },
+                {
+                  title: "산업 안전뉴스",
+                  content: <NewsPanel />,
+                },
               ]}
             />
           </div>
@@ -3653,10 +3657,6 @@ export function DemoDashboard() {
                 content: (
                   <HospitalPanel lat={effLat} lon={effLon} region={siteRegion} />
                 ),
-              },
-              {
-                title: "산업 안전뉴스",
-                content: <NewsPanel />,
               },
             ]}
           />
