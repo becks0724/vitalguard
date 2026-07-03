@@ -210,6 +210,7 @@ function CameraTile({
   cam,
   name,
   enabled,
+  canManage,
   onRename,
   onToggle,
   onSelect,
@@ -217,6 +218,8 @@ function CameraTile({
   cam: Cam;
   name: string;
   enabled?: boolean | null;
+  // 이름 ✎ 수정 권한 — 관리자 권한(권한있음)만 true. false 면 ✎ 버튼 미표시.
+  canManage: boolean;
   onRename: (value: string) => void;
   onToggle?: () => void;
   onSelect: () => void;
@@ -264,7 +267,7 @@ function CameraTile({
           ) : (
             <span className="truncate font-semibold">{name}</span>
           )}
-          {!editing && (
+          {!editing && canManage && (
             <button
               type="button"
               onClick={(e) => {
@@ -273,6 +276,7 @@ function CameraTile({
                 setEditing(true);
               }}
               aria-label="카메라 이름 수정"
+              title="카메라 이름 수정(관리자 권한 필요)"
               className="shrink-0 rounded p-0.5 text-zinc-400 opacity-0 transition hover:bg-white/10 hover:text-zinc-100 group-hover:opacity-100"
             >
               <EditIcon />
@@ -606,7 +610,8 @@ function CctvModal({
   );
 }
 
-export function CctvQuadView() {
+// canManage=false(관리자 권한 '권한있음' 아님)면 타일 이름 ✎ 수정 비활성(작업자 등록/해제와 동일 권한 게이트).
+export function CctvQuadView({ canManage }: { canManage: boolean }) {
   const [selected, setSelected] = useState<Cam | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   // AI 타일별 연결 상태 — suffix("" 객체감지 / "2" 낙상감지) 별로 보관.
@@ -692,7 +697,7 @@ export function CctvQuadView() {
           8개소
         </span>
         <span className="text-xs text-muted dark:text-on-dark-soft">
-          이름 ✎ 수정 · 클릭 확대 · AI 타일 연결 ON/OFF
+          {canManage ? "이름 ✎ 수정 · " : ""}클릭 확대 · AI 타일 연결 ON/OFF
         </span>
       </div>
       <div className="grid min-h-0 flex-1 grid-cols-4 grid-rows-2 gap-2 p-3">
@@ -702,6 +707,7 @@ export function CctvQuadView() {
             cam={cam}
             name={nameOf(cam)}
             enabled={enabledOf(cam)}
+            canManage={canManage}
             onRename={(value) => rename(cam.id, value)}
             onToggle={cam.aiApi ? () => toggleAi(cam) : undefined}
             onSelect={() => setSelected(cam)}
