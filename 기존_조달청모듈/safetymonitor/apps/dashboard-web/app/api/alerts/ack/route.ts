@@ -2,7 +2,9 @@
 import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
-import { ackAlert } from "../../../../lib/db";
+import { ackAlert, ackAlertByKey, type AlertType } from "../../../../lib/db";
+
+const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital"];
 
 export async function POST(request: Request) {
   if (!verifyBasicAuth(request)) {
@@ -16,19 +18,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }
 
-  const id =
-    typeof body === "object" && body !== null && "id" in body
-      ? Number((body as { id: unknown }).id)
-      : NaN;
-  const ackBy =
-    typeof body === "object" && body !== null && "ackBy" in body
-      ? String((body as { ackBy: unknown }).ackBy ?? "").slice(0, 40)
-      : "";
+  const obj = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
+  const ackBy = String(obj.ackBy ?? "").slice(0, 40) || "관제자";
 
-  if (!Number.isInteger(id) || id <= 0) {
-    return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+  // 자연키(작업자·종류) — 알림 팝업의 '확인' 버튼용(id 를 모름). id 방식보다 우선 검사.
+  const workerId = "workerId" in obj ? String(obj.workerId ?? "").slice(0, 80) : "";
+  const type = "type" in obj ? String(obj.type ?? "") : "";
+  if (workerId && ALERT_TYPES.includes(type as AlertType)) {
+    const changed = await ackAlertByKey(workerId, type as AlertType, ackBy);
+    return NextResponse.json({ ok: true, acked: changed > 0 });
   }
 
-  const changed = await ackAlert(id, ackBy || "관제자");
+  const id = "id" in obj ? Number(obj.id) : NaN;
+  if (!Number.isInteger(id) || id <= 0) {
+    return NextResponse.json(
+      { ok: false, error: "id or (workerId + type) required" },
+      { status: 400 },
+    );
+  }
+
+  const changed = await ackAlert(id, ackBy);
   return NextResponse.json({ ok: true, acked: changed > 0 });
 }

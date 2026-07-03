@@ -3,9 +3,19 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
-import type { WorkerSummary, ExportRow, EnvAlertAckRow } from "../../lib/db";
+import type { WorkerSummary, ExportRow, EnvAlertAckRow, AlertRow } from "../../lib/db";
 import type { Status } from "../../lib/severity";
 import { SEVERITY_BADGE_CLASS, SEVERITY_LABEL } from "../../lib/weather-rules";
+import { GlassTabBar } from "./GlassTabBar";
+
+// 관리자 메뉴 탭 — 리퀴드글래스 탭바(캐러셀과 동일 컴포넌트) 순서.
+const ADMIN_TABS = [
+  "현장 정보",
+  "데이터 내보내기",
+  "작업자 ID 병합",
+  "환경·특보 이력",
+  "SOS·낙상 이력",
+];
 
 type PreviewRow = ExportRow & {
   hr_status: Status;
@@ -394,6 +404,7 @@ function ExportPanel({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [tab, setTab] = useState(0); // 관리자 메뉴 활성 탭
 
   useEffect(() => {
     let active = true;
@@ -546,9 +557,15 @@ function ExportPanel({
         </div>
       </div>
 
-      <SiteInfoPanel token={token} siteInfo={siteInfo} onSave={onSiteInfoSave} />
+      {/* 메뉴 탭 — 리퀴드글래스 탭바(대시보드 캐러셀과 동일 GlassTabBar 컴포넌트) */}
+      <GlassTabBar tabs={ADMIN_TABS} active={tab} onSelect={setTab} />
 
-      {/* 섹션: 데이터 내보내기 */}
+      {tab === 0 && (
+        <SiteInfoPanel token={token} siteInfo={siteInfo} onSave={onSiteInfoSave} />
+      )}
+
+      {tab === 1 && (
+      /* 섹션: 데이터 내보내기 */
       <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
         <div className="mb-3 flex items-center gap-2">
           <AdminIcon name="download" className="h-5 w-5 text-muted dark:text-muted-soft" />
@@ -648,10 +665,13 @@ function ExportPanel({
           </p>
         </div>
       </section>
+      )}
 
-      <EnvAlertAckPanel token={token} onAuthFail={onAuthFail} />
+      {tab === 2 && <WorkerMergePanel token={token} onAuthFail={onAuthFail} />}
 
-      <WorkerMergePanel token={token} onAuthFail={onAuthFail} />
+      {tab === 3 && <EnvAlertAckPanel token={token} onAuthFail={onAuthFail} />}
+
+      {tab === 4 && <AlertAckPanel token={token} onAuthFail={onAuthFail} />}
     </div>
   );
 }
@@ -764,6 +784,119 @@ function EnvAlertAckPanel({
                   </td>
                   <td className="whitespace-nowrap px-2 py-1.5">{a.status}</td>
                   <td className="whitespace-nowrap px-2 py-1.5">{a.ack_by}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// SOS·낙상·생체 알림 확인/조치 이력 — 환경 이력 패널과 동형(표시 전용 감사 이력).
+// 알림 발생(alerts) + 관제자 대응 확인(ack). 팝업 '확인' / 헤더 알림 이력에서 ack 시 대응완료로 반영.
+function AlertAckPanel({
+  token,
+  onAuthFail,
+}: {
+  token: string;
+  onAuthFail: () => void;
+}) {
+  const [alerts, setAlerts] = useState<AlertRow[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/alerts", {
+        headers: { authorization: `Basic ${token}` },
+      });
+      if (res.status === 401) {
+        onAuthFail();
+        return;
+      }
+      const j = (await res.json()) as { ok?: boolean; alerts?: AlertRow[] };
+      if (j.ok && j.alerts) setAlerts(j.alerts);
+    } catch {
+      /* 표시 전용 — 무시 */
+    } finally {
+      setBusy(false);
+    }
+  }, [token, onAuthFail]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const typeLabel = (t: string) => (t === "fall" ? "낙상" : t === "vital" ? "생체 위험" : "SOS");
+  const typeCls = (t: string) =>
+    t === "fall"
+      ? "border-amber-500/40 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
+      : t === "vital"
+        ? "border-rose-500/40 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300"
+        : "border-red-500/40 bg-red-50 text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300";
+
+  const unacked = alerts.filter((a) => !a.ack_at).length;
+
+  return (
+    <section className="rounded-xl border border-hairline bg-surface-card/60 p-4 dark:border-white/10 dark:bg-canvas/[0.02]">
+      <div className="mb-3 flex items-center gap-2">
+        <h3 className="text-sm font-semibold text-ink dark:text-zinc-100">SOS·낙상·생체 알림 확인/조치 이력</h3>
+        {unacked > 0 && (
+          <span className="rounded-full border border-red-500/40 bg-red-50 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300">
+            미대응 {unacked}
+          </span>
+        )}
+        <span className="ml-auto rounded-full border border-hairline bg-canvas px-2 py-0.5 text-[10px] font-medium text-muted dark:border-white/15 dark:bg-canvas/5 dark:text-zinc-300">
+          최근 {alerts.length}건
+        </span>
+        <button
+          type="button"
+          onClick={() => void load()}
+          disabled={busy}
+          className="min-w-[5rem] rounded border border-hairline px-2 py-1 text-center text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
+        >
+          {busy ? "불러오는 중…" : "새로고침"}
+        </button>
+      </div>
+      <p className="mb-3 text-[11px] text-muted">
+        작업자 SOS·낙상·생체 위험 긴급 알림의 발생과 관제자 대응 확인 기록입니다. 알림 팝업의 '확인' 버튼 또는 헤더 알림 이력에서 대응 확인 시 반영됩니다. KOSHA 보고·대응 추적용 감사 이력.
+      </p>
+      {alerts.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted">알림 이력이 없습니다.</p>
+      ) : (
+        <div className="max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
+          <table className="w-full text-left text-[11px]">
+            <thead className="sticky top-0 bg-surface-soft text-muted dark:bg-canvas/[0.04]">
+              <tr>
+                <th className="px-2 py-1.5 font-medium">발생</th>
+                <th className="px-2 py-1.5 font-medium">구분</th>
+                <th className="px-2 py-1.5 font-medium">작업자</th>
+                <th className="px-2 py-1.5 font-medium">상태</th>
+                <th className="px-2 py-1.5 font-medium">대응</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline dark:divide-white/10">
+              {alerts.map((a) => (
+                <tr key={a.id} className="text-ink dark:text-zinc-200">
+                  <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">{formatAckTime(a.ts)}</td>
+                  <td className="px-2 py-1.5">
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${typeCls(a.type)}`}>
+                      {typeLabel(a.type)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5">{a.worker_name || a.worker_id}</td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    {a.ack_at ? (
+                      <span className="font-semibold text-emerald-600 dark:text-emerald-300">대응완료</span>
+                    ) : (
+                      <span className="font-semibold text-red-600 dark:text-red-300">미대응</span>
+                    )}
+                  </td>
+                  <td className="whitespace-nowrap px-2 py-1.5">
+                    {a.ack_at ? `${formatAckTime(a.ack_at)} · ${a.ack_by ?? "-"}` : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

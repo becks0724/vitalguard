@@ -1,7 +1,7 @@
 // SOS 알람 모달 — manualSos:true sample 수신 시 자동 표시. 작업자 + 생체 + 연락처 + 통화/문자 액션.
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { VitalSample } from "@safetymonitor/schemas";
 import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
 
@@ -130,6 +130,8 @@ export function SosAlertModal({
   sample,
   onDismiss,
   onContact,
+  onAcknowledge,
+  acknowledged,
   reason = "sos",
   region,
 }: {
@@ -137,11 +139,23 @@ export function SosAlertModal({
   onDismiss: () => void;
   // 보호자/119 에 전화·문자 시 호출 — 무사고 카운터 초기화 트리거.
   onContact?: () => void;
+  // 관리자 '확인' 클릭 시 호출 — 이 알림을 대응 확인(ack)으로 기록. 있으면 헤더에 확인 버튼 노출.
+  onAcknowledge?: () => void | Promise<void>;
+  // 이미 확인된 알림이면 true(초기 확인 상태).
+  acknowledged?: boolean;
   // "sos" = 단말 SOS 발신, "vital" = 센서 생체 위험 자동 감지. 헤더·문구만 분기(동일 대응 액션).
   reason?: AlertReason;
   // 현장 지역 키워드(예: "광주 동구") — 가장 가까운 응급실/병원 조회용. 없으면 섹션 미표시.
   region?: string;
 }) {
+  // 관리자 확인 상태 — 확인 클릭 시 ack 기록 후 '확인됨' 표시(팝업은 열린 채 유지).
+  const [acked, setAcked] = useState(acknowledged ?? false);
+  const handleAck = () => {
+    if (acked) return;
+    setAcked(true);
+    void onAcknowledge?.();
+  };
+
   // ESC 키로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -189,20 +203,43 @@ export function SosAlertModal({
         className="w-full max-w-md overflow-hidden rounded-lg border border-red-500/70 bg-canvas dark:border-red-500/60 dark:bg-surface-dark"
       >
         <header className="flex items-center justify-between gap-3 border-b border-red-500/40 bg-red-100 px-5 py-3 dark:bg-red-500/10">
-          <div className="flex items-center gap-2">
-            <span className="inline-block h-3 w-3 rounded-full bg-red-500 vital-blink-danger ring-1 ring-red-300 dark:ring-white/30" />
-            <h2 className="text-base font-bold text-red-700 dark:text-red-200">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-block h-3 w-3 shrink-0 rounded-full bg-red-500 vital-blink-danger ring-1 ring-red-300 dark:ring-white/30" />
+            <h2 className="truncate text-base font-bold text-red-700 dark:text-red-200">
               {reason === "fall" ? "낙상 긴급 알람" : reason === "vital" ? "생체 위험 경보" : "SOS 긴급 알람"}
             </h2>
           </div>
-          <button
-            type="button"
-            onClick={onDismiss}
-            aria-label="닫기"
-            className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-400 dark:hover:bg-white/10"
-          >
-            닫기
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {onAcknowledge &&
+              (acked ? (
+                <span
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-500/50 bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-200"
+                  aria-label="확인 완료"
+                >
+                  <CheckIcon filled />
+                  확인됨
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleAck}
+                  aria-label="관리자 확인"
+                  title="이 알림을 확인 처리합니다(대응 확인 이력에 기록)"
+                  className="inline-flex items-center gap-1 rounded-full border border-emerald-500/60 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-400/40 dark:bg-white/5 dark:text-emerald-200 dark:hover:bg-emerald-500/15"
+                >
+                  <CheckIcon />
+                  확인
+                </button>
+              ))}
+            <button
+              type="button"
+              onClick={onDismiss}
+              aria-label="닫기"
+              className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-white/15 dark:text-zinc-400 dark:hover:bg-white/10"
+            >
+              닫기
+            </button>
+          </div>
         </header>
 
         <div className="space-y-4 px-5 py-4">
@@ -331,6 +368,23 @@ export function SosAlertModal({
         </div>
       </div>
     </div>
+  );
+}
+
+// 확인 버튼 아이콘 — 체크(빈/채움) 라인 SVG(무의존).
+function CheckIcon({ filled }: { filled?: boolean }) {
+  return filled ? (
+    <svg viewBox="0 0 20 20" width="13" height="13" fill="currentColor" aria-hidden>
+      <path
+        fillRule="evenodd"
+        d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.7-9.3a1 1 0 00-1.4-1.4L9 10.6 7.7 9.3a1 1 0 00-1.4 1.4l2 2a1 1 0 001.4 0l4-4z"
+        clipRule="evenodd"
+      />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 20 20" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 10.5l4 4 8-9" />
+    </svg>
   );
 }
 

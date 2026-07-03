@@ -2824,6 +2824,24 @@ export function DemoDashboard() {
     setActiveVitalAlert(null);
   }
 
+  // 알림 팝업 '확인' — 해당 작업자·종류의 최근 미대응 알림을 대응 확인(ack)으로 기록.
+  // 관리자 메뉴 'SOS·낙상 이력' 표에 대응완료로 반영된다(자연키 ack, 팝업은 alert id 를 모름).
+  async function acknowledgeAlert(sample: VitalSample, type: "sos" | "fall" | "vital") {
+    const token = getSessionToken();
+    try {
+      await fetch("/api/alerts/ack", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ workerId: sample.workerId, type, ackBy: "관제자" }),
+      });
+    } catch (e) {
+      console.error("[알림 확인 오류]", e);
+    }
+  }
+
   const openJobTitleEditor = useCallback((workerId: string, current: string) => {
     setJobTitleEdit({ workerId, current });
   }, []);
@@ -3838,6 +3856,7 @@ export function DemoDashboard() {
           region={siteRegion}
           onDismiss={dismissSos}
           onContact={recordAccident}
+          onAcknowledge={() => acknowledgeAlert(activeSos, "sos")}
         />
       )}
 
@@ -3848,6 +3867,7 @@ export function DemoDashboard() {
           region={siteRegion}
           onDismiss={dismissFallAlert}
           onContact={recordAccident}
+          onAcknowledge={() => acknowledgeAlert(activeFallAlert, "fall")}
         />
       )}
 
@@ -3857,6 +3877,7 @@ export function DemoDashboard() {
           reason="vital"
           region={siteRegion}
           onDismiss={dismissVitalAlert}
+          onAcknowledge={() => acknowledgeAlert(activeVitalAlert, "vital")}
         />
       )}
 

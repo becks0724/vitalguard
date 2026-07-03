@@ -732,6 +732,26 @@ export async function ackAlert(id: number, ackBy: string): Promise<number> {
   return rowCount;
 }
 
+// 자연키(작업자·종류)로 대응 확인 — 알림 팝업의 '확인' 버튼용(팝업은 alert id 를 모름).
+// 해당 작업자·종류의 가장 최근 미대응 알림 1건을 ack(ts 정확 매칭 취약성 회피). 변경 행 수 반환.
+export async function ackAlertByKey(
+  workerId: string,
+  type: AlertType,
+  ackBy: string,
+): Promise<number> {
+  const { rowCount } = await q(
+    `UPDATE alerts SET ack_at = ${NOW_ISO}, ack_by = $1
+       WHERE id = (
+         SELECT id FROM alerts
+          WHERE worker_id = $2 AND type = $3 AND ack_at IS NULL
+          ORDER BY ts DESC, id DESC
+          LIMIT 1
+       )`,
+    [ackBy, workerId, type],
+  );
+  return rowCount;
+}
+
 // ── 현장 환경 경보 확인/조치 기록 ──────────────────────────────────────────
 export type EnvAlertAckRow = {
   id: number;
