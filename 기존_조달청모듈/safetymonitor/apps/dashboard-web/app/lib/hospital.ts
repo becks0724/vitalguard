@@ -11,6 +11,7 @@ export type Hospital = {
   lat?: number;
   lon?: number;
   distanceKm?: number; // 현장 GPS 로부터의 거리(좌표 유효 시)
+  emergencyKind?: "응급실" | "종합병원"; // SOS 응급 목록 분류(응급실=실제 응급의료센터, 종합병원=폴백)
 };
 
 export type HospitalGroup = { department: string; items: Hospital[] };
@@ -36,8 +37,26 @@ export const DEPARTMENTS = [
   "치과",
 ] as const;
 
-// SOS·응급 대응용 축약 검색셋(호출 수 절약).
+// SOS·응급 대응용 축약 검색셋(호출 수 절약). "응급실" 검색은 실제 응급의료센터(병원>응급실)와
+// 주차장입구·교차로(도로시설) junk 를 함께 반환 → isMedicalPlace 로 junk 배제, isEmergencyRoom 으로 1순위.
 export const EMERGENCY_DEPARTMENTS = ["응급실", "종합병원"] as const;
+
+// 실제 의료기관 여부 — 네이버 category 로 판별.
+// (예: "병원>응급실"·"병원,의원>정형외과"·"건강,의료>종합병원" = 의료 / "도로시설>방면정보"·"도로시설>교차로" = junk)
+// "○○병원 응급의료센터주차장입구" 같은 주차장·부속시설도 배제(name·category 에 주차/입구/장례/약국).
+export function isMedicalPlace(h: Pick<Hospital, "name" | "category">): boolean {
+  const cat = h.category ?? "";
+  const hay = `${h.name ?? ""} ${cat}`;
+  if (!/병원|의원|의료|건강|보건|치과|한의원|클리닉/.test(cat)) return false;
+  if (/주차|주차장|입구|장례|약국|주유|편의점|동물병원/.test(hay)) return false;
+  return true;
+}
+
+// 실제 응급실/응급의료센터 여부 — 네이버 category 가 "병원>응급실" 이면 참(전남대병원 응급의료센터·권역응급의료센터 등).
+// 이름 기반이 아니라 category 기반이라 신뢰성 높음("전남대학교병원"(종합병원 category)은 제외, "…응급의료센터"(응급실 category)만 포함).
+export function isEmergencyRoom(h: Pick<Hospital, "category">): boolean {
+  return /응급/.test(h.category ?? "");
+}
 
 // 한국 범위 게이트 — fieldCoords 와 동일 기준(비-한국·NaN·swap 좌표 배제).
 const KR_LAT_MIN = 32.5;

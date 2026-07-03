@@ -218,7 +218,7 @@ export function NearestEmergency({
     <div className="rounded-xl border border-hairline bg-canvas p-2.5 dark:border-white/10 dark:bg-surface-dark">
       <div className="mb-1 flex items-center gap-1.5">
         <span className="text-xs font-semibold text-semantic-down">
-          가장 가까운 응급실·병원
+          가장 가까운 응급실·응급의료센터
         </span>
         <span className="rounded-pill bg-surface-strong px-1.5 py-0.5 text-[10px] font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
           {region}
@@ -232,6 +232,17 @@ export function NearestEmergency({
           >
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
+                {h.emergencyKind === "응급실" ? (
+                  <span className="shrink-0 rounded-pill bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-500/20 dark:text-red-200">
+                    응급실
+                  </span>
+                ) : (
+                  h.emergencyKind === "종합병원" && (
+                    <span className="shrink-0 rounded-pill bg-surface-strong px-1.5 py-0.5 text-[10px] font-semibold text-muted dark:bg-white/10 dark:text-on-dark-soft">
+                      종합병원
+                    </span>
+                  )
+                )}
                 <span className="truncate text-[13px] font-semibold text-ink dark:text-on-dark">
                   {h.name}
                 </span>

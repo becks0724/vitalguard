@@ -8,6 +8,8 @@ import {
   stripTags,
   formatDistance,
   haversineKm,
+  isMedicalPlace,
+  isEmergencyRoom,
 } from "./hospital";
 
 test("extractRegion — 광역시 + 구", () => {
@@ -77,4 +79,24 @@ test("formatDistance — 1km 미만 m, 이상 km", () => {
 test("haversineKm — 대략적 정확도(광주 두 지점)", () => {
   const d = haversineKm(35.15, 126.92, 35.14, 126.924);
   assert.ok(d > 0.9 && d < 1.3, "약 1.1km");
+});
+
+test("isMedicalPlace — 의료기관은 유지, 도로시설·주차장 junk 는 배제", () => {
+  // 실 데이터(광주 동구 응급실 검색) 기반
+  assert.equal(isMedicalPlace({ name: "전남대학교병원 응급의료센터", category: "병원>응급실" }), true);
+  assert.equal(isMedicalPlace({ name: "대중병원", category: "병원,의원>정형외과" }), true);
+  assert.equal(isMedicalPlace({ name: "전남대학교병원", category: "건강,의료>종합병원" }), true);
+  // junk — 도로시설(주차장 입구·교차로)
+  assert.equal(isMedicalPlace({ name: "전남대학교병원 응급의료센터주차장입구", category: "도로시설>방면정보" }), false);
+  assert.equal(isMedicalPlace({ name: "전대병원응급실앞", category: "도로시설>교차로" }), false);
+  // 병원 부속 주차장(의료 category 여도 name 에 주차)
+  assert.equal(isMedicalPlace({ name: "○○병원 주차장", category: "병원>종합병원" }), false);
+});
+
+test("isEmergencyRoom — category '병원>응급실' 만 응급실로 판정(이름 기반 아님)", () => {
+  assert.equal(isEmergencyRoom({ category: "병원>응급실" }), true);
+  assert.equal(isEmergencyRoom({ category: "병원>응급의료센터" }), true);
+  // 종합병원 자체 항목은 응급실 아님(폴백 티어)
+  assert.equal(isEmergencyRoom({ category: "건강,의료>종합병원" }), false);
+  assert.equal(isEmergencyRoom({ category: "병원,의원>정형외과" }), false);
 });

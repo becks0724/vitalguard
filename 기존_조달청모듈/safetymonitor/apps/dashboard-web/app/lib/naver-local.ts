@@ -7,6 +7,8 @@ import "server-only";
 import {
   DEPARTMENTS,
   EMERGENCY_DEPARTMENTS,
+  isEmergencyRoom,
+  isMedicalPlace,
   parseNaverLocalItem,
   type Hospital,
   type HospitalGroup,
@@ -111,6 +113,8 @@ export async function searchNearbyHospitals(params: {
     );
     items = items.filter((h) => {
       if (!h.name) return false;
+      // 주차장·교차로 등 비의료 junk 배제(전 그룹 — 인근 병원 리스트에서도 주차장 제거).
+      if (!isMedicalPlace(h)) return false;
       const k = `${h.name}|${h.roadAddress}`;
       if (seen.has(k)) return false;
       seen.add(k);
@@ -119,14 +123,32 @@ export async function searchNearbyHospitals(params: {
     if (items.length > 0) groups.push({ department: dept, items });
   }
 
-  // nearestEmergency — emergency 스코프면 전체, full 이면 응급실 그룹에서 거리순 상위.
-  const emergencyPool =
+  // nearestEmergency — 실제 응급실/응급의료센터(category "병원>응급실")를 1순위 티어로, 종합병원은 폴백 티어.
+  // (전역 거리순이면 가까운 종합병원[정형외과 등]이 실제 응급의료센터보다 위로 오던 버그 수정)
+  const emergencyPool = (
     scope === "emergency"
       ? groups.flatMap((grp) => grp.items)
-      : (groups.find((grp) => grp.department === "응급실")?.items ?? []);
-  const nearestEmergency = emergencyPool
-    .filter((h) => h.distanceKm !== undefined)
-    .sort((a, b) => (a.distanceKm as number) - (b.distanceKm as number))
+      : (groups.find((grp) => grp.department === "응급실")?.items ?? [])
+  ).filter((h) => h.distanceKm !== undefined);
+  const byDist = (a: Hospital, b: Hospital) =>
+    (a.distanceKm as number) - (b.distanceKm as number);
+  const ers = emergencyPool
+    .filter(isEmergencyRoom)
+    .sort(byDist)
+    .map((h) => ({ ...h, emergencyKind: "응급실" as const }));
+  const general = emergencyPool
+    .filter((h) => !isEmergencyRoom(h))
+    .sort(byDist)
+    .map((h) => ({ ...h, emergencyKind: "종합병원" as const }));
+  // 응급실 티어 우선, 같은 병원(도로명주소) 중복은 앞선 것(응급실) 유지.
+  const seenLoc = new Set<string>();
+  const nearestEmergency = [...ers, ...general]
+    .filter((h) => {
+      const k = h.roadAddress || h.name;
+      if (seenLoc.has(k)) return false;
+      seenLoc.add(k);
+      return true;
+    })
     .slice(0, NEAREST_N);
 
   const data: HospitalResult = {
