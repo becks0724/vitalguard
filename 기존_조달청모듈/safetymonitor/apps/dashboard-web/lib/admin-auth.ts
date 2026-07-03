@@ -1,8 +1,14 @@
 // 관리자 인증 — 로그인 시 발급한 불투명 세션 토큰(서버측 TTL) 또는 직접 자격(id:pw) 검증.
 // 발표용 프로토타입 한정. 실 서비스 화 시 NextAuth + Cognito + httpOnly cookie + CSRF 토큰 도입 필요.
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 
 import { findUserByUsername } from "./db";
+import {
+  signSessionJwt,
+  verifySessionJwt,
+  sessionTtlSec,
+  type SessionRole,
+} from "./session-jwt";
 
 const ADMIN_ID = process.env.ADMIN_ID ?? "admin";
 // 소스에 동작하는 기본 비밀번호를 넣지 않는다(fail-closed). 미설정 시 관리자 인증은 항상 거부.
@@ -96,59 +102,28 @@ export function recordLoginResult(key: string, ok: boolean): void {
   sweepLoginAttempts();
 }
 
-// ── 세션 토큰 ─────────────────────────────────────────────────────────────
-// 로그인 성공 시 비밀번호와 무관한 랜덤 불투명 토큰을 발급해 서버측에 TTL 과 함께 보관한다.
-// 클라이언트는 이 토큰만 저장/재전송하므로 sessionStorage 노출(XSS 등) 시에도 평문 비밀번호는 새지 않고,
-// TTL 만료 또는 프로세스 재시작으로 자동 폐기된다.
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000; // 8시간
-
-const MAX_SESSION_ENTRIES = 10000; // 24/7 누수 방지 상한
+// ── 세션 토큰(무상태 JWT) ─────────────────────────────────────────────────────
+// 로그인 성공 시 비밀번호와 무관한 서명 JWT(HMAC-SHA256)를 발급한다. 서버 저장이 없어 Cloud Run
+// 재배포·다중 인스턴스에도 검증되며(→ in-memory 세션 소멸로 인한 GPS redaction 등 방지), 만료(exp)로
+// 자동 폐기된다. 서명/검증은 lib/session-jwt(무의존). 만료 임박 시 클라이언트가 refresh 로 재발급(슬라이딩).
 
 // owner = env 관리자(최초 승인자, 사용자 관리 권한), admin = 가입 후 승인된 관리자.
-export type SessionRole = "owner" | "admin";
+export type { SessionRole };
 export type SessionInfo = { expiresAt: number; role: SessionRole; username: string };
 
-type SessionStore = Map<string, SessionInfo>; // token → 세션 정보(만료·역할·아이디)
-const globalForSessions = globalThis as typeof globalThis & {
-  __safetyMonitorAdminSessions?: SessionStore;
-};
-const sessions: SessionStore =
-  globalForSessions.__safetyMonitorAdminSessions ??
-  (globalForSessions.__safetyMonitorAdminSessions = new Map());
-
-// 만료 토큰 일괄 정리 + 상한 초과 시 오래된 토큰 제거(lazy 삭제만으로는 24/7 누수).
-function sweepSessions(): void {
-  const now = Date.now();
-  for (const [token, info] of sessions) {
-    if (now > info.expiresAt) sessions.delete(token);
-  }
-  while (sessions.size > MAX_SESSION_ENTRIES) {
-    const oldest = sessions.keys().next().value;
-    if (oldest === undefined) break;
-    sessions.delete(oldest);
-  }
-}
-
-// 역할·아이디를 담아 세션 발급(기본은 env owner — 기존 호출 호환).
+// 역할·아이디를 담아 세션 발급(기본은 env owner — 기존 호출 호환). 반환 = 서명 JWT.
 export function createSession(
   role: SessionRole = "owner",
   username: string = ADMIN_ID,
 ): string {
-  sweepSessions();
-  const token = randomBytes(32).toString("base64url");
-  sessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS, role, username });
-  return token;
+  return signSessionJwt({ sub: username, role });
 }
 
-// 유효 세션 정보 반환(만료 시 삭제 후 null).
+// 유효 세션 정보 반환(서명·만료 검증 실패 시 null).
 function getValidSession(token: string): SessionInfo | null {
-  const info = sessions.get(token);
-  if (!info) return null;
-  if (Date.now() > info.expiresAt) {
-    sessions.delete(token);
-    return null;
-  }
-  return info;
+  const claims = verifySessionJwt(token);
+  if (!claims) return null;
+  return { expiresAt: claims.exp * 1000, role: claims.role, username: claims.sub };
 }
 
 function validateSession(token: string): boolean {
@@ -211,7 +186,7 @@ export function getSession(request: Request): SessionInfo | null {
         verifyCredentials(decoded.slice(0, sep), decoded.slice(sep + 1))
       ) {
         return {
-          expiresAt: Date.now() + SESSION_TTL_MS,
+          expiresAt: Date.now() + sessionTtlSec() * 1000,
           role: "owner",
           username: ADMIN_ID,
         };

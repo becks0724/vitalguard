@@ -11,6 +11,7 @@ import {
 } from "react";
 
 import { LoginScreen } from "./LoginScreen";
+import { SessionKeeper } from "./SessionKeeper";
 
 // 대시보드 보기 권한 토큰 — 관리자 export(safetymonitor.admin.token.v1)와 별도 키로 보기/내보내기 권한 분리.
 const SESSION_KEY = "safetymonitor.session.v1";
@@ -92,6 +93,15 @@ export function LoginGate({ children }: { children: ReactNode }) {
     setAuthed(false);
   }, []);
 
+  // 세션 연장(refresh)으로 받은 새 JWT 저장 — SessionKeeper 가 호출.
+  const saveSessionToken = useCallback((token: string) => {
+    try {
+      window.sessionStorage.setItem(SESSION_KEY, token);
+    } catch {
+      // sessionStorage 불가 환경 무시
+    }
+  }, []);
+
   // 판정 전 — 로그인↔대시보드 깜빡임 방지용 중립 스플래시
   if (authed === null) {
     return (
@@ -130,6 +140,7 @@ export function LoginGate({ children }: { children: ReactNode }) {
 
   return (
     <SessionContext.Provider value={{ logout }}>
+      <SessionKeeper onExtended={saveSessionToken} onExpire={logout} />
       {children}
     </SessionContext.Provider>
   );
