@@ -3360,7 +3360,7 @@ export function DemoDashboard() {
       )}
       <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
         <div className="flex items-center gap-3">
-          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-surface-strong dark:bg-surface-dark-elevated">
+          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl">
             <img
               src="/brand/vitalguard-logo-light.png"
               alt="VitAlGuard Industrial Safety OS"
