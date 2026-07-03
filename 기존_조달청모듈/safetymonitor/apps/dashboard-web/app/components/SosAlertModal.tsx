@@ -5,6 +5,8 @@ import { useEffect } from "react";
 import type { VitalSample } from "@safetymonitor/schemas";
 import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
 
+import { NearestEmergency } from "./HospitalPanel";
+
 const COMPANY_NAME = "스마트인재개발원";
 
 // 시연용 기본 보호자 연락처 (worker payload 의 guardianName/guardianPhone 이 있으면 그 값이 우선).
@@ -129,6 +131,7 @@ export function SosAlertModal({
   onDismiss,
   onContact,
   reason = "sos",
+  region,
 }: {
   sample: VitalSample;
   onDismiss: () => void;
@@ -136,6 +139,8 @@ export function SosAlertModal({
   onContact?: () => void;
   // "sos" = 단말 SOS 발신, "vital" = 센서 생체 위험 자동 감지. 헤더·문구만 분기(동일 대응 액션).
   reason?: AlertReason;
+  // 현장 지역 키워드(예: "광주 동구") — 가장 가까운 응급실/병원 조회용. 없으면 섹션 미표시.
+  region?: string;
 }) {
   // ESC 키로 닫기
   useEffect(() => {
@@ -272,6 +277,12 @@ export function SosAlertModal({
               </p>
             )}
           </section>
+
+          <NearestEmergency
+            lat={sample.latitude}
+            lon={sample.longitude}
+            region={region ?? ""}
+          />
 
           <section>
             <h3 className="text-xs text-zinc-600 dark:text-zinc-400">보호자 연락처</h3>

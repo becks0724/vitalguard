@@ -43,6 +43,8 @@ import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
+import { HospitalPanel } from "./HospitalPanel";
+import { extractRegion } from "../lib/hospital";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -3009,6 +3011,9 @@ export function DemoDashboard() {
   const coordSource: "live" | "cached" | "none" =
     fieldCoords.count > 0 ? "live" : cachedCoord ? "cached" : "none";
 
+  // 현장 주소에서 인근 병원 검색용 지역 키워드(예: "광주 동구"). 지역검색은 좌표가 아닌 지역명이 필요.
+  const siteRegion = useMemo(() => extractRegion(siteInfo.address), [siteInfo.address]);
+
   // mount 시 서버 캐시 좌표 로드(라이브 좌표 없을 때 기상 fallback 용).
   useEffect(() => {
     (async () => {
@@ -3624,6 +3629,12 @@ export function DemoDashboard() {
                 title: "특보 영상",
                 content: <WarningVideoPanel lat={effLat} lon={effLon} />,
               },
+              {
+                title: "인근 병원",
+                content: (
+                  <HospitalPanel lat={effLat} lon={effLon} region={siteRegion} />
+                ),
+              },
             ]}
           />
         </div>
@@ -3824,6 +3835,7 @@ export function DemoDashboard() {
       {activeSos && (
         <SosAlertModal
           sample={activeSos}
+          region={siteRegion}
           onDismiss={dismissSos}
           onContact={recordAccident}
         />
@@ -3833,6 +3845,7 @@ export function DemoDashboard() {
         <SosAlertModal
           sample={activeFallAlert}
           reason="fall"
+          region={siteRegion}
           onDismiss={dismissFallAlert}
           onContact={recordAccident}
         />
@@ -3842,6 +3855,7 @@ export function DemoDashboard() {
         <SosAlertModal
           sample={activeVitalAlert}
           reason="vital"
+          region={siteRegion}
           onDismiss={dismissVitalAlert}
         />
       )}
