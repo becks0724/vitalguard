@@ -3685,10 +3685,16 @@ export function DemoDashboard() {
                   <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => firstEmptySlot >= 0 && setQueueModalSlot(firstEmptySlot)}
-              disabled={firstEmptySlot < 0}
-              title={firstEmptySlot < 0 ? "슬롯이 가득 찼습니다" : "대기 큐에서 작업자 등록"}
-              className={`inline-flex h-8 items-center gap-1 rounded-pill bg-primary px-3 text-xs font-semibold text-on-primary active:scale-95 disabled:opacity-40 ${FOCUS_CLASS}`}
+              onClick={() => canAdminMenu && firstEmptySlot >= 0 && setQueueModalSlot(firstEmptySlot)}
+              disabled={!canAdminMenu || firstEmptySlot < 0}
+              title={
+                !canAdminMenu
+                  ? "관리자 권한(권한있음)이 있는 계정만 작업자 등록이 가능합니다"
+                  : firstEmptySlot < 0
+                    ? "슬롯이 가득 찼습니다"
+                    : "대기 큐에서 작업자 등록"
+              }
+              className={`inline-flex h-8 items-center gap-1 rounded-pill bg-primary px-3 text-xs font-semibold text-on-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_CLASS}`}
             >
               + 작업자 등록
               {pendingWorkers.length > 0 && (
@@ -3769,6 +3775,7 @@ export function DemoDashboard() {
                           selection={selection}
                           onSelect={toggleSelection}
                           onClear={clearSlot}
+                          canManage={canAdminMenu}
                         />
                       ))}
                     </SortableContext>
@@ -3806,6 +3813,7 @@ export function DemoDashboard() {
                           selection={selection}
                           onSelect={toggleSelection}
                           onClear={clearSlot}
+                          canManage={canAdminMenu}
                           ariaHidden={copy === 1}
                         />
                       ))}
@@ -4043,6 +4051,8 @@ type WorkerTableRowProps = {
   selection: Selection | null;
   onSelect: (next: Selection) => void;
   onClear: (slotIndex: number) => void;
+  // 슬롯 해제 권한 — 관리자 권한(owner 또는 admin_access) 있는 계정만 true. false 면 해제 버튼 비활성.
+  canManage: boolean;
   // 자동 복제본(aria-hidden)은 포커스/클릭 비활성
   ariaHidden?: boolean;
   // 드래그(수동 모드)용 — SortableWorkerTableRow 가 주입
@@ -4068,6 +4078,7 @@ function WorkerTableRow({
   selection,
   onSelect,
   onClear,
+  canManage,
   ariaHidden,
   draggable,
   innerRef,
@@ -4280,12 +4291,18 @@ function WorkerTableRow({
         <button
           type="button"
           tabIndex={tabIndex}
+          disabled={!canManage}
           onClick={(e) => {
             e.stopPropagation();
+            if (!canManage) return;
             onClear(entry.slotIndex);
           }}
-          title={`슬롯 ${entry.slotIndex + 1}번에서 해제`}
-          className={`rounded-md px-1.5 py-1 text-[11px] font-medium text-muted hover:bg-surface-strong hover:text-semantic-down dark:hover:bg-white/10 ${FOCUS_CLASS}`}
+          title={
+            canManage
+              ? `슬롯 ${entry.slotIndex + 1}번에서 해제`
+              : "관리자 권한(권한있음)이 있는 계정만 해제할 수 있습니다"
+          }
+          className={`rounded-md px-1.5 py-1 text-[11px] font-medium text-muted hover:bg-surface-strong hover:text-semantic-down disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted dark:hover:bg-white/10 ${FOCUS_CLASS}`}
         >
           해제
         </button>

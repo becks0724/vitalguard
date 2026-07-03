@@ -1,7 +1,7 @@
-// 작업자 모니터링 슬롯 등록(공유 관제 1벌) 조회/저장 API — 관리자 인증. 브라우저 localStorage 를 서버로 승격.
+// 작업자 모니터링 슬롯 조회/저장 API. 조회(GET)=로그인 세션, 저장(PUT=등록/해제)=관리자 권한(권한있음)만.
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { verifyBasicAuth, hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { getMonitorSlots, saveMonitorSlots } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,12 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  // 등록/해제는 관리자 권한(owner 또는 admin_access=권한있음)만 — 권한없음 계정의 직접 호출도 서버에서 차단.
+  if (!(await hasAdminMenuAccess(request))) {
+    return NextResponse.json(
+      { ok: false, error: "작업자 등록/해제는 관리자 권한이 필요합니다" },
+      { status: 403 },
+    );
   }
   let body: { slots?: unknown };
   try {
