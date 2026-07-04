@@ -149,7 +149,7 @@ export function HospitalPanel({
         </button>
       </div>
 
-      <div className="mt-1.5 flex-1 overflow-y-auto pr-0.5">
+      <div className="wx-cards-scroll mt-1.5 flex-1 overflow-y-auto pr-0.5">
         {!region ? (
           <div className="grid h-full place-items-center px-4 text-center text-xs text-muted dark:text-on-dark-soft">
             현장 주소가 없어 지역을 도출할 수 없습니다. 관리자 메뉴에서 현장 주소를 입력하세요.

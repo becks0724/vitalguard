@@ -221,7 +221,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-5 py-3">
+        <div className="wx-cards-scroll min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain px-5 py-3">
           {!loaded ? (
             <p className="py-6 text-center text-sm text-muted dark:text-on-dark-soft">
               불러오는 중…

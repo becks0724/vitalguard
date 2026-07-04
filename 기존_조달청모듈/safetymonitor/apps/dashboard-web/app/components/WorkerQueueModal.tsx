@@ -73,7 +73,7 @@ export function WorkerQueueModal({
             </span>
           </p>
         ) : (
-          <ul className="flex max-h-[60vh] flex-col gap-2 overflow-auto">
+          <ul className="wx-cards-scroll flex max-h-[60vh] flex-col gap-2 overflow-auto">
             {pendingWorkers.map((sample) => {
               const { title, subtitle } = workerLabel(sample);
               return (

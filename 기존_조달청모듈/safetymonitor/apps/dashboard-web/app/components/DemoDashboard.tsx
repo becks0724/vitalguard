@@ -869,7 +869,7 @@ function MediaMetaBlock({ media, dark }: { media: CalendarMedia; dark?: boolean 
           </button>
           {rawOpen && (
             <p
-              className={`mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed ${valueCls}`}
+              className={`wx-cards-scroll mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed ${valueCls}`}
             >
               {media.ocrText}
             </p>
@@ -1171,7 +1171,7 @@ function ScheduleEventFormModal({
       aria-label="일정 등록"
     >
       <div
-        className="max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="wx-cards-scroll max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3 dark:border-white/10">
@@ -1942,7 +1942,7 @@ function HeaderCalendarPopup({
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto overscroll-y-contain" onWheel={(e) => e.stopPropagation()}>
+        <div className="wx-cards-scroll flex-1 overflow-y-auto overscroll-y-contain" onWheel={(e) => e.stopPropagation()}>
         {planOpen && (
           <div className="border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
             <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간 일정</p>
@@ -2227,7 +2227,7 @@ function HeaderCalendarPopup({
                     >
                       <div
                         onClick={(e) => e.stopPropagation()}
-                        className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-y-auto"
+                        className="wx-cards-scroll flex max-h-[92vh] w-full max-w-3xl flex-col overflow-y-auto"
                       >
                         <div className="mb-2 flex items-center justify-between gap-3 text-white">
                           <div className="min-w-0">
@@ -3733,7 +3733,7 @@ export function DemoDashboard() {
                     등록된 작업자가 없습니다. 우측 상단 <b className="text-ink dark:text-on-dark">+ 작업자 등록</b> 으로 추가하세요.
                   </p>
                 ) : (
-                  <div className="min-h-0 flex-1 overflow-x-auto">
+                  <div className="wx-cards-scroll min-h-0 flex-1 overflow-x-auto">
                     <div className="flex h-full min-w-[920px] flex-col">
                       <WorkerTableHeader manual={slideMode === "manual"} />
                       <div
@@ -3970,7 +3970,7 @@ export function DemoDashboard() {
           </span>
         </button>
         {logExpanded && (
-          <div className="max-h-[32rem] overflow-auto">
+          <div className="wx-cards-scroll max-h-[32rem] overflow-auto">
             <table className="w-full text-left text-sm">
               <thead className="sticky top-0 bg-surface-soft text-xs text-body dark:bg-surface-dark dark:text-on-dark-soft">
                 <tr>
@@ -4536,7 +4536,7 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
             닫기
           </button>
         </div>
-        <div className="overflow-y-auto px-5 py-3">
+        <div className="wx-cards-scroll overflow-y-auto px-5 py-3">
           {loading ? (
             <p className="py-8 text-center text-sm text-muted">불러오는 중...</p>
           ) : alerts.length === 0 ? (

@@ -332,7 +332,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 본문 — DB 스키마 테이블 */}
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        <div className="wx-cards-scroll min-h-0 flex-1 overflow-auto px-5 py-4">
           {error && (
             <p className="mb-3 rounded-xl border border-red-300/50 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200">
               {error}
@@ -349,7 +349,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
               가입한 사용자가 없습니다.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="wx-cards-scroll overflow-x-auto">
               <table className="min-w-full border-collapse text-[11px]">
                 <thead>
                   <tr className="border-b border-hairline text-ink dark:border-white/10 dark:text-on-dark">

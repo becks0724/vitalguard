@@ -109,7 +109,7 @@ function TableShell({
           샘플 · 자체 디바이스 연동 시 실시간 · 수동 스크롤
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-x-auto">
+      <div className="wx-cards-scroll min-h-0 flex-1 overflow-x-auto">
         <div className={`flex h-full ${minWidthClass} flex-col`}>
           {header}
           {/* 수동 스크롤 전용(오토 상하 슬라이딩 없음) */}
@@ -598,7 +598,7 @@ function AedDeviceModal({ row, onClose }: { row: AedRow; onClose: () => void }) 
       aria-modal="true"
     >
       <div
-        className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="wx-cards-scroll max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="sticky top-0 bg-surface-soft px-5 py-3 dark:bg-surface-dark-elevated">

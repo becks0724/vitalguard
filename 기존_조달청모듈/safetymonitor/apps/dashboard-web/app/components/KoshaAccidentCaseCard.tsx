@@ -138,7 +138,7 @@ function AccidentCaseDetailModal({ item, onClose }: { item: Item; onClose: () =>
           </button>
         </header>
 
-        <div className="space-y-4 overflow-y-auto px-5 py-4">
+        <div className="wx-cards-scroll space-y-4 overflow-y-auto px-5 py-4">
           <section>
             <h3 className="text-xs text-zinc-600 dark:text-zinc-400">사고 개요</h3>
             <div className="mt-1 flex flex-wrap items-baseline gap-2">

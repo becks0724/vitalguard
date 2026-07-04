@@ -76,7 +76,7 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
         </div>
 
         {/* 임계 항목 목록 */}
-        <ul className="max-h-[50vh] divide-y divide-hairline overflow-y-auto dark:divide-white/10">
+        <ul className="wx-cards-scroll max-h-[50vh] divide-y divide-hairline overflow-y-auto dark:divide-white/10">
           {alerts.map((a) => (
             <li key={a.itemKey} className="px-3 py-2">
               <button

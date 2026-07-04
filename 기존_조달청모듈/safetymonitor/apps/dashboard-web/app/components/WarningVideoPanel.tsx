@@ -213,7 +213,7 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
           {yt?.query ? <span className="mt-1 block text-[10px]">검색어: {yt.query}</span> : null}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+        <div className="wx-cards-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
           {videos.map((v) => (
             <button
               key={v.id}

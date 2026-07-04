@@ -156,7 +156,7 @@ export function AdminExportModal({
             </div>
           </header>
 
-          <div className="flex-1 overflow-auto">
+          <div className="wx-cards-scroll flex-1 overflow-auto">
             <ExportPanel
               token={token}
               siteInfo={siteInfo}
@@ -755,7 +755,7 @@ function EnvAlertAckPanel({
       {acks.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted">확인/조치 기록이 없습니다.</p>
       ) : (
-        <div className="max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
+        <div className="wx-cards-scroll max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-surface-soft text-muted dark:bg-canvas/[0.04]">
               <tr>
@@ -866,7 +866,7 @@ function AlertAckPanel({
       {alerts.length === 0 ? (
         <p className="py-6 text-center text-xs text-muted">알림 이력이 없습니다.</p>
       ) : (
-        <div className="max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
+        <div className="wx-cards-scroll max-h-72 overflow-auto rounded border border-hairline dark:border-white/10">
           <table className="w-full text-left text-[11px]">
             <thead className="sticky top-0 bg-surface-soft text-muted dark:bg-canvas/[0.04]">
               <tr>
@@ -1270,7 +1270,7 @@ function PreviewTable({ preview }: { preview: PreviewState }) {
           해당 조건에 일치하는 sample 이 없습니다.
         </p>
       ) : (
-        <div className="max-h-[40vh] overflow-auto rounded-lg border border-hairline dark:border-white/10">
+        <div className="wx-cards-scroll max-h-[40vh] overflow-auto rounded-lg border border-hairline dark:border-white/10">
           <table className="w-full text-left text-xs">
             <thead className="sticky top-0 bg-surface-soft text-[10px] uppercase tracking-wide text-muted dark:bg-surface-dark-elevated dark:text-muted-soft">
               <tr>

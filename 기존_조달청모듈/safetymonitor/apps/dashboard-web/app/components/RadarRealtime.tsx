@@ -158,7 +158,7 @@ function Timeline({
       >
         {playing ? "❚❚" : "▶"}
       </button>
-      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <div className="wx-cards-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {shown.map(({ f, i }) => (
           <button
             key={f.time}
