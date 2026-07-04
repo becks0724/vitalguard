@@ -1,9 +1,11 @@
-// 상단 섹션 페이저 — ‹ 제목 N/M › 헤더로 전체 폭 페이지를 좌우 슬라이드 전환(작업자 모니터링 캐러셀과 동일한 조작감).
+// 상단 섹션 페이저 — 현황 요약 캐러셀과 동일한 리퀴드글래스 탭 메뉴(GlassTabBar)로 전체 폭 페이지를 좌우 슬라이드 전환.
 // WidgetCarousel 과 달리 고정 높이가 아니라 활성 페이지 높이에 맞춰 뷰포트 높이를 동기화하므로 전체 페이지 콘텐츠에 적합.
 // 모든 페이지를 마운트 유지 → 페이지를 넘겨도 라이브 데이터·내부 캐러셀 위치·상태가 보존됨.
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import { GlassTabBar } from "./GlassTabBar";
 
 export type PagerPage = { title: string; content: ReactNode };
 
@@ -25,31 +27,19 @@ export function SectionPager({ pages }: { pages: PagerPage[] }) {
     return () => ro.disconnect();
   }, [idx, n]);
 
-  const go = (dir: 1 | -1) => setIdx((i) => (i + dir + n) % n);
   const cur = pages[idx];
   if (!cur) return null;
 
-  const arrowClass =
-    "flex h-7 w-7 shrink-0 items-center justify-center rounded-pill bg-surface-strong text-base leading-none text-ink active:scale-90 disabled:opacity-30 dark:bg-surface-dark dark:text-on-dark";
-
   return (
     <div className="flex flex-col gap-4">
-      {/* 컨트롤 바 — ‹ 제목 N/M › (대시보드 바 스타일과 통일) */}
-      <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline-strong bg-canvas px-4 py-2 dark:border-white/10 dark:bg-surface-dark">
-        <button type="button" onClick={() => go(-1)} aria-label="이전 페이지" disabled={n <= 1} className={arrowClass}>
-          ‹
-        </button>
-        <span className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-ink dark:text-on-dark">
-          {cur.title}
-        </span>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <span className="font-mono text-[11px] text-muted dark:text-on-dark-soft">
-            {idx + 1}/{n}
-          </span>
-          <button type="button" onClick={() => go(1)} aria-label="다음 페이지" disabled={n <= 1} className={arrowClass}>
-            ›
-          </button>
-        </div>
+      {/* 컨트롤 바 — 현황 요약 캐러셀과 동일한 리퀴드글래스 탭 메뉴(GlassTabBar) */}
+      <div className="flex items-center gap-1.5 rounded-xl border border-hairline-strong bg-canvas px-1.5 py-1 dark:border-white/10 dark:bg-surface-dark">
+        <GlassTabBar
+          tabs={pages.map((p) => p.title)}
+          active={idx}
+          onSelect={setIdx}
+          className="flex-1"
+        />
       </div>
       {/* 뷰포트 — 활성 페이지 높이로 클립, 트랙을 translateX 로 슬라이드 */}
       <div className="overflow-hidden transition-[height] duration-300 ease-out" style={{ height }}>
