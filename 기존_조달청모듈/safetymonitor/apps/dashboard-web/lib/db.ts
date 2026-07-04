@@ -100,7 +100,18 @@ function getPool(): Pool {
     if (!connectionString) {
       throw new Error("DATABASE_URL 미설정 — apps/dashboard-web/.env.local 확인");
     }
-    globalForDb.__safetyMonitorPgPool = new Pool({ connectionString, max: 8 });
+    const pool = new Pool({
+      connectionString,
+      max: 8,
+      connectionTimeoutMillis: 5000, // 커넥션 획득 대기 상한(기본 0=무한 대기 방지)
+      idleTimeoutMillis: 30000, // 유휴 커넥션 30초 후 정리(끊긴 커넥션 오래 안 붙잡게)
+      statement_timeout: 30000, // 세션 statement_timeout(ms) — 느린 쿼리의 풀 점유 방지
+    });
+    // 유휴 커넥션 error 를 잡아 프로세스 크래시 방지(핸들러 부재 시 미처리 'error'로 전체 다운).
+    pool.on("error", (err) => {
+      console.error("[db] PG 풀 유휴 커넥션 오류", err);
+    });
+    globalForDb.__safetyMonitorPgPool = pool;
   }
   return globalForDb.__safetyMonitorPgPool;
 }
