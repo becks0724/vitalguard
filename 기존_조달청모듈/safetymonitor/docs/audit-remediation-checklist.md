@@ -24,9 +24,9 @@
 - [x] A14 · SosAlertModal 임계 하드코딩(현재값 일치). `lib/severity` 재사용 (`SosAlertModal.tsx`, FE-L1d)
 
 ## 🟠 B. 안전 정체성 — 응급 무음 폐기 (packages·dashboard-web)
-- [ ] B1 · **C1 범위 밖 vital 하나가 SOS/낙상 무음 폐기**(최우선). 이벤트 플래그(`manualSos`/`fallDetected`) 샘플은 범위 밖 vital 필드 strip 후 수용, 배치 dropped 서버 경고. `packages/schemas/src/vital-stream.ts`·`app/api/mock/store.ts`·`app/api/mock/vital/route.ts` + `vital-stream.test.ts` 수정
-- [ ] B2 · sticky 활동값 → 안정 시 빈맥 팝업 억제. 활동 필드 신선도 TTL(90s) 만료 시 null→안정 임계 폴백 (`lib/severity.ts`·`store.ts`, 도메인1-H)
-- [ ] B3 · any-danger 이진 전이가 2번째 별개 응급 삼킴. 메트릭별 독립 전이 추적 (`store.ts`, 도메인1-M)
+- [x] B1 · **C1 범위 밖 vital 하나가 SOS/낙상 무음 폐기**(최우선). 이벤트 플래그(`manualSos`/`fallDetected`) 샘플은 범위 밖 vital 필드 strip 후 수용, 배치 dropped 서버 경고. `packages/schemas/src/vital-stream.ts`·`app/api/mock/store.ts`·`app/api/mock/vital/route.ts` + `vital-stream.test.ts` 수정
+- [x] B2 · sticky 활동값 → 안정 시 빈맥 팝업 억제. 활동 필드 신선도 TTL(90s) 만료 시 null→안정 임계 폴백 (`lib/severity.ts`·`store.ts`, 도메인1-H)
+- [x] B3 · any-danger 이진 전이가 2번째 별개 응급 삼킴. 메트릭별 독립 전이 추적 (`store.ts`, 도메인1-M)
 
 ## 🟡 C. 조달 제출 게이트 (dashboard-web·db)
 
