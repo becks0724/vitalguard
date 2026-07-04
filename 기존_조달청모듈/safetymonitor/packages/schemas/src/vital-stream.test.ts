@@ -2,7 +2,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { VitalSampleSchema } from "./vital-stream.ts";
+import { VitalSampleSchema, parseResilientVitalSample } from "./vital-stream.ts";
 
 const TS = "2026-06-03T10:00:00.000Z";
 
@@ -165,5 +165,71 @@ test("peakRotationRadS 경계 — 0~50 안은 통과, 초과는 거부", () => {
   assert.equal(
     VitalSampleSchema.safeParse({ workerId: "EMP-1", ts: TS, peakRotationRadS: 51 }).success,
     false,
+  );
+});
+
+// --- parseResilientVitalSample — 이벤트 플래그(SOS/낙상) 샘플의 범위 밖 vital 스트립 ---
+
+test("리질리언트 — manualSos + 심정지 HR(15)은 heartRate 만 스트립되고 샘플은 살아남는다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    manualSos: true,
+    heartRate: 15,
+  });
+  assert.equal(r.manualSos, true);
+  assert.equal(r.heartRate, undefined);
+  assert.equal(r.workerId, "EMP-1");
+});
+
+test("리질리언트 — fallDetected + 저산소 SpO₂(47)는 spo2 만 스트립", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    fallDetected: true,
+    spo2: 47,
+  });
+  assert.equal(r.fallDetected, true);
+  assert.equal(r.spo2, undefined);
+});
+
+test("리질리언트 — fallDetected + 강한 충격(25G)은 accelMagnitudeG 만 스트립", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    fallDetected: true,
+    accelMagnitudeG: 25,
+  });
+  assert.equal(r.fallDetected, true);
+  assert.equal(r.accelMagnitudeG, undefined);
+});
+
+test("리질리언트 — 이벤트 샘플의 정상 범위 vital 은 그대로 보존(범위 밖만 스트립)", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    manualSos: true,
+    heartRate: 80,
+    spo2: 47,
+  });
+  assert.equal(r.manualSos, true);
+  assert.equal(r.heartRate, 80);
+  assert.equal(r.spo2, undefined);
+});
+
+test("리질리언트 — 비-이벤트 샘플은 strict 그대로(범위 밖 heartRate 는 throw)", () => {
+  assert.throws(() =>
+    parseResilientVitalSample({ workerId: "EMP-1", ts: TS, heartRate: 15 }),
+  );
+});
+
+test("리질리언트 — 이벤트여도 필수 필드 문제(ts 형식 오류)는 스트립으로 못 살려 throw", () => {
+  assert.throws(() =>
+    parseResilientVitalSample({
+      workerId: "EMP-1",
+      ts: "2026-06-03",
+      manualSos: true,
+      heartRate: 15,
+    }),
   );
 });

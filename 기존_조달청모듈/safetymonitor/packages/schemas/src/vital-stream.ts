@@ -55,3 +55,49 @@ export const VitalSampleSchema = z.object({
 });
 
 export type VitalSample = z.infer<typeof VitalSampleSchema>;
+
+// 이벤트 플래그(manualSos/fallDetected === true) 샘플용 리질리언트 파서 — 범위 밖 "선택적 숫자" vital 만
+// 필드 단위로 제거(strip = undefined)한 뒤 재검증해, 응급 신호가 실린 샘플 전체가 폐기되지 않게 한다.
+// 심정지(HR<20)·모션아티팩트 SpO₂(<50)·강한 낙상충격(>20G)처럼 이 시스템이 잡아야 할 응급의 vital 이
+// 스키마 범위를 벗어나도 플래그·나머지 유효 필드는 살아남아 경보(recordAlert)가 발화한다.
+// 값을 경계로 조작(clamp)하지 않는다 — 조작된 vital 을 기록하느니 비워두고 플래그로 경보를 살린다.
+// 비-이벤트 샘플은 VitalSampleSchema.parse 와 정확히 동일(strict — 범위 밖 거부, 스트립 없음).
+// 스트립 판별은 하드코딩 bounds 가 아니라 ZodError issues(too_small/too_big) + 스키마 shape
+// (optional 숫자 필드)가 진실 소스 — workerId/ts 같은 필수 필드·형식 오류는 스트립 불가라 throw.
+export function parseResilientVitalSample(input: unknown): VitalSample {
+  const first = VitalSampleSchema.safeParse(input);
+  if (first.success) return first.data;
+
+  const raw =
+    typeof input === "object" && input !== null
+      ? (input as Record<string, unknown>)
+      : null;
+  const isEventSample =
+    raw !== null && (raw.manualSos === true || raw.fallDetected === true);
+  if (!isEventSample) throw first.error;
+
+  const shape: Record<string, z.ZodTypeAny> = VitalSampleSchema.shape;
+  const candidate: Record<string, unknown> = { ...raw };
+  let lastError = first.error;
+  // 재-safeParse 반복(최대 4회) — 이슈는 보통 한 pass 에 전부 보고되므로 1~2회면 수렴한다.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    let stripped = false;
+    for (const issue of lastError.issues) {
+      if (issue.code !== "too_small" && issue.code !== "too_big") continue;
+      if (issue.path.length !== 1) continue;
+      const key = issue.path[0];
+      if (typeof key !== "string") continue;
+      const field = shape[key];
+      if (!(field instanceof z.ZodOptional)) continue;
+      if (!(field.unwrap() instanceof z.ZodNumber)) continue;
+      if (candidate[key] === undefined) continue;
+      delete candidate[key];
+      stripped = true;
+    }
+    if (!stripped) throw lastError;
+    const retry = VitalSampleSchema.safeParse(candidate);
+    if (retry.success) return retry.data;
+    lastError = retry.error;
+  }
+  throw lastError;
+}

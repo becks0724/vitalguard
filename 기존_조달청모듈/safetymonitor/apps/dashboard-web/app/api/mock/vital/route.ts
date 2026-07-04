@@ -65,6 +65,24 @@ export async function POST(request: Request) {
           sample = await addSample(item);
         } catch (itemError: unknown) {
           if (itemError instanceof ZodError) {
+            // 심층방어 — 응급 플래그(manualSos/fallDetected) 샘플이 파싱 불가(ts 형식 오류 등
+            // 스트립 불가 케이스)로 폐기되면 조용히 사라지지 않게 눈에 띄는 경고를 남긴다.
+            // 범위 밖 vital 만의 문제는 리질리언트 파서(store.addSample)가 이미 수용한다.
+            const rec =
+              typeof item === "object" && item !== null
+                ? (item as {
+                    manualSos?: unknown;
+                    fallDetected?: unknown;
+                    workerId?: unknown;
+                    ts?: unknown;
+                  })
+                : null;
+            if (rec && (rec.manualSos || rec.fallDetected)) {
+              console.warn(
+                `[vital] 경고: 응급 신호(manualSos/fallDetected) 샘플이 파싱 불가로 폐기됨 — workerId=${String(rec.workerId)}, ts=${String(rec.ts)}`,
+                itemError.issues,
+              );
+            }
             dropped += 1;
             continue;
           }

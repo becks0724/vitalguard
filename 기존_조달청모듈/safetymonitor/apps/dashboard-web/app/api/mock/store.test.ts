@@ -1,10 +1,18 @@
-// store.ts 순수 로직 단위 테스트 — reserved 필터 + mergeLatestByWorker(sticky / ts-ordering / 이벤트 비-sticky)
-// + vitalDanger(안정 임계 판정) + addSample 게이트(reserved 차단 / 스키마 위반 throw).
+// store.ts 순수 로직 단위 테스트 — reserved 필터 + mergeLatestByWorker(sticky / ts-ordering / 이벤트 비-sticky
+// / 활동 필드 90초 TTL) + vitalDanger·dangerMetrics(안정 임계 판정)·hasNewDangerMetric(메트릭별 전이)
+// + addSample 게이트(reserved 차단 / 스키마 위반 throw).
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { VitalSample } from "@safetymonitor/schemas";
 
-import { addSample, isReservedTestWorker, mergeLatestByWorker, vitalDanger } from "./store";
+import {
+  addSample,
+  dangerMetrics,
+  hasNewDangerMetric,
+  isReservedTestWorker,
+  mergeLatestByWorker,
+  vitalDanger,
+} from "./store";
 
 const TS = "2026-06-03T10:00:00.000Z";
 
@@ -85,6 +93,66 @@ test("mergeLatestByWorker — aliasMap 으로 secondary→primary 폴딩(같은 
   assert.equal(folded[0]?.skinTempC, 36.2); // 폰 메트릭(sticky 결합)
 });
 
+test("mergeLatestByWorker — 신선한 활동(90초 이내)은 sticky 유지(기존과 동일 동작)", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", activeEnergyKcal: 150, steps: 4000, flightsClimbed: 20 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:01:00.000Z", heartRate: 145 }), // 60초 후, 활동 미동봉
+  ]);
+  assert.equal(out[0]?.activeEnergyKcal, 150);
+  assert.equal(out[0]?.steps, 4000);
+  assert.equal(out[0]?.flightsClimbed, 20);
+});
+
+test("mergeLatestByWorker — 활동 TTL 경계(정확히 90초)는 아직 신선(초과만 만료)", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", activeEnergyKcal: 150 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:01:30.000Z", heartRate: 145 }), // 정확히 90초 후
+  ]);
+  assert.equal(out[0]?.activeEnergyKcal, 150);
+});
+
+test("mergeLatestByWorker — 90초 초과 stale 활동은 만료(undefined) → 안정 임계 폴백", () => {
+  // 활동 전송이 끊긴 뒤에도 'heavy' 가 sticky 로 남으면 안정 HR 145 가 완화 밴드(caution)로
+  // 가려져 위험 팝업이 안 뜨는 감사 지적 케이스 — 만료로 classifyActivity 가 null 을 반환하게 한다.
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", activeEnergyKcal: 150, steps: 4000, flightsClimbed: 20 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:02:00.000Z", heartRate: 145 }), // 120초 후, 활동 미동봉
+  ]);
+  assert.equal(out[0]?.activeEnergyKcal, undefined);
+  assert.equal(out[0]?.steps, undefined);
+  assert.equal(out[0]?.flightsClimbed, undefined);
+  assert.equal(out[0]?.heartRate, 145); // vital sticky 는 무관(유지)
+});
+
+test("mergeLatestByWorker — 최신 샘플이 활동을 재동봉하면 TTL 리프레시(만료 없음)", () => {
+  // 활동 ts 는 워커 단위(3필드 중 하나라도 present 한 최대 ts) — 활동 전송이 재개되면
+  // 자기 값 + 직전 sticky 값이 함께 신선 취급된다(활동 스트림이 살아있다는 신호).
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", activeEnergyKcal: 150 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:05:00.000Z", heartRate: 145, steps: 3000 }), // 활동 재동봉
+  ]);
+  assert.equal(out[0]?.steps, 3000); // 자기 값
+  assert.equal(out[0]?.activeEnergyKcal, 150); // 재동봉이 TTL 리프레시 → sticky 유지
+});
+
+test("mergeLatestByWorker — 스트레스 입력은 90초 초과여도 sticky 유지(TTL 미적용)", () => {
+  const out = mergeLatestByWorker([
+    s({
+      workerId: "EMP-1",
+      ts: "2026-06-03T10:00:00.000Z",
+      hrvSdnnMs: 42,
+      restingHeartRate: 62,
+      walkingHeartRate: 95,
+      respiratoryRate: 15,
+    }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:05:00.000Z", heartRate: 80 }), // 5분 후
+  ]);
+  assert.equal(out[0]?.hrvSdnnMs, 42);
+  assert.equal(out[0]?.restingHeartRate, 62);
+  assert.equal(out[0]?.walkingHeartRate, 95);
+  assert.equal(out[0]?.respiratoryRate, 15);
+});
+
 test("vitalDanger — 안정 임계로 판정(활동 메트릭 동봉해도 작업 게이트로 가려지지 않음)", () => {
   // 심박 140 은 작업 메트릭(고활동)을 동봉해도 안정 임계(≥130)로 danger — false-negative 0.
   assert.equal(
@@ -110,6 +178,35 @@ test("vitalDanger — 정상치/undefined 는 위험 아님", () => {
     false,
   );
   assert.equal(vitalDanger(undefined), false);
+});
+
+test("dangerMetrics — danger 인 메트릭만 독립적으로 반환", () => {
+  assert.deepEqual(dangerMetrics(s({ workerId: "EMP-1", ts: TS, heartRate: 140 })), ["hr"]);
+  assert.deepEqual(dangerMetrics(s({ workerId: "EMP-1", ts: TS, spo2: 85 })), ["spo2"]);
+  assert.deepEqual(
+    dangerMetrics(s({ workerId: "EMP-1", ts: TS, heartRate: 140, spo2: 85, skinTempC: 38.5 })),
+    ["hr", "spo2", "temp"],
+  );
+  assert.deepEqual(dangerMetrics(s({ workerId: "EMP-1", ts: TS, heartRate: 75, spo2: 97 })), []);
+  assert.deepEqual(dangerMetrics(undefined), []);
+});
+
+test("hasNewDangerMetric — 정상→위험 전이는 감지, 같은 메트릭 지속은 미기록", () => {
+  const normal = s({ workerId: "EMP-1", ts: TS, heartRate: 75, spo2: 97 });
+  const hrDanger = s({ workerId: "EMP-1", ts: TS, heartRate: 140, spo2: 97 });
+  const hrDangerStill = s({ workerId: "EMP-1", ts: TS, heartRate: 145, spo2: 97 });
+  assert.equal(hasNewDangerMetric(normal, hrDanger), true); // 정상→위험(기존 동작 보존)
+  assert.equal(hasNewDangerMetric(undefined, hrDanger), true); // 첫 샘플부터 위험
+  assert.equal(hasNewDangerMetric(hrDanger, hrDangerStill), false); // 같은 메트릭 지속 = 중복 기록 없음
+  assert.equal(hasNewDangerMetric(hrDanger, normal), false); // 회복은 미기록
+});
+
+test("hasNewDangerMetric — HR danger 지속 중 SpO₂ 신규 진입(두 번째 별개 응급)을 감지", () => {
+  // 이진 vitalDanger 전이(prev/cur 모두 danger)로는 삼켜지던 케이스 — 메트릭별 추적으로 감지.
+  const hrOnly = s({ workerId: "EMP-1", ts: TS, heartRate: 140, spo2: 97 });
+  const hrPlusSpo2 = s({ workerId: "EMP-1", ts: TS, heartRate: 140, spo2: 85 });
+  assert.equal(vitalDanger(hrOnly) && vitalDanger(hrPlusSpo2), true); // 이진 전이로는 미감지 상황
+  assert.equal(hasNewDangerMetric(hrOnly, hrPlusSpo2), true); // spo2 신규 진입 감지
 });
 
 test("addSample — reserved 워커 입력은 null 반환(DB 미접근)", async () => {

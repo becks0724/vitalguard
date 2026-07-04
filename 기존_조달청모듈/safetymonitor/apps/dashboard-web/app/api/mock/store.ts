@@ -1,4 +1,4 @@
-import { VitalSample, VitalSampleSchema } from "@safetymonitor/schemas";
+import { VitalSample, parseResilientVitalSample } from "@safetymonitor/schemas";
 
 import {
   persistSample,
@@ -31,16 +31,34 @@ export function isReservedTestWorker(workerId: string) {
   return RESERVED_TEST_IDS.has(workerId) || RESERVED_PREFIX_RE.test(workerId);
 }
 
-// 생체 위험(심박/SpO₂/체온 중 하나라도 danger) 여부 — alerts "vital" 전이 감지용.
+// 메트릭별 생체 위험 판정 — alerts "vital" 전이 감지용(hr/spo2/temp 독립 추적).
 // 알림 이력(감사)은 안정 임계로 판정한다(활동 게이트 미적용) → 작업 중이라도 위험이
 // 활동 메트릭 유무로 가려지지 않음(false-negative 0). 카드·신호등 표시의 활동 완화와는 분리.
+export type VitalDangerMetric = "hr" | "spo2" | "temp";
+
+export function dangerMetrics(s: VitalSample | undefined): VitalDangerMetric[] {
+  if (!s) return [];
+  const out: VitalDangerMetric[] = [];
+  if (heartRateStatus(s.heartRate) === "danger") out.push("hr");
+  if (spo2Status(s.spo2) === "danger") out.push("spo2");
+  if (coreTempStatus(s.skinTempC) === "danger") out.push("temp");
+  return out;
+}
+
+// 생체 위험(심박/SpO₂/체온 중 하나라도 danger) 여부 — dangerMetrics 단일 source 위임.
 export function vitalDanger(s: VitalSample | undefined): boolean {
-  if (!s) return false;
-  return (
-    heartRateStatus(s.heartRate) === "danger" ||
-    spo2Status(s.spo2) === "danger" ||
-    coreTempStatus(s.skinTempC) === "danger"
-  );
+  return dangerMetrics(s).length > 0;
+}
+
+// 신규 danger 진입 메트릭 존재 여부 — prev 에 없던 danger 메트릭이 cur 에 하나라도 있으면 true.
+// 이진 vitalDanger 전이(정상→위험)만 보면 HR danger 지속 중 SpO₂ 가 새로 danger 로
+// 진입하는 두 번째 별개 응급이 prev/cur 모두 danger 라 삼켜진다 → 메트릭별 독립 전이로 감지.
+export function hasNewDangerMetric(
+  prev: VitalSample | undefined,
+  cur: VitalSample | undefined,
+): boolean {
+  const prevSet = new Set(dangerMetrics(prev));
+  return dangerMetrics(cur).some((m) => !prevSet.has(m));
 }
 
 // 작업자 ID 병합 별칭 캐시(secondary → primary) — 수신마다 DB 조회 회피(15s TTL).
@@ -68,7 +86,9 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
         }
       : input;
 
-  const parsed = VitalSampleSchema.parse(normalized);
+  // 리질리언트 파서 — 이벤트 플래그(SOS/낙상) 샘플은 범위 밖 vital 만 스트립하고 수용해
+  // recordAlert 이전 throw 로 응급 샘플 전체가 조용히 폐기되는 것을 막는다(비-이벤트는 strict 동일).
+  const parsed = parseResilientVitalSample(normalized);
   // 작업자 ID 병합 — 별칭(secondary)을 주 ID(primary)로 정규화해 같은 사람을 1카드로 합친다.
   const sample = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
   if (isReservedTestWorker(sample.workerId)) {
@@ -112,12 +132,13 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
         ts: sample.ts,
       });
     }
-    // 생체 위험(심박/SpO₂/체온 danger) 정상→위험 전이 시 1건 기록(진입당 1건).
-    // 병합 기준이라 잠금 null 깜빡임엔 안 흔들리고, SOS/낙상 동반 샘플은 위에서 기록되므로 제외.
+    // 생체 위험(심박/SpO₂/체온 danger) 메트릭별 신규 진입 시 1건 기록(메트릭 진입당 1건) —
+    // HR danger 지속 중 SpO₂ 크래시 같은 두 번째 별개 응급도 감지. 병합 기준이라 잠금 null
+    // 깜빡임엔 안 흔들리고, SOS/낙상 동반 샘플은 위에서 기록되므로 제외. 같은 ts 중복은 DB UNIQUE dedup.
     if (!sample.manualSos && !sample.fallDetected) {
       // 추가 후 상태 = 추가 전 워커 샘플 + 이번 sample (ring 재필터 없이 재사용).
       const curMerged = mergeLatestByWorker([...prevWorkerSamples, sample])[0];
-      if (!vitalDanger(prevMerged) && vitalDanger(curMerged)) {
+      if (hasNewDangerMetric(prevMerged, curMerged)) {
         await recordAlert({
           workerId: sample.workerId,
           workerName: sample.workerName ?? null,
@@ -171,6 +192,16 @@ export function latestByWorker(aliasMap?: Record<string, string>) {
   return mergeLatestByWorker(mockStore.samples, aliasMap);
 }
 
+// 활동 분류 필드 신선도 TTL — 활동 전송(60초 sub-cadence)이 끊기면 마지막 'heavy' 활동이
+// 무기한 sticky 로 남아 소비처(classifyActivity)가 심박 완화 밴드(135/155)를 계속 적용,
+// 안정 상태 HR 145 가 caution 에 머물러 위험 팝업이 안 뜬다 → 병합 결과 ts 기준으로
+// 활동 관측이 90초를 초과해 오래됐으면 활동 3필드를 만료(undefined)해 안정 임계로 폴백.
+const ACTIVITY_TTL_MS = 90_000;
+
+function hasActivityFields(s: VitalSample): boolean {
+  return s.activeEnergyKcal != null || s.steps != null || s.flightsClimbed != null;
+}
+
 // 순수 함수(I/O 없음) — 워커별 최신 샘플 병합. 단위 테스트 가능하도록 분리.
 // 수집시각(ts) 기준 최신 우선 + null 메트릭 sticky carry-forward + 이벤트 플래그 비-sticky.
 // aliasMap(secondary→primary) 가 있으면 표시 시점에 별칭을 주 ID로 접어 같은 사람을 한 카드로 병합한다
@@ -180,11 +211,21 @@ export function mergeLatestByWorker(
   aliasMap?: Record<string, string>,
 ): VitalSample[] {
   const latest = new Map<string, VitalSample>();
+  // 워커별 활동 분류 필드가 실제 존재했던 최대 샘플 ts(ms) — TTL 판정 기준(Date.now() 미사용 = 순수 유지).
+  const activityTsMs = new Map<string, number>();
 
   for (const sample of samples) {
     if (isReservedTestWorker(sample.workerId)) continue;
     const wid = aliasMap?.[sample.workerId] ?? sample.workerId;
     const previous = latest.get(wid);
+
+    if (hasActivityFields(sample)) {
+      const t = Date.parse(sample.ts);
+      if (Number.isFinite(t)) {
+        const prevT = activityTsMs.get(wid);
+        if (prevT === undefined || t > prevT) activityTsMs.set(wid, t);
+      }
+    }
 
     // 삽입 순서가 아닌 수집시각(ts) 기준으로 최신을 판정 — 워치는 오프라인 backlog 를 fresh 배치
     // 성공 후 별도 POST 로 보내므로 더 오래된 샘플이 더 나중에 삽입될 수 있다. 이때 그냥 last-writer 로
@@ -198,7 +239,7 @@ export function mergeLatestByWorker(
     // 카드가 마지막 실측값으로 살아있음). SOS/낙상 이벤트 샘플(생체 미동봉)도 동일하게 직전값 유지.
     // 센서가 아예 없는 메트릭(예: Apple Watch SE 의 SpO₂·손목온도)은 실측을 받은 적이 없어
     // older 도 undefined → "--" 유지(시연용 조작값은 폰 fallback 제거로 더 이상 안 들어옴).
-    latest.set(wid, {
+    const merged: VitalSample = {
       ...older,
       ...newer,
       workerId: wid,
@@ -225,7 +266,19 @@ export function mergeLatestByWorker(
       manualSos: newer.manualSos,
       fallDetected: newer.fallDetected,
       ts: newer.ts,
-    });
+    };
+
+    // 활동 분류 필드 TTL — 최신 샘플 ts 가 마지막 활동 관측 ts 보다 90초 넘게 지났으면 만료.
+    // 90초 이내(신선)면 기존 sticky 와 완전 동일. 스트레스 입력은 활동 게이트와 무관하므로 유지.
+    const actTs = activityTsMs.get(wid);
+    const mergedTsMs = Date.parse(merged.ts);
+    if (actTs !== undefined && Number.isFinite(mergedTsMs) && mergedTsMs - actTs > ACTIVITY_TTL_MS) {
+      merged.activeEnergyKcal = undefined;
+      merged.steps = undefined;
+      merged.flightsClimbed = undefined;
+    }
+
+    latest.set(wid, merged);
   }
 
   return Array.from(latest.values()).sort((a, b) =>
