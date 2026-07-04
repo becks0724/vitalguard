@@ -42,6 +42,7 @@ export default function WeeklyReportBoard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [history, setHistory] = useState<Submission[]>([]);
 
   useEffect(() => {
@@ -66,6 +67,7 @@ export default function WeeklyReportBoard() {
   async function submit() {
     if (!report) return;
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch("/api/weekly-report/submit", {
         method: "POST",
@@ -77,8 +79,11 @@ export default function WeeklyReportBoard() {
           suspectCount: report.suspect,
         }),
       });
+      if (!res.ok) throw new Error(`제출 실패 (${res.status})`);
       const j = (await res.json()) as { history?: Submission[] };
       setHistory(j.history ?? []);
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "제출 실패");
     } finally {
       setSubmitting(false);
     }
@@ -184,6 +189,13 @@ export default function WeeklyReportBoard() {
           PDF 다운로드 / 인쇄
         </button>
       </div>
+
+      {/* 제출 실패 안내 */}
+      {submitError && (
+        <div className="mt-3 rounded-lg border border-[#cf202f]/30 bg-[#cf202f]/10 px-3 py-2 text-[11px] font-semibold text-[#cf202f]">
+          {submitError}
+        </div>
+      )}
 
       {/* 제출 이력 (DB 영속) */}
       {history.length > 0 && (

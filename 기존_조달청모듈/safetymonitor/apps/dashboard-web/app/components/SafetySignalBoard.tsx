@@ -196,11 +196,18 @@ export function SafetySignalBoard({
     detail: worker.detail,
   };
 
-  // 가스/AED 상세는 입력 의존이 없는 고정 픽스처 — 매 렌더 재계산 방지 위해 메모이즈.
-  const gas = useMemo(() => gasDetail(), []);
+  // 가스/AED 상세는 AED 점검 모듈 캐시(60초 폴링)·시간 기반 D-day 에 의존 — 빈 deps 메모이즈는 마운트 시점 값으로 동결.
+  // 점검 폴링 주기와 동형의 60초 tick 을 deps 에 넣어 배터리 위험 전이·D-day·NFC 점검 복구가 램프에 반영되게 한다.
+  const [lampTick, setLampTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setLampTick((t) => t + 1), 60000); // AED 점검 폴링(60초)과 동형
+    return () => clearInterval(id);
+  }, []);
+
+  const gas = useMemo(() => gasDetail(), [lampTick]);
   const gasRow: LampRow = { icon: "gas", label: "가스 감지", sev: gas.sev, summary: gas.summary, short: gas.short, detail: gas.detail };
 
-  const aed = useMemo(() => aedDetail(), []);
+  const aed = useMemo(() => aedDetail(), [lampTick]);
   const aedRow: LampRow = { icon: "aed", label: "AED", sev: aed.sev, summary: aed.summary, short: aed.short, detail: aed.detail };
 
   const rows: LampRow[] = [weatherRow, workerRow, gasRow, aedRow];

@@ -6,6 +6,7 @@ import type { VitalSample } from "@safetymonitor/schemas";
 import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
 
 import { NearestEmergency } from "./HospitalPanel";
+import { heartRateStatus, spo2Status, type Status } from "../../lib/severity";
 
 const COMPANY_NAME = "스마트인재개발원";
 
@@ -18,21 +19,8 @@ const DEMO_GUARDIANS: Record<string, { name: string; phone: string }> = {
   demo_mock_03: { name: "정보호 (배우자)", phone: "010-5678-9012" },
 };
 
-type Severity = "idle" | "normal" | "caution" | "danger";
-
-function hrSeverity(hr?: number): Severity {
-  if (hr === undefined) return "idle";
-  if (hr >= 130 || hr <= 40) return "danger";
-  if (hr >= 110 || hr <= 50) return "caution";
-  return "normal";
-}
-
-function spo2Severity(spo2?: number): Severity {
-  if (spo2 === undefined) return "idle";
-  if (spo2 < 88) return "danger";
-  if (spo2 < 92) return "caution";
-  return "normal";
-}
+// 심박·SpO₂ 판정은 lib/severity 단일 소스(heartRateStatus/spo2Status) 재사용 — 활동 미전달=안정 임계.
+type Severity = Status;
 
 function coreSeverity(skinTempC?: number): Severity {
   if (skinTempC === undefined) return "idle";
@@ -87,10 +75,10 @@ function buildSmsBody(sample: VitalSample, audience: "guardian" | "119", reason:
 
   const vitals: string[] = [];
   if (sample.heartRate !== undefined) {
-    vitals.push(`심박 ${sample.heartRate}bpm${labelSeverity(hrSeverity(sample.heartRate))}`);
+    vitals.push(`심박 ${sample.heartRate}bpm${labelSeverity(heartRateStatus(sample.heartRate))}`);
   }
   if (sample.spo2 !== undefined) {
-    vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Severity(sample.spo2))}`);
+    vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Status(sample.spo2))}`);
   }
   if (sample.skinTempC !== undefined) {
     const core = estimateCoreTempC(sample.skinTempC).toFixed(1);
@@ -169,8 +157,8 @@ export function SosAlertModal({
   const guardianName = sample.guardianName ?? fallback?.name ?? "보호자 미등록";
   const guardianPhone = sample.guardianPhone ?? fallback?.phone ?? "";
 
-  const hrSev = hrSeverity(sample.heartRate);
-  const spo2Sev = spo2Severity(sample.spo2);
+  const hrSev = heartRateStatus(sample.heartRate);
+  const spo2Sev = spo2Status(sample.spo2);
   const coreSev = coreSeverity(sample.skinTempC);
   const core = sample.skinTempC === undefined ? undefined : estimateCoreTempC(sample.skinTempC);
 

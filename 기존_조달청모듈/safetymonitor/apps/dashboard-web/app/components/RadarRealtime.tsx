@@ -220,7 +220,7 @@ export function RadarRealtime() {
     return () => window.clearInterval(t);
   }, [playing, frames.length]);
 
-  if (error) {
+  if (error && !data) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-xs text-muted dark:text-on-dark-soft">
         레이더 — {error}

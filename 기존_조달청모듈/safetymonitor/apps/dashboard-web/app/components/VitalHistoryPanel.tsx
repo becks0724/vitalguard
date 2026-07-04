@@ -83,23 +83,35 @@ export function VitalHistoryPanel({
 
     let active = true;
     setLoading(true);
+    // 선택(작업자/메트릭/기간) 변경 시 이전 데이터를 비워 새 라벨·임계선으로 오표시되지 않게 한다.
+    setData(null);
 
     const params = new URLSearchParams({
       workerId: selection.workerId,
       metric: selection.metric,
       days: String(range),
     });
+    // 요청 시점 선택을 캡처 — 지연 응답이 새 선택 위에 덮이지 않게 커밋 전 대조한다.
+    const requested = { workerId: selection.workerId, metric: selection.metric, range };
 
     fetch(`/api/mock/history?${params.toString()}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: HistoryResponse | null) => {
         if (active) {
-          setData(json);
+          const matchesRequest =
+            json !== null &&
+            json.workerId === requested.workerId &&
+            json.metric === requested.metric &&
+            json.range === requested.range;
+          setData(matchesRequest ? json : null);
           setLoading(false);
         }
       })
       .catch(() => {
-        if (active) setLoading(false);
+        if (active) {
+          setData(null);
+          setLoading(false);
+        }
       });
 
     return () => {

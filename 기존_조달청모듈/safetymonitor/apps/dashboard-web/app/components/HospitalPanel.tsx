@@ -40,7 +40,11 @@ function useHospitals(
       qs.set("lon", String(lon));
     }
     fetch(`/api/hospitals?${qs.toString()}`, { signal: ctrl.signal })
-      .then((r) => r.json())
+      .then((r) => {
+        // HTTP 오류(500 등)의 에러 JSON 을 정상 데이터로 커밋하지 않도록 catch 로 던짐
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((json: HospitalResult & { ok?: boolean }) => {
         setData(json);
       })

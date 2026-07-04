@@ -3,8 +3,10 @@
 // aiApi=MJPEG 라이브 <img>+감지 통계 / streamUrl=<video> / 둘 다 없으면 샘플 placeholder.
 "use client";
 
-import { useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { CarouselPageVisibleContext } from "./WidgetCarousel";
 
 // AI 감지 백엔드(YOLOv8 MJPEG 스트림 + 감지 통계/연결 API) 주소.
 // 빌드타임 주입(Dockerfile build-arg). 미주입/빈값이면 로컬 데모 기본값으로 폴백(|| — 빈 문자열도 폴백).
@@ -103,20 +105,37 @@ function AiLiveScreen({
 }) {
   const [err, setErr] = useState(false);
   const [tick, setTick] = useState(0); // 재연결용 — 캐시 버스트 + img 리마운트.
-  // 다시 ON 되면 에러 상태 초기화(재연결 시도).
+  const retryCountRef = useRef(0); // 연속 재연결 실패 횟수 — 지수 백오프 계산용(연결 성공 시 리셋).
+  // 가시성 — 캐러셀 숨은 페이지(캐러셀 밖 소비처는 기본 true) 또는 탭 숨김이면 스트림 연결·재시도 중단.
+  const pageVisible = useContext(CarouselPageVisibleContext);
+  const [tabVisible, setTabVisible] = useState(true);
   useEffect(() => {
-    if (enabled !== false) setErr(false);
+    const onVisibility = () => setTabVisible(!document.hidden);
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  const visible = pageVisible && tabVisible;
+  // 다시 ON 되면 에러·백오프 상태 초기화(재연결 시도).
+  useEffect(() => {
+    if (enabled !== false) {
+      retryCountRef.current = 0;
+      setErr(false);
+    }
   }, [enabled]);
-  // 스트림 끊김 시 빠르게 자동 재연결(서버 재기동·MJPEG 일시적 onError·네트워크 블립 자가복구).
-  // 1.2초로 짧게 — 분할 타일이 영상 대신 빈 안내 화면에 머무는 시간을 최소화해 "영상이 안 채워짐" 체감을 줄인다.
+  // 스트림 끊김 시 자동 재연결(서버 재기동·MJPEG 일시적 onError·네트워크 블립 자가복구).
+  // 첫 재시도 1.2초 — 빈 안내 화면 체감 최소화. 이후 실패마다 지수 증가(최대 30초)로 죽은 백엔드 무한 폴 방지.
+  // 안 보일 때(탭 숨김·캐러셀 다른 페이지)는 재시도 중단, 가시화되면 재개.
   useEffect(() => {
-    if (!err || enabled === false) return;
+    if (!err || enabled === false || !visible) return;
+    const delayMs = Math.min(1200 * 2 ** retryCountRef.current, 30000);
     const id = setTimeout(() => {
+      retryCountRef.current += 1;
       setErr(false);
       setTick((t) => t + 1);
-    }, 1200);
+    }, delayMs);
     return () => clearTimeout(id);
-  }, [err, enabled]);
+  }, [err, enabled, visible]);
 
   if (enabled === false) {
     return (
@@ -136,11 +155,16 @@ function AiLiveScreen({
       </div>
     );
   }
+  // 숨김 상태(탭 비활성·캐러셀 다른 페이지) — img 언마운트로 MJPEG 연결 해제(대역폭·백엔드 부하 절약), 가시화 시 재연결.
+  if (!visible) return null;
   return (
     <img
       key={tick}
       src={`${aiApi}/cctv/stream${suffix}${tick ? `?t=${tick}` : ""}`}
       alt="AI 실시간 감지 영상"
+      onLoad={() => {
+        retryCountRef.current = 0; // 연결 성공 — 백오프 리셋(다음 끊김은 다시 1.2초부터).
+      }}
       onError={() => setErr(true)}
       // object-contain — 영상 전체를 잘림 없이 한 화면에 표시(줌아웃). 정사각형(shorts) 소스는 좌우 여백 발생.
       // CAM-02 낙상 영상 전체가 레이아웃 안에 온전히 들어오도록. 16:9 소스(CAM-01/03)는 여백 없이 동일.

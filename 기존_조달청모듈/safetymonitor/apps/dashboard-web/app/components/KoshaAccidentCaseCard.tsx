@@ -31,7 +31,11 @@ export function KoshaAccidentCaseCard({
     let alive = true;
     const load = () =>
       fetch("/api/kosha/accident-cases")
-        .then((r) => r.json())
+        .then((r) => {
+          // HTTP 오류(500 등)의 에러 JSON 을 정상 데이터로 커밋하지 않도록 catch 로 던짐
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
         .then((j: Payload) => {
           if (alive) setData(j);
         })

@@ -2,9 +2,13 @@
 // 같은 자리에 여러 위젯(현장정보·국내재해사례 등)을 두고 수동 전환을 쉽게(자동순환은 호버 시 정지).
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { GlassTabBar } from "./GlassTabBar";
+
+// 캐러셀에서 현재 보이는 페이지인지 알려주는 신호 — 숨은 페이지의 스트림 상시 연결(CCTV 등) 중단용.
+// 캐러셀 밖 소비처는 Provider 가 없어 기본값 true = 기존 동작 유지(하위호환).
+export const CarouselPageVisibleContext = createContext(true);
 
 // headerAccessory — 컨트롤 바의 좌측 화살표 우측에 표시할 부가 요소(예: 데이터 출처 배지). 현재 페이지 것만 노출.
 export type CarouselPage = { title: string; content: ReactNode; headerAccessory?: ReactNode };
@@ -70,7 +74,9 @@ export function WidgetCarousel({
             style={{ transform: `translateX(${(i - idx) * 100}%)` }}
             aria-hidden={i !== idx}
           >
-            {p.content}
+            <CarouselPageVisibleContext.Provider value={i === idx}>
+              {p.content}
+            </CarouselPageVisibleContext.Provider>
           </div>
         ))}
       </div>

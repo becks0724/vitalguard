@@ -279,6 +279,7 @@ function loadSiteInfo(): SiteInfo {
       address: parsed.address ?? DEFAULT_SITE_INFO.address,
       startDate: parsed.startDate ?? DEFAULT_SITE_INFO.startDate,
       completionDate: parsed.completionDate ?? DEFAULT_SITE_INFO.completionDate,
+      noticeId: parsed.noticeId, // 안전관리비 검증 매칭 키 — 드롭하면 재저장 시 영구 삭제된다
     };
   } catch {
     return DEFAULT_SITE_INFO;
@@ -291,6 +292,36 @@ function saveSiteInfo(siteInfo: SiteInfo) {
     window.localStorage.setItem(SITE_INFO_STORAGE_KEY, JSON.stringify(siteInfo));
   } catch {
     // localStorage 사용 불가 환경은 현재 화면 상태만 유지
+  }
+}
+
+// SOS/낙상 팝업 확인(ack) 영속 — 메모리 상태만으론 새로고침 시 이미 확인한 경보가 재팝업.
+// 값 = 확인한 경보 자연키("sos|<workerId>|<ts>" / "fall|<workerId>|<ts>") 배열.
+const ALERT_ACK_STORAGE_KEY = "safetymonitor.alertAck.v1";
+const ALERT_ACK_MAX_KEYS = 200; // 오래된 키부터 밀어내 localStorage 무한 증가 방지
+
+function loadAckedAlertKeys(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ALERT_ACK_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((k): k is string => typeof k === "string");
+  } catch {
+    return [];
+  }
+}
+
+function appendAckedAlertKey(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const next = [...loadAckedAlertKeys().filter((k) => k !== key), key].slice(
+      -ALERT_ACK_MAX_KEYS,
+    );
+    window.localStorage.setItem(ALERT_ACK_STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // localStorage 사용 불가 환경은 조용히 무시(세션 내 메모리 ack 는 유지)
   }
 }
 
@@ -1513,8 +1544,12 @@ function HeaderCalendarPopup({
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
   const [hydrated, setHydrated] = useState(false);
 
+  // 미디어 조회 레이스 가드 — 빠른 월 이동 시 느린 이전 달 응답이 현재 달을 덮지 않게 최신 요청만 commit.
+  const mediaFetchSeqRef = useRef(0);
+
   // 보이는 달(viewDate) 범위의 미디어를 서버에서 조회 — 관리자 세션 토큰 동봉.
   const fetchMedia = useCallback(async (d: Date) => {
+    const seq = ++mediaFetchSeqRef.current;
     const y = d.getFullYear();
     const mo = d.getMonth();
     const from = toDateKey(new Date(y, mo, 1));
@@ -1561,6 +1596,7 @@ function HeaderCalendarPopup({
           })),
         });
       }
+      if (seq !== mediaFetchSeqRef.current) return; // 더 새 조회(월 이동·폴링) 진행 중 — 옛 달 응답 무시
       setMediaByDate(map);
     } catch {
       // 미디어 조회 실패는 조용히 무시 — 캘린더 본기능 유지
@@ -2601,6 +2637,21 @@ export function DemoDashboard() {
     } catch {
       /* localStorage 불가 환경 무시 */
     }
+    // 확인(ack)한 SOS/낙상 경보 키 복원 — 새로고침 시 이미 확인한 팝업 재발화 방지.
+    // 워커별 최신 ts 만 유지(트리거 판정이 lastSosByWorker/lastFallByWorker 의 최신 ts 와 비교).
+    const sosAcks: Record<string, string> = {};
+    const fallAcks: Record<string, string> = {};
+    for (const key of loadAckedAlertKeys()) {
+      const [type, workerId, ts] = key.split("|");
+      if (!workerId || !ts) continue;
+      const target = type === "sos" ? sosAcks : type === "fall" ? fallAcks : null;
+      if (!target) continue;
+      const cur = target[workerId];
+      if (cur === undefined || ts > cur) target[workerId] = ts;
+    }
+    if (Object.keys(sosAcks).length > 0) setAcknowledgedSosTs((prev) => ({ ...sosAcks, ...prev }));
+    if (Object.keys(fallAcks).length > 0)
+      setAcknowledgedFallTs((prev) => ({ ...fallAcks, ...prev }));
     // 서버(공유 관제 1벌) 슬롯 로드 — 있으면 로컬보다 우선(다른 기기에서 등록한 것 반영). 실패 시 localStorage 유지.
     (async () => {
       try {
@@ -2687,25 +2738,22 @@ export function DemoDashboard() {
   }, []);
 
   function assignWorkerToSlot(slotIndex: number, workerId: string) {
-    setSlots((prev) => {
-      // 다른 슬롯에 이미 있으면 그 자리는 비움 (중복 등록 방지)
-      const next = prev.map((id) => (id === workerId ? null : id));
-      next[slotIndex] = workerId;
-      saveSlots(next);
-      persistSlotsServer(next);
-      return next;
-    });
+    // 다음 상태를 updater 밖에서 계산 — StrictMode updater 2회 실행 시 저장/PUT 중복 방지(순수 updater 유지).
+    // 다른 슬롯에 이미 있으면 그 자리는 비움 (중복 등록 방지)
+    const next = slots.map((id) => (id === workerId ? null : id));
+    next[slotIndex] = workerId;
+    setSlots(next);
+    saveSlots(next);
+    persistSlotsServer(next);
     setQueueModalSlot(null);
   }
 
   function clearSlot(slotIndex: number) {
-    setSlots((prev) => {
-      const next = [...prev];
-      next[slotIndex] = null;
-      saveSlots(next);
-      persistSlotsServer(next);
-      return next;
-    });
+    const next = [...slots];
+    next[slotIndex] = null;
+    setSlots(next);
+    saveSlots(next);
+    persistSlotsServer(next);
   }
 
   function toggleSelection(next: Selection) {
@@ -2741,30 +2789,37 @@ export function DemoDashboard() {
   );
 
   // 드래그 종료 → 채워진 작업자 순서 재배열 후 슬롯 배열을 앞으로 compact 하여 영속.
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    setSlots((prev) => {
-      const filled = prev.filter((id): id is string => id !== null);
+  // 다음 상태를 updater 밖에서 계산 — StrictMode updater 2회 실행 시 저장/PUT 중복 방지(순수 updater 유지).
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+      const filled = slots.filter((id): id is string => id !== null);
       const from = filled.indexOf(String(active.id));
       const to = filled.indexOf(String(over.id));
-      if (from < 0 || to < 0) return prev;
+      if (from < 0 || to < 0) return;
       const reordered = arrayMove(filled, from, to);
       const next: SlotAssignments = Array.from(
         { length: SLOT_COUNT },
         (_, i) => reordered[i] ?? null,
       );
+      setSlots(next);
       saveSlots(next);
       persistSlotsServer(next);
-      return next;
-    });
-  }, []);
+    },
+    [slots],
+  );
 
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    // 요청 순서 가드 — 응답 지연으로 뒤늦게 도착한 옛 응답이 더 새 응답을 덮어
+    // 경보가 위험↔정상으로 플랩(사이렌 재트리거·순간 해제)하지 않게, 마지막 commit 이후 시퀀스만 반영.
+    let pollSeq = 0;
+    let committedSeq = 0;
 
     async function load() {
+      const seq = ++pollSeq;
       // 로그인 세션 토큰을 동봉 → 서버가 인증된 대시보드에만 PII(GPS·보호자) 노출. 비로그인 익명 호출은 redaction.
       const token = getSessionToken();
       try {
@@ -2777,7 +2832,8 @@ export function DemoDashboard() {
           return;
         }
         const json = (await response.json()) as MockVitalResponse;
-        if (!active) return;
+        if (!active || seq <= committedSeq) return; // 더 새 응답이 이미 반영됨 — 오래된 응답 무시
+        committedSeq = seq;
         setData(json);
       } catch {
         // abort(언마운트/재폴) 또는 일시 네트워크 실패 — 다음 폴에서 복구
@@ -2803,6 +2859,7 @@ export function DemoDashboard() {
   function dismissSos() {
     if (activeSos) {
       setAcknowledgedSosTs((prev) => ({ ...prev, [activeSos.workerId]: activeSos.ts }));
+      appendAckedAlertKey(`sos|${activeSos.workerId}|${activeSos.ts}`); // 새로고침 재팝업 방지 영속
     }
     setActiveSos(null);
   }
@@ -2810,6 +2867,7 @@ export function DemoDashboard() {
   function dismissFallAlert() {
     if (activeFallAlert) {
       setAcknowledgedFallTs((prev) => ({ ...prev, [activeFallAlert.workerId]: activeFallAlert.ts }));
+      appendAckedAlertKey(`fall|${activeFallAlert.workerId}|${activeFallAlert.ts}`); // 새로고침 재팝업 방지 영속
     }
     setActiveFallAlert(null);
   }
@@ -2828,6 +2886,8 @@ export function DemoDashboard() {
   // 알림 팝업 '확인' — 해당 작업자·종류의 최근 미대응 알림을 대응 확인(ack)으로 기록.
   // 관리자 메뉴 'SOS·낙상 이력' 표에 대응완료로 반영된다(자연키 ack, 팝업은 alert id 를 모름).
   async function acknowledgeAlert(sample: VitalSample, type: "sos" | "fall" | "vital") {
+    // 확인 즉시 자연키 영속 — 닫기 전에 새로고침해도 재팝업 안 함(vital 은 정상복귀 시 ack 해제라 제외).
+    if (type !== "vital") appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
     const token = getSessionToken();
     try {
       await fetch("/api/alerts/ack", {
@@ -3008,9 +3068,11 @@ export function DemoDashboard() {
     if (points.length === 0) return { lat: undefined, lon: undefined, count: 0 };
     const latSum = points.reduce((acc, p) => acc + (p.latitude as number), 0);
     const lonSum = points.reduce((acc, p) => acc + (p.longitude as number), 0);
+    // GPS 지터 억제 — 소수 3자리(≈110m) 양자화. 매 2초 폴마다 평균 좌표가 미세 변동해
+    // [lat,lon] 을 fetch deps 로 쓰는 패널(날씨·특보·특보영상·병원)이 재호출되는 것을 막는다.
     return {
-      lat: latSum / points.length,
-      lon: lonSum / points.length,
+      lat: Math.round((latSum / points.length) * 1000) / 1000,
+      lon: Math.round((lonSum / points.length) * 1000) / 1000,
       count: points.length,
     };
   }, [slots, latestMap]);
