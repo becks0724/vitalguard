@@ -95,7 +95,7 @@ const LANG_KEY = "safetymonitor.lang.v1";
 const T: Record<Lang, Strings> = {
   ko: {
     slogan: "OPEN SAFETY · NEVER ALONE",
-    line1: "보이지 않는 위험은 없습니다. 혼자가 아니기 때문입니다",
+    line1: "보이지 않는 위험은 없습니다.\n혼자가 아니기 때문입니다.",
     line2:
       "모든 생체 신호와 현장 환경을 투명하게 — 이상 징후를 발견하는 즉시 대응합니다.",
     subtitle: "관제 대시보드 로그인",
@@ -711,7 +711,7 @@ export function LoginScreen({
         </p>
         {/* 한↔영 전환 시 레이아웃 높이 고정 — min-h 로 영역 예약 + 영문은 폰트 축소해 1줄 유지(한글과 동일 높이). */}
         <h1
-          className={`mt-2.5 flex min-h-[30px] flex-col items-center justify-center text-center leading-snug tracking-[-0.4px] text-white drop-shadow-lg ${
+          className={`mt-2.5 flex min-h-[30px] flex-col items-center justify-center whitespace-pre-line text-center leading-snug tracking-[-0.4px] text-white drop-shadow-lg ${
             lang === "en" ? "text-[15px]" : "text-[22px]"
           }`}
           style={{ fontFamily: "'Archivo Black', 'Do Hyeon', system-ui, sans-serif" }}
