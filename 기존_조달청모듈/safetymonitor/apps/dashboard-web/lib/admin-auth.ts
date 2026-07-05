@@ -1,6 +1,6 @@
 // 관리자 인증 — 로그인 시 발급한 불투명 세션 토큰(서버측 TTL) 또는 직접 자격(id:pw) 검증.
 // 발표용 프로토타입 한정. 실 서비스 화 시 NextAuth + Cognito + httpOnly cookie + CSRF 토큰 도입 필요.
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { findUserByUsername } from "./db";
 import {
@@ -17,11 +17,15 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? "";
 
 let warnedMissingPassword = false;
 
+// 프로세스 수명 동안 고정된 HMAC 키 — 자격을 고정폭(32바이트) 다이제스트로 만들어 비교한다.
+const COMPARE_KEY = randomBytes(32);
+
+// 상수시간 문자열 비교 — 양쪽을 HMAC-SHA256 다이제스트로 변환한 뒤 비교한다.
+// 길이 불일치 early-return 을 없애 자격 길이가 응답시간으로 새지 않게 한다(timing 오라클 제거).
 function safeEqual(a: string, b: string): boolean {
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+  const da = createHmac("sha256", COMPARE_KEY).update(a).digest();
+  const db = createHmac("sha256", COMPARE_KEY).update(b).digest();
+  return timingSafeEqual(da, db);
 }
 
 let warnedWeakPassword = false;
@@ -44,7 +48,11 @@ export function verifyCredentials(id: string, password: string): boolean {
     );
     warnedWeakPassword = true;
   }
-  return safeEqual(id, ADMIN_ID) && safeEqual(password, ADMIN_PASSWORD);
+  // id·password 를 각각 상수시간 비교한 뒤 결합 — 두 safeEqual 을 항상 평가해(단락 없이)
+  // 어느 쪽이 틀렸는지 응답시간으로 새지 않게 한다.
+  const idOk = safeEqual(id, ADMIN_ID);
+  const pwOk = safeEqual(password, ADMIN_PASSWORD);
+  return idOk && pwOk;
 }
 
 // ── 로그인 시도 제한(무차별 대입 방어) ──────────────────────────────────────
