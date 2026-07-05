@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
       "frame-ancestors 'none'",
       "img-src 'self' data: blob: https:",
       "style-src 'self' 'unsafe-inline'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "script-src 'self' 'unsafe-inline'",
       "font-src 'self' data:",
       "connect-src 'self' https:",
     ].join("; ");
@@ -34,6 +34,7 @@ const nextConfig: NextConfig = {
           },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Content-Security-Policy-Report-Only", value: csp },
         ],
       },
