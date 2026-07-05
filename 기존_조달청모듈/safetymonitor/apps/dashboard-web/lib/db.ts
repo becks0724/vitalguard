@@ -599,12 +599,17 @@ export async function auditWorkerDays(opts: {
   to: string;
 }): Promise<WorkerDayAudit> {
   // (작업자, 날짜) 단위로 접어 worker-day 산출. 테스트/예약 워커(reserved_/test_ 등)는 제외.
+  // 출역 집계일을 KST 달력일로 통일 — ts 는 UTC ISO 라 substr(ts,1,10)(UTC일)로 버킷팅하면 KST
+  // 00:00~08:59 샘플이 전날로 빠져 site/weather 의 KST일 산출물과 어긋난다(안전관리비 교차검증 오류).
+  // ts::timestamptz AT TIME ZONE 'Asia/Seoul' 로 KST 달력일을 뽑아 WHERE·GROUP BY 모두 KST일 기준으로.
   const { rows } = await q<{ day: string; worker_id: string; job_title: string | null }>(
-    `SELECT substr(ts, 1, 10) AS day, worker_id, MAX(job_title) AS job_title
+    `SELECT to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
+            worker_id, MAX(job_title) AS job_title
        FROM vital_samples
-       WHERE ts >= $1 AND ts <= $2
+       WHERE to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') >= $1
+         AND to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') <= $2
          AND worker_id !~ '^(reserved|test|smoke|infra)_'
-       GROUP BY substr(ts, 1, 10), worker_id`,
+       GROUP BY to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'), worker_id`,
     [opts.from, opts.to],
   );
 

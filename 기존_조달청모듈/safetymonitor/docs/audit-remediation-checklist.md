@@ -30,6 +30,8 @@
 
 ## 🟡 C. 조달 제출 게이트 (dashboard-web·db)
 
+> **진행(2026-07-05)**: **C1~C6·C8·C9·C11~C18 완료**(무인증 쓰기 인증·수집 토큰 병행(soft)·AED fail-closed·XFF 신뢰홉·귀속 위조 차단·에러 400/500·상세 숨김·통합/doc_media DROP 가드·통합 FK 인덱스+SG_ID UNIQUE·출역 KST일). **🟢D 이관(리스크/설계)**: C7(외부 프록시 레이트리밋 — 다중 인스턴스 in-memory 한계·클라 광범위 변경) · C10(앱 JWT 폐기 — async DB 리보케이션 인프라 필요) · C19·C20·C21(vital_samples CHECK·FK·락 — **라이브 공유 DB 기존 데이터 위반/고아 시 ALTER 실패 → 가드 마이그레이션 필요**).
+
 ### 무인증 쓰기 인증
 - [ ] C1 · weekly-report/inputs GET+POST 세션 게이트 (route.ts, API-H1)
 - [ ] C2 · weekly-report/submit 세션 게이트 (route.ts, API-M2)

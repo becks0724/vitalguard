@@ -207,6 +207,16 @@ ALTER TABLE T_SAFETY_EXPENSE
     ADD CONSTRAINT FK_T_SAFETY_EXPENSE_SITE_IDX_T_SITE_SITE_IDX FOREIGN KEY (SITE_IDX)
         REFERENCES T_SITE (SITE_IDX) ON DELETE RESTRICT ON UPDATE RESTRICT;
 
+-- ── 감사 PERF-01/DI-01 반영 — FK 컬럼 인덱스(무인덱스 RESTRICT FK 6개: 부모 DELETE·워커 조인마다
+--    full-scan) + 관리자 아이디 회사단위 유일(중복 SG_ID 로 로그인 비결정적이던 것 차단) ──
+CREATE INDEX IF NOT EXISTS idx_t_worker_company_idx      ON T_WORKER (COMPANY_IDX);
+CREATE INDEX IF NOT EXISTS idx_t_sensing_worker_idx      ON T_SENSING (WORKER_IDX);
+CREATE INDEX IF NOT EXISTS idx_t_site_company_idx        ON T_SITE (COMPANY_IDX);
+CREATE INDEX IF NOT EXISTS idx_t_safeguard_company_idx   ON T_SAFEGUARD (COMPANY_IDX);
+CREATE INDEX IF NOT EXISTS idx_t_alert_sensing_idx       ON T_ALERT (SENSING_IDX);
+CREATE INDEX IF NOT EXISTS idx_t_safety_expense_site_idx ON T_SAFETY_EXPENSE (SITE_IDX);
+ALTER TABLE T_SAFEGUARD ADD CONSTRAINT uq_t_safeguard_company_sgid UNIQUE (COMPANY_IDX, SG_ID);
+
 -- =====================================================================
 --  ② SafeProcure — 조달 안전관리비 위험검증  (safeprocure 스키마로 격리)
 --  나라장터(G2B) 공사 공고 → 안전관리비 과소계상 검증 + 위험작업 태깅 → 종합 위험도(0~100)
@@ -215,8 +225,17 @@ ALTER TABLE T_SAFETY_EXPENSE
 CREATE SCHEMA IF NOT EXISTS safeprocure;
 SET search_path TO safeprocure, public;
 
-DROP TABLE IF EXISTS risk_profile, risk_tag, safety_cost_check,
-                     safety_cost_rate, notice CASCADE;
+-- ⚠ 재실행 데이터 보호(fail-safe) — 헤더의 "안전·멱등" 주장과 달리 무방비 DROP CASCADE 는 라이브
+--   재실행 시 모든 SafeProcure 공고·원가검증·리스크 데이터를 삭제하고 커밋한다. DROP 을 제거하고
+--   (신규 설치는 아래 CREATE 가 그대로 진행, 기존 테이블 있으면 CREATE 단계에서 안전 실패), 데이터가
+--   존재하면 명시적으로 중단한다. 초기화가 목적이면 운영자가 수동으로 DROP 후 재실행한다.
+DO $$
+BEGIN
+  IF to_regclass('safeprocure.notice') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM safeprocure.notice LIMIT 1) THEN
+    RAISE EXCEPTION '설치 중단 — safeprocure.notice 에 데이터가 존재합니다. 재실행이 데이터를 삭제하지 않도록 보호합니다(초기화 시 수동 DROP 후 재실행).';
+  END IF;
+END $$;
 
 -- ── 공고/계약 (G2B 나라장터) — 자연키(조달청 공고번호) PK ──────────────
 CREATE TABLE notice (

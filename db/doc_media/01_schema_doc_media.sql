@@ -22,11 +22,16 @@
 
 CREATE SCHEMA IF NOT EXISTS doc_media;
 
-DROP VIEW  IF EXISTS doc_media.v_calendar_media;
-DROP TABLE IF EXISTS doc_media.media_cloud_sync;
-DROP TABLE IF EXISTS doc_media.media_integrity;
-DROP TABLE IF EXISTS doc_media.media_ocr;
-DROP TABLE IF EXISTS doc_media.media_asset;
+-- ⚠ 재적용 데이터 보호(fail-safe) — "확정본"이라도 무조건 DROP VIEW/TABLE 은 3중 검증이 보존해야 할
+--   조달 증거 사진의 해시·OCR·무결성 판정을 전부 삭제한다. DROP 을 제거(신규 설치는 아래 CREATE 가
+--   진행, 기존 테이블 있으면 안전 실패)하고 데이터가 존재하면 명시적으로 중단한다. 초기화는 수동 DROP.
+DO $$
+BEGIN
+  IF to_regclass('doc_media.media_asset') IS NOT NULL
+     AND EXISTS (SELECT 1 FROM doc_media.media_asset LIMIT 1) THEN
+    RAISE EXCEPTION '설치 중단 — doc_media.media_asset 에 데이터가 존재합니다. 재적용이 조달 증거(해시·OCR·무결성)를 삭제하지 않도록 보호합니다(초기화 시 수동 DROP 후 재실행).';
+  END IF;
+END $$;
 
 -- ① 미디어 자산 -------------------------------------------------------
 CREATE TABLE doc_media.media_asset (
