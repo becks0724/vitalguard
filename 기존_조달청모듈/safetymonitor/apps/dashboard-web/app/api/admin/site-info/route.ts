@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
+import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
   getLatestSiteInfo,
   persistSiteInfoDaily,
@@ -24,9 +25,12 @@ function normalize(body: unknown): SiteInfoInput | null {
 }
 
 export async function GET(request: Request) {
-  if (!(await hasAdminMenuAccess(request))) {
+  // 조회(GET) = 대시보드 관리자 세션 또는 앱 로그인 JWT(owner/admin/worker) 수용 — 현장 앱이 현장정보 표시.
+  // 저장(PUT)은 관리자 전용 유지. 앱 JWT 를 먼저 확인해 불필요한 DB 조회(hasAdminMenuAccess)를 피한다.
+  const appAuthed = verifyAppJwt(bearerToken(request)) !== null;
+  if (!appAuthed && !(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
-      { ok: false, error: "관리자 인증 필요" },
+      { ok: false, error: "인증 필요" },
       { status: 401 },
     );
   }
