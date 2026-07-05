@@ -12,8 +12,8 @@
 
 **현재상태** — GitHub main `8401a60` 동기(0/0)·작업 트리 clean. 라이브 = `vitalguard-dashboard-00067-4cm` 100%. SQL 가드(C15/C16/C18)는 수동 스크립트라 레포에만 반영(배포 미포함, 운영자 재실행 시 데이터 보호).
 
-**다음 할 일 (🟢D — 착수 순서 사용자 결정 대기)**
-1. **안전·즉시**: D1 보안헤더 HSTS·X-Frame-Options·CSP **Report-Only** · D2 Google id_token 검증 · D3 admin timing 오라클 · D4 안전 핵심경로 테스트.
+**다음 할 일 (🟢D)**
+1. **안전·즉시**: ~~D1 보안헤더~~ ✅·~~D3 admin timing 오라클~~ ✅ **완료(2026-07-05·라이브 00072-qcm)** · D2 Google id_token 검증 · D4 안전 핵심경로 테스트(발표 후).
 2. **설계 필요**: C10 앱 JWT 폐기(token_version+DB 리보케이션) · C7 프록시 레이트리밋 · D7 세션 httpOnly 쿠키(로그인 흐름 변경).
 3. **⚠️ 라이브 공유 DB ALTER(신중)**: C19 vital_samples CHECK · C20 FK · C21 upsert 락 — 기존 데이터 위반/고아 시 ALTER 실패 → **가드 마이그레이션 파일로 작성(운영자 수동 실행)**, 프로드 직접 ALTER 지양(L-04 정신).
 
@@ -77,9 +77,9 @@
 
 > **🟡C 이관분 포함**: C7(프록시 레이트리밋)·C10(앱 JWT 리보케이션)·C19·C20·C21(라이브 DB CHECK/FK/락 가드 마이그레이션) — 위 C 섹션 참조.
 
-- [ ] D1 · 보안 헤더 HSTS·X-Frame-Options·X-Content-Type-Options·Referrer-Policy + CSP Report-Only (`next.config.ts`/middleware, FE 보안)
+- [x] D1 · 보안 헤더 — HSTS·X-Frame-Options DENY·X-Content-Type-Options nosniff + **CSP Report-Only** 적용(`next.config.ts` `headers()`). 라이브 `00072-qcm` 실측 4종 존재. Referrer-Policy 는 이번 미포함(무위험 추가분·후속 선택). (2026-07-05·커밋 `7465985`)
 - [ ] D2 · Google id_token aud/iss/exp·email_verified 검증(방어심층) (`lib/google-oauth.ts`, AUTH-L2)
-- [ ] D3 · admin ID 타이밍/단락 오라클. 두 비교 무조건+고정길이 해시 (`lib/admin-auth.ts`, AUTH-L1)
+- [x] D3 · admin timing/단락 오라클 제거 — `safeEqual` double-HMAC(양쪽 HMAC-SHA256 고정 32바이트 비교)로 길이 early-return 제거 + `verifyCredentials` 두 비교 무조건 평가(`&&` 단락 제거). 라이브 로그인 정상·틀린비번 401·스탠드얼론 자격비교 8/8. (2026-07-05·커밋 `04ac5b0`)
 - [ ] D4 · 안전 핵심경로 테스트 보강(store 수신 게이트·C1 회귀)
 - [ ] D5 (문서화) · TEXT→timestamptz 이관 계획 (DB-M1·L)
 - [ ] D6 (문서화) · SERIAL→BIGSERIAL 이관 (DB-L)
