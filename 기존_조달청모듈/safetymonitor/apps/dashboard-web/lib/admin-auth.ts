@@ -78,6 +78,16 @@ function sweepLoginAttempts(): void {
   }
 }
 
+// 신뢰 클라이언트 IP — Cloud Run 등 신뢰 프록시는 실제 클라 IP 를 X-Forwarded-For 최우측에 append 한다.
+// 최좌측 값은 클라이언트가 임의로 넣을 수 있어(위조), 매 요청 XFF 를 바꿔 (ip,id) 잠금을 절대 발동 안 하게
+// 하던 우회를 만든다 → 최우측(신뢰 프록시가 본 실 IP)을 잠금 키 IP 로 사용한다.
+export function clientIpFromXff(request: Request): string {
+  const xff = request.headers.get("x-forwarded-for");
+  if (!xff) return "unknown";
+  const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+  return parts[parts.length - 1] || "unknown";
+}
+
 // 남은 잠금 시간(ms). 0 이면 잠기지 않음. key = 'ip:id'(login route 에서 조합).
 export function loginLockRemainingMs(key: string): number {
   const rec = loginAttempts.get(key);

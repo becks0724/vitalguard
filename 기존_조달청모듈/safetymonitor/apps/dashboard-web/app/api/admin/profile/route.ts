@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSession } from "../../../../lib/admin-auth";
 import { isAllowedCompany } from "../../../../lib/companies";
-import { findUserByUsername, updateUserProfile } from "../../../../lib/db";
+import { employeeIdTakenByOther, findUserByUsername, updateUserProfile } from "../../../../lib/db";
 import { hashPassword, verifyPassword } from "../../../../lib/password";
 
 // 내 정보 조회 — 폼 프리필용(민감값 제외).
@@ -145,6 +145,13 @@ export async function POST(request: Request) {
   const dept = typeof department === "string" ? department.trim() : "";
   const title = typeof jobTitle === "string" ? jobTitle.trim() : "";
   const empId = typeof employeeId === "string" ? employeeId.trim() : "";
+  // 귀속 위조 방지 — 사번을 다른 계정이 쓰는 값으로 바꾸면 생체·미디어·낙상 기록이 그 사람에게 귀속된다.
+  if (empId && (await employeeIdTakenByOther(empId, session.username))) {
+    return NextResponse.json(
+      { ok: false, error: "이미 다른 계정에서 사용 중인 사번입니다." },
+      { status: 409 },
+    );
+  }
   const updated = await updateUserProfile(session.username, {
     name: personName.slice(0, 60),
     company: coName.slice(0, 100),

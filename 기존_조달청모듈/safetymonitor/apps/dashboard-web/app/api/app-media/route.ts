@@ -124,10 +124,12 @@ export async function POST(request: Request) {
   const ocrText = pick(form, ["ocrText", "ocr", "ocr_text", "text"]);
   const title = pick(form, ["title"]);
   const siteId = pick(form, ["siteId", "site", "site_id"]);
-  // 작업자 이름과 ID를 분리 수집(스탬프 정리 표시용). 폼 미전송 시 로그인 JWT 신원으로 자동 채움.
-  const uploader = pick(form, ["uploader", "workerName", "worker", "name"]) ?? jwtClaims?.name ?? null;
+  // 귀속 위조 방지 — 로그인 JWT 로 인증했으면 JWT 신원(name/workerId)을 강제하고 폼 값은 무시한다.
+  // (폼 workerId 가 JWT 보다 우선하면 인증된 사용자가 미디어를 타인에게 귀속시킬 수 있음.)
+  // APP_UPLOAD_TOKEN 만의 익명 기기 업로드는 신원이 없어 폼 값 폴백을 허용.
+  const uploader = jwtClaims?.name ?? pick(form, ["uploader", "workerName", "worker", "name"]) ?? null;
   const workerId =
-    pick(form, ["workerId", "worker_id", "employeeId", "empId", "empNo"]) ?? jwtClaims?.workerId ?? null;
+    jwtClaims?.workerId ?? pick(form, ["workerId", "worker_id", "employeeId", "empId", "empNo"]) ?? null;
   const roadAddress = pick(form, ["roadAddress", "road_address", "address", "addr", "roadAddr"]);
   const latitude = toNum(pick(form, ["latitude", "lat", "gpsLat"]));
   const longitude = toNum(pick(form, ["longitude", "lng", "lon", "gpsLng", "gpsLon"]));

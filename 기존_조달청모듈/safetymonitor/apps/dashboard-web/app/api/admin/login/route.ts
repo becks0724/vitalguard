@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  clientIpFromXff,
   createSession,
   loginLockRemainingMs,
   recordLoginResult,
@@ -36,10 +37,9 @@ export async function POST(request: Request) {
     );
   }
 
-  // 잠금 키 = 요청 IP + id. id 단독으로 키잉하면 임의 id 로 다른 관리자를 잠그는
-  // targeted lockout(DoS)이 가능 + Map 무한 증식. IP(프록시 헤더 첫 값) 로 범위를 한정.
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // 잠금 키 = 신뢰 홉 IP + id. id 단독 키잉은 targeted lockout(DoS) + Map 무한 증식 위험.
+  // IP 는 신뢰 프록시(Cloud Run)가 append 한 XFF 최우측 홉 — 클라 위조 최좌측으로 잠금 우회 차단.
+  const ip = clientIpFromXff(request);
   const lockKey = `${ip}:${id}`;
 
   // 무차별 대입 방어 — (ip,id) 별 연속 실패 임계 초과 시 일정 시간 잠금(429).

@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  clientIpFromXff,
   loginLockRemainingMs,
   recordLoginResult,
   verifyCredentials,
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   // 무차별 대입 방어 — (ip,id) 별 연속 실패 임계 초과 시 잠금(웹 로그인과 동일 메커니즘, 키 접두사만 분리).
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = clientIpFromXff(request);
   const lockKey = `app:${ip}:${id}`;
   const lockMs = loginLockRemainingMs(lockKey);
   if (lockMs > 0) {

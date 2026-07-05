@@ -1530,6 +1530,18 @@ export async function findUserByUsername(username: string): Promise<UserRow | nu
   return rows[0] ?? null;
 }
 
+// 사번(employee_id)이 다른 사용자에게 이미 쓰이는지 — 자가 프로필 수정 시 타인 사번 도용(귀속 위조) 차단용.
+export async function employeeIdTakenByOther(
+  employeeId: string,
+  username: string,
+): Promise<boolean> {
+  const { rows } = await q<{ one: number }>(
+    "SELECT 1 AS one FROM users WHERE employee_id = $1 AND username <> $2 LIMIT 1",
+    [employeeId, username],
+  );
+  return rows.length > 0;
+}
+
 // 사용자 관리 목록(owner UI) — 대기 → 승인 → 거절 순, 최신 가입 우선.
 export async function listUsers(): Promise<UserRow[]> {
   const { rows } = await q<UserRow>(
