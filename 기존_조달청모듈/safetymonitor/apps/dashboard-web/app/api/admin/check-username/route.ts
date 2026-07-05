@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { findUserByUsername } from "../../../../lib/db";
+import { clientIpFromXff } from "../../../../lib/admin-auth";
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,40}$/;
 const RESERVED = new Set(["admin", "owner", "root", "administrator", "superuser"]);
@@ -10,12 +11,6 @@ const RESERVED = new Set(["admin", "owner", "root", "administrator", "superuser"
 const IP_WINDOW_MS = 60 * 1000;
 const IP_MAX = 30;
 const ipHits = new Map<string, { count: number; resetAt: number }>();
-
-function clientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip") || "unknown";
-}
 
 function ipThrottled(ip: string): boolean {
   const now = Date.now();
@@ -36,7 +31,9 @@ export async function GET(request: Request) {
   if (RESERVED.has(u.toLowerCase())) {
     return NextResponse.json({ ok: true, available: false, reason: "reserved" });
   }
-  if (ipThrottled(clientIp(request))) {
+  // 신뢰 프록시(Cloud Run)가 XFF 맨 뒤에 실제 클라 IP 를 append — 좌측은 클라 위조 가능하므로
+  // 로그인 잠금과 동일하게 clientIpFromXff(우측 끝)로 통일한다(레이트리밋 우회·사번 열거 방어).
+  if (ipThrottled(clientIpFromXff(request))) {
     return NextResponse.json(
       { ok: false, error: "요청이 많습니다. 잠시 후 다시 시도해주세요." },
       { status: 429 },
