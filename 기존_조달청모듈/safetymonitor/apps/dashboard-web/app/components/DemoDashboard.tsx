@@ -2135,7 +2135,7 @@ function HeaderCalendarPopup({
                         "pointer-events-none absolute bottom-0.5 right-0.5 z-10 inline-flex items-center gap-0.5 rounded px-1 text-[8px] font-bold leading-none",
                         isSelected
                           ? "bg-white/20 text-white"
-                          : "bg-primary/15 text-primary dark:bg-primary/25 dark:text-on-dark",
+                          : "bg-primary-subtle text-primary dark:text-on-dark",
                       ].join(" ")}
                       title={`현장 이미지/미디어 ${dayMedia.length}건`}
                     >

@@ -189,7 +189,7 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
             type="button"
             onClick={() => onSelect?.(gasMetric(r))}
             title="클릭 → 측정값 추세 그래프"
-            className="mx-auto rounded px-1 text-center font-mono font-semibold tabular-nums hover:bg-primary/10 hover:underline"
+            className="mx-auto rounded px-1 text-center font-mono font-semibold tabular-nums hover:bg-primary-subtle hover:underline"
           >
             {r.val}
             <span className="ml-0.5 text-[10px] font-normal text-muted">{r.unit}</span>

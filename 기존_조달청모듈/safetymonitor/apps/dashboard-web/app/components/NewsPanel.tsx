@@ -81,7 +81,7 @@ export function NewsPanel() {
                   rel="noopener noreferrer"
                   tabIndex={copy === 1 ? -1 : undefined}
                   title={it.title}
-                  className="group mb-1 block rounded-lg bg-canvas px-2.5 py-1 transition hover:ring-1 hover:ring-primary/40 dark:bg-surface-dark"
+                  className="group mb-1 block rounded-lg bg-canvas px-2.5 py-1 transition hover:ring-1 hover:ring-primary-ring dark:bg-surface-dark"
                 >
                   <div className="truncate text-xs font-semibold text-ink group-hover:text-primary dark:text-on-dark">
                     {it.title}

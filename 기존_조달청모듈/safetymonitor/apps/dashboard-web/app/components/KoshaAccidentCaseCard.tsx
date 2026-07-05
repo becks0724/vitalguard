@@ -74,7 +74,7 @@ export function KoshaAccidentCaseCard({
                   onClick={() => setSelected(it)}
                   title="클릭하여 사고 경위 전문 보기"
                   tabIndex={copy === 1 ? -1 : undefined}
-                  className="mb-1 flex w-full items-center gap-1.5 rounded-lg bg-canvas px-2.5 py-1 text-left transition hover:ring-1 hover:ring-primary/40 dark:bg-surface-dark"
+                  className="mb-1 flex w-full items-center gap-1.5 rounded-lg bg-canvas px-2.5 py-1 text-left transition hover:ring-1 hover:ring-primary-ring dark:bg-surface-dark"
                 >
                   {it.business && (
                     <span className="shrink-0 rounded bg-surface-card px-1.5 py-0.5 text-[10px] font-semibold text-ink">
