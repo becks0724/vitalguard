@@ -97,7 +97,7 @@ const T: Record<Lang, Strings> = {
     slogan: "OPEN SAFETY · NEVER ALONE",
     line1: "보이지 않는 위험은 없습니다.\n혼자가 아니기 때문입니다.",
     line2:
-      "모든 생체 신호와 현장 환경을 투명하게 — 이상 징후를 발견하는 즉시 대응합니다.",
+      "모든 생체 신호와 현장 환경을 투명하게\n이상 징후를 발견하는 즉시 대응합니다.",
     subtitle: "관제 대시보드 로그인",
     idLabel: "관리자 ID",
     idPlaceholder: "관리자 ID",
@@ -719,7 +719,7 @@ export function LoginScreen({
           {t.line1}
         </h1>
         <p
-          className={`mt-3 flex min-h-[20px] flex-col items-center justify-center text-center leading-5 text-white/85 drop-shadow ${
+          className={`mt-3 flex min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow ${
             lang === "en" ? "text-[10px]" : "text-sm"
           }`}
         >
