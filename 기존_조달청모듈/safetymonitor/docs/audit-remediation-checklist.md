@@ -1,7 +1,21 @@
 # 감사 80건 리메디에이션 체크리스트 (2026-07-04 착수)
 
 > `audit-response-20260704.md` 재검증 판정 위에서 구현. 범위 결정(사용자) = **관제웹(dashboard-web·packages·db)만** · 수집 API 인증 = **토큰 병행(soft)** · 미배선 분석기 = **스킵·문서화** · 보안 헤더 = **헤더 + CSP Report-Only**. 모바일(Flutter)·워치(Swift)는 별도 트랙(이 환경 빌드·배포 불가).
-> 실행 = fable 서브에이전트 구현 → 검증(tsc/lint/test) → 그룹 경계마다 `/deploy`. 각 항목 = 별도 커밋 지향.
+> 실행 = 구현(🔴A·🟠B·B1 = fable 서브에이전트 / 🟡C = Opus 4.8 직접 — fable 세션한도 반복 사망 + 사용자 지시) → 검증(tsc/lint/test) → 그룹 경계마다 `/deploy`. 각 항목 = 별도 커밋.
+
+## 진척 요약 (2026-07-05 현재)
+
+**지금까지 작업 (배포 완료 32건)**
+- 🔴A 발표 데모 안정성 **14건** + 🟠B 안전 정체성 **3건**(C1 범위밖 vital 무음폐기·활동 90초 TTL·메트릭별 danger 전이) → **라이브 `00066-nks`** (5커밋 `149bd9e→b09907c`).
+- 🟡C 조달 게이트 **15건**(무인증 쓰기 인증+클라 토큰·수집 API 토큰 병행 soft·AED fail-closed·XFF 신뢰홉·귀속위조·통합/doc_media DROP 가드·통합 FK+SG_ID UNIQUE·출역 KST일) → **라이브 `00067-4cm`** (4커밋 `082f4a6→a23f71d`).
+- 전 그룹 tsc=0·lint 0err·schemas 21·analyzers 46·dashboard 89·라이브 실측 통과(게이트 회귀 0·C17 캐스트 정상·soft 토큰 정상).
+
+**현재상태** — GitHub main `8401a60` 동기(0/0)·작업 트리 clean. 라이브 = `vitalguard-dashboard-00067-4cm` 100%. SQL 가드(C15/C16/C18)는 수동 스크립트라 레포에만 반영(배포 미포함, 운영자 재실행 시 데이터 보호).
+
+**다음 할 일 (🟢D — 착수 순서 사용자 결정 대기)**
+1. **안전·즉시**: D1 보안헤더 HSTS·X-Frame-Options·CSP **Report-Only** · D2 Google id_token 검증 · D3 admin timing 오라클 · D4 안전 핵심경로 테스트.
+2. **설계 필요**: C10 앱 JWT 폐기(token_version+DB 리보케이션) · C7 프록시 레이트리밋 · D7 세션 httpOnly 쿠키(로그인 흐름 변경).
+3. **⚠️ 라이브 공유 DB ALTER(신중)**: C19 vital_samples CHECK · C20 FK · C21 upsert 락 — 기존 데이터 위반/고아 시 ALTER 실패 → **가드 마이그레이션 파일로 작성(운영자 수동 실행)**, 프로드 직접 ALTER 지양(L-04 정신).
 
 ## 🔴 A. 발표 데모 안정성 (dashboard-web · 전부 외과적)
 
@@ -33,33 +47,36 @@
 > **진행(2026-07-05)**: **C1~C6·C8·C9·C11~C18 완료**(무인증 쓰기 인증·수집 토큰 병행(soft)·AED fail-closed·XFF 신뢰홉·귀속 위조 차단·에러 400/500·상세 숨김·통합/doc_media DROP 가드·통합 FK 인덱스+SG_ID UNIQUE·출역 KST일). **🟢D 이관(리스크/설계)**: C7(외부 프록시 레이트리밋 — 다중 인스턴스 in-memory 한계·클라 광범위 변경) · C10(앱 JWT 폐기 — async DB 리보케이션 인프라 필요) · C19·C20·C21(vital_samples CHECK·FK·락 — **라이브 공유 DB 기존 데이터 위반/고아 시 ALTER 실패 → 가드 마이그레이션 필요**).
 
 ### 무인증 쓰기 인증
-- [ ] C1 · weekly-report/inputs GET+POST 세션 게이트 (route.ts, API-H1)
-- [ ] C2 · weekly-report/submit 세션 게이트 (route.ts, API-M2)
-- [ ] C3 · weekly-report/photos 인증 + content-type 허용목록 + 파일 크기/개수 상한 (route.ts·photo-store.ts, API-H3)
-- [ ] C4 · mock/vital POST 토큰 병행(soft) + GET 세션 (route.ts, API-H2)
-- [ ] C5 · cctv/event POST 토큰 병행 + GET 세션 (route.ts, API-H4)
-- [ ] C6 · fall/imu-window 인증 + row 상한 + error.message 숨김 (route.ts, API-M1)
-- [ ] C7 · 외부 API 프록시 남용(키·쿼터). 경량 레이트리밋 (nts·hospitals·youtube·news·typhoon·kosha·kma-warning·weather, API-M3) — 판단 후 적용
+- [x] C1 · weekly-report/inputs GET+POST 세션 게이트 + 클라 토큰 동봉 (route.ts·ContractorSubmitForm, API-H1)
+- [x] C2 · weekly-report/submit 세션 게이트 + 클라 토큰 (route.ts·WeeklyReportBoard, API-M2)
+- [x] C3 · weekly-report/photos 인증 + image/* 허용목록 + 파일당 10MB·최대 20장 (route.ts, API-H3)
+- [x] C4 · mock/vital POST 토큰 병행(soft) (route.ts·lib/ingest-auth, API-H2)
+- [x] C5 · cctv/event POST 토큰 병행 + GET 세션 (route.ts, API-H4)
+- [x] C6 · fall/imu-window 토큰 병행 + row 상한 2000 + error.message 숨김 (route.ts, API-M1)
+- [ ] C7 · 외부 API 프록시 남용(키·쿼터). 경량 레이트리밋 (API-M3) → **🟢D 이관**(다중 인스턴스 in-memory 한계·클라 광범위 변경)
 
 ### 인증 강화
-- [ ] C8 · AED 폴백 시크릿 fail-closed. 키 미설정 시 서명·검증 거부 (`lib/aed-sign.ts`, AUTH-H1)
-- [ ] C9 · XFF 스푸핑 잠금 우회. Cloud Run 신뢰 최우측 홉 IP + id별 전역 시도 상한 (`lib/admin-auth.ts`+login routes, AUTH-H2)
-- [ ] C10 · 앱 JWT 폐기·비번변경 무효화 없음. `token_version` 클레임+DB 대조 (`lib/app-jwt.ts`, AUTH-M2)
-- [ ] C11 · 귀속 위조. app-media는 JWT workerId 강제(폼 우선 제거), admin/profile employee_id 자기수정 차단 (app-media·admin/profile route, AUTH-M4)
-- [ ] C12 · 응답 내부 에러 상세 노출. 서버 로깅 후 일반 메시지 (radar·weather·cctv/event·mock/vital·fall/imu-window, API-L1)
-- [ ] C13 · 서버 실패 400 vs 500 구분. ZodError(400)/그외(500) 분리 (cctv/event·mock/vital, API-L2)
-- [ ] C14 · aed/inspections GET 점검자 이름 세션 게이트 (route.ts, API-L3)
+- [x] C8 · AED 폴백 시크릿 fail-closed. 키 미설정 시 서명·검증 거부 (`lib/aed-sign.ts`, AUTH-H1)
+- [x] C9 · XFF 스푸핑 잠금 우회. XFF 최우측 신뢰 홉 IP (`clientIpFromXff`, admin/login·app-auth/login, AUTH-H2)
+- [ ] C10 · 앱 JWT 폐기·비번변경 무효화 없음. `token_version` 클레임+DB 대조 (`lib/app-jwt.ts`, AUTH-M2) → **🟢D 이관**(async DB 리보케이션 인프라)
+- [x] C11 · 귀속 위조. app-media JWT workerId/name 강제(폼 폴백은 익명 토큰만), admin/profile 사번 유일성 검사 409 (app-media·admin/profile·db. employeeIdTakenByOther, AUTH-M4)
+- [x] C12 · 응답 내부 에러 상세 제거. 서버 로깅 후 일반 메시지 (mock/vital·cctv/event·fall/imu-window, API-L1)
+- [x] C13 · 서버 실패 400 vs 500 구분. ZodError(400)/그외(500) 분리 (cctv/event·mock/vital, API-L2)
+- [x] C14 · aed/inspections GET 점검자 이름 세션 게이트 + 클라 토큰 (route.ts·SiteSafetyTables, API-L3)
 
 ### DB/무결성
-- [ ] C15 · 통합 설치 스크립트 무방비 DROP TABLE 제거/가드 (`db/integrated/vitalguard_safeprocure_full.sql`, DB-C1)
-- [ ] C16 · doc_media 확정본 무조건 DROP → `CREATE TABLE IF NOT EXISTS`+가드 (`db/doc_media/01_schema_doc_media.sql`, DB-C2)
-- [ ] C17 · 출역 집계 UTC일 vs KST일 어긋남. KST 변환일 그룹 (`lib/db.ts` auditWorkerDays, DB-H4)
-- [ ] C18 · 통합 스키마 무인덱스 FK6 + SG_ID UNIQUE 부재. FK 인덱스+회사단위 UNIQUE (`db/integrated/...`, DB-M9)
-- [ ] C19 · vital_samples SpO2/HR CHECK 미러링(심층방어) (`lib/db.ts`, DB-M4)
-- [ ] C20 · fall_labels.sample_id FK + initSchema calendar_media_comment FK 누락 (`lib/db.ts`, DB-M2·M3)
-- [ ] C21 · upsertReportInputs 읽기-수정-쓰기 트랜잭션/락 (`lib/db.ts`, DB-M5)
+- [x] C15 · 통합 설치 스크립트 무방비 DROP TABLE 제거 + 데이터 존재 시 RAISE 가드 (`db/integrated/vitalguard_safeprocure_full.sql`, DB-C1)
+- [x] C16 · doc_media 확정본 무조건 DROP 제거 + 데이터 보호 가드 (`db/doc_media/01_schema_doc_media.sql`, DB-C2)
+- [x] C17 · 출역 집계 UTC일→KST일. `ts::timestamptz AT TIME ZONE 'Asia/Seoul'` WHERE·GROUP BY (`lib/db.ts` auditWorkerDays, DB-H4)
+- [x] C18 · 통합 스키마 FK 인덱스 6 + 회사단위 SG_ID UNIQUE (`db/integrated/...`, DB-M9)
+- [ ] C19 · vital_samples SpO2/HR CHECK 미러링(심층방어) (`lib/db.ts`, DB-M4) → **🟢D 이관**(라이브 DB ALTER 가드 마이그레이션)
+- [ ] C20 · fall_labels.sample_id FK + initSchema calendar_media_comment FK 누락 (`lib/db.ts`, DB-M2·M3) → **🟢D 이관**(고아 행 ALTER 실패 리스크)
+- [ ] C21 · upsertReportInputs 읽기-수정-쓰기 트랜잭션/락 (`lib/db.ts`, DB-M5) → **🟢D 이관**(트랜잭션 래핑, 데모 영향 저)
 
 ## 🟢 D. 상용화 로드맵 (일부 즉시·일부 문서화)
+
+> **🟡C 이관분 포함**: C7(프록시 레이트리밋)·C10(앱 JWT 리보케이션)·C19·C20·C21(라이브 DB CHECK/FK/락 가드 마이그레이션) — 위 C 섹션 참조.
+
 - [ ] D1 · 보안 헤더 HSTS·X-Frame-Options·X-Content-Type-Options·Referrer-Policy + CSP Report-Only (`next.config.ts`/middleware, FE 보안)
 - [ ] D2 · Google id_token aud/iss/exp·email_verified 검증(방어심층) (`lib/google-oauth.ts`, AUTH-L2)
 - [ ] D3 · admin ID 타이밍/단락 오라클. 두 비교 무조건+고정길이 해시 (`lib/admin-auth.ts`, AUTH-L1)
