@@ -14,6 +14,7 @@ export type ExpandableTabItem = {
   tooltip?: string; // title 속성(없으면 title 사용)
   dim?: boolean; // 비활성 톤(예: 사이렌 꺼짐)
   ariaPressed?: boolean; // 토글 버튼 상태
+  badge?: number; // 미확인 개수(카카오톡식 빨간 배지) — 0/미설정이면 미표시
 };
 
 export function ExpandableTabs({
@@ -57,8 +58,16 @@ export function ExpandableTabs({
                 : undefined
             }
           >
-            <span className="grid h-4 w-4 shrink-0 place-items-center">
+            <span className="relative grid h-4 w-4 shrink-0 place-items-center">
               {tab.icon}
+              {typeof tab.badge === "number" && tab.badge > 0 && (
+                <span
+                  aria-label={`새 알림 ${tab.badge}건`}
+                  className="absolute -right-1.5 -top-1.5 grid h-4 min-w-[16px] place-items-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-surface-soft dark:ring-surface-dark-elevated"
+                >
+                  {tab.badge > 99 ? "99+" : tab.badge}
+                </span>
+              )}
             </span>
             {/* 라벨 — 인라인 스타일로 폭/투명도 전환(JIT 타이밍·preflight 간섭 회피). transition-all 이 부드럽게 애니메이션. */}
             <span

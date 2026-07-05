@@ -785,6 +785,31 @@ function toDateKey(d: Date) {
   return `${y}-${m}-${day}`;
 }
 
+// 캘린더 배지 — '이미 본' 현장 사진(미디어) id 집합을 localStorage 에 보관(카카오톡 미확인 방식).
+// 새 미디어 id 개수 = 배지 숫자. 캘린더를 열면 현재 미디어 전부를 seen 에 추가해 배지를 비운다.
+const CALENDAR_SEEN_KEY = "safetymonitor.calendarSeen.v1";
+const CALENDAR_SEEN_MAX = 500; // localStorage 무한 증가 방지 — 최근 N개 id 만 보관
+function loadCalendarSeen(): { ids: string[]; existed: boolean } {
+  try {
+    const raw = localStorage.getItem(CALENDAR_SEEN_KEY);
+    if (raw === null) return { ids: [], existed: false };
+    const arr = JSON.parse(raw);
+    return {
+      ids: Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [],
+      existed: true,
+    };
+  } catch {
+    return { ids: [], existed: false };
+  }
+}
+function saveCalendarSeen(ids: string[]) {
+  try {
+    localStorage.setItem(CALENDAR_SEEN_KEY, JSON.stringify(ids.slice(-CALENDAR_SEEN_MAX)));
+  } catch {
+    // 저장 실패(용량/프라이빗 모드)는 무시 — 배지는 세션 내에서만 동작
+  }
+}
+
 function weekDateKeys(anchor: Date): string[] {
   const start = new Date(anchor);
   start.setHours(0, 0, 0, 0);
@@ -2577,6 +2602,92 @@ export function DemoDashboard() {
   const [adminOpen, setAdminOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  // 캘린더 배지·토스트 — 새 현장 사진(앱 업로드 미디어) 미확인 개수 배지 + 도착 알림 토스트.
+  const [calendarNewCount, setCalendarNewCount] = useState(0);
+  const [calendarToast, setCalendarToast] = useState<{ count: number; key: number } | null>(null);
+  const calendarSeenRef = useRef<Set<string>>(new Set());
+  const calendarRecentIdsRef = useRef<string[]>([]);
+  const calendarSeenExistedRef = useRef(false);
+  const calendarFirstPollRef = useRef(true);
+  const calendarToastKeyRef = useRef(0);
+  const calendarOpenRef = useRef(false);
+  useEffect(() => {
+    calendarOpenRef.current = calendarOpen;
+  }, [calendarOpen]);
+
+  // 현재 조회된 미디어 전부를 '봄' 처리 → 배지 0. 캘린더 열 때 호출.
+  const markCalendarSeen = useCallback(() => {
+    const seen = calendarSeenRef.current;
+    calendarRecentIdsRef.current.forEach((id) => seen.add(id));
+    saveCalendarSeen([...seen]);
+    setCalendarNewCount(0);
+    setCalendarToast(null);
+  }, []);
+
+  // 최근 30일 현장 사진을 조회해 미확인(새 id) 개수를 계산 — 팝업 열림/닫힘과 무관하게 백그라운드 동작.
+  const runCalendarPoll = useCallback(async () => {
+    const token = getSessionToken();
+    if (!token) return;
+    const now = new Date();
+    const from = toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 30));
+    const to = toDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
+    try {
+      const res = await fetch(`/api/calendar/media?from=${from}&to=${to}`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const json = (await res.json()) as { ok?: boolean; media?: { id?: string | null }[] };
+      if (!json.ok || !Array.isArray(json.media)) return;
+      const ids = json.media.map((m) => m.id).filter((x): x is string => !!x);
+      const seen = calendarSeenRef.current;
+      const wasFirst = calendarFirstPollRef.current;
+      calendarFirstPollRef.current = false;
+
+      // (a) 캘린더 열려 있으면 즉시 봄 처리, (b) 첫 폴이고 저장된 seen 이 없으면 baseline(현재 전부 봄) → 배지 0.
+      if (calendarOpenRef.current || (wasFirst && !calendarSeenExistedRef.current)) {
+        ids.forEach((id) => seen.add(id));
+        saveCalendarSeen([...seen]);
+        calendarRecentIdsRef.current = ids;
+        setCalendarNewCount(0);
+        return;
+      }
+
+      const prevIds = new Set(calendarRecentIdsRef.current);
+      const unseen = ids.filter((id) => !seen.has(id));
+      const arrived = unseen.filter((id) => !prevIds.has(id)); // 직전 조회엔 없던 새 도착분
+      calendarRecentIdsRef.current = ids;
+      setCalendarNewCount(unseen.length);
+      // 새로 도착한 사진이 있고 첫 폴이 아니면 토스트(초기 로드 스팸 방지).
+      if (arrived.length > 0 && !wasFirst) {
+        calendarToastKeyRef.current += 1;
+        setCalendarToast({ count: unseen.length, key: calendarToastKeyRef.current });
+      }
+    } catch {
+      // 조용히 무시 — 배지 없이도 캘린더 본기능 유지
+    }
+  }, []);
+
+  // mount: seen 로드 + 즉시 1회 폴 + 60초 인터벌(탭 숨김 시 스킵).
+  useEffect(() => {
+    const { ids, existed } = loadCalendarSeen();
+    calendarSeenRef.current = new Set(ids);
+    calendarSeenExistedRef.current = existed;
+    runCalendarPoll();
+    const pollId = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      runCalendarPoll();
+    }, 60000);
+    return () => clearInterval(pollId);
+  }, [runCalendarPoll]);
+
+  // 토스트 자동 사라짐(6초) — key 변경마다 타이머 재설정.
+  useEffect(() => {
+    if (!calendarToast) return;
+    const toastId = setTimeout(() => setCalendarToast(null), 6000);
+    return () => clearTimeout(toastId);
+  }, [calendarToast]);
+
   const [usersOpen, setUsersOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   // 로그인 역할 — owner 만 "사용자 관리" 탭 노출. sessionStorage 는 클라이언트에서만 접근.
@@ -3519,8 +3630,12 @@ export function DemoDashboard() {
               },
               {
                 title: "캘린더",
-                tooltip: "일정 캘린더 — 날짜 선택",
-                onSelect: () => setCalendarOpen(true),
+                tooltip: "일정 캘린더 — 새 현장 사진 알림",
+                badge: calendarNewCount,
+                onSelect: () => {
+                  setCalendarOpen(true);
+                  markCalendarSeen();
+                },
                 icon: (
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <rect x="3" y="9" width="18" height="12" rx="2" />
@@ -3965,6 +4080,39 @@ export function DemoDashboard() {
       )}
 
       {alertsOpen && <AlertHistoryModal onClose={() => setAlertsOpen(false)} />}
+
+      {/* 새 현장 사진 도착 알림 토스트 — 클릭 시 캘린더 열림+확인 처리, 6초 후 자동 사라짐. */}
+      {calendarToast && (
+        <button
+          type="button"
+          aria-live="polite"
+          onClick={() => {
+            setCalendarOpen(true);
+            markCalendarSeen();
+          }}
+          className="fixed right-4 top-20 z-[70] flex max-w-[20rem] items-center gap-3 rounded-2xl border border-hairline bg-surface-strong px-4 py-3 text-left shadow-xl transition hover:brightness-105 dark:border-white/10 dark:bg-surface-dark-elevated"
+        >
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[#0052ff]/10 text-primary dark:bg-[#0052ff]/25">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+              <path d="m9 15 2 2 4-4" />
+            </svg>
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-ink dark:text-on-dark">
+              새 현장 사진 {calendarToast.count}건
+            </span>
+            <span className="block text-xs text-muted dark:text-on-dark-soft">
+              캘린더에서 확인하기
+            </span>
+          </span>
+          <span className="relative ml-1 flex h-2 w-2 shrink-0" aria-hidden="true">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-70" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-red-500" />
+          </span>
+        </button>
+      )}
 
       <HeaderCalendarPopup
         open={calendarOpen}
