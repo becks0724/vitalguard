@@ -3,6 +3,7 @@ import { ZodError } from "zod";
 import type { VitalSample } from "@safetymonitor/schemas";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { ingestAuthStatus } from "../../../../lib/ingest-auth";
 import {
   addSample,
   countsByWorker,
@@ -47,7 +48,19 @@ export async function GET(request: Request) {
   });
 }
 
+// 무인증 수집 전송 경고(soft 모드) — 프로세스당 1회만(5초 폴 로그 스팸 방지).
+let warnedUnauthedVital = false;
+
 export async function POST(request: Request) {
+  // 토큰 병행(soft) — 유효 토큰 있으면 인증, 무토큰은 한시 허용(경고), 무효 토큰은 거부.
+  const auth = ingestAuthStatus(request);
+  if (auth === "invalid") {
+    return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
+  }
+  if (auth === "none" && !warnedUnauthedVital) {
+    warnedUnauthedVital = true;
+    console.warn("[vital] 무인증 수집 전송 수용 중(soft) — 발표 후 토큰 필수화 예정");
+  }
   try {
     const body = await request.json();
 
@@ -118,13 +131,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // 서버/DB 오류 — 내부 상세(호스트·스키마·드라이버)는 응답에 노출하지 않고 서버 로그로만(위 console.error).
     return NextResponse.json(
-      {
-        ok: false,
-        error: "invalid mock vital payload",
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 400 },
+      { ok: false, error: "수집 처리 실패" },
+      { status: 500 },
     );
   }
 }
