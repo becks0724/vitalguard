@@ -785,8 +785,9 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
     if (aedPollingOwned) return; // 다른 인스턴스가 이미 폴링 중 → 공유 캐시 그대로 사용(중복 폴 방지).
     aedPollingOwned = true;
     let alive = true;
-    const load = () =>
-      fetch("/api/aed/inspections")
+    const load = () => {
+      const t = getSessionToken();
+      return fetch("/api/aed/inspections", t ? { headers: { Authorization: `Bearer ${t}` } } : undefined)
         .then((r) => r.json())
         .then((j: { ok?: boolean; inspections?: AedInspectionDTO[] }) => {
           if (alive && j.ok && Array.isArray(j.inspections)) {
@@ -795,6 +796,7 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
           }
         })
         .catch(() => {});
+    };
     load();
     const id = setInterval(load, 60000);
     return () => {

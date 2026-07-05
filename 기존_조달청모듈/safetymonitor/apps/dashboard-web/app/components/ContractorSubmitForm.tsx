@@ -5,6 +5,14 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
+import { getSessionToken } from "./LoginGate";
+
+// 로그인 세션 토큰을 Authorization 으로 동봉 — 서버 게이트(verifyBasicAuth) 통과용. 없으면 빈 헤더(→401).
+function authHeaders(): Record<string, string> {
+  const t = getSessionToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 type Notice = { id: string; title: string; agency: string };
 type Inputs = {
   supplier: string | null;
@@ -58,8 +66,8 @@ export default function ContractorSubmitForm() {
     let alive = true;
     (async () => {
       const [ir, pr] = await Promise.all([
-        fetch(`/api/weekly-report/inputs?contractId=${encodeURIComponent(contractId)}`),
-        fetch(`/api/weekly-report/photos?contractId=${encodeURIComponent(contractId)}`),
+        fetch(`/api/weekly-report/inputs?contractId=${encodeURIComponent(contractId)}`, { headers: authHeaders() }),
+        fetch(`/api/weekly-report/photos?contractId=${encodeURIComponent(contractId)}`, { headers: authHeaders() }),
       ]);
       const ij = (await ir.json()) as { inputs: Inputs | null };
       const pj = (await pr.json()) as { count: number };
@@ -95,7 +103,7 @@ export default function ContractorSubmitForm() {
       const fd = new FormData();
       fd.append("contractId", contractId);
       Array.from(files).forEach((f) => fd.append("photos", f));
-      const r = await fetch("/api/weekly-report/photos", { method: "POST", body: fd });
+      const r = await fetch("/api/weekly-report/photos", { method: "POST", headers: authHeaders(), body: fd });
       const j = (await r.json()) as { count?: number };
       setPhotoCount(j.count ?? photoCount);
       setFiles(null);
@@ -110,7 +118,7 @@ export default function ContractorSubmitForm() {
     try {
       await fetch("/api/weekly-report/inputs", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           contractId,
           supplier: form.supplier || undefined,

@@ -2,11 +2,16 @@
 //   (데모: 실제 메일 발송 대신 제출 이력을 영속. 실서비스: 주1회 자동 메일 스케줄러)
 import { NextResponse } from "next/server";
 
+import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { recordReportSubmission, listReportSubmissions } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
+// 감독관 제출 감사기록 — 무인증 시 공격자 지정 contractId 로 "제출" 위조·이력 열거 가능. 세션 게이트.
 export async function POST(req: Request) {
+  if (!verifyBasicAuth(req)) {
+    return NextResponse.json({ error: { code: "UNAUTH", message: "인증이 필요합니다" } }, { status: 401 });
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as {
       contractId?: string;
