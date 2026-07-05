@@ -9,11 +9,18 @@
 - 🔴A 발표 데모 안정성 **14건** + 🟠B 안전 정체성 **3건**(C1 범위밖 vital 무음폐기·활동 90초 TTL·메트릭별 danger 전이) → **라이브 `00066-nks`** (5커밋 `149bd9e→b09907c`).
 - 🟡C 조달 게이트 **15건**(무인증 쓰기 인증+클라 토큰·수집 API 토큰 병행 soft·AED fail-closed·XFF 신뢰홉·귀속위조·통합/doc_media DROP 가드·통합 FK+SG_ID UNIQUE·출역 KST일) → **라이브 `00067-4cm`** (4커밋 `082f4a6→a23f71d`).
 - 전 그룹 tsc=0·lint 0err·schemas 21·analyzers 46·dashboard 89·라이브 실측 통과(게이트 회귀 0·C17 캐스트 정상·soft 토큰 정상).
+- 🟢D 저위험 **D1·D3**(보안헤더+CSP-RO·admin timing double-HMAC) → **라이브 `00072-qcm`** (커밋 `04ac5b0`·`7465985`).
+- **전반 재감사** 후 즉시조치 **4건**(check-username XFF 우측·CSP unsafe-eval 제거+Referrer-Policy·Tailwind 테마 토큰·CLAUDE.md 비번 스크럽) → **라이브 `00073-zsj`** (커밋 `0267dbc·fe86830·94e6dd9·386dfad`).
 
-**현재상태** — GitHub main `8401a60` 동기(0/0)·작업 트리 clean. 라이브 = `vitalguard-dashboard-00067-4cm` 100%. SQL 가드(C15/C16/C18)는 수동 스크립트라 레포에만 반영(배포 미포함, 운영자 재실행 시 데이터 보호).
+**현재상태** — GitHub main `ce33851` 동기(0/0)·작업 트리 clean. 라이브 = `vitalguard-dashboard-00073-zsj` 100%. SQL 가드(C15/C16/C18)는 수동 스크립트라 레포에만 반영(배포 미포함, 운영자 재실행 시 데이터 보호).
+
+**재감사 결과 (2026-07-05·전반)** — FE·BE·서버·코드·라이브 8도메인 병렬 재감사(find→적대적 검증)로 원시 ~36 → **확정 18·반증 18·critical 0**. 발표 급소 0(유일 high=DB `sslmode=disable` 인프라 제약). 즉시조치 4건 배포 완료(위). **미해결 = 사용자 조치 3건**:
+- **ADMIN_PASSWORD 로테이션(근본)** — 시크릿 `ADMIN_PASSWORD:latest` 새 버전 추가(`gcloud secrets versions add … --data-file=-`) + 재배포 + `.env.local` 교체. 문서 스크럽만으론 git 히스토리 잔존이라 무의미(로테이션이 값 무효화).
+- **DB `sslmode=disable`(유일 high)** — 캠퍼스 DB SSL 미지원([db.ts:96](../apps/dashboard-web/lib/db.ts)). 발표 단계=리스크 수용 문서화, 상용화=Cloud SQL 이관(자동 TLS·`connectionString`만 교체).
+- **나머지 tracked 문서 비번 스크럽** — `safety2026` 이 11파일 ~41회(CLAUDE.md 처리 완료). 로테이션 후 위생 차원 선택. 전체 리포트 = Artifact(재감사 2026-07-05).
 
 **다음 할 일 (🟢D)**
-1. **안전·즉시**: ~~D1 보안헤더~~ ✅·~~D3 admin timing 오라클~~ ✅ **완료(2026-07-05·라이브 00072-qcm)** · D2 Google id_token 검증 · D4 안전 핵심경로 테스트(발표 후).
+1. **안전·즉시**: ~~D1 보안헤더(+Referrer-Policy)~~ ✅·~~D3 admin timing 오라클~~ ✅ **완료(00072-qcm·00073-zsj)** · D2 Google id_token 검증 · D4 안전 핵심경로 테스트(발표 후).
 2. **설계 필요**: C10 앱 JWT 폐기(token_version+DB 리보케이션) · C7 프록시 레이트리밋 · D7 세션 httpOnly 쿠키(로그인 흐름 변경).
 3. **⚠️ 라이브 공유 DB ALTER(신중)**: C19 vital_samples CHECK · C20 FK · C21 upsert 락 — 기존 데이터 위반/고아 시 ALTER 실패 → **가드 마이그레이션 파일로 작성(운영자 수동 실행)**, 프로드 직접 ALTER 지양(L-04 정신).
 
@@ -77,7 +84,7 @@
 
 > **🟡C 이관분 포함**: C7(프록시 레이트리밋)·C10(앱 JWT 리보케이션)·C19·C20·C21(라이브 DB CHECK/FK/락 가드 마이그레이션) — 위 C 섹션 참조.
 
-- [x] D1 · 보안 헤더 — HSTS·X-Frame-Options DENY·X-Content-Type-Options nosniff + **CSP Report-Only** 적용(`next.config.ts` `headers()`). 라이브 `00072-qcm` 실측 4종 존재. Referrer-Policy 는 이번 미포함(무위험 추가분·후속 선택). (2026-07-05·커밋 `7465985`)
+- [x] D1 · 보안 헤더 — HSTS·X-Frame-Options DENY·X-Content-Type-Options nosniff·**Referrer-Policy**(strict-origin-when-cross-origin) + **CSP Report-Only**(script-src 에서 unsafe-eval 제거) 적용(`next.config.ts` `headers()`). Referrer-Policy 는 재감사 후속으로 추가, 라이브 `00073-zsj` 실측 5종 존재. (2026-07-05·커밋 `7465985`·`fe86830`)
 - [ ] D2 · Google id_token aud/iss/exp·email_verified 검증(방어심층) (`lib/google-oauth.ts`, AUTH-L2)
 - [x] D3 · admin timing/단락 오라클 제거 — `safeEqual` double-HMAC(양쪽 HMAC-SHA256 고정 32바이트 비교)로 길이 early-return 제거 + `verifyCredentials` 두 비교 무조건 평가(`&&` 단락 제거). 라이브 로그인 정상·틀린비번 401·스탠드얼론 자격비교 8/8. (2026-07-05·커밋 `04ac5b0`)
 - [ ] D4 · 안전 핵심경로 테스트 보강(store 수신 게이트·C1 회귀)
