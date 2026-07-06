@@ -223,7 +223,7 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
 //   점검 페이지가 열리고(점검자·항목 입력) 관제 웹으로 전송됨 → 이력 기록·최근 교환 갱신. 관제 웹은 '표시만'.
 // 「응급의료에 관한 법률」 제47조의2(설치·관리)·제62조(미설치 과태료)·시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보).
 const AED_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7rem,1.3fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_6.5rem]";
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7rem,1.3fr)_minmax(5.5rem,0.9fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_6.5rem]";
 
 // 표시·계산용 런타임 행 — 장비 레지스트리(AED_DEVICES) + 병합 이력. history = DB 점검(NFC) + seed.
 type AedHistRecord = { daysAgo: number; items: AedItem[]; by: string; ts?: string };
@@ -231,6 +231,7 @@ type AedRow = {
   id: string;
   loc: string;
   manager: string;
+  product: string | null; // 관제웹 편집 제품명(모델) — 오버라이드 없으면 null.
   note: string | null; // 관제웹 편집 비고(관련 내용) — 오버라이드 없으면 null.
   devBatt: number; // 알림 단말 배터리 %(실시간 — "배터리 부족"은 이것만)
   battCycleMonths: number;
@@ -238,8 +239,8 @@ type AedRow = {
   history: AedHistRecord[]; // 최신(작은 경과일) 먼저. 최근 배터리/패드 교체일이 교환 주기 기준.
 };
 
-// AED 설정 오버라이드(설치위치·관리책임자·비고) — /api/aed/config 응답 1건.
-type AedConfigOverride = { loc: string | null; manager: string | null; note: string | null };
+// AED 설정 오버라이드(설치위치·관리책임자·제품명·비고) — /api/aed/config 응답 1건.
+type AedConfigOverride = { loc: string | null; manager: string | null; product: string | null; note: string | null };
 
 // GET /api/aed/inspections 응답 1건.
 type AedInspectionDTO = { aed_id: string; inspector: string; items: string | null; ts: string };
@@ -269,6 +270,7 @@ function buildAedRow(d: AedDevice, inspections: AedInspectionDTO[]): AedRow {
     id: d.id,
     loc: cfg?.loc || d.loc, // 오버라이드 있으면 우선, 빈/없음이면 레지스트리 기본값.
     manager: cfg?.manager || d.manager,
+    product: cfg?.product ?? null,
     note: cfg?.note ?? null,
     devBatt: d.devBatt,
     battCycleMonths: d.battCycleMonths,
@@ -765,7 +767,7 @@ function AedManagementModal({
   );
 }
 
-// AED 설정 편집 모달(관리자 권한) — 설치위치·관리책임자·비고 수정. PUT /api/aed/config → 성공 시 캐시 갱신. ESC/배경 닫기.
+// AED 설정 편집 모달(관리자 권한) — 설치위치·제품명·관리책임자·비고 수정. PUT /api/aed/config → 성공 시 캐시 갱신. ESC/배경 닫기.
 function AedConfigEditModal({
   row,
   onClose,
@@ -776,6 +778,7 @@ function AedConfigEditModal({
   onSaved: (aedId: string, cfg: AedConfigOverride) => void;
 }) {
   const [loc, setLoc] = useState(row.loc);
+  const [product, setProduct] = useState(row.product ?? "");
   const [manager, setManager] = useState(row.manager);
   const [note, setNote] = useState(row.note ?? "");
   const [saving, setSaving] = useState(false);
@@ -797,7 +800,7 @@ function AedConfigEditModal({
       const res = await fetch("/api/aed/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
-        body: JSON.stringify({ aedId: row.id, loc, manager, note }),
+        body: JSON.stringify({ aedId: row.id, loc, manager, product, note }),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !j.ok) {
@@ -808,6 +811,7 @@ function AedConfigEditModal({
       onSaved(row.id, {
         loc: loc.trim() || null,
         manager: manager.trim() || null,
+        product: product.trim() || null,
         note: note.trim() || null,
       });
     } catch {
@@ -844,6 +848,16 @@ function AedConfigEditModal({
               maxLength={40}
               onChange={(e) => setLoc(e.target.value)}
               placeholder="예: 지하 주차장 B1"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>제품명</label>
+            <input
+              className={fieldCls}
+              value={product}
+              maxLength={40}
+              onChange={(e) => setProduct(e.target.value)}
+              placeholder="예: 필립스 HeartStart FRx"
             />
           </div>
           <div>
@@ -947,6 +961,7 @@ export function AedAlertTable({
     <div className={`${AED_GRID} shrink-0 border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}>
       <div />
       <div>설치 위치</div>
+      <div>제품명</div>
       <div>관리책임자</div>
       <div className="text-center">상태</div>
       <div className="text-center">단말</div>
@@ -956,7 +971,7 @@ export function AedAlertTable({
     </div>
   );
   return (
-    <TableShell count={AED_DEVICES.length} header={header} minWidthClass="min-w-[920px]">
+    <TableShell count={AED_DEVICES.length} header={header} minWidthClass="min-w-[1010px]">
       {rows.map((r) => {
         const st = aedStatus(r);
         const bDue = battDueDays(r);
@@ -970,12 +985,35 @@ export function AedAlertTable({
             <div className="flex justify-center">
               <SignalDot sev={st.sev} />
             </div>
-            <div className="truncate font-medium" title={r.note || undefined}>{r.loc}</div>
             {canManage ? (
               <button
                 type="button"
                 onClick={() => setEditRow(r)}
-                title="클릭 → 설치위치·관리책임자·비고 수정 (관리자 권한)"
+                title={r.note ? `비고: ${r.note} · 클릭하여 수정` : "클릭 → 설치위치·제품명·관리책임자·비고 수정 (관리자 권한)"}
+                className="truncate text-left font-medium hover:text-primary hover:underline"
+              >
+                {r.loc}
+              </button>
+            ) : (
+              <div className="truncate font-medium" title={r.note || undefined}>{r.loc}</div>
+            )}
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => setEditRow(r)}
+                title="클릭 → 설치위치·제품명·관리책임자·비고 수정 (관리자 권한)"
+                className="truncate text-left text-body hover:text-primary hover:underline dark:text-on-dark-soft"
+              >
+                {r.product || "—"}
+              </button>
+            ) : (
+              <div className="truncate text-body dark:text-on-dark-soft">{r.product || "—"}</div>
+            )}
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => setEditRow(r)}
+                title="클릭 → 설치위치·제품명·관리책임자·비고 수정 (관리자 권한)"
                 className="truncate text-left text-body hover:text-primary hover:underline dark:text-on-dark-soft"
               >
                 {r.manager}

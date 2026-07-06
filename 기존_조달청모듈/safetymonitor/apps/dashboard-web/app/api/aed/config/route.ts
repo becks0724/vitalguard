@@ -37,7 +37,7 @@ export async function PUT(request: Request) {
   const updatedBy = getSession(request)?.username ?? "";
   await setAedConfig(
     aedId,
-    { loc: str(body.loc), manager: str(body.manager), note: str(body.note) },
+    { loc: str(body.loc), manager: str(body.manager), product: str(body.product), note: str(body.note) },
     updatedBy,
   );
   return NextResponse.json({ ok: true, aedId });
