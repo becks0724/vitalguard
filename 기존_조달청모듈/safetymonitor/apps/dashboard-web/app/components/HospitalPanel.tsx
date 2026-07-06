@@ -75,26 +75,32 @@ function HospitalRow({ h }: { h: Hospital }) {
         <div className="truncate text-[11px] text-muted dark:text-on-dark-soft">
           {h.roadAddress || h.address || "주소 정보 없음"}
         </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {h.telephone && (
-          <a
-            href={`tel:${h.telephone.replace(/[^0-9+]/g, "")}`}
-            className="rounded-md bg-surface-strong px-1.5 py-1 text-[10px] font-medium text-body transition hover:opacity-80 dark:bg-white/10 dark:text-on-dark-soft"
-            title={h.telephone}
-          >
-            전화
-          </a>
+        {(h.openHours || h.telephone) && (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-tight">
+            {h.openHours && (
+              <span className="text-muted dark:text-on-dark-soft">
+                진료 {h.openHours}
+              </span>
+            )}
+            {h.telephone && (
+              <a
+                href={`tel:${h.telephone.replace(/[^0-9+]/g, "")}`}
+                className="font-medium tabular-nums text-brand-accent dark:text-primary"
+              >
+                전화 {h.telephone}
+              </a>
+            )}
+          </div>
         )}
-        <a
-          href={naverMapLink(h)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="rounded-md bg-surface-strong px-1.5 py-1 text-[10px] font-medium text-body transition hover:opacity-80 dark:bg-white/10 dark:text-on-dark-soft"
-        >
-          지도
-        </a>
       </div>
+      <a
+        href={naverMapLink(h)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="shrink-0 self-start rounded-md bg-surface-strong px-1.5 py-1 text-[10px] font-medium text-body transition hover:opacity-80 dark:bg-white/10 dark:text-on-dark-soft"
+      >
+        지도
+      </a>
     </li>
   );
 }
@@ -259,6 +265,11 @@ export function NearestEmergency({
               <div className="truncate text-[11px] text-muted dark:text-on-dark-soft">
                 {h.roadAddress || h.address || ""}
               </div>
+              {h.openHours && (
+                <div className="text-[11px] text-muted dark:text-on-dark-soft">
+                  진료 {h.openHours}
+                </div>
+              )}
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {h.telephone && (

@@ -12,6 +12,7 @@ export type Hospital = {
   lon?: number;
   distanceKm?: number; // 현장 GPS 로부터의 거리(좌표 유효 시)
   emergencyKind?: "응급실" | "종합병원"; // SOS 응급 목록 분류(응급실=실제 응급의료센터, 종합병원=폴백)
+  openHours?: string; // 진료시간(E-Gen 공공데이터 보강, 응급실은 "24시간 진료"). 없으면 미표시.
 };
 
 export type HospitalGroup = { department: string; items: Hospital[] };

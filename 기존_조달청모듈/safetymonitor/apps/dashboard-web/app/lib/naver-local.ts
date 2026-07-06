@@ -4,6 +4,7 @@
 //   - 지역검색은 좌표를 안 받으므로 "지역명 진료과" 키워드로 검색하고 거리·반경은 반환 좌표(mapx/mapy=WGS84×1e7)로 계산.
 import "server-only";
 
+import { enrichHospitals } from "./egen-hospital";
 import {
   DEPARTMENTS,
   EMERGENCY_DEPARTMENTS,
@@ -122,6 +123,10 @@ export async function searchNearbyHospitals(params: {
     });
     if (items.length > 0) groups.push({ department: dept, items });
   }
+
+  // 공공데이터(E-Gen)로 연락처·진료시간 보강 — 제자리 변형이라 아래 nearestEmergency 파생 복사본에도 반영.
+  // 미승인/오류는 no-op(네이버 결과 그대로).
+  await enrichHospitals(groups.flatMap((grp) => grp.items), region);
 
   // nearestEmergency — 실제 응급실/응급의료센터(category "병원>응급실")를 1순위 티어로, 종합병원은 폴백 티어.
   // (전역 거리순이면 가까운 종합병원[정형외과 등]이 실제 응급의료센터보다 위로 오던 버그 수정)
