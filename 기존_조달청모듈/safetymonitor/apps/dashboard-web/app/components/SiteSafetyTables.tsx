@@ -7,6 +7,17 @@ import { createPortal } from "react-dom";
 
 import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
 import { AED_DEVICES, normalizeAedItems, type AedDevice, type AedItem } from "../../lib/aed-devices";
+import {
+  AED_DEV_BATT_CAUTION,
+  AED_DEV_BATT_DANGER,
+  AED_SWAP_DUE_SOON_DAYS,
+  aedCycleSev,
+  aedDevBattSev,
+  battDaysSince,
+  battDueDays,
+  padDaysSince,
+  padDueDays,
+} from "../../lib/aed-status";
 import { getSessionToken } from "./LoginGate";
 
 export type Sev = "normal" | "caution" | "danger";
@@ -350,12 +361,7 @@ export function gasDetail(): CategorySignal {
   };
 }
 
-// ── AED 관리 임계·교환 주기 ───────────────────────────────────────
-// 단말(알림 장비) 배터리 — 유일하게 실시간 측정 가능.
-const AED_DEV_BATT_DANGER = 20; // 단말 배터리 부족
-const AED_DEV_BATT_CAUTION = 50; // 단말 배터리 주의
-// AED 본체 배터리·전극패드 — 실시간 상태 측정 불가 → 교환 주기로만 관리.
-const AED_SWAP_DUE_SOON_DAYS = 90; // 교환 임박(주의) — 잔여 90일 이내
+// ── AED 관리 임계·교환 주기 — 심각도 계산은 lib/aed-status(임계 단일 소스, 물리 알림 엔드포인트와 공유) ──
 function fmtYMD(d: Date): string {
   return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, "0")}-${`${d.getDate()}`.padStart(2, "0")}`;
 }
@@ -365,36 +371,11 @@ function dateDaysAgo(days: number): string {
   return fmtYMD(d);
 }
 
-// 교환 경과일 — history(현장 단말 기록)에서 해당 항목의 가장 최근 교체일을 파생. 관제 웹은 표시 전용(직접 갱신 없음).
-function recentSwapDaysAgo(r: AedRow, item: "battery" | "pad"): number {
-  const recs = r.history.filter((h) => h.items.includes(item)).map((h) => h.daysAgo);
-  return recs.length ? Math.min(...recs) : 0; // 기록 없으면 신규 설치로 간주(오탐 방지)
-}
-function battDaysSince(r: AedRow): number {
-  return recentSwapDaysAgo(r, "battery");
-}
-function padDaysSince(r: AedRow): number {
-  return recentSwapDaysAgo(r, "pad");
-}
 // 최근 교환(점검)일 = 가장 최근 이력.
 function aedLastSwap(r: AedRow): { date: string; daysAgo: number } {
   const all = r.history.map((h) => h.daysAgo);
   const daysAgo = all.length ? Math.min(...all) : 0;
   return { date: dateDaysAgo(daysAgo), daysAgo };
-}
-// 교환까지 잔여일(음수 = 권장 주기 경과).
-function battDueDays(r: AedRow): number {
-  return r.battCycleMonths * 30 - battDaysSince(r);
-}
-function padDueDays(r: AedRow): number {
-  return r.padCycleMonths * 30 - padDaysSince(r);
-}
-
-function aedDevBattSev(b: number): Sev {
-  return b <= AED_DEV_BATT_DANGER ? "danger" : b <= AED_DEV_BATT_CAUTION ? "caution" : "normal";
-}
-function aedCycleSev(dueDays: number): Sev {
-  return dueDays < 0 ? "danger" : dueDays <= AED_SWAP_DUE_SOON_DAYS ? "caution" : "normal";
 }
 // 교환 셀 짧은 표기.
 function dueShort(dueDays: number): string {
