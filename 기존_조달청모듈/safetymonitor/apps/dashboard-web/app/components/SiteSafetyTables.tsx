@@ -231,17 +231,23 @@ type AedRow = {
   id: string;
   loc: string;
   manager: string;
+  note: string | null; // 관제웹 편집 비고(관련 내용) — 오버라이드 없으면 null.
   devBatt: number; // 알림 단말 배터리 %(실시간 — "배터리 부족"은 이것만)
   battCycleMonths: number;
   padCycleMonths: number;
   history: AedHistRecord[]; // 최신(작은 경과일) 먼저. 최근 배터리/패드 교체일이 교환 주기 기준.
 };
 
+// AED 설정 오버라이드(설치위치·관리책임자·비고) — /api/aed/config 응답 1건.
+type AedConfigOverride = { loc: string | null; manager: string | null; note: string | null };
+
 // GET /api/aed/inspections 응답 1건.
 type AedInspectionDTO = { aed_id: string; inspector: string; items: string | null; ts: string };
 
 // 폴링으로 채워지는 점검 기록 캐시 — aedDetail(통합 신호등)과 표가 공유. SSR/첫 렌더엔 빈 배열(하이드레이션 안전).
 let aedInspectionsCache: AedInspectionDTO[] = [];
+// 관제웹 설정 오버라이드 캐시(aedId → 설치위치·관리책임자·비고). 표·통합 신호등이 레지스트리 기본값보다 우선 적용.
+let aedConfigCache: Record<string, AedConfigOverride> = {};
 // 폴링 소유권 가드 — 다중 AedAlertTable 인스턴스가 동시에 모듈 캐시를 덮어쓰지 않도록 한 번에 한 인스턴스만 폴링.
 let aedPollingOwned = false;
 
@@ -258,10 +264,12 @@ function buildAedRow(d: AedDevice, inspections: AedInspectionDTO[]): AedRow {
     .map((i) => ({ daysAgo: tsToDaysAgo(i.ts), items: normalizeAedItems(i.items), by: i.inspector, ts: i.ts }));
   const seed: AedHistRecord[] = d.seedHistory.map((s) => ({ daysAgo: s.daysAgo, items: s.items, by: s.by }));
   const history = [...scanned, ...seed].sort((a, b) => a.daysAgo - b.daysAgo);
+  const cfg = aedConfigCache[d.id];
   return {
     id: d.id,
-    loc: d.loc,
-    manager: d.manager,
+    loc: cfg?.loc || d.loc, // 오버라이드 있으면 우선, 빈/없음이면 레지스트리 기본값.
+    manager: cfg?.manager || d.manager,
+    note: cfg?.note ?? null,
     devBatt: d.devBatt,
     battCycleMonths: d.battCycleMonths,
     padCycleMonths: d.padCycleMonths,
@@ -710,6 +718,9 @@ function AedManagementModal({
           <p className="mb-3 leading-relaxed">
             <span className="font-semibold">{row.loc}</span> · 관리책임자{" "}
             <span className="font-semibold">{row.manager}</span>
+            {row.note ? (
+              <span className="mt-1 block text-xs text-muted dark:text-on-dark-soft">비고: {row.note}</span>
+            ) : null}
           </p>
           <ul className="mb-3 space-y-2">
             {status.issues.map((i) => (
@@ -754,10 +765,146 @@ function AedManagementModal({
   );
 }
 
-export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void }) {
+// AED 설정 편집 모달(관리자 권한) — 설치위치·관리책임자·비고 수정. PUT /api/aed/config → 성공 시 캐시 갱신. ESC/배경 닫기.
+function AedConfigEditModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: AedRow;
+  onClose: () => void;
+  onSaved: (aedId: string, cfg: AedConfigOverride) => void;
+}) {
+  const [loc, setLoc] = useState(row.loc);
+  const [manager, setManager] = useState(row.manager);
+  const [note, setNote] = useState(row.note ?? "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const save = async () => {
+    setSaving(true);
+    setErr("");
+    try {
+      const t = getSessionToken();
+      const res = await fetch("/api/aed/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        body: JSON.stringify({ aedId: row.id, loc, manager, note }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setErr(j.error || "저장 실패 — 관리자 권한을 확인하세요.");
+        setSaving(false);
+        return;
+      }
+      onSaved(row.id, {
+        loc: loc.trim() || null,
+        manager: manager.trim() || null,
+        note: note.trim() || null,
+      });
+    } catch {
+      setErr("저장 실패 — 네트워크 오류.");
+      setSaving(false);
+    }
+  };
+
+  const fieldCls =
+    "w-full rounded-lg border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
+  const labelCls = "mb-1 block text-xs font-semibold text-body dark:text-on-dark-soft";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <span className="text-sm font-bold text-ink dark:text-on-dark">AED 알림 설정 수정</span>
+          <span className="text-xs text-muted dark:text-on-dark-soft">{row.id}</span>
+        </div>
+        <div className="flex flex-col gap-3 px-5 py-4">
+          <div>
+            <label className={labelCls}>설치 위치</label>
+            <input
+              className={fieldCls}
+              value={loc}
+              maxLength={40}
+              onChange={(e) => setLoc(e.target.value)}
+              placeholder="예: 지하 주차장 B1"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>관리책임자</label>
+            <input
+              className={fieldCls}
+              value={manager}
+              maxLength={30}
+              onChange={(e) => setManager(e.target.value)}
+              placeholder="예: 이현장"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>비고 (관련 내용)</label>
+            <textarea
+              className={`${fieldCls} min-h-[64px] resize-y`}
+              value={note}
+              maxLength={200}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="점검 특이사항·비상 연락처 등 (선택)"
+            />
+          </div>
+          {err && <p className="text-xs font-semibold text-semantic-down">{err}</p>}
+          <p className="text-[11px] text-muted dark:text-on-dark-soft">
+            빈 칸으로 저장하면 기본값으로 복귀합니다. 관리자 권한 계정만 저장됩니다.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-hairline px-4 py-1.5 text-sm font-semibold text-body hover:bg-surface-soft disabled:opacity-50 dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/10"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active disabled:opacity-50"
+          >
+            {saving ? "저장 중…" : "저장"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AedAlertTable({
+  onSelect,
+  canManage = false,
+}: {
+  onSelect?: (m: SiteMetric) => void;
+  canManage?: boolean;
+}) {
   // 행 맵에서 이미 계산한 status 를 함께 보관 → 모달에서 aedStatus 재계산 안 함.
   const [alert, setAlert] = useState<{ row: AedRow; status: ReturnType<typeof aedStatus> } | null>(null);
   const [deviceRow, setDeviceRow] = useState<AedRow | null>(null);
+  const [editRow, setEditRow] = useState<AedRow | null>(null); // 권한있음 설정 편집 모달 대상.
   const [, setTick] = useState(0);
 
   // 점검 기록 폴링 → 모듈 캐시 갱신(통합 신호등과 공유) + 표 리렌더.
@@ -768,15 +915,22 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
     let alive = true;
     const load = () => {
       const t = getSessionToken();
-      return fetch("/api/aed/inspections", t ? { headers: { Authorization: `Bearer ${t}` } } : undefined)
+      const hdr = t ? { headers: { Authorization: `Bearer ${t}` } } : undefined;
+      const pIns = fetch("/api/aed/inspections", hdr)
         .then((r) => r.json())
         .then((j: { ok?: boolean; inspections?: AedInspectionDTO[] }) => {
-          if (alive && j.ok && Array.isArray(j.inspections)) {
-            aedInspectionsCache = j.inspections;
-            setTick((t) => t + 1);
-          }
+          if (alive && j.ok && Array.isArray(j.inspections)) aedInspectionsCache = j.inspections;
         })
         .catch(() => {});
+      const pCfg = fetch("/api/aed/config", hdr)
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; configs?: Record<string, AedConfigOverride> }) => {
+          if (alive && j.ok && j.configs) aedConfigCache = j.configs;
+        })
+        .catch(() => {});
+      return Promise.all([pIns, pCfg]).then(() => {
+        if (alive) setTick((t) => t + 1);
+      });
     };
     load();
     const id = setInterval(load, 60000);
@@ -816,8 +970,19 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
             <div className="flex justify-center">
               <SignalDot sev={st.sev} />
             </div>
-            <div className="truncate font-medium">{r.loc}</div>
-            <div className="truncate text-body dark:text-on-dark-soft">{r.manager}</div>
+            <div className="truncate font-medium" title={r.note || undefined}>{r.loc}</div>
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => setEditRow(r)}
+                title="클릭 → 설치위치·관리책임자·비고 수정 (관리자 권한)"
+                className="truncate text-left text-body hover:text-primary hover:underline dark:text-on-dark-soft"
+              >
+                {r.manager}
+              </button>
+            ) : (
+              <div className="truncate text-body dark:text-on-dark-soft">{r.manager}</div>
+            )}
             <div className="text-center">
               {st.sev === "normal" ? (
                 <span className={`font-semibold ${TONE.normal}`}>정상</span>
@@ -875,6 +1040,20 @@ export function AedAlertTable({ onSelect }: { onSelect?: (m: SiteMetric) => void
         typeof document !== "undefined" &&
         createPortal(
           <AedDeviceModal row={deviceRow} onClose={() => setDeviceRow(null)} />,
+          document.body,
+        )}
+      {editRow &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AedConfigEditModal
+            row={editRow}
+            onClose={() => setEditRow(null)}
+            onSaved={(aedId, cfg) => {
+              aedConfigCache = { ...aedConfigCache, [aedId]: cfg };
+              setTick((t) => t + 1);
+              setEditRow(null);
+            }}
+          />,
           document.body,
         )}
     </TableShell>

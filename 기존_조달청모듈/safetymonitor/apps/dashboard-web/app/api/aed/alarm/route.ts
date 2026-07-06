@@ -10,7 +10,7 @@ import {
   type AedHistoryEntry,
   type AedSev,
 } from "../../../../lib/aed-status";
-import { listAedInspections, type AedInspectionRow } from "../../../../lib/db";
+import { getAedConfigs, listAedInspections, type AedConfigOverride, type AedInspectionRow } from "../../../../lib/db";
 
 function tsToDaysAgo(ts: string): number {
   const t = Date.parse(ts);
@@ -41,13 +41,21 @@ function sevOf(d: AedDevice, inspections: AedInspectionRow[]): AedSev {
 export async function GET(request: Request) {
   const deviceId = new URL(request.url).searchParams.get("deviceId")?.trim() ?? "";
 
-  // DB 장애에도 장치가 멈추지 않게 — 점검이력 조회 실패 시 seed 만으로 계산(graceful).
+  // DB 장애에도 장치가 멈추지 않게 — 점검이력·설정 조회 실패 시 seed·레지스트리 기본값으로 계산(graceful).
   let inspections: AedInspectionRow[] = [];
   try {
     inspections = await listAedInspections();
   } catch {
     inspections = [];
   }
+  let configs: Record<string, AedConfigOverride> = {};
+  try {
+    configs = await getAedConfigs();
+  } catch {
+    configs = {};
+  }
+  // 설치위치는 관제웹 오버라이드(있으면) 우선 — 대시보드 표와 동일 표기.
+  const locOf = (id: string, fallback: string) => configs[id]?.loc || fallback;
 
   const updatedAt = new Date().toISOString();
   const headers = { "cache-control": "no-store" };
@@ -59,7 +67,7 @@ export async function GET(request: Request) {
     }
     const sev = sevOf(device, inspections);
     return NextResponse.json(
-      { ok: true, deviceId: device.id, loc: device.loc, sev, level: alarmLevelOf(sev), updatedAt },
+      { ok: true, deviceId: device.id, loc: locOf(device.id, device.loc), sev, level: alarmLevelOf(sev), updatedAt },
       { headers },
     );
   }

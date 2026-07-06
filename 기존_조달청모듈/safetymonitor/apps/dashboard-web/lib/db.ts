@@ -307,6 +307,16 @@ async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
+    -- AED(제세동기 알림) 장비 관제 웹 오버라이드 — aed_id 키. 설치위치·관리책임자·비고를 레지스트리 기본값보다 우선.
+    CREATE TABLE IF NOT EXISTS aed_config (
+      aed_id TEXT PRIMARY KEY,
+      loc TEXT,
+      manager TEXT,
+      note TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 작업자 ID 병합 별칭 — secondary(별칭) → primary(주 ID). 수신 시 정규화해 같은 사람을 1카드로 합친다.
     CREATE TABLE IF NOT EXISTS worker_alias (
       secondary_worker_id TEXT PRIMARY KEY,
@@ -658,6 +668,42 @@ export async function getWorkerProfiles(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
   for (const r of rows) out[r.worker_id] = r.job_title;
   return out;
+}
+
+// ── AED(제세동기 알림) 장비 관제 웹 오버라이드 ─────────────────────────────
+export type AedConfigOverride = { loc: string | null; manager: string | null; note: string | null };
+
+// aedId → 오버라이드(설치위치·관리책임자·비고). 대시보드 표·알림 엔드포인트가 레지스트리 기본값보다 우선 적용.
+export async function getAedConfigs(): Promise<Record<string, AedConfigOverride>> {
+  const { rows } = await q<{ aed_id: string; loc: string | null; manager: string | null; note: string | null }>(
+    "SELECT aed_id, loc, manager, note FROM aed_config",
+  );
+  const out: Record<string, AedConfigOverride> = {};
+  for (const r of rows) out[r.aed_id] = { loc: r.loc, manager: r.manager, note: r.note };
+  return out;
+}
+
+// AED 오버라이드 upsert — 빈 문자열은 null(해제 → 레지스트리 기본값 복귀). 권한 계정만(라우트에서 강제).
+export async function setAedConfig(
+  aedId: string,
+  fields: { loc?: string; manager?: string; note?: string },
+  updatedBy: string,
+): Promise<void> {
+  const clip = (v: string | undefined, max: number) => {
+    const t = (v ?? "").trim();
+    return t ? t.slice(0, max) : null;
+  };
+  await q(
+    `INSERT INTO aed_config (aed_id, loc, manager, note, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, ${NOW_ISO})
+       ON CONFLICT (aed_id) DO UPDATE SET
+         loc = excluded.loc,
+         manager = excluded.manager,
+         note = excluded.note,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+    [aedId, clip(fields.loc, 40), clip(fields.manager, 30), clip(fields.note, 200), updatedBy.slice(0, 40) || null],
+  );
 }
 
 // ── 작업자 ID 병합 별칭(secondary → primary) ───────────────────────────────
