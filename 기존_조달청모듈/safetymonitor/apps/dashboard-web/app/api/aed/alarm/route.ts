@@ -6,11 +6,19 @@ import { AED_DEVICES, findAedDevice, normalizeAedItems, type AedDevice } from ".
 import {
   aedRowSev,
   alarmLevelOf,
+  buildAedStatusInput,
   worstAedSev,
   type AedHistoryEntry,
   type AedSev,
 } from "../../../../lib/aed-status";
-import { getAedConfigs, listAedInspections, type AedConfigOverride, type AedInspectionRow } from "../../../../lib/db";
+import {
+  getAedConfigs,
+  listAedInspections,
+  listRegisteredAedDevices,
+  type AedConfigOverride,
+  type AedInspectionRow,
+  type RegisteredAedDevice,
+} from "../../../../lib/db";
 
 function tsToDaysAgo(ts: string): number {
   const t = Date.parse(ts);
@@ -36,6 +44,22 @@ function sevOf(d: AedDevice, inspections: AedInspectionRow[]): AedSev {
   });
 }
 
+// 등록 실 장비 심각도 — 최근 교환일(없으면 등록일) 기준 + NFC 점검 이력 병합(데모와 동일 임계 단일 소스).
+function registeredSevOf(d: RegisteredAedDevice, inspections: AedInspectionRow[]): AedSev {
+  const extra: AedHistoryEntry[] = inspections
+    .filter((i) => i.aed_id === d.aedId)
+    .map((i) => ({ daysAgo: tsToDaysAgo(i.ts), items: normalizeAedItems(i.items) }));
+  return aedRowSev(
+    buildAedStatusInput({
+      devBatt: d.devBatt,
+      battCycleMonths: d.battCycleMonths,
+      padCycleMonths: d.padCycleMonths,
+      lastSwapDaysAgo: tsToDaysAgo(d.lastSwapTs ?? d.registeredAt),
+      extraHistory: extra,
+    }),
+  );
+}
+
 // GET /api/aed/alarm?deviceId=AED-03 — 해당 AED 알림 레벨. deviceId 없으면 전 구역 worst-of(현장 통합 알림).
 // 무인증 폴링(알림 레벨은 비민감 상태값). 비-200 응답 시 장치는 직전 레벨을 유지하도록 클라이언트에서 처리 권장.
 export async function GET(request: Request) {
@@ -57,10 +81,27 @@ export async function GET(request: Request) {
   // 설치위치는 관제웹 오버라이드(있으면) 우선 — 대시보드 표와 동일 표기.
   const locOf = (id: string, fallback: string) => configs[id]?.loc || fallback;
 
+  // 등록된 실 연동 장비(관리자 등록) — RPi가 이 aed_id 로 폴링. 조회 실패해도 데모 프리셋으로 graceful.
+  let registered: RegisteredAedDevice[] = [];
+  try {
+    registered = await listRegisteredAedDevices();
+  } catch {
+    registered = [];
+  }
+
   const updatedAt = new Date().toISOString();
   const headers = { "cache-control": "no-store" };
 
   if (deviceId) {
+    // 실 등록 장비 우선 조회 → 없으면 데모 프리셋.
+    const reg = registered.find((d) => d.aedId === deviceId);
+    if (reg) {
+      const sev = registeredSevOf(reg, inspections);
+      return NextResponse.json(
+        { ok: true, deviceId: reg.aedId, loc: reg.loc, sev, level: alarmLevelOf(sev), updatedAt },
+        { headers },
+      );
+    }
     const device = findAedDevice(deviceId);
     if (!device) {
       return NextResponse.json({ ok: false, error: "알 수 없는 AED 장비" }, { status: 404, headers });
@@ -73,7 +114,11 @@ export async function GET(request: Request) {
   }
 
   // deviceId 미지정 = 현장 전체 worst-of(단일 장치가 현장 통합 알림을 표시할 때).
-  const worst = worstAedSev(AED_DEVICES.map((d) => sevOf(d, inspections)));
+  // 실 등록 장비가 있으면 그 장비들만(데모는 실 하드웨어 미연동) · 없으면 데모 프리셋(하위호환).
+  const worst =
+    registered.length > 0
+      ? worstAedSev(registered.map((d) => registeredSevOf(d, inspections)))
+      : worstAedSev(AED_DEVICES.map((d) => sevOf(d, inspections)));
   return NextResponse.json(
     { ok: true, deviceId: null, loc: "전 구역", sev: worst, level: alarmLevelOf(worst), updatedAt },
     { headers },

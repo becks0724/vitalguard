@@ -2,7 +2,7 @@
 // 실 센서 데이터 소스는 발표 후 연동. 현재는 가상 샘플 + 수동 스크롤만(자동 상하 슬라이딩 없음).
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
@@ -57,6 +57,19 @@ function SignalDot({ sev }: { sev: Sev }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/20 ${DOT[sev]}`} />;
 }
 
+// 실 연동/데모 구분 배지 — 실 연동=실제 하드웨어(RPi) 폴링, 데모=발표용 샘플(하드웨어 미연동).
+function KindBadge({ demo }: { demo: boolean }) {
+  return demo ? (
+    <span className="shrink-0 rounded-pill bg-surface-strong px-1.5 py-px text-[9px] font-medium text-muted dark:bg-surface-dark dark:text-on-dark-soft">
+      데모
+    </span>
+  ) : (
+    <span className="shrink-0 rounded-pill bg-emerald-500/15 px-1.5 py-px text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
+      실 연동
+    </span>
+  );
+}
+
 // 제세동기 배터리 게이지 — 텍스트 % 대체용 원형 링(레퍼런스 Gauge 축약, 의존성 0).
 // 36px 고정이라 행 높이(h-12=48px) 불변. 색=배터리 임계(≤20 위험/≤50 주의/그 외 정상).
 function BatteryGauge({ pct }: { pct: number }) {
@@ -98,17 +111,21 @@ function BatteryGauge({ pct }: { pct: number }) {
   );
 }
 
-// 공통 외곽 — 헤더(카운트·샘플 표기) + 표 헤더 행 + 수동 스크롤 본문(자동 슬라이딩 없음).
+// 공통 외곽 — 헤더(카운트·표기·액션) + 표 헤더 행 + 수동 스크롤 본문(자동 슬라이딩 없음).
 function TableShell({
   count,
   header,
   children,
   minWidthClass = "min-w-[760px]",
+  action,
+  note,
 }: {
   count: number;
   header: React.ReactNode;
   children: React.ReactNode;
   minWidthClass?: string;
+  action?: React.ReactNode; // 우측 액션(예: AED '+ 장비 등록' 버튼).
+  note?: React.ReactNode; // 우측 표기(기본=샘플 안내).
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -116,9 +133,12 @@ function TableShell({
         <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-xs font-medium text-body dark:bg-surface-dark dark:text-on-dark-soft">
           {count}개소
         </span>
-        <span className="text-[11px] text-muted dark:text-on-dark-soft">
-          샘플 · 자체 디바이스 연동 시 실시간 · 수동 스크롤
-        </span>
+        <div className="flex items-center gap-2">
+          {action}
+          <span className="text-[11px] text-muted dark:text-on-dark-soft">
+            {note ?? "샘플 · 자체 디바이스 연동 시 실시간 · 수동 스크롤"}
+          </span>
+        </div>
       </div>
       <div className="wx-cards-scroll min-h-0 flex-1 overflow-x-auto">
         <div className={`flex h-full ${minWidthClass} flex-col`}>
@@ -223,7 +243,7 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
 //   점검 페이지가 열리고(점검자·항목 입력) 관제 웹으로 전송됨 → 이력 기록·최근 교환 갱신. 관제 웹은 '표시만'.
 // 「응급의료에 관한 법률」 제47조의2(설치·관리)·제62조(미설치 과태료)·시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보).
 const AED_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7rem,1.3fr)_minmax(5.5rem,0.9fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_6.5rem]";
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7.5rem,1.3fr)_minmax(5.5rem,0.9fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_7.5rem]";
 
 // 표시·계산용 런타임 행 — 장비 레지스트리(AED_DEVICES) + 병합 이력. history = DB 점검(NFC) + seed.
 type AedHistRecord = { daysAgo: number; items: AedItem[]; by: string; ts?: string };
@@ -237,6 +257,7 @@ type AedRow = {
   battCycleMonths: number;
   padCycleMonths: number;
   history: AedHistRecord[]; // 최신(작은 경과일) 먼저. 최근 배터리/패드 교체일이 교환 주기 기준.
+  demo: boolean; // true=데모 프리셋(발표용·실 하드웨어 미연동) · false=실 연동 등록 장비(RPi 폴링).
 };
 
 // AED 설정 오버라이드(설치위치·관리책임자·제품명·비고) — /api/aed/config 응답 1건.
@@ -245,10 +266,25 @@ type AedConfigOverride = { loc: string | null; manager: string | null; product: 
 // GET /api/aed/inspections 응답 1건.
 type AedInspectionDTO = { aed_id: string; inspector: string; items: string | null; ts: string };
 
+// 등록 실 연동 장비 — GET /api/aed/devices 응답 1건.
+type RegisteredAedDeviceDTO = {
+  aedId: string;
+  loc: string;
+  product: string | null;
+  manager: string;
+  devBatt: number;
+  battCycleMonths: number;
+  padCycleMonths: number;
+  lastSwapTs: string | null;
+  registeredAt: string;
+};
+
 // 폴링으로 채워지는 점검 기록 캐시 — aedDetail(통합 신호등)과 표가 공유. SSR/첫 렌더엔 빈 배열(하이드레이션 안전).
 let aedInspectionsCache: AedInspectionDTO[] = [];
 // 관제웹 설정 오버라이드 캐시(aedId → 설치위치·관리책임자·비고). 표·통합 신호등이 레지스트리 기본값보다 우선 적용.
 let aedConfigCache: Record<string, AedConfigOverride> = {};
+// 등록 실 연동 장비 캐시 — 관리자가 등록한 실제 장비(데모 프리셋과 별개). GET /api/aed/devices 로 채움.
+let aedRegisteredCache: RegisteredAedDeviceDTO[] = [];
 // 폴링 소유권 가드 — 다중 AedAlertTable 인스턴스가 동시에 모듈 캐시를 덮어쓰지 않도록 한 번에 한 인스턴스만 폴링.
 let aedPollingOwned = false;
 
@@ -276,11 +312,37 @@ function buildAedRow(d: AedDevice, inspections: AedInspectionDTO[]): AedRow {
     battCycleMonths: d.battCycleMonths,
     padCycleMonths: d.padCycleMonths,
     history,
+    demo: true,
   };
 }
 
+// 등록 실 연동 장비 → 런타임 행. 이력 = NFC 점검(DB) + 최근 교환일(없으면 등록일) 신품 seed, 최신 먼저.
+function buildRegisteredAedRow(d: RegisteredAedDeviceDTO): AedRow {
+  const scanned: AedHistRecord[] = aedInspectionsCache
+    .filter((i) => i.aed_id === d.aedId)
+    .map((i) => ({ daysAgo: tsToDaysAgo(i.ts), items: normalizeAedItems(i.items), by: i.inspector, ts: i.ts }));
+  const baseTs = d.lastSwapTs ?? d.registeredAt;
+  const seed: AedHistRecord[] = [{ daysAgo: tsToDaysAgo(baseTs), items: ["battery", "pad"] as AedItem[], by: "등록" }];
+  const history = [...scanned, ...seed].sort((a, b) => a.daysAgo - b.daysAgo);
+  return {
+    id: d.aedId,
+    loc: d.loc,
+    manager: d.manager,
+    product: d.product,
+    note: null,
+    devBatt: d.devBatt,
+    battCycleMonths: d.battCycleMonths,
+    padCycleMonths: d.padCycleMonths,
+    history,
+    demo: false,
+  };
+}
+
+// 실 연동 장비(등록순, 상단) + 데모 프리셋. 통합 신호등·표가 공유.
 function buildAedRows(): AedRow[] {
-  return AED_DEVICES.map((d) => buildAedRow(d, aedInspectionsCache));
+  const real = aedRegisteredCache.map(buildRegisteredAedRow);
+  const demo = AED_DEVICES.map((d) => buildAedRow(d, aedInspectionsCache));
+  return [...real, ...demo];
 }
 
 // ── 통합 안전 신호등용 상세(worst-of + 도메인 안내) ───────────────
@@ -460,13 +522,13 @@ export function aedDetail(): CategorySignal {
   if (sev === "normal") {
     return {
       sev,
-      summary: `정상 ${AED_DEVICES.length}대`,
+      summary: `정상 ${statuses.length}대`,
       short: "단말 배터리·AED 배터리·패드 교환주기 모두 정상",
       detail: {
         title: "자동심장충격기(AED) 정상",
         location: "전 구역",
         lines: [
-          { label: "관리 상태", text: `${AED_DEVICES.length}대 전부 단말 배터리 양호 · AED 배터리·전극패드 교환 주기 이내` },
+          { label: "관리 상태", text: `${statuses.length}대 전부 단말 배터리 양호 · AED 배터리·전극패드 교환 주기 이내` },
           { label: "법적 근거", text: "「응급의료에 관한 법률」 제47조의2 · 시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보)" },
         ],
         note: "AED 본체 배터리·패드는 실시간 확인 불가 → 권장 교환 주기로 관리 · 현장 단말 교체·점검 시 이력 자동 기록",
@@ -908,6 +970,176 @@ function AedConfigEditModal({
   );
 }
 
+// AED 실 연동 장비 등록 모달(관리자 권한) — 장비 ID·설치위치·제품명·관리책임자·단말 배터리·최근 교환일. PUT /api/aed/devices register.
+function AedRegisterModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [aedId, setAedId] = useState("");
+  const [loc, setLoc] = useState("");
+  const [product, setProduct] = useState("");
+  const [manager, setManager] = useState("");
+  const [devBatt, setDevBatt] = useState("100");
+  const [lastSwap, setLastSwap] = useState(fmtYMD(new Date())); // 최근 교환일 기본=오늘(신품 가정).
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const save = async () => {
+    if (!aedId.trim() || !loc.trim() || !manager.trim()) {
+      setErr("장비 ID·설치위치·관리책임자는 필수입니다.");
+      return;
+    }
+    setSaving(true);
+    setErr("");
+    try {
+      const t = getSessionToken();
+      const res = await fetch("/api/aed/devices", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        body: JSON.stringify({
+          action: "register",
+          device: {
+            aedId: aedId.trim(),
+            loc: loc.trim(),
+            product: product.trim(),
+            manager: manager.trim(),
+            devBatt: Number(devBatt) || 100,
+            lastSwapTs: lastSwap || null,
+          },
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setErr(j.error || "등록 실패 — 관리자 권한을 확인하세요.");
+        setSaving(false);
+        return;
+      }
+      onSaved();
+    } catch {
+      setErr("등록 실패 — 네트워크 오류.");
+      setSaving(false);
+    }
+  };
+
+  const fieldCls =
+    "w-full rounded-lg border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
+  const labelCls = "mb-1 block text-xs font-semibold text-body dark:text-on-dark-soft";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="wx-cards-scroll max-h-[88vh] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <span className="text-sm font-bold text-ink dark:text-on-dark">AED 알림 장비 등록</span>
+          <KindBadge demo={false} />
+        </div>
+        <div className="flex flex-col gap-3 px-5 py-4">
+          <div>
+            <label className={labelCls}>
+              장비 ID <span className="text-semantic-down">*</span>
+            </label>
+            <input
+              className={fieldCls}
+              value={aedId}
+              maxLength={40}
+              onChange={(e) => setAedId(e.target.value)}
+              placeholder="예: AED-08"
+            />
+            <p className="mt-1 text-[10px] text-muted dark:text-on-dark-soft">
+              RPi 스크립트의 AED_ID와 일치해야 실 알림이 폴링됩니다. 데모 프리셋(AED-01~07)과 다른 ID를 쓰세요.
+            </p>
+          </div>
+          <div>
+            <label className={labelCls}>
+              설치 위치 <span className="text-semantic-down">*</span>
+            </label>
+            <input
+              className={fieldCls}
+              value={loc}
+              maxLength={40}
+              onChange={(e) => setLoc(e.target.value)}
+              placeholder="예: 스마트인재개발원 601호"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>제품명</label>
+            <input
+              className={fieldCls}
+              value={product}
+              maxLength={40}
+              onChange={(e) => setProduct(e.target.value)}
+              placeholder="예: VitAlGuard-AED-ALERT-01"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>
+              관리책임자 <span className="text-semantic-down">*</span>
+            </label>
+            <input
+              className={fieldCls}
+              value={manager}
+              maxLength={30}
+              onChange={(e) => setManager(e.target.value)}
+              placeholder="예: 김태곤"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={labelCls}>단말 배터리 %</label>
+              <input
+                className={fieldCls}
+                type="number"
+                min={0}
+                max={100}
+                value={devBatt}
+                onChange={(e) => setDevBatt(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>최근 교환일</label>
+              <input className={fieldCls} type="date" value={lastSwap} onChange={(e) => setLastSwap(e.target.value)} />
+            </div>
+          </div>
+          {err && <p className="text-xs font-semibold text-semantic-down">{err}</p>}
+          <p className="text-[11px] text-muted dark:text-on-dark-soft">
+            AED 배터리·전극패드 교환 주기는 표준(48/24개월)으로 등록됩니다. 관리자 권한 계정만 등록됩니다.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-hairline px-4 py-1.5 text-sm font-semibold text-body hover:bg-surface-soft disabled:opacity-50 dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/10"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active disabled:opacity-50"
+          >
+            {saving ? "등록 중…" : "등록"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AedAlertTable({
   onSelect,
   canManage = false,
@@ -918,8 +1150,38 @@ export function AedAlertTable({
   // 행 맵에서 이미 계산한 status 를 함께 보관 → 모달에서 aedStatus 재계산 안 함.
   const [alert, setAlert] = useState<{ row: AedRow; status: ReturnType<typeof aedStatus> } | null>(null);
   const [deviceRow, setDeviceRow] = useState<AedRow | null>(null);
-  const [editRow, setEditRow] = useState<AedRow | null>(null); // 권한있음 설정 편집 모달 대상.
+  const [editRow, setEditRow] = useState<AedRow | null>(null); // 권한있음 설정 편집 모달 대상(데모 프리셋).
+  const [registerOpen, setRegisterOpen] = useState(false); // 실 연동 장비 등록 모달.
   const [, setTick] = useState(0);
+
+  // 등록 실 장비 목록 재조회 → 캐시 갱신 + 표 리렌더(등록/해제 직후 즉시 반영).
+  const reloadDevices = useCallback(() => {
+    const t = getSessionToken();
+    const hdr = t ? { headers: { Authorization: `Bearer ${t}` } } : undefined;
+    return fetch("/api/aed/devices", hdr)
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; devices?: RegisteredAedDeviceDTO[] }) => {
+        if (j.ok && Array.isArray(j.devices)) aedRegisteredCache = j.devices;
+        setTick((n) => n + 1);
+      })
+      .catch(() => {});
+  }, []);
+
+  // 실 연동 장비 등록 해제(삭제) — 관리자만. 확인 후 삭제.
+  const removeDevice = useCallback(
+    (r: AedRow) => {
+      if (!window.confirm(`실 연동 장비 "${r.loc}" (${r.id}) 등록을 해제할까요?`)) return;
+      const t = getSessionToken();
+      fetch("/api/aed/devices", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        body: JSON.stringify({ action: "remove", aedId: r.id }),
+      })
+        .then(() => reloadDevices())
+        .catch(() => {});
+    },
+    [reloadDevices],
+  );
 
   // 점검 기록 폴링 → 모듈 캐시 갱신(통합 신호등과 공유) + 표 리렌더.
   // 한 번에 한 인스턴스만 폴링·캐시 쓰기(aedPollingOwned) → 다중 인스턴스 경합 방지.
@@ -942,7 +1204,13 @@ export function AedAlertTable({
           if (alive && j.ok && j.configs) aedConfigCache = j.configs;
         })
         .catch(() => {});
-      return Promise.all([pIns, pCfg]).then(() => {
+      const pDev = fetch("/api/aed/devices", hdr)
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; devices?: RegisteredAedDeviceDTO[] }) => {
+          if (alive && j.ok && Array.isArray(j.devices)) aedRegisteredCache = j.devices;
+        })
+        .catch(() => {});
+      return Promise.all([pIns, pCfg, pDev]).then(() => {
         if (alive) setTick((t) => t + 1);
       });
     };
@@ -956,6 +1224,7 @@ export function AedAlertTable({
   }, []);
 
   const rows = buildAedRows();
+  const realCount = rows.filter((r) => !r.demo).length;
 
   const header = (
     <div className={`${AED_GRID} shrink-0 border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}>
@@ -971,7 +1240,23 @@ export function AedAlertTable({
     </div>
   );
   return (
-    <TableShell count={AED_DEVICES.length} header={header} minWidthClass="min-w-[1010px]">
+    <TableShell
+      count={rows.length}
+      header={header}
+      minWidthClass="min-w-[1050px]"
+      note={`실 연동 ${realCount} · 데모 ${AED_DEVICES.length} · 수동 스크롤`}
+      action={
+        canManage ? (
+          <button
+            type="button"
+            onClick={() => setRegisterOpen(true)}
+            className="rounded-pill bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-on-primary hover:bg-primary-active"
+          >
+            + 장비 등록
+          </button>
+        ) : undefined
+      }
+    >
       {rows.map((r) => {
         const st = aedStatus(r);
         const bDue = battDueDays(r);
@@ -985,19 +1270,24 @@ export function AedAlertTable({
             <div className="flex justify-center">
               <SignalDot sev={st.sev} />
             </div>
-            {canManage ? (
-              <button
-                type="button"
-                onClick={() => setEditRow(r)}
-                title={r.note ? `비고: ${r.note} · 클릭하여 수정` : "클릭 → 설치위치·제품명·관리책임자·비고 수정 (관리자 권한)"}
-                className="truncate text-left font-medium hover:text-primary hover:underline"
-              >
-                {r.loc}
-              </button>
-            ) : (
-              <div className="truncate font-medium" title={r.note || undefined}>{r.loc}</div>
-            )}
-            {canManage ? (
+            <div className="flex min-w-0 items-center gap-1">
+              {r.demo && canManage ? (
+                <button
+                  type="button"
+                  onClick={() => setEditRow(r)}
+                  title={r.note ? `비고: ${r.note} · 클릭하여 수정` : "클릭 → 설치위치·제품명·관리책임자·비고 수정 (관리자 권한)"}
+                  className="truncate text-left font-medium hover:text-primary hover:underline"
+                >
+                  {r.loc}
+                </button>
+              ) : (
+                <div className="truncate font-medium" title={r.note || undefined}>
+                  {r.loc}
+                </div>
+              )}
+              <KindBadge demo={r.demo} />
+            </div>
+            {r.demo && canManage ? (
               <button
                 type="button"
                 onClick={() => setEditRow(r)}
@@ -1009,7 +1299,7 @@ export function AedAlertTable({
             ) : (
               <div className="truncate text-body dark:text-on-dark-soft">{r.product || "—"}</div>
             )}
-            {canManage ? (
+            {r.demo && canManage ? (
               <button
                 type="button"
                 onClick={() => setEditRow(r)}
@@ -1064,6 +1354,21 @@ export function AedAlertTable({
                   <circle cx="12" cy="12" r="1" />
                 </svg>
               </button>
+              {!r.demo && canManage && (
+                <button
+                  type="button"
+                  onClick={() => removeDevice(r)}
+                  title="실 연동 장비 등록 해제"
+                  aria-label={`${r.loc} 등록 해제`}
+                  className="inline-flex items-center justify-center rounded border border-hairline p-0.5 text-semantic-down hover:bg-red-50 dark:border-white/10 dark:hover:bg-red-500/10"
+                >
+                  <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
         );
@@ -1090,6 +1395,18 @@ export function AedAlertTable({
               aedConfigCache = { ...aedConfigCache, [aedId]: cfg };
               setTick((t) => t + 1);
               setEditRow(null);
+            }}
+          />,
+          document.body,
+        )}
+      {registerOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <AedRegisterModal
+            onClose={() => setRegisterOpen(false)}
+            onSaved={() => {
+              setRegisterOpen(false);
+              reloadDevices();
             }}
           />,
           document.body,

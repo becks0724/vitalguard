@@ -7,6 +7,7 @@ import {
   aedDevBattSev,
   aedRowSev,
   alarmLevelOf,
+  buildAedStatusInput,
   worstAedSev,
   type AedStatusInput,
 } from "./aed-status.js";
@@ -68,4 +69,33 @@ test("alarmLevelOf — 정상 CLEAR · 주의 WARNING · 위험 DANGER", () => {
   assert.equal(alarmLevelOf("normal"), "CLEAR");
   assert.equal(alarmLevelOf("caution"), "WARNING");
   assert.equal(alarmLevelOf("danger"), "DANGER");
+});
+
+// ── 등록 실 장비 심각도(buildAedStatusInput) — 알림 엔드포인트·관제 표 공유 입력 ──
+test("buildAedStatusInput — 신품(교환 0일 경과)·배터리 양호면 정상", () => {
+  const inp = buildAedStatusInput({ devBatt: 100, battCycleMonths: 48, padCycleMonths: 24, lastSwapDaysAgo: 0 });
+  assert.equal(aedRowSev(inp), "normal");
+});
+
+test("buildAedStatusInput — 단말 배터리 부족이면 신품이어도 위험", () => {
+  const inp = buildAedStatusInput({ devBatt: 18, battCycleMonths: 48, padCycleMonths: 24, lastSwapDaysAgo: 0 });
+  assert.equal(aedRowSev(inp), "danger");
+});
+
+test("buildAedStatusInput — 교환일 오래 경과(패드 주기 초과)면 위험", () => {
+  // pad 720일 주기 · 800일 경과 → due = -80 < 0 → danger.
+  const inp = buildAedStatusInput({ devBatt: 92, battCycleMonths: 48, padCycleMonths: 24, lastSwapDaysAgo: 800 });
+  assert.equal(aedRowSev(inp), "danger");
+});
+
+test("buildAedStatusInput — 추가 점검 이력(더 최근 교체)이 주기 리셋", () => {
+  // seed 교체는 800일 전(경과)이지만 NFC 점검으로 10일 전 battery·pad 교체 → 정상 복귀.
+  const inp = buildAedStatusInput({
+    devBatt: 92,
+    battCycleMonths: 48,
+    padCycleMonths: 24,
+    lastSwapDaysAgo: 800,
+    extraHistory: [{ daysAgo: 10, items: ["battery", "pad"] }],
+  });
+  assert.equal(aedRowSev(inp), "normal");
 });

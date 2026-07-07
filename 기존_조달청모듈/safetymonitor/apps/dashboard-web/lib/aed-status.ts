@@ -64,3 +64,21 @@ export type AlarmLevel = "CLEAR" | "WARNING" | "DANGER";
 export function alarmLevelOf(sev: AedSev): AlarmLevel {
   return sev === "danger" ? "DANGER" : sev === "caution" ? "WARNING" : "CLEAR";
 }
+
+// 등록 실 장비·데모 장비 공통 — 최근 교환일(경과일) 기준 교체 이력 1건(신품 가정) + 추가 점검 이력(NFC) → 심각도 계산 입력.
+// 알림 엔드포인트(RPi 폴링)와 관제 표가 같은 기준으로 계산하도록 단일 소스화.
+export function buildAedStatusInput(p: {
+  devBatt: number;
+  battCycleMonths: number;
+  padCycleMonths: number;
+  lastSwapDaysAgo: number; // 최근 배터리·패드 교환(또는 등록) 이후 경과일.
+  extraHistory?: AedHistoryEntry[]; // NFC 점검 기록 등(더 최근 교체가 있으면 우선 반영).
+}): AedStatusInput {
+  const seed: AedHistoryEntry = { daysAgo: Math.max(0, p.lastSwapDaysAgo), items: ["battery", "pad"] };
+  return {
+    devBatt: p.devBatt,
+    battCycleMonths: p.battCycleMonths,
+    padCycleMonths: p.padCycleMonths,
+    history: [...(p.extraHistory ?? []), seed],
+  };
+}

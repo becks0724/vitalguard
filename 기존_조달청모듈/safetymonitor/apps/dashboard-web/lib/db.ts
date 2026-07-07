@@ -319,6 +319,21 @@ async function initSchema(): Promise<void> {
     );
     ALTER TABLE aed_config ADD COLUMN IF NOT EXISTS product TEXT;
 
+    -- AED 실 연동 장비 등록 — 관리자가 등록한 실제 장비(RPi가 aed_id로 알림 레벨 폴링). 데모 프리셋(AED_DEVICES)과 별개.
+    -- 이 테이블 행만 '실 연동', 코드 프리셋은 '데모(발표용)'. 단말 배터리·교환주기는 등록 입력값.
+    CREATE TABLE IF NOT EXISTS aed_registered_device (
+      aed_id TEXT PRIMARY KEY,
+      loc TEXT NOT NULL,
+      product TEXT,
+      manager TEXT NOT NULL,
+      dev_batt INTEGER NOT NULL DEFAULT 100,
+      batt_cycle_months INTEGER NOT NULL DEFAULT 48,
+      pad_cycle_months INTEGER NOT NULL DEFAULT 24,
+      last_swap_ts TEXT,
+      registered_by TEXT,
+      registered_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 작업자 ID 병합 별칭 — secondary(별칭) → primary(주 ID). 수신 시 정규화해 같은 사람을 1카드로 합친다.
     CREATE TABLE IF NOT EXISTS worker_alias (
       secondary_worker_id TEXT PRIMARY KEY,
@@ -723,6 +738,101 @@ export async function setAedConfig(
       updatedBy.slice(0, 40) || null,
     ],
   );
+}
+
+// ── AED 실 연동 장비 등록(데모 프리셋과 별개 — RPi가 aed_id로 알림 레벨을 폴링하는 실제 장비) ──
+export type RegisteredAedDevice = {
+  aedId: string;
+  loc: string;
+  product: string | null;
+  manager: string;
+  devBatt: number;
+  battCycleMonths: number;
+  padCycleMonths: number;
+  lastSwapTs: string | null; // 최근 배터리·패드 교환일(ISO). null이면 등록일 기준(신품).
+  registeredAt: string;
+};
+
+// 등록된 실 연동 장비 목록(등록 순). 알림 엔드포인트·관제 표가 공유.
+export async function listRegisteredAedDevices(): Promise<RegisteredAedDevice[]> {
+  const { rows } = await q<{
+    aed_id: string;
+    loc: string;
+    product: string | null;
+    manager: string;
+    dev_batt: number;
+    batt_cycle_months: number;
+    pad_cycle_months: number;
+    last_swap_ts: string | null;
+    registered_at: string;
+  }>(
+    `SELECT aed_id, loc, product, manager, dev_batt, batt_cycle_months, pad_cycle_months, last_swap_ts, registered_at
+       FROM aed_registered_device ORDER BY registered_at ASC, aed_id ASC`,
+  );
+  return rows.map((r) => ({
+    aedId: r.aed_id,
+    loc: r.loc,
+    product: r.product,
+    manager: r.manager,
+    devBatt: r.dev_batt,
+    battCycleMonths: r.batt_cycle_months,
+    padCycleMonths: r.pad_cycle_months,
+    lastSwapTs: r.last_swap_ts,
+    registeredAt: r.registered_at,
+  }));
+}
+
+// 실 장비 등록/수정 upsert — 관리자만(라우트에서 강제). 숫자는 안전 범위로 클램프.
+export async function registerAedDevice(
+  device: {
+    aedId: string;
+    loc: string;
+    product?: string;
+    manager: string;
+    devBatt?: number;
+    battCycleMonths?: number;
+    padCycleMonths?: number;
+    lastSwapTs?: string | null;
+  },
+  by: string,
+): Promise<void> {
+  const clip = (v: string | undefined, max: number) => {
+    const t = (v ?? "").trim();
+    return t ? t.slice(0, max) : null;
+  };
+  const num = (v: number | undefined, def: number, min: number, max: number) =>
+    typeof v === "number" && Number.isFinite(v) ? Math.max(min, Math.min(max, Math.round(v))) : def;
+  await q(
+    `INSERT INTO aed_registered_device
+       (aed_id, loc, product, manager, dev_batt, batt_cycle_months, pad_cycle_months, last_swap_ts, registered_by, registered_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ${NOW_ISO})
+       ON CONFLICT (aed_id) DO UPDATE SET
+         loc = excluded.loc,
+         product = excluded.product,
+         manager = excluded.manager,
+         dev_batt = excluded.dev_batt,
+         batt_cycle_months = excluded.batt_cycle_months,
+         pad_cycle_months = excluded.pad_cycle_months,
+         last_swap_ts = excluded.last_swap_ts,
+         registered_by = excluded.registered_by`,
+    [
+      device.aedId.trim().slice(0, 40),
+      clip(device.loc, 40) ?? "",
+      clip(device.product, 40),
+      clip(device.manager, 30) ?? "",
+      num(device.devBatt, 100, 0, 100),
+      num(device.battCycleMonths, 48, 1, 120),
+      num(device.padCycleMonths, 24, 1, 120),
+      device.lastSwapTs ? device.lastSwapTs.slice(0, 40) : null,
+      by.slice(0, 40) || null,
+    ],
+  );
+}
+
+// 실 장비 등록 해제(삭제). 존재하면 true.
+export async function removeRegisteredAedDevice(aedId: string): Promise<boolean> {
+  const { rowCount } = await q("DELETE FROM aed_registered_device WHERE aed_id = $1", [aedId.trim()]);
+  return rowCount > 0;
 }
 
 // ── 작업자 ID 병합 별칭(secondary → primary) ───────────────────────────────
