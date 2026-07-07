@@ -1246,15 +1246,22 @@ export function AedAlertTable({
       minWidthClass="min-w-[1050px]"
       note={`실 연동 ${realCount} · 데모 ${AED_DEVICES.length} · 수동 스크롤`}
       action={
-        canManage ? (
-          <button
-            type="button"
-            onClick={() => setRegisterOpen(true)}
-            className="rounded-pill bg-primary px-2.5 py-0.5 text-[11px] font-semibold text-on-primary hover:bg-primary-active"
-          >
-            + 장비 등록
-          </button>
-        ) : undefined
+        // 작업자 등록 버튼과 동일하게 항상 렌더 — 권한 없으면 disabled(회색+툴팁). 조건부 숨김은 canManage 로드 타이밍에 버튼이 통째로 사라져 "미구현"으로 보임.
+        <button
+          type="button"
+          onClick={() => {
+            if (canManage) setRegisterOpen(true);
+          }}
+          disabled={!canManage}
+          title={
+            canManage
+              ? "AED 알림 장비 등록 (실 연동)"
+              : "관리자 권한(권한있음)이 있는 계정만 장비 등록이 가능합니다"
+          }
+          className="inline-flex h-7 items-center gap-1 rounded-pill bg-primary px-3 text-[11px] font-semibold text-on-primary hover:bg-primary-active active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          + 장비 등록
+        </button>
       }
     >
       {rows.map((r) => {
@@ -1354,13 +1361,17 @@ export function AedAlertTable({
                   <circle cx="12" cy="12" r="1" />
                 </svg>
               </button>
-              {!r.demo && canManage && (
+              {!r.demo && (
+                // 실 연동 장비 행에만 해제(데모 프리셋은 코드 상수라 해제 불가). 작업자 해제와 동일하게 권한 없으면 disabled.
                 <button
                   type="button"
-                  onClick={() => removeDevice(r)}
-                  title="실 연동 장비 등록 해제"
+                  onClick={() => {
+                    if (canManage) removeDevice(r);
+                  }}
+                  disabled={!canManage}
+                  title={canManage ? "실 연동 장비 등록 해제" : "관리자 권한(권한있음)만 해제 가능"}
                   aria-label={`${r.loc} 등록 해제`}
-                  className="inline-flex items-center justify-center rounded border border-hairline p-0.5 text-semantic-down hover:bg-red-50 dark:border-white/10 dark:hover:bg-red-500/10"
+                  className="inline-flex items-center justify-center rounded border border-hairline p-0.5 text-semantic-down hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:hover:bg-red-500/10"
                 >
                   <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 6h18" />
