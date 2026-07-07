@@ -57,6 +57,7 @@ export function VitalHistoryPanel({
   workerName,
   employeeId,
   hasLiveData,
+  liveValue,
   onMetricChange,
   onClose,
 }: {
@@ -64,6 +65,7 @@ export function VitalHistoryPanel({
   workerName?: string;
   employeeId?: string;
   hasLiveData: boolean;
+  liveValue?: number | null; // 선택 작업자·메트릭의 현재 라이브 값(대시보드가 2초마다 갱신). 24시간 뷰 마지막 점에 반영.
   onMetricChange?: (metric: Metric) => void;
   onClose: () => void;
 }) {
@@ -125,6 +127,29 @@ export function VitalHistoryPanel({
   const isTemp = selection.metric === "skinTempC";
   const coreSub = (v: number) => (isTemp ? `추정 ${estimateCoreTempC(v).toFixed(1)}℃` : undefined);
   const coreHover = isTemp ? (v: number) => `추정 ${estimateCoreTempC(v).toFixed(1)}℃` : undefined;
+
+  // 24시간(range=1) 실시간 뷰 — 마지막 버킷(현재 시각)을 라이브 값으로 덮어 실시간 반영.
+  // 대시보드가 2초마다 새 liveValue 로 리렌더 → 그래프 tip 이 실시간 표와 동기화. 일/월 집계·낙상은 원본 유지.
+  const liveOverride =
+    data !== null &&
+    range === 1 &&
+    selection.metric !== "fall" &&
+    typeof liveValue === "number" &&
+    Number.isFinite(liveValue) &&
+    data.points.length > 0;
+  const displayPoints = liveOverride
+    ? data!.points.map((p, i, arr) => (i === arr.length - 1 ? { ...p, value: liveValue as number } : p))
+    : (data?.points ?? []);
+  const displaySummary = (() => {
+    if (!data) return { min: 0, max: 0, avg: 0 };
+    if (!liveOverride) return data.summary;
+    const vals = displayPoints.map((p) => p.value);
+    return {
+      min: Math.min(...vals),
+      max: Math.max(...vals),
+      avg: vals.reduce((a, b) => a + b, 0) / vals.length,
+    };
+  })();
 
   return (
     <section
@@ -233,22 +258,22 @@ export function VitalHistoryPanel({
             <div className="mb-3 flex flex-wrap items-stretch gap-2">
               {selection.metric === "fall" ? (
                 <>
-                  <SummaryCell label="총 건수" value={data.summary.min} unit={meta.unit} decimals={0} color={meta.color} />
-                  <SummaryCell label="시간/일 최대" value={data.summary.max} unit={meta.unit} decimals={0} color={meta.color} />
-                  <SummaryCell label="평균" value={data.summary.avg} unit={meta.unit} decimals={2} color={meta.color} />
+                  <SummaryCell label="총 건수" value={displaySummary.min} unit={meta.unit} decimals={0} color={meta.color} />
+                  <SummaryCell label="시간/일 최대" value={displaySummary.max} unit={meta.unit} decimals={0} color={meta.color} />
+                  <SummaryCell label="평균" value={displaySummary.avg} unit={meta.unit} decimals={2} color={meta.color} />
                 </>
               ) : (
                 <>
-                  <SummaryCell label="평균" value={data.summary.avg} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(data.summary.avg)} />
-                  <SummaryCell label="최저" value={data.summary.min} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(data.summary.min)} />
-                  <SummaryCell label="최고" value={data.summary.max} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(data.summary.max)} />
-                  <SafetyStatsCell metric={selection.metric} points={data.points} unit={meta.unit} decimals={meta.decimals} />
+                  <SummaryCell label="평균" value={displaySummary.avg} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(displaySummary.avg)} />
+                  <SummaryCell label="최저" value={displaySummary.min} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(displaySummary.min)} />
+                  <SummaryCell label="최고" value={displaySummary.max} unit={meta.unit} decimals={meta.decimals} color={meta.color} sub={coreSub(displaySummary.max)} />
+                  <SafetyStatsCell metric={selection.metric} points={displayPoints} unit={meta.unit} decimals={meta.decimals} />
                 </>
               )}
             </div>
             {selection.metric === "fall" || chartType === "bar" ? (
               <BarChart
-                points={data.points}
+                points={displayPoints}
                 color={meta.color}
                 unit={meta.unit}
                 decimals={meta.decimals}
@@ -258,7 +283,7 @@ export function VitalHistoryPanel({
               />
             ) : (
               <LineChart
-                points={data.points}
+                points={displayPoints}
                 color={meta.color}
                 unit={meta.unit}
                 decimals={meta.decimals}

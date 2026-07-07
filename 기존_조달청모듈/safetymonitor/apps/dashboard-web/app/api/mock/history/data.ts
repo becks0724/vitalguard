@@ -42,21 +42,29 @@ function hashSeed(workerId: string, metric: HistoryMetric, dayIndex: number) {
   return ((h >>> 0) % 10000) / 10000;
 }
 
+// KST(UTC+9) 파츠 — Cloud Run 서버 로컬은 UTC 라 getHours() 등이 9시간 밀림(KST 11시가 02시로 표시).
+// 라벨을 현장 시간(KST)에 맞춰 실시간 표와 동일 시각으로 보이게 한다(예: 24시간 뷰 마지막 버킷 = 현재 KST 시각).
+function kst(date: Date): Date {
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000);
+}
+
 function formatDay(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-  const dd = `${date.getDate()}`.padStart(2, "0");
+  const k = kst(date);
+  const yyyy = k.getUTCFullYear();
+  const mm = `${k.getUTCMonth() + 1}`.padStart(2, "0");
+  const dd = `${k.getUTCDate()}`.padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
 
 function formatHour(date: Date) {
-  const hh = `${date.getHours()}`.padStart(2, "0");
+  const hh = `${kst(date).getUTCHours()}`.padStart(2, "0");
   return `${hh}:00`;
 }
 
 // 1년(월별) 라벨 — "YY/M" (예: 25/7). 12개월 각 월 고유.
 function formatMonth(date: Date) {
-  return `${`${date.getFullYear()}`.slice(2)}/${date.getMonth() + 1}`;
+  const k = kst(date);
+  return `${`${k.getUTCFullYear()}`.slice(2)}/${k.getUTCMonth() + 1}`;
 }
 
 export function buildHistory(

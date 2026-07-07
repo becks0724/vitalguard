@@ -4154,6 +4154,12 @@ export function DemoDashboard() {
             selection.metric,
             lastFallByWorker.get(selection.workerId),
           )}
+          liveValue={(() => {
+            // 선택 작업자·메트릭의 현재 라이브 값 — 2초 폴 리렌더마다 갱신 → 그래프 24시간 뷰 마지막 점 실시간 반영.
+            if (selection.metric === "fall") return null;
+            const v = latestMap.get(selection.workerId)?.[selection.metric];
+            return typeof v === "number" && Number.isFinite(v) ? v : null;
+          })()}
           onMetricChange={(metric) =>
             setSelection({ workerId: selection.workerId, metric })
           }
