@@ -319,6 +319,32 @@ async function initSchema(): Promise<void> {
     );
     ALTER TABLE aed_config ADD COLUMN IF NOT EXISTS product TEXT;
 
+    -- 가스 누출 감지기 관제 웹 오버라이드 — row_key(실기기 gaspod 가스 행·데모 행) 키. 설치위치·가스종류 라벨을 기본값보다 우선.
+    CREATE TABLE IF NOT EXISTS gaspod_config (
+      row_key TEXT PRIMARY KEY,
+      loc TEXT,
+      gas TEXT,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
+    -- 가스포드(ESP32) 텔레메트리 영속 — 실기기 실시간 수집을 DB에 누적 저장(메모리 링버퍼 대체·인스턴스 재시작/멀티인스턴스 무관).
+    CREATE TABLE IF NOT EXISTS gaspod_telemetry (
+      id SERIAL PRIMARY KEY,
+      device_id TEXT NOT NULL,
+      o2 REAL,
+      temp REAL,
+      humidity REAL,
+      pressure REAL,
+      mq7_raw INTEGER,
+      mq136_raw INTEGER,
+      vbat REAL,
+      state TEXT NOT NULL,
+      acked BOOLEAN NOT NULL DEFAULT FALSE,
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_gaspod_recv ON gaspod_telemetry(received_at);
+
     -- AED 실 연동 장비 등록 — 관리자가 등록한 실제 장비(RPi가 aed_id로 알림 레벨 폴링). 데모 프리셋(AED_DEVICES)과 별개.
     -- 이 테이블 행만 '실 연동', 코드 프리셋은 '데모(발표용)'. 단말 배터리·교환주기는 등록 입력값.
     CREATE TABLE IF NOT EXISTS aed_registered_device (
@@ -738,6 +764,105 @@ export async function setAedConfig(
       updatedBy.slice(0, 40) || null,
     ],
   );
+}
+
+// ── 가스 누출 감지기 관제 웹 오버라이드(설치위치·가스종류 라벨) ─────────────
+export type GaspodConfigOverride = { loc: string | null; gas: string | null };
+
+// row_key → 오버라이드(설치위치·가스종류). 실기기 가스 행·데모 행 공통. 표가 기본값보다 우선 적용.
+export async function getGaspodConfigs(): Promise<Record<string, GaspodConfigOverride>> {
+  const { rows } = await q<{ row_key: string; loc: string | null; gas: string | null }>(
+    "SELECT row_key, loc, gas FROM gaspod_config",
+  );
+  const out: Record<string, GaspodConfigOverride> = {};
+  for (const r of rows) out[r.row_key] = { loc: r.loc, gas: r.gas };
+  return out;
+}
+
+// 가스 오버라이드 upsert — 빈 문자열은 null(해제 → 기본값 복귀). 권한 계정만(라우트에서 강제).
+export async function setGaspodConfig(
+  rowKey: string,
+  fields: { loc?: string; gas?: string },
+  updatedBy: string,
+): Promise<void> {
+  const clip = (v: string | undefined, max: number) => {
+    const t = (v ?? "").trim();
+    return t ? t.slice(0, max) : null;
+  };
+  await q(
+    `INSERT INTO gaspod_config (row_key, loc, gas, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, ${NOW_ISO})
+       ON CONFLICT (row_key) DO UPDATE SET
+         loc = excluded.loc,
+         gas = excluded.gas,
+         updated_by = excluded.updated_by,
+         updated_at = excluded.updated_at`,
+    [rowKey.slice(0, 60), clip(fields.loc, 40), clip(fields.gas, 30), updatedBy.slice(0, 40) || null],
+  );
+}
+
+// ── 가스포드 텔레메트리 영속(실기기 실시간 수집 DB) ─────────────────────────
+export type GaspodTelemetryRow = {
+  device_id: string;
+  o2: number;
+  temp: number;
+  humidity: number;
+  pressure: number;
+  mq7_raw: number;
+  mq136_raw: number;
+  vbat: number;
+  state: string;
+  acked: boolean;
+  received_at: string;
+};
+
+// 수신 텔레메트리 1건 DB 적재(POST). 수신 시각은 서버 UTC ISO 기본값.
+export async function insertGaspodTelemetry(input: {
+  device_id: string;
+  o2: number;
+  temp: number;
+  humidity: number;
+  pressure: number;
+  mq7_raw: number;
+  mq136_raw: number;
+  vbat: number;
+  state: string;
+  acked: boolean;
+}): Promise<void> {
+  await q(
+    `INSERT INTO gaspod_telemetry
+       (device_id, o2, temp, humidity, pressure, mq7_raw, mq136_raw, vbat, state, acked, received_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ${NOW_ISO})`,
+    [
+      input.device_id.slice(0, 40),
+      input.o2,
+      input.temp,
+      input.humidity,
+      input.pressure,
+      Math.round(input.mq7_raw),
+      Math.round(input.mq136_raw),
+      input.vbat,
+      input.state.slice(0, 16),
+      input.acked,
+    ],
+  );
+}
+
+// 최근 텔레메트리 N건(최신 먼저). 대시보드/검증용.
+export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRow[]> {
+  const lim = Math.min(720, Math.max(1, Math.floor(limit)));
+  const { rows } = await q<GaspodTelemetryRow>(
+    `SELECT device_id, o2, temp, humidity, pressure, mq7_raw, mq136_raw, vbat, state, acked, received_at
+       FROM gaspod_telemetry ORDER BY received_at DESC, id DESC LIMIT $1`,
+    [lim],
+  );
+  return rows;
+}
+
+// 누적 수집 건수(DB 영속 총계).
+export async function countGaspodTelemetry(): Promise<number> {
+  const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM gaspod_telemetry");
+  return rows[0]?.n ?? 0;
 }
 
 // ── AED 실 연동 장비 등록(데모 프리셋과 별개 — RPi가 aed_id로 알림 레벨을 폴링하는 실제 장비) ──

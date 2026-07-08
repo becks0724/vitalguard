@@ -119,6 +119,7 @@ function TableShell({
   minWidthClass = "min-w-[760px]",
   action,
   note,
+  footer,
 }: {
   count: number;
   header: React.ReactNode;
@@ -126,6 +127,7 @@ function TableShell({
   minWidthClass?: string;
   action?: React.ReactNode; // 우측 액션(예: AED '+ 장비 등록' 버튼).
   note?: React.ReactNode; // 우측 표기(기본=샘플 안내).
+  footer?: React.ReactNode; // 하단 고정 스트립(예: 가스 실시간 수집·DB 영속 누적).
 }) {
   return (
     <div className="flex h-full flex-col">
@@ -147,15 +149,23 @@ function TableShell({
           <div className="wx-cards-scroll min-h-0 flex-1 overflow-y-auto">{children}</div>
         </div>
       </div>
+      {footer && (
+        <div className="shrink-0 border-t border-hairline bg-surface-soft dark:border-white/10 dark:bg-surface-dark-elevated">
+          {footer}
+        </div>
+      )}
     </div>
   );
 }
 
 // ── 가스 누출 감지기 ──────────────────────────────────────────────
+// 실기기(gaspod-01)는 O₂·CO·H₂S·온습압·배터리를 동시 측정 → 표(한 행=한 가스)엔 O₂/CO/H₂S 3행(실 연동)으로 상단 배치.
+// 데모 프리셋은 '데모' 배지. 설치위치·가스종류는 권한있음(관리자)만 편집(오버라이드=gaspod_config, 서버 저장).
 const GAS_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(8rem,1.5fr)_minmax(6rem,1fr)_5rem_6rem_4rem_5rem]";
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(8rem,1.5fr)_minmax(6rem,1fr)_5rem_6rem_4rem_3.5rem_5rem]";
 
-type GasRow = {
+// 데모 샘플 1행 형태(발표용 · 실 하드웨어 미연동).
+type GasSample = {
   loc: string;
   gas: string;
   val: string;
@@ -165,7 +175,7 @@ type GasRow = {
   recv: string;
 };
 
-const GAS_ROWS: GasRow[] = [
+const GAS_ROWS: GasSample[] = [
   { loc: "지하 1층 펌프실", gas: "CH₄ 메탄", val: "0.3", unit: "%LEL", thr: "≥5 %LEL", sev: "normal", recv: "5초 전" },
   { loc: "B2 집수정", gas: "H₂S 황화수소", val: "8", unit: "ppm", thr: "≥10 ppm", sev: "caution", recv: "4초 전" },
   { loc: "탱크 야드", gas: "CO 일산화탄소", val: "52", unit: "ppm", thr: "≥30 ppm", sev: "danger", recv: "6초 전" },
@@ -176,7 +186,95 @@ const GAS_ROWS: GasRow[] = [
   { loc: "지하 전기실", gas: "CO 일산화탄소", val: "12", unit: "ppm", thr: "≥30 ppm", sev: "normal", recv: "5초 전" },
 ];
 
-function gasMetric(r: GasRow): SiteMetric {
+// 실기기(gaspod) 텔레메트리 1건 — GET /api/gaspod/telemetry latest.
+type GaspodLatest = {
+  device_id: string;
+  o2: number;
+  temp: number;
+  humidity: number;
+  pressure: number;
+  mq7_raw: number;
+  mq136_raw: number;
+  vbat: number;
+  state: string;
+  acked: boolean;
+  ts: string;
+};
+
+// 가스 표시 오버라이드(설치위치·가스종류) — GET /api/gaspod/config 응답.
+type GasConfigOverride = { loc: string | null; gas: string | null };
+
+// 표시·편집용 런타임 행 — 데모 샘플 + { key(오버라이드/편집), demo, latest(실기기 상세) }.
+type GasRow = GasSample & { key: string; demo: boolean; latest?: GaspodLatest };
+
+// 펌웨어 임계(gaspod_v4.ino) — O₂ 경고19.2/위험18.5(%), MQ-7(CO) 경고500/위험1000, MQ-136(H₂S) 경고1800/위험2200(raw ADC).
+function o2Sev(v: number): Sev {
+  return v > 0 && v < 18.5 ? "danger" : v > 0 && v < 19.2 ? "caution" : "normal";
+}
+function mq7Sev(v: number): Sev {
+  return v > 1000 ? "danger" : v > 500 ? "caution" : "normal";
+}
+function mq136Sev(v: number): Sev {
+  return v > 2200 ? "danger" : v > 1800 ? "caution" : "normal";
+}
+
+// 단말 배터리 전압(V) → 잔량 %(추정) — 단일 리튬셀 만충 4.2V / 임박 3.0V 선형 환산(펌웨어 VBAT_CRIT 3.0·VBAT_WARN 3.2 기준).
+function vbatToPct(v: number): number {
+  if (!Number.isFinite(v) || v <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round(((v - 3.0) / (4.2 - 3.0)) * 100)));
+}
+
+// 최근 수신 경과("N초 전"/"N분 전").
+function recvAgo(ts: string): string {
+  const s = Math.round((Date.now() - Date.parse(ts)) / 1000);
+  if (Number.isNaN(s)) return "-";
+  const c = Math.max(0, s);
+  return c < 60 ? `${c}초 전` : `${Math.floor(c / 60)}분 전`;
+}
+
+// 데모 8행 → 런타임 행(key=demo:i) + 오버라이드 적용.
+function demoGasRows(ov: Record<string, GasConfigOverride>): GasRow[] {
+  return GAS_ROWS.map((r, i) => {
+    const key = `demo:${i}`;
+    const o = ov[key];
+    return { ...r, key, demo: true, loc: o?.loc || r.loc, gas: o?.gas || r.gas };
+  });
+}
+
+// 실기기 텔레메트리 1건 → O₂/CO/H₂S 3행(실 연동). sev=펌웨어 임계 실측 + 오버라이드 적용.
+function realGasRows(l: GaspodLatest, ov: Record<string, GasConfigOverride>): GasRow[] {
+  const recv = recvAgo(l.ts);
+  const mk = (
+    suffix: "o2" | "co" | "h2s",
+    gas: string,
+    val: string,
+    unit: string,
+    thr: string,
+    sev: Sev,
+  ): GasRow => {
+    const key = `${l.device_id}:${suffix}`;
+    const o = ov[key];
+    return {
+      key,
+      loc: o?.loc || "현장 가스 감지기",
+      gas: o?.gas || gas,
+      val,
+      unit,
+      thr,
+      sev,
+      recv,
+      demo: false,
+      latest: l,
+    };
+  };
+  return [
+    mk("o2", "O₂ 산소", l.o2.toFixed(1), "%", "<18.5 %", o2Sev(l.o2)),
+    mk("co", "CO 일산화탄소", String(l.mq7_raw), "raw", "≥1000 raw", mq7Sev(l.mq7_raw)),
+    mk("h2s", "H₂S 황화수소", String(l.mq136_raw), "raw", "≥2200 raw", mq136Sev(l.mq136_raw)),
+  ];
+}
+
+function gasMetric(r: GasSample): SiteMetric {
   const value = Number(r.val);
   const thrMatch = r.thr.match(/[\d.]+/); // "≥5 %LEL" / "<18 %" → 숫자 추출
   const thrValue = thrMatch ? Number(thrMatch[0]) : NaN;
@@ -192,7 +290,282 @@ function gasMetric(r: GasRow): SiteMetric {
   };
 }
 
-export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => void }) {
+// 실기기 상세 팝업 — O₂·CO·H₂S 실측 + 온습도·기압·배터리·종합상태·최근수신. 실기기 행 측정값 클릭 시.
+function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const l = latest;
+  const stateKo = l.state === "DANGER" ? "위험" : l.state === "WARNING" ? "주의" : "정상";
+  const stateSev: Sev = l.state === "DANGER" ? "danger" : l.state === "WARNING" ? "caution" : "normal";
+  const gasItems = [
+    { label: "O₂ 산소", val: `${l.o2.toFixed(1)} %`, sev: o2Sev(l.o2) },
+    { label: "CO 일산화탄소", val: `${l.mq7_raw} raw`, sev: mq7Sev(l.mq7_raw) },
+    { label: "H₂S 황화수소", val: `${l.mq136_raw} raw`, sev: mq136Sev(l.mq136_raw) },
+  ];
+  const envItems = [
+    { label: "온도", val: `${l.temp.toFixed(1)} ℃` },
+    { label: "습도", val: `${Math.round(l.humidity)} %` },
+    { label: "기압", val: `${l.pressure.toFixed(1)} hPa` },
+    { label: "단말 배터리", val: `${l.vbat.toFixed(2)} V` },
+  ];
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <span className="flex items-center gap-2">
+            <span className="text-sm font-bold text-ink dark:text-on-dark">가스 감지기 상세</span>
+            <KindBadge demo={false} />
+          </span>
+          <span className="text-xs text-muted dark:text-on-dark-soft">{l.device_id}</span>
+        </div>
+        <div className="px-5 py-4 text-sm text-ink dark:text-on-dark">
+          <div className="mb-3 flex items-center justify-between rounded-lg border border-hairline px-3 py-2 dark:border-white/10">
+            <span className="text-xs font-semibold text-body dark:text-on-dark-soft">종합 상태</span>
+            <span className={`flex items-center gap-1.5 font-semibold ${TONE[stateSev]}`}>
+              <SignalDot sev={stateSev} />
+              {stateKo}
+              {l.acked ? " · 현장 확인됨" : ""}
+            </span>
+          </div>
+          <p className="mb-1.5 text-xs font-semibold text-body dark:text-on-dark-soft">가스 측정값</p>
+          <ul className="mb-3 space-y-1.5">
+            {gasItems.map((g) => (
+              <li
+                key={g.label}
+                className="flex items-center justify-between rounded-lg border border-hairline px-3 py-1.5 text-xs dark:border-white/10"
+              >
+                <span className="flex items-center gap-1.5">
+                  <SignalDot sev={g.sev} />
+                  {g.label}
+                </span>
+                <span className={`font-mono font-semibold tabular-nums ${TONE[g.sev]}`}>{g.val}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mb-1.5 text-xs font-semibold text-body dark:text-on-dark-soft">환경 센서</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {envItems.map((e) => (
+              <div
+                key={e.label}
+                className="flex items-center justify-between rounded-lg border border-hairline px-3 py-1.5 text-xs dark:border-white/10"
+              >
+                <span className="text-body dark:text-on-dark-soft">{e.label}</span>
+                <span className="font-mono font-semibold tabular-nums">{e.val}</span>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-muted dark:text-on-dark-soft">
+            최근 수신 {recvAgo(l.ts)} · CO·H₂S는 무보정 원시값(raw ADC, ppm 아님) · 임계·종합상태는 기기 계산값
+          </p>
+        </div>
+        <div className="flex justify-end border-t border-hairline px-5 py-3 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active"
+          >
+            확인
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// 가스 행 설정 편집(관리자 권한) — 설치위치·가스종류 수정. PUT /api/gaspod/config → 성공 시 캐시 갱신. ESC/배경 닫기.
+function GasConfigEditModal({
+  row,
+  onClose,
+  onSaved,
+}: {
+  row: GasRow;
+  onClose: () => void;
+  onSaved: (key: string, cfg: GasConfigOverride) => void;
+}) {
+  const [loc, setLoc] = useState(row.loc);
+  const [gas, setGas] = useState(row.gas);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const save = async () => {
+    setSaving(true);
+    setErr("");
+    try {
+      const t = getSessionToken();
+      const res = await fetch("/api/gaspod/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
+        body: JSON.stringify({ rowKey: row.key, loc, gas }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        setErr(j.error || "저장 실패 — 관리자 권한을 확인하세요.");
+        setSaving(false);
+        return;
+      }
+      onSaved(row.key, { loc: loc.trim() || null, gas: gas.trim() || null });
+    } catch {
+      setErr("저장 실패 — 네트워크 오류.");
+      setSaving(false);
+    }
+  };
+
+  const fieldCls =
+    "w-full rounded-lg border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
+  const labelCls = "mb-1 block text-xs font-semibold text-body dark:text-on-dark-soft";
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <span className="text-sm font-bold text-ink dark:text-on-dark">가스 감지기 설정 수정</span>
+          <KindBadge demo={row.demo} />
+        </div>
+        <div className="flex flex-col gap-3 px-5 py-4">
+          <div>
+            <label className={labelCls}>설치 위치</label>
+            <input
+              className={fieldCls}
+              value={loc}
+              maxLength={40}
+              onChange={(e) => setLoc(e.target.value)}
+              placeholder="예: 지하 1층 집수정"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>가스 종류</label>
+            <input
+              className={fieldCls}
+              value={gas}
+              maxLength={30}
+              onChange={(e) => setGas(e.target.value)}
+              placeholder="예: H₂S 황화수소"
+            />
+          </div>
+          {err && <p className="text-xs font-semibold text-semantic-down">{err}</p>}
+          <p className="text-[11px] text-muted dark:text-on-dark-soft">
+            빈 칸으로 저장하면 기본값으로 복귀합니다. 관리자 권한 계정만 저장됩니다.
+          </p>
+        </div>
+        <div className="flex justify-end gap-2 border-t border-hairline px-5 py-3 dark:border-white/10">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-hairline px-4 py-1.5 text-sm font-semibold text-body hover:bg-surface-soft disabled:opacity-50 dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/10"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary hover:bg-primary-active disabled:opacity-50"
+          >
+            {saving ? "저장 중…" : "저장"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function GasDetectorTable({
+  onSelect,
+  canManage = false,
+}: {
+  onSelect?: (m: SiteMetric) => void;
+  canManage?: boolean;
+}) {
+  const [latest, setLatest] = useState<GaspodLatest | null>(null);
+  const [count, setCount] = useState(0); // DB 영속 누적 수집 건수.
+  const [overrides, setOverrides] = useState<Record<string, GasConfigOverride>>({});
+  const [detail, setDetail] = useState<GaspodLatest | null>(null);
+  const [editRow, setEditRow] = useState<GasRow | null>(null);
+  const [, setTick] = useState(0); // recvAgo 표시 갱신용.
+
+  // 실기기 텔레메트리 폴링(8초) — 최신 1건 + DB 누적 수집 건수. 없으면(미수신) 데모만 표시.
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      fetch("/api/gaspod/telemetry?n=1")
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; latest?: GaspodLatest | null; count?: number }) => {
+          if (!alive) return;
+          setLatest(j.ok && j.latest ? j.latest : null);
+          if (typeof j.count === "number") setCount(j.count);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 8000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  // 설치위치·가스종류 오버라이드 폴링(60초) — 로그인 세션 필요.
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      const t = getSessionToken();
+      const hdr = t ? { headers: { Authorization: `Bearer ${t}` } } : undefined;
+      fetch("/api/gaspod/config", hdr)
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; configs?: Record<string, GasConfigOverride> }) => {
+          if (alive && j.ok && j.configs) setOverrides(j.configs);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 60000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  // "N초 전" 표시 갱신(10초).
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  const rows: GasRow[] = [...(latest ? realGasRows(latest, overrides) : []), ...demoGasRows(overrides)];
+  const realCount = latest ? 3 : 0;
+
   const header = (
     <div className={`${GAS_GRID} shrink-0 border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}>
       <div />
@@ -201,25 +574,69 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
       <div className="text-center">측정값</div>
       <div className="text-center">임계</div>
       <div className="text-center">상태</div>
+      <div className="text-center">단말</div>
       <div className="text-center">최근수신</div>
     </div>
   );
   return (
-    <TableShell count={GAS_ROWS.length} header={header}>
-      {GAS_ROWS.map((r) => (
+    <TableShell
+      count={rows.length}
+      header={header}
+      minWidthClass="min-w-[840px]"
+      note={`실 연동 ${realCount} · 데모 ${GAS_ROWS.length} · 수동 스크롤`}
+      footer={
+        <div className="flex items-center justify-between gap-2 px-4 py-1.5 text-[11px]">
+          <span className="flex items-center gap-1.5 font-medium text-body dark:text-on-dark-soft">
+            <span
+              className={`inline-block h-1.5 w-1.5 rounded-full ${latest ? "bg-semantic-up animate-pulse" : "bg-zinc-400"}`}
+            />
+            실기기 실시간 수집{latest ? ` · 최근 ${recvAgo(latest.ts)}` : " · 수신 대기"}
+          </span>
+          <span className="tabular-nums text-muted dark:text-on-dark-soft">
+            가스 누적 <b className="text-body dark:text-on-dark">{count.toLocaleString()}</b>건 · DB 영속
+          </span>
+        </div>
+      }
+    >
+      {rows.map((r) => (
         <div
-          key={r.loc}
+          key={r.key}
           className={`${GAS_GRID} h-12 border-b border-hairline px-3 text-xs text-ink dark:border-white/5 dark:text-on-dark ${SEV_ROW_BG[r.sev]}`}
         >
           <div className="flex justify-center">
             <SignalDot sev={r.sev} />
           </div>
-          <div className="truncate font-medium">{r.loc}</div>
-          <div className="truncate text-body dark:text-on-dark-soft">{r.gas}</div>
+          <div className="flex min-w-0 items-center gap-1">
+            {canManage ? (
+              <button
+                type="button"
+                onClick={() => setEditRow(r)}
+                title="클릭 → 설치위치·가스종류 수정 (관리자 권한)"
+                className="truncate text-left font-medium hover:text-primary hover:underline"
+              >
+                {r.loc}
+              </button>
+            ) : (
+              <div className="truncate font-medium">{r.loc}</div>
+            )}
+            <KindBadge demo={r.demo} />
+          </div>
+          {canManage ? (
+            <button
+              type="button"
+              onClick={() => setEditRow(r)}
+              title="클릭 → 설치위치·가스종류 수정 (관리자 권한)"
+              className="truncate text-left text-body hover:text-primary hover:underline dark:text-on-dark-soft"
+            >
+              {r.gas}
+            </button>
+          ) : (
+            <div className="truncate text-body dark:text-on-dark-soft">{r.gas}</div>
+          )}
           <button
             type="button"
-            onClick={() => onSelect?.(gasMetric(r))}
-            title="클릭 → 측정값 추세 그래프"
+            onClick={() => (r.demo ? onSelect?.(gasMetric(r)) : r.latest && setDetail(r.latest))}
+            title={r.demo ? "클릭 → 측정값 추세 그래프" : "클릭 → 실기기 상세(온습도·기압·배터리·종합상태)"}
             className="mx-auto rounded px-1 text-center font-mono font-semibold tabular-nums hover:bg-primary-subtle hover:underline"
           >
             {r.val}
@@ -229,9 +646,27 @@ export function GasDetectorTable({ onSelect }: { onSelect?: (m: SiteMetric) => v
           <div className={`text-center font-semibold ${TONE[r.sev]}`}>
             {r.sev === "normal" ? "정상" : r.sev === "caution" ? "주의" : "위험"}
           </div>
+          <div className="flex justify-center" title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V` : undefined}>
+            {r.latest ? (
+              <BatteryGauge pct={vbatToPct(r.latest.vbat)} />
+            ) : (
+              <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>
+            )}
+          </div>
           <div className="text-center text-[11px] text-muted dark:text-on-dark-soft">{r.recv}</div>
         </div>
       ))}
+      {detail && <GaspodDetailModal latest={detail} onClose={() => setDetail(null)} />}
+      {editRow && (
+        <GasConfigEditModal
+          row={editRow}
+          onClose={() => setEditRow(null)}
+          onSaved={(key, cfg) => {
+            setOverrides((prev) => ({ ...prev, [key]: cfg }));
+            setEditRow(null);
+          }}
+        />
+      )}
     </TableShell>
   );
 }

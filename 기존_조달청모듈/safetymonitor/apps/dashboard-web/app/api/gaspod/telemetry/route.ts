@@ -1,8 +1,9 @@
 // 가스포드(ESP32) 텔레메트리 수신 — 5초 주기 POST. cctv/event와 동일한 soft 토큰 수집 패턴.
-// 저장 = 메모리 링버퍼(데모용). DB 영구 저장은 팀원이 별도 진행(docs/GasPod_DB저장_확장가이드.md).
+// 저장 = PostgreSQL 영속(gaspod_telemetry)에 실시간 누적 + 메모리 링버퍼 폴백(DB 장애 시). GET은 DB에서 최신·누적수 반환(인스턴스 무관).
 import { NextResponse } from "next/server";
 
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
+import { countGaspodTelemetry, insertGaspodTelemetry, listGaspodTelemetry } from "../../../../lib/db";
 
 type GaspodTelemetry = {
   device_id: string; o2: number; temp: number; humidity: number; pressure: number;
@@ -10,7 +11,7 @@ type GaspodTelemetry = {
   state: "CLEAR" | "WARNING" | "DANGER"; acked: boolean; ts: string;
 };
 
-const recent: GaspodTelemetry[] = []; // 메모리 링버퍼(최근 720건 ≈ 1시간). 인스턴스 재시작 시 초기화 — 데모용.
+const recent: GaspodTelemetry[] = []; // DB 장애 폴백용 메모리 링버퍼(최근 720건).
 let warned = false;
 
 export async function POST(request: Request) {
@@ -30,15 +31,38 @@ export async function POST(request: Request) {
     vbat: Number(b.vbat) || 0, state: state as GaspodTelemetry["state"], acked: !!b.acked,
     ts: new Date().toISOString(),
   };
-  recent.push(row); if (recent.length > 720) recent.shift();
+  recent.push(row); if (recent.length > 720) recent.shift(); // 메모리 폴백 유지
+  // DB 영속 — 실시간 누적 저장. 실패해도 수집은 계속(메모리 폴백).
+  try {
+    await insertGaspodTelemetry({
+      device_id: row.device_id, o2: row.o2, temp: row.temp, humidity: row.humidity, pressure: row.pressure,
+      mq7_raw: row.mq7_raw, mq136_raw: row.mq136_raw, vbat: row.vbat, state: row.state, acked: row.acked,
+    });
+  } catch (e) {
+    console.error("[gaspod] DB 저장 실패(메모리 폴백 유지):", e);
+  }
   return NextResponse.json({ ok: true }, { status: 201 });
 }
 
-// 최근 텔레메트리 조회 (?n=20) — 대시보드/검증용
+// 최근 텔레메트리 조회 (?n=20) + 누적 수집 건수 — 대시보드 실시간 수집 표시/검증용.
 export async function GET(request: Request) {
   const n = Math.min(720, Math.max(1, Number(new URL(request.url).searchParams.get("n") ?? 20)));
-  return NextResponse.json(
-    { ok: true, latest: recent[recent.length - 1] ?? null, rows: recent.slice(-n) },
-    { headers: { "cache-control": "no-store" } },
-  );
+  try {
+    const [desc, count] = await Promise.all([listGaspodTelemetry(n), countGaspodTelemetry()]);
+    // DB=최신 먼저(DESC) → 표시용 오름차순 + received_at을 ts로 매핑(기존 클라이언트 호환).
+    const rows = desc
+      .slice()
+      .reverse()
+      .map(({ received_at, ...rest }) => ({ ...rest, ts: received_at }));
+    return NextResponse.json(
+      { ok: true, latest: rows[rows.length - 1] ?? null, rows, count, persisted: true },
+      { headers: { "cache-control": "no-store" } },
+    );
+  } catch {
+    // DB 장애 — 메모리 폴백.
+    return NextResponse.json(
+      { ok: true, latest: recent[recent.length - 1] ?? null, rows: recent.slice(-n), count: recent.length, persisted: false },
+      { headers: { "cache-control": "no-store" } },
+    );
+  }
 }
