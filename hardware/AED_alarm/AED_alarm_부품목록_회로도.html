@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AED 알람 장치 — 부품 목록 · 회로도</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d21; --muted: #5c6470; --line: #3a4048;
+    --card: #f6f7f9; --border: #dde1e6; --accent: #0b6bcb;
+    --red: #d43d3d; --yellow: #d9a400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --fg: #e8eaed; --muted: #9aa3ad; --line: #c3c9d1;
+      --card: #1f2228; --border: #33383f; --accent: #5aa2e8;
+      --red: #ef6a6a; --yellow: #e6c14c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px 60px;
+    background: var(--bg); color: var(--fg);
+    font: 15px/1.6 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 40px 0 12px; border-bottom: 2px solid var(--border); padding-bottom: 6px; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: var(--card); font-weight: 600; white-space: nowrap; }
+  code { background: var(--card); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .fig { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; }
+  svg { display: block; min-width: 760px; }
+  svg text { fill: var(--fg); font: 12px -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  svg .pin { font-size: 11.5px; }
+  svg .lbl { font-size: 11px; fill: var(--muted); }
+  svg .wire { stroke: var(--line); stroke-width: 1.6; fill: none; }
+  svg .box  { stroke: var(--line); stroke-width: 1.6; fill: none; }
+  ul { padding-left: 22px; }
+  li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>AED 알람 장치 — 부품 목록 · 회로도</h1>
+<p class="sub">VitalAI · 제세동기(AED) 상태 알림 물리장치 (라즈베리파이) — 관제서버 폴링 연동판 · 2026-07-06 기준</p>
+
+<h2>1. 최신 변경 사항 (펌웨어 · 연동)</h2>
+<ul>
+  <li>가짜 <code>sequence</code> 신호 제거 → <b>관제서버 실폴링</b>으로 교체:
+      <code>GET /api/aed/alarm?deviceId=AED-03</code> (8초 주기, urllib, 인증 없음)</li>
+  <li>베이스 URL: <code>https://vitalguard-dashboard-569797426568.asia-northeast3.run.app</code></li>
+  <li>폴 실패(비-200/타임아웃) 시 <b>직전 레벨 유지</b> — 네트워크 장애로 알람이 갑자기 꺼지지 않음</li>
+  <li>systemd 서비스 <code>aed-alarm</code> 등록 — 부팅 자동 시작, 비정상 종료 시 5초 후 재시작 (재부팅 검증 완료)</li>
+  <li>장치 파일: <code>/home/pi/RaspberryPiStudy/Test_proj/AED_alarm_NoSignal_Pattern.py</code>, 담당 변경은 상단 <code>AED_ID</code>만 수정</li>
+  <li>기존 유지: LED 깜빡임 · 부저 4개 순차 사이렌 · 강제활성화 버튼(1분 래치, 서버 무관) · 슬라이드 전원 스위치</li>
+</ul>
+
+<h2>2. 부품 목록</h2>
+<table>
+  <tr><th>부품</th><th>수량</th><th>연결 (BCM / 물리핀)</th><th>비고</th></tr>
+  <tr><td>Raspberry Pi</td><td>1</td><td>—</td><td>5V 어댑터 직결(배터리 없음), 와이파이 필수, RPi.GPIO 사용</td></tr>
+  <tr><td>빨강 LED</td><td>1</td><td>GPIO5 / 핀29</td><td>위험(DANGER) 표시, 직렬 저항 330Ω*</td></tr>
+  <tr><td>노랑 LED</td><td>1</td><td>GPIO6 / 핀31</td><td>경고(WARNING) 표시, 직렬 저항 330Ω*</td></tr>
+  <tr><td>액티브 부저</td><td>4</td><td>GPIO17·27·22·23 / 핀11·13·15·16</td><td>1개씩 순차 점등 사이렌, GPIO 직결</td></tr>
+  <tr><td>택트 버튼 (강제활성화)</td><td>1</td><td>GPIO20 / 핀38</td><td>내부 풀업 — 누르면 GND(=0), 1분 DANGER 래치</td></tr>
+  <tr><td>슬라이드 스위치 (전원)</td><td>1</td><td>GPIO21 / 핀40</td><td>외부 풀다운* — 오른쪽=3.3V=ON, OFF 시 전 기능 차단</td></tr>
+  <tr><td>저항 330Ω*</td><td>2</td><td>LED 직렬</td><td>전류 제한</td></tr>
+  <tr><td>저항 10kΩ*</td><td>1</td><td>GPIO21 – GND</td><td>슬라이드 스위치 풀다운</td></tr>
+  <tr><td>브레드보드 · 점퍼선</td><td>적정</td><td>—</td><td>실물 조립 기준</td></tr>
+</table>
+<p class="note">* 저항값은 일반 권장값 — 실물 조립에 사용된 값으로 확인 필요.</p>
+
+<h2>3. 회로도</h2>
+<div class="fig">
+<svg viewBox="0 0 860 575" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="gnd" class="wire">
+      <line x1="0" y1="0" x2="0" y2="10"/>
+      <line x1="-12" y1="10" x2="12" y2="10"/>
+      <line x1="-8" y1="15" x2="8" y2="15"/>
+      <line x1="-4" y1="20" x2="4" y2="20"/>
+    </g>
+  </defs>
+
+  <!-- Raspberry Pi 블록 -->
+  <rect class="box" x="30" y="40" width="170" height="460" rx="10"/>
+  <text x="115" y="66" text-anchor="middle" font-weight="600">Raspberry Pi</text>
+  <text x="115" y="84" text-anchor="middle" class="lbl">BCM (물리핀)</text>
+
+  <!-- 부저 4개 -->
+  <text x="360" y="72" text-anchor="middle" class="lbl">액티브 부저 ×4 (GPIO 직결, 순차 사이렌)</text>
+  <g>
+    <text class="pin" x="192" y="104" text-anchor="end">GPIO17 (11)</text>
+    <line class="wire" x1="200" y1="100" x2="337" y2="100"/>
+    <circle class="box" cx="355" cy="100" r="18"/>
+    <text x="355" y="104" text-anchor="middle" class="pin">BZ1</text>
+    <line class="wire" x1="373" y1="100" x2="450" y2="100"/>
+    <use href="#gnd" x="450" y="100"/>
+  </g>
+  <g>
+    <text class="pin" x="192" y="154" text-anchor="end">GPIO27 (13)</text>
+    <line class="wire" x1="200" y1="150" x2="337" y2="150"/>
+    <circle class="box" cx="355" cy="150" r="18"/>
+    <text x="355" y="154" text-anchor="middle" class="pin">BZ2</text>
+    <line class="wire" x1="373" y1="150" x2="450" y2="150"/>
+    <use href="#gnd" x="450" y="150"/>
+  </g>
+  <g>
+    <text class="pin" x="192" y="204" text-anchor="end">GPIO22 (15)</text>
+    <line class="wire" x1="200" y1="200" x2="337" y2="200"/>
+    <circle class="box" cx="355" cy="200" r="18"/>
+    <text x="355" y="204" text-anchor="middle" class="pin">BZ3</text>
+    <line class="wire" x1="373" y1="200" x2="450" y2="200"/>
+    <use href="#gnd" x="450" y="200"/>
+  </g>
+  <g>
+    <text class="pin" x="192" y="254" text-anchor="end">GPIO23 (16)</text>
+    <line class="wire" x1="200" y1="250" x2="337" y2="250"/>
+    <circle class="box" cx="355" cy="250" r="18"/>
+    <text x="355" y="254" text-anchor="middle" class="pin">BZ4</text>
+    <line class="wire" x1="373" y1="250" x2="450" y2="250"/>
+    <use href="#gnd" x="450" y="250"/>
+  </g>
+
+  <!-- LED 2개 -->
+  <g>
+    <text class="pin" x="192" y="314" text-anchor="end">GPIO5 (29)</text>
+    <line class="wire" x1="200" y1="310" x2="240" y2="310"/>
+    <rect class="box" x="240" y="301" width="50" height="18"/>
+    <text x="265" y="314" text-anchor="middle" class="pin">330Ω*</text>
+    <line class="wire" x1="290" y1="310" x2="336" y2="310"/>
+    <circle cx="350" cy="310" r="14" fill="var(--red)" stroke="var(--line)" stroke-width="1.6"/>
+    <text x="350" y="288" text-anchor="middle" class="lbl">빨강 LED — 위험(DANGER)</text>
+    <line class="wire" x1="364" y1="310" x2="450" y2="310"/>
+    <use href="#gnd" x="450" y="310"/>
+  </g>
+  <g>
+    <text class="pin" x="192" y="364" text-anchor="end">GPIO6 (31)</text>
+    <line class="wire" x1="200" y1="360" x2="240" y2="360"/>
+    <rect class="box" x="240" y="351" width="50" height="18"/>
+    <text x="265" y="364" text-anchor="middle" class="pin">330Ω*</text>
+    <line class="wire" x1="290" y1="360" x2="336" y2="360"/>
+    <circle cx="350" cy="360" r="14" fill="var(--yellow)" stroke="var(--line)" stroke-width="1.6"/>
+    <text x="350" y="392" text-anchor="middle" class="lbl">노랑 LED — 경고(WARNING)</text>
+    <line class="wire" x1="364" y1="360" x2="450" y2="360"/>
+    <use href="#gnd" x="450" y="360"/>
+  </g>
+
+  <!-- 강제활성화 버튼 -->
+  <g>
+    <text class="pin" x="192" y="434" text-anchor="end">GPIO20 (38)</text>
+    <text x="345" y="412" text-anchor="middle" class="lbl">강제활성화 버튼 (내부 풀업 · 누르면 GND · 1분 래치)</text>
+    <line class="wire" x1="200" y1="430" x2="300" y2="430"/>
+    <circle cx="300" cy="430" r="3" fill="var(--line)"/>
+    <circle cx="360" cy="430" r="3" fill="var(--line)"/>
+    <line class="wire" x1="298" y1="426" x2="362" y2="412"/>
+    <line class="wire" x1="360" y1="430" x2="450" y2="430"/>
+    <use href="#gnd" x="450" y="430"/>
+  </g>
+
+  <!-- 슬라이드 전원 스위치 -->
+  <g>
+    <text class="pin" x="192" y="489" text-anchor="end">GPIO21 (40)</text>
+    <text x="360" y="462" text-anchor="middle" class="lbl">슬라이드 전원 스위치 (오른쪽=ON=3.3V)</text>
+    <line class="wire" x1="200" y1="485" x2="300" y2="485"/>
+    <circle cx="280" cy="485" r="3.5" fill="var(--line)"/>
+    <circle cx="300" cy="485" r="3" fill="var(--line)"/>
+    <circle cx="360" cy="485" r="3" fill="var(--line)"/>
+    <line class="wire" x1="298" y1="481" x2="362" y2="467"/>
+    <line class="wire" x1="360" y1="485" x2="430" y2="485"/>
+    <circle class="box" cx="436" cy="485" r="4"/>
+    <text x="448" y="489" class="pin">3.3V (핀1)</text>
+    <!-- 풀다운 -->
+    <line class="wire" x1="280" y1="485" x2="280" y2="500"/>
+    <rect class="box" x="271" y="500" width="18" height="28"/>
+    <text x="296" y="518" class="pin">10kΩ*</text>
+    <use href="#gnd" x="280" y="528"/>
+  </g>
+
+  <text x="115" y="530" class="lbl">⏚ = GND (핀 6·9·14·20·39 등 아무 GND)</text>
+</svg>
+</div>
+<p class="note">핀 번호는 BCM 기준(괄호는 40핀 헤더 물리핀). 부저는 실물 검증된 GPIO 직결 기준 — 소모 전류가 큰 부저로 바꿀 경우 트랜지스터 구동 필요.</p>
+
+<h2>4. 레벨 ↔ 동작 매핑</h2>
+<table>
+  <tr><th>레벨</th><th>LED</th><th>부저</th><th>비고</th></tr>
+  <tr><td><b>CLEAR</b></td><td>모두 꺼짐</td><td>꺼짐</td><td>DANGER 래치 해제</td></tr>
+  <tr><td><b>WARNING</b></td><td>노랑 깜빡 (ON 1.0s / OFF 0.5s)</td><td>4개 순차 0.25초 스텝</td><td>DANGER 래치 중엔 무시됨</td></tr>
+  <tr><td><b>DANGER</b></td><td>빨강 깜빡 (ON 1.0s / OFF 0.5s)</td><td>4개 순차 0.12초 스텝</td><td>CLEAR 수신 전까지 유지(래치)</td></tr>
+</table>
+<ul>
+  <li><b>강제활성화 버튼</b>: 서버 신호와 무관하게 1분간 DANGER 강제, 이후 자동 해제</li>
+  <li><b>슬라이드 스위치 OFF</b>: LED·부저·버튼 전부 차단 (폴링 자체는 서비스가 계속 수행)</li>
+  <li>레벨 판정은 관제서버 담당 — 단말 배터리(20%/50%) · AED 본체 배터리 · 전극패드 교환주기의 worst-of</li>
+</ul>
+
+</main>
+</body>
+</html>
