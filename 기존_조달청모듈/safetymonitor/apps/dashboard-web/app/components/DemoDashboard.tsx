@@ -4010,7 +4010,7 @@ export function DemoDashboard() {
             ),
           },
           { title: "가스 누출 감지기", content: <GasDetectorTable onSelect={openSiteChart} canManage={canAdminMenu} /> },
-          { title: "심장 제세동기(AED) 알림", content: <AedAlertTable onSelect={openSiteChart} canManage={canAdminMenu} /> },
+          { title: "심장 제세동기(AED) 알림", content: <AedAlertTable canManage={canAdminMenu} /> },
           { title: "CCTV 관제", content: <CctvQuadView canManage={canAdminMenu} /> },
         ]}
       />

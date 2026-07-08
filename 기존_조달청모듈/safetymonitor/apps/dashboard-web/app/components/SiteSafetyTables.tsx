@@ -7,12 +7,10 @@ import { createPortal } from "react-dom";
 
 import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
 import { AED_DEVICES, normalizeAedItems, type AedDevice, type AedItem } from "../../lib/aed-devices";
+import { vbatToPercent } from "../../lib/gaspod-battery";
 import {
-  AED_DEV_BATT_CAUTION,
-  AED_DEV_BATT_DANGER,
   AED_SWAP_DUE_SOON_DAYS,
   aedCycleSev,
-  aedDevBattSev,
   battDaysSince,
   battDueDays,
   padDaysSince,
@@ -207,21 +205,16 @@ type GasConfigOverride = { loc: string | null; gas: string | null };
 // 표시·편집용 런타임 행 — 데모 샘플 + { key(오버라이드/편집), demo, latest(실기기 상세) }.
 type GasRow = GasSample & { key: string; demo: boolean; latest?: GaspodLatest };
 
-// 펌웨어 임계(gaspod_v4.ino) — O₂ 경고19.2/위험18.5(%), MQ-7(CO) 경고500/위험1000, MQ-136(H₂S) 경고1800/위험2200(raw ADC).
+// 가스별 임계(raw ADC) — O₂ 경고19.2/위험18.5(%), MQ-7(CO) 경고150/위험350, MQ-136(H₂S) 경고1800/위험2200.
+// O₂·H₂S는 펌웨어(gaspod_v4.ino)와 동일 · CO는 관제 표시 임계(펌웨어 500/1000보다 민감하게 조정).
 function o2Sev(v: number): Sev {
   return v > 0 && v < 18.5 ? "danger" : v > 0 && v < 19.2 ? "caution" : "normal";
 }
 function mq7Sev(v: number): Sev {
-  return v > 1000 ? "danger" : v > 500 ? "caution" : "normal";
+  return v > 350 ? "danger" : v > 150 ? "caution" : "normal";
 }
 function mq136Sev(v: number): Sev {
   return v > 2200 ? "danger" : v > 1800 ? "caution" : "normal";
-}
-
-// 단말 배터리 전압(V) → 잔량 %(추정) — 단일 리튬셀 만충 4.2V / 임박 3.0V 선형 환산(펌웨어 VBAT_CRIT 3.0·VBAT_WARN 3.2 기준).
-function vbatToPct(v: number): number {
-  if (!Number.isFinite(v) || v <= 0) return 0;
-  return Math.max(0, Math.min(100, Math.round(((v - 3.0) / (4.2 - 3.0)) * 100)));
 }
 
 // 최근 수신 경과("N초 전"/"N분 전").
@@ -269,7 +262,7 @@ function realGasRows(l: GaspodLatest, ov: Record<string, GasConfigOverride>): Ga
   };
   return [
     mk("o2", "O₂ 산소", l.o2.toFixed(1), "%", "<18.5 %", o2Sev(l.o2)),
-    mk("co", "CO 일산화탄소", String(l.mq7_raw), "raw", "≥1000 raw", mq7Sev(l.mq7_raw)),
+    mk("co", "CO 일산화탄소", String(l.mq7_raw), "raw", "≥350 raw", mq7Sev(l.mq7_raw)),
     mk("h2s", "H₂S 황화수소", String(l.mq136_raw), "raw", "≥2200 raw", mq136Sev(l.mq136_raw)),
   ];
 }
@@ -648,7 +641,7 @@ export function GasDetectorTable({
           </div>
           <div className="flex justify-center" title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V` : undefined}>
             {r.latest ? (
-              <BatteryGauge pct={vbatToPct(r.latest.vbat)} />
+              <BatteryGauge pct={vbatToPercent(r.latest.vbat)} />
             ) : (
               <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>
             )}
@@ -678,7 +671,7 @@ export function GasDetectorTable({
 //   점검 페이지가 열리고(점검자·항목 입력) 관제 웹으로 전송됨 → 이력 기록·최근 교환 갱신. 관제 웹은 '표시만'.
 // 「응급의료에 관한 법률」 제47조의2(설치·관리)·제62조(미설치 과태료)·시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보).
 const AED_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7.5rem,1.3fr)_minmax(5.5rem,0.9fr)_4.5rem_5.5rem_3.5rem_5.5rem_5.5rem_7.5rem]";
+  "grid items-center gap-x-2 grid-cols-[1.5rem_minmax(7.5rem,1.3fr)_minmax(5.5rem,0.9fr)_4.5rem_5.5rem_5.5rem_5.5rem_7.5rem]";
 
 // 표시·계산용 런타임 행 — 장비 레지스트리(AED_DEVICES) + 병합 이력. history = DB 점검(NFC) + seed.
 type AedHistRecord = { daysAgo: number; items: AedItem[]; by: string; ts?: string };
@@ -692,7 +685,8 @@ type AedRow = {
   battCycleMonths: number;
   padCycleMonths: number;
   history: AedHistRecord[]; // 최신(작은 경과일) 먼저. 최근 배터리/패드 교체일이 교환 주기 기준.
-  demo: boolean; // true=데모 프리셋(발표용·실 하드웨어 미연동) · false=실 연동 등록 장비(RPi 폴링).
+  demo: boolean; // true=데모 프리셋 · false=실 연동(등록 장비 또는 real 프리셋).
+  registered: boolean; // true=관리자 등록 장비(aed_registered_device·해제 가능) · false=코드 프리셋(데모 또는 real 프리셋·설정 편집 가능).
 };
 
 // AED 설정 오버라이드(설치위치·관리책임자·제품명·비고) — /api/aed/config 응답 1건.
@@ -741,13 +735,14 @@ function buildAedRow(d: AedDevice, inspections: AedInspectionDTO[]): AedRow {
     id: d.id,
     loc: cfg?.loc || d.loc, // 오버라이드 있으면 우선, 빈/없음이면 레지스트리 기본값.
     manager: cfg?.manager || d.manager,
-    product: cfg?.product ?? null,
+    product: cfg?.product ?? d.product ?? null, // 오버라이드 > 프리셋 product(실 장치) > 없음.
     note: cfg?.note ?? null,
     devBatt: d.devBatt,
     battCycleMonths: d.battCycleMonths,
     padCycleMonths: d.padCycleMonths,
     history,
-    demo: true,
+    demo: !d.real, // real 프리셋(실 장치)은 '실 연동', 나머지는 '데모'.
+    registered: false, // 코드 프리셋 — 설정 편집 가능(해제 대상 아님).
   };
 }
 
@@ -770,6 +765,7 @@ function buildRegisteredAedRow(d: RegisteredAedDeviceDTO): AedRow {
     padCycleMonths: d.padCycleMonths,
     history,
     demo: false,
+    registered: true, // 관리자 등록 장비 — 해제 가능(설정 편집 대상 아님).
   };
 }
 
@@ -897,16 +893,6 @@ type AedIssue = { dim: AedDim; sev: Sev; label: string; text: string; basis?: st
 // 관리 차원별 비정상 항목 + 근거. 정상이면 빈 배열.
 function aedIssues(r: AedRow): AedIssue[] {
   const out: AedIssue[] = [];
-  const ds = aedDevBattSev(r.devBatt);
-  if (ds !== "normal") {
-    out.push({
-      dim: "device",
-      sev: ds,
-      label: ds === "danger" ? "단말 배터리 부족" : "단말 배터리 주의",
-      text: `알림 단말 배터리 ${r.devBatt}% (${AED_DEV_BATT_DANGER}%↓ 부족 · ${AED_DEV_BATT_CAUTION}%↓ 주의)`,
-      basis: "AED 알림 단말 자체 배터리 — 방전 시 AED 상태 감시 중단(AED 본체 배터리와 별개)",
-    });
-  }
   const bDue = battDueDays(r);
   const bs = aedCycleSev(bDue);
   if (bs !== "normal") {
@@ -958,12 +944,12 @@ export function aedDetail(): CategorySignal {
     return {
       sev,
       summary: `정상 ${statuses.length}대`,
-      short: "단말 배터리·AED 배터리·패드 교환주기 모두 정상",
+      short: "AED 배터리·패드 교환주기 모두 정상",
       detail: {
         title: "자동심장충격기(AED) 정상",
         location: "전 구역",
         lines: [
-          { label: "관리 상태", text: `${statuses.length}대 전부 단말 배터리 양호 · AED 배터리·전극패드 교환 주기 이내` },
+          { label: "관리 상태", text: `${statuses.length}대 전부 AED 배터리·전극패드 교환 주기 이내` },
           { label: "법적 근거", text: "「응급의료에 관한 법률」 제47조의2 · 시행규칙 제38조의3(관리책임자·월1회 점검·결과 통보)" },
         ],
         note: "AED 본체 배터리·패드는 실시간 확인 불가 → 권장 교환 주기로 관리 · 현장 단말 교체·점검 시 이력 자동 기록",
@@ -981,7 +967,7 @@ export function aedDetail(): CategorySignal {
     label: "권장 대응",
     text:
       sev === "danger"
-        ? "현장에서 즉시 조치(단말 충전 · AED 배터리/패드 교체). 현장 단말 리셋 시 이력 기록·최근 교환 갱신 · 관할 지자체 통보."
+        ? "현장에서 즉시 조치(AED 배터리/패드 교체). 현장 단말 리셋 시 이력 기록·최근 교환 갱신 · 관할 지자체 통보."
         : "교환 임박분 사전 확보·교체. 현장 단말 리셋 시 교체 이력 기록·주기 재카운팅.",
   });
   return {
@@ -992,24 +978,8 @@ export function aedDetail(): CategorySignal {
       title: `AED ${SEV_KO[sev]} — ${r.loc}`,
       location: `${r.loc} · 관리책임자 ${r.manager}`,
       lines,
-      note: "AED 배터리·패드는 권장 교환 주기 기준(실시간 측정 불가) · 단말 배터리만 실시간",
+      note: "AED 배터리·패드는 권장 교환 주기 기준(실시간 측정 불가) · 교환·점검은 현장 NFC 태깅으로 기록",
     },
-  };
-}
-
-function aedDevBattPct(r: AedRow): number {
-  return Math.max(0, Math.min(100, r.devBatt));
-}
-
-function aedDevBattMetric(r: AedRow): SiteMetric {
-  return {
-    key: `aed-${r.loc}`,
-    title: `AED 알림 단말 배터리 — ${r.loc}`,
-    unit: "%",
-    color: "#22d3ee",
-    value: aedDevBattPct(r),
-    decimals: 0,
-    kind: "battery",
   };
 }
 
@@ -1244,7 +1214,7 @@ function AedManagementModal({
             </ul>
           </div>
           <div className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
-            단말 배터리 {row.devBatt}% · AED 배터리 {dueShort(battDueDays(row))}(주기 {row.battCycleMonths}개월) · 패드{" "}
+            AED 배터리 {dueShort(battDueDays(row))}(주기 {row.battCycleMonths}개월) · 패드{" "}
             {dueShort(padDueDays(row))}(주기 {row.padCycleMonths}개월) · 최근 교환 {aedLastSwap(row).date}
           </div>
         </div>
@@ -1575,13 +1545,7 @@ function AedRegisterModal({ onClose, onSaved }: { onClose: () => void; onSaved: 
   );
 }
 
-export function AedAlertTable({
-  onSelect,
-  canManage = false,
-}: {
-  onSelect?: (m: SiteMetric) => void;
-  canManage?: boolean;
-}) {
+export function AedAlertTable({ canManage = false }: { canManage?: boolean }) {
   // 행 맵에서 이미 계산한 status 를 함께 보관 → 모달에서 aedStatus 재계산 안 함.
   const [alert, setAlert] = useState<{ row: AedRow; status: ReturnType<typeof aedStatus> } | null>(null);
   const [deviceRow, setDeviceRow] = useState<AedRow | null>(null);
@@ -1668,7 +1632,6 @@ export function AedAlertTable({
       <div>제품명</div>
       <div>관리책임자</div>
       <div className="text-center">상태</div>
-      <div className="text-center">단말</div>
       <div className="text-center">AED 배터리</div>
       <div className="text-center">패드</div>
       <div className="text-center">최근 교환</div>
@@ -1678,8 +1641,8 @@ export function AedAlertTable({
     <TableShell
       count={rows.length}
       header={header}
-      minWidthClass="min-w-[1050px]"
-      note={`실 연동 ${realCount} · 데모 ${AED_DEVICES.length} · 수동 스크롤`}
+      minWidthClass="min-w-[1000px]"
+      note={`실 연동 ${realCount} · 데모 ${AED_DEVICES.filter((d) => !d.real).length} · 수동 스크롤`}
       action={
         // 작업자 등록 버튼과 동일하게 항상 렌더 — 권한 없으면 disabled(회색+툴팁). 조건부 숨김은 canManage 로드 타이밍에 버튼이 통째로 사라져 "미구현"으로 보임.
         <button
@@ -1713,7 +1676,7 @@ export function AedAlertTable({
               <SignalDot sev={st.sev} />
             </div>
             <div className="flex min-w-0 items-center gap-1">
-              {r.demo && canManage ? (
+              {!r.registered && canManage ? (
                 <button
                   type="button"
                   onClick={() => setEditRow(r)}
@@ -1729,7 +1692,7 @@ export function AedAlertTable({
               )}
               <KindBadge demo={r.demo} />
             </div>
-            {r.demo && canManage ? (
+            {!r.registered && canManage ? (
               <button
                 type="button"
                 onClick={() => setEditRow(r)}
@@ -1741,7 +1704,7 @@ export function AedAlertTable({
             ) : (
               <div className="truncate text-body dark:text-on-dark-soft">{r.product || "—"}</div>
             )}
-            {r.demo && canManage ? (
+            {!r.registered && canManage ? (
               <button
                 type="button"
                 onClick={() => setEditRow(r)}
@@ -1767,14 +1730,6 @@ export function AedAlertTable({
                 </button>
               )}
             </div>
-            <button
-              type="button"
-              onClick={() => onSelect?.(aedDevBattMetric(r))}
-              title={`알림 단말 배터리 ${r.devBatt}% · 클릭 → 추세 그래프`}
-              className="mx-auto inline-flex items-center justify-center rounded-md p-0.5 transition hover:bg-zinc-100 dark:hover:bg-white/10"
-            >
-              <BatteryGauge pct={aedDevBattPct(r)} />
-            </button>
             <div className={`text-center font-mono text-[11px] ${cycleStaticTone(aedCycleSev(bDue))}`} title={`AED 배터리 — 권장 교환 주기 ${r.battCycleMonths}개월`}>
               {dueShort(bDue)}
             </div>
@@ -1796,8 +1751,8 @@ export function AedAlertTable({
                   <circle cx="12" cy="12" r="1" />
                 </svg>
               </button>
-              {!r.demo && (
-                // 실 연동 장비 행에만 해제(데모 프리셋은 코드 상수라 해제 불가). 작업자 해제와 동일하게 권한 없으면 disabled.
+              {r.registered && (
+                // 관리자 등록 장비만 해제(코드 프리셋=데모·real 프리셋은 상수라 해제 불가). 작업자 해제와 동일하게 권한 없으면 disabled.
                 <button
                   type="button"
                   onClick={() => {

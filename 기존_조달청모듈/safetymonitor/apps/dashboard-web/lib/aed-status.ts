@@ -50,13 +50,9 @@ export function aedCycleSev(dueDays: number): AedSev {
   return dueDays < 0 ? "danger" : dueDays <= AED_SWAP_DUE_SOON_DAYS ? "caution" : "normal";
 }
 
-// 종합 심각도 = worst-of(단말 배터리 · 본체 배터리 교환주기 · 패드 교환주기). 대시보드 aedStatus 와 동일 기준.
+// 종합 심각도 = worst-of(본체 배터리 교환주기 · 패드 교환주기). 대시보드 aedStatus 와 동일 기준(단말 배터리 항목 제거됨).
 export function aedRowSev(r: AedStatusInput): AedSev {
-  return worstAedSev([
-    aedDevBattSev(r.devBatt),
-    aedCycleSev(battDueDays(r)),
-    aedCycleSev(padDueDays(r)),
-  ]);
+  return worstAedSev([aedCycleSev(battDueDays(r)), aedCycleSev(padDueDays(r))]);
 }
 
 // 물리 알림 레벨 — 정상=CLEAR(전부 OFF) · 주의=WARNING(노랑 깜빡) · 위험=DANGER(빨강 깜빡+부저). 라즈베리파이 장치 신호 3단계와 일치.

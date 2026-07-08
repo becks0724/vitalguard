@@ -6,18 +6,22 @@ export type AedItem = "battery" | "pad";
 export type AedSeedRecord = { daysAgo: number; items: AedItem[]; by: string };
 
 export type AedDevice = {
-  id: string; // NFC 태그 URL 식별자(점검 페이지 ?id=)
+  id: string; // NFC 태그 URL 식별자(점검 페이지 ?id=) · 실 장치는 RPi 가 이 id 로 알림 레벨 폴링(/api/aed/alarm?deviceId=)
   loc: string; // 설치 위치
   manager: string; // 대표 관리책임자(여러 명이 점검 — 실제 점검자는 NFC 태깅 시 입력)
   devBatt: number; // 알림 단말 배터리 %(실시간 — "배터리 부족"은 이것만)
   battCycleMonths: number; // AED 본체 배터리 권장 교환 주기(개월)
   padCycleMonths: number; // 전극패드 권장 교환 주기(개월)
   seedHistory: AedSeedRecord[]; // NFC 도입 전 교체·점검 기록
+  product?: string; // 제품명(모델) — 실 장치 기본 표기(관제웹 오버라이드 없을 때). 데모 프리셋은 미지정(—).
+  real?: boolean; // true=실 연동 실 장치(RPi 폴링·'실 연동' 배지) · 미지정/false=데모 프리셋('데모' 배지).
 };
 
 export const AED_DEVICES: AedDevice[] = [
-  { id: "AED-01", loc: "본관 1층 로비", manager: "김안전", devBatt: 92, battCycleMonths: 48, padCycleMonths: 24,
-    seedHistory: [{ daysAgo: 120, items: ["battery", "pad"], by: "김안전" }] },
+  // ★ 실 연동 실 장치 — RPi(VitAlGuard-AED-ALERT-01)가 /api/aed/alarm?deviceId=AED-01 로 알림 레벨 폴링.
+  { id: "AED-01", loc: "스마트인재개발원 601호", manager: "김태곤", product: "VitAlGuard-AED-ALERT-01", real: true,
+    devBatt: 92, battCycleMonths: 48, padCycleMonths: 24,
+    seedHistory: [{ daysAgo: 120, items: ["battery", "pad"], by: "김태곤" }] },
   { id: "AED-02", loc: "현장 사무동", manager: "박보건", devBatt: 78, battCycleMonths: 48, padCycleMonths: 24,
     seedHistory: [{ daysAgo: 300, items: ["battery", "pad"], by: "박보건" }] },
   { id: "AED-03", loc: "지하 주차장 B1", manager: "이현장", devBatt: 18, battCycleMonths: 48, padCycleMonths: 24,

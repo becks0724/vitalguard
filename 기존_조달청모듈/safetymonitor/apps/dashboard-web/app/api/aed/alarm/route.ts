@@ -114,10 +114,14 @@ export async function GET(request: Request) {
   }
 
   // deviceId 미지정 = 현장 전체 worst-of(단일 장치가 현장 통합 알림을 표시할 때).
-  // 실 등록 장비가 있으면 그 장비들만(데모는 실 하드웨어 미연동) · 없으면 데모 프리셋(하위호환).
+  // 실 장치(등록 장비 + real 프리셋)가 있으면 그 장비들만(데모는 실 하드웨어 미연동) · 없으면 데모 프리셋(하위호환).
+  const realSevs = [
+    ...registered.map((d) => registeredSevOf(d, inspections)),
+    ...AED_DEVICES.filter((d) => d.real).map((d) => sevOf(d, inspections)),
+  ];
   const worst =
-    registered.length > 0
-      ? worstAedSev(registered.map((d) => registeredSevOf(d, inspections)))
+    realSevs.length > 0
+      ? worstAedSev(realSevs)
       : worstAedSev(AED_DEVICES.map((d) => sevOf(d, inspections)));
   return NextResponse.json(
     { ok: true, deviceId: null, loc: "전 구역", sev: worst, level: alarmLevelOf(worst), updatedAt },

@@ -32,14 +32,14 @@ test("worst-of — 단말·본체 배터리·패드 중 최악", () => {
   assert.equal(worstAedSev(["normal", "normal"]), "normal");
 });
 
-test("aedRowSev — 단말 방전이면 교환주기 정상이어도 위험", () => {
+test("aedRowSev — 단말 배터리는 심각도 무관(방전이어도 교환주기 정상이면 정상)", () => {
   const r: AedStatusInput = {
-    devBatt: 18,
+    devBatt: 18, // 단말 배터리 항목 제거 — 더 이상 심각도에 반영되지 않음.
     battCycleMonths: 48,
     padCycleMonths: 24,
     history: [{ daysAgo: 30, items: ["battery", "pad"] }],
   };
-  assert.equal(aedRowSev(r), "danger");
+  assert.equal(aedRowSev(r), "normal");
 });
 
 test("aedRowSev — 패드 교환주기 경과면 위험(단말 양호여도)", () => {
@@ -77,9 +77,9 @@ test("buildAedStatusInput — 신품(교환 0일 경과)·배터리 양호면 �
   assert.equal(aedRowSev(inp), "normal");
 });
 
-test("buildAedStatusInput — 단말 배터리 부족이면 신품이어도 위험", () => {
+test("buildAedStatusInput — 단말 배터리 부족이어도 신품(교환주기 정상)이면 정상(단말 배터리 심각도 제거)", () => {
   const inp = buildAedStatusInput({ devBatt: 18, battCycleMonths: 48, padCycleMonths: 24, lastSwapDaysAgo: 0 });
-  assert.equal(aedRowSev(inp), "danger");
+  assert.equal(aedRowSev(inp), "normal");
 });
 
 test("buildAedStatusInput — 교환일 오래 경과(패드 주기 초과)면 위험", () => {
