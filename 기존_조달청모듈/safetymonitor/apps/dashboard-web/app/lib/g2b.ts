@@ -118,19 +118,20 @@ function normalizeDetail(row: Record<string, unknown>): NoticeDetail {
 }
 
 // ── 계약(핵심: 진행 중 현장) 정규화 ────────────────────────────────────
-// ⚠ 필드명은 추정(tolerant pick). 사용자 환경 실응답([g2b-contract-raw] 로그)으로 교정 예정.
+// 필드명은 실응답([g2b-contract-raw] 로그, 2026-07-09)으로 교정 —
+// 공사명=cnstwkNm, 계약기관=cntrctInsttNm, 착공=cbgnDate, 준공=ttalCcmpltDate, 계약일=cntrctDate.
 function normalizeContractSummary(row: Record<string, unknown>): NoticeSummary {
   const licenseRaw = pick(row, ["mainCnsttyNm", "cntrctCorpNm", "corpNm", "indstrytyNm"]);
   return {
     id: pick(row, ["untyCntrctNo", "cntrctNo", "cntrctRefNo", "bidNtceNo", "id"]) ?? "(미상)",
-    title: pick(row, ["cntrctNm", "bidNtceNm", "ntceNm", "title"]) ?? "(계약명 없음)",
+    title: pick(row, ["cnstwkNm", "cntrctNm", "bidNtceNm", "ntceNm", "title"]) ?? "(계약명 없음)",
     kind: "공사",
-    agency: pick(row, ["dminsttNm", "ntceInsttNm", "agency"]) ?? "(수요기관 미상)",
+    agency: pick(row, ["cntrctInsttNm", "dminsttNm", "ntceInsttNm", "agency"]) ?? "(수요기관 미상)",
     region: pick(row, ["cntrctsiteRgnNm", "cnstrtsiteRgnNm", "region"]),
     // 계약금액(대상액 근사) — 총계약금액/이번계약금액 후보.
     estimatedPrice: pickNumber(row, ["totCntrctAmt", "thtmCntrctAmt", "cntrctAmt", "presmptPrce"]),
-    startDate: normDate(pick(row, ["cntrctDt", "cntrctBgnDt", "cntrctCnclsDt", "startDate"])),
-    endDate: normDate(pick(row, ["cntrctEndDt", "cntrctPrdEndDt", "endDate"])),
+    startDate: normDate(pick(row, ["cbgnDate", "cntrctDate", "cntrctDt", "cntrctBgnDt", "cntrctCnclsDt", "startDate"])),
+    endDate: normDate(pick(row, ["ttalCcmpltDate", "thtmCcmpltDate", "cntrctEndDt", "cntrctPrdEndDt", "endDate"])),
     licenses: licenseRaw ? [licenseRaw] : [],
   };
 }
@@ -141,10 +142,34 @@ function normalizeContractDetail(row: Record<string, unknown>): NoticeDetail {
     ...summary,
     taskText: taskText || summary.title,
     contractAmount: summary.estimatedPrice, // 계약금액
+    ntceNo: pick(row, ["ntceNo", "bidNtceNo"]), // 입찰공고번호 → 낙찰률 보강 키
     winRate: null,
     declaredSafetyCost: null,
     targetAmount: summary.estimatedPrice, // 계약금액을 안전관리비 대상액 근사로 사용
   };
+}
+
+// ── 낙찰률 보강 — 낙찰정보서비스(as/ScsbidInfoService) ─────────────────
+// 계약 응답의 ntceNo(입찰공고번호)로 공사 낙찰 건을 직접 조회(inqryDiv=4 = 공고번호 조회, 실측).
+// 낙찰률(sucsfbidRate)은 확정 후 불변 → 프로세스 수명 캐시.
+const winRateCache = new Map<string, number | null>();
+async function fetchWinRate(ntceNo: string): Promise<number | null> {
+  if (winRateCache.has(ntceNo)) return winRateCache.get(ntceNo) ?? null;
+  const url = new URL("https://apis.data.go.kr/1230000/as/ScsbidInfoService/getScsbidListSttusCnstwk");
+  url.searchParams.set("serviceKey", process.env.G2B_SERVICE_KEY as string);
+  url.searchParams.set("pageNo", "1");
+  url.searchParams.set("numOfRows", "3");
+  url.searchParams.set("type", "json");
+  url.searchParams.set("inqryDiv", "4");
+  url.searchParams.set("bidNtceNo", ntceNo);
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as unknown;
+  const rows = extractRows(json);
+  const rate = rows.length > 0 ? Number(pick(rows[0]!, ["sucsfbidRate"])) : NaN;
+  const value = Number.isFinite(rate) && rate > 0 ? rate : null;
+  winRateCache.set(ntceNo, value);
+  return value;
 }
 
 function cacheDetails(details: NoticeDetail[]): void {
@@ -162,6 +187,7 @@ function toSummary(d: NoticeDetail): NoticeSummary {
     startDate: d.startDate,
     endDate: d.endDate,
     licenses: d.licenses,
+    winRate: d.winRate ?? null,
   };
 }
 
@@ -189,7 +215,8 @@ async function fetchList(
   url.searchParams.set("inqryEndDt", fmtG2bDate(nowDt));
   url.searchParams.set("type", "json");
 
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  // 나라장터 API가 목록 쿼리(20건·90일 창)에 ~9초 걸리는 시기가 있음(실측) → 8초면 상시 타임아웃.
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as unknown;
   // ⚠ 임시 디버그(필드 확정 후 제거).
@@ -242,17 +269,65 @@ export async function getContracts(opts: { region?: string; page?: number; rows?
     return { source: "mock", items, page, total: items.length, note: "샘플(계약) — G2B 인증키 연결 시 실데이터로 전환" };
   }
   try {
-    const live = await fetchList(G2B_PATH.contractListConstruction, `contracts:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeContractDetail, rows, page, "g2b-contract-raw");
-    // 계약 실 API 필드 미확정 — 유효 계약명이 하나도 없으면(0건/전부 "(계약명 없음)") 데모용 샘플(가상 계약 현장)로 폴백.
-    const hasNamed = live.items.some((n) => n.title && n.title !== "(계약명 없음)" && n.id !== "(미상)");
-    if (!hasNamed) {
-      return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "계약 실데이터 미확보 — 샘플(가상 계약 현장) 표시" };
-    }
-    return live;
+    // 현장 목록 = 데모 현장 6곳 + 나라장터 실계약 3곳(id=통합계약번호).
+    // 실계약은 90일 창 목록 스캔(느리고 창 밖 계약 누락) 대신 계약번호 직접 조회(inqryDiv=2, 실측)로
+    // 매번 실데이터를 갱신하고, 계약 응답의 ntceNo 로 낙찰정보서비스에서 낙찰률까지 라이브 보강.
+    const cacheKey = `contracts:direct:${opts.region ?? ""}:${page}:${rows}`;
+    const hit = getCached<NoticesPayload>(cacheKey);
+    if (hit) return hit;
+    const realIds = MOCK_NOTICES.filter((n) => n.id.startsWith("R26TE")).map((n) => n.id);
+    const liveById = new Map<string, NoticeSummary>();
+    await Promise.all(
+      realIds.map(async (id) => {
+        try {
+          const detail = await fetchContractByNo(id);
+          if (!detail) return;
+          if (detail.ntceNo) {
+            try {
+              detail.winRate = (await fetchWinRate(detail.ntceNo)) ?? MOCK_NOTICES.find((n) => n.id === id)?.winRate ?? null;
+            } catch {
+              detail.winRate = MOCK_NOTICES.find((n) => n.id === id)?.winRate ?? null; // 낙찰 조회 실패 → 스냅샷 유지
+            }
+          }
+          cacheDetails([detail]); // 사전 검증(getNoticeDetail) 축도 같은 live 상세·낙찰률 사용
+          liveById.set(id, toSummary(detail));
+        } catch {
+          // 개별 계약 조회 실패 → 그 건만 스냅샷 유지
+        }
+      }),
+    );
+    if (liveById.size === 0) throw new Error("실계약 직접 조회 전건 실패");
+    const items = MOCK_NOTICES.map(toSummary).map((m) => liveById.get(m.id) ?? m);
+    const payload: NoticesPayload = {
+      source: "live",
+      items,
+      page,
+      total: items.length,
+      note: "데모 현장 6곳 + 나라장터 실계약 3곳(계약번호 직접 조회 · 낙찰정보 연동)",
+    };
+    setCached(cacheKey, payload);
+    return payload;
   } catch (err) {
     console.error("[g2b] getContracts fallback to mock:", err);
     return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "실 계약 API 응답 실패 — 샘플 데이터 표시" };
   }
+}
+
+// 계약번호 직접 조회 — inqryDiv=2 + untyCntrctNo (실측: total 1 로 해당 계약만 반환, 날짜 불필요·응답 빠름).
+async function fetchContractByNo(untyCntrctNo: string): Promise<NoticeDetail | null> {
+  const url = new URL(`${G2B_BASE}/${G2B_PATH.contractListConstruction}`);
+  url.searchParams.set("serviceKey", process.env.G2B_SERVICE_KEY as string);
+  url.searchParams.set("pageNo", "1");
+  url.searchParams.set("numOfRows", "1");
+  url.searchParams.set("type", "json");
+  url.searchParams.set("inqryDiv", "2");
+  url.searchParams.set("untyCntrctNo", untyCntrctNo);
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as unknown;
+  assertNormal(json);
+  const row = extractRows(json)[0];
+  return row ? normalizeContractDetail(row) : null;
 }
 
 export type NoticeDetailPayload = { source: "live" | "mock"; notice: NoticeDetail | null; note?: string };

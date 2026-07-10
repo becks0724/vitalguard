@@ -20,7 +20,15 @@ import type {
 const RATE_NOTE =
   "요율 출처: 고용노동부 고시 제2025-11호(2025.2.12 시행) 별표1. 공식 별표1 HWP 최종 대조 권장.";
 
-type RateRow = {
+// 이 요율표가 근거하는 고시 버전 — 법제처 API(lib/moleg.ts)가 최신 고시와 비교해 개정 드리프트를 감지한다.
+// 고시 개정 확인 시: 별표1 요율 대조 → SAFETY_COST_RATES 갱신 → 아래 버전 정보 갱신.
+export const APPLIED_RATE_NOTICE = {
+  name: "건설업 산업안전보건관리비 계상 및 사용기준",
+  noticeNo: "제2025-11호",
+  effectiveDate: "2025-02-12", // 시행일자(YYYY-MM-DD)
+} as const;
+
+export type RateRow = {
   under5: number; // 대상액 5억 미만 요율
   mid: { rate: number; base: number }; // 5억~50억: 요율 + 기초액(원)
   over50: number; // 50억 이상 요율
@@ -90,8 +98,10 @@ export function classifyConstructionType(
 export function computeRequiredSafetyCost(
   constructionType: ConstructionType,
   baseAmount: number,
+  // 요율표 주입 — 기본은 내장(고시 제2025-11호), 법제처 별표1 실시간 파싱값(lib/moleg)으로 교체 가능.
+  rates: Record<ConstructionType, RateRow> = SAFETY_COST_RATES,
 ): { requiredCost: number; rateApplied: number; baseAdded: number; bracket: CostBracket; formula: string } {
-  const row = SAFETY_COST_RATES[constructionType];
+  const row = rates[constructionType];
   const bracket = bracketOf(baseAmount);
 
   let rateApplied: number;

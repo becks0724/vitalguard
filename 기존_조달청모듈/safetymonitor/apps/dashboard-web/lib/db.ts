@@ -345,6 +345,34 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_gaspod_recv ON gaspod_telemetry(received_at);
 
+    -- 세금계산서 수신 — 시공사 경리시스템(스마트경리 데모)/전자세금계산서 연동이 쏘는 매입 계산서.
+    -- ④증액 검증의 청구 내역 데이터원. 승인번호 UNIQUE = 재전송 멱등(중복 수신 방지).
+    CREATE TABLE IF NOT EXISTS tax_invoice (
+      id SERIAL PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      approval_no TEXT NOT NULL UNIQUE,
+      write_date TEXT NOT NULL,
+      supplier_name TEXT NOT NULL,
+      supplier_bno TEXT NOT NULL,
+      buyer_name TEXT NOT NULL,
+      buyer_bno TEXT NOT NULL,
+      supply_amount BIGINT NOT NULL,
+      tax_amount BIGINT NOT NULL,
+      items_json TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_taxinv_site ON tax_invoice(site_id);
+
+    -- 산업안전보건관리비 사용계획서 수신 — 경리시스템(스마트경리 데모)이 제출하는 현장별 계획.
+    -- ④증액 검증의 '계획액 대비 증액 청구' 판정 기준. 현장당 1건 upsert(재제출 = 갱신).
+    CREATE TABLE IF NOT EXISTS use_plan (
+      site_id TEXT PRIMARY KEY,
+      target_amount BIGINT NOT NULL,
+      appropriated BIGINT NOT NULL,
+      items_json TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- AED 실 연동 장비 등록 — 관리자가 등록한 실제 장비(RPi가 aed_id로 알림 레벨 폴링). 데모 프리셋(AED_DEVICES)과 별개.
     -- 이 테이블 행만 '실 연동', 코드 프리셋은 '데모(발표용)'. 단말 배터리·교환주기는 등록 입력값.
     CREATE TABLE IF NOT EXISTS aed_registered_device (
@@ -863,6 +891,92 @@ export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRo
 export async function countGaspodTelemetry(): Promise<number> {
   const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM gaspod_telemetry");
   return rows[0]?.n ?? 0;
+}
+
+// ── 세금계산서 수신(④증액 검증 데이터원 — 경리시스템 데모/전자세금계산서 연동) ──
+export type TaxInvoiceRow = {
+  site_id: string;
+  approval_no: string;
+  write_date: string;
+  supplier_name: string;
+  supplier_bno: string;
+  buyer_name: string;
+  buyer_bno: string;
+  supply_amount: number;
+  tax_amount: number;
+  items_json: string; // [{name,spec,qty,unit,supply,tax}]
+  received_at: string;
+};
+
+// 승인번호 충돌(재전송)은 무시 — 멱등 수신.
+export async function insertTaxInvoice(input: Omit<TaxInvoiceRow, "received_at">): Promise<void> {
+  await q(
+    `INSERT INTO tax_invoice
+       (site_id, approval_no, write_date, supplier_name, supplier_bno, buyer_name, buyer_bno, supply_amount, tax_amount, items_json, received_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ${NOW_ISO})
+       ON CONFLICT (approval_no) DO NOTHING`,
+    [
+      input.site_id.slice(0, 60),
+      input.approval_no.slice(0, 40),
+      input.write_date.slice(0, 10),
+      input.supplier_name.slice(0, 80),
+      input.supplier_bno.slice(0, 20),
+      input.buyer_name.slice(0, 80),
+      input.buyer_bno.slice(0, 20),
+      Math.round(input.supply_amount),
+      Math.round(input.tax_amount),
+      input.items_json,
+    ],
+  );
+}
+
+// ── 사용계획서 수신(④증액 검증의 계획액 기준 — 경리시스템 데모 제출) ──
+export type UsePlanRow = {
+  site_id: string;
+  target_amount: number;
+  appropriated: number;
+  items_json: string; // [{name, amount}] — 법정 9항목
+  received_at: string;
+};
+
+export async function upsertUsePlan(input: Omit<UsePlanRow, "received_at">): Promise<void> {
+  await q(
+    `INSERT INTO use_plan (site_id, target_amount, appropriated, items_json, received_at)
+       VALUES ($1, $2, $3, $4, ${NOW_ISO})
+       ON CONFLICT (site_id) DO UPDATE SET
+         target_amount = EXCLUDED.target_amount,
+         appropriated = EXCLUDED.appropriated,
+         items_json = EXCLUDED.items_json,
+         received_at = EXCLUDED.received_at`,
+    [input.site_id.slice(0, 60), Math.round(input.target_amount), Math.round(input.appropriated), input.items_json],
+  );
+}
+
+export async function getUsePlan(siteId: string): Promise<UsePlanRow | null> {
+  const { rows } = await q<UsePlanRow>(
+    `SELECT site_id, target_amount, appropriated, items_json, received_at FROM use_plan WHERE site_id = $1`,
+    [siteId],
+  );
+  return rows[0] ?? null;
+}
+
+// 현장별 수신 계산서(최신 먼저). siteId 생략 시 전체 최근 N건(ERP 전송상태 표시용).
+export async function listTaxInvoices(siteId: string | null, limit = 50): Promise<TaxInvoiceRow[]> {
+  const lim = Math.min(200, Math.max(1, Math.floor(limit)));
+  const { rows } = siteId
+    ? await q<TaxInvoiceRow>(
+        `SELECT site_id, approval_no, write_date, supplier_name, supplier_bno, buyer_name, buyer_bno,
+                supply_amount, tax_amount, items_json, received_at
+           FROM tax_invoice WHERE site_id = $1 ORDER BY received_at DESC, id DESC LIMIT $2`,
+        [siteId, lim],
+      )
+    : await q<TaxInvoiceRow>(
+        `SELECT site_id, approval_no, write_date, supplier_name, supplier_bno, buyer_name, buyer_bno,
+                supply_amount, tax_amount, items_json, received_at
+           FROM tax_invoice ORDER BY received_at DESC, id DESC LIMIT $1`,
+        [lim],
+      );
+  return rows;
 }
 
 // ── AED 실 연동 장비 등록(데모 프리셋과 별개 — RPi가 aed_id로 알림 레벨을 폴링하는 실제 장비) ──

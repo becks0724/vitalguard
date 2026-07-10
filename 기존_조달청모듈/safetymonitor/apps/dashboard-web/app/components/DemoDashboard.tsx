@@ -62,6 +62,7 @@ import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
+import ErpDemoPage from "../erp/page";
 import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
@@ -3740,7 +3741,7 @@ export function DemoDashboard() {
         </div>
       </header>
 
-      {/* 상단 페이저 — 작업자 모니터링 캐러셀처럼 ‹ › 로 넘기는 2페이지(1.실시간 현장 관제 / 2.안전관리비 검증) */}
+      {/* 상단 페이저 — 3페이지(1.실시간 현장 관제 / 2.안전관리비 검증 / 3.ERP 스마트경리) */}
       <SectionPager
         pages={[
           {
@@ -4020,6 +4021,16 @@ export function DemoDashboard() {
           {
             title: "안전관리비 검증",
             content: <SafetyVerificationTabs />,
+          },
+          {
+            // 시공사 경리 시스템(스마트경리 데모) — /erp 단독 라우트와 동일 컴포넌트를 탭으로 열람.
+            // 자체 인디고 헤더·라이트 룩 유지 = "별개 시스템을 관제에서 열람" 역할극.
+            title: "ERP: 스마트경리",
+            content: (
+              <div className="overflow-hidden rounded-xl border border-hairline-strong dark:border-white/10">
+                <ErpDemoPage />
+              </div>
+            ),
           },
         ]}
       />

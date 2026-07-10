@@ -9,6 +9,7 @@ import {
   verifyCredentials,
 } from "../../../../lib/admin-auth";
 import { findUserByUsername } from "../../../../lib/db";
+import { DEMO_ENABLED, verifyDemoMember } from "../../../../lib/demo-members";
 import { verifyPassword } from "../../../../lib/password";
 
 export async function POST(request: Request) {
@@ -62,6 +63,19 @@ export async function POST(request: Request) {
       token: createSession("owner", id),
       role: "owner",
     });
+  }
+
+  // 1.5) 로컬 데모 회원 — DATABASE_URL 미설정(로컬 dev) 시만. 실 서버(DB 연결)에선 비활성 → 아래 DB 사용.
+  if (DEMO_ENABLED) {
+    const ok = verifyDemoMember(id, password);
+    recordLoginResult(lockKey, ok);
+    if (!ok) {
+      return NextResponse.json(
+        { ok: false, error: "관리자 ID 또는 비밀번호가 일치하지 않습니다." },
+        { status: 401 },
+      );
+    }
+    return NextResponse.json({ ok: true, token: createSession("admin", id), role: "admin" });
   }
 
   // 2) DB 가입 관리자 — 비번 검증 후 승인 상태에 따라 분기.

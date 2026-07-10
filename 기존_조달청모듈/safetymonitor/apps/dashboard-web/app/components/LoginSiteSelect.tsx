@@ -93,12 +93,59 @@ const DEMO_SITES: SiteOption[] = [
   },
 ];
 
+// 나라장터 실계약 현장 3곳 — g2b-mock 실계약 스냅샷(getCntrctInfoListCnstwk 실응답)과 noticeId 1:1 매칭.
+// 기관·시공사·금액·기간 = 실값. 주소는 계약기관 관할 지역 근사(계약 API 미제공).
+const REAL_SITES: SiteOption[] = [
+  {
+    id: "real-asan",
+    label: "아산 시민문화복지센터 내진보강공사",
+    info: {
+      noticeId: "R26TE13895124",
+      companyName: "주식회사 백산건설",
+      siteName: "시민문화복지센터 내진성능 보강공사",
+      constructionType: "건축 (내진보강)",
+      address: "충청남도 아산시",
+      startDate: "2026-04-20",
+      completionDate: "2026-09-16",
+    },
+  },
+  {
+    id: "real-gwangju",
+    label: "광주 사직동 코워킹스페이스 리모델링",
+    info: {
+      noticeId: "R26TE13894834",
+      companyName: "현대도건 주식회사",
+      siteName: "사직동 코워킹스페이스(녹성상회) 리모델링공사",
+      constructionType: "건축 (리모델링)",
+      address: "광주광역시 남구 사직동",
+      startDate: "2025-11-27",
+      completionDate: "2026-09-16",
+    },
+  },
+  {
+    id: "real-bonghwa",
+    label: "봉화 삼계2교 교량보수공사",
+    info: {
+      noticeId: "R26TE13877355",
+      companyName: "성광종합건설(주)",
+      siteName: "삼계2교 외 2개소 교량보수공사",
+      constructionType: "토목 (교량보수)",
+      address: "경상북도 봉화군",
+      startDate: "2026-04-15",
+      completionDate: "2026-08-12",
+    },
+  },
+];
+
 // 데모 현장 표시는 가나다순(라벨이 "지역 현장이름" 순이라 사실상 지역 가나다 — 광주·부산·세종·인천·평택).
 const SORTED_DEMO_SITES: SiteOption[] = [...DEMO_SITES].sort((a, b) =>
   a.label.localeCompare(b.label, "ko"),
 );
+const SORTED_REAL_SITES: SiteOption[] = [...REAL_SITES].sort((a, b) =>
+  a.label.localeCompare(b.label, "ko"),
+);
 
-const ALL_SITES: SiteOption[] = [MAIN_SITE, ...DEMO_SITES];
+const ALL_SITES: SiteOption[] = [MAIN_SITE, ...DEMO_SITES, ...REAL_SITES];
 
 const TX: Record<Lang, Record<string, string>> = {
   ko: {
@@ -107,6 +154,7 @@ const TX: Record<Lang, Record<string, string>> = {
     search: "현장 검색…",
     main: "메인 현장",
     demo: "데모 현장",
+    real: "실계약 현장 (나라장터)",
     enter: "현장 입장",
     back: "← 로그인으로",
   },
@@ -116,6 +164,7 @@ const TX: Record<Lang, Record<string, string>> = {
     search: "Search sites…",
     main: "Main site",
     demo: "Demo sites",
+    real: "Live contract sites (G2B)",
     enter: "Enter site",
     back: "← Back to login",
   },
@@ -169,6 +218,16 @@ export function LoginSiteSelect({
               <ListBox.Section>
                 <Header>{t.demo}</Header>
                 {SORTED_DEMO_SITES.map((s) => (
+                  <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
+                    {s.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
+              </ListBox.Section>
+              <Separator />
+              <ListBox.Section>
+                <Header>{t.real}</Header>
+                {SORTED_REAL_SITES.map((s) => (
                   <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
                     {s.label}
                     <ListBox.ItemIndicator />

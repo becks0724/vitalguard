@@ -52,13 +52,14 @@ export interface NoticeSummary {
   startDate?: string; // ISO yyyy-mm-dd
   endDate?: string;
   licenses: string[]; // 면허/업종 제한
+  winRate?: number | null; // 낙찰률(%) — 계약 건은 낙찰정보서비스에서 보강
 }
 
 /** 공고 상세(분석 입력). */
 export interface NoticeDetail extends NoticeSummary {
   taskText: string; // 과업/공고 전문 텍스트
   contractAmount?: number | null;
-  winRate?: number | null; // 낙찰률(%)
+  ntceNo?: string | null; // 입찰공고번호 — 낙찰정보서비스 조회 키(계약 응답 ntceNo)
   declaredSafetyCost?: number | null; // 공고/계약 명시 안전관리비(있으면)
   /** 안전관리비 대상액(원). 계약 단계에서 확보되면 정밀 검증, 없으면 추정가격 근사(→검토필요). */
   targetAmount?: number | null;

@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "../../../../lib/admin-auth";
 import { isAllowedCompany } from "../../../../lib/companies";
 import { employeeIdTakenByOther, findUserByUsername, updateUserProfile } from "../../../../lib/db";
+import { DEMO_ENABLED, getDemoProfile, updateDemoProfile } from "../../../../lib/demo-members";
 import { hashPassword, verifyPassword } from "../../../../lib/password";
 
 // 내 정보 조회 — 폼 프리필용(민감값 제외).
@@ -21,6 +22,14 @@ export async function GET(request: Request) {
       role: session.role,
       adminAccess: true,
     });
+  }
+  // 로컬 데모 회원 — DATABASE_URL 미설정 시 DB 대신 in-memory 프로필.
+  if (DEMO_ENABLED) {
+    const p = getDemoProfile(session.username);
+    if (!p) {
+      return NextResponse.json({ ok: true, editable: false, profile: null, role: "admin", adminAccess: false });
+    }
+    return NextResponse.json({ ok: true, editable: true, role: "admin", adminAccess: p.admin_access, profile: p });
   }
   const u = await findUserByUsername(session.username);
   if (!u) {
@@ -59,6 +68,54 @@ export async function POST(request: Request) {
       { status: 403 },
     );
   }
+
+  // 로컬 데모 회원 — in-memory 프로필 수정(비밀번호 변경 미지원).
+  if (DEMO_ENABLED) {
+    const p = getDemoProfile(session.username);
+    if (!p) {
+      return NextResponse.json({ ok: false, error: "계정을 찾을 수 없습니다." }, { status: 404 });
+    }
+    let demoBody: unknown;
+    try {
+      demoBody = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
+    }
+    const d = (demoBody ?? {}) as {
+      name?: unknown;
+      company?: unknown;
+      phone?: unknown;
+      carrier?: unknown;
+      department?: unknown;
+      jobTitle?: unknown;
+      employeeId?: unknown;
+    };
+    if (typeof d.name !== "string" || typeof d.company !== "string" || typeof d.phone !== "string") {
+      return NextResponse.json({ ok: false, error: "입력 형식 오류" }, { status: 400 });
+    }
+    const nm = d.name.trim();
+    const co = d.company.trim();
+    const tel = d.phone.trim();
+    const car = typeof d.carrier === "string" ? d.carrier.trim() : "";
+    if (!nm) return NextResponse.json({ ok: false, error: "이름을 입력해주세요." }, { status: 400 });
+    if (!isAllowedCompany(co)) {
+      return NextResponse.json({ ok: false, error: "승인되지 않은 회사(상호)입니다." }, { status: 400 });
+    }
+    if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
+      return NextResponse.json({ ok: false, error: "연락처 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+    updateDemoProfile(session.username, {
+      name: nm.slice(0, 60),
+      company: co.slice(0, 100),
+      phone: tel.slice(0, 20),
+      carrier: car ? car.slice(0, 20) : null,
+      department: typeof d.department === "string" && d.department.trim() ? d.department.trim().slice(0, 40) : null,
+      job_title: typeof d.jobTitle === "string" && d.jobTitle.trim() ? d.jobTitle.trim().slice(0, 40) : null,
+      employee_id: typeof d.employeeId === "string" && d.employeeId.trim() ? d.employeeId.trim().slice(0, 40) : null,
+    });
+    return NextResponse.json({ ok: true, message: "내 정보가 수정됐습니다." });
+  }
+
   const u = await findUserByUsername(session.username);
   if (!u) {
     return NextResponse.json({ ok: false, error: "계정을 찾을 수 없습니다." }, { status: 404 });

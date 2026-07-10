@@ -17,6 +17,10 @@ const SITE_PLANS: Record<string, SitePlan> = {
   "SITE-BUSAN-RESI": { workers: 14, days: 22, safetyWorkers: 3 }, // 부산 주상복합(대형)
   "SITE-INCHEON-OFFICE": { workers: 11, days: 18, safetyWorkers: 3 }, // 인천 오피스타워
   "SITE-SEJONG-APT": { workers: 16, days: 20, safetyWorkers: 4 }, // 세종 공동주택
+  // 나라장터 실계약 현장 3곳(계약·금액·기간=실값, 출역만 규모 비례 가상 — 워치 미배포 현장).
+  "R26TE13895124": { workers: 6, days: 15, safetyWorkers: 1 }, // 아산 내진성능 보강(8.0억)
+  "R26TE13894834": { workers: 5, days: 12, safetyWorkers: 1 }, // 광주 사직동 리모델링(4.0억)
+  "R26TE13877355": { workers: 4, days: 10, safetyWorkers: 1 }, // 봉화 삼계2교 교량보수(1.8억)
 };
 
 const EMPTY: WorkerDayAudit = {

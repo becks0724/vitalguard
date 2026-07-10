@@ -44,6 +44,62 @@ function won(n: number | null | undefined): string {
   return n == null ? "-" : `${Math.round(n).toLocaleString("ko-KR")}원`;
 }
 
+// 적용 요율 고시 상태 배지 — 법제처 API로 최신 발령과 비교(개정 감지 시 앰버 경고).
+type RateNotice = {
+  source: "live" | "fallback";
+  applied: { noticeNo: string; effectiveDate: string };
+  latest: { noticeNo: string; effectiveDate: string | null } | null;
+  drift: boolean;
+  rateCheck: { verified: boolean; diffs: string[] } | null;
+  note?: string;
+};
+
+function RateNoticeBadge() {
+  const [st, setSt] = useState<RateNotice | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/safety-rate/notice");
+        if (!r.ok) return;
+        const j = (await r.json()) as RateNotice;
+        if (alive) setSt(j);
+      } catch {
+        // 조회 실패 → 배지 미표시(검증 본기능 무영향)
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!st) return null;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted dark:text-on-dark-soft">
+      <span>
+        적용 요율: 고용노동부고시 {st.applied.noticeNo} (시행 {st.applied.effectiveDate})
+      </span>
+      {st.drift ? (
+        <span className="rounded-pill bg-amber-100 px-2 py-0.5 font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+          고시 개정 감지 — 요율표 갱신 필요{st.latest?.effectiveDate ? ` (최신 시행 ${st.latest.effectiveDate})` : ""}
+        </span>
+      ) : st.rateCheck && !st.rateCheck.verified ? (
+        <span
+          className="rounded-pill bg-amber-100 px-2 py-0.5 font-semibold text-amber-700 dark:bg-amber-400/15 dark:text-amber-300"
+          title={st.rateCheck.diffs.join(" · ")}
+        >
+          고시 요율 불일치 감지 — 요율표 확인 필요
+        </span>
+      ) : st.source === "live" ? (
+        <span className="rounded-pill bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+          법제처 확인{st.rateCheck?.verified ? " · 별표1 요율 일치" : " · 최신"}
+        </span>
+      ) : (
+        <span className="rounded-pill bg-surface-soft px-2 py-0.5 dark:bg-white/10">내장 기준</span>
+      )}
+    </p>
+  );
+}
+
 export default function SafetyCostAuditBoard() {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [source, setSource] = useState<"live" | "mock">("mock");
@@ -107,6 +163,7 @@ export default function SafetyCostAuditBoard() {
         <div className="min-w-0">
           <h2 className="text-base font-semibold text-ink dark:text-on-dark">안전관리비 실집행 검증</h2>
           <p className="text-xs text-body dark:text-on-dark-soft">조달 계상액과 워치 출역(실집행)을 교차해 안전예산이 현장 작업자에게 실제 도달했는지 검증합니다.</p>
+          <RateNoticeBadge />
         </div>
         <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[11px] font-semibold ${source === "live" ? "bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark" : "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft"}`}>
           {source === "live" ? "G2B 실시간" : "샘플 데이터"}

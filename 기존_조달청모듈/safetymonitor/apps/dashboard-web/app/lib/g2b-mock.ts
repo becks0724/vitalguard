@@ -118,4 +118,63 @@ export const MOCK_NOTICES: NoticeDetail[] = [
     targetAmount: 30_000_000_000,
     declaredSafetyCost: 280_000_000, // 법정 약 5.9억 대비 과소(심함)
   },
+  // ── 나라장터 실계약 스냅샷 3곳 — getCntrctInfoListCnstwk 실응답(2026-07-09 조회) 기반. ──
+  //    id(통합계약번호)·공사명·계약기관·계약금액·착공/준공일·시공사 = 전부 실값.
+  //    declaredSafetyCost 는 계약 API 미제공 → null(룰엔진이 '검토필요'로 판정).
+  //    winRate = 낙찰정보서비스(as/ScsbidInfoService, inqryDiv=4+ntceNo) 실측 스냅샷(2026-07-10) — live 시 재조회로 갱신.
+  //    getContracts 가 실 API 수신 시 이 3건을 live 값으로 갱신해 목록에 태운다(ID 매칭).
+  {
+    id: "R26TE13895124",
+    title: "시민문화복지센터 내진성능 보강공사",
+    kind: "공사",
+    agency: "충청남도 아산시",
+    region: "충남",
+    estimatedPrice: 799_719_230,
+    startDate: "2026-04-20",
+    endDate: "2026-09-16",
+    licenses: ["건축공사업"],
+    taskText:
+      "시민문화복지센터 내진성능 보강공사. 나라장터 계약분류 시설공사>종합건설>건축공사, 제한경쟁 계약. 시공: 주식회사 백산건설.",
+    contractAmount: 799_719_230,
+    ntceNo: "R26BK01412328",
+    winRate: 90.255, // 낙찰정보서비스 실측,
+    targetAmount: 799_719_230, // 계약금액을 대상액 근사로 사용(계약 API 기준)
+    declaredSafetyCost: null, // 계약 API 미제공 → 검토필요
+  },
+  {
+    id: "R26TE13894834",
+    title: "사직동 코워킹스페이스(녹성상회) 리모델링공사(건축, 기계)",
+    kind: "공사",
+    agency: "광주광역시 남구",
+    region: "광주",
+    estimatedPrice: 404_334_000,
+    startDate: "2025-11-27",
+    endDate: "2026-09-16",
+    licenses: ["건축공사업"],
+    taskText:
+      "사직동 코워킹스페이스(녹성상회) 리모델링공사(건축, 기계). 나라장터 계약분류 시설공사>종합건설>건축공사, 제한경쟁 계약. 시공: 현대도건 주식회사.",
+    contractAmount: 404_334_000,
+    ntceNo: "R25BK01120895",
+    winRate: 90.212, // 낙찰정보서비스 실측,
+    targetAmount: 404_334_000,
+    declaredSafetyCost: null,
+  },
+  {
+    id: "R26TE13877355",
+    title: "삼계2교 외 2개소 교량보수공사",
+    kind: "공사",
+    agency: "경상북도 봉화군",
+    region: "경북",
+    estimatedPrice: 176_059_600,
+    startDate: "2026-04-15",
+    endDate: "2026-08-12",
+    licenses: ["토목공사업"],
+    taskText:
+      "삼계2교 외 2개소 교량보수공사. 나라장터 계약분류 시설공사>종합건설>토목공사, 수의계약. 시공: 성광종합건설(주).",
+    contractAmount: 176_059_600,
+    ntceNo: "R26BK01438751",
+    winRate: 90.54, // 낙찰정보서비스 실측,
+    targetAmount: 176_059_600,
+    declaredSafetyCost: null,
+  },
 ];

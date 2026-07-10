@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { getSession, verifyCredentials } from "../../../../lib/admin-auth";
 import { findUserByUsername } from "../../../../lib/db";
+import { DEMO_ENABLED, verifyDemoMember } from "../../../../lib/demo-members";
 import { verifyPassword } from "../../../../lib/password";
 
 export async function POST(request: Request) {
@@ -23,9 +24,12 @@ export async function POST(request: Request) {
   }
 
   // owner = env 자격(verifyCredentials), admin = DB 비밀번호 해시(verifyPassword).
+  // 로컬 데모(DATABASE_URL 미설정)에선 admin = in-memory 데모 회원 비밀번호 검증.
   let ok = false;
   if (session.role === "owner") {
     ok = verifyCredentials(session.username, password);
+  } else if (DEMO_ENABLED) {
+    ok = verifyDemoMember(session.username, password);
   } else {
     const user = await findUserByUsername(session.username).catch(() => null);
     ok = !!(user && user.password_hash && (await verifyPassword(password, user.password_hash)));
