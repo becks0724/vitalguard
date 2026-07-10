@@ -27,7 +27,7 @@ export function extractHwpPrvText(data: Uint8Array): string | null {
     const miniFatStart = u32(data, 60);
 
     // FAT (헤더 DIFAT 109개 한정 — 소형 파일 전용)
-    let fatBytes: number[] = [];
+    const fatBytes: number[] = [];
     for (let i = 0; i < 109; i++) {
       const s = u32(data, 76 + i * 4);
       if (s === FREE_SECT) break;

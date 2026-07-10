@@ -201,7 +201,6 @@ async function fetchList(
   normalize: (row: Record<string, unknown>) => NoticeDetail,
   rows: number,
   page: number,
-  debugTag: string,
 ): Promise<NoticesPayload> {
   const hit = getCached<NoticesPayload>(cacheKey);
   if (hit) return hit;
@@ -219,12 +218,6 @@ async function fetchList(
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as unknown;
-  // ⚠ 임시 디버그(필드 확정 후 제거).
-  {
-    const dbg = extractRows(json);
-    console.log(`[${debugTag}] keys:`, Object.keys(dbg[0] ?? {}).join(","));
-    console.log(`[${debugTag}] row0:`, JSON.stringify(dbg[0] ?? {}).slice(0, 2500));
-  }
   assertNormal(json);
   const rawRows = extractRows(json);
   if (rawRows.length === 0) {
@@ -253,7 +246,7 @@ export async function getNotices(opts: { kind?: string; region?: string; page?: 
     return { source: "live", items: [], page, total: 0, note: "현재 공사 부문만 실데이터 지원(MVP)" };
   }
   try {
-    return await fetchList(G2B_PATH.bidListConstruction, `notices:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeDetail, rows, page, "g2b-raw");
+    return await fetchList(G2B_PATH.bidListConstruction, `notices:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeDetail, rows, page);
   } catch (err) {
     console.error("[g2b] getNotices fallback to mock:", err);
     return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "실 API 응답 실패 — 샘플 데이터 표시" };
