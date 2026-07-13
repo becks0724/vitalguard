@@ -27,14 +27,27 @@ export async function GET(req: Request) {
     }
 
     // 현장별 격리 — 메인 관제 현장만 실 워치 출역(vital_samples), 그 외는 현장별 가상 출역.
+    // 메인 현장도 DB 불가(로컬 dev 미설정·장애) 시 가상 출역으로 강등(KOSHA/G2B mock 폴백 패턴) — 500 대신 데모 표기.
     const isMainSite = id === MAIN_SITE_ID;
-    const wd = isMainSite ? await auditWorkerDays({ from, to }) : mockWorkerDayAudit(id);
+    let dbLive = isMainSite;
+    let wd;
+    if (isMainSite) {
+      try {
+        wd = await auditWorkerDays({ from, to });
+      } catch (err) {
+        console.error("[api/safety-audit] DB 불가 — 가상 출역 폴백:", err);
+        dbLive = false;
+        wd = mockWorkerDayAudit(id);
+      }
+    } else {
+      wd = mockWorkerDayAudit(id);
+    }
     const audit = buildExecutionAudit(detail.notice, wd);
-    if (!isMainSite && wd.totalWorkerDays > 0) {
+    if (!dbLive && wd.totalWorkerDays > 0) {
       audit.note = `[가상 출역 데모] ${audit.note}`;
     }
     const execution: "live" | "simulated" | "none" =
-      wd.totalWorkerDays === 0 ? "none" : isMainSite ? "live" : "simulated";
+      wd.totalWorkerDays === 0 ? "none" : dbLive ? "live" : "simulated";
 
     return NextResponse.json({ source: detail.source, execution, notice: detail.notice, audit, period: { from, to } });
   } catch (err) {

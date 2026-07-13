@@ -21,7 +21,7 @@ const CLAIMS_BY_SITE: Record<string, SubmittedClaim> = {
     items: [
       { name: "안전모", qty: 14, unit: 25000 },
       { name: "안전화", qty: 12, unit: 60000 },
-      { name: "안전대", qty: 8, unit: 80000 },
+      { name: "안전대", qty: 20, unit: 80000 },
     ],
     hasEvidence: true,
   },

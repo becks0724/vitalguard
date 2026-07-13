@@ -216,7 +216,7 @@ export default function SafetyCostAuditBoard() {
                 </div>
 
                 {/* 3축 */}
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-[1fr_1.8fr_0.9fr]">
                   <div className="rounded-lg border border-hairline bg-canvas p-3 dark:border-white/10 dark:bg-surface-dark">
                     <div className="text-[10px] font-semibold text-ink">① 계상(예산)</div>
                     <div className="mt-1 text-base font-bold tabular-nums text-ink dark:text-on-dark">{won(a.requiredCost)}</div>
