@@ -38,6 +38,10 @@ export async function GET(req: Request) {
         console.error("[api/safety-audit] DB 불가 — 가상 출역 폴백:", err);
         dbLive = false;
         wd = mockWorkerDayAudit(id);
+        // 메인 현장은 가상 출역 테이블에 없어 0 — 로컬 dev 판정이 돌도록 라이브 규모의 데모 출역 사용.
+        if (wd.totalWorkerDays === 0) {
+          wd = { totalWorkerDays: 91, safetyWorkerDays: 55, distinctWorkers: 16, days: 20, byDay: [] };
+        }
       }
     } else {
       wd = mockWorkerDayAudit(id);
