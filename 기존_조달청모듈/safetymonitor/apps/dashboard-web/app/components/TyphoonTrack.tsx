@@ -365,11 +365,48 @@ function fmtTmFc(s?: string): string {
   return `${s.slice(4, 6)}/${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}`;
 }
 
-// ── 위험 반경 게이팅 — 태풍 현재 위치가 현장 GPS 반경 또는 한국 반경 안에 있을 때만 추적·정보 제공 ──
-// 반경 밖이면 추적 중지(지도·상세 숨김). 값은 프로토타입 기준(현장=국지 위협 / 한국=접근 위협) — 튜닝 가능.
-const KOREA_CENTER = { lat: 36.0, lon: 127.8 }; // 한반도 중앙 근사
-const KOREA_DANGER_RADIUS_KM = 1000; // 한국 위험 반경(접근 위협)
-const SITE_DANGER_RADIUS_KM = 500; // 현장 위험 반경(국지 위협)
+// ── 작업현장 조기 경보 게이팅 — 기상청 강풍반경(rad15)/폭풍반경(rad25) 기준 영향권 판정 ──
+// 태풍 중심에서 15m/s(강풍)·25m/s(폭풍) 바람이 미치는 실제 반경으로 현장/국토 영향을 판정한다.
+// 구 방식(한국/현장 고정거리 500·1000km)은 임의값이라 폐기 — 반경 미제공 시에만 폴백값 사용.
+const KOREA_CENTER = { lat: 36.0, lon: 127.8 }; // 한반도 중앙 내륙 근사
+const APPROACH_LEAD_KM = 300; // 강풍역 바깥 '접근 대비'(조기 인지) 마진
+const KOREA_REACH_BUFFER_KM = 400; // 현장 GPS 없을 때 국토 가장자리 근사(강풍역이 국토에 닿는지)
+const SITE_FALLBACK_KM = 500; // 강풍반경 미제공 시 현장 폴백 거리
+const KOREA_FALLBACK_KM = 1000; // 강풍반경 미제공 시 한국 폴백 거리
+
+// 태풍 영향권 등급 — 폭풍역(≥25m/s)·강풍역(≥15m/s)·접근 대비·밖.
+type Zone = "storm" | "gale" | "approach" | "none";
+const ZONE_LABEL: Record<Zone, string> = {
+  storm: "폭풍역 진입",
+  gale: "강풍역 진입",
+  approach: "영향권 접근",
+  none: "영향권 밖",
+};
+// 작업중지 안내 — 건설 작업중지 기준(산업안전보건기준에 관한 규칙 제37·143·383조).
+const ZONE_ADVISORY: Record<Zone, string> = {
+  storm: "전면 작업중지 · 순간풍속 25m/s급 — 타워크레인·고소·양중 중지·대피",
+  gale: "작업중지 · 순간풍속 15m/s급 — 타워크레인 운전·철골·고소작업 중지",
+  approach: "진입 대비 · 자재 결박·타워크레인 하강·가설물 점검",
+  none: "",
+};
+const ZONE_TEXT: Record<Zone, string> = {
+  storm: "text-red-600 dark:text-red-300",
+  gale: "text-orange-600 dark:text-orange-300",
+  approach: "text-amber-600 dark:text-amber-300",
+  none: "text-zinc-500 dark:text-on-dark-soft",
+};
+const ZONE_BANNER: Record<Zone, string> = {
+  storm: "border-red-300 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+  gale: "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300",
+  approach: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  none: "",
+};
+
+// 강풍/폭풍반경 문자열("300"·"0"·"")을 km 숫자로. 값 없음/0 이하 → 0.
+function parseRadiusKm(s?: string): number {
+  const n = s ? Number.parseFloat(s) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 
 function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): number {
   const R = 6371;
@@ -404,22 +441,25 @@ function TyphoonIcon({ size = 16, className }: { size?: number; className?: stri
   );
 }
 
-// 위험 반경 밖 — 추적 중지 패널(지도·상세 대신 거리만 안내).
+// 영향권 밖 — 추적 중지 패널(지도·상세 대신 거리만 안내).
 function TrackingStopped({
   cur,
   siteKm,
   koreaKm,
+  galeKm,
 }: {
   cur: TrackPoint | null;
   siteKm: number | null;
   koreaKm: number | null;
+  galeKm: number;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center dark:border-white/10 dark:bg-white/[0.02]">
       <TyphoonIcon size={28} className="text-zinc-400 dark:text-zinc-500" />
       <span className="text-sm font-semibold text-ink dark:text-on-dark">태풍 추적 중지</span>
-      <span className="text-xs text-body dark:text-on-dark-soft">현장·한국 위험 반경 밖</span>
+      <span className="text-xs text-body dark:text-on-dark-soft">현장·국토 강풍 영향권 밖</span>
       <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 text-[11px] text-muted dark:text-on-dark-soft">
+        {galeKm > 0 && <span>강풍반경 {Math.round(galeKm).toLocaleString()}km</span>}
         {siteKm !== null && <span>현장 {Math.round(siteKm).toLocaleString()}km</span>}
         {koreaKm !== null && <span>한국 {Math.round(koreaKm).toLocaleString()}km</span>}
       </div>
@@ -428,6 +468,17 @@ function TrackingStopped({
           현재 위치 {cur.lat.toFixed(1)}, {cur.lon.toFixed(1)}
         </span>
       )}
+    </div>
+  );
+}
+
+// 작업중지 안내 배너 — 영향권(폭풍역/강풍역/접근) 진입 시 건설 작업중지 조치를 색상으로 강조.
+function WorkStoppageBanner({ zone, advisory }: { zone: Zone; advisory: string }) {
+  if (zone === "none") return null;
+  return (
+    <div className={`shrink-0 rounded-lg border px-2 py-1.5 text-center leading-tight ${ZONE_BANNER[zone]}`}>
+      <span className="text-[11px] font-bold">{ZONE_LABEL[zone]}</span>
+      <span className="ml-1 text-[10px]">{advisory}</span>
     </div>
   );
 }
@@ -478,18 +529,45 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     return data.track[Math.min(data.currentIndex, data.track.length - 1)] ?? null;
   }, [data]);
 
-  // 현재 위치 기준 현장/한국 거리 + 위험 반경 내 여부. 둘 중 하나라도 반경 내면 추적.
-  // 현장 GPS(작업자 등록) 없으면 한국 반경만으로 판정.
+  // 강풍반경(rad15)/폭풍반경(rad25) 기준 영향권 판정 — 태풍 강풍역/폭풍역이 현장(또는 국토)에 닿는지.
+  // 현장 GPS(작업자 등록) 있으면 현장 기준(정밀), 없으면 국토 중앙점 근사로 판정.
   const gate = useMemo(() => {
-    if (!cur) return { tracking: false, siteKm: null as number | null, koreaKm: null as number | null };
+    if (!cur)
+      return {
+        tracking: false,
+        zone: "none" as Zone,
+        siteKm: null as number | null,
+        koreaKm: null as number | null,
+        galeKm: 0,
+        stormKm: 0,
+      };
+    const galeKm = parseRadiusKm(cur.rad15); // 강풍반경(15m/s)
+    const stormKm = parseRadiusKm(cur.rad25); // 폭풍반경(25m/s)
     const koreaKm = haversineKm(cur.lat, cur.lon, KOREA_CENTER.lat, KOREA_CENTER.lon);
     const siteKm =
       typeof lat === "number" && typeof lon === "number"
         ? haversineKm(cur.lat, cur.lon, lat, lon)
         : null;
-    const inSite = siteKm !== null && siteKm <= SITE_DANGER_RADIUS_KM;
-    const inKorea = koreaKm <= KOREA_DANGER_RADIUS_KM;
-    return { tracking: inSite || inKorea, siteKm, koreaKm };
+
+    let zone: Zone = "none";
+    if (galeKm > 0) {
+      if (siteKm !== null) {
+        // 현장 GPS 기준(정밀) — 강풍역/폭풍역 진입 여부.
+        if (stormKm > 0 && siteKm <= stormKm) zone = "storm";
+        else if (siteKm <= galeKm) zone = "gale";
+        else if (siteKm <= galeKm + APPROACH_LEAD_KM) zone = "approach";
+      } else {
+        // 현장 GPS 없음 — 국토 중앙점 근사로 강풍역 국토 도달 판정.
+        if (koreaKm <= galeKm + KOREA_REACH_BUFFER_KM) zone = "gale";
+        else if (koreaKm <= galeKm + KOREA_REACH_BUFFER_KM + APPROACH_LEAD_KM) zone = "approach";
+      }
+    } else {
+      // 강풍반경 미제공 — 고정거리 폴백(접근 대비만).
+      const inSite = siteKm !== null && siteKm <= SITE_FALLBACK_KM;
+      const inKorea = koreaKm <= KOREA_FALLBACK_KM;
+      if (inSite || inKorea) zone = "approach";
+    }
+    return { tracking: zone !== "none", zone, siteKm, koreaKm, galeKm, stormKm };
   }, [cur, lat, lon]);
 
   if (error) {
@@ -545,6 +623,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         <IdleNoThreat note={idleNote} />
       ) : gate.tracking ? (
         <>
+          <WorkStoppageBanner zone={gate.zone} advisory={ZONE_ADVISORY[gate.zone]} />
           <button
             type="button"
             onClick={() => setOpen(true)}
@@ -572,7 +651,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           )}
         </>
       ) : (
-        <TrackingStopped cur={cur} siteKm={gate.siteKm} koreaKm={gate.koreaKm} />
+        <TrackingStopped cur={cur} siteKm={gate.siteKm} koreaKm={gate.koreaKm} galeKm={gate.galeKm} />
       )}
 
       <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
@@ -585,14 +664,16 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           (gate.tracking ? (
             <>
               {" · "}
-              <span className="font-semibold text-emerald-600 dark:text-emerald-300">위험 반경 내 추적 중</span>
-              {gate.siteKm !== null ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km` : ""}
-              {` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
+              <span className={`font-semibold ${ZONE_TEXT[gate.zone]}`}>{ZONE_LABEL[gate.zone]}</span>
+              {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
+              {gate.siteKm !== null
+                ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`
+                : ` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
             </>
           ) : (
             <>
               {" · "}
-              <span className="font-semibold text-zinc-500 dark:text-on-dark-soft">위험 반경 밖 · 추적 중지</span>
+              <span className="font-semibold text-zinc-500 dark:text-on-dark-soft">국토 강풍 영향권 밖 · 추적 중지</span>
             </>
           ))}
       </p>
