@@ -1,10 +1,15 @@
-// 기상청(1360000) 태풍정보 조회서비스 클라이언트 — getTyphoonInfo 진로/중심기압/최대풍속.
+// 기상청(1360000) 태풍정보 조회서비스 클라이언트 — getTyphoonInfo 진로/중심기압/최대풍속(다중 태풍).
 // 정책: 이 서비스는 data.go.kr "활용신청" 승인이 별도로 필요(특보 키와 같은 계정이라도 미승인 시 Forbidden).
 //   - 키 없음/미승인/오류 → 목업(데모 무중단, source:"mock" 으로 표시).
-//   - 승인 + 발효 태풍 있음 → 실데이터(source:"live").
-//   - 승인 + 발효 태풍 없음(비시즌) → source:"none".
+//   - 승인 + 발효 태풍 있음 → 실데이터 배열(각 source:"live"). 쌍태풍이면 2개 이상.
+//   - 승인 + 발효 태풍 없음(비시즌) → 빈 배열.
+// 파싱(typSeq 그룹핑·태풍별 최신 통보문 선택)은 순수 모듈 typhoon-parse.ts 로 분리(테스트 가능).
 // 응답 필드(공식): typSeq/typTm/typLat/typLon/typDir/typSp/typPs/typWs/typ15/typ25/typName/typEn/img/tmFc.
 import "server-only";
+
+import { groupTyphoonItems, type TrackPoint, type TyphoonInfo } from "./typhoon-parse";
+
+export type { TrackPoint, TyphoonInfo };
 
 type CacheEntry<T> = { ts: number; data: T };
 const g = globalThis as typeof globalThis & {
@@ -30,36 +35,6 @@ function serviceKey(): string | null {
     process.env.KOSHA_SERVICE_KEY?.trim() ||
     null
   );
-}
-
-export type TrackPoint = {
-  tm: string; // typTm — 분석/예보 시각(yyyyMMddHHmm)
-  lat: number; // typLat
-  lon: number; // typLon
-  dir?: string; // typDir — 이동방향
-  speedKmh?: number; // typSp — 이동속도(km/h)
-  pressureHpa?: number; // typPs — 중심기압(hPa)
-  maxWindMs?: number; // typWs — 최대풍속(m/s)
-  rad25?: string; // typ25 — 25m/s 반경
-  rad15?: string; // typ15 — 15m/s 반경
-};
-
-export type TyphoonInfo = {
-  source: "live" | "mock" | "none";
-  seq?: string; // typSeq — 태풍 번호
-  name?: string; // typName — 태풍명(한글)
-  nameEn?: string; // typEn — 태풍명(영문)
-  img?: string; // 공식 진로 이미지 URL
-  tmFc?: string; // 통보문 발표시각
-  track: TrackPoint[]; // 시간순 진로
-  currentIndex: number; // track 중 현재(통보문 시각 최근접) 인덱스
-  note?: string; // 상태 안내 문구
-};
-
-function num(v: unknown): number | undefined {
-  if (v === null || v === undefined || v === "") return undefined;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : undefined;
 }
 
 // 데모 무중단용 목업(키 없음/미승인/오류 시). 남쪽에서 한반도로 북상하는 가상 태풍 진로.
@@ -88,126 +63,57 @@ function yyyymmdd(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
 
-// 통보문 시각(tmFc) 에 가장 가까운 track 지점 = 현재 분석 위치(이후 typTm 은 예보 위치).
-function pickCurrentIndex(track: TrackPoint[], tmFc?: string): number {
-  if (track.length === 0) return 0;
-  if (!tmFc) return 0;
-  const target = Number(tmFc.slice(0, 12)); // yyyyMMddHHmm 비교
-  let best = 0;
-  let bestD = Infinity;
-  track.forEach((p, i) => {
-    const t = Number(String(p.tm).slice(0, 12));
-    if (!Number.isFinite(t)) return;
-    const d = Math.abs(t - target);
-    if (d < bestD) {
-      bestD = d;
-      best = i;
-    }
-  });
-  return best;
-}
-
-export async function getActiveTyphoon(): Promise<TyphoonInfo> {
+// 발효 중인 태풍 전부(한국 최근접 순). 목업은 비캐시(승인 즉시 자동 라이브), 라이브/없음은 30분 캐시.
+export async function getActiveTyphoons(): Promise<TyphoonInfo[]> {
   const key = serviceKey();
-  if (!key) return mockTyphoon("인증키 미설정 — 샘플 진로");
+  if (!key) return [mockTyphoon("인증키 미설정 — 샘플 진로")];
 
-  const cached = getCached<TyphoonInfo>("active");
+  // 캐시 키 v2 — 단일 객체 → 배열로 shape 변경(과거 "active" 키 stale 객체와 충돌 방지, kma.ts v2 회전 선례).
+  const cached = getCached<TyphoonInfo[]>("active-v2");
   if (cached) return cached;
 
   try {
     const now = new Date();
     const from = new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000); // 최근 2일 통보문
-    const url =
-      `${BASE}/getTyphoonInfo?serviceKey=${key}&dataType=JSON&pageNo=1&numOfRows=50` +
-      `&fromTmFc=${yyyymmdd(from)}&toTmFc=${yyyymmdd(now)}`;
-    // 업스트림 무응답 시 무한 대기 방지 — 8초 타임아웃(초과 시 throw → catch 의 목업 폴백).
-    const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
-    const text = await res.text();
-    // 미승인 시 본문이 "Forbidden" 평문 → JSON 파싱 실패. 승인 안내와 함께 샘플.
-    let json: unknown;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return mockTyphoon(UNAPPROVED_NOTE);
-    }
-    const root = json as {
-      response?: { header?: { resultCode?: string }; body?: { items?: { item?: unknown } } };
-    };
-    if (root?.response?.header?.resultCode !== "00") {
-      return mockTyphoon(UNAPPROVED_NOTE);
-    }
-    const raw = root.response?.body?.items?.item;
-    const items = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Record<string, unknown>[];
-    if (items.length === 0) {
-      const none: TyphoonInfo = {
-        source: "none",
-        track: [],
-        currentIndex: 0,
-        note: "현재 발효 중인 태풍 없음",
+    // 페이지당 500행 + totalCount 기반 추가 페이지(최대 3) — 통보문 3시간 간격 × 2일 × 다중 태풍 ×
+    // 진로점이라 단일 페이지 절단 시 최신 통보문이 잘려 stale 위치로 게이팅되는 조용한 열화 방지.
+    const collected: Record<string, unknown>[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const url =
+        `${BASE}/getTyphoonInfo?serviceKey=${key}&dataType=JSON&pageNo=${page}&numOfRows=500` +
+        `&fromTmFc=${yyyymmdd(from)}&toTmFc=${yyyymmdd(now)}`;
+      // 업스트림 무응답 시 무한 대기 방지 — 8초 타임아웃(초과 시 throw → catch 의 목업 폴백).
+      const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+      const text = await res.text();
+      // 미승인 시 본문이 "Forbidden" 평문 → JSON 파싱 실패. 승인 안내와 함께 샘플.
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        if (page === 1) return [mockTyphoon(UNAPPROVED_NOTE)];
+        break; // 후속 페이지 실패는 수집분으로 진행
+      }
+      const root = json as {
+        response?: {
+          header?: { resultCode?: string };
+          body?: { totalCount?: unknown; items?: { item?: unknown } };
+        };
       };
-      setCached("active", none);
-      return none;
+      if (root?.response?.header?.resultCode !== "00") {
+        if (page === 1) return [mockTyphoon(UNAPPROVED_NOTE)];
+        break;
+      }
+      const body = root.response?.body;
+      const raw = body?.items?.item;
+      const items = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Record<string, unknown>[];
+      collected.push(...items);
+      const total = Number(body?.totalCount ?? 0);
+      if (!Number.isFinite(total) || collected.length >= total || items.length === 0) break;
     }
-
-    // 가장 최근 통보문의 태풍(typSeq) 선택 → 그 태풍의 진로만.
-    const latestTmFc = items
-      .map((it) => String(it.tmFc ?? ""))
-      .sort()
-      .at(-1);
-    const latestSeq = items.find((it) => String(it.tmFc ?? "") === latestTmFc)?.typSeq;
-    const group = items.filter((it) => String(it.typSeq ?? "") === String(latestSeq));
-
-    const track: TrackPoint[] = group
-      .map((it) => ({
-        tm: String(it.typTm ?? ""),
-        lat: num(it.typLat) ?? NaN,
-        lon: num(it.typLon) ?? NaN,
-        dir: it.typDir ? String(it.typDir) : undefined,
-        speedKmh: num(it.typSp),
-        pressureHpa: num(it.typPs),
-        maxWindMs: num(it.typWs),
-        rad25: it.typ25 ? String(it.typ25) : undefined,
-        rad15: it.typ15 ? String(it.typ15) : undefined,
-      }))
-      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
-      .sort((a, b) => String(a.tm).localeCompare(String(b.tm)));
-
-    if (track.length === 0) {
-      const none: TyphoonInfo = {
-        source: "none",
-        track: [],
-        currentIndex: 0,
-        note: "현재 발효 중인 태풍 없음",
-      };
-      setCached("active", none);
-      return none;
-    }
-
-    const head =
-      group.find((it) => String(it.typSeq ?? "") === String(latestSeq)) ?? group[0];
-    if (!head) {
-      const none: TyphoonInfo = {
-        source: "none",
-        track: [],
-        currentIndex: 0,
-        note: "현재 발효 중인 태풍 없음",
-      };
-      setCached("active", none);
-      return none;
-    }
-    const info: TyphoonInfo = {
-      source: "live",
-      seq: head.typSeq ? String(head.typSeq) : undefined,
-      name: head.typName ? String(head.typName) : undefined,
-      nameEn: head.typEn ? String(head.typEn) : undefined,
-      img: head.img ? String(head.img) : undefined,
-      tmFc: latestTmFc,
-      track,
-      currentIndex: pickCurrentIndex(track, latestTmFc),
-    };
-    setCached("active", info);
-    return info;
+    const infos = groupTyphoonItems(collected); // 발효 없음 → [] (빈 배열도 캐시 = 정상 무태풍)
+    setCached("active-v2", infos);
+    return infos;
   } catch {
-    return mockTyphoon(UNAPPROVED_NOTE);
+    return [mockTyphoon(UNAPPROVED_NOTE)];
   }
 }

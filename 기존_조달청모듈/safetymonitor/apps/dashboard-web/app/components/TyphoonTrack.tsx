@@ -6,6 +6,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  computeGate,
+  EMPTY_GATE,
+  pickWorst,
+  type GateResult,
+  type Zone,
+} from "../lib/typhoon-gate";
+
 type TrackPoint = {
   tm: string;
   lat: number;
@@ -17,8 +25,8 @@ type TrackPoint = {
   rad25?: string;
   rad15?: string;
 };
-type Payload = {
-  ok: boolean;
+// 태풍 1개 레코드 — 서버 typhoons 배열 원소이자 하위호환 스프레드 필드(구 단일 payload)와 동형.
+type TyphoonRec = {
   source: "live" | "mock" | "none";
   seq?: string;
   name?: string;
@@ -28,6 +36,10 @@ type Payload = {
   track: TrackPoint[];
   currentIndex: number;
   note?: string;
+};
+type Payload = TyphoonRec & {
+  ok: boolean;
+  typhoons?: TyphoonRec[]; // 다중 태풍(쌍태풍) — 구 서버 응답엔 없음(폴백 [data])
 };
 
 // ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
@@ -365,17 +377,7 @@ function fmtTmFc(s?: string): string {
   return `${s.slice(4, 6)}/${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}`;
 }
 
-// ── 작업현장 조기 경보 게이팅 — 기상청 강풍반경(rad15)/폭풍반경(rad25) 기준 영향권 판정 ──
-// 태풍 중심에서 15m/s(강풍)·25m/s(폭풍) 바람이 미치는 실제 반경으로 현장/국토 영향을 판정한다.
-// 구 방식(한국/현장 고정거리 500·1000km)은 임의값이라 폐기 — 반경 미제공 시에만 폴백값 사용.
-const KOREA_CENTER = { lat: 36.0, lon: 127.8 }; // 한반도 중앙 내륙 근사
-const APPROACH_LEAD_KM = 300; // 강풍역 바깥 '접근 대비'(조기 인지) 마진
-const KOREA_REACH_BUFFER_KM = 400; // 현장 GPS 없을 때 국토 가장자리 근사(강풍역이 국토에 닿는지)
-const SITE_FALLBACK_KM = 500; // 강풍반경 미제공 시 현장 폴백 거리
-const KOREA_FALLBACK_KM = 1000; // 강풍반경 미제공 시 한국 폴백 거리
-
-// 태풍 영향권 등급 — 폭풍역(≥25m/s)·강풍역(≥15m/s)·접근 대비·밖.
-type Zone = "storm" | "gale" | "approach" | "none";
+// ── 작업현장 조기 경보 표시 — 판정(강풍/폭풍반경 영향권·예보점 선행)은 lib/typhoon-gate 순수 모듈 ──
 const ZONE_LABEL: Record<Zone, string> = {
   storm: "폭풍역 진입",
   gale: "강풍역 진입",
@@ -402,22 +404,6 @@ const ZONE_BANNER: Record<Zone, string> = {
   none: "",
 };
 
-// 강풍/폭풍반경 문자열("300"·"0"·"")을 km 숫자로. 값 없음/0 이하 → 0.
-function parseRadiusKm(s?: string): number {
-  const n = s ? Number.parseFloat(s) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
-
-function haversineKm(aLat: number, aLon: number, bLat: number, bLon: number): number {
-  const R = 6371;
-  const dLat = (bLat - aLat) * D2R;
-  const dLon = (bLon - aLon) * D2R;
-  const s =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(aLat * D2R) * Math.cos(bLat * D2R) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-}
-
 // 태풍(사이클론) 모노톤 라인 아이콘 — 다른 대시보드 아이콘과 동일 테마(currentColor 라인 SVG).
 // 눈(중심 원) + 회전하는 두 나선 팔로 태풍을 표현. 이모지(🌀) 대체.
 function TyphoonIcon({ size = 16, className }: { size?: number; className?: string }) {
@@ -441,31 +427,37 @@ function TyphoonIcon({ size = 16, className }: { size?: number; className?: stri
   );
 }
 
-// 영향권 밖 — 추적 중지 패널(지도·상세 대신 거리만 안내).
+// 태풍 표기 라벨 — "제11호 하이선"(샘플은 이름만).
+function typhoonLabel(t: TyphoonRec): string {
+  const name = t.name ?? "태풍";
+  return t.seq && t.seq !== "샘플" ? `제${t.seq}호 ${name}` : name;
+}
+
+// 영향권 밖 — 추적 중지 패널(지도·상세 대신 발효 태풍별 거리만 안내, 쌍태풍이면 각각 한 줄).
 function TrackingStopped({
-  cur,
-  siteKm,
-  koreaKm,
-  galeKm,
+  entries,
 }: {
-  cur: TrackPoint | null;
-  siteKm: number | null;
-  koreaKm: number | null;
-  galeKm: number;
+  entries: { label: string; cur: TrackPoint | null; gate: GateResult }[];
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 p-4 text-center dark:border-white/10 dark:bg-white/[0.02]">
       <TyphoonIcon size={28} className="text-zinc-400 dark:text-zinc-500" />
       <span className="text-sm font-semibold text-ink dark:text-on-dark">태풍 추적 중지</span>
       <span className="text-xs text-body dark:text-on-dark-soft">현장·국토 강풍 영향권 밖</span>
-      <div className="mt-1 flex flex-wrap items-center justify-center gap-x-3 text-[11px] text-muted dark:text-on-dark-soft">
-        {galeKm > 0 && <span>강풍반경 {Math.round(galeKm).toLocaleString()}km</span>}
-        {siteKm !== null && <span>현장 {Math.round(siteKm).toLocaleString()}km</span>}
-        {koreaKm !== null && <span>한국 {Math.round(koreaKm).toLocaleString()}km</span>}
-      </div>
-      {cur && (
+      {entries.map((e) => (
+        <div
+          key={e.label}
+          className="mt-1 flex flex-wrap items-center justify-center gap-x-3 text-[11px] text-muted dark:text-on-dark-soft"
+        >
+          {entries.length > 1 && <span className="font-semibold">{e.label}</span>}
+          {e.gate.galeKm > 0 && <span>강풍반경 {Math.round(e.gate.galeKm).toLocaleString()}km</span>}
+          {e.gate.siteKm !== null && <span>현장 {Math.round(e.gate.siteKm).toLocaleString()}km</span>}
+          {e.gate.koreaKm !== null && <span>한국 {Math.round(e.gate.koreaKm).toLocaleString()}km</span>}
+        </div>
+      ))}
+      {entries.length === 1 && entries[0]?.cur && (
         <span className="text-[10px] text-muted dark:text-on-dark-soft">
-          현재 위치 {cur.lat.toFixed(1)}, {cur.lon.toFixed(1)}
+          현재 위치 {entries[0].cur.lat.toFixed(1)}, {entries[0].cur.lon.toFixed(1)}
         </span>
       )}
     </div>
@@ -473,11 +465,12 @@ function TrackingStopped({
 }
 
 // 작업중지 안내 배너 — 영향권(폭풍역/강풍역/접근) 진입 시 건설 작업중지 조치를 색상으로 강조.
-function WorkStoppageBanner({ zone, advisory }: { zone: Zone; advisory: string }) {
+// title = 원인 태풍 귀속 포함 라벨(예: "제9호 바비 · 강풍역 진입", 예보 선행 시 "(진로 예보)" 접미).
+function WorkStoppageBanner({ zone, title, advisory }: { zone: Zone; title: string; advisory: string }) {
   if (zone === "none") return null;
   return (
     <div className={`shrink-0 rounded-lg border px-2 py-1.5 text-center leading-tight ${ZONE_BANNER[zone]}`}>
-      <span className="text-[11px] font-bold">{ZONE_LABEL[zone]}</span>
+      <span className="text-[11px] font-bold">{title}</span>
       <span className="ml-1 text-[10px]">{advisory}</span>
     </div>
   );
@@ -524,51 +517,28 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     };
   }, []);
 
-  const cur = useMemo<TrackPoint | null>(() => {
-    if (!data || data.track.length === 0) return null;
-    return data.track[Math.min(data.currentIndex, data.track.length - 1)] ?? null;
+  // 발효 태풍 배열 — 신 서버는 typhoons 동봉, 구 응답(서버 캐시·배포 시차)은 단일 payload 폴백.
+  const typhoons = useMemo<TyphoonRec[]>(() => {
+    if (!data) return [];
+    return data.typhoons?.length ? data.typhoons : [data];
   }, [data]);
+  const liveList = useMemo(
+    () => typhoons.filter((t) => t.source === "live" && t.track.length > 0),
+    [typhoons],
+  );
 
-  // 강풍반경(rad15)/폭풍반경(rad25) 기준 영향권 판정 — 태풍 강풍역/폭풍역이 현장(또는 국토)에 닿는지.
-  // 현장 GPS(작업자 등록) 있으면 현장 기준(정밀), 없으면 국토 중앙점 근사로 판정.
-  const gate = useMemo(() => {
-    if (!cur)
-      return {
-        tracking: false,
-        zone: "none" as Zone,
-        siteKm: null as number | null,
-        koreaKm: null as number | null,
-        galeKm: 0,
-        stormKm: 0,
-      };
-    const galeKm = parseRadiusKm(cur.rad15); // 강풍반경(15m/s)
-    const stormKm = parseRadiusKm(cur.rad25); // 폭풍반경(25m/s)
-    const koreaKm = haversineKm(cur.lat, cur.lon, KOREA_CENTER.lat, KOREA_CENTER.lon);
-    const siteKm =
-      typeof lat === "number" && typeof lon === "number"
-        ? haversineKm(cur.lat, cur.lon, lat, lon)
-        : null;
-
-    let zone: Zone = "none";
-    if (galeKm > 0) {
-      if (siteKm !== null) {
-        // 현장 GPS 기준(정밀) — 강풍역/폭풍역 진입 여부.
-        if (stormKm > 0 && siteKm <= stormKm) zone = "storm";
-        else if (siteKm <= galeKm) zone = "gale";
-        else if (siteKm <= galeKm + APPROACH_LEAD_KM) zone = "approach";
-      } else {
-        // 현장 GPS 없음 — 국토 중앙점 근사로 강풍역 국토 도달 판정.
-        if (koreaKm <= galeKm + KOREA_REACH_BUFFER_KM) zone = "gale";
-        else if (koreaKm <= galeKm + KOREA_REACH_BUFFER_KM + APPROACH_LEAD_KM) zone = "approach";
-      }
-    } else {
-      // 강풍반경 미제공 — 고정거리 폴백(접근 대비만).
-      const inSite = siteKm !== null && siteKm <= SITE_FALLBACK_KM;
-      const inKorea = koreaKm <= KOREA_FALLBACK_KM;
-      if (inSite || inKorea) zone = "approach";
-    }
-    return { tracking: zone !== "none", zone, siteKm, koreaKm, galeKm, stormKm };
-  }, [cur, lat, lon]);
+  // 태풍별 영향권 판정(현재 위치 + 예보점 선행) 후 worst-of 합성 — 쌍태풍에서 근접 태풍이 드랍되지 않게.
+  const gates = useMemo(
+    () => liveList.map((t) => computeGate(t.track, t.currentIndex, lat, lon)),
+    [liveList, lat, lon],
+  );
+  const worstIdx = gates.length > 0 ? pickWorst(gates) : -1;
+  const active = worstIdx >= 0 ? (liveList[worstIdx] ?? null) : null;
+  const gate = worstIdx >= 0 ? (gates[worstIdx] ?? EMPTY_GATE) : EMPTY_GATE;
+  const cur = useMemo<TrackPoint | null>(() => {
+    if (!active || active.track.length === 0) return null;
+    return active.track[Math.min(active.currentIndex, active.track.length - 1)] ?? null;
+  }, [active]);
 
   if (error) {
     return (
@@ -585,10 +555,14 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     );
   }
 
-  // 실제 위협 = 실데이터(live) + 발효 진로 존재. 샘플(mock)·발효없음(none)·빈 진로는 위협 아님 → 레이더 미가동.
-  const realThreat = data.source === "live" && data.track.length > 0;
+  // 실제 위협 = 실데이터(live) 태풍 1개 이상. 샘플(mock)·발효없음(none)·빈 진로는 위협 아님 → 레이더 미가동.
+  const realThreat = liveList.length > 0;
   const idleNote =
     data.source === "mock" ? "활용신청 승인 후 실시간 가동" : "발효 중인 태풍 없음";
+  // 표시 대상 = worst 태풍(발효 중) ?? 대표(샘플/없음 안내용). 헤더·지도·상세·모달이 같은 소스를 쓴다.
+  const disp = active ?? typhoons[0] ?? data;
+  // 배너/푸터 존 라벨 — 예보점 선행 점등이면 "(진로 예보)" 접미로 근거를 구분.
+  const zoneLabelText = ZONE_LABEL[gate.zone] + (gate.forecast ? " (진로 예보)" : "");
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -606,11 +580,12 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           <span className="flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-on-dark">
             <TyphoonIcon /> 태풍 진로
           </span>
-          {data.name && (
+          {disp.name && (
             <span className="truncate text-xs text-body dark:text-on-dark-soft">
-              {data.seq && data.seq !== "샘플" ? `제${data.seq}호 ` : ""}
-              {data.name}
-              {data.nameEn ? ` (${data.nameEn})` : ""}
+              {disp.seq && disp.seq !== "샘플" ? `제${disp.seq}호 ` : ""}
+              {disp.name}
+              {disp.nameEn ? ` (${disp.nameEn})` : ""}
+              {liveList.length > 1 ? ` 외 ${liveList.length - 1}` : ""}
             </span>
           )}
         </div>
@@ -623,7 +598,11 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         <IdleNoThreat note={idleNote} />
       ) : gate.tracking ? (
         <>
-          <WorkStoppageBanner zone={gate.zone} advisory={ZONE_ADVISORY[gate.zone]} />
+          <WorkStoppageBanner
+            zone={gate.zone}
+            title={`${active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
+            advisory={ZONE_ADVISORY[gate.zone]}
+          />
           <button
             type="button"
             onClick={() => setOpen(true)}
@@ -631,7 +610,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
             className="group relative flex min-h-0 flex-1"
           >
             <SquareFit>
-              <SlippyMap track={data.track} currentIndex={data.currentIndex} interactive={false} />
+              <SlippyMap track={disp.track} currentIndex={disp.currentIndex} interactive={false} />
             </SquareFit>
             <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
               ⤢ 크게 보기
@@ -651,7 +630,13 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           )}
         </>
       ) : (
-        <TrackingStopped cur={cur} siteKm={gate.siteKm} koreaKm={gate.koreaKm} galeKm={gate.galeKm} />
+        <TrackingStopped
+          entries={liveList.map((t, i) => ({
+            label: typhoonLabel(t),
+            cur: t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null,
+            gate: gates[i] ?? EMPTY_GATE,
+          }))}
+        />
       )}
 
       <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
@@ -659,16 +644,17 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           ? data.source === "mock"
             ? "샘플 데이터 · 활용신청 승인 후 실시간 가동"
             : "현재 발효 중인 태풍 없음 · 레이더 대기"
-          : `기상청 태풍정보${data.tmFc ? ` · ${fmtTmFc(data.tmFc)} 발표` : ""}`}
+          : `기상청 태풍정보${disp.tmFc ? ` · ${fmtTmFc(disp.tmFc)} 발표` : ""}`}
         {realThreat &&
           (gate.tracking ? (
             <>
               {" · "}
-              <span className={`font-semibold ${ZONE_TEXT[gate.zone]}`}>{ZONE_LABEL[gate.zone]}</span>
+              <span className={`font-semibold ${ZONE_TEXT[gate.zone]}`}>{zoneLabelText}</span>
               {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
               {gate.siteKm !== null
                 ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`
                 : ` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
+              {liveList.length > 1 ? ` · 발효 태풍 ${liveList.length}개 감시` : ""}
             </>
           ) : (
             <>
@@ -680,7 +666,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
 
       {open &&
         typeof document !== "undefined" &&
-        createPortal(<TyphoonModal data={data} onClose={() => setOpen(false)} />, document.body)}
+        createPortal(<TyphoonModal t={disp} onClose={() => setOpen(false)} />, document.body)}
     </div>
   );
 }
@@ -699,7 +685,8 @@ function Stat({ label, value, unit }: { label: string; value: string; unit?: str
 }
 
 // 확대 팝업 — 정식 슬리피맵(위성, 휠/버튼 줌 + 드래그 팬) + 현재 정보. 배경/ESC/닫기 해제.
-function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void }) {
+// t = 인라인 지도와 동일한 표시 대상 태풍(worst) — 크게 보기에서 다른 진로가 뜨지 않게 단일 소스.
+function TyphoonModal({ t, onClose }: { t: TyphoonRec; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -708,7 +695,7 @@ function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void })
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const cur = data.track[Math.min(data.currentIndex, data.track.length - 1)] ?? null;
+  const cur = t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null;
 
   return (
     <div
@@ -727,7 +714,7 @@ function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void })
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500 vital-blink-caution" />
             <h2 className="flex min-w-0 items-center gap-1.5 text-base font-bold text-ink dark:text-on-dark">
               <TyphoonIcon size={18} className="shrink-0" />
-              <span className="truncate">태풍 진로{data.name ? ` · ${data.name}` : ""}</span>
+              <span className="truncate">태풍 진로{t.name ? ` · ${t.name}` : ""}</span>
             </h2>
           </div>
           <button
@@ -743,7 +730,7 @@ function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void })
         <div className="shrink-0 overflow-hidden bg-slate-100 p-3 dark:bg-black/40">
           <div className="h-[60vh] w-full">
             <SquareFit>
-              <SlippyMap track={data.track} currentIndex={data.currentIndex} interactive />
+              <SlippyMap track={t.track} currentIndex={t.currentIndex} interactive />
             </SquareFit>
           </div>
         </div>
@@ -761,9 +748,9 @@ function TyphoonModal({ data, onClose }: { data: Payload; onClose: () => void })
             </div>
           )}
           <p className="mt-1.5 text-center text-[10px] text-muted dark:text-on-dark-soft">
-            {data.source === "mock"
-              ? data.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
-              : `Esri 위성 · 빨강 점=현재 위치, 점선=이동 경로 · 휠/＋− 확대 · 드래그 이동${data.tmFc ? ` · ${fmtTmFc(data.tmFc)} 발표` : ""}`}
+            {t.source === "mock"
+              ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
+              : `Esri 위성 · 빨강 점=현재 위치, 점선=이동 경로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
           </p>
         </div>
       </div>

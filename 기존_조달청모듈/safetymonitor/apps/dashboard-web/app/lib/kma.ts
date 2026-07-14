@@ -4,6 +4,8 @@
 //   ("o 특보종류 : 구역1, 구역2…" 줄들) 을 파싱 → 시·도 키워드로 필터.
 import "server-only";
 
+import { regionMatchesSido, splitRegions } from "./kma-regions";
+
 type CacheEntry<T> = { ts: number; data: T };
 const g = globalThis as typeof globalThis & {
   __smKmaCache?: Map<string, CacheEntry<unknown>>;
@@ -41,7 +43,9 @@ const SIDO: { name: string; lat: number; lon: number; keywords: string[] }[] = [
   { name: "부산", lat: 35.1796, lon: 129.0756, keywords: ["부산"] },
   { name: "대구", lat: 35.8714, lon: 128.6014, keywords: ["대구"] },
   { name: "인천", lat: 37.4563, lon: 126.7052, keywords: ["인천"] },
-  { name: "광주", lat: 35.1595, lon: 126.8526, keywords: ["광주광역시", "광주북", "광주남", "광주동", "광주서"] },
+  // 광주광역시는 t6 에서 head "광주" 단독 토큰("…대전, 광주, 부산…") — 괄호-보존 분리 + head 매칭이라
+  // 경기도 괄호 안의 경기 광주시("경기도(…, 광주, …)")와 충돌하지 않는다(kma-regions.ts 참조).
+  { name: "광주", lat: 35.1595, lon: 126.8526, keywords: ["광주"] },
   { name: "대전", lat: 36.3504, lon: 127.3845, keywords: ["대전"] },
   { name: "울산", lat: 35.5384, lon: 129.3114, keywords: ["울산"] },
   { name: "세종", lat: 36.48, lon: 127.289, keywords: ["세종"] },
@@ -81,11 +85,8 @@ function parseT6(t6: string): ActiveWarning[] {
     if (idx < 0) continue;
     const type = line.slice(0, idx).trim();
     if (!type) continue;
-    const regions = line
-      .slice(idx + 1)
-      .split(",")
-      .map((r) => r.trim())
-      .filter(Boolean);
+    // 괄호-보존 분리 — "경기도(안산, 시흥)" 이 한 토큰(괄호 안 시·군·구가 독립 토큰으로 흩어지지 않게).
+    const regions = splitRegions(line.slice(idx + 1));
     const level: WarningLevel = type.endsWith("경보") ? "경보" : "주의보";
     out.push({ type, level, regions });
   }
@@ -111,11 +112,7 @@ function parseT7(t7: string): PreliminaryWarning[] {
     const idx = body.indexOf(":");
     if (idx < 0) continue;
     const when = body.slice(0, idx).trim();
-    const regions = body
-      .slice(idx + 1)
-      .split(",")
-      .map((r) => r.trim())
-      .filter(Boolean);
+    const regions = splitRegions(body.slice(idx + 1));
     if (curType && regions.length > 0) out.push({ type: curType, when, regions });
   }
   return out;
@@ -210,8 +207,9 @@ export async function warningsForLocation(
   lon: number,
 ): Promise<LocationWarning> {
   const sido = latLonToSido(lat, lon);
+  // head(괄호 앞 본구역명) 한정 매칭 — 괄호 안 시·군·구(예: 경기 광주시)가 타 시·도로 오매칭되지 않게.
   const matchSido = (regions: string[]) =>
-    regions.some((r) => sido.keywords.some((k) => r.includes(k)));
+    regions.some((r) => regionMatchesSido(r, sido.keywords));
 
   const { source, warnings, preliminary } = await fetchAllActive();
   const matched = warnings.filter((w) => matchSido(w.regions));
