@@ -1,8 +1,10 @@
-// 특보 영상 패널 — 기상특보/예비특보 발생 시 공식 채널 한정 유튜브 영상을 자동 검색해 제공.
-// 특보 없으면 placeholder. 안전 제품이라 공식 채널 한정 + 참고용 면책 표기.
+// 특보 영상 패널 — 유튜브에서 실시간 특보 생방송(주요 방송사)을 가져와 리스트로 제공, 선택 시 재생.
+//   · LIVE 토글(기본 OFF·localStorage) 로 상시 조회/임베드 과금을 제어(꺼두면 유튜브 호출 0).
+//   · 토글 OFF 시 기존 동작 유지 = 현장 시·도 발효 특보 관련 공식 영상 검색.
+//   · 안전 제품이라 주요 방송사 채널 한정 + 참고용 면책 표기.
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type ActiveWarning = { type: string; level: "경보" | "주의보"; regions: string[] };
 type Preliminary = { type: string; when: string; regions: string[] };
@@ -24,6 +26,12 @@ type YtResp = {
   channelLimited: boolean;
   query: string;
   videos: Video[];
+  note?: string;
+};
+// 실시간 특보 생방송 목록 응답(/api/youtube-live-warnings).
+type LiveResp = {
+  configured: boolean;
+  videos?: Video[];
   note?: string;
 };
 
@@ -76,12 +84,57 @@ function VideoIcon({ size = 16, className }: { size?: number; className?: string
   );
 }
 
+const LIVE_STORAGE_KEY = "safetymonitor.warningLive.v1";
+
+// 특보 LIVE 온/오프 스위치(상시 조회/임베드 비용 제어 — 기본 OFF).
+function LiveToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      title={
+        on
+          ? "특보 LIVE 켜짐 — 클릭하면 끄기(실시간 조회·방송 중지)"
+          : "특보 LIVE 꺼짐 — 클릭하면 실시간 특보 생방송 켜기"
+      }
+      className={`flex shrink-0 items-center gap-1 rounded-pill px-2 py-0.5 text-[10px] font-semibold transition ${
+        on
+          ? "bg-red-500 text-white"
+          : "bg-zinc-200 text-zinc-500 dark:bg-white/10 dark:text-on-dark-soft"
+      }`}
+    >
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${on ? "bg-white" : "bg-zinc-400 dark:bg-white/40"}`}
+      />
+      LIVE {on ? "ON" : "OFF"}
+    </button>
+  );
+}
+
+// 목록/재생 항목의 LIVE 배지.
+function LiveBadge() {
+  return (
+    <span className="mr-1 rounded-sm bg-red-500 px-1 align-[1px] text-[9px] font-bold text-white">
+      LIVE
+    </span>
+  );
+}
+
 export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) {
   const [active, setActive] = useState<Active | null>(null);
   const [yt, setYt] = useState<YtResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<Video | null>(null);
+
+  // 실시간 특보 생방송(여러 방송사) — LIVE 토글 ON 일 때만 조회.
+  const [liveOn, setLiveOn] = useState(false);
+  const [liveVideos, setLiveVideos] = useState<Video[]>([]);
+  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveError, setLiveError] = useState<string | null>(null);
+  const liveIdsRef = useRef<Set<string>>(new Set());
 
   const hasGps = typeof lat === "number" && typeof lon === "number";
 
@@ -100,7 +153,8 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
         if (!alive) return;
         const act = pickActive(kma);
         setActive(act);
-        setPlaying(null);
+        // 검색(VOD) 영상 재생은 특보 변경 시 리셋하되, 재생 중인 라이브 방송은 유지.
+        setPlaying((p) => (p && liveIdsRef.current.has(p.id) ? p : null));
         if (!act) {
           setYt(null);
           setLoading(false);
@@ -127,16 +181,71 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
     };
   }, [lat, lon, hasGps]);
 
+  // LIVE 온/오프 복원(기본 OFF·비용 절약).
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(LIVE_STORAGE_KEY) === "on") setLiveOn(true);
+    } catch {
+      /* localStorage 불가 환경 무시 */
+    }
+  }, []);
+
+  // LIVE ON 이면 실시간 특보 생방송 목록 조회(30분 폴링). OFF 면 조회 안 함 = 과금 0.
+  useEffect(() => {
+    if (!liveOn) {
+      setLiveVideos([]);
+      setLiveError(null);
+      setLiveLoading(false);
+      return;
+    }
+    let alive = true;
+    async function loadLive() {
+      setLiveLoading(true);
+      setLiveError(null);
+      try {
+        const r = await fetch("/api/youtube-live-warnings", { cache: "no-store" });
+        const j = (await r.json()) as LiveResp;
+        if (!alive) return;
+        if (!j.configured) {
+          setLiveError("YouTube API 키 미설정");
+          setLiveVideos([]);
+        } else {
+          setLiveVideos(j.videos ?? []);
+        }
+      } catch {
+        if (alive) setLiveError("생방송 조회 실패");
+      } finally {
+        if (alive) setLiveLoading(false);
+      }
+    }
+    loadLive();
+    const id = setInterval(loadLive, 30 * 60 * 1000); // 30분마다 라이브 목록 갱신
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [liveOn]);
+
+  // 재생 중 라이브 방송 보존용 id 집합(load 폴링이 라이브 재생을 끊지 않도록).
+  useEffect(() => {
+    liveIdsRef.current = new Set(liveVideos.map((v) => v.id));
+  }, [liveVideos]);
+
+  const toggleLive = () => {
+    const next = !liveOn;
+    setLiveOn(next);
+    try {
+      localStorage.setItem(LIVE_STORAGE_KEY, next ? "on" : "off");
+    } catch {
+      /* 무시 */
+    }
+    if (!next) setPlaying(null); // 끄면 재생 중지
+  };
+
   const badge = useMemo(() => {
     if (!active) return null;
-    const label =
-      active.kind === "preliminary"
-        ? `${active.type} 예비특보`
-        : active.type;
-    const cls =
-      active.severity === "danger"
-        ? "bg-red-500 text-white"
-        : "bg-amber-500 text-white";
+    const label = active.kind === "preliminary" ? `${active.type} 예비특보` : active.type;
+    const cls = active.severity === "danger" ? "bg-red-500 text-white" : "bg-amber-500 text-white";
     return { label, cls };
   }, [active]);
 
@@ -147,11 +256,14 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
         <VideoIcon className="shrink-0" />
         <span className="truncate">특보 대응 영상</span>
       </span>
-      {badge && (
-        <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-semibold ${badge.cls}`}>
-          {badge.label}
-        </span>
-      )}
+      <span className="flex shrink-0 items-center gap-1.5">
+        {badge && (
+          <span className={`rounded-pill px-2 py-0.5 text-[10px] font-semibold ${badge.cls}`}>
+            {badge.label}
+          </span>
+        )}
+        <LiveToggle on={liveOn} onToggle={toggleLive} />
+      </span>
     </div>
   );
 
@@ -166,11 +278,13 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
     );
   }
 
-  if (!hasGps) return <Centered>현장 GPS 미등록 — 작업자 등록 시 특보 영상 제공</Centered>;
-  if (loading) return <Centered>특보 확인 중…</Centered>;
-  if (error) return <Centered>특보 영상 — {error}</Centered>;
-  if (!active) return <Centered>현재 발효 중인 특보 없음</Centered>;
-  if (yt && !yt.configured)
+  // liveOn 이 false 면 아래 조건들이 기존 동작 그대로 조기 반환(라이브 미표시).
+  // true 면 조기 반환을 건너뛰고 본문에서 실시간 특보 생방송 목록을 표시.
+  if (!hasGps && !liveOn) return <Centered>현장 GPS 미등록 — 작업자 등록 시 특보 영상 제공</Centered>;
+  if (loading && !liveOn) return <Centered>특보 확인 중…</Centered>;
+  if (error && !liveOn) return <Centered>특보 영상 — {error}</Centered>;
+  if (!active && !liveOn) return <Centered>현재 발효 중인 특보 없음</Centered>;
+  if (active && yt && !yt.configured && !liveOn)
     return (
       <Centered>
         YouTube API 키 미설정
@@ -179,7 +293,13 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
       </Centered>
     );
 
-  const videos = yt?.videos ?? [];
+  // 실시간 특보 생방송(ON) 을 맨 앞에 + 현장 특보 검색 영상(발효 시) 병합, id 중복 제거.
+  const searchVideos = active ? (yt?.videos ?? []) : [];
+  const liveIds = new Set(liveVideos.map((v) => v.id));
+  const seen = new Set<string>();
+  const videos: Video[] = (liveOn ? [...liveVideos, ...searchVideos] : searchVideos).filter((v) =>
+    seen.has(v.id) ? false : (seen.add(v.id), true),
+  );
 
   return (
     <div className="flex h-full flex-col gap-1.5 p-2">
@@ -204,47 +324,59 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
             />
           </div>
           <p className="line-clamp-2 shrink-0 text-[11px] text-body dark:text-on-dark-soft">
+            {liveIds.has(playing.id) && <LiveBadge />}
             {playing.title}
           </p>
         </div>
-      ) : videos.length === 0 ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-zinc-300 p-4 text-center text-xs text-muted dark:border-white/10 dark:text-on-dark-soft">
-          관련 공식 영상 없음
-          {yt?.query ? <span className="mt-1 block text-[10px]">검색어: {yt.query}</span> : null}
+      ) : videos.length > 0 ? (
+        <div className="wx-cards-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
+          {videos.map((v) => {
+            const isLive = liveIds.has(v.id);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                onClick={() => setPlaying(v)}
+                className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 p-1.5 text-left transition hover:bg-zinc-50 dark:border-white/10 dark:hover:bg-white/5"
+              >
+                {v.thumbnail ? (
+                  <img
+                    src={v.thumbnail}
+                    alt=""
+                    className="h-10 w-16 shrink-0 rounded object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="flex h-10 w-16 shrink-0 items-center justify-center rounded bg-zinc-200 text-xs dark:bg-white/10">
+                    ▶
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-[11px] font-medium text-ink dark:text-on-dark">
+                    {isLive && <LiveBadge />}
+                    {v.title}
+                  </p>
+                  <p className="truncate text-[10px] text-muted dark:text-on-dark-soft">
+                    {v.channelTitle}
+                    {isLive ? " · 생방송" : v.publishedAt ? ` · ${fmtDate(v.publishedAt)}` : ""}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       ) : (
-        <div className="wx-cards-scroll min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-0.5">
-          {videos.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setPlaying(v)}
-              className="flex w-full items-center gap-2 rounded-lg border border-zinc-200 p-1.5 text-left transition hover:bg-zinc-50 dark:border-white/10 dark:hover:bg-white/5"
-            >
-              {v.thumbnail ? (
-                <img
-                  src={v.thumbnail}
-                  alt=""
-                  className="h-10 w-16 shrink-0 rounded object-cover"
-                  loading="lazy"
-                />
-              ) : (
-                <div className="flex h-10 w-16 shrink-0 items-center justify-center rounded bg-zinc-200 text-xs dark:bg-white/10">▶</div>
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 text-[11px] font-medium text-ink dark:text-on-dark">{v.title}</p>
-                <p className="truncate text-[10px] text-muted dark:text-on-dark-soft">
-                  {v.channelTitle}
-                  {v.publishedAt ? ` · ${fmtDate(v.publishedAt)}` : ""}
-                </p>
-              </div>
-            </button>
-          ))}
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-lg border border-dashed border-zinc-300 p-4 text-center text-xs text-muted dark:border-white/10 dark:text-on-dark-soft">
+          {liveOn
+            ? liveLoading
+              ? "특보 생방송 불러오는 중…"
+              : (liveError ?? "현재 진행 중인 특보 생방송 없음")
+            : "관련 공식 영상 없음"}
         </div>
       )}
 
       <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
-        {yt?.note ?? "검색"} · 참고용(공식 지침 우선)
+        {liveOn ? "실시간 특보 생방송(주요 방송사)" : (yt?.note ?? "검색")} · 참고용(공식 지침 우선)
       </p>
     </div>
   );

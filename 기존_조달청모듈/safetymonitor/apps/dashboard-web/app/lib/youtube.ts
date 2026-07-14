@@ -114,6 +114,7 @@ async function searchOnce(
   q: string,
   channelId?: string,
   maxResults?: number,
+  eventType?: "live",
 ): Promise<WarningVideo[]> {
   const params = new URLSearchParams({
     part: "snippet",
@@ -121,13 +122,16 @@ async function searchOnce(
     maxResults: String(maxResults ?? (channelId ? PER_CHANNEL : MAX_TOTAL)),
     q,
     order: "relevance",
-    safeSearch: "strict",
+    // safeSearch=strict 는 라이브 검색 결과를 0으로 만듦(실측). 라이브는 뉴스채널 화이트리스트로
+    // 안전을 확보하므로 moderate 로 완화하고, VOD 는 기존대로 strict 유지.
+    safeSearch: eventType === "live" ? "moderate" : "strict",
     videoEmbeddable: "true",
     relevanceLanguage: "ko",
     regionCode: "KR",
     key,
   });
   if (channelId) params.set("channelId", channelId);
+  if (eventType) params.set("eventType", eventType); // eventType=live → 현재 생방송만
   const url = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
   // 6초 타임아웃 — googleapis 무응답 시 무한 hang 방지(대시보드 무중단).
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(6000) });
@@ -185,6 +189,49 @@ export async function searchWarningVideos(q: string): Promise<WarningVideoResult
     videos,
     note:
       mode === "id" ? "공식 채널 한정" : mode === "news" ? "주요 뉴스 채널 한정" : "일반 검색(safeSearch)",
+  };
+  cache.set(cacheKey, { ts: Date.now(), data });
+  return data;
+}
+
+// 실시간 특보 생방송(주요 방송사) — eventType=live 로 현재 진행 중인 뉴스 라이브만 조회.
+// 방송사 24시간 뉴스 라이브가 특보 시 특보 방송을 겸함 → 뉴스채널 화이트리스트로 필터.
+// 비용: 이 함수는 LIVE 토글 ON 일 때만 호출됨(OFF 면 유튜브 호출 0). 30분 캐시.
+const LIVE_TTL_MS = 30 * 60 * 1000; // 라이브 상태 변동 → 30분 캐시
+const LIVE_QUERY = "날씨"; // 기상 관련 실시간 방송(특보/속보) 탐색 — 뉴스채널 필터와 결합
+
+export async function searchLiveWarningBroadcasts(): Promise<WarningVideoResult> {
+  const key = apiKey();
+  if (!key) {
+    return {
+      configured: false,
+      channelLimited: true,
+      query: LIVE_QUERY,
+      videos: [],
+      note: ".env.local 에 YOUTUBE_API_KEY 설정 필요",
+    };
+  }
+
+  const news = newsChannelNames();
+  const cacheKey = `live::${LIVE_QUERY}::${news.join(",")}`;
+  const hit = cache.get(cacheKey);
+  if (hit && Date.now() - hit.ts < LIVE_TTL_MS) return hit.data;
+
+  let videos: WarningVideo[] = [];
+  try {
+    // 후보를 넉넉히(GENERAL_FETCH) 받은 뒤 뉴스채널만 필터 → 상위 N.
+    const raw = await searchOnce(key, LIVE_QUERY, undefined, GENERAL_FETCH, "live");
+    videos = raw.filter((v) => matchesNews(v.channelTitle, news)).slice(0, MAX_TOTAL);
+  } catch {
+    videos = [];
+  }
+
+  const data: WarningVideoResult = {
+    configured: true,
+    channelLimited: true,
+    query: LIVE_QUERY,
+    videos,
+    note: "주요 방송사 실시간 특보·뉴스 생방송",
   };
   cache.set(cacheKey, { ts: Date.now(), data });
   return data;
