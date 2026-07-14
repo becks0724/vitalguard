@@ -76,10 +76,11 @@ type KmaWarningResponse = {
   ok: boolean;
   source: "live" | "mock";
   sido: string;
-  warnings: { type: string; level: "경보" | "주의보"; regions: string[] }[];
+  // regions = 현장·인근 시·도 지역화 목록, otherRegionCount = 그 외 시·도 구역 수(전국 발효 맥락).
+  warnings: { type: string; level: "경보" | "주의보"; regions: string[]; otherRegionCount?: number }[];
   severity: "normal" | "caution" | "danger";
   summary: string;
-  preliminary: { type: string; when: string; regions: string[] }[];
+  preliminary: { type: string; when: string; regions: string[]; otherRegionCount?: number }[];
   preliminarySeverity: "normal" | "caution";
   preliminarySummary: string;
 };
@@ -122,7 +123,10 @@ function kmaToEvaluations(kma: KmaWarningResponse | null): RuleEvaluation[] {
   if (!kma || kma.warnings.length === 0) return [];
   return kma.warnings.map((w) => {
     const severity: RuleSeverity = w.level === "경보" ? "danger" : "caution";
-    const regionText = w.regions.length > 0 ? w.regions.join(", ") : kma.sido;
+    // 현장·인근 시·도만 표시(서버 지역화) + 그 외 시·도 수로 전국 발효 맥락 보존.
+    const regionText =
+      (w.regions.length > 0 ? w.regions.join(", ") : kma.sido) +
+      (w.otherRegionCount ? ` 외 ${w.otherRegionCount}개 지역` : "");
     const step: ThresholdStep = {
       severity,
       binding: "legal",

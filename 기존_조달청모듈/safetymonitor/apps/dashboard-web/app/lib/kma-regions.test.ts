@@ -2,7 +2,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { regionMatchesSido, splitRegions } from "./kma-regions";
+import {
+  latLonToSido,
+  localizeRegions,
+  nearbySidos,
+  regionMatchesSido,
+  splitRegions,
+} from "./kma-regions";
 
 // 2026-07-14 실측 t6 폭염주의보 구역 축약.
 const T6_REGIONS =
@@ -37,6 +43,28 @@ test("경기 광주시 함정 — 경기도 괄호 안 '광주'는 광주광역�
   assert.equal(regions.some((r) => regionMatchesSido(r, gwangju)), false);
   // 반면 경기 현장은 정상 매칭.
   assert.equal(regions.some((r) => regionMatchesSido(r, ["경기"])), true);
+});
+
+test("nearbySidos — 광주 현장은 전남·전북이 인근(120km), 서울·제주는 아님", () => {
+  const site = { lat: 35.15, lon: 126.92 }; // 광주
+  assert.equal(latLonToSido(site.lat, site.lon).name, "광주");
+  const names = nearbySidos(site.lat, site.lon).map((s) => s.name);
+  assert.ok(names.includes("전남"), `전남 누락: ${names}`);
+  assert.ok(names.includes("전북"), `전북 누락: ${names}`);
+  assert.ok(!names.includes("광주")); // 자기 자신 제외
+  assert.ok(!names.includes("서울"));
+  assert.ok(!names.includes("제주"));
+});
+
+test("localizeRegions — 전국 나열을 현장·인근만 남기고 제외 수 집계", () => {
+  const regions = splitRegions(T6_REGIONS); // 경기/전남/서울/인천/대전/광주/부산 = 7토큰
+  const site = { lat: 35.15, lon: 126.92 }; // 광주
+  const keywordSets = [latLonToSido(site.lat, site.lon), ...nearbySidos(site.lat, site.lon)].map(
+    (s) => s.keywords,
+  );
+  const { local, otherCount } = localizeRegions(regions, keywordSets);
+  assert.deepEqual(local, ["광주", "전라남도(담양, 장성, 화순)"]); // 현장(광주) 맨 앞 + 인근(전남)
+  assert.equal(otherCount, 5); // 경기·서울·인천·대전·부산 제외분
 });
 
 test("기존 시·도 매칭 회귀 없음 — 괄호 붙은 도 단위·특별자치도 표기", () => {

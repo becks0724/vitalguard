@@ -4,7 +4,15 @@
 //   ("o 특보종류 : 구역1, 구역2…" 줄들) 을 파싱 → 시·도 키워드로 필터.
 import "server-only";
 
-import { regionMatchesSido, splitRegions } from "./kma-regions";
+import {
+  latLonToSido,
+  localizeRegions,
+  nearbySidos,
+  regionMatchesSido,
+  splitRegions,
+} from "./kma-regions";
+
+export { latLonToSido };
 
 type CacheEntry<T> = { ts: number; data: T };
 const g = globalThis as typeof globalThis & {
@@ -33,47 +41,20 @@ function serviceKey(): string | null {
 }
 
 export type WarningLevel = "경보" | "주의보";
-export type ActiveWarning = { type: string; level: WarningLevel; regions: string[] };
+// regions 는 현장·인근 시·도 지역화 후 목록(전국 나열 아님) — otherRegionCount 가 제외분 수(전국 발효 맥락).
+export type ActiveWarning = {
+  type: string;
+  level: WarningLevel;
+  regions: string[];
+  otherRegionCount?: number;
+};
 // 예비특보(t7) — 가까운 미래에 발효 예정인 특보(사전 대비용). 시점 문자열 + 구역.
-export type PreliminaryWarning = { type: string; when: string; regions: string[] };
-
-// 17 시·도 중심좌표 + t6 구역 문자열 매칭 키워드(구역명이 도/시 전체명을 포함).
-const SIDO: { name: string; lat: number; lon: number; keywords: string[] }[] = [
-  { name: "서울", lat: 37.5665, lon: 126.978, keywords: ["서울"] },
-  { name: "부산", lat: 35.1796, lon: 129.0756, keywords: ["부산"] },
-  { name: "대구", lat: 35.8714, lon: 128.6014, keywords: ["대구"] },
-  { name: "인천", lat: 37.4563, lon: 126.7052, keywords: ["인천"] },
-  // 광주광역시는 t6 에서 head "광주" 단독 토큰("…대전, 광주, 부산…") — 괄호-보존 분리 + head 매칭이라
-  // 경기도 괄호 안의 경기 광주시("경기도(…, 광주, …)")와 충돌하지 않는다(kma-regions.ts 참조).
-  { name: "광주", lat: 35.1595, lon: 126.8526, keywords: ["광주"] },
-  { name: "대전", lat: 36.3504, lon: 127.3845, keywords: ["대전"] },
-  { name: "울산", lat: 35.5384, lon: 129.3114, keywords: ["울산"] },
-  { name: "세종", lat: 36.48, lon: 127.289, keywords: ["세종"] },
-  { name: "경기", lat: 37.4138, lon: 127.5183, keywords: ["경기"] },
-  { name: "강원", lat: 37.8228, lon: 128.1555, keywords: ["강원"] },
-  { name: "충북", lat: 36.6357, lon: 127.4917, keywords: ["충청북", "충북"] },
-  { name: "충남", lat: 36.5184, lon: 126.8, keywords: ["충청남", "충남"] },
-  { name: "전북", lat: 35.7175, lon: 127.153, keywords: ["전라북", "전북"] },
-  { name: "전남", lat: 34.8161, lon: 126.463, keywords: ["전라남", "전남"] },
-  { name: "경북", lat: 36.4919, lon: 128.8889, keywords: ["경상북", "경북"] },
-  { name: "경남", lat: 35.4606, lon: 128.2132, keywords: ["경상남", "경남"] },
-  { name: "제주", lat: 33.4996, lon: 126.5312, keywords: ["제주"] },
-];
-
-// 현장 GPS → 가장 가까운 시·도(유클리드 근사, 키 불필요).
-export function latLonToSido(lat: number, lon: number) {
-  // SIDO 는 17개 고정 리터럴이라 항상 존재하지만, 빈 배열 방어용 fallback 으로 undefined 제거.
-  let best = SIDO[0] ?? { name: "서울", lat: 37.5665, lon: 126.978, keywords: ["서울"] };
-  let bestD = Infinity;
-  for (const s of SIDO) {
-    const d = (s.lat - lat) ** 2 + (s.lon - lon) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = s;
-    }
-  }
-  return best;
-}
+export type PreliminaryWarning = {
+  type: string;
+  when: string;
+  regions: string[];
+  otherRegionCount?: number;
+};
 
 // t6 ("o 태풍경보 : 남해…\r\no 강풍주의보 : 전라남도(…)") → 발효 특보 배열.
 function parseT6(t6: string): ActiveWarning[] {
@@ -210,9 +191,15 @@ export async function warningsForLocation(
   // head(괄호 앞 본구역명) 한정 매칭 — 괄호 안 시·군·구(예: 경기 광주시)가 타 시·도로 오매칭되지 않게.
   const matchSido = (regions: string[]) =>
     regions.some((r) => regionMatchesSido(r, sido.keywords));
+  // 표시 지역화 — 발효 구역 전국 나열 대신 현장 시·도 + 인근 시·도(중심 120km 이내)만 남긴다.
+  const localKeywordSets = [sido, ...nearbySidos(lat, lon)].map((s) => s.keywords);
+  const localize = <T extends { regions: string[] }>(w: T): T & { otherRegionCount: number } => {
+    const { local, otherCount } = localizeRegions(w.regions, localKeywordSets);
+    return { ...w, regions: local, otherRegionCount: otherCount };
+  };
 
   const { source, warnings, preliminary } = await fetchAllActive();
-  const matched = warnings.filter((w) => matchSido(w.regions));
+  const matched = warnings.filter((w) => matchSido(w.regions)).map(localize);
   const severity: LocationWarning["severity"] = matched.some((w) => w.level === "경보")
     ? "danger"
     : matched.length > 0
@@ -220,7 +207,7 @@ export async function warningsForLocation(
       : "normal";
   const summary = matched.length > 0 ? matched.map((w) => w.type).join(" · ") : "특보 없음";
 
-  const prelimMatched = preliminary.filter((p) => matchSido(p.regions));
+  const prelimMatched = preliminary.filter((p) => matchSido(p.regions)).map(localize);
   const prelimTypes = [...new Set(prelimMatched.map((p) => p.type))];
   const preliminarySummary =
     prelimTypes.length > 0 ? `${prelimTypes.join("·")} 예정` : "예정 특보 없음";
