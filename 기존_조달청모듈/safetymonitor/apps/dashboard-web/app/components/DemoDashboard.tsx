@@ -2580,6 +2580,8 @@ export function DemoDashboard() {
   });
   const [logExpanded, setLogExpanded] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
+  // 상단 페이저 활성 페이지 — ERP: 스마트경리(3번째 탭) 활성 시 하단 부속 UI(속보 티커·DB 스트립) 숨김.
+  const [pagerIdx, setPagerIdx] = useState(0);
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -3743,6 +3745,7 @@ export function DemoDashboard() {
 
       {/* 상단 페이저 — 3페이지(1.실시간 현장 관제 / 2.안전관리비 검증 / 3.ERP 스마트경리) */}
       <SectionPager
+        onPageChange={setPagerIdx}
         pages={[
           {
             title: "실시간 현장 관제",
@@ -4039,8 +4042,9 @@ export function DemoDashboard() {
         <SiteMetricChartPanel metric={siteChart} onClose={() => setSiteChart(null)} />
       )}
 
-      {/* 전국 산업재해 사망 속보 — KOSHA OpenAPI (작업자 모니터링 하단으로 이동) */}
-      <KoshaAccidentTicker />
+      {/* 전국 산업재해 사망 속보 — KOSHA OpenAPI (작업자 모니터링 하단으로 이동).
+          ERP: 스마트경리(pagerIdx 2) 활성 시 숨김 — ERP 화면을 한 화면에 최대한 노출(언마운트=마퀴·폴링도 정지). */}
+      {pagerIdx !== 2 && <KoshaAccidentTicker />}
 
       {queueModalSlot !== null && (
         <WorkerQueueModal
@@ -4178,6 +4182,8 @@ export function DemoDashboard() {
         />
       )}
 
+      {/* 실시간 수집 · DB 영속 스트립 — ERP: 스마트경리 활성 시 숨김(속보 티커와 동일 사유). */}
+      {pagerIdx !== 2 && (
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
         <button
           type="button"
@@ -4239,6 +4245,7 @@ export function DemoDashboard() {
           </div>
         )}
       </section>
+      )}
     </main>
   );
 }

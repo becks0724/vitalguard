@@ -9,7 +9,13 @@ import { GlassTabBar } from "./GlassTabBar";
 
 export type PagerPage = { title: string; content: ReactNode };
 
-export function SectionPager({ pages }: { pages: PagerPage[] }) {
+export function SectionPager({
+  pages,
+  onPageChange,
+}: {
+  pages: PagerPage[];
+  onPageChange?: (idx: number) => void; // 활성 페이지 변경 통지(부모가 페이지별 부속 UI를 제어할 때).
+}) {
   const [idx, setIdx] = useState(0);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -37,7 +43,10 @@ export function SectionPager({ pages }: { pages: PagerPage[] }) {
         <GlassTabBar
           tabs={pages.map((p) => p.title)}
           active={idx}
-          onSelect={setIdx}
+          onSelect={(i) => {
+            setIdx(i);
+            onPageChange?.(i);
+          }}
           className="flex-1"
         />
       </div>
