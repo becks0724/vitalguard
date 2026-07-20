@@ -560,7 +560,7 @@ export function WeatherStrip({
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <span className="text-body dark:text-on-dark-soft">
-              {data.cached ? "캐시" : "실시간"} · Open-Meteo · 클릭 → 정책 근거
+              {data.cached ? "캐시" : "실시간"} · Open-Meteo · 항목 클릭 시 정책 근거
             </span>
             {statusControls}
           </div>
