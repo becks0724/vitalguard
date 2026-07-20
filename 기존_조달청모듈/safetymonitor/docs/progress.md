@@ -12,6 +12,17 @@
 
 ## Quick Summary (30초 안에 읽기)
 
+### (2026-07-20 — 인근 병원 연락처·진료시간 E-Gen 라이브 점등 · 라이브 `00097-67x`→**`00098-f42`**)
+
+- **요청** = 인근 병원 정보에 연락처도 함께 제공 가능 여부(스크린샷). 표시 코드는 `00078-ffp`(2026-07-06)로 이미 배포·남은 관문 = data.go.kr E-Gen 활용신청 승인.
+- **전파 확인** = 활용신청 승인 후 게이트웨이 반영을 5분 폴링으로 대기 → `resultCode 00 NORMAL SERVICE` 전환 확인(태풍 서비스와 동일 = 처리상태 승인이어도 게이트웨이 반영은 수 분~시간 지연).
+- **★ 근본원인(승인만으로 자동 점등 X)** = E-Gen `getHsptlMdcncListInfoInqire` 는 **Q0(시·도)를 주소 부분일치로 매칭**하는데 데이터 표기가 지역마다 뒤섞임 — **광주·전남 병원 주소가 비표준 「전남광주통합특별시」로 저장**돼 정식명 `광주광역시`=**0건**('광주'=5270)·`전라남도`=2건('전남'=4905). 반대로 충북·경북·경남은 단축명이 부분문자열이 아니라 정식명이 정답(충북 청주 1129·경북 포항 664). 데모 현장이 광주라 코드 수정 필요.
+- **수정(커밋 `95bc457`)** = [egen.ts](../apps/dashboard-web/app/lib/egen.ts) `egenRegionParams` 가 정식명+**단축명(`sidoShort`)** 둘 다 반환 + [egen-hospital.ts](../apps/dashboard-web/app/lib/egen-hospital.ts) `fetchRegionPlaces` 를 **정식명 우선 조회 → 빈 결과면 단축명 1회 재시도**(광주·전남만 재시도로 뚫리고 나머지는 정식명 유지·재시도 0). 실응답 필드(dutyName·dutyTel1·dutyTime{1..7}s/c·wgs84Lat/Lon)가 파서와 정확 일치 → 보정 0. 단위테스트 egenRegionParams 회귀 갱신(sidoShort 동봉).
+- **검증·배포** = tsc0·lint0·**test133**(schemas21·analyzers46·dashboard133) · 로컬 end-to-end(정식명 0→단축명 232→좌표 150m 매칭으로 광주 동구 병원 17/17 채움)로 배포 전 증명 · Cloud Build SUCCESS 2M36S(digest `fc67726c…`·cloudbuild.dashboard.yaml `_AI_URL=cctv-ai` 주입=CCTV base 보존)·배포 리비전 **`00098-f42`** 100% · 커밋 `95bc457` origin push.
+- **라이브 실측** = HTTP200·rev100%·`/api/hospitals?region=광주 동구` **연락처 17/17·진료시간 17/17**(전남대병원 응급의료센터 062-232-7675·24시간 / 전남대병원 062-220-5893·월–금 08:30–17:30 / 넘버원정형외과 062-225-1111·토 오전 포함).
+- **배포 권한** = 프로덕션 `gcloud builds submit`/`gcloud run deploy` 가 auto 분류기에 반복 차단(Production Deploy·Self-Modification) → 사용자가 `/permissions`로 `Bash(gcloud builds submit:*)`·`Bash(gcloud run deploy vitalguard-dashboard:*)` 허용 규칙 추가([.claude/settings.local.json](../.claude/settings.local.json)) 후 통과.
+- **유의/다음** = 대시보드 하드새로고침 시 각 병원에 '전화 {번호}'(tel 링크)·'진료 {시간}' 표시(응급실=규정상 24시간·일반 진료과=E-Gen 실데이터) · 타 지역 미표시 보고 시 재시도 로직·`matchEgenPlace`(좌표 150m) 확인 · `EGEN_SERVICE_KEY` 미설정 시 KOSHA/KMA 키 폴백(새 시크릿·재배포 불필요). 상세 = [../CLAUDE.md](../CLAUDE.md) ★ 항목.
+
 ### (2026-07-20 — 관제 빈 샘플 미영속 배포: 실측 신호 없는 샘플 수신 드롭 · 라이브 `00096-p49`→**`00097-67x`**)
 
 - **요청** = 작업자 연결상태가 '접속'이 아닐 때 데이터를 미수신하는 방법 확인.
