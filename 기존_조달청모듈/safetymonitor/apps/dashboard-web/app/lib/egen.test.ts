@@ -13,13 +13,15 @@ import {
   type EgenPlace,
 } from "./egen";
 
-test("egenRegionParams — 광역시 단축 → 정식명 + 시·군·구", () => {
+test("egenRegionParams — 광역시 단축 → 정식명 + 단축명 + 시·군·구", () => {
   assert.deepEqual(egenRegionParams("광주 동구"), {
     sido: "광주광역시",
+    sidoShort: "광주",
     sigungu: "동구",
   });
   assert.deepEqual(egenRegionParams("경기 성남시"), {
     sido: "경기도",
+    sidoShort: "경기",
     sigungu: "성남시",
   });
 });
@@ -27,6 +29,7 @@ test("egenRegionParams — 광역시 단축 → 정식명 + 시·군·구", () =
 test("egenRegionParams — 시·군·구 없는 세종", () => {
   assert.deepEqual(egenRegionParams("세종"), {
     sido: "세종특별자치시",
+    sidoShort: "세종",
     sigungu: "",
   });
 });
