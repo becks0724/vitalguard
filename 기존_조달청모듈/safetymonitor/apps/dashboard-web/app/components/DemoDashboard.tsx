@@ -3815,7 +3815,7 @@ export function DemoDashboard() {
                         <SummaryStat label="등록 작업자" value={`${slots.filter(Boolean).length}`} />
                         <SummaryStat label="대기 작업자" value={`${pendingWorkers.length}`} />
                         <SummaryStat label="최근 표시" value={`${data.recent.length}`} />
-                        <SummaryStat label="DB 누적" value={(data.totalPersisted ?? 0).toLocaleString()} />
+                        <SummaryStat label="DB 누적" value={(data.totalPersisted ?? 0).toLocaleString()} roll />
                       </div>
                     </div>
                   </div>
@@ -4954,11 +4954,20 @@ function TrafficLight({ status, stale }: { status: VitalStatus; stale?: boolean 
   );
 }
 
-function SummaryStat({ label, value }: { label: string; value: string }) {
+// roll=true 면 값을 헤더 시계와 같은 롤링(.clock-roll-char) 애니메이션으로 표시(바뀐 자리만 굴러감).
+function SummaryStat({ label, value, roll = false }: { label: string; value: string; roll?: boolean }) {
   return (
     <div className="flex min-h-0 flex-col justify-center rounded-lg bg-surface-soft px-2.5 py-1 dark:bg-surface-dark-elevated">
       <div className="text-xs leading-tight text-body dark:text-on-dark-soft">{label}</div>
-      <div className="font-mono text-base font-medium leading-tight text-ink dark:text-on-dark">{value}</div>
+      <div className="font-mono text-base font-medium leading-tight text-ink dark:text-on-dark">
+        {roll ? (
+          <span className="tabular-nums">
+            <RollingChars text={value} />
+          </span>
+        ) : (
+          value
+        )}
+      </div>
     </div>
   );
 }
