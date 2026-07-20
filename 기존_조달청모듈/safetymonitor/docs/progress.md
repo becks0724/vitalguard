@@ -12,6 +12,14 @@
 
 ## Quick Summary (30초 안에 읽기)
 
+### (2026-07-20 — 관제 빈 샘플 미영속 배포: 실측 신호 없는 샘플 수신 드롭 · 라이브 `00096-p49`→**`00097-67x`**)
+
+- **요청** = 작업자 연결상태가 '접속'이 아닐 때 데이터를 미수신하는 방법 확인.
+- **핵심 발견** = 연결상태(접속/대기/연결끊김)는 **100% 클라이언트(관제웹)에서 마지막 샘플 ts 나이로만 파생** — 서버 수신·DB 경로엔 없다. 도착 샘플은 정의상 "접속"이라 연결상태 게이트는 라이브에 no-op(+워치 배칭 백로그만 손상). 하단 "실시간 수집·DB 영속 N건 누적"을 부풀리는 실체 = **상시 접속 데모/관리자 기기 EMP-admin("VitAlGuard 관리자")가 값 없이 계속 POST 하는 빈 하트비트**(라이브 payload 확인 = metadata+`manualSos:false`/`fallDetected:false`뿐·생체값 0).
+- **구현(택1·사용자=빈 샘플 미영속)** = [store.addSample](../apps/dashboard-web/app/api/mock/store.ts) persist choke point(기존 `isReservedTestWorker` 자리)에 `hasMonitorableSignal` 게이트 — 실측 생체(심박/SpO₂/손목·환경온도)·모션·스트레스 입력·이벤트(SOS/낙상=`true`)·낙상 후보가 하나도 없으면 ring·DB 양쪽 드롭(`return null`). 이벤트 플래그는 `false`로 실려와 `===true`로만 신호 인정. 신호 있는 샘플은 새 분기 건너뛰고 기존 persist 그대로(실 생체값·이벤트·낙상후보·워치 배칭 무영향). [vital/route.ts](../apps/dashboard-web/app/api/mock/vital/route.ts) 단일 POST 202 라벨 `reserved_test_worker`→`not_stored`.
+- **검증·배포** = tsc0·lint0·**test133**(신규 2=hasMonitorableSignal·addSample 빈샘플 드롭) · Cloud Build SUCCESS 2M46S(digest `9d00e9c1…`·cloudbuild.dashboard.yaml `_AI_URL` 주입=CCTV 보존) · 커밋 `aceab85` push. 라이브 실측 = HTTP200·rev **`00097-67x`** 100%·**빈 샘플 POST(비예약·신호0)→HTTP 202 `not_stored`**(변경 전이면 201)·totalPersisted 264,992→264,998(실 샘플 영속 정상).
+- **유의/다음** = 기존 빈 행은 그대로(카운트 감소 X·앞으로 증가만 정지, 과거 행 DELETE는 프로덕션 DB라 별건)·잠금 폰이 빈 값/GPS만 보내면 그 카드가 60초 뒤 '연결끊김'(수락된 트레이드오프)·(선택) CLAUDE.md '현재 라이브' 반영 완료. 상세 = [../CLAUDE.md](../CLAUDE.md) ★ 항목·run-log(로컬).
+
 ### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 11단계 고도화 · 단일 출처)
 
 > cctv-ai = 대시보드 CCTV 관제 3타일에 MJPEG/스냅샷 + 감지통계를 주는 **별도 Cloud Run 서비스**. 기술 상세 → [cctv-ai/README.md](../cctv-ai/README.md).
