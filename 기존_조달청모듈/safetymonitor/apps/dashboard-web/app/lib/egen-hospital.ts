@@ -40,28 +40,36 @@ async function fetchRegionPlaces(region: string): Promise<EgenPlace[]> {
     if (Date.now() - hit.ts < ttl) return hit.places;
   }
 
-  const { sido, sigungu } = egenRegionParams(region);
+  const { sido, sidoShort, sigungu } = egenRegionParams(region);
   if (!sido) return [];
-  // serviceKey 는 .env 에 인코딩키로 보관(kma.ts 와 동일하게 raw append).
-  const url =
-    `${BASE}?serviceKey=${k}` +
-    `&Q0=${encodeURIComponent(sido)}` +
-    (sigungu ? `&Q1=${encodeURIComponent(sigungu)}` : "") +
-    `&pageNo=1&numOfRows=1000`;
 
-  let places: EgenPlace[] = [];
-  try {
-    const res = await fetch(url, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(6000),
-    });
-    if (res.ok) {
-      places = parseEgenXml(await res.text());
+  // serviceKey 는 .env 에 인코딩키로 보관(kma.ts 와 동일하게 raw append).
+  const fetchOne = async (q0: string): Promise<EgenPlace[]> => {
+    const url =
+      `${BASE}?serviceKey=${k}` +
+      `&Q0=${encodeURIComponent(q0)}` +
+      (sigungu ? `&Q1=${encodeURIComponent(sigungu)}` : "") +
+      `&pageNo=1&numOfRows=1000`;
+    try {
+      const res = await fetch(url, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(6000),
+      });
+      // res.ok=false(403 미승인 등)면 [] → 빈 결과로 캐시(짧은 TTL)
+      return res.ok ? parseEgenXml(await res.text()) : [];
+    } catch {
+      return []; // 네트워크/타임아웃도 no-op
     }
-    // res.ok=false(403 미승인 등)면 places=[] → 빈 결과로 캐시(짧은 TTL)
-  } catch {
-    places = []; // 네트워크/타임아웃도 no-op
+  };
+
+  // E-Gen 은 Q0 를 주소 부분일치로 매칭하는데 표기가 지역마다 뒤섞임 —
+  // 대부분은 정식명(충청북도…)이 맞지만 광주·전남은 「전남광주통합특별시」로 저장돼
+  // 정식명이 0건 → 단축명(광주·전남)으로 1회 재시도해 뚫는다(반대 케이스는 정식명 유지).
+  let places = await fetchOne(sido);
+  if (places.length === 0 && sidoShort && sidoShort !== sido) {
+    places = await fetchOne(sidoShort);
   }
+
   cache.set(region, { ts: Date.now(), places });
   return places;
 }

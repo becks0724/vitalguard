@@ -23,13 +23,18 @@ export const SIDO_FULL: Record<string, string> = {
   제주: "제주특별자치도",
 };
 
-// "광주 동구" → { sido: "광주광역시", sigungu: "동구" }. 시·군·구 없으면 sigungu 빈 문자열.
-export function egenRegionParams(region: string): { sido: string; sigungu: string } {
+// "광주 동구" → { sido: "광주광역시", sidoShort: "광주", sigungu: "동구" }. 시·군·구 없으면 sigungu 빈 문자열.
+// sidoShort = E-Gen 주소 표기 불일치(광주=「전남광주통합특별시」·전남 등) 시 정식명 대신 재시도할 단축명.
+export function egenRegionParams(region: string): {
+  sido: string;
+  sidoShort: string;
+  sigungu: string;
+} {
   const toks = (region ?? "").trim().split(/\s+/).filter(Boolean);
   const short = toks[0] ?? "";
   const sido = SIDO_FULL[short] ?? short;
   const sigungu = toks.slice(1).join(" ");
-  return { sido, sigungu };
+  return { sido, sidoShort: short, sigungu };
 }
 
 export type EgenPlace = {
