@@ -3597,7 +3597,7 @@ export function DemoDashboard() {
                 <>
                   <span className="font-semibold text-ink dark:text-on-dark">관리자</span>
                   <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200">
-                    소유자
+                    총괄 관리자
                   </span>
                 </>
               ) : (
