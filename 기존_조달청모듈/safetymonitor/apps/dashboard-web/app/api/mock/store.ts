@@ -61,6 +61,31 @@ export function hasNewDangerMetric(
   return dangerMetrics(cur).some((m) => !prevSet.has(m));
 }
 
+// 빈 샘플 판별 — 이 샘플이 모니터링 가치가 있는 실측 신호를 하나라도 담고 있는가.
+// 실측 생체(심박/SpO₂/손목·환경온도)·모션(가속/정지)·스트레스 입력·낙상 후보·이벤트(SOS/낙상=true) 중
+// 하나라도 있으면 true. 메타데이터(이름·사번·직급)·보호자·위치·배터리·이벤트 false 만 있으면 false(빈 샘플).
+// 이벤트 플래그는 false 로 실려올 수 있어 present 가 아니라 === true 로만 신호로 인정한다.
+export function hasMonitorableSignal(s: VitalSample): boolean {
+  return (
+    s.heartRate !== undefined ||
+    s.spo2 !== undefined ||
+    s.skinTempC !== undefined ||
+    s.ambientTempC !== undefined ||
+    s.accelMagnitudeG !== undefined ||
+    s.motionStillSec !== undefined ||
+    s.hrvSdnnMs !== undefined ||
+    s.restingHeartRate !== undefined ||
+    s.activeEnergyKcal !== undefined ||
+    s.steps !== undefined ||
+    s.walkingHeartRate !== undefined ||
+    s.flightsClimbed !== undefined ||
+    s.respiratoryRate !== undefined ||
+    s.manualSos === true ||
+    s.fallDetected === true ||
+    s.fallCandidate === true
+  );
+}
+
 // 작업자 ID 병합 별칭 캐시(secondary → primary) — 수신마다 DB 조회 회피(15s TTL).
 // owner 가 별칭 등록/해제하면 최대 15s 내 자동 반영. DB 실패 시 원본 ID 사용(폴백).
 let _aliasCache: { map: Record<string, string>; at: number } | null = null;
@@ -104,6 +129,12 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   ) {
     await updateFallCandidateState(sample);
     if (!sample.fallDetected && !sample.manualSos) return sample;
+  }
+  // 빈 샘플 미영속 — 실측 신호가 하나도 없는 샘플(화면 "—")은 수신하지 않는다(ring·DB 양쪽 제외).
+  // 상시 접속 데모/관리자 기기가 값 없이 계속 POST 하는 빈 하트비트가 vital_samples 에 무한 누적돼
+  // "DB 영속 누적" 카운트를 부풀리는 것을 막는다. 실 생체값·이벤트·낙상 후보 샘플은 전부 보존된다.
+  if (!hasMonitorableSignal(sample)) {
+    return null;
   }
   // 생체 위험 전이 감지용 — 추가 전 이 워커의 병합(sticky) 상태.
   // 같은 워커 샘플은 ring 에서 한 번만 필터해 prev/cur 두 병합에 재사용(중복 filter 제거).

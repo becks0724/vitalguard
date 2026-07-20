@@ -8,6 +8,7 @@ import type { VitalSample } from "@safetymonitor/schemas";
 import {
   addSample,
   dangerMetrics,
+  hasMonitorableSignal,
   hasNewDangerMetric,
   isReservedTestWorker,
   mergeLatestByWorker,
@@ -209,9 +210,59 @@ test("hasNewDangerMetric — HR danger 지속 중 SpO₂ 신규 진입(두 번�
   assert.equal(hasNewDangerMetric(hrOnly, hrPlusSpo2), true); // spo2 신규 진입 감지
 });
 
+test("hasMonitorableSignal — 실측 신호 유무 판별(빈 샘플=false)", () => {
+  // EMP-admin(VitAlGuard 관리자) 빈 샘플 재현 — 메타데이터 + 이벤트 false 만 → 신호 없음.
+  assert.equal(
+    hasMonitorableSignal(
+      s({
+        workerId: "EMP-admin",
+        ts: TS,
+        workerName: "VitAlGuard 관리자",
+        employeeId: "EMP-admin",
+        jobTitle: "관리자",
+        manualSos: false,
+        fallDetected: false,
+      }),
+    ),
+    false,
+  );
+  // 실측 생체·스트레스는 하나만 있어도 신호.
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, heartRate: 80 })), true);
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, spo2: 97 })), true);
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, skinTempC: 35.5 })), true); // EMP-admin6861(장우진) 케이스
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, steps: 0 })), true); // 0 도 실측 결과
+  // 이벤트는 true 만 신호(false 는 무신호 — 빈 샘플에 false 로 실려온다).
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, manualSos: true })), true);
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, fallDetected: true })), true);
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, fallCandidate: true })), true);
+  // 메타데이터/위치/배터리만 있으면 빈 샘플(false) — 모니터링 값 없음.
+  assert.equal(
+    hasMonitorableSignal(
+      s({
+        workerId: "EMP-1",
+        ts: TS,
+        latitude: 35.15,
+        longitude: 126.9,
+        batteryPct: 80,
+        guardianPhone: "010-0000-0000",
+      }),
+    ),
+    false,
+  );
+});
+
 test("addSample — reserved 워커 입력은 null 반환(DB 미접근)", async () => {
   // 스키마는 통과하지만 예약 ID 이므로 persist 전에 차단되어 DB 를 건드리지 않는다(쿼리 0).
   assert.equal(await addSample({ workerId: "smoke_x", ts: TS, heartRate: 80 }), null);
+});
+
+test("addSample — 빈 샘플(실측 신호 없음)은 null 반환(persist 도달 전 드롭)", async () => {
+  // EMP-admin 빈 하트비트 재현 — 실측 신호 없어 ring·DB 진입 전 드롭(persistSample 미도달).
+  assert.equal(
+    await addSample({ workerId: "EMP-admin", ts: TS, manualSos: false, fallDetected: false }),
+    null,
+  );
+  assert.equal(await addSample({ workerId: "EMP-1", ts: TS }), null); // 순수 메타데이터
 });
 
 test("addSample — 스키마 위반 입력은 reject(persist 도달 전 거부)", async () => {

@@ -115,8 +115,9 @@ export async function POST(request: Request) {
 
     const sample = await addSample(body);
     if (sample === null) {
+      // null = 예약 진단 ID 차단 또는 실측 신호 없는 빈 샘플 → 저장 안 함(수신은 정상 수용).
       return NextResponse.json(
-        { ok: true, dropped: "reserved_test_worker" },
+        { ok: true, dropped: "not_stored" },
         { status: 202 },
       );
     }
