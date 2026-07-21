@@ -9,11 +9,22 @@ import { GlassTabBar } from "./GlassTabBar";
 
 export type PagerPage = { title: string; content: ReactNode };
 
-export function SectionPager({ pages }: { pages: PagerPage[] }) {
+export function SectionPager({
+  pages,
+  homeSignal,
+}: {
+  pages: PagerPage[];
+  homeSignal?: number;
+}) {
   const [idx, setIdx] = useState(0);
   const [height, setHeight] = useState<number | undefined>(undefined);
   const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
   const n = pages.length;
+
+  // 헤더 로고 클릭 등 외부 신호로 첫 페이지(홈)로 복귀 — 값이 증가할 때마다 1회 동작.
+  useEffect(() => {
+    if (homeSignal) setIdx(0);
+  }, [homeSignal]);
 
   // 활성 페이지 높이에 뷰포트 높이를 맞춤 — 짧은 페이지의 빈 공간 방지 + 페이지 간 높이 전환 애니메이션.
   // 콘텐츠가 늘어나면(작업자 등록·날씨 로드 등) ResizeObserver 로 추적.

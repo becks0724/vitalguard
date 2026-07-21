@@ -3537,6 +3537,9 @@ export function DemoDashboard() {
     else stopSiren();
   }, [activeSos, activeFallAlert, activeVitalAlert, sirenEnabled, audioArmed, startSiren, stopSiren]);
 
+  // 헤더 로고 클릭 → 홈(1페이지 실시간 현장 관제) 복귀 신호 — 증가할 때마다 SectionPager 가 첫 페이지로 전환.
+  const [homeSignal, setHomeSignal] = useState(0);
+
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[1280px] flex-col gap-4 px-6 py-4 font-sans text-body dark:text-on-dark-soft max-[640px]:px-4">
       {/* 브라우저 autoplay 정책상 첫 제스처 전에는 소리 불가 → SOS 경보음 활성화 배너(클릭=제스처=arm). */}
@@ -3553,7 +3556,16 @@ export function DemoDashboard() {
       )}
       <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
         <div className="flex items-center gap-3">
-          <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl">
+          <button
+            type="button"
+            onClick={() => {
+              setHomeSignal((n) => n + 1);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            aria-label="홈 화면으로 이동"
+            title="홈 화면으로 이동"
+            className="relative h-14 w-14 shrink-0 cursor-pointer overflow-hidden rounded-xl"
+          >
             <img
               src="/brand/vitalguard-logo-light.png"
               alt="VitAlGuard Industrial Safety OS"
@@ -3564,7 +3576,7 @@ export function DemoDashboard() {
               alt="VitAlGuard Industrial Safety OS"
               className="hidden h-full w-full object-cover dark:block"
             />
-          </div>
+          </button>
           <div className="min-w-0">
             <h1 className="truncate font-display text-[24px] font-semibold leading-none tracking-[-0.4px] text-ink dark:text-on-dark">
               VitAlGuard
@@ -3743,6 +3755,7 @@ export function DemoDashboard() {
 
       {/* 상단 페이저 — 3페이지(1.실시간 현장 관제 / 2.안전관리비 검증 / 3.ERP 스마트경리) */}
       <SectionPager
+        homeSignal={homeSignal}
         pages={[
           {
             title: "실시간 현장 관제",
