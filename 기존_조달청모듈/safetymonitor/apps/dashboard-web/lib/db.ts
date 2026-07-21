@@ -396,6 +396,18 @@ async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
+    -- 현장 과업지시서(배치 어시스턴트) — PDF 업로드 전용(텍스트 직접 입력은 위변조 우려로 미수용).
+    -- 원본 파일명·SHA-256 을 함께 기록해 감사 시 업로드 원본과 대조 가능. 최신 1행이 유효본.
+    CREATE TABLE IF NOT EXISTS site_task_doc (
+      id SERIAL PRIMARY KEY,
+      task_text TEXT NOT NULL,
+      tags_json TEXT NOT NULL,
+      updated_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    ALTER TABLE site_task_doc ADD COLUMN IF NOT EXISTS src_name TEXT;
+    ALTER TABLE site_task_doc ADD COLUMN IF NOT EXISTS src_sha256 TEXT;
+
     -- 현장 환경 경보 확인/조치 기록 — 관리자가 환경 경보 팝업을 '확인'/'조치완료' 할 때 1건 적재(감사 이력).
     CREATE TABLE IF NOT EXISTS env_alert_ack (
       id SERIAL PRIMARY KEY,
@@ -892,6 +904,44 @@ export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRo
 export async function countGaspodTelemetry(): Promise<number> {
   const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM gaspod_telemetry");
   return rows[0]?.n ?? 0;
+}
+
+// ── 현장 과업지시서(site_task_doc) — 배치 어시스턴트의 태깅 소스(PDF 업로드 전용·최신 1행 유효) ──
+export type SiteTaskDocRow = {
+  task_text: string;
+  tags_json: string; // RiskTag[] 직렬화(태그·심각도·근거 문장)
+  updated_by: string;
+  updated_at: string;
+  src_name: string | null; // 업로드 원본 파일명
+  src_sha256: string | null; // 업로드 원본 SHA-256(위변조 감사 대조용)
+};
+
+export async function setSiteTaskDoc(input: {
+  taskText: string;
+  tagsJson: string;
+  updatedBy: string;
+  srcName: string;
+  srcSha256: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO site_task_doc (task_text, tags_json, updated_by, src_name, src_sha256)
+       VALUES ($1, $2, $3, $4, $5)`,
+    [
+      input.taskText.slice(0, 20_000),
+      input.tagsJson,
+      input.updatedBy.slice(0, 60),
+      input.srcName.slice(0, 200),
+      input.srcSha256.slice(0, 64),
+    ],
+  );
+}
+
+export async function getLatestSiteTaskDoc(): Promise<SiteTaskDocRow | null> {
+  const { rows } = await q<SiteTaskDocRow>(
+    `SELECT task_text, tags_json, updated_by, updated_at, src_name, src_sha256
+       FROM site_task_doc ORDER BY id DESC LIMIT 1`,
+  );
+  return rows[0] ?? null;
 }
 
 // ── 세금계산서 수신(④증액 검증 데이터원 — 경리시스템 데모/전자세금계산서 연동) ──
@@ -2470,4 +2520,100 @@ export async function saveMonitorSlots(slots: (string | null)[]): Promise<void> 
        ON CONFLICT (id) DO UPDATE SET slots = excluded.slots, updated_at = excluded.updated_at`,
     [JSON.stringify(slots)],
   );
+}
+
+// ── 작업자 컨디션 신호 집계(배치 권고용) ──────────────────────────────────────
+// 최근 창(sinceIso~) 생체 이력 + 경보 이력을 lib/worker-condition.ts 가 소비하는
+// ConditionSignals 형태로 집계한다. workerIds 는 별칭 병합을 감안해 복수 수용.
+// 임계 파라미터는 호출부(severity/analyzers 단일 source)에서 주입 — 여기 매직넘버 금지.
+export async function workerConditionSignals(input: {
+  workerIds: string[];
+  sinceIso: string;
+  spo2CautionPct: number;
+  spo2DangerPct: number;
+  hrHeavyBpm: number;
+  hrOverloadBpm: number;
+  hrCollapseBpm: number;
+}): Promise<{
+  sampleCount: number;
+  firstTs: string | null;
+  latestTs: string | null;
+  spo2CautionCount: number;
+  spo2DangerCount: number;
+  hrCautionCount: number;
+  hrDangerCount: number;
+  fallAlerts: number;
+  sosAlerts: number;
+  vitalAlerts: number;
+  unackedAlerts: number;
+}> {
+  const ids = input.workerIds.length > 0 ? input.workerIds : ["__none__"];
+  const idPh = ids.map((_, i) => `$${i + 1}`).join(", ");
+  const base = ids.length;
+
+  const vitals = await q<{
+    sample_count: number;
+    first_ts: string | null;
+    latest_ts: string | null;
+    spo2_caution: number;
+    spo2_danger: number;
+    hr_caution: number;
+    hr_danger: number;
+  }>(
+    `SELECT
+       COUNT(*)::int AS sample_count,
+       MIN(ts) AS first_ts,
+       MAX(ts) AS latest_ts,
+       COUNT(*) FILTER (WHERE spo2 IS NOT NULL AND spo2 < $${base + 2})::int AS spo2_caution,
+       COUNT(*) FILTER (WHERE spo2 IS NOT NULL AND spo2 < $${base + 3})::int AS spo2_danger,
+       COUNT(*) FILTER (
+         WHERE heart_rate IS NOT NULL AND heart_rate >= $${base + 4} AND heart_rate < $${base + 5}
+       )::int AS hr_caution,
+       COUNT(*) FILTER (
+         WHERE heart_rate IS NOT NULL AND (heart_rate >= $${base + 5} OR heart_rate <= $${base + 6})
+       )::int AS hr_danger
+     FROM vital_samples
+     WHERE worker_id IN (${idPh}) AND ts >= $${base + 1}`,
+    [
+      ...ids,
+      input.sinceIso,
+      input.spo2CautionPct,
+      input.spo2DangerPct,
+      input.hrHeavyBpm,
+      input.hrOverloadBpm,
+      input.hrCollapseBpm,
+    ],
+  );
+
+  const alerts = await q<{
+    fall_n: number;
+    sos_n: number;
+    vital_n: number;
+    unacked_n: number;
+  }>(
+    `SELECT
+       COUNT(*) FILTER (WHERE type = 'fall')::int AS fall_n,
+       COUNT(*) FILTER (WHERE type = 'sos')::int AS sos_n,
+       COUNT(*) FILTER (WHERE type = 'vital')::int AS vital_n,
+       COUNT(*) FILTER (WHERE ack_at IS NULL)::int AS unacked_n
+     FROM alerts
+     WHERE worker_id IN (${idPh}) AND ts >= $${base + 1}`,
+    [...ids, input.sinceIso],
+  );
+
+  const v = vitals.rows[0];
+  const a = alerts.rows[0];
+  return {
+    sampleCount: v?.sample_count ?? 0,
+    firstTs: v?.first_ts ?? null,
+    latestTs: v?.latest_ts ?? null,
+    spo2CautionCount: v?.spo2_caution ?? 0,
+    spo2DangerCount: v?.spo2_danger ?? 0,
+    hrCautionCount: v?.hr_caution ?? 0,
+    hrDangerCount: v?.hr_danger ?? 0,
+    fallAlerts: a?.fall_n ?? 0,
+    sosAlerts: a?.sos_n ?? 0,
+    vitalAlerts: a?.vital_n ?? 0,
+    unackedAlerts: a?.unacked_n ?? 0,
+  };
 }

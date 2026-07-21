@@ -27,6 +27,17 @@ export function getSessionToken(): string | null {
   }
 }
 
+// 서버가 401 로 거부한 낡은 토큰을 제거 — 게이트가 로그인 화면으로 복귀할 수 있게 한다.
+// (LoginGate 는 토큰 존재만 보므로, 무효 토큰이 남으면 게이트 통과+서버 거부 상태에 갇힌다.)
+export function clearSessionToken(): void {
+  try {
+    window.sessionStorage.removeItem(SESSION_KEY);
+    window.sessionStorage.removeItem(ROLE_KEY);
+  } catch {
+    /* noop */
+  }
+}
+
 // 현재 로그인 역할 — owner 만 사용자 관리(승인/거절) UI 노출.
 export function getSessionRole(): string | null {
   try {
