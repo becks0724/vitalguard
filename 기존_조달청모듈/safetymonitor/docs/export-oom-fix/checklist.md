@@ -3,8 +3,8 @@
 배경: DB 31만 건 성장으로 내보내기(미리보기·CSV·XLSX)가 전체 로드 → Node 힙 OOM → 컨테이너 사망(503) + 라이브 수집 순단. 진단 근거는 context-notes 참조.
 
 ## Phase 0 — 안전판 (코드 무변경)
-- [ ] Cloud Run `--memory 1Gi` 상향 (분류기 차단 → 사용자 직접 실행 대기)
-- [ ] 상향 후 리비전·메모리 검증
+- [x] Cloud Run `--memory 1Gi` 상향 (사용자 직접 실행 · `00101-97z`)
+- [x] 상향 후 리비전·메모리 검증 (1Gi · 100% · 루트 200)
 
 ## Phase 1 — 저위험 수정
 - [x] `exportSamples` SELECT * → ExportRow 25컬럼 명시 (raw_json 제외)
@@ -26,12 +26,12 @@
 - [x] 관측 로그 (시작/완료/행수/소요 ms)
 
 ## Phase 3 — XLSX 상한
-- [x] 시트2 생체데이터 최근 50,000건 상한 (`exportSamplesCapped`)
+- [x] 시트2 생체데이터 상한 (`exportSamplesCapped`) — 라이브 503 재현·힙 실측(5만 ~786MB·1만 ~370MB)으로 **50,000→10,000 재조정**
 - [x] 초과 시 안내 행 삽입 ("전체는 CSV 이용") + x-vital-rows-total 헤더
 
 ## 검증 게이트
 - [x] tsc 0 · lint 0err · 테스트 전체 통과 (149→164)
 - [x] 로컬 실측 (실 DB 읽기 전용): SQL 카운트 = 라이브 베이스라인 일치 · 스트리밍 완주 행수 = COUNT 일치
-- [ ] 배포 (cloudbuild.dashboard.yaml `_AI_URL` 보존)
-- [ ] 라이브 검증: 불변 구간 미리보기 = 베이스라인(181,391/3,666/75,544) · 전체 기간 CSV 완주 · 다운로드 중 /api/mock/vital 200 · OOM 로그 0
-- [ ] 커밋·push (Phase 단위)
+- [x] 배포 2회 (cloudbuild `_AI_URL` 보존 · `00102-rrg`→`00103-zr7` + NODE_OPTIONS=--max-old-space-size=800)
+- [x] 라이브 검증: 불변 구간 = 베이스라인 정확 일치 · 전체 313,220건 미리보기 200 · CSV 313,220행=x-row-count 완주(51.9MB/8.6s) · XLSX 200(1만 상한+안내 행) · 다운로드 중 vital 6/6 무중단 · 새 리비전 OOM 로그 0
+- [x] 커밋·push (`6938e7a` 코드 · `16dfca6` 문서 · `bed1df8` XLSX 상한 재조정)
