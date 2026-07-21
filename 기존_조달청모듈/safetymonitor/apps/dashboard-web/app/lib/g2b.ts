@@ -102,14 +102,19 @@ function normalizeSummary(row: Record<string, unknown>): NoticeSummary {
 function normalizeDetail(row: Record<string, unknown>): NoticeDetail {
   const summary = normalizeSummary(row);
   const specFiles: string[] = [];
+  // 첨부문서(시방서·과업내용서·공고규격서) — 파일명(ntceSpecFileNm)과 다운로드 URL(ntceSpecDocUrl) 쌍.
+  const specDocs: { name: string; url: string }[] = [];
   for (let i = 1; i <= 10; i++) {
     const f = pick(row, [`ntceSpecFileNm${i}`]);
     if (f) specFiles.push(f);
+    const u = pick(row, [`ntceSpecDocUrl${i}`]);
+    if (f && u && /^https?:\/\//.test(u)) specDocs.push({ name: f, url: u });
   }
   const taskText = [summary.title, pick(row, ["mainCnsttyNm"]), ...specFiles, pick(row, ["refNo"])].filter(Boolean).join(" · ");
   return {
     ...summary,
     taskText: taskText || summary.title,
+    specDocs,
     contractAmount: null,
     winRate: null,
     declaredSafetyCost: null,
@@ -170,6 +175,43 @@ async function fetchWinRate(ntceNo: string): Promise<number | null> {
   const value = Number.isFinite(rate) && rate > 0 ? rate : null;
   winRateCache.set(ntceNo, value);
   return value;
+}
+
+// ── 공고 첨부문서 직접 조회 — 입찰공고정보서비스 공고번호 조회(inqryDiv=2) ──────────
+// 계약 매칭 현장은 계약정보서비스 응답에 첨부 필드가 없으므로, 계약 상세의 입찰공고번호(ntceNo)로
+// 입찰공고를 직접 조회해 첨부(시방서·과업내용서·공고규격서)를 확보한다. 첨부는 불변 → 프로세스 수명 캐시.
+const attachmentsCache = new Map<string, { title: string; docs: { name: string; url: string }[] } | null>();
+export async function getNoticeAttachments(
+  bidNtceNo: string,
+): Promise<{ title: string; docs: { name: string; url: string }[] } | null> {
+  if (!hasKey() || !bidNtceNo) return null;
+  if (attachmentsCache.has(bidNtceNo)) return attachmentsCache.get(bidNtceNo) ?? null;
+  try {
+    const url = new URL(`${G2B_BASE}/${G2B_PATH.bidListConstruction}`);
+    url.searchParams.set("serviceKey", process.env.G2B_SERVICE_KEY as string);
+    url.searchParams.set("pageNo", "1");
+    url.searchParams.set("numOfRows", "3");
+    url.searchParams.set("type", "json");
+    url.searchParams.set("inqryDiv", "2");
+    url.searchParams.set("bidNtceNo", bidNtceNo);
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as unknown;
+    assertNormal(json);
+    const rows = extractRows(json);
+    const first = rows[0];
+    if (!first) {
+      attachmentsCache.set(bidNtceNo, null);
+      return null;
+    }
+    const d = normalizeDetail(first);
+    const value = { title: d.title, docs: d.specDocs ?? [] };
+    attachmentsCache.set(bidNtceNo, value);
+    return value;
+  } catch (err) {
+    console.error("[g2b] getNoticeAttachments 실패:", err);
+    return null; // 실패는 캐시하지 않음(일시 장애 재시도 허용)
+  }
 }
 
 function cacheDetails(details: NoticeDetail[]): void {
