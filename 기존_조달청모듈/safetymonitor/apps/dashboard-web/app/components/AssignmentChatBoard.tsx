@@ -5,10 +5,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { clearSessionToken, getSessionToken } from "./LoginGate";
 
+// 규칙 엔진의 확정 판정 요약 — 신호등 배지는 LLM 문장이 아니라 이 값으로 그린다.
+type VerdictBadge = {
+  workerId: string;
+  grade: "fit" | "caution" | "restricted" | "unknown";
+  blocked: number; // 배제 권고 태그 수
+  allowed: number; // 배치 가능 태그 수
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   source?: "clova" | "rule";
+  badges?: VerdictBadge[];
 };
 
 type ChatResponse = {
@@ -17,6 +26,38 @@ type ChatResponse = {
   source?: "clova" | "rule";
   disclaimer?: string;
   error?: string;
+  assignments?: {
+    workerId: string;
+    condition: { grade: VerdictBadge["grade"] };
+    advice: { perTag: { allowed: boolean; pending: boolean }[] };
+  }[];
+};
+
+// 등급 → 신호등(대시보드 작업자 신호등과 동일 문법: 정상 정적·주의/위험 블링크).
+const GRADE_BADGE: Record<
+  VerdictBadge["grade"],
+  { label: string; dot: string; chip: string }
+> = {
+  fit: {
+    label: "양호",
+    dot: "bg-emerald-500",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  },
+  caution: {
+    label: "주의",
+    dot: "bg-amber-500 vital-blink-caution",
+    chip: "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  },
+  restricted: {
+    label: "제한",
+    dot: "bg-red-500 vital-blink-danger",
+    chip: "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+  },
+  unknown: {
+    label: "미판정",
+    dot: "bg-zinc-400",
+    chip: "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300",
+  },
 };
 
 const SUGGESTIONS = [
@@ -81,9 +122,15 @@ export default function AssignmentChatBoard() {
           throw new Error(json.error ?? `HTTP ${res.status}`);
         }
         if (json.disclaimer) setDisclaimer(json.disclaimer);
+        const badges: VerdictBadge[] = (json.assignments ?? []).map((a) => ({
+          workerId: a.workerId,
+          grade: a.condition.grade,
+          blocked: a.advice.perTag.filter((t) => !t.allowed && !t.pending).length,
+          allowed: a.advice.perTag.filter((t) => t.allowed).length,
+        }));
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", text: json.reply as string, source: json.source },
+          { role: "assistant", text: json.reply as string, source: json.source, badges },
         ]);
       } catch {
         setMessages((prev) => [
@@ -116,7 +163,38 @@ export default function AssignmentChatBoard() {
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
         {messages.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+          <div
+            key={i}
+            className={m.role === "user" ? "flex justify-end" : "flex flex-col items-start gap-1.5"}
+          >
+            {/* 판정 배지 — 말풍선 밖 독립 행, 아래 말풍선 폭(85%) 기준 중앙 정렬 */}
+            {m.role === "assistant" && m.badges && m.badges.length > 0 ? (
+              <div className="flex w-[85%] max-w-full flex-wrap justify-center gap-1.5">
+                {m.badges.map((b) => {
+                  const meta = GRADE_BADGE[b.grade];
+                  return (
+                    // 세그먼트형 배지 — 판정(볼드)·요약(일반)을 배지 전체 높이 구분선(border)으로 분리
+                    <span
+                      key={b.workerId}
+                      className={
+                        "inline-flex max-w-full items-stretch overflow-hidden rounded-lg border text-[11px] " +
+                        meta.chip
+                      }
+                    >
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-semibold">
+                        <span className={"h-2.5 w-2.5 shrink-0 rounded-full " + meta.dot} />
+                        {b.workerId} · {meta.label}
+                      </span>
+                      <span className="inline-flex items-center whitespace-nowrap border-l border-inherit px-3 py-1 font-normal opacity-80">
+                        {b.grade === "unknown"
+                          ? "판단 보류"
+                          : `배제 권고 ${b.blocked}종 · 배치 가능 ${b.allowed}종`}
+                      </span>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : null}
             <div
               className={
                 m.role === "user"

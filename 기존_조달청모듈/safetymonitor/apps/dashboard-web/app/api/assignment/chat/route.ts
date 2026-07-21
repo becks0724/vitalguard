@@ -79,7 +79,8 @@ async function clovaReply(question: string, contexts: unknown[]): Promise<string
   const json = (await res.json()) as { result?: { message?: { content?: string } } };
   const text = json.result?.message?.content?.trim();
   if (!text) throw new Error("clova empty response");
-  return text;
+  // 마크다운 금지 프롬프트를 어기는 경우가 있어 후처리로 강제(**강조**·## 헤딩 제거).
+  return text.replace(/\*\*/g, "").replace(/^#{1,4}\s*/gm, "");
 }
 
 export async function POST(request: Request) {

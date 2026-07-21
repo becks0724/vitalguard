@@ -13,7 +13,9 @@ export default function AssignmentPage() {
   return (
     <LoginGate>
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <AssignmentTaskDocPanel />
+        <div className="mb-4">
+          <AssignmentTaskDocPanel />
+        </div>
         <div className="h-[80vh]">
           <AssignmentChatBoard />
         </div>

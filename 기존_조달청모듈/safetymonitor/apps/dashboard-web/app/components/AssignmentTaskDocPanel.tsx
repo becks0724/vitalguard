@@ -174,7 +174,7 @@ export default function AssignmentTaskDocPanel() {
         if (f && !busy) void uploadPdf(f);
       }}
       className={
-        "mb-4 rounded-2xl border bg-white px-5 py-4 shadow-sm transition-colors dark:bg-zinc-900 " +
+        "flex min-h-full flex-col rounded-2xl border bg-white px-5 py-4 shadow-sm transition-colors dark:bg-zinc-900 " +
         (dragging
           ? "border-blue-500 bg-blue-50/60 dark:border-blue-400 dark:bg-blue-500/10"
           : "border-zinc-200 dark:border-white/10")
@@ -302,7 +302,7 @@ export default function AssignmentTaskDocPanel() {
         onClick={() => fileRef.current?.click()}
         disabled={busy}
         className={
-          "mt-3 flex w-full flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors " +
+          "mt-3 flex w-full flex-1 flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-4 py-6 text-center transition-colors " +
           (dragging
             ? "border-blue-500 bg-blue-50/70 dark:border-blue-400 dark:bg-blue-500/10"
             : "border-zinc-300 hover:border-blue-400 hover:bg-zinc-50/60 dark:border-white/15 dark:hover:bg-white/5")
