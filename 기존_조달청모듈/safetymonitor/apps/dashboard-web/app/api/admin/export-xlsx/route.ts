@@ -30,7 +30,9 @@ import {
 } from "../../../../lib/severity";
 
 // 시트2 생체데이터 행 상한 — 열람·보고용 실용 범위. 초과분은 CSV(전체 스트리밍)로 안내.
-const XLSX_VITAL_ROW_CAP = 50_000;
+// 실데이터 힙 실측(2026-07-21): exceljs 워크북+writeBuffer 가 5만 행 ~786MB·2만 행 ~530MB 로
+// 1Gi 컨테이너 V8 힙 한도 초과(라이브 OOM 재현) → 1만 행 ~370MB 가 여유 있는 안전 상한.
+const XLSX_VITAL_ROW_CAP = 10_000;
 
 // 위험 = 빨강 굵게, 주의 = 주황, 정상/대기 = 기본
 const FONT_BY_STATUS: Record<Status, Partial<ExcelJS.Font>> = {
