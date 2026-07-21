@@ -40,6 +40,7 @@ import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
 import { getSessionRole, getSessionToken, useSession } from "./LoginGate";
 import { KoshaAccidentTicker } from "./KoshaAccidentTicker";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
+import { WorkerGpsMap, type WorkerMapPoint } from "./WorkerGpsMap";
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
@@ -2736,6 +2737,8 @@ export function DemoDashboard() {
   const [lastAccidentTs, setLastAccidentTs] = useState<string | null>(null);
   // 작업자 표 슬라이딩 모드 — auto: 세로 자동 슬라이딩 / manual: 정지 + 드래그 정렬
   const [slideMode, setSlideMode] = useState<"auto" | "manual">("auto");
+  // 작업자 뷰 — table: 기존 표 / map: GPS 위성지도(마커 호버 시 생체 툴팁). 세션 한정(영속 없음).
+  const [workerView, setWorkerView] = useState<"table" | "map">("table");
   // 국내 재해사례 데이터 출처 — 캐러셀 헤더 배지(좌측 화살표 우측)로 표시. 카드가 fetch 후 통지.
   const [koshaSource, setKoshaSource] = useState<"live" | "mock" | null>(null);
 
@@ -3322,6 +3325,49 @@ export function DemoDashboard() {
   // 첫 빈 슬롯 — "+ 작업자 등록" 버튼이 여는 대상. 없으면(-1) 버튼 비활성.
   const firstEmptySlot = useMemo(() => slots.findIndex((id) => id === null), [slots]);
 
+  // 지도 모드 마커 데이터 — 등록 슬롯 중 한국 범위 GPS 보유 작업자만(fieldCoords 와 동일 게이트).
+  // GPS 없는 작업자(가상·PII 게이트·미수신)는 제외하고 개수만 안내. now(1초 tick)로 수신 age 계산.
+  const workerMapData = useMemo(() => {
+    const pts: WorkerMapPoint[] = [];
+    let noGps = 0;
+    for (const { workerId } of filledSlots) {
+      const s = latestMap.get(workerId);
+      const lat = s?.latitude;
+      const lon = s?.longitude;
+      if (
+        s &&
+        typeof lat === "number" &&
+        typeof lon === "number" &&
+        Number.isFinite(lat) &&
+        Number.isFinite(lon) &&
+        lat >= 32.5 &&
+        lat <= 39.5 &&
+        lon >= 123.5 &&
+        lon <= 132.5
+      ) {
+        const status = workerStatus(s);
+        const ageMs = now - Date.parse(s.ts);
+        pts.push({
+          workerId,
+          name: s.workerName ?? workerId,
+          employeeId: s.employeeId ?? undefined,
+          jobTitle: data.workerProfiles?.[workerId] ?? s.jobTitle ?? undefined,
+          lat,
+          lon,
+          heartRate: s.heartRate,
+          spo2: s.spo2,
+          skinTempC: s.skinTempC,
+          statusLabel: status.label,
+          tone: status.tone,
+          ageSec: Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null,
+        });
+      } else {
+        noGps++;
+      }
+    }
+    return { pts, noGps };
+  }, [filledSlots, latestMap, data.workerProfiles, now]);
+
   // ── 작업자 표 세로 자동 슬라이딩 + 수동 스크롤 + 이상 자동 스크롤 ──
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const tableHovered = useRef(false);
@@ -3900,29 +3946,65 @@ export function DemoDashboard() {
                 <span className="ml-1 rounded-full bg-white/25 px-1.5 text-[10px]">대기 {pendingWorkers.length}</span>
               )}
             </button>
+            {workerView === "table" && (
+              <button
+                type="button"
+                onClick={toggleSlideMode}
+                title={
+                  slideMode === "auto"
+                    ? "자동 슬라이딩 중 — 클릭하면 수동(드래그 정렬)"
+                    : "수동(드래그 정렬) 중 — 클릭하면 자동 슬라이딩"
+                }
+                className={`inline-flex h-8 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold active:scale-95 ${FOCUS_CLASS} ${
+                  slideMode === "auto"
+                    ? "bg-semantic-up/15 text-semantic-up"
+                    : "bg-surface-strong text-body dark:bg-surface-dark dark:text-on-dark-soft"
+                }`}
+              >
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${slideMode === "auto" ? "bg-semantic-up" : "bg-muted-soft"}`}
+                />
+                {slideMode === "auto" ? "자동 슬라이딩" : "수동 (드래그 정렬)"}
+              </button>
+            )}
             <button
               type="button"
-              onClick={toggleSlideMode}
+              onClick={() => setWorkerView((v) => (v === "map" ? "table" : "map"))}
               title={
-                slideMode === "auto"
-                  ? "자동 슬라이딩 중 — 클릭하면 수동(드래그 정렬)"
-                  : "수동(드래그 정렬) 중 — 클릭하면 자동 슬라이딩"
+                workerView === "map"
+                  ? "지도 모드 — 클릭하면 표로 전환"
+                  : "작업자 GPS 위성지도 보기 (마커 호버 시 생체 데이터)"
               }
               className={`inline-flex h-8 items-center gap-1.5 rounded-pill px-3 text-xs font-semibold active:scale-95 ${FOCUS_CLASS} ${
-                slideMode === "auto"
-                  ? "bg-semantic-up/15 text-semantic-up"
+                workerView === "map"
+                  ? "bg-primary text-on-primary"
                   : "bg-surface-strong text-body dark:bg-surface-dark dark:text-on-dark-soft"
               }`}
             >
-              <span
-                className={`inline-block h-2 w-2 rounded-full ${slideMode === "auto" ? "bg-semantic-up" : "bg-muted-soft"}`}
-              />
-              {slideMode === "auto" ? "자동 슬라이딩" : "수동 (드래그 정렬)"}
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              {workerView === "map" ? "표 보기" : "지도"}
             </button>
           </div>
         </div>
 
-                {filledSlots.length === 0 ? (
+                {workerView === "map" ? (
+                  <div className="min-h-0 flex-1 p-2">
+                    <WorkerGpsMap points={workerMapData.pts} noGpsCount={workerMapData.noGps} />
+                  </div>
+                ) : filledSlots.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted dark:text-on-dark-soft">
                     등록된 작업자가 없습니다. 우측 상단 <b className="text-ink dark:text-on-dark">+ 작업자 등록</b> 으로 추가하세요.
                   </p>
