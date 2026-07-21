@@ -180,6 +180,7 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_vs_worker_ts ON vital_samples(worker_id, ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts ON vital_samples(ts);
+    CREATE INDEX IF NOT EXISTS idx_vs_ts_id ON vital_samples(ts, id);
 
     CREATE TABLE IF NOT EXISTS weather_log (
       id SERIAL PRIMARY KEY,
@@ -1466,7 +1467,37 @@ export async function setFallLabel(input: {
   );
 }
 
-// 관리자 내보내기 — 기간 (+ 선택적 workerId) 필터로 모든 컬럼 조회
+// 내보내기 조회 컬럼 — ExportRow 와 1:1. SELECT * 금지: raw_json(행당 1~2KB 감사 사본)은 내보내기
+// 세 소비처(미리보기/CSV/XLSX) 모두 미사용인데 전 행 로드 시 메모리를 지배해 OOM(503)을 유발했다.
+const EXPORT_COLUMNS = [
+  "id",
+  "worker_id",
+  "worker_name",
+  "employee_id",
+  "job_title",
+  "guardian_name",
+  "guardian_phone",
+  "ts",
+  "heart_rate",
+  "spo2",
+  "skin_temp_c",
+  "ambient_temp_c",
+  "battery_pct",
+  "manual_sos",
+  "fall_detected",
+  "latitude",
+  "longitude",
+  "hrv_sdnn_ms",
+  "resting_heart_rate",
+  "active_energy_kcal",
+  "steps",
+  "walking_heart_rate",
+  "flights_climbed",
+  "respiratory_rate",
+  "received_at",
+].join(", ");
+
+// 관리자 내보내기 — 기간 (+ 선택적 workerId) 필터로 ExportRow 컬럼 조회
 export async function exportSamples(opts: {
   workerId?: string;
   from: string;
@@ -1475,16 +1506,174 @@ export async function exportSamples(opts: {
   const { workerId, from, to } = opts;
   if (workerId) {
     const { rows } = await q<ExportRow>(
-      "SELECT * FROM vital_samples WHERE worker_id = $1 AND ts >= $2 AND ts <= $3 ORDER BY ts ASC",
+      `SELECT ${EXPORT_COLUMNS} FROM vital_samples WHERE worker_id = $1 AND ts >= $2 AND ts <= $3 ORDER BY ts ASC`,
       [workerId, from, to],
     );
     return rows;
   }
   const { rows } = await q<ExportRow>(
-    "SELECT * FROM vital_samples WHERE ts >= $1 AND ts <= $2 ORDER BY ts ASC",
+    `SELECT ${EXPORT_COLUMNS} FROM vital_samples WHERE ts >= $1 AND ts <= $2 ORDER BY ts ASC`,
     [from, to],
   );
   return rows;
+}
+
+// 미리보기 — 기간 내 최근 N건만 DB 에서 잘라 조회(전체 로드 금지). 응답 규약과 동일한 최근순(DESC).
+export async function previewRecentSamples(opts: {
+  workerId?: string;
+  from: string;
+  to: string;
+  limit: number;
+}): Promise<ExportRow[]> {
+  const { workerId, from, to, limit } = opts;
+  if (workerId) {
+    const { rows } = await q<ExportRow>(
+      `SELECT ${EXPORT_COLUMNS} FROM vital_samples
+        WHERE worker_id = $1 AND ts >= $2 AND ts <= $3
+        ORDER BY ts DESC, id DESC LIMIT $4`,
+      [workerId, from, to, limit],
+    );
+    return rows;
+  }
+  const { rows } = await q<ExportRow>(
+    `SELECT ${EXPORT_COLUMNS} FROM vital_samples
+      WHERE ts >= $1 AND ts <= $2
+      ORDER BY ts DESC, id DESC LIMIT $3`,
+    [from, to, limit],
+  );
+  return rows;
+}
+
+// 심각도 집계용 임계 파라미터 — lib/severity SEVERITY_SQL_PARAMS 와 구조 일치(값은 호출부가 주입).
+export type SeverityCountParams = {
+  hrDangerHigh: number;
+  hrDangerLow: number;
+  hrCautionHigh: number;
+  hrCautionLow: number;
+  spo2Danger: number;
+  spo2Caution: number;
+  tempOffset: number;
+  tempDanger: number;
+  tempCaution: number;
+};
+
+// 기간 일치 전체/위험/주의 건수 — overallStatus(worst-of + SOS/낙상 즉시 danger)를 SQL 로 동일 재현.
+// 임계값은 파라미터 바인딩(하드코딩 금지 — 단일 소스는 lib/severity). caution 은 "danger 아님" 전제.
+export async function countSamplesBySeverity(
+  opts: { workerId?: string; from: string; to: string },
+  p: SeverityCountParams,
+): Promise<{ total: number; danger: number; caution: number }> {
+  const { workerId, from, to } = opts;
+  // 주의: SQL 3치 논리 — fall/sos 가 NULL 이면 `= 1` 이 false 아닌 NULL 이 되고,
+  // `NOT (… OR NULL)` 도 NULL 이라 caution FILTER 가 전부 탈락한다(실 DB 실측으로 적발).
+  // COALESCE 로 NULL→0 강제해 조건 전체가 항상 확정 boolean 이 되게 한다.
+  const dangerCond = `(
+    COALESCE(fall_detected, 0) = 1 OR COALESCE(manual_sos, 0) = 1
+    OR (heart_rate IS NOT NULL AND (heart_rate >= $3 OR heart_rate <= $4))
+    OR (spo2 IS NOT NULL AND spo2 < $5)
+    OR (skin_temp_c IS NOT NULL AND skin_temp_c + $6 >= $7)
+  )`;
+  const cautionCond = `(
+    (heart_rate IS NOT NULL AND (heart_rate >= $8 OR heart_rate <= $9))
+    OR (spo2 IS NOT NULL AND spo2 < $10)
+    OR (skin_temp_c IS NOT NULL AND skin_temp_c + $6 >= $11)
+  )`;
+  const params: unknown[] = [
+    from,
+    to,
+    p.hrDangerHigh,
+    p.hrDangerLow,
+    p.spo2Danger,
+    p.tempOffset,
+    p.tempDanger,
+    p.hrCautionHigh,
+    p.hrCautionLow,
+    p.spo2Caution,
+    p.tempCaution,
+  ];
+  let where = "ts >= $1 AND ts <= $2";
+  if (workerId) {
+    params.push(workerId);
+    where += ` AND worker_id = $${params.length}`;
+  }
+  const { rows } = await q<{ total: number; danger: number; caution: number }>(
+    `SELECT
+       COUNT(*)::bigint AS total,
+       COUNT(*) FILTER (WHERE ${dangerCond})::bigint AS danger,
+       COUNT(*) FILTER (WHERE NOT ${dangerCond} AND ${cautionCond})::bigint AS caution
+     FROM vital_samples WHERE ${where}`,
+    params,
+  );
+  return {
+    total: rows[0]?.total ?? 0,
+    danger: rows[0]?.danger ?? 0,
+    caution: rows[0]?.caution ?? 0,
+  };
+}
+
+// 기간 일치 총 건수 — 스트리밍 CSV 의 x-row-count 헤더·XLSX 상한 안내용 경량 COUNT.
+export async function countExportRows(opts: {
+  workerId?: string;
+  from: string;
+  to: string;
+}): Promise<number> {
+  const { workerId, from, to } = opts;
+  if (workerId) {
+    const { rows } = await q<{ n: number }>(
+      "SELECT COUNT(*)::bigint AS n FROM vital_samples WHERE worker_id = $1 AND ts >= $2 AND ts <= $3",
+      [workerId, from, to],
+    );
+    return rows[0]?.n ?? 0;
+  }
+  const { rows } = await q<{ n: number }>(
+    "SELECT COUNT(*)::bigint AS n FROM vital_samples WHERE ts >= $1 AND ts <= $2",
+    [from, to],
+  );
+  return rows[0]?.n ?? 0;
+}
+
+// CSV 스트리밍용 키셋 페이지네이션 — (ts, id) 커서로 batch 행씩 순회. 메모리 상주 = 1배치.
+// OFFSET 대신 키셋: 후반 페이지 비용 증가·순회 중 삽입에 의한 중복/누락이 없다(idx_vs_ts_id 사용).
+export async function* iterateExportRows(opts: {
+  workerId?: string;
+  from: string;
+  to: string;
+  batchSize?: number;
+}): AsyncGenerator<ExportRow[]> {
+  const { workerId, from, to } = opts;
+  const batch = opts.batchSize ?? 5000;
+  let cursor: { ts: string; id: number } | null = null;
+  for (;;) {
+    const params: unknown[] = workerId ? [workerId, from, to] : [from, to];
+    let where = workerId
+      ? "worker_id = $1 AND ts >= $2 AND ts <= $3"
+      : "ts >= $1 AND ts <= $2";
+    if (cursor) {
+      params.push(cursor.ts, cursor.id);
+      where += ` AND (ts, id) > ($${params.length - 1}, $${params.length}::int)`;
+    }
+    const { rows } = await q<ExportRow>(
+      `SELECT ${EXPORT_COLUMNS} FROM vital_samples
+        WHERE ${where} ORDER BY ts ASC, id ASC LIMIT ${batch}`,
+      params,
+    );
+    if (rows.length === 0) return;
+    yield rows;
+    const last = rows[rows.length - 1];
+    if (!last) return;
+    cursor = { ts: last.ts, id: last.id };
+  }
+}
+
+// XLSX 상한 조회 — 기간 내 최근 limit 건을 시간 오름차순으로(시트 표시 규약 유지).
+export async function exportSamplesCapped(opts: {
+  workerId?: string;
+  from: string;
+  to: string;
+  limit: number;
+}): Promise<ExportRow[]> {
+  const rows = await previewRecentSamples(opts);
+  return rows.reverse();
 }
 
 // 현장 환경 snapshot 저장 — weather API fresh fetch 시 (캐시 hit 제외) 1회 기록

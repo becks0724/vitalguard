@@ -1,113 +1,25 @@
-// 관리자 — 현장정보 + vital_samples 를 기간/워커 필터로 CSV 스트리밍 다운로드
+// 관리자 — 현장정보 + vital_samples 를 기간/워커 필터로 CSV 스트리밍 다운로드.
+// 전체 로드 금지: 키셋 페이지네이션(iterateExportRows)으로 배치 단위 조회 → ReadableStream pull 로
+// 백프레셔를 받으며 직송. 메모리 상주 = 1배치(기본 5,000행) — 데이터가 얼마나 쌓여도 성립.
+// (과거: 전체 기간 313k 행 SELECT * 일괄 로드 → Node 힙 OOM → 컨테이너 사망 503 + 라이브 수집 순단)
 import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import {
-  exportSamples,
+  countExportRows,
   exportSiteInfoLogs,
   getWorkerProfiles,
-  type ExportRow,
-  type SiteInfoRow,
+  iterateExportRows,
 } from "../../../../lib/db";
 import {
-  STATUS_LABEL,
-  coreTempStatus,
-  heartRateStatus,
-  overallStatus,
-  spo2Status,
-} from "../../../../lib/severity";
-
-// DB 컬럼 + 위험도 4 컬럼 (산업재해 자료 제출 시 이상치 표시용).
-// status_* 는 한글 라벨 (정상/주의/위험/대기) — Excel conditional formatting 으로 색 적용 가능.
-const CSV_HEADER = [
-  "id",
-  "received_at",
-  "worker_id",
-  "worker_name",
-  "employee_id",
-  "job_title",
-  "guardian_name",
-  "guardian_phone",
-  "ts",
-  "heart_rate",
-  "spo2",
-  "skin_temp_c",
-  "ambient_temp_c",
-  "battery_pct",
-  "manual_sos",
-  "fall_detected",
-  "latitude",
-  "longitude",
-  "hr_status",
-  "spo2_status",
-  "temp_status",
-  "overall_status",
-] as const;
-
-const SITE_INFO_HEADER = [
-  "snapshot_date",
-  "recorded_at",
-  "company_name",
-  "site_name",
-  "construction_type",
-  "address",
-  "start_date",
-  "completion_date",
-] as const;
-
-// RFC 4180 — 쉼표/줄바꿈/큰따옴표 포함 시 " 로 감싸고 내부 " 는 "" 로 escape
-function csvCell(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  const s = String(value);
-  if (/[",\n\r]/.test(s)) {
-    return `"${s.replace(/"/g, '""')}"`;
-  }
-  return s;
-}
-
-// 직급은 관제 웹 오버라이드(worker_profile)가 폰 발신값(job_title)보다 우선 — 효과값으로 export.
-function withStatuses(row: ExportRow, profiles: Record<string, string>) {
-  return {
-    ...row,
-    job_title: profiles[row.worker_id] ?? row.job_title,
-    hr_status: STATUS_LABEL[heartRateStatus(row.heart_rate)],
-    spo2_status: STATUS_LABEL[spo2Status(row.spo2)],
-    temp_status: STATUS_LABEL[coreTempStatus(row.skin_temp_c)],
-    overall_status: STATUS_LABEL[overallStatus(row)],
-  };
-}
-
-function toCsv(
-  rows: ExportRow[],
-  siteInfoRows: SiteInfoRow[],
-  profiles: Record<string, string>,
-): string {
-  const lines: string[] = [
-    "현장정보(관리자 저장 기준 일 1회 snapshot)",
-    SITE_INFO_HEADER.join(","),
-  ];
-  for (const row of siteInfoRows) {
-    lines.push(
-      SITE_INFO_HEADER.map((col) => csvCell((row as Record<string, unknown>)[col])).join(","),
-    );
-  }
-
-  lines.push("", "생체데이터", CSV_HEADER.join(","));
-  for (const row of rows) {
-    const enriched = withStatuses(row, profiles);
-    lines.push(
-      CSV_HEADER.map((col) => csvCell((enriched as Record<string, unknown>)[col])).join(","),
-    );
-  }
-  return lines.join("\n") + "\n";
-}
-
-function filenameFor(workerId: string | undefined, from: string, to: string) {
-  const safeFrom = from.slice(0, 10);
-  const safeTo = to.slice(0, 10);
-  const wid = workerId ? workerId.replace(/[^a-zA-Z0-9_-]/g, "_") : "all";
-  return `vital-${wid}-${safeFrom}_${safeTo}.csv`;
-}
+  csvFilenameFor,
+  csvPrologue,
+  rowsToCsvChunk,
+} from "../../../../lib/export-csv";
+import {
+  releaseExportSlot,
+  tryAcquireExportSlot,
+} from "../../../../lib/export-guard";
 
 export async function GET(request: Request) {
   if (!(await hasAdminMenuAccess(request))) {
@@ -136,20 +48,89 @@ export async function GET(request: Request) {
     );
   }
 
-  const rows = await exportSamples({ workerId, from, to });
-  const siteInfoRows = await exportSiteInfoLogs({ from, to });
-  const csv = toCsv(rows, siteInfoRows, await getWorkerProfiles());
+  // 동시 내보내기 1건 제한 — 대용량 스트리밍 중첩으로 인한 메모리 중첩 방지(CSV·XLSX 공유 가드)
+  if (!tryAcquireExportSlot()) {
+    return NextResponse.json(
+      { ok: false, error: "다른 내보내기가 진행 중입니다. 완료 후 다시 시도하세요." },
+      { status: 429 },
+    );
+  }
+  // 스트림 종료/중단/오류 어느 경로로든 정확히 1회만 해제
+  let released = false;
+  const release = () => {
+    if (!released) {
+      released = true;
+      releaseExportSlot();
+    }
+  };
 
-  // 한국어 엑셀 호환을 위해 UTF-8 BOM prefix — 엑셀이 ANSI 로 오인하는 문제 회피
-  const bom = "﻿";
+  try {
+    const [siteInfoRows, profiles, totalRows] = await Promise.all([
+      exportSiteInfoLogs({ from, to }),
+      getWorkerProfiles(),
+      countExportRows({ workerId, from, to }),
+    ]);
 
-  return new NextResponse(bom + csv, {
-    status: 200,
-    headers: {
-      "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="${filenameFor(workerId, from, to)}"`,
-      "x-row-count": String(rows.length),
-      "x-site-info-rows": String(siteInfoRows.length),
-    },
-  });
+    const gen = iterateExportRows({ workerId, from, to });
+    const encoder = new TextEncoder();
+    const startedAt = Date.now();
+    let prologueSent = false;
+    let sentRows = 0;
+
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          if (!prologueSent) {
+            prologueSent = true;
+            // 한국어 엑셀 호환 UTF-8 BOM + 현장정보 블록 + 생체데이터 헤더
+            controller.enqueue(encoder.encode("﻿" + csvPrologue(siteInfoRows)));
+            return;
+          }
+          const { value, done } = await gen.next();
+          if (done) {
+            // eslint-disable-next-line no-console -- 내보내기 관측 로그(시작/완료/행수/소요) 의도적 유지
+            console.log(
+              `[export-csv] 완료 rows=${sentRows} total=${totalRows} ms=${Date.now() - startedAt}`,
+            );
+            release();
+            controller.close();
+            return;
+          }
+          sentRows += value.length;
+          controller.enqueue(encoder.encode(rowsToCsvChunk(value, profiles)));
+        } catch (err) {
+          // 중간 실패는 스트림 오류로 명시화 — 부분 파일이 정상 다운로드처럼 보이지 않게
+          console.error(`[export-csv] 실패 rows=${sentRows}`, err);
+          release();
+          controller.error(err);
+        }
+      },
+      async cancel() {
+        // 클라이언트 중단(다운로드 취소·연결 끊김)
+        // eslint-disable-next-line no-console -- 내보내기 관측 로그(시작/완료/행수/소요) 의도적 유지
+        console.log(`[export-csv] 중단 rows=${sentRows}`);
+        release();
+        await gen.return(undefined as never).catch(() => {});
+      },
+    });
+
+    // eslint-disable-next-line no-console -- 내보내기 관측 로그(시작/완료/행수/소요) 의도적 유지
+    console.log(
+      `[export-csv] 시작 worker=${workerId ?? "all"} from=${from} to=${to} total=${totalRows}`,
+    );
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "content-type": "text/csv; charset=utf-8",
+        "content-disposition": `attachment; filename="${csvFilenameFor(workerId, from, to)}"`,
+        // 스트리밍 시작 시점의 COUNT — 진행 중 신규 적재분이 뒤에 포함될 수 있어 참고값
+        "x-row-count": String(totalRows),
+        "x-site-info-rows": String(siteInfoRows.length),
+      },
+    });
+  } catch (err) {
+    release();
+    throw err;
+  }
 }

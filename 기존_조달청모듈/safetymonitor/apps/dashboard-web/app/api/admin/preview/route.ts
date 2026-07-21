@@ -1,9 +1,16 @@
 // 관리자 — CSV 다운로드 전 위험도 미리보기 (최근 N건, 이상 row 강조용)
+// 전체 로드 금지: 최근 N건은 LIMIT 푸시다운, 전체/위험/주의 건수는 SQL 집계(임계 파라미터 바인딩).
+// 과거 전체 기간 313k 행 로드가 Node 힙 OOM → 컨테이너 사망(503)을 유발했던 경로.
 import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
-import { exportSamples, type ExportRow } from "../../../../lib/db";
 import {
+  countSamplesBySeverity,
+  previewRecentSamples,
+  type ExportRow,
+} from "../../../../lib/db";
+import {
+  SEVERITY_SQL_PARAMS,
   coreTempStatus,
   heartRateStatus,
   overallStatus,
@@ -41,6 +48,8 @@ export async function GET(request: Request) {
   const workerId = url.searchParams.get("workerId") || undefined;
   const fromRaw = url.searchParams.get("from");
   const toRaw = url.searchParams.get("to");
+  // countOnly=1 — 기간 일치 건수 배지용(행 조회 생략, 집계만)
+  const countOnly = url.searchParams.get("countOnly") === "1";
 
   const now = new Date();
   const defaultTo = now.toISOString();
@@ -55,39 +64,29 @@ export async function GET(request: Request) {
     );
   }
 
-  const all = await exportSamples({ workerId, from, to });
-  // 미리보기 — 가장 최근 N건 우선 표시 (역순). 다운로드는 항상 전체 + 시간 오름차순
-  const recentSlice = all.slice(-PREVIEW_LIMIT).reverse();
+  const range = { workerId, from, to };
+  const [counts, recent] = await Promise.all([
+    countSamplesBySeverity(range, SEVERITY_SQL_PARAMS),
+    countOnly
+      ? Promise.resolve([] as ExportRow[])
+      : previewRecentSamples({ ...range, limit: PREVIEW_LIMIT }),
+  ]);
 
-  const rows: PreviewRow[] = recentSlice.map((row) => {
-    const overall = overallStatus(row);
-    return {
-      ...row,
-      hr_status: heartRateStatus(row.heart_rate),
-      spo2_status: spo2Status(row.spo2),
-      temp_status: coreTempStatus(row.skin_temp_c),
-      overall_status: overall,
-    };
-  });
-
-  // 전체 danger/caution 카운트도 계산해서 미리 보여줌 (요약 배지용)
-  let totalDanger = 0;
-  let totalCaution = 0;
-  for (const row of all) {
-    const o = overallStatus(row);
-    if (o === "danger") totalDanger += 1;
-    else if (o === "caution") totalCaution += 1;
-  }
+  // 개별 행 상태 라벨링은 기존과 동일하게 TS 판정 함수 사용(50건 한정이라 비용 무시 가능)
+  const rows: PreviewRow[] = recent.map((row) => ({
+    ...row,
+    hr_status: heartRateStatus(row.heart_rate),
+    spo2_status: spo2Status(row.spo2),
+    temp_status: coreTempStatus(row.skin_temp_c),
+    overall_status: overallStatus(row),
+  }));
 
   return NextResponse.json({
     ok: true,
-    totalMatched: all.length,
+    totalMatched: counts.total,
     shown: rows.length,
-    dangerCount: totalDanger,
-    cautionCount: totalCaution,
+    dangerCount: counts.danger,
+    cautionCount: counts.caution,
     rows,
-  } satisfies Omit<PreviewResponse, "dangerCount" | "cautionCount"> & {
-    dangerCount: number;
-    cautionCount: number;
-  });
+  } satisfies PreviewResponse);
 }

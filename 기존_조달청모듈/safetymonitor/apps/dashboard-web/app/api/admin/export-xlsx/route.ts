@@ -1,11 +1,14 @@
 // 관리자 — XLSX 내보내기
 // 시트1: 현장정보 일 1회 snapshot / 시트2: 생체데이터 이상치 빨강 / 시트3: 현장환경 이력
+// 시트2 는 최근 XLSX_VITAL_ROW_CAP 건 상한 — exceljs 는 워크북 전체를 메모리에 만들므로(스타일 포함)
+// 무제한 행은 OOM 경로. 전체 원본 다운로드 책임은 스트리밍 CSV 가 진다(상한 초과 시 안내 행 표기).
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import {
-  exportSamples,
+  countExportRows,
+  exportSamplesCapped,
   exportSiteInfoLogs,
   exportWeatherLogs,
   getWorkerProfiles,
@@ -14,6 +17,10 @@ import {
   type WeatherLogRow,
 } from "../../../../lib/db";
 import {
+  releaseExportSlot,
+  tryAcquireExportSlot,
+} from "../../../../lib/export-guard";
+import {
   STATUS_LABEL,
   coreTempStatus,
   heartRateStatus,
@@ -21,6 +28,9 @@ import {
   spo2Status,
   type Status,
 } from "../../../../lib/severity";
+
+// 시트2 생체데이터 행 상한 — 열람·보고용 실용 범위. 초과분은 CSV(전체 스트리밍)로 안내.
+const XLSX_VITAL_ROW_CAP = 50_000;
 
 // 위험 = 빨강 굵게, 주의 = 주황, 정상/대기 = 기본
 const FONT_BY_STATUS: Record<Status, Partial<ExcelJS.Font>> = {
@@ -255,30 +265,63 @@ export async function GET(request: Request) {
     );
   }
 
-  const vitalRows = await exportSamples({ workerId, from, to });
-  // 현장 환경은 워커 무관 (현장 공통) — 기간만 필터
-  const weatherRows = await exportWeatherLogs({ from, to });
-  // 현장 정보는 관리자 저장 시 하루 1회 snapshot 으로 보존
-  const siteInfoRows = await exportSiteInfoLogs({ from, to });
+  // 동시 내보내기 1건 제한 — CSV 스트리밍과 공유 가드(메모리 중첩 방지)
+  if (!tryAcquireExportSlot()) {
+    return NextResponse.json(
+      { ok: false, error: "다른 내보내기가 진행 중입니다. 완료 후 다시 시도하세요." },
+      { status: 429 },
+    );
+  }
+  const startedAt = Date.now();
+  try {
+    // 기간 일치 총 건수 + 최근 상한 건(시간 오름차순) — 전체 로드 금지
+    const [totalRows, vitalRows, weatherRows, siteInfoRows, profiles] =
+      await Promise.all([
+        countExportRows({ workerId, from, to }),
+        exportSamplesCapped({ workerId, from, to, limit: XLSX_VITAL_ROW_CAP }),
+        // 현장 환경은 워커 무관 (현장 공통) — 기간만 필터
+        exportWeatherLogs({ from, to }),
+        // 현장 정보는 관리자 저장 시 하루 1회 snapshot 으로 보존
+        exportSiteInfoLogs({ from, to }),
+        getWorkerProfiles(),
+      ]);
 
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "SafetyMonitor";
-  wb.created = now;
-  buildSiteInfoSheet(wb, siteInfoRows);
-  buildVitalSheet(wb, vitalRows, await getWorkerProfiles());
-  buildWeatherSheet(wb, weatherRows);
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "SafetyMonitor";
+    wb.created = now;
+    buildSiteInfoSheet(wb, siteInfoRows);
+    const vitalWs = buildVitalSheet(wb, vitalRows, profiles);
+    buildWeatherSheet(wb, weatherRows);
 
-  const buffer = await wb.xlsx.writeBuffer();
+    // 상한 초과 시 시트 최상단 안내 행 — 잘림이 침묵하지 않게 명시(전체는 CSV 안내)
+    if (totalRows > vitalRows.length) {
+      vitalWs.spliceRows(1, 0, [
+        `⚠ 기간 일치 ${totalRows.toLocaleString()}건 중 최근 ${vitalRows.length.toLocaleString()}건만 표시 — 전체 데이터는 CSV 다운로드를 이용하세요`,
+      ]);
+      const notice = vitalWs.getRow(1);
+      notice.font = { bold: true, color: { argb: "FFDC2626" } };
+      vitalWs.views = [{ state: "frozen", ySplit: 2 }];
+    }
 
-  return new NextResponse(buffer, {
-    status: 200,
-    headers: {
-      "content-type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "content-disposition": `attachment; filename="${filenameFor(workerId, from, to)}"`,
-      "x-vital-rows": String(vitalRows.length),
-      "x-weather-rows": String(weatherRows.length),
-      "x-site-info-rows": String(siteInfoRows.length),
-    },
-  });
+    const buffer = await wb.xlsx.writeBuffer();
+    // eslint-disable-next-line no-console -- 내보내기 관측 로그(시작/완료/행수/소요) 의도적 유지
+    console.log(
+      `[export-xlsx] 완료 rows=${vitalRows.length} total=${totalRows} ms=${Date.now() - startedAt}`,
+    );
+
+    return new NextResponse(buffer, {
+      status: 200,
+      headers: {
+        "content-type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": `attachment; filename="${filenameFor(workerId, from, to)}"`,
+        "x-vital-rows": String(vitalRows.length),
+        "x-vital-rows-total": String(totalRows),
+        "x-weather-rows": String(weatherRows.length),
+        "x-site-info-rows": String(siteInfoRows.length),
+      },
+    });
+  } finally {
+    releaseExportSlot();
+  }
 }

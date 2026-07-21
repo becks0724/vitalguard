@@ -49,6 +49,9 @@ export function workHeartRateStatus(hr: number | null | undefined): Status {
   return "normal";
 }
 
+// 심박 안정 임계의 '주의' 밴드 (의료 reference) — heartRateStatus 와 SQL 집계가 공유하는 단일 소스.
+export const HR_CAUTION = { highBpm: 110, lowBpm: 50 } as const;
+
 // 심박 위험도 — 활동 미지정/안정: danger ≥130·≤40, caution 110~129·41~50 (안정 임계, 의료 reference).
 // 활동 '작업 중(heavy)': danger ≥155(과부하)·≤45(급락), caution 135~154(고강도) (작업부하 밴드).
 export function heartRateStatus(
@@ -60,7 +63,7 @@ export function heartRateStatus(
   if (hr >= THRESHOLDS.heartRate.highBpm || hr <= THRESHOLDS.heartRate.lowBpm) {
     return "danger";
   }
-  if (hr >= 110 || hr <= 50) return "caution";
+  if (hr >= HR_CAUTION.highBpm || hr <= HR_CAUTION.lowBpm) return "caution";
   return "normal";
 }
 
@@ -79,6 +82,22 @@ export function coreTempStatus(skinTempC: number | null | undefined): Status {
   if (core >= THRESHOLDS.coreTemp.cautionC) return "caution";
   return "normal";
 }
+
+// SQL 집계(내보내기 미리보기 카운트)용 임계 파라미터 — 위 판정 함수들과 동일 상수에서 파생(단일 소스).
+// SQL 쪽에 숫자를 하드코딩하지 않기 위해 쿼리 파라미터로 바인딩해 전달한다(과거 감사 M5 임계 중복 재발 방지).
+export const SEVERITY_SQL_PARAMS = {
+  hrDangerHigh: THRESHOLDS.heartRate.highBpm,
+  hrDangerLow: THRESHOLDS.heartRate.lowBpm,
+  hrCautionHigh: HR_CAUTION.highBpm,
+  hrCautionLow: HR_CAUTION.lowBpm,
+  spo2Danger: THRESHOLDS.spo2.dangerPct,
+  spo2Caution: THRESHOLDS.spo2.cautionPct,
+  tempOffset: THRESHOLDS.coreTemp.wristToCoreOffsetC,
+  tempDanger: THRESHOLDS.coreTemp.dangerC,
+  tempCaution: THRESHOLDS.coreTemp.cautionC,
+} as const;
+
+export type SeveritySqlParams = typeof SEVERITY_SQL_PARAMS;
 
 export type StatusInputs = {
   heart_rate: number | null;

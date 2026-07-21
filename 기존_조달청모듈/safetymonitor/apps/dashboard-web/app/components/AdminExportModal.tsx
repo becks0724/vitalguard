@@ -404,6 +404,8 @@ function ExportPanel({
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  // 선택 기간 일치 건수 배지 — 드롭다운의 DB 누적 건수와 구분되는, 실제 내보내기 대상 수량
+  const [rangeCount, setRangeCount] = useState<number | null>(null);
   const [tab, setTab] = useState(0); // 관리자 메뉴 활성 탭
 
   useEffect(() => {
@@ -456,6 +458,36 @@ function ExportPanel({
       active = false;
     };
   }, [token, onAuthFail, onSiteInfoSave]);
+
+  // 날짜/작업자 변경 시 기간 일치 건수만 서버 COUNT 집계로 조회(countOnly=1 · 디바운스 400ms).
+  // 보조 배지라 실패는 조용히 숨긴다(내보내기 흐름에 영향 없음).
+  useEffect(() => {
+    setRangeCount(null);
+    if (!from || !to) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams();
+        if (selectedWorker) params.set("workerId", selectedWorker);
+        params.set("from", fromYmdToIso(from, false));
+        params.set("to", fromYmdToIso(to, true));
+        params.set("countOnly", "1");
+        const res = await fetch(`/api/admin/preview?${params.toString()}`, {
+          headers: { authorization: `Basic ${token}` },
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as { ok: boolean; totalMatched: number };
+        if (active && json.ok) setRangeCount(json.totalMatched);
+      } catch {
+        // 배지 전용 — 무시
+      }
+    }, 400);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [from, to, selectedWorker, token]);
 
   async function handlePreview() {
     setError(null);
@@ -583,7 +615,7 @@ function ExportPanel({
           onChange={(e) => setSelectedWorker(e.target.value)}
           className="mt-1 w-full rounded border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:border-cyan-500 dark:border-white/10 dark:bg-canvas/[0.02] dark:text-zinc-100 dark:focus:border-cyan-400/60"
         >
-          <option value="">전체 ({total.toLocaleString()}건)</option>
+          <option value="">전체 (DB 누적 {total.toLocaleString()}건)</option>
           {(workers ?? []).map((w) => {
             const label =
               w.worker_name && w.employee_id
@@ -618,6 +650,16 @@ function ExportPanel({
           />
         </label>
       </div>
+
+      {rangeCount !== null && (
+        <p className="text-xs text-body dark:text-zinc-400">
+          선택 기간 일치{" "}
+          <span className="font-semibold tabular-nums text-ink dark:text-zinc-100">
+            {rangeCount.toLocaleString()}
+          </span>
+          건 — 이 수량이 내보내기 대상입니다 (드롭다운 숫자는 DB 전체 누적)
+        </p>
+      )}
 
       {error && (
         <p className="rounded border border-red-400/40 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-200">
