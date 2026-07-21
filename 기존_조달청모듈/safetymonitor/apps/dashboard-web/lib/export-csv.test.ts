@@ -91,21 +91,40 @@ const ROWS: ExportRow[] = [
     spo2: 91,
     skin_temp_c: 37.1,
   },
+  // D: 스트레스 입력 보유 — rest 활동·독립 검산 stress_index=53 (hrv z=1.11·excess 27/68·resp z=0.14)
+  {
+    ...BASE_ROW,
+    id: 4,
+    worker_id: "EMP-4",
+    worker_name: "박현장",
+    employee_id: "EMP-4",
+    ts: "2026-07-01T00:03:00.000Z",
+    received_at: "2026-07-01T00:03:01.000Z",
+    heart_rate: 95,
+    hrv_sdnn_ms: 30,
+    resting_heart_rate: 68,
+    active_energy_kcal: 1.0,
+    steps: 50,
+    respiratory_rate: 16,
+  },
 ];
 
 // EMP-1 만 관제 웹 직급 오버라이드 존재(효과값 규칙: 오버라이드 ?? 폰 발신값)
 const PROFILES: Record<string, string> = { "EMP-1": "현장소장" };
 
+// v2 양식 — 기존 22컬럼 위치 불변 + 뒤에 스트레스 입력 7종·stress_index append.
+// A~C 는 스트레스 입력 전무(심박 단독 포함) → calibrating → 8칸 빈 값. D 만 지수 53(독립 검산값).
 const EXPECTED =
   "현장정보(관리자 저장 기준 일 1회 snapshot)\n" +
   "snapshot_date,recorded_at,company_name,site_name,construction_type,address,start_date,completion_date\n" +
   "2026-07-01,2026-07-01T00:00:00.000Z,(주)VitAlGuard,스마트인재개발원 신축 공사,건축 (신축),광주광역시 동구 중앙로 196,2026-03-24,2026-10-06\n" +
   "\n" +
   "생체데이터\n" +
-  "id,received_at,worker_id,worker_name,employee_id,job_title,guardian_name,guardian_phone,ts,heart_rate,spo2,skin_temp_c,ambient_temp_c,battery_pct,manual_sos,fall_detected,latitude,longitude,hr_status,spo2_status,temp_status,overall_status\n" +
-  "1,2026-07-01T00:00:01.000Z,EMP-1,장우진,EMP-1,현장소장,,,2026-07-01T00:00:00.000Z,75,98,36,,80,0,0,35.1,126.9,정상,정상,정상,정상\n" +
-  '2,2026-07-01T00:01:01.000Z,EMP-2,"김""수,영",EMP-2,"철근, 반장",이보호,010-1234-5678,2026-07-01T00:01:00.000Z,140,,,,,1,0,,,위험,대기,대기,위험\n' +
-  "3,2026-07-01T00:02:01.000Z,EMP-3,양지후,EMP-3,,,,2026-07-01T00:02:00.000Z,115,91,37.1,,,,,,,주의,주의,주의,주의\n";
+  "id,received_at,worker_id,worker_name,employee_id,job_title,guardian_name,guardian_phone,ts,heart_rate,spo2,skin_temp_c,ambient_temp_c,battery_pct,manual_sos,fall_detected,latitude,longitude,hr_status,spo2_status,temp_status,overall_status,hrv_sdnn_ms,resting_heart_rate,active_energy_kcal,steps,walking_heart_rate,flights_climbed,respiratory_rate,stress_index\n" +
+  "1,2026-07-01T00:00:01.000Z,EMP-1,장우진,EMP-1,현장소장,,,2026-07-01T00:00:00.000Z,75,98,36,,80,0,0,35.1,126.9,정상,정상,정상,정상,,,,,,,,\n" +
+  '2,2026-07-01T00:01:01.000Z,EMP-2,"김""수,영",EMP-2,"철근, 반장",이보호,010-1234-5678,2026-07-01T00:01:00.000Z,140,,,,,1,0,,,위험,대기,대기,위험,,,,,,,,\n' +
+  "3,2026-07-01T00:02:01.000Z,EMP-3,양지후,EMP-3,,,,2026-07-01T00:02:00.000Z,115,91,37.1,,,,,,,주의,주의,주의,주의,,,,,,,,\n" +
+  "4,2026-07-01T00:03:01.000Z,EMP-4,박현장,EMP-4,,,,2026-07-01T00:03:00.000Z,95,,,,,,,,,정상,대기,대기,정상,30,68,1,50,,,16,53\n";
 
 test("골든마스터 — 현장정보 블록 + 생체데이터 + 상태 라벨 바이트 동일", () => {
   const doc = csvPrologue(SITE_ROWS) + rowsToCsvChunk(ROWS, PROFILES);

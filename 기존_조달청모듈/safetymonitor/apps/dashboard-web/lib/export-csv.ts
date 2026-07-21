@@ -1,5 +1,8 @@
 // CSV 내보내기 순수 헬퍼 — 스트리밍 라우트와 골든마스터(형식 고정) 테스트가 공유하는 단일 소스.
-// 형식 규약: [현장정보 블록] 빈 줄 [생체데이터 헤더] [행들], 각 줄 \n 구분·마지막 \n. (조달 제출 양식 — 변경 금지)
+// 형식 규약: [현장정보 블록] 빈 줄 [생체데이터 헤더] [행들], 각 줄 \n 구분·마지막 \n. (조달 제출 양식)
+// 컬럼 확장은 append-only — 기존 22컬럼의 위치를 바꾸지 않는다(위치 기반 소비 호환 유지).
+import { computeStressIndex } from "@safetymonitor/analyzers";
+
 import type { ExportRow, SiteInfoRow } from "./db";
 import {
   STATUS_LABEL,
@@ -9,8 +12,10 @@ import {
   spo2Status,
 } from "./severity";
 
-// DB 컬럼 + 위험도 4 컬럼 (산업재해 자료 제출 시 이상치 표시용).
+// DB 컬럼 + 위험도 4 컬럼 (산업재해 자료 제출 시 이상치 표시용)
+// + 스트레스 입력 7종·스트레스 지수 (v2 append — LLM 컨디션 분석·산업재해 스트레스 근거용).
 // status_* 는 한글 라벨 (정상/주의/위험/대기) — Excel conditional formatting 으로 색 적용 가능.
+// stress_index 는 0~100 정수(참고용 추정·의료진단 아님), 입력 부족(calibrating) 시 빈 칸.
 export const CSV_HEADER = [
   "id",
   "received_at",
@@ -34,6 +39,14 @@ export const CSV_HEADER = [
   "spo2_status",
   "temp_status",
   "overall_status",
+  "hrv_sdnn_ms",
+  "resting_heart_rate",
+  "active_energy_kcal",
+  "steps",
+  "walking_heart_rate",
+  "flights_climbed",
+  "respiratory_rate",
+  "stress_index",
 ] as const;
 
 export const SITE_INFO_HEADER = [
@@ -58,7 +71,19 @@ export function csvCell(value: unknown): string {
 }
 
 // 직급은 관제 웹 오버라이드(worker_profile)가 폰 발신값(job_title)보다 우선 — 효과값으로 export.
+// stress_index 는 그 행의 스트레스 입력만으로 계산(analyzers 단일 소스·population baseline 폴백) —
+// 입력이 없어 calibrating 이면 null(빈 칸). 활동 데이터 없는 심박 단독 행도 계산하지 않는다(보수적).
 export function withStatuses(row: ExportRow, profiles: Record<string, string>) {
+  const stress = computeStressIndex({
+    heartRate: row.heart_rate ?? undefined,
+    hrvSdnnMs: row.hrv_sdnn_ms ?? undefined,
+    restingHeartRate: row.resting_heart_rate ?? undefined,
+    activeEnergyKcal: row.active_energy_kcal ?? undefined,
+    steps: row.steps ?? undefined,
+    walkingHeartRate: row.walking_heart_rate ?? undefined,
+    flightsClimbed: row.flights_climbed ?? undefined,
+    respiratoryRate: row.respiratory_rate ?? undefined,
+  });
   return {
     ...row,
     job_title: profiles[row.worker_id] ?? row.job_title,
@@ -66,6 +91,7 @@ export function withStatuses(row: ExportRow, profiles: Record<string, string>) {
     spo2_status: STATUS_LABEL[spo2Status(row.spo2)],
     temp_status: STATUS_LABEL[coreTempStatus(row.skin_temp_c)],
     overall_status: STATUS_LABEL[overallStatus(row)],
+    stress_index: stress.calibrating ? null : stress.index,
   };
 }
 
