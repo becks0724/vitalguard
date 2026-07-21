@@ -35,3 +35,13 @@
 - [x] 배포 2회 (cloudbuild `_AI_URL` 보존 · `00102-rrg`→`00103-zr7` + NODE_OPTIONS=--max-old-space-size=800)
 - [x] 라이브 검증: 불변 구간 = 베이스라인 정확 일치 · 전체 313,220건 미리보기 200 · CSV 313,220행=x-row-count 완주(51.9MB/8.6s) · XLSX 200(1만 상한+안내 행) · 다운로드 중 vital 6/6 무중단 · 새 리비전 OOM 로그 0
 - [x] 커밋·push (`6938e7a` 코드 · `16dfca6` 문서 · `bed1df8` XLSX 상한 재조정)
+
+## 확장 — CSV v2: 스트레스 입력 7종 + 스트레스 지수 (2026-07-21 · 사용자 요청)
+- [x] `CSV_HEADER` append-only 8컬럼 추가 (기존 22컬럼 위치 불변 — 위치 기반 소비 호환)
+- [x] `withStatuses` 행 단위 `computeStressIndex` (analyzers 단일 소스 · calibrating/활동 무데이터 = 빈 칸)
+- [x] 골든마스터 v2 갱신 — stress_index 픽스처는 수식 독립 검산값 53 (배선 검증)
+- [x] 배포 `00105-j4r` (최신 main `692723e` = CSV v2 + 팀원 5커밋)
+- [x] 라이브 검증: 30컬럼 · stress_index 386건 채움(14~65) · 베이스라인 회귀 일치 · FATAL 0
+
+## 최종 리비전 흐름
+`00100-8hs`(수정 전) → `00101-97z`(1Gi) → `00102-rrg`(Phase1~3 코드) → `00103-zr7`(XLSX 1만 상한 + NODE_OPTIONS) → **`00105-j4r`**(CSV v2 + 팀원 기능, 서빙 중)
