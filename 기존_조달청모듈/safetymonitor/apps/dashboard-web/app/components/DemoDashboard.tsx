@@ -47,8 +47,11 @@ import {
   type WorkerMapPoint,
 } from "./WorkerGpsMap";
 
-// 지도 모드 현장 구획 근사 원 반경(m) — 현장 좌표(작업자 GPS 평균·서버 캐시) 중심. 현장 규모에 맞게 조정.
-const SITE_CIRCLE_RADIUS_M = 150;
+// 지도 모드 현장 구획 근사 원 반경(m) — 현장 규모에 맞게 조정.
+// 중심 = 서버 캐시 현장 좌표(site_coord_daily·일 단위 고정) 우선 — 작업자 이동에 중심이 끌려다니지 않게.
+// 주소 문자열 기반 정확 지오코딩은 무키 서비스가 건물번호를 못 잡음(도로 중심 ~800m 오차 실측) →
+// NCP Maps/VWorld 키 활성화 시 주소 중심으로 승격 예정.
+const SITE_CIRCLE_RADIUS_M = 100;
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
@@ -4020,11 +4023,14 @@ export function DemoDashboard() {
                     <WorkerGpsMap
                       points={workerMapData.pts}
                       excluded={workerMapData.excluded}
-                      siteCircle={
-                        typeof effLat === "number" && typeof effLon === "number"
-                          ? ({ lat: effLat, lon: effLon, radiusM: SITE_CIRCLE_RADIUS_M } satisfies SiteCircle)
-                          : undefined
-                      }
+                      siteCircle={(() => {
+                        // 캐시 좌표(일 고정) 우선, 없으면 라이브 평균 — 중심 안정성 확보.
+                        const cLat = cachedCoord?.lat ?? effLat;
+                        const cLon = cachedCoord?.lon ?? effLon;
+                        return typeof cLat === "number" && typeof cLon === "number"
+                          ? ({ lat: cLat, lon: cLon, radiusM: SITE_CIRCLE_RADIUS_M } satisfies SiteCircle)
+                          : undefined;
+                      })()}
                     />
                   </div>
                 ) : filledSlots.length === 0 ? (
