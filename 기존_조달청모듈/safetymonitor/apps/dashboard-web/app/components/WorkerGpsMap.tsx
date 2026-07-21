@@ -23,6 +23,9 @@ export type WorkerMapPoint = {
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
 export type WorkerMapExcluded = { workerId: string; name: string; reason: string };
 
+// 현장 구획 근사 원 — 현장 좌표(작업자 GPS 평균·서버 캐시) 중심 반경 표시(지적 구획 아님).
+export type SiteCircle = { lat: number; lon: number; radiusM: number };
+
 // ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
 const TILE = 256;
 const D2R = Math.PI / 180;
@@ -80,9 +83,11 @@ type View = { center: { lat: number; lon: number }; zoom: number };
 export function WorkerGpsMap({
   points,
   excluded,
+  siteCircle,
 }: {
   points: WorkerMapPoint[];
   excluded: WorkerMapExcluded[];
+  siteCircle?: SiteCircle;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -246,13 +251,23 @@ export function WorkerGpsMap({
     );
   }
 
-  // ── 타일/마커 렌더 산출 ──
+  // ── 타일/마커/구획 원 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   const markers: { p: WorkerMapPoint; x: number; y: number }[] = [];
+  let circle: { x: number; y: number; r: number } | null = null;
   if (view && size.w > 0) {
     const z = view.zoom;
     const tlx = lonToWorldX(view.center.lon, z) - size.w / 2;
     const tly = latToWorldY(view.center.lat, z) - size.h / 2;
+    if (siteCircle) {
+      // 미터 → 픽셀 — 웹 메르카토르 지상해상도(위도 보정): 156543.03392·cos(lat)/2^z (m/px, 256px 타일).
+      const mpp = (156543.03392 * Math.cos(siteCircle.lat * D2R)) / 2 ** z;
+      circle = {
+        x: lonToWorldX(siteCircle.lon, z) - tlx,
+        y: latToWorldY(siteCircle.lat, z) - tly,
+        r: siteCircle.radiusM / mpp,
+      };
+    }
     const n = 2 ** z;
     const xt0 = Math.floor(tlx / TILE);
     const xt1 = Math.floor((tlx + size.w) / TILE);
@@ -308,6 +323,28 @@ export function WorkerGpsMap({
           </span>
         ))}
 
+        {/* 현장 구획 근사 원(레드라인) — 현장 좌표 중심 반경. 마커 아래 레이어·이벤트 통과. */}
+        {circle && siteCircle && (
+          <>
+            <span
+              aria-hidden
+              className="pointer-events-none absolute rounded-full border-2 border-red-500/90 bg-red-500/10"
+              style={{
+                left: circle.x - circle.r,
+                top: circle.y - circle.r,
+                width: circle.r * 2,
+                height: circle.r * 2,
+              }}
+            />
+            <span
+              className="pointer-events-none absolute -translate-x-1/2 whitespace-nowrap rounded-pill bg-red-600/85 px-1.5 py-0.5 text-[9px] font-semibold text-white"
+              style={{ left: circle.x, top: circle.y - circle.r - 16 }}
+            >
+              현장 구획(근사) · 반경 {siteCircle.radiusM}m
+            </span>
+          </>
+        )}
+
         {/* 작업자 마커 — 신호등 톤 점 + 이름 칩. 호버 시 생체 툴팁. */}
         {markers.map(({ p, x, y }) => (
           <div
@@ -358,8 +395,11 @@ export function WorkerGpsMap({
           </div>
         ))}
 
-        {/* 줌 컨트롤 */}
-        <div className="absolute right-2 top-2 z-20 flex flex-col gap-1">
+        {/* 줌 컨트롤 — 컨테이너 pointer capture(드래그 팬)가 버튼 클릭을 삼키지 않게 전파 차단 필수. */}
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute right-2 top-2 z-20 flex flex-col gap-1"
+        >
           {[
             { label: "＋", action: () => zoomBy(1), title: "확대" },
             { label: "－", action: () => zoomBy(-1), title: "축소" },

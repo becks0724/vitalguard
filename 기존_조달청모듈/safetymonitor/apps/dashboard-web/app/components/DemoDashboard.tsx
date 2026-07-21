@@ -40,7 +40,15 @@ import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
 import { getSessionRole, getSessionToken, useSession } from "./LoginGate";
 import { KoshaAccidentTicker } from "./KoshaAccidentTicker";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
-import { WorkerGpsMap, type WorkerMapExcluded, type WorkerMapPoint } from "./WorkerGpsMap";
+import {
+  WorkerGpsMap,
+  type SiteCircle,
+  type WorkerMapExcluded,
+  type WorkerMapPoint,
+} from "./WorkerGpsMap";
+
+// 지도 모드 현장 구획 근사 원 반경(m) — 현장 좌표(작업자 GPS 평균·서버 캐시) 중심. 현장 규모에 맞게 조정.
+const SITE_CIRCLE_RADIUS_M = 150;
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
@@ -4009,7 +4017,15 @@ export function DemoDashboard() {
 
                 {workerView === "map" ? (
                   <div className="min-h-0 flex-1 p-2">
-                    <WorkerGpsMap points={workerMapData.pts} excluded={workerMapData.excluded} />
+                    <WorkerGpsMap
+                      points={workerMapData.pts}
+                      excluded={workerMapData.excluded}
+                      siteCircle={
+                        typeof effLat === "number" && typeof effLon === "number"
+                          ? ({ lat: effLat, lon: effLon, radiusM: SITE_CIRCLE_RADIUS_M } satisfies SiteCircle)
+                          : undefined
+                      }
+                    />
                   </div>
                 ) : filledSlots.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted dark:text-on-dark-soft">
