@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@safetymonitor/schemas", "@safetymonitor/analyzers"],
   // Cloud Run 컨테이너용 최소 런타임 산출물(.next/standalone) — server.js + 추적된 node_modules 만.
   output: "standalone",
+  // pdfjs-dist 는 서버 번들에서 제외(node_modules 직접 로드) — 번들하면 내부 워커(pdf.worker.mjs)
+  // 상대 import 가 번들에서 빠져 "Setting up fake worker failed" 로 PDF 추출이 깨진다(실측).
+  // standalone 산출물에는 파일 트레이싱이 포함시키므로 배포 무영향.
+  serverExternalPackages: ["pdfjs-dist"],
   // 모노레포라 트레이싱 루트를 레포 루트로 올려 workspace 패키지(@safetymonitor/*)를 standalone 에 포함.
   outputFileTracingRoot: path.join(__dirname, "../../"),
   // 보안 헤더(D1) — 다운그레이드(HSTS)·클릭재킹(X-Frame-Options)·MIME 스니핑(nosniff) 방어 +
