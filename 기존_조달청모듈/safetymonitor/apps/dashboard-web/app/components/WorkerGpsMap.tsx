@@ -20,6 +20,9 @@ export type WorkerMapPoint = {
   ageSec: number | null;
 };
 
+// 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
+export type WorkerMapExcluded = { workerId: string; name: string; reason: string };
+
 // ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
 const TILE = 256;
 const D2R = Math.PI / 180;
@@ -66,20 +69,28 @@ function fmt(v: number | null | undefined, unit: string): string {
   return v === null || v === undefined ? "--" : `${v}${unit}`;
 }
 
+function ageLabel(ageSec: number | null): string {
+  if (ageSec === null) return "--";
+  if (ageSec < 60) return `${ageSec}초 전`;
+  return `${Math.floor(ageSec / 60)}분 전`;
+}
+
 type View = { center: { lat: number; lon: number }; zoom: number };
 
 export function WorkerGpsMap({
   points,
-  noGpsCount,
+  excluded,
 }: {
   points: WorkerMapPoint[];
-  noGpsCount: number;
+  excluded: WorkerMapExcluded[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
   const [grabbing, setGrabbing] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // 수신 상태 펼침 패널 — 칩 클릭 토글, 지도 드래그 시작 시 닫힘.
+  const [statusOpen, setStatusOpen] = useState(false);
   const fittedRef = useRef(false);
   const drag = useRef<{ px: number; py: number; cwx: number; cwy: number } | null>(null);
 
@@ -173,7 +184,17 @@ export function WorkerGpsMap({
     return () => el.removeEventListener("wheel", onWheel);
   }, [commit]);
 
+  // 수신 목록에서 작업자 클릭 → 그 작업자로 지도 이동(확대 유지·최소 FIT_MAX_Z).
+  const flyTo = useCallback(
+    (p: WorkerMapPoint) => {
+      const z = Math.max(viewRef.current?.zoom ?? FIT_MAX_Z, FIT_MAX_Z);
+      commit({ lat: p.lat, lon: p.lon }, z);
+    },
+    [commit],
+  );
+
   const onPointerDown = (e: React.PointerEvent) => {
+    setStatusOpen(false);
     if (!view) return;
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
     drag.current = {
@@ -204,9 +225,23 @@ export function WorkerGpsMap({
 
   if (points.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted dark:text-on-dark-soft">
-        GPS 수신 작업자가 없습니다 — 작업자 폰 위치 권한(항상 허용)과 로그인 세션(GPS 표시 게이트)을
-        확인하세요.
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted dark:text-on-dark-soft">
+        <p>
+          GPS 수신 작업자가 없습니다 — 작업자 폰 위치 권한(항상 허용)과 로그인 세션(GPS 표시
+          게이트)을 확인하세요.
+        </p>
+        {excluded.length > 0 && (
+          <ul className="wx-cards-scroll max-h-44 w-72 overflow-y-auto rounded-xl border border-hairline p-2 text-left dark:border-white/10">
+            {excluded.map((w) => (
+              <li key={w.workerId} className="px-1.5 py-1">
+                <span className="block truncate text-xs text-ink dark:text-on-dark">{w.name}</span>
+                <span className="block truncate text-[10px] text-muted dark:text-on-dark-soft">
+                  {w.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
@@ -315,9 +350,7 @@ export function WorkerGpsMap({
                   </div>
                   <div className="flex justify-between">
                     <dt>수신</dt>
-                    <dd className="tabular-nums">
-                      {p.ageSec === null ? "--" : p.ageSec < 60 ? `${p.ageSec}초 전` : `${Math.floor(p.ageSec / 60)}분 전`}
-                    </dd>
+                    <dd className="tabular-nums">{ageLabel(p.ageSec)}</dd>
                   </div>
                 </dl>
               </div>
@@ -344,13 +377,59 @@ export function WorkerGpsMap({
           ))}
         </div>
 
-        {/* 출처 + 미수신 안내 */}
+        {/* 출처 + 수신 상태 칩(클릭 시 작업자별 목록 펼침) */}
         <div className="absolute bottom-1.5 left-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[9px] text-zinc-300">
           위성지도 © Esri World Imagery
         </div>
-        {noGpsCount > 0 && (
-          <div className="absolute bottom-1.5 right-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[10px] text-zinc-200">
-            GPS 미수신 {noGpsCount}명 제외
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setStatusOpen((v) => !v)}
+          title="작업자별 GPS 수신 상태 목록 — 항목 클릭 시 해당 작업자로 이동"
+          className="absolute bottom-1.5 right-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[10px] text-zinc-200 hover:bg-black/70"
+        >
+          GPS 수신 {points.length} / 전체 {points.length + excluded.length}
+          <span aria-hidden className="ml-1 text-[8px]">{statusOpen ? "▼" : "▲"}</span>
+        </button>
+        {statusOpen && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="wx-cards-scroll absolute bottom-8 right-2 z-30 max-h-64 w-56 overflow-y-auto rounded-xl border border-white/15 bg-[#0d1117]/95 p-2.5 shadow-xl backdrop-blur"
+          >
+            <p className="text-[10px] font-semibold text-zinc-400">GPS 수신 중 {points.length}명</p>
+            <ul className="mt-1 space-y-0.5">
+              {points.map((p) => (
+                <li key={p.workerId}>
+                  <button
+                    type="button"
+                    onClick={() => flyTo(p)}
+                    title="클릭하면 지도가 이 작업자로 이동합니다"
+                    className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left hover:bg-white/10"
+                  >
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${TONE_DOT[p.tone]}`} />
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-100">{p.name}</span>
+                    <span className="shrink-0 text-[10px] tabular-nums text-zinc-400">
+                      {ageLabel(p.ageSec)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {excluded.length > 0 && (
+              <>
+                <p className="mt-2 border-t border-white/10 pt-2 text-[10px] font-semibold text-zinc-400">
+                  GPS 미수신 {excluded.length}명
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {excluded.map((w) => (
+                    <li key={w.workerId} className="px-1.5 py-0.5">
+                      <span className="block truncate text-[11px] text-zinc-200">{w.name}</span>
+                      <span className="block truncate text-[10px] text-zinc-500">{w.reason}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         )}
       </div>

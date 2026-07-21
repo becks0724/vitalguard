@@ -40,7 +40,7 @@ import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
 import { getSessionRole, getSessionToken, useSession } from "./LoginGate";
 import { KoshaAccidentTicker } from "./KoshaAccidentTicker";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
-import { WorkerGpsMap, type WorkerMapPoint } from "./WorkerGpsMap";
+import { WorkerGpsMap, type WorkerMapExcluded, type WorkerMapPoint } from "./WorkerGpsMap";
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
@@ -3326,10 +3326,10 @@ export function DemoDashboard() {
   const firstEmptySlot = useMemo(() => slots.findIndex((id) => id === null), [slots]);
 
   // 지도 모드 마커 데이터 — 등록 슬롯 중 한국 범위 GPS 보유 작업자만(fieldCoords 와 동일 게이트).
-  // GPS 없는 작업자(가상·PII 게이트·미수신)는 제외하고 개수만 안내. now(1초 tick)로 수신 age 계산.
+  // 못 올린 작업자는 명단·사유로 수신 상태 패널에 안내. now(1초 tick)로 수신 age 계산.
   const workerMapData = useMemo(() => {
     const pts: WorkerMapPoint[] = [];
-    let noGps = 0;
+    const excluded: WorkerMapExcluded[] = [];
     for (const { workerId } of filledSlots) {
       const s = latestMap.get(workerId);
       const lat = s?.latitude;
@@ -3362,10 +3362,17 @@ export function DemoDashboard() {
           ageSec: Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null,
         });
       } else {
-        noGps++;
+        const reason = !s
+          ? "미접속 — 수신 샘플 없음"
+          : isVirtualWorker(workerId)
+            ? "가상 작업자(테스트) — GPS 없음"
+            : typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)
+              ? "GPS 미포함 — 위치 권한·로그인 게이트 확인"
+              : "한국 범위 밖 좌표 — 표시 제외";
+        excluded.push({ workerId, name: s?.workerName ?? workerId, reason });
       }
     }
-    return { pts, noGps };
+    return { pts, excluded };
   }, [filledSlots, latestMap, data.workerProfiles, now]);
 
   // ── 작업자 표 세로 자동 슬라이딩 + 수동 스크롤 + 이상 자동 스크롤 ──
@@ -4002,7 +4009,7 @@ export function DemoDashboard() {
 
                 {workerView === "map" ? (
                   <div className="min-h-0 flex-1 p-2">
-                    <WorkerGpsMap points={workerMapData.pts} noGpsCount={workerMapData.noGps} />
+                    <WorkerGpsMap points={workerMapData.pts} excluded={workerMapData.excluded} />
                   </div>
                 ) : filledSlots.length === 0 ? (
                   <p className="px-4 py-10 text-center text-sm text-muted dark:text-on-dark-soft">
