@@ -3220,6 +3220,36 @@ export function DemoDashboard() {
   const coordSource: "live" | "cached" | "none" =
     fieldCoords.count > 0 ? "live" : cachedCoord ? "cached" : "none";
 
+  // 현장 주소 지오코딩(VWorld) — 지도 모드 구획 원 중심을 주소 기준으로 고정. 실패/미설정 시 폴백 체인 유지.
+  const [siteAnchor, setSiteAnchor] = useState<{ lat: number; lon: number } | null>(null);
+  useEffect(() => {
+    const address = siteInfo.address.trim();
+    if (!address) {
+      setSiteAnchor(null);
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const token = getSessionToken();
+        if (!token) return;
+        const res = await fetch(`/api/site-geocode?address=${encodeURIComponent(address)}`, {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = (await res.json()) as { ok?: boolean; lat?: number; lon?: number };
+        if (active && res.ok && j.ok && typeof j.lat === "number" && typeof j.lon === "number") {
+          setSiteAnchor({ lat: j.lat, lon: j.lon });
+        }
+      } catch {
+        /* 지오코딩 실패 — 캐시 좌표 폴백 유지 */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [siteInfo.address]);
+
   // 현장 주소에서 인근 병원 검색용 지역 키워드(예: "광주 동구"). 지역검색은 좌표가 아닌 지역명이 필요.
   const siteRegion = useMemo(() => extractRegion(siteInfo.address), [siteInfo.address]);
 
@@ -4024,9 +4054,9 @@ export function DemoDashboard() {
                       points={workerMapData.pts}
                       excluded={workerMapData.excluded}
                       siteCircle={(() => {
-                        // 캐시 좌표(일 고정) 우선, 없으면 라이브 평균 — 중심 안정성 확보.
-                        const cLat = cachedCoord?.lat ?? effLat;
-                        const cLon = cachedCoord?.lon ?? effLon;
+                        // 중심 우선순위: 현장 주소 지오코딩(VWorld) → 캐시 좌표(일 고정) → 라이브 GPS 평균.
+                        const cLat = siteAnchor?.lat ?? cachedCoord?.lat ?? effLat;
+                        const cLon = siteAnchor?.lon ?? cachedCoord?.lon ?? effLon;
                         return typeof cLat === "number" && typeof cLon === "number"
                           ? ({ lat: cLat, lon: cLon, radiusM: SITE_CIRCLE_RADIUS_M } satisfies SiteCircle)
                           : undefined;

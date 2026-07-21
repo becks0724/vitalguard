@@ -96,6 +96,8 @@ export function WorkerGpsMap({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // 수신 상태 펼침 패널 — 칩 클릭 토글, 지도 드래그 시작 시 닫힘.
   const [statusOpen, setStatusOpen] = useState(false);
+  // 베이스맵 모드 — sat: Esri 위성(기본) / cad: VWorld 베이스 + 연속지적도 오버레이(서버 프록시).
+  const [baseMode, setBaseMode] = useState<"sat" | "cad">("sat");
   const fittedRef = useRef(false);
   const drag = useRef<{ px: number; py: number; cwx: number; cwy: number } | null>(null);
 
@@ -300,28 +302,20 @@ export function WorkerGpsMap({
           grabbing ? "cursor-grabbing" : "cursor-grab"
         }`}
       >
-        {tiles.map((t) => (
-          <span key={t.key}>
-            <img
-              src={`${SAT}/${t.z}/${t.y}/${t.x}`}
-              alt=""
-              width={TILE}
-              height={TILE}
-              draggable={false}
-              className="absolute"
-              style={{ left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" }}
-            />
-            <img
-              src={`${REF}/${t.z}/${t.y}/${t.x}`}
-              alt=""
-              width={TILE}
-              height={TILE}
-              draggable={false}
-              className="absolute opacity-80"
-              style={{ left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" }}
-            />
-          </span>
-        ))}
+        {tiles.map((t) => {
+          const style = { left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" as const };
+          return baseMode === "sat" ? (
+            <span key={t.key}>
+              <img src={`${SAT}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
+              <img src={`${REF}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-80" style={style} />
+            </span>
+          ) : (
+            <span key={t.key}>
+              <img src={`/api/vworld-tile?kind=base&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
+              <img src={`/api/vworld-tile?kind=cadastral&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-90" style={style} />
+            </span>
+          );
+        })}
 
         {/* 현장 구획 근사 원(레드라인) — 현장 좌표 중심 반경. 마커 아래 레이어·이벤트 통과. */}
         {circle && siteCircle && (
@@ -395,6 +389,29 @@ export function WorkerGpsMap({
           </div>
         ))}
 
+        {/* 베이스맵 모드 토글 — 위성(Esri) ↔ 지적도(VWorld 베이스+연속지적도). 전파 차단 필수(드래그 캡처). */}
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          className="absolute left-2 top-2 z-20 flex overflow-hidden rounded-lg bg-black/55 text-[11px] font-semibold text-white backdrop-blur"
+        >
+          {(
+            [
+              { mode: "sat", label: "위성" },
+              { mode: "cad", label: "지적도" },
+            ] as const
+          ).map((b) => (
+            <button
+              key={b.mode}
+              type="button"
+              onClick={() => setBaseMode(b.mode)}
+              title={b.mode === "sat" ? "Esri 위성지도" : "VWorld 베이스맵 + 연속지적도(필지 경계)"}
+              className={`px-2.5 py-1 ${baseMode === b.mode ? "bg-primary text-on-primary" : "hover:bg-black/75"}`}
+            >
+              {b.label}
+            </button>
+          ))}
+        </div>
+
         {/* 줌 컨트롤 — 컨테이너 pointer capture(드래그 팬)가 버튼 클릭을 삼키지 않게 전파 차단 필수. */}
         <div
           onPointerDown={(e) => e.stopPropagation()}
@@ -419,7 +436,7 @@ export function WorkerGpsMap({
 
         {/* 출처 + 수신 상태 칩(클릭 시 작업자별 목록 펼침) */}
         <div className="absolute bottom-1.5 left-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[9px] text-zinc-300">
-          위성지도 © Esri World Imagery
+          {baseMode === "sat" ? "위성지도 © Esri World Imagery" : "지적도 © 국토교통부 VWorld"}
         </div>
         <button
           type="button"
