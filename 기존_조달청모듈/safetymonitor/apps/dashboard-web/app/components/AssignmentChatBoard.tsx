@@ -166,7 +166,7 @@ export default function AssignmentChatBoard() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="예: EMP-6861 오늘 밀폐공간 배치 가능해?"
+            placeholder="질문을 입력하세요"
             className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-white/15 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <button
