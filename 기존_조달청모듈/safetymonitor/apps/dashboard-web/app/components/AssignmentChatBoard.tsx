@@ -102,7 +102,7 @@ export default function AssignmentChatBoard() {
   );
 
   return (
-    <div className="flex h-[80vh] flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900">
+    <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900">
       <header className="border-b border-zinc-200 px-5 py-4 dark:border-white/10">
         <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
           작업 배치 어시스턴트
