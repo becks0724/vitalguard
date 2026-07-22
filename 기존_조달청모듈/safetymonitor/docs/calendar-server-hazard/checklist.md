@@ -29,5 +29,5 @@
 - [x] tsc 0 · lint 0err · pnpm test 전체 green — 대시보드 **197/197**(신규 hazard 8 포함)
 - [x] 라우트 목 E2E(L-02·L-04) — LOAD(GET 배선·셀 렌더)·⚠ 배지·경고 라인/면책·SAVE(POST 본문 hazardType=high_place·Bearer 헤더·낙관적 렌더) **PASS**(합성 데이터만, 프로덕션 DB 무쓰기)
 - [x] 커밋 2건(① 서버 승격 / ② 위험작업 경고)
-- [ ] origin 동기 push
-- [ ] /deploy — 빌드·배포·라이브 검증
+- [x] origin 동기 push (`6a41028`)
+- [x] /deploy — 빌드 SUCCESS(digest `04cd33bb…`) → 리비전 **`00114-ckp` 100%** · 라이브 검증(루트 200·events/labels 무인증 401·weather daily7 돌풍/강수 확장 실데이터·서빙 page 청크 신규 문자열 6종 존재)
