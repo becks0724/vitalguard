@@ -150,8 +150,8 @@ function AiLiveScreen({
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-zinc-500">
         <CameraIcon size={large ? 72 : 40} />
-        <span className={large ? "text-sm text-zinc-400" : "text-[11px] text-zinc-400"}>AI 서버 연결 대기</span>
-        <span className={large ? "text-xs text-zinc-600" : "text-[10px] text-zinc-600"}>{aiApi}</span>
+        <span className={large ? "text-sm text-zinc-400" : "text-[11px] text-zinc-400"}>서버 과금 절감을 위한 CCTV 일시 중단</span>
+        <span className={large ? "text-xs text-zinc-600" : "text-[10px] text-zinc-600"}>객체인식(AI) 모델 연구·고도화 진행 중</span>
       </div>
     );
   }
