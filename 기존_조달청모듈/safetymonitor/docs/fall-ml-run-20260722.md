@@ -59,7 +59,13 @@
 - freefallG(0.6)·stillBandG(0.3)·postWindow(4s)는 원시 파형 확보로 재튜닝이 *가능해졌으나*
   이번 범위 밖(스크립트 확장 필요).
 - 착용자 4명 — 개인 간 편차는 4-fold LOSO 로 점검했으나 표본 확대 여지.
-- v4 모델 오프라인 비교는 아티팩트 위치 미확인으로 이번 실행에서 제외(2자 비교로 축소).
+- v4 모델(규칙×ML 융합) 오프라인 비교는 이번 실행에서 제외. 아티팩트 위치는 확인됨 —
+  **origin/main `apps/VitAlGuard-iOS-WatchOS-App/Watch/ML/`**(impact·work_veto·recovery.mlmodel +
+  thresholds.json[4명 LOSO OOF 운영점: veto 0.675=precision≥0.95·impact 0.710=FPR5%] + ml_selfcheck.json),
+  융합 코드 = 같은 앱 `Watch/Sources/MLFusion.swift`·`FallMLPipeline.swift`. 제외 사유 2가지 —
+  ① 88피처 추출기 이식 필요(학습 스크립트는 리포 밖·미니앱 IMU_ML_Test 계보)
+  ② **v4 학습 데이터가 본 평가셋과 동일 소스(imu_window 4명)** → 오프라인 재평가는 낙관 편향
+  위험이 있어 v4 검증은 shadow/실착용(5단계)이 정도(正道).
 
 ## 6. 재현
 
