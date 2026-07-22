@@ -14,4 +14,4 @@
 - [x] 알림 이력 모달에 `구획 이탈` 라벨·톤·아이콘 추가
 - [x] `/verify` — tsc 0 · lint 0 · test 전체 green
 - [x] 커밋 + push (origin 전진 확인 후) — `9196a54` · origin 동기
-- [ ] `/deploy` + 라이브 검증
+- [x] `/deploy` + 라이브 검증 — `00111-b48`(digest a1068baf) · 루트 200 · POST 무인증 401 · 청크 문자열 6종 · 라이브 라우트 목 E2E PASS
