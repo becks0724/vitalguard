@@ -23,6 +23,7 @@ builds=(${(f)$(sed -nE 's/^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*"?([0
 (( ${#versions} == 1 && ${#builds} == 1 )) || { print -u2 "All targets must use one shared version and build number."; exit 1; }
 version="${versions[1]}"
 build="${builds[1]}"
+pushed_at="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
 
 forbidden_file=$(find "${source_root}/Phone" "${source_root}/Watch" "${source_root}/VitAlGuard.xcodeproj" -type f \( \
   -iname '*.p12' -o -iname '*.cer' -o -iname '*.key' -o -iname '*.pem' -o \
@@ -96,8 +97,12 @@ commit_tag_and_push() {
   fi
   git -C "${repository}" add -A -- "$@"
   if ! git -C "${repository}" diff --cached --quiet; then
-    git -C "${repository}" commit -m "chore(release): sync VitAlGuard ${version} (${build})"
-    git -C "${repository}" tag -a "${tag}" -m "VitAlGuard ${version} (build ${build})"
+    git -C "${repository}" commit -m "chore(release): VitAlGuard ${version} (build ${build}) · pushed ${pushed_at}"
+    git -C "${repository}" tag -a "${tag}" \
+      -m "VitAlGuard ${version} (build ${build})" \
+      -m "Version: ${version}" \
+      -m "Build: ${build}" \
+      -m "Pushed at: ${pushed_at}"
     git -C "${repository}" push origin main
     git -C "${repository}" push origin "${tag}"
   else
@@ -119,4 +124,4 @@ cp "${source_root}/.github/workflows/${workflow_name}" "${jodal_repo}/.github/wo
 commit_tag_and_push "${ios_backup_repo}" "v${version}-build.${build}" Phone Watch VitAlGuard.xcodeproj project.yml scripts .github/workflows/${workflow_name}
 commit_tag_and_push "${jodal_repo}" "vitalguard-v${version}-build.${build}" "${jodal_app_path}" .github/workflows/${workflow_name}
 
-print "Published VitAlGuard ${version} (${build}) source to both private GitHub repositories."
+print "Published VitAlGuard ${version} (build ${build}) at ${pushed_at} to both private GitHub repositories."
