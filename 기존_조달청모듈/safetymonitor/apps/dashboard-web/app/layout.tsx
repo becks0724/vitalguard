@@ -4,7 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "./components/ThemeProvider";
 
 export const metadata: Metadata = {
-  title: "SafetyMonitor — 관제 대시보드 (프로토타입)",
+  title: "VitAlGuard — 관제 대시보드",
   description: "산업 현장 작업자 생체 모니터링 데모 대시보드",
 };
 
