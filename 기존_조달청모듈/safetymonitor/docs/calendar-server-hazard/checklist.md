@@ -2,6 +2,9 @@
 
 계획·결정 근거는 [context-notes.md](./context-notes.md).
 
+> **상태(2026-07-22): 트랙 완료** — ①·②·A묶음 전부 구현·검증·배포(라이브 `00115-mnh` = main `1b467e9`).
+> 남은 것 = 사용자 육안 확인 + 후속 후보(B5 설비 점검 자동 일정 등, context-notes "다음 할 일").
+
 ## ① 일정·라벨 서버 DB 승격
 
 - [x] DB — `calendar_event`·`calendar_label` 테이블 (ensureSchema 멱등 CREATE)
