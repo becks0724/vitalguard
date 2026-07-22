@@ -11,12 +11,15 @@ ios_backup_repo="${VITALGUARD_IOS_BACKUP_REPO:-${workspace_root}/2026-07-08-vita
 jodal_repo="${VITALGUARD_JODAL_REPO:-${workspace_root}/2026-07-08-vitalguard-jodalcheong-source-readonly}"
 jodal_app_path="apps/VitAlGuard-iOS-WatchOS-App"
 workflow_name="2026-07-22-create-github-release.yml"
+safety_check_script="${script_dir}/2026-07-22-verify-fall-fail-open.sh"
 
 allowed_paths=(Phone Watch VitAlGuard.xcodeproj project.yml scripts)
 sync_directories=(Phone Watch VitAlGuard.xcodeproj scripts)
 for required_path in "${allowed_paths[@]}"; do
   [[ -e "${source_root}/${required_path}" ]] || { print -u2 "Missing required source path: ${required_path}"; exit 1; }
 done
+[[ -x "${safety_check_script}" ]] || { print -u2 "Missing executable fall-safety check."; exit 1; }
+"${safety_check_script}" "${source_root}"
 
 versions=(${(f)$(sed -nE 's/^[[:space:]]*MARKETING_VERSION:[[:space:]]*"?([0-9]+(\.[0-9]+)*)"?[[:space:]]*$/\1/p' "${source_root}/project.yml" | sort -u)})
 builds=(${(f)$(sed -nE 's/^[[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*"?([0-9]+)"?[[:space:]]*$/\1/p' "${source_root}/project.yml" | sort -u)})
@@ -118,10 +121,8 @@ for sync_path in "${sync_directories[@]}"; do
   sync_directory "${jodal_repo}/${jodal_app_path}" "${sync_path}"
 done
 sync_file "${ios_backup_repo}"
-mkdir -p "${jodal_repo}/.github/workflows"
-cp "${source_root}/.github/workflows/${workflow_name}" "${jodal_repo}/.github/workflows/${workflow_name}"
 
 commit_tag_and_push "${ios_backup_repo}" "v${version}-build.${build}" Phone Watch VitAlGuard.xcodeproj project.yml scripts .github/workflows/${workflow_name}
-commit_tag_and_push "${jodal_repo}" "vitalguard-v${version}-build.${build}" "${jodal_app_path}" .github/workflows/${workflow_name}
+commit_tag_and_push "${jodal_repo}" "vitalguard-v${version}-build.${build}" "${jodal_app_path}"
 
 print "Published VitAlGuard ${version} (build ${build}) at ${pushed_at} to both private GitHub repositories."

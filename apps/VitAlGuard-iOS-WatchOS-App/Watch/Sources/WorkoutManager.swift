@@ -364,26 +364,13 @@ final class WorkoutManager: NSObject, ObservableObject {
         let finalShouldAlert = shouldAlert ?? candidate.isFall
         if finalShouldAlert {
             activateEvidenceCaptureWindow(reason: "낙상 후보")
-            if mlVerdict?.rescuedByML == true {
-                lastFallText = String(
-                    format: "ML 구제 낙상 후보 %.1fG · impact %.2f — 확인 대기",
-                    candidate.peakG,
-                    mlVerdict?.impProb ?? 0
-                )
-            } else {
-                lastFallText = String(
-                    format: "낙상 후보 %.1fG · 정지 %.1fs — 확인 대기", candidate.peakG, candidate.stillSec
-                )
-            }
+            lastFallText = String(
+                format: "낙상 후보 %.1fG · 정지 %.1fs — 확인 대기", candidate.peakG, candidate.stillSec
+            )
         } else if mlVerdict?.vetoedByML == true {
             lastFallText = String(
                 format: "작업 동작 ML 판정으로 낙상 알림 억제 · work %.2f",
                 mlVerdict?.wvProb ?? 0
-            )
-        } else if mlVerdict?.rejectedByImpactML == true {
-            lastFallText = String(
-                format: "낙상 충격 ML 근거 부족으로 알림 억제 · impact %.2f",
-                mlVerdict?.impProb ?? 0
             )
         }
         transmitter.sendFallCandidate(
@@ -401,8 +388,9 @@ final class WorkoutManager: NSObject, ObservableObject {
             mlWorkVetoProb: mlVerdict?.wvProb,
             mlImpactProb: mlVerdict?.impProb,
             mlVetoedByML: mlVerdict?.vetoedByML ?? false,
-            mlRejectedByImpactML: mlVerdict?.rejectedByImpactML ?? false,
-            mlRescuedByML: mlVerdict?.rescuedByML ?? false,
+            // 기존 전송 스키마 호환: impact ML은 알림 판정에 쓰지 않으므로 항상 false다.
+            mlRejectedByImpactML: false,
+            mlRescuedByML: false,
             mlShouldAlert: mlVerdict?.shouldAlert
         )
         if finalShouldAlert {
