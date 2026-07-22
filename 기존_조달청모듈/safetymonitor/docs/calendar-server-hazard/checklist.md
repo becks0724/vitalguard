@@ -26,11 +26,11 @@
 
 ## A 묶음 — 발효 특보 연동 + 관제 노출 + 등록자 표시
 
-- [ ] `calendar-hazard.ts` — evaluateHazardKmaWarnings(발효 특보 type[] ↔ 5종 매핑·주의보/경보) + mergeHazardWarnings(worst-of) + 테스트
-- [ ] 캘린더 팝업 — /api/kma-warning 조회 합류 + 오늘 일정에 발효 특보 경고 합성(셀·목록·주간 Plan 공통 helper)
-- [ ] 대시보드 — 오늘 위험작업 폴(120초·events+weather+kma) + 통합 신호등 아래 칩(N건·기상 충돌 M건·클릭=캘린더)
-- [ ] 등록자 — CalendarEvent.createdBy 매핑·폼 모달 행/칩 툴팁 표시·POST 응답 서버 행 반영
-- [ ] 검증 — tsc·lint·test + 라우트 목 E2E(발효 특보 목 → 오늘 일정 경고·칩 렌더) + 배포·라이브 검증
+- [x] `calendar-hazard.ts` — evaluateHazardKmaWarnings(발효 특보 type[] ↔ 5종 매핑·주의보/경보) + mergeHazardWarnings(worst-of) + 테스트 3건
+- [x] 캘린더 팝업 — /api/kma-warning 조회 합류 + 오늘 일정에 발효 특보 경고 합성(셀·목록·주간 Plan 공통 helper)
+- [x] 대시보드 — 오늘 위험작업 폴(120초·events+weather+kma·캘린더 닫힘 시 즉시 재집계) + 통합 신호등 아래 칩(N건·기상 충돌 M건·클릭=캘린더)
+- [x] 등록자 — CalendarEvent.createdBy 매핑·폼 모달 행/칩 툴팁 표시·POST 응답 서버 행 반영
+- [x] 검증 — tsc0·lint0·**test 200/200** + 라우트 목 E2E PASS(예보 무경고 조건에서 발효 특보 축 경고 증명·칩·등록자) + 배포 **`00115-mnh` 100%**·라이브 검증(루트 200·page 청크 신규 문자열 6종)
 
 ## 검증
 
