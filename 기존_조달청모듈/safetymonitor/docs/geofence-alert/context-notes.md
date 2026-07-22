@@ -9,3 +9,10 @@
 - **재경보 규칙 = vital 패턴 미러** — 확인/닫기 시 그 작업자 억제, 복귀(반경−10m 이내)하면 억제 해제 → 재이탈 시 재경보. localStorage 영속 ack(`appendAckedAlertKey`)는 이벤트형(SOS/낙상)용이라 레벨형인 이탈엔 vital 과 동일하게 미적용.
 - **DB 이력 = `alerts` 테이블 재사용** — `AlertType` 에 `"geofence"` 추가(컬럼 TEXT·CHECK 없음 = additive). 기록은 이탈 전이당 1건, 클라이언트가 신규 `POST /api/alerts`(세션 게이트)로 기록. 서버 자동 기록(addSample)과 달리 클라이언트 기록은 **geofence 종류만 허용**해 SOS/낙상/생체 위조 삽입을 차단.
 - **한계(알려진)** — 중심이 라이브 GPS 평균 폴백일 때(주소·캐시 좌표 모두 없음)는 중심이 작업자를 따라가므로 판정 실효가 낮다. 현장정보 주소가 저장돼 있으면(지오코딩 중심) 정상 동작. 작업자 앱 푸시는 별도 트랙(FCM/APNs).
+
+## 2026-07-22 검증 결과
+
+- tsc 0 · lint 0err · **test 256/256**(schemas 21 · analyzers 46 · dashboard 189 = 기존 179 + geofence 10 신규).
+- 라우트 목 E2E `harness/2-verify/e2e/geofence_alert_spec.py`(로컬 전용) **PASS** — 합성 작업자 원 밖 좌표(중심 167m)·폴링마다 새 ts → 히스테리시스 확정 → 팝업(작업자명·초과 거리) → `POST /api/alerts` 기록 1건 → 확인 ack 전송까지 검증. 프로덕션 DB 무접촉(L-04).
+- 부수 발견 = 기존 `profile_binding_spec.py` 가 **main 베이스라인에서도 실패**(stash 격리 재현 — 모달은 열리나 부서 입력칸 미발견). 이번 변경과 무관한 스펙 드리프트로 README 에 표기, 스펙 갱신은 별도.
+- 커밋 `9196a54` push 완료(전후 origin 전진 0). **배포는 미실행** — 프로덕션 배포는 사용자 승인 필요로 차단됨(`/deploy` 대기).

@@ -13,5 +13,5 @@
 - [x] `DemoDashboard` 배선 — 구획 중심 단일 소스 승격 + 판정 effect + 팝업 우선순위(SOS>낙상>생체>이탈) + 복귀 시 ack 해제
 - [x] 알림 이력 모달에 `구획 이탈` 라벨·톤·아이콘 추가
 - [x] `/verify` — tsc 0 · lint 0 · test 전체 green
-- [ ] 커밋 + push (origin 전진 확인 후)
+- [x] 커밋 + push (origin 전진 확인 후) — `9196a54` · origin 동기
 - [ ] `/deploy` + 라이브 검증
