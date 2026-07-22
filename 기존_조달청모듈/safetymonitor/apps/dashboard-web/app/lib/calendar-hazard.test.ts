@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  evaluateHazardKmaWarnings,
   evaluateHazardWeather,
   HAZARD_TYPE_IDS,
   hazardTypeName,
   kmhToMs,
+  mergeHazardWarnings,
 } from "./calendar-hazard";
 
 test("hazardTypeName — 5종 이름·불명 null", () => {
@@ -68,4 +70,39 @@ test("밀폐공간 — 일 최고기온 33/35℃ 경계(돌풍·강수 무시)",
   assert.equal(evaluateHazardWeather("confined", { tMaxC: 32.9, windGustMs: 20 }), null);
   assert.equal(evaluateHazardWeather("confined", { tMaxC: 33 })?.severity, "caution");
   assert.equal(evaluateHazardWeather("confined", { tMaxC: 35 })?.severity, "danger");
+});
+
+test("발효 특보 — 종류×위험작업 매핑·주의보/경보 등급", () => {
+  // 강풍주의보 → 크레인 caution / 강풍경보 → danger
+  assert.equal(evaluateHazardKmaWarnings("crane", ["강풍주의보"])?.severity, "caution");
+  const dz = evaluateHazardKmaWarnings("crane", ["강풍경보"]);
+  assert.equal(dz?.severity, "danger");
+  assert.ok(dz?.messages[0]?.includes("강풍경보 발효 중"));
+  // 무관 조합 = null(폭염↔크레인, 호우↔화기)
+  assert.equal(evaluateHazardKmaWarnings("crane", ["폭염경보"]), null);
+  assert.equal(evaluateHazardKmaWarnings("hot_work", ["호우경보"]), null);
+  // 건조→화기·호우→굴착·폭염→밀폐공간
+  assert.equal(evaluateHazardKmaWarnings("hot_work", ["건조주의보"])?.severity, "caution");
+  assert.equal(evaluateHazardKmaWarnings("excavation", ["호우경보"])?.severity, "danger");
+  assert.equal(evaluateHazardKmaWarnings("confined", ["폭염주의보"])?.severity, "caution");
+});
+
+test("발효 특보 — 결측·불명 입력·복수 특보 worst-of", () => {
+  assert.equal(evaluateHazardKmaWarnings(null, ["강풍경보"]), null);
+  assert.equal(evaluateHazardKmaWarnings("crane", []), null);
+  assert.equal(evaluateHazardKmaWarnings("crane", null), null);
+  assert.equal(evaluateHazardKmaWarnings("unknown", ["강풍경보"]), null);
+  const multi = evaluateHazardKmaWarnings("high_place", ["강풍주의보", "호우경보"]);
+  assert.equal(multi?.severity, "danger");
+  assert.equal(multi?.messages.length, 2);
+});
+
+test("mergeHazardWarnings — null 안전·worst-of·사유 중복 제거", () => {
+  assert.equal(mergeHazardWarnings(null, null), null);
+  const a = { severity: "caution" as const, messages: ["m1"] };
+  const b = { severity: "danger" as const, messages: ["m1", "m2"] };
+  assert.equal(mergeHazardWarnings(a, null), a);
+  const merged = mergeHazardWarnings(a, b);
+  assert.equal(merged?.severity, "danger");
+  assert.deepEqual(merged?.messages, ["m1", "m2"]);
 });

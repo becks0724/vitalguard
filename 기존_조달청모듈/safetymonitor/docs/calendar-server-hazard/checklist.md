@@ -24,6 +24,14 @@
 - [x] 선택 날짜 일정 목록 — 경고 라인(예보값 + 법정 기준 근거) + 참고 면책 문구
 - [x] 주간 일정(Plan) — 경고 아이콘 표시
 
+## A 묶음 — 발효 특보 연동 + 관제 노출 + 등록자 표시
+
+- [ ] `calendar-hazard.ts` — evaluateHazardKmaWarnings(발효 특보 type[] ↔ 5종 매핑·주의보/경보) + mergeHazardWarnings(worst-of) + 테스트
+- [ ] 캘린더 팝업 — /api/kma-warning 조회 합류 + 오늘 일정에 발효 특보 경고 합성(셀·목록·주간 Plan 공통 helper)
+- [ ] 대시보드 — 오늘 위험작업 폴(120초·events+weather+kma) + 통합 신호등 아래 칩(N건·기상 충돌 M건·클릭=캘린더)
+- [ ] 등록자 — CalendarEvent.createdBy 매핑·폼 모달 행/칩 툴팁 표시·POST 응답 서버 행 반영
+- [ ] 검증 — tsc·lint·test + 라우트 목 E2E(발효 특보 목 → 오늘 일정 경고·칩 렌더) + 배포·라이브 검증
+
 ## 검증
 
 - [x] tsc 0 · lint 0err · pnpm test 전체 green — 대시보드 **197/197**(신규 hazard 8 포함)

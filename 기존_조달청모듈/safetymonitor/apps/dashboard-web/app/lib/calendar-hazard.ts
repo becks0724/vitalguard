@@ -156,3 +156,65 @@ export function evaluateHazardWeather(
 export function kmhToMs(kmh: number): number {
   return kmh / 3.6;
 }
+
+// ── 발효 기상특보(KMA) × 위험작업 — 예보(위)와 별개 축. 발효 = 현재 상태라 오늘 일정에만 적용한다.
+// 특보 type 은 등급 포함 문자열("강풍주의보"·"호우경보" 등, kma.ts ActiveWarning.type).
+// 매핑: 강풍·태풍→고소/크레인/화기 · 호우→굴착/고소 · 대설→고소/크레인 · 건조→화기 · 폭염→밀폐공간.
+const KMA_KINDS_BY_HAZARD: Record<HazardTypeId, string[]> = {
+  high_place: ["강풍", "태풍", "호우", "대설"],
+  crane: ["강풍", "태풍", "대설"],
+  hot_work: ["강풍", "태풍", "건조"],
+  excavation: ["호우", "태풍"],
+  confined: ["폭염"],
+};
+
+const KMA_KIND_NOTE: Record<string, string> = {
+  강풍: "작업중지 기준 검토(규칙 §37·§143)",
+  태풍: "작업중지 기준 검토(규칙 §37·§143)",
+  호우: "붕괴·침수·미끄럼 주의(규칙 §37)",
+  대설: "적설 하중·미끄럼 주의(규칙 §37)",
+  건조: "불티 비산·화재 위험, 방화 조치 강화",
+  폭염: "온열질환 예방(휴식·환기) 조치",
+};
+
+// 발효 특보 목록 × 위험작업 유형 → 경고 또는 null. 주의보=caution / 경보=danger.
+export function evaluateHazardKmaWarnings(
+  hazard: string | null | undefined,
+  warningTypes: string[] | null | undefined,
+): HazardWarning | null {
+  if (!hazard || !warningTypes || warningTypes.length === 0) return null;
+  const kinds = KMA_KINDS_BY_HAZARD[hazard as HazardTypeId];
+  if (!kinds) return null;
+
+  const found: { severity: HazardSeverity; message: string }[] = [];
+  for (const t of warningTypes) {
+    if (typeof t !== "string") continue;
+    const kind = kinds.find((k) => t.startsWith(k));
+    if (!kind) continue;
+    const severity: HazardSeverity | null = t.includes("경보")
+      ? "danger"
+      : t.includes("주의보")
+        ? "caution"
+        : null;
+    if (!severity) continue;
+    found.push({ severity, message: `${t} 발효 중 — ${KMA_KIND_NOTE[kind] ?? "안전조치 검토"}` });
+  }
+  if (found.length === 0) return null;
+  return {
+    severity: found.some((f) => f.severity === "danger") ? "danger" : "caution",
+    messages: found.map((f) => f.message),
+  };
+}
+
+// 예보 경고 ∪ 발효 특보 경고 — worst severity + 사유 병합(중복 제거).
+export function mergeHazardWarnings(
+  a: HazardWarning | null,
+  b: HazardWarning | null,
+): HazardWarning | null {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    severity: a.severity === "danger" || b.severity === "danger" ? "danger" : "caution",
+    messages: [...new Set([...a.messages, ...b.messages])],
+  };
+}
