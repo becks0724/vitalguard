@@ -8,6 +8,7 @@ import {
   listCalendarEvents,
   upsertCalendarEvent,
 } from "../../../../lib/db";
+import { HAZARD_TYPE_IDS } from "../../../lib/calendar-hazard";
 
 export const dynamic = "force-dynamic";
 
@@ -54,6 +55,14 @@ export async function POST(request: Request) {
   }
   const timeOf = (v: unknown): string | null =>
     typeof v === "string" && TIME_RE.test(v) ? v : null;
+  // 위험작업 유형 — 5종 목록 외 값은 거부(빈 문자열·미전송 = 없음).
+  const hazardRaw =
+    typeof body.hazardType === "string" && body.hazardType.trim()
+      ? body.hazardType.trim()
+      : null;
+  if (hazardRaw !== null && !(HAZARD_TYPE_IDS as string[]).includes(hazardRaw)) {
+    return NextResponse.json({ ok: false, error: "hazardType 불명" }, { status: 400 });
+  }
   const id =
     typeof body.id === "string" && body.id.trim() && body.id.length <= 80
       ? body.id.trim()
@@ -65,6 +74,7 @@ export async function POST(request: Request) {
     labelId,
     startTime: timeOf(body.startTime),
     endTime: timeOf(body.endTime),
+    hazardType: hazardRaw,
     createdBy: getSession(request)?.username ?? null,
   });
   return NextResponse.json({ ok: true, event }, { status: 201 });

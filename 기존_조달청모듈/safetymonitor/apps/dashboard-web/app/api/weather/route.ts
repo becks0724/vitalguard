@@ -32,13 +32,16 @@ type WeatherPayload = {
     sunrise?: string;
     sunset?: string;
   };
-  // 일주일 기상예보 — 날씨 항목 클릭 시 모달 표시용
+  // 일주일 기상예보 — 날씨 항목 클릭 시 모달 표시용 + 캘린더 위험작업 기상 충돌 판정용
   daily7: {
     time: string[];
     weatherCode: number[];
     tMax: number[];
     tMin: number[];
     precipProbMax: (number | null)[];
+    // 위험작업 판정 입력 — 일 최대 돌풍(km/h·wind_speed_unit 따름)·일 강수량 합(mm)
+    windGustMaxKmh: (number | null)[];
+    precipSumMm: (number | null)[];
   };
   // 현재 시각부터 24시간 시간대별 기온 — 기온 항목 클릭 시 모달 표시용
   hourly: {
@@ -212,7 +215,15 @@ function weatherPayloadFromDaily(
       sunrise: row.sunrise ?? undefined,
       sunset: row.sunset ?? undefined,
     },
-    daily7: { time: [], weatherCode: [], tMax: [], tMin: [], precipProbMax: [] },
+    daily7: {
+      time: [],
+      weatherCode: [],
+      tMax: [],
+      tMin: [],
+      precipProbMax: [],
+      windGustMaxKmh: [],
+      precipSumMm: [],
+    },
     hourly: { time: [], temperatureC: [] },
     fetchedAt: row.recorded_at,
   };
@@ -228,7 +239,7 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   );
   forecastUrl.searchParams.set(
     "daily",
-    "sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    "sunrise,sunset,weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_gusts_10m_max,precipitation_sum",
   );
   forecastUrl.searchParams.set("hourly", "temperature_2m");
   forecastUrl.searchParams.set("forecast_days", "7");
@@ -288,6 +299,8 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
       tMax: forecast?.daily?.temperature_2m_max ?? [],
       tMin: forecast?.daily?.temperature_2m_min ?? [],
       precipProbMax: forecast?.daily?.precipitation_probability_max ?? [],
+      windGustMaxKmh: forecast?.daily?.wind_gusts_10m_max ?? [],
+      precipSumMm: forecast?.daily?.precipitation_sum ?? [],
     },
     hourly: {
       time: hTime.slice(startIdx, endIdx),

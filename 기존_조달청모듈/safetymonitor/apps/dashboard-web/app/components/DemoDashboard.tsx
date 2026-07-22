@@ -34,6 +34,14 @@ import {
 
 import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
+import {
+  evaluateHazardWeather,
+  HAZARD_TYPES,
+  hazardTypeName,
+  kmhToMs,
+  type HazardDailyForecast,
+  type HazardSeverity,
+} from "../lib/calendar-hazard";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
 import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
@@ -676,6 +684,8 @@ type CalendarEvent = {
   labelId: string;
   startTime?: string;
   endTime?: string;
+  // 위험작업 유형(calendar-hazard 5종) — 기상 예보와 충돌 시 경고 표시.
+  hazardType?: string;
 };
 
 // 옛 localStorage 키 — 서버 승격 후에는 1회 마이그레이션 원본·서버 조회 실패 시 읽기 폴백으로만 사용.
@@ -775,6 +785,7 @@ function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
       labelId: r.label_id as string,
       startTime: typeof r.start_time === "string" ? r.start_time : undefined,
       endTime: typeof r.end_time === "string" ? r.end_time : undefined,
+      hazardType: typeof r.hazard_type === "string" ? r.hazard_type : undefined,
     }));
 }
 
@@ -1131,7 +1142,10 @@ function CalendarEventChip({
   const title = event.title.trim();
   const timeText = formatScheduleTime(event);
   const timeSuffix = !compact && timeText ? ` · ${timeText}` : "";
-  const fullTitle = timeText ? `${title} · ${timeText}` : title;
+  const hazardName = hazardTypeName(event.hazardType);
+  const fullTitle = [title, timeText, hazardName ? `위험작업: ${hazardName}` : ""]
+    .filter(Boolean)
+    .join(" · ");
 
   if (compact) {
     return (
@@ -1158,6 +1172,11 @@ function CalendarEventChip({
         {title}
         {timeSuffix}
       </span>
+      {hazardName && (
+        <span className="ml-auto shrink-0 rounded border border-current px-1 text-[8px] font-semibold opacity-80">
+          {hazardName}
+        </span>
+      )}
     </div>
   );
 }
@@ -1183,6 +1202,8 @@ function ScheduleEventFormModal({
   const [labelId, setLabelId] = useState<string>(labels[0]?.id ?? "");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
+  // 위험작업 유형 — "" = 없음(일반 일정).
+  const [hazardType, setHazardType] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
 
@@ -1191,6 +1212,7 @@ function ScheduleEventFormModal({
     setLabelId(labels[0]?.id ?? "");
     setStartTime("");
     setEndTime("");
+    setHazardType("");
     setEditingId(null);
   };
 
@@ -1215,6 +1237,7 @@ function ScheduleEventFormModal({
     setLabelId(labels.some((l) => l.id === event.labelId) ? event.labelId : labels[0]?.id ?? "");
     setStartTime(event.startTime ?? "");
     setEndTime(event.endTime ?? "");
+    setHazardType(event.hazardType ?? "");
   };
 
   const handleSubmit = () => {
@@ -1225,6 +1248,7 @@ function ScheduleEventFormModal({
       labelId,
       startTime: startTime.trim() || undefined,
       endTime: endTime.trim() || undefined,
+      hazardType: hazardType || undefined,
     };
     if (editingId) {
       onUpdate(editingId, draft);
@@ -1443,6 +1467,42 @@ function ScheduleEventFormModal({
           </div>
 
           <div>
+            <p className="mb-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              위험작업 (선택) — 지정 시 기상 예보와 자동 대조
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {[{ id: "", name: "없음" }, ...HAZARD_TYPES].map((h) => (
+                <label
+                  key={h.id || "none"}
+                  className={[
+                    "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition",
+                    hazardType === h.id
+                      ? "border-ink/20 bg-surface-card text-ink dark:border-white/20 dark:bg-surface-dark-elevated dark:text-on-dark"
+                      : "border-hairline text-muted hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
+                  ].join(" ")}
+                >
+                  <input
+                    type="radio"
+                    name="schedule-hazard"
+                    value={h.id}
+                    checked={hazardType === h.id}
+                    onChange={() => setHazardType(h.id)}
+                    className="sr-only"
+                  />
+                  {h.id && (
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                      <path d="M12 9v4" />
+                      <path d="M12 17h.01" />
+                    </svg>
+                  )}
+                  {h.name}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               시작 시간 (선택)
             </label>
@@ -1595,6 +1655,10 @@ function HeaderCalendarPopup({
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
   // 현장 GPS 좌표 기반 일일 예보 — dateKey(YYYY-MM-DD) → WMO weatherCode. 예보 창(오늘~+6일)만 채워짐.
   const [weatherByDate, setWeatherByDate] = useState<Record<string, number>>({});
+  // 위험작업 충돌 판정용 일일 예보(돌풍 m/s·강수량·최고기온) — 같은 예보 응답에서 파생.
+  const [hazardForecastByDate, setHazardForecastByDate] = useState<
+    Record<string, HazardDailyForecast>
+  >({});
   // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 댓글 작성 드래프트(mediaId→입력값) + 편집 중 댓글.
   const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
   // 현장 사진(앱 OCR) 수동 새로고침 진행 표시 — 아이콘 회전용.
@@ -1843,16 +1907,33 @@ function HeaderCalendarPopup({
         if (!active || !res.ok) return;
         const json = (await res.json()) as {
           ok?: boolean;
-          daily7?: { time?: string[]; weatherCode?: number[] };
+          daily7?: {
+            time?: string[];
+            weatherCode?: number[];
+            tMax?: number[];
+            windGustMaxKmh?: (number | null)[];
+            precipSumMm?: (number | null)[];
+          };
         };
         if (!active || !json.ok || !json.daily7?.time || !json.daily7.weatherCode) return;
         const { time, weatherCode } = json.daily7;
         const map: Record<string, number> = {};
+        const fcMap: Record<string, HazardDailyForecast> = {};
         time.forEach((t, i) => {
+          if (typeof t !== "string") return;
           const code = weatherCode[i];
-          if (typeof t === "string" && typeof code === "number") map[t] = code;
+          if (typeof code === "number") map[t] = code;
+          const gustKmh = json.daily7?.windGustMaxKmh?.[i];
+          const rain = json.daily7?.precipSumMm?.[i];
+          const tMax = json.daily7?.tMax?.[i];
+          fcMap[t] = {
+            windGustMs: typeof gustKmh === "number" ? kmhToMs(gustKmh) : null,
+            precipSumMm: typeof rain === "number" ? rain : null,
+            tMaxC: typeof tMax === "number" ? tMax : null,
+          };
         });
         setWeatherByDate(map);
+        setHazardForecastByDate(fcMap);
       } catch {
         // 날씨 조회 실패는 조용히 무시 — 아이콘만 생략, 캘린더 본기능은 유지
       }
@@ -2198,6 +2279,30 @@ function HeaderCalendarPopup({
                               {findLabelDef(labels, event.labelId).name} · {event.title}
                               {formatScheduleTime(event) ? ` · ${formatScheduleTime(event)}` : ""}
                             </span>
+                            {(() => {
+                              const w = evaluateHazardWeather(
+                                event.hazardType,
+                                hazardForecastByDate[event.dateKey] ?? null,
+                              );
+                              if (!w) return null;
+                              return (
+                                <span
+                                  className={[
+                                    "shrink-0",
+                                    w.severity === "danger"
+                                      ? "text-red-600 dark:text-red-400"
+                                      : "text-amber-600 dark:text-amber-400",
+                                  ].join(" ")}
+                                  title={`${hazardTypeName(event.hazardType) ?? "위험작업"} — ${w.messages.join(" / ")}`}
+                                >
+                                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                    <path d="M12 9v4" />
+                                    <path d="M12 17h.01" />
+                                  </svg>
+                                </span>
+                              );
+                            })()}
                           </li>
                         ))}
                       </ul>
@@ -2264,6 +2369,15 @@ function HeaderCalendarPopup({
               const holiday = holidayMap[dateKey];
               const dayWeatherCode = weatherByDate[dateKey];
               const dayMedia = mediaByDate[dateKey] ?? [];
+              // 위험작업 일정 × 악천후 예보 겹침 — 그 날 일정들의 worst severity(없으면 null).
+              const dayHazardSev = dayEvents.reduce<HazardSeverity | null>((acc, e) => {
+                const w = evaluateHazardWeather(
+                  e.hazardType,
+                  hazardForecastByDate[dateKey] ?? null,
+                );
+                if (!w) return acc;
+                return w.severity === "danger" || acc === "danger" ? "danger" : "caution";
+              }, null);
 
               return (
                 <button
@@ -2312,6 +2426,25 @@ function HeaderCalendarPopup({
                         <circle cx="12" cy="13" r="4" />
                       </svg>
                       {dayMedia.length}
+                    </span>
+                  )}
+                  {dayHazardSev && (
+                    <span
+                      className={[
+                        "pointer-events-none absolute bottom-0.5 left-0.5 z-10 inline-flex items-center rounded px-0.5 py-0.5",
+                        isSelected
+                          ? "bg-white/20 text-white"
+                          : dayHazardSev === "danger"
+                            ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+                            : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+                      ].join(" ")}
+                      title="위험작업 일정과 악천후 예보가 겹칩니다 — 날짜를 선택해 상세 확인"
+                    >
+                      <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                        <path d="M12 9v4" />
+                        <path d="M12 17h.01" />
+                      </svg>
                     </span>
                   )}
                   {hoverDateKey === dateKey && dayEvents.length > 0 && (
@@ -2423,13 +2556,53 @@ function HeaderCalendarPopup({
               </div>
               {selectedEvents.length > 0 ? (
                 <div className="space-y-1">
-                  {sortCalendarEventsByTime(selectedEvents).map((event) => (
-                    <CalendarEventChip
-                      key={event.id}
-                      event={event}
-                      color={findLabelDef(labels, event.labelId).color}
-                    />
-                  ))}
+                  {sortCalendarEventsByTime(selectedEvents).map((event) => {
+                    const warning = evaluateHazardWeather(
+                      event.hazardType,
+                      hazardForecastByDate[event.dateKey] ?? null,
+                    );
+                    return (
+                      <div key={event.id} className="space-y-0.5">
+                        <CalendarEventChip
+                          event={event}
+                          color={findLabelDef(labels, event.labelId).color}
+                        />
+                        {warning && (
+                          <div
+                            className={[
+                              "rounded-lg border px-2 py-1.5 text-[10px] leading-snug",
+                              warning.severity === "danger"
+                                ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+                                : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+                            ].join(" ")}
+                          >
+                            {warning.messages.map((m) => (
+                              <p key={m} className="flex items-start gap-1">
+                                <svg className="mt-0.5 shrink-0" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                                  <path d="M12 9v4" />
+                                  <path d="M12 17h.01" />
+                                </svg>
+                                <span>
+                                  {hazardTypeName(event.hazardType)} · {m}
+                                </span>
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {sortCalendarEventsByTime(selectedEvents).some((event) =>
+                    evaluateHazardWeather(
+                      event.hazardType,
+                      hazardForecastByDate[event.dateKey] ?? null,
+                    ),
+                  ) && (
+                    <p className="pt-0.5 text-[9px] leading-snug text-muted dark:text-on-dark-soft">
+                      기상 예보(Open-Meteo) 기반 참고 정보 — 작업중지 여부는 현장 책임자가 당일 실측·특보로 판단합니다.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="text-[11px] text-muted dark:text-on-dark-soft">등록된 일정이 없습니다.</p>
