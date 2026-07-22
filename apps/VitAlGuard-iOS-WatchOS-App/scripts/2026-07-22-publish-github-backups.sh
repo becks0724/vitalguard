@@ -48,6 +48,13 @@ verify_repo() {
   [[ -z "$(git -C "${repository}" status --porcelain)" ]] || {
     print -u2 "Repository has uncommitted changes: ${repository}"; exit 1
   }
+  git -C "${repository}" fetch origin main
+  if git -C "${repository}" merge-base --is-ancestor HEAD origin/main; then
+    git -C "${repository}" merge --ff-only origin/main
+  elif ! git -C "${repository}" merge-base --is-ancestor origin/main HEAD; then
+    print -u2 "Repository diverged from origin/main; resolve it before publishing."
+    exit 1
+  fi
 }
 
 sync_directory() {
