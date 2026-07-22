@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024px" height="1024px" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>VitAlGuard Layered Health Icon</title>
+  <defs>
+    <linearGradient id="bg" x1="148" y1="92" x2="858" y2="934" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF3F0"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="292" y1="140" x2="732" y2="850" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111111"/>
+      <stop offset="1" stop-color="#303634"/>
+    </linearGradient>
+    <linearGradient id="heart" x1="356" y1="318" x2="694" y2="646" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF5C67"/>
+      <stop offset="1" stop-color="#D30005"/>
+    </linearGradient>
+  </defs>
+  <g id="Template-App-Icons" fill="none" fill-rule="evenodd">
+    <g id="1-Layer">
+      <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+    </g>
+    <g id="2-Layer">
+      <path d="M512 112L780 211V452C780 625 672 768 512 850C352 768 244 625 244 452V211L512 112Z" fill="url(#shield)"/>
+    </g>
+    <g id="3-Layer">
+      <path d="M512 654C495 654 405 604 338 535C282 477 258 418 258 370C258 292 314 237 388 237C445 237 484 267 512 310C540 267 579 237 636 237C710 237 766 292 766 370C766 418 742 477 686 535C619 604 529 654 512 654Z" fill="url(#heart)"/>
+      <path d="M513 548L462 460H397L377 424H484L512 475L564 358L590 424H650L630 460H566L513 548Z" fill="#FFFFFF"/>
+    </g>
+    <g id="4-Layer">
+      <rect x="328" y="688" width="368" height="104" rx="34" fill="#FFFFFF" opacity="0.96"/>
+      <rect x="372" y="723" width="128" height="16" rx="8" fill="#111111"/>
+      <rect x="372" y="753" width="214" height="16" rx="8" fill="#9E9EA0"/>
+      <circle cx="643" cy="746" r="25" fill="#007D48"/>
+    </g>
+  </g>
+</svg>

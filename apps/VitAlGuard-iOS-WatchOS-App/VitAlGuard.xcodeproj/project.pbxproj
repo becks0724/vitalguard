@@ -1,0 +1,787 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A812FBC7E20203495D8E677 /* WatchTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 762BBEB03053E2480F3131C5 /* WatchTheme.swift */; };
+		0E691FB466F6D4CC17505E19 /* VitalTransmitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CDFBA3BE5E9C88171F9520 /* VitalTransmitter.swift */; };
+		1015D2B1CD173799EFE7BA69 /* IconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F94F031561E857E87B6989F /* IconAssets.xcassets */; };
+		183DF5F2042806FDB82955B1 /* ConnectionSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A524E82C8391A5FF4422B6 /* ConnectionSettings.swift */; };
+		1F001F001F001F001F001F01 /* IMUWindowLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F01 /* IMUWindowLogger.swift */; };
+		1F001F001F001F001F001F02 /* FeatureExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F02 /* FeatureExtractor.swift */; };
+		1F001F001F001F001F001F03 /* FallMLPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F03 /* FallMLPipeline.swift */; };
+		1F001F001F001F001F001F04 /* MLFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F04 /* MLFusion.swift */; };
+		1F001F001F001F001F001F05 /* MLSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F05 /* MLSelfCheck.swift */; };
+		1F001F001F001F001F001F06 /* work_veto.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F06 /* work_veto.mlmodel */; };
+		1F001F001F001F001F001F07 /* impact.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F07 /* impact.mlmodel */; };
+		1F001F001F001F001F001F08 /* recovery.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F08 /* recovery.mlmodel */; };
+		1F001F001F001F001F001F09 /* ml_selfcheck.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F09 /* ml_selfcheck.json */; };
+		1F001F001F001F001F001F0A /* thresholds.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F001F001F001F001F001F0A /* thresholds.json */; };
+		2B4D590D8EE6CD4CB7CE0F8E /* IconAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F94F031561E857E87B6989F /* IconAssets.xcassets */; };
+		2D63FEA8BB826CABDC8AE7E3 /* VitAlGuardLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAEDAC0B1CB5D314C6CA8618 /* VitAlGuardLiveActivityManager.swift */; };
+		397E70AA9CD16E7F41750EB4 /* VitAlGuardShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39CF9809A4665CCAB967D198 /* VitAlGuardShared.swift */; };
+		40C16271A976D2BF6F89BBB6 /* vitalguard-logo-dark.png in Resources */ = {isa = PBXBuildFile; fileRef = 6673EBFF6AC20096D1997A08 /* vitalguard-logo-dark.png */; };
+		420A50A731E1C8FD3C5F395E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DFFAD6569717BC4CAB03022A /* Assets.xcassets */; };
+		4ACA088D3182CFBAE6BBF95B /* vitalguard-logo-light.png in Resources */ = {isa = PBXBuildFile; fileRef = 559B12811E1EDFBCD4C7C04F /* vitalguard-logo-light.png */; };
+		6024F1519BF151222F84438D /* VitAlGuardForWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1AD534493FF09AF1E162268 /* VitAlGuardForWatchApp.swift */; };
+		64A640000000000000000001 /* AppleDesignComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A640000000000000000002 /* AppleDesignComponents.swift */; };
+		64A640000000000000000003 /* AppleDesignComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A640000000000000000004 /* AppleDesignComponents.swift */; };
+		667994E74639173651A557D7 /* VitAlGuardShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39CF9809A4665CCAB967D198 /* VitAlGuardShared.swift */; };
+		75DB6725F1466125E00E9258 /* VitAlGuardPreviewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DC66651FD10E21AB0BF8A49 /* VitAlGuardPreviewApp.swift */; };
+		7ADAE3A881037D29C5B53CCF /* WorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B75036407F1C4D303E74AE0 /* WorkoutManager.swift */; };
+		8753CF3FF2B7F7551A92D5A8 /* IMG_E4667.jpg in Resources */ = {isa = PBXBuildFile; fileRef = B09AEA740EE6E8C6883210D1 /* IMG_E4667.jpg */; };
+		8F9A046E46391D18128A71ED /* StressInputsReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350386689F15E5923777F8C6 /* StressInputsReader.swift */; };
+		A2D3E6F701CE3C84D398CB0E /* VitAlGuardWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 2ED62E9A11ED375D62005625 /* VitAlGuardWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A8F7863EDEE9BF9EC1279F32 /* FallDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E7AC07B2A5215A72C5CD14 /* FallDetector.swift */; };
+		ABCD10000000000000000001 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = ABCD10000000000000000002 /* Settings.bundle */; };
+		C1C6D5C7D4DBE53DC48D8920 /* VitAlGuard.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 2541DA7600CFE68AE0AF795F /* VitAlGuard.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C5622FA4DB6056BCD58DA04C /* VitAlGuardWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2EC778154371C537198FAEF /* VitAlGuardWidgets.swift */; };
+		CEBB603F85618C06A2C98BF7 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 131DF6C2359CAD6EC102254B /* ContentView.swift */; };
+		E0549C1ADA280F4909384AE6 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 0CFF1198646158599BBDC99E /* LaunchScreen.storyboard */; };
+		E99AECD646CAFBE27BF6D36C /* SpO2Reader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E74B2BA29FBAEBFA839AD31 /* SpO2Reader.swift */; };
+		F76C55F51B4125351DD72E90 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9C4D3374116F3BD27801254 /* SettingsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		0C4908132A3A73EAEA3F3D8F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D3675522AFDE32D36888A7D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A84EB669F783E38F7F516E71;
+			remoteInfo = "VitAlGuard Watch";
+		};
+		F712BDEAC0AF8B2559793477 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4D3675522AFDE32D36888A7D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8171FEB08832C85C6FAF97A5;
+			remoteInfo = VitAlGuardPhoneWatchWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4737FEA6D171D6752982C322 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A2D3E6F701CE3C84D398CB0E /* VitAlGuardWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		73E3C3283C175D85DB086620 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				C1C6D5C7D4DBE53DC48D8920 /* VitAlGuard.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		06F209AF28C2900165176620 /* VitAlGuardWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VitAlGuardWidgets.entitlements; sourceTree = "<group>"; };
+		0CFF1198646158599BBDC99E /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+		131DF6C2359CAD6EC102254B /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2541DA7600CFE68AE0AF795F /* VitAlGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = VitAlGuard.app; path = VitAlGuardWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2B75036407F1C4D303E74AE0 /* WorkoutManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutManager.swift; sourceTree = "<group>"; };
+		2ED62E9A11ED375D62005625 /* VitAlGuardWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VitAlGuardWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2F001F001F001F001F001F01 /* IMUWindowLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IMUWindowLogger.swift; sourceTree = "<group>"; };
+		2F001F001F001F001F001F02 /* FeatureExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureExtractor.swift; sourceTree = "<group>"; };
+		2F001F001F001F001F001F03 /* FallMLPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallMLPipeline.swift; sourceTree = "<group>"; };
+		2F001F001F001F001F001F04 /* MLFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLFusion.swift; sourceTree = "<group>"; };
+		2F001F001F001F001F001F05 /* MLSelfCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLSelfCheck.swift; sourceTree = "<group>"; };
+		2F001F001F001F001F001F06 /* work_veto.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = work_veto.mlmodel; sourceTree = "<group>"; };
+		2F001F001F001F001F001F07 /* impact.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = impact.mlmodel; sourceTree = "<group>"; };
+		2F001F001F001F001F001F08 /* recovery.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = recovery.mlmodel; sourceTree = "<group>"; };
+		2F001F001F001F001F001F09 /* ml_selfcheck.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ml_selfcheck.json; sourceTree = "<group>"; };
+		2F001F001F001F001F001F0A /* thresholds.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = thresholds.json; sourceTree = "<group>"; };
+		350386689F15E5923777F8C6 /* StressInputsReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StressInputsReader.swift; sourceTree = "<group>"; };
+		3717814A1BB6340A098EF3D1 /* VitAlGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitAlGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		39CF9809A4665CCAB967D198 /* VitAlGuardShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitAlGuardShared.swift; sourceTree = "<group>"; };
+		559B12811E1EDFBCD4C7C04F /* vitalguard-logo-light.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "vitalguard-logo-light.png"; sourceTree = "<group>"; };
+		5E74B2BA29FBAEBFA839AD31 /* SpO2Reader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpO2Reader.swift; sourceTree = "<group>"; };
+		64A640000000000000000002 /* AppleDesignComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleDesignComponents.swift; sourceTree = "<group>"; };
+		64A640000000000000000004 /* AppleDesignComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleDesignComponents.swift; sourceTree = "<group>"; };
+		6673EBFF6AC20096D1997A08 /* vitalguard-logo-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "vitalguard-logo-dark.png"; sourceTree = "<group>"; };
+		762BBEB03053E2480F3131C5 /* WatchTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchTheme.swift; sourceTree = "<group>"; };
+		7DC66651FD10E21AB0BF8A49 /* VitAlGuardPreviewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitAlGuardPreviewApp.swift; sourceTree = "<group>"; };
+		7F94F031561E857E87B6989F /* IconAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = IconAssets.xcassets; sourceTree = "<group>"; };
+		83A524E82C8391A5FF4422B6 /* ConnectionSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionSettings.swift; sourceTree = "<group>"; };
+		97E7AC07B2A5215A72C5CD14 /* FallDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallDetector.swift; sourceTree = "<group>"; };
+		A2CDFBA3BE5E9C88171F9520 /* VitalTransmitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitalTransmitter.swift; sourceTree = "<group>"; };
+		ABCD10000000000000000002 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = wrapper.cfbundle; path = Settings.bundle; sourceTree = "<group>"; };
+		B09AEA740EE6E8C6883210D1 /* IMG_E4667.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = IMG_E4667.jpg; sourceTree = "<group>"; };
+		B2EC778154371C537198FAEF /* VitAlGuardWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitAlGuardWidgets.swift; sourceTree = "<group>"; };
+		BDEE20C1D62D07B035F11C3E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CAEDAC0B1CB5D314C6CA8618 /* VitAlGuardLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitAlGuardLiveActivityManager.swift; sourceTree = "<group>"; };
+		D1AD534493FF09AF1E162268 /* VitAlGuardForWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VitAlGuardForWatchApp.swift; sourceTree = "<group>"; };
+		D9C4D3374116F3BD27801254 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		DFFAD6569717BC4CAB03022A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1372610C85FC551A1A88CBAC /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				64A640000000000000000004 /* AppleDesignComponents.swift */,
+				CAEDAC0B1CB5D314C6CA8618 /* VitAlGuardLiveActivityManager.swift */,
+				7DC66651FD10E21AB0BF8A49 /* VitAlGuardPreviewApp.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		29B473381AD329B267EA90C8 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				39CF9809A4665CCAB967D198 /* VitAlGuardShared.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		4FE0E06CEEE5FA98F28CEDEC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				3717814A1BB6340A098EF3D1 /* VitAlGuard.app */,
+				2541DA7600CFE68AE0AF795F /* VitAlGuard.app */,
+				2ED62E9A11ED375D62005625 /* VitAlGuardWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		6D6A5F45469A54F387A25DF1 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				64A640000000000000000002 /* AppleDesignComponents.swift */,
+				83A524E82C8391A5FF4422B6 /* ConnectionSettings.swift */,
+				131DF6C2359CAD6EC102254B /* ContentView.swift */,
+				97E7AC07B2A5215A72C5CD14 /* FallDetector.swift */,
+				2F001F001F001F001F001F03 /* FallMLPipeline.swift */,
+				2F001F001F001F001F001F02 /* FeatureExtractor.swift */,
+				2F001F001F001F001F001F01 /* IMUWindowLogger.swift */,
+				2F001F001F001F001F001F04 /* MLFusion.swift */,
+				2F001F001F001F001F001F05 /* MLSelfCheck.swift */,
+				D9C4D3374116F3BD27801254 /* SettingsView.swift */,
+				5E74B2BA29FBAEBFA839AD31 /* SpO2Reader.swift */,
+				350386689F15E5923777F8C6 /* StressInputsReader.swift */,
+				D1AD534493FF09AF1E162268 /* VitAlGuardForWatchApp.swift */,
+				A2CDFBA3BE5E9C88171F9520 /* VitalTransmitter.swift */,
+				762BBEB03053E2480F3131C5 /* WatchTheme.swift */,
+				2B75036407F1C4D303E74AE0 /* WorkoutManager.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		6ECFDAAC61BCD1941293E7A0 /* Phone */ = {
+			isa = PBXGroup;
+			children = (
+				7F94F031561E857E87B6989F /* IconAssets.xcassets */,
+				ABCD10000000000000000002 /* Settings.bundle */,
+				0CFF1198646158599BBDC99E /* LaunchScreen.storyboard */,
+				80B8AE654A402192EA7B7806 /* Assets */,
+				29B473381AD329B267EA90C8 /* Shared */,
+				1372610C85FC551A1A88CBAC /* Sources */,
+				8F26F1682E4B013505B042CB /* Widgets */,
+			);
+			path = Phone;
+			sourceTree = "<group>";
+		};
+		6F001F001F001F001F001F01 /* ML */ = {
+			isa = PBXGroup;
+			children = (
+				2F001F001F001F001F001F07 /* impact.mlmodel */,
+				2F001F001F001F001F001F09 /* ml_selfcheck.json */,
+				2F001F001F001F001F001F08 /* recovery.mlmodel */,
+				2F001F001F001F001F001F0A /* thresholds.json */,
+				2F001F001F001F001F001F06 /* work_veto.mlmodel */,
+			);
+			path = ML;
+			sourceTree = "<group>";
+		};
+		80B8AE654A402192EA7B7806 /* Assets */ = {
+			isa = PBXGroup;
+			children = (
+				B09AEA740EE6E8C6883210D1 /* IMG_E4667.jpg */,
+				6673EBFF6AC20096D1997A08 /* vitalguard-logo-dark.png */,
+				559B12811E1EDFBCD4C7C04F /* vitalguard-logo-light.png */,
+			);
+			path = Assets;
+			sourceTree = "<group>";
+		};
+		8F26F1682E4B013505B042CB /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				BDEE20C1D62D07B035F11C3E /* Info.plist */,
+				06F209AF28C2900165176620 /* VitAlGuardWidgets.entitlements */,
+				B2EC778154371C537198FAEF /* VitAlGuardWidgets.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		CA85908CBEAA912D904AEF22 = {
+			isa = PBXGroup;
+			children = (
+				6ECFDAAC61BCD1941293E7A0 /* Phone */,
+				E029C0D1652BFBE01A5647C5 /* Watch */,
+				4FE0E06CEEE5FA98F28CEDEC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		E029C0D1652BFBE01A5647C5 /* Watch */ = {
+			isa = PBXGroup;
+			children = (
+				DFFAD6569717BC4CAB03022A /* Assets.xcassets */,
+				6F001F001F001F001F001F01 /* ML */,
+				6D6A5F45469A54F387A25DF1 /* Sources */,
+			);
+			path = Watch;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8171FEB08832C85C6FAF97A5 /* VitAlGuard Widgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DA7BCCF162938FA29D139590 /* Build configuration list for PBXNativeTarget "VitAlGuard Widgets" */;
+			buildPhases = (
+				8E37814A1C7F3B1BC35DC131 /* Sources */,
+				A6CC78C3AF117A664EFF9ACF /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "VitAlGuard Widgets";
+			packageProductDependencies = (
+			);
+			productName = VitAlGuardPhoneWatchWidgets;
+			productReference = 2ED62E9A11ED375D62005625 /* VitAlGuardWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		990A52437877A9394CBBA9E8 /* VitAlGuard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EF0FFAB6D135AAE7BC787E75 /* Build configuration list for PBXNativeTarget "VitAlGuard" */;
+			buildPhases = (
+				6C8D1568A1DED8D2B6FCFFAF /* Sources */,
+				8B4C86AFF74DCFCBF98C2417 /* Resources */,
+				4737FEA6D171D6752982C322 /* Embed Foundation Extensions */,
+				73E3C3283C175D85DB086620 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8FA742448BE0DC1D36375401 /* PBXTargetDependency */,
+				0F17FD50C22DDA6CB0F31CB6 /* PBXTargetDependency */,
+			);
+			name = VitAlGuard;
+			packageProductDependencies = (
+			);
+			productName = VitAlGuard;
+			productReference = 3717814A1BB6340A098EF3D1 /* VitAlGuard.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A84EB669F783E38F7F516E71 /* VitAlGuard Watch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 004051FE1BEF52BD42661EC3 /* Build configuration list for PBXNativeTarget "VitAlGuard Watch" */;
+			buildPhases = (
+				452675C103C8747CC1A3F6EF /* Sources */,
+				133979FD11FD16D4F970D8F9 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "VitAlGuard Watch";
+			packageProductDependencies = (
+			);
+			productName = VitAlGuard;
+			productReference = 2541DA7600CFE68AE0AF795F /* VitAlGuard.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		4D3675522AFDE32D36888A7D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2660;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					8171FEB08832C85C6FAF97A5 = {
+						DevelopmentTeam = R2684PTQQZ;
+						ProvisioningStyle = Automatic;
+					};
+					A84EB669F783E38F7F516E71 = {
+						DevelopmentTeam = R2684PTQQZ;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = CEB291BD0BF79C6457CC42DA /* Build configuration list for PBXProject "VitAlGuard" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				ko,
+				en,
+				"zh-Hans",
+				ja,
+				vi,
+				th,
+				ms,
+				id,
+				ru,
+				uk,
+				fr,
+				de,
+				cs,
+				pl,
+				it,
+				es,
+				sv,
+				nb,
+				fi,
+			);
+			mainGroup = CA85908CBEAA912D904AEF22;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4FE0E06CEEE5FA98F28CEDEC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A84EB669F783E38F7F516E71 /* VitAlGuard Watch */,
+				990A52437877A9394CBBA9E8 /* VitAlGuard */,
+				8171FEB08832C85C6FAF97A5 /* VitAlGuard Widgets */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		133979FD11FD16D4F970D8F9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				420A50A731E1C8FD3C5F395E /* Assets.xcassets in Resources */,
+				1F001F001F001F001F001F07 /* impact.mlmodel in Resources */,
+				1F001F001F001F001F001F09 /* ml_selfcheck.json in Resources */,
+				1F001F001F001F001F001F08 /* recovery.mlmodel in Resources */,
+				1F001F001F001F001F001F0A /* thresholds.json in Resources */,
+				1F001F001F001F001F001F06 /* work_veto.mlmodel in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B4C86AFF74DCFCBF98C2417 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8753CF3FF2B7F7551A92D5A8 /* IMG_E4667.jpg in Resources */,
+				1015D2B1CD173799EFE7BA69 /* IconAssets.xcassets in Resources */,
+				E0549C1ADA280F4909384AE6 /* LaunchScreen.storyboard in Resources */,
+				ABCD10000000000000000001 /* Settings.bundle in Resources */,
+				40C16271A976D2BF6F89BBB6 /* vitalguard-logo-dark.png in Resources */,
+				4ACA088D3182CFBAE6BBF95B /* vitalguard-logo-light.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A6CC78C3AF117A664EFF9ACF /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2B4D590D8EE6CD4CB7CE0F8E /* IconAssets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		452675C103C8747CC1A3F6EF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64A640000000000000000001 /* AppleDesignComponents.swift in Sources */,
+				183DF5F2042806FDB82955B1 /* ConnectionSettings.swift in Sources */,
+				CEBB603F85618C06A2C98BF7 /* ContentView.swift in Sources */,
+				A8F7863EDEE9BF9EC1279F32 /* FallDetector.swift in Sources */,
+				1F001F001F001F001F001F03 /* FallMLPipeline.swift in Sources */,
+				1F001F001F001F001F001F02 /* FeatureExtractor.swift in Sources */,
+				1F001F001F001F001F001F01 /* IMUWindowLogger.swift in Sources */,
+				1F001F001F001F001F001F04 /* MLFusion.swift in Sources */,
+				1F001F001F001F001F001F05 /* MLSelfCheck.swift in Sources */,
+				F76C55F51B4125351DD72E90 /* SettingsView.swift in Sources */,
+				E99AECD646CAFBE27BF6D36C /* SpO2Reader.swift in Sources */,
+				8F9A046E46391D18128A71ED /* StressInputsReader.swift in Sources */,
+				6024F1519BF151222F84438D /* VitAlGuardForWatchApp.swift in Sources */,
+				0E691FB466F6D4CC17505E19 /* VitalTransmitter.swift in Sources */,
+				0A812FBC7E20203495D8E677 /* WatchTheme.swift in Sources */,
+				7ADAE3A881037D29C5B53CCF /* WorkoutManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6C8D1568A1DED8D2B6FCFFAF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64A640000000000000000003 /* AppleDesignComponents.swift in Sources */,
+				2D63FEA8BB826CABDC8AE7E3 /* VitAlGuardLiveActivityManager.swift in Sources */,
+				75DB6725F1466125E00E9258 /* VitAlGuardPreviewApp.swift in Sources */,
+				667994E74639173651A557D7 /* VitAlGuardShared.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8E37814A1C7F3B1BC35DC131 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				397E70AA9CD16E7F41750EB4 /* VitAlGuardShared.swift in Sources */,
+				C5622FA4DB6056BCD58DA04C /* VitAlGuardWidgets.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0F17FD50C22DDA6CB0F31CB6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A84EB669F783E38F7F516E71 /* VitAlGuard Watch */;
+			targetProxy = 0C4908132A3A73EAEA3F3D8F /* PBXContainerItemProxy */;
+		};
+		8FA742448BE0DC1D36375401 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8171FEB08832C85C6FAF97A5 /* VitAlGuard Widgets */;
+			targetProxy = F712BDEAC0AF8B2559793477 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		5F96C5F9574A843C0DCF51B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		683B116299487589E8D9E09F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
+				CODE_SIGN_ENTITLEMENTS = Phone/Widgets/VitAlGuardWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Phone/Widgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VitAlGuard;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.widgets;
+				PRODUCT_NAME = VitAlGuardWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6F8FFBCB01D6190447A10908 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
+				CODE_SIGN_ENTITLEMENTS = Phone/Widgets/VitAlGuardWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Phone/Widgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VitAlGuard;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.widgets;
+				PRODUCT_NAME = VitAlGuardWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		94A294963990DD5D46A67901 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Phone/BundleTemplate/VitAlGuard.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Phone/BundleTemplate/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VitAlGuard;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard;
+				PRODUCT_NAME = VitAlGuard;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_SUPPRESS_WARNINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B7A9EBE6E98441C11BB2D468 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Watch/SupportingFiles/VitAlGuardForWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Watch/SupportingFiles/Info.plist;
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.watch;
+				PRODUCT_NAME = VitAlGuardWatch;
+				RECEIVER_URL_DEFAULT = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
+		D026CC9537EC6165FB902D2F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		D6D1C2B5A9F1DA47272618E1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Phone/BundleTemplate/VitAlGuard.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Phone/BundleTemplate/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = VitAlGuard;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard;
+				PRODUCT_NAME = VitAlGuard;
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_SUPPRESS_WARNINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		DCF277B9801FC0E3B77CF9AF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Watch/SupportingFiles/VitAlGuardForWatch.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 73;
+				DEVELOPMENT_TEAM = R2684PTQQZ;
+				EXTRACT_APP_INTENTS_METADATA = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Watch/SupportingFiles/Info.plist;
+				MARKETING_VERSION = 7.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.watch;
+				PRODUCT_NAME = VitAlGuardWatch;
+				RECEIVER_URL_DEFAULT = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		004051FE1BEF52BD42661EC3 /* Build configuration list for PBXNativeTarget "VitAlGuard Watch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B7A9EBE6E98441C11BB2D468 /* Debug */,
+				DCF277B9801FC0E3B77CF9AF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CEB291BD0BF79C6457CC42DA /* Build configuration list for PBXProject "VitAlGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5F96C5F9574A843C0DCF51B0 /* Debug */,
+				D026CC9537EC6165FB902D2F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DA7BCCF162938FA29D139590 /* Build configuration list for PBXNativeTarget "VitAlGuard Widgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				683B116299487589E8D9E09F /* Debug */,
+				6F8FFBCB01D6190447A10908 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EF0FFAB6D135AAE7BC787E75 /* Build configuration list for PBXNativeTarget "VitAlGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				94A294963990DD5D46A67901 /* Debug */,
+				D6D1C2B5A9F1DA47272618E1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 4D3675522AFDE32D36888A7D /* Project object */;
+}

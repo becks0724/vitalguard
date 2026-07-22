@@ -1,0 +1,22 @@
+name: Publish VitAlGuard source release
+
+on:
+  push:
+    tags:
+      - 'v*-build.*'
+      - 'vitalguard-v*-build.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "VitAlGuard $TAG" --generate-notes

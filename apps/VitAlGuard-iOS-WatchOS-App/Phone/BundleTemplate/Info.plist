@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>ko</string>
+	<key>CFBundleDisplayName</key>
+	<string>VitAlGuard</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconName</key>
+			<string>AppIcon</string>
+		</dict>
+	</dict>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>ko</string>
+		<string>en</string>
+		<string>zh-Hans</string>
+		<string>ja</string>
+		<string>vi</string>
+		<string>th</string>
+		<string>ms</string>
+		<string>id</string>
+		<string>ru</string>
+		<string>uk</string>
+		<string>fr</string>
+		<string>de</string>
+		<string>cs</string>
+		<string>pl</string>
+		<string>it</string>
+		<string>es</string>
+		<string>sv</string>
+		<string>nb</string>
+		<string>fi</string>
+		<string>ar</string>
+		<string>da</string>
+		<string>el</string>
+		<string>he</string>
+		<string>hi</string>
+		<string>hr</string>
+		<string>hu</string>
+		<string>nl</string>
+		<string>pt</string>
+		<string>ro</string>
+		<string>sk</string>
+		<string>tr</string>
+	</array>
+	<key>CFBundleName</key>
+	<string>VitAlGuard</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.yangjeehoo.vitalguard.dashboard-refresh</string>
+	</array>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NFCReaderUsageDescription</key>
+	<string>현장 NFC 스티커를 스캔하여 작업 구역 URL, 안전 점검 정보, 대시보드 연동 정보를 확인하기 위해 NFC 접근이 필요합니다.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>문서/증빙 촬영 및 실시간 업로드를 위해 카메라 접근이 필요합니다.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>화면이 꺼져 있거나 잠겨 있어도 작업 위치, 위치 기반 날씨, 관제 대시보드 연동을 유지하기 위해 위치 권한(항상 허용)이 필요합니다.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>현재 위치 기반 날씨, 작업 위치 공유, 촬영 워터마크 기록을 위해 위치 권한이 필요합니다.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>동영상 촬영 시 오디오 저장을 위해 마이크 접근 권한이 필요합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>촬영한 이미지와 영상을 앨범에 저장하기 위해 사진 라이브러리 쓰기 권한이 필요합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>캡처한 사진 파일/동영상을 저장하고 관리하기 위해 사진 라이브러리 접근이 필요합니다.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIStatusBarStyle</key>
+	<string></string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>
