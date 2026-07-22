@@ -51,3 +51,8 @@
 1. **필지 경계 폴리곤 레드라인** — VWorld 데이터 API(GetFeature·LP_PA_CBND_BUBUN geomFilter=POINT)로 주소 필지 폴리곤을 받아 원 대신/병행 표시. 공사부지가 다필지면 수동 폴리곤(②안)이 정답.
 2. **현장 환경 역지오코딩** — GPS→지역명 표기(이전 검토 항목)가 VWorld 로도 가능해짐(NCP Maps 불필요).
 3. 지도 모드 영속화(localStorage)·다크/라이트 라벨 톤 튜닝 — 필요 시.
+
+## 6. 후속 구현 (2026-07-22)
+
+- **구획 원 → 이탈 알림 배선** — §1 의 구획 원 중심 우선순위 체인을 `siteCircleCenter` 메모(단일 소스)로 승격, 같은 중심·반경 100m 로 **작업자 구획 이탈 알림**(히스테리시스 판정·앰버 팝업·`alerts` 이력 `geofence`)을 구현. 원을 그리는 값과 이탈을 판정하는 값이 항상 동일하다. 상세 = [geofence-alert/checklist.md](geofence-alert/checklist.md)·[geofence-alert/context-notes.md](geofence-alert/context-notes.md).
+- §5 확장 후보(필지 폴리곤·역지오코딩·모드 영속화)는 그대로 미착수.
