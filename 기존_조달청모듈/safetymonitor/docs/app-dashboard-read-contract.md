@@ -14,6 +14,8 @@
 | 기능 현황요약 | `GET /api/mock/vital` | **없음(공개)** — GPS·보호자 등 PII 는 마스킹되어 나옴(현황요약엔 불필요) |
 | 현장정보 | `GET /api/admin/site-info` | **`Authorization: Bearer <앱 JWT>`** |
 | 캘린더(조회) | `GET /api/calendar/media?from=&to=` | **`Authorization: Bearer <앱 JWT>`** |
+| 캘린더 일정(조회) | `GET /api/calendar/events?from=&to=` | **`Authorization: Bearer <앱 JWT>`** |
+| 캘린더 일정 라벨(조회) | `GET /api/calendar/labels` | **`Authorization: Bearer <앱 JWT>`** |
 
 - 앱 JWT = 로그인(`POST /api/app-auth/login`) 성공 시 받는 30일 토큰. 현장정보·캘린더 조회는 **로그인한 사용자(owner/admin/worker 모두)** 면 허용된다.
 - 레이더·현황요약은 토큰 없이 바로 호출 가능.
@@ -141,6 +143,18 @@ Authorization: Bearer <앱 JWT>
 - `from`/`to` 는 `YYYY-MM-DD` 필수. 형식 오류 400.
 - `media_url` 은 비공개 스토리지 저장분이면 **만료형 프리사인 URL**(표시 시점 발급). 캐시하지 말고 매 조회분을 사용.
 - 미인증/만료 토큰 → 401.
+
+### 캘린더 일정(조회) — `GET /api/calendar/events?from=YYYY-MM-DD&to=YYYY-MM-DD` · `GET /api/calendar/labels`
+
+관제 캘린더의 등록 일정(서버 영속) 목록과 라벨(이름·색상) 목록. 인증·오류 규칙은 미디어 조회와 동일(앱 JWT 수용, `from`/`to` 형식 오류 400).
+
+```json
+{ "ok": true, "events": [ { "id": "…", "date_key": "2026-07-22", "title": "타설 작업", "label_id": "lbl_important", "start_time": "09:00", "end_time": "12:00", "hazard_type": "crane" } ] }
+{ "ok": true, "labels": [ { "id": "lbl_important", "name": "중요일정", "color": "red", "sort_order": 0 } ] }
+```
+- `hazard_type` = 위험작업 유형(`high_place`·`crane`·`hot_work`·`excavation`·`confined`) 또는 null.
+- `labels` 가 빈 배열이면 대시보드 기본 4라벨(중요일정·발주계획·착수계획·기타)을 클라이언트가 폴백 표시한다.
+- 일정 등록·수정·삭제는 대시보드 세션 전용(앱은 조회만).
 
 ### 캘린더 업로드(앱 → 캘린더)는 이미 지원
 - 단일 업로드 = `POST /api/app-media`(앱 JWT 수용, 로그인 신원 자동 연결) — [app-media-upload-contract.md](./app-media-upload-contract.md).

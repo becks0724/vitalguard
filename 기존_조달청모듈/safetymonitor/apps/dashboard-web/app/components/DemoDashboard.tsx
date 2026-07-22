@@ -655,7 +655,7 @@ const LABEL_COLOR_META: Record<
 
 const FALLBACK_LABEL_COLOR: LabelColor = "slate";
 
-// 사용자 정의 일정 라벨 — 이름·색상 편집 및 추가/삭제 가능, localStorage 영속
+// 사용자 정의 일정 라벨 — 이름·색상 편집 및 추가/삭제 가능, 서버 DB 영속(관리자 간 공유)
 type ScheduleLabelDef = {
   id: string;
   name: string;
@@ -678,10 +678,13 @@ type CalendarEvent = {
   endTime?: string;
 };
 
+// 옛 localStorage 키 — 서버 승격 후에는 1회 마이그레이션 원본·서버 조회 실패 시 읽기 폴백으로만 사용.
 const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
 const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
+// localStorage → 서버 1회 마이그레이션 완료 플래그(브라우저별).
+const CALENDAR_MIGRATED_KEY = "safetymonitor.calendar-migrated.v1";
 
-// 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정(localStorage)과 별개 레이어.
+// 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정과 같은 서버 레이어(테이블 별개).
 type CalendarMediaComment = {
   id: string;
   authorName: string | null;
@@ -743,13 +746,36 @@ function loadCalendarLabels(): ScheduleLabelDef[] {
   }
 }
 
-function saveCalendarLabels(labels: ScheduleLabelDef[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CALENDAR_LABELS_STORAGE_KEY, JSON.stringify(labels));
-  } catch {
-    // localStorage 사용 불가 환경은 조용히 무시
-  }
+// 서버 응답 라벨 행(snake 없음·검증만) → ScheduleLabelDef. 형식 불량 행은 버림.
+function calendarLabelsFromServer(rows: unknown[]): ScheduleLabelDef[] {
+  return rows
+    .filter(
+      (l): l is { id: string; name: string; color: LabelColor } =>
+        typeof (l as { id?: unknown })?.id === "string" &&
+        typeof (l as { name?: unknown })?.name === "string" &&
+        isLabelColor((l as { color?: unknown })?.color),
+    )
+    .map((l) => ({ id: l.id, name: l.name, color: l.color }));
+}
+
+// 서버 응답 일정 행(snake_case) → CalendarEvent. 형식 불량 행은 버림.
+function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
+  return rows
+    .filter(
+      (r): r is Record<string, unknown> =>
+        typeof (r as { id?: unknown })?.id === "string" &&
+        typeof (r as { date_key?: unknown })?.date_key === "string" &&
+        typeof (r as { title?: unknown })?.title === "string" &&
+        typeof (r as { label_id?: unknown })?.label_id === "string",
+    )
+    .map((r) => ({
+      id: r.id as string,
+      dateKey: r.date_key as string,
+      title: r.title as string,
+      labelId: r.label_id as string,
+      startTime: typeof r.start_time === "string" ? r.start_time : undefined,
+      endTime: typeof r.end_time === "string" ? r.end_time : undefined,
+    }));
 }
 
 function loadCalendarEvents(): CalendarEvent[] {
@@ -778,15 +804,6 @@ function loadCalendarEvents(): CalendarEvent[] {
       }));
   } catch {
     return [];
-  }
-}
-
-function saveCalendarEvents(events: CalendarEvent[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CALENDAR_EVENTS_STORAGE_KEY, JSON.stringify(events));
-  } catch {
-    // localStorage 사용 불가 환경은 조용히 무시
   }
 }
 
@@ -1586,7 +1603,7 @@ function HeaderCalendarPopup({
   const [editingComment, setEditingComment] = useState<{ id: string; body: string } | null>(null);
   // 사진 클릭 시 확대 팝업(라이트박스) 대상 미디어.
   const [lightbox, setLightbox] = useState<CalendarMedia | null>(null);
-  // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드, 로드 전엔 저장 보류
+  // 초기 일정·라벨 로드 완료 플래그 — 로드 전엔 라벨 서버 반영(PUT) 보류
   const [hydrated, setHydrated] = useState(false);
 
   // 미디어 조회 레이스 가드 — 빠른 월 이동 시 느린 이전 달 응답이 현재 달을 덮지 않게 최신 요청만 commit.
@@ -1648,6 +1665,40 @@ function HeaderCalendarPopup({
     }
   }, []);
 
+  // 일정·라벨 서버 조회(단일 진실 소스) — 보이는 달 ±7일 패딩(주간 Plan 의 월 경계 커버).
+  // 반환 = 실패 null / 성공 { labelCount: 서버 라벨 수(기본 라벨 폴백 전 원값, 마이그레이션 판단용) }.
+  const scheduleFetchSeqRef = useRef(0);
+  const fetchSchedule = useCallback(async (d: Date): Promise<{ labelCount: number } | null> => {
+    const seq = ++scheduleFetchSeqRef.current;
+    const y = d.getFullYear();
+    const mo = d.getMonth();
+    const from = toDateKey(new Date(y, mo, 1 - 7));
+    const to = toDateKey(new Date(y, mo + 1, 7));
+    const token = getSessionToken();
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    try {
+      const [evRes, lbRes] = await Promise.all([
+        fetch(`/api/calendar/events?from=${from}&to=${to}`, { cache: "no-store", headers }),
+        fetch("/api/calendar/labels", { cache: "no-store", headers }),
+      ]);
+      if (!evRes.ok || !lbRes.ok) return null;
+      const evJson = (await evRes.json()) as { ok?: boolean; events?: unknown[] };
+      const lbJson = (await lbRes.json()) as { ok?: boolean; labels?: unknown[] };
+      if (!evJson.ok || !Array.isArray(evJson.events) || !lbJson.ok || !Array.isArray(lbJson.labels)) {
+        return null;
+      }
+      const serverEvents = calendarEventsFromServer(evJson.events);
+      const serverLabels = calendarLabelsFromServer(lbJson.labels);
+      if (seq === scheduleFetchSeqRef.current) {
+        setEvents(serverEvents);
+        setLabels(serverLabels.length > 0 ? serverLabels : DEFAULT_LABELS);
+      }
+      return { labelCount: serverLabels.length };
+    } catch {
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     fetchMedia(viewDate);
@@ -1663,16 +1714,17 @@ function HeaderCalendarPopup({
     }
   }, [fetchMedia, viewDate]);
 
-  // 자동 폴링 — 팝업 열려 있는 동안 60초마다 현재 달 미디어를 조용히 재조회(스피너 없음).
-  // 탭 숨김 시엔 폴링하지 않아 백그라운드 DB 부하를 줄인다.
+  // 자동 폴링 — 팝업 열려 있는 동안 60초마다 현재 달 미디어·일정·라벨을 조용히 재조회(스피너 없음).
+  // 다중 관리자 간 일정 동기화 겸용. 탭 숨김 시엔 폴링하지 않아 백그라운드 DB 부하를 줄인다.
   useEffect(() => {
     if (!open) return;
     const id = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       fetchMedia(viewDate);
+      fetchSchedule(viewDate);
     }, 60000);
     return () => clearInterval(id);
-  }, [open, viewDate, fetchMedia]);
+  }, [open, viewDate, fetchMedia, fetchSchedule]);
 
   const authHeaders = (json: boolean) => {
     const token = getSessionToken();
@@ -1810,21 +1862,90 @@ function HeaderCalendarPopup({
     };
   }, [open, lat, lon, workerCount]);
 
+  // 서버 우선 로드(팝업 열림·월 이동 시 재조회). 실패 시 옛 localStorage 로 읽기 폴백(저장은 서버 전용).
+  // 성공 시 1회 마이그레이션 — 옛 localStorage 일정을 서버로 승격(id 보존 업서트 = 멱등, 브라우저별 플래그).
   useEffect(() => {
-    setLabels(loadCalendarLabels());
-    setEvents(loadCalendarEvents());
-    setHydrated(true);
+    if (!open) return;
+    let active = true;
+    (async () => {
+      const result = await fetchSchedule(viewDate);
+      if (!active) return;
+      if (result === null) {
+        setLabels(loadCalendarLabels());
+        setEvents(loadCalendarEvents());
+        setHydrated(true);
+        return;
+      }
+      try {
+        if (!window.localStorage.getItem(CALENDAR_MIGRATED_KEY)) {
+          const localEvents = loadCalendarEvents();
+          const hadLocalLabels =
+            window.localStorage.getItem(CALENDAR_LABELS_STORAGE_KEY) !== null;
+          const token = getSessionToken();
+          const jsonHeaders = {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          };
+          let uploaded = false;
+          for (const ev of localEvents) {
+            const res = await fetch("/api/calendar/events", {
+              method: "POST",
+              headers: jsonHeaders,
+              body: JSON.stringify(ev),
+            });
+            if (!res.ok) throw new Error("migrate failed");
+            uploaded = true;
+          }
+          // 라벨은 전체교체(PUT)라 다른 관리자가 저장한 서버 라벨을 덮지 않게 서버가 비어 있을 때만.
+          if (hadLocalLabels && result.labelCount === 0) {
+            const res = await fetch("/api/calendar/labels", {
+              method: "PUT",
+              headers: jsonHeaders,
+              body: JSON.stringify({ labels: loadCalendarLabels() }),
+            });
+            if (!res.ok) throw new Error("migrate failed");
+            uploaded = true;
+          }
+          window.localStorage.setItem(CALENDAR_MIGRATED_KEY, new Date().toISOString());
+          if (uploaded && active) await fetchSchedule(viewDate);
+        }
+      } catch {
+        // 마이그레이션 실패 — 플래그 미설정 상태로 두어 다음 열기에서 재시도
+      }
+      if (active) setHydrated(true);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [open, viewDate, fetchSchedule]);
+
+  // 라벨 편집 서버 반영 — 인라인 이름 편집이 keystroke 마다 오므로 600ms 디바운스 전체교체 PUT.
+  // 서버 조회 echo 로는 PUT 하지 않도록 사용자 변경(dirty)일 때만 전송.
+  const labelsDirtyRef = useRef(false);
+  const handleLabelsChange = useCallback((next: ScheduleLabelDef[]) => {
+    labelsDirtyRef.current = true;
+    setLabels(next);
   }, []);
-
   useEffect(() => {
-    if (!hydrated) return;
-    saveCalendarLabels(labels);
+    if (!hydrated || !labelsDirtyRef.current) return;
+    const t = setTimeout(async () => {
+      labelsDirtyRef.current = false;
+      const token = getSessionToken();
+      try {
+        await fetch("/api/calendar/labels", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ labels }),
+        });
+      } catch {
+        // 저장 실패 — 다음 편집·폴링 재조회에서 수렴
+      }
+    }, 600);
+    return () => clearTimeout(t);
   }, [labels, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveCalendarEvents(events);
-  }, [events, hydrated]);
 
   useEffect(() => {
     if (!open) return;
@@ -1909,27 +2030,54 @@ function HeaderCalendarPopup({
     setSelected(cellDate);
   };
 
+  // 일정 CUD — 낙관적 로컬 반영 후 서버 반영(업서트). 실패 시 서버 상태 재조회로 복원.
+  const persistEvent = (event: CalendarEvent) => {
+    const token = getSessionToken();
+    void fetch("/api/calendar/events", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(event),
+    })
+      .then((res) => {
+        if (!res.ok) fetchSchedule(viewDate);
+      })
+      .catch(() => fetchSchedule(viewDate));
+  };
+
   const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">) => {
     if (!formDate) return;
     const dateKey = toDateKey(formDate);
-    setEvents((prev) => [
-      ...prev,
-      {
-        ...draft,
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
-        dateKey,
-      },
-    ]);
+    const event: CalendarEvent = {
+      ...draft,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
+      dateKey,
+    };
+    setEvents((prev) => [...prev, event]);
+    persistEvent(event);
   };
 
   const handleDeleteEvent = (id: string) => {
     setEvents((prev) => prev.filter((event) => event.id !== id));
+    const token = getSessionToken();
+    void fetch(`/api/calendar/events?id=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    })
+      .then((res) => {
+        if (!res.ok) fetchSchedule(viewDate);
+      })
+      .catch(() => fetchSchedule(viewDate));
   };
 
   const handleUpdateEvent = (id: string, draft: Omit<CalendarEvent, "id" | "dateKey">) => {
-    setEvents((prev) =>
-      prev.map((event) => (event.id === id ? { ...event, ...draft } : event)),
-    );
+    const current = events.find((event) => event.id === id);
+    if (!current) return;
+    const updated = { ...current, ...draft };
+    setEvents((prev) => prev.map((event) => (event.id === id ? updated : event)));
+    persistEvent(updated);
   };
 
   return (
@@ -2531,7 +2679,7 @@ function HeaderCalendarPopup({
           <ScheduleEventFormModal
             events={eventsByDate[toDateKey(formDate)] ?? []}
             labels={labels}
-            onLabelsChange={setLabels}
+            onLabelsChange={handleLabelsChange}
             onAdd={handleAddEvent}
             onUpdate={handleUpdateEvent}
             onDelete={handleDeleteEvent}

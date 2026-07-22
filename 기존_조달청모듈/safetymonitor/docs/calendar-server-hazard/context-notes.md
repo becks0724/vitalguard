@@ -1,0 +1,53 @@
+# 캘린더 서버 승격 + 위험작업 기상 경고 — 컨텍스트 노트
+
+## 배경·왜
+
+일정 캘린더의 일정·라벨이 `localStorage` 전용(`safetymonitor.calendar-events.v1`·`calendar-labels.v1`)이라
+관리자 간 공유 불가·기기별 상이·캐시 삭제 시 소실. 미디어(calendar_media)는 이미 서버 DB 라 비대칭.
+"편집 가능한 상태는 진실 소스 하나(서버 DB)" 원칙(현장정보 flip 버그 교훈, 2026-07-02)을 일정에도 적용한다.
+그 위에 이 프로젝트 차별화인 안전 도메인 연동 — 위험작업 태그 + 기상 예보 충돌 경고 — 를 얹는다.
+
+## 결정 사항
+
+### ① 서버 승격
+- **테이블** = `calendar_event`(id TEXT PK·date_key·title·label_id·start_time·end_time·created_by·created_at·updated_at)
+  + `calendar_label`(id PK·name·color·sort_order). 기존 `calendar_media` 네이밍(단수)과 정합.
+- **인증** = 조회 GET 은 캘린더 미디어 GET 과 동일하게 **대시보드 세션 OR 앱 로그인 JWT**(읽기 전용,
+  현장 앱 일정 표시 대비). 쓰기(POST/DELETE/PUT)는 **유효 대시보드 세션**(verifyBasicAuth) — 일정 등록은
+  기존 UX 상 로그인 관제자 누구나 하던 행위라 hasAdminMenuAccess 게이트는 걸지 않음(슬롯 등록과 구분).
+- **조회 범위** = 보이는 달 ±7일 패딩(주간 Plan 이 월 경계를 걸쳐도 커버). 전체 조회는 무한 성장이라 배제.
+- **마이그레이션** = 클라 mount 시 서버 조회 성공 후, 서버가 비어 있고 localStorage 에 데이터가 있으면
+  1회 업로드(이벤트=id 보존 업서트, 라벨=서버 빈 경우만 PUT) 후 플래그(`calendar-migrated.v1`) 영속.
+  이후 localStorage 저장 경로 제거(단일 진실 소스). 서버 조회 실패 시엔 localStorage 폴백 표시(읽기).
+- **라벨 저장** = 이름 인라인 편집이 keystroke 마다 onLabelsChange 를 호출하므로 **600ms 디바운스 PUT**
+  (전체 교체 semantics — 클라가 항상 전체 배열을 보냄).
+- **동기화** = 기존 60초 미디어 폴링 effect 에 일정·라벨 재조회 합류(탭 숨김 스킵 동일).
+
+### ② 위험작업 태그 + 기상 충돌 경고
+- **위험작업 5종** = 고소작업(high_place)·크레인 양중(crane)·화기작업(hot_work)·굴착(excavation)·
+  밀폐공간(confined). 일정당 0~1개(옵션) — `hazard_type` 컬럼(멱등 ALTER).
+- **판정은 순수 모듈** `app/lib/calendar-hazard.ts` — I/O 없음, 단위테스트로 고정(analyzers 철학).
+- **기상 데이터** = `/api/weather` daily 에 `wind_gusts_10m_max`(돌풍·km/h)·`precipitation_sum`(일 강수량)
+  추가. 기존 소비처 무영향(append-only). DB 폴백(weatherPayloadFromDaily)의 daily7 빈 값에도 필드 추가.
+  돌풍은 클라에서 km/h→m/s 환산 후 판정 모듈에 전달(법정 기준이 m/s).
+- **임계 근거** (기존 코드의 법정 기준 앵커 재사용 — TyphoonTrack 작업중지 안내와 동일 계열)
+  - 크레인 양중 = 순간풍속 10m/s(설치·수리·해체 중지)/15m/s(운전 중지) — 산업안전보건기준에 관한 규칙 제37·143조.
+  - 고소작업 = 순간풍속 10/15m/s(§37 악천후) + 일 강수 10mm↑ 미끄럼 주의.
+  - 화기작업 = 순간풍속 10/15m/s(불티 비산).
+  - 굴착 = 일 강수량 30mm 주의/50mm 위험(붕괴·침수 — 참고 기준).
+  - 밀폐공간 = 일 최고기온 33℃ 주의/35℃ 위험(폭염특보 기준 정렬 — 질식·온열 가중).
+  - 예보 기반 **참고 정보** 포지셔닝 — 경고 문구에 근거 병기 + 면책 한 줄(가스 지식 테이블 면책 패턴).
+- **판정 창** = daily7 예보가 있는 날짜(오늘~+6일)만. 과거·그 밖은 판정 안 함(배지 없음).
+- **UI** = 셀 좌하단 ⚠ 배지(worst-of, amber/red) + 선택 날짜 일정 행 아래 경고 라인(예보값+기준) +
+  주간 Plan 행 ⚠ 아이콘. 새 모달 없음(외과적).
+
+## 함정·주의
+
+- 라우트 목 E2E 필수(L-02) — 서버-우선 로드로 바뀌는 클라 배선(LOAD/SAVE)은 데이터 계층 테스트로 못 잡음.
+- 프로덕션 공유 DB 무쓰기(L-04) — E2E 는 라우트 인터셉트 합성 데이터만.
+- Open-Meteo daily 는 `wind_speed_unit=kmh` 설정을 따라 돌풍도 km/h — m/s 환산 누락 시 3.6배 과대 경고.
+- date_key 는 클라 로컬(KST) 기준 문자열 — 서버는 저장·범위비교만(타임존 재해석 금지).
+
+## 진행 로그
+
+- 2026-07-22 계획 수립·구현 착수.

@@ -526,6 +526,29 @@ async function initSchema(): Promise<void> {
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS author_title TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
 
+    -- 일정 캘린더 일정/라벨 — 브라우저 localStorage 영속을 서버로 승격(관리자 간 공유·기기 무관).
+    -- date_key/start_time/end_time 은 클라(KST) 기준 문자열 — 서버는 저장·범위비교만.
+    CREATE TABLE IF NOT EXISTS calendar_event (
+      id TEXT PRIMARY KEY,
+      date_key TEXT NOT NULL,
+      title TEXT NOT NULL,
+      label_id TEXT NOT NULL,
+      start_time TEXT,
+      end_time TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      updated_at TEXT
+    );
+    ALTER TABLE calendar_event ADD COLUMN IF NOT EXISTS hazard_type TEXT;
+    CREATE INDEX IF NOT EXISTS idx_calevent_date ON calendar_event(date_key);
+
+    CREATE TABLE IF NOT EXISTS calendar_label (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0
+    );
+
     -- 작업자 모니터링 슬롯 등록(공유 관제 1벌) — 단일행(id=1)에 슬롯 배열 JSON 보존.
     -- 기존 브라우저 localStorage 영속을 서버로 승격: 어느 기기·브라우저로 접속해도 등록 유지.
     CREATE TABLE IF NOT EXISTS monitor_slot_config (
@@ -2495,6 +2518,115 @@ export async function updateCalendarMediaDescription(
 export async function deleteCalendarMedia(id: string): Promise<boolean> {
   const { rowCount } = await q("DELETE FROM calendar_media WHERE id = $1", [id]);
   return rowCount > 0;
+}
+
+// ── 일정 캘린더 일정/라벨(서버 영속 — localStorage 승격) ──────────────────────
+export type CalendarEventRow = {
+  id: string;
+  date_key: string;
+  title: string;
+  label_id: string;
+  start_time: string | null;
+  end_time: string | null;
+  hazard_type: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+export type CalendarLabelRow = {
+  id: string;
+  name: string;
+  color: string;
+  sort_order: number;
+};
+
+// 날짜 범위(YYYY-MM-DD, 포함) 일정 조회 — 캘린더 월(±주간 패딩) 단위 표시용.
+export async function listCalendarEvents(
+  fromKey: string,
+  toKey: string,
+): Promise<CalendarEventRow[]> {
+  const { rows } = await q<CalendarEventRow>(
+    `SELECT * FROM calendar_event
+       WHERE date_key >= $1 AND date_key <= $2
+       ORDER BY date_key ASC, start_time ASC NULLS LAST, created_at ASC`,
+    [fromKey, toKey],
+  );
+  return rows;
+}
+
+// 일정 업서트 — id 충돌 시 내용 갱신(클라 마이그레이션 재전송에도 멱등).
+export async function upsertCalendarEvent(input: {
+  id: string;
+  dateKey: string;
+  title: string;
+  labelId: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  hazardType?: string | null;
+  createdBy?: string | null;
+}): Promise<CalendarEventRow> {
+  const { rows } = await q<CalendarEventRow>(
+    `INSERT INTO calendar_event (id, date_key, title, label_id, start_time, end_time, hazard_type, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (id) DO UPDATE SET
+         date_key = EXCLUDED.date_key,
+         title = EXCLUDED.title,
+         label_id = EXCLUDED.label_id,
+         start_time = EXCLUDED.start_time,
+         end_time = EXCLUDED.end_time,
+         hazard_type = EXCLUDED.hazard_type,
+         updated_at = ${NOW_ISO}
+       RETURNING *`,
+    [
+      input.id,
+      input.dateKey,
+      input.title,
+      input.labelId,
+      input.startTime ?? null,
+      input.endTime ?? null,
+      input.hazardType ?? null,
+      input.createdBy ?? null,
+    ],
+  );
+  return rows[0]!;
+}
+
+export async function deleteCalendarEvent(id: string): Promise<boolean> {
+  const { rowCount } = await q("DELETE FROM calendar_event WHERE id = $1", [id]);
+  return rowCount > 0;
+}
+
+export async function listCalendarLabels(): Promise<CalendarLabelRow[]> {
+  const { rows } = await q<CalendarLabelRow>(
+    "SELECT * FROM calendar_label ORDER BY sort_order ASC, id ASC",
+  );
+  return rows;
+}
+
+// 라벨 전체 교체 — 클라가 항상 전체 배열을 보내는 semantics(삭제 포함) 그대로 반영.
+export async function replaceCalendarLabels(
+  labels: { id: string; name: string; color: string }[],
+): Promise<void> {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM calendar_label");
+    for (let i = 0; i < labels.length; i++) {
+      const l = labels[i]!;
+      await client.query(
+        "INSERT INTO calendar_label (id, name, color, sort_order) VALUES ($1, $2, $3, $4)",
+        [l.id, l.name, l.color, i],
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── 작업자 모니터링 슬롯 등록(공유 관제 1벌, 단일행 id=1) ─────────────────────
