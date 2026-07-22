@@ -59,12 +59,19 @@ import { HospitalPanel } from "./HospitalPanel";
 import { NewsPanel } from "./NewsPanel";
 import { extractRegion } from "../lib/hospital";
 import {
+  GEOFENCE_INITIAL,
+  geofenceDistanceM,
+  stepGeofence,
+  type GeofenceState,
+} from "../lib/geofence";
+import {
   AedAlertTable,
   GasDetectorTable,
   SiteMetricChartPanel,
   type SiteMetric,
 } from "./SiteSafetyTables";
 import { SosAlertModal } from "./SosAlertModal";
+import { GeofenceAlertModal } from "./GeofenceAlertModal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { WeatherStrip, weatherLabel } from "./WeatherStrip";
@@ -2610,6 +2617,13 @@ export function DemoDashboard() {
   // 생체 위험 자동 경보 — 현재 표시 중 워커 + ack(정상복귀 시 해제)된 워커.
   const [activeVitalAlert, setActiveVitalAlert] = useState<VitalSample | null>(null);
   const [ackedVital, setAckedVital] = useState<Set<string>>(() => new Set());
+  // 구획 이탈 경보 — 현재 표시 중 {sample, distM} + ack(구획 복귀 시 해제)된 워커 + 이탈 확정 워커 집합.
+  const [activeGeofenceAlert, setActiveGeofenceAlert] = useState<{
+    sample: VitalSample;
+    distM: number;
+  } | null>(null);
+  const [ackedGeofence, setAckedGeofence] = useState<Set<string>>(() => new Set());
+  const [outsideWorkers, setOutsideWorkers] = useState<Set<string>>(() => new Set());
   const [sirenEnabled, setSirenEnabled] = useState(true);
   const [audioArmed, setAudioArmed] = useState(false); // 오디오 컨텍스트 running 여부(브라우저 제스처 unlock)
   const [slots, setSlots] = useState<SlotAssignments>(() => Array(SLOT_COUNT).fill(null));
@@ -3011,11 +3025,23 @@ export function DemoDashboard() {
     setActiveVitalAlert(null);
   }
 
+  function dismissGeofenceAlert() {
+    if (activeGeofenceAlert) {
+      setAckedGeofence((prev) => {
+        const next = new Set(prev);
+        next.add(activeGeofenceAlert.sample.workerId);
+        return next;
+      });
+    }
+    setActiveGeofenceAlert(null);
+  }
+
   // 알림 팝업 '확인' — 해당 작업자·종류의 최근 미대응 알림을 대응 확인(ack)으로 기록.
   // 관리자 메뉴 'SOS·낙상 이력' 표에 대응완료로 반영된다(자연키 ack, 팝업은 alert id 를 모름).
-  async function acknowledgeAlert(sample: VitalSample, type: "sos" | "fall" | "vital") {
-    // 확인 즉시 자연키 영속 — 닫기 전에 새로고침해도 재팝업 안 함(vital 은 정상복귀 시 ack 해제라 제외).
-    if (type !== "vital") appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
+  async function acknowledgeAlert(sample: VitalSample, type: "sos" | "fall" | "vital" | "geofence") {
+    // 확인 즉시 자연키 영속 — 닫기 전에 새로고침해도 재팝업 안 함
+    // (vital·geofence 는 레벨형이라 정상복귀/구획복귀 시 ack 해제 → localStorage 영속 제외).
+    if (type !== "vital" && type !== "geofence") appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
     const token = getSessionToken();
     try {
       await fetch("/api/alerts/ack", {
@@ -3253,6 +3279,14 @@ export function DemoDashboard() {
   // 현장 주소에서 인근 병원 검색용 지역 키워드(예: "광주 동구"). 지역검색은 좌표가 아닌 지역명이 필요.
   const siteRegion = useMemo(() => extractRegion(siteInfo.address), [siteInfo.address]);
 
+  // 구획 원 중심 단일 소스 — 지도 모드의 레드라인 원과 이탈 판정이 같은 값을 쓴다.
+  // 우선순위: 현장 주소 지오코딩(VWorld) → 캐시 좌표(일 고정) → 라이브 GPS 평균.
+  const siteCircleCenter = useMemo(() => {
+    const cLat = siteAnchor?.lat ?? cachedCoord?.lat ?? effLat;
+    const cLon = siteAnchor?.lon ?? cachedCoord?.lon ?? effLon;
+    return typeof cLat === "number" && typeof cLon === "number" ? { lat: cLat, lon: cLon } : null;
+  }, [siteAnchor, cachedCoord, effLat, effLon]);
+
   // mount 시 서버 캐시 좌표 로드(라이브 좌표 없을 때 기상 fallback 용).
   useEffect(() => {
     (async () => {
@@ -3415,6 +3449,110 @@ export function DemoDashboard() {
     }
     return { pts, excluded };
   }, [filledSlots, latestMap, data.workerProfiles, now]);
+
+  // ── 현장 구획(반경 100m) 이탈 알림 ──────────────────────────────────────────
+  // 지도 원과 동일 중심·반경으로 히스테리시스 판정. 워커별 상태 + 마지막 관측 ts(같은 샘플 재관측 시
+  // 상태머신을 전진시키지 않아 이상치 1건이 틱 반복으로 이탈 확정되는 것을 방지).
+  const geofenceStates = useRef(new Map<string, { st: GeofenceState; lastTs: string }>());
+
+  // 이탈 확정 전이 시 DB 이력 기록(전이당 1건, worker/type/ts 자연키 dedup).
+  const recordGeofenceAlert = useCallback(
+    (workerId: string, workerName: string | null, ts: string) => {
+      const token = getSessionToken();
+      fetch("/api/alerts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ type: "geofence", workerId, workerName, ts }),
+      }).catch((e) => console.error("[구획 이탈 기록 오류]", e));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const states = geofenceStates.current;
+    if (!siteCircleCenter) {
+      // 중심 미확정이면 판정 불가 — 상태 리셋(중심 확보 시 초기부터 다시 판정).
+      if (states.size > 0) states.clear();
+      setOutsideWorkers((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    const fresh = new Set<string>();
+    for (const pt of workerMapData.pts) {
+      // 60초 초과 미수신(연결끊김 상태머신과 동일 임계)은 stale 좌표 발화 방지를 위해 판정 보류.
+      if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      fresh.add(pt.workerId);
+      const base = latestMap.get(pt.workerId);
+      const entry = states.get(pt.workerId);
+      if (!base?.ts || entry?.lastTs === base.ts) continue; // 새 관측 없음 — 상태 유지
+      const dist = geofenceDistanceM(pt.lat, pt.lon, siteCircleCenter.lat, siteCircleCenter.lon);
+      const { state, event } = stepGeofence(
+        entry?.st ?? GEOFENCE_INITIAL,
+        dist,
+        SITE_CIRCLE_RADIUS_M,
+      );
+      states.set(pt.workerId, { st: state, lastTs: base.ts });
+      if (event === "exit") {
+        recordGeofenceAlert(pt.workerId, base.workerName ?? pt.name ?? null, base.ts);
+      }
+    }
+    // GPS 가 끊긴 워커는 상태 제거 — 재수신 시 초기 상태부터 다시 판정(미수신 ≠ 이탈).
+    for (const id of Array.from(states.keys())) {
+      if (!fresh.has(id)) states.delete(id);
+    }
+    const outs = new Set<string>();
+    for (const [id, entry] of states) if (entry.st.outside) outs.add(id);
+    setOutsideWorkers((prev) => {
+      if (prev.size === outs.size && Array.from(outs).every((id) => prev.has(id))) return prev;
+      return outs;
+    });
+  }, [workerMapData, siteCircleCenter, latestMap, recordGeofenceAlert]);
+
+  // 구획 이탈 팝업 — SOS/낙상/생체 경보 우선, ack(복귀 전) 안 된 첫 이탈 워커 표시.
+  useEffect(() => {
+    if (activeSos || activeFallAlert || activeVitalAlert || activeGeofenceAlert) return;
+    if (!siteCircleCenter) return;
+    for (const id of outsideWorkers) {
+      if (ackedGeofence.has(id)) continue;
+      const base = latestMap.get(id);
+      if (!base || base.latitude === undefined || base.longitude === undefined) continue;
+      setActiveGeofenceAlert({
+        sample: base,
+        distM: geofenceDistanceM(
+          base.latitude,
+          base.longitude,
+          siteCircleCenter.lat,
+          siteCircleCenter.lon,
+        ),
+      });
+      return;
+    }
+  }, [
+    outsideWorkers,
+    ackedGeofence,
+    activeSos,
+    activeFallAlert,
+    activeVitalAlert,
+    activeGeofenceAlert,
+    latestMap,
+    siteCircleCenter,
+  ]);
+
+  // 구획 복귀한 워커는 ack 해제 → 다음 이탈 시 재경보(vital 패턴).
+  useEffect(() => {
+    setAckedGeofence((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (outsideWorkers.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [outsideWorkers]);
 
   // ── 작업자 표 세로 자동 슬라이딩 + 수동 스크롤 + 이상 자동 스크롤 ──
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -4053,14 +4191,15 @@ export function DemoDashboard() {
                     <WorkerGpsMap
                       points={workerMapData.pts}
                       excluded={workerMapData.excluded}
-                      siteCircle={(() => {
-                        // 중심 우선순위: 현장 주소 지오코딩(VWorld) → 캐시 좌표(일 고정) → 라이브 GPS 평균.
-                        const cLat = siteAnchor?.lat ?? cachedCoord?.lat ?? effLat;
-                        const cLon = siteAnchor?.lon ?? cachedCoord?.lon ?? effLon;
-                        return typeof cLat === "number" && typeof cLon === "number"
-                          ? ({ lat: cLat, lon: cLon, radiusM: SITE_CIRCLE_RADIUS_M } satisfies SiteCircle)
-                          : undefined;
-                      })()}
+                      siteCircle={
+                        siteCircleCenter
+                          ? ({
+                              lat: siteCircleCenter.lat,
+                              lon: siteCircleCenter.lon,
+                              radiusM: SITE_CIRCLE_RADIUS_M,
+                            } satisfies SiteCircle)
+                          : undefined
+                      }
                     />
                   </div>
                 ) : filledSlots.length === 0 ? (
@@ -4237,6 +4376,16 @@ export function DemoDashboard() {
           region={siteRegion}
           onDismiss={dismissVitalAlert}
           onAcknowledge={() => acknowledgeAlert(activeVitalAlert, "vital")}
+        />
+      )}
+
+      {activeGeofenceAlert && !activeSos && !activeFallAlert && !activeVitalAlert && (
+        <GeofenceAlertModal
+          sample={activeGeofenceAlert.sample}
+          distM={activeGeofenceAlert.distM}
+          radiusM={SITE_CIRCLE_RADIUS_M}
+          onDismiss={dismissGeofenceAlert}
+          onAcknowledge={() => acknowledgeAlert(activeGeofenceAlert.sample, "geofence")}
         />
       )}
 
@@ -4812,7 +4961,7 @@ type ClientAlert = {
   id: number;
   worker_id: string;
   worker_name: string | null;
-  type: "sos" | "fall" | "vital";
+  type: "sos" | "fall" | "vital" | "geofence";
   ts: string;
   created_at: string;
   ack_at: string | null;
@@ -4823,17 +4972,20 @@ const ALERT_LABEL: Record<string, string> = {
   sos: "SOS 요청",
   fall: "낙상 감지",
   vital: "생체 위험",
+  geofence: "구획 이탈",
 };
-// 미대응 알림 카드/아이콘 톤 — SOS 레드 / 낙상 앰버 / 생체 위험 로즈.
+// 미대응 알림 카드/아이콘 톤 — SOS 레드 / 낙상 앰버 / 생체 위험 로즈 / 구획 이탈 오렌지.
 const ALERT_UNACK_CARD: Record<string, string> = {
   sos: "border-[#dc2626]/30 bg-[#dc2626]/[0.06] dark:border-[#dc2626]/40 dark:bg-[#dc2626]/[0.10]",
   fall: "border-[#f59e0b]/35 bg-[#f59e0b]/[0.08] dark:border-[#f59e0b]/40 dark:bg-[#f59e0b]/[0.10]",
   vital: "border-[#e11d48]/30 bg-[#e11d48]/[0.06] dark:border-[#e11d48]/40 dark:bg-[#e11d48]/[0.10]",
+  geofence: "border-[#f97316]/35 bg-[#f97316]/[0.08] dark:border-[#f97316]/40 dark:bg-[#f97316]/[0.10]",
 };
 const ALERT_UNACK_ICON: Record<string, string> = {
   sos: "text-semantic-down",
   fall: "text-amber-600 dark:text-amber-400",
   vital: "text-rose-600 dark:text-rose-400",
+  geofence: "text-orange-600 dark:text-orange-400",
 };
 
 function fmtAlertTime(iso: string): string {
@@ -4911,7 +5063,7 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
       >
         <div className="flex items-center justify-between border-b border-hairline px-5 py-3 dark:border-white/10">
           <span className="text-sm font-bold text-ink dark:text-on-dark">
-            SOS·낙상·생체 알림 이력
+            SOS·낙상·생체·이탈 알림 이력
             {unacked > 0 && (
               <span className="ml-2 text-semantic-down">미대응 {unacked}건</span>
             )}
@@ -5004,6 +5156,15 @@ function AlertTypeIcon({ type }: { type: string }) {
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
         <path d="M3.22 12H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27" />
+      </svg>
+    );
+  }
+  if (type === "geofence") {
+    // map-pin (구획 이탈)
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
+        <circle cx="12" cy="10" r="3" />
       </svg>
     );
   }

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { ackAlert, ackAlertByKey, type AlertType } from "../../../../lib/db";
 
-const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital"];
+const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital", "geofence"];
 
 export async function POST(request: Request) {
   if (!verifyBasicAuth(request)) {

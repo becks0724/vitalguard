@@ -1167,8 +1167,8 @@ export async function listWorkerAliases(): Promise<WorkerAliasRow[]> {
   return rows;
 }
 
-// ── 알림 이력(SOS/낙상/생체 위험) ──────────────────────────────────────────
-export type AlertType = "sos" | "fall" | "vital";
+// ── 알림 이력(SOS/낙상/생체 위험/구획 이탈) ────────────────────────────────
+export type AlertType = "sos" | "fall" | "vital" | "geofence";
 
 export type AlertRow = {
   id: number;
