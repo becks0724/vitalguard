@@ -1197,6 +1197,26 @@ export async function listWorkerAliases(): Promise<WorkerAliasRow[]> {
   return rows;
 }
 
+// ── 작업자 이동 경로(트랙) ──────────────────────────────────────────────────
+export type TrackRow = { ts: string; latitude: number | null; longitude: number | null };
+
+// 지도 트레일용 좌표 시계열 — 좌표 보유 행만 ts 오름차순(ts 는 ISO-UTC TEXT 라 문자열 비교 = 시간 비교).
+export async function listWorkerTrack(
+  workerIds: string[],
+  sinceIso: string,
+  limit = 2000,
+): Promise<TrackRow[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<TrackRow>(
+    `SELECT ts, latitude, longitude FROM vital_samples
+      WHERE worker_id = ANY($1) AND ts >= $2
+        AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY ts ASC LIMIT $3`,
+    [workerIds, sinceIso, limit],
+  );
+  return rows;
+}
+
 // ── 알림 이력(SOS/낙상/생체 위험/구획 이탈) ────────────────────────────────
 export type AlertType = "sos" | "fall" | "vital" | "geofence";
 

@@ -52,6 +52,7 @@ import { KoshaAccidentTicker } from "./KoshaAccidentTicker";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
 import {
   WorkerGpsMap,
+  type MapFocus,
   type SiteCircle,
   type WorkerMapExcluded,
   type WorkerMapPoint,
@@ -74,6 +75,7 @@ import {
   stepGeofence,
   type GeofenceState,
 } from "../lib/geofence";
+import { TRACK_WINDOW_MIN, type TrackPoint } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -2983,6 +2985,11 @@ export function DemoDashboard() {
   } | null>(null);
   const [ackedGeofence, setAckedGeofence] = useState<Set<string>>(() => new Set());
   const [outsideWorkers, setOutsideWorkers] = useState<Set<string>>(() => new Set());
+  // 알림 → 지도 포커스 — 모달 "관제 지도에서 보기" 클릭 시 지도 모드 전환 + 해당 좌표 flyTo·펄스.
+  const [mapFocus, setMapFocus] = useState<MapFocus | null>(null);
+  // 이동 경로 트레일 — 지도 마커 클릭으로 토글된 작업자 + 서버 조회 좌표 시계열.
+  const [trailWorkerId, setTrailWorkerId] = useState<string | null>(null);
+  const [trailPoints, setTrailPoints] = useState<TrackPoint[] | null>(null);
   const [sirenEnabled, setSirenEnabled] = useState(true);
   const [audioArmed, setAudioArmed] = useState(false); // 오디오 컨텍스트 running 여부(브라우저 제스처 unlock)
   const [slots, setSlots] = useState<SlotAssignments>(() => Array(SLOT_COUNT).fill(null));
@@ -3357,6 +3364,41 @@ export function DemoDashboard() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // 지도 포커스 펄스 — 12초 후 자동 해제(영구 잔존 시 다음 관제에 혼란).
+  useEffect(() => {
+    if (!mapFocus) return;
+    const t = window.setTimeout(() => setMapFocus(null), 12_000);
+    return () => window.clearTimeout(t);
+  }, [mapFocus]);
+
+  // 트레일 조회 — 지도 모드에서 대상 작업자가 있는 동안 15초 주기 갱신(실패는 조용히 직전 경로 유지).
+  useEffect(() => {
+    if (!trailWorkerId || workerView !== "map") {
+      setTrailPoints(null);
+      return;
+    }
+    let alive = true;
+    const load = async () => {
+      try {
+        const token = getSessionToken();
+        const res = await fetch(`/api/monitor/track?workerId=${encodeURIComponent(trailWorkerId)}`, {
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+          cache: "no-store",
+        });
+        const j = (await res.json()) as { ok?: boolean; points?: TrackPoint[] };
+        if (alive && res.ok && j.ok && Array.isArray(j.points)) setTrailPoints(j.points);
+      } catch {
+        // 트레일은 보조 표시 — 일시 실패 시 직전 경로 유지
+      }
+    };
+    void load();
+    const t = window.setInterval(() => void load(), 15_000);
+    return () => {
+      alive = false;
+      window.clearInterval(t);
+    };
+  }, [trailWorkerId, workerView]);
+
   function dismissSos() {
     if (activeSos) {
       setAcknowledgedSosTs((prev) => ({ ...prev, [activeSos.workerId]: activeSos.ts }));
@@ -3393,6 +3435,13 @@ export function DemoDashboard() {
       });
     }
     setActiveGeofenceAlert(null);
+  }
+
+  // 알림 모달 "관제 지도에서 보기" — 지도 모드 전환 + 해당 좌표 포커스(모달 닫기는 호출부에서, ack 는 별개).
+  function showAlertOnMap(sample: VitalSample) {
+    if (sample.latitude === undefined || sample.longitude === undefined) return;
+    setWorkerView("map");
+    setMapFocus({ lat: sample.latitude, lon: sample.longitude, key: Date.now() });
   }
 
   // 알림 팝업 '확인' — 해당 작업자·종류의 최근 미대응 알림을 대응 확인(ack)으로 기록.
@@ -3879,6 +3928,10 @@ export function DemoDashboard() {
       ) {
         const status = workerStatus(s);
         const ageMs = now - Date.parse(s.ts);
+        const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
+        // STALE_MS(60초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 — 지도도 마지막 상태색
+        // (false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
+        const stale = ageSec !== null && ageSec * 1000 >= STALE_MS;
         pts.push({
           workerId,
           name: s.workerName ?? workerId,
@@ -3889,9 +3942,10 @@ export function DemoDashboard() {
           heartRate: s.heartRate,
           spo2: s.spo2,
           skinTempC: s.skinTempC,
-          statusLabel: status.label,
-          tone: status.tone,
-          ageSec: Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null,
+          statusLabel: stale ? "연결끊김" : status.label,
+          tone: stale ? "idle" : status.tone,
+          ageSec,
+          stale,
         });
       } else {
         const reason = !s
@@ -4687,6 +4741,21 @@ export function DemoDashboard() {
                             } satisfies SiteCircle)
                           : undefined
                       }
+                      focus={mapFocus ?? undefined}
+                      trail={
+                        trailWorkerId
+                          ? {
+                              workerId: trailWorkerId,
+                              name:
+                                latestMap.get(trailWorkerId)?.workerName ?? trailWorkerId,
+                              windowMin: TRACK_WINDOW_MIN,
+                              points: trailPoints ?? [],
+                            }
+                          : undefined
+                      }
+                      onToggleTrail={(workerId) =>
+                        setTrailWorkerId((cur) => (cur === workerId ? null : workerId))
+                      }
                     />
                   </div>
                 ) : filledSlots.length === 0 ? (
@@ -4842,6 +4911,10 @@ export function DemoDashboard() {
           onDismiss={dismissSos}
           onContact={recordAccident}
           onAcknowledge={() => acknowledgeAlert(activeSos, "sos")}
+          onShowMap={() => {
+            showAlertOnMap(activeSos);
+            dismissSos();
+          }}
         />
       )}
 
@@ -4853,6 +4926,10 @@ export function DemoDashboard() {
           onDismiss={dismissFallAlert}
           onContact={recordAccident}
           onAcknowledge={() => acknowledgeAlert(activeFallAlert, "fall")}
+          onShowMap={() => {
+            showAlertOnMap(activeFallAlert);
+            dismissFallAlert();
+          }}
         />
       )}
 
@@ -4863,6 +4940,10 @@ export function DemoDashboard() {
           region={siteRegion}
           onDismiss={dismissVitalAlert}
           onAcknowledge={() => acknowledgeAlert(activeVitalAlert, "vital")}
+          onShowMap={() => {
+            showAlertOnMap(activeVitalAlert);
+            dismissVitalAlert();
+          }}
         />
       )}
 
@@ -4873,6 +4954,10 @@ export function DemoDashboard() {
           radiusM={SITE_CIRCLE_RADIUS_M}
           onDismiss={dismissGeofenceAlert}
           onAcknowledge={() => acknowledgeAlert(activeGeofenceAlert.sample, "geofence")}
+          onShowMap={() => {
+            showAlertOnMap(activeGeofenceAlert.sample);
+            dismissGeofenceAlert();
+          }}
         />
       )}
 

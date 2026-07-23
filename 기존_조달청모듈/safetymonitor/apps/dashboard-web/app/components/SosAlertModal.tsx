@@ -122,6 +122,7 @@ export function SosAlertModal({
   acknowledged,
   reason = "sos",
   region,
+  onShowMap,
 }: {
   sample: VitalSample;
   onDismiss: () => void;
@@ -135,6 +136,8 @@ export function SosAlertModal({
   reason?: AlertReason;
   // 현장 지역 키워드(예: "광주 동구") — 가장 가까운 응급실/병원 조회용. 없으면 섹션 미표시.
   region?: string;
+  // "관제 지도에서 보기" 클릭 시 호출 — 관제 웹 내부 지도 모드로 전환·해당 작업자 포커스.
+  onShowMap?: () => void;
 }) {
   // 관리자 확인 상태 — 확인 클릭 시 ack 기록 후 '확인됨' 표시(팝업은 열린 채 유지).
   const [acked, setAcked] = useState(acknowledged ?? false);
@@ -287,14 +290,26 @@ export function SosAlertModal({
                 <span className="font-mono text-xs text-body dark:text-on-dark-soft">
                   위도 {sample.latitude!.toFixed(6)} · 경도 {sample.longitude!.toFixed(6)}
                 </span>
-                <a
-                  href={mapsLink}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="text-xs font-medium text-primary underline underline-offset-2 transition hover:opacity-80"
-                >
-                  🗺️ 지도에서 보기 (Google Maps)
-                </a>
+                <span className="flex items-center gap-3">
+                  {onShowMap && (
+                    <button
+                      type="button"
+                      onClick={onShowMap}
+                      title="관제 웹 작업자 지도로 전환해 이 작업자 위치를 표시합니다"
+                      className="text-xs font-semibold text-primary underline underline-offset-2 transition hover:opacity-80"
+                    >
+                      🧭 관제 지도에서 보기
+                    </button>
+                  )}
+                  <a
+                    href={mapsLink}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-xs font-medium text-primary underline underline-offset-2 transition hover:opacity-80"
+                  >
+                    🗺️ Google Maps
+                  </a>
+                </span>
               </div>
             ) : (
               <p className="mt-1 text-xs text-muted">

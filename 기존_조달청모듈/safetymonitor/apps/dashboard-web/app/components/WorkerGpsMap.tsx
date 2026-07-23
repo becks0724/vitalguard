@@ -15,9 +15,11 @@ export type WorkerMapPoint = {
   heartRate?: number | null;
   spo2?: number | null;
   skinTempC?: number | null;
-  statusLabel: string; // 낙상 감지 / SOS 요청 / 위험 / 주의 / 정상 / 대기
+  statusLabel: string; // 낙상 감지 / SOS 요청 / 위험 / 주의 / 정상 / 대기 / 연결끊김
   tone: "danger" | "caution" | "normal" | "idle";
   ageSec: number | null;
+  // 60초(STALE_MS) 초과 미수신 — 마커를 지우지 않고 고스트(마지막 확인 위치)로 유지한다.
+  stale?: boolean;
 };
 
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
@@ -25,6 +27,17 @@ export type WorkerMapExcluded = { workerId: string; name: string; reason: string
 
 // 현장 구획 근사 원 — 현장 좌표(작업자 GPS 평균·서버 캐시) 중심 반경 표시(지적 구획 아님).
 export type SiteCircle = { lat: number; lon: number; radiusM: number };
+
+// 알림 → 지도 포커스 — key 가 바뀔 때마다 해당 좌표로 flyTo + 펄스 링 표시(초기 프레이밍보다 우선).
+export type MapFocus = { lat: number; lon: number; key: number };
+
+// 이동 경로 트레일 — 마커 클릭으로 토글, 최근 윈도(TRACK_WINDOW_MIN)의 좌표 시계열 폴리라인.
+export type WorkerTrail = {
+  workerId: string;
+  name: string;
+  windowMin: number;
+  points: { lat: number; lon: number }[];
+};
 
 // ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
 const TILE = 256;
@@ -84,10 +97,16 @@ export function WorkerGpsMap({
   points,
   excluded,
   siteCircle,
+  focus,
+  trail,
+  onToggleTrail,
 }: {
   points: WorkerMapPoint[];
   excluded: WorkerMapExcluded[];
   siteCircle?: SiteCircle;
+  focus?: MapFocus;
+  trail?: WorkerTrail;
+  onToggleTrail?: (workerId: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -158,6 +177,19 @@ export function WorkerGpsMap({
       fittedRef.current = true;
     }
   }, [size, fit]);
+
+  // 알림 포커스 — 같은 key 는 1회만 적용(사용자 조작 보존), 마운트 직후에도 초기 프레이밍을 덮는다.
+  const focusKeyRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focus || size.w === 0) return;
+    if (focusKeyRef.current === focus.key) return;
+    focusKeyRef.current = focus.key;
+    fittedRef.current = true;
+    setView({
+      center: { lat: focus.lat, lon: focus.lon },
+      zoom: clampZoom(Math.max(viewRef.current?.zoom ?? FIT_MAX_Z, FIT_MAX_Z)),
+    });
+  }, [focus, size]);
 
   const commit = useCallback((center: { lat: number; lon: number }, zoom: number) => {
     setView({ center, zoom: clampZoom(zoom) });
@@ -257,10 +289,21 @@ export function WorkerGpsMap({
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   const markers: { p: WorkerMapPoint; x: number; y: number }[] = [];
   let circle: { x: number; y: number; r: number } | null = null;
+  let focusPt: { x: number; y: number } | null = null;
+  let trailPts: { x: number; y: number }[] | null = null;
   if (view && size.w > 0) {
     const z = view.zoom;
     const tlx = lonToWorldX(view.center.lon, z) - size.w / 2;
     const tly = latToWorldY(view.center.lat, z) - size.h / 2;
+    if (focus) {
+      focusPt = { x: lonToWorldX(focus.lon, z) - tlx, y: latToWorldY(focus.lat, z) - tly };
+    }
+    if (trail && trail.points.length >= 2) {
+      trailPts = trail.points.map((p) => ({
+        x: lonToWorldX(p.lon, z) - tlx,
+        y: latToWorldY(p.lat, z) - tly,
+      }));
+    }
     if (siteCircle) {
       // 미터 → 픽셀 — 웹 메르카토르 지상해상도(위도 보정): 156543.03392·cos(lat)/2^z (m/px, 256px 타일).
       const mpp = (156543.03392 * Math.cos(siteCircle.lat * D2R)) / 2 ** z;
@@ -289,6 +332,10 @@ export function WorkerGpsMap({
       markers.push({ p, x, y });
     }
   }
+
+  // 수신 상태 패널 그룹 — 라이브 수신 vs 연결끊김(마지막 위치 유지) 분리 표기.
+  const freshPts = points.filter((p) => !p.stale);
+  const stalePts = points.filter((p) => p.stale);
 
   return (
     <div className="relative h-full w-full">
@@ -339,20 +386,77 @@ export function WorkerGpsMap({
           </>
         )}
 
-        {/* 작업자 마커 — 신호등 톤 점 + 이름 칩. 호버 시 생체 툴팁. */}
+        {/* 이동 경로 트레일 — 마커 클릭으로 토글된 작업자의 최근 동선 폴리라인(어두운 외곽선 + 시안 라인). */}
+        {trailPts && (
+          <svg
+            aria-hidden
+            data-testid="worker-trail"
+            className="pointer-events-none absolute inset-0 z-[7]"
+            width={size.w}
+            height={size.h}
+          >
+            <polyline
+              points={trailPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#0b1420"
+              strokeWidth={4}
+              strokeOpacity={0.55}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <polyline
+              points={trailPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {trailPts[0] && (
+              <circle cx={trailPts[0].x} cy={trailPts[0].y} r={3.5} fill="#38bdf8" stroke="#fff" strokeWidth={1.5} />
+            )}
+          </svg>
+        )}
+
+        {/* 알림 포커스 펄스 링 — 알림 모달 "관제 지도에서 보기"로 진입한 위치 강조(12초 후 부모가 해제). */}
+        {focusPt && (
+          <span
+            aria-hidden
+            data-testid="map-focus-pulse"
+            className="pointer-events-none absolute z-[9]"
+            style={{ left: focusPt.x - 22, top: focusPt.y - 22, width: 44, height: 44 }}
+          >
+            <span className="absolute inset-0 animate-ping rounded-full bg-red-500/40" />
+            <span className="absolute inset-[13px] rounded-full border-2 border-red-400" />
+          </span>
+        )}
+
+        {/* 작업자 마커 — 신호등 톤 점 + 이름 칩. 호버 시 생체 툴팁.
+            연결끊김(stale)은 고스트 마커(회색·점선 링·경과 병기)로 마지막 확인 위치를 유지. */}
         {markers.map(({ p, x, y }) => (
           <div
             key={p.workerId}
-            className="absolute z-10"
+            className={`absolute z-10 ${onToggleTrail ? "cursor-pointer" : ""}`}
             style={{ left: x, top: y }}
             onMouseEnter={() => setHoveredId(p.workerId)}
             onMouseLeave={() => setHoveredId((cur) => (cur === p.workerId ? null : cur))}
+            onClick={() => onToggleTrail?.(p.workerId)}
+            title={onToggleTrail ? "클릭하면 최근 이동 경로를 표시/해제합니다" : undefined}
           >
             <span
-              className={`absolute block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white shadow-[0_0_6px_rgba(0,0,0,0.6)] ${TONE_DOT[p.tone]}`}
+              className={`absolute block h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[0_0_6px_rgba(0,0,0,0.6)] ${
+                p.stale
+                  ? "border-2 border-dashed border-white/80 bg-slate-500/60"
+                  : `ring-2 ring-white ${TONE_DOT[p.tone]}`
+              }`}
             />
-            <span className="absolute left-0 top-2 -translate-x-1/2 whitespace-nowrap rounded-pill bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+            <span
+              className={`absolute left-0 top-2 -translate-x-1/2 whitespace-nowrap rounded-pill px-1.5 py-0.5 text-[10px] font-medium ${
+                p.stale ? "bg-black/45 text-zinc-300" : "bg-black/60 text-white"
+              }`}
+            >
               {p.name}
+              {p.stale ? ` · ${ageLabel(p.ageSec)}` : ""}
             </span>
             {hoveredId === p.workerId && (
               <div className="pointer-events-none absolute bottom-3 left-0 z-20 w-48 -translate-x-1/2 rounded-xl border border-white/15 bg-[#0d1117]/95 p-2.5 text-left shadow-xl backdrop-blur">
@@ -366,6 +470,11 @@ export function WorkerGpsMap({
                   {p.employeeId ?? p.workerId}
                   {p.jobTitle ? ` · ${p.jobTitle}` : ""}
                 </div>
+                {p.stale && (
+                  <div className="mt-0.5 text-[10px] text-amber-300/90">
+                    마지막 확인 위치 표시 중 — 수신 두절
+                  </div>
+                )}
                 <dl className="mt-1.5 space-y-0.5 text-[11px] text-zinc-300">
                   <div className="flex justify-between">
                     <dt>심박</dt>
@@ -412,6 +521,26 @@ export function WorkerGpsMap({
           ))}
         </div>
 
+        {/* 트레일 활성 칩 — 대상 작업자·윈도 표기 + 해제. */}
+        {trail && (
+          <div
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute left-2 top-11 z-20 flex items-center gap-1.5 rounded-pill bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur"
+          >
+            <span className="inline-block h-1.5 w-4 rounded-full bg-[#38bdf8]" aria-hidden />
+            경로: {trail.name} · 최근 {trail.windowMin}분
+            {trail.points.length < 2 && <span className="text-zinc-400">(경로 데이터 없음)</span>}
+            <button
+              type="button"
+              onClick={() => onToggleTrail?.(trail.workerId)}
+              aria-label="이동 경로 해제"
+              className="ml-0.5 rounded-full px-1 text-zinc-300 hover:bg-white/15 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* 줌 컨트롤 — 컨테이너 pointer capture(드래그 팬)가 버튼 클릭을 삼키지 않게 전파 차단 필수. */}
         <div
           onPointerDown={(e) => e.stopPropagation()}
@@ -445,7 +574,7 @@ export function WorkerGpsMap({
           title="작업자별 GPS 수신 상태 목록 — 항목 클릭 시 해당 작업자로 이동"
           className="absolute bottom-1.5 right-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[10px] text-zinc-200 hover:bg-black/70"
         >
-          GPS 수신 {points.length} / 전체 {points.length + excluded.length}
+          GPS 수신 {freshPts.length} / 전체 {points.length + excluded.length}
           <span aria-hidden className="ml-1 text-[8px]">{statusOpen ? "▼" : "▲"}</span>
         </button>
         {statusOpen && (
@@ -453,9 +582,9 @@ export function WorkerGpsMap({
             onPointerDown={(e) => e.stopPropagation()}
             className="wx-cards-scroll absolute bottom-8 right-2 z-30 max-h-64 w-56 overflow-y-auto rounded-xl border border-white/15 bg-[#0d1117]/95 p-2.5 shadow-xl backdrop-blur"
           >
-            <p className="text-[10px] font-semibold text-zinc-400">GPS 수신 중 {points.length}명</p>
+            <p className="text-[10px] font-semibold text-zinc-400">GPS 수신 중 {freshPts.length}명</p>
             <ul className="mt-1 space-y-0.5">
-              {points.map((p) => (
+              {freshPts.map((p) => (
                 <li key={p.workerId}>
                   <button
                     type="button"
@@ -472,6 +601,31 @@ export function WorkerGpsMap({
                 </li>
               ))}
             </ul>
+            {stalePts.length > 0 && (
+              <>
+                <p className="mt-2 border-t border-white/10 pt-2 text-[10px] font-semibold text-amber-300/90">
+                  연결끊김(마지막 위치) {stalePts.length}명
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {stalePts.map((p) => (
+                    <li key={p.workerId}>
+                      <button
+                        type="button"
+                        onClick={() => flyTo(p)}
+                        title="수신 두절 — 클릭하면 마지막 확인 위치로 이동합니다"
+                        className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left hover:bg-white/10"
+                      >
+                        <span className="h-2 w-2 shrink-0 rounded-full border border-dashed border-white/70 bg-slate-500/60" />
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-zinc-300">{p.name}</span>
+                        <span className="shrink-0 text-[10px] tabular-nums text-zinc-500">
+                          {ageLabel(p.ageSec)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
             {excluded.length > 0 && (
               <>
                 <p className="mt-2 border-t border-white/10 pt-2 text-[10px] font-semibold text-zinc-400">

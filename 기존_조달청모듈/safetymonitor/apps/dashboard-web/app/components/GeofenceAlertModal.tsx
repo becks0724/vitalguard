@@ -22,6 +22,7 @@ export function GeofenceAlertModal({
   radiusM,
   onDismiss,
   onAcknowledge,
+  onShowMap,
 }: {
   sample: VitalSample;
   // 이탈 확정 시점의 현장 중심 거리(m).
@@ -30,6 +31,8 @@ export function GeofenceAlertModal({
   onDismiss: () => void;
   // 관리자 '확인' 클릭 시 호출 — 이 알림을 대응 확인(ack)으로 기록.
   onAcknowledge?: () => void | Promise<void>;
+  // "관제 지도에서 보기" 클릭 시 호출 — 내부 지도 모드 전환·해당 작업자 포커스.
+  onShowMap?: () => void;
 }) {
   // 관리자 확인 상태 — 확인 클릭 시 ack 기록 후 '확인됨' 표시(팝업은 열린 채 유지).
   const [acked, setAcked] = useState(false);
@@ -153,16 +156,28 @@ export function GeofenceAlertModal({
               <p className="mt-1 font-mono text-sm text-body dark:text-on-dark-soft">
                 위도 {sample.latitude.toFixed(6)} · 경도 {sample.longitude.toFixed(6)}
               </p>
-              {mapsLink && (
-                <a
-                  href={mapsLink}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-2 hover:opacity-80"
-                >
-                  지도에서 위치 보기
-                </a>
-              )}
+              <span className="mt-1 flex items-center gap-3">
+                {onShowMap && (
+                  <button
+                    type="button"
+                    onClick={onShowMap}
+                    title="관제 웹 작업자 지도로 전환해 이 작업자 위치를 표시합니다"
+                    className="text-xs font-semibold text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    🧭 관제 지도에서 보기
+                  </button>
+                )}
+                {mapsLink && (
+                  <a
+                    href={mapsLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs font-medium text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    Google Maps
+                  </a>
+                )}
+              </span>
             </section>
           )}
         </div>
