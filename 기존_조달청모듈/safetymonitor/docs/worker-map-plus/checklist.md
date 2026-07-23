@@ -22,30 +22,30 @@
 - [x] db `listWorkerTrack(workerIds, sinceIso, limit)` — 좌표 보유 행만 ts 오름차순
 - [x] `GET /api/monitor/track` — 세션 게이트(verifyBasicAuth), 별칭(worker_alias) 포함, mins 기본 30
 - [x] 지도 — 마커 클릭 = 트레일 토글, SVG 폴리라인 + 시작점, 활성 칩(이름·30분·해제), 15초 갱신
-- [ ] E2E(라우트 목) — 목 트랙 → 폴리라인 렌더
+- [x] E2E(라우트 목) — 목 트랙 → 폴리라인 렌더
 
 ## ④ 위험구역 진입 경보
 
-- [ ] `geofence.ts` `stepZoneEntry`(진입 히스테리시스 미러) + 단위테스트
-- [ ] db `danger_zone` 테이블(멱등) + list/create/delete
-- [ ] `/api/danger-zones` — GET 세션 / POST·DELETE 권한있음(hasAdminMenuAccess) 서버 강제
-- [ ] 지도 — 존 오렌지 원+이름 라벨, 권한있음 전용 "＋구역" 배치 모드(클릭 중심 지정→이름·반경 폼), 라벨 클릭 삭제
-- [ ] 판정 effect — 워커×존 상태, fresh 게이트(60초), 진입 확정 시 `POST /api/alerts type=danger_zone` + 팝업
-- [ ] 팝업 — GeofenceAlertModal `kind="entry"`(오렌지 톤·구역명), 우선순위 SOS>낙상>생체>위험구역>구획 이탈
-- [ ] 알림 이력 — AlertType `danger_zone` + 라벨 "위험구역 진입" + 아이콘/톤(AlertHistoryModal·AdminExportModal)
-- [ ] E2E(라우트 목) — 진입 시퀀스 → 팝업 + 이력 POST 1건
+- [x] `geofence.ts` `stepZoneEntry`(진입 히스테리시스 미러) + 단위테스트
+- [x] db `danger_zone` 테이블(멱등) + list/create/delete
+- [x] `/api/danger-zones` — GET 세션 / POST·DELETE 권한있음(hasAdminMenuAccess) 서버 강제
+- [x] 지도 — 존 오렌지 원+이름 라벨, 권한있음 전용 "＋구역" 배치 모드(클릭 중심 지정→이름·반경 폼), 라벨 클릭 삭제
+- [x] 판정 effect — 워커×존 상태, fresh 게이트(60초), 진입 확정 시 `POST /api/alerts type=danger_zone` + 팝업
+- [x] 팝업 — GeofenceAlertModal `kind="entry"`(오렌지 톤·구역명), 우선순위 SOS>낙상>생체>위험구역>구획 이탈
+- [x] 알림 이력 — AlertType `danger_zone` + 라벨 "위험구역 진입" + 아이콘/톤(AlertHistoryModal·AdminExportModal)
+- [x] E2E(라우트 목) — 진입 시퀀스 → 팝업 + 이력 POST 1건
 
 ## ⑤ 필지 경계 폴리곤
 
-- [ ] VWorld 데이터 API(GetFeature·LP_PA_CBND_BUBUN) 원키 프로브 — 실좌표로 응답 구조 확정
-- [ ] `lib/vworld.ts` `fetchParcelPolygon(lat, lon)` — 6h 캐시·graceful
-- [ ] `GET /api/site-parcel` — 세션 게이트, 외곽 링 반환
-- [ ] 지도 — 폴리곤 레드라인 렌더, 있으면 구획 원은 점선 보조(판정은 원 유지)
-- [ ] E2E(라우트 목) — 목 폴리곤 → SVG 렌더
+- [x] VWorld 데이터 API(GetFeature·LP_PA_CBND_BUBUN) 원키 프로브 — 실좌표로 응답 구조 확정
+- [x] `lib/vworld.ts` `fetchParcelPolygon(lat, lon)` — 6h 캐시·graceful
+- [x] `GET /api/site-parcel` — 세션 게이트, 외곽 링 반환
+- [x] 지도 — 폴리곤 레드라인 렌더, 있으면 구획 원은 점선 보조(판정은 원 유지)
+- [x] E2E(라우트 목) — 목 폴리곤 → SVG 렌더
 
 ## 공통 검증
 
-- [ ] tsc 0 · lint 0err · 전체 테스트 green(신규 단위테스트 포함)
-- [ ] 라우트 목 Playwright E2E(로컬 dev·프로덕션 DB 무접촉)
-- [ ] 기능 단위 커밋(5개) + push
+- [x] tsc 0 · lint 0err · 전체 테스트 green(신규 단위테스트 포함)
+- [x] 라우트 목 Playwright E2E(로컬 dev·프로덕션 DB 무접촉)
+- [x] 커밋 = `d611378`(1차 ①②③·병렬 세션 커밋) + `8b85f41`(2차 ④⑤) + `5f555e7`(마커 클릭 fix) + docs, push 완료
 - [ ] 배포는 사용자 `/deploy` 대기(분류기 차단 — 빌드 선완료 가능)

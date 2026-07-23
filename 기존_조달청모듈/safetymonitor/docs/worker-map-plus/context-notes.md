@@ -32,11 +32,25 @@
 
 ## 프로브·실측 기록
 
-- (진행하며 추가)
+- (2026-07-23) **VWorld GetFeature(LP_PA_CBND_BUBUN) 원키 프로브** — 무 Referer = `INCORRECT_KEY`,
+  등록 도메인 Referer 동봉 시 `OK`(WMS 와 동일 요구 실측 확정). 응답 = GeoJSON FeatureCollection,
+  geometry = **MultiPolygon(depth 4)** → 외곽 링 = `coordinates[0][0]` = [lon,lat][] (금남로 인근 필지
+  18점 확인). properties 에 pnu·jibun·addr 포함. `geomFilter=POINT(lon lat)`·`size=1`·`crs=EPSG:4326`.
+- (2026-07-23) **마커 클릭 = 컨테이너 pointer capture 에 삼켜짐** — 드래그 팬의 `setPointerCapture` 가
+  click 타깃을 가로채 마커 onClick(트레일 토글)이 발화 안 함. 줌 버튼 때 문서화된 것과 같은 함정 —
+  라우트 목 E2E 가 적발(코드 리뷰·tsc 로는 불가). 마커 pointerdown 전파 차단으로 해소.
+- (2026-07-23) E2E 중 실 날씨로 "현장 환경 경보" 모달이 떠 클릭을 가로챔 — 목 500 응답은 소비처
+  크래시(`undefined.includes`)를 유발해 부적합. 실 API 통과 + `addLocatorHandler` 자동 닫기로 해결.
 
-## 검증 결과
+## 검증 결과 (2026-07-23)
 
-- (진행하며 추가)
+- tsc 0 · eslint 0err(기존 scripts 경고 4만) · **테스트 222/222**(신규 15 = track 7 · zone-entry 8).
+- **라우트 목 Playwright E2E 18/18 PASS**(로컬 dev·세션 실로그인 시드·쓰기 라우트 전부 인터셉트 =
+  프로덕션 DB 무접촉). 커버 = ① 고스트 마커·이름칩 경과·수신 패널 분리 그룹·칩 카운트 /
+  ② SOS 모달 "관제 지도에서 보기" → 지도 전환+펄스 → 12초 자동 해제 / ③ 마커 클릭 트레일
+  폴리라인+칩·해제 / ④ 존 렌더·배치 버튼·등록 폼 POST 1건·재조회 렌더·진입 시퀀스(3폴) 팝업+
+  구역명·이력 POST(danger_zone) 정확 1건·확인(ack) / ⑤ 필지 폴리곤 렌더·구획 원 점선 강등.
+- 커밋 = `d611378`(1차 ①②③ — 병렬 세션이 커밋·push) → `8b85f41`(2차 ④⑤) → `5f555e7`(마커 클릭 fix).
 
 ## 남긴 것(후속)
 
