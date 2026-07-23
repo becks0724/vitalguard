@@ -273,6 +273,14 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 
+    -- 현장환경(날씨/특보) 자동 텔레그램 알림 억제 상태 — item_key 별 마지막 발송 severity.
+    -- 악화 전이(정상→주의/위험)일 때만 재발송, 정상 복귀 시 리셋. 사람이 누른 ack(env_alert_ack)와 별개.
+    CREATE TABLE IF NOT EXISTS env_alert_state (
+      item_key TEXT PRIMARY KEY,
+      severity TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 위험구역(진입 금지 존) — 지도에서 관리자가 등록(중심+반경), 작업자 진입 시 경보.
     CREATE TABLE IF NOT EXISTS danger_zone (
       id SERIAL PRIMARY KEY,
@@ -1384,6 +1392,23 @@ export async function listEnvAlertAck(limit = 100): Promise<EnvAlertAckRow[]> {
     [limit],
   );
   return rows;
+}
+
+// 현장환경 자동 알림 억제 — item_key 를 새 severity 로 원자적 upsert 하고 "이전" severity 를 반환.
+// WITH prev 가 upsert 전 스냅샷을 읽어 이전값을 돌려주므로, 발송 여부(악화 전이)는 호출측이 rank 비교로 결정.
+export async function upsertEnvAlertState(
+  itemKey: string,
+  severity: string,
+): Promise<string | null> {
+  const { rows } = await q<{ prev_severity: string | null }>(
+    `WITH prev AS (SELECT severity AS old FROM env_alert_state WHERE item_key = $1)
+     INSERT INTO env_alert_state (item_key, severity, updated_at)
+       VALUES ($1, $2, ${NOW_ISO})
+       ON CONFLICT (item_key) DO UPDATE SET severity = EXCLUDED.severity, updated_at = ${NOW_ISO}
+     RETURNING (SELECT old FROM prev) AS prev_severity`,
+    [itemKey, severity],
+  );
+  return rows[0]?.prev_severity ?? null;
 }
 
 // ── AED NFC 점검 기록 ──────────────────────────────────────────────────────

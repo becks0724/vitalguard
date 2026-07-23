@@ -7,6 +7,15 @@ import {
   getLatestWeatherDaily,
   type WeatherDailyRow,
 } from "../../../lib/db";
+import { notifyEnvAlerts, ruleEvalToItem } from "../../../lib/env-alert-notify";
+import {
+  evaluateApparentTemp,
+  evaluateDiscomfortIndex,
+  evaluatePM25,
+  evaluatePrecipitation,
+  evaluateUV,
+  evaluateWindKmh,
+} from "../../../lib/weather-rules";
 
 type CacheEntry = {
   ts: number;
@@ -149,6 +158,24 @@ export async function GET(request: Request) {
       await persistWeatherDaily(snapshot); // 일별 대표 snapshot(하루 1행 upsert, 당일 마지막값 유지)
     } catch (persistError) {
       console.error("[weather] persist failed:", persistError);
+    }
+
+    // 현장환경 위험 자동 텔레그램 알림(주의+위험 전이) — fresh fetch 시점 서버 판정.
+    // 실패는 삼켜 날씨 응답을 막지 않는다(발송기·상태저장 모두 내부에서 예외 처리).
+    try {
+      const c = data.current;
+      await notifyEnvAlerts(
+        [
+          evaluateApparentTemp(c.apparentTempC),
+          evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
+          evaluatePM25(c.pm25),
+          evaluateWindKmh(c.windKmh, c.windGustKmh),
+          evaluateUV(c.uvIndex),
+          evaluatePrecipitation(c.precipitationMm),
+        ].map(ruleEvalToItem),
+      );
+    } catch (notifyError) {
+      console.error("[weather] env alert notify failed:", notifyError);
     }
 
     return NextResponse.json({ ok: true, cached: false, ...data });

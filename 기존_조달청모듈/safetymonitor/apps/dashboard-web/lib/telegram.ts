@@ -37,8 +37,9 @@ export function formatAlertMessage(input: AlertNotifyInput): string {
   return [`${label}`, `작업자 ${who}`, `발생 ${formatKst(input.ts)}`].join("\n");
 }
 
-// 텔레그램 알림 전송. 미설정이면 no-op, 실패/타임아웃은 삼킨다(절대 throw 하지 않음).
-export async function notifyAlertTelegram(input: AlertNotifyInput): Promise<void> {
+// 텔레그램 임의 텍스트 전송(공용) — 미설정이면 no-op, 실패/타임아웃은 삼킨다(절대 throw 하지 않음).
+// 작업자 알림(notifyAlertTelegram)·현장환경 알림(env-alert-notify) 이 공유한다.
+export async function sendTelegramMessage(text: string): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return; // 미배선 환경 — 조용히 통과
@@ -49,11 +50,7 @@ export async function notifyAlertTelegram(input: AlertNotifyInput): Promise<void
     const res = await fetch(TELEGRAM_ENDPOINT(token), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: formatAlertMessage(input),
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify({ chat_id: chatId, text, disable_web_page_preview: true }),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -63,4 +60,9 @@ export async function notifyAlertTelegram(input: AlertNotifyInput): Promise<void
   } catch {
     // 네트워크/타임아웃 — 알림 전송 실패가 vital 수집·alert 기록을 막지 않도록 삼킨다.
   }
+}
+
+// 작업자 알림(SOS/낙상/생체/구획이탈/위험구역진입) 전송.
+export async function notifyAlertTelegram(input: AlertNotifyInput): Promise<void> {
+  await sendTelegramMessage(formatAlertMessage(input));
 }
