@@ -58,6 +58,7 @@ export type WeatherLogRow = {
   apparent_temp_c: number | null;
   humidity_pct: number | null;
   wind_kmh: number | null;
+  wind_gust_kmh: number | null;
   precipitation_mm: number | null;
   uv_index: number | null;
   pm10: number | null;
@@ -192,6 +193,7 @@ async function initSchema(): Promise<void> {
       apparent_temp_c DOUBLE PRECISION,
       humidity_pct DOUBLE PRECISION,
       wind_kmh DOUBLE PRECISION,
+      wind_gust_kmh DOUBLE PRECISION,
       precipitation_mm DOUBLE PRECISION,
       uv_index DOUBLE PRECISION,
       pm10 DOUBLE PRECISION,
@@ -201,6 +203,8 @@ async function initSchema(): Promise<void> {
       recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_wl_recorded ON weather_log(recorded_at);
+    -- 기존 설치 호환 — 순간풍속(돌풍) 컬럼 보강(크레인/고소 중지 판정 = 순간풍속 기준).
+    ALTER TABLE weather_log ADD COLUMN IF NOT EXISTS wind_gust_kmh DOUBLE PRECISION;
 
     CREATE TABLE IF NOT EXISTS site_info_daily (
       id SERIAL PRIMARY KEY,
@@ -239,6 +243,7 @@ async function initSchema(): Promise<void> {
       apparent_temp_c DOUBLE PRECISION,
       humidity_pct DOUBLE PRECISION,
       wind_kmh DOUBLE PRECISION,
+      wind_gust_kmh DOUBLE PRECISION,
       precipitation_mm DOUBLE PRECISION,
       uv_index DOUBLE PRECISION,
       pm10 DOUBLE PRECISION,
@@ -248,6 +253,8 @@ async function initSchema(): Promise<void> {
       recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_wd_snapshot ON weather_daily(snapshot_date);
+    -- 기존 설치 호환 — 순간풍속(돌풍) 컬럼 보강(구 행 null = 평균풍속 폴백 판정).
+    ALTER TABLE weather_daily ADD COLUMN IF NOT EXISTS wind_gust_kmh DOUBLE PRECISION;
 
     -- SOS/낙상 알림 이력 — 발생/대응(ack) 시각·대응자 보존(산업재해 자료 "알림→대응 시각" 첨부).
     -- (worker_id, type, ts) UNIQUE 로 폰 재전송·backlog flush 시 중복 방지.
@@ -1759,6 +1766,7 @@ export async function persistWeather(input: {
   apparentTempC?: number;
   humidityPct?: number;
   windKmh?: number;
+  windGustKmh?: number;
   precipitationMm?: number;
   uvIndex?: number;
   pm10?: number;
@@ -1775,6 +1783,7 @@ export async function persistWeather(input: {
     apparent_temp_c: input.apparentTempC ?? null,
     humidity_pct: input.humidityPct ?? null,
     wind_kmh: input.windKmh ?? null,
+    wind_gust_kmh: input.windGustKmh ?? null,
     precipitation_mm: input.precipitationMm ?? null,
     uv_index: input.uvIndex ?? null,
     pm10: input.pm10 ?? null,
@@ -1874,6 +1883,7 @@ export type WeatherDailyRow = {
   apparent_temp_c: number | null;
   humidity_pct: number | null;
   wind_kmh: number | null;
+  wind_gust_kmh: number | null;
   precipitation_mm: number | null;
   uv_index: number | null;
   pm10: number | null;
@@ -1931,6 +1941,7 @@ export async function persistWeatherDaily(input: {
   apparentTempC?: number;
   humidityPct?: number;
   windKmh?: number;
+  windGustKmh?: number;
   precipitationMm?: number;
   uvIndex?: number;
   pm10?: number;
@@ -1942,14 +1953,15 @@ export async function persistWeatherDaily(input: {
   await q(
     `INSERT INTO weather_daily (
        snapshot_date, lat, lon, worker_count, weather_code, temperature_c,
-       apparent_temp_c, humidity_pct, wind_kmh, precipitation_mm, uv_index,
+       apparent_temp_c, humidity_pct, wind_kmh, wind_gust_kmh, precipitation_mm, uv_index,
        pm10, pm25, sunrise, sunset, recorded_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, ${NOW_ISO})
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, ${NOW_ISO})
      ON CONFLICT (snapshot_date) DO UPDATE SET
        lat = excluded.lat, lon = excluded.lon, worker_count = excluded.worker_count,
        weather_code = excluded.weather_code, temperature_c = excluded.temperature_c,
        apparent_temp_c = excluded.apparent_temp_c, humidity_pct = excluded.humidity_pct,
-       wind_kmh = excluded.wind_kmh, precipitation_mm = excluded.precipitation_mm,
+       wind_kmh = excluded.wind_kmh, wind_gust_kmh = excluded.wind_gust_kmh,
+       precipitation_mm = excluded.precipitation_mm,
        uv_index = excluded.uv_index, pm10 = excluded.pm10, pm25 = excluded.pm25,
        sunrise = excluded.sunrise, sunset = excluded.sunset, recorded_at = excluded.recorded_at`,
     [
@@ -1962,6 +1974,7 @@ export async function persistWeatherDaily(input: {
       input.apparentTempC ?? null,
       input.humidityPct ?? null,
       input.windKmh ?? null,
+      input.windGustKmh ?? null,
       input.precipitationMm ?? null,
       input.uvIndex ?? null,
       input.pm10 ?? null,

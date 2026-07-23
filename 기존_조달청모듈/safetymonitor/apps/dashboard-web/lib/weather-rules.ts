@@ -96,13 +96,15 @@ export function evaluateApparentTemp(t: number): RuleEvaluation {
 }
 
 // 풍속 (m/s, 정책 기준). Open-Meteo 는 km/h 반환 → 변환.
+// 규칙 §37·§143 임계는 순간풍속(돌풍) 기준 — 판정도 순간풍속으로(평균풍속 아님).
 const WIND_STEPS: ThresholdStep[] = [
   {
     severity: "danger",
-    binding: "recommendation",
-    label: "15m/s 이상 — 옥외작업 중지",
-    action: "옥외작업 원칙 중지. 모든 양중·고소·비계 작업 중단.",
-    source: "KOSHA Guide (옥외작업 전체)",
+    binding: "legal",
+    label: "15m/s 이상 — 타워크레인 운전·옥외작업 중지",
+    action:
+      "타워크레인 운전 중지 (법적). 옥외작업 원칙 중지, 모든 양중·고소·비계 작업 중단 (권고).",
+    source: "안전보건규칙 §143 + KOSHA Guide",
   },
   {
     severity: "caution",
@@ -110,26 +112,34 @@ const WIND_STEPS: ThresholdStep[] = [
     label: "10m/s 이상 — 타워크레인/고소 중지",
     action:
       "타워크레인 설치·수리·점검·해체 중지 (법적). 비계·고소·양중작업 중지 (권고).",
-    source: "안전보건규칙",
+    source: "안전보건규칙 §37·§143",
   },
 ];
 
-export function evaluateWindKmh(kmh: number): RuleEvaluation {
+// 판정 = 순간풍속(돌풍·gustKmh). 돌풍 미제공(구 DB 폴백 행 등)이면 평균풍속 폴백(과소경보 한계 명시).
+// 이상 데이터로 돌풍 < 평균이어도 안전측 판정 위해 둘 중 큰 값 사용.
+export function evaluateWindKmh(kmh: number, gustKmh?: number): RuleEvaluation {
   const ms = kmh / 3.6;
+  const judgedMs = Math.max(kmh, gustKmh ?? kmh) / 3.6;
   let hit: ThresholdStep | undefined;
-  if (ms >= 15) hit = WIND_STEPS[0];
-  else if (ms >= 10) hit = WIND_STEPS[1];
+  if (judgedMs >= 15) hit = WIND_STEPS[0];
+  else if (judgedMs >= 10) hit = WIND_STEPS[1];
 
+  const hasGust = gustKmh !== undefined;
   return {
     itemKey: "wind",
     itemLabel: "풍속",
-    currentValue: `${kmh.toFixed(1)}km/h (${ms.toFixed(1)}m/s)`,
+    currentValue: hasGust
+      ? `순간 ${gustKmh.toFixed(1)}km/h (${(gustKmh / 3.6).toFixed(1)}m/s) · 평균 ${kmh.toFixed(1)}km/h (${ms.toFixed(1)}m/s)`
+      : `${kmh.toFixed(1)}km/h (${ms.toFixed(1)}m/s) · 평균(돌풍 데이터 없음)`,
     currentSeverity: hit?.severity ?? "normal",
     currentStep: hit,
     steps: WIND_STEPS,
-    baseline: "10m/s (36km/h) 미만 = 정상. 순간풍속 기준, 평균풍속 아님.",
+    baseline: hasGust
+      ? "순간풍속(돌풍) 10m/s (36km/h) 미만 = 정상. 판정 = 순간풍속 기준, 평균풍속 아님."
+      : "순간풍속(돌풍) 10m/s (36km/h) 미만 = 정상. 현재 돌풍 데이터 없어 평균풍속으로 판정(과소경보 가능).",
     notes:
-      "타워크레인 운전 중지 기준 15m/s 는 법적 강제. 옥외 전체 중지 권고 15m/s 는 KOSHA Guide.",
+      "설치·해체 중지 10m/s·운전 중지 15m/s 는 안전보건규칙(순간풍속) 법적 강제. 옥외 전체 중지 15m/s 는 KOSHA Guide 권고.",
   };
 }
 

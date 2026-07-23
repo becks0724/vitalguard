@@ -23,6 +23,9 @@ type WeatherPayload = {
     apparentTempC: number;
     humidityPct: number;
     windKmh: number;
+    // 순간풍속(돌풍·km/h) — 크레인/고소 중지 임계(규칙 §37·§143)가 순간풍속 기준이라 판정에 필수.
+    // 구 DB 폴백 행 등 미보유 시 undefined(평균풍속 폴백 판정).
+    windGustKmh?: number;
     precipitationMm: number;
     uvIndex: number;
     pm10?: number;
@@ -133,6 +136,7 @@ export async function GET(request: Request) {
       apparentTempC: data.current.apparentTempC,
       humidityPct: data.current.humidityPct,
       windKmh: data.current.windKmh,
+      windGustKmh: data.current.windGustKmh,
       precipitationMm: data.current.precipitationMm,
       uvIndex: data.current.uvIndex,
       pm10: data.current.pm10,
@@ -206,6 +210,7 @@ function weatherPayloadFromDaily(
       apparentTempC: row.apparent_temp_c ?? 0,
       humidityPct: row.humidity_pct ?? 0,
       windKmh: row.wind_kmh ?? 0,
+      windGustKmh: row.wind_gust_kmh ?? undefined,
       precipitationMm: row.precipitation_mm ?? 0,
       uvIndex: row.uv_index ?? 0,
       pm10: row.pm10 ?? undefined,
@@ -235,7 +240,7 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   forecastUrl.searchParams.set("longitude", lon.toString());
   forecastUrl.searchParams.set(
     "current",
-    "weather_code,temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation,uv_index",
+    "weather_code,temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,uv_index",
   );
   forecastUrl.searchParams.set(
     "daily",
@@ -284,6 +289,7 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
       apparentTempC: forecast?.current?.apparent_temperature ?? 0,
       humidityPct: forecast?.current?.relative_humidity_2m ?? 0,
       windKmh: forecast?.current?.wind_speed_10m ?? 0,
+      windGustKmh: forecast?.current?.wind_gusts_10m ?? undefined,
       precipitationMm: forecast?.current?.precipitation ?? 0,
       uvIndex: forecast?.current?.uv_index ?? 0,
       pm10: air?.current?.pm10,

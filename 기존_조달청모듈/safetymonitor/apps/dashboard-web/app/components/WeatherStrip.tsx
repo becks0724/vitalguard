@@ -35,6 +35,8 @@ type WeatherCurrent = {
   apparentTempC: number;
   humidityPct: number;
   windKmh: number;
+  // 순간풍속(돌풍·km/h) — 크레인/고소 중지 판정 기준. 구 DB 폴백 응답엔 없을 수 있음.
+  windGustKmh?: number;
   precipitationMm: number;
   uvIndex: number;
   pm10?: number;
@@ -262,7 +264,7 @@ export function WeatherStrip({
       ),
       discomfort: evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
       pm25: evaluatePM25(c.pm25),
-      wind: evaluateWindKmh(c.windKmh),
+      wind: evaluateWindKmh(c.windKmh, c.windGustKmh),
       uv: evaluateUV(c.uvIndex),
       precipitation: evaluatePrecipitation(c.precipitationMm),
       sunrise: infoEvaluation(
@@ -530,7 +532,17 @@ export function WeatherStrip({
     { icon: "humidity", label: "습도", value: `${Math.round(c.humidityPct)}%`, sub: undefined, evaluation: evaluations.humidity },
     { icon: "discomfort", label: "불쾌지수", value: discomfortDi.toFixed(1), sub: discomfortGrade(discomfortDi), evaluation: evaluations.discomfort },
     { icon: "dust", label: "미세먼지", value: c.pm25 !== undefined ? `${c.pm25.toFixed(0)}` : "--", sub: "PM2.5 (μg/㎥)", evaluation: evaluations.pm25 },
-    { icon: "wind", label: "풍속", value: `${c.windKmh.toFixed(1)}`, sub: `km/h (${(c.windKmh / 3.6).toFixed(1)} m/s)`, evaluation: evaluations.wind },
+    {
+      icon: "wind",
+      label: "풍속",
+      // 판정 기준(순간풍속)을 헤드라인으로 — 평균만 보여주면 "돌풍 초과인데 정상 표시" 혼동 재발.
+      value: c.windGustKmh !== undefined ? `${(c.windGustKmh / 3.6).toFixed(1)}` : `${c.windKmh.toFixed(1)}`,
+      sub:
+        c.windGustKmh !== undefined
+          ? `m/s·순간 (평균 ${(c.windKmh / 3.6).toFixed(1)} m/s)`
+          : `km/h (${(c.windKmh / 3.6).toFixed(1)} m/s)`,
+      evaluation: evaluations.wind,
+    },
     { icon: "uv", label: "자외선", value: c.uvIndex.toFixed(1), sub: uvLabel(c.uvIndex), evaluation: evaluations.uv },
     { icon: "umbrella", label: "강수량", value: `${c.precipitationMm.toFixed(1)}`, sub: "mm/h", evaluation: evaluations.precipitation },
     { icon: "sunrise", label: "일출", value: formatHm(data.daily?.sunrise), sub: undefined, evaluation: evaluations.sunrise },
