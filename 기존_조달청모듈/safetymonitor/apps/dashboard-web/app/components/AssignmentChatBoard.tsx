@@ -61,6 +61,7 @@ const GRADE_BADGE: Record<
 };
 
 const SUGGESTIONS = [
+  "전체 작업자 컨디션 확인해줘",
   "EMP-6861 오늘 밀폐공간 배치 가능해?",
   "EMP-6861 컨디션 등급이랑 배제 작업 알려줘",
 ];
