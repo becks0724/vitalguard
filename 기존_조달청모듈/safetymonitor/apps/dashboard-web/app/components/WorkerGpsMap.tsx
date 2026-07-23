@@ -475,7 +475,7 @@ export function WorkerGpsMap({
               aria-hidden
               className={`pointer-events-none absolute rounded-full ${
                 polyPts
-                  ? "border border-dashed border-red-400/70"
+                  ? "border-2 border-dashed border-red-500/80 bg-red-500/[0.07]"
                   : "border-2 border-red-500/90 bg-red-500/10"
               }`}
               style={{
