@@ -102,7 +102,7 @@ async function clovaReply(question: string, contexts: unknown[]): Promise<string
   // 규칙 4 강제: 마무리 문장(변형 표기 포함)을 찾아 그 뒤 내용(주입된 꼬리말·면책 문구)을 잘라내고,
   //   서버가 정규 마무리 문장을 결정적으로 부착한다. 없으면 그대로 부착(정확일치 의존 제거).
   const DISCLAIMER = "최종 배치 결정 권한은 감독관에게 있습니다.";
-  const normalized = cleaned.replace(/​/g, "").trimEnd();
+  const normalized = cleaned.replace(/\u200B/g, "").trimEnd();
   const dm = normalized.match(/최종\s*배치\s*결정\s*권한은\s*감독관에게\s*있습니다\s*[.．。]?/);
   const body = (dm && dm.index !== undefined ? normalized.slice(0, dm.index) : normalized).trimEnd();
   return body + "\n\n" + DISCLAIMER;
