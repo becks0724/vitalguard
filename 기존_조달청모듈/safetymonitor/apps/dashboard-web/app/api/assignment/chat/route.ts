@@ -99,17 +99,22 @@ async function clovaReply(question: string, contexts: unknown[]): Promise<string
     .replace(/\*\*/g, "")
     .replace(/^#{1,4}\s*/gm, "")
     .replace(/^\s*[-*]\s+/gm, "");
-  // 규칙 4 강제: 필수 마무리 문장 뒤에 붙는 내용(사용자가 주입한 꼬리말·면책 문구)을 결정적으로 잘라냄.
-  const disclaimer = "최종 배치 결정 권한은 감독관에게 있습니다.";
-  const di = cleaned.indexOf(disclaimer);
-  return di === -1 ? cleaned : cleaned.slice(0, di + disclaimer.length);
+  // 규칙 4 강제: 마무리 문장(변형 표기 포함)을 찾아 그 뒤 내용(주입된 꼬리말·면책 문구)을 잘라내고,
+  //   서버가 정규 마무리 문장을 결정적으로 부착한다. 없으면 그대로 부착(정확일치 의존 제거).
+  const DISCLAIMER = "최종 배치 결정 권한은 감독관에게 있습니다.";
+  const normalized = cleaned.replace(/​/g, "").trimEnd();
+  const dm = normalized.match(/최종\s*배치\s*결정\s*권한은\s*감독관에게\s*있습니다\s*[.．。]?/);
+  const body = (dm && dm.index !== undefined ? normalized.slice(0, dm.index) : normalized).trimEnd();
+  return body + "\n\n" + DISCLAIMER;
 }
 
-/** 응답이 한국어 위주인지 판별 — 라틴·일본어 가나·한자(CJK)를 '외국 문자'로 보고 한글이 그보다 많아야 한국어로 인정.
- *  (한글수 ≥ 라틴수만 보면 중국어·일본어 응답이 둘 다 0으로 통과하는 구멍이 있어 CJK를 포함시킴.) */
+/** 응답이 한국어 위주인지 판별. 정상적인 한국어 답변은 항상 완성형 한글을 포함하므로,
+ *  한글이 전혀 없으면(중국어·일본어·키릴·아랍·이모지·전각·한글자모 등) 비한국어로 간주해 거부한다.
+ *  한글이 있으면 '한글 외 문자'(공백·숫자·문장부호 제외)보다 한글이 많아야 통과. */
 function isMostlyKorean(text: string): boolean {
   const hangul = (text.match(/[가-힣]/g) ?? []).length;
-  const foreign = (text.match(/[A-Za-z぀-ヿ一-鿿]/g) ?? []).length;
+  if (hangul === 0) return false;
+  const foreign = (text.match(/[^\s\d가-힣.,!?%·:;()"'\-~/…、。！？]/gu) ?? []).length;
   return hangul >= foreign;
 }
 

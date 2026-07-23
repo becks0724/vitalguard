@@ -17,7 +17,13 @@ let warned = false;
 export async function POST(request: Request) {
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
-  if (auth === "none" && !warned) { warned = true; console.warn("[gaspod] 무인증 수집 수용 중(soft)"); }
+  // 정적 토큰 강제(무중단 롤아웃): 기본은 soft 수용. GASPOD_REQUIRE_TOKEN 설정 시 무토큰(none)도 거부.
+  //   → 코드 배포 후 ESP32 펌웨어에 x-app-upload-token 헤더 추가 → env 설정 순으로 켜면 실기기 수신 안 끊김.
+  const requireToken = /^(1|true|on)$/i.test(process.env.GASPOD_REQUIRE_TOKEN ?? "");
+  if (auth === "none") {
+    if (requireToken) return NextResponse.json({ ok: false, error: "토큰 필요" }, { status: 401 });
+    if (!warned) { warned = true; console.warn("[gaspod] 무인증 수집 수용 중(soft) — GASPOD_REQUIRE_TOKEN 설정 시 401"); }
+  }
   let b: Record<string, unknown>;
   try { b = await request.json(); } catch { return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 }); }
   const state = String(b?.state ?? "");

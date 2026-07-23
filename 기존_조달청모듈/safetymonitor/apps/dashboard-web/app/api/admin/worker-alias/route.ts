@@ -46,6 +46,15 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  // 사번 형식 강제 — 저장된 primaryId 는 배치 어시스턴트 LLM 컨텍스트에 workerId 로 전달되므로
+  // 임의 문자열(개행·지시문)이 들어가면 간접 프롬프트 인젝션 경로가 된다.
+  const ID_RE = /^(?:EMP|VW)-[A-Za-z0-9_-]+$/;
+  if (!ID_RE.test(primaryId) || !ID_RE.test(secondaryId)) {
+    return NextResponse.json(
+      { ok: false, error: "ID 형식이 올바르지 않습니다 (EMP-/VW- 사번만 허용)." },
+      { status: 400 },
+    );
+  }
   await setWorkerAlias(secondaryId, primaryId);
   return NextResponse.json({ ok: true, primaryId, secondaryId });
 }

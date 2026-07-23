@@ -40,18 +40,20 @@ export function matchEnvironment(signals: SiteEnvSignals): EnvAdvice {
   const notes: string[] = [];
 
   const g = signals.gaspod;
-  if (g) {
-    if (g.stale) {
-      notes.push(
-        `가스 감지기(${g.deviceId}) 최신 수신 없음 — 밀폐공간 투입 전 산소·유해가스 농도 측정 필요(규칙 제619조의2).`,
-      );
-    } else if (g.state === "WARNING" || g.state === "DANGER") {
-      blocks.push({
-        tag: "밀폐공간",
-        label: `가스 감지기 ${g.state === "DANGER" ? "위험" : "경고"} 발효(${g.deviceId} · O₂ ${g.o2}%)`,
-        basis: GAS_BASIS,
-      });
-    }
+  if (g && !g.stale && (g.state === "WARNING" || g.state === "DANGER")) {
+    blocks.push({
+      tag: "밀폐공간",
+      label: `가스 감지기 ${g.state === "DANGER" ? "위험" : "경고"} 발효(${g.deviceId} · O₂ ${g.o2}%)`,
+      basis: GAS_BASIS,
+    });
+  } else if (g) {
+    // 페일세이프: 감지기가 있으나 WARNING/DANGER 가 아닌 경우(정상 CLEAR·수신 지연)에도 밀폐공간은
+    //   법정 사전 측정을 요구한다. 실시간 센서값(조작 가능)이 사전 측정을 대체하지 못하게 하여,
+    //   위조된 CLEAR 텔레메트리로 밀폐공간 게이트를 해제할 수 없도록 한다(규칙 제619조의2).
+    const detail = g.stale ? "수신 지연" : "정상 표시는 사전 측정을 대체하지 않음";
+    notes.push(
+      `밀폐공간 투입 전 산소·유해가스 농도 측정 필요(규칙 제619조의2) — 감지기(${g.deviceId}) ${detail}.`,
+    );
   }
 
   for (const w of signals.warnings) {
