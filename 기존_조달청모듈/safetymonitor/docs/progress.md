@@ -12,6 +12,19 @@
 
 ## Quick Summary (30초 안에 읽기)
 
+### ★ 풍속 판정 순간풍속(돌풍) 기준 교정 (2026-07-22~23 — 크레인/고소 중지 임계 정합 · main `c3c91ef` · 라이브 00119 포함)
+
+**지금까지 작업**
+- 증상 = 현장 환경 풍속 '정상'(평균 2.9m/s)인데 캘린더는 "돌풍 최대 10.5m/s·규칙 §37 초과" 경고 — 모순 원인 확인 요청.
+- 근본원인 = `/api/weather` 가 Open-Meteo current `wind_speed_10m`(10분 **평균**)만 수집. 크레인/고소 중지 임계(§37·§143 10/15m/s)는 **순간풍속(돌풍)** 기준이라 판정 지표 불일치(캘린더 경고는 daily `wind_gusts_10m_max` 로 이미 올바름).
+- 수정(`c3c91ef`, 5파일) = current 에 `wind_gusts_10m` 추가·`evaluateWindKmh(kmh, gustKmh?)` 돌풍 기준 판정(미보유 시 평균 폴백+한계 명시·안전측 max)·WIND_STEPS 15m/s 운전 중지(법적) 반영·WeatherStrip 헤드라인 순간풍속(평균 병기)·DB `weather_log`/`weather_daily` `wind_gust_kmh` 멱등 컬럼.
+
+**현재 상태**
+- 검증 = tsc0·lint0·test 200→207(풍속 회귀 7 신규). **별도 배포 불필요** — 병렬 세션 00118→00119 빌드에 포함(`merge-base` 확인). 라이브 실측 = `windGustKmh 42.1km/h(11.7m/s)` vs 평균 3.3m/s → 돌풍만 임계 초과인 실전 조건에서 '주의' 점등 확인.
+
+**다음 할 일**
+- (육안) 풍속 칩 "m/s·순간(평균 병기)"+주의 배지·모달 §37·§143·확인/조치 팝업. (선택) XLSX 시트3/CSV 환경 이력에 돌풍 컬럼 노출 결정. (참고) 구 폴백 행(돌풍 null)은 평균 판정+한계 문구가 정상.
+
 ### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 11단계 고도화 · 단일 출처)
 
 > cctv-ai = 대시보드 CCTV 관제 3타일에 MJPEG/스냅샷 + 감지통계를 주는 **별도 Cloud Run 서비스**. 기술 상세 → [cctv-ai/README.md](../cctv-ai/README.md).
