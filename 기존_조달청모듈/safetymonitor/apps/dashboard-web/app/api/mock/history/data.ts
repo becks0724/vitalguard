@@ -136,6 +136,33 @@ export function buildHistory(
   return points;
 }
 
+// 사용자 지정 기간(시작일~종료일, YYYY-MM-DD) — 일별 결정적 포인트. 날짜 고정 시드라 같은 날짜는 항상 같은 값.
+export function buildHistoryBetween(
+  workerId: string,
+  metric: HistoryMetric,
+  fromISO: string,
+  toISO: string,
+): HistoryPoint[] {
+  const dayMs = 86400000;
+  const from = new Date(`${fromISO}T00:00:00Z`);
+  const to = new Date(`${toISO}T00:00:00Z`);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
+    return [];
+  }
+  const n = Math.round((to.getTime() - from.getTime()) / dayMs) + 1;
+  const points: HistoryPoint[] = [];
+  for (let idx = 0; idx < n; idx += 1) {
+    const day = new Date(from.getTime() + idx * dayMs);
+    const epochDay = Math.floor(day.getTime() / dayMs);
+    const value =
+      metric === "fall"
+        ? fallCountAt(workerId, epochDay)
+        : numericValueAt(workerId, metric, epochDay, n, idx);
+    points.push({ date: formatDay(day), value });
+  }
+  return points;
+}
+
 function numericValueAt(
   workerId: string,
   metric: Exclude<HistoryMetric, "fall">,

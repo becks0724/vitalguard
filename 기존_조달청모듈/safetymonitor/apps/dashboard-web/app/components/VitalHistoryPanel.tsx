@@ -1,4 +1,5 @@
-// 작업자 + 메트릭 선택 시 24시간 / 1주일 / 30일 / 60일 누적 시계열을 SVG 라인/막대 차트로 표시
+// 작업자 + 메트릭 선택 시 프리셋(24시간~1년) 또는 지정 기간 누적 시계열을 Recharts 라인/막대 차트로 표시
+// (하단 export LineChart/BarChart/SummaryCell 은 수작업 SVG — SiteSafetyTables 에서 재사용)
 "use client";
 
 import { useEffect, useState, type MouseEvent } from "react";
@@ -13,6 +14,8 @@ import {
   type Status,
 } from "../../lib/severity";
 
+import { RechartsLineChart, RechartsBarChart } from "./VitalChartsRecharts";
+
 type Metric = "heartRate" | "spo2" | "skinTempC" | "fall";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
@@ -22,10 +25,14 @@ type Selection = {
   metric: Metric;
 };
 
+type CustomRange = { from: string; to: string }; // YYYY-MM-DD
+
 type HistoryResponse = {
   workerId: string;
   metric: Metric;
-  range: Range;
+  range: Range | 0; // 0 = 사용자 지정 기간(from/to)
+  from?: string;
+  to?: string;
   points: { date: string; label?: string; value: number }[];
   summary: { min: number; max: number; avg: number };
 };
@@ -70,6 +77,9 @@ export function VitalHistoryPanel({
   onClose: () => void;
 }) {
   const [range, setRange] = useState<Range>(7);
+  const [customRange, setCustomRange] = useState<CustomRange | null>(null); // 설정 시 프리셋(range) 대신 이 구간 조회
+  const [fromInput, setFromInput] = useState("");
+  const [toInput, setToInput] = useState("");
   const [chartType, setChartType] = useState<ChartType>("line");
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -88,13 +98,22 @@ export function VitalHistoryPanel({
     // 선택(작업자/메트릭/기간) 변경 시 이전 데이터를 비워 새 라벨·임계선으로 오표시되지 않게 한다.
     setData(null);
 
-    const params = new URLSearchParams({
-      workerId: selection.workerId,
-      metric: selection.metric,
-      days: String(range),
-    });
+    const params = new URLSearchParams(
+      customRange
+        ? {
+            workerId: selection.workerId,
+            metric: selection.metric,
+            from: customRange.from,
+            to: customRange.to,
+          }
+        : {
+            workerId: selection.workerId,
+            metric: selection.metric,
+            days: String(range),
+          },
+    );
     // 요청 시점 선택을 캡처 — 지연 응답이 새 선택 위에 덮이지 않게 커밋 전 대조한다.
-    const requested = { workerId: selection.workerId, metric: selection.metric, range };
+    const requested = { workerId: selection.workerId, metric: selection.metric, range, customRange };
 
     fetch(`/api/mock/history?${params.toString()}`, { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
@@ -104,7 +123,9 @@ export function VitalHistoryPanel({
             json !== null &&
             json.workerId === requested.workerId &&
             json.metric === requested.metric &&
-            json.range === requested.range;
+            (requested.customRange
+              ? json.from === requested.customRange.from && json.to === requested.customRange.to
+              : json.range === requested.range);
           setData(matchesRequest ? json : null);
           setLoading(false);
         }
@@ -119,7 +140,7 @@ export function VitalHistoryPanel({
     return () => {
       active = false;
     };
-  }, [selection.workerId, selection.metric, range, hasLiveData]);
+  }, [selection.workerId, selection.metric, range, customRange, hasLiveData]);
 
   const meta = METRIC_LABEL[selection.metric];
 
@@ -132,6 +153,7 @@ export function VitalHistoryPanel({
   // 대시보드가 2초마다 새 liveValue 로 리렌더 → 그래프 tip 이 실시간 표와 동기화. 일/월 집계·낙상은 원본 유지.
   const liveOverride =
     data !== null &&
+    customRange === null &&
     range === 1 &&
     selection.metric !== "fall" &&
     typeof liveValue === "number" &&
@@ -150,6 +172,20 @@ export function VitalHistoryPanel({
       avg: vals.reduce((a, b) => a + b, 0) / vals.length,
     };
   })();
+
+  // 시작일/종료일 캘린더 입력 반영 — 둘 다 유효(from ≤ to)하면 커스텀 기간 조회, 아니면 프리셋 유지.
+  const applyCustom = (f: string, t: string) => {
+    setFromInput(f);
+    setToInput(t);
+    setCustomRange(f && t && f <= t ? { from: f, to: t } : null);
+  };
+  const clearCustom = (r: Range) => {
+    setRange(r);
+    setCustomRange(null);
+    setFromInput("");
+    setToInput("");
+  };
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   return (
     <section
@@ -226,9 +262,9 @@ export function VitalHistoryPanel({
               <button
                 key={r.value}
                 type="button"
-                onClick={() => setRange(r.value)}
+                onClick={() => clearCustom(r.value)}
                 className={`px-3 py-1 text-xs ${
-                  range === r.value
+                  range === r.value && !customRange
                     ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
                     : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
                 }`}
@@ -236,6 +272,44 @@ export function VitalHistoryPanel({
                 {r.label}
               </button>
             ))}
+          </div>
+          {/* 기간 설정 — 시작일/종료일 캘린더(연·월·일) 선택 */}
+          <div
+            className={`flex items-center gap-1 rounded border px-2 py-0.5 text-xs [color-scheme:light] dark:[color-scheme:dark] ${
+              customRange
+                ? "border-cyan-500/60 bg-cyan-100/60 dark:border-cyan-400/40 dark:bg-cyan-400/10"
+                : "border-zinc-300 dark:border-white/10"
+            }`}
+          >
+            <input
+              type="date"
+              aria-label="시작일"
+              value={fromInput}
+              max={toInput || todayIso}
+              onChange={(e) => applyCustom(e.target.value, toInput)}
+              className="bg-transparent text-xs text-zinc-700 outline-none dark:text-zinc-200"
+            />
+            <span className="text-zinc-500">~</span>
+            <input
+              type="date"
+              aria-label="종료일"
+              value={toInput}
+              min={fromInput || undefined}
+              max={todayIso}
+              onChange={(e) => applyCustom(fromInput, e.target.value)}
+              className="bg-transparent text-xs text-zinc-700 outline-none dark:text-zinc-200"
+            />
+            {customRange && (
+              <button
+                type="button"
+                onClick={() => clearCustom(range)}
+                aria-label="기간 해제"
+                title="기간 설정 해제"
+                className="ml-0.5 rounded px-1 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-800 dark:hover:bg-white/10 dark:hover:text-zinc-100"
+              >
+                ×
+              </button>
+            )}
           </div>
           <button
             type="button"
@@ -271,27 +345,19 @@ export function VitalHistoryPanel({
                 </>
               )}
             </div>
-            {selection.metric === "fall" || chartType === "bar" ? (
-              <BarChart
-                points={displayPoints}
-                color={meta.color}
-                unit={meta.unit}
-                decimals={meta.decimals}
-                referenceLines={metricReferenceLines(selection.metric)}
-                pointSeverity={metricPointSeverity(selection.metric)}
-                hoverExtra={coreHover}
-              />
-            ) : (
-              <LineChart
-                points={displayPoints}
-                color={meta.color}
-                unit={meta.unit}
-                decimals={meta.decimals}
-                referenceLines={metricReferenceLines(selection.metric)}
-                pointSeverity={metricPointSeverity(selection.metric)}
-                hoverExtra={coreHover}
-              />
-            )}
+            {(() => {
+              const chartProps = {
+                points: displayPoints,
+                color: meta.color,
+                unit: meta.unit,
+                decimals: meta.decimals,
+                referenceLines: metricReferenceLines(selection.metric),
+                pointSeverity: metricPointSeverity(selection.metric),
+                hoverExtra: coreHover,
+              };
+              const isBar = selection.metric === "fall" || chartType === "bar";
+              return isBar ? <RechartsBarChart {...chartProps} /> : <RechartsLineChart {...chartProps} />;
+            })()}
           </>
         ) : (
           <p className="text-xs text-red-600 dark:text-red-300">데이터를 불러오지 못했습니다.</p>
