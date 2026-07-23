@@ -570,6 +570,7 @@ export function WorkerGpsMap({
             />
             <div
               onPointerDown={(e) => e.stopPropagation()}
+              data-testid="zone-draft-form"
               className="absolute z-30 w-52 -translate-x-1/2 rounded-xl border border-orange-400/40 bg-[#0d1117]/95 p-2.5 shadow-xl backdrop-blur"
               style={{ left: draftPt.x, top: draftPt.y + draftPt.r + 8 }}
             >
@@ -678,8 +679,13 @@ export function WorkerGpsMap({
             style={{ left: x, top: y }}
             onMouseEnter={() => setHoveredId(p.workerId)}
             onMouseLeave={() => setHoveredId((cur) => (cur === p.workerId ? null : cur))}
+            // 컨테이너 pointer capture(드래그 팬)가 클릭을 삼키지 않게 전파 차단(줌 버튼과 동일 함정).
+            // 배치 모드에선 차단하지 않고 컨테이너 클릭(중심 지정)에 양보한다.
+            onPointerDown={(e) => {
+              if (!placingZone) e.stopPropagation();
+            }}
             onClick={() => {
-              if (placingZone) return; // 배치 모드 중엔 컨테이너 클릭(중심 지정)에 양보
+              if (placingZone) return;
               onToggleTrail?.(p.workerId);
             }}
             title={onToggleTrail ? "클릭하면 최근 이동 경로를 표시/해제합니다" : undefined}
