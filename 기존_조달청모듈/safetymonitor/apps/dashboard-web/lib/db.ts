@@ -4,6 +4,8 @@
 import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
+import { notifyAlertTelegram } from "./telegram";
+
 // int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
 // 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
 pg.types.setTypeParser(20, (v) => parseInt(v, 10));
@@ -1282,18 +1284,23 @@ export type AlertRow = {
 };
 
 // SOS/낙상 발생 기록 — 중복(worker/type/ts)은 무시. addSample 에서 호출.
+// 신규 삽입(중복 아님)일 때만 텔레그램 알림 발신 — dedup 통과분만 1회 통지.
 export async function recordAlert(input: {
   workerId: string;
   workerName?: string | null;
   type: AlertType;
   ts: string;
 }): Promise<void> {
-  await q(
+  const { rowCount } = await q(
     `INSERT INTO alerts (worker_id, worker_name, type, ts)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (worker_id, type, ts) DO NOTHING`,
     [input.workerId, input.workerName ?? null, input.type, input.ts],
   );
+  if (rowCount > 0) {
+    // notifyAlertTelegram 은 미설정 시 no-op·실패 삼킴이라 여기서 await 해도 기록·수집을 막지 않는다.
+    await notifyAlertTelegram(input);
+  }
 }
 
 export async function listAlerts(limit = 100): Promise<AlertRow[]> {
