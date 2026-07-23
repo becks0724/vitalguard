@@ -35,7 +35,9 @@ export async function GET(request: Request) {
   }
 
   // 자체 라우트 호출 — 날씨(캐시미스 시 판정)·기상특보(live 특보)가 평가·억제·텔레그램 발송을 수행한다.
-  const origin = new URL(request.url).origin;
+  // Cloud Run 은 컨테이너에 http 로 프록시해 request.url 이 http origin 이 될 수 있음 → Host 헤더로 https 강제.
+  const host = request.headers.get("host");
+  const origin = host ? `https://${host}` : new URL(request.url).origin;
   const query = `lat=${lat}&lon=${lon}`;
   const checked: Record<string, number | string> = {};
   try {
