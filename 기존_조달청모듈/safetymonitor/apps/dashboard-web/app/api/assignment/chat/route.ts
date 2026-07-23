@@ -13,12 +13,14 @@ import {
   type WorkerAssignment,
 } from "../../../../lib/assignment-service";
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
+import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CLOVA_MODEL = process.env.CLOVA_MODEL ?? "HCX-005";
 const MAX_WORKERS_PER_QUERY = 3;
+const MAX_ALL_WORKERS = 20; // '전체 작업자' 요약 시 평가 상한.
 
 const SYSTEM_PROMPT =
   "당신은 건설 현장 감독관을 보조하는 작업 배치 어시스턴트다. " +
@@ -118,6 +120,22 @@ function isMostlyKorean(text: string): boolean {
   return hangul >= foreign;
 }
 
+/** 메시지에서 등록/수신 이력의 작업자 이름을 찾아 사번으로 해소한다.
+ *  이름은 로그인 감독관의 입력이고 LLM 에는 전달하지 않으므로 PII 유출이 아니다(가명 사번만 판정에 사용). */
+async function resolveByName(message: string): Promise<{ workerId: string; name: string }[]> {
+  const [workers, aliasMap] = await Promise.all([listAllWorkers(), getWorkerAliasMap()]);
+  const hits = new Map<string, { workerId: string; name: string }>();
+  for (const w of workers) {
+    const name = (w.worker_name ?? "").trim();
+    if (name.length >= 2 && message.includes(name)) {
+      // 별칭(폰/워치 다른 사번) 폴딩 → 같은 사람은 primary 로 합침(진짜 동명이인은 서로 다른 primary 라 유지).
+      const primary = aliasMap[w.worker_id] ?? w.worker_id;
+      if (!hits.has(primary)) hits.set(primary, { workerId: primary, name });
+    }
+  }
+  return [...hits.values()];
+}
+
 export async function POST(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -134,18 +152,81 @@ export async function POST(request: Request) {
   }
 
   // 질문에서 작업자 ID 추출(EMP-…/VW-… 사번 패턴, 가명 ID).
-  const ids = [...new Set(message.match(/\b(?:EMP|VW)-[A-Za-z0-9_-]+/gi) ?? [])].slice(
+  let ids = [...new Set(message.match(/\b(?:EMP|VW)-[A-Za-z0-9_-]+/gi) ?? [])].slice(
     0,
     MAX_WORKERS_PER_QUERY,
   );
+
+  // 사번을 못 찾은 경우: (1) 전체 조회 → (2) 이름 조회 → (3) 도움말 순.
   if (ids.length === 0) {
-    return NextResponse.json({
-      ok: true,
-      reply:
-        "질문에서 작업자 ID(사번)를 찾지 못했습니다. 예: \"EMP-6861 오늘 밀폐공간 배치 가능해?\" 처럼 사번을 포함해 질문해 주세요.",
-      source: "rule",
-      disclaimer: CONDITION_DISCLAIMER,
-    });
+    // (1) 전체 작업자 컨디션 요약 — 관제 등록 슬롯 대상(결정적 로스터, LLM 미경유·이름 비노출).
+    const wantsAll = /전체|모든|모두|전원/.test(message) && /작업자|인원|컨디션|상태|배치/.test(message);
+    if (wantsAll) {
+      const slotIds = ((await getMonitorSlots()) ?? [])
+        .filter((s): s is string => !!s && /^(?:EMP|VW)-/i.test(s))
+        .slice(0, MAX_ALL_WORKERS);
+      if (slotIds.length === 0) {
+        return NextResponse.json({
+          ok: true,
+          reply:
+            "관제에 등록된 작업자가 없습니다. 대시보드에서 작업자를 등록한 뒤 다시 조회해 주세요.\n\n최종 배치 결정 권한은 감독관에게 있습니다.",
+          source: "rule",
+          disclaimer: CONDITION_DISCLAIMER,
+        });
+      }
+      const assessed = (
+        await Promise.all(slotIds.map((id) => assessWorker(id).catch(() => null)))
+      ).filter((a): a is WorkerAssignment => a !== null);
+      const needAttention = assessed.filter((a) =>
+        a.advice.perTag.some((t) => !t.allowed && !t.pending),
+      ).length;
+      const roster = assessed
+        .map((a) => {
+          const blocked = a.advice.perTag.filter((t) => !t.allowed && !t.pending).length;
+          return `· ${a.workerId} — ${GRADE_LABEL[a.condition.grade]}${blocked ? ` (배제 ${blocked}종)` : ""}`;
+        })
+        .join("\n");
+      const example = assessed[0]?.workerId ?? "EMP-6861";
+      return NextResponse.json({
+        ok: true,
+        reply:
+          `등록 작업자 ${assessed.length}명 컨디션 요약 — 주의 필요 ${needAttention}명.\n${roster}\n\n` +
+          `자세한 사유·배제 근거는 사번으로 개별 질문해 주세요(예: "${example} 컨디션 등급이랑 배제 작업 알려줘").\n\n` +
+          "최종 배치 결정 권한은 감독관에게 있습니다.",
+        source: "rule",
+        assignments: assessed,
+        disclaimer: CONDITION_DISCLAIMER,
+      });
+    }
+
+    // (2) 이름으로 조회 — 이름을 사번으로 해소.
+    const named = await resolveByName(message);
+    if (named.length === 1) {
+      ids = [named[0]!.workerId];
+      // 이름 → 사번 치환: 컨텍스트엔 사번만 있으므로 질문의 이름도 사번으로 바꿔 CLOVA 가 연결하게 한다.
+      message = message.split(named[0]!.name).join(named[0]!.workerId);
+    } else if (named.length > 1) {
+      const list = named.map((w) => `· ${w.workerId} (${w.name})`).join("\n");
+      return NextResponse.json({
+        ok: true,
+        reply: `해당 이름의 작업자가 여러 명입니다. 사번으로 다시 질문해 주세요.\n${list}\n\n최종 배치 결정 권한은 감독관에게 있습니다.`,
+        source: "rule",
+        disclaimer: CONDITION_DISCLAIMER,
+      });
+    } else {
+      // (3) 도움말 — 무엇을 어떻게 물어보는지 안내(반복 문구 대체).
+      return NextResponse.json({
+        ok: true,
+        reply:
+          "작업자 사번·이름·'전체 작업자' 중 하나로 질문해 주세요.\n\n" +
+          '· 개별 조회: "EMP-6861 오늘 밀폐공간 배치 가능해?"\n' +
+          '· 이름 조회: "장우진 컨디션 알려줘"\n' +
+          '· 전체 요약: "전체 작업자 컨디션 확인해줘"\n\n' +
+          "최종 배치 결정 권한은 감독관에게 있습니다.",
+        source: "rule",
+        disclaimer: CONDITION_DISCLAIMER,
+      });
+    }
   }
 
   let assignments: WorkerAssignment[];
