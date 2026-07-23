@@ -1,4 +1,4 @@
-// 현장 구획 이탈 알림 모달 — 작업자 GPS 가 구획 원(반경)을 벗어나 확정되면 표시. 주의(앰버) 톤, 사이렌 없음.
+// 현장 구획 이탈(앰버) / 위험구역 진입(오렌지) 알림 모달 — 히스테리시스 확정 전이 시 표시. 사이렌 없음.
 "use client";
 
 import { useEffect, useState } from "react";
@@ -23,9 +23,11 @@ export function GeofenceAlertModal({
   onDismiss,
   onAcknowledge,
   onShowMap,
+  kind = "exit",
+  zoneName,
 }: {
   sample: VitalSample;
-  // 이탈 확정 시점의 현장 중심 거리(m).
+  // 확정 시점의 기준(구획/위험구역) 중심 거리(m).
   distM: number;
   radiusM: number;
   onDismiss: () => void;
@@ -33,6 +35,9 @@ export function GeofenceAlertModal({
   onAcknowledge?: () => void | Promise<void>;
   // "관제 지도에서 보기" 클릭 시 호출 — 내부 지도 모드 전환·해당 작업자 포커스.
   onShowMap?: () => void;
+  // exit = 현장 구획 이탈(앰버) / entry = 위험구역 진입(오렌지·구역명 표시).
+  kind?: "exit" | "entry";
+  zoneName?: string;
 }) {
   // 관리자 확인 상태 — 확인 클릭 시 ack 기록 후 '확인됨' 표시(팝업은 열린 채 유지).
   const [acked, setAcked] = useState(false);
@@ -57,24 +62,46 @@ export function GeofenceAlertModal({
       : undefined;
 
   const overM = Math.max(0, Math.round(distM - radiusM));
+  const isEntry = kind === "entry";
+  const title = isEntry ? "위험구역 진입 알림" : "현장 구획 이탈 알림";
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="현장 구획 이탈 알림"
+      aria-label={title}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 dark:bg-black/70"
       onClick={onDismiss}
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-500/60 bg-canvas shadow-xl dark:border-amber-500/50 dark:bg-surface-dark"
+        className={`w-full max-w-md overflow-hidden rounded-2xl border bg-canvas shadow-xl dark:bg-surface-dark ${
+          isEntry
+            ? "border-orange-500/60 dark:border-orange-500/50"
+            : "border-amber-500/60 dark:border-amber-500/50"
+        }`}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-50 px-5 py-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+        <header
+          className={`flex items-center justify-between gap-3 border-b px-5 py-3 ${
+            isEntry
+              ? "border-orange-500/30 bg-orange-50 dark:border-orange-500/30 dark:bg-orange-500/10"
+              : "border-amber-500/30 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/10"
+          }`}
+        >
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 vital-blink-caution ring-1 ring-amber-300 dark:ring-white/30" />
-            <h2 className="truncate font-display text-base font-bold tracking-tight text-amber-700 dark:text-amber-200">
-              현장 구획 이탈 알림
+            <span
+              className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full vital-blink-caution ring-1 dark:ring-white/30 ${
+                isEntry ? "bg-orange-500 ring-orange-300" : "bg-amber-500 ring-amber-300"
+              }`}
+            />
+            <h2
+              className={`truncate font-display text-base font-bold tracking-tight ${
+                isEntry
+                  ? "text-orange-700 dark:text-orange-200"
+                  : "text-amber-700 dark:text-amber-200"
+              }`}
+            >
+              {title}
             </h2>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -126,25 +153,47 @@ export function GeofenceAlertModal({
               <span className="text-muted-soft">소속</span>{" "}
               <span className="text-body dark:text-on-dark-soft">{COMPANY_NAME}</span>
               <span className="mx-2 text-muted-soft">·</span>
-              이탈 감지 시각 <span className="font-mono">{formatTime(sample.ts)}</span>
+              {isEntry ? "진입" : "이탈"} 감지 시각{" "}
+              <span className="font-mono">{formatTime(sample.ts)}</span>
             </p>
           </section>
 
-          <section className="rounded-xl border border-amber-500/30 bg-amber-50/60 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-500/[0.08]">
+          <section
+            className={`rounded-xl border px-4 py-3 ${
+              isEntry
+                ? "border-orange-500/30 bg-orange-50/60 dark:border-orange-500/25 dark:bg-orange-500/[0.08]"
+                : "border-amber-500/30 bg-amber-50/60 dark:border-amber-500/25 dark:bg-amber-500/[0.08]"
+            }`}
+          >
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">
-              이탈 정보
+              {isEntry ? "진입 정보" : "이탈 정보"}
             </h3>
-            <p className="mt-1 text-sm text-body dark:text-on-dark-soft">
-              현장 구획 중심에서{" "}
-              <span className="font-display text-lg font-bold text-amber-700 dark:text-amber-300">
-                {Math.round(distM)}m
-              </span>{" "}
-              — 반경 <span className="font-mono">{radiusM}m</span> 기준{" "}
-              <span className="font-semibold text-amber-700 dark:text-amber-300">+{overM}m 초과</span>
-            </p>
+            {isEntry ? (
+              <p className="mt-1 text-sm text-body dark:text-on-dark-soft">
+                위험구역{" "}
+                <span className="font-display text-base font-bold text-orange-700 dark:text-orange-300">
+                  {zoneName ?? "미지정"}
+                </span>{" "}
+                중심에서{" "}
+                <span className="font-display text-lg font-bold text-orange-700 dark:text-orange-300">
+                  {Math.round(distM)}m
+                </span>{" "}
+                — 반경 <span className="font-mono">{radiusM}m</span> 내 진입
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-body dark:text-on-dark-soft">
+                현장 구획 중심에서{" "}
+                <span className="font-display text-lg font-bold text-amber-700 dark:text-amber-300">
+                  {Math.round(distM)}m
+                </span>{" "}
+                — 반경 <span className="font-mono">{radiusM}m</span> 기준{" "}
+                <span className="font-semibold text-amber-700 dark:text-amber-300">+{overM}m 초과</span>
+              </p>
+            )}
             <p className="mt-1 text-[11px] leading-relaxed text-muted dark:text-on-dark-soft">
-              GPS 지터 방어를 위해 반경 초과가 연속 관측으로 확정된 경우에만 알림이 발생합니다. 작업자
-              위치·작업 지시 상태를 확인하세요.
+              {isEntry
+                ? "GPS 지터 방어를 위해 반경 진입이 연속 관측으로 확정된 경우에만 알림이 발생합니다. 작업자를 구역 밖으로 이동시키고 작업 지시 상태를 확인하세요."
+                : "GPS 지터 방어를 위해 반경 초과가 연속 관측으로 확정된 경우에만 알림이 발생합니다. 작업자 위치·작업 지시 상태를 확인하세요."}
             </p>
           </section>
 

@@ -53,6 +53,7 @@ import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
 import {
   WorkerGpsMap,
   type MapFocus,
+  type MapZone,
   type SiteCircle,
   type WorkerMapExcluded,
   type WorkerMapPoint,
@@ -71,9 +72,12 @@ import { NewsPanel } from "./NewsPanel";
 import { extractRegion } from "../lib/hospital";
 import {
   GEOFENCE_INITIAL,
+  ZONE_ENTRY_INITIAL,
   geofenceDistanceM,
   stepGeofence,
+  stepZoneEntry,
   type GeofenceState,
+  type ZoneEntryState,
 } from "../lib/geofence";
 import { TRACK_WINDOW_MIN, type TrackPoint } from "../lib/track";
 import {
@@ -2990,6 +2994,15 @@ export function DemoDashboard() {
   // 이동 경로 트레일 — 지도 마커 클릭으로 토글된 작업자 + 서버 조회 좌표 시계열.
   const [trailWorkerId, setTrailWorkerId] = useState<string | null>(null);
   const [trailPoints, setTrailPoints] = useState<TrackPoint[] | null>(null);
+  // 위험구역(진입 금지 존) — 서버 등록 존 + 진입 확정 워커×존 키(`workerId|zoneId`) + 팝업/ack.
+  const [dangerZones, setDangerZones] = useState<MapZone[]>([]);
+  const [activeZoneAlert, setActiveZoneAlert] = useState<{
+    sample: VitalSample;
+    zone: MapZone;
+    distM: number;
+  } | null>(null);
+  const [ackedZone, setAckedZone] = useState<Set<string>>(() => new Set());
+  const [insideZones, setInsideZones] = useState<Set<string>>(() => new Set());
   const [sirenEnabled, setSirenEnabled] = useState(true);
   const [audioArmed, setAudioArmed] = useState(false); // 오디오 컨텍스트 running 여부(브라우저 제스처 unlock)
   const [slots, setSlots] = useState<SlotAssignments>(() => Array(SLOT_COUNT).fill(null));
@@ -3437,6 +3450,18 @@ export function DemoDashboard() {
     setActiveGeofenceAlert(null);
   }
 
+  function dismissZoneAlert() {
+    if (activeZoneAlert) {
+      const key = `${activeZoneAlert.sample.workerId}|${activeZoneAlert.zone.id}`;
+      setAckedZone((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+    }
+    setActiveZoneAlert(null);
+  }
+
   // 알림 모달 "관제 지도에서 보기" — 지도 모드 전환 + 해당 좌표 포커스(모달 닫기는 호출부에서, ack 는 별개).
   function showAlertOnMap(sample: VitalSample) {
     if (sample.latitude === undefined || sample.longitude === undefined) return;
@@ -3446,10 +3471,14 @@ export function DemoDashboard() {
 
   // 알림 팝업 '확인' — 해당 작업자·종류의 최근 미대응 알림을 대응 확인(ack)으로 기록.
   // 관리자 메뉴 'SOS·낙상 이력' 표에 대응완료로 반영된다(자연키 ack, 팝업은 alert id 를 모름).
-  async function acknowledgeAlert(sample: VitalSample, type: "sos" | "fall" | "vital" | "geofence") {
+  async function acknowledgeAlert(
+    sample: VitalSample,
+    type: "sos" | "fall" | "vital" | "geofence" | "danger_zone",
+  ) {
     // 확인 즉시 자연키 영속 — 닫기 전에 새로고침해도 재팝업 안 함
-    // (vital·geofence 는 레벨형이라 정상복귀/구획복귀 시 ack 해제 → localStorage 영속 제외).
-    if (type !== "vital" && type !== "geofence") appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
+    // (vital·geofence·danger_zone 은 레벨형이라 복귀 시 ack 해제 → localStorage 영속 제외).
+    if (type !== "vital" && type !== "geofence" && type !== "danger_zone")
+      appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
     const token = getSessionToken();
     try {
       await fetch("/api/alerts/ack", {
@@ -3782,6 +3811,37 @@ export function DemoDashboard() {
     };
   }, [siteInfo.address]);
 
+  // 현장 필지 경계 폴리곤 — 주소 지오코딩 좌표가 확정되면 1회 조회(시각 레드라인 전용, 판정은 원 유지).
+  const [siteParcel, setSiteParcel] = useState<{ lat: number; lon: number }[] | null>(null);
+  useEffect(() => {
+    if (!siteAnchor) {
+      setSiteParcel(null);
+      return;
+    }
+    let active = true;
+    (async () => {
+      try {
+        const token = getSessionToken();
+        if (!token) return;
+        const res = await fetch(`/api/site-parcel?lat=${siteAnchor.lat}&lon=${siteAnchor.lon}`, {
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+        const j = (await res.json()) as {
+          ok?: boolean;
+          found?: boolean;
+          ring?: { lat: number; lon: number }[];
+        };
+        if (active && res.ok && j.ok && j.found && Array.isArray(j.ring)) setSiteParcel(j.ring);
+      } catch {
+        /* 폴리곤은 보조 표시 — 실패 시 원만 표시 */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [siteAnchor]);
+
   // 현장 주소에서 인근 병원 검색용 지역 키워드(예: "광주 동구"). 지역검색은 좌표가 아닌 지역명이 필요.
   const siteRegion = useMemo(() => extractRegion(siteInfo.address), [siteInfo.address]);
 
@@ -4064,6 +4124,168 @@ export function DemoDashboard() {
       return changed ? next : prev;
     });
   }, [outsideWorkers]);
+
+  // ── 위험구역(진입 금지 존) 진입 경보 ────────────────────────────────────────
+  // 워커×존 키(`workerId|zoneId`)별 히스테리시스 — 구획 이탈과 같은 fresh 게이트(60초)·ts 전진 규칙.
+  const zoneStates = useRef(new Map<string, { st: ZoneEntryState; lastTs: string }>());
+
+  const loadDangerZones = useCallback(async () => {
+    try {
+      const token = getSessionToken();
+      const res = await fetch("/api/danger-zones", {
+        headers: token ? { authorization: `Bearer ${token}` } : {},
+        cache: "no-store",
+      });
+      const j = (await res.json()) as {
+        ok?: boolean;
+        zones?: { id: number; name: string; lat: number; lon: number; radius_m: number }[];
+      };
+      if (res.ok && j.ok && Array.isArray(j.zones)) {
+        setDangerZones(
+          j.zones.map((z) => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radiusM: z.radius_m })),
+        );
+      }
+    } catch (e) {
+      console.error("[위험구역 조회 오류]", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDangerZones();
+  }, [loadDangerZones]);
+
+  const createDangerZone = useCallback(
+    async (zone: { name: string; lat: number; lon: number; radiusM: number }) => {
+      try {
+        const token = getSessionToken();
+        await fetch("/api/danger-zones", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify(zone),
+        });
+      } catch (e) {
+        console.error("[위험구역 등록 오류]", e);
+      }
+      void loadDangerZones();
+    },
+    [loadDangerZones],
+  );
+
+  const removeDangerZone = useCallback(
+    async (id: number) => {
+      try {
+        const token = getSessionToken();
+        await fetch(`/api/danger-zones?id=${id}`, {
+          method: "DELETE",
+          headers: token ? { authorization: `Bearer ${token}` } : {},
+        });
+      } catch (e) {
+        console.error("[위험구역 삭제 오류]", e);
+      }
+      void loadDangerZones();
+    },
+    [loadDangerZones],
+  );
+
+  // 진입 확정 전이 시 DB 이력 기록(전이당 1건, worker/type/ts 자연키 dedup).
+  const recordZoneAlert = useCallback(
+    (workerId: string, workerName: string | null, ts: string) => {
+      const token = getSessionToken();
+      fetch("/api/alerts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ type: "danger_zone", workerId, workerName, ts }),
+      }).catch((e) => console.error("[위험구역 진입 기록 오류]", e));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const states = zoneStates.current;
+    if (dangerZones.length === 0) {
+      if (states.size > 0) states.clear();
+      setInsideZones((prev) => (prev.size === 0 ? prev : new Set()));
+      return;
+    }
+    const freshKeys = new Set<string>();
+    for (const pt of workerMapData.pts) {
+      // 60초 초과 미수신은 stale 좌표 발화 방지를 위해 판정 보류(미수신 ≠ 진입/이탈).
+      if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      const base = latestMap.get(pt.workerId);
+      if (!base?.ts) continue;
+      for (const zone of dangerZones) {
+        const key = `${pt.workerId}|${zone.id}`;
+        freshKeys.add(key);
+        const entry = states.get(key);
+        if (entry?.lastTs === base.ts) continue; // 새 관측 없음 — 상태 유지
+        const dist = geofenceDistanceM(pt.lat, pt.lon, zone.lat, zone.lon);
+        const { state, event } = stepZoneEntry(entry?.st ?? ZONE_ENTRY_INITIAL, dist, zone.radiusM);
+        states.set(key, { st: state, lastTs: base.ts });
+        if (event === "enter") {
+          recordZoneAlert(pt.workerId, base.workerName ?? pt.name ?? null, base.ts);
+        }
+      }
+    }
+    // GPS 가 끊긴 워커·삭제된 존 키는 상태 제거 — 재수신 시 초기부터 재판정.
+    for (const key of Array.from(states.keys())) {
+      if (!freshKeys.has(key)) states.delete(key);
+    }
+    const ins = new Set<string>();
+    for (const [key, entry] of states) if (entry.st.inside) ins.add(key);
+    setInsideZones((prev) => {
+      if (prev.size === ins.size && Array.from(ins).every((k) => prev.has(k))) return prev;
+      return ins;
+    });
+  }, [workerMapData, dangerZones, latestMap, recordZoneAlert]);
+
+  // 위험구역 진입 팝업 — SOS/낙상/생체 우선(구획 이탈보다는 우선), ack(구역 밖 복귀 전) 안 된 첫 키 표시.
+  useEffect(() => {
+    if (activeSos || activeFallAlert || activeVitalAlert || activeZoneAlert) return;
+    for (const key of insideZones) {
+      if (ackedZone.has(key)) continue;
+      const sep = key.lastIndexOf("|");
+      const workerId = key.slice(0, sep);
+      const zoneId = Number(key.slice(sep + 1));
+      const zone = dangerZones.find((z) => z.id === zoneId);
+      const base = latestMap.get(workerId);
+      if (!zone || !base || base.latitude === undefined || base.longitude === undefined) continue;
+      setActiveZoneAlert({
+        sample: base,
+        zone,
+        distM: geofenceDistanceM(base.latitude, base.longitude, zone.lat, zone.lon),
+      });
+      return;
+    }
+  }, [
+    insideZones,
+    ackedZone,
+    activeSos,
+    activeFallAlert,
+    activeVitalAlert,
+    activeZoneAlert,
+    latestMap,
+    dangerZones,
+  ]);
+
+  // 구역 밖으로 복귀한 키는 ack 해제 → 재진입 시 재경보(구획 이탈 패턴).
+  useEffect(() => {
+    setAckedZone((prev) => {
+      if (prev.size === 0) return prev;
+      let changed = false;
+      const next = new Set<string>();
+      for (const key of prev) {
+        if (insideZones.has(key)) next.add(key);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [insideZones]);
 
   // ── 작업자 표 세로 자동 슬라이딩 + 수동 스크롤 + 이상 자동 스크롤 ──
   const tableScrollRef = useRef<HTMLDivElement>(null);
@@ -4742,6 +4964,11 @@ export function DemoDashboard() {
                           : undefined
                       }
                       focus={mapFocus ?? undefined}
+                      sitePolygon={siteParcel ?? undefined}
+                      zones={dangerZones}
+                      canManage={canAdminMenu}
+                      onCreateZone={createDangerZone}
+                      onDeleteZone={removeDangerZone}
                       trail={
                         trailWorkerId
                           ? {
@@ -4947,7 +5174,27 @@ export function DemoDashboard() {
         />
       )}
 
-      {activeGeofenceAlert && !activeSos && !activeFallAlert && !activeVitalAlert && (
+      {activeZoneAlert && !activeSos && !activeFallAlert && !activeVitalAlert && (
+        <GeofenceAlertModal
+          kind="entry"
+          zoneName={activeZoneAlert.zone.name}
+          sample={activeZoneAlert.sample}
+          distM={activeZoneAlert.distM}
+          radiusM={activeZoneAlert.zone.radiusM}
+          onDismiss={dismissZoneAlert}
+          onAcknowledge={() => acknowledgeAlert(activeZoneAlert.sample, "danger_zone")}
+          onShowMap={() => {
+            showAlertOnMap(activeZoneAlert.sample);
+            dismissZoneAlert();
+          }}
+        />
+      )}
+
+      {activeGeofenceAlert &&
+        !activeSos &&
+        !activeFallAlert &&
+        !activeVitalAlert &&
+        !activeZoneAlert && (
         <GeofenceAlertModal
           sample={activeGeofenceAlert.sample}
           distM={activeGeofenceAlert.distM}
@@ -5545,19 +5792,22 @@ const ALERT_LABEL: Record<string, string> = {
   fall: "낙상 감지",
   vital: "생체 위험",
   geofence: "구획 이탈",
+  danger_zone: "위험구역 진입",
 };
-// 미대응 알림 카드/아이콘 톤 — SOS 레드 / 낙상 앰버 / 생체 위험 로즈 / 구획 이탈 오렌지.
+// 미대응 알림 카드/아이콘 톤 — SOS 레드 / 낙상 앰버 / 생체 위험 로즈 / 구획 이탈·위험구역 진입 오렌지.
 const ALERT_UNACK_CARD: Record<string, string> = {
   sos: "border-[#dc2626]/30 bg-[#dc2626]/[0.06] dark:border-[#dc2626]/40 dark:bg-[#dc2626]/[0.10]",
   fall: "border-[#f59e0b]/35 bg-[#f59e0b]/[0.08] dark:border-[#f59e0b]/40 dark:bg-[#f59e0b]/[0.10]",
   vital: "border-[#e11d48]/30 bg-[#e11d48]/[0.06] dark:border-[#e11d48]/40 dark:bg-[#e11d48]/[0.10]",
   geofence: "border-[#f97316]/35 bg-[#f97316]/[0.08] dark:border-[#f97316]/40 dark:bg-[#f97316]/[0.10]",
+  danger_zone: "border-[#f97316]/35 bg-[#f97316]/[0.08] dark:border-[#f97316]/40 dark:bg-[#f97316]/[0.10]",
 };
 const ALERT_UNACK_ICON: Record<string, string> = {
   sos: "text-semantic-down",
   fall: "text-amber-600 dark:text-amber-400",
   vital: "text-rose-600 dark:text-rose-400",
   geofence: "text-orange-600 dark:text-orange-400",
+  danger_zone: "text-orange-600 dark:text-orange-400",
 };
 
 function fmtAlertTime(iso: string): string {
@@ -5737,6 +5987,16 @@ function AlertTypeIcon({ type }: { type: string }) {
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
         <circle cx="12" cy="10" r="3" />
+      </svg>
+    );
+  }
+  if (type === "danger_zone") {
+    // octagon-alert (위험구역 진입)
+    return (
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M7.86 2h8.28L22 7.86v8.28L16.14 22H7.86L2 16.14V7.86L7.86 2Z" />
+        <path d="M12 8v4" />
+        <path d="M12 16h.01" />
       </svg>
     );
   }

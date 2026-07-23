@@ -82,6 +82,72 @@ export function cadastralTileUrl(z: number, y: number, x: number): string {
   );
 }
 
+// ── 필지 경계 폴리곤 (연속지적도 GetFeature) ──
+// 좌표가 속한 필지의 외곽 링을 반환. Referer 필수 실측(무 Referer=INCORRECT_KEY, 2026-07 프로브).
+export type ParcelResult =
+  | { ok: true; ring: { lat: number; lon: number }[]; addr: string }
+  | { ok: false };
+
+const PARCEL_TTL_MS = 6 * 60 * 60 * 1000;
+const parcelCache = new Map<string, { at: number; result: ParcelResult }>();
+
+export async function fetchParcelPolygon(lat: number, lon: number): Promise<ParcelResult> {
+  if (!vworldConfigured()) return { ok: false };
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return { ok: false };
+  const cacheKey = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+  const cached = parcelCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < PARCEL_TTL_MS) return cached.result;
+
+  const url =
+    "https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LP_PA_CBND_BUBUN" +
+    `&key=${KEY}&geomFilter=POINT(${lon} ${lat})&geometry=true&format=json&size=1&crs=EPSG:4326`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { Referer: REGISTERED_REFERER },
+      cache: "no-store",
+    });
+    if (!res.ok) return { ok: false };
+    const json = (await res.json()) as {
+      response?: {
+        status?: string;
+        result?: {
+          featureCollection?: {
+            features?: {
+              geometry?: { type?: string; coordinates?: unknown };
+              properties?: { addr?: string };
+            }[];
+          };
+        };
+      };
+    };
+    const r = json.response;
+    const feature = r?.result?.featureCollection?.features?.[0];
+    if (r?.status !== "OK" || !feature?.geometry) return { ok: false };
+    // MultiPolygon: coordinates[폴리곤][링][점][lon,lat] — 첫 폴리곤 외곽 링만 사용.
+    const coords = feature.geometry.coordinates as number[][][][] | number[][][];
+    const rawRing = feature.geometry.type === "MultiPolygon"
+      ? (coords as number[][][][])[0]?.[0]
+      : (coords as number[][][])[0];
+    if (!Array.isArray(rawRing) || rawRing.length < 4) return { ok: false };
+    const ring: { lat: number; lon: number }[] = [];
+    for (const pt of rawRing) {
+      const [plon, plat] = pt;
+      if (!Number.isFinite(plat) || !Number.isFinite(plon)) return { ok: false };
+      ring.push({ lat: plat as number, lon: plon as number });
+    }
+    const result: ParcelResult = { ok: true, ring, addr: feature.properties?.addr ?? "" };
+    parcelCache.set(cacheKey, { at: Date.now(), result }); // 실패는 캐시하지 않음
+    return result;
+  } catch {
+    return { ok: false };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // 업스트림 타일 fetch — WMS Referer 검증 포함(WMTS 에도 무해).
 export async function fetchTile(url: string): Promise<{ body: ArrayBuffer; contentType: string } | null> {
   const controller = new AbortController();

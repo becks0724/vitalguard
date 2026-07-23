@@ -271,6 +271,17 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 
+    -- 위험구역(진입 금지 존) — 지도에서 관리자가 등록(중심+반경), 작업자 진입 시 경보.
+    CREATE TABLE IF NOT EXISTS danger_zone (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      lat DOUBLE PRECISION NOT NULL,
+      lon DOUBLE PRECISION NOT NULL,
+      radius_m INTEGER NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     CREATE TABLE IF NOT EXISTS aed_inspections (
       id SERIAL PRIMARY KEY,
       aed_id TEXT NOT NULL,
@@ -1217,8 +1228,47 @@ export async function listWorkerTrack(
   return rows;
 }
 
-// ── 알림 이력(SOS/낙상/생체 위험/구획 이탈) ────────────────────────────────
-export type AlertType = "sos" | "fall" | "vital" | "geofence";
+// ── 위험구역(진입 금지 존) ─────────────────────────────────────────────────
+export type DangerZoneRow = {
+  id: number;
+  name: string;
+  lat: number;
+  lon: number;
+  radius_m: number;
+  created_by: string | null;
+  created_at: string;
+};
+
+export async function listDangerZones(): Promise<DangerZoneRow[]> {
+  const { rows } = await q<DangerZoneRow>(
+    "SELECT id, name, lat, lon, radius_m, created_by, created_at FROM danger_zone ORDER BY id ASC",
+  );
+  return rows;
+}
+
+export async function createDangerZone(input: {
+  name: string;
+  lat: number;
+  lon: number;
+  radiusM: number;
+  createdBy?: string | null;
+}): Promise<DangerZoneRow> {
+  const { rows } = await q<DangerZoneRow>(
+    `INSERT INTO danger_zone (name, lat, lon, radius_m, created_by)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, lat, lon, radius_m, created_by, created_at`,
+    [input.name, input.lat, input.lon, input.radiusM, input.createdBy ?? null],
+  );
+  return rows[0]!;
+}
+
+export async function deleteDangerZone(id: number): Promise<boolean> {
+  const { rowCount } = await q("DELETE FROM danger_zone WHERE id = $1", [id]);
+  return rowCount > 0;
+}
+
+// ── 알림 이력(SOS/낙상/생체 위험/구획 이탈/위험구역 진입) ───────────────────
+export type AlertType = "sos" | "fall" | "vital" | "geofence" | "danger_zone";
 
 export type AlertRow = {
   id: number;
