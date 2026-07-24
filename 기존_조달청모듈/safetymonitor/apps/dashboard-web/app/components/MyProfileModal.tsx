@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CARRIERS, MVNO_NETS, composeCarrier, parseCarrier } from "../../lib/carriers";
 import { ALLOWED_COMPANIES } from "../../lib/companies";
+import { GUARDIAN_RELATIONS, composeGuardian, parseGuardian } from "../../lib/guardian";
 import { getSessionToken } from "./LoginGate";
 
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
@@ -65,7 +66,9 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [department, setDepartment] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [employeeId, setEmployeeId] = useState("");
-  const [guardianName, setGuardianName] = useState("");
+  const [guardianPersonName, setGuardianPersonName] = useState("");
+  const [guardianRelation, setGuardianRelation] = useState(""); // 프리셋 관계 or '기타'
+  const [guardianRelationCustom, setGuardianRelationCustom] = useState(""); // '기타' 선택 시 직접 입력
   const [guardianPhone, setGuardianPhone] = useState("");
   const [prefix, setPrefix] = useState("010");
   const [mid, setMid] = useState("");
@@ -118,7 +121,10 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setDepartment(p.department ?? "");
         setJobTitle(p.job_title ?? "");
         setEmployeeId(p.employee_id ?? "");
-        setGuardianName(p.guardian_name ?? "");
+        const g = parseGuardian(p.guardian_name);
+        setGuardianPersonName(g.name);
+        setGuardianRelation(g.relation);
+        setGuardianRelationCustom(g.custom);
         setGuardianPhone(p.guardian_phone ?? "");
         const pc = parseCarrier(p.carrier);
         setCarrierBase(pc.base);
@@ -188,7 +194,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           department: department.trim(),
           jobTitle: jobTitle.trim(),
           employeeId: employeeId.trim(),
-          guardianName: guardianName.trim(),
+          guardianName: composeGuardian(guardianPersonName, guardianRelation, guardianRelationCustom),
           guardianPhone: guardianPhone.trim(),
           ...(newPw ? { currentPassword: curPw, newPassword: newPw } : {}),
         }),
@@ -207,7 +213,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, guardianName, guardianPhone, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, guardianPersonName, guardianRelation, guardianRelationCustom, guardianPhone, curPw, newPw, newPw2]);
 
   return (
     <div
@@ -405,15 +411,41 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                 </p>
                 <div className="mt-2 space-y-1.5">
                   <label className="block">
-                    <span className={LBL}>보호자 이름 / 관계</span>
+                    <span className={LBL}>보호자 이름</span>
                     <input
-                      value={guardianName}
-                      onChange={(e) => setGuardianName(e.target.value)}
-                      placeholder="예) 김보호 (배우자)"
-                      maxLength={40}
+                      value={guardianPersonName}
+                      onChange={(e) => setGuardianPersonName(e.target.value)}
+                      placeholder="예) 김보호"
+                      maxLength={30}
                       className={FIELD}
                     />
                   </label>
+                  <label className="block">
+                    <span className={LBL}>관계</span>
+                    <select
+                      value={guardianRelation}
+                      onChange={(e) => setGuardianRelation(e.target.value)}
+                      style={SELECT_CHEVRON}
+                      className={SELECT_FULL}
+                    >
+                      <option value="">관계 선택</option>
+                      {GUARDIAN_RELATIONS.map((r) => (
+                        <option key={r} value={r}>
+                          {r === "기타" ? "기타 (직접 입력)" : r}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {guardianRelation === "기타" && (
+                    <input
+                      value={guardianRelationCustom}
+                      onChange={(e) => setGuardianRelationCustom(e.target.value)}
+                      placeholder="관계 직접 입력 (예: 이모)"
+                      maxLength={20}
+                      className={FIELD}
+                      aria-label="관계 직접 입력"
+                    />
+                  )}
                   <label className="block">
                     <span className={LBL}>보호자 전화번호</span>
                     <input
