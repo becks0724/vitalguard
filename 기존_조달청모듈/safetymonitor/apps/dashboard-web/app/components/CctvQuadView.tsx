@@ -264,7 +264,7 @@ function CameraTile({
       onKeyDown={(e) => {
         if ((e.key === "Enter" || e.key === " ") && !editing) onSelect();
       }}
-      className="group relative flex min-h-0 cursor-pointer flex-col overflow-hidden rounded-lg border border-hairline bg-zinc-900 text-left transition hover:border-white/40 hover:ring-1 hover:ring-white/30 dark:border-white/10"
+      className="group relative flex min-h-0 cursor-pointer flex-col overflow-hidden border border-transparent bg-zinc-900 text-left transition hover:border-white/40 hover:ring-1 hover:ring-white/30"
     >
       {/* 상단 위치 항목 — 이름 ✎ 수정 + (AI) 연결 토글 */}
       <div className="flex shrink-0 items-center justify-between gap-2 bg-black/40 px-2.5 py-1.5 text-xs text-zinc-100">
@@ -724,7 +724,7 @@ export function CctvQuadView({ canManage }: { canManage: boolean }) {
           {canManage ? "이름 ✎ 수정 · " : ""}클릭 확대 · AI 타일 연결 ON/OFF
         </span>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-4 grid-rows-2 gap-2 p-3">
+      <div className="grid min-h-0 flex-1 grid-cols-4 grid-rows-2 gap-px bg-white/10">
         {CAMERAS.map((cam) => (
           <CameraTile
             key={cam.id}
