@@ -1733,6 +1733,12 @@ function HeaderCalendarPopup({
   const [lightbox, setLightbox] = useState<CalendarMedia | null>(null);
   // 초기 일정·라벨 로드 완료 플래그 — 로드 전엔 라벨 서버 반영(PUT) 보류
   const [hydrated, setHydrated] = useState(false);
+  // 플로팅 창 드래그 위치(기본 위치 대비 translate 오프셋). null = 기본(우상단). 열 때마다 리셋.
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragStart = useRef<
+    { px: number; py: number; x: number; y: number; baseLeft: number; baseTop: number; w: number; h: number } | null
+  >(null);
 
   // 미디어 조회 레이스 가드 — 빠른 월 이동 시 느린 이전 달 응답이 현재 달을 덮지 않게 최신 요청만 commit.
   const mediaFetchSeqRef = useRef(0);
@@ -2120,6 +2126,7 @@ function HeaderCalendarPopup({
     setFormDate(null);
     setPlanOpen(false);
     setHoverDateKey(null);
+    setDragPos(null); // 열 때마다 기본 위치로 리셋
   }, [open]);
 
   useEffect(() => {
@@ -2134,14 +2141,47 @@ function HeaderCalendarPopup({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, formDate]);
 
-  useEffect(() => {
-    if (!open) return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prevOverflow;
+  // 헤더 드래그 — 플로팅 창 자유 이동(pointer capture). 버튼 위 클릭은 드래그 시작 안 함(액션 보존).
+  const onDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    const base = dragPos ?? { x: 0, y: 0 };
+    const rect = panelRef.current?.getBoundingClientRect();
+    dragStart.current = {
+      px: e.clientX,
+      py: e.clientY,
+      x: base.x,
+      y: base.y,
+      baseLeft: (rect?.left ?? 0) - base.x,
+      baseTop: (rect?.top ?? 0) - base.y,
+      w: rect?.width ?? 580,
+      h: rect?.height ?? 500,
     };
-  }, [open]);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = dragStart.current;
+    if (!s) return;
+    let nx = s.x + (e.clientX - s.px);
+    let ny = s.y + (e.clientY - s.py);
+    // 화면 밖으로 완전히 못 나가게 clamp — 좌우 최소 160px·헤더(상단 48px)는 항상 보이게.
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const left = s.baseLeft + nx;
+    const top = s.baseTop + ny;
+    const clampedLeft = Math.min(vw - 160, Math.max(160 - s.w, left));
+    const clampedTop = Math.min(vh - 48, Math.max(8, top));
+    nx += clampedLeft - left;
+    ny += clampedTop - top;
+    setDragPos({ x: nx, y: ny });
+  };
+  const onDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStart.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* 이미 해제됨 */
+    }
+  };
 
   if (!open) return null;
 
@@ -2266,18 +2306,21 @@ function HeaderCalendarPopup({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 overflow-hidden bg-black/25 backdrop-blur-[2px]"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="일정 캘린더"
-    >
+    <div className="pointer-events-none fixed inset-0 z-50">
       <div
-        className="absolute bottom-4 right-4 top-[4.5rem] flex w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark sm:top-20"
-        onClick={(e) => e.stopPropagation()}
+        ref={panelRef}
+        className="pointer-events-auto absolute right-4 top-[4.5rem] flex max-h-[calc(100dvh-6rem)] w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark sm:top-20"
+        style={dragPos ? { transform: `translate(${dragPos.x}px, ${dragPos.y}px)` } : undefined}
+        role="dialog"
+        aria-label="일정 캘린더"
       >
-        <div className="flex shrink-0 items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+        <div
+          className="flex shrink-0 cursor-grab touch-none select-none items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 active:cursor-grabbing dark:border-white/10 dark:bg-surface-dark-elevated"
+          onPointerDown={onDragPointerDown}
+          onPointerMove={onDragPointerMove}
+          onPointerUp={onDragPointerUp}
+          onPointerCancel={onDragPointerUp}
+        >
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark">
               <svg
