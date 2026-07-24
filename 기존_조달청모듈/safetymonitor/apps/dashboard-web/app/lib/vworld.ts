@@ -66,6 +66,16 @@ export function baseTileUrl(z: number, y: number, x: number): string {
   return `https://api.vworld.kr/req/wmts/1.0.0/${KEY}/Base/${z}/${y}/${x}.png`;
 }
 
+// 항공사진(위성) WMTS — 국토부 정사영상. Esri(국내 z18 안정)보다 고해상·z19 까지 더 확대. jpeg.
+export function satelliteTileUrl(z: number, y: number, x: number): string {
+  return `https://api.vworld.kr/req/wmts/1.0.0/${KEY}/Satellite/${z}/${y}/${x}.jpeg`;
+}
+
+// 항공사진 위 지명·경계 라벨 오버레이(Hybrid, 투명 png) — 위성만으론 안 보이는 지명 보강.
+export function hybridTileUrl(z: number, y: number, x: number): string {
+  return `https://api.vworld.kr/req/wmts/1.0.0/${KEY}/Hybrid/${z}/${y}/${x}.png`;
+}
+
 // 연속지적도(lp_pa_cbnd_bubun) WMS GetMap — 타일 xyz → EPSG:3857 BBOX 환산.
 export function cadastralTileUrl(z: number, y: number, x: number): string {
   const n = 2 ** z;

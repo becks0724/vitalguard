@@ -60,11 +60,12 @@ function worldYToLat(y: number, z: number): number {
   return Math.atan(Math.sinh(n)) / D2R;
 }
 
-// 현장 스케일 — 확대 상한 z18(Esri 국내 위성 안정 커버리지), 초기 프레이밍은 z17 캡(주변 맥락 확보).
+// 현장 스케일 — 베이스맵별 확대 상한. Esri 위성/VWorld 지적도는 국내 z18 안정, VWorld 항공사진은 z19 까지 더 확대.
+// 초기 프레이밍은 z17 캡(주변 맥락 확보).
 const MIN_Z = 5;
-const MAX_Z = 18;
+const MODE_MAX_Z = { sat: 18, air: 19, cad: 18 } as const;
 const FIT_MAX_Z = 17;
-const clampZoom = (z: number) => Math.max(MIN_Z, Math.min(MAX_Z, z));
+const clampZoom = (z: number, maxZ: number) => Math.max(MIN_Z, Math.min(maxZ, z));
 
 // Esri 타일(키 불필요). 위성 = World_Imagery(jpeg), 라벨 = 경계·지명 오버레이(투명 png). URL은 {z}/{y}/{x}.
 const SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile";
@@ -130,8 +131,8 @@ export function WorkerGpsMap({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // 수신 상태 펼침 패널 — 칩 클릭 토글, 지도 드래그 시작 시 닫힘.
   const [statusOpen, setStatusOpen] = useState(false);
-  // 베이스맵 모드 — sat: Esri 위성(기본) / cad: VWorld 베이스 + 연속지적도 오버레이(서버 프록시).
-  const [baseMode, setBaseMode] = useState<"sat" | "cad">("sat");
+  // 베이스맵 모드 — sat: Esri 위성(기본) / air: VWorld 항공사진(국내 고해상·z19) / cad: VWorld 베이스 + 연속지적도.
+  const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("sat");
   // 위험구역 배치 모드 — "＋ 위험구역" 클릭 → 지도 클릭으로 중심 지정 → 이름·반경 폼.
   const [placingZone, setPlacingZone] = useState(false);
   const [zoneDraft, setZoneDraft] = useState<{ lat: number; lon: number } | null>(null);
@@ -149,6 +150,14 @@ export function WorkerGpsMap({
   const sizeRef = useRef({ w: 0, h: 0 });
   viewRef.current = view;
   sizeRef.current = size;
+  // 현재 베이스맵의 확대 상한 미러 — 휠 줌·commit 이 최신값을 읽어 모드별 상한을 적용한다.
+  const maxZRef = useRef<number>(MODE_MAX_Z.sat);
+  maxZRef.current = MODE_MAX_Z[baseMode];
+
+  // 베이스맵 전환 시 현재 줌이 새 모드 상한을 넘으면 내린다(Esri 는 z19 타일이 없어 공백 방지).
+  useEffect(() => {
+    setView((v) => (v && v.zoom > MODE_MAX_Z[baseMode] ? { ...v, zoom: MODE_MAX_Z[baseMode] } : v));
+  }, [baseMode]);
 
   useEffect(() => {
     const el = ref.current;
@@ -211,12 +220,12 @@ export function WorkerGpsMap({
     fittedRef.current = true;
     setView({
       center: { lat: focus.lat, lon: focus.lon },
-      zoom: clampZoom(Math.max(viewRef.current?.zoom ?? FIT_MAX_Z, FIT_MAX_Z)),
+      zoom: clampZoom(Math.max(viewRef.current?.zoom ?? FIT_MAX_Z, FIT_MAX_Z), maxZRef.current),
     });
   }, [focus, size]);
 
   const commit = useCallback((center: { lat: number; lon: number }, zoom: number) => {
-    setView({ center, zoom: clampZoom(zoom) });
+    setView({ center, zoom: clampZoom(zoom, maxZRef.current) });
   }, []);
 
   // 휠 줌(커서 기준) — native 리스너로 passive:false(페이지 스크롤 방지).
@@ -236,7 +245,7 @@ export function WorkerGpsMap({
       const tly = latToWorldY(v.center.lat, z) - s.h / 2;
       const lon = worldXToLon(tlx + sx, z);
       const lat = worldYToLat(tly + sy, z);
-      const nz = clampZoom(z + (e.deltaY < 0 ? 1 : -1));
+      const nz = clampZoom(z + (e.deltaY < 0 ? 1 : -1), maxZRef.current);
       if (nz === z) return;
       // 커서 지점(lon,lat)이 같은 화면 좌표에 오도록 새 center 계산.
       const ncx = lonToWorldX(lon, nz) - sx + s.w / 2;
@@ -427,12 +436,23 @@ export function WorkerGpsMap({
       >
         {tiles.map((t) => {
           const style = { left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" as const };
-          return baseMode === "sat" ? (
-            <span key={t.key}>
-              <img src={`${SAT}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
-              <img src={`${REF}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-80" style={style} />
-            </span>
-          ) : (
+          if (baseMode === "sat") {
+            return (
+              <span key={t.key}>
+                <img src={`${SAT}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
+                <img src={`${REF}/${t.z}/${t.y}/${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-80" style={style} />
+              </span>
+            );
+          }
+          if (baseMode === "air") {
+            return (
+              <span key={t.key}>
+                <img src={`/api/vworld-tile?kind=satellite&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
+                <img src={`/api/vworld-tile?kind=hybrid&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-90" style={style} />
+              </span>
+            );
+          }
+          return (
             <span key={t.key}>
               <img src={`/api/vworld-tile?kind=base&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute" style={style} />
               <img src={`/api/vworld-tile?kind=cadastral&z=${t.z}&y=${t.y}&x=${t.x}`} alt="" width={TILE} height={TILE} draggable={false} className="absolute opacity-90" style={style} />
@@ -753,15 +773,16 @@ export function WorkerGpsMap({
           <div className="flex overflow-hidden rounded-lg bg-black/55 text-[11px] font-semibold text-white backdrop-blur">
             {(
               [
-                { mode: "sat", label: "위성" },
-                { mode: "cad", label: "지적도" },
+                { mode: "sat", label: "위성", title: "Esri 위성지도(전세계)" },
+                { mode: "air", label: "항공", title: "국토교통부 VWorld 항공사진 — 국내 고해상·z19 까지 더 확대" },
+                { mode: "cad", label: "지적도", title: "VWorld 베이스맵 + 연속지적도(필지 경계)" },
               ] as const
             ).map((b) => (
               <button
                 key={b.mode}
                 type="button"
                 onClick={() => setBaseMode(b.mode)}
-                title={b.mode === "sat" ? "Esri 위성지도" : "VWorld 베이스맵 + 연속지적도(필지 경계)"}
+                title={b.title}
                 className={`px-2.5 py-1 ${baseMode === b.mode ? "bg-primary text-on-primary" : "hover:bg-black/75"}`}
               >
                 {b.label}
@@ -829,7 +850,11 @@ export function WorkerGpsMap({
 
         {/* 출처 + 수신 상태 칩(클릭 시 작업자별 목록 펼침) */}
         <div className="absolute bottom-1.5 left-2 z-20 rounded bg-black/45 px-1.5 py-0.5 text-[9px] text-zinc-300">
-          {baseMode === "sat" ? "위성지도 © Esri World Imagery" : "지적도 © 국토교통부 VWorld"}
+          {baseMode === "sat"
+            ? "위성지도 © Esri World Imagery"
+            : baseMode === "air"
+              ? "항공사진 © 국토교통부 VWorld"
+              : "지적도 © 국토교통부 VWorld"}
         </div>
         <button
           type="button"

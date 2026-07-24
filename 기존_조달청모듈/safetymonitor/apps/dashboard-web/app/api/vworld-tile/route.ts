@@ -2,32 +2,46 @@
 // <img> 태그 소비라 무인증(공개 지도 타일·비민감, 레이더 프록시와 동일 정책). 키·Referer 는 서버에서만 부착.
 import { NextResponse } from "next/server";
 
-import { baseTileUrl, cadastralTileUrl, fetchTile, vworldConfigured } from "../../lib/vworld";
+import {
+  baseTileUrl,
+  cadastralTileUrl,
+  fetchTile,
+  hybridTileUrl,
+  satelliteTileUrl,
+  vworldConfigured,
+} from "../../lib/vworld";
 
 export const dynamic = "force-dynamic";
 
 const MIN_Z = 5;
-const MAX_Z = 18;
+// 항공사진(satellite/hybrid)은 z19 까지 서빙 — base/cadastral 은 컴포넌트에서 z18 이하로만 요청.
+const MAX_Z = 19;
+const TILE_URL = {
+  base: baseTileUrl,
+  cadastral: cadastralTileUrl,
+  satellite: satelliteTileUrl,
+  hybrid: hybridTileUrl,
+} as const;
 
 export async function GET(request: Request) {
   if (!vworldConfigured()) {
     return NextResponse.json({ ok: false, error: "VWORLD_KEY 미설정" }, { status: 503 });
   }
   const sp = new URL(request.url).searchParams;
-  const kind = sp.get("kind");
+  const kind = sp.get("kind") ?? "";
   const z = Number(sp.get("z"));
   const x = Number(sp.get("x"));
   const y = Number(sp.get("y"));
   const n = 2 ** z;
   if (
-    (kind !== "base" && kind !== "cadastral") ||
+    !(kind in TILE_URL) ||
     !Number.isInteger(z) || z < MIN_Z || z > MAX_Z ||
     !Number.isInteger(x) || x < 0 || x >= n ||
     !Number.isInteger(y) || y < 0 || y >= n
   ) {
     return NextResponse.json({ ok: false, error: "invalid tile params" }, { status: 400 });
   }
-  const tile = await fetchTile(kind === "base" ? baseTileUrl(z, y, x) : cadastralTileUrl(z, y, x));
+  const tile = await fetchTile(TILE_URL[kind as keyof typeof TILE_URL](z, y, x));
   if (!tile) {
     return NextResponse.json({ ok: false, error: "upstream tile fail" }, { status: 502 });
   }
