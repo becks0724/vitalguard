@@ -17,6 +17,8 @@ export type DemoProfile = {
   department: string | null;
   job_title: string | null;
   employee_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
   admin_access: boolean;
 };
 
@@ -39,6 +41,8 @@ function seed(): Map<string, DemoEntry> {
           department: "안전관리팀",
           job_title: "현장 안전관리자",
           employee_id: null,
+          guardian_name: null,
+          guardian_phone: null,
           admin_access: false,
         },
       },

@@ -39,6 +39,8 @@ type Profile = {
   department: string | null;
   job_title: string | null;
   employee_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
 };
 
 // 저장된 연락처를 3박스로 역분해(숫자만 추출 → 접두 3 / 끝 4 / 중간).
@@ -63,6 +65,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [department, setDepartment] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [employeeId, setEmployeeId] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
   const [prefix, setPrefix] = useState("010");
   const [mid, setMid] = useState("");
   const [last, setLast] = useState("");
@@ -114,6 +118,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setDepartment(p.department ?? "");
         setJobTitle(p.job_title ?? "");
         setEmployeeId(p.employee_id ?? "");
+        setGuardianName(p.guardian_name ?? "");
+        setGuardianPhone(p.guardian_phone ?? "");
         const pc = parseCarrier(p.carrier);
         setCarrierBase(pc.base);
         setMvno(pc.mvno);
@@ -144,6 +150,11 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     }
     if (!phoneValid) {
       setError("연락처를 올바르게 입력해주세요.");
+      return;
+    }
+    // 보호자는 선택 — 전화번호를 입력한 경우에만 형식 검증(연락처와 동일 규칙).
+    if (guardianPhone.trim() && !/^[0-9+\-\s]{7,20}$/.test(guardianPhone.trim())) {
+      setError("보호자 전화번호를 올바르게 입력해주세요.");
       return;
     }
     if (newPw || curPw || newPw2) {
@@ -177,6 +188,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           department: department.trim(),
           jobTitle: jobTitle.trim(),
           employeeId: employeeId.trim(),
+          guardianName: guardianName.trim(),
+          guardianPhone: guardianPhone.trim(),
           ...(newPw ? { currentPassword: curPw, newPassword: newPw } : {}),
         }),
       });
@@ -194,7 +207,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, guardianName, guardianPhone, curPw, newPw, newPw2]);
 
   return (
     <div
@@ -378,6 +391,42 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                   )}
                 </div>
               </label>
+
+              <div className="rounded-lg border border-hairline p-2.5 dark:border-white/10">
+                {/* 보호자 연락처(선택) — 등록 시 SOS/낙상 알람에서 본인 사번 매칭으로 표출. */}
+                <span className="text-xs font-semibold text-ink dark:text-on-dark">
+                  보호자 연락처{" "}
+                  <span className="font-normal text-muted dark:text-on-dark-soft">
+                    (선택)
+                  </span>
+                </span>
+                <p className="mt-0.5 text-[11px] text-muted dark:text-on-dark-soft">
+                  SOS·낙상 알람 시 관제 대시보드에서 보호자에게 전화·문자를 발신합니다.
+                </p>
+                <div className="mt-2 space-y-1.5">
+                  <label className="block">
+                    <span className={LBL}>보호자 이름 / 관계</span>
+                    <input
+                      value={guardianName}
+                      onChange={(e) => setGuardianName(e.target.value)}
+                      placeholder="예) 김보호 (배우자)"
+                      maxLength={40}
+                      className={FIELD}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={LBL}>보호자 전화번호</span>
+                    <input
+                      value={guardianPhone}
+                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      placeholder="010-1234-5678"
+                      inputMode="tel"
+                      maxLength={20}
+                      className={FIELD}
+                    />
+                  </label>
+                </div>
+              </div>
 
               <div className="rounded-lg border border-hairline p-2.5 dark:border-white/10">
                 {/* 비밀번호 변경 — 기본 접힘(선택 항목이라 한 화면 레이아웃 위해 펼침 토글). */}

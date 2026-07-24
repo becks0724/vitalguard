@@ -509,6 +509,9 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
+    -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_phone TEXT;
 
     -- 클라우드 브릿지 — 앱 OCR 미디어(이미지/영상)를 날짜에 매칭해 캘린더에 표시.
     -- 스토리지 비종속: media_url(표시용)만 채워도 동작, provider/key는 Phase 2(오브젝트 스토리지) 보강.
@@ -2260,6 +2263,8 @@ export type UserRow = {
   department: string | null;
   job_title: string | null;
   employee_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
   admin_access: boolean;
   created_at: string;
   approved_at: string | null;
@@ -2372,22 +2377,26 @@ export async function updateUserProfile(
     department: string | null;
     jobTitle: string | null;
     employeeId: string | null;
+    guardianName: string | null;
+    guardianPhone: string | null;
     passwordHash?: string;
   },
 ): Promise<UserRow | null> {
   if (input.passwordHash !== undefined) {
     const { rows } = await q<UserRow>(
       `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4,
-         department = $5, job_title = $6, employee_id = $7, password_hash = $8
-       WHERE username = $9 RETURNING *`,
-      [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, input.passwordHash, username],
+         department = $5, job_title = $6, employee_id = $7,
+         guardian_name = $8, guardian_phone = $9, password_hash = $10
+       WHERE username = $11 RETURNING *`,
+      [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, input.guardianName, input.guardianPhone, input.passwordHash, username],
     );
     return rows[0] ?? null;
   }
   const { rows } = await q<UserRow>(
-    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, department = $5, job_title = $6, employee_id = $7
-     WHERE username = $8 RETURNING *`,
-    [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, username],
+    `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4, department = $5, job_title = $6, employee_id = $7,
+       guardian_name = $8, guardian_phone = $9
+     WHERE username = $10 RETURNING *`,
+    [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, input.guardianName, input.guardianPhone, username],
   );
   return rows[0] ?? null;
 }

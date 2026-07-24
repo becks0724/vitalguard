@@ -3271,6 +3271,8 @@ export function DemoDashboard() {
     jobTitle: string | null;
     employeeId: string | null;
     username: string | null;
+    guardianName: string | null;
+    guardianPhone: string | null;
   } | null>(null);
   // 내 정보 수정 진입 전 비밀번호 게이트(step-up 인증) — 공용 관제 화면 무단 조회·수정 방지.
   const [profileGateOpen, setProfileGateOpen] = useState(false);
@@ -3292,6 +3294,8 @@ export function DemoDashboard() {
                   jobTitle: p.job_title ?? null,
                   employeeId: p.employee_id ?? null,
                   username: p.username ?? null,
+                  guardianName: p.guardian_name ?? null,
+                  guardianPhone: p.guardian_phone ?? null,
                 }
               : null,
           );
@@ -3300,6 +3304,21 @@ export function DemoDashboard() {
       .catch(() => {});
   }, []);
   const canAdminMenu = role === "owner" || adminAccess;
+  // 내 정보에 등록한 본인 보호자 — 알람 작업자 사번(employeeId)이 로그인 회원 본인 사번과
+  // 일치하고 샘플에 보호자가 없을 때만 채운다. 폰 발신값·데모 목록은 그대로 우선하며,
+  // 본인 계정 등록값만 쓰므로 다른 작업자·회원의 보호자는 노출되지 않는다.
+  const withMyGuardian = useCallback(
+    (sample: VitalSample): VitalSample => {
+      const myEmp = loginInfo?.employeeId?.trim();
+      const gName = loginInfo?.guardianName?.trim();
+      if (!myEmp || !gName) return sample;
+      if (sample.guardianName) return sample;
+      if ((sample.employeeId ?? "").trim() !== myEmp) return sample;
+      const gPhone = loginInfo?.guardianPhone?.trim();
+      return { ...sample, guardianName: gName, guardianPhone: gPhone || undefined };
+    },
+    [loginInfo],
+  );
   const [siteInfo, setSiteInfo] = useState<SiteInfo>(DEFAULT_SITE_INFO);
   const [lastAccidentTs, setLastAccidentTs] = useState<string | null>(null);
   // 작업자 표 슬라이딩 모드 — auto: 세로 자동 슬라이딩 / manual: 정지 + 드래그 정렬
@@ -5296,7 +5315,7 @@ export function DemoDashboard() {
 
       {activeSos && (
         <SosAlertModal
-          sample={activeSos}
+          sample={withMyGuardian(activeSos)}
           region={siteRegion}
           onDismiss={dismissSos}
           onContact={recordAccident}
@@ -5310,7 +5329,7 @@ export function DemoDashboard() {
 
       {activeFallAlert && !activeSos && (
         <SosAlertModal
-          sample={activeFallAlert}
+          sample={withMyGuardian(activeFallAlert)}
           reason="fall"
           region={siteRegion}
           onDismiss={dismissFallAlert}
@@ -5325,7 +5344,7 @@ export function DemoDashboard() {
 
       {activeVitalAlert && !activeSos && !activeFallAlert && (
         <SosAlertModal
-          sample={activeVitalAlert}
+          sample={withMyGuardian(activeVitalAlert)}
           reason="vital"
           region={siteRegion}
           onDismiss={dismissVitalAlert}

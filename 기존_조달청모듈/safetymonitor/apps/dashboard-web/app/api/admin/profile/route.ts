@@ -51,6 +51,8 @@ export async function GET(request: Request) {
       department: u.department,
       job_title: u.job_title,
       employee_id: u.employee_id,
+      guardian_name: u.guardian_name,
+      guardian_phone: u.guardian_phone,
       admin_access: u.admin_access,
     },
   });
@@ -89,6 +91,8 @@ export async function POST(request: Request) {
       department?: unknown;
       jobTitle?: unknown;
       employeeId?: unknown;
+      guardianName?: unknown;
+      guardianPhone?: unknown;
     };
     if (typeof d.name !== "string" || typeof d.company !== "string" || typeof d.phone !== "string") {
       return NextResponse.json({ ok: false, error: "입력 형식 오류" }, { status: 400 });
@@ -104,6 +108,10 @@ export async function POST(request: Request) {
     if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
       return NextResponse.json({ ok: false, error: "연락처 형식이 올바르지 않습니다." }, { status: 400 });
     }
+    const gPhoneRaw = typeof d.guardianPhone === "string" ? d.guardianPhone.trim() : "";
+    if (gPhoneRaw && !/^[0-9+\-\s]{7,20}$/.test(gPhoneRaw)) {
+      return NextResponse.json({ ok: false, error: "보호자 전화번호 형식이 올바르지 않습니다." }, { status: 400 });
+    }
     updateDemoProfile(session.username, {
       name: nm.slice(0, 60),
       company: co.slice(0, 100),
@@ -112,6 +120,8 @@ export async function POST(request: Request) {
       department: typeof d.department === "string" && d.department.trim() ? d.department.trim().slice(0, 40) : null,
       job_title: typeof d.jobTitle === "string" && d.jobTitle.trim() ? d.jobTitle.trim().slice(0, 40) : null,
       employee_id: typeof d.employeeId === "string" && d.employeeId.trim() ? d.employeeId.trim().slice(0, 40) : null,
+      guardian_name: typeof d.guardianName === "string" && d.guardianName.trim() ? d.guardianName.trim().slice(0, 40) : null,
+      guardian_phone: gPhoneRaw ? gPhoneRaw.slice(0, 20) : null,
     });
     return NextResponse.json({ ok: true, message: "내 정보가 수정됐습니다." });
   }
@@ -127,7 +137,7 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { name, company, phone, carrier, department, jobTitle, employeeId, currentPassword, newPassword } =
+  const { name, company, phone, carrier, department, jobTitle, employeeId, guardianName, guardianPhone, currentPassword, newPassword } =
     (body ?? {}) as {
       name?: unknown;
       company?: unknown;
@@ -136,6 +146,8 @@ export async function POST(request: Request) {
       department?: unknown;
       jobTitle?: unknown;
       employeeId?: unknown;
+      guardianName?: unknown;
+      guardianPhone?: unknown;
       currentPassword?: unknown;
       newPassword?: unknown;
     };
@@ -164,6 +176,15 @@ export async function POST(request: Request) {
   if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
     return NextResponse.json(
       { ok: false, error: "연락처 형식이 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+  // 보호자(선택) — 전화번호가 있으면 연락처와 동일 형식 검증. 이름/전화 모두 미입력 허용.
+  const gName = typeof guardianName === "string" ? guardianName.trim() : "";
+  const gPhone = typeof guardianPhone === "string" ? guardianPhone.trim() : "";
+  if (gPhone && !/^[0-9+\-\s]{7,20}$/.test(gPhone)) {
+    return NextResponse.json(
+      { ok: false, error: "보호자 전화번호 형식이 올바르지 않습니다." },
       { status: 400 },
     );
   }
@@ -217,6 +238,8 @@ export async function POST(request: Request) {
     department: dept ? dept.slice(0, 40) : null,
     jobTitle: title ? title.slice(0, 40) : null,
     employeeId: empId ? empId.slice(0, 40) : null,
+    guardianName: gName ? gName.slice(0, 40) : null,
+    guardianPhone: gPhone ? gPhone.slice(0, 20) : null,
     passwordHash,
   });
   if (!updated) {
