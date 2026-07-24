@@ -44,6 +44,7 @@ import {
   type HazardDailyForecast,
   type HazardSeverity,
 } from "../lib/calendar-hazard";
+import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-schedule";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
 import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
@@ -699,6 +700,16 @@ type CalendarEvent = {
 };
 
 // 옛 localStorage 키 — 서버 승격 후에는 1회 마이그레이션 원본·서버 조회 실패 시 읽기 폴백으로만 사용.
+// 설비 점검 자동 일정 마커(서버 /api/inspection-schedule 응답) — 읽기 전용.
+type CalendarInspectionMarker = {
+  deviceId: string;
+  loc: string;
+  item: InspectionItem;
+  dueDateKey: string;
+  dueDays: number;
+  severity: "normal" | "caution" | "danger";
+};
+
 const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
 const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
 // localStorage → 서버 1회 마이그레이션 완료 플래그(브라우저별).
@@ -798,6 +809,34 @@ function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
       hazardType: typeof r.hazard_type === "string" ? r.hazard_type : undefined,
       createdBy: typeof r.created_by === "string" ? r.created_by : undefined,
     }));
+}
+
+// 설비 점검 스케줄 응답 → dateKey별 마커 맵. 형식 불량 행은 버림.
+async function inspectionMapFromResponse(
+  res: Response,
+): Promise<Record<string, CalendarInspectionMarker[]> | null> {
+  const json = (await res.json()) as { ok?: boolean; markers?: unknown[] };
+  if (!json.ok || !Array.isArray(json.markers)) return null;
+  const map: Record<string, CalendarInspectionMarker[]> = {};
+  for (const raw of json.markers) {
+    const m = raw as Record<string, unknown>;
+    const dateKey = typeof m.dueDateKey === "string" ? m.dueDateKey : "";
+    const item = m.item === "battery" || m.item === "pad" ? m.item : null;
+    const sev =
+      m.severity === "danger" || m.severity === "caution" || m.severity === "normal"
+        ? m.severity
+        : null;
+    if (!dateKey || !item || !sev || typeof m.dueDays !== "number") continue;
+    (map[dateKey] ??= []).push({
+      deviceId: typeof m.deviceId === "string" ? m.deviceId : "",
+      loc: typeof m.loc === "string" ? m.loc : "",
+      item,
+      dueDateKey: dateKey,
+      dueDays: m.dueDays,
+      severity: sev,
+    });
+  }
+  return map;
 }
 
 function loadCalendarEvents(): CalendarEvent[] {
@@ -1682,6 +1721,8 @@ function HeaderCalendarPopup({
   >({});
   // 현장 시·도 발효 기상특보 type 목록("강풍주의보" 등) — 오늘 위험작업 일정 경고 합성용.
   const [activeWarningTypes, setActiveWarningTypes] = useState<string[]>([]);
+  // 설비 점검 자동 일정(AED 교환주기) — dateKey → 마커(읽기 전용·서버 파생). 편집 불가.
+  const [inspectionByDate, setInspectionByDate] = useState<Record<string, CalendarInspectionMarker[]>>({});
   // 클라우드 브릿지 — dateKey → 앱 OCR 미디어(서버 조회). 댓글 작성 드래프트(mediaId→입력값) + 편집 중 댓글.
   const [mediaByDate, setMediaByDate] = useState<Record<string, CalendarMedia[]>>({});
   // 현장 사진(앱 OCR) 수동 새로고침 진행 표시 — 아이콘 회전용.
@@ -1764,9 +1805,13 @@ function HeaderCalendarPopup({
     const token = getSessionToken();
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
     try {
-      const [evRes, lbRes] = await Promise.all([
+      // 설비 점검 자동 일정은 보조 항목 — 실패해도 events/labels 본기능은 유지(별도 catch).
+      const [evRes, lbRes, inspRes] = await Promise.all([
         fetch(`/api/calendar/events?from=${from}&to=${to}`, { cache: "no-store", headers }),
         fetch("/api/calendar/labels", { cache: "no-store", headers }),
+        fetch(`/api/inspection-schedule?from=${from}&to=${to}`, { cache: "no-store", headers }).catch(
+          () => null,
+        ),
       ]);
       if (!evRes.ok || !lbRes.ok) return null;
       const evJson = (await evRes.json()) as { ok?: boolean; events?: unknown[] };
@@ -1776,9 +1821,11 @@ function HeaderCalendarPopup({
       }
       const serverEvents = calendarEventsFromServer(evJson.events);
       const serverLabels = calendarLabelsFromServer(lbJson.labels);
+      const inspByDate = inspRes && inspRes.ok ? await inspectionMapFromResponse(inspRes) : null;
       if (seq === scheduleFetchSeqRef.current) {
         setEvents(serverEvents);
         setLabels(serverLabels.length > 0 ? serverLabels : DEFAULT_LABELS);
+        if (inspByDate) setInspectionByDate(inspByDate);
       }
       return { labelCount: serverLabels.length };
     } catch {
@@ -2140,6 +2187,7 @@ function HeaderCalendarPopup({
 
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
   const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
+  const selectedInspections = inspectionByDate[toDateKey(selected)] ?? [];
   const weekKeys = weekDateKeys(selected);
   const weeklyPlanEvents = weekKeys.flatMap((key) =>
     (eventsByDate[key] ?? []).map((e) => ({ ...e, dateKey: key })),
@@ -2428,6 +2476,15 @@ function HeaderCalendarPopup({
                 if (!w) return acc;
                 return w.severity === "danger" || acc === "danger" ? "danger" : "caution";
               }, null);
+              // 설비 점검 예정(AED 교환주기) — 그 날 마커의 worst severity(없으면 null).
+              const dayInspections = inspectionByDate[dateKey] ?? [];
+              const dayInspSev = dayInspections.some((m) => m.severity === "danger")
+                ? "danger"
+                : dayInspections.some((m) => m.severity === "caution")
+                  ? "caution"
+                  : dayInspections.length > 0
+                    ? "normal"
+                    : null;
 
               return (
                 <button
@@ -2552,6 +2609,26 @@ function HeaderCalendarPopup({
                     </span>
                   )}
                   <div className="mt-0.5 flex flex-1 flex-col gap-0.5 overflow-hidden">
+                    {dayInspSev && (
+                      <span
+                        className={[
+                          "flex min-w-0 items-center gap-0.5 truncate rounded px-1 text-[8px] font-semibold leading-tight",
+                          isSelected
+                            ? "bg-white/20 text-white"
+                            : dayInspSev === "danger"
+                              ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+                              : dayInspSev === "caution"
+                                ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
+                                : "bg-surface-strong text-muted dark:bg-white/10 dark:text-on-dark-soft",
+                        ].join(" ")}
+                        title={`설비 점검 예정 ${dayInspections.length}건`}
+                      >
+                        <svg viewBox="0 0 24 24" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                        </svg>
+                        점검 {dayInspections.length}
+                      </span>
+                    )}
                     {sortCalendarEventsByTime(dayEvents).slice(0, 2).map((event) => (
                       <CalendarEventChip
                         key={event.id}
@@ -2652,6 +2729,49 @@ function HeaderCalendarPopup({
                 <p className="text-[11px] text-muted dark:text-on-dark-soft">등록된 일정이 없습니다.</p>
               )}
             </div>
+
+            {selectedInspections.length > 0 && (
+              <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+                <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                  </svg>
+                  설비 점검 예정 {selectedInspections.length}건
+                </p>
+                <div className="space-y-1">
+                  {selectedInspections.map((m) => (
+                    <div
+                      key={`${m.deviceId}-${m.item}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-hairline bg-canvas px-2.5 py-1.5 dark:border-white/10 dark:bg-surface-dark"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-ink dark:text-on-dark">
+                          {INSPECTION_ITEM_LABEL[m.item]}
+                        </p>
+                        <p className="truncate text-[10px] text-muted dark:text-on-dark-soft">
+                          {m.deviceId} · {m.loc}
+                        </p>
+                      </div>
+                      <span
+                        className={[
+                          "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                          m.severity === "danger"
+                            ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
+                            : m.severity === "caution"
+                              ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
+                              : "bg-surface-strong text-muted dark:bg-white/10 dark:text-on-dark-soft",
+                        ].join(" ")}
+                      >
+                        {m.dueDays < 0 ? `${-m.dueDays}일 경과` : m.dueDays === 0 ? "오늘" : `D-${m.dueDays}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1.5 text-[9px] leading-snug text-muted dark:text-on-dark-soft">
+                  교환 주기 기반 자동 표시(AED 배터리 48·패드 24개월) — 현장 NFC 점검 태깅 시 다음 예정일이 자동 갱신됩니다.
+                </p>
+              </div>
+            )}
 
             {selectedMedia.length > 0 && (
               <div className="rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
