@@ -1,0 +1,5 @@
+# 낙상 이벤트 라벨 — 한 줄 = 후보 이벤트 1건. 01-db-audit.mjs 최근 목록에서 candidate_id 대조.
+# primary_label: work_impact | trip_samelevel | fall_height
+# severity_label: recovered | collapsed | (work_impact 은 공백)
+# 아래 헤더 다음 줄부터 실제 라벨 append. 주석(#)·빈 줄은 무시됨.
+fall_candidate_id,primary_label,motion_subtype,severity_label,wrist,subject_id,collection,note

@@ -1,0 +1,293 @@
+<!doctype html><html lang='ko'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>낙상 ML 재설계 계획</title><style>
+:root{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#e2e2e6;--accent:#2563eb;--code:#f4f4f6;--th:#f0f4ff;--warn:#b45309}
+@media(prefers-color-scheme:dark){:root{--bg:#16171a;--fg:#e6e6e8;--muted:#9a9aa2;--line:#2c2d31;--accent:#6ea8ff;--code:#24252a;--th:#1e2430;--warn:#e0a94a}}
+:root[data-theme=dark]{--bg:#16171a;--fg:#e6e6e8;--muted:#9a9aa2;--line:#2c2d31;--accent:#6ea8ff;--code:#24252a;--th:#1e2430;--warn:#e0a94a}
+:root[data-theme=light]{--bg:#fff;--fg:#1a1a1a;--muted:#666;--line:#e2e2e6;--accent:#2563eb;--code:#f4f4f6;--th:#f0f4ff;--warn:#b45309}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",sans-serif;line-height:1.6;max-width:920px;margin:0 auto;padding:32px 24px 80px}
+h1{font-size:1.7rem;margin:1.4em 0 .5em;padding-bottom:.3em;border-bottom:2px solid var(--accent)}
+h2{font-size:1.3rem;margin:1.5em 0 .5em;color:var(--accent)}
+h3{font-size:1.08rem;margin:1.2em 0 .4em}
+p{margin:.5em 0}
+code{background:var(--code);padding:.12em .4em;border-radius:4px;font-size:.88em;font-family:"SF Mono",Menlo,monospace}
+pre{background:var(--code);padding:14px 16px;border-radius:8px;overflow-x:auto}
+pre code{background:none;padding:0}
+blockquote{border-left:3px solid var(--accent);margin:.8em 0;padding:.3em 1em;color:var(--muted);background:var(--code);border-radius:0 6px 6px 0}
+ul{margin:.5em 0;padding-left:1.4em}
+li{margin:.25em 0}
+hr{border:none;border-top:1px solid var(--line);margin:1.5em 0}
+hr.docsep{border-top:3px double var(--accent);margin:3em 0}
+table{border-collapse:collapse;width:100%;margin:1em 0;font-size:.92rem;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--th);font-weight:600;white-space:nowrap}
+strong{font-weight:600}
+</style></head><body><h1>낙상 ML 재설계 — 팀 계획표</h1>
+
+<blockquote>문제: 낙상 ML 수집 샘플에 약충격(비낙상 저강도 충격)이 과다해 클래스 가중치가 학습되지 않음.</blockquote>
+<blockquote>진단 교정(리서치 결론): 표본수 문제가 아니라 <strong>정상 동작과 낙상의 특징 공간이 겹치는(support-overlap) 문제</strong>.</blockquote>
+<blockquote>근거 리서치 전문: <code>dist/fall-detection-hf-models/index.html</code> (STORM 5관점·출처 70여 건).</blockquote>
+
+<h2>핵심 통찰 3줄</h2>
+
+<ul>
+<li>망치질과 낙상을 가르는 결정 변수는 심박·SpO₂가 아니라 <strong>회전 각속도(<code>peak_rotation_rad_s</code>)</strong> — 이미 스키마·DB에 존재.</li>
+<li>심박 특징(<code>hr_delta_peak</code> 등)은 망치/낙상 게이트가 아니라 <strong>넘어짐→쓰러짐 심각도</strong> 판정 계층에 쓴다.</li>
+<li>진짜 블로커는 <strong>라벨(동작 종류) 부재</strong> — DB 검증으로 교정됨(아래).</li>
+</ul>
+
+<h2>DB 현황 검증 결과 (2026-07-24, <code>01-db-audit.mjs</code>)</h2>
+
+<p>당초 &quot;회전값이 합성상수 7로 고정&quot; 우려는 <strong>틀렸다</strong>. 실측 결과:</p>
+<ul>
+<li>낙상 후보 <strong>3,985건</strong>, <code>peak_rotation_rad_s</code> <strong>distinct 1,707개</strong>로 분산(1.1~44.8 rad/s). 합성상수 아님.</li>
+<li>단, 대부분 <strong>mock 데이터</strong>(worker_id 가 <code>EMP-admin*</code>, <code>motion_still_sec</code> 전부 1.2/1.5 고정, <code>fall_decision</code> 전부 <code>fall</code>) → 값은 다양하나 <strong>랜덤 생성이지 실측 gyro 아님</strong>, 그리고 <strong>동작 종류 라벨이 전혀 없음</strong>.</li>
+<li><code>accel_magnitude_g</code> 평균 4.05(2.8~18.25) — 저G(약충격) 다수로 &quot;약충격 과다&quot; 문제와 일치.</li>
+<li><strong>결론</strong>: 블로커는 &quot;회전 데이터 없음&quot;이 아니라 <strong>&quot;scripted 라벨된 실측 데이터 없음&quot;</strong>. 실기기로 망치질 vs 넘어짐을 라벨해 수집하는 게 핵심.</li>
+</ul>
+
+<h2>3분류 + 심각도 라벨 체계</h2>
+
+<table><thead><tr><th>축</th><th>값</th><th>결정 변수</th></tr></thead><tbody><tr><td>주 라벨(층2)</td><td><code>work_impact</code>(작업충격·일상, 음성) / <code>trip_samelevel</code>(넘어짐) / <code>fall_height</code>(추락)</td><td><code>peak_rotation_rad_s</code>, <code>freefall_preceded</code>, <code>motion_still_sec</code>, <code>accel_magnitude_g</code></td></tr><tr><td>심각도(층3)</td><td><code>recovered</code>(회복) / <code>collapsed</code>(쓰러짐)</td><td><code>hr_delta_peak</code>, <code>hr_post_peak_30s</code>, <code>motion_still_sec</code></td></tr></tbody></table>
+
+<h2>계층형 판정 구조 (최종 목표)</h2>
+
+<pre><code>[충격 경로]
+층1  고G·자유낙하 게이트(기존 v4 유지)         ← accel_magnitude_g, freefall_preceded
+  └→ 통과한 후보만
+층2  회전 기반 3분류                             ← peak_rotation_rad_s (규칙 or 소형 ML)
+  └→ 넘어짐/추락으로 분류되면
+층3  심박+회복으로 쓰러짐 승격                   ← hr_delta_*, motion_still_sec (B4 회복수집 연결)
+
+[무충격 경로] ← 실신·서서히 쓰러짐 (03-syncope-layer.md 통합)
+층1&#x27;  저G + 장시간 무동작 + 자세변화 → no_impact_collapse   ← fall.ts 고G 게이트 비종속 독립 계층
+  + SOS &quot;어지러움&quot; 자기신고 채널, + 열맥락(WBGT·체온) AND 무동작 결합
+     둘 다 → 공통 응답 루프: 무동작 확인 → 취소 or 무응답 → 관제 escalation</code></pre>
+
+<blockquote>실신 계층 상세·라벨 확장·이 시스템의 천장(혈압 못 재므로 혈압주도형·무전조 심장성 실신 불가)은</blockquote>
+<blockquote><strong><code>03-syncope-layer.md</code></strong> 참조. 낙상 재라벨링(P1)에 실신 클래스를 함께 라벨한다.</blockquote>
+
+<h2>단계표</h2>
+
+<table><thead><tr><th>단계</th><th>목표</th><th>완료 검증</th><th>선후</th><th>워치 필요?</th></tr></thead><tbody><tr><td>P0 라벨 설계</td><td>3분류+심각도 정의 확정</td><td><code>01-label-spec.md</code> 팀 합의</td><td>즉시</td><td>✗</td></tr><tr><td><strong>P1 실측 수집</strong> ⚠블로커</td><td>실제 회전 데이터 확보</td><td><code>peak_rotation_rad_s</code> 세션마다 실측(합성상수 7 아님)+클래스별 표본</td><td>P0 후</td><td><strong>✓ 워치</strong></td></tr><tr><td>P2 분리 검증 🚦게이트</td><td>회전이 실제로 가르는지</td><td><code>(accelG × rotation)</code> 산점도 분리 확인</td><td>P1 후</td><td>✗(P1 데이터로)</td></tr><tr><td>P3 재라벨링+테스트셋</td><td>깨끗한 평가 기반</td><td>subject-disjoint 테스트셋+지표 2개 정의</td><td>P2 통과 후</td><td>✗</td></tr><tr><td>P4 계층형 판정기</td><td>3층 구조 구현</td><td>고정 테스트셋서 현행 대비 오탐↓·재현율 유지</td><td>P3 후</td><td>✗</td></tr><tr><td>P5 HF 백본 A/B(선택)</td><td>표현학습 이득 검증</td><td>두 지표 동시 개선 시만 채택</td><td>P3 후 병렬</td><td>✗</td></tr></tbody></table>
+
+<h2>워치 없이 지금 가능한 것 (이번 작업 범위)</h2>
+
+<ul>
+<li>✅ P0 라벨 정의서 (<code>01-label-spec.md</code>)</li>
+<li>✅ P1 수집 각본·기록지 (<code>02-collection-protocol.md</code>) — 워치 오면 바로 실행</li>
+<li>✅ DB 현황 검증 스크립트 (<code>scripts/fall-ml/01-db-audit.mjs</code>) — 합성상수 문제 실증</li>
+<li>✅ P2 분리 검증 EDA 스크립트 (<code>scripts/fall-ml/02-separation-eda.mjs</code>) — 데이터 오면 바로 실행</li>
+</ul>
+
+<h2>워치 오면 즉시 할 일 (재개 지점)</h2>
+
+<ul>
+<li><code>02-collection-protocol.md</code> 파일럿(2명×각 클래스 20건) scripted 수집 — <strong>동작 종류를 알고 수집</strong></li>
+<li><code>node scripts/fall-ml/01-db-audit.mjs</code> → 최근 후보 목록에서 <code>fall_candidate_id</code> 확인</li>
+<li><code>docs/fall-ml-relabel/labels.csv</code> 에 이벤트별 라벨 append(각본이라 확정적)</li>
+<li><code>node scripts/fall-ml/02-separation-eda.mjs</code> → 회전 임계 분리 정확도로 <strong>P2 게이트 판정</strong>(≥85% 면 P3 진행)</li>
+</ul>
+
+<blockquote>주의: 기존 mock 후보 3,985건은 라벨·실측이 아니므로 학습·평가에서 제외(labels.csv 에 안 넣으면 자동 제외).</blockquote>
+
+<h2>버릴 것 (지금 즉시, 비용 0)</h2>
+
+<ul>
+<li>클래스 가중치·focal loss·SMOTE 조합 탐색 중단. 문헌상 회수 안 됨(리서치 학자·회의론자 관점). 그 시간을 P1 수집으로.</li>
+</ul>
+
+<hr class="docsep">
+<h1>P0 — 라벨 정의서 (조작적 정의)</h1>
+
+<blockquote>목적: 팀원 누가 라벨해도 같은 결과가 나오도록 &quot;무엇을 보고 어떤 라벨을 붙이는지&quot;를 문장으로 고정.</blockquote>
+<blockquote>라벨 단위 = 충격 후보 이벤트 1건(<code>fall_candidate_id</code>). 원시 시계열이 아니라 이벤트당 1행.</blockquote>
+
+<h2>1. 주 라벨 (층2 · 3-class)</h2>
+
+<table><thead><tr><th>라벨 값</th><th>한글</th><th>정의 (이것을 보면 이 라벨)</th><th>대표 예시</th></tr></thead><tbody><tr><td><code>work_impact</code></td><td>작업충격·일상(음성)</td><td>몸통이 지면으로 넘어가지 않음. 충격이 손·팔에 국소적이거나 반복적. 동작 후 곧바로 원래 자세 복귀</td><td>망치질, 공구 내려놓기, 계단 내려디딤, 뛰기/점프, 팔 크게 휘두름, 문·물건 세게 다룸</td></tr><tr><td><code>trip_samelevel</code></td><td>넘어짐(동일평면)</td><td>같은 바닥에서 미끄러지거나 걸려 몸통이 지면 쪽으로 회전. 종료 시 눕거나 주저앉은 자세</td><td>걸려 넘어짐, 미끄러짐, 헛디딤</td></tr><tr><td><code>fall_height</code></td><td>추락(높이)</td><td>높이차(계단·발판·개구부)에서 떨어짐. 자유낙하 구간 선행 후 큰 충격</td><td>사다리·비계에서 떨어짐, 개구부 추락</td></tr></tbody></table>
+
+<h3>경계 판정 규칙 (헷갈릴 때)</h3>
+<ul>
+<li><strong>몸통 회전 여부</strong>가 1차 기준: 손목만 움직였으면 <code>work_impact</code>, 몸이 넘어갔으면 <code>trip</code>/<code>fall</code>.</li>
+<li><code>trip</code> vs <code>fall</code>: 높이차·자유낙하 있으면 <code>fall_height</code>, 같은 평면이면 <code>trip_samelevel</code>.</li>
+<li>연기(각본) 수집은 <strong>수행자가 무슨 동작을 했는지 이미 알고 있으므로</strong> 라벨이 확정적. 자연 수집분만 영상·상황으로 판정 필요.</li>
+</ul>
+
+<h3>무충격 경로(실신) 라벨 — 03-syncope-layer.md 통합</h3>
+<p>충격이 약하거나 없는 쓰러짐은 위 3분류와 <strong>다른 축</strong>이다(고G 게이트 비종속). 함께 라벨한다:</p>
+
+<table><thead><tr><th>primary_label</th><th>정의</th><th>결정 신호</th></tr></thead><tbody><tr><td><code>presyncope</code></td><td>의식 있는 전조(어지럼·시야흐림·메스꺼움)</td><td>SOS 자기신고 / 사후 문진</td></tr><tr><td><code>no_impact_collapse</code></td><td>충격 없이 주저앉음·미끄러짐·기댐 후 무동작</td><td>저G + 장시간 무동작 + 자세변화</td></tr><tr><td><code>post_event_immobility</code></td><td>사건(충격/무충격) 후 지속 무동작</td><td>motion_still_sec 지속</td></tr><tr><td><code>non_event_immobility</code></td><td>정상 무동작(휴식·앉은작업·기대기, 음성)</td><td>취소됨 / 정상 맥락</td></tr></tbody></table>
+
+<p>신호품질 라벨(별도 축): <code>ppg_dropout</code>, <code>device_off_body</code> — PPG 끊김을 서맥으로 오해 금지.</p>
+
+<h2>2. 심각도 라벨 (층3 · 이진, trip/fall 에만)</h2>
+
+<table><thead><tr><th>라벨 값</th><th>한글</th><th>정의</th></tr></thead><tbody><tr><td><code>recovered</code></td><td>회복</td><td>충격 후 스스로 기립·이동. <code>motion_still_sec</code> 짧음</td></tr><tr><td><code>collapsed</code></td><td>쓰러짐</td><td>충격 후 계속 정지(무회복). 실신·온열질환 의심. <code>motion_still_sec</code> 지속</td></tr></tbody></table>
+
+<ul>
+<li><code>work_impact</code> 은 심각도 라벨 없음(공백).</li>
+<li>각본 수집 시 <strong>양성의 약 1/3은 <code>collapsed</code> 연기</strong>(넘어진 뒤 계속 누워 있기)로 층3 정답 확보.</li>
+</ul>
+
+<h2>3. 이벤트당 메타데이터 (라벨과 함께 기록)</h2>
+
+<table><thead><tr><th>필드</th><th>값</th><th>이유</th></tr></thead><tbody><tr><td><code>fall_candidate_id</code></td><td>UUID (DB 자동)</td><td>수집된 특징 행과 연결</td></tr><tr><td><code>primary_label</code></td><td>위 3-class</td><td>층2 정답</td></tr><tr><td><code>motion_subtype</code></td><td>음성이면 세부동작(hammer/tool_drop/stairs/jump/arm_swing/…)</td><td>음성 다양성 커버 확인</td></tr><tr><td><code>severity_label</code></td><td>recovered/collapsed/(공백)</td><td>층3 정답</td></tr><tr><td><code>wrist</code></td><td>left/right</td><td>손목 좌우 회전 부호 차이 보정</td></tr><tr><td><code>subject_id</code></td><td>EMP-…</td><td>subject-disjoint 분리 필수</td></tr><tr><td><code>collection</code></td><td>scripted/natural</td><td>라벨 신뢰도 구분</td></tr><tr><td><code>note</code></td><td>자유</td><td>특이사항</td></tr></tbody></table>
+
+<h2>4. 라벨 저장 위치 (설계)</h2>
+
+<ul>
+<li>특징(feature)은 이미 <code>vital_samples</code>(DB)에 <code>fall_candidate_id</code> 로 존재.</li>
+<li>라벨은 <strong>별도 파일</strong>로 관리(코드·DB 변경 없이 시작): <code>docs/fall-ml-relabel/labels.csv</code></li>
+  <li>헤더: <code>fall_candidate_id,primary_label,motion_subtype,severity_label,wrist,subject_id,collection,note</code></li>
+  <li>EDA 스크립트가 이 CSV 와 DB 특징을 <code>fall_candidate_id</code> 로 조인.</li>
+<li>(선택·후순위) 규모가 커지면 <code>fall_labels</code> 테이블 신설. 지금은 CSV 가 가장 싼 시작.</li>
+</ul>
+
+<h2>5. 하지 말 것</h2>
+
+<ul>
+<li>G값(세기)만으로 라벨 붙이지 말 것 — 망치질도 고G가 나온다. <strong>동작(사건)</strong> 으로 라벨.</li>
+<li>자연 수집분 전수 라벨 금지 — 게이트 통과한 경계 샘플만.</li>
+<li>합성상수(<code>peak_rotation_rad_s=7</code> 고정) 세션은 라벨 대상 제외 — <code>note</code> 에 <code>synthetic</code> 표기 후 학습 배제.</li>
+</ul>
+
+<hr class="docsep">
+<h1>P1 — 실측 수집 각본 &amp; 기록지</h1>
+
+<blockquote>워치가 준비되면 이 문서대로 수집. 파일럿 → P2 분리 확인 → 본 수집 순서.</blockquote>
+<blockquote>안전 최우선: 추락 연기는 반드시 크래시매트·저높이.</blockquote>
+
+<h2>수집 전 체크 (블로커 확인)</h2>
+
+<ul>
+<li>워치 앱이 <code>peak_rotation_rad_s</code> 를 <strong>실측 gyro</strong> 로 채우는지 확인 — <code>simulateFall</code> 합성상수(=7) 아님.</li>
+<li><code>node scripts/fall-ml/01-db-audit.mjs</code> 로 최근 수신 회전값이 세션마다 다른지 검증.</li>
+  <li>값이 전부 7이면 → 워치 펌웨어가 아직 합성상수. 실측 활성화 후 재시도(수집 무의미).</li>
+</ul>
+
+<h2>단계 1 — 파일럿 (P2 게이트용, 최소)</h2>
+
+<p>목적: &quot;회전이 정말 망치질과 넘어짐을 가르는가&quot;를 산점도로 확인. 본 수집 전 낭비 방지.</p>
+
+<table><thead><tr><th>작업자</th><th>work_impact</th><th>trip_samelevel</th><th>계</th></tr></thead><tbody><tr><td>2명</td><td>각 20건(망치질 10·공구충격/계단 10)</td><td>각 20건(앞·옆·뒤)</td><td>80건</td></tr></tbody></table>
+
+<p>→ <code>node scripts/fall-ml/02-separation-eda.mjs</code> 실행 → 분리 보이면 단계 2, 안 보이면 중단·변수 재검토.</p>
+
+<h2>단계 2 — 본 수집 (P2 통과 후)</h2>
+
+<p>작업자당 목표(≥3명, 권장 5명, 좌우 손 모두):</p>
+
+<table><thead><tr><th>클래스</th><th>작업자당</th><th>세부</th></tr></thead><tbody><tr><td><code>work_impact</code>(음성)</td><td>60건+</td><td>동작 6종 × 각 10건+: 망치질·공구충격·계단내려딛기·점프·팔휘두름·물건다룸</td></tr><tr><td><code>trip_samelevel</code>(넘어짐)</td><td>30건+</td><td>앞·옆·뒤 방향 섞기, 매트 위</td></tr><tr><td><code>fall_height</code>(추락)</td><td>15건+</td><td>저높이·크래시매트, <strong>안전 최우선·무리 금지</strong></td></tr></tbody></table>
+
+<p>심각도: 양성(trip+fall)의 약 1/3은 <code>collapsed</code>(넘어진 뒤 계속 누워 있기) 연기.</p>
+
+<h3>합계 목표</h3>
+<ul>
+<li>3명 최소: 음성 ~180 / 넘어짐 ~90 / 추락 ~45 (양성 ~135)</li>
+<li>5명 권장: 음성 ~300 / 넘어짐 ~150 / 추락 ~75 (양성 ~225)</li>
+</ul>
+
+<h3>개수의 진짜 기준</h3>
+<p>위 숫자는 공학적 목표치. <strong>실제 충분 여부는 P2 산점도가 판정</strong>한다:</p>
+<ul>
+<li>20건만으로 회전축에서 깨끗이 갈리면 → 위 숫자면 충분.</li>
+<li>겹치면 → 개수↑ 또는 변수 추가(방향변화 각도 등). 파일럿으로 먼저 확인.</li>
+</ul>
+
+<h2>기록지 양식 (세션당 1행씩 labels.csv 에 append)</h2>
+
+<pre><code>fall_candidate_id,primary_label,motion_subtype,severity_label,wrist,subject_id,collection,note
+&lt;DB에서 확인&gt;,work_impact,hammer,,left,EMP-6861,scripted,파일럿
+&lt;DB에서 확인&gt;,trip_samelevel,,recovered,left,EMP-6861,scripted,앞방향
+&lt;DB에서 확인&gt;,trip_samelevel,,collapsed,left,EMP-6861,scripted,옆방향·무회복연기</code></pre>
+
+<ul>
+<li><code>fall_candidate_id</code> 는 수집 직후 <code>01-db-audit.mjs</code> 가 최근 후보 목록을 타임스탬프순으로 출력하므로 대조해 채운다.</li>
+<li>각본 수집은 &quot;이 세션은 망치질&quot; 을 이미 아니까 라벨이 확정적 — 기록지에 옮겨 적는 수준.</li>
+</ul>
+
+<h2>안전 규칙</h2>
+
+<ul>
+<li>추락 연기: 크래시매트 필수, 낮은 높이부터, 부족분은 넘어짐으로 대체. 개수보다 안전 우선.</li>
+<li>넘어짐 연기: 매트 위, 방향 바꿔가며. 무릎·손목 보호대 권장.</li>
+<li>작업자 피로 시 중단. 하루 세션 분할.</li>
+</ul>
+
+<hr class="docsep">
+<h1>P-SYNC — 실신·무충격 붕괴 계층 (낙상 계획 통합)</h1>
+
+<blockquote>출처 리서치: <code>dist/syncope-collapse-detection/index.html</code> (STORM 5관점·임상 1차 문헌 70여 건).</blockquote>
+<blockquote>이 문서는 <code>00-plan.md</code>의 낙상 3분류 계획에 &quot;충격 없는 쓰러짐(실신)&quot; 계층을 얹는다.</blockquote>
+
+<h2>왜 별도 계층인가 (코드로 확인)</h2>
+
+<p><code>packages/analyzers/src/fall.ts:18-21</code> — 낙상 감지는 <strong><code>accel ≥ 임계 AND still ≥ 임계</code></strong> 로,</p>
+<p>고G 충격과 무동작을 <strong>동시에</strong> 요구한다. 실신·서서히 주저앉음은 충격이 약하거나 없어 이 게이트를</p>
+<p><strong>원리적으로 통과하지 못한다.</strong> 게다가 <code>detectFall</code>은 死코드(CLAUDE.md: 실동작은 워치 <code>fallDetected</code></p>
+<p>플래그)라, 실신 감지는 &quot;기존 무동작 알람 재사용&quot;이 아니라 **고G에 종속되지 않는 독립 무동작 감시</p>
+<p>계층을 새로 만드는 것**이다. (동료평가 &quot;가장 약한 고리&quot;의 코드 검증 결과)</p>
+
+<h2>핵심 결론 (리서치 5관점 수렴)</h2>
+
+<ul>
+<li>실신은 단일 이벤트가 아니라 <strong>상태 사슬</strong>: 전조 → 자세 붕괴 → 무동작 → 응답 실패.</li>
+<li>검증된 종착 구조는 <strong>무동작 감지 + 사용자 취소 + 관제 응답 루프</strong>(PERS 50년·상용 4사 수렴).</li>
+<li>손목 PPG로 실신 &quot;예측&quot;은 함정 — 실신 순간 말초 저관류로 PPG 신호가 붕괴. 예측은 예방 알람 보조층으로만, 자동 출동엔 금지.</li>
+<li>단일 심박 임계(서맥)로는 못 가름 — 혈압 주도형·열실신을 놓침.</li>
+</ul>
+
+<h2>★ 이 시스템의 명시적 천장 (과대약속 방지)</h2>
+
+<p>우리는 <strong>혈압·뇌관류를 측정하지 못한다</strong>(손목 IMU+PPG만). 따라서:</p>
+<ul>
+<li><strong>혈압 주도형 실신</strong>(서맥 없이 저혈압), <strong>무전조 심장성 실신</strong>(수 초 내 방실차단)은 <strong>원리적으로 감지 불가</strong>.</li>
+<li>목표는 &quot;실신 완벽 감지&quot;가 아니라 <strong>&quot;무응답 사건을 놓치지 않기&quot;</strong>.</li>
+<li>표현도 &quot;실신 확정&quot;이 아니라 <strong>&quot;무응답/무충격 붕괴 감지&quot;</strong>로 낮춘다(의료기기 규제·법적 책임 회피).</li>
+</ul>
+
+<h2>라벨 확장 (01-label-spec.md 에 추가)</h2>
+
+<p>기존 낙상 3분류(작업충격/넘어짐/추락)에 <strong>충격 없는 경로</strong>를 별도 축으로 추가:</p>
+
+<table><thead><tr><th>primary_label</th><th>정의</th><th>결정 신호</th></tr></thead><tbody><tr><td><code>presyncope</code></td><td>의식 있는 전조(어지럼·시야흐림·메스꺼움) — 자기 신고 or 사후 문진</td><td>SOS 자기신고, HR/HRV 이상(신호품질 양호 시)</td></tr><tr><td><code>no_impact_collapse</code></td><td>충격 없이 주저앉음·미끄러짐·기댐 후 무동작</td><td>저G + 장시간 무동작 + 자세 변화</td></tr><tr><td><code>post_event_immobility</code></td><td>사건(충격/무충격) 후 지속 무동작</td><td>motion_still_sec 지속</td></tr><tr><td><code>non_event_immobility</code></td><td>정상 무동작(휴식·앉은작업·기대기) — 음성</td><td>취소됨 / 정상 맥락</td></tr></tbody></table>
+
+<p>신호품질 라벨(별도): <code>ppg_dropout</code>, <code>device_off_body</code> — PPG 끊김을 &quot;서맥&quot;으로 오해 방지.</p>
+<p>심각도(기존과 공유): <code>recovered</code> / <code>collapsed</code>.</p>
+
+<h2>계층 구조 (통합 최종)</h2>
+
+<pre><code>[충격 경로]  고G 게이트 → 회전 3분류(작업충격/넘어짐/추락)      ← 기존 낙상 계획 P0~P4
+[무충격 경로] 저G + 장시간 무동작 + 자세변화 → no_impact_collapse  ← 신설 독립 계층
+     둘 다 ↓
+공통 응답 루프:  무동작 확인 프롬프트 → 취소 or 무응답 → 관제 escalation
+     +
+자기신고 채널:   SOS 버튼 &quot;어지러움/쓰러질 것 같음&quot; → 예방 경보 + 위치
+     +
+열 맥락 결합:    WBGT/체온 위험(기존 폭염 시스템) AND 무동작 → heat-context possible collapse</code></pre>
+
+<h2>실행 항목 (낙상 계획에 추가)</h2>
+
+<table><thead><tr><th>#</th><th>작업</th><th>기존 자산 재사용</th><th>신규</th></tr></thead><tbody><tr><td>S1</td><td>저G 비종속 무동작 감시 분석기</td><td>fall.ts 미러(accel 게이트 제거)</td><td>독립 진입점</td></tr><tr><td>S2</td><td>SOS 버튼에 &quot;어지러움&quot; 자기신고 추가</td><td>기존 SOS·관제·위치</td><td>UI 한 줄</td></tr><tr><td>S3</td><td>열맥락 결합 경보</td><td>기존 WBGT·체온·폭염 규칙</td><td>무동작 AND 조건</td></tr><tr><td>S4</td><td>5갈래+신호품질 라벨</td><td>낙상 재라벨링(labels.csv)</td><td>실신 클래스 추가</td></tr><tr><td>S5</td><td>신호품질 게이팅(PPG dropout 구분)</td><td>—</td><td>PhysioNet 검증</td></tr></tbody></table>
+
+<h2>데이터 (파이프라인 검증용, gold label 아님)</h2>
+
+<p>PhysioNet 후보 — 양성 실신 학습셋이 아니라 <strong>정상 자세반응·신호품질 음성 기준선</strong> 검증용:</p>
+<ul>
+<li>PRCP (자세 변화 정상 HR/ABP 반응)</li>
+<li>Pulse Transit Time PPG (PPG+IMU 19채널 동기 — 신호품질 QA)</li>
+<li>Cerebral Vasoregulation in Diabetes/Stroke (HUT 59·120건 ECG+ABP)</li>
+<li>Two-tiered orthostatic response (정상 기립 대조군)</li>
+</ul>
+
+<p>주의: 라이선스·실제 다운로드·우리 손목 20Hz 정합은 [미검증] — 받아 봐야 확정. 양성 실신은 현장·임상 직접 수집(고의 유발 시험 금지).</p>
+
+<h2>우선순위 (낙상 계획과의 순서)</h2>
+
+<ul>
+<li><strong>S2(자기신고)·S3(열맥락)는 지금 즉시 가능</strong> — 새 데이터·새 모델 0, 기존 자산 조합. 가장 싸고 확실.</li>
+<li><strong>S1(독립 무동작 계층)은 낙상 P4(계층형 판정기)와 함께</strong> — 같은 무동작 로직 근처.</li>
+<li><strong>S4(라벨)는 낙상 재라벨링에 흡수</strong> — 워치 수집 시 실신 클래스 동시 라벨.</li>
+<li><strong>S5(PPG 예측)는 로드맵</strong> — 현장 오경보 로그 축적 후 오프라인 연구.</li>
+</ul>
+</body></html>

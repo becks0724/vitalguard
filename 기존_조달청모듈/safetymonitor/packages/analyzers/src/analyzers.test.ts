@@ -3,6 +3,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import { detectFall } from "./fall.js";
+import { detectCollapse } from "./collapse.js";
 import { detectHeartRateAbnormal } from "./heart-rate.js";
 import { buildSosEvent } from "./sos.js";
 import { detectSpo2Low } from "./spo2.js";
@@ -48,6 +49,55 @@ test("낙상 미감지 — 가속도 누락 샘플은 null", () => {
     sample: { workerId: "demo01", ts: NOW, motionStillSec: 35 },
   });
   assert.equal(event, null);
+});
+
+test("무충격 붕괴 감지 — 저G(충격없음) + 무동작 90s 이상이면 warning collapse", () => {
+  const event = detectCollapse({
+    sample: {
+      workerId: "demo01",
+      ts: NOW,
+      accelMagnitudeG: 1.0, // 충격 없음
+      motionStillSec: 95,
+    },
+  });
+  assert.ok(event, "붕괴 후보 이벤트가 생성되어야 함");
+  assert.equal(event.type, "collapse");
+  assert.equal(event.severity, "warning"); // 후보 — danger 아님(확인 프롬프트 필요)
+});
+
+test("붕괴 미감지 — 고G 충격은 낙상 경로(collapse 아님)", () => {
+  const event = detectCollapse({
+    sample: {
+      workerId: "demo01",
+      ts: NOW,
+      accelMagnitudeG: 3.5, // 충격 있음 → detectFall 담당
+      motionStillSec: 95,
+    },
+  });
+  assert.equal(event, null);
+});
+
+test("붕괴 미감지 — 무동작이 짧으면 null(정상 동작)", () => {
+  const event = detectCollapse({
+    sample: {
+      workerId: "demo01",
+      ts: NOW,
+      accelMagnitudeG: 1.0,
+      motionStillSec: 20,
+    },
+  });
+  assert.equal(event, null);
+});
+
+test("붕괴 미감지 — 무동작/가속도 누락 샘플은 null", () => {
+  assert.equal(
+    detectCollapse({ sample: { workerId: "demo01", ts: NOW, accelMagnitudeG: 1.0 } }),
+    null,
+  );
+  assert.equal(
+    detectCollapse({ sample: { workerId: "demo01", ts: NOW, motionStillSec: 95 } }),
+    null,
+  );
 });
 
 test("심박 이상 — 최근 5초간 모두 130bpm 이상이면 warning", () => {

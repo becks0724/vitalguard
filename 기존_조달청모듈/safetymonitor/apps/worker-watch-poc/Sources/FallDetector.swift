@@ -33,6 +33,10 @@ struct FallCandidate {
 final class FallDetector {
     // 후보 해소(양성/음성 공통) — 항상 메인 큐에서 호출. ML 수집·라이브 알림 양쪽이 구독.
     var onCandidate: ((FallCandidate) -> Void)?
+    // 착용자 움직임(활동) 신호 — 항상 메인 큐에서 호출(스로틀됨). 낙상 프롬프트 무동작 게이트가 구독:
+    // 프롬프트 창 동안 이 신호가 오면 = 착용자 활동 중 = 자동 취소(멀쩡). 진짜 낙상/실신은 미동 없음.
+    // ★ 감지 임계는 안 건드린다 — 이 게이트는 '움직임 감지'에만 민감해 오탐만 취소하고 미탐은 안 올린다.
+    var onMovement: (() -> Void)?
 
     private let motion = CMMotionManager()
     private let queue = OperationQueue()
@@ -50,6 +54,17 @@ final class FallDetector {
     private let tumbleRotThresholdRadS = 6.0 // 자유낙하 부재 시 코로보레이션용 강회전(몸통 tumble) 임계
     private let refractorySec = 8.0          // 재트리거 방지 윈도
     private let maxIntegrationDtSec = 0.1    // 센서 일시정지 시 dt 과대적분 방지 상한
+
+    // 움직임 게이트 임계 — 오탐 취소용이라 '민감하게'(취소 쉽게) 잡는다. 감지 임계와 별개.
+    // ★ 현장 튜닝 knob: 과대=멀쩡을 못 취소(오탐↑), 과소=미동에도 취소(미탐 위험). 실측 로그로 조정.
+    private let movementBandG = 0.15         // |totalG-1| 이 이상이면 움직임(주). stillBandG 0.3보다 민감.
+    private let movementRotRadS = 0.8        // 회전속도 이 이상이면 움직임(주).
+    private let movementGravityDot = 0.985   // 중력방향 코사인 이 미만이면 자세 변화(보조, ≈10°). 느린 재기립 포착.
+    private let movementThrottleSec = 0.4    // onMovement 발화 최소 간격(50Hz 폭주 방지).
+    private let movementBaselineEma = 0.02   // 자세 기준 EMA 계수(느림 — 새 안정 자세는 서서히 기준화).
+
+    private var lastMovementFireAt: Date?
+    private var gravBaseline: (x: Double, y: Double, z: Double)?
 
     private var impactAt: Date?
     private var impactPeakG = 0.0
@@ -74,8 +89,44 @@ final class FallDetector {
             let totalG = (ax * ax + ay * ay + az * az).squareRoot()
             let r = dm.rotationRate
             let rotMag = (r.x * r.x + r.y * r.y + r.z * r.z).squareRoot()
-            self.process(totalG: totalG, rotMag: rotMag, at: Date())
+            let now = Date()
+            // 낙상 상태머신과 별개로 매 샘플 움직임 감지(무동작 게이트용) — 같은 직렬 큐라 안전.
+            self.detectMovement(
+                totalG: totalG, rotMag: rotMag,
+                gx: dm.gravity.x, gy: dm.gravity.y, gz: dm.gravity.z, at: now
+            )
+            self.process(totalG: totalG, rotMag: rotMag, at: now)
         }
+    }
+
+    // 착용자 움직임(활동) 감지 — 낙상 후보 상태·refractory 와 무관하게 매 샘플 평가.
+    // 가속도 편차(주)·회전(주)·중력방향 변화(자세 보조) 중 하나면 움직임 → onMovement(스로틀·메인 큐).
+    private func detectMovement(
+        totalG: Double, rotMag: Double, gx: Double, gy: Double, gz: Double, at now: Date
+    ) {
+        var reoriented = false
+        let gmag = (gx * gx + gy * gy + gz * gz).squareRoot()
+        if gmag > 0.0001 {
+            let nx = gx / gmag, ny = gy / gmag, nz = gz / gmag
+            if let b = gravBaseline {
+                if (b.x * nx + b.y * ny + b.z * nz) < movementGravityDot { reoriented = true }
+                // 느린 EMA 로 기준 자세 갱신 — 새 안정 자세는 서서히 기준화(지속 오발화 방지).
+                let ex = b.x + movementBaselineEma * (nx - b.x)
+                let ey = b.y + movementBaselineEma * (ny - b.y)
+                let ez = b.z + movementBaselineEma * (nz - b.z)
+                let em = (ex * ex + ey * ey + ez * ez).squareRoot()
+                gravBaseline = em > 0.0001 ? (ex / em, ey / em, ez / em) : (nx, ny, nz)
+            } else {
+                gravBaseline = (nx, ny, nz)
+            }
+        }
+        let moved = abs(totalG - 1.0) >= movementBandG
+            || rotMag >= movementRotRadS
+            || reoriented
+        guard moved else { return }
+        if let last = lastMovementFireAt, now.timeIntervalSince(last) < movementThrottleSec { return }
+        lastMovementFireAt = now
+        OperationQueue.main.addOperation { [weak self] in self?.onMovement?() }
     }
 
     func stop() {

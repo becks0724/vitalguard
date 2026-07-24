@@ -37,6 +37,10 @@ final class WorkoutManager: NSObject, ObservableObject {
     private let hrPostWindowSec: TimeInterval = 30
     private let hrHistoryKeepSec: TimeInterval = 90
     private let fallPromptTimeoutSec: TimeInterval = 20
+    // 무동작 게이트 — 프롬프트 시작 후 이 유예(초)가 지난 뒤의 움직임만 '활동'으로 본다(낙상 직후 잔여 정리 무시).
+    private let fallMovementGraceSec: TimeInterval = 1.5
+    // FallDetector.onMovement 로 갱신되는 '마지막 착용자 움직임 시각'. 프롬프트 무동작 판정에 사용.
+    private var lastMovementAt: Date?
 
     private struct HeartRatePoint {
         let at: Date
@@ -57,6 +61,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         case dismissed
         case manualSos = "manual_sos"
         case autoEscalated = "auto_escalated"
+        case movedCancelled = "moved_cancelled" // 프롬프트 중 착용자 움직임 감지 → 자동 취소(멀쩡).
     }
 
     override init() {
@@ -72,6 +77,10 @@ final class WorkoutManager: NSObject, ObservableObject {
         }
         fallDetector.onCandidate = { [weak self] candidate in
             self?.handleCandidate(candidate)
+        }
+        // 착용자 움직임 신호 — 낙상 프롬프트 무동작 게이트가 이 시각을 본다(움직이면 자동 취소).
+        fallDetector.onMovement = { [weak self] in
+            self?.lastMovementAt = Date()
         }
     }
 
@@ -161,8 +170,10 @@ final class WorkoutManager: NSObject, ObservableObject {
         peakRotationRadS: Double,
         detectedAt: Date
     ) {
+        // 프롬프트 중 새 후보 발생 = 또 다른 충격 = 착용자 활동 중 → 이전 것을 취소(에스컬레이션 아님).
+        // (기존엔 .autoEscalated 라 오탐이 몰리면 경보가 연달아 나갔다.)
         if activeFallPrompt != nil {
-            completeFallPrompt(.autoEscalated)
+            completeFallPrompt(.movedCancelled)
         }
 
         activeFallPrompt = ActiveFallPrompt(
@@ -176,15 +187,28 @@ final class WorkoutManager: NSObject, ObservableObject {
         )
         lastStatus = "낙상 확인 대기"
         playPromptAlert()
+        // 무동작 게이트 기준선 — 이 시각(유예 포함) 이후의 움직임만 '활동'으로 본다. 프롬프트 이전 움직임은 무시.
+        let movementGraceUntil = detectedAt.addingTimeInterval(fallMovementGraceSec)
         fallPromptTask?.cancel()
         fallPromptTask = Task { @MainActor [weak self] in
             guard let self else { return }
             for remaining in stride(from: Int(self.fallPromptTimeoutSec), through: 1, by: -1) {
                 guard var prompt = self.activeFallPrompt, prompt.id == candidateId else { return }
+                // ★ 무동작 게이트: 유예 후 착용자 움직임이 감지되면 = 멀쩡 → 자동 취소(에스컬레이션 아님).
+                //   진짜 낙상/실신은 미동이 없어 이 분기를 안 타고 아래 승격으로 간다 → 미탐 안 오름.
+                if let moved = self.lastMovementAt, moved > movementGraceUntil {
+                    self.completeFallPrompt(.movedCancelled)
+                    return
+                }
                 prompt.remainingSec = remaining
                 self.activeFallPrompt = prompt
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if Task.isCancelled { return }
+            }
+            // 20초 내내 미동 없음 = 진짜 무동작 → 승격. (마지막 1초 구간의 움직임도 최종 확인.)
+            if let moved = self.lastMovementAt, moved > movementGraceUntil {
+                self.completeFallPrompt(.movedCancelled)
+                return
             }
             self.completeFallPrompt(.autoEscalated)
         }
@@ -208,6 +232,11 @@ final class WorkoutManager: NSObject, ObservableObject {
             lastStatus = "낙상 후보 해제"
             lastFallText = String(
                 format: "후보 해제 %.1f초", responseSec
+            )
+        case .movedCancelled:
+            lastStatus = "낙상 후보 자동 취소(움직임 감지)"
+            lastFallText = String(
+                format: "움직임 감지 — 자동 취소 %.1f초", responseSec
             )
         case .manualSos:
             lastStatus = "낙상 후보 SOS 전송"

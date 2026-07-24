@@ -5,6 +5,14 @@ export const THRESHOLDS = {
     accelMagnitudeG: 3.0,
     motionStillSec: 30,
   },
+  collapse: {
+    // 무충격 붕괴(실신·서서히 주저앉음) — 충격 없이(저G) 장시간 무동작.
+    // maxImpactG: 이 미만 = 충격 없음. fall.accelMagnitudeG(3.0)와 같은 경계로 상보(≥3.0 낙상 / <3.0 붕괴 후보).
+    maxImpactG: 3.0,
+    // motionStillSec: 무동작 지속 임계. 정상 휴식 오탐을 줄이려 낙상(30s)보다 길게 잡은 시작값.
+    // ★ 이것이 오탐/미탐의 1차 조절 knob — 현장 false-alarm 로그로 튜닝(과대=휴식 오탐, 과소=발견 지연).
+    motionStillSec: 90,
+  },
   heartRate: {
     highBpm: 130,
     lowBpm: 40,

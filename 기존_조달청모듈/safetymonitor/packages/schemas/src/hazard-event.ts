@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const HazardTypeSchema = z.enum([
   "fall",
+  "collapse", // 무충격 붕괴(실신·서서히 주저앉음) — 충격 없이 장시간 무동작. 낙상 게이트 사각 보완.
   "hr_abnormal",
   "manual_sos",
   "spo2_low",

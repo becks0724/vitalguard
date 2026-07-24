@@ -336,6 +336,11 @@ function saveSiteInfo(siteInfo: SiteInfo) {
 // 값 = 확인한 경보 자연키("sos|<workerId>|<ts>" / "fall|<workerId>|<ts>") 배열.
 const ALERT_ACK_STORAGE_KEY = "safetymonitor.alertAck.v1";
 const ALERT_ACK_MAX_KEYS = 200; // 오래된 키부터 밀어내 localStorage 무한 증가 방지
+// 낙상/SOS 긴급 팝업 신선도 — 이 시간보다 오래된 이벤트는 활성 경보로 재팝업하지 않는다.
+// (표 셀 "발생" 표시와 동일 창. 팝업 트리거엔 이 필터가 없어 몇 시간 전 stale 샘플이 계속 재팝업하던 버그 수정.)
+const ALARM_FRESH_MS = 5 * 60 * 1000;
+// 낙상 "확인 중"(pending) 표시 창 — 워치 확인 프롬프트 20초 + 여유. 이 안의 fall 후보는 확인 중으로 표시.
+const FALL_PENDING_MS = 22 * 1000;
 
 function loadAckedAlertKeys(): string[] {
   if (typeof window === "undefined") return [];
@@ -3594,10 +3599,25 @@ export function DemoDashboard() {
     };
   }, [trailWorkerId, workerView]);
 
+  // 팝업 '확인'을 서버 알림 이력에도 기록(공유 ack) — 로컬 localStorage 억제와 별개로, 알림 이력의
+  // 대응 상태에 반영된다. fire-and-forget(dismiss 를 네트워크로 막지 않음). 인증은 세션 Bearer.
+  function persistAlertAck(workerId: string, type: "sos" | "fall") {
+    const token = getSessionToken();
+    void fetch("/api/alerts/ack", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ workerId, type }),
+    }).catch(() => {});
+  }
+
   function dismissSos() {
     if (activeSos) {
       setAcknowledgedSosTs((prev) => ({ ...prev, [activeSos.workerId]: activeSos.ts }));
       appendAckedAlertKey(`sos|${activeSos.workerId}|${activeSos.ts}`); // 새로고침 재팝업 방지 영속
+      persistAlertAck(activeSos.workerId, "sos"); // 서버 공유 ack
     }
     setActiveSos(null);
   }
@@ -3606,6 +3626,7 @@ export function DemoDashboard() {
     if (activeFallAlert) {
       setAcknowledgedFallTs((prev) => ({ ...prev, [activeFallAlert.workerId]: activeFallAlert.ts }));
       appendAckedAlertKey(`fall|${activeFallAlert.workerId}|${activeFallAlert.ts}`); // 새로고침 재팝업 방지 영속
+      persistAlertAck(activeFallAlert.workerId, "fall"); // 서버 공유 ack
     }
     setActiveFallAlert(null);
   }
@@ -3731,8 +3752,10 @@ export function DemoDashboard() {
   // 마지막 발생 시각은 recent 스트림을 스캔해서 계산.
   const lastSosByWorker = useMemo(() => {
     const map = new Map<string, string>();
+    const freshAfter = Date.now() - ALARM_FRESH_MS;
     for (const s of data.recent) {
       if (s.manualSos !== true) continue;
+      if (new Date(s.ts).getTime() < freshAfter) continue; // 신선도 게이트 — stale 이벤트 재팝업 차단
       const existing = map.get(s.workerId);
       if (!existing || s.ts > existing) map.set(s.workerId, s.ts);
     }
@@ -3754,13 +3777,34 @@ export function DemoDashboard() {
 
   const lastFallByWorker = useMemo(() => {
     const map = new Map<string, string>();
+    const freshAfter = Date.now() - ALARM_FRESH_MS;
     for (const s of data.recent) {
       if (s.fallDetected !== true) continue;
+      if (new Date(s.ts).getTime() < freshAfter) continue; // 신선도 게이트 — stale 낙상 재팝업 차단
       const existing = map.get(s.workerId);
       if (!existing || s.ts > existing) map.set(s.workerId, s.ts);
     }
     return map;
   }, [data.recent]);
+
+  // 낙상 "확인 중"(pending) — 워치가 프롬프트 표시 중인 fall 후보(에스컬레이션 전). 워치·웹 동기화용.
+  // 결과(해제/moved_cancelled) 샘플은 ring 에 없으므로 창 기반 근사: FALL_PENDING_MS 지나면 자연 만료.
+  const fallPendingByWorker = useMemo(() => {
+    const map = new Map<string, string>();
+    const freshAfter = Date.now() - FALL_PENDING_MS;
+    for (const s of data.recent) {
+      if (s.fallCandidate !== true || s.fallDecision !== "fall") continue;
+      if (new Date(s.ts).getTime() < freshAfter) continue;
+      const existing = map.get(s.workerId);
+      if (!existing || s.ts > existing) map.set(s.workerId, s.ts);
+    }
+    // 이미 에스컬레이션된(=발생) 워커는 pending 아님 — 표에 "발생"으로 표시된다.
+    for (const [workerId, escTs] of lastFallByWorker) {
+      const p = map.get(workerId);
+      if (p !== undefined && escTs >= p) map.delete(workerId);
+    }
+    return map;
+  }, [data.recent, lastFallByWorker]);
 
   // 새 낙상 감지 — 워치 확인 프롬프트 무응답/도움 요청으로 fallDetected 가 들어오면
   // SOS 와 동일한 긴급 모달 및 사이렌 경로를 탄다.
@@ -5209,6 +5253,7 @@ export function DemoDashboard() {
                           }
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
+                          fallPending={fallPendingByWorker.has(entry.workerId)}
                           count={data.countsByWorker?.[entry.workerId] ?? 0}
                           isVirtual={isVirtualWorker(entry.workerId)}
                           jobTitle={
@@ -5247,6 +5292,7 @@ export function DemoDashboard() {
                           }
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
+                          fallPending={fallPendingByWorker.has(entry.workerId)}
                           count={data.countsByWorker?.[entry.workerId] ?? 0}
                           isVirtual={isVirtualWorker(entry.workerId)}
                           jobTitle={
@@ -5586,6 +5632,7 @@ type WorkerTableRowProps = {
   stress: StressResult;
   isAnomaly: boolean;
   fallTs?: string;
+  fallPending?: boolean; // 워치 낙상 확인 프롬프트 진행 중(에스컬레이션 전) — "확인 중" 표시.
   count: number;
   isVirtual: boolean;
   // 효과 직급 = 관제 웹 오버라이드 ?? 폰 발신값 ?? (없으면 undefined → "—"). 클릭 시 편집.
@@ -5614,6 +5661,7 @@ function WorkerTableRow({
   stress,
   isAnomaly,
   fallTs,
+  fallPending,
   count,
   isVirtual,
   jobTitle,
@@ -5646,7 +5694,7 @@ function WorkerTableRow({
         : "border-l-transparent";
   const core = sample?.skinTempC == null ? undefined : estimateCoreTempC(sample.skinTempC);
   const fallRecent =
-    fallTs !== undefined && Date.now() - new Date(fallTs).getTime() < 5 * 60 * 1000;
+    fallTs !== undefined && Date.now() - new Date(fallTs).getTime() < ALARM_FRESH_MS;
 
   const sel = (metric: HistoryMetric) =>
     selection?.workerId === workerId && selection.metric === metric;
@@ -5782,13 +5830,19 @@ function WorkerTableRow({
         "손목온도 / 추정체온 — 클릭 시 누적 추세",
       )}
 
-      {/* 7 낙상 */}
+      {/* 7 낙상 — 발생(에스컬레이션) / 확인 중(워치 프롬프트 진행) / 감지안됨 */}
       {metricCell(
         "fall",
         <span
-          className={`text-xs font-medium ${fallRecent ? "text-semantic-down vital-blink-danger" : "text-muted"}`}
+          className={`text-xs font-medium ${
+            fallRecent
+              ? "text-semantic-down vital-blink-danger"
+              : fallPending
+                ? "text-amber-600 dark:text-amber-400 vital-blink-caution"
+                : "text-muted"
+          }`}
         >
-          {fallRecent ? "발생" : "감지안됨"}
+          {fallRecent ? "발생" : fallPending ? "확인 중" : "감지안됨"}
         </span>,
         "낙상 감지 — 클릭 시 누적 추세",
       )}

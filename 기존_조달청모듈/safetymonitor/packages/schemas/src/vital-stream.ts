@@ -27,7 +27,8 @@ export const VitalSampleSchema = z.object({
     .enum(["candidate", "post_impact_followup", "prompt_result"])
     .optional(),
   fallPromptOutcome: z
-    .enum(["pending", "dismissed", "manual_sos", "auto_escalated"])
+    // moved_cancelled: 프롬프트 20초 동안 착용자 움직임 감지 → 자동 취소(멀쩡). 무동작 게이트 결과.
+    .enum(["pending", "dismissed", "manual_sos", "auto_escalated", "moved_cancelled"])
     .optional(),
   fallPromptResponseSec: z.number().min(0).max(600).optional(),
   freefallPreceded: z.boolean().optional(),
