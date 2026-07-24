@@ -6728,6 +6728,7 @@ final class VitAlGuardPreviewController: UIViewController,
     private var dashboardHomeSummaryError: String?
     private var isUploadBusy = false
     private var isLoginRequestInFlight = false
+    private var isPresentingAIChat = false
     private static var didShowIntroGuideThisLaunch = false
     private static var isIntroGuideMutedForThisLaunch = false
     private var didAttemptIntroGuidePresentation = false
@@ -7237,7 +7238,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func settingsTabPanel() -> UIView {
-        let panel = panelView(height: 286)
+        let panel = panelView(height: 332)
         let title = label("설정", size: 22, weight: .black, color: textColor)
         let sub = label("계정, GPS 항상 허용, Watch 주기, 워터마크, 대시보드 URL을 한 곳에서 조정합니다.", size: 12, weight: .semibold, color: secondaryTextColor)
         sub.numberOfLines = 2
@@ -7250,6 +7251,8 @@ final class VitAlGuardPreviewController: UIViewController,
         chips.distribution = .fillEqually
         let open = buttonPillForActionRow("설정 열기", foreground: canvas, background: ink)
         open.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        let ai = buttonPillForActionRow("VitAlGuard 챗봇", foreground: textColor, background: tileColor)
+        ai.addTarget(self, action: #selector(openAIChatAssistant), for: .touchUpInside)
         let layout = buttonPillForActionRow("홈 섹션 순서", foreground: textColor, background: tileColor)
         layout.addTarget(self, action: #selector(openHomeLayout), for: .touchUpInside)
 
@@ -7273,9 +7276,13 @@ final class VitAlGuardPreviewController: UIViewController,
             open.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             open.topAnchor.constraint(equalTo: chips.bottomAnchor, constant: 14),
             open.heightAnchor.constraint(equalToConstant: 42),
+            ai.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            ai.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            ai.topAnchor.constraint(equalTo: open.bottomAnchor, constant: 9),
+            ai.heightAnchor.constraint(equalToConstant: 42),
             layout.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             layout.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            layout.topAnchor.constraint(equalTo: open.bottomAnchor, constant: 9),
+            layout.topAnchor.constraint(equalTo: ai.bottomAnchor, constant: 9),
             layout.heightAnchor.constraint(equalToConstant: 42),
             layout.bottomAnchor.constraint(lessThanOrEqualTo: panel.bottomAnchor, constant: -18)
         ])
@@ -7293,8 +7300,23 @@ final class VitAlGuardPreviewController: UIViewController,
         )
 
         let mark = logoImageButton()
-        let title = label(currentMode == .admin ? "VitAlGuard 관리자" : "VitAlGuard 근로자", size: 22, weight: .black, color: textColor)
-        let subtitle = label(workerSubtitle, size: 12, weight: .semibold, color: secondaryTextColor)
+        let title = label(currentMode == .admin ? "VitAlGuard 관리자" : "VitAlGuard 근로자", size: 18, weight: .black, color: textColor)
+        title.numberOfLines = 1
+        title.adjustsFontSizeToFitWidth = true
+        title.minimumScaleFactor = 0.78
+        let subtitle = label(workerSubtitle, size: 11, weight: .semibold, color: secondaryTextColor)
+        subtitle.numberOfLines = 2
+        subtitle.lineBreakMode = .byWordWrapping
+        let chat = iconPill(
+            symbol: "text.bubble.fill",
+            foreground: .white,
+            background: UIColor.systemBlue,
+            width: 44,
+            isCircle: true,
+            isPrimary: true
+        )
+        chat.accessibilityLabel = "VitAlGuard 챗봇"
+        chat.addTarget(self, action: #selector(openAIChatAssistant), for: .touchUpInside)
         let calendar = iconPill(symbol: "calendar", foreground: textColor, background: tileColor, width: 44)
         calendar.accessibilityLabel = "관제 캘린더 열기"
         calendar.addTarget(self, action: #selector(openDashboardCalendar), for: .touchUpInside)
@@ -7314,11 +7336,12 @@ final class VitAlGuardPreviewController: UIViewController,
         notificationBadge.isHidden = localAlertCount == 0
         mark.addTarget(self, action: #selector(openScanMenu), for: .touchUpInside)
 
-        let actionStack = UIStackView(arrangedSubviews: [calendar, notifications])
+        let actionStack = UIStackView(arrangedSubviews: [chat, calendar, notifications])
         actionStack.translatesAutoresizingMaskIntoConstraints = false
         actionStack.axis = .horizontal
-        actionStack.spacing = 8
+        actionStack.spacing = 6
         actionStack.alignment = .center
+        actionStack.distribution = .fillEqually
 
         wrapper.addSubview(mark)
         wrapper.addSubview(title)
@@ -7326,18 +7349,24 @@ final class VitAlGuardPreviewController: UIViewController,
         wrapper.addSubview(actionStack)
         wrapper.addSubview(notificationBadge)
 
+        title.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        subtitle.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        actionStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+
         NSLayoutConstraint.activate([
-            wrapper.heightAnchor.constraint(equalToConstant: 78),
+            wrapper.heightAnchor.constraint(equalToConstant: 94),
             mark.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor, constant: 10),
             mark.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
             title.leadingAnchor.constraint(equalTo: mark.trailingAnchor, constant: 12),
             title.trailingAnchor.constraint(lessThanOrEqualTo: actionStack.leadingAnchor, constant: -10),
-            title.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor, constant: -9),
+            title.topAnchor.constraint(equalTo: wrapper.topAnchor, constant: 18),
             subtitle.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             subtitle.trailingAnchor.constraint(lessThanOrEqualTo: actionStack.leadingAnchor, constant: -10),
-            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 2),
+            subtitle.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 3),
+            subtitle.bottomAnchor.constraint(lessThanOrEqualTo: wrapper.bottomAnchor, constant: -12),
             actionStack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -10),
             actionStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
+            actionStack.widthAnchor.constraint(equalToConstant: 44 * 3 + 12),
             notificationBadge.topAnchor.constraint(equalTo: notifications.topAnchor, constant: 4),
             notificationBadge.trailingAnchor.constraint(equalTo: notifications.trailingAnchor, constant: -4),
             notificationBadge.widthAnchor.constraint(greaterThanOrEqualToConstant: 18),
@@ -10597,6 +10626,28 @@ final class VitAlGuardPreviewController: UIViewController,
         present(nav, animated: true)
     }
 
+    @objc private func openAIChatAssistant() {
+        guard presentedViewController == nil, !isPresentingAIChat else { return }
+
+        isPresentingAIChat = true
+        let assistant = VitAlGuardAssistantViewController()
+        let nav = UINavigationController(rootViewController: assistant)
+
+        nav.modalPresentationStyle = .pageSheet
+        if let sheet = nav.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = true
+        }
+
+        assistant.onCloseRequest = { [weak nav] in
+            nav?.dismiss(animated: true)
+        }
+
+        present(nav, animated: true) { [weak self] in
+            self?.isPresentingAIChat = false
+        }
+    }
+
     @objc private func openHomeLayout() {
         let controller = HomeLayoutViewController(mode: currentMode)
         controller.onSave = { [weak self] in
@@ -11706,23 +11757,43 @@ final class VitAlGuardPreviewController: UIViewController,
         guard CLLocationManager.locationServicesEnabled() else { return }
         switch watermarkAuthorizationStatus() {
         case .notDetermined:
-            watermarkLocationManager.requestWhenInUseAuthorization()
+            requestLocationPermissionAsync(locationManager: watermarkLocationManager, requestAlways: false)
         case .authorizedWhenInUse:
             if let location = watermarkLocationManager.location {
                 lastKnownWatermarkLocation = location
                 storeLatestLocationForDashboard(location)
             }
-            watermarkLocationManager.requestLocation()
+            startWatermarkOneShotLocationIfAvailable()
         case .authorizedAlways:
             if let location = watermarkLocationManager.location {
                 lastKnownWatermarkLocation = location
                 storeLatestLocationForDashboard(location)
             }
-            watermarkLocationManager.requestLocation()
+            startWatermarkOneShotLocationIfAvailable()
         case .restricted, .denied:
             break
         @unknown default:
             break
+        }
+    }
+
+    private func startWatermarkOneShotLocationIfAvailable() {
+        guard CLLocationManager.locationServicesEnabled() else { return }
+        let status = watermarkAuthorizationStatus()
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else { return }
+
+        DispatchQueue.main.async {
+            self.watermarkLocationManager.startUpdatingLocation()
+        }
+    }
+
+    private func requestLocationPermissionAsync(locationManager: CLLocationManager, requestAlways: Bool) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            if requestAlways {
+                locationManager.requestAlwaysAuthorization()
+            } else {
+                locationManager.requestWhenInUseAuthorization()
+            }
         }
     }
 
@@ -13209,7 +13280,7 @@ final class VitAlGuardPreviewController: UIViewController,
                     updateLocationWeather(for: location)
                 }
             }
-            manager.requestLocation()
+            manager.startUpdatingLocation()
         }
     }
 
@@ -13225,7 +13296,7 @@ final class VitAlGuardPreviewController: UIViewController,
                     updateLocationWeather(for: location)
                 }
             }
-            manager.requestLocation()
+            manager.startUpdatingLocation()
         }
     }
 
@@ -15005,7 +15076,14 @@ final class VitAlGuardPreviewController: UIViewController,
         return button
     }
 
-    private func iconPill(symbol: String, foreground: UIColor, background: UIColor, width: CGFloat) -> UIButton {
+    private func iconPill(
+        symbol: String,
+        foreground: UIColor,
+        background: UIColor,
+        width: CGFloat,
+        isCircle: Bool = false,
+        isPrimary: Bool = false
+    ) -> UIButton {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         let image = UIImage(systemName: symbol)
@@ -15013,11 +15091,29 @@ final class VitAlGuardPreviewController: UIViewController,
         button.tintColor = foreground
         button.backgroundColor = .clear
         button.imageView?.contentMode = .scaleAspectFit
-        AppleDesignGlass.apply(to: button, cornerRadius: 22, tint: background, isInteractive: true)
+        if isPrimary {
+            button.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.22)
+            button.layer.cornerRadius = width / 2
+            button.clipsToBounds = true
+            button.layer.borderWidth = 1
+            button.layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.35).cgColor
+        } else if isCircle {
+            button.backgroundColor = background.withAlphaComponent(0.18)
+            button.layer.cornerRadius = width / 2
+            button.clipsToBounds = true
+        } else {
+            AppleDesignGlass.apply(to: button, cornerRadius: 22, tint: background, isInteractive: true)
+        }
+        if !isPrimary && !isCircle {
+            button.tintColor = foreground
+        }
         NSLayoutConstraint.activate([
             button.widthAnchor.constraint(equalToConstant: width),
             button.heightAnchor.constraint(equalToConstant: 44)
         ])
+        button.imageView?.tintColor = button.tintColor
+        button.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         return button
     }
 
@@ -16992,12 +17088,22 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         }
     }
 
+    private func requestLocationPermissionAsync(locationManager: CLLocationManager, requestAlways: Bool) {
+        DispatchQueue.main.async {
+            if requestAlways {
+                locationManager.requestAlwaysAuthorization()
+            } else {
+                locationManager.requestWhenInUseAuthorization()
+            }
+        }
+    }
+
     @objc private func requestAlwaysLocationPermission() {
         guard CLLocationManager.locationServicesEnabled() else {
             openSystemAppSettings()
             return
         }
-        settingsLocationManager.requestAlwaysAuthorization()
+        requestLocationPermissionAsync(locationManager: settingsLocationManager, requestAlways: true)
         if settingsLocationManager.authorizationStatus == .authorizedAlways
             || settingsLocationManager.authorizationStatus == .authorizedWhenInUse {
             settingsLocationManager.startUpdatingLocation()
@@ -17015,7 +17121,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
             if manager.authorizationStatus == .authorizedWhenInUse {
-                manager.requestAlwaysAuthorization()
+                requestLocationPermissionAsync(locationManager: manager, requestAlways: true)
             }
             manager.startUpdatingLocation()
         }
@@ -17028,7 +17134,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     ) {
         if status == .authorizedAlways || status == .authorizedWhenInUse {
             if status == .authorizedWhenInUse {
-                manager.requestAlwaysAuthorization()
+                requestLocationPermissionAsync(locationManager: manager, requestAlways: true)
             }
             manager.startUpdatingLocation()
         }
