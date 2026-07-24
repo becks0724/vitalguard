@@ -548,41 +548,78 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
   );
 }
 
-// 클릭한 카메라를 확대 표시하는 팝업 — 캐러셀 transform 에 갇히지 않도록 body 로 portal.
+// 클릭한 카메라를 확대 표시하는 플로팅 창 — 캐러셀 transform 에 갇히지 않도록 body 로 portal.
+// 드래그 이동(헤더 핸들·pointer capture) + 여러 창 동시 표시(딤 없음·뒤 대시보드 조작 가능).
 function CctvModal({
   cam,
   name,
   enabled,
   onToggle,
   onClose,
+  initialIndex,
+  zIndex,
+  onFocus,
 }: {
   cam: Cam;
   name: string;
   enabled?: boolean | null;
   onToggle?: () => void;
   onClose: () => void;
+  initialIndex: number; // 계단식 초기 배치 시드(마운트 시 1회)
+  zIndex: number; // z-순서(앞으로 가져오기)
+  onFocus: () => void; // 클릭 시 맨 앞으로
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  // 창 위치·너비(fixed left/top). 마운트 시 계단 오프셋으로 초기화.
+  const [pos, setPos] = useState(() => {
+    const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
+    const w = Math.min(720, vw - 32);
+    const left = Math.max(16, Math.min(vw - w - 16, 96 + initialIndex * 32));
+    const top = 84 + initialIndex * 32;
+    return { left, top, w };
+  });
+  const dragStart = useRef<{ px: number; py: number; left: number; top: number } | null>(null);
+
+  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    onFocus();
+    if ((e.target as HTMLElement).closest("button")) return; // 버튼 위 클릭은 드래그 시작 안 함
+    dragStart.current = { px: e.clientX, py: e.clientY, left: pos.left, top: pos.top };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const s = dragStart.current;
+    if (!s) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const left = Math.min(vw - 160, Math.max(160 - pos.w, s.left + (e.clientX - s.px)));
+    const top = Math.min(vh - 48, Math.max(8, s.top + (e.clientY - s.py)));
+    setPos((p) => ({ ...p, left, top }));
+  };
+  const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStart.current = null;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* 이미 해제 */
+    }
+  };
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-      onClick={onClose}
+      className="pointer-events-auto fixed overflow-hidden rounded-2xl border border-hairline-strong bg-surface-dark shadow-2xl dark:border-white/10"
+      style={{ left: pos.left, top: pos.top, width: pos.w, zIndex }}
+      onPointerDown={onFocus}
       role="dialog"
-      aria-modal="true"
+      aria-label={`CCTV ${name}`}
     >
-      <div
-        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-hairline-strong bg-surface-dark dark:border-white/10"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* 헤더 — 위치 + ID + (AI) 연결 토글 + 닫기 */}
-        <div className="flex items-center justify-between gap-2 bg-black/50 px-4 py-2.5 text-zinc-100">
+      <div>
+        {/* 헤더 — 드래그 핸들 · 위치 + ID + (AI) 연결 토글 + 닫기 */}
+        <div
+          className="flex cursor-grab touch-none select-none items-center justify-between gap-2 bg-black/50 px-4 py-2.5 text-zinc-100 active:cursor-grabbing"
+          onPointerDown={onHeaderPointerDown}
+          onPointerMove={onHeaderPointerMove}
+          onPointerUp={onHeaderPointerUp}
+          onPointerCancel={onHeaderPointerUp}
+        >
           <span className="flex min-w-0 items-center gap-2">
             <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-red-500" />
             <span className="truncate text-sm font-semibold">{name}</span>
@@ -635,8 +672,12 @@ function CctvModal({
 }
 
 // canManage=false(관리자 권한 '권한있음' 아님)면 타일 이름 ✎ 수정 비활성(작업자 등록/해제와 동일 권한 게이트).
+// 동시에 띄울 수 있는 CCTV 팝업 최대 개수 — 라이브 MJPEG 스트림 부하 상한(초과 시 가장 오래된 창 닫힘).
+const MAX_OPEN_CAMS = 4;
+
 export function CctvQuadView({ canManage }: { canManage: boolean }) {
-  const [selected, setSelected] = useState<Cam | null>(null);
+  // 열린 카메라 창들(배열) — 여러 창 동시. 배열 끝 = 맨 앞(z-순서). 클릭 시 앞으로 이동.
+  const [openCams, setOpenCams] = useState<Cam[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   // AI 타일별 연결 상태 — suffix("" 객체감지 / "2" 낙상감지) 별로 보관.
   const [aiState, setAiState] = useState<Record<string, boolean | null>>({});
@@ -714,6 +755,35 @@ export function CctvQuadView({ canManage }: { canManage: boolean }) {
 
   const nameOf = (cam: Cam) => names[cam.id] ?? cam.location;
 
+  // 카메라 창 열기 — 이미 열려 있으면 맨 앞으로, 아니면 추가(상한 초과 시 가장 오래된 창 제거).
+  const openCam = (cam: Cam) => {
+    setOpenCams((prev) => {
+      if (prev.some((c) => c.id === cam.id)) {
+        return [...prev.filter((c) => c.id !== cam.id), cam]; // 앞으로
+      }
+      const next = [...prev, cam];
+      return next.length > MAX_OPEN_CAMS ? next.slice(next.length - MAX_OPEN_CAMS) : next;
+    });
+  };
+  const closeCam = (cam: Cam) =>
+    setOpenCams((prev) => prev.filter((c) => c.id !== cam.id));
+  const bringToFront = (cam: Cam) =>
+    setOpenCams((prev) =>
+      prev[prev.length - 1]?.id === cam.id
+        ? prev // 이미 맨 앞 — 불필요 재렌더 방지
+        : [...prev.filter((c) => c.id !== cam.id), cam],
+    );
+
+  // ESC — 맨 앞(마지막) 창부터 닫기(창별 리스너 중복 방지 위해 부모에서 일괄 처리).
+  useEffect(() => {
+    if (openCams.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpenCams((prev) => prev.slice(0, -1));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [openCams.length]);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-hairline px-4 py-2 dark:border-white/10">
@@ -734,19 +804,23 @@ export function CctvQuadView({ canManage }: { canManage: boolean }) {
             canManage={canManage}
             onRename={(value) => rename(cam.id, value)}
             onToggle={cam.aiApi ? () => toggleAi(cam) : undefined}
-            onSelect={() => setSelected(cam)}
+            onSelect={() => openCam(cam)}
           />
         ))}
       </div>
-      {selected && (
+      {openCams.map((cam, i) => (
         <CctvModal
-          cam={selected}
-          name={nameOf(selected)}
-          enabled={enabledOf(selected)}
-          onToggle={selected.aiApi ? () => toggleAi(selected) : undefined}
-          onClose={() => setSelected(null)}
+          key={cam.id}
+          cam={cam}
+          name={nameOf(cam)}
+          enabled={enabledOf(cam)}
+          onToggle={cam.aiApi ? () => toggleAi(cam) : undefined}
+          onClose={() => closeCam(cam)}
+          initialIndex={i}
+          zIndex={50 + i}
+          onFocus={() => bringToFront(cam)}
         />
-      )}
+      ))}
     </div>
   );
 }
