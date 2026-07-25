@@ -89,7 +89,7 @@ import {
 } from "./SiteSafetyTables";
 import { SosAlertModal } from "./SosAlertModal";
 import { GeofenceAlertModal } from "./GeofenceAlertModal";
-import { effectiveTone, withOutsideMetric } from "../../lib/worker-signal";
+import { effectiveTone, gateStaleVitals, withOutsideMetric } from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { WeatherStrip, weatherLabel } from "./WeatherStrip";
@@ -219,6 +219,8 @@ function formatInt(value?: number | null) {
 // 체온 미수신(기기 미전송) 안내 — 애플워치 등 일부 기기는 작업 중 체온을 전송하지 않음.
 // store sticky-carry 로 한번이라도 값이 오면 유지되므로, 남아있는 null/undefined ≈ "미수신".
 const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데이터가 들어오지 않습니다";
+// 연결끊김일 때는 "센서 없음" 이 아니라 "수신 중단" 이므로 사유를 구분해 표시한다.
+const TEMP_STALE_TITLE = "연결끊김 — 마지막 수신 이후 60초 초과. 직전 값은 현재 상태가 아닙니다";
 
 // 누적 추세 차트는 자체 웨어러블 디바이스가 실측한 메트릭에만 표시.
 // 폰 측 store 에 해당 metric 값이 실시간 들어와 있는 경우만 live 로 판정.
@@ -5733,7 +5735,10 @@ function WorkerTableRow({
       : overall === "caution"
         ? "border-l-amber-400"
         : "border-l-transparent";
-  const core = sample?.skinTempC == null ? undefined : estimateCoreTempC(sample.skinTempC);
+  // 연결끊김이면 생체 3종을 비운다 — sticky 직전값을 현재값처럼 초록으로 보여주던 false-OK 차단.
+  // (잠금 중에는 폰이 계속 POST 해 stale 이 아니므로 잠금 연속성은 그대로 유지된다.)
+  const shown = gateStaleVitals(sample, stale);
+  const core = shown.skinTempC == null ? undefined : estimateCoreTempC(shown.skinTempC);
   const fallRecent =
     fallTs !== undefined && Date.now() - new Date(fallTs).getTime() < ALARM_FRESH_MS;
 
@@ -5827,8 +5832,8 @@ function WorkerTableRow({
       {metricCell(
         "heartRate",
         <span className="font-mono text-sm tabular-nums">
-          <span className={STATUS_CLASS[heartRateStatus(sample?.heartRate, workActivity(sample ?? {}))]}>
-            {formatInt(sample?.heartRate)}
+          <span className={STATUS_CLASS[heartRateStatus(shown.heartRate, workActivity(sample ?? {}))]}>
+            {formatInt(shown.heartRate)}
           </span>
           <span className="ml-0.5 text-[10px] text-muted">bpm</span>
         </span>,
@@ -5839,7 +5844,7 @@ function WorkerTableRow({
       {metricCell(
         "spo2",
         <span className="font-mono text-sm tabular-nums">
-          <span className={STATUS_CLASS[spo2Status(sample?.spo2)]}>{formatInt(sample?.spo2)}</span>
+          <span className={STATUS_CLASS[spo2Status(shown.spo2)]}>{formatInt(shown.spo2)}</span>
           <span className="ml-0.5 text-[10px] text-muted">%</span>
         </span>,
         "산소포화도 — 클릭 시 누적 추세",
@@ -5848,18 +5853,20 @@ function WorkerTableRow({
       {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}
       {metricCell(
         "skinTempC",
-        sample?.skinTempC == null ? (
-          <span className="leading-tight" title={TEMP_UNAVAILABLE_TITLE}>
+        shown.skinTempC == null ? (
+          <span className="leading-tight" title={stale ? TEMP_STALE_TITLE : TEMP_UNAVAILABLE_TITLE}>
             <span className="font-mono text-sm tabular-nums text-muted">
               --<span className="ml-0.5 text-[10px]">℃</span>
             </span>
-            <span className="block text-[9px] leading-none text-muted">미수신</span>
+            <span className="block text-[9px] leading-none text-muted">
+              {stale ? "연결끊김" : "미수신"}
+            </span>
           </span>
         ) : (
           <span className="leading-tight">
             <span className="font-mono text-sm tabular-nums">
-              <span className={STATUS_CLASS[coreTempStatus(sample.skinTempC)]}>
-                {formatTemp(sample.skinTempC)}
+              <span className={STATUS_CLASS[coreTempStatus(shown.skinTempC)]}>
+                {formatTemp(shown.skinTempC)}
               </span>
               <span className="ml-0.5 text-[10px] text-muted">℃</span>
             </span>
