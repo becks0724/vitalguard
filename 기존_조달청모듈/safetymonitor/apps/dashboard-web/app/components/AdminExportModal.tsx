@@ -323,6 +323,26 @@ function LoginCard({
 }
 
 // 관리자 패널용 라인 아이콘(레퍼런스 lucide 대체 — 의존성 0 인라인 SVG). currentColor 상속.
+// 내보내기 진행 표시 — 대용량 XLSX 는 수십 초 걸려 정지 화면처럼 보인다. 회전 아이콘으로 진행을 알린다.
+function ExportSpinner() {
+  return (
+    <svg
+      className="h-4 w-4 shrink-0 animate-spin"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.3" />
+      <path
+        d="M21 12a9 9 0 0 0-9-9"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function AdminIcon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {
   const paths: Record<string, ReactNode> = {
     building: (
@@ -401,7 +421,10 @@ function ExportPanel({
   const [selectedWorker, setSelectedWorker] = useState<string>(""); // "" = 전체
   const [{ from, to }, setRange] = useState(defaultRange);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // 진행 중인 내보내기 형식 — 눌린 버튼에만 스피너를 띄우기 위해 boolean 이 아닌 형식으로 보관한다.
+  // (둘 다 "내보내는 중"으로 바뀌면 어느 쪽을 눌렀는지 알 수 없다.)
+  const [busyFormat, setBusyFormat] = useState<"csv" | "xlsx" | null>(null);
+  const busy = busyFormat !== null;
   const [preview, setPreview] = useState<PreviewState | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   // 선택 기간 일치 건수 배지 — 드롭다운의 DB 누적 건수와 구분되는, 실제 내보내기 대상 수량
@@ -527,7 +550,7 @@ function ExportPanel({
 
   async function handleDownload(format: "csv" | "xlsx") {
     setError(null);
-    setBusy(true);
+    setBusyFormat(format);
     try {
       const params = new URLSearchParams();
       if (selectedWorker) params.set("workerId", selectedWorker);
@@ -564,7 +587,7 @@ function ExportPanel({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setBusy(false);
+      setBusyFormat(null);
     }
   }
 
@@ -682,19 +705,35 @@ function ExportPanel({
             type="button"
             onClick={() => handleDownload("xlsx")}
             disabled={busy || !from || !to}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-emerald-500 bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-400/60 dark:bg-emerald-500/30 dark:hover:bg-emerald-500/40"
+            aria-busy={busyFormat === "xlsx"}
+            className="inline-flex items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-md border border-emerald-500 bg-emerald-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-emerald-400/60 dark:bg-emerald-500/30 dark:hover:bg-emerald-500/40"
           >
-            <AdminIcon name="download" className="h-4 w-4" />
-            {busy ? "내보내는 중..." : "XLSX 다운로드 (색·3시트)"}
+            {busyFormat === "xlsx" ? (
+              <ExportSpinner />
+            ) : (
+              <AdminIcon name="download" className="h-4 w-4 shrink-0" />
+            )}
+            {/* 라벨은 교체하지 않는다 — 진행 표시는 아이콘·문구 접미로만. 텍스트를 통째로 갈아끼우면
+                버튼 폭이 흔들리고 어느 버튼을 눌렀는지 알 수 없게 된다. */}
+            <span className="truncate">
+              XLSX 다운로드{busyFormat === "xlsx" ? " — 내보내는 중" : " (색·3시트)"}
+            </span>
           </button>
           <button
             type="button"
             onClick={() => handleDownload("csv")}
             disabled={busy || !from || !to}
-            className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-500 bg-cyan-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-400/60 dark:bg-cyan-500/30 dark:hover:bg-cyan-500/40"
+            aria-busy={busyFormat === "csv"}
+            className="inline-flex items-center justify-center gap-2 overflow-hidden whitespace-nowrap rounded-md border border-cyan-500 bg-cyan-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-cyan-400/60 dark:bg-cyan-500/30 dark:hover:bg-cyan-500/40"
           >
-            <AdminIcon name="download" className="h-4 w-4" />
-            {busy ? "내보내는 중..." : "CSV 다운로드"}
+            {busyFormat === "csv" ? (
+              <ExportSpinner />
+            ) : (
+              <AdminIcon name="download" className="h-4 w-4 shrink-0" />
+            )}
+            <span className="truncate">
+              CSV 다운로드{busyFormat === "csv" ? " — 내보내는 중" : ""}
+            </span>
           </button>
         </div>
       </div>
