@@ -1,14 +1,16 @@
 // 레포 경로: apps/dashboard-web/app/api/admin/imu-export/route.ts
 // 관리자 → imu_window 전체를 NDJSON 으로 다운로드. 미니앱 payload 형식 그대로라
 // 받은 파일을 그대로 python run_all.py --real <파일> / train_solo.py 에 투입 가능.
-// fall-export 와 동일하게 verifyBasicAuth 사용.
+// 게이트는 fall-export 와 동일한 hasAdminMenuAccess(owner 또는 admin_access 보유자).
+// 과거 verifyBasicAuth 를 썼으나 그것은 역할을 구분하지 않아, admin_access 없는 일반 승인
+// 계정도 전 작업자의 원시 IMU 를 전량 내려받을 수 있었다(감사 BE-AUTHZ-04).
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { exportImuWindows } from "../../../../lib/db";
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },

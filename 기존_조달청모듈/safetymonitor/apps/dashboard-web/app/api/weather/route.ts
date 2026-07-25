@@ -7,6 +7,7 @@ import {
   getLatestWeatherDaily,
   type WeatherDailyRow,
 } from "../../../lib/db";
+import { verifyBasicAuth } from "../../../lib/admin-auth";
 import { notifyEnvAlerts, ruleEvalToItem } from "../../../lib/env-alert-notify";
 import {
   evaluateApparentTemp,
@@ -153,29 +154,40 @@ export async function GET(request: Request) {
       sunrise: data.daily.sunrise,
       sunset: data.daily.sunset,
     };
-    try {
-      await persistWeather(snapshot); // 상세 이력(fresh fetch 마다)
-      await persistWeatherDaily(snapshot); // 일별 대표 snapshot(하루 1행 upsert, 당일 마지막값 유지)
-    } catch (persistError) {
-      console.error("[weather] persist failed:", persistError);
+    // 부작용(DB 쓰기·알림)은 로그인 세션이 있을 때만 수행한다. 조회 자체는 공개로 유지한다.
+    // 과거에는 무인증 GET 이 그대로 쓰기까지 했고, weather_daily 는 하루 1행 upsert 라
+    // 외부인이 curl 한 번으로 폭염 기록을 덮어쓸 수 있었다(감사 BE-AUTHZ-02).
+    const trusted = verifyBasicAuth(request);
+    if (!trusted) {
+      console.warn("[weather] 무인증 조회 — 이력 저장·환경 알림을 건너뛴다");
+    }
+    if (trusted) {
+      try {
+        await persistWeather(snapshot); // 상세 이력(fresh fetch 마다)
+        await persistWeatherDaily(snapshot); // 일별 대표 snapshot(하루 1행 upsert, 당일 마지막값 유지)
+      } catch (persistError) {
+        console.error("[weather] persist failed:", persistError);
+      }
     }
 
     // 현장환경 위험 자동 텔레그램 알림(주의+위험 전이) — fresh fetch 시점 서버 판정.
     // 실패는 삼켜 날씨 응답을 막지 않는다(발송기·상태저장 모두 내부에서 예외 처리).
-    try {
-      const c = data.current;
-      await notifyEnvAlerts(
-        [
-          evaluateApparentTemp(c.apparentTempC),
-          evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
-          evaluatePM25(c.pm25),
-          evaluateWindKmh(c.windKmh, c.windGustKmh),
-          evaluateUV(c.uvIndex),
-          evaluatePrecipitation(c.precipitationMm),
-        ].map(ruleEvalToItem),
-      );
-    } catch (notifyError) {
-      console.error("[weather] env alert notify failed:", notifyError);
+    if (trusted) {
+      try {
+        const c = data.current;
+        await notifyEnvAlerts(
+          [
+            evaluateApparentTemp(c.apparentTempC),
+            evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
+            evaluatePM25(c.pm25),
+            evaluateWindKmh(c.windKmh, c.windGustKmh),
+            evaluateUV(c.uvIndex),
+            evaluatePrecipitation(c.precipitationMm),
+          ].map(ruleEvalToItem),
+        );
+      } catch (notifyError) {
+        console.error("[weather] env alert notify failed:", notifyError);
+      }
     }
 
     return NextResponse.json({ ok: true, cached: false, ...data });

@@ -1981,9 +1981,14 @@ function HeaderCalendarPopup({
     let active = true;
     (async () => {
       try {
+        // 토큰 동봉 — 서버가 세션이 있을 때만 이력 저장·환경 알림을 수행한다(BE-AUTHZ-02).
+        const wxToken = getSessionToken();
         const res = await fetch(
           `/api/weather?lat=${lat}&lon=${lon}&workers=${workerCount}`,
-          { cache: "no-store" },
+          {
+            cache: "no-store",
+            headers: wxToken ? { Authorization: `Bearer ${wxToken}` } : undefined,
+          },
         );
         if (!active || !res.ok) return;
         const json = (await res.json()) as {
@@ -3928,10 +3933,15 @@ export function DemoDashboard() {
           cache: "no-store",
           headers: { Authorization: `Bearer ${token}` },
         }),
+        // 날씨 이력 저장·환경 알림은 서버가 세션이 있을 때만 수행한다(BE-AUTHZ-02) — 토큰 동봉 필수.
         fetch(`/api/weather?lat=${effLat}&lon=${effLon}&workers=${fieldCoords.count}`, {
           cache: "no-store",
+          headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`/api/kma-warning?lat=${effLat}&lon=${effLon}`, { cache: "no-store" }),
+        fetch(`/api/kma-warning?lat=${effLat}&lon=${effLon}`, {
+          cache: "no-store",
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
       if (!evRes.ok) return;
       const evJson = (await evRes.json()) as { ok?: boolean; events?: unknown[] };

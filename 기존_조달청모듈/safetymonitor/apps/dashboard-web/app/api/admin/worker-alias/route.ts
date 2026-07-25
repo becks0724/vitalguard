@@ -1,7 +1,10 @@
-// 작업자 ID 병합 별칭 — owner 전용. secondary(별칭) → primary(주 ID) 등록/조회/해제. 수신 시 정규화해 1인 1카드로 합친다.
+// 작업자 ID 병합 별칭 — secondary(별칭) → primary(주 ID) 등록/조회/해제. 수신 시 정규화해 1인 1카드로 합친다.
+// 게이트는 관리자 메뉴 접근권(owner 또는 admin_access) — 관리자 모달의 실제 노출 조건
+// (DemoDashboard canAdminMenu)과 일치시킨다. 과거 verifyBasicAuth 는 역할을 구분하지 않아
+// 승인된 일반 계정도 타인의 작업자 ID 병합을 조작할 수 있었다(감사 BE-AUTHZ-04).
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import {
   deleteWorkerAlias,
   listWorkerAliases,
@@ -15,7 +18,7 @@ function field(body: unknown, key: string): string {
 }
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const aliases = await listWorkerAliases();
@@ -23,7 +26,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   let body: unknown;
@@ -60,7 +63,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   let body: unknown;

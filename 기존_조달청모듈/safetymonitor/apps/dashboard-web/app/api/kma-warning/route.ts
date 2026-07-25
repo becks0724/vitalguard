@@ -1,6 +1,7 @@
 // 기상특보 프록시 — 현장 GPS(lat/lon) → 시·도 발효 특보. 인증키 서버 보관, 미설정 시 목업.
 import { NextResponse } from "next/server";
 
+import { verifyBasicAuth } from "../../../lib/admin-auth";
 import { notifyEnvAlerts } from "../../../lib/env-alert-notify";
 import { warningsForLocation } from "../../lib/kma";
 
@@ -14,7 +15,13 @@ export async function GET(request: Request) {
   const data = await warningsForLocation(lat, lon);
 
   // 발효 특보 자동 텔레그램 알림(경보=위험·주의보=주의 전이) — 실측(live) 특보만(목업 오발송 방지).
-  if (data.source === "live") {
+  // 조회는 공개로 두되 알림 발사는 로그인 세션에서만 — 무인증 GET 으로 외부인이 텔레그램을
+  // 임의 발사시킬 수 있었다(감사 BE-AUTHZ-02).
+  const trusted = verifyBasicAuth(request);
+  if (data.source === "live" && !trusted) {
+    console.warn("[kma] 무인증 조회 — 특보 알림 발사를 건너뛴다");
+  }
+  if (data.source === "live" && trusted) {
     try {
       await notifyEnvAlerts(
         data.warnings.map((w) => ({

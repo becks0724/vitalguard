@@ -176,9 +176,14 @@ export function WeatherStrip({
 
     async function load() {
       try {
+        // 토큰 동봉 — 서버가 세션이 있을 때만 이력 저장·환경 알림을 수행한다(BE-AUTHZ-02).
+        const wxToken = getSessionToken();
         const res = await fetch(
           `/api/weather?lat=${lat}&lon=${lon}&workers=${workerCount}`,
-          { cache: "no-store" },
+          {
+            cache: "no-store",
+            headers: wxToken ? { Authorization: `Bearer ${wxToken}` } : undefined,
+          },
         );
         if (!active) return;
         if (!res.ok) {
