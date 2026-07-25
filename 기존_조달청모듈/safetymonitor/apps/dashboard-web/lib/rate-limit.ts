@@ -10,27 +10,6 @@ const buckets = new Map<string, Bucket>();
 // 메모리 무한 증식 방지 — 키가 이 수를 넘으면 가장 오래된 것부터 정리한다.
 const MAX_KEYS = 10_000;
 
-// 클라이언트 IP 추정 — **최우측**을 쓴다. lib/admin-auth.ts 의 clientIpFromXff 와 동일 규칙.
-//
-// 근거(2026-07-25 라이브 실측). 위조 XFF 를 붙여 보낸 요청이 새 레이트리밋 버킷을 얻는지로
-// 판별했다. `X-Forwarded-For: 203.0.113.77` 동봉 시 뒤에서 두 번째를 고르는 구현은 위조값을
-// 집어 제한을 우회했다 → 서버가 받은 XFF 가 `위조값, 진짜IP` 2개였다는 뜻이고,
-// 곧 **Cloud Run 이 홉을 정확히 1개(진짜 클라이언트 IP)만 덧붙인다**는 것이 확인됐다.
-//
-// 따라서 최좌측·중간은 클라이언트가 위조할 수 있고, 최우측만 프록시가 보증한다.
-// (감사 BE-AUTHZ-07 의 "XFF 최좌측 신뢰" 지적과 같은 계열의 우회를 막는다.)
-export function clientIpForRateLimit(request: Request): string {
-  const xff = request.headers.get("x-forwarded-for");
-  if (xff) {
-    const hops = xff
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (hops.length > 0) return hops[hops.length - 1] ?? "unknown";
-  }
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
 /**
  * 토큰버킷 소비. 허용되면 true.
  * @param key   버킷 식별자(라우트명 + 클라이언트 IP 조합을 권장)

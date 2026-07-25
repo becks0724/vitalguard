@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { sendVerificationEmail } from "../../../../../lib/email";
 import { requestCode } from "../../../../../lib/email-verify";
+import { clientIpFromRequest } from "../../../../../lib/client-ip";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -11,10 +12,10 @@ const IP_WINDOW_MS = 10 * 60 * 1000;
 const IP_MAX = 10;
 const ipHits = new Map<string, { count: number; resetAt: number }>();
 
+// 최좌측은 클라이언트가 위조할 수 있어 헤더 한 줄로 제한을 우회할 수 있었다(감사 BE-AUTHZ-07).
+// 판정은 단일 파서에 위임한다(교훈 L-12).
 function clientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0]!.trim();
-  return req.headers.get("x-real-ip") || "unknown";
+  return clientIpFromRequest(req);
 }
 
 function ipThrottled(ip: string): boolean {
