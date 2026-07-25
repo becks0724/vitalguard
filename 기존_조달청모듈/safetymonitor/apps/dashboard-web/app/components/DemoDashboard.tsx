@@ -89,6 +89,7 @@ import {
 } from "./SiteSafetyTables";
 import { SosAlertModal } from "./SosAlertModal";
 import { GeofenceAlertModal } from "./GeofenceAlertModal";
+import { effectiveTone, withOutsideMetric } from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { WeatherStrip, weatherLabel } from "./WeatherStrip";
@@ -4555,7 +4556,13 @@ export function DemoDashboard() {
       // 연결끊김은 생체 상태보다 우선 — stale 이면 주의(caution)로 강등하고 이상으로 집계.
       // sticky 직전값이 "정상"이어도 끊긴 작업자를 정상으로 보고하는 false-OK 를 막는다.
       const stale = isStale(sample, now);
-      const tone: WorkerStatus["tone"] = stale ? "caution" : workerStatus(sample).tone;
+      // 구획 이탈 — 워치는 작업 중에만 착용하므로 "착용 중 + 구획 밖"은 근무지 이탈로 본다.
+      // stale 이면 위치 판정을 신뢰하지 않는다(미수신 ≠ 이탈, effectiveTone 내부 규칙).
+      const outside = outsideWorkers.has(slot.workerId);
+      const tone: WorkerStatus["tone"] = effectiveTone(
+        stale ? "caution" : workerStatus(sample).tone,
+        { stale, outside },
+      );
       if (rank[tone] > rank[sev]) sev = tone;
       const name = sample?.workerName?.trim() || sample?.employeeId?.trim() || slot.workerId;
       if (stale) {
@@ -4570,7 +4577,8 @@ export function DemoDashboard() {
         if (sp === "caution" || sp === "danger") ms.push("SpO₂");
         const tp = coreTempStatus(sample?.skinTempC);
         if (tp === "caution" || tp === "danger") ms.push("체온");
-        issues.push({ name, metrics: ms.length ? ms.join("·") : "이상" });
+        const withLoc = withOutsideMetric(ms, outside);
+        issues.push({ name, metrics: withLoc.length ? withLoc.join("·") : "이상" });
       }
     }
     const anomaly = issues.length;
@@ -4604,7 +4612,7 @@ export function DemoDashboard() {
               : [{ label: "안내", text: "빈 슬롯에 작업자 등록 시 실시간 평가됩니다." }],
       },
     };
-  }, [filledSlots, latestMap, now]);
+  }, [filledSlots, latestMap, now, outsideWorkers]);
 
   // 이상 발생 시 해당 행으로 자동 스크롤 — 자동 모드에서만(수동 정렬 존중). 빨강 링은 모드 무관.
   useEffect(() => {
@@ -5256,6 +5264,7 @@ export function DemoDashboard() {
                           key={entry.workerId}
                           entry={entry}
                           sample={latestMap.get(entry.workerId)}
+                          outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           stress={
                             stressByWorker.get(entry.workerId) ??
@@ -5295,6 +5304,7 @@ export function DemoDashboard() {
                           key={`${copy}-${entry.workerId}`}
                           entry={entry}
                           sample={latestMap.get(entry.workerId)}
+                          outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           stress={
                             stressByWorker.get(entry.workerId) ??
@@ -5641,6 +5651,8 @@ type WorkerTableRowProps = {
   signal: 0 | 1 | 2 | 3 | 4;
   stress: StressResult;
   isAnomaly: boolean;
+  // 구획(근무지) 이탈 중 — 생체와 별개로 신호등을 주의로 올린다(감사 후속·위치 연동).
+  outside?: boolean;
   fallTs?: string;
   fallPending?: boolean; // 워치 낙상 확인 프롬프트 진행 중(에스컬레이션 전) — "확인 중" 표시.
   count: number;
@@ -5670,6 +5682,7 @@ function WorkerTableRow({
   signal,
   stress,
   isAnomaly,
+  outside,
   fallTs,
   fallPending,
   count,
@@ -5688,11 +5701,13 @@ function WorkerTableRow({
   dragListeners,
 }: WorkerTableRowProps) {
   const workerId = entry.workerId;
-  const overall = overallStatus(sample);
+  const overallVital = overallStatus(sample);
   const wstatus = workerStatus(sample);
   // 연결끊김 — sample 존재 + 신호 60초 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 60초 기준은 워치 30초 배칭 오탐 회피용(STALE_MS 주석 참조).
   const stale = sample !== undefined && signal === 0;
+  // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
+  const overall = effectiveTone(overallVital, { stale, outside });
   const heading = workerHeading(sample, workerId);
   const tabIndex = ariaHidden ? -1 : undefined;
   const accent = stale
