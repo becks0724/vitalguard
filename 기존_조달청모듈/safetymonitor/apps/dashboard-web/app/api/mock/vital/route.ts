@@ -4,6 +4,7 @@ import type { VitalSample } from "@safetymonitor/schemas";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
+import { clientIpForRateLimit, consumeToken } from "../../../../lib/rate-limit";
 import {
   addSample,
   countsByWorker,
@@ -52,6 +53,16 @@ export async function GET(request: Request) {
 let warnedUnauthedVital = false;
 
 export async function POST(request: Request) {
+  // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이었다(감사 BE-RATE-01).
+  // 한도는 실제 전송 케이던스보다 넉넉하게 둔다. 워치·폰은 5초 주기(≈12회/분)이고
+  // NAT 뒤 다수 기기를 감안해 IP 당 분당 120 — 정상 트래픽은 자르지 않고 폭주만 막는다.
+  if (!consumeToken(`vital:${clientIpForRateLimit(request)}`, 120, 60_000)) {
+    console.warn("[vital] 수집 빈도 제한 초과 — 요청 거부");
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   // 토큰 병행(soft) — 유효 토큰 있으면 인증, 무토큰은 한시 허용(경고), 무효 토큰은 거부.
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") {
