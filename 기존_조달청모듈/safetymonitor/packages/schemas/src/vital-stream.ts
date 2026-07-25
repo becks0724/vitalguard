@@ -53,6 +53,23 @@ export const VitalSampleSchema = z.object({
   walkingHeartRate: z.number().min(40).max(250).optional(),
   flightsClimbed: z.number().min(0).max(500).optional(),
   respiratoryRate: z.number().min(4).max(60).optional(),
+
+  // 상시 모션 스냅샷 (워치 VitalTransmitter 의 정기 전송 경로) — 낙상 후보의 충격 피크와는
+  // 의미가 다르다. accelMagnitudeG/peakRotationRadS 는 "충격 순간의 피크"이고 아래 둘은
+  // "지금 이 순간의 값"이다. 이름이 스키마에 없어 그동안 100% 무음 strip 됐다(감사 BND-CONTRACT-01).
+  // 별칭으로 피크 필드에 합치지 않는다 — 상시값이 충격 피크로 오인되면 낙상 분석이 오염된다.
+  accelerationMagnitudeG: z.number().min(0).max(20).optional(),
+  rotationRateRadS: z.number().min(0).max(50).optional(),
+
+  // 낙상 ML 텔레메트리 (감사 BND-CONTRACT-02) — 워치가 후보마다 실어 보내지만 스키마에 없어
+  // 전량 무음 폐기됐다. ML 판정 근거가 저장되지 않아 임계 재학습·오탐 사후분석이 불가능했다.
+  fallRuleIsFall: z.boolean().optional(),
+  mlWorkVetoProb: z.number().min(0).max(1).optional(),
+  mlImpactProb: z.number().min(0).max(1).optional(),
+  mlShouldAlert: z.boolean().optional(),
+  mlVetoedByML: z.boolean().optional(),
+  mlRejectedByImpactML: z.boolean().optional(),
+  mlRescuedByML: z.boolean().optional(),
 });
 
 export type VitalSample = z.infer<typeof VitalSampleSchema>;

@@ -278,3 +278,61 @@ test("리질리언트 — 이벤트여도 필수 필드 문제(ts 형식 오류)
     }),
   );
 });
+
+// --- 감사 BND-CONTRACT-01/-02 회귀 — 워치가 실제로 보내는 키가 살아남는지 ---
+
+test("상시 모션 스냅샷 키(accelerationMagnitudeG/rotationRateRadS)가 보존된다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    accelerationMagnitudeG: 1.02,
+    rotationRateRadS: 0.35,
+  });
+  assert.equal(r.accelerationMagnitudeG, 1.02);
+  assert.equal(r.rotationRateRadS, 0.35);
+});
+
+test("상시 모션값이 충격 피크 필드로 합쳐지지 않는다(의미 분리)", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    accelerationMagnitudeG: 1.02,
+    rotationRateRadS: 0.35,
+  });
+  assert.equal(r.accelMagnitudeG, undefined);
+  assert.equal(r.peakRotationRadS, undefined);
+});
+
+test("낙상 ML 텔레메트리 7종이 보존된다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    fallCandidate: true,
+    fallRuleIsFall: true,
+    mlWorkVetoProb: 0.812,
+    mlImpactProb: 0.44,
+    mlShouldAlert: false,
+    mlVetoedByML: true,
+    mlRejectedByImpactML: false,
+    mlRescuedByML: false,
+  });
+  assert.equal(r.fallRuleIsFall, true);
+  assert.equal(r.mlWorkVetoProb, 0.812);
+  assert.equal(r.mlImpactProb, 0.44);
+  assert.equal(r.mlShouldAlert, false);
+  assert.equal(r.mlVetoedByML, true);
+  assert.equal(r.mlRejectedByImpactML, false);
+  assert.equal(r.mlRescuedByML, false);
+});
+
+test("ML 확률은 0~1 범위 밖이면 해당 필드만 스트립된다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    fallCandidate: true,
+    mlWorkVetoProb: 1.5,
+    mlImpactProb: 0.44,
+  });
+  assert.equal(r.mlWorkVetoProb, undefined);
+  assert.equal(r.mlImpactProb, 0.44);
+});
