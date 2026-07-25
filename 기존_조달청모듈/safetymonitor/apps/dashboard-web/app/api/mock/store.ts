@@ -238,6 +238,34 @@ function hasActivityFields(s: VitalSample): boolean {
   return s.activeEnergyKcal != null || s.steps != null || s.flightsClimbed != null;
 }
 
+// SpO₂ 신선도 TTL — 활동 3필드와 달리 SpO₂ 는 '누락'으로 오래됨을 알 수 없다. 워치가 마지막
+// 스팟 측정값을 매 심박 전송에 계속 얹어 보내 필드가 항상 present 이기 때문이다. 애플워치 SpO₂ 는
+// 연속 측정이 아니라 손목이 정지했을 때만 걸리는 간헐 스팟 측정이라(실측 하루 ~15회, 며칠 0회도
+// 발생), 게이트가 없으면 며칠 전 값이 계속 '정상' 으로 표시되고 신호등·텔레그램 알림·위험 판정까지
+// 그 위에서 이뤄진다(없는 위험을 알리는 낙상 오탐과 반대로, 있는 위험을 놓치는 방향).
+// → 값이 바뀐 적 없는 연속 구간의 시작 ts 로 나이의 하한을 잡고, 30분 초과면 만료(undefined).
+//   spo2Status 가 idle 로 떨어져 "--" 표시 + 모든 판정에서 제외된다(소비처 수정 불필요).
+// 한계: 나이는 하한만 알 수 있다(측정 시각을 워치가 보내주지 않음 — 워치 앱은 팀원 소유라 별도 조율).
+//   서로 다른 두 측정이 우연히 같은 값이면 실제보다 오래된 것으로 본다(안전한 방향의 오차).
+const SPO2_TTL_MS = 30 * 60_000;
+
+type Spo2Obs = { tsMs: number; spo2: number };
+
+// 현재 값이 연속으로 관측되기 시작한 ts — 나이 하한의 기준점.
+// 현재 값과 다른 마지막 관측(lastDiff) 이후로 같은 값만 이어진 구간의 시작점을 찾는다.
+// 관측이 전부 현재 값이면 가장 오래된 관측 ts 가 하한이 된다(그 이전은 ring 밖이라 알 수 없음).
+function spo2RunStartMs(obs: Spo2Obs[], current: number): number | null {
+  let lastDiff = -Infinity;
+  for (const o of obs) {
+    if (o.spo2 !== current && o.tsMs > lastDiff) lastDiff = o.tsMs;
+  }
+  let start = Infinity;
+  for (const o of obs) {
+    if (o.spo2 === current && o.tsMs > lastDiff && o.tsMs < start) start = o.tsMs;
+  }
+  return Number.isFinite(start) ? start : null;
+}
+
 // 순수 함수(I/O 없음) — 워커별 최신 샘플 병합. 단위 테스트 가능하도록 분리.
 // 수집시각(ts) 기준 최신 우선 + null 메트릭 sticky carry-forward + 이벤트 플래그 비-sticky.
 // aliasMap(secondary→primary) 가 있으면 표시 시점에 별칭을 주 ID로 접어 같은 사람을 한 카드로 병합한다
@@ -249,6 +277,8 @@ export function mergeLatestByWorker(
   const latest = new Map<string, VitalSample>();
   // 워커별 활동 분류 필드가 실제 존재했던 최대 샘플 ts(ms) — TTL 판정 기준(Date.now() 미사용 = 순수 유지).
   const activityTsMs = new Map<string, number>();
+  // 워커별 SpO₂ 관측(ts, 값) — 값 변화 시점으로 나이를 산출하기 위해 모은다.
+  const spo2Obs = new Map<string, Spo2Obs[]>();
 
   for (const sample of samples) {
     if (isReservedTestWorker(sample.workerId)) continue;
@@ -260,6 +290,15 @@ export function mergeLatestByWorker(
       if (Number.isFinite(t)) {
         const prevT = activityTsMs.get(wid);
         if (prevT === undefined || t > prevT) activityTsMs.set(wid, t);
+      }
+    }
+
+    if (sample.spo2 != null) {
+      const t = Date.parse(sample.ts);
+      if (Number.isFinite(t)) {
+        const obs = spo2Obs.get(wid);
+        if (obs) obs.push({ tsMs: t, spo2: sample.spo2 });
+        else spo2Obs.set(wid, [{ tsMs: t, spo2: sample.spo2 }]);
       }
     }
 
@@ -315,6 +354,18 @@ export function mergeLatestByWorker(
     }
 
     latest.set(wid, merged);
+  }
+
+  // SpO₂ TTL — 같은 값이 30분 넘게 이어졌으면 그 사이 새 측정이 없었다는 뜻이므로 만료한다.
+  for (const merged of latest.values()) {
+    if (merged.spo2 == null) continue;
+    const obs = spo2Obs.get(merged.workerId);
+    const mergedTsMs = Date.parse(merged.ts);
+    if (obs === undefined || !Number.isFinite(mergedTsMs)) continue;
+    const startMs = spo2RunStartMs(obs, merged.spo2);
+    if (startMs !== null && mergedTsMs - startMs > SPO2_TTL_MS) {
+      merged.spo2 = undefined;
+    }
   }
 
   return Array.from(latest.values()).sort((a, b) =>

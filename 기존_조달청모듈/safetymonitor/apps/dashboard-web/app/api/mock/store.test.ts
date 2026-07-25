@@ -154,6 +154,71 @@ test("mergeLatestByWorker — 스트레스 입력은 90초 초과여도 sticky �
   assert.equal(out[0]?.respiratoryRate, 15);
 });
 
+test("mergeLatestByWorker — 신선한 SpO₂(30분 이내 동일값)는 sticky 유지", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", heartRate: 80, spo2: 97 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:20:00.000Z", heartRate: 82, spo2: 97 }), // 20분 후 재전송
+  ]);
+  assert.equal(out[0]?.spo2, 97);
+});
+
+test("mergeLatestByWorker — SpO₂ TTL 경계(정확히 30분)는 아직 신선(초과만 만료)", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", spo2: 97 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:30:00.000Z", heartRate: 80, spo2: 97 }),
+  ]);
+  assert.equal(out[0]?.spo2, 97);
+});
+
+test("mergeLatestByWorker — 30분 초과 동일 SpO₂ 는 만료(undefined) → '--' 표시·판정 제외", () => {
+  // 워치가 마지막 스팟 측정값을 매 심박 전송에 계속 얹어 보내므로 값은 present 지만 새 측정은 없다.
+  // 게이트가 없으면 오래된 값이 계속 '정상' 으로 표시돼 실제 저산소를 놓친다.
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", spo2: 97 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:31:00.000Z", heartRate: 80, spo2: 97 }), // 31분 후
+  ]);
+  assert.equal(out[0]?.spo2, undefined);
+  assert.equal(out[0]?.heartRate, 80); // 다른 메트릭은 무관(유지)
+});
+
+test("mergeLatestByWorker — SpO₂ 값이 바뀌면 새 측정이므로 TTL 리프레시(만료 없음)", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T09:00:00.000Z", spo2: 95 }), // 1시간 전 옛 값
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", heartRate: 80, spo2: 92 }), // 값 변화 = 새 측정
+  ]);
+  assert.equal(out[0]?.spo2, 92);
+});
+
+test("mergeLatestByWorker — 값 변화 이후 다시 30분 넘게 고정되면 만료", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", spo2: 95 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:10:00.000Z", spo2: 92 }), // 새 측정(run 시작)
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:45:00.000Z", heartRate: 80, spo2: 92 }), // 35분 고정
+  ]);
+  assert.equal(out[0]?.spo2, undefined);
+});
+
+test("mergeLatestByWorker — 며칠 지난 SpO₂ 가 정상으로 표시되던 회귀 차단 (실사례)", () => {
+  // 2026-07-23 측정한 92% 가 07-25 까지 그대로 재전송되며 관제웹에 '정상' 으로 표시되던 케이스.
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-admin6861", ts: "2026-07-23T09:00:00.000Z", spo2: 92 }),
+    s({ workerId: "EMP-admin6861", ts: "2026-07-25T15:58:00.000Z", heartRate: 82, spo2: 92 }),
+  ]);
+  assert.equal(out[0]?.spo2, undefined);
+  assert.equal(out[0]?.heartRate, 82);
+});
+
+test("mergeLatestByWorker — SpO₂ 만료는 워커별 독립(다른 워커의 신선한 값은 유지)", () => {
+  const out = mergeLatestByWorker([
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:00:00.000Z", spo2: 97 }),
+    s({ workerId: "EMP-1", ts: "2026-06-03T10:40:00.000Z", spo2: 97 }), // 40분 고정 → 만료
+    s({ workerId: "EMP-2", ts: "2026-06-03T10:39:00.000Z", spo2: 96 }),
+    s({ workerId: "EMP-2", ts: "2026-06-03T10:40:00.000Z", spo2: 98 }), // 값 변화 → 신선
+  ]);
+  assert.equal(out[0]?.spo2, undefined);
+  assert.equal(out[1]?.spo2, 98);
+});
+
 test("vitalDanger — 안정 임계로 판정(활동 메트릭 동봉해도 작업 게이트로 가려지지 않음)", () => {
   // 심박 140 은 작업 메트릭(고활동)을 동봉해도 안정 임계(≥130)로 danger — false-negative 0.
   assert.equal(
