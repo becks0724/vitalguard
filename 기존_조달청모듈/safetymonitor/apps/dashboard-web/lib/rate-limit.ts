@@ -15,9 +15,20 @@ const MAX_KEYS = 10_000;
  * @param key   버킷 식별자(라우트명 + 클라이언트 IP 조합을 권장)
  * @param limit 윈도당 허용 요청 수
  * @param windowMs 윈도 길이(ms)
+ * @param nowMs 현재 시각(ms). 테스트에서 시계 역행을 재현하기 위한 주입점 — 운영은 기본값 사용.
  */
-export function consumeToken(key: string, limit: number, windowMs: number): boolean {
-  const now = Date.now();
+export function consumeToken(
+  key: string,
+  limit: number,
+  windowMs: number,
+  nowMs: number = Date.now(),
+): boolean {
+  // 인자 방어 — 값이 env·설정에서 오면 오타 하나로 리미터가 조용히 꺼진다(감사 DLT-LIB-007).
+  // windowMs 가 0/NaN 이면 회복량이 Infinity/NaN 이 되어 전 요청이 통과했다. fail-closed 로 막는다.
+  if (!Number.isFinite(limit) || limit < 1) return false;
+  if (!Number.isFinite(windowMs) || windowMs <= 0) return false;
+
+  const now = nowMs;
   const bucket = buckets.get(key);
   if (!bucket) {
     if (buckets.size >= MAX_KEYS) {
@@ -28,7 +39,11 @@ export function consumeToken(key: string, limit: number, windowMs: number): bool
     return true;
   }
   // 경과 시간에 비례해 토큰을 회복시킨다(윈도 전체가 지나면 가득 참).
-  const refill = ((now - bucket.updatedAt) / windowMs) * limit;
+  // 경과를 0 으로 하한한다 — 시계가 뒤로 가면(NTP 보정·수동 변경) 회복량이 음수가 되어
+  // 토큰이 거꾸로 깎이고, 역행 폭만큼의 시간 동안 정상 트래픽이 전면 429 로 막힌다.
+  // 워치·폰은 429 를 재전송하지 않으므로 그대로 무음 유실이 된다(감사 DLT-LIB-006).
+  const elapsed = Math.max(0, now - bucket.updatedAt);
+  const refill = (elapsed / windowMs) * limit;
   const tokens = Math.min(limit, bucket.tokens + refill);
   bucket.updatedAt = now;
   if (tokens < 1) {

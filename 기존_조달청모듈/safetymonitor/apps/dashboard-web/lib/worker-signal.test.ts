@@ -2,7 +2,13 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { effectiveTone, gateStaleVitals, withOutsideMetric, worseTone } from "./worker-signal";
+import {
+  disconnectMetric,
+  effectiveTone,
+  gateStaleVitals,
+  withOutsideMetric,
+  worseTone,
+} from "./worker-signal";
 
 test("worseTone — 더 위험한 쪽을 남긴다", () => {
   assert.equal(worseTone("normal", "caution"), "caution");
@@ -23,11 +29,28 @@ test("구획 안이면 생체 판정을 그대로 쓴다", () => {
   assert.equal(effectiveTone("caution", {}), "caution");
 });
 
-// 미수신을 이탈로 오인하지 않는다 — 연결끊김이면 위치 판정을 신뢰하지 않는다.
-test("연결끊김이면 이탈 여부와 무관하게 주의(연결끊김 사유)로 처리된다", () => {
+// 감사 DLT-LIB-012 정정 — 과거 테스트는 stale/outside 분기가 같은 값을 반환하는 것을
+// 몰랐고(둘 다 최소 caution) "stale 이 우선"이라는 있지도 않은 동작을 고정한다고 착각했다.
+// 실제로 고정해야 할 계약은 "둘 중 하나라도 참이면 최소 caution, danger 는 유지"다.
+test("stale 또는 outside 면 최소 caution 으로 올린다", () => {
+  assert.equal(effectiveTone("normal", { stale: true }), "caution");
+  assert.equal(effectiveTone("normal", { outside: true }), "caution");
   assert.equal(effectiveTone("normal", { stale: true, outside: true }), "caution");
-  assert.equal(effectiveTone("normal", { stale: true, outside: false }), "caution");
+  assert.equal(effectiveTone("idle", { stale: true }), "caution");
+});
+
+test("생체 danger 는 stale·outside 와 무관하게 유지된다", () => {
   assert.equal(effectiveTone("danger", { stale: true }), "danger");
+  assert.equal(effectiveTone("danger", { outside: true }), "danger");
+  assert.equal(effectiveTone("danger", { stale: true, outside: true }), "danger");
+});
+
+// 감사 DLT-LIB-013 — 톤은 같아도 라벨은 구별해야 한다.
+// "구획 밖에서 신호 두절"은 마지막 확인 위치가 작업구역 밖이라는 뜻이라 수색 시작점이 달라진다.
+test("구획 밖에서 끊긴 것과 그냥 끊긴 것을 라벨로 구별한다", () => {
+  assert.equal(disconnectMetric(true), "구획밖 연결끊김");
+  assert.equal(disconnectMetric(false), "연결끊김");
+  assert.notEqual(disconnectMetric(true), disconnectMetric(false));
 });
 
 test("이상 사유에 구획이탈이 덧붙는다", () => {

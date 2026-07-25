@@ -89,7 +89,12 @@ import {
 } from "./SiteSafetyTables";
 import { SosAlertModal } from "./SosAlertModal";
 import { GeofenceAlertModal } from "./GeofenceAlertModal";
-import { effectiveTone, gateStaleVitals, withOutsideMetric } from "../../lib/worker-signal";
+import {
+  disconnectMetric,
+  effectiveTone,
+  gateStaleVitals,
+  withOutsideMetric,
+} from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { WeatherStrip, weatherLabel } from "./WeatherStrip";
@@ -4577,14 +4582,17 @@ export function DemoDashboard() {
       // 구획 이탈 — 워치는 작업 중에만 착용하므로 "착용 중 + 구획 밖"은 근무지 이탈로 본다.
       // stale 이면 위치 판정을 신뢰하지 않는다(미수신 ≠ 이탈, effectiveTone 내부 규칙).
       const outside = outsideWorkers.has(slot.workerId);
-      const tone: WorkerStatus["tone"] = effectiveTone(
-        stale ? "caution" : workerStatus(sample).tone,
-        { stale, outside },
-      );
+      // 가공하지 않은 생체 톤을 넘긴다 — 과거 여기서만 stale 을 미리 caution 으로 강등해
+      // 표 행(원 톤 전달)과 결과가 갈렸다(감사 DLT-LIB-014).
+      const tone: WorkerStatus["tone"] = effectiveTone(workerStatus(sample).tone, {
+        stale,
+        outside,
+      });
       if (rank[tone] > rank[sev]) sev = tone;
       const name = sample?.workerName?.trim() || sample?.employeeId?.trim() || slot.workerId;
       if (stale) {
-        issues.push({ name, metrics: "연결끊김" });
+        // 구획 밖에서 끊긴 것은 마지막 확인 위치가 작업구역 밖이라는 뜻 — 수색 시작점이 달라진다.
+        issues.push({ name, metrics: disconnectMetric(outside) });
       } else if (tone === "caution" || tone === "danger") {
         const ms: string[] = [];
         if (sample?.manualSos) ms.push("SOS");
