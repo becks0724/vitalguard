@@ -4,29 +4,18 @@ import { NextResponse } from "next/server";
 import { sendVerificationEmail } from "../../../../../lib/email";
 import { requestCode } from "../../../../../lib/email-verify";
 import { clientIpFromRequest } from "../../../../../lib/client-ip";
+import { consumeToken } from "../../../../../lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // per-IP 스팸/남용 방지 — 동일 IP 10분당 발송 한도(메일 릴레이 악용 차단).
+// 자체 Map 대신 공통 토큰버킷을 쓴다 — 자체 구현은 상한·스윕이 없어 고유 IP 유입만으로
+// 무한 증식하고, OOM 으로 프로세스가 재시작되면 제한 상태가 통째로 리셋됐다(감사 DLT-LIB-011).
 const IP_WINDOW_MS = 10 * 60 * 1000;
 const IP_MAX = 10;
-const ipHits = new Map<string, { count: number; resetAt: number }>();
-
-// 최좌측은 클라이언트가 위조할 수 있어 헤더 한 줄로 제한을 우회할 수 있었다(감사 BE-AUTHZ-07).
-// 판정은 단일 파서에 위임한다(교훈 L-12).
-function clientIp(req: Request): string {
-  return clientIpFromRequest(req);
-}
 
 function ipThrottled(ip: string): boolean {
-  const now = Date.now();
-  const cur = ipHits.get(ip);
-  if (!cur || now > cur.resetAt) {
-    ipHits.set(ip, { count: 1, resetAt: now + IP_WINDOW_MS });
-    return false;
-  }
-  cur.count += 1;
-  return cur.count > IP_MAX;
+  return !consumeToken(`send-code:${ip}`, IP_MAX, IP_WINDOW_MS);
 }
 
 export async function POST(request: Request) {
@@ -44,7 +33,7 @@ export async function POST(request: Request) {
     );
   }
 
-  if (ipThrottled(clientIp(request))) {
+  if (ipThrottled(clientIpFromRequest(request))) {
     return NextResponse.json(
       { ok: false, error: "요청이 많습니다. 잠시 후 다시 시도해주세요." },
       { status: 429 },

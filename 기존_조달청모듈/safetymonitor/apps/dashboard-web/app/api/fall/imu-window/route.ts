@@ -3,6 +3,8 @@
 // 인증 없음(임시 수집 버퍼, 본 파이프라인과 미연결). 필요 시 토큰 헤더 추가.
 import { NextResponse } from "next/server";
 
+import { clientIpFromRequest } from "../../../../lib/client-ip";
+import { consumeToken } from "../../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
 import { insertImuWindow } from "../../../../lib/db";
 
@@ -12,6 +14,14 @@ let warnedUnauthedImu = false;
 const MAX_IMU_ROWS = 2000;
 
 export async function POST(request: Request) {
+  // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이다(감사 VER-013).
+  if (!consumeToken(`imu:${clientIpFromRequest(request)}`, 30, 60_000)) {
+    console.warn("[imu] 수집 빈도 제한 초과 — 요청 거부");
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   // 토큰 병행(soft) — 유효 토큰 있으면 인증, 무토큰 한시 허용(경고), 무효 토큰 거부.
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") {

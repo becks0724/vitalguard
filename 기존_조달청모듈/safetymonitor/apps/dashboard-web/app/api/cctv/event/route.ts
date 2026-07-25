@@ -3,6 +3,8 @@ import { ZodError } from "zod";
 import { CctvFallEventSchema } from "@safetymonitor/schemas";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { clientIpFromRequest } from "../../../../lib/client-ip";
+import { consumeToken } from "../../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
 import { ingestCctvEvent, recentZoneHazards } from "../ingest";
 import { recentCctvEvents } from "../../../../lib/db";
@@ -14,6 +16,14 @@ let warnedUnauthedCctv = false;
 // 기존 vital route 패턴 답습(배열/단일, Zod, 항목 격리). 단 CCTV 는 reserved worker 가 없어
 // 202 분기를 두지 않는다(설계 §9) — 201/400 만 사용.
 export async function POST(request: Request) {
+  // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이다(감사 VER-013).
+  if (!consumeToken(`cctv:${clientIpFromRequest(request)}`, 120, 60_000)) {
+    console.warn("[cctv] 수집 빈도 제한 초과 — 요청 거부");
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   // 토큰 병행(soft) — 유효 토큰 있으면 인증, 무토큰 한시 허용(경고), 무효 토큰 거부.
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") {

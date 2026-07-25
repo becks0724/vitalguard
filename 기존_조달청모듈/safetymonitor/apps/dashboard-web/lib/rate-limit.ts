@@ -6,7 +6,14 @@
 
 type Bucket = { tokens: number; updatedAt: number };
 
-const buckets = new Map<string, Bucket>();
+// globalThis 앵커 — 형제 모듈(admin-auth.ts 의 로그인 시도 Map)과 같은 패턴.
+// 모듈 지역 변수로 두면 라우트별 번들에 복제되어 한도가 번들 수만큼 쪼개진다(감사 DLT-LIB-008).
+const globalForBuckets = globalThis as typeof globalThis & {
+  __safetyMonitorRateBuckets?: Map<string, Bucket>;
+};
+const buckets: Map<string, Bucket> =
+  globalForBuckets.__safetyMonitorRateBuckets ??
+  (globalForBuckets.__safetyMonitorRateBuckets = new Map());
 // 메모리 무한 증식 방지 — 키가 이 수를 넘으면 가장 오래된 것부터 정리한다.
 const MAX_KEYS = 10_000;
 

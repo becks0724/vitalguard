@@ -362,3 +362,25 @@ test("ML 확률은 0~1 범위 밖이면 해당 필드만 스트립된다", () =>
   assert.equal(r.mlWorkVetoProb, undefined);
   assert.equal(r.mlImpactProb, 0.44);
 });
+
+// 감사 DLT-SCHEMA — workerId 는 서버 로그와 버킷 키에 그대로 들어간다.
+// 개행 위조(로그 인젝션)·초장문 로그 부풀리기를 스키마에서 막는다.
+test("workerId — 실사용 사번 형식은 통과한다", () => {
+  for (const id of ["EMP-6861", "EMP-admin6861", "worker1", "smoke_xff", "infra_check"]) {
+    assert.equal(
+      VitalSampleSchema.safeParse({ workerId: id, ts: TS }).success,
+      true,
+      `${id} 가 거부됨`,
+    );
+  }
+});
+
+test("workerId — 개행·공백·한글·초장문은 거부한다", () => {
+  for (const bad of ["EMP\n[vital] 위조", "EMP 6861", "한글사번", "A".repeat(65)]) {
+    assert.equal(
+      VitalSampleSchema.safeParse({ workerId: bad, ts: TS }).success,
+      false,
+      `${JSON.stringify(bad.slice(0, 12))} 가 통과됨`,
+    );
+  }
+});

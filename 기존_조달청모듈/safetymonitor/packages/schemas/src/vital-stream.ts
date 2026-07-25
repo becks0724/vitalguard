@@ -2,7 +2,13 @@
 import { z } from "zod";
 
 export const VitalSampleSchema = z.object({
-  workerId: z.string().min(1),
+  // 길이·문자셋 제한 — workerId 는 서버 로그(`[vital] … workerId=…`)와 버킷 키에 그대로 들어간다.
+  // 무제한이면 개행을 넣어 로그 라인을 위조하거나 100KB 문자열로 로그를 부풀릴 수 있다(감사 DLT-SCHEMA).
+  workerId: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9._:-]+$/, "workerId 는 영숫자와 . _ : - 만 허용"),
   ts: z.string().datetime(),
   workerName: z.string().min(1).max(40).optional(),
   employeeId: z.string().min(1).max(40).optional(),

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { aedDetail, gasDetail, type LampDetail } from "./SiteSafetyTables";
+import { getSessionToken } from "./LoginGate";
 
 function formatTodayBoardDate() {
   const now = new Date();
@@ -147,7 +148,13 @@ export function SafetySignalBoard({
     }
     let alive = true;
     const load = () =>
-      fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`)
+      // 토큰 동봉 — 서버가 세션·크론키가 있을 때만 특보 알림을 발사한다(감사 DLT-FE-2 전수 재조사).
+      fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, {
+        headers: (() => {
+          const t = getSessionToken();
+          return t ? { Authorization: `Bearer ${t}` } : undefined;
+        })(),
+      })
         .then((r) => r.json())
         .then((j: KmaWarning) => {
           if (alive) setWeather(j);

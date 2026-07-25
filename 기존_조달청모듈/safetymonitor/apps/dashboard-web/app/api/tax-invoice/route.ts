@@ -3,6 +3,8 @@
 // 수집 정책 = gaspod/cctv 와 동일 soft 토큰 + DB 영속(tax_invoice) + 메모리 링버퍼 폴백(DATABASE_URL 없는 로컬 데모).
 import { NextResponse } from "next/server";
 
+import { clientIpFromRequest } from "../../../lib/client-ip";
+import { consumeToken } from "../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../lib/ingest-auth";
 import { insertTaxInvoice, listTaxInvoices, type TaxInvoiceRow } from "../../../lib/db";
 
@@ -14,6 +16,14 @@ const recent: TaxInvoiceRow[] = []; // DB 미설정/장애 폴백(최근 200건)
 let warned = false;
 
 export async function POST(request: Request) {
+  // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이다(감사 VER-013).
+  if (!consumeToken(`taxinv:${clientIpFromRequest(request)}`, 60, 60_000)) {
+    console.warn("[taxinv] 수집 빈도 제한 초과 — 요청 거부");
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
   if (auth === "none" && !warned) {

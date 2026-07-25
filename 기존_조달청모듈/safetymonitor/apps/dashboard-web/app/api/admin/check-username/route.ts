@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { findUserByUsername } from "../../../../lib/db";
 import { clientIpFromXff } from "../../../../lib/admin-auth";
+import { consumeToken } from "../../../../lib/rate-limit";
 
 const USERNAME_RE = /^[a-zA-Z0-9._-]{3,40}$/;
 const RESERVED = new Set(["admin", "owner", "root", "administrator", "superuser"]);
@@ -10,17 +11,9 @@ const RESERVED = new Set(["admin", "owner", "root", "administrator", "superuser"
 // per-IP 조회 한도 — 사용자명 열거(enumeration) 남용 완화.
 const IP_WINDOW_MS = 60 * 1000;
 const IP_MAX = 30;
-const ipHits = new Map<string, { count: number; resetAt: number }>();
-
+// 공통 토큰버킷 사용 — 자체 Map 은 상한·스윕이 없어 무한 증식했다(감사 DLT-LIB-011).
 function ipThrottled(ip: string): boolean {
-  const now = Date.now();
-  const cur = ipHits.get(ip);
-  if (!cur || now > cur.resetAt) {
-    ipHits.set(ip, { count: 1, resetAt: now + IP_WINDOW_MS });
-    return false;
-  }
-  cur.count += 1;
-  return cur.count > IP_MAX;
+  return !consumeToken(`check-username:${ip}`, IP_MAX, IP_WINDOW_MS);
 }
 
 export async function GET(request: Request) {

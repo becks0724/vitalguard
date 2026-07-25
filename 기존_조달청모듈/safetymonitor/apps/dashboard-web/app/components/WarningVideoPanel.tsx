@@ -5,6 +5,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getSessionToken } from "./LoginGate";
 
 type ActiveWarning = { type: string; level: "경보" | "주의보"; regions: string[] };
 type Preliminary = { type: string; when: string; regions: string[] };
@@ -148,7 +149,12 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
       setLoading(true);
       setError(null);
       try {
-        const kmaRes = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, { cache: "no-store" });
+        // 토큰 동봉 — 서버가 세션·크론키가 있을 때만 특보 알림을 발사한다(감사 DLT-FE-2 전수 재조사).
+        const kmaToken = getSessionToken();
+        const kmaRes = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, {
+          cache: "no-store",
+          headers: kmaToken ? { Authorization: `Bearer ${kmaToken}` } : undefined,
+        });
         const kma = (await kmaRes.json()) as KmaResp;
         if (!alive) return;
         const act = pickActive(kma);

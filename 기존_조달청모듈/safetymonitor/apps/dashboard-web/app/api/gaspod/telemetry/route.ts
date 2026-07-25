@@ -2,6 +2,8 @@
 // 저장 = PostgreSQL 영속(gaspod_telemetry)에 실시간 누적 + 메모리 링버퍼 폴백(DB 장애 시). GET은 DB에서 최신·누적수 반환(인스턴스 무관).
 import { NextResponse } from "next/server";
 
+import { clientIpFromRequest } from "../../../../lib/client-ip";
+import { consumeToken } from "../../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
 import { countGaspodTelemetry, insertGaspodTelemetry, listGaspodTelemetry } from "../../../../lib/db";
 
@@ -15,6 +17,14 @@ const recent: GaspodTelemetry[] = []; // DB 장애 폴백용 메모리 링버퍼
 let warned = false;
 
 export async function POST(request: Request) {
+  // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이다(감사 VER-013).
+  if (!consumeToken(`gaspod:${clientIpFromRequest(request)}`, 120, 60_000)) {
+    console.warn("[gaspod] 수집 빈도 제한 초과 — 요청 거부");
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   const auth = ingestAuthStatus(request);
   if (auth === "invalid") return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
   // 정적 토큰 강제(무중단 롤아웃): 기본은 soft 수용. GASPOD_REQUIRE_TOKEN 설정 시 무토큰(none)도 거부.

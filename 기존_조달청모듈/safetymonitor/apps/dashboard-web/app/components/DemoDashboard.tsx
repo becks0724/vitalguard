@@ -2033,7 +2033,12 @@ function HeaderCalendarPopup({
       }
       // 발효 기상특보 — 실패해도 예보 축만으로 동작(별도 try).
       try {
-        const res = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, { cache: "no-store" });
+        // 토큰 동봉 — 바로 위 형제 weather 호출에는 붙었는데 여기만 빠져 있었다(감사 DLT-FE-3).
+        const kmaToken = getSessionToken();
+        const res = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, {
+          cache: "no-store",
+          headers: kmaToken ? { Authorization: `Bearer ${kmaToken}` } : undefined,
+        });
         if (!active || !res.ok) return;
         const json = (await res.json()) as { ok?: boolean; warnings?: { type?: string }[] };
         if (!active || !json.ok || !Array.isArray(json.warnings)) return;

@@ -222,7 +222,14 @@ export function WeatherStrip({
     let active = true;
     async function loadKma() {
       try {
-        const res = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, { cache: "no-store" });
+        // 토큰 동봉 — 서버가 세션·크론키가 있을 때만 특보 알림을 발사한다(BE-AUTHZ-02).
+        // 18ae4b8 이 같은 파일의 weather load() 에만 붙이고 여기를 빠뜨려, 브라우저 경로
+        // 특보 알림이 항상 스킵되고 있었다(감사 DLT-FE-2).
+        const kmaToken = getSessionToken();
+        const res = await fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, {
+          cache: "no-store",
+          headers: kmaToken ? { Authorization: `Bearer ${kmaToken}` } : undefined,
+        });
         if (!active || !res.ok) return;
         const json = (await res.json()) as KmaWarningResponse;
         if (active && json.ok) setKma(json);
