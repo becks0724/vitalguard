@@ -8,6 +8,7 @@ import {
   type WeatherDailyRow,
 } from "../../../lib/db";
 import { verifyBasicAuth } from "../../../lib/admin-auth";
+import { cronAuth } from "../../../lib/cron-auth";
 import { notifyEnvAlerts, ruleEvalToItem } from "../../../lib/env-alert-notify";
 import {
   evaluateApparentTemp,
@@ -157,7 +158,11 @@ export async function GET(request: Request) {
     // 부작용(DB 쓰기·알림)은 로그인 세션이 있을 때만 수행한다. 조회 자체는 공개로 유지한다.
     // 과거에는 무인증 GET 이 그대로 쓰기까지 했고, weather_daily 는 하루 1행 upsert 라
     // 외부인이 curl 한 번으로 폭염 기록을 덮어쓸 수 있었다(감사 BE-AUTHZ-02).
-    const trusted = verifyBasicAuth(request);
+    // 로그인 세션 또는 Cloud Scheduler 크론 키. 크론은 브라우저 없이 도는 무인 24/7 경로라
+    // 세션이 없다 — 여기서 인정하지 않으면 현장환경 알림이 조용히 멈춘다.
+    const trusted =
+      verifyBasicAuth(request) ||
+      cronAuth(request.headers.get("x-cron-key"), process.env.CRON_SECRET) === "ok";
     if (!trusted) {
       console.warn("[weather] 무인증 조회 — 이력 저장·환경 알림을 건너뛴다");
     }

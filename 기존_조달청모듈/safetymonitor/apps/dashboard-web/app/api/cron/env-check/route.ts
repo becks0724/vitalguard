@@ -39,15 +39,24 @@ export async function GET(request: Request) {
   const host = request.headers.get("host");
   const origin = host ? `https://${host}` : new URL(request.url).origin;
   const query = `lat=${lat}&lon=${lon}`;
+  // 크론 키를 자기호출에 전달한다. weather/kma 는 부작용(이력 저장·텔레그램 발송)을 인증된
+  // 호출에만 수행하므로(BE-AUTHZ-02), 키가 없으면 무인 24/7 알림이 조용히 멈춘다.
+  const cronHeaders = { "x-cron-key": process.env.CRON_SECRET ?? "" };
   const checked: Record<string, number | string> = {};
   try {
-    const w = await fetch(`${origin}/api/weather?${query}`, { cache: "no-store" });
+    const w = await fetch(`${origin}/api/weather?${query}`, {
+      cache: "no-store",
+      headers: cronHeaders,
+    });
     checked.weather = w.status;
   } catch {
     checked.weather = "error";
   }
   try {
-    const k = await fetch(`${origin}/api/kma-warning?${query}`, { cache: "no-store" });
+    const k = await fetch(`${origin}/api/kma-warning?${query}`, {
+      cache: "no-store",
+      headers: cronHeaders,
+    });
     checked.kma = k.status;
   } catch {
     checked.kma = "error";
