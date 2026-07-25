@@ -217,21 +217,22 @@ test("리질리언트 — 이벤트 샘플의 정상 범위 vital 은 그대로 
   assert.equal(r.spo2, undefined);
 });
 
-// BND-LOSS-01 회귀 — 비-이벤트 샘플도 필드 단위 스트립으로 살린다(과거엔 통째 throw).
-test("리질리언트 — 비-이벤트 샘플도 범위 밖 필드만 스트립되고 나머지는 살아남는다", () => {
-  const r = parseResilientVitalSample({
-    workerId: "EMP-1",
-    ts: TS,
-    heartRate: 15,
-    spo2: 97,
-  });
-  assert.equal(r.heartRate, undefined);
-  assert.equal(r.spo2, 97);
-  assert.equal(r.workerId, "EMP-1");
+// ★ 2차 감사 회귀(P0) — 비-이벤트 샘플의 생체값은 스트립하지 않는다.
+// 스트립하면 샘플이 저장되어 ts 가 전진하고 sticky 병합이 직전 정상값을 되살려
+// "정상·연결됨"으로 표시된다. 거부해야 ts 가 늙고 신선도 게이트가 연결끊김으로 드러낸다.
+test("비-이벤트 + 범위 밖 SpO₂(40)는 스트립하지 않고 거부한다", () => {
+  assert.throws(() =>
+    parseResilientVitalSample({ workerId: "EMP-1", ts: TS, spo2: 40, heartRate: 80 }),
+  );
 });
 
-// 실제 사고 재현 — 워치가 하루 누적 활동량을 보내는 오후 상황.
-// 과거에는 이 샘플 전체가 폐기되어 심박·SpO₂ 까지 함께 사라졌다.
+test("비-이벤트 + 범위 밖 심박(15)도 거부한다", () => {
+  assert.throws(() =>
+    parseResilientVitalSample({ workerId: "EMP-1", ts: TS, heartRate: 15, spo2: 97 }),
+  );
+});
+
+// 원래 고치려던 문제 — 활동량은 수집 창 정의 차이라 스트립해도 안전하다.
 test("리질리언트 — 하루 누적 steps/kcal 초과가 생체값을 죽이지 않는다", () => {
   const r = parseResilientVitalSample({
     workerId: "EMP-1",
@@ -247,6 +248,31 @@ test("리질리언트 — 하루 누적 steps/kcal 초과가 생체값을 죽이
   assert.equal(r.skinTempC, 36.5);
   assert.equal(r.steps, undefined);
   assert.equal(r.activeEnergyKcal, undefined);
+});
+
+test("flightsClimbed 초과도 활동량이라 스트립 대상", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    heartRate: 88,
+    flightsClimbed: 9999,
+  });
+  assert.equal(r.heartRate, 88);
+  assert.equal(r.flightsClimbed, undefined);
+});
+
+// 이벤트 샘플은 종전 동작 유지 — 플래그가 경보를 살리므로 생체값 스트립이 안전하다.
+test("이벤트 샘플은 생체값도 스트립해 플래그를 살린다(종전 동작)", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    manualSos: true,
+    spo2: 40,
+    heartRate: 80,
+  });
+  assert.equal(r.manualSos, true);
+  assert.equal(r.spo2, undefined);
+  assert.equal(r.heartRate, 80);
 });
 
 test("리질리언트 — 스트립이 발생하면 onStrip 으로 관측 가능하다", () => {

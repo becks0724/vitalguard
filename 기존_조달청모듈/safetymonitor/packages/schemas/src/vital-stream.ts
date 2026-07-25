@@ -80,14 +80,44 @@ export type VitalSample = z.infer<typeof VitalSampleSchema>;
 // 스키마 범위를 벗어나도 플래그·나머지 유효 필드는 살아남아 경보(recordAlert)가 발화한다.
 // 값을 경계로 조작(clamp)하지 않는다 — 조작된 vital 을 기록하느니 비워두고 플래그로 경보를 살린다.
 //
-// 2026-07-25 — 이벤트 플래그(manualSos/fallDetected) 샘플 한정에서 **전 샘플**로 확대.
-// 사유: 워치가 활동량(steps/activeEnergyKcal)을 하루 누적으로 보내 오후에 스키마 상한을 넘기면,
-// 비-이벤트 샘플이 strict 로 거부되면서 심박·SpO₂·체온까지 함께 폐기됐다(감사 BND-LOSS-01).
-// 가용성(모니터링 지속) > 엄격성으로 판단을 뒤집는다. 대신 스트립은 반드시 관측 가능해야 한다 —
-// onStrip 으로 호출부가 로그를 남기지 않으면 이 파서 자체가 새로운 침묵이 된다.
+// 2026-07-25 — 이벤트 플래그 샘플 한정에서 전 샘플로 확대했다가, 2026-07-26 **부분 철회**.
+// 확대 사유였던 것: 워치가 활동량(steps/activeEnergyKcal)을 하루 누적으로 보내 오후에 상한을
+// 넘기면 비-이벤트 샘플이 strict 로 거부되면서 심박·SpO₂·체온까지 함께 폐기됐다(감사 BND-LOSS-01).
+//
+// 철회 사유(2차 감사에서 3개 에이전트가 독립 확인, 1건은 파서 실행으로 실측):
+// 전 샘플 확대는 **생체값에 대해 더 위험한 결과**를 낳았다. 비-이벤트 샘플의 범위 밖 spo2(<50)·
+// heartRate(<20)가 조용히 스트립되면 샘플은 저장되어 ts 가 전진하고, store.ts 의 sticky 병합이
+// 그 자리를 직전 정상값으로 채운다 → 화면에 "정상·연결됨"으로 표시되고 경보도 발화하지 않는다.
+// 확대 전에는 샘플이 통째 거부되어 ts 가 늙었고 신선도 게이트가 "연결끊김"으로 드러냈다.
+// 위 주석의 "플래그와 나머지 필드가 살아남아 경보가 발화한다"는 논리는 **이벤트 샘플에만 성립**한다 —
+// 비-이벤트 샘플에는 발화시킬 플래그가 없다. 확대 시 이 전제를 검토하지 않은 것이 원인이다.
+//
+// 그래서 스트립 범위를 **위험 신호가 아닌 필드로 한정**한다(아래 허용목록).
+//  - 활동량(steps/activeEnergyKcal/flightsClimbed) = 창(window) 정의 불일치로 상한을 넘는 것이라
+//    버려도 안전하다. 이 필드가 없다고 사람이 위험해지지 않는다.
+//  - 생체값 = 범위 이탈 자체가 응급 신호일 수 있다. 조용히 지우면 안 된다.
+//    이벤트 샘플(manualSos/fallDetected)에서는 종전대로 스트립한다 — 플래그가 경보를 살리므로.
+//
+// 스트립은 반드시 관측 가능해야 한다 — onStrip 으로 호출부가 로그를 남기지 않으면
+// 이 파서 자체가 새로운 침묵이 된다.
 //
 // 스트립 판별은 하드코딩 bounds 가 아니라 ZodError issues(too_small/too_big) + 스키마 shape
 // (optional 숫자 필드)가 진실 소스 — workerId/ts 같은 필수 필드·형식 오류는 스트립 불가라 throw.
+
+// 어떤 샘플에서도 스트립을 허용하는 필드 = **범위를 벗어나도 그 자체가 위험 신호가 아닌 것**.
+// 판정 기준 — "이 값이 없다고 사람이 위험해지는가". 아니면 스트립, 맞으면 거부(샘플 전체를 살리지 않는다).
+//  - 활동량 3종: 수집 창 정의 불일치(하루 누적 vs 60초 합)로 상한을 넘는다. 없어도 안전.
+//  - ML 확률 2종: 진단용 텔레메트리. 확률 하나가 망가졌다고 낙상 후보 전체를 버리면 손해가 더 크다.
+// 심박·SpO₂·체온·가속도 등 생체값은 **의도적으로 제외** — 범위 이탈 자체가 응급일 수 있다.
+// 새 필드를 추가할 때 여기 넣지 않으면 기본값은 "거부"다(안전한 실패 방향).
+const NON_SAFETY_STRIPPABLE_KEYS = new Set([
+  "steps",
+  "activeEnergyKcal",
+  "flightsClimbed",
+  "mlWorkVetoProb",
+  "mlImpactProb",
+]);
+
 export function parseResilientVitalSample(
   input: unknown,
   onStrip?: (strippedKeys: string[], sample: VitalSample) => void,
@@ -101,6 +131,10 @@ export function parseResilientVitalSample(
       : null;
   if (raw === null) throw first.error;
 
+  // 이벤트 샘플은 플래그가 경보를 살리므로 생체값까지 스트립해 샘플을 구제한다.
+  // 비-이벤트 샘플은 활동량만 스트립한다 — 생체값을 지우면 위험이 정상으로 보인다.
+  const isEventSample = raw.manualSos === true || raw.fallDetected === true;
+
   const shape: Record<string, z.ZodTypeAny> = VitalSampleSchema.shape;
   const candidate: Record<string, unknown> = { ...raw };
   const strippedKeys: string[] = [];
@@ -113,6 +147,9 @@ export function parseResilientVitalSample(
       if (issue.path.length !== 1) continue;
       const key = issue.path[0];
       if (typeof key !== "string") continue;
+      // 비-이벤트 샘플에서 생체값은 스트립하지 않는다 → 샘플 전체가 거부되어 ts 가 늙고
+      // 신선도 게이트가 "연결끊김"으로 드러낸다(조용한 정상 표시보다 안전한 실패).
+      if (!isEventSample && !NON_SAFETY_STRIPPABLE_KEYS.has(key)) continue;
       const field = shape[key];
       if (!(field instanceof z.ZodOptional)) continue;
       if (!(field.unwrap() instanceof z.ZodNumber)) continue;
