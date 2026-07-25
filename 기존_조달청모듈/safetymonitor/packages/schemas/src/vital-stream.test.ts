@@ -217,10 +217,55 @@ test("리질리언트 — 이벤트 샘플의 정상 범위 vital 은 그대로 
   assert.equal(r.spo2, undefined);
 });
 
-test("리질리언트 — 비-이벤트 샘플은 strict 그대로(범위 밖 heartRate 는 throw)", () => {
-  assert.throws(() =>
-    parseResilientVitalSample({ workerId: "EMP-1", ts: TS, heartRate: 15 }),
+// BND-LOSS-01 회귀 — 비-이벤트 샘플도 필드 단위 스트립으로 살린다(과거엔 통째 throw).
+test("리질리언트 — 비-이벤트 샘플도 범위 밖 필드만 스트립되고 나머지는 살아남는다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    heartRate: 15,
+    spo2: 97,
+  });
+  assert.equal(r.heartRate, undefined);
+  assert.equal(r.spo2, 97);
+  assert.equal(r.workerId, "EMP-1");
+});
+
+// 실제 사고 재현 — 워치가 하루 누적 활동량을 보내는 오후 상황.
+// 과거에는 이 샘플 전체가 폐기되어 심박·SpO₂ 까지 함께 사라졌다.
+test("리질리언트 — 하루 누적 steps/kcal 초과가 생체값을 죽이지 않는다", () => {
+  const r = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    heartRate: 88,
+    spo2: 97,
+    skinTempC: 36.5,
+    steps: 9000,
+    activeEnergyKcal: 450,
+  });
+  assert.equal(r.heartRate, 88);
+  assert.equal(r.spo2, 97);
+  assert.equal(r.skinTempC, 36.5);
+  assert.equal(r.steps, undefined);
+  assert.equal(r.activeEnergyKcal, undefined);
+});
+
+test("리질리언트 — 스트립이 발생하면 onStrip 으로 관측 가능하다", () => {
+  let seen: string[] | null = null;
+  parseResilientVitalSample(
+    { workerId: "EMP-1", ts: TS, heartRate: 88, steps: 9000 },
+    (keys) => {
+      seen = keys;
+    },
   );
+  assert.deepEqual(seen, ["steps"]);
+});
+
+test("리질리언트 — 스트립이 없으면 onStrip 은 호출되지 않는다", () => {
+  let called = false;
+  parseResilientVitalSample({ workerId: "EMP-1", ts: TS, heartRate: 88 }, () => {
+    called = true;
+  });
+  assert.equal(called, false);
 });
 
 test("리질리언트 — 이벤트여도 필수 필드 문제(ts 형식 오류)는 스트립으로 못 살려 throw", () => {

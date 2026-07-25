@@ -111,9 +111,14 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
         }
       : input;
 
-  // 리질리언트 파서 — 이벤트 플래그(SOS/낙상) 샘플은 범위 밖 vital 만 스트립하고 수용해
-  // recordAlert 이전 throw 로 응급 샘플 전체가 조용히 폐기되는 것을 막는다(비-이벤트는 strict 동일).
-  const parsed = parseResilientVitalSample(normalized);
+  // 리질리언트 파서 — 범위 밖 vital 만 필드 단위로 스트립하고 나머지는 수용해, 한 필드 때문에
+  // 샘플 전체(심박·SpO₂·체온 포함)가 조용히 폐기되는 것을 막는다.
+  // 스트립은 반드시 로그로 드러낸다 — 조용히 버리면 "데이터가 왜 없는지" 아무도 모르게 된다.
+  const parsed = parseResilientVitalSample(normalized, (keys, sample) => {
+    console.warn(
+      `[vital] 범위 밖 필드 스트립 — workerId=${sample.workerId} fields=${keys.join(",")}`,
+    );
+  });
   // 작업자 ID 병합 — 별칭(secondary)을 주 ID(primary)로 정규화해 같은 사람을 1카드로 합친다.
   const sample = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
   if (isReservedTestWorker(sample.workerId)) {

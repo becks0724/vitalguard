@@ -68,6 +68,9 @@ export async function POST(request: Request) {
     if (Array.isArray(body)) {
       let accepted = 0;
       let dropped = 0;
+      // 폐기 사유 분리 — dropped 는 "검증 실패"와 "예약 ID·빈 샘플 미저장"이 섞여 있어 그대로는
+      // 측정에 못 쓴다. 검증 실패만 따로 세어 실제 데이터 유실량을 관측한다(감사 BND-CONTRACT-05).
+      let droppedInvalid = 0;
       let last = null;
       for (const item of body) {
         // 항목별 격리 — 한 샘플이 검증 실패(ZodError)해도 전체 400 으로 묶지 않는다.
@@ -97,6 +100,7 @@ export async function POST(request: Request) {
               );
             }
             dropped += 1;
+            droppedInvalid += 1;
             continue;
           }
           throw itemError;
@@ -107,8 +111,15 @@ export async function POST(request: Request) {
           last = sample;
         }
       }
+      // 검증 실패는 항상 드러낸다 — 과거에는 응급 플래그 샘플만 경고를 남겨, 평상시 샘플이
+      // 통째로 버려지는 상황(감사 BND-LOSS-01)이 201 ok 뒤에 완전히 가려져 있었다.
+      if (droppedInvalid > 0) {
+        console.warn(
+          `[vital] 배치 검증 실패로 폐기 — ${droppedInvalid}/${body.length}건 (accepted=${accepted})`,
+        );
+      }
       return NextResponse.json(
-        { ok: true, accepted, dropped, last },
+        { ok: true, accepted, dropped, droppedInvalid, last },
         { status: 201 },
       );
     }
