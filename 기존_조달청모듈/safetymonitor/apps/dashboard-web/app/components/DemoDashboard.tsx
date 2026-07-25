@@ -4318,6 +4318,22 @@ export function DemoDashboard() {
     });
   }, [workerMapData, siteCircleCenter, latestMap, recordGeofenceAlert]);
 
+  // 지도 마커용 파생 — 생체 톤에 구획 이탈을 얹는다.
+  // workerMapData 자체에 넣으면 구획 판정(위 effect)의 입력이라 순환 의존이 되므로 별도 파생으로 둔다.
+  const workerMapPoints = useMemo(
+    () =>
+      workerMapData.pts.map((p) =>
+        outsideWorkers.has(p.workerId)
+          ? {
+              ...p,
+              tone: effectiveTone(p.tone, { stale: p.stale, outside: true }),
+              statusLabel: p.stale ? p.statusLabel : "구획이탈",
+            }
+          : p,
+      ),
+    [workerMapData, outsideWorkers],
+  );
+
   // 구획 이탈 팝업 — SOS/낙상/생체 경보 우선, ack(복귀 전) 안 된 첫 이탈 워커 표시.
   useEffect(() => {
     if (activeSos || activeFallAlert || activeVitalAlert || activeGeofenceAlert) return;
@@ -5196,7 +5212,7 @@ export function DemoDashboard() {
                 {workerView === "map" ? (
                   <div className="min-h-0 flex-1 p-2">
                     <WorkerGpsMap
-                      points={workerMapData.pts}
+                      points={workerMapPoints}
                       excluded={workerMapData.excluded}
                       siteCircle={
                         siteCircleCenter
