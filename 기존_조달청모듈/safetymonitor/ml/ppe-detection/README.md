@@ -3,9 +3,10 @@
 CCTV 엣지에서 안전모·안전조끼·안전화 착용 여부를 판정하기 위한 모델 학습·평가 트랙.
 현행 라이브 모델(CAM-03 Hexmon `vyra_ppe.pt`)을 **교체할 수 있는지** 숫자로 판정하는 것이 목적이다.
 
+- **★ 실행 가이드 → [GUIDE.md](GUIDE.md)** — 처음이면 여기부터. 하루 진행 순서·확인 포인트·트러블슈팅
+- 학습 노트북 → [ppe_yolo26_colab.ipynb](ppe_yolo26_colab.ipynb) (코랩)
 - 계획·결정 근거 → [context-notes.md](context-notes.md)
 - 진행 체크박스 → [checklist.md](checklist.md)
-- 학습 노트북 → [ppe_yolo26_colab.ipynb](ppe_yolo26_colab.ipynb) (코랩)
 
 ## 통합 클래스
 
