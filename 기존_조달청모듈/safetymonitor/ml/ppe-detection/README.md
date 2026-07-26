@@ -45,33 +45,39 @@ CCTV 엣지에서 안전모·안전조끼·안전화 착용 여부를 판정하�
 
 이 트랙의 결론을 좌우하는 것은 정확도가 아니라 **메모리**다.
 
-### 하드웨어 사실
+### 하드웨어 사실 — Orin Nano **Super** 4GB (JetPack 6.2)
 
 | 항목 | 값 | 함의 |
 |---|---|---|
 | 메모리 | 4GB LPDDR5 **CPU·GPU 공유** | 3.5GB 안에 OS·ROS2·카메라·추론이 전부 들어가야 한다 |
-| 대역폭 | **34 GB/s** (8GB 모델은 68) | 공개 벤치마크 대비 체감 성능이 낮다 |
-| GPU | 512 CUDA / 16 Tensor, 20 TOPS INT8 | |
-| DLA | **없음**(추정 — 아래 명령으로 확정할 것) | GPU 오프로딩 불가 |
-| 전력 모드 | 7W / 15W | |
+| 대역폭 | 34 → **51 GB/s** (Super 모드 +50%) | 8GB Super(102)의 절반 |
+| AI 성능 | 20 → **34 TOPS** (Super 모드) | |
+| GPU | 512 CUDA / 16 Tensor | |
+| DLA | **없음**(아래 명령으로 확정할 것) | GPU 오프로딩 불가 |
+| 전력 모드 | 10W / 25W / **MAXN_SUPER** | Super 모드를 켜야 위 수치가 나온다 |
 
-공개된 "Jetson Orin Nano" YOLO 벤치마크는 거의 전부 **8GB(Super)** 기준이다. 4GB 는 대역폭이 절반이라
-그 수치를 그대로 기대하면 안 된다.
-
-DLA 확정(기기에서 한 줄) — 출력이 없으면 DLA 없음.
+공개된 "Jetson Orin Nano" YOLO 벤치마크는 거의 전부 **8GB** 기준이다. 4GB 는 대역폭이 절반이라
+그 수치를 그대로 기대하면 안 된다. 성능은 Super 로 올라갔지만 **메모리 4GB 는 그대로**다.
 
 ```bash
+# DLA 확정 — 출력이 없으면 DLA 없음
 ls /dev/nvhost-nvdla* 2>/dev/null; sudo dmesg | grep -i nvdla
+
+# Super 모드 확인·적용 (MAXN_SUPER 가 목록에 없으면 nvpmodel.conf 를 super 버전으로 교체해야 함)
+sudo nvpmodel -q
+sudo nvpmodel -m <MAXN_SUPER id> && sudo jetson_clocks
 ```
 
-### 메모리 예산부터 재라
+### 측정부터 — 메모리와 **디스크** 둘 다
 
-모델을 고르기 전에 **남는 메모리가 얼마인지** 먼저 측정한다. 이 젯슨은 ROS2 + Orbbec + 푸셔가 이미 돈다.
+모델을 고르기 전에 남는 자원을 잰다. 이 젯슨은 ROS2 + Orbbec + 푸셔가 이미 돌고,
+**디스크가 95% 차 있던 이력**이 있다. 디스크가 없으면 스왑도 못 만든다.
 
 ```bash
-# 평상시(카메라 파이프라인 가동 중) 여유 메모리
-free -h
-tegrastats --interval 1000 | head -20   # RAM x/3956MB 항목
+free -h                                 # 여유 RAM
+df -h /                                 # ★ 여유 디스크 — 스왑·데이터셋·엔진 빌드에 전부 필요
+tegrastats --interval 1000 | head -20   # RAM x/3956MB 실시간
+lsblk                                   # NVMe 있으면 스왑·작업공간을 그쪽으로
 ```
 
 ### 권장 — yolo26m 은 상한 측정용, 배포 후보는 s 부터
@@ -95,20 +101,31 @@ tegrastats --interval 1000 | head -20   # RAM x/3956MB 항목
 
 TensorRT 엔진 빌드는 추론보다 훨씬 메모리를 쓴다. 4GB에서 스왑 없이 빌드하면 OOM 으로 죽을 가능성이 높다.
 
+**⚠️ 스왑 파일은 디스크를 먹는다.** 이 젯슨은 디스크 95% 이력이 있으니 `df -h /` 를 먼저 보고
+여유가 없으면 정리하거나 NVMe/USB SSD 로 뺀다. 여유가 8GB 미만이면 스왑을 4GB 로 줄이고
+`imgsz` 를 낮춰 빌드한다.
+
 ```bash
-# 1) 스왑 확보 (엔진 빌드 전 1회)
+# 0) 여유 확인 — 이게 스왑 크기를 결정한다
+df -h /
+
+# 1) 스왑 확보 (엔진 빌드 전 1회). 크기는 여유의 절반 이하로
 sudo systemctl disable nvzramconfig || true
-sudo fallocate -l 16G /var/swapfile && sudo chmod 600 /var/swapfile
+sudo fallocate -l 8G /var/swapfile && sudo chmod 600 /var/swapfile
 sudo mkswap /var/swapfile && sudo swapon /var/swapfile
+free -h                                  # Swap 행에 잡히는지 확인
 
 # 2) 데스크톱 GUI 끄기 — 약 0.8GB 확보
 sudo systemctl set-default multi-user.target && sudo reboot
 
 # 3) 다른 워크로드 내리고 변환
-pkill -f orbbec_cctv_push.py; pkill -f dash_push.py
-sudo nvpmodel -m 0 && sudo jetson_clocks
+pkill -f orbbec_cctv_push.py; pkill -f gopro_ppe_push.py; pkill -f dash_push.py
+sudo nvpmodel -q && sudo jetson_clocks   # MAXN_SUPER 확인 후 적용
 python3 -c "from ultralytics import YOLO; \
   YOLO('ppe_yolo26s_960_nc.pt').export(format='engine', half=True, imgsz=960, workspace=2)"
+
+# 4) 빌드 후 스왑은 남겨둬도 되지만, 디스크가 빠듯하면 회수
+# sudo swapoff /var/swapfile && sudo rm /var/swapfile
 ```
 
 엔진은 **그 기기 그 TensorRT 버전 전용**이라 다른 기기로 복사할 수 없다. 코랩에서 만든 엔진도 못 쓴다.
