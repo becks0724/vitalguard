@@ -43,6 +43,11 @@ jobs:
       - name: 의존성 설치
         run: pnpm install --frozen-lockfile
 
+      # packages/*/dist 는 gitignore 라 clean clone 엔 없다. dashboard-web 이
+      # @safetymonitor/schemas 타입을 dist 에서 찾으므로 먼저 빌드해야 한다.
+      - name: 워크스페이스 패키지 빌드
+        run: pnpm -r --filter=./packages/* build
+
       # 싼 것 → 비싼 것 순서. typecheck 가 next build 와 같은 게이트다(L-10).
       - name: 타입
         run: pnpm typecheck
