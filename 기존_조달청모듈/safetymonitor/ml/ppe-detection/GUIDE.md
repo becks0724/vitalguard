@@ -22,8 +22,8 @@
 - **목표** — 현행 라이브 모델(CAM-03 Hexmon `vyra_ppe.pt`)을 **교체할 수 있는지** 숫자로 판정.
 - **클래스 8종** — `person head helmet safety_vest foot shoes hands gloves`.
   미착용은 클래스로 두지 않고 `head`(맨머리) + person 포함관계로 코드 판정.
-- **모델** — 배포 후보는 `yolo26s`, `yolo26m` 은 정확도 상한 측정용.
-  젯슨이 Orin Nano Super **4GB(실사용 3.5GB)** 라 m 의 24시간 배포는 현실성이 낮다.
+- **모델** — `yolo26s` 와 `yolo26m` 둘 다 학습한다. **젯슨 실측 결과 m 도 배포 가능**하다
+  (2026-07-27 확인). 정확도 차이를 보고 고른다.
 - **SH17 은 이 단계 한정** — 비상업 라이선스라 가중치에 `-nc` 접미사가 자동으로 붙는다.
 - **엔진 변환은 젯슨에서만** — 코랩에서 만든 `.engine` 은 젯슨에서 못 쓴다.
 
@@ -31,7 +31,8 @@
 
 ## 준비물 (시작 전 확인)
 
-- [ ] Kaggle 계정 → Settings → API → **Create New Token** → `kaggle.json` 다운로드
+- [ ] Kaggle 계정 → Settings → API → **Create New Token** → **토큰 문자열 복사**
+      (★ 한 번만 표시된다. 파일 다운로드가 아니다 — 예전 `kaggle.json` 방식은 폐지)
 - [ ] Roboflow 계정 → **API 키** 확보
 - [ ] Google Drive 여유 **10GB 이상**
 - [ ] 코랩 런타임 **GPU**(런타임 → 런타임 유형 변경 → T4)
@@ -72,20 +73,20 @@ Tailscale 원격으로 실측·정리까지 끝냈다. **다시 할 필요 없�
 | JetPack | 6.2 (L4T R36.4.3), TensorRT 10.7.0 | |
 | torch | 2.5.0a0+nv24.08, CUDA True | NVIDIA 빌드 |
 
-### 실측 추론 성능 (PyTorch FP16 @960, 프록시 모델)
+### ★ yolo26 실측 (PyTorch FP16, **GUI 켠 불리한 조건**)
 
-| 모델 | 속도 | 메모리 사용 |
+| 모델 | imgsz 640 | imgsz 960 |
 |---|---|---|
-| yolo11s | **14.8 fps** (68ms) | 약 1.1GB |
-| yolo11m | **10.4 fps** (96ms) | 약 1.3GB |
+| yolo26n | **29.4 fps** | **18.7 fps** |
+| yolo26s | **25.4 fps** | **16.8 fps** |
+| **yolo26m** | **18.1 fps** | **12.0 fps** |
 
-**TensorRT 로 변환하면 이보다 빨라지고 메모리도 준다.** PyTorch eager 는 오버헤드 바운드라
-젯슨에서 실제 속도를 대표하지 않는다.
+**yolo26m @960 이 12.0 fps 로 목표선(≥10 fps)을 이미 넘겼다.** PyTorch eager 에 GUI 까지 켠
+최악 조건의 값이라 TensorRT 로 변환하면 더 올라간다. (참고 — 프록시 yolo11m @960 은 10.4 fps 였다.)
 
-### ★ 결론 — yolo26m 도 후보에 남는다
+### ★ 결론 — yolo26m 으로 가도 된다
 
-정리 전 여유 1.4GB 기준으로는 "엣지 추론 포기" 구간이었지만, **2.8GB 확보 후에는 m 도 들어간다.**
-yolo11m 이 PyTorch 만으로도 10.4 fps 로 목표선(≥10 fps)을 이미 넘겼고, TensorRT 면 여유가 더 생긴다.
+정리 전 여유 1.4GB 기준으로는 "엣지 추론 포기" 구간이었지만, **2.8GB 확보 후에는 m 이 여유롭게 들어간다.**
 
 | 여유 RAM | 판단 | 현재 |
 |---|---|---|
@@ -133,7 +134,7 @@ BATCH  = -1
 
 ### B-3. 데이터 다운로드 (10–20분)
 
-`kaggle.json` 업로드 프롬프트가 뜨면 파일을 올린다. Roboflow 키는 입력창에 붙여넣는다.
+Kaggle 토큰·Roboflow 키를 각각 입력창에 붙여넣는다(getpass 라 화면에 안 찍힌다).
 
 ### B-4. ★ 구조 확인 셀 — 여기서 반드시 멈춰서 눈으로 볼 것
 
@@ -209,15 +210,18 @@ SH17 클래스 순서가 다르면 `SH17_NAMES` 를 출력값으로 교체한다
 | 리매핑 후 클래스 0건 | 클래스 이름 불일치. B-4 출력의 `names` 를 그대로 매핑 표에 반영 |
 | `collect_pairs` 0장 | 경로에 `images` 디렉터리가 없는 레이아웃. `find` 출력 보고 `root` 수정 |
 | 세션 끊김 | `RESUME = True` 후 학습 셀 재실행 |
-| Kaggle 403 | `kaggle.json` 권한. `chmod 600` 확인, 데이터셋 페이지에서 규정 동의 필요할 수 있음 |
+| Kaggle 403 | 데이터셋 페이지를 브라우저로 한 번 열고 Download 를 눌러 규정 동의 |
+| Kaggle 401/토큰 오류 | 토큰은 **한 번만** 표시된다. 놓쳤으면 Expire Token 후 재발급 |
+| Kaggle 계속 막힘 | `USE_SH17 = False` 로 CSS 만 진행 — helmet·safety_vest 는 그대로 학습된다 |
 | Roboflow 버전 없음 | `version(27)` 숫자를 프로젝트 페이지의 최신 버전으로 교체 |
 | `vyra_ppe.pt` 다운로드 실패 | HuggingFace 경로 변경 가능. `cctv-ai/README.md` 재취득 절차 참조 |
 | 젯슨 SSH 막힘 | Tailscale check 만료. 출력 URL 브라우저 승인 1회 |
-| 젯슨에서 `yolo26` 모델 로드 실패 | **설치된 ultralytics 8.3.59 는 yolo26 미지원.** 아래 함정 참조 |
+| 젯슨에서 `yolo26` 모델 로드 실패 | ultralytics 버전 문제. 아래 함정 참조 |
 
-### ★ 젯슨 ultralytics 업그레이드 함정 (엔진 변환 시점에 해당)
+### ★ 젯슨 ultralytics 업그레이드 함정 — ✅ 2026-07-27 처리 완료
 
-젯슨의 ultralytics 는 **8.3.59** 라 yolo26 을 모르는데, 그냥 올리면 CUDA 가 죽는다.
+젯슨은 **8.3.59 → 8.4.107** 로 올렸고 CUDA 생존을 확인했다. 아래는 재설치·복구 시 참고용이다.
+그냥 올리면 CUDA 가 죽는다.
 
 ```bash
 # ✗ 절대 이렇게 하지 말 것 — PyPI torch 가 NVIDIA 빌드 torch 를 덮어써 CUDA False 가 된다

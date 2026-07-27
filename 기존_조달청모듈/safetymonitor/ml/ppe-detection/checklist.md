@@ -4,7 +4,7 @@
 
 ## 0. 준비
 
-- [ ] Kaggle 계정 → `kaggle.json` API 토큰 발급 (SH17 다운로드용)
+- [ ] Kaggle 계정 → Settings → API → Create New Token → **토큰 문자열 복사** (한 번만 표시됨)
 - [ ] Roboflow 계정 → API 키 발급 (Construction Site Safety 다운로드용)
 - [ ] 코랩 런타임 GPU 확인 (T4 최소, L4/A100 권장)
 - [ ] Google Drive 여유 공간 10GB 이상 (체크포인트 영속용)
