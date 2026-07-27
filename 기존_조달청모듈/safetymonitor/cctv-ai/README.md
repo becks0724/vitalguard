@@ -212,3 +212,47 @@ gcloud run services update cctv-ai --region asia-northeast3 --min-instances 0 --
 ### 캐치
 - `pkill`(SIGTERM)은 `atexit` 미실행 → GoPro 웹캠 streaming 잔존 가능(새 grabber 의 stop→start 로 회복). 강제 종료 시 수동 `curl …/gopro/webcam/stop`.
 - `ingest2`/`ingest3` 무인증(공개 ingress) — 노출 주의. 무푸시 3초 후 각 타일은 합성/클립으로 복귀.
+
+## 관제웹 CCTV 라이브 연결 — Orbbec Astra 엣지 (ROS2) — 2026-07-24
+
+Jetson Orin Nano(`yahboom`, Tailscale `yahboom-1`)에 연결된 **Orbbec Astra(Astro Pro Plus)** 뎁스카메라를 관제웹 CCTV 타일에 라이브로 띄운 구성. 위 GoPro/G100 과 달리 **v4l2/RTSP 가 아니라 ROS2 토픽**으로 프레임을 받는다. 엣지 상세는 메모리 `jetson-edge-poc`.
+
+**핵심 차이 (왜 ROS2)** — Orbbec 은 `/dev/video*`(v4l2) 를 만들지 않는다(OpenNI/SDK 방식). 따라서 `cv2.VideoCapture`·RTSP 직접 접근이 불가하다 → **`astra_camera` ROS2 드라이버가 발행하는 토픽을 구독**해 프레임을 얻는다.
+
+### 소스 = ROS2 토픽 (라이브 30fps 실측 · `ROS_DOMAIN_ID=77`)
+| 토픽 | 해상도 | 인코딩 | 용도 |
+|---|---|---|---|
+| `/camera/color/image_raw` | 640×480 | rgb8 | 컬러 |
+| `/camera/ir/image_raw` | 640×480 | mono8 | IR(적외선·저조도/야간) |
+| `/camera/depth/image_raw`·`/camera/depth/points` | — | — | 뎁스(현재 미사용) |
+
+드라이버 = `ros2 launch astra_camera astro_pro_plus.launch.xml`. Jetson 에 `rclpy`·`cv_bridge`·`cv2 4.10.0` 사전설치됨.
+
+### 엣지 푸셔 — `~/vg_edge_poc/orbbec_cctv_push.py` (Jetson, git 미추적·로컬)
+rclpy 로 이미지 토픽 구독 → cv_bridge 로 cv2 변환 → JPEG → `POST /cctv/ingestN`(GoPro 푸셔와 동일 계약·raw JPEG body). IR mono8 은 GRAY2BGR 변환 후 인코딩(서버가 IMREAD_COLOR 라 회색조로 정상 표시).
+```bash
+export ROS_DOMAIN_ID=77
+source /opt/ros/humble/setup.bash
+cd ~/vg_edge_poc
+# 컬러 → CAM-02 슬롯(표시-only · 서버 코드 변경 0)
+CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app INGEST=/cctv/ingest2 PUSH_FPS=5 \
+  nohup python3 orbbec_cctv_push.py > orbbec_push.log 2>&1 < /dev/null &
+# IR 로 보려면 위 줄에 TOPIC=/camera/ir/image_raw 추가
+# 오프라인 자가검증(과금 0): SAVE_ONLY=3 RUN_SEC=20 python3 orbbec_cctv_push.py  → /tmp 에 샘플 JPEG 저장
+```
+
+**★ 함정 = QoS.** 카메라 이미지 토픽은 BEST_EFFORT(sensor_data) QoS 로 발행된다. 기본 RELIABLE 로 구독하면 정합 실패로 **한 프레임도 안 들어오고** `rclpy.spin` 이 C 레벨에서 블록돼 SIGTERM/`timeout` 도 안 먹는다(첫 실행 2분 행). → 구독을 `qos_profile_sensor_data` 로, 종료 안전을 위해 `spin_once` 루프로 작성한다. QoS 미스매치 좀비는 이름이 실 푸셔와 같으니 **PID 로** 정리.
+
+### 검증 완료 (2026-07-24)
+- 오프라인 자가검증 — 컬러(사무실 실장면)·IR(적외선 실프레임) 둘 다 실영상 확인(과금 0·Jetson 로컬 저장 후 육안).
+- 라이브 E2E — cctv-ai ON(`00045-djf`) 후 컬러·IR 각각 `/cctv/ingest2` 로 푸시 → `snapshot2` 가 Orbbec 라이브로 표시(~4.5fps·POST 실패 0). CAM-02 슬롯 재사용이라 **서버 코드 변경 0**.
+
+### 현재 상태 (정리됨 · 과금 0)
+- 푸셔 종료(`pkill -f orbbec_cctv_push`), cctv-ai OFF(`00046-cx4` · `--min-instances 0 --ingress internal` · 외부 404 검증).
+- 재현 = astra 드라이버 생존 확인(`pgrep astra_camera_node`) → cctv-ai ON → 위 푸셔 기동.
+- ★ astra 드라이버는 현재 **비영속**(대화형 세션 launch · systemd 미등록) — 세션 종료 시 토픽이 멈추고 CAM-02 는 3초 TTL 후 합성으로 복귀한다.
+
+### 다음 할 일
+1. **CAM-01 정식 편입** — 지금은 CAM-02 슬롯으로만 검증했다. Orbbec 을 실제 CAM-01 타일로 넣으려면 cctv-ai 에 `POST /cctv/ingest1` override 추가가 필요하다(약 30줄 — `_cam2_live` TTL 패턴 복제 + 핸들러 + `mjpeg_object`/`snapshot_object` 가 라이브 우선·클립 폴백). 대시보드는 이미 `/cctv/stream` 을 보므로 프런트 변경 0. 단일 인스턴스 CPU 보호상 표시-only(ingest2식) 권장.
+2. **astra 드라이버 영구화** — systemd/nohup 등록(현재 비영속).
+3. **IR + AI** — IR mono8 은 RGB 학습 YOLO 정확도가 낮다. 표시용(저조도/야간)은 우수하나 검출까지 원하면 IR 전용 모델·별도 검증이 필요하다.
