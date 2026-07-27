@@ -12,12 +12,15 @@ test("작업자 범위는 worker_id 조건을 붙이고 사번을 바인딩한�
   assert.deepEqual(params, ["media-1", "EMP-6861"]);
 });
 
-test("자리표시자 번호는 기존 파라미터 수를 따라간다", () => {
-  const one: unknown[] = ["m1"];
-  assert.equal(mediaScopeClause({ workerId: "E1" }, one), " AND worker_id = $2");
+// DELETE 는 [id] 뒤에, PATCH(설명 수정)는 [id, description] 뒤에 붙는다.
+// 번호를 상수로 박으면 둘 중 하나가 반드시 어긋나 조건이 엉뚱한 값과 비교된다.
+test("자리표시자 번호는 기존 파라미터 수를 따라간다(DELETE $2 / PATCH $3)", () => {
+  const del: unknown[] = ["m1"];
+  assert.equal(mediaScopeClause({ workerId: "E1" }, del), " AND worker_id = $2");
 
-  const two: unknown[] = ["m1", "x"];
-  assert.equal(mediaScopeClause({ workerId: "E1" }, two), " AND worker_id = $3");
+  const patch: unknown[] = ["m1", "설명"];
+  assert.equal(mediaScopeClause({ workerId: "E1" }, patch), " AND worker_id = $3");
+  assert.deepEqual(patch, ["m1", "설명", "E1"]);
 });
 
 test("모더레이터(owner)는 조건 없이 전체 허용이고 파라미터를 늘리지 않는다", () => {

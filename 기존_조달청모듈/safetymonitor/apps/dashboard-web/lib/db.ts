@@ -2639,14 +2639,17 @@ export async function deleteCalendarMediaComment(
   return rowCount > 0;
 }
 
-// 관리자 설명 메모 수정.
+// 설명 메모 수정 — 삭제와 같은 소유권 규칙(올린 작업자 본인 또는 owner).
 export async function updateCalendarMediaDescription(
   id: string,
   description: string,
+  scope: MediaScope,
 ): Promise<boolean> {
+  const params: unknown[] = [id, description];
+  const clause = mediaScopeClause(scope, params);
   const { rowCount } = await q(
-    "UPDATE calendar_media SET description = $2 WHERE id = $1",
-    [id, description],
+    `UPDATE calendar_media SET description = $2 WHERE id = $1${clause}`,
+    params,
   );
   return rowCount > 0;
 }
