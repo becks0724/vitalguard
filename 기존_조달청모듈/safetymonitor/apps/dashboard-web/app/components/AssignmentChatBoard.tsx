@@ -78,6 +78,8 @@ export default function AssignmentChatBoard() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [disclaimer, setDisclaimer] = useState<string | null>(null);
+  // 직전 단일 서버 판정의 가명 사번만 보관한다. 대화 전문/이름은 보내지 않아 주입·개인정보 표면을 늘리지 않는다.
+  const [followUpWorkerIds, setFollowUpWorkerIds] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -99,7 +101,7 @@ export default function AssignmentChatBoard() {
             "content-type": "application/json",
             ...(token ? { authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ message: question }),
+          body: JSON.stringify({ message: question, followUpWorkerIds }),
         });
         if (res.status === 401) {
           // 서버가 거부한 낡은 토큰이 남아 있으면 LoginGate 가 로그인 화면을 안 띄우고 계속 401 에 갇힘
@@ -129,6 +131,11 @@ export default function AssignmentChatBoard() {
           blocked: a.advice.perTag.filter((t) => !t.allowed && !t.pending).length,
           allowed: a.advice.perTag.filter((t) => t.allowed).length,
         }));
+        // 한 명만 조회한 직후에만 "배제 이유는?" 같은 짧은 후속 질문을 그 작업자에 연결한다.
+        // 전체 요약/복수 조회 뒤에는 대상이 모호하므로 문맥을 비운다.
+        setFollowUpWorkerIds(
+          json.assignments?.length === 1 ? [json.assignments[0].workerId] : [],
+        );
         setMessages((prev) => [
           ...prev,
           { role: "assistant", text: json.reply as string, source: json.source, badges },
@@ -146,7 +153,7 @@ export default function AssignmentChatBoard() {
         setBusy(false);
       }
     },
-    [busy, input],
+    [busy, followUpWorkerIds, input],
   );
 
   return (

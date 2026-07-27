@@ -1,0 +1,27 @@
+import { strict as assert } from "node:assert";
+import { test } from "node:test";
+
+import {
+  isInvalidScopeRefusal,
+  parseFollowUpWorkerIds,
+  SERVER_VERIFIED_CONTEXT_NOTICE,
+} from "./assignment-chat-harness";
+
+test("유효한 판정 문맥을 무시하는 표준 범위 거절문을 감지한다", () => {
+  assert.equal(isInvalidScopeRefusal("작업 배치와 관련된 질문에만 답변할 수 있습니다."), true);
+  assert.equal(isInvalidScopeRefusal("작업 배치 관련된 질문에만 대답할 수 있습니다."), true);
+});
+
+test("정상 컨디션 설명은 범위 거절로 오인하지 않는다", () => {
+  assert.equal(isInvalidScopeRefusal("현재 안전 기준상 제한 등급이며 고소작업은 피하는 것을 권고합니다."), false);
+  assert.match(SERVER_VERIFIED_CONTEXT_NOTICE, /컨디션 알려줘/);
+  assert.match(SERVER_VERIFIED_CONTEXT_NOTICE, /등급 알려줘/);
+});
+
+test("직전 단일 서버 판정의 가명 사번만 후속 질문 문맥으로 허용한다", () => {
+  assert.deepEqual(parseFollowUpWorkerIds(["EMP-admin6861"]), ["EMP-admin6861"]);
+  assert.deepEqual(parseFollowUpWorkerIds(["EMP-admin6861", "EMP-admin7276"]), []);
+  assert.deepEqual(parseFollowUpWorkerIds(["장우진"]), []);
+  assert.deepEqual(parseFollowUpWorkerIds("EMP-admin6861"), []);
+  assert.deepEqual(parseFollowUpWorkerIds([{ workerId: "EMP-admin6861" }]), []);
+});
