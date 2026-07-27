@@ -2,7 +2,10 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  AI_REPLY_POLICY,
   assignmentOutputPolicyInstruction,
+  assignmentOutputPolicyRepairInstruction,
+  assignmentSystemInstruction,
   findAiReplyPolicyViolations,
   hasMedicalInference,
   isWorkerId,
@@ -10,6 +13,23 @@ import {
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
 } from "./assignment-chat-harness";
+
+test("하네스 계층은 단일 레지스트리에 고정된 순서로 등록한다", () => {
+  assert.deepEqual(
+    AI_REPLY_POLICY.layers.map((layer) => layer.id),
+    [
+      "SERVER_INPUT",
+      "FACTUAL_GROUNDING",
+      "SAFETY_LANGUAGE",
+      "ASSIGNMENT_AUTHORITY",
+      "RESPONSE_INTEGRITY",
+      "RECOVERY",
+    ],
+  );
+  assert.match(assignmentSystemInstruction(), /\[입력 경계\]/);
+  assert.match(assignmentSystemInstruction(), /\[사실 경계\]/);
+  assert.match(assignmentSystemInstruction(), /\[배치 권한 언어\]/);
+});
 
 test("의료적 상태 추정 표현을 감지한다", () => {
   assert.equal(hasMedicalInference("피로 누적이 예상됩니다."), true);
@@ -39,6 +59,23 @@ test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한�
   );
   assert.deepEqual(
     findAiReplyPolicyViolations("일반 작업 배치가 가능합니다.", { allowedCount: 1 }),
+    [],
+  );
+});
+
+test("작업 배치 문구의 확정적 지시를 감지하고 권고형 교정을 제공한다", () => {
+  const violations = findAiReplyPolicyViolations(
+    "고위험 작업을 피해야 하며 해당 작업에서 제외되어야 합니다.",
+    { allowedCount: 0 },
+  );
+  assert.deepEqual(violations.map((violation) => violation.code), ["ASSIGNMENT_DETERMINISTIC_TONE"]);
+  assert.match(assignmentOutputPolicyInstruction({ allowedCount: 0 }), /배제해야, 피해야/);
+  assert.match(assignmentOutputPolicyRepairInstruction(violations), /배제 권고·배치 검토·관리자 확인/);
+  assert.deepEqual(
+    findAiReplyPolicyViolations(
+      "등록된 고위험 작업은 배제 권고 대상이며 관리자 확인 후 배치를 검토합니다.",
+      { allowedCount: 0 },
+    ),
     [],
   );
 });
