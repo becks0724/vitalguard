@@ -15,7 +15,7 @@ export const NORMAL_SCOPE_REPAIR =
 
 export const MEDICAL_LANGUAGE_REPAIR =
   "직전 답변에 서버 판정 데이터에 없는 의료적 상태 추정 또는 예측 표현이 포함됐다. " +
-  "피로, 회복, 재발, 건강, 컨디션, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 쓰지 말고, " +
+  "피로, 회복, 재발, 건강 상태, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 쓰지 말고, " +
   "'안전 이벤트 기록', '안전 기준 적용', '관리자 확인 필요', '배제 권고'처럼 서버 판정 언어만 사용해 답변을 다시 작성해라.";
 
 /** 모델이 유효한 판정 문맥을 무시하고 내보내는 표준 범위 거절문을 감지한다. */
@@ -31,7 +31,7 @@ export function isInvalidScopeRefusal(reply: string): boolean {
  * 실제 판정은 서버가 제공한 안전 이벤트·기준·배제 권고로만 설명해야 한다.
  */
 export function hasMedicalInference(reply: string): boolean {
-  return /피로|회복|재발|건강\s*상태?|컨디션|신체\s*상태|증상|질환|진단|예상(?:됩니다|된다|됨)?|우려(?:됩니다|된다|됨)?/.test(
+  return /피로|회복|재발|건강\s*상태?|신체\s*상태|증상|질환|진단|예상(?:됩니다|된다|됨)?|우려(?:됩니다|된다|됨)?/.test(
     reply.replace(/\s+/g, " "),
   );
 }

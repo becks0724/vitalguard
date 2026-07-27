@@ -13,6 +13,7 @@ test("의료적 상태 추정 표현을 감지한다", () => {
   assert.equal(hasMedicalInference("피로 누적이 예상됩니다."), true);
   assert.equal(hasMedicalInference("낙상 재발이 우려됩니다."), true);
   assert.equal(hasMedicalInference("현재 건강 상태는 제한입니다."), true);
+  assert.equal(hasMedicalInference("작업 배치 컨디션 등급은 제한입니다."), false);
   assert.equal(
     hasMedicalInference("낙상 관련 안전 이벤트가 기록되어 고위험 작업 배제를 권고합니다."),
     false,
