@@ -245,21 +245,24 @@ final class WorkoutManager: NSObject, ObservableObject {
             return
         }
         let mode = ConnectionSettings.currentSensorPowerMode()
+        // Sensor accuracy may vary by power mode, but the dashboard contract
+        // remains the user-selected boundary on both iPhone and Watch.
+        let dashboardRadius = ConnectionSettings.currentLocationUpdateRadiusMeters()
         switch mode {
         case .extreme:
             watchLocationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-            watchLocationManager.distanceFilter = 100
+            watchLocationManager.distanceFilter = dashboardRadius
             watchLocationManager.allowsBackgroundLocationUpdates = true
             watchLocationManager.startUpdatingLocation()
         case .balanced:
             // watchOS는 지역 이탈 콜백을 제공하지 않으므로 시스템 거리 필터를 사용한다.
             watchLocationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-            watchLocationManager.distanceFilter = ConnectionSettings.currentLocationUpdateRadiusMeters()
+            watchLocationManager.distanceFilter = dashboardRadius
             watchLocationManager.allowsBackgroundLocationUpdates = true
             watchLocationManager.startUpdatingLocation()
         case .lowPower:
             watchLocationManager.desiredAccuracy = kCLLocationAccuracyKilometer
-            watchLocationManager.distanceFilter = max(1_000, ConnectionSettings.currentLocationUpdateRadiusMeters())
+            watchLocationManager.distanceFilter = dashboardRadius
             watchLocationManager.allowsBackgroundLocationUpdates = true
             watchLocationManager.startUpdatingLocation()
         }
@@ -274,67 +277,30 @@ final class WorkoutManager: NSObject, ObservableObject {
     private func configureFallMonitoringForCurrentMode() {
         guard fallDetector == nil else { return }
         let mode = ConnectionSettings.currentSensorPowerMode()
-        let detector = FallDetector(
-            // 모델 입력은 50 Hz 기준으로 학습됐다. 저전력 모드에서도 판정 샘플링을
-            // 낮추면 모델을 조용히 무효화하므로, UI 전송 간격만 절전한다.
-            sampleHz: 50,
-            eventSampleHz: 50,
-            motionPublishInterval: mode == .lowPower ? 5 : 1
-        )
+        let detector = FallDetector(sampleHz: 50, eventSampleHz: 50, motionPublishInterval: mode == .lowPower ? 5 : 1)
         detector.onMotionSample = { [weak self] accelerationMagnitudeG, rotationRateRadS in
             guard let self else { return }
             self.latestAccelerationMagnitudeG = accelerationMagnitudeG
             self.latestRotationRateRadS = rotationRateRadS
         }
-
-        // ML 번들 또는 자가검증에 문제가 있으면 규칙 기반 감지를 그대로 사용한다.
-        // 이 fallback은 실제 낙상을 ML 오류 때문에 놓치지 않게 하는 안전 경로다.
         detector.onCandidate = { [weak self] candidate in
-            Task { @MainActor in
-                self?.handleCandidate(candidate)
-            }
+            Task { @MainActor in self?.handleCandidate(candidate) }
         }
-
-        guard mlFusionEnabled else {
-            fallDetector = detector
-            return
-        }
-
-        do {
+        if mlFusionEnabled {
             let fusion = MLFusion()
-            let logger = IMUWindowLogger(fs: 50, preSec: 1.0, postSec: 2.0, logThresholdG: 1.5, refractorySec: 0.8)
-            let mlFirst = MLFirstShadowPipeline()
-            logger.onWindow = { [weak fusion] window in
-                Task { @MainActor in
-                    fusion?.ingest(window: window)
-                }
-            }
+            let logger = IMUWindowLogger(fs: 50, preSec: 1, postSec: 2, logThresholdG: 1.5, refractorySec: 0.8)
+            let shadow = MLFirstShadowPipeline()
+            logger.onWindow = { [weak fusion] window in Task { @MainActor in fusion?.ingest(window: window) } }
             fusion.onVerdict = { [weak self] verdict in
-                Task { @MainActor in
-                    self?.handleCandidate(
-                        verdict.candidate,
-                        shouldAlert: verdict.shouldAlert,
-                        mlVerdict: verdict
-                    )
-                }
+                Task { @MainActor in self?.handleCandidate(verdict.candidate, shouldAlert: verdict.shouldAlert, mlVerdict: verdict) }
             }
-            // ML-first 관전 경로는 FallDetector의 후보가 아닌 원시 센서 스트림을 직접
-            // 사용한다. 아직 알림을 만들지 않아 현행 안전 경로를 바꾸지 않는다.
-            mlFirst.onObservation = { [weak self] observation in
-                self?.handleMLFirstObservation(observation)
-            }
+            shadow.onObservation = { [weak self] observation in self?.handleMLFirstObservation(observation) }
             detector.imuLogger = logger
-            detector.onIMUSample = { [weak mlFirst] sample in
-                mlFirst?.ingest(sample)
-            }
-            detector.onCandidate = { [weak fusion] candidate in
-                Task { @MainActor in
-                    fusion?.ingest(candidate: candidate)
-                }
-            }
+            detector.onIMUSample = { [weak shadow] sample in shadow?.ingest(sample) }
+            detector.onCandidate = { [weak fusion] candidate in Task { @MainActor in fusion?.ingest(candidate: candidate) } }
             fallMLFusion = fusion
             fallIMULogger = logger
-            mlFirstShadowPipeline = mlFirst
+            mlFirstShadowPipeline = shadow
         }
         fallDetector = detector
     }
@@ -342,8 +308,8 @@ final class WorkoutManager: NSObject, ObservableObject {
     private func stopFallMonitoring() {
         fallDetector?.stop()
         fallDetector = nil
-        fallIMULogger = nil
         fallMLFusion = nil
+        fallIMULogger = nil
         mlFirstShadowPipeline = nil
     }
 
@@ -416,8 +382,6 @@ final class WorkoutManager: NSObject, ObservableObject {
         }
     }
 
-    // 낙상 후보 해소(양성/음성 공통) — 후보행은 항상 ML 수집용으로 전송한다.
-    // 양성은 즉시 경보로 확정하지 않고 워치 확인 프롬프트를 띄운 뒤, 해제/SOS/무응답 결과로 후속 처리한다.
     private func handleCandidate(
         _ candidate: FallCandidate,
         shouldAlert: Bool? = nil,
@@ -427,10 +391,8 @@ final class WorkoutManager: NSObject, ObservableObject {
         let now = Date()
         let impactAt = now.addingTimeInterval(-candidate.stillSec)
         let preTrajectory = trajectoryAroundImpact(impactAt: impactAt)
-        let requestedAlert = shouldAlert ?? candidate.isFall
         let existingIncidentID = unresolvedFallIncidentID
-        // 심박 초기 수집 전의 실제 낙상까지 놓치지 않도록 Watch 확인 프롬프트는 유지한다.
-        // 다만 무응답 자동 SOS는 아래에서 착용·심박 신호를 다시 확인해 보류한다.
+        let requestedAlert = shouldAlert ?? candidate.isFall
         let finalShouldAlert = requestedAlert && existingIncidentID == nil
         if finalShouldAlert {
             activateEvidenceCaptureWindow(reason: "낙상 후보")
@@ -438,10 +400,7 @@ final class WorkoutManager: NSObject, ObservableObject {
                 format: "낙상 후보 %.1fG · 정지 %.1fs — 확인 대기", candidate.peakG, candidate.stillSec
             )
         } else if mlVerdict?.vetoedByML == true {
-            lastFallText = String(
-                format: "작업 동작 ML 판정으로 낙상 알림 억제 · work %.2f",
-                mlVerdict?.wvProb ?? 0
-            )
+            lastFallText = String(format: "작업 동작 ML 판정으로 낙상 알림 억제 · work %.2f", mlVerdict?.wvProb ?? 0)
         }
         transmitter.sendFallCandidate(
             candidateId: candidateId,
@@ -457,8 +416,8 @@ final class WorkoutManager: NSObject, ObservableObject {
             ruleIsFall: candidate.isFall,
             mlWorkVetoProb: mlVerdict?.wvProb,
             mlImpactProb: mlVerdict?.impProb,
+            mlRecoveryProb: nil,
             mlVetoedByML: mlVerdict?.vetoedByML ?? false,
-            // 기존 전송 스키마 호환: impact ML은 알림 판정에 쓰지 않으므로 항상 false다.
             mlRejectedByImpactML: false,
             mlRescuedByML: false,
             mlShouldAlert: mlVerdict?.shouldAlert
@@ -474,47 +433,21 @@ final class WorkoutManager: NSObject, ObservableObject {
                 peakRotationRadS: candidate.peakRotationRadS,
                 detectedAt: now
             )
-        }
-        if finalShouldAlert {
             schedulePostImpactFollowup(candidateId: candidateId, impactAt: impactAt)
         }
     }
 
-    /// ML-first 전환 검증용 상태 표기. 관전 결과는 기존 알림·ACK·SOS를 만들지 않는다.
+    /// Shadow results are UI-only: no alert, ACK, SOS, or network incident is created here.
     private func handleMLFirstObservation(_ observation: MLFirstShadowPipeline.Observation) {
         guard observation.isModelCandidate else { return }
         switch observation.phase {
         case .fast:
-            lastStatus = String(
-                format: "ML-우선 관전 후보 · impact %.2f / work %.2f",
-                observation.impact.probability,
-                observation.workVeto.probability
-            )
+            lastStatus = String(format: "ML-우선 관전 후보 · impact %.2f / work %.2f", observation.impact.probability, observation.workVeto.probability)
         case .recovery:
             if let recovery = observation.recovery {
-                lastStatus = String(
-                    format: "ML-우선 recovery 관전 · 비회복 %.2f (%@)",
-                    recovery.probability,
-                    recovery.label ? "위험" : "회복 신호"
-                )
-            } else {
-                lastStatus = "ML-우선 recovery 모델 미탑재"
+                lastStatus = String(format: "ML-우선 recovery 관전 · 비회복 %.2f (%@)", recovery.probability, recovery.label ? "위험" : "회복 신호")
             }
         }
-    }
-
-    // 실제 낙상이 어려운 데모/검증용 수동 트리거 — 알고리즘 무관 합성 양성(자유낙하 전조 가정).
-    func simulateFall() {
-        handleCandidate(
-            FallCandidate(
-                decision: .fall,
-                peakG: 3.4,
-                stillSec: 1.5,
-                freefallPreceded: true,
-                peakRotationRadS: 7.0
-            ),
-            shouldAlert: true
-        )
     }
 
     // 워치 단독 SOS — 작업자가 워치에서 직접 발신. 최신 HR/SpO₂ 동봉(즉시 전송).
@@ -871,15 +804,15 @@ final class WorkoutManager: NSObject, ObservableObject {
         let result = MLSelfCheck.run()
         if result.contains("❌") || result.contains("없음") || result.contains("미탑재") {
             mlFusionEnabled = false
-            mlPipelineStatus = "ML 비활성 · 규칙 기반 감시"
+            mlPipelineStatus = "ML 3모델 비활성 · 낙상 감시 중지"
             transmitter.updateMLPipelineStatus(isActive: false)
             lastError = "ML 자가검증 실패: \(result.replacingOccurrences(of: "\n", with: " / "))"
-            lastStatus = "ML 자가검증 실패 - 규칙 기반 감시 유지"
+            lastStatus = "ML 자가검증 실패 - 낙상 감시 중지"
         } else {
             mlFusionEnabled = true
-            mlPipelineStatus = "ML 오탐 억제 활성 · 6/6 검증 완료"
+            mlPipelineStatus = "ML-first 관전 · 6/6 검증 완료"
             transmitter.updateMLPipelineStatus(isActive: true)
-            lastStatus = "ML 자가검증 완료 · 오탐 억제 활성"
+            lastStatus = "ML 자가검증 완료 · ML-first 관전 활성"
         }
     }
 
@@ -1139,14 +1072,14 @@ extension WorkoutManager: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let latest = locations.last, latest.horizontalAccuracy > 0 else { return }
         Task { @MainActor in
+            guard ConnectionSettings.locationBasedUpdatesEnabled(),
+                  ConnectionSettings.shouldPublishLocation(latest, after: self.latestLocation) else { return }
+            // Only a boundary-approved location becomes payload state, so
+            // regular vital updates cannot leak intermediate GPS drift.
             self.latestLocation = latest
             self.transmitter.updateLocation(latest)
-            if ConnectionSettings.locationBasedUpdatesEnabled() {
-                self.readAndTransmitSensorSnapshot(forceFlush: true)
-            }
-            if self.isEvidenceCaptureActive() || ConnectionSettings.currentSensorPowerMode() == .extreme {
-                self.publishMeasuredSnapshot()
-            }
+            self.readAndTransmitSensorSnapshot(forceFlush: true)
+            self.publishMeasuredSnapshot()
         }
     }
 

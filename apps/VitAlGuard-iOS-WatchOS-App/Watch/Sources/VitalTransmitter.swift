@@ -204,6 +204,7 @@ final class VitalTransmitter {
         ruleIsFall: Bool,
         mlWorkVetoProb: Double?,
         mlImpactProb: Double?,
+        mlRecoveryProb: Double?,
         mlVetoedByML: Bool,
         mlRejectedByImpactML: Bool,
         mlRescuedByML: Bool,
@@ -224,6 +225,8 @@ final class VitalTransmitter {
         payload["peakRotationRadS"] = (peakRotationRadS * 100).rounded() / 100
         if let mlWorkVetoProb { payload["mlWorkVetoProb"] = (mlWorkVetoProb * 1_000).rounded() / 1_000 }
         if let mlImpactProb { payload["mlImpactProb"] = (mlImpactProb * 1_000).rounded() / 1_000 }
+        if let mlRecoveryProb { payload["mlRecoveryProb"] = (mlRecoveryProb * 1_000).rounded() / 1_000 }
+        payload["fallDetectionMode"] = "ml_three_model"
         if let mlShouldAlert { payload["mlShouldAlert"] = mlShouldAlert }
         payload["mlVetoedByML"] = mlVetoedByML
         payload["mlRejectedByImpactML"] = mlRejectedByImpactML

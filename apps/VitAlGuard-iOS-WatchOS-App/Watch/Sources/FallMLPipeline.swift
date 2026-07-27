@@ -12,12 +12,11 @@ final class FallMLPipeline {
 
     private let workVeto: MLModel
     private let impact: MLModel
-    private let recovery: MLModel?
+    private let recovery: MLModel
 
     struct Prediction {
         let probability: Double
-        /// Core ML 모델이 학습한 기본 분류 경계의 label. 새 ML-first 관전 경로는
-        /// 고정 G값 대신 이 label을 후보 제안 신호로만 사용한다.
+        /// Uses the Core ML model's learned label, not a physical G threshold.
         let label: Bool
     }
 
@@ -26,47 +25,62 @@ final class FallMLPipeline {
         let impact: Prediction
     }
 
-    /// 번들에 모델(.mlmodelc)이 없으면 nil — 호출부는 규칙 단독으로 동작(fail-open).
+    /// 세 모델이 모두 번들에 있고 로드될 때만 활성화한다.
+    /// 이 앱의 낙상 판정은 ML 전용이므로 부분 로드는 허용하지 않는다.
     init?() {
         guard let wvURL = Bundle.main.url(forResource: "work_veto", withExtension: "mlmodelc"),
               let impURL = Bundle.main.url(forResource: "impact", withExtension: "mlmodelc"),
+              let recoveryURL = Bundle.main.url(forResource: "recovery", withExtension: "mlmodelc"),
               let wv = try? MLModel(contentsOf: wvURL),
-              let imp = try? MLModel(contentsOf: impURL) else { return nil }
+              let imp = try? MLModel(contentsOf: impURL),
+              let rec = try? MLModel(contentsOf: recoveryURL) else { return nil }
         workVeto = wv
         impact = imp
-        recovery = Bundle.main.url(forResource: "recovery", withExtension: "mlmodelc")
-            .flatMap { try? MLModel(contentsOf: $0) }
+        recovery = rec
     }
 
-    /// 융합용 — 충격 윈도에서 (작업확률, 낙상충격확률). 슬라이스: work_veto 3s / impact ±1s.
+    /// ML 전용 감지기가 제공한 시계열에서 (작업확률, 낙상충격확률)을 계산한다.
+    func probs(samples floatSamples: [[Float]], impactIndex: Int) -> (wv: Double, imp: Double) {
+        let samples = floatSamples.map { $0.map(Double.init) }
+        let center = min(max(impactIndex, 0), max(0, samples.count - 1))
+        let wv = prob(workVeto, slice(samples, center: center, sec: 3.0))
+        let im = prob(impact, slice(samples, center: center, sec: 2.0))
+        return (wv, im)
+    }
+
     func probs(_ window: ImuWindow) -> (wv: Double, imp: Double) {
         let result = fastPredictions(window)
         return (result.workVeto.probability, result.impact.probability)
     }
 
-    /// work_veto/impact의 확률과 모델 기본 label을 함께 반환한다.
+    /// Raw-IMU ML-first fast pass. The boolean labels are solely model output.
     func fastPredictions(_ window: ImuWindow) -> FastPredictions {
         let samples = window.samples.map { $0.map(Double.init) }
-        let wv = prediction(workVeto, slice(samples, center: window.impactIndex, sec: 3.0))
-        let im = prediction(impact, slice(samples, center: window.impactIndex, sec: 2.0))
-        return FastPredictions(workVeto: wv, impact: im)
+        return FastPredictions(
+            workVeto: prediction(workVeto, slice(samples, center: window.impactIndex, sec: 3.0)),
+            impact: prediction(impact, slice(samples, center: window.impactIndex, sec: 2.0))
+        )
     }
 
-    /// 회복 모드(12초 윈도) 전용 — 비회복 확률. spanSec = 윈도 벽시계 길이(스로틀링 대응 실효 fs).
-    func nonrecoveryProb(_ window: ImuWindow, spanSec: Double) -> Double? {
-        nonrecoveryPrediction(window, spanSec: spanSec)?.probability
+    /// 회복 모델의 비회복 확률. spanSec은 실제 윈도 길이로, 센서 스로틀링에도 유효 샘플레이트를 보존한다.
+    func nonrecoveryProb(samples floatSamples: [[Float]], spanSec: Double) -> Double {
+        let samples = floatSamples.map { $0.map(Double.init) }
+        return prob(recovery, samples, fs: Double(samples.count) / max(spanSec, 0.1))
     }
 
-    /// recovery 모델의 확률과 기본 label. spanSec은 실제 윈도 벽시계 길이다.
     func nonrecoveryPrediction(_ window: ImuWindow, spanSec: Double) -> Prediction? {
-        guard let m = recovery else { return nil }
         let samples = window.samples.map { $0.map(Double.init) }
-        return prediction(m, samples, fs: Double(samples.count) / max(1, spanSec))
+        return prediction(recovery, samples, fs: Double(samples.count) / max(1, spanSec))
     }
 
-    /// 자가검증용 — task 이름("work_veto"/"impact")으로 확률 조회.
+    /// 자가검증용 — task 이름으로 해당 모델 확률 조회.
     func prob(task: String, _ samples: [[Double]]) -> Double {
-        prediction(task == "work_veto" ? workVeto : impact, samples).probability
+        switch task {
+        case "work_veto": return prob(workVeto, samples)
+        case "impact": return prob(impact, samples)
+        case "recovery": return prob(recovery, samples)
+        default: return 0
+        }
     }
 
     /// real_loader._slice 동일: 충격 중심 n샘플 (짧으면 전체).
@@ -78,17 +92,17 @@ final class FallMLPipeline {
         return Array(samples[s..<(s + n)])
     }
 
+    private func prob(_ model: MLModel, _ samples: [[Double]], fs: Double = FallMLPipeline.fs) -> Double {
+        prediction(model, samples, fs: fs).probability
+    }
+
     private func prediction(_ model: MLModel, _ samples: [[Double]], fs: Double = FallMLPipeline.fs) -> Prediction {
         let feat = FeatureExtractor.extract(samples, fs: fs)
-        guard let arr = try? MLMultiArray(shape: [88], dataType: .double) else {
-            return Prediction(probability: 0, label: false)
-        }
+        guard let arr = try? MLMultiArray(shape: [88], dataType: .double) else { return Prediction(probability: 0, label: false) }
         for (i, v) in feat.enumerated() { arr[i] = NSNumber(value: v) }
         guard let inp = try? MLDictionaryFeatureProvider(dictionary: ["features": arr]),
               let out = try? model.prediction(from: inp),
-              let dict = out.featureValue(for: "classProbability")?.dictionaryValue else {
-            return Prediction(probability: 0, label: false)
-        }
+              let dict = out.featureValue(for: "classProbability")?.dictionaryValue else { return Prediction(probability: 0, label: false) }
         let probability = dict[Int64(1) as NSNumber]?.doubleValue ?? dict[1 as NSNumber]?.doubleValue ?? 0
         let label = out.featureValue(for: "label")?.int64Value == 1
         return Prediction(probability: probability, label: label)

@@ -3204,7 +3204,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         context["timeBasedUpdatesEnabled"] = defaults.object(forKey: PreviewSettingsKey.timeBasedUpdatesEnabled) as? Bool ?? true
         context["locationBasedUpdatesEnabled"] = defaults.object(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled) as? Bool ?? true
         let radius = defaults.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
-        context["locationUpdateRadiusMeters"] = min(5_000, max(100, radius.rounded()))
+        context["locationUpdateRadiusMeters"] = VitAlGuardLocationUpdatePolicy.clampedRadius(radius)
     }
 
     private func signedOutContext(syncInterval: Double) -> [String: Any] {
@@ -11819,7 +11819,7 @@ final class VitAlGuardPreviewController: UIViewController,
 
     private var locationUpdateRadiusMeters: CLLocationDistance {
         let raw = UserDefaults.standard.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
-        return min(5_000, max(100, raw))
+        return VitAlGuardLocationUpdatePolicy.clampedRadius(raw)
     }
 
     private func cachedDashboardLocation() -> CLLocation? {
@@ -11851,7 +11851,7 @@ final class VitAlGuardPreviewController: UIViewController,
               location.horizontalAccuracy >= 0 else { return }
         let region = CLCircularRegion(
             center: location.coordinate,
-            radius: locationUpdateRadiusMeters,
+            radius: VitAlGuardLocationUpdatePolicy.clampedRadius(locationUpdateRadiusMeters),
             identifier: identifier
         )
         region.notifyOnEntry = false
@@ -13300,11 +13300,22 @@ final class VitAlGuardPreviewController: UIViewController,
         guard let latest = locations.last else { return }
         guard latest.horizontalAccuracy > 0 else { return }
         lastKnownWatermarkLocation = latest
-        storeLatestLocationForDashboard(latest)
         let forceLocationBoundarySync = locationBoundaryRefreshPending
         locationBoundaryRefreshPending = false
-        syncDashboardFromLocationIfNeeded(force: forceLocationBoundarySync)
-        configureLocationBoundaryMonitoring(using: latest)
+        let shouldPublishToDashboard = isLocationBasedUpdatesEnabled && (
+            forceLocationBoundarySync || VitAlGuardLocationUpdatePolicy.shouldPublish(
+                location: latest,
+                after: cachedDashboardLocation(),
+                radiusMeters: locationUpdateRadiusMeters
+            )
+        )
+        if shouldPublishToDashboard {
+            storeLatestLocationForDashboard(latest)
+            // Re-anchor the dashboard boundary only after this position becomes
+            // the published reference; small GPS drift must not move the fence.
+            configureLocationBoundaryMonitoring(using: latest)
+            syncDashboardFromLocationIfNeeded(force: true)
+        }
         if isWeatherRefreshPending {
             updateLocationWeather(for: latest)
         }
