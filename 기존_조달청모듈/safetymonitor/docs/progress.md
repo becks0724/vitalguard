@@ -24,6 +24,32 @@
 
 **다음 할 일**
 - (육안) 풍속 칩 "m/s·순간(평균 병기)"+주의 배지·모달 §37·§143·확인/조치 팝업. (선택) XLSX 시트3/CSV 환경 이력에 돌풍 컬럼 노출 결정. (참고) 구 폴백 행(돌풍 null)은 평균 판정+한계 문구가 정상.
+### (2026-07-21 — 상태 점검: GitHub 알림 무관 확인 + ⚠️ E-Gen 병원 연락처 회귀 발견(라이브 드리프트 `00098`→`00105`))
+
+- **요청** = ① GitHub 알림 메일(becks0724/becks0724-04.ai_agent "coins catalog" 워크플로 비활성) 우리 작업과 연관 여부 확인 ② 지금까지 작업·현재상태·다음 할 일 관련 .md 정리.
+- **① GitHub 알림 = 무관** = `becks0724-04.ai_agent`는 **같은 becks0724 계정의 별개 레포**(암호화폐 카탈로그 실습 추정). 우리 팀 레포는 `VitAlGuard-jodal/vitalguard-jodalcheong`(becks0724 SSH 키 인증)라 계정만 공통·코드/워크플로/배포 무관. 스케줄 워크플로는 60일 미활동 시 자동 비활성(GitHub 정책) — 우리 배포·CI 영향 0. (참고 별건 = 우리 레포 `ci.yml`은 루트 아닌 하위경로 `기존_조달청모듈/safetymonitor/.github/workflows/`라 GitHub Actions 미인식.)
+- **★ ⚠️ E-Gen 병원 연락처 회귀 발견(현재상태 정정)** = 어제 배포한 인근 병원 연락처 수정(`00098-f42`·실측 17/17)은 **41분만 라이브**였다(07-20 07:22 `00099`가 교체). 이후 **팀원 main 배포가 계속 덮어써 현재 라이브 = `vitalguard-dashboard-00105-j4r`**(07-21 03:30·이미지 `6f55367…` = 배치 어시스턴트·CSV 내보내기 v2·나라장터 문서·과업지시서 PDF·XLSX OOM 수정 등 main 22커밋). **내 E-Gen 수정 `95bc457`은 main 미병합 확정**(origin/main `egen-hospital.ts`에 `sidoShort` 재시도 0건·`git branch -r --contains 95bc457`에 main 없음) → **라이브 `/api/hospitals?region=광주 동구` 실측 = 전남대병원 응급의료센터 등 연락처 다시 공란**(응급실 '24시간 진료'는 규정 하드코딩이라 유지, 실 연락처는 광주 재시도 없어 미매칭).
+- **브랜치 분기** = 작업 브랜치 `cctv-cam03-connection-check` = **origin/main 대비 7 ahead / 22 behind**(분기점 `0d4a4be`). 내 7커밋(E-Gen `95bc457`·CAM-03·ERP 탭 등) 미병합, 팀원 22커밋 미수신. 프로덕션 배포는 전부 main에서 나옴 → 내 브랜치 작업은 현재 라이브에 없음.
+- **다음(결정 대기)** = 광주 연락처 복구하려면 **E-Gen 수정을 main에 반영(`95bc457` cherry-pick 또는 브랜치 병합) → main에서 재빌드·재배포** 필요. **내 브랜치를 그대로 prod 배포하면 팀원 22커밋(배치 어시스턴트·CSV v2 등) 유실이라 불가 — main 경유 필수**. main 병합은 팀원이 활성 작업 중인 공유 브랜치 건드림 = 조율 필요.
+
+### (2026-07-20 — 인근 병원 연락처·진료시간 E-Gen 라이브 점등 · 라이브 `00097-67x`→**`00098-f42`**)
+
+- **요청** = 인근 병원 정보에 연락처도 함께 제공 가능 여부(스크린샷). 표시 코드는 `00078-ffp`(2026-07-06)로 이미 배포·남은 관문 = data.go.kr E-Gen 활용신청 승인.
+- **전파 확인** = 활용신청 승인 후 게이트웨이 반영을 5분 폴링으로 대기 → `resultCode 00 NORMAL SERVICE` 전환 확인(태풍 서비스와 동일 = 처리상태 승인이어도 게이트웨이 반영은 수 분~시간 지연).
+- **★ 근본원인(승인만으로 자동 점등 X)** = E-Gen `getHsptlMdcncListInfoInqire` 는 **Q0(시·도)를 주소 부분일치로 매칭**하는데 데이터 표기가 지역마다 뒤섞임 — **광주·전남 병원 주소가 비표준 「전남광주통합특별시」로 저장**돼 정식명 `광주광역시`=**0건**('광주'=5270)·`전라남도`=2건('전남'=4905). 반대로 충북·경북·경남은 단축명이 부분문자열이 아니라 정식명이 정답(충북 청주 1129·경북 포항 664). 데모 현장이 광주라 코드 수정 필요.
+- **수정(커밋 `95bc457`)** = [egen.ts](../apps/dashboard-web/app/lib/egen.ts) `egenRegionParams` 가 정식명+**단축명(`sidoShort`)** 둘 다 반환 + [egen-hospital.ts](../apps/dashboard-web/app/lib/egen-hospital.ts) `fetchRegionPlaces` 를 **정식명 우선 조회 → 빈 결과면 단축명 1회 재시도**(광주·전남만 재시도로 뚫리고 나머지는 정식명 유지·재시도 0). 실응답 필드(dutyName·dutyTel1·dutyTime{1..7}s/c·wgs84Lat/Lon)가 파서와 정확 일치 → 보정 0. 단위테스트 egenRegionParams 회귀 갱신(sidoShort 동봉).
+- **검증·배포** = tsc0·lint0·**test133**(schemas21·analyzers46·dashboard133) · 로컬 end-to-end(정식명 0→단축명 232→좌표 150m 매칭으로 광주 동구 병원 17/17 채움)로 배포 전 증명 · Cloud Build SUCCESS 2M36S(digest `fc67726c…`·cloudbuild.dashboard.yaml `_AI_URL=cctv-ai` 주입=CCTV base 보존)·배포 리비전 **`00098-f42`** 100% · 커밋 `95bc457` origin push.
+- **라이브 실측** = HTTP200·rev100%·`/api/hospitals?region=광주 동구` **연락처 17/17·진료시간 17/17**(전남대병원 응급의료센터 062-232-7675·24시간 / 전남대병원 062-220-5893·월–금 08:30–17:30 / 넘버원정형외과 062-225-1111·토 오전 포함).
+- **배포 권한** = 프로덕션 `gcloud builds submit`/`gcloud run deploy` 가 auto 분류기에 반복 차단(Production Deploy·Self-Modification) → 사용자가 `/permissions`로 `Bash(gcloud builds submit:*)`·`Bash(gcloud run deploy vitalguard-dashboard:*)` 허용 규칙 추가([.claude/settings.local.json](../.claude/settings.local.json)) 후 통과.
+- **유의/다음** = 대시보드 하드새로고침 시 각 병원에 '전화 {번호}'(tel 링크)·'진료 {시간}' 표시(응급실=규정상 24시간·일반 진료과=E-Gen 실데이터) · 타 지역 미표시 보고 시 재시도 로직·`matchEgenPlace`(좌표 150m) 확인 · `EGEN_SERVICE_KEY` 미설정 시 KOSHA/KMA 키 폴백(새 시크릿·재배포 불필요). 상세 = [../CLAUDE.md](../CLAUDE.md) ★ 항목.
+
+### (2026-07-20 — 관제 빈 샘플 미영속 배포: 실측 신호 없는 샘플 수신 드롭 · 라이브 `00096-p49`→**`00097-67x`**)
+
+- **요청** = 작업자 연결상태가 '접속'이 아닐 때 데이터를 미수신하는 방법 확인.
+- **핵심 발견** = 연결상태(접속/대기/연결끊김)는 **100% 클라이언트(관제웹)에서 마지막 샘플 ts 나이로만 파생** — 서버 수신·DB 경로엔 없다. 도착 샘플은 정의상 "접속"이라 연결상태 게이트는 라이브에 no-op(+워치 배칭 백로그만 손상). 하단 "실시간 수집·DB 영속 N건 누적"을 부풀리는 실체 = **상시 접속 데모/관리자 기기 EMP-admin("VitAlGuard 관리자")가 값 없이 계속 POST 하는 빈 하트비트**(라이브 payload 확인 = metadata+`manualSos:false`/`fallDetected:false`뿐·생체값 0).
+- **구현(택1·사용자=빈 샘플 미영속)** = [store.addSample](../apps/dashboard-web/app/api/mock/store.ts) persist choke point(기존 `isReservedTestWorker` 자리)에 `hasMonitorableSignal` 게이트 — 실측 생체(심박/SpO₂/손목·환경온도)·모션·스트레스 입력·이벤트(SOS/낙상=`true`)·낙상 후보가 하나도 없으면 ring·DB 양쪽 드롭(`return null`). 이벤트 플래그는 `false`로 실려와 `===true`로만 신호 인정. 신호 있는 샘플은 새 분기 건너뛰고 기존 persist 그대로(실 생체값·이벤트·낙상후보·워치 배칭 무영향). [vital/route.ts](../apps/dashboard-web/app/api/mock/vital/route.ts) 단일 POST 202 라벨 `reserved_test_worker`→`not_stored`.
+- **검증·배포** = tsc0·lint0·**test133**(신규 2=hasMonitorableSignal·addSample 빈샘플 드롭) · Cloud Build SUCCESS 2M46S(digest `9d00e9c1…`·cloudbuild.dashboard.yaml `_AI_URL` 주입=CCTV 보존) · 커밋 `aceab85` push. 라이브 실측 = HTTP200·rev **`00097-67x`** 100%·**빈 샘플 POST(비예약·신호0)→HTTP 202 `not_stored`**(변경 전이면 201)·totalPersisted 264,992→264,998(실 샘플 영속 정상).
+- **유의/다음** = 기존 빈 행은 그대로(카운트 감소 X·앞으로 증가만 정지, 과거 행 DELETE는 프로덕션 DB라 별건)·잠금 폰이 빈 값/GPS만 보내면 그 카드가 60초 뒤 '연결끊김'(수락된 트레이드오프)·(선택) CLAUDE.md '현재 라이브' 반영 완료. 상세 = [../CLAUDE.md](../CLAUDE.md) ★ 항목·run-log(로컬).
 
 ### ★ CCTV AI 서버 현황 (2026-06-28 — `cctv-ai` 신규 서비스, 11단계 고도화 · 단일 출처)
 
@@ -43,6 +69,7 @@
 11. **`00013-d5l`→`00015-pp4`(기능 최종 · 이후 OFF)** — **관제웹 연결 테스트 중 429 장애 → 해결**. 대시보드 MJPEG 3종 장기연결 + 두 모델 연속추론이 단일 인스턴스 **CPU 기아**(OOM 아님) → 전 요청 429/000(검은 화면). **핵심 해결 = `OMP_NUM_THREADS=1`/`MKL_NUM_THREADS=1` 로 torch 스레드 제한** → 추론 2코어 + HTTP 2코어 보장. + `PLAYBACK_FPS=6`·워커 20ms yield. (시행착오: `--max-instances↑` 는 콜드스타트 처닝으로 더 불안정 → 롤백.) 검증: MJPEG 3개 점유 상태 30/30 200·health 6/6·폰 override(source phone-live·`fall_count`) 동작·CORS OK. **결과 — `max-instances 1` 로 대시보드 MJPEG ↔ 폰 override 동시 양립(충돌 해소).**
 
 **현재 상태**
+- **⏸ 2026-07-20 OFF(현행·과금 0·리비전 `00044-qph`)** — 발표(07-07) 이후 CAM-03 는 **GoPro9 USB-net → Jetson 푸셔(`gopro_ppe_push.py`) → `/cctv/ingest3` phone-live** 체제로 진화(07-15 재구축 — Jetson 재플래시로 구 스택 소실, CAM-02 엣지 낙상 스택은 복원 별도). **ON/OFF 런북 5회+ 실검증** — 재가동 = 사용자 `gcloud run services update cctv-ai --region asia-northeast3 --ingress all --min-instances 1 --max-instances 1` 1줄 + 에이전트가 Jetson 푸셔 기동(GoPro STOP 상태여도 자동 START) → `cam03_source: phone-live` / 종료 = 푸셔 kill·GoPro STOP·`--min0 --ingress internal`. **07-20 실증** = GoPro 물리 재연결만으로 푸셔 자동 복구(수동 개입 0)·초기 검정 화면=렌즈 가림(물리·스트림 정상)·GoPro 배터리 0%=USB 전원 의존. 상세 런북·이력 = 메모리 `jetson-edge-poc`·run-log(로컬)·[../CLAUDE.md](../CLAUDE.md) ★ 항목.
 - **⏸ 2026-06-28 OFF(접근 차단·과금 0)** — CCTV 진행 보류 → `cctv-ai --min-instances 0 --ingress internal`(리비전 `00017-nld`). 외부(브라우저) 접근 **404 차단** → 깨어날 일 없음 = **과금 0**. **서비스·이미지·검증된 `00015-pp4` 구성 보존(삭제 아님 → 차후 즉시 수정/재개 가능).** **재개(ON)**: `gcloud run services update cctv-ai --region asia-northeast3 --min-instances 1 --ingress all`. (OFF 중 대시보드 CCTV 타일은 미표시/대기.)
 - (정지 전 검증된 상태) 대시보드 `00018-5tn`(MJPEG·무변경) + **cctv-ai `00015-pp4`**. CAM-01=YOLOv8n 객체+한글(건설현장 부감 클립) · CAM-02=합성 낙상 · CAM-03=**Hexmon PPE 듀얼소스(클립/폰 라이브)+낙상**+한글. **관제웹 연결 OK·안정(429 해소).**
 - 라이브 검증 — CAM-01 차량 한글검출·'Worksite' 헤더 · CAM-03 `fall_count`+안전모 동시 · MJPEG 3개 동시 부하 30/30 200·health 6/6 · 폰 override source phone-live · CORS OK.
