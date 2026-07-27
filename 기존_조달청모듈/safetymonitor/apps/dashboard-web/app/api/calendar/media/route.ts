@@ -9,9 +9,15 @@ import {
   insertCalendarMedia,
   updateCalendarMediaDescription,
   deleteCalendarMedia,
+  findUserByUsername,
+  getWorkerAliasMap,
   type CalendarMediaCommentRow,
-  type MediaScope,
 } from "../../../../lib/db";
+import {
+  mediaMatchesScope,
+  workerIdGroup,
+  type MediaScope,
+} from "../../../../lib/media-scope";
 import { isStorageConfigured, presignDownload } from "../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +45,9 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
+  // 항목별 삭제 가능 여부를 서버가 계산해 내려준다 — 화면이 같은 규칙을 다시 구현하면
+  // 언젠가 어긋나고, 그때 사용자는 "버튼은 있는데 눌러도 안 된다"를 겪는다(단일 소스).
+  const scope = await mediaWriteScope(request);
   const media = await listCalendarMedia(from, to);
   const comments = await listCommentsForMedia(media.map((m) => m.id));
   const byMedia = new Map<string, CalendarMediaCommentRow[]>();
@@ -60,7 +69,12 @@ export async function GET(request: Request) {
           /* 발급 실패 — 기존 media_url 유지 */
         }
       }
-      return { ...m, media_url: mediaUrl, comments: byMedia.get(m.id) ?? [] };
+      return {
+        ...m,
+        media_url: mediaUrl,
+        comments: byMedia.get(m.id) ?? [],
+        canDelete: scope !== null && mediaMatchesScope(m.worker_id, scope),
+      };
     }),
   );
   return NextResponse.json({ ok: true, media: withComments });
@@ -108,7 +122,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   // 삭제와 같은 소유권 규칙 — 남의 사진 설명을 고치는 것도 같은 계열의 IDOR 이다.
-  const scope = mediaWriteScope(request);
+  const scope = await mediaWriteScope(request);
   if (!scope) return mediaWriteDenied(request, "수정");
   let body: { id?: unknown; description?: unknown };
   try {
@@ -128,23 +142,37 @@ export async function PATCH(request: Request) {
 }
 
 // 수정·삭제 권한 범위 — 사진을 올린 작업자 본인, 또는 owner(최고관리자).
-// 올리는 쪽과 지우는 쪽의 신원 체계가 다르므로 두 갈래를 각각 판정한다.
-//  · 앱 JWT      = 현장 작업자. 사번(workerId)이 업로드 시 저장된 worker_id 와 같을 때만.
-//  · 관제 세션   = owner 만 전체 허용(잘못 올라온 사진 정리). 일반 admin 은 자기 것이 아니므로 불가.
-// 판정 불가는 항상 거부 쪽이다 — "신원 없음 → 범위 없음(전체 허용)"으로 떨어지면 인가 구멍이 된다.
 //
+// 올리는 쪽과 지우는 쪽의 신원 체계가 달라 두 갈래를 각각 사번으로 환산한다.
+//  · 앱 JWT    = 클레임의 사번(workerId)을 그대로 쓴다.
+//  · 관제 세션 = owner 면 전체 허용. 그 외에는 로그인 ID 로 users 를 찾아 **사번(employee_id)**을 얻는다.
+//    관제 로그인 ID(admin6861)와 사진에 박히는 사번(EMP-admin6861)이 다르기 때문이다.
+//    이 환산을 빼면 **자기가 올린 사진도 못 지운다** — 실제로 그 증상으로 제보가 들어왔다.
+//
+// 얻은 사번은 병합(worker_alias) 그룹으로 넓힌다. 같은 사람이 폰·워치에서 다른 ID 로 들어오고
+// 관제 웹의 "작업자 ID 병합"이 이를 하나로 합치므로, 어느 ID 로 올렸든 본인 것이어야 한다.
+//
+// 판정 불가는 항상 거부 쪽이다 — "신원 없음 → 범위 없음(전체 허용)"으로 떨어지면 인가 구멍이 된다.
 // PATCH(설명 수정)와 DELETE 가 같은 함수를 쓴다. 규칙이 갈리면 한쪽만 고쳐지는 실수가 난다.
-function mediaWriteScope(request: Request): MediaScope | null {
+async function mediaWriteScope(request: Request): Promise<MediaScope | null> {
   // 앱 JWT 를 먼저 본다. 작업자 앱은 세션 쿠키가 아니라 Bearer JWT 로만 인증한다.
   const claims = verifyAppJwt(bearerToken(request));
-  const workerId = claims?.workerId?.trim();
-  if (workerId) return { workerId };
+  if (claims?.role === "owner") return "moderator";
+  const jwtWorkerId = claims?.workerId?.trim();
+  if (jwtWorkerId) {
+    return { workerIds: workerIdGroup(jwtWorkerId, await getWorkerAliasMap()) };
+  }
 
   // 관제 웹 세션.
   const session = getSession(request);
-  if (session?.role === "owner") return "moderator";
+  if (!session) return null;
+  if (session.role === "owner") return "moderator";
 
-  return null;
+  // env owner 가 아닌 가입 관리자 — 로그인 ID → 사번 환산. 사번이 없으면 대조할 것이 없어 거부.
+  const user = await findUserByUsername(session.username);
+  const employeeId = user?.employee_id?.trim();
+  if (!employeeId) return null;
+  return { workerIds: workerIdGroup(employeeId, await getWorkerAliasMap()) };
 }
 
 // 권한 없음 응답 — 로그인 자체가 없으면 401, 로그인은 했지만 남의 사진이면 403 으로 나눈다.
@@ -161,7 +189,7 @@ function mediaWriteDenied(request: Request, action: string): NextResponse {
 }
 
 export async function DELETE(request: Request) {
-  const scope = mediaWriteScope(request);
+  const scope = await mediaWriteScope(request);
   if (!scope) return mediaWriteDenied(request, "삭제");
   const url = new URL(request.url);
   const id = url.searchParams.get("id") ?? "";

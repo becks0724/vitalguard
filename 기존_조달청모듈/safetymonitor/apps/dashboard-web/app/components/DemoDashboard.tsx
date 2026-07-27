@@ -754,6 +754,8 @@ type CalendarMedia = {
   latitude: number | null;
   longitude: number | null;
   roadAddress: string | null;
+  // 서버가 계산한 삭제 가능 여부 — 화면이 권한 규칙을 다시 구현하지 않는다(단일 소스).
+  canDelete: boolean;
   comments: CalendarMediaComment[];
 };
 
@@ -1712,17 +1714,12 @@ function HeaderCalendarPopup({
   lat,
   lon,
   workerCount,
-  canDeleteMedia,
 }: {
   open: boolean;
   onClose: () => void;
   lat?: number;
   lon?: number;
   workerCount: number;
-  // 사진 삭제 권한 — 서버가 owner 와 업로드 작업자 본인만 허용하므로(감사 IDOR 수정),
-  // 관제 웹에서는 owner 에게만 버튼을 보인다. 일반 관리자는 눌러도 403 이라 버튼이 있으면
-  // "되는 줄 알고 눌렀다 실패"가 된다. UI 와 서버 규칙을 같은 값으로 맞춘다.
-  canDeleteMedia: boolean;
 }) {
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -1776,7 +1773,10 @@ function HeaderCalendarPopup({
       });
       if (!res.ok) return;
       type RawComment = Record<string, string | null>;
-      type RawMedia = Record<string, string | null> & { comments?: RawComment[] };
+      type RawMedia = Record<string, string | null> & {
+        comments?: RawComment[];
+        canDelete?: boolean; // 서버가 계산한 항목별 삭제 권한
+      };
       const json = (await res.json()) as { ok?: boolean; media?: RawMedia[] };
       if (!json.ok || !Array.isArray(json.media)) return;
       const map: Record<string, CalendarMedia[]> = {};
@@ -1798,6 +1798,9 @@ function HeaderCalendarPopup({
           latitude: r.latitude != null ? Number(r.latitude) : null,
           longitude: r.longitude != null ? Number(r.longitude) : null,
           roadAddress: r.road_address ?? null,
+          // 서버 판정을 그대로 쓴다. 없으면 false — 판정을 못 받았는데 버튼을 보이면
+          // 눌렀을 때 실패한다(모르면 감춘다).
+          canDelete: r.canDelete === true,
           comments: (r.comments ?? []).map((c) => ({
             id: c.id ?? "",
             authorName: c.author_name ?? null,
@@ -2955,7 +2958,7 @@ function HeaderCalendarPopup({
                             </p>
                           )}
                         </div>
-                        {canDeleteMedia && (
+                        {m.canDelete && (
                           <button
                             type="button"
                             onClick={() => deleteMedia(m.id)}
@@ -5543,7 +5546,6 @@ export function DemoDashboard() {
         lat={effLat}
         lon={effLon}
         workerCount={fieldCoords.count}
-        canDeleteMedia={role === "owner"}
       />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
