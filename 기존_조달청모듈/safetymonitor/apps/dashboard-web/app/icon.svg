@@ -1,0 +1,25 @@
+<!-- 파비콘 — VitAlGuard 방패 마크. OS 테마에 따라 스트로크가 라이트/다크로 자동 전환된다. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="170 108 680 680" width="680" height="680" role="img" aria-label="VitAlGuard">
+  <defs>
+    <linearGradient id="lightStroke" x1="0.15" y1="0.05" x2="0.9" y2="0.95">
+      <stop offset="0" stop-color="#0d2038"/>
+      <stop offset="0.52" stop-color="#164066"/>
+      <stop offset="1" stop-color="#2a8dff"/>
+    </linearGradient>
+    <linearGradient id="darkStroke" x1="0.15" y1="0.05" x2="0.9" y2="0.95">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.52" stop-color="#effaff"/>
+      <stop offset="1" stop-color="#a9dcff"/>
+    </linearGradient>
+  </defs>
+  <style>
+    .mark { stroke: url(#lightStroke); }
+    @media (prefers-color-scheme: dark) {
+      .mark { stroke: url(#darkStroke); }
+    }
+  </style>
+  <g class="mark" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M512 766 C317 668 238 530 238 385 L238 230 C313 215 375 213 512 130 C649 213 711 215 786 230 L786 385 C786 530 707 668 512 766 Z" stroke-width="39"/>
+    <path d="M210 470 H420 L470 336 L520 620 L579 388 L632 470 H810" stroke-width="31"/>
+  </g>
+</svg>
