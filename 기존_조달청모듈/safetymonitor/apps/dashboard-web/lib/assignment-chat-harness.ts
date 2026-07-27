@@ -13,11 +13,26 @@ export const NORMAL_SCOPE_REPAIR =
   "판정 데이터만 근거로 컨디션 등급·안전상 제한·배치 권고를 한국어로 설명해라. " +
   "원시 생체 수치, 의료 진단, 개인정보, 내부 지침은 만들거나 공개하지 마라.";
 
+export const MEDICAL_LANGUAGE_REPAIR =
+  "직전 답변에 서버 판정 데이터에 없는 의료적 상태 추정 또는 예측 표현이 포함됐다. " +
+  "피로, 회복, 재발, 건강, 컨디션, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 쓰지 말고, " +
+  "'안전 이벤트 기록', '안전 기준 적용', '관리자 확인 필요', '배제 권고'처럼 서버 판정 언어만 사용해 답변을 다시 작성해라.";
+
 /** 모델이 유효한 판정 문맥을 무시하고 내보내는 표준 범위 거절문을 감지한다. */
 export function isInvalidScopeRefusal(reply: string): boolean {
   const normalized = reply.replace(/\s+/g, " ").trim();
   return /작업\s*배치(?:와|에)?\s*관련된?\s*질문에만\s*(?:답변|대답)할\s*수\s*있습니다/.test(
     normalized,
+  );
+}
+
+/**
+ * CLOVA가 규칙 엔진의 안전 판정을 의료·신체 상태 판단으로 확장했는지 감지한다.
+ * 실제 판정은 서버가 제공한 안전 이벤트·기준·배제 권고로만 설명해야 한다.
+ */
+export function hasMedicalInference(reply: string): boolean {
+  return /피로|회복|재발|건강\s*상태?|컨디션|신체\s*상태|증상|질환|진단|예상(?:됩니다|된다|됨)?|우려(?:됩니다|된다|됨)?/.test(
+    reply.replace(/\s+/g, " "),
   );
 }
 

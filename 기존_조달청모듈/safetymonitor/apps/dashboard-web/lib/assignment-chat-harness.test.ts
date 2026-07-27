@@ -2,11 +2,22 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  hasMedicalInference,
   isWorkerId,
   isInvalidScopeRefusal,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
 } from "./assignment-chat-harness";
+
+test("의료적 상태 추정 표현을 감지한다", () => {
+  assert.equal(hasMedicalInference("피로 누적이 예상됩니다."), true);
+  assert.equal(hasMedicalInference("낙상 재발이 우려됩니다."), true);
+  assert.equal(hasMedicalInference("현재 건강 상태는 제한입니다."), true);
+  assert.equal(
+    hasMedicalInference("낙상 관련 안전 이벤트가 기록되어 고위험 작업 배제를 권고합니다."),
+    false,
+  );
+});
 
 test("유효한 판정 문맥을 무시하는 표준 범위 거절문을 감지한다", () => {
   assert.equal(isInvalidScopeRefusal("작업 배치와 관련된 질문에만 답변할 수 있습니다."), true);

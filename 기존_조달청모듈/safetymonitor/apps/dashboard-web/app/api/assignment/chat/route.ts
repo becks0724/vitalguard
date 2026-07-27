@@ -17,6 +17,8 @@ import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../
 import {
   isInvalidScopeRefusal,
   isWorkerId,
+  hasMedicalInference,
+  MEDICAL_LANGUAGE_REPAIR,
   NORMAL_SCOPE_REPAIR,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
@@ -34,7 +36,9 @@ const SYSTEM_PROMPT =
   "함께 제공되는 '판정 데이터'는 규칙 엔진이 계산한 확정 결과다. 다음을 반드시 지켜라: " +
   "1) 판정 데이터에 없는 사실을 만들지 말 것. 등급·배제 사유·근거를 바꾸거나 새로 판정하지 말 것. " +
   "사유를 설명할 때 구체적 건수·시간 수치(예: 몇 건·몇 시간)를 임의로 지어내지 말 것 — 정확한 수치는 화면의 배지·상세가 담당하므로 정성적으로만 서술할 것. " +
-  "2) 의료적 진단·건강 상태 단정 표현을 쓰지 말 것 — '안전 기준 충족 여부' 관점으로만 서술할 것. " +
+  "2) 의료적 진단·건강 상태 단정·추정·예측 표현을 쓰지 말 것 — '안전 기준 충족 여부' 관점으로만 서술할 것. " +
+  "피로, 회복, 재발, 건강, 컨디션, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 사용하지 말고, " +
+  "서버가 제공한 안전 이벤트·안전 기준·관리자 확인·배제 권고만으로 설명할 것. " +
   "3) 답변은 간결한 한국어로, 배치 가능/배제 권고를 먼저 요약하고 사유·근거를 뒤에 붙일 것. " +
   "4) 답변 끝에 '최종 배치 결정 권한은 감독관에게 있습니다.' 한 줄을 반드시 포함할 것. " +
   "5) 마크다운 문법(**, ##, - 목록 기호 등)을 쓰지 말 것 — 순수 평문으로만 작성할 것. " +
@@ -283,13 +287,23 @@ export async function POST(request: Request) {
       console.warn("[assignment-chat] CLOVA 1차 실패, 재시도:", firstErr);
       reply = await clovaReply(message, contexts);
     }
-    // 정상적인 판정 문맥을 모델이 자체 범위 규칙으로 거절하면, 한 번만 교정한다.
-    // 재발 시에는 이미 계산한 결정적 규칙 텍스트를 반환해 정상 질문이 빈 거절문으로 끝나지 않게 한다.
-    if (isInvalidScopeRefusal(reply)) {
-      console.warn("[assignment-chat] 유효 판정 질문의 CLOVA 범위 거절 감지 → 교정 재시도");
-      reply = await clovaReply(message, contexts, NORMAL_SCOPE_REPAIR);
-      if (isInvalidScopeRefusal(reply)) {
-        console.warn("[assignment-chat] CLOVA 범위 거절 재발 → 규칙 텍스트로 대체");
+    // 정상 판정의 범위 거절 또는 의료적 추정은 한 번만 교정한다.
+    // 교정 뒤에도 남으면 모델 문장을 버리고 이미 계산한 결정적 규칙 텍스트로 대체한다.
+    const needsScopeRepair = isInvalidScopeRefusal(reply);
+    const needsMedicalRepair = hasMedicalInference(reply);
+    if (needsScopeRepair || needsMedicalRepair) {
+      console.warn(
+        `[assignment-chat] CLOVA ${needsScopeRepair ? "범위 거절" : "의료 추정"} 감지 → 교정 재시도`,
+      );
+      const repairInstruction = [
+        needsScopeRepair ? NORMAL_SCOPE_REPAIR : "",
+        needsMedicalRepair ? MEDICAL_LANGUAGE_REPAIR : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+      reply = await clovaReply(message, contexts, repairInstruction);
+      if (isInvalidScopeRefusal(reply) || hasMedicalInference(reply)) {
+        console.warn("[assignment-chat] CLOVA 교정 실패 → 규칙 텍스트로 대체");
         return NextResponse.json({
           ok: true,
           reply: ruleText,
