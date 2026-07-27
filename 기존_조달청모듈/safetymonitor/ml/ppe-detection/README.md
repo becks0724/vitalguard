@@ -69,29 +69,45 @@ sudo nvpmodel -q
 sudo nvpmodel -m <MAXN_SUPER id> && sudo jetson_clocks
 ```
 
-### 측정부터 — 메모리와 **디스크** 둘 다
+### ✅ 실측 완료 (2026-07-27, Tailscale 원격)
 
-모델을 고르기 전에 남는 자원을 잰다. 이 젯슨은 ROS2 + Orbbec + 푸셔가 이미 돌고,
-**디스크가 95% 차 있던 이력**이 있다. 디스크가 없으면 스왑도 못 만든다.
+| 항목 | 정리 전 | 정리 후 |
+|---|---|---|
+| 여유 RAM | 1.4GB | **2.8GB** |
+| 여유 디스크 | 9.0GB (95%) | **50GB (68%)** |
+| 스왑 | 8GB 파일 + zram 1.8GB | 그대로 (추가 작업 불필요) |
+| DLA | — | **없음 확정** |
+| 전력 모드 | — | **MAXN_SUPER** (이미 최대) |
+
+조치 = 헤드리스 전환(GUI 종료, 약 950MB 확보) + ollama 모델 40GB·apt 캐시 삭제.
+Docker 이미지 30GB 는 보존했다.
+
+**실측 추론 성능** (PyTorch FP16 @960, 프록시 모델) — yolo11s **14.8 fps** / yolo11m **10.4 fps**.
+TensorRT 변환 시 더 빨라지고 메모리도 준다.
+
+→ **정리 후에는 yolo26m 도 배포 후보에 남는다.** 정리 전 1.4GB 기준의 "m 은 위험" 판단은
+2.8GB 확보로 뒤집혔다. 최종 결정은 TensorRT 실측 + 카메라 파이프라인 동시 가동 상태에서 내린다.
+
+재측정이 필요할 때.
 
 ```bash
-free -h                                 # 여유 RAM
-df -h /                                 # ★ 여유 디스크 — 스왑·데이터셋·엔진 빌드에 전부 필요
-tegrastats --interval 1000 | head -20   # RAM x/3956MB 실시간
-lsblk                                   # NVMe 있으면 스왑·작업공간을 그쪽으로
+free -h; df -h /; tegrastats --interval 1000 | head -5
 ```
 
 ### 권장 — yolo26m 은 상한 측정용, 배포 후보는 s 부터
 
-| 모델 | 학습 | 젯슨 4GB 배포 | 비고 |
+| 모델 | 학습 | 젯슨 4GB 배포 (정리 후 2.8GB 기준) | 비고 |
 |---|---|---|---|
 | yolo26n | ○ | 여유 | 640~960 모두 무난 |
-| **yolo26s** | ○ | **현실적 후보** | 960 도 단독이면 가능성 있음 |
-| yolo26m | ○ (코랩은 문제없음) | **위험** | 960 24/7 은 비권장. 640 이라도 실측 필수 |
+| **yolo26s** | ○ | **여유** | 프록시 yolo11s @960 = 14.8 fps, ~1.1GB |
+| yolo26m | ○ | **가능 — 실측으로 확정** | 프록시 yolo11m @960 = 10.4 fps, ~1.3GB |
 
-노트북 기본값은 `yolo26s` 로 두었다. 요청하신 `yolo26m` 은 **정확도 상한을 재는 용도**로 함께 학습해
-"m 이 s 보다 얼마나 나은가"를 확인하고, 그 차이가 메모리 리스크를 감수할 만한지 데이터로 결정한다.
-코랩 학습 자체는 m 도 전혀 문제없다 — 제약은 배포 쪽에만 있다.
+노트북 기본값은 `yolo26s` 다. `yolo26m` 은 정확도 상한 측정용으로 함께 학습해
+"m 이 s 보다 얼마나 나은가"를 확인하고, 그 차이가 메모리 여유를 쓸 값어치인지 데이터로 결정한다.
+프록시 실측상 m 도 목표선(≥10 fps)을 PyTorch 만으로 이미 넘겼으므로 TensorRT 면 여유가 더 생긴다.
+
+**단 위 수치는 카메라 파이프라인이 꺼진 상태**다. ROS2 Orbbec + 푸셔를 켜면 그만큼 줄어드니,
+최종 판정은 파이프라인 가동 상태에서 다시 잰다.
 
 ### 2단계 파이프라인은 여기서 재검토
 
@@ -102,31 +118,24 @@ lsblk                                   # NVMe 있으면 스왑·작업공간을
 
 TensorRT 엔진 빌드는 추론보다 훨씬 메모리를 쓴다. 4GB에서 스왑 없이 빌드하면 OOM 으로 죽을 가능성이 높다.
 
-**⚠️ 스왑 파일은 디스크를 먹는다.** 이 젯슨은 디스크 95% 이력이 있으니 `df -h /` 를 먼저 보고
-여유가 없으면 정리하거나 NVMe/USB SSD 로 뺀다. 여유가 8GB 미만이면 스왑을 4GB 로 줄이고
-`imgsz` 를 낮춰 빌드한다.
+**스왑·헤드리스·디스크는 2026-07-27 에 이미 처리했다**(스왑 8GB + zram 1.8GB 구성, GUI 종료,
+여유 50GB). 남은 것은 ultralytics 업그레이드와 변환 자체다.
 
 ```bash
-# 0) 여유 확인 — 이게 스왑 크기를 결정한다
-df -h /
+# 1) ★ ultralytics 8.3.59 는 yolo26 미지원 → 의존성 건드리지 말고 올린다
+#    `pip install -U ultralytics` 는 PyPI torch 가 NVIDIA 빌드를 덮어써 CUDA 를 죽인다
+pip install -U --no-deps ultralytics
+python3 -c "import torch,ultralytics; print(ultralytics.__version__, torch.cuda.is_available())"
+# → True 확인 필수
 
-# 1) 스왑 확보 (엔진 빌드 전 1회). 크기는 여유의 절반 이하로
-sudo systemctl disable nvzramconfig || true
-sudo fallocate -l 8G /var/swapfile && sudo chmod 600 /var/swapfile
-sudo mkswap /var/swapfile && sudo swapon /var/swapfile
-free -h                                  # Swap 행에 잡히는지 확인
-
-# 2) 데스크톱 GUI 끄기 — 약 0.8GB 확보
-sudo systemctl set-default multi-user.target && sudo reboot
-
-# 3) 다른 워크로드 내리고 변환
+# 2) 다른 워크로드 내리고 변환
 pkill -f orbbec_cctv_push.py; pkill -f gopro_ppe_push.py; pkill -f dash_push.py
-sudo nvpmodel -q && sudo jetson_clocks   # MAXN_SUPER 확인 후 적용
+sudo jetson_clocks                       # 전력 모드는 이미 MAXN_SUPER
 python3 -c "from ultralytics import YOLO; \
   YOLO('ppe_yolo26s_960_nc.pt').export(format='engine', half=True, imgsz=960, workspace=2)"
 
-# 4) 빌드 후 스왑은 남겨둬도 되지만, 디스크가 빠듯하면 회수
-# sudo swapoff /var/swapfile && sudo rm /var/swapfile
+# 3) 카메라 파이프라인을 켠 상태에서 정상상태 측정 — 이게 진짜 숫자다
+jtop
 ```
 
 엔진은 **그 기기 그 TensorRT 버전 전용**이라 다른 기기로 복사할 수 없다. 코랩에서 만든 엔진도 못 쓴다.

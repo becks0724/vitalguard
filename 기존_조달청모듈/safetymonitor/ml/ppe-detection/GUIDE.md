@@ -49,49 +49,64 @@
 |---|---|
 | 09:00–09:30 | 스모크런 (`EPOCHS = 3`) — 전 구간 통과 확인 |
 | 09:30 | 본 학습 시작 (`yolo26s` · `EPOCHS = 150`) → **방치** |
-| 09:30–11:00 | ★ 병행 — 젯슨 자원 측정 (아래 A 단계) |
 | 학습 종료 후 | 평가 → 착용판정 → 기준선 비교 → 내보내기 |
-| 남으면 | `yolo26m` 또는 `imgsz=640` 추가 학습 |
+| 남으면 | `yolo26m` 학습 (젯슨에서 m 도 가능하다고 실측됨) |
+
+젯슨 자원 측정(A 단계)은 **2026-07-27 에 이미 완료**했다. 결과는 아래에 있다.
 
 ---
 
-## A. 젯슨 자원 측정 (코랩 학습 도는 동안 병행 · 20분)
+## A. 젯슨 자원 측정 — ✅ 2026-07-27 완료
 
-**이게 모델 선택을 결정한다.** 먼저 재두면 나중에 헛수고를 던다.
+Tailscale 원격으로 실측·정리까지 끝냈다. **다시 할 필요 없다.** 아래는 확정된 값이다.
 
-```bash
-ssh jetson@yahboom-1
-```
+### 실측 결과 (정리 후)
 
-Tailscale check 만료로 막히면 출력된 URL 을 브라우저에서 1회 승인한다.
+| 항목 | 값 | 비고 |
+|---|---|---|
+| 여유 RAM | **2.8GB** (정리 전 1.4GB) | 헤드리스 전환으로 확보 |
+| 여유 디스크 | **50GB** (정리 전 9.0GB) | ollama 모델 40GB·apt 캐시 삭제 |
+| 스왑 | **8GB 파일 + zram 1.8GB (구성 완료)** | 추가 작업 불필요 |
+| DLA | **없음 확정** | GPU 오프로딩 불가 |
+| 전력 모드 | **MAXN_SUPER** | 이미 최대, 조치 불필요 |
+| JetPack | 6.2 (L4T R36.4.3), TensorRT 10.7.0 | |
+| torch | 2.5.0a0+nv24.08, CUDA True | NVIDIA 빌드 |
 
-```bash
-# 1) 남는 메모리 — 카메라 파이프라인 돌려둔 상태에서
-free -h
-tegrastats --interval 1000 | head -10        # RAM x/3956MB
+### 실측 추론 성능 (PyTorch FP16 @960, 프록시 모델)
 
-# 2) ★ 디스크 — 95% 이력이 있다. 스왑을 만들 수 있는지가 여기서 갈린다
-df -h /
-lsblk                                        # NVMe 있으면 그쪽을 작업공간으로
+| 모델 | 속도 | 메모리 사용 |
+|---|---|---|
+| yolo11s | **14.8 fps** (68ms) | 약 1.1GB |
+| yolo11m | **10.4 fps** (96ms) | 약 1.3GB |
 
-# 3) DLA 유무 — 출력 없으면 없음(GPU 오프로딩 불가 확정)
-ls /dev/nvhost-nvdla* 2>/dev/null; sudo dmesg | grep -i nvdla
+**TensorRT 로 변환하면 이보다 빨라지고 메모리도 준다.** PyTorch eager 는 오버헤드 바운드라
+젯슨에서 실제 속도를 대표하지 않는다.
 
-# 4) Super 모드 확인
-sudo nvpmodel -q
-```
+### ★ 결론 — yolo26m 도 후보에 남는다
 
-**기록해 둘 값** — 여유 RAM / 여유 디스크 / DLA 유무 / 현재 전력 모드.
+정리 전 여유 1.4GB 기준으로는 "엣지 추론 포기" 구간이었지만, **2.8GB 확보 후에는 m 도 들어간다.**
+yolo11m 이 PyTorch 만으로도 10.4 fps 로 목표선(≥10 fps)을 이미 넘겼고, TensorRT 면 여유가 더 생긴다.
 
-판단 기준.
+| 여유 RAM | 판단 | 현재 |
+|---|---|---|
+| 2.5GB 이상 | yolo26s @960 여유, **yolo26m @960 시도 가능** | **← 여기** |
+| 1.5–2.5GB | yolo26s @640 또는 yolo26n | |
+| 1.5GB 미만 | 엣지 추론 포기 → 현행 서버 추론 유지 | |
 
-| 여유 RAM | 판단 |
-|---|---|
-| 2.5GB 이상 | yolo26s @960 시도 가능 |
-| 1.5–2.5GB | yolo26s @640 또는 yolo26n |
-| 1.5GB 미만 | 엣지 추론 포기 → **현행 서버 추론 유지**가 정답 |
+따라서 코랩에서 **s 와 m 을 모두 학습**해 정확도 차이를 보고, 젯슨 TensorRT 실측으로 최종 결정한다.
 
-여유 디스크가 8GB 미만이면 스왑을 4GB 로 줄이고 `imgsz` 를 낮춰 빌드한다.
+### 남은 변수 — 카메라 파이프라인 메모리
+
+위 2.8GB 는 **카메라 파이프라인이 꺼진 상태**의 값이다. ROS2 Orbbec 드라이버 + 푸셔를 띄우면
+그만큼 줄어든다. 엔진 변환 후 **파이프라인을 켠 상태에서 재측정**해야 최종 판정이 선다.
+
+### 이때 함께 바뀐 것 (인지 필요)
+
+- **데스크톱 GUI 없음** — 젯슨에 모니터를 직접 연결해도 화면이 안 나온다.
+  되돌리려면 `sudo systemctl set-default graphical.target && sudo reboot`.
+- **Rosmaster 자동시작 중단** — 로봇 컨트롤러(`rosmaster_main.py`)가 데스크톱 세션 자동시작이었다.
+  CCTV 용도엔 불필요하지만, 필요하면 수동 실행하거나 systemd 서비스로 등록해야 한다.
+- **ollama 비활성화** — 모델 40GB 삭제됨. Docker 이미지 30GB 는 보존했다.
 
 ---
 
@@ -198,6 +213,21 @@ SH17 클래스 순서가 다르면 `SH17_NAMES` 를 출력값으로 교체한다
 | Roboflow 버전 없음 | `version(27)` 숫자를 프로젝트 페이지의 최신 버전으로 교체 |
 | `vyra_ppe.pt` 다운로드 실패 | HuggingFace 경로 변경 가능. `cctv-ai/README.md` 재취득 절차 참조 |
 | 젯슨 SSH 막힘 | Tailscale check 만료. 출력 URL 브라우저 승인 1회 |
+| 젯슨에서 `yolo26` 모델 로드 실패 | **설치된 ultralytics 8.3.59 는 yolo26 미지원.** 아래 함정 참조 |
+
+### ★ 젯슨 ultralytics 업그레이드 함정 (엔진 변환 시점에 해당)
+
+젯슨의 ultralytics 는 **8.3.59** 라 yolo26 을 모르는데, 그냥 올리면 CUDA 가 죽는다.
+
+```bash
+# ✗ 절대 이렇게 하지 말 것 — PyPI torch 가 NVIDIA 빌드 torch 를 덮어써 CUDA False 가 된다
+pip install -U ultralytics
+
+# ✓ 의존성 건드리지 않고 올린다
+pip install -U --no-deps ultralytics
+python3 -c "import torch,ultralytics; print(ultralytics.__version__, torch.__version__, torch.cuda.is_available())"
+# → CUDA 가 True 인지 반드시 확인. False 면 torch 를 NVIDIA 빌드로 복구해야 한다.
+```
 
 ---
 
@@ -207,7 +237,7 @@ SH17 클래스 순서가 다르면 `SH17_NAMES` 를 출력값으로 교체한다
 - [ ] 리매핑 클래스별 인스턴스 수 확보 → 데이터가 쓸 만한지 판정
 - [ ] `yolo26s` 학습 1회 완주 (에포크는 줄여도 됨)
 - [ ] 클래스별 recall 표 확보
-- [ ] **젯슨 여유 RAM·디스크·DLA 기록** (A 단계)
+- [x] ~~젯슨 여유 RAM·디스크·DLA 기록~~ — **2026-07-27 완료** (A 단계 참조)
 
 ## 내일 안 끝나도 되는 것
 
