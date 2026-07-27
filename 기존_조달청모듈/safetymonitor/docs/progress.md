@@ -12,6 +12,21 @@
 
 ## Quick Summary (30초 안에 읽기)
 
+### ★ 다크모드 파비콘 (2026-07-27 — 테마 자동전환 SVG + Safari용 테마별 PNG · main `1b03481` · 라이브 `00150-9cf`→**`00151-ntq`**)
+
+**지금까지 작업**
+- 증상 = 라이트 모드는 탭 로고가 또렷한데 **다크모드에서 묻힘**. 원인 = 파비콘이 `app/icon.png` 한 장뿐이고 방패가 네이비→블루(`#0d2038`→`#2a8dff`).
+- 1차(`bce061b`→`00150-9cf`) = `app/icon.svg` 신규(브랜드 원본 패스 + CSS `prefers-color-scheme` 로 스트로크 전환, 다크 `#ffffff`→`#a9dcff`) + **`app/icon.png` 제거**(같은 base name 이면 Next 가 png 만 emit 하고 svg 를 무시).
+- 2차(`1b03481`→`00151-ntq`) = Safari 는 SVG 내부 media query 를 무시 → `public/brand/favicon-{dark,light}.png`(원본 4267px 에서 SVG 와 **동일 crop 박스**로 방패만 잘라 256px) + `favicon.svg` 이동 + `metadata.icons` 순서 명시(**다크 PNG → 라이트 PNG → SVG(any)**). `metadata.icons` 선언이 `app/apple-icon.png` 링크를 밀어내 apple-touch-icon 이 빠지는 **회귀를 자체 적발·복구**.
+- `/retro` → [lessons L-16](../../../harness/4-guardrails/lessons.md) + 가드 테스트 `lib/icon-metadata.guard.test.ts`(혼용·`apple:` 누락·깨진 참조 3종 차단, 위반을 실제로 만들어 실패 확인).
+
+**현재 상태**
+- 검증 = tsc0·lint0err(4warn 기존)·**test 363→368**·`next build`·L-09 3자 일치. 라이브 = 루트200·rev100%·digest 일치·head 아이콘 링크 **5종**·자산 5종 200·구 `/icon.png` **404**·라이브 파일이 커밋과 **바이트 동일**·다크 PNG 평균 RGB `(232,247,255)` vs 라이트 `(23,69,118)`.
+- **라이브 `00151-ntq` = `1b03481`**. main `eef4454` 가 2커밋 앞서지만 팀원 앱 소스(`d528db6`)·테스트 전용이라 **재배포 불필요**. `favicon.ico` 는 07-24 Safari 대응 BMP-in-ICO 유지(라이트 전용 폴백).
+
+**다음 할 일**
+- (사용자 육안) 다크모드 탭·북마크 아이콘 — 파비콘 캐시가 강하니 탭 재개설 또는 ⌘⇧R. (미검증) Safari 의 icon `media` 속성 지원 여부 — 미지원이면 BMP ICO(라이트)로 폴백해 회귀는 없음, 확인 후 다크용 ICO 배선 검토.
+
 ### ★ 풍속 판정 순간풍속(돌풍) 기준 교정 (2026-07-22~23 — 크레인/고소 중지 임계 정합 · main `c3c91ef` · 라이브 00119 포함)
 
 **지금까지 작업**
