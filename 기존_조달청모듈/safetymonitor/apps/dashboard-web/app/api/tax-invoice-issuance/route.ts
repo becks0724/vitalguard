@@ -1,11 +1,24 @@
 // 전자세금계산서 발급사실 확인 — ②사용축(홈택스 제3자 조회 5요소). POST { supplierBno, buyerBno, approvalNo, writeDate, supplyAmount }.
+//
+// 빈도 제한만 두고 인가는 두지 않는다(감사 BE-AUTHZ-08) — nts 와 같은 이유다. 소비처
+// BusinessVerifyCard 가 `app/safety-audit/page.tsx`(로그인 없는 공개 데모)에도 실려,
+// 인가를 붙이면 그 화면의 발급사실 확인이 401 로 죽는다(교훈 L-11).
+// 무제한 시도는 발급 사실 대조에도 악용될 수 있으므로 빈도 제한을 낮게 잡는다.
 import { NextResponse } from "next/server";
 
+import { clientIpFromRequest } from "../../../lib/client-ip";
+import { consumeToken } from "../../../lib/rate-limit";
 import { checkTaxInvoiceIssuance, type TwoWayInfo } from "../../lib/tax-invoice-issuance";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
+  if (!consumeToken(`taxinvissue:${clientIpFromRequest(req)}`, 30, 60_000)) {
+    return NextResponse.json(
+      { ok: false, error: "요청이 너무 잦습니다" },
+      { status: 429 },
+    );
+  }
   try {
     const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
     const digits = (v: unknown) => String(v ?? "").replace(/[^0-9]/g, "");

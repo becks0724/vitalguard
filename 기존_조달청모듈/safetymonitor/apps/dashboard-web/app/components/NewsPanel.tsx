@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 
 import { useMarqueeScroll } from "../hooks/useMarqueeScroll";
 import { formatRelativeTime, type NewsResult } from "../lib/news";
+import { getSessionToken } from "./LoginGate";
 
 export function NewsPanel() {
   const [data, setData] = useState<NewsResult | null>(null);
@@ -18,7 +19,13 @@ export function NewsPanel() {
   useEffect(() => {
     let alive = true;
     const load = () =>
-      fetch("/api/news")
+      // 토큰 동봉 — 서버가 인증된 호출만 네이버 검색 쿼터를 쓰게 한다(감사 BE-AUTHZ-08).
+      fetch("/api/news", {
+        headers: (() => {
+          const t = getSessionToken();
+          return t ? { Authorization: `Bearer ${t}` } : undefined;
+        })(),
+      })
         .then((r) => {
           // HTTP 오류(500 등)의 에러 JSON 을 정상 데이터로 커밋하지 않도록 catch 로 던짐
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
