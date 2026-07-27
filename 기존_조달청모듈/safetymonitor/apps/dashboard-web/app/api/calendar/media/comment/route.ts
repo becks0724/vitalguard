@@ -7,6 +7,7 @@ import {
   updateCalendarMediaComment,
   deleteCalendarMediaComment,
   findUserByUsername,
+  type CommentScope,
 } from "../../../../../lib/db";
 
 export const dynamic = "force-dynamic";
@@ -56,8 +57,24 @@ export async function POST(request: Request) {
   return NextResponse.json({ ok: true, comment });
 }
 
+// 수정·삭제 권한 범위 — 작성자 본인만. owner(env 관리자)는 모더레이션 목적으로 전체 허용.
+// 세션이 없으면 null 을 돌려 호출부가 401 을 내게 한다. "세션 없음 → 범위 없음(전체 허용)"으로
+// 떨어지면 인가 구멍이 되므로, 판정 불가는 항상 거부 쪽이다(안전한 실패 방향).
+function commentScope(request: Request): CommentScope | null {
+  const session = getSession(request);
+  if (!session) return null;
+  if (session.role === "owner") return "moderator";
+  const authorId = session.username.trim();
+  if (!authorId) return null;
+  return { authorId };
+}
+
 export async function PATCH(request: Request) {
   if (!verifyBasicAuth(request)) {
+    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  }
+  const scope = commentScope(request);
+  if (!scope) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
   let body: { id?: unknown; body?: unknown };
@@ -71,7 +88,9 @@ export async function PATCH(request: Request) {
   if (!id || !text) {
     return NextResponse.json({ ok: false, error: "id, body 필요" }, { status: 400 });
   }
-  const ok = await updateCalendarMediaComment(id, text);
+  // 남의 댓글이면 rowCount 0 → 404. "없음"과 "권한 없음"을 같은 응답으로 묶어
+  // 댓글 id 존재 여부가 새어나가지 않게 한다.
+  const ok = await updateCalendarMediaComment(id, text, scope);
   return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
 }
 
@@ -79,11 +98,15 @@ export async function DELETE(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
+  const scope = commentScope(request);
+  if (!scope) {
+    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  }
   const url = new URL(request.url);
   const id = url.searchParams.get("id") ?? "";
   if (!id) {
     return NextResponse.json({ ok: false, error: "id 필요" }, { status: 400 });
   }
-  const ok = await deleteCalendarMediaComment(id);
+  const ok = await deleteCalendarMediaComment(id, scope);
   return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
 }

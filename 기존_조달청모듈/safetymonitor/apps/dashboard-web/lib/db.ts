@@ -4,7 +4,10 @@
 import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
+import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { notifyAlertTelegram } from "./telegram";
+
+export type { CommentScope };
 
 // int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
 // 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
@@ -2611,18 +2614,26 @@ export async function insertCalendarMediaComment(input: {
 export async function updateCalendarMediaComment(
   id: string,
   body: string,
+  scope: CommentScope,
 ): Promise<boolean> {
+  const params: unknown[] = [id, body];
+  const clause = commentScopeClause(scope, params);
   const { rowCount } = await q(
-    `UPDATE calendar_media_comment SET body = $2, updated_at = ${NOW_ISO} WHERE id = $1`,
-    [id, body],
+    `UPDATE calendar_media_comment SET body = $2, updated_at = ${NOW_ISO} WHERE id = $1${clause}`,
+    params,
   );
   return rowCount > 0;
 }
 
-export async function deleteCalendarMediaComment(id: string): Promise<boolean> {
+export async function deleteCalendarMediaComment(
+  id: string,
+  scope: CommentScope,
+): Promise<boolean> {
+  const params: unknown[] = [id];
+  const clause = commentScopeClause(scope, params);
   const { rowCount } = await q(
-    "DELETE FROM calendar_media_comment WHERE id = $1",
-    [id],
+    `DELETE FROM calendar_media_comment WHERE id = $1${clause}`,
+    params,
   );
   return rowCount > 0;
 }
