@@ -91,6 +91,9 @@ async function clovaReply(
 ): Promise<string> {
   const key = process.env.CLOVA_API_KEY;
   if (!key) throw new Error("CLOVA_API_KEY not set");
+  // Chat Completions v3(HCX-005)는 요청당 system 메시지를 하나만 허용한다.
+  // 기본 지침·동적 출력 정책·교정 지침을 분리하면 400이므로 하나로 합친다.
+  const systemContent = [SYSTEM_PROMPT, outputPolicy, repairInstruction].filter(Boolean).join("\n\n");
   const res = await fetch(
     `https://clovastudio.stream.ntruss.com/v3/chat-completions/${CLOVA_MODEL}`,
     {
@@ -98,9 +101,7 @@ async function clovaReply(
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "system", content: outputPolicy },
-          ...(repairInstruction ? [{ role: "system", content: repairInstruction }] : []),
+          { role: "system", content: systemContent },
           {
             role: "user",
             content:
