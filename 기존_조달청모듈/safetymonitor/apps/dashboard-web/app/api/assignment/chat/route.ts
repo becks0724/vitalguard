@@ -15,9 +15,10 @@ import {
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
 import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
 import {
+  assignmentOutputPolicyInstruction,
+  findAiReplyPolicyViolations,
   isInvalidScopeRefusal,
   isWorkerId,
-  hasMedicalInference,
   MEDICAL_LANGUAGE_REPAIR,
   NORMAL_SCOPE_REPAIR,
   parseFollowUpWorkerIds,
@@ -85,6 +86,7 @@ function toLlmContext(a: WorkerAssignment) {
 async function clovaReply(
   question: string,
   contexts: unknown[],
+  outputPolicy: string,
   repairInstruction?: string,
 ): Promise<string> {
   const key = process.env.CLOVA_API_KEY;
@@ -97,6 +99,7 @@ async function clovaReply(
       body: JSON.stringify({
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
+          { role: "system", content: outputPolicy },
           ...(repairInstruction ? [{ role: "system", content: repairInstruction }] : []),
           {
             role: "user",
@@ -278,31 +281,46 @@ export async function POST(request: Request) {
     "⚠ AI 어시스턴트 응답을 불러오지 못해 규칙 엔진 판정 원문을 표시합니다.\n\n" + ruleText;
 
   const contexts = assignments.map(toLlmContext);
+  const outputPolicyContext = {
+    allowedCount: assignments.reduce(
+      (count, assignment) => count + assignment.advice.perTag.filter((tag) => tag.allowed).length,
+      0,
+    ),
+  };
+  const outputPolicy = assignmentOutputPolicyInstruction(outputPolicyContext);
   try {
     let reply: string;
     try {
-      reply = await clovaReply(message, contexts);
+      reply = await clovaReply(message, contexts, outputPolicy);
     } catch (firstErr) {
       // 일시적 장애(순간 5xx·네트워크 블립)로 폴백 급락하는 것을 막는 1회 재시도.
       console.warn("[assignment-chat] CLOVA 1차 실패, 재시도:", firstErr);
-      reply = await clovaReply(message, contexts);
+      reply = await clovaReply(message, contexts, outputPolicy);
     }
-    // 정상 판정의 범위 거절 또는 의료적 추정은 한 번만 교정한다.
+    // 정상 판정의 범위 거절 또는 중앙 출력 정책 위반은 한 번만 교정한다.
     // 교정 뒤에도 남으면 모델 문장을 버리고 이미 계산한 결정적 규칙 텍스트로 대체한다.
     const needsScopeRepair = isInvalidScopeRefusal(reply);
-    const needsMedicalRepair = hasMedicalInference(reply);
-    if (needsScopeRepair || needsMedicalRepair) {
+    const policyViolations = findAiReplyPolicyViolations(reply, outputPolicyContext);
+    if (needsScopeRepair || policyViolations.length > 0) {
       console.warn(
-        `[assignment-chat] CLOVA ${needsScopeRepair ? "범위 거절" : "의료 추정"} 감지 → 교정 재시도`,
+        `[assignment-chat] CLOVA ${needsScopeRepair ? "범위 거절" : policyViolations.map((v) => v.code).join(",")} 감지 → 교정 재시도`,
       );
       const repairInstruction = [
         needsScopeRepair ? NORMAL_SCOPE_REPAIR : "",
-        needsMedicalRepair ? MEDICAL_LANGUAGE_REPAIR : "",
+        policyViolations.some((violation) => violation.code === "MEDICAL_INFERENCE")
+          ? MEDICAL_LANGUAGE_REPAIR
+          : "",
+        policyViolations.some((violation) => violation.code === "UNSUPPORTED_WORK_PERMISSION")
+          ? "직전 답변이 서버 판정에 없는 작업 허용을 만들었다. 현재 배치 가능 작업은 0종이므로, 작업 가능·진행·허용·투입 표현 없이 안전 이벤트·배제 권고·관리자 확인만 설명해라."
+          : "",
       ]
         .filter(Boolean)
         .join(" ");
-      reply = await clovaReply(message, contexts, repairInstruction);
-      if (isInvalidScopeRefusal(reply) || hasMedicalInference(reply)) {
+      reply = await clovaReply(message, contexts, outputPolicy, repairInstruction);
+      if (
+        isInvalidScopeRefusal(reply) ||
+        findAiReplyPolicyViolations(reply, outputPolicyContext).length > 0
+      ) {
         console.warn("[assignment-chat] CLOVA 교정 실패 → 규칙 텍스트로 대체");
         return NextResponse.json({
           ok: true,

@@ -2,6 +2,8 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  assignmentOutputPolicyInstruction,
+  findAiReplyPolicyViolations,
   hasMedicalInference,
   isWorkerId,
   isInvalidScopeRefusal,
@@ -17,6 +19,27 @@ test("의료적 상태 추정 표현을 감지한다", () => {
   assert.equal(
     hasMedicalInference("낙상 관련 안전 이벤트가 기록되어 고위험 작업 배제를 권고합니다."),
     false,
+  );
+});
+
+test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한다", () => {
+  const noAllowed = { allowedCount: 0 };
+  const violations = findAiReplyPolicyViolations(
+    "일반 작업 배치는 감독관 판단에 따라 진행되어야 합니다.",
+    noAllowed,
+  );
+  assert.deepEqual(violations.map((violation) => violation.code), ["UNSUPPORTED_WORK_PERMISSION"]);
+  assert.match(assignmentOutputPolicyInstruction(noAllowed), /일반 작업 가능/);
+  assert.deepEqual(
+    findAiReplyPolicyViolations(
+      "등록된 위험 작업은 배제 권고 대상이며 관리자 확인 후 재판정이 필요합니다.",
+      noAllowed,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    findAiReplyPolicyViolations("일반 작업 배치가 가능합니다.", { allowedCount: 1 }),
+    [],
   );
 });
 

@@ -18,6 +18,71 @@ export const MEDICAL_LANGUAGE_REPAIR =
   "피로, 회복, 재발, 건강 상태, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 쓰지 말고, " +
   "'안전 이벤트 기록', '안전 기준 적용', '관리자 확인 필요', '배제 권고'처럼 서버 판정 언어만 사용해 답변을 다시 작성해라.";
 
+/**
+ * LLM 출력 정책의 단일 목록. 질문별 정답을 고정하지 않고, 모델이 서버 판정 밖으로
+ * 나갈 때만 막는다. 새 금지 표현은 이 목록에 추가하면 프롬프트·사후검증에 함께 반영된다.
+ */
+export const AI_REPLY_POLICY = {
+  alwaysForbidden: [
+    {
+      code: "MEDICAL_INFERENCE",
+      label: "의료적 상태 추정·예측",
+      pattern: /피로|회복|재발|건강\s*상태?|신체\s*상태|증상|질환|진단|예상(?:됩니다|된다|됨)?|우려(?:됩니다|된다|됨)?/,
+      instruction:
+        "피로, 회복, 재발, 건강 상태, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 사용하지 말 것.",
+    },
+  ],
+  conditionalForbidden: [
+    {
+      code: "UNSUPPORTED_WORK_PERMISSION",
+      label: "근거 없는 작업 허용",
+      when: (context: AssignmentOutputPolicyContext) => context.allowedCount === 0,
+      pattern:
+        /(?:일반\s*)?작업\s*(?:배치|진행|수행).*?(?:가능|허용|진행)|(?:문제\s*없|즉시\s*투입|제한\s*없)/,
+      instruction:
+        "배치 가능 작업이 0종인 판정에서는 일반 작업 가능, 작업 진행·수행 가능, 허용, 문제없음, 즉시 투입, 제한 없음을 말하지 말 것.",
+    },
+  ],
+} as const;
+
+export type AssignmentOutputPolicyContext = {
+  allowedCount: number;
+};
+
+export type AiReplyPolicyViolation = {
+  code: string;
+  label: string;
+};
+
+/** 현재 서버 판정에 맞는 LLM 출력 정책을 만든다. */
+export function assignmentOutputPolicyInstruction(context: AssignmentOutputPolicyContext): string {
+  const rules = [
+    ...AI_REPLY_POLICY.alwaysForbidden,
+    ...AI_REPLY_POLICY.conditionalForbidden.filter((rule) => rule.when(context)),
+  ];
+  return (
+    "[출력 정책 — 서버 강제] " +
+    `현재 판정의 배치 가능 작업 수는 ${context.allowedCount}종이다. ` +
+    rules.map((rule) => rule.instruction).join(" ") +
+    " 서버 판정 데이터에 없는 허용·의료적 해석·최종 결정을 만들지 말 것."
+  );
+}
+
+/** 모델 응답을 중앙 정책 목록으로 검사한다. */
+export function findAiReplyPolicyViolations(
+  reply: string,
+  context: AssignmentOutputPolicyContext,
+): AiReplyPolicyViolation[] {
+  const normalized = reply.replace(/\s+/g, " ");
+  const rules = [
+    ...AI_REPLY_POLICY.alwaysForbidden,
+    ...AI_REPLY_POLICY.conditionalForbidden.filter((rule) => rule.when(context)),
+  ];
+  return rules
+    .filter((rule) => rule.pattern.test(normalized))
+    .map(({ code, label }) => ({ code, label }));
+}
+
 /** 모델이 유효한 판정 문맥을 무시하고 내보내는 표준 범위 거절문을 감지한다. */
 export function isInvalidScopeRefusal(reply: string): boolean {
   const normalized = reply.replace(/\s+/g, " ").trim();
@@ -31,8 +96,8 @@ export function isInvalidScopeRefusal(reply: string): boolean {
  * 실제 판정은 서버가 제공한 안전 이벤트·기준·배제 권고로만 설명해야 한다.
  */
 export function hasMedicalInference(reply: string): boolean {
-  return /피로|회복|재발|건강\s*상태?|신체\s*상태|증상|질환|진단|예상(?:됩니다|된다|됨)?|우려(?:됩니다|된다|됨)?/.test(
-    reply.replace(/\s+/g, " "),
+  return findAiReplyPolicyViolations(reply, { allowedCount: 1 }).some(
+    (violation) => violation.code === "MEDICAL_INFERENCE",
   );
 }
 
