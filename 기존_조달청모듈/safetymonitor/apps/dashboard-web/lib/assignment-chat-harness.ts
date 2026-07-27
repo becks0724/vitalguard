@@ -103,6 +103,7 @@ type AssignmentOutputPolicyRule = {
   pattern: RegExp;
   instruction: string;
   repair: string;
+  normalize?: (reply: string) => string;
   when?: (context: AssignmentOutputPolicyContext) => boolean;
 };
 
@@ -136,6 +137,26 @@ export const AI_REPLY_POLICY: {
         "작업 배치·제한·배제·허용을 언급하는 모든 문장에는 반드시 권고, 검토, 관리자 확인 중 하나를 포함할 것. 배제해야, 피해야, 제외되어야, 제한됩니다, 금지합니다처럼 확정적 지시를 쓰지 말 것.",
       repair:
         "직전 답변이 작업 배치에 대해 확정적 지시를 내렸다. 답변을 처음부터 다시 작성하되, 작업 배치·제한·배제·허용을 말하는 모든 문장에 반드시 권고·검토·관리자 확인 중 하나를 넣어라. 배제해야·피해야·제외되어야·제한됩니다 대신 배제 권고·배치 검토·관리자 확인 표현만 사용해라.",
+      // 판정 내용은 바꾸지 않고, 모델이 반복하는 확정형 종결만 권고형으로 정규화한다.
+      // 정규화 뒤에도 정책 위반이 남으면 아래 사후검증이 규칙 엔진 폴백을 담당한다.
+      normalize: (reply) =>
+        reply
+          .replace(
+            /([가-힣A-Za-z0-9/·,\s]{2,120})을\s*피해야\s*(?:하며|합니다|한다)/g,
+            "$1은 배제 권고 대상이며",
+          )
+          .replace(
+            /([가-힣A-Za-z0-9/·,\s]{2,120})을\s*배제해야\s*(?:합니다|한다)/g,
+            "$1은 배제 권고 대상입니다",
+          )
+          .replace(
+            /((?:해당|등록된|고위험)?\s*작업)\s*(?:에서|으로부터)\s*제외되어야\s*(?:합니다|한다)/g,
+            "$1은 배제 권고 대상입니다",
+          )
+          .replace(
+            /([가-힣A-Za-z0-9/·,\s]{2,120})\s*작업\s*배치\s*(?:가|는)?\s*제한(?:됩니다|된다)/g,
+            "$1 작업 배치는 제한 권고 대상입니다",
+          ),
     },
     {
       layer: "ASSIGNMENT_AUTHORITY",
@@ -181,6 +202,17 @@ export function findAiReplyPolicyViolations(
   return activeOutputPolicyRules(context)
     .filter((rule) => rule.pattern.test(normalized))
     .map(({ code, label }) => ({ code, label }));
+}
+
+/** 출력 계층의 표현 정규화. 판정 사실은 건드리지 않고 권고형 말투만 강제한다. */
+export function normalizeAiReplyPolicyLanguage(
+  reply: string,
+  context: AssignmentOutputPolicyContext,
+): string {
+  return activeOutputPolicyRules(context).reduce(
+    (normalized, rule) => (rule.normalize ? rule.normalize(normalized) : normalized),
+    reply,
+  );
 }
 
 /** 위반 코드로부터 같은 중앙 정책 목록의 교정 지침을 만든다. */

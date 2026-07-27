@@ -21,6 +21,7 @@ import {
   findAiReplyPolicyViolations,
   isInvalidScopeRefusal,
   isWorkerId,
+  normalizeAiReplyPolicyLanguage,
   NORMAL_SCOPE_REPAIR,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
@@ -279,6 +280,7 @@ export async function POST(request: Request) {
       console.warn("[assignment-chat] CLOVA 1차 실패, 재시도:", firstErr);
       reply = await clovaReply(message, contexts, outputPolicy);
     }
+    reply = normalizeAiReplyPolicyLanguage(reply, outputPolicyContext);
     // 정상 판정의 범위 거절 또는 중앙 출력 정책 위반은 한 번만 교정한다.
     // 교정 뒤에도 남으면 모델 문장을 버리고 이미 계산한 결정적 규칙 텍스트로 대체한다.
     const needsScopeRepair = isInvalidScopeRefusal(reply);
@@ -294,6 +296,7 @@ export async function POST(request: Request) {
         .filter(Boolean)
         .join(" ");
       reply = await clovaReply(message, contexts, outputPolicy, repairInstruction);
+      reply = normalizeAiReplyPolicyLanguage(reply, outputPolicyContext);
       if (
         isInvalidScopeRefusal(reply) ||
         findAiReplyPolicyViolations(reply, outputPolicyContext).length > 0

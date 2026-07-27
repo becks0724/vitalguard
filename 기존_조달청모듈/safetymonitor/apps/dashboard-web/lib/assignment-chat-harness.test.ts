@@ -10,6 +10,7 @@ import {
   hasMedicalInference,
   isWorkerId,
   isInvalidScopeRefusal,
+  normalizeAiReplyPolicyLanguage,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
 } from "./assignment-chat-harness";
@@ -79,6 +80,16 @@ test("작업 배치 문구의 확정적 지시를 감지하고 권고형 교정�
     ),
     [],
   );
+});
+
+test("권고형 정규화는 CLOVA의 판정 내용 대신 확정적 배치 말투만 바꾼다", () => {
+  const normalized = normalizeAiReplyPolicyLanguage(
+    "고소작업, 굴착/흙막이 작업을 피해야 하며 해당 작업에서 제외되어야 합니다.",
+    { allowedCount: 0 },
+  );
+  assert.match(normalized, /고소작업, 굴착\/흙막이 작업은 배제 권고 대상이며/);
+  assert.match(normalized, /해당 작업은 배제 권고 대상입니다/);
+  assert.deepEqual(findAiReplyPolicyViolations(normalized, { allowedCount: 0 }), []);
 });
 
 test("유효한 판정 문맥을 무시하는 표준 범위 거절문을 감지한다", () => {
