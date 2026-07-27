@@ -53,6 +53,15 @@ export async function GET(request: Request) {
 // 무인증 수집 전송 경고(soft 모드) — 프로세스당 1회만(5초 폴 로그 스팸 방지).
 let warnedUnauthedVital = false;
 
+// 배치 항목 수 상한(감사 BE-VALID-01) — 레이트리밋은 "요청 수"만 세므로 한 요청에 수십만 건을
+// 담는 단일 폭탄은 막지 못한다. 항목마다 zod 파싱 + DB INSERT 가 돌아 요청 하나로 인스턴스를
+// 묶어둘 수 있다.
+//
+// 값의 근거 — 워치 클라이언트의 자체 상한이 300 이다(VitalTransmitter.maxBacklog).
+// 오프라인 후 재전송 시 backlog 전체를 1배열로 보내므로 정상 최대치가 300 이고, 여기에
+// 여유를 둬 500 으로 잡는다. 정상 트래픽은 자르지 않고 폭탄만 막는 자리다.
+const MAX_BATCH_ITEMS = 500;
+
 export async function POST(request: Request) {
   // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이었다(감사 BE-RATE-01).
   // 한도는 실제 전송 케이던스보다 넉넉하게 둔다. 워치·폰은 5초 주기(≈12회/분)이고
@@ -78,6 +87,18 @@ export async function POST(request: Request) {
 
     // 워치 배칭 전송 — 한 요청에 샘플 배열(라디오 기상 1회). 단일 객체도 그대로 허용(폰 호환).
     if (Array.isArray(body)) {
+      // 상한 초과는 잘라서 일부만 받지 않는다 — 조용히 자르면 클라는 201 을 보고 전송 성공으로
+      // 판단해 재전송하지 않아, 잘린 뒤쪽이 그대로 유실된다(무음 유실). 413 으로 거부해
+      // 클라의 재시도 경로를 살린다.
+      if (body.length > MAX_BATCH_ITEMS) {
+        console.warn(
+          `[vital] 배치 항목 수 상한 초과 — ${body.length}건 (상한 ${MAX_BATCH_ITEMS}) 요청 거부`,
+        );
+        return NextResponse.json(
+          { ok: false, error: `배치는 최대 ${MAX_BATCH_ITEMS}건까지 허용됩니다` },
+          { status: 413 },
+        );
+      }
       let accepted = 0;
       let dropped = 0;
       // 폐기 사유 분리 — dropped 는 "검증 실패"와 "예약 ID·빈 샘플 미저장"이 섞여 있어 그대로는

@@ -70,6 +70,12 @@ export const VitalSampleSchema = z.object({
   // 낙상 ML 텔레메트리 (감사 BND-CONTRACT-02) — 워치가 후보마다 실어 보내지만 스키마에 없어
   // 전량 무음 폐기됐다. ML 판정 근거가 저장되지 않아 임계 재학습·오탐 사후분석이 불가능했다.
   fallRuleIsFall: z.boolean().optional(),
+  // 워치 ML 파이프라인 실동작 여부 (감사 2026-07-27) — 낙상 후보에만 실리는 위 텔레메트리와 달리
+  // **정상 생체 샘플에도 매번** 실려 온다(VitalTransmitter.basePayload). 스키마에 없어 전량 무음
+  // 폐기됐고, 그래서 "워치에서 ML 이 실제로 도는가"를 관제가 알 방법이 없었다.
+  // 이 값이 계속 false 면 번들에 .mlmodelc 가 없어 FallMLPipeline 이 fail-open 중이라는 뜻이다
+  // (규칙 단독 감지 = 오탐 억제 없음). ML 미동작을 조용히 넘기지 않으려면 반드시 관측돼야 한다.
+  mlFallPipelineActive: z.boolean().optional(),
   mlWorkVetoProb: z.number().min(0).max(1).optional(),
   mlImpactProb: z.number().min(0).max(1).optional(),
   mlShouldAlert: z.boolean().optional(),

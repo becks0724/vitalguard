@@ -221,9 +221,12 @@ def report_baseline(rows, labels) -> dict:
     return {"params": p.__dict__, "metrics": m}
 
 
-def grid_search(rows, labels, w_fn: float, w_fp: float, fpr_cap: float | None) -> dict:
-    grid_impact = frange(2.8, 4.0, 0.2)   # 게이트 미만 불가(데이터 절단)
-    grid_still = frange(0.6, 2.0, 0.1)
+def grid_search(rows, labels, w_fn: float, w_fp: float, fpr_cap: float | None,
+                impact_grid_min: float = 2.8, still_grid_min: float = 0.6) -> dict:
+    # 하한 기본값 = 기존 동작 유지(라이브 후보 CSV 는 2.8 게이트 조건부 수집이라 그 미만 탐색 불가).
+    # 원시 파형 소스(imu_collect.imu_window)의 임계-독립 피처면 하한을 낮춰 게이트 자체를 탐색한다.
+    grid_impact = frange(impact_grid_min, 4.0, 0.2)
+    grid_still = frange(still_grid_min, 2.0, 0.1)
     grid_rot = frange(3.0, 10.0, 0.5)
     best = None
     evaluated = 0
@@ -349,6 +352,10 @@ def main(argv=None) -> int:
     ap.add_argument("--w-fn", type=float, default=10.0, help="놓친 낙상(FN) 비용 가중 (기본 10)")
     ap.add_argument("--w-fp", type=float, default=1.0, help="오탐(FP) 비용 가중 (기본 1)")
     ap.add_argument("--fpr-cap", type=float, default=None, help="오탐율 상한(예: 0.1)")
+    ap.add_argument("--impact-grid-min", type=float, default=2.8,
+                    help="충격 임계 그리드 하한 (기본 2.8 = 기존 동작. 원시 파형 피처면 낮춰 게이트 탐색)")
+    ap.add_argument("--still-grid-min", type=float, default=0.6,
+                    help="정지 임계 그리드 하한 (기본 0.6. 짧은 윈도 데이터면 0.0 으로 절단 대응)")
     ap.add_argument("--out-dir", default="./out", help="PR곡선/결과 저장 폴더")
     ap.add_argument("--no-plot", action="store_true", help="PR곡선 PNG 생략")
     args = ap.parse_args(argv)
@@ -387,7 +394,8 @@ def main(argv=None) -> int:
 
     rows, labels = rows_and_labels(complete)
     baseline = report_baseline(rows, labels)
-    best = grid_search(rows, labels, args.w_fn, args.w_fp, args.fpr_cap)
+    best = grid_search(rows, labels, args.w_fn, args.w_fp, args.fpr_cap,
+                       args.impact_grid_min, args.still_grid_min)
     if best:
         cross_validate(complete, best["params"], args.w_fn, args.w_fp)
         if not args.no_plot:

@@ -351,6 +351,39 @@ test("낙상 ML 텔레메트리 7종이 보존된다", () => {
   assert.equal(r.mlRescuedByML, false);
 });
 
+// 감사 2026-07-27 — 워치가 정상 생체 샘플마다 보내는 ML 실동작 플래그.
+// 낙상 후보 전용인 위 텔레메트리 7종과 달리 평상시 샘플에 실리므로, 후보 샘플 테스트만으로는
+// 이 경로가 지켜지지 않는다. 이 값이 사라지면 ML 미동작을 관제가 감지할 수단이 없어진다.
+test("mlFallPipelineActive 는 낙상 후보가 아닌 평상 샘플에서도 보존된다", () => {
+  const active = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    heartRate: 78,
+    mlFallPipelineActive: true,
+  });
+  assert.equal(active.mlFallPipelineActive, true);
+
+  // false 가 undefined 로 뭉개지면 "미동작"과 "미보고"를 구분할 수 없다.
+  const inactive = parseResilientVitalSample({
+    workerId: "EMP-1",
+    ts: TS,
+    heartRate: 78,
+    mlFallPipelineActive: false,
+  });
+  assert.equal(inactive.mlFallPipelineActive, false);
+});
+
+test("mlFallPipelineActive 는 boolean — 문자열 'true'는 거부한다", () => {
+  assert.equal(
+    VitalSampleSchema.safeParse({
+      workerId: "EMP-1",
+      ts: TS,
+      mlFallPipelineActive: "true",
+    }).success,
+    false,
+  );
+});
+
 test("ML 확률은 0~1 범위 밖이면 해당 필드만 스트립된다", () => {
   const r = parseResilientVitalSample({
     workerId: "EMP-1",
