@@ -134,9 +134,9 @@ export default function AssignmentChatBoard() {
         // 한 명만 조회한 직후에만 "배제 이유는?" 같은 짧은 후속 질문을 그 작업자에 연결한다.
         // 전체 요약/복수 조회 뒤에는 대상이 모호하므로 문맥을 비운다.
         const responseAssignments = json.assignments ?? [];
-        setFollowUpWorkerIds(
-          responseAssignments.length === 1 ? [responseAssignments[0].workerId] : [],
-        );
+        const soleAssignment =
+          responseAssignments.length === 1 ? responseAssignments[0] : undefined;
+        setFollowUpWorkerIds(soleAssignment ? [soleAssignment.workerId] : []);
         setMessages((prev) => [
           ...prev,
           { role: "assistant", text: json.reply as string, source: json.source, badges },
