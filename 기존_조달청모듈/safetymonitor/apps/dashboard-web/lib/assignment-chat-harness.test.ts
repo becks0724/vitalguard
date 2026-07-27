@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  isWorkerId,
   isInvalidScopeRefusal,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
@@ -24,4 +25,11 @@ test("직전 단일 서버 판정의 가명 사번만 후속 질문 문맥으로
   assert.deepEqual(parseFollowUpWorkerIds(["장우진"]), []);
   assert.deepEqual(parseFollowUpWorkerIds("EMP-admin6861"), []);
   assert.deepEqual(parseFollowUpWorkerIds([{ workerId: "EMP-admin6861" }]), []);
+});
+
+test("로그인 계정 ID는 작업자 후보로 취급하지 않는다", () => {
+  assert.equal(isWorkerId("EMP-admin6861"), true);
+  assert.equal(isWorkerId("VW-6861"), true);
+  assert.equal(isWorkerId("admin6861"), false);
+  assert.equal(isWorkerId("장우진"), false);
 });

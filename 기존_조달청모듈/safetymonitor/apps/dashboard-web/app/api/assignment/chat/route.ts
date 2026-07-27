@@ -16,6 +16,7 @@ import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condit
 import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
 import {
   isInvalidScopeRefusal,
+  isWorkerId,
   NORMAL_SCOPE_REPAIR,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
@@ -142,6 +143,9 @@ async function resolveByName(message: string): Promise<{ workerId: string; name:
   const [workers, aliasMap] = await Promise.all([listAllWorkers(), getWorkerAliasMap()]);
   const hits = new Map<string, { workerId: string; name: string }>();
   for (const w of workers) {
+    // listAllWorkers는 생체 수신 테이블을 그대로 집계한다. 과거 앱이 남긴 로그인 ID 등은
+    // 여기서 작업자로 승격하지 않는다. 챗봇의 안전 조회 기준은 workerId 하나다.
+    if (!isWorkerId(w.worker_id)) continue;
     const name = (w.worker_name ?? "").trim();
     if (name.length >= 2 && message.includes(name)) {
       // 별칭(폰/워치 다른 사번) 폴딩 → 같은 사람은 primary 로 합침(진짜 동명이인은 서로 다른 primary 라 유지).
@@ -226,11 +230,12 @@ export async function POST(request: Request) {
       // 이름 → 사번 치환: 컨텍스트엔 사번만 있으므로 질문의 이름도 사번으로 바꿔 CLOVA 가 연결하게 한다.
       message = message.split(named[0]!.name).join(named[0]!.workerId);
     } else if (named.length > 1) {
-      const list = named.map((w) => `· ${w.workerId} (${w.name})`).join("\n");
       return NextResponse.json({
         ok: true,
-        reply: `해당 이름의 작업자가 여러 명입니다. 사번으로 다시 질문해 주세요.\n${list}\n\n최종 배치 결정 권한은 감독관에게 있습니다.`,
+        reply:
+          "해당 이름의 작업자가 여러 명입니다. 아래에서 작업자 사번을 선택해 주세요.\n\n최종 배치 결정 권한은 감독관에게 있습니다.",
         source: "rule",
+        candidates: named,
         disclaimer: CONDITION_DISCLAIMER,
       });
     } else {

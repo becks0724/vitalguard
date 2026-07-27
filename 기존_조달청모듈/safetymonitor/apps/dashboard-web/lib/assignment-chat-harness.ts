@@ -31,6 +31,14 @@ export function parseFollowUpWorkerIds(value: unknown): string[] {
   const [candidate] = value;
   if (typeof candidate !== "string") return [];
   const workerId = candidate.trim();
-  // 접두사만 대소문자 비구분이다. 뒤 식별자는 DB 키와 정확히 일치해야 하므로 보존한다.
-  return /^(?:EMP|VW)-[A-Z0-9_-]+$/i.test(workerId) ? [workerId] : [];
+  return isWorkerId(workerId) ? [workerId] : [];
+}
+
+/**
+ * 작업자·워치 생체 데이터의 정식 식별자 형식이다.
+ * 로그인 계정 ID(예: admin6861)는 인증용이므로 챗봇의 작업자 후보·후속 문맥에 섞지 않는다.
+ * 접두사만 대소문자 비구분이며 뒤 식별자는 DB 키와 정확히 일치해야 하므로 보존한다.
+ */
+export function isWorkerId(value: string): boolean {
+  return /^(?:EMP|VW)-[A-Z0-9_-]+$/i.test(value.trim());
 }

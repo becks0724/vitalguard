@@ -18,6 +18,7 @@ type ChatMessage = {
   text: string;
   source?: "clova" | "rule";
   badges?: VerdictBadge[];
+  candidates?: { workerId: string; name: string }[];
 };
 
 type ChatResponse = {
@@ -31,6 +32,7 @@ type ChatResponse = {
     condition: { grade: VerdictBadge["grade"] };
     advice: { perTag: { allowed: boolean; pending: boolean }[] };
   }[];
+  candidates?: { workerId: string; name: string }[];
 };
 
 // 등급 → 신호등(대시보드 작업자 신호등과 동일 문법: 정상 정적·주의/위험 블링크).
@@ -139,7 +141,13 @@ export default function AssignmentChatBoard() {
         setFollowUpWorkerIds(soleAssignment ? [soleAssignment.workerId] : []);
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", text: json.reply as string, source: json.source, badges },
+          {
+            role: "assistant",
+            text: json.reply as string,
+            source: json.source,
+            badges,
+            candidates: json.candidates,
+          },
         ]);
       } catch {
         setMessages((prev) => [
@@ -218,6 +226,21 @@ export default function AssignmentChatBoard() {
                 </div>
               ) : null}
             </div>
+            {m.role === "assistant" && m.candidates && m.candidates.length > 0 ? (
+              <div className="flex max-w-[85%] flex-wrap gap-2">
+                {m.candidates.map((candidate) => (
+                  <button
+                    key={candidate.workerId}
+                    type="button"
+                    onClick={() => void send(`${candidate.workerId} 컨디션 알려줘`)}
+                    disabled={busy}
+                    className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-left text-xs font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-40 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-200 dark:hover:bg-blue-500/20"
+                  >
+                    {candidate.name} · {candidate.workerId}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
         {busy ? (
