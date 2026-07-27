@@ -10,6 +10,8 @@ import {
   discomfortGrade,
   evaluateApparentTemp,
   evaluateDiscomfortIndex,
+  evaluateKmaPreliminary,
+  evaluateKmaWarning,
   evaluatePM25,
   evaluatePrecipitation,
   evaluateUV,
@@ -501,37 +503,10 @@ export function WeatherStrip({
   const discomfortDi = computeDiscomfortIndex(c.temperatureC, c.humidityPct);
   const updatedAt = formatDateMinute(data.fetchedAt);
 
-  // 기상특보(기상청) — 현장 시·도 발효 특보. RuleEvaluation 형태로 만들어 다른 항목과 동일 렌더/모달.
-  const kmaEvaluation: RuleEvaluation = {
-    itemKey: "kma-warning",
-    itemLabel: "기상특보",
-    currentValue: kma?.summary ?? "조회 중",
-    currentSeverity: kma?.severity ?? "normal",
-    steps: [
-      { severity: "danger", binding: "legal", label: "특보 '경보' 발효 — 옥외작업 중지 검토", action: "강풍·호우·태풍·폭염 경보 시 옥외 고소·중량물 작업 중지 검토.", source: "기상청 기상특보" },
-      { severity: "caution", binding: "recommendation", label: "특보 '주의보' 발효 — 주의·대비", action: "작업자 안전 점검 및 현장 상황 주시.", source: "기상청 기상특보" },
-    ],
-    baseline: "특보 없음",
-    notes: kma
-      ? `현장 시·도(${kma.sido}) 기준 현재 발효 특보${kma.source === "mock" ? " · 샘플" : ""}. 출처 기상청 기상특보.`
-      : "기상특보 조회 중",
-  };
-
-  // 예비특보(t7) — 현장 시·도에 발효 예정인 특보(사전 대비). 있으면 caution.
+  // 기상특보·예비특보(기상청) — 현장 시·도 발효 특보. 다른 항목과 동일하게 weather-rules 가 평가.
+  const kmaEvaluation = evaluateKmaWarning(kma);
   const prelimWhen = kma?.preliminary?.[0]?.when;
-  const prelimEvaluation: RuleEvaluation = {
-    itemKey: "kma-preliminary",
-    itemLabel: "예비특보",
-    currentValue: kma?.preliminarySummary ?? "조회 중",
-    currentSeverity: kma?.preliminarySeverity ?? "normal",
-    steps: [
-      { severity: "caution", binding: "recommendation", label: "예비특보 발효 예정 — 사전 대비", action: "발효 예정 시점 전 옥외작업 일정 조정·자재 결박·고소작업 점검.", source: "기상청 예비특보" },
-    ],
-    baseline: "예정 특보 없음",
-    notes: kma
-      ? `현장 시·도(${kma.sido}) 발효 예정 특보${prelimWhen ? ` · ${prelimWhen}` : ""}${kma.source === "mock" ? " · 샘플" : ""}. 출처 기상청 예비특보(통보문 t7).`
-      : "예비특보 조회 중",
-  };
+  const prelimEvaluation = evaluateKmaPreliminary(kma);
 
   // 마퀴(가로 슬라이딩)로 순환시킬 항목. 같은 배열을 2벌 렌더해 끊김 없이 흐른다.
   // icon 은 WeatherIcons 의 모노톤 라인 아이콘 키(이모지 아님).

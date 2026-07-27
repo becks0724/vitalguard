@@ -1,9 +1,33 @@
 import ActivityKit
+import CoreLocation
 import Foundation
 
 enum AppMode: String, Codable, Hashable {
     case admin
     case worker
+}
+
+/// iPhone, Watch, and the control dashboard share this boundary contract.
+/// A position is published only on the first valid fix or after movement beyond
+/// the configured radius from the last dashboard-confirmed position.
+enum VitAlGuardLocationUpdatePolicy {
+    static let minimumRadiusMeters: CLLocationDistance = 100
+    static let maximumRadiusMeters: CLLocationDistance = 5_000
+
+    static func clampedRadius(_ value: Double) -> CLLocationDistance {
+        min(maximumRadiusMeters, max(minimumRadiusMeters, value.rounded()))
+    }
+
+    static func shouldPublish(
+        location: CLLocation,
+        after lastPublishedLocation: CLLocation?,
+        radiusMeters: CLLocationDistance
+    ) -> Bool {
+        let radius = clampedRadius(radiusMeters)
+        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= radius else { return false }
+        guard let lastPublishedLocation else { return true }
+        return location.distance(from: lastPublishedLocation) >= radius
+    }
 }
 
 enum VitAlGuardQuickAction: String, Codable, Hashable {

@@ -422,13 +422,6 @@ struct ContentView: View {
                 ) {
                     workout.stop()
                 }
-                AppleGlassActionButton(
-                    title: L("낙상 시연(수동)"),
-                    tint: WatchTheme.warn,
-                    foreground: WatchTheme.ink
-                ) {
-                    workout.simulateFall()
-                }
             } else {
                 AppleGlassActionButton(
                     title: L("산업 모니터링 시작"),

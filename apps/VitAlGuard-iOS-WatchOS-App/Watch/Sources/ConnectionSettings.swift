@@ -829,6 +829,16 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         min(5_000, max(100, value.rounded()))
     }
 
+    /// Mirrors the iPhone/dashboard boundary contract. The shared Phone source
+    /// is not compiled into the Watch target, so this target-local entry point
+    /// preserves the same 100m...5km and last-published-position semantics.
+    static func shouldPublishLocation(_ location: CLLocation, after lastPublishedLocation: CLLocation?) -> Bool {
+        let radius = currentLocationUpdateRadiusMeters()
+        guard location.horizontalAccuracy > 0, location.horizontalAccuracy <= radius else { return false }
+        guard let lastPublishedLocation else { return true }
+        return location.distance(from: lastPublishedLocation) >= radius
+    }
+
     static func formattedInterval(_ seconds: Double) -> String {
         let value = Int(clampedSyncInterval(seconds))
         if value >= 60 {

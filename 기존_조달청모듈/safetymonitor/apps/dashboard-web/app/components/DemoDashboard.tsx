@@ -754,6 +754,8 @@ type CalendarMedia = {
   latitude: number | null;
   longitude: number | null;
   roadAddress: string | null;
+  // 서버가 계산한 삭제 가능 여부 — 화면이 권한 규칙을 다시 구현하지 않는다(단일 소스).
+  canDelete: boolean;
   comments: CalendarMediaComment[];
 };
 
@@ -1771,7 +1773,10 @@ function HeaderCalendarPopup({
       });
       if (!res.ok) return;
       type RawComment = Record<string, string | null>;
-      type RawMedia = Record<string, string | null> & { comments?: RawComment[] };
+      type RawMedia = Record<string, string | null> & {
+        comments?: RawComment[];
+        canDelete?: boolean; // 서버가 계산한 항목별 삭제 권한
+      };
       const json = (await res.json()) as { ok?: boolean; media?: RawMedia[] };
       if (!json.ok || !Array.isArray(json.media)) return;
       const map: Record<string, CalendarMedia[]> = {};
@@ -1793,6 +1798,9 @@ function HeaderCalendarPopup({
           latitude: r.latitude != null ? Number(r.latitude) : null,
           longitude: r.longitude != null ? Number(r.longitude) : null,
           roadAddress: r.road_address ?? null,
+          // 서버 판정을 그대로 쓴다. 없으면 false — 판정을 못 받았는데 버튼을 보이면
+          // 눌렀을 때 실패한다(모르면 감춘다).
+          canDelete: r.canDelete === true,
           comments: (r.comments ?? []).map((c) => ({
             id: c.id ?? "",
             authorName: c.author_name ?? null,
@@ -2950,13 +2958,26 @@ function HeaderCalendarPopup({
                             </p>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => deleteMedia(m.id)}
-                          className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                        >
-                          삭제
-                        </button>
+                        {/* 삭제 불가 사유를 구분해 보여준다 — 버튼이 그냥 사라지면 고장으로 읽힌다.
+                            다만 "남의 사진"일 때는 아무것도 띄우지 않는다(설명할 일이 아니다).
+                            사번이 비어 주인을 특정할 수 없는 과거 사진만 안내한다. */}
+                        {!m.canDelete && !m.workerId && (
+                          <span
+                            title="업로드 당시 작업자 사번이 기록되지 않아 소유자를 확인할 수 없습니다. 삭제는 최고관리자에게 요청하세요."
+                            className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-muted dark:text-on-dark-soft"
+                          >
+                            작업자 정보 없음
+                          </span>
+                        )}
+                        {m.canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => deleteMedia(m.id)}
+                            className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                          >
+                            삭제
+                          </button>
+                        )}
                       </div>
 
                       {/* 내용 영역 — 촬영정보 정리(촬영시각·도로명주소·GPS·작업자), 원문 OCR은 접어두기 */}

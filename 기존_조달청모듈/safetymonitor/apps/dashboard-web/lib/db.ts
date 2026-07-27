@@ -5,9 +5,11 @@ import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
 import { commentScopeClause, type CommentScope } from "./comment-scope";
+import { defaultEmployeeId } from "./employee-id";
+import { mediaScopeClause, type MediaScope } from "./media-scope";
 import { notifyAlertTelegram } from "./telegram";
 
-export type { CommentScope };
+export type { CommentScope, MediaScope };
 
 // int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
 // 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
@@ -511,6 +513,12 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS employee_id TEXT;
+    -- 사번 백필 — 이 컬럼이 비어 있으면 사진·생체의 worker_id 와 대조할 값이 없어
+    -- **본인이 올린 사진도 못 지운다**(2026-07-27 제보, 9명 중 8명이 null 이었다).
+    -- 값은 앱이 이미 쓰고 있는 규칙과 동일한 'EMP-'||username 이라 기존 데이터와 즉시 맞물린다.
+    -- 이미 값이 있는 계정은 건드리지 않는다(WHERE employee_id IS NULL) — 실제 사번 우선.
+    -- 멱등이라 재기동마다 돌아도 두 번째부터는 0행이다.
+    UPDATE users SET employee_id = 'EMP-' || username WHERE employee_id IS NULL;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
     -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;
@@ -2294,6 +2302,9 @@ export async function createUser(input: {
     email: input.email,
     email_verified: input.emailVerified,
     password_hash: input.passwordHash,
+    // 가입 시점에 사번 기본값을 넣는다 — null 로 두면 그 계정만 사진 소유권 대조가
+    // 불가능해져 "본인 사진을 못 지우는" 상태로 태어난다. 실제 사번은 프로필에서 덮어쓴다.
+    employee_id: defaultEmployeeId(input.username),
   });
   const { rows } = await q<UserRow>(
     `${text} ON CONFLICT (username) DO NOTHING RETURNING *`,
@@ -2460,6 +2471,9 @@ export async function createGoogleUser(input: {
     email: input.email,
     auth_provider: "google",
     google_sub: input.googleSub,
+    // 구글 가입도 동일 — username 이 이메일이라 사번은 'EMP-<이메일>' 이 된다.
+    // 앱이 만드는 값과 같은 규칙이라 나중에 그 계정으로 앱을 써도 그대로 맞물린다.
+    employee_id: defaultEmployeeId(input.email),
   });
   const { rows } = await q<UserRow>(
     `${text} ON CONFLICT DO NOTHING RETURNING *`,
@@ -2638,20 +2652,31 @@ export async function deleteCalendarMediaComment(
   return rowCount > 0;
 }
 
-// 관리자 설명 메모 수정.
+// 설명 메모 수정 — 삭제와 같은 소유권 규칙(올린 작업자 본인 또는 owner).
 export async function updateCalendarMediaDescription(
   id: string,
   description: string,
+  scope: MediaScope,
 ): Promise<boolean> {
+  const params: unknown[] = [id, description];
+  const clause = mediaScopeClause(scope, params);
   const { rowCount } = await q(
-    "UPDATE calendar_media SET description = $2 WHERE id = $1",
-    [id, description],
+    `UPDATE calendar_media SET description = $2 WHERE id = $1${clause}`,
+    params,
   );
   return rowCount > 0;
 }
 
-export async function deleteCalendarMedia(id: string): Promise<boolean> {
-  const { rowCount } = await q("DELETE FROM calendar_media WHERE id = $1", [id]);
+export async function deleteCalendarMedia(
+  id: string,
+  scope: MediaScope,
+): Promise<boolean> {
+  const params: unknown[] = [id];
+  const clause = mediaScopeClause(scope, params);
+  const { rowCount } = await q(
+    `DELETE FROM calendar_media WHERE id = $1${clause}`,
+    params,
+  );
   return rowCount > 0;
 }
 

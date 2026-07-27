@@ -321,6 +321,80 @@ export function evaluateDiscomfortIndex(tempC: number, humidityPct: number): Rul
   };
 }
 
+// 기상청 특보 응답 중 판정·표시에 쓰는 필드. 전체 응답 타입은 호출부 소유(구조적 타이핑으로 그대로 전달).
+export type KmaEvaluationInput = {
+  sido: string;
+  source: "live" | "mock";
+  severity: RuleSeverity;
+  summary: string;
+  preliminary: { when: string }[];
+  preliminarySeverity: RuleSeverity;
+  preliminarySummary: string;
+};
+
+const KMA_WARNING_STEPS: ThresholdStep[] = [
+  {
+    severity: "danger",
+    binding: "legal",
+    label: "특보 '경보' 발효 — 옥외작업 중지 검토",
+    action: "강풍·호우·태풍·폭염 경보 시 옥외 고소·중량물 작업 중지 검토.",
+    source: "기상청 기상특보",
+  },
+  {
+    severity: "caution",
+    binding: "recommendation",
+    label: "특보 '주의보' 발효 — 주의·대비",
+    action: "작업자 안전 점검 및 현장 상황 주시.",
+    source: "기상청 기상특보",
+  },
+];
+
+// 기상특보 — 발효 특보의 심각도를 임계 단계에 연결한다.
+// 다른 항목과 같이 severity 를 step 에서 파생시킨다(둘을 따로 정하면 칩은 위험인데 모달은 "정상 범위"가 된다).
+export function evaluateKmaWarning(kma: KmaEvaluationInput | null): RuleEvaluation {
+  const hit = KMA_WARNING_STEPS.find((s) => s.severity === kma?.severity);
+  return {
+    itemKey: "kma-warning",
+    itemLabel: "기상특보",
+    currentValue: kma?.summary ?? "조회 중",
+    currentSeverity: hit?.severity ?? "normal",
+    currentStep: hit,
+    steps: KMA_WARNING_STEPS,
+    baseline: "특보 없음",
+    notes: kma
+      ? `현장 시·도(${kma.sido}) 기준 현재 발효 특보${kma.source === "mock" ? " · 샘플" : ""}. 출처 기상청 기상특보.`
+      : "기상특보 조회 중",
+  };
+}
+
+const KMA_PRELIMINARY_STEPS: ThresholdStep[] = [
+  {
+    severity: "caution",
+    binding: "recommendation",
+    label: "예비특보 발효 예정 — 사전 대비",
+    action: "발효 예정 시점 전 옥외작업 일정 조정·자재 결박·고소작업 점검.",
+    source: "기상청 예비특보",
+  },
+];
+
+// 예비특보(통보문 t7) — 발효 예정 특보. 있으면 주의 단계.
+export function evaluateKmaPreliminary(kma: KmaEvaluationInput | null): RuleEvaluation {
+  const hit = KMA_PRELIMINARY_STEPS.find((s) => s.severity === kma?.preliminarySeverity);
+  const when = kma?.preliminary[0]?.when;
+  return {
+    itemKey: "kma-preliminary",
+    itemLabel: "예비특보",
+    currentValue: kma?.preliminarySummary ?? "조회 중",
+    currentSeverity: hit?.severity ?? "normal",
+    currentStep: hit,
+    steps: KMA_PRELIMINARY_STEPS,
+    baseline: "예정 특보 없음",
+    notes: kma
+      ? `현장 시·도(${kma.sido}) 발효 예정 특보${when ? ` · ${when}` : ""}${kma.source === "mock" ? " · 샘플" : ""}. 출처 기상청 예비특보(통보문 t7).`
+      : "예비특보 조회 중",
+  };
+}
+
 // 정보 항목 — 임계 없음. 클릭 시 정보 모달만 표시.
 export function infoEvaluation(
   itemKey: string,
