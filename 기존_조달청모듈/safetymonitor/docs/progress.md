@@ -12,6 +12,24 @@
 
 ## Quick Summary (30초 안에 읽기)
 
+### ★ 기상특보 세부 모달 "정상 범위" 오표시 수정 (2026-07-27 — 칩·모달 판정 불일치 · main `0b01586` · 라이브 `00158-2b6`→**`00159-dv5`**)
+
+**지금까지 작업**
+- 제보 = 작업 환경에 **폭염경보·열대야주의보**가 떠 있는데 **항목을 클릭하면 세부는 "정상 범위 · 특보 없음"**.
+- 원인 = 한 모달 안에서 헤더와 본문이 **서로 다른 값을 보고 있었다**. 헤더 `위험` 배지는 `currentSeverity`(기상청 응답), 본문 정상범위 박스는 **`currentStep` 유무**([WeatherRuleModal.tsx:103](../apps/dashboard-web/app/components/WeatherRuleModal.tsx#L103)). 그런데 `WeatherStrip.tsx` 가 기상특보·예비특보 `RuleEvaluation` 을 **컴포넌트 안에서 손으로 만들며 `currentStep` 을 아예 안 채웠다** → 어떤 특보가 떠도 본문은 영구히 "정상 범위". 다른 기상 항목(체감온도·풍속·미세먼지·자외선·강수·불쾌지수)은 `weather-rules.ts` 의 `evaluate*` 가 `currentSeverity: hit?.severity` + `currentStep: hit` 을 **같은 출처에서 함께** 넣어 무사했다 — 규약은 있었고 두 항목만 그 밖에 있었다.
+- 수정(`0b01586`) = 두 평가를 다른 항목과 같은 자리(`lib/weather-rules.ts`)로 옮겨 `evaluateKmaWarning`·`evaluateKmaPreliminary` 로 노출 + **심각도를 단계에서 파생**(`currentSeverity: hit?.severity ?? "normal"`)시켜 둘이 구조적으로 따로 놀 수 없게 함. **예비특보도 동일 결함**이었다(발효 예정이 없어 안 보였을 뿐). 판정 내용·문구·`itemKey` 불변 → 알림·억제·DB 기록 파이프라인 영향 0. 같은 파일의 `kmaToEvaluations`(확인/조치 팝업용)는 `currentStep` 을 이미 올바로 채워 정상이라 통합하지 않음.
+- 회귀 고정 = `lib/weather-rules.test.ts` 신규 21건(기상특보 9 + **전 항목 심각도·단계 동기 불변식 12**) → **수정을 되돌려 5건 실패를 실제로 확인**한 뒤 복구(L-12 가드 방식).
+
+**현재 상태**
+- 검증 = tsc0·lint0err(4warn 기존)·**test 421**(schemas35+analyzers50+dashboard336)·`next build` SUCCESS·**L-09 3자 일치**(BUILT==HEAD==origin). 라이브 = 루트200·rev100%·서빙 digest 일치·env24·시크릿·스케일1-4 보존.
+- ★ **번들로 실증** — 라이브 page 청크에서 특보 steps 가 모듈 최상위 상수(`let ee=[…],et=[…]`)로 올라갔고 `currentStep:r` 이 `ee.find(t=>t.severity===e?.severity)` 결과로 채워짐(예비특보 동일). 모달 육안은 로그인 뒤라 curl 불가 — L-04 준수로 테스트 계정 미생성.
+- ✅ **사용자 육안 확인 완료** — 라이브에서 기상특보 세부가 정상 표시됨.
+- **라이브 `00159-dv5` = `0b01586`**. ⚠ 이후 병렬 세션이 assignment chat 3커밋(`0a106cb`·`a9aeb59`·`a69b3dc` — AI 답변 의학적 추론 차단·작업자 ID 기반 이름 해석)을 main 에 올렸다 — **미배포이며 배포 주체는 해당 세션**(즉 main ≠ 라이브).
+
+**다음 할 일**
+- 이 트랙은 **종결**(제보 → 원인 규명 → 수정 → 배포 → 육안 확인 완료). 잔여 액션 없음.
+- (이월·이 트랙 밖) 병렬 세션 chat 3커밋 배포는 해당 세션 소관. 감사 미해결(BE-AUTHZ 계열·DB 결정 선행)은 [CLAUDE.md](../CLAUDE.md) Status 참조.
+
 ### ★ 다크모드 파비콘 (2026-07-27 — 테마 자동전환 SVG + Safari용 테마별 PNG · main `1b03481` · 라이브 `00150-9cf`→**`00151-ntq`**)
 
 **지금까지 작업**
