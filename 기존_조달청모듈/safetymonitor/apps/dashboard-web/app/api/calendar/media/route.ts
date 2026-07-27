@@ -1,7 +1,7 @@
 // 클라우드 브릿지 — 캘린더 미디어(앱 OCR 이미지/영상) 조회·등록·설명수정·삭제 API (관리자 인증)
 import { NextResponse } from "next/server";
 
-import { verifyAppUploadToken, verifyBasicAuth } from "../../../../lib/admin-auth";
+import { getSession, verifyAppUploadToken, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
   listCalendarMedia,
@@ -10,6 +10,7 @@ import {
   updateCalendarMediaDescription,
   deleteCalendarMedia,
   type CalendarMediaCommentRow,
+  type MediaScope,
 } from "../../../../lib/db";
 import { isStorageConfigured, presignDownload } from "../../../../lib/storage";
 
@@ -125,15 +126,44 @@ export async function PATCH(request: Request) {
   return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
 }
 
+// 삭제 권한 범위 — 사진을 올린 작업자 본인, 또는 owner(최고관리자).
+// 올리는 쪽과 지우는 쪽의 신원 체계가 다르므로 두 갈래를 각각 판정한다.
+//  · 앱 JWT      = 현장 작업자. 사번(workerId)이 업로드 시 저장된 worker_id 와 같을 때만.
+//  · 관제 세션   = owner 만 전체 허용(잘못 올라온 사진 정리). 일반 admin 은 자기 것이 아니므로 불가.
+// 판정 불가는 항상 거부 쪽이다 — "신원 없음 → 범위 없음(전체 허용)"으로 떨어지면 인가 구멍이 된다.
+function mediaDeleteScope(request: Request): MediaScope | null {
+  // 앱 JWT 를 먼저 본다. 작업자 앱은 세션 쿠키가 아니라 Bearer JWT 로만 인증한다.
+  const claims = verifyAppJwt(bearerToken(request));
+  const workerId = claims?.workerId?.trim();
+  if (workerId) return { workerId };
+
+  // 관제 웹 세션.
+  const session = getSession(request);
+  if (session?.role === "owner") return "moderator";
+
+  return null;
+}
+
 export async function DELETE(request: Request) {
-  if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  const scope = mediaDeleteScope(request);
+  if (!scope) {
+    // 로그인 자체가 없으면 401, 로그인은 했지만 권한이 없으면 403 으로 나눈다.
+    // 일반 관리자가 남의 사진을 지우려 한 경우가 후자다 — 안내 문구가 달라야 한다.
+    const authenticated = verifyBasicAuth(request) || verifyAppJwt(bearerToken(request)) !== null;
+    return authenticated
+      ? NextResponse.json(
+          { ok: false, error: "본인이 올린 사진만 삭제할 수 있습니다" },
+          { status: 403 },
+        )
+      : NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
   const url = new URL(request.url);
   const id = url.searchParams.get("id") ?? "";
   if (!id) {
     return NextResponse.json({ ok: false, error: "id 필요" }, { status: 400 });
   }
-  const ok = await deleteCalendarMedia(id);
+  // 남의 사진이면 rowCount 0 → 404. "없음"과 "권한 없음"을 같은 응답으로 묶어
+  // 사진 id 존재 여부가 새어나가지 않게 한다.
+  const ok = await deleteCalendarMedia(id, scope);
   return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
 }

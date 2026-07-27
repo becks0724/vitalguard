@@ -5,9 +5,10 @@ import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
 import { commentScopeClause, type CommentScope } from "./comment-scope";
+import { mediaScopeClause, type MediaScope } from "./media-scope";
 import { notifyAlertTelegram } from "./telegram";
 
-export type { CommentScope };
+export type { CommentScope, MediaScope };
 
 // int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
 // 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
@@ -2650,8 +2651,16 @@ export async function updateCalendarMediaDescription(
   return rowCount > 0;
 }
 
-export async function deleteCalendarMedia(id: string): Promise<boolean> {
-  const { rowCount } = await q("DELETE FROM calendar_media WHERE id = $1", [id]);
+export async function deleteCalendarMedia(
+  id: string,
+  scope: MediaScope,
+): Promise<boolean> {
+  const params: unknown[] = [id];
+  const clause = mediaScopeClause(scope, params);
+  const { rowCount } = await q(
+    `DELETE FROM calendar_media WHERE id = $1${clause}`,
+    params,
+  );
   return rowCount > 0;
 }
 

@@ -1712,12 +1712,17 @@ function HeaderCalendarPopup({
   lat,
   lon,
   workerCount,
+  canDeleteMedia,
 }: {
   open: boolean;
   onClose: () => void;
   lat?: number;
   lon?: number;
   workerCount: number;
+  // 사진 삭제 권한 — 서버가 owner 와 업로드 작업자 본인만 허용하므로(감사 IDOR 수정),
+  // 관제 웹에서는 owner 에게만 버튼을 보인다. 일반 관리자는 눌러도 403 이라 버튼이 있으면
+  // "되는 줄 알고 눌렀다 실패"가 된다. UI 와 서버 규칙을 같은 값으로 맞춘다.
+  canDeleteMedia: boolean;
 }) {
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -2950,13 +2955,15 @@ function HeaderCalendarPopup({
                             </p>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => deleteMedia(m.id)}
-                          className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                        >
-                          삭제
-                        </button>
+                        {canDeleteMedia && (
+                          <button
+                            type="button"
+                            onClick={() => deleteMedia(m.id)}
+                            className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                          >
+                            삭제
+                          </button>
+                        )}
                       </div>
 
                       {/* 내용 영역 — 촬영정보 정리(촬영시각·도로명주소·GPS·작업자), 원문 OCR은 접어두기 */}
@@ -5536,6 +5543,7 @@ export function DemoDashboard() {
         lat={effLat}
         lon={effLon}
         workerCount={fieldCoords.count}
+        canDeleteMedia={role === "owner"}
       />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
