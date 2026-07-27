@@ -79,7 +79,7 @@ export function matchAssignments(
     condition.grade === "unknown"
       ? "생체 데이터가 없어 배치 판단을 보류합니다(워치 착용 확인 후 재조회)."
       : condition.grade === "restricted"
-        ? "제한 등급 — 고위험 작업 배치를 제한 권고합니다. 일반 작업 배치는 감독관 판단에 따릅니다."
+        ? "제한 등급 — 등록된 고위험 작업은 배제 권고 대상입니다. 관리자 확인과 최신 안전 기준 재판정 후 배치를 검토합니다."
         : condition.grade === "caution"
           ? "주의 등급 — 일부 고위험 작업만 배제 권고합니다."
           : "양호 등급 — 전 작업 배치 가능(권고).";

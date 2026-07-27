@@ -68,7 +68,7 @@ export function matchEnvironment(signals: SiteEnvSignals): EnvAdvice {
       notes.push(`${w.type} 발효 — ${rule.tags.join("·")} 배치 시 감독관 확인 필요(${rule.basis}).`);
     } else if (/폭염/.test(w.type)) {
       notes.push(
-        `${w.type} 발효 — 체감온도 33℃ 이상 작업 시 2시간마다 20분 이상 휴식 의무(산업안전보건기준에 관한 규칙 온열질환 예방 규정 · 2025.7.17. 시행).`,
+        `${w.type} 발효 — 체감온도 33℃ 이상 작업 시 2시간마다 20분 이상 휴식 의무(산업안전보건기준에 관한 규칙상 폭염 작업자 보호 규정 · 2025.7.17. 시행).`,
       );
     } else if (/한파/.test(w.type)) {
       notes.push(`${w.type} 발효 — 옥외작업 보온·휴식 조치 권고.`);

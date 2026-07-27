@@ -30,6 +30,8 @@ test("제한(restricted) → 전 태그 배제 + 사유 전파", () => {
   });
   assert.ok(a.perTag.every((t) => !t.allowed && !t.pending));
   assert.ok(a.perTag.every((t) => t.blockedBy.some((b) => b.code === "FALL_24H")));
+  assert.doesNotMatch(a.note, /일반\s*작업.*?(?:가능|진행|허용)/);
+  assert.match(a.note, /배제 권고 대상/);
 });
 
 test("주의(caution)+SpO₂ 빈발 → 밀폐공간·고소작업만 배제, 나머지 허용", () => {
