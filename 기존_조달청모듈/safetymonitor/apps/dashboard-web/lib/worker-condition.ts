@@ -99,7 +99,7 @@ export function gradeCondition(signals: ConditionSignals): ConditionResult {
     restricted.push({
       code: "FALL_24H",
       label: "24시간 내 낙상 신호",
-      detail: `낙상 경보 ${signals.fallAlerts}건 — 재발 위험 구간으로 보아 고위험 작업 배치를 제한 권고합니다.`,
+      detail: `낙상 경보 ${signals.fallAlerts}건 — 확인 전 고위험 작업 배제 기준이 적용됩니다.`,
     });
   }
   if (signals.sosAlerts > 0) {
@@ -113,7 +113,7 @@ export function gradeCondition(signals: ConditionSignals): ConditionResult {
     restricted.push({
       code: "SPO2_DANGER_24H",
       label: "혈중산소 안전 기준 미달 이력",
-      detail: `SpO₂ 위험 구간 실측 ${signals.spo2DangerCount}건 — 산소결핍 우려 작업 기준 미충족.`,
+      detail: `SpO₂ 위험 구간 실측 ${signals.spo2DangerCount}건 — 해당 작업 배치 안전 기준 미충족.`,
     });
   }
   if (signals.hrDangerCount >= CONDITION_RULES.hrDangerRestrict) {
@@ -148,8 +148,8 @@ export function gradeCondition(signals: ConditionSignals): ConditionResult {
   if (workedHours !== null && workedHours >= CONDITION_RULES.longShiftHours) {
     caution.push({
       code: "LONG_SHIFT",
-      label: "장시간 연속 작업",
-      detail: `24시간 창 내 착용 ${workedHours.toFixed(1)}시간 — 피로 누적 구간.`,
+      label: "장시간 연속 작업 신호",
+      detail: `24시간 창 내 착용 ${workedHours.toFixed(1)}시간 — 연속 작업 안전 기준이 적용됩니다.`,
     });
   }
   if (signals.unackedAlerts > 0) {

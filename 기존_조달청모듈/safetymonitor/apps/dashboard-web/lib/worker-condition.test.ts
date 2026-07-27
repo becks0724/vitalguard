@@ -41,6 +41,20 @@ test("낙상/SOS/SpO₂ 위험 이력은 각각 단독으로 restricted", () => 
   assert.equal(gradeCondition({ ...base, spo2DangerCount: 1 }).grade, "restricted");
 });
 
+test("표시 사유는 의료적 추정 대신 안전 기준 언어를 사용한다", () => {
+  const fall = gradeCondition({ ...base, fallAlerts: 1 }).reasons[0]!;
+  const oxygen = gradeCondition({ ...base, spo2DangerCount: 1 }).reasons[0]!;
+  const longShift = gradeCondition({
+    ...base,
+    latestTs: new Date(
+      Date.parse(base.firstTs!) + CONDITION_RULES.longShiftHours * 3_600_000,
+    ).toISOString(),
+  }).reasons[0]!;
+  for (const reason of [fall, oxygen, longShift]) {
+    assert.doesNotMatch(reason.detail, /피로|회복|재발|건강\s*상태|신체\s*상태|증상|질환|진단|예상|우려/);
+  }
+});
+
 test("심박 위험 반복은 임계(hrDangerRestrict) 경계에서만 restricted", () => {
   const under = gradeCondition({ ...base, hrDangerCount: CONDITION_RULES.hrDangerRestrict - 1 });
   assert.notEqual(under.grade, "restricted");
