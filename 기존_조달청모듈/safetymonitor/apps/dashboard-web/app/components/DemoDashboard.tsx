@@ -2958,6 +2958,17 @@ function HeaderCalendarPopup({
                             </p>
                           )}
                         </div>
+                        {/* 삭제 불가 사유를 구분해 보여준다 — 버튼이 그냥 사라지면 고장으로 읽힌다.
+                            다만 "남의 사진"일 때는 아무것도 띄우지 않는다(설명할 일이 아니다).
+                            사번이 비어 주인을 특정할 수 없는 과거 사진만 안내한다. */}
+                        {!m.canDelete && !m.workerId && (
+                          <span
+                            title="업로드 당시 작업자 사번이 기록되지 않아 소유자를 확인할 수 없습니다. 삭제는 최고관리자에게 요청하세요."
+                            className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-muted dark:text-on-dark-soft"
+                          >
+                            작업자 정보 없음
+                          </span>
+                        )}
                         {m.canDelete && (
                           <button
                             type="button"
