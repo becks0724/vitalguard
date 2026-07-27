@@ -1,0 +1,54 @@
+# safetymonitor 모노레포의 typecheck·lint·test 를 push/PR 마다 강제하는 CI (lessons L-17)
+name: Verify safetymonitor
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '기존_조달청모듈/safetymonitor/**'
+      - '.github/workflows/verify-safetymonitor.yml'
+  pull_request:
+    paths:
+      - '기존_조달청모듈/safetymonitor/**'
+      - '.github/workflows/verify-safetymonitor.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-safetymonitor-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: 기존_조달청모듈/safetymonitor
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.1.3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: 기존_조달청모듈/safetymonitor/pnpm-lock.yaml
+
+      - name: 의존성 설치
+        run: pnpm install --frozen-lockfile
+
+      # 싼 것 → 비싼 것 순서. typecheck 가 next build 와 같은 게이트다(L-10).
+      - name: 타입
+        run: pnpm typecheck
+
+      - name: 린트
+        run: pnpm lint
+
+      - name: 단위 테스트
+        run: pnpm test
