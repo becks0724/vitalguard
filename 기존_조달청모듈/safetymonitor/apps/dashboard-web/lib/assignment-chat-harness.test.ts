@@ -29,6 +29,7 @@ test("하네스 계층은 단일 레지스트리에 고정된 순서로 등록�
   assert.match(assignmentSystemInstruction(), /\[입력 경계\]/);
   assert.match(assignmentSystemInstruction(), /\[사실 경계\]/);
   assert.match(assignmentSystemInstruction(), /\[배치 권한 언어\]/);
+  assert.match(assignmentSystemInstruction(), /모든 문장에는 반드시 '권고', '검토', '관리자 확인'/);
 });
 
 test("의료적 상태 추정 표현을 감지한다", () => {
@@ -70,7 +71,7 @@ test("작업 배치 문구의 확정적 지시를 감지하고 권고형 교정�
   );
   assert.deepEqual(violations.map((violation) => violation.code), ["ASSIGNMENT_DETERMINISTIC_TONE"]);
   assert.match(assignmentOutputPolicyInstruction({ allowedCount: 0 }), /배제해야, 피해야/);
-  assert.match(assignmentOutputPolicyRepairInstruction(violations), /배제 권고·배치 검토·관리자 확인/);
+  assert.match(assignmentOutputPolicyRepairInstruction(violations), /모든 문장에 반드시 권고·검토·관리자 확인/);
   assert.deepEqual(
     findAiReplyPolicyViolations(
       "등록된 고위험 작업은 배제 권고 대상이며 관리자 확인 후 배치를 검토합니다.",
