@@ -66,6 +66,7 @@ final class WorkoutManager: NSObject, ObservableObject {
     private var fallDetector: FallDetector?
     private var fallMLFusion: MLFusion?
     private var fallIMULogger: IMUWindowLogger?
+    private var mlFirstShadowPipeline: MLFirstShadowPipeline?
     private let watchLocationManager = CLLocationManager()
     private var lastStressAt: Date?
     private var lastAltitudeUpdateAt: Date?
@@ -302,6 +303,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         do {
             let fusion = MLFusion()
             let logger = IMUWindowLogger(fs: 50, preSec: 1.0, postSec: 2.0, logThresholdG: 1.5, refractorySec: 0.8)
+            let mlFirst = MLFirstShadowPipeline()
             logger.onWindow = { [weak fusion] window in
                 Task { @MainActor in
                     fusion?.ingest(window: window)
@@ -316,7 +318,15 @@ final class WorkoutManager: NSObject, ObservableObject {
                     )
                 }
             }
+            // ML-first 관전 경로는 FallDetector의 후보가 아닌 원시 센서 스트림을 직접
+            // 사용한다. 아직 알림을 만들지 않아 현행 안전 경로를 바꾸지 않는다.
+            mlFirst.onObservation = { [weak self] observation in
+                self?.handleMLFirstObservation(observation)
+            }
             detector.imuLogger = logger
+            detector.onIMUSample = { [weak mlFirst] sample in
+                mlFirst?.ingest(sample)
+            }
             detector.onCandidate = { [weak fusion] candidate in
                 Task { @MainActor in
                     fusion?.ingest(candidate: candidate)
@@ -324,6 +334,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             }
             fallMLFusion = fusion
             fallIMULogger = logger
+            mlFirstShadowPipeline = mlFirst
         }
         fallDetector = detector
     }
@@ -333,6 +344,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         fallDetector = nil
         fallIMULogger = nil
         fallMLFusion = nil
+        mlFirstShadowPipeline = nil
     }
 
     private func applyCurrentPowerMode() {
@@ -465,6 +477,29 @@ final class WorkoutManager: NSObject, ObservableObject {
         }
         if finalShouldAlert {
             schedulePostImpactFollowup(candidateId: candidateId, impactAt: impactAt)
+        }
+    }
+
+    /// ML-first 전환 검증용 상태 표기. 관전 결과는 기존 알림·ACK·SOS를 만들지 않는다.
+    private func handleMLFirstObservation(_ observation: MLFirstShadowPipeline.Observation) {
+        guard observation.isModelCandidate else { return }
+        switch observation.phase {
+        case .fast:
+            lastStatus = String(
+                format: "ML-우선 관전 후보 · impact %.2f / work %.2f",
+                observation.impact.probability,
+                observation.workVeto.probability
+            )
+        case .recovery:
+            if let recovery = observation.recovery {
+                lastStatus = String(
+                    format: "ML-우선 recovery 관전 · 비회복 %.2f (%@)",
+                    recovery.probability,
+                    recovery.label ? "위험" : "회복 신호"
+                )
+            } else {
+                lastStatus = "ML-우선 recovery 모델 미탑재"
+            }
         }
     }
 

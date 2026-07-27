@@ -33,6 +33,7 @@
 		8B651B2C112F08F28DA7C4DA /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = BB1E7B6A3B3CB40159EA3EFA /* LaunchScreen.storyboard */; };
 		900F965C7437A292888EB2A7 /* WorkoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 211A6D78E2FAB63C81AFBCB7 /* WorkoutManager.swift */; };
 		981D66935C5374B462BD2DB0 /* MLFusion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EB5D50B9E6D5FB739252CD6 /* MLFusion.swift */; };
+		A1F100000000000000000001 /* MLFirstShadowPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F100000000000000000002 /* MLFirstShadowPipeline.swift */; };
 		99FFCCD2BDC33CD52EDDC471 /* MLSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF98056513B053BDC2DF8708 /* MLSelfCheck.swift */; };
 		9C9DBB09972EE01151CD539A /* recovery.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = D1F7F6480D5F19D7D81DE634 /* recovery.mlmodel */; };
 		9E2773DEE318BB53DF8E4949 /* thresholds.json in Resources */ = {isa = PBXBuildFile; fileRef = 1F006E52C0009DF969CC2175 /* thresholds.json */; };
@@ -104,6 +105,7 @@
 		2352792FB288DA6CD6824ADF /* vitalguard-logo-dark.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "vitalguard-logo-dark.png"; sourceTree = "<group>"; };
 		2C740C7C34CD3FCE3D92615F /* VitAlGuard Watch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "VitAlGuard Watch.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		2EB5D50B9E6D5FB739252CD6 /* MLFusion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLFusion.swift; sourceTree = "<group>"; };
+		A1F100000000000000000002 /* MLFirstShadowPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MLFirstShadowPipeline.swift; sourceTree = "<group>"; };
 		3B7E2F8E1FB07FD4AD320C17 /* FallMLPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FallMLPipeline.swift; sourceTree = "<group>"; };
 		3E8FE25B1FDD7D093BCAC441 /* 2026-07-24-VitAlGuardAssistant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "2026-07-24-VitAlGuardAssistant.swift"; sourceTree = "<group>"; };
 		41202BD9CEC03571EBA61E0A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 				DCF0B14AA83FF159E5836ED7 /* FeatureExtractor.swift */,
 				7C5E1B11E6F5D5687A561010 /* IMUWindowLogger.swift */,
 				2EB5D50B9E6D5FB739252CD6 /* MLFusion.swift */,
+				A1F100000000000000000002 /* MLFirstShadowPipeline.swift */,
 				FF98056513B053BDC2DF8708 /* MLSelfCheck.swift */,
 				8DF36286DE89190300D0E73F /* SettingsView.swift */,
 				C14C0D7CB9ACEA9DA5353AA6 /* SpO2Reader.swift */,
@@ -433,6 +436,7 @@
 				37B1742CB9E5313591E9A374 /* FeatureExtractor.swift in Sources */,
 				F73646A75790283A68035BA0 /* IMUWindowLogger.swift in Sources */,
 				981D66935C5374B462BD2DB0 /* MLFusion.swift in Sources */,
+				A1F100000000000000000001 /* MLFirstShadowPipeline.swift in Sources */,
 				99FFCCD2BDC33CD52EDDC471 /* MLSelfCheck.swift in Sources */,
 				7148B7D548744D62BEBD30DC /* SettingsView.swift in Sources */,
 				F9315B239E470D66E75AE94A /* SpO2Reader.swift in Sources */,

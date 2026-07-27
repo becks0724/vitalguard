@@ -8,6 +8,12 @@
 // 수집 모드에서만 주입(평소 발표 데모엔 영향 0).
 import Foundation
 
+/// 규칙 판정과 무관한 원시 모션 샘플. ML-first 경로는 이 데이터만 소비한다.
+struct ImuSample {
+    let at: Date
+    let axes: [Float] // [ax, ay, az, gx, gy, gz]
+}
+
 struct ImuWindow {
     let fs: Double
     let samples: [[Float]]   // 각 행 = [ax, ay, az, gx, gy, gz], 시간순

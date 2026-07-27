@@ -34,6 +34,8 @@ final class FallDetector {
     // 후보 해소(양성/음성 공통) — 항상 메인 큐에서 호출. ML 수집·라이브 알림 양쪽이 구독.
     var onCandidate: ((FallCandidate) -> Void)?
     var onMotionSample: ((_ accelerationMagnitudeG: Double, _ rotationRateRadS: Double) -> Void)?
+    /// ML-first 관전 경로용 원시 스트림. 이 콜백은 기존 규칙 판정 결과에 의존하지 않는다.
+    var onIMUSample: ((ImuSample) -> Void)?
     var imuLogger: IMUWindowLogger?
 
     private let motion = CMMotionManager()
@@ -101,6 +103,10 @@ final class FallDetector {
                 totalG: totalG,
                 at: now
             )
+            self.onIMUSample?(ImuSample(
+                at: now,
+                axes: [Float(ax), Float(ay), Float(az), Float(r.x), Float(r.y), Float(r.z)]
+            ))
             self.process(totalG: totalG, rotMag: rotMag, at: now)
         }
     }
