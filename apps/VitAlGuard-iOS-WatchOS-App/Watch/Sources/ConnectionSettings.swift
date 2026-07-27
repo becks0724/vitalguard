@@ -4,6 +4,7 @@
 import Foundation
 import Combine
 import WatchConnectivity
+import CoreLocation
 
 enum WatchSensorPowerMode: String, CaseIterable, Hashable {
     case extreme
@@ -99,6 +100,9 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let serverRoleKey = "watchServerRole"
     private static let canManageDashboardKey = "watchCanManageDashboard"
     private static let syncIntervalKey = "watchSyncIntervalSeconds"
+    private static let timeBasedUpdatesEnabledKey = "watchTimeBasedUpdatesEnabled"
+    private static let locationBasedUpdatesEnabledKey = "watchLocationBasedUpdatesEnabled"
+    private static let locationUpdateRadiusMetersKey = "watchLocationUpdateRadiusMeters"
     private static let sensorPowerModeKey = "watchSensorPowerMode"
     private static let energyEfficiencyMigrationKey = "watchEnergyEfficiencyMigration.v1"
     private static let languageCodeKey = "watchLanguageCode"
@@ -148,6 +152,35 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             UserDefaults.standard.set(syncIntervalSeconds, forKey: Self.syncIntervalKey)
         }
     }
+    @Published var timeBasedUpdatesEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(timeBasedUpdatesEnabled, forKey: Self.timeBasedUpdatesEnabledKey)
+            if timeBasedUpdatesEnabled != oldValue {
+                NotificationCenter.default.post(name: .vitalguardWatchUpdatePolicyDidChange, object: nil)
+            }
+        }
+    }
+    @Published var locationBasedUpdatesEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(locationBasedUpdatesEnabled, forKey: Self.locationBasedUpdatesEnabledKey)
+            if locationBasedUpdatesEnabled != oldValue {
+                NotificationCenter.default.post(name: .vitalguardWatchUpdatePolicyDidChange, object: nil)
+            }
+        }
+    }
+    @Published var locationUpdateRadiusMeters: Double {
+        didSet {
+            let clamped = Self.clampedLocationUpdateRadius(locationUpdateRadiusMeters)
+            if locationUpdateRadiusMeters != clamped {
+                locationUpdateRadiusMeters = clamped
+                return
+            }
+            UserDefaults.standard.set(locationUpdateRadiusMeters, forKey: Self.locationUpdateRadiusMetersKey)
+            if locationUpdateRadiusMeters != oldValue {
+                NotificationCenter.default.post(name: .vitalguardWatchUpdatePolicyDidChange, object: nil)
+            }
+        }
+    }
     @Published var dashboardConnectionState: WatchDashboardConnectionState = .delayed
     private var dashboardConnectionTimer: Timer?
     private var isDashboardConnectionCheckInFlight = false
@@ -169,10 +202,14 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         canManageDashboard = d.object(forKey: Self.canManageDashboardKey) as? Bool
             ?? Self.canManageDashboard(for: initialServerRole, fallbackMode: initialMode)
         languageCode = d.string(forKey: Self.languageCodeKey) ?? ""
-        let rawSensorMode = d.string(forKey: Self.sensorPowerModeKey) ?? WatchSensorPowerMode.lowPower.rawValue
-        sensorPowerMode = WatchSensorPowerMode(rawValue: rawSensorMode) ?? .lowPower
+        let rawSensorMode = d.string(forKey: Self.sensorPowerModeKey) ?? WatchSensorPowerMode.balanced.rawValue
+        sensorPowerMode = WatchSensorPowerMode(rawValue: rawSensorMode) ?? .balanced
         let savedInterval = d.object(forKey: Self.syncIntervalKey) as? Double ?? 300
         syncIntervalSeconds = Self.clampedSyncInterval(savedInterval)
+        timeBasedUpdatesEnabled = d.object(forKey: Self.timeBasedUpdatesEnabledKey) as? Bool ?? true
+        locationBasedUpdatesEnabled = d.object(forKey: Self.locationBasedUpdatesEnabledKey) as? Bool ?? true
+        let savedRadius = d.object(forKey: Self.locationUpdateRadiusMetersKey) as? Double ?? 500
+        locationUpdateRadiusMeters = Self.clampedLocationUpdateRadius(savedRadius)
         super.init()
         translationCache = d.dictionary(forKey: Self.translationCacheKey) as? [String: String] ?? [:]
         activatePhoneSession()
@@ -270,6 +307,7 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
+
     func requestManualSync(reason: String = "manual") {
         checkDashboardConnection()
         let request: [String: Any] = [
@@ -281,6 +319,9 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             "canManageDashboard": canManageDashboard,
             "canUploadOwnMedia": true,
             "syncIntervalSeconds": Self.clampedSyncInterval(syncIntervalSeconds),
+            "timeBasedUpdatesEnabled": timeBasedUpdatesEnabled,
+            "locationBasedUpdatesEnabled": locationBasedUpdatesEnabled,
+            "locationUpdateRadiusMeters": Self.clampedLocationUpdateRadius(locationUpdateRadiusMeters),
             "sensorPowerMode": sensorPowerMode.rawValue,
             "endpointURL": currentURLString()
         ]
@@ -335,6 +376,9 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             ?? Self.canManageDashboard(for: incomingServerRole, fallbackMode: incomingMode)
         let incomingInterval = context["syncIntervalSeconds"] as? Double
         let incomingSensorPowerMode = WatchSensorPowerMode(rawValue: context["sensorPowerMode"] as? String ?? "")
+        let incomingTimeBasedUpdatesEnabled = context["timeBasedUpdatesEnabled"] as? Bool
+        let incomingLocationBasedUpdatesEnabled = context["locationBasedUpdatesEnabled"] as? Bool
+        let incomingLocationUpdateRadiusMeters = context["locationUpdateRadiusMeters"] as? Double
         let incomingEndpoint = (context["endpointURL"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingEmployeeId = (context["employeeId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingLanguageCode = (context["languageCode"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -370,6 +414,15 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             }
             if let incomingSensorPowerMode {
                 self.sensorPowerMode = incomingSensorPowerMode
+            }
+            if let incomingTimeBasedUpdatesEnabled {
+                self.timeBasedUpdatesEnabled = incomingTimeBasedUpdatesEnabled
+            }
+            if let incomingLocationBasedUpdatesEnabled {
+                self.locationBasedUpdatesEnabled = incomingLocationBasedUpdatesEnabled
+            }
+            if let incomingLocationUpdateRadiusMeters {
+                self.locationUpdateRadiusMeters = incomingLocationUpdateRadiusMeters
             }
             if !incomingEndpoint.isEmpty, URL(string: incomingEndpoint) != nil {
                 self.urlString = Self.normalizedReceiverURLString(incomingEndpoint)
@@ -698,7 +751,7 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         guard !defaults.bool(forKey: energyEfficiencyMigrationKey) else { return }
         let savedMode = defaults.string(forKey: sensorPowerModeKey)
         if savedMode == nil || savedMode == WatchSensorPowerMode.balanced.rawValue {
-            defaults.set(WatchSensorPowerMode.lowPower.rawValue, forKey: sensorPowerModeKey)
+            defaults.set(WatchSensorPowerMode.balanced.rawValue, forKey: sensorPowerModeKey)
         }
         let savedInterval = defaults.object(forKey: syncIntervalKey) as? Double
         if savedInterval == nil || savedInterval?.rounded() == 10 {
@@ -713,8 +766,21 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     static func currentSensorPowerMode() -> WatchSensorPowerMode {
-        let raw = UserDefaults.standard.string(forKey: sensorPowerModeKey) ?? WatchSensorPowerMode.lowPower.rawValue
-        return WatchSensorPowerMode(rawValue: raw) ?? .lowPower
+        let raw = UserDefaults.standard.string(forKey: sensorPowerModeKey) ?? WatchSensorPowerMode.balanced.rawValue
+        return WatchSensorPowerMode(rawValue: raw) ?? .balanced
+    }
+
+    static func timeBasedUpdatesEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: timeBasedUpdatesEnabledKey) as? Bool ?? true
+    }
+
+    static func locationBasedUpdatesEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: locationBasedUpdatesEnabledKey) as? Bool ?? true
+    }
+
+    static func currentLocationUpdateRadiusMeters() -> CLLocationDistance {
+        let raw = UserDefaults.standard.object(forKey: locationUpdateRadiusMetersKey) as? Double ?? 500
+        return clampedLocationUpdateRadius(raw)
     }
 
     static func eventEvidenceDurationSeconds() -> TimeInterval { 30 * 60 }
@@ -759,6 +825,10 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         min(3599, max(5, value.rounded()))
     }
 
+    static func clampedLocationUpdateRadius(_ value: Double) -> Double {
+        min(5_000, max(100, value.rounded()))
+    }
+
     static func formattedInterval(_ seconds: Double) -> String {
         let value = Int(clampedSyncInterval(seconds))
         if value >= 60 {
@@ -775,4 +845,5 @@ extension Notification.Name {
     static let vitalguardWatchNfcScanResult = Notification.Name("vitalguard.watch.nfcScanResult")
     static let vitalguardWatchFallAlertClear = Notification.Name("vitalguard.watch.fallAlertClear")
     static let vitalguardWatchPowerModeDidChange = Notification.Name("vitalguard.watch.powerModeDidChange")
+    static let vitalguardWatchUpdatePolicyDidChange = Notification.Name("vitalguard.watch.updatePolicyDidChange")
 }

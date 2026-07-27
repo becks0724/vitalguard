@@ -45,7 +45,7 @@ final class FallDetector {
     private let eventSampleHz: Double
     private let motionPublishInterval: TimeInterval
     private var eventSampleBoostUntil: Date?
-    private let impactThresholdG = 2.8       // 충격 스파이크 판정 (총가속도)
+    private let impactThresholdG = 2.8       // 실제 낙상 민감도를 유지하는 충격 스파이크 판정
     private let freefallG = 0.6              // 자유낙하 판정 (무중력 → 총가속도 ≈ 0)
     private let freefallLookbackSec = 0.8    // 충격 직전 이 시간 내 자유낙하가 있었으면 전조 인정
     private let stillBandG = 0.3             // 저활동 판정 밴드 (|totalG - 1.0|)
@@ -151,8 +151,8 @@ final class FallDetector {
         if abs(totalG - 1.0) < stillBandG { lowActivityAccum += dt }
 
         if lowActivityAccum >= stillRequiredSec {
-            // 코로보레이션 — 자유낙하 전조 또는 강회전(몸통 tumble) 중 하나는 있어야 낙상으로 확정.
-            // 둘 다 없으면 충격+휴식한 작업 동작으로 보고 음성 후보로 기록 후 폐기(오탐 차단).
+            // 자유낙하 또는 몸통 tumble을 보조 증거로 사용해 민감도를 유지한다.
+            // 착용·심박 확인과 ML 작업동작 기각은 상위 경보 경로에서 별도로 적용한다.
             if freefallPrecededImpact || peakRotation >= tumbleRotThresholdRadS {
                 resolve(.fall)
             } else {

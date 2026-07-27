@@ -11,6 +11,7 @@ import WatchKit
 @MainActor
 final class WorkoutManager: NSObject, ObservableObject {
     private static let nfcFeatureEnabled = true
+    private static let unresolvedFallIncidentKey = "vitalguard.watch.unresolvedFallIncidentID"
     @Published var authorized = false
     @Published var isRunning = false
     @Published var latestHeartRate: Double?
@@ -42,6 +43,8 @@ final class WorkoutManager: NSObject, ObservableObject {
     @Published var lastStatus = "대기"
     @Published var lastError: String?
     @Published var activeFallPrompt: ActiveFallPrompt?
+    /// 실제 Watch 번들에서 모델·피처 검증까지 통과했는지 표시한다.
+    @Published private(set) var mlPipelineStatus = "ML 자가검증 대기"
 
     var ecgStatusText: String {
         latestECGStatus
@@ -74,10 +77,14 @@ final class WorkoutManager: NSObject, ObservableObject {
     private var backgroundSyncTimerInterval: TimeInterval?
     private var evidenceCaptureUntil: Date?
     private var lastHeartRateTransmitAt: Date?
+    private var lastHeartRateAt: Date?
     private var isSensorSnapshotReadInFlight = false
     private var nfcScanResultToken: NSObjectProtocol?
     private var fallAlertClearToken: NSObjectProtocol?
     private var powerModeChangeToken: NSObjectProtocol?
+    private var updatePolicyChangeToken: NSObjectProtocol?
+    private var didRunMLSelfCheck = false
+    private var mlFusionEnabled = false
     private let hrType = HKQuantityType(.heartRate)
     private let spo2Type = HKQuantityType(.oxygenSaturation)
     private let hrPreWindowSec: TimeInterval = 10
@@ -87,6 +94,24 @@ final class WorkoutManager: NSObject, ObservableObject {
     private var manualSyncRequestToken: NSObjectProtocol?
     private static let wristTemperatureValidRange: ClosedRange<Double> = 20.0...45.0
     private static let wristTemperatureCacheRetention: TimeInterval = 24 * 60 * 60
+
+    private var unresolvedFallIncidentID: String? {
+        let identifier = UserDefaults.standard
+            .string(forKey: Self.unresolvedFallIncidentKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return identifier.isEmpty ? nil : identifier
+    }
+
+    private func markFallIncidentUnresolved(_ candidateId: String) {
+        guard !candidateId.isEmpty else { return }
+        UserDefaults.standard.set(candidateId, forKey: Self.unresolvedFallIncidentKey)
+    }
+
+    private func clearFallIncidentIfMatches(_ candidateId: String) {
+        guard let unresolved = unresolvedFallIncidentID else { return }
+        guard candidateId.isEmpty || unresolved == candidateId else { return }
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentKey)
+    }
 
     private struct HeartRatePoint {
         let at: Date
@@ -107,6 +132,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         case dismissed
         case manualSos = "manual_sos"
         case autoEscalated = "auto_escalated"
+        case safetyHold = "safety_hold_no_on_wrist"
     }
 
     override init() {
@@ -163,6 +189,15 @@ final class WorkoutManager: NSObject, ObservableObject {
                 self?.applyCurrentPowerMode()
             }
         }
+        updatePolicyChangeToken = NotificationCenter.default.addObserver(
+            forName: .vitalguardWatchUpdatePolicyDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.applyCurrentPowerMode()
+            }
+        }
         watchLocationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         watchLocationManager.distanceFilter = 250
         watchLocationManager.allowsBackgroundLocationUpdates = false
@@ -204,6 +239,10 @@ final class WorkoutManager: NSObject, ObservableObject {
     }
 
     private func configureLocationUpdatesForCurrentMode(requestFreshLocation: Bool = true) {
+        guard ConnectionSettings.locationBasedUpdatesEnabled() else {
+            watchLocationManager.stopUpdatingLocation()
+            return
+        }
         let mode = ConnectionSettings.currentSensorPowerMode()
         switch mode {
         case .extreme:
@@ -212,27 +251,32 @@ final class WorkoutManager: NSObject, ObservableObject {
             watchLocationManager.allowsBackgroundLocationUpdates = true
             watchLocationManager.startUpdatingLocation()
         case .balanced:
+            // watchOS는 지역 이탈 콜백을 제공하지 않으므로 시스템 거리 필터를 사용한다.
             watchLocationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
-            watchLocationManager.distanceFilter = 250
+            watchLocationManager.distanceFilter = ConnectionSettings.currentLocationUpdateRadiusMeters()
             watchLocationManager.allowsBackgroundLocationUpdates = true
             watchLocationManager.startUpdatingLocation()
         case .lowPower:
             watchLocationManager.desiredAccuracy = kCLLocationAccuracyKilometer
-            watchLocationManager.distanceFilter = 1_000
-            watchLocationManager.allowsBackgroundLocationUpdates = false
-            watchLocationManager.stopUpdatingLocation()
-            let status = watchLocationManager.authorizationStatus
-            if requestFreshLocation, status == .authorizedAlways || status == .authorizedWhenInUse {
-                watchLocationManager.requestLocation()
-            }
+            watchLocationManager.distanceFilter = max(1_000, ConnectionSettings.currentLocationUpdateRadiusMeters())
+            watchLocationManager.allowsBackgroundLocationUpdates = true
+            watchLocationManager.startUpdatingLocation()
         }
+    }
+
+    private func requestSafetyLocation() {
+        let status = watchLocationManager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else { return }
+        watchLocationManager.requestLocation()
     }
 
     private func configureFallMonitoringForCurrentMode() {
         guard fallDetector == nil else { return }
         let mode = ConnectionSettings.currentSensorPowerMode()
         let detector = FallDetector(
-            sampleHz: mode == .lowPower ? 25 : 50,
+            // 모델 입력은 50 Hz 기준으로 학습됐다. 저전력 모드에서도 판정 샘플링을
+            // 낮추면 모델을 조용히 무효화하므로, UI 전송 간격만 절전한다.
+            sampleHz: 50,
             eventSampleHz: 50,
             motionPublishInterval: mode == .lowPower ? 5 : 1
         )
@@ -242,13 +286,20 @@ final class WorkoutManager: NSObject, ObservableObject {
             self.latestRotationRateRadS = rotationRateRadS
         }
 
-        if mode == .lowPower {
-            detector.onCandidate = { [weak self] candidate in
-                Task { @MainActor in
-                    self?.handleCandidate(candidate, shouldAlert: candidate.isFall)
-                }
+        // ML 번들 또는 자가검증에 문제가 있으면 규칙 기반 감지를 그대로 사용한다.
+        // 이 fallback은 실제 낙상을 ML 오류 때문에 놓치지 않게 하는 안전 경로다.
+        detector.onCandidate = { [weak self] candidate in
+            Task { @MainActor in
+                self?.handleCandidate(candidate)
             }
-        } else {
+        }
+
+        guard mlFusionEnabled else {
+            fallDetector = detector
+            return
+        }
+
+        do {
             let fusion = MLFusion()
             let logger = IMUWindowLogger(fs: 50, preSec: 1.0, postSec: 2.0, logThresholdG: 1.5, refractorySec: 0.8)
             logger.onWindow = { [weak fusion] window in
@@ -312,6 +363,9 @@ final class WorkoutManager: NSObject, ObservableObject {
         if let powerModeChangeToken {
             NotificationCenter.default.removeObserver(powerModeChangeToken)
         }
+        if let updatePolicyChangeToken {
+            NotificationCenter.default.removeObserver(updatePolicyChangeToken)
+        }
     }
 
     private func updateNfcStatus(from userInfo: [AnyHashable: Any]?) {
@@ -361,7 +415,11 @@ final class WorkoutManager: NSObject, ObservableObject {
         let now = Date()
         let impactAt = now.addingTimeInterval(-candidate.stillSec)
         let preTrajectory = trajectoryAroundImpact(impactAt: impactAt)
-        let finalShouldAlert = shouldAlert ?? candidate.isFall
+        let requestedAlert = shouldAlert ?? candidate.isFall
+        let existingIncidentID = unresolvedFallIncidentID
+        // 심박 초기 수집 전의 실제 낙상까지 놓치지 않도록 Watch 확인 프롬프트는 유지한다.
+        // 다만 무응답 자동 SOS는 아래에서 착용·심박 신호를 다시 확인해 보류한다.
+        let finalShouldAlert = requestedAlert && existingIncidentID == nil
         if finalShouldAlert {
             activateEvidenceCaptureWindow(reason: "낙상 후보")
             lastFallText = String(
@@ -393,6 +451,9 @@ final class WorkoutManager: NSObject, ObservableObject {
             mlRescuedByML: false,
             mlShouldAlert: mlVerdict?.shouldAlert
         )
+        if requestedAlert, existingIncidentID != nil {
+            lastFallText = "미해결 낙상 사건 확인 대기 — 추가 경보 억제"
+        }
         if finalShouldAlert {
             beginFallPrompt(
                 candidateId: candidateId,
@@ -402,7 +463,9 @@ final class WorkoutManager: NSObject, ObservableObject {
                 detectedAt: now
             )
         }
-        schedulePostImpactFollowup(candidateId: candidateId, impactAt: impactAt)
+        if finalShouldAlert {
+            schedulePostImpactFollowup(candidateId: candidateId, impactAt: impactAt)
+        }
     }
 
     // 실제 낙상이 어려운 데모/검증용 수동 트리거 — 알고리즘 무관 합성 양성(자유낙하 전조 가정).
@@ -433,6 +496,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         let candidateId = (userInfo?["candidateId"] as? String)
             ?? (userInfo?["fallCandidateId"] as? String)
             ?? ""
+        clearFallIncidentIfMatches(candidateId)
         if let prompt = activeFallPrompt, candidateId.isEmpty || prompt.id == candidateId {
             fallPromptTask?.cancel()
             fallPromptTask = nil
@@ -456,6 +520,9 @@ final class WorkoutManager: NSObject, ObservableObject {
     private func maybeReadStress() {
         let now = Date()
         let boosted = isEvidenceCaptureActive(now: now)
+        guard boosted || ConnectionSettings.currentSensorPowerMode() == .extreme || ConnectionSettings.timeBasedUpdatesEnabled() else {
+            return
+        }
         if let last = lastStressAt, now.timeIntervalSince(last) < ConnectionSettings.currentSensorReadIntervalSeconds(boosted: boosted) { return }
         lastStressAt = now
         readAndTransmitSensorSnapshot(forceFlush: boosted)
@@ -514,8 +581,11 @@ final class WorkoutManager: NSObject, ObservableObject {
         peakRotationRadS: Double,
         detectedAt: Date
     ) {
-        if activeFallPrompt != nil {
-            completeFallPrompt(.autoEscalated)
+        // 새 후보가 이미 열린 확인 프롬프트를 자동 SOS로 바꾸면 오탐이 연쇄 경보가 된다.
+        // 기존 프롬프트의 사용자 응답 또는 타임아웃만 처리하고, 새 후보는 억제한다.
+        guard activeFallPrompt == nil else {
+            lastFallText = "낙상 확인 대기 중 — 추가 후보 억제"
+            return
         }
 
         activeFallPrompt = ActiveFallPrompt(
@@ -527,6 +597,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             startedHeartRate: latestHeartRate,
             remainingSec: Int(fallPromptTimeoutSec)
         )
+        markFallIncidentUnresolved(candidateId)
         lastStatus = "낙상 확인 대기"
         playPromptAlert()
         fallPromptTask?.cancel()
@@ -548,15 +619,20 @@ final class WorkoutManager: NSObject, ObservableObject {
         fallPromptTask?.cancel()
         fallPromptTask = nil
         activeFallPrompt = nil
+        let resolvedOutcome: FallPromptOutcome =
+            outcome == .autoEscalated && !hasRecentOnWristEvidence ? .safetyHold : outcome
+        if resolvedOutcome == .dismissed || resolvedOutcome == .safetyHold {
+            clearFallIncidentIfMatches(prompt.id)
+        }
 
         let responseSec = max(0, Date().timeIntervalSince(prompt.detectedAt))
         transmitter.sendFallPromptResult(
             candidateId: prompt.id,
-            outcome: outcome.rawValue,
+            outcome: resolvedOutcome.rawValue,
             responseSec: responseSec
         )
 
-        switch outcome {
+        switch resolvedOutcome {
         case .dismissed:
             lastStatus = "낙상 후보 해제"
             lastFallText = String(
@@ -585,6 +661,9 @@ final class WorkoutManager: NSObject, ObservableObject {
                 heartRate: latestHeartRate,
                 spo2: latestSpO2
             )
+        case .safetyHold:
+            lastStatus = "낙상 경보 안전 보류"
+            lastFallText = "착용·심박 신호 미확인"
         }
     }
 
@@ -600,6 +679,7 @@ final class WorkoutManager: NSObject, ObservableObject {
     }
 
     private func recordHeartRate(_ bpm: Double, at now: Date) {
+        lastHeartRateAt = now
         hrHistory.append(HeartRatePoint(at: now, bpm: bpm))
         pruneHrHistory(reference: now)
     }
@@ -680,6 +760,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             builder.delegate = self
             self.session = session
             self.builder = builder
+            runMLSelfCheckIfNeeded()
 
             let startDate = Date()
             session.startActivity(with: startDate)
@@ -708,6 +789,62 @@ final class WorkoutManager: NSObject, ObservableObject {
             }
         } catch {
             lastError = "세션 생성 실패: \(error.localizedDescription)"
+        }
+    }
+
+    func recoverActiveWorkoutSession() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                guard let recovered = try await self.store.recoverActiveWorkoutSession() else {
+                    self.lastStatus = "복구할 활성 워크아웃 없음"
+                    return
+                }
+                let recoveredBuilder = recovered.associatedWorkoutBuilder()
+                let dataSource = HKLiveWorkoutDataSource(healthStore: self.store, workoutConfiguration: recovered.workoutConfiguration)
+                dataSource.disableCollection(for: HKQuantityType(.distanceWalkingRunning))
+                dataSource.disableCollection(for: HKQuantityType(.basalEnergyBurned))
+                recoveredBuilder.dataSource = dataSource
+                recovered.delegate = self
+                recoveredBuilder.delegate = self
+                self.session = recovered
+                self.builder = recoveredBuilder
+                self.isRunning = recovered.state == .running
+                self.lastStatus = self.isRunning ? "워크아웃 복구됨" : "워크아웃 복구됨(일시 정지)"
+                self.lastError = nil
+                self.runMLSelfCheckIfNeeded()
+                guard self.isRunning else { return }
+                self.lastStressAt = nil
+                self.requestWatchLocationPermissionIfNeeded()
+                self.spo2Reader.start()
+                self.configureFallMonitoringForCurrentMode()
+                self.fallDetector?.start()
+                self.configureLocationUpdatesForCurrentMode()
+                self.startBackgroundSyncTimer()
+                self.readAndTransmitSensorSnapshot(forceFlush: true)
+            } catch {
+                self.lastError = "워크아웃 복구 실패: \(error.localizedDescription)"
+                self.lastStatus = "워크아웃 복구 실패"
+                WKInterfaceDevice.current().play(.failure)
+            }
+        }
+    }
+
+    private func runMLSelfCheckIfNeeded() {
+        guard !didRunMLSelfCheck else { return }
+        didRunMLSelfCheck = true
+        let result = MLSelfCheck.run()
+        if result.contains("❌") || result.contains("없음") || result.contains("미탑재") {
+            mlFusionEnabled = false
+            mlPipelineStatus = "ML 비활성 · 규칙 기반 감시"
+            transmitter.updateMLPipelineStatus(isActive: false)
+            lastError = "ML 자가검증 실패: \(result.replacingOccurrences(of: "\n", with: " / "))"
+            lastStatus = "ML 자가검증 실패 - 규칙 기반 감시 유지"
+        } else {
+            mlFusionEnabled = true
+            mlPipelineStatus = "ML 오탐 억제 활성 · 6/6 검증 완료"
+            transmitter.updateMLPipelineStatus(isActive: true)
+            lastStatus = "ML 자가검증 완료 · 오탐 억제 활성"
         }
     }
 
@@ -767,6 +904,10 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
             self.stopAltitudeUpdates()
             self.watchLocationManager.stopUpdatingLocation()
             self.stopBackgroundSyncTimer()
+            self.session = nil
+            self.builder = nil
+            self.lastStatus = "세션 오류 - 앱 재실행 시 복구 시도"
+            WKInterfaceDevice.current().play(.failure)
         }
     }
 }
@@ -801,6 +942,11 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
 }
 
 private extension WorkoutManager {
+    var hasRecentOnWristEvidence: Bool {
+        guard latestHeartRate != nil, let lastHeartRateAt else { return false }
+        return Date().timeIntervalSince(lastHeartRateAt) <= 90
+    }
+
     var measuredSnapshot: MeasuredVitalSnapshot {
         MeasuredVitalSnapshot(
             heartRate: latestHeartRate,
@@ -860,6 +1006,7 @@ private extension WorkoutManager {
         if let current = evidenceCaptureUntil, current > Date() { return }
         evidenceCaptureUntil = until
         lastStatus = "\(reason) 증거 수집"
+        requestSafetyLocation()
         startAltitudeUpdates()
         startBackgroundSyncTimer()
         readAndTransmitSensorSnapshot(forceFlush: true)
@@ -885,6 +1032,12 @@ private extension WorkoutManager {
     }
 
     func startBackgroundSyncTimer() {
+        guard ConnectionSettings.timeBasedUpdatesEnabled()
+                || isEvidenceCaptureActive()
+                || ConnectionSettings.currentSensorPowerMode() == .extreme else {
+            stopBackgroundSyncTimer()
+            return
+        }
         let interval = max(5, ConnectionSettings.currentBackgroundSyncIntervalSeconds(boosted: isEvidenceCaptureActive()))
         if backgroundSyncTimer != nil, backgroundSyncTimerInterval == interval { return }
         stopBackgroundSyncTimer()
@@ -898,7 +1051,7 @@ private extension WorkoutManager {
                 if self.backgroundSyncTimerInterval != desiredInterval {
                     self.startBackgroundSyncTimer()
                 }
-                if ConnectionSettings.currentSensorPowerMode() == .lowPower {
+                if ConnectionSettings.currentSensorPowerMode() != .extreme {
                     self.configureLocationUpdatesForCurrentMode(requestFreshLocation: true)
                 }
                 self.readAndTransmitSensorSnapshot(
@@ -953,6 +1106,9 @@ extension WorkoutManager: CLLocationManagerDelegate {
         Task { @MainActor in
             self.latestLocation = latest
             self.transmitter.updateLocation(latest)
+            if ConnectionSettings.locationBasedUpdatesEnabled() {
+                self.readAndTransmitSensorSnapshot(forceFlush: true)
+            }
             if self.isEvidenceCaptureActive() || ConnectionSettings.currentSensorPowerMode() == .extreme {
                 self.publishMeasuredSnapshot()
             }

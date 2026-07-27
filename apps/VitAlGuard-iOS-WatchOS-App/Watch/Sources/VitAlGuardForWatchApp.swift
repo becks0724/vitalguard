@@ -2,9 +2,18 @@
 import AppIntents
 import SwiftUI
 
+@MainActor
+final class VitAlGuardWatchAppDelegate: NSObject, WKApplicationDelegate {
+    let workout = WorkoutManager()
+
+    func handleActiveWorkoutRecovery() {
+        workout.recoverActiveWorkoutSession()
+    }
+}
+
 @main
 struct VitAlGuardForWatchApp: App {
-    @StateObject private var workout = WorkoutManager()
+    @WKApplicationDelegateAdaptor private var appDelegate: VitAlGuardWatchAppDelegate
     @StateObject private var settings = ConnectionSettings()
 
     var body: some Scene {
@@ -12,7 +21,7 @@ struct VitAlGuardForWatchApp: App {
             NavigationStack {
                 ContentView()
             }
-            .environmentObject(workout)
+            .environmentObject(appDelegate.workout)
             .environmentObject(settings)
         }
     }

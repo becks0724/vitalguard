@@ -73,6 +73,7 @@ enum VitAlGuardDashboardShared {
         workerName: String,
         mode: AppMode,
         reason: String,
+        isFallDetected: Bool = false,
         date: Date = Date()
     ) -> [String: Any] {
         let workerId: String
@@ -91,7 +92,7 @@ enum VitAlGuardDashboardShared {
             "employeeId": employeeId.isEmpty ? workerId : employeeId,
             "jobTitle": mode == .admin ? "안전 관리자" : "현장 근로자",
             "manualSos": reason == "sos",
-            "fallDetected": reason == "fall" || reason == "fall_demo",
+            "fallDetected": isFallDetected && reason != "fall_demo",
             "source": "VitAlGuard-iPhone",
             "appMode": mode.rawValue,
             "syncReason": reason

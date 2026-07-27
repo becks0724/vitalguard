@@ -145,6 +145,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
     private let closeButton = UIButton(type: .system)
     private let apiKeyButton = UIButton(type: .system)
     private let keySettingsCard = UIView()
+    private let messagesContentView = UIView()
     private var keySettingsHeightConstraint: NSLayoutConstraint?
     private var attachmentTrayHeightConstraint: NSLayoutConstraint?
     private var messageEditToolbarHeightConstraint: NSLayoutConstraint?
@@ -330,7 +331,10 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         keyContent.translatesAutoresizingMaskIntoConstraints = false
         keySettingsCard.addSubview(keyContent)
 
-        scroll.addSubview(messagesStack)
+        messagesContentView.translatesAutoresizingMaskIntoConstraints = false
+        messagesContentView.backgroundColor = UIColor.clear
+        scroll.addSubview(messagesContentView)
+        messagesContentView.addSubview(messagesStack)
 
         attachmentTray.translatesAutoresizingMaskIntoConstraints = false
         attachmentTray.backgroundColor = UIColor.secondarySystemBackground
@@ -356,8 +360,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             deleteButton.widthAnchor.constraint(equalToConstant: 42),
             deleteButton.heightAnchor.constraint(equalTo: keyField.heightAnchor),
             inputField.heightAnchor.constraint(greaterThanOrEqualToConstant: 42),
-            inputField.heightAnchor.constraint(lessThanOrEqualToConstant: 100),
-            messagesStack.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -28)
+            inputField.heightAnchor.constraint(lessThanOrEqualToConstant: 100)
         ])
 
         NSLayoutConstraint.activate([
@@ -371,10 +374,14 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             scroll.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             scroll.bottomAnchor.constraint(equalTo: messageEditToolbar.topAnchor),
-            messagesStack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
-            messagesStack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 14),
-            messagesStack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -14),
-            messagesStack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -12),
+            messagesContentView.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 12),
+            messagesContentView.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 14),
+            messagesContentView.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -14),
+            messagesContentView.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -12),
+            messagesStack.topAnchor.constraint(equalTo: messagesContentView.topAnchor),
+            messagesStack.leadingAnchor.constraint(equalTo: messagesContentView.leadingAnchor),
+            messagesStack.trailingAnchor.constraint(equalTo: messagesContentView.trailingAnchor),
+            messagesStack.bottomAnchor.constraint(equalTo: messagesContentView.bottomAnchor),
             attachmentTray.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             attachmentTray.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             messageEditToolbar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),

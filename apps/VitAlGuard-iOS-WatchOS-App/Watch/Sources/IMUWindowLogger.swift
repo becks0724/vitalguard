@@ -92,4 +92,5 @@ final class IMUWindowLogger {
         }
         onWindow?(ImuWindow(fs: fs, samples: win.map { $0.s }, impactIndex: idx))
     }
+
 }

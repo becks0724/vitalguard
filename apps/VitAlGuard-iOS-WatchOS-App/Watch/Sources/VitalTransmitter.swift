@@ -42,6 +42,7 @@ final class VitalTransmitter {
     // 샘플 도착 시의 enqueuePending 플러시는 이제 보조(타이머가 도착 전에 비워줌).
     private var flushTimer: DispatchSourceTimer?
     private var latestLocation: CLLocation?
+    private var mlPipelineActive = false
 
     // 전송 실패분(backlog)을 UserDefaults 에 영속화 — 앱 종료/크래시 후에도 미전송 데이터를
     // 잃지 않도록 복원(AF2). backlog 변경 시마다 저장하고, init 에서 복원한다.
@@ -100,7 +101,14 @@ final class VitalTransmitter {
         payload["watchDeviceModel"] = WKInterfaceDevice.current().model
         payload["watchDeviceLocalizedModel"] = WKInterfaceDevice.current().localizedModel
         payload["watchSystemVersion"] = WKInterfaceDevice.current().systemVersion
+        // iPhone과 관제 수신 측이 "모델이 실제 Watch에서 검증되어 동작 중"인지
+        // 알 수 있도록 정상 생체 스냅샷에도 상태만 동봉한다. 이는 낙상 이벤트가 아니다.
+        payload["mlFallPipelineActive"] = mlPipelineActive
         return payload
+    }
+
+    func updateMLPipelineStatus(isActive: Bool) {
+        mlPipelineActive = isActive
     }
 
     func updateLocation(_ location: CLLocation) {
@@ -201,6 +209,9 @@ final class VitalTransmitter {
         mlRescuedByML: Bool,
         mlShouldAlert: Bool?
     ) {
+        // 관제웹은 후보행도 낙상 이벤트로 표시할 수 있다. Watch 경보로 확정되지 않은
+        // 후보(ML 기각·미착용·미해결 사건)는 전송하지 않아 유령 낙상 행을 막는다.
+        guard isFall else { return }
         var payload = basePayload()
         payload["fallCandidate"] = true
         payload["fallCandidateId"] = candidateId
@@ -217,7 +228,9 @@ final class VitalTransmitter {
         payload["mlVetoedByML"] = mlVetoedByML
         payload["mlRejectedByImpactML"] = mlRejectedByImpactML
         payload["mlRescuedByML"] = mlRescuedByML
-        if isFall { payload["fallPromptOutcome"] = "pending" }
+        // A missing outcome is interpreted by the phone as a pending prompt.
+        // Mark rejected candidates explicitly so they cannot become an alert.
+        payload["fallPromptOutcome"] = isFall ? "pending" : "not_alerted"
         if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
         if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
         if let v = hrTrajectory.preMean10s { payload["hrPreMean10s"] = (v * 10).rounded() / 10 }

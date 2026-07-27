@@ -3152,7 +3152,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         let rawMode = VitAlGuardSharedStorage.loadAppMode()?.rawValue
             ?? defaults.string(forKey: PreviewSettingsKey.appMode)
             ?? AppMode.worker.rawValue
-        let sync = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 10
+        let sync = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
         guard !id.isEmpty else {
             publishSignedOut(syncInterval: sync)
             return
@@ -3171,7 +3171,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             defaults.string(forKey: PreviewSettingsKey.appServerRole),
             fallbackMode: mode
         )
-        let sync = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 10
+        let sync = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
         guard !id.isEmpty else {
             return signedOutContext(syncInterval: sync)
         }
@@ -3194,12 +3194,21 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "endpointURL": VitalGuardLinks.appAPI,
             "dashboardURL": VitalGuardLinks.safetyMonitor
         ]
+        appendUpdatePolicy(to: &context)
         appendWalletIdentity(to: &context, mode: mode)
         return context
     }
 
+    private func appendUpdatePolicy(to context: inout [String: Any]) {
+        let defaults = UserDefaults.standard
+        context["timeBasedUpdatesEnabled"] = defaults.object(forKey: PreviewSettingsKey.timeBasedUpdatesEnabled) as? Bool ?? true
+        context["locationBasedUpdatesEnabled"] = defaults.object(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled) as? Bool ?? true
+        let radius = defaults.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
+        context["locationUpdateRadiusMeters"] = min(5_000, max(100, radius.rounded()))
+    }
+
     private func signedOutContext(syncInterval: Double) -> [String: Any] {
-        [
+        var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
             "loggedIn": false,
             "loginId": "",
@@ -3216,6 +3225,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "endpointURL": VitalGuardLinks.appAPI,
             "dashboardURL": VitalGuardLinks.safetyMonitor
         ]
+        appendUpdatePolicy(to: &context)
+        return context
     }
 
     func publish(loginId: String, mode: AppMode, syncInterval: Double) {
@@ -3245,6 +3256,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "endpointURL": VitalGuardLinks.appAPI,
             "dashboardURL": VitalGuardLinks.safetyMonitor
         ]
+        appendUpdatePolicy(to: &context)
         appendWalletIdentity(to: &context, mode: mode)
         do {
             try WCSession.default.updateApplicationContext(context)
@@ -3257,7 +3269,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
 
     func publishSignedOut(syncInterval: Double) {
         guard WCSession.isSupported() else { return }
-        let context: [String: Any] = [
+        var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
             "loggedIn": false,
             "loginId": "",
@@ -3274,6 +3286,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "endpointURL": VitalGuardLinks.appAPI,
             "dashboardURL": VitalGuardLinks.safetyMonitor
         ]
+        appendUpdatePolicy(to: &context)
         do {
             try WCSession.default.updateApplicationContext(context)
         } catch {
@@ -3460,6 +3473,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         }
     }
 
+
     func sendWatchNFCScanResult(status: String, message: String, tagText: String? = nil, url: String? = nil, requestId: String? = nil) {
         var payload: [String: Any] = [
             "source": "VitAlGuard-iPhone",
@@ -3534,14 +3548,18 @@ final class DashboardSyncService: NSObject {
         VitAlGuardDashboardShared.normalizedEndpoint(from: raw)
     }
 
-    func checkReceiverConnection(reason: String, completion: Completion? = nil) {
+    func checkReceiverConnection(
+        reason: String,
+        fallDetected: Bool = false,
+        completion: Completion? = nil
+    ) {
         let endpointString = normalizedEndpoint(from: UserDefaults.standard.string(forKey: PreviewSettingsKey.endpoint))
         guard let endpoint = URL(string: endpointString) else {
             completion?(false, "대시보드 URL 형식이 올바르지 않습니다.")
             return
         }
 
-        let payload = connectionCheckPayload(reason: reason)
+        let payload = connectionCheckPayload(reason: reason, fallDetected: fallDetected)
         guard JSONSerialization.isValidJSONObject(payload),
               let body = try? JSONSerialization.data(withJSONObject: payload) else {
             completion?(false, "대시보드 전송 데이터를 만들 수 없습니다.")
@@ -3703,7 +3721,7 @@ final class DashboardSyncService: NSObject {
         }.resume()
     }
 
-    private func connectionCheckPayload(reason: String) -> [String: Any] {
+    private func connectionCheckPayload(reason: String, fallDetected: Bool) -> [String: Any] {
         let defaults = UserDefaults.standard
         let loginId = defaults.string(forKey: PreviewSettingsKey.loggedInId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let rawMode = VitAlGuardSharedStorage.loadAppMode()?.rawValue
@@ -3717,7 +3735,8 @@ final class DashboardSyncService: NSObject {
             employeeId: employeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: loginId) : employeeId,
             workerName: defaults.string(forKey: PreviewSettingsKey.workerName)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             mode: mode,
-            reason: reason
+            reason: reason,
+            isFallDetected: fallDetected
         )
         let actorName = defaults.string(forKey: PreviewSettingsKey.workerName)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let resolvedLogin = loginId.isEmpty ? (mode == .admin ? "admin7276" : "worker7276") : loginId
@@ -3890,6 +3909,9 @@ private enum PreviewSettingsKey {
     static let appServerRole = "preview.appServerRole"
     static let forceSignedOut = "preview.forceSignedOut"
     static let syncInterval = "preview.watchSyncIntervalSeconds"
+    static let timeBasedUpdatesEnabled = "preview.updates.timeEnabled"
+    static let locationBasedUpdatesEnabled = "preview.updates.locationEnabled"
+    static let locationUpdateRadiusMeters = "preview.updates.locationRadiusMeters"
     static let realTimeSyncMigration = "preview.realTimeSyncMigration.v1"
     static let energyEfficiencyMigration = "preview.energyEfficiencyMigration.v1"
     static let lastWatchSync = "preview.lastWatchSync"
@@ -6685,6 +6707,8 @@ final class VitAlGuardPreviewController: UIViewController,
     private var pendingScrollOffsetToRestore: CGPoint?
     private weak var cctvRefreshControl: UIRefreshControl?
     private weak var watchRefreshControl: UIRefreshControl?
+    // 당겨서 새로고침 임계점을 넘겼을 때 Safari와 같은 명확한 중간 강도의 피드백을 준다.
+    private let pullRefreshFeedback = UIImpactFeedbackGenerator(style: .medium)
     private weak var loginPanelView: UIView?
     private weak var activeJournalEditor: FieldJournalEntryViewController?
     private weak var activeCalendarCommentComposer: CalendarCommentComposerViewController?
@@ -6692,6 +6716,7 @@ final class VitAlGuardPreviewController: UIViewController,
     private var dashboardSyncTimer: Timer?
     private var dashboardSyncTimerInterval: TimeInterval?
     private var lastLocationDashboardSyncAt: Date?
+    private var locationBoundaryRefreshPending = false
     private var pendingScanMode: ScanMode = .none
     private var pendingJournalAttachmentMode: ScanMode = .none
     private var isJournalFileImportActive = false
@@ -7260,6 +7285,7 @@ final class VitAlGuardPreviewController: UIViewController,
         panel.addSubview(sub)
         panel.addSubview(chips)
         panel.addSubview(open)
+        panel.addSubview(ai)
         panel.addSubview(layout)
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: panel.topAnchor, constant: 20),
@@ -10628,19 +10654,18 @@ final class VitAlGuardPreviewController: UIViewController,
 
     @objc private func openAIChatAssistant() {
         guard presentedViewController == nil, !isPresentingAIChat else { return }
+        guard view.window != nil else { return }
+        guard navigationController?.presentedViewController == nil else { return }
 
         isPresentingAIChat = true
         let assistant = VitAlGuardAssistantViewController()
         let nav = UINavigationController(rootViewController: assistant)
 
-        nav.modalPresentationStyle = .pageSheet
-        if let sheet = nav.sheetPresentationController {
-            sheet.detents = [.large()]
-            sheet.prefersGrabberVisible = true
-        }
+        nav.modalPresentationStyle = .fullScreen
 
-        assistant.onCloseRequest = { [weak nav] in
+        assistant.onCloseRequest = { [weak self, weak nav] in
             nav?.dismiss(animated: true)
+            self?.isPresentingAIChat = false
         }
 
         present(nav, animated: true) { [weak self] in
@@ -10682,6 +10707,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     @objc private func refreshCurrentTabFromPull(_ sender: UIRefreshControl) {
+        playPullRefreshHaptic()
         switch activeMainTab {
         case .home:
             beginLocationWeatherRefresh(rebuildInterface: false)
@@ -10710,11 +10736,18 @@ final class VitAlGuardPreviewController: UIViewController,
         }
     }
 
+    private func playPullRefreshHaptic() {
+        pullRefreshFeedback.impactOccurred(intensity: 0.9)
+        // 다음 당김을 위해 미리 준비해 지연 없는 촉감을 유지한다.
+        pullRefreshFeedback.prepare()
+    }
+
     @objc private func refreshCCTVFromPull(_ sender: UIRefreshControl) {
         guard activeMainTab == .cctv else {
             sender.endRefreshing()
             return
         }
+        playPullRefreshHaptic()
         refreshDashboardCCTVIfNeeded(force: true)
     }
 
@@ -11754,7 +11787,6 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func requestLocationPermissionForWatermark() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
         switch watermarkAuthorizationStatus() {
         case .notDetermined:
             requestLocationPermissionAsync(locationManager: watermarkLocationManager, requestAlways: false)
@@ -11777,8 +11809,57 @@ final class VitAlGuardPreviewController: UIViewController,
         }
     }
 
+    private var isTimeBasedUpdatesEnabled: Bool {
+        UserDefaults.standard.object(forKey: PreviewSettingsKey.timeBasedUpdatesEnabled) as? Bool ?? true
+    }
+
+    private var isLocationBasedUpdatesEnabled: Bool {
+        UserDefaults.standard.object(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled) as? Bool ?? true
+    }
+
+    private var locationUpdateRadiusMeters: CLLocationDistance {
+        let raw = UserDefaults.standard.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
+        return min(5_000, max(100, raw))
+    }
+
+    private func cachedDashboardLocation() -> CLLocation? {
+        let defaults = UserDefaults.standard
+        guard defaults.object(forKey: PreviewSettingsKey.lastLocationLatitude) != nil,
+              defaults.object(forKey: PreviewSettingsKey.lastLocationLongitude) != nil else { return nil }
+        let latitude = defaults.double(forKey: PreviewSettingsKey.lastLocationLatitude)
+        let longitude = defaults.double(forKey: PreviewSettingsKey.lastLocationLongitude)
+        let accuracy = max(0, defaults.double(forKey: PreviewSettingsKey.lastLocationAccuracy))
+        guard CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: latitude, longitude: longitude)) else { return nil }
+        return CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
+            altitude: 0,
+            horizontalAccuracy: accuracy > 0 ? accuracy : locationUpdateRadiusMeters,
+            verticalAccuracy: -1,
+            timestamp: defaults.object(forKey: PreviewSettingsKey.lastLocationTimestamp) as? Date ?? Date()
+        )
+    }
+
+    private func configureLocationBoundaryMonitoring(using location: CLLocation?) {
+        let identifier = "com.yangjeehoo.vitalguard.location-boundary"
+        watermarkLocationManager.monitoredRegions
+            .filter { $0.identifier == identifier }
+            .forEach { watermarkLocationManager.stopMonitoring(for: $0) }
+        guard isLocationBasedUpdatesEnabled,
+              watermarkAuthorizationStatus() == .authorizedAlways,
+              CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self),
+              let location,
+              location.horizontalAccuracy >= 0 else { return }
+        let region = CLCircularRegion(
+            center: location.coordinate,
+            radius: locationUpdateRadiusMeters,
+            identifier: identifier
+        )
+        region.notifyOnEntry = false
+        region.notifyOnExit = true
+        watermarkLocationManager.startMonitoring(for: region)
+    }
+
     private func startWatermarkOneShotLocationIfAvailable() {
-        guard CLLocationManager.locationServicesEnabled() else { return }
         let status = watermarkAuthorizationStatus()
         guard status == .authorizedWhenInUse || status == .authorizedAlways else { return }
 
@@ -11798,10 +11879,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func watermarkAuthorizationStatus() -> CLAuthorizationStatus {
-        if #available(iOS 14.0, *) {
-            return watermarkLocationManager.authorizationStatus
-        }
-        return CLLocationManager.locationServicesEnabled() ? .notDetermined : .restricted
+        watermarkLocationManager.authorizationStatus
     }
 
     private func captureTimeZone(for location: CLLocation?) -> TimeZone {
@@ -13223,7 +13301,10 @@ final class VitAlGuardPreviewController: UIViewController,
         guard latest.horizontalAccuracy > 0 else { return }
         lastKnownWatermarkLocation = latest
         storeLatestLocationForDashboard(latest)
-        syncDashboardFromLocationIfNeeded()
+        let forceLocationBoundarySync = locationBoundaryRefreshPending
+        locationBoundaryRefreshPending = false
+        syncDashboardFromLocationIfNeeded(force: forceLocationBoundarySync)
+        configureLocationBoundaryMonitoring(using: latest)
         if isWeatherRefreshPending {
             updateLocationWeather(for: latest)
         }
@@ -13240,16 +13321,32 @@ final class VitAlGuardPreviewController: UIViewController,
         defaults.set(location.timestamp, forKey: PreviewSettingsKey.lastLocationTimestamp)
     }
 
-    private func syncDashboardFromLocationIfNeeded() {
+    private func syncDashboardFromLocationIfNeeded(force: Bool = false) {
         let defaults = UserDefaults.standard
         guard isDashboardAutoCollectionEnabled else { return }
-        let interval = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 10
+        let configuredInterval = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
+        let interval: TimeInterval
+        switch SensorPowerMode.saved {
+        case .extreme:
+            interval = max(10, min(60, configuredInterval))
+        case .balanced:
+            interval = max(300, configuredInterval)
+        case .lowPower:
+            interval = max(600, configuredInterval)
+        }
         let now = Date()
-        if let last = lastLocationDashboardSyncAt, now.timeIntervalSince(last) < max(5, interval) {
+        if !force, let last = lastLocationDashboardSyncAt, now.timeIntervalSince(last) < interval {
             return
         }
         lastLocationDashboardSyncAt = now
         DashboardSyncService.shared.checkReceiverConnection(reason: "gps_location_update")
+    }
+
+    func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
+        guard region.identifier == "com.yangjeehoo.vitalguard.location-boundary",
+              isLocationBasedUpdatesEnabled else { return }
+        locationBoundaryRefreshPending = true
+        manager.requestLocation()
     }
 
     private var isDashboardAutoCollectionEnabled: Bool {
@@ -13281,6 +13378,7 @@ final class VitAlGuardPreviewController: UIViewController,
                 }
             }
             manager.startUpdatingLocation()
+            configureLocationBoundaryMonitoring(using: manager.location ?? cachedDashboardLocation())
         }
     }
 
@@ -13297,6 +13395,7 @@ final class VitAlGuardPreviewController: UIViewController,
                 }
             }
             manager.startUpdatingLocation()
+            configureLocationBoundaryMonitoring(using: manager.location ?? cachedDashboardLocation())
         }
     }
 
@@ -14152,6 +14251,7 @@ final class VitAlGuardPreviewController: UIViewController,
             sender.endRefreshing()
             return
         }
+        playPullRefreshHaptic()
         refreshWatchData(showStatus: false)
     }
 
@@ -14193,6 +14293,14 @@ final class VitAlGuardPreviewController: UIViewController,
         let updatePhase = (values["fallUpdatePhase"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let isPendingCandidate = boolValue(values["fallCandidate"]) && (outcome.isEmpty || outcome == "pending")
         let isEscalatedFall = boolValue(values["fallDetected"])
+        // Watch가 ML로 명확한 작업 동작이라고 기각한 후보는 iPhone에서도 알림을 만들지 않는다.
+        // 다만 모델 상태가 없거나 실패한 경우에는 규칙 기반 후보를 통과시켜 fail-open을 유지한다.
+        if boolValue(values["mlVetoedByML"]) { return nil }
+        if isPendingCandidate,
+           values["mlShouldAlert"] != nil,
+           !boolValue(values["mlShouldAlert"]) {
+            return nil
+        }
         guard isPendingCandidate || isEscalatedFall else { return nil }
         guard updatePhase != "prompt_result" || outcome == "pending" else { return nil }
 
@@ -14255,15 +14363,22 @@ final class VitAlGuardPreviewController: UIViewController,
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let storedCandidateId = UserDefaults.standard.string(forKey: PreviewSettingsKey.activeFallConfirmationCandidateId) ?? ""
         let candidateId = incomingCandidateId.isEmpty ? storedCandidateId : incomingCandidateId
+        // 시스템 기본 탭, dismiss, 그리고 알 수 없는 action은 사용자의 낙상 확정이 아니다.
+        // 확정은 앱이 등록한 명시적 SOS action에서만 허용한다.
         if action == PhoneWatchBridge.fallDismissActionIdentifier {
             dismissFallConfirmation(candidateId: candidateId)
-        } else {
+        } else if action == PhoneWatchBridge.fallConfirmActionIdentifier {
             confirmFallEmergency(candidateId: candidateId)
+        } else {
+            recordLocalAlert(title: "낙상 확인 대기", message: "알림을 열거나 닫은 동작만으로는 낙상을 확정하지 않았습니다. 앱에서 SOS를 명시적으로 선택해 주세요.")
         }
     }
 
     private func confirmFallEmergency(candidateId: String) {
-        DashboardSyncService.shared.checkReceiverConnection(reason: "fall") { [weak self] _, message in
+        DashboardSyncService.shared.checkReceiverConnection(
+            reason: "fall",
+            fallDetected: true
+        ) { [weak self] _, message in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.recordLocalAlert(title: "낙상 관제 알람 전송", message: "사용자가 위급 상황으로 확인했습니다.\n\(message)")
@@ -14429,7 +14544,7 @@ final class VitAlGuardPreviewController: UIViewController,
         case .critical:
             showCriticalEmergencyMenu(sourceView: sender)
         case .fall:
-            DashboardSyncService.shared.checkReceiverConnection(reason: "fall") { [weak self] _, message in
+            DashboardSyncService.shared.checkReceiverConnection(reason: "manual_fall") { [weak self] _, message in
                 self?.presentStatus("낙상 알림", message: "낙상 의심 알림을 웹 대시보드로 전송했습니다.\n\(message)")
             }
         case .sos:
@@ -14799,7 +14914,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func startDashboardAutoSyncIfNeeded(force: Bool = false) {
-        guard loggedInID != nil, isDashboardAutoCollectionEnabled else {
+        guard loggedInID != nil, isDashboardAutoCollectionEnabled, isTimeBasedUpdatesEnabled else {
             stopDashboardAutoSync()
             return
         }
@@ -14852,11 +14967,17 @@ final class VitAlGuardPreviewController: UIViewController,
             stopDashboardConnectionMonitor()
             return
         }
+        let interval: TimeInterval
+        switch SensorPowerMode.saved {
+        case .extreme: interval = 30
+        case .balanced: interval = 300
+        case .lowPower: interval = 600
+        }
         if dashboardConnectionTimer == nil {
-            let timer = Timer(timeInterval: 30, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
                 self?.checkDashboardConnection()
             }
-            timer.tolerance = 8
+            timer.tolerance = min(60, interval / 5)
             RunLoop.main.add(timer, forMode: .common)
             dashboardConnectionTimer = timer
         }
@@ -14953,12 +15074,16 @@ final class VitAlGuardPreviewController: UIViewController,
     func prepareContinuousBackgroundSync() {
         guard loggedInID != nil, isDashboardAutoCollectionEnabled else { return }
         requestLocationPermissionForWatermark()
-        DashboardSyncService.shared.enqueueContinuousUpdate(reason: "iphone_background_enter")
+        configureLocationBoundaryMonitoring(using: lastKnownWatermarkLocation ?? cachedDashboardLocation())
+        if isTimeBasedUpdatesEnabled {
+            DashboardSyncService.shared.enqueueContinuousUpdate(reason: "iphone_background_enter")
+        }
         stopDashboardAutoSync()
     }
 
     func resumeContinuousDashboardSync() {
         guard loggedInID != nil else { return }
+        configureLocationBoundaryMonitoring(using: lastKnownWatermarkLocation ?? cachedDashboardLocation())
         startDashboardAutoSyncIfNeeded(force: true)
     }
 
@@ -15161,7 +15286,7 @@ final class HomeLayoutViewController: UITableViewController {
         tableView.backgroundColor = traitCollection.userInterfaceStyle == .dark ? ink : .systemBackground
         tableView.dragInteractionEnabled = true
         tableView.isEditing = true
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .prominent, target: self, action: #selector(saveLayout))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .plain, target: self, action: #selector(saveLayout))
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "기본값", style: .plain, target: self, action: #selector(resetLayout))
     }
 
@@ -16181,7 +16306,7 @@ private final class SafetySignalOrderEditorController: UITableViewController {
         tableView.isEditing = true
         tableView.allowsSelectionDuringEditing = false
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "닫기", style: .plain, target: self, action: #selector(close))
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .prominent, target: self, action: #selector(save))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .plain, target: self, action: #selector(save))
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -16499,6 +16624,10 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     private let languageButton = UIButton(type: .system)
     private let syncIntervalField = UITextField()
     private let syncSlider = UISlider()
+    private let timeUpdatesSwitch = UISwitch()
+    private let locationUpdatesSwitch = UISwitch()
+    private let locationRadiusField = UITextField()
+    private let locationRadiusSlider = UISlider()
     private let autoSwitch = UISwitch()
     private let watermarkDateSwitch = UISwitch()
     private let watermarkAddressSwitch = UISwitch()
@@ -16527,18 +16656,15 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     override func viewDidLoad() {
         super.viewDidLoad()
         settingsLocationManager.delegate = self
-        settingsLocationManager.desiredAccuracy = kCLLocationAccuracyBest
+        // 설정 화면은 안전 감지 경로가 아니다. 주소/워터마크 확인에는 저비용 정확도로 충분하다.
+        settingsLocationManager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         settingsLocationManager.activityType = .other
-        settingsLocationManager.distanceFilter = 5
-        settingsLocationManager.pausesLocationUpdatesAutomatically = false
-        if #available(iOS 11.0, *) {
-            settingsLocationManager.showsBackgroundLocationIndicator = true
-            settingsLocationManager.allowsBackgroundLocationUpdates = true
-        }
+        settingsLocationManager.distanceFilter = 100
+        settingsLocationManager.pausesLocationUpdatesAutomatically = true
         applySavedTheme()
         title = "설정"
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "닫기", style: .plain, target: self, action: #selector(close))
-        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .prominent, target: self, action: #selector(save))
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "저장", style: .plain, target: self, action: #selector(save))
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(keyboardFrameChanged(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
         buildForm()
@@ -16546,6 +16672,14 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        settingsLocationManager.stopUpdatingLocation()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || navigationController?.isBeingDismissed == true {
+            settingsLocationManager.stopUpdatingLocation()
+        }
     }
 
     private var savedThemeMode: PreviewThemeMode {
@@ -16574,6 +16708,11 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         isDarkTheme ? .white : ink
     }
 
+    // 보조 문구는 다크 카드 위에서도 읽혀야 하므로 고정 회색을 쓰지 않는다.
+    private var detailTextColor: UIColor {
+        isDarkTheme ? UIColor.white.withAlphaComponent(0.82) : mute
+    }
+
     private var fieldColor: UIColor {
         isDarkTheme ? glassDark : glassLight
     }
@@ -16600,11 +16739,18 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         dashboardAdminPasswordField.text = DashboardCredentialStore.loadPassword()
         configureLanguageButton()
 
-        let syncValue = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 10
+        let syncValue = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
         syncIntervalField.text = "\(Int(min(3599, max(5, syncValue)).rounded()))"
         syncSlider.minimumValue = 5
         syncSlider.maximumValue = 3599
         syncSlider.value = Float(min(3599, max(5, syncValue)))
+        timeUpdatesSwitch.isOn = defaults.object(forKey: PreviewSettingsKey.timeBasedUpdatesEnabled) as? Bool ?? true
+        locationUpdatesSwitch.isOn = defaults.object(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled) as? Bool ?? true
+        let locationRadius = defaults.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
+        locationRadiusField.text = "\(Int(min(5_000, max(100, locationRadius)).rounded()))"
+        locationRadiusSlider.minimumValue = 100
+        locationRadiusSlider.maximumValue = 5_000
+        locationRadiusSlider.value = Float(min(5_000, max(100, locationRadius)))
         syncSlider.addTarget(self, action: #selector(syncSliderChanged), for: .valueChanged)
         autoSwitch.isOn = defaults.object(forKey: PreviewSettingsKey.autoCollection) == nil
             ? true
@@ -16625,7 +16771,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         watermarkFontScaleSlider.value = Float(max(0.6, min(2.0, fontScale)))
         watermarkFontScaleSlider.addTarget(self, action: #selector(watermarkFontScaleChanged), for: .valueChanged)
         watermarkFontScaleValueLabel.text = String(format: "x%.2f", watermarkFontScaleSlider.value)
-        watermarkFontScaleValueLabel.textColor = mute
+        watermarkFontScaleValueLabel.textColor = detailTextColor
         watermarkFontScaleValueLabel.font = UIFont.systemFont(ofSize: 12, weight: .black)
 
         let bgAlpha = defaults.object(forKey: PreviewSettingsKey.watermarkBackgroundAlpha) as? Double ?? 0.5
@@ -16634,7 +16780,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         watermarkBackgroundAlphaSlider.value = Float(max(0, min(1, bgAlpha)))
         watermarkBackgroundAlphaSlider.addTarget(self, action: #selector(watermarkBackgroundAlphaChanged), for: .valueChanged)
         watermarkBackgroundAlphaValueLabel.text = String(format: "%.0f%%", watermarkBackgroundAlphaSlider.value * 100)
-        watermarkBackgroundAlphaValueLabel.textColor = mute
+        watermarkBackgroundAlphaValueLabel.textColor = detailTextColor
         watermarkBackgroundAlphaValueLabel.font = UIFont.systemFont(ofSize: 12, weight: .black)
 
         let position = WatermarkPosition(rawValue: defaults.string(forKey: PreviewSettingsKey.watermarkPosition) ?? "") ?? .bottom
@@ -16726,6 +16872,8 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
         formStack.addArrangedSubview(sectionTitle("Watch 데이터 연동 주기"))
         formStack.addArrangedSubview(syncIntervalRow())
+        formStack.addArrangedSubview(sectionTitle("자동 업데이트 방식"))
+        formStack.addArrangedSubview(updatePolicyRow())
         formStack.addArrangedSubview(switchRow())
 
         formStack.addArrangedSubview(sectionTitle("메타데이터 워터마크"))
@@ -16782,7 +16930,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let detail = UILabel()
         detail.translatesAutoresizingMaskIntoConstraints = false
         detail.text = AppLanguage.saved.detail
-        detail.textColor = mute
+        detail.textColor = detailTextColor
         detail.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
         detail.numberOfLines = 2
 
@@ -16942,7 +17090,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let detail = UILabel()
         detail.translatesAutoresizingMaskIntoConstraints = false
         detail.text = IntroGuideMode.saved.detail
-        detail.textColor = mute
+        detail.textColor = detailTextColor
         detail.font = UIFont.systemFont(ofSize: 11, weight: .bold)
         detail.numberOfLines = 2
 
@@ -16983,7 +17131,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let detail = UILabel()
         detail.translatesAutoresizingMaskIntoConstraints = false
         detail.text = SensorPowerMode.saved.detail
-        detail.textColor = mute
+        detail.textColor = detailTextColor
         detail.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
         detail.numberOfLines = 3
 
@@ -17025,7 +17173,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.numberOfLines = 2
         sub.text = "화면이 꺼져도 위치 기반 관제 전송을 유지하려면 위치 권한을 항상 허용으로 설정해 주세요."
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         let request = actionButton(title: "항상 허용 요청", action: #selector(requestAlwaysLocationPermission))
@@ -17244,14 +17392,14 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let hint = UILabel()
         hint.translatesAutoresizingMaskIntoConstraints = false
         hint.text = "슬라이더 또는 직접 입력으로 Watch 데이터 동기화 주기를 조정합니다."
-        hint.textColor = mute
+        hint.textColor = detailTextColor
         hint.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
         hint.numberOfLines = 2
 
         let unit = UILabel()
         unit.translatesAutoresizingMaskIntoConstraints = false
         unit.text = "초"
-        unit.textColor = mute
+        unit.textColor = detailTextColor
         unit.font = UIFont.systemFont(ofSize: 14, weight: .black)
 
         row.addSubview(title)
@@ -17279,6 +17427,126 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         return row
     }
 
+    private func updatePolicyRow() -> UIView {
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        let timeCard = policyCard()
+        let locationCard = policyCard()
+
+        let timeTitle = policyTitle("시간 기준 자동 업데이트")
+        let timeDetail = policyDetail("선택한 주기마다 Watch 상태를 안전하게 동기화합니다.")
+        let timeStatus = policyCaption("연동 주기는 위에서 설정")
+        timeUpdatesSwitch.translatesAutoresizingMaskIntoConstraints = false
+
+        let locationTitle = policyTitle("위치 이탈 시 자동 업데이트")
+        let locationDetail = policyDetail("기준 위치에서 반경을 벗어날 때만 한 번 갱신합니다.")
+        let radiusTitle = policyCaption("이탈 반경")
+        let rangeCaption = policyCaption("100m ~ 5km")
+        locationUpdatesSwitch.translatesAutoresizingMaskIntoConstraints = false
+
+        locationRadiusField.translatesAutoresizingMaskIntoConstraints = false
+        locationRadiusField.keyboardType = .numberPad
+        locationRadiusField.textAlignment = .right
+        locationRadiusField.textColor = textColor
+        locationRadiusField.font = UIFont.systemFont(ofSize: 17, weight: .black)
+        locationRadiusField.backgroundColor = .clear
+
+        let meter = UILabel()
+        meter.translatesAutoresizingMaskIntoConstraints = false
+        meter.text = "m"
+        meter.textColor = detailTextColor
+        meter.font = UIFont.systemFont(ofSize: 14, weight: .black)
+
+        locationRadiusSlider.translatesAutoresizingMaskIntoConstraints = false
+        locationRadiusSlider.minimumTrackTintColor = UIColor(red: 0.067, green: 0.318, blue: 1.0, alpha: 1.0)
+        locationRadiusSlider.maximumTrackTintColor = isDarkTheme ? UIColor.white.withAlphaComponent(0.16) : UIColor.black.withAlphaComponent(0.10)
+        locationRadiusSlider.addTarget(self, action: #selector(locationRadiusSliderChanged), for: .valueChanged)
+
+        [timeCard, locationCard].forEach(row.addSubview)
+        [timeTitle, timeDetail, timeStatus, timeUpdatesSwitch].forEach(timeCard.addSubview)
+        [locationTitle, locationDetail, radiusTitle, rangeCaption, locationUpdatesSwitch, locationRadiusField, meter, locationRadiusSlider].forEach(locationCard.addSubview)
+
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 274),
+            timeCard.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            timeCard.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            timeCard.topAnchor.constraint(equalTo: row.topAnchor),
+            timeCard.heightAnchor.constraint(equalToConstant: 112),
+            locationCard.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            locationCard.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            locationCard.topAnchor.constraint(equalTo: timeCard.bottomAnchor, constant: 12),
+            locationCard.bottomAnchor.constraint(equalTo: row.bottomAnchor),
+
+            timeTitle.leadingAnchor.constraint(equalTo: timeCard.leadingAnchor, constant: 18),
+            timeTitle.topAnchor.constraint(equalTo: timeCard.topAnchor, constant: 16),
+            timeUpdatesSwitch.trailingAnchor.constraint(equalTo: timeCard.trailingAnchor, constant: -18),
+            timeUpdatesSwitch.centerYAnchor.constraint(equalTo: timeCard.centerYAnchor),
+            timeDetail.leadingAnchor.constraint(equalTo: timeTitle.leadingAnchor),
+            timeDetail.trailingAnchor.constraint(equalTo: timeUpdatesSwitch.leadingAnchor, constant: -16),
+            timeDetail.topAnchor.constraint(equalTo: timeTitle.bottomAnchor, constant: 5),
+            timeStatus.leadingAnchor.constraint(equalTo: timeTitle.leadingAnchor),
+            timeStatus.bottomAnchor.constraint(equalTo: timeCard.bottomAnchor, constant: -15),
+
+            locationTitle.leadingAnchor.constraint(equalTo: locationCard.leadingAnchor, constant: 18),
+            locationTitle.topAnchor.constraint(equalTo: locationCard.topAnchor, constant: 16),
+            locationUpdatesSwitch.trailingAnchor.constraint(equalTo: locationCard.trailingAnchor, constant: -18),
+            locationUpdatesSwitch.centerYAnchor.constraint(equalTo: locationCard.centerYAnchor),
+            locationDetail.leadingAnchor.constraint(equalTo: locationTitle.leadingAnchor),
+            locationDetail.trailingAnchor.constraint(equalTo: locationUpdatesSwitch.leadingAnchor, constant: -16),
+            locationDetail.topAnchor.constraint(equalTo: locationTitle.bottomAnchor, constant: 5),
+            radiusTitle.leadingAnchor.constraint(equalTo: locationTitle.leadingAnchor),
+            radiusTitle.topAnchor.constraint(equalTo: locationDetail.bottomAnchor, constant: 14),
+            locationRadiusField.leadingAnchor.constraint(equalTo: radiusTitle.trailingAnchor, constant: 12),
+            locationRadiusField.centerYAnchor.constraint(equalTo: radiusTitle.centerYAnchor),
+            locationRadiusField.widthAnchor.constraint(equalToConstant: 70),
+            meter.leadingAnchor.constraint(equalTo: locationRadiusField.trailingAnchor, constant: 4),
+            meter.centerYAnchor.constraint(equalTo: locationRadiusField.centerYAnchor),
+            locationRadiusSlider.leadingAnchor.constraint(equalTo: locationTitle.leadingAnchor),
+            locationRadiusSlider.trailingAnchor.constraint(equalTo: locationCard.trailingAnchor, constant: -18),
+            locationRadiusSlider.topAnchor.constraint(equalTo: radiusTitle.bottomAnchor, constant: 9),
+            rangeCaption.leadingAnchor.constraint(equalTo: locationTitle.leadingAnchor),
+            rangeCaption.topAnchor.constraint(equalTo: locationRadiusSlider.bottomAnchor, constant: 3),
+            rangeCaption.bottomAnchor.constraint(equalTo: locationCard.bottomAnchor, constant: -12)
+        ])
+        return row
+    }
+
+    private func policyCard() -> UIView {
+        let card = UIView()
+        card.translatesAutoresizingMaskIntoConstraints = false
+        applyGlass(to: card, cornerRadius: 22)
+        return card
+    }
+
+    private func policyTitle(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = text
+        label.textColor = textColor
+        label.font = UIFont.systemFont(ofSize: 16, weight: .black)
+        return label
+    }
+
+    private func policyDetail(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = text
+        label.textColor = detailTextColor
+        label.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
+        label.numberOfLines = 2
+        return label
+    }
+
+    private func policyCaption(_ text: String) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.text = text
+        label.textColor = detailTextColor.withAlphaComponent(0.88)
+        label.font = UIFont.systemFont(ofSize: 11, weight: .bold)
+        return label
+    }
+
     private func watermarkInfoRow() -> UIView {
         let row = UIView()
         row.translatesAutoresizingMaskIntoConstraints = false
@@ -17294,7 +17562,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.numberOfLines = 2
         sub.text = "기기 정보(모델/OS)는 보안상 변경되지 않으며 항상 표시됩니다."
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         row.addSubview(title)
@@ -17326,7 +17594,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.numberOfLines = 2
         sub.text = "작업자 이름, 로그인 ID, EMP 식별자는 토글 없이 항상 워터마크에 표시됩니다."
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         let value = UILabel()
@@ -17379,7 +17647,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let sub = UILabel()
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.text = subTitle
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         control.translatesAutoresizingMaskIntoConstraints = false
@@ -17414,7 +17682,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let sub = UILabel()
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.text = subTitle
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         segment.translatesAutoresizingMaskIntoConstraints = false
@@ -17466,6 +17734,11 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     @objc private func syncSliderChanged() {
         let value = Int(min(3599, max(5, round(Double(syncSlider.value)))))
         syncIntervalField.text = "\(value)"
+    }
+
+    @objc private func locationRadiusSliderChanged() {
+        let value = Int(min(5_000, max(100, round(Double(locationRadiusSlider.value)))))
+        locationRadiusField.text = "\(value)"
     }
 
     private func watermarkFontScale() -> CGFloat {
@@ -17556,7 +17829,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let sub = UILabel()
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.text = "워터마크 텍스트 색상(프리셋/직접 선택)"
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         let controlRow = UIStackView()
@@ -17751,7 +18024,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let sub = UILabel()
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.text = subTitle
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         valueLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -17791,7 +18064,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let sub = UILabel()
         sub.translatesAutoresizingMaskIntoConstraints = false
         sub.text = "앱 실행 시 생체 데이터 수집 상태를 유지합니다."
-        sub.textColor = mute
+        sub.textColor = detailTextColor
         sub.font = UIFont.systemFont(ofSize: 12, weight: .semibold)
 
         autoSwitch.translatesAutoresizingMaskIntoConstraints = false
@@ -17823,6 +18096,10 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         DashboardCredentialStore.savePassword(dashboardAdminPasswordField.text ?? "")
         let entered = Double(syncIntervalField.text ?? "") ?? Double(syncSlider.value)
         defaults.set(min(3599, max(5, entered.rounded())), forKey: PreviewSettingsKey.syncInterval)
+        defaults.set(timeUpdatesSwitch.isOn, forKey: PreviewSettingsKey.timeBasedUpdatesEnabled)
+        defaults.set(locationUpdatesSwitch.isOn, forKey: PreviewSettingsKey.locationBasedUpdatesEnabled)
+        let radius = Double(locationRadiusField.text ?? "") ?? Double(locationRadiusSlider.value)
+        defaults.set(min(5_000, max(100, radius.rounded())), forKey: PreviewSettingsKey.locationUpdateRadiusMeters)
         defaults.set(autoSwitch.isOn, forKey: PreviewSettingsKey.autoCollection)
         defaults.set(IntroGuideMode.saved.rawValue, forKey: PreviewSettingsKey.introGuideMode)
 
@@ -17851,6 +18128,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
         PhoneWatchBridge.shared.publishCurrentSession()
         onSave?()
+        settingsLocationManager.stopUpdatingLocation()
         dismiss(animated: true)
     }
 
@@ -17912,6 +18190,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
     }
 
     @objc private func close() {
+        settingsLocationManager.stopUpdatingLocation()
         dismiss(animated: true)
     }
 

@@ -116,6 +116,12 @@ struct SettingsView: View {
             }
 
             Section(L("워치 데이터 연동 주기")) {
+                Toggle(L("시간 기반 업데이트"), isOn: $settings.timeBasedUpdatesEnabled)
+
+                Text(L("켜면 아래 주기마다 상태를 배치 전송합니다."))
+                    .font(.caption2)
+                    .foregroundStyle(WatchTheme.muted)
+
                 NavigationLink {
                     SyncIntervalPickerView(intervalSeconds: $settings.syncIntervalSeconds)
                 } label: {
@@ -134,6 +140,27 @@ struct SettingsView: View {
                     Button(L("5분")) { settings.syncIntervalSeconds = 300 }
                 }
                 .font(.caption2)
+            }
+
+            Section(L("위치 기반 업데이트")) {
+                Toggle(L("기준 위치 이탈 시 업데이트"), isOn: $settings.locationBasedUpdatesEnabled)
+
+                if settings.locationBasedUpdatesEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(L("이탈 반경"))
+                            Spacer()
+                            Text("\(Int(settings.locationUpdateRadiusMeters))m")
+                                .foregroundStyle(WatchTheme.brand)
+                        }
+                        Slider(value: $settings.locationUpdateRadiusMeters, in: 100...5_000, step: 100)
+                    }
+                    .font(.caption2.weight(.semibold))
+
+                    Text(L("연속 GPS 대신 기준 위치 반경을 벗어날 때만 현재 위치와 워치 상태를 갱신합니다."))
+                        .font(.caption2)
+                        .foregroundStyle(WatchTheme.muted)
+                }
             }
 
             Section(L("언어")) {
