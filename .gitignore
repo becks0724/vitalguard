@@ -38,3 +38,10 @@ Thumbs.db
 demo/
 *.zip
 *.mp4
+
+# 감사 산출물 — 로컬 전용 (2026-07-27)
+# 지적사항·취약점 위치가 그대로 적혀 있어 저장소에 두지 않는다.
+# 파일은 디스크에 남고 추적만 하지 않는다. 과거 커밋에는 남아 있으므로,
+# GitHub 에서까지 지우려면 히스토리 재작성 + GitHub Support purge 요청이 별도로 필요하다.
+기존_조달청모듈/safetymonitor/docs/audit-*
+audit/
