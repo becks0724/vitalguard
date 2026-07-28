@@ -7,11 +7,11 @@
 import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { assessWorker, type WorkerAssignment } from "../../../../lib/assignment-service";
 import {
-  assessWorker,
-  formatAssignment,
-  type WorkerAssignment,
-} from "../../../../lib/assignment-service";
+  formatChatRuleFallback,
+  toClovaChatContext,
+} from "../../../../lib/assignment-chat-presentation";
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
 import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
 import {
@@ -35,35 +35,6 @@ const MAX_WORKERS_PER_QUERY = 3;
 const MAX_ALL_WORKERS = 20; // '전체 작업자' 요약 시 평가 상한.
 
 const SYSTEM_PROMPT = assignmentSystemInstruction();
-
-/** LLM에 넘길 사유 설명에서 구체 건수·시간 수치를 제거 — CLOVA가 숫자를 못 받으면 오인용(할루시네이션)이 불가능.
- *  정확한 수치는 배지·상세(결정적 레이어)가 담당한다. 법령 조문(제42조)·환경 note는 대상 아님. */
-function stripCounts(s: string): string {
-  return s.replace(/\s*\d+(?:\.\d+)?\s*(?:건|시간|회|분|%)/g, "").replace(/\s{2,}/g, " ").trim();
-}
-
-/** LLM 전달용 최소 데이터(가명 ID·등급·사유 라벨·태그 권고·환경 요약만 — 원시 생체·구체 수치 비포함). */
-function toLlmContext(a: WorkerAssignment) {
-  return {
-    workerId: a.workerId,
-    grade: GRADE_LABEL[a.condition.grade],
-    reasons: a.condition.reasons.map((r) => ({ label: r.label, detail: stripCounts(r.detail) })),
-    note: stripCounts(a.advice.note),
-    environment: {
-      기상특보: a.environment.warningSummary,
-      가스감지기: a.environment.gaspodSummary,
-      안내: a.environment.notes,
-    },
-    // 과업지시서가 등록돼 있으면 그 태그만 검토 대상(없으면 전체 어휘).
-    taskScope: a.taskDoc ? a.taskDoc.tags : "전체 위험작업 어휘(과업지시서 미등록)",
-    tags: a.advice.perTag.map((t) => ({
-      tag: t.tag,
-      recommendation: t.pending ? "보류(데이터 없음)" : t.allowed ? "배치 가능" : "배제 권고",
-      blockedBy: t.blockedBy.map((b) => b.label),
-      basis: t.basis,
-    })),
-  };
-}
 
 async function clovaReply(
   question: string,
@@ -257,13 +228,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "assessment_failed" }, { status: 500 });
   }
 
+  // 챗봇은 공용 assignment-service의 화면용 문구를 재사용하지 않는다.
+  // 사유 코드·배제 결과만 챗봇 전용 어댑터를 거쳐 CLOVA와 규칙 폴백으로 보낸다.
   const ruleText =
-    assignments.map(formatAssignment).join("\n\n") +
-    "\n\n최종 배치 결정 권한은 감독관에게 있습니다.";
+    formatChatRuleFallback(assignments) + "\n\n최종 배치 결정 권한은 감독관에게 있습니다.";
   const fallbackText =
-    "⚠ AI 어시스턴트 응답을 불러오지 못해 규칙 엔진 판정 원문을 표시합니다.\n\n" + ruleText;
+    "⚠ AI 어시스턴트 응답을 불러오지 못해 서버 안전 기준 요약을 표시합니다.\n\n" + ruleText;
 
-  const contexts = assignments.map(toLlmContext);
+  const contexts = assignments.map(toClovaChatContext);
   const outputPolicyContext = {
     allowedCount: assignments.reduce(
       (count, assignment) => count + assignment.advice.perTag.filter((tag) => tag.allowed).length,
