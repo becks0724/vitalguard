@@ -10,6 +10,7 @@ import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { assessWorker, type WorkerAssignment } from "../../../../lib/assignment-service";
 import {
   formatChatRuleFallback,
+  toChatTaskSummary,
   toClovaChatContext,
 } from "../../../../lib/assignment-chat-presentation";
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
@@ -236,11 +237,14 @@ export async function POST(request: Request) {
     "⚠ AI 어시스턴트 응답을 불러오지 못해 서버 안전 기준 요약을 표시합니다.\n\n" + ruleText;
 
   const contexts = assignments.map(toClovaChatContext);
+  // LLM 문장과 별개로 UI가 서버 확정 작업명을 항상 표시하는 결정적 계층.
+  const taskSummaries = assignments.map(toChatTaskSummary);
   const outputPolicyContext = {
     allowedCount: assignments.reduce(
       (count, assignment) => count + assignment.advice.perTag.filter((tag) => tag.allowed).length,
       0,
     ),
+    taskLists: taskSummaries,
   };
   const outputPolicy = assignmentOutputPolicyInstruction(outputPolicyContext);
   try {
@@ -279,6 +283,7 @@ export async function POST(request: Request) {
           reply: ruleText,
           source: "rule",
           assignments,
+          taskSummaries,
           disclaimer: CONDITION_DISCLAIMER,
         });
       }
@@ -288,10 +293,11 @@ export async function POST(request: Request) {
       console.warn("[assignment-chat] 비한국어 응답 감지 → 규칙 텍스트로 대체");
       return NextResponse.json({
         ok: true,
-        reply: ruleText,
-        source: "rule",
-        assignments,
-        disclaimer: CONDITION_DISCLAIMER,
+          reply: ruleText,
+          source: "rule",
+          assignments,
+          taskSummaries,
+          disclaimer: CONDITION_DISCLAIMER,
       });
     }
     return NextResponse.json({
@@ -299,6 +305,7 @@ export async function POST(request: Request) {
       reply,
       source: "clova",
       assignments,
+      taskSummaries,
       disclaimer: CONDITION_DISCLAIMER,
     });
   } catch (err) {
@@ -308,6 +315,7 @@ export async function POST(request: Request) {
       reply: fallbackText,
       source: "rule",
       assignments,
+      taskSummaries,
       disclaimer: CONDITION_DISCLAIMER,
     });
   }

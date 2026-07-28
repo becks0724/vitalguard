@@ -44,6 +44,49 @@ test("의료적 상태 추정 표현을 감지한다", () => {
   );
 });
 
+test("사람의 컨디션 단정 대신 배치 참고 등급을 요구한다", () => {
+  const context = { allowedCount: 1 };
+  assert.deepEqual(
+    findAiReplyPolicyViolations("EMP-admin6861님의 컨디션은 주의 단계입니다.", context).map(
+      (violation) => violation.code,
+    ),
+    ["PERSON_CONDITION_LABEL"],
+  );
+  assert.deepEqual(
+    findAiReplyPolicyViolations("EMP-admin6861의 배치 참고 등급은 주의입니다.", context),
+    [],
+  );
+});
+
+test("서버 확정 작업명은 CLOVA 답변에서 빠짐없이 열거해야 한다", () => {
+  const context = {
+    allowedCount: 4,
+    taskLists: [
+      {
+        workerId: "EMP-admin6861",
+        blockedTags: ["고소작업", "중장비/양중"],
+        allowedTags: ["굴착/흙막이", "밀폐공간", "해체/철거", "도장/화기"],
+        pendingTags: [],
+      },
+    ],
+  };
+  assert.deepEqual(
+    findAiReplyPolicyViolations(
+      "배치 참고 등급은 주의입니다. 일부 고위험 작업은 배제 권고 대상입니다.",
+      context,
+    ).map((violation) => violation.code),
+    ["TASK_LIST_DISCLOSURE"],
+  );
+  assert.deepEqual(
+    findAiReplyPolicyViolations(
+      "배치 참고 등급은 주의입니다. 배제 권고 작업은 고소작업, 중장비/양중입니다. 배치 가능 작업은 굴착/흙막이, 밀폐공간, 해체/철거, 도장/화기입니다.",
+      context,
+    ),
+    [],
+  );
+  assert.match(assignmentOutputPolicyInstruction(context), /서버 확정 작업 목록/);
+});
+
 test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한다", () => {
   const noAllowed = { allowedCount: 0 };
   const violations = findAiReplyPolicyViolations(

@@ -13,11 +13,20 @@ type VerdictBadge = {
   allowed: number; // 배치 가능 태그 수
 };
 
+// 서버가 확정한 작업 목록. LLM 문장과 분리해 누락·환각 없이 표시한다.
+type TaskSummary = {
+  workerId: string;
+  blockedTags: string[];
+  allowedTags: string[];
+  pendingTags: string[];
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
   source?: "clova" | "rule";
   badges?: VerdictBadge[];
+  taskSummaries?: TaskSummary[];
   candidates?: { workerId: string; name: string }[];
 };
 
@@ -32,6 +41,7 @@ type ChatResponse = {
     condition: { grade: VerdictBadge["grade"] };
     advice: { perTag: { allowed: boolean; pending: boolean }[] };
   }[];
+  taskSummaries?: TaskSummary[];
   candidates?: { workerId: string; name: string }[];
 };
 
@@ -146,6 +156,7 @@ export default function AssignmentChatBoard() {
             text: json.reply as string,
             source: json.source,
             badges,
+            taskSummaries: json.taskSummaries,
             candidates: json.candidates,
           },
         ]);
@@ -226,6 +237,25 @@ export default function AssignmentChatBoard() {
                 </div>
               ) : null}
             </div>
+            {m.role === "assistant" && m.taskSummaries && m.taskSummaries.length > 0 ? (
+              <div className="w-[85%] max-w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200">
+                <div className="mb-1 font-semibold text-zinc-800 dark:text-zinc-100">서버 판정 작업 목록</div>
+                {m.taskSummaries.map((summary) => (
+                  <div key={summary.workerId} className="space-y-0.5">
+                    <div className="font-medium">{summary.workerId}</div>
+                    {summary.blockedTags.length > 0 ? (
+                      <div>배제 권고: {summary.blockedTags.join(", ")}</div>
+                    ) : null}
+                    {summary.allowedTags.length > 0 ? (
+                      <div>배치 가능: {summary.allowedTags.join(", ")}</div>
+                    ) : null}
+                    {summary.pendingTags.length > 0 ? (
+                      <div>판단 보류: {summary.pendingTags.join(", ")}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
             {m.role === "assistant" && m.candidates && m.candidates.length > 0 ? (
               <div className="flex max-w-[85%] flex-wrap gap-2">
                 {m.candidates.map((candidate) => (

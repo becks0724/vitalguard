@@ -43,7 +43,7 @@ const CHAT_REASON_LABEL: Record<ConditionReasonCode, string> = {
   SITE_ENV: "현장 환경 안전 신호",
 };
 
-type ChatAssignmentSummary = {
+export type ChatAssignmentTaskSummary = {
   workerId: string;
   grade: string;
   reasonLabels: string[];
@@ -53,7 +53,8 @@ type ChatAssignmentSummary = {
   conclusion: string;
 };
 
-function summarizeAssignment(assignment: ChatAssignment): ChatAssignmentSummary {
+/** 챗봇 UI·하네스에 공통으로 쓰는 서버 확정 작업 목록. */
+export function toChatTaskSummary(assignment: ChatAssignment): ChatAssignmentTaskSummary {
   const allowedTags = assignment.advice.perTag.filter((tag) => tag.allowed).map((tag) => tag.tag);
   const blockedTags = assignment.advice.perTag
     .filter((tag) => !tag.allowed && !tag.pending)
@@ -81,7 +82,7 @@ function summarizeAssignment(assignment: ChatAssignment): ChatAssignmentSummary 
 
 /** CLOVA에는 공용 화면용 문장·수치 대신 챗봇 전용 사실 DTO만 전달한다. */
 export function toClovaChatContext(assignment: ChatAssignment) {
-  const summary = summarizeAssignment(assignment);
+  const summary = toChatTaskSummary(assignment);
   return {
     workerId: summary.workerId,
     배치참고등급: summary.grade,
@@ -103,7 +104,7 @@ export function toClovaChatContext(assignment: ChatAssignment) {
 export function formatChatRuleFallback(assignments: readonly ChatAssignment[]): string {
   return assignments
     .map((assignment) => {
-      const summary = summarizeAssignment(assignment);
+      const summary = toChatTaskSummary(assignment);
       const lines = [
         `작업자 ${summary.workerId} — 배치 참고 등급: ${summary.grade}`,
         `배치 가능 ${summary.allowedTags.length}종 · 배제 권고 ${summary.blockedTags.length}종`,
@@ -112,6 +113,9 @@ export function formatChatRuleFallback(assignments: readonly ChatAssignment[]): 
       lines.push(summary.conclusion);
       if (summary.blockedTags.length > 0) {
         lines.push(`- 배제 권고 작업: ${summary.blockedTags.join(", ")}`);
+      }
+      if (summary.allowedTags.length > 0) {
+        lines.push(`- 배치 가능 작업: ${summary.allowedTags.join(", ")}`);
       }
       if (summary.pendingTags.length > 0) {
         lines.push(`- 판단 보류 작업: ${summary.pendingTags.join(", ")}`);

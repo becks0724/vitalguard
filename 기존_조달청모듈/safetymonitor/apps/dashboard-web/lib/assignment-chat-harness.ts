@@ -94,10 +94,20 @@ export function assignmentSystemInstruction(): string {
 
 export type AssignmentOutputPolicyContext = {
   allowedCount: number;
+  /** 서버가 확정한 태그 목록. 모델은 이 목록을 빠뜨리거나 새로 만들 수 없다. */
+  taskLists?: readonly {
+    workerId: string;
+    blockedTags: readonly string[];
+    allowedTags: readonly string[];
+    pendingTags: readonly string[];
+  }[];
 };
 
 type AssignmentOutputPolicyRule = {
-  layer: Extract<AssignmentHarnessLayerId, "SAFETY_LANGUAGE" | "ASSIGNMENT_AUTHORITY">;
+  layer: Extract<
+    AssignmentHarnessLayerId,
+    "SAFETY_LANGUAGE" | "ASSIGNMENT_AUTHORITY" | "RESPONSE_INTEGRITY"
+  >;
   code: string;
   label: string;
   pattern: RegExp;
@@ -106,6 +116,8 @@ type AssignmentOutputPolicyRule = {
   repair: string;
   normalize?: (reply: string) => string;
   when?: (context: AssignmentOutputPolicyContext) => boolean;
+  /** pattern 으로 표현하기 어려운 서버 사실값 누락은 이 계층에서 결정적으로 검사한다. */
+  violates?: (reply: string, context: AssignmentOutputPolicyContext) => boolean;
 };
 
 /**
@@ -127,6 +139,16 @@ export const AI_REPLY_POLICY: {
         "피로, 회복, 재발, 건강 상태, 신체 상태, 증상, 질환, 진단, 예상, 우려라는 표현을 사용하지 말 것.",
       repair:
         "직전 답변에 의료적 상태 추정 또는 예측 표현이 포함됐다. 피로, 회복, 재발, 건강 상태, 신체 상태, 증상, 질환, 진단, 예상, 우려를 쓰지 말고 안전 이벤트 기록·안전 기준 적용·관리자 확인·배제 권고만으로 다시 작성해라.",
+    },
+    {
+      layer: "SAFETY_LANGUAGE",
+      code: "PERSON_CONDITION_LABEL",
+      label: "사람의 컨디션·상태 단정",
+      pattern: /(?:님의?|작업자의?)\s*컨디션(?:은|이)|컨디션\s*(?:은|이)\s*(?:양호|주의|제한|미판정)|건강\s*단계/,
+      instruction:
+        "사람의 컨디션·상태를 단정하지 말 것. 등급은 반드시 '배치 참고 등급' 또는 '서버 안전 기준상 등급'으로 표현할 것.",
+      repair:
+        "직전 답변이 사람의 컨디션이나 상태를 단정했다. '배치 참고 등급' 또는 '서버 안전 기준상 등급'으로 바꾸고, 서버 안전 신호와 작업 배제 권고만 설명해라.",
     },
     {
       layer: "ASSIGNMENT_AUTHORITY",
@@ -183,6 +205,27 @@ export const AI_REPLY_POLICY: {
       repair:
         "직전 답변이 서버 판정에 없는 미래 배치를 암시했다. 현재 배치 가능 작업은 0종이므로 작업 가능·진행·허용·투입·배치 권고·배치 검토 표현 없이, 등록된 고위험 작업의 배제 권고·안전 이벤트·관리자 확인만 설명해라.",
     },
+    {
+      layer: "RESPONSE_INTEGRITY",
+      code: "TASK_LIST_DISCLOSURE",
+      label: "서버 확정 작업 목록 누락",
+      pattern: /$^/,
+      when: (context) => (context.taskLists ?? []).some((list) =>
+        [list.blockedTags, list.allowedTags, list.pendingTags].some((tags) => tags.length > 0),
+      ),
+      violates: (reply, context) => {
+        const normalized = reply.replace(/\s+/g, " ");
+        return (context.taskLists ?? []).some((list) =>
+          [...list.blockedTags, ...list.allowedTags, ...list.pendingTags].some(
+            (tag) => !normalized.includes(tag),
+          ),
+        );
+      },
+      instruction:
+        "서버가 제공한 배제 권고 작업·배치 가능 작업·판단 보류 작업이 있으면, 각 작업명을 빠짐없이 그대로 열거할 것. '일부 작업'처럼 뭉뚱그리거나 서버에 없는 작업명을 추가하지 말 것.",
+      repair:
+        "직전 답변이 서버가 확정한 작업 목록을 누락했다. 서버 판정 데이터의 배제 권고 작업·배치 가능 작업·판단 보류 작업 이름을 각각 빠짐없이 그대로 열거하고, 일부 작업 같은 모호한 표현을 쓰지 말 것.",
+    },
   ],
 };
 
@@ -198,9 +241,18 @@ export type AiReplyPolicyViolation = {
 /** 현재 서버 판정에 맞는 LLM 출력 정책을 만든다. */
 export function assignmentOutputPolicyInstruction(context: AssignmentOutputPolicyContext): string {
   const rules = activeOutputPolicyRules(context);
+  const taskListFacts = (context.taskLists ?? [])
+    .map(
+      (list) =>
+        `${list.workerId}: 배제 권고=${list.blockedTags.join(", ") || "없음"}; ` +
+        `배치 가능=${list.allowedTags.join(", ") || "없음"}; ` +
+        `판단 보류=${list.pendingTags.join(", ") || "없음"}`,
+    )
+    .join(" / ");
   return (
     "[출력 정책 — 서버 강제] 적용 계층: 안전 언어, 배치 권한 언어. " +
     `현재 판정의 배치 가능 작업 수는 ${context.allowedCount}종이다. ` +
+    (taskListFacts ? `서버 확정 작업 목록: ${taskListFacts}. ` : "") +
     rules.map((rule) => rule.instruction).join(" ") +
     " 서버 판정 데이터에 없는 허용·의료적 해석·최종 결정을 만들지 말 것."
   );
@@ -213,7 +265,13 @@ export function findAiReplyPolicyViolations(
 ): AiReplyPolicyViolation[] {
   const normalized = reply.replace(/\s+/g, " ");
   return activeOutputPolicyRules(context)
-    .filter((rule) => (rule.required ? !rule.pattern.test(normalized) : rule.pattern.test(normalized)))
+    .filter((rule) =>
+      rule.violates
+        ? rule.violates(normalized, context)
+        : rule.required
+          ? !rule.pattern.test(normalized)
+          : rule.pattern.test(normalized),
+    )
     .map(({ code, label }) => ({ code, label }));
 }
 
