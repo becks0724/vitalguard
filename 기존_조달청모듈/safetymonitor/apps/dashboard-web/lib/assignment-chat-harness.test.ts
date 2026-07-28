@@ -47,14 +47,14 @@ test("의료적 상태 추정 표현을 감지한다", () => {
 test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한다", () => {
   const noAllowed = { allowedCount: 0 };
   const violations = findAiReplyPolicyViolations(
-    "일반 작업 배치는 감독관 판단에 따라 진행되어야 합니다.",
+    "등록된 고위험 작업은 배제 권고 대상입니다. 일반 작업 배치는 감독관 판단에 따라 진행되어야 합니다.",
     noAllowed,
   );
   assert.deepEqual(violations.map((violation) => violation.code), ["UNSUPPORTED_WORK_PERMISSION"]);
   assert.match(assignmentOutputPolicyInstruction(noAllowed), /일반 작업 가능/);
   assert.deepEqual(
     findAiReplyPolicyViolations(
-      "등록된 위험 작업은 배제 권고 대상이며 관리자 확인 후 재판정이 필요합니다.",
+      "등록된 고위험 작업은 배제 권고 대상입니다. 관리자 확인 및 최신 안전 기준 재판정이 필요합니다.",
       noAllowed,
     ),
     [],
@@ -65,17 +65,36 @@ test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한�
   );
 });
 
+test("배치 가능 0종이면 고위험 작업 배제 권고 결론을 반드시 포함한다", () => {
+  const noAllowed = { allowedCount: 0 };
+  const missingConclusion = findAiReplyPolicyViolations(
+    "낙상 신호와 미대응 경보가 기록되어 관리자 확인이 필요합니다.",
+    noAllowed,
+  );
+  assert.deepEqual(missingConclusion.map((violation) => violation.code), ["ZERO_ALLOWED_EXCLUSION_CONCLUSION"]);
+  assert.match(assignmentOutputPolicyInstruction(noAllowed), /반드시 '등록된 고위험 작업은 배제 권고 대상입니다'/);
+
+  const futurePlacement = findAiReplyPolicyViolations(
+    "등록된 고위험 작업은 배제 권고 대상입니다. 경보 확인 후 배치가 권고됩니다.",
+    noAllowed,
+  );
+  assert.deepEqual(futurePlacement.map((violation) => violation.code), ["UNSUPPORTED_WORK_PERMISSION"]);
+});
+
 test("작업 배치 문구의 확정적 지시를 감지하고 권고형 교정을 제공한다", () => {
   const violations = findAiReplyPolicyViolations(
     "고위험 작업을 피해야 하며 해당 작업에서 제외되어야 합니다.",
     { allowedCount: 0 },
   );
-  assert.deepEqual(violations.map((violation) => violation.code), ["ASSIGNMENT_DETERMINISTIC_TONE"]);
+  assert.deepEqual(violations.map((violation) => violation.code), [
+    "ASSIGNMENT_DETERMINISTIC_TONE",
+    "ZERO_ALLOWED_EXCLUSION_CONCLUSION",
+  ]);
   assert.match(assignmentOutputPolicyInstruction({ allowedCount: 0 }), /배제해야, 피해야/);
   assert.match(assignmentOutputPolicyRepairInstruction(violations), /모든 문장에 반드시 권고·검토·관리자 확인/);
   assert.deepEqual(
     findAiReplyPolicyViolations(
-      "등록된 고위험 작업은 배제 권고 대상이며 관리자 확인 후 배치를 검토합니다.",
+      "등록된 고위험 작업은 배제 권고 대상이며 관리자 확인 및 최신 안전 기준 재판정이 필요합니다.",
       { allowedCount: 0 },
     ),
     [],
@@ -89,7 +108,7 @@ test("권고형 정규화는 CLOVA의 판정 내용 대신 확정적 배치 말�
   );
   assert.match(normalized, /고소작업, 굴착\/흙막이 작업은 배제 권고 대상이며/);
   assert.match(normalized, /해당 작업은 배제 권고 대상입니다/);
-  assert.deepEqual(findAiReplyPolicyViolations(normalized, { allowedCount: 0 }), []);
+  assert.deepEqual(findAiReplyPolicyViolations(normalized, { allowedCount: 1 }), []);
 });
 
 test("유효한 판정 문맥을 무시하는 표준 범위 거절문을 감지한다", () => {

@@ -101,6 +101,7 @@ type AssignmentOutputPolicyRule = {
   code: string;
   label: string;
   pattern: RegExp;
+  required?: boolean;
   instruction: string;
   repair: string;
   normalize?: (reply: string) => string;
@@ -160,15 +161,27 @@ export const AI_REPLY_POLICY: {
     },
     {
       layer: "ASSIGNMENT_AUTHORITY",
+      code: "ZERO_ALLOWED_EXCLUSION_CONCLUSION",
+      label: "배치 가능 0종의 필수 배제 결론",
+      when: (context: AssignmentOutputPolicyContext) => context.allowedCount === 0,
+      required: true,
+      pattern: /등록된\s*고위험\s*작업(?:들은|은)?\s*배제\s*권고\s*대상/,
+      instruction:
+        "배치 가능 작업이 0종이면 답변에 반드시 '등록된 고위험 작업은 배제 권고 대상입니다'라는 결론을 포함할 것. 이 결론 없이 개별 사유만 설명하지 말 것.",
+      repair:
+        "현재 배치 가능 작업은 0종이다. 답변에 반드시 '등록된 고위험 작업은 배제 권고 대상입니다.'를 포함하고, 그 뒤에 서버 판정의 안전 이벤트와 관리자 확인 필요만 설명해라. 미래 배치 가능성이나 배치 검토를 말하지 마라.",
+    },
+    {
+      layer: "ASSIGNMENT_AUTHORITY",
       code: "UNSUPPORTED_WORK_PERMISSION",
       label: "근거 없는 작업 허용",
       when: (context: AssignmentOutputPolicyContext) => context.allowedCount === 0,
       pattern:
-        /(?:일반\s*)?작업\s*(?:배치|진행|수행).*?(?:가능|허용|진행)|(?:문제\s*없|즉시\s*투입|제한\s*없)/,
+        /(?:일반\s*)?작업\s*(?:배치|진행|수행).*?(?:가능|허용|진행)|배치(?:가|를)?\s*(?:권고|검토|가능|허용|진행)|(?:문제\s*없|즉시\s*투입|제한\s*없)/,
       instruction:
-        "배치 가능 작업이 0종인 판정에서는 일반 작업 가능, 작업 진행·수행 가능, 허용, 문제없음, 즉시 투입, 제한 없음을 말하지 말 것.",
+        "배치 가능 작업이 0종인 판정에서는 일반 작업 가능, 작업 진행·수행 가능, 배치 권고·배치 검토, 허용, 문제없음, 즉시 투입, 제한 없음을 말하지 말 것.",
       repair:
-        "직전 답변이 서버 판정에 없는 작업 허용을 만들었다. 현재 배치 가능 작업은 0종이므로 작업 가능·진행·허용·투입 표현 없이 안전 이벤트·배제 권고·관리자 확인만 설명해라.",
+        "직전 답변이 서버 판정에 없는 미래 배치를 암시했다. 현재 배치 가능 작업은 0종이므로 작업 가능·진행·허용·투입·배치 권고·배치 검토 표현 없이, 등록된 고위험 작업의 배제 권고·안전 이벤트·관리자 확인만 설명해라.",
     },
   ],
 };
@@ -200,7 +213,7 @@ export function findAiReplyPolicyViolations(
 ): AiReplyPolicyViolation[] {
   const normalized = reply.replace(/\s+/g, " ");
   return activeOutputPolicyRules(context)
-    .filter((rule) => rule.pattern.test(normalized))
+    .filter((rule) => (rule.required ? !rule.pattern.test(normalized) : rule.pattern.test(normalized)))
     .map(({ code, label }) => ({ code, label }));
 }
 
