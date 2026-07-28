@@ -11,7 +11,7 @@
     "build": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web build",
     "test": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web test",
     "lint": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web lint",
-    "typecheck": "pnpm -r --filter=./packages/* --filter=./apps/dashboard-web typecheck",
+    "typecheck": "pnpm run prepare:packages && pnpm -r --filter=./packages/* --filter=./apps/dashboard-web typecheck",
     "dev:web": "pnpm --filter @safetymonitor/dashboard-web dev",
     "mock:publish": "node scripts/mock-publish.mjs",
     "prepare:packages": "pnpm --filter @safetymonitor/schemas build && pnpm --filter @safetymonitor/analyzers build"
