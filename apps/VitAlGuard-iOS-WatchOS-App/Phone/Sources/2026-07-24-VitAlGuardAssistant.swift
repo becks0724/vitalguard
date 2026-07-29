@@ -479,7 +479,8 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             attachmentStack.heightAnchor.constraint(equalTo: attachmentScrollView.frameLayoutGuide.heightAnchor),
             messageInputContainer.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             messageInputContainer.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            messageInputContainer.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            // Tracks the real keyboard frame, including Korean/third-party keyboards.
+            messageInputContainer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor),
             messageInputContainer.heightAnchor.constraint(equalToConstant: 66)
         ])
 

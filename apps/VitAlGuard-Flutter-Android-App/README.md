@@ -1,6 +1,6 @@
 # VitAlGuard Flutter
 
-VitAlGuard 8.1 (81)의 Android/Wear OS 중심 Flutter 앱입니다. 낙상 후보 규칙(자유낙하·충격·정지), 활력 데이터 계약, 현장 안전 대시보드와 휴대폰-시계 세션 동기화를 포함합니다.
+VitAlGuard 8.2 (82)의 Android/Wear OS 중심 Flutter 앱입니다. 낙상 후보 규칙(자유낙하·충격·정지), 활력 데이터 계약, 현장 안전 대시보드와 휴대폰-시계 세션 동기화를 포함합니다.
 
 ## 플랫폼 구성
 
