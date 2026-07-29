@@ -4419,6 +4419,12 @@ private enum DashboardCredentialStore {
         load(account: passwordAccount)
     }
 
+    // 로그아웃 시 관리자 비밀번호 잔존 제거(감사 IOS-KEY-01) — iOS 는 앱을 지워도 Keychain 이
+    // 남으므로, 삭제 경로가 없으면 기기 이양·공용 단말에서 다음 사용자에게 그대로 넘어간다.
+    static func deletePassword() {
+        delete(account: passwordAccount)
+    }
+
     static func saveAppJWT(_ token: String) {
         save(token, account: appJWTAccount)
     }
@@ -14262,6 +14268,7 @@ final class VitAlGuardPreviewController: UIViewController,
         UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appServerRole)
         UserDefaults.standard.synchronize()
         DashboardCredentialStore.deleteAppJWT()
+        DashboardCredentialStore.deletePassword()
         VitAlGuardSharedStorage.saveAppMode(.worker)
         WidgetCenter.shared.reloadAllTimelines()
         PhoneWatchBridge.shared.publishSignedOut(syncInterval: Double(syncIntervalSeconds))
