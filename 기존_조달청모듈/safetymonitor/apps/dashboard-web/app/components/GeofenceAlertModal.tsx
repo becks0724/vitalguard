@@ -73,9 +73,10 @@ export function GeofenceAlertModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 dark:bg-black/70"
       onClick={onDismiss}
     >
+      {/* 낮은 화면에서 하단 조치 버튼이 잘려 도달 불가였다 — 바깥 p-4(상하 2rem)를 뺀 높이로 상한 + 스크롤. */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md overflow-hidden rounded-2xl border bg-canvas shadow-xl dark:bg-surface-dark ${
+        className={`max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border bg-canvas shadow-xl dark:bg-surface-dark ${
           isEntry
             ? "border-orange-500/60 dark:border-orange-500/50"
             : "border-amber-500/60 dark:border-amber-500/50"

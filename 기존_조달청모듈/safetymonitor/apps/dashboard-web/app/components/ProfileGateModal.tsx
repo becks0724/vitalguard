@@ -59,8 +59,9 @@ export function ProfileGateModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
     >
+      {/* 낮은 화면에서 확인 버튼이 잘려 도달 불가였다 — 바깥 p-4(상하 2rem)를 뺀 높이로 상한 + 스크롤. */}
       <div
-        className="w-full max-w-sm rounded-2xl border border-hairline-strong bg-canvas p-5 dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas p-5 dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-sm font-bold text-ink dark:text-on-dark">비밀번호 확인</h2>
