@@ -16,7 +16,12 @@ import {
   toClovaChatContext,
 } from "../../../../lib/assignment-chat-presentation";
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
-import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
+import {
+  getMonitorSlots,
+  getWorkerAliasMap,
+  listAllWorkers,
+  listApprovedWorkerNames,
+} from "../../../../lib/db";
 import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import {
@@ -30,6 +35,7 @@ import {
   NORMAL_SCOPE_REPAIR,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
+  unresolvedPersonNames,
 } from "../../../../lib/assignment-chat-harness";
 
 export const runtime = "nodejs";
@@ -172,21 +178,29 @@ function isMostlyKorean(text: string): boolean {
 }
 
 /** 메시지에서 등록/수신 이력의 작업자 이름을 찾아 사번으로 해소한다.
- *  이름은 로그인 감독관의 입력이고 LLM 에는 전달하지 않으므로 PII 유출이 아니다(가명 사번만 판정에 사용). */
+ *  이름은 로그인 감독관의 입력이고 LLM 에는 전달하지 않으므로 PII 유출이 아니다(가명 사번만 판정에 사용).
+ *
+ *  조회 대상이 둘인 이유 — 생체 수신 이력(vital_samples)만 보면 "계정은 있는데 아직 워치
+ *  데이터가 없는 작업자"를 이름으로 못 찾는다. 그러면 아래 후속 문맥 폴백으로 새어 나가
+ *  직전 작업자의 판정을 그 사람의 것처럼 돌려주게 된다. 등록 계정까지 함께 해소해
+ *  "그 사람이되 데이터가 없다"(판단 보류)로 답하게 한다. */
 async function resolveByName(message: string): Promise<{ workerId: string; name: string }[]> {
-  const [workers, aliasMap] = await Promise.all([listAllWorkers(), getWorkerAliasMap()]);
+  const [workers, aliasMap, accounts] = await Promise.all([
+    listAllWorkers(),
+    getWorkerAliasMap(),
+    listApprovedWorkerNames().catch(() => []),
+  ]);
   const hits = new Map<string, { workerId: string; name: string }>();
-  for (const w of workers) {
+  const add = (workerId: string, name: string) => {
     // listAllWorkers는 생체 수신 테이블을 그대로 집계한다. 과거 앱이 남긴 로그인 ID 등은
     // 여기서 작업자로 승격하지 않는다. 챗봇의 안전 조회 기준은 workerId 하나다.
-    if (!isWorkerId(w.worker_id)) continue;
-    const name = (w.worker_name ?? "").trim();
-    if (name.length >= 2 && message.includes(name)) {
-      // 별칭(폰/워치 다른 사번) 폴딩 → 같은 사람은 primary 로 합침(진짜 동명이인은 서로 다른 primary 라 유지).
-      const primary = aliasMap[w.worker_id] ?? w.worker_id;
-      if (!hits.has(primary)) hits.set(primary, { workerId: primary, name });
-    }
-  }
+    if (!isWorkerId(workerId) || name.length < 2 || !message.includes(name)) return;
+    // 별칭(폰/워치 다른 사번) 폴딩 → 같은 사람은 primary 로 합침(진짜 동명이인은 서로 다른 primary 라 유지).
+    const primary = aliasMap[workerId] ?? workerId;
+    if (!hits.has(primary)) hits.set(primary, { workerId: primary, name });
+  };
+  for (const w of workers) add(w.worker_id, (w.worker_name ?? "").trim());
+  for (const a of accounts) add(a.workerId, a.name);
   return [...hits.values()];
 }
 
@@ -232,6 +246,8 @@ export async function POST(request: Request) {
     0,
     MAX_WORKERS_PER_QUERY,
   );
+  // 질문이 대상을 특정하지 않아 직전 조회 작업자로 답한 경우 — 응답에 그 사실을 밝힌다.
+  let usedFollowUpContext = false;
 
   // 사번을 못 찾은 경우: (1) 전체 조회 → (2) 이름 조회 → (3) 직전 단일 판정의 후속 질문 → (4) 도움말 순.
   // 후속 문맥은 클라이언트가 직전 서버 응답에서 받은 가명 ID 하나만 별도 필드로 전송한다.
@@ -293,9 +309,29 @@ export async function POST(request: Request) {
         disclaimer: CONDITION_DISCLAIMER,
       });
     } else {
+      // (2-1) 이름으로 보이는 말이 남아 있으면 후속 문맥으로 새지 않게 여기서 끊는다.
+      // 이 가드가 없으면 "김태곤 컨디션 알려줘"가 직전 조회 작업자(예: 장우진)의 판정을
+      // 김태곤의 것처럼 돌려준다 — 안전 판정에서 대상자가 바뀌는 오류다.
+      const unknownNames = unresolvedPersonNames(message);
+      if (unknownNames.length > 0) {
+        return NextResponse.json({
+          ok: true,
+          reply:
+            `${unknownNames.join(", ")} — 조회할 수 없는 작업자입니다.\n` +
+            "관제에 등록된 작업자 이름이나 사번으로 질문해 주세요.\n\n" +
+            '· 사번 조회: "EMP-6861 오늘 밀폐공간 배치 가능해?"\n' +
+            '· 전체 요약: "전체 작업자 컨디션 확인해줘"\n\n' +
+            "최종 배치 결정 권한은 감독관에게 있습니다.",
+          source: "rule",
+          disclaimer: CONDITION_DISCLAIMER,
+        });
+      }
       // (3) "배제 이유는?" 등 직전 단일 작업자에 대한 후속 질문.
       if (followUpWorkerIds.length === 1) {
         ids = followUpWorkerIds;
+        // 폴백을 실제로 쓸 때는 대상을 밝힌다 — 위 가드가 놓친 표현이 있어도
+        // 감독관이 "내가 물은 사람이 아니다"를 화면에서 바로 알아챌 수 있게 하는 2차 방어선.
+        usedFollowUpContext = true;
       } else {
         // (4) 도움말 — 무엇을 어떻게 물어보는지 안내(반복 문구 대체).
       return NextResponse.json({
@@ -321,10 +357,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "assessment_failed" }, { status: 500 });
   }
 
+  // 질문이 대상을 특정하지 않아 직전 조회 작업자로 답한 경우, 답변 첫 줄에 대상을 밝힌다.
+  // CLOVA 문장이든 규칙 폴백이든 동일하게 붙여, 감독관이 "내가 물은 사람이 맞나"를 먼저 본다.
+  const followUpNotice = usedFollowUpContext
+    ? `직전에 조회한 ${ids.join(", ")} 기준으로 답변합니다.\n\n`
+    : "";
+
   // 챗봇은 공용 assignment-service의 화면용 문구를 재사용하지 않는다.
   // 사유 코드·배제 결과만 챗봇 전용 어댑터를 거쳐 CLOVA와 규칙 폴백으로 보낸다.
   const ruleText =
-    formatChatRuleFallback(assignments) + "\n\n최종 배치 결정 권한은 감독관에게 있습니다.";
+    followUpNotice +
+    formatChatRuleFallback(assignments) +
+    "\n\n최종 배치 결정 권한은 감독관에게 있습니다.";
   const fallbackText =
     "⚠ AI 어시스턴트 응답을 불러오지 못해 서버 안전 기준 요약을 표시합니다.\n\n" + ruleText;
 
@@ -394,7 +438,7 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({
       ok: true,
-      reply,
+      reply: followUpNotice + reply,
       source: "clova",
       assignments,
       taskSummaries,

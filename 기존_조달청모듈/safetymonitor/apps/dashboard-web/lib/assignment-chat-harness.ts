@@ -339,3 +339,75 @@ export function parseFollowUpWorkerIds(value: unknown): string[] {
 export function isWorkerId(value: string): boolean {
   return /^(?:EMP|VW)-[A-Z0-9_-]+$/i.test(value.trim());
 }
+
+// ── 미해소 사람 이름 탐지 ───────────────────────────────────────────────────
+// 왜 필요한가 — 이름 조회가 실패하면 직전 단일 판정(후속 문맥)으로 답하는 경로가 있다.
+// 그 경로는 "배제 이유는?"처럼 주어가 생략된 질문을 위한 것인데, "김태곤 컨디션 알려줘"처럼
+// **다른 사람을 명시한 질문**에도 똑같이 발동해 엉뚱한 작업자의 배치 판정을 돌려줬다.
+// 안전 판정에서 대상자가 바뀌는 오류라, 이름으로 보이는 말이 남아 있으면 폴백하지 않고 거절한다.
+
+// 한국 성씨(단음절). 목록에 없으면 이름으로 보지 않아 후속 질문을 막지 않는다.
+const KOREAN_SURNAMES = new Set(
+  ("강고곽구국권기길김나남노도동류마명문민박반방배백변복서석선설성소손송신심안양어엄여연염오옥왕우원위유육윤은이임장전정제조주지진차채천최추탁태하한함허현형홍황").split(""),
+);
+// 복성 — 단음절 성씨 검사보다 먼저 본다.
+const KOREAN_COMPOUND_SURNAMES = ["남궁", "제갈", "선우", "황보", "사공", "서문", "독고", "동방"];
+
+// 성씨로 시작하지만 사람이 아닌 챗봇 도메인 어휘. 여기 없으면 이름 후보로 잡혀 거절되므로,
+// 실패 방향이 "엉뚱한 사람 판정"이 아니라 "다시 질문 요청"이다(fail-closed).
+const ASSIGNMENT_DOMAIN_TOKENS = new Set([
+  // 위험작업 어휘
+  "고소작업", "굴착", "흙막이", "밀폐공간", "중장비", "양중", "해체", "철거", "도장", "화기",
+  // 판정·상태 어휘
+  "배치", "배제", "제한", "주의", "양호", "정상", "위험", "안전", "판정", "등급", "컨디션",
+  "상태", "보류", "허용", "가능", "불가", "이유", "사유", "근거", "신호", "경보", "낙상",
+  // 조회 범위·시점 어휘
+  "전체", "전원", "인원", "오늘", "어제", "내일", "최근", "지금", "방금", "오전", "오후",
+  "하루", "정보", "추가", "현장", "문의", "설명", "확인", "요약", "작업", "작업자",
+]);
+
+// 조사·종결어미 — 이름 뒤에 붙는 말을 떼어 내 "김태곤이" 를 "김태곤" 으로 본다.
+// 긴 것부터 검사해야 "이라도" 가 "이" 로 잘리지 않는다.
+const TRAILING_PARTICLES = [
+  "이라도", "으로는", "에서는", "까지", "부터", "보다", "처럼", "마다", "조차", "이나",
+  "에서", "으로", "인가요", "인가", "나요", "가요", "해줘", "해주세요", "주세요", "알려줘",
+  "말해줘", "어때", "은요", "는요",
+  "은", "는", "이", "가", "을", "를", "의", "도", "만", "과", "와", "랑", "에", "로", "요", "야", "님", "씨",
+];
+
+function stripTrailingParticle(token: string): string {
+  for (const particle of TRAILING_PARTICLES) {
+    if (token.length > particle.length && token.endsWith(particle)) {
+      return token.slice(0, token.length - particle.length);
+    }
+  }
+  return token;
+}
+
+function startsWithSurname(token: string): boolean {
+  if (KOREAN_COMPOUND_SURNAMES.some((s) => token.startsWith(s))) return true;
+  return KOREAN_SURNAMES.has(token[0] ?? "");
+}
+
+/**
+ * 메시지에서 "사람 이름으로 보이는데 서버가 해소하지 못한" 말을 찾는다.
+ * 이름 조회(vital_samples·등록 계정)가 모두 실패한 뒤에만 호출한다.
+ *
+ * @param knownNames 이미 해소된 이름들 — 여기 포함된 말은 후보에서 제외한다.
+ */
+export function unresolvedPersonNames(
+  message: string,
+  knownNames: readonly string[] = [],
+): string[] {
+  const known = new Set(knownNames.map((n) => n.trim()).filter(Boolean));
+  const found: string[] = [];
+  for (const run of message.match(/[가-힣]+/g) ?? []) {
+    const token = stripTrailingParticle(run);
+    // 한국 이름은 성 1~2자 + 이름 1~2자라 2~4음절이다. 그 밖은 이름으로 보지 않는다.
+    if (token.length < 2 || token.length > 4) continue;
+    if (known.has(token) || ASSIGNMENT_DOMAIN_TOKENS.has(token)) continue;
+    if (!startsWithSurname(token)) continue;
+    if (!found.includes(token)) found.push(token);
+  }
+  return found;
+}

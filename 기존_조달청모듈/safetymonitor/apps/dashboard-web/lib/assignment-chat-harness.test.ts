@@ -13,6 +13,7 @@ import {
   normalizeAiReplyPolicyLanguage,
   parseFollowUpWorkerIds,
   SERVER_VERIFIED_CONTEXT_NOTICE,
+  unresolvedPersonNames,
 } from "./assignment-chat-harness";
 
 test("하네스 계층은 단일 레지스트리에 고정된 순서로 등록한다", () => {
@@ -176,6 +177,41 @@ test("직전 단일 서버 판정의 가명 사번만 후속 질문 문맥으로
   assert.deepEqual(parseFollowUpWorkerIds(["장우진"]), []);
   assert.deepEqual(parseFollowUpWorkerIds("EMP-admin6861"), []);
   assert.deepEqual(parseFollowUpWorkerIds([{ workerId: "EMP-admin6861" }]), []);
+});
+
+test("해소되지 않은 사람 이름을 찾아 후속 문맥 폴백을 막는다", () => {
+  // 이 버그의 재현 조건: 이름 조회가 실패했는데 직전 작업자(장우진)로 답해버렸다.
+  assert.deepEqual(unresolvedPersonNames("김태곤 컨디션 알려줘"), ["김태곤"]);
+  assert.deepEqual(unresolvedPersonNames("김태곤이 오늘 밀폐공간 가능해?"), ["김태곤"]);
+  assert.deepEqual(unresolvedPersonNames("최민수랑 박서준 배치 알려줘"), ["최민수", "박서준"]);
+  // 복성도 이름으로 본다.
+  assert.deepEqual(unresolvedPersonNames("남궁민 컨디션"), ["남궁민"]);
+  // 이미 해소된 이름은 후보에서 뺀다(정상 이름 조회를 막지 않는다).
+  assert.deepEqual(unresolvedPersonNames("장우진 컨디션 알려줘", ["장우진"]), []);
+});
+
+test("주어 없는 후속 질문은 이름으로 오인하지 않는다(폴백 유지)", () => {
+  // 여기서 하나라도 이름으로 잡히면 정상 후속 질문이 도움말로 빠져 기능이 죽는다.
+  for (const followUp of [
+    "배제 이유는?",
+    "왜?",
+    "자세히 설명해줘",
+    "그럼 밀폐공간은 가능해?",
+    "고소작업 배치 가능한가요?",
+    "지금 상태 확인해줘",
+    "오늘 등급 알려줘",
+    "전체 작업자 컨디션 확인해줘",
+    "추가 정보 있어?",
+    "안전 신호 근거가 뭐야?",
+  ]) {
+    assert.deepEqual(unresolvedPersonNames(followUp), [], `후속 질문 오탐: ${followUp}`);
+  }
+});
+
+test("성씨로 시작하지 않거나 음절 수가 이름 범위를 벗어나면 이름으로 보지 않는다", () => {
+  assert.deepEqual(unresolvedPersonNames("밀폐공간 알려줘"), []); // 성씨 아님
+  assert.deepEqual(unresolvedPersonNames("김"), []); // 1음절
+  assert.deepEqual(unresolvedPersonNames("김태곤이라는사람"), []); // 5음절 초과
 });
 
 test("로그인 계정 ID는 작업자 후보로 취급하지 않는다", () => {

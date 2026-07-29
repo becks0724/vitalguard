@@ -2465,6 +2465,23 @@ export async function listUsers(): Promise<UserRow[]> {
   return rows;
 }
 
+// 등록 계정의 이름 ↔ 사번 목록(챗봇 이름 조회용).
+// vital_samples 집계(listAllWorkers)는 "생체를 보낸 적 있는 사람"만 담는다. 그래서 계정은 있으나
+// 아직 워치 데이터가 없는 작업자는 이름으로 못 찾고, 챗봇이 직전 작업자로 잘못 답했다.
+// 여기서는 판정에 필요한 두 열만 읽는다(비밀번호 해시 등은 이 경로로 끌어오지 않는다).
+export async function listApprovedWorkerNames(): Promise<
+  { workerId: string; name: string }[]
+> {
+  const { rows } = await q<{ employee_id: string; name: string }>(
+    `SELECT employee_id, name
+       FROM users
+      WHERE status = 'approved'
+        AND employee_id IS NOT NULL AND employee_id <> ''
+        AND name IS NOT NULL AND name <> ''`,
+  );
+  return rows.map((r) => ({ workerId: r.employee_id.trim(), name: r.name.trim() }));
+}
+
 export async function setUserStatus(
   id: number,
   status: "approved" | "rejected",
