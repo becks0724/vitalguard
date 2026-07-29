@@ -552,9 +552,12 @@ async function initSchema(): Promise<void> {
     -- 사번 백필 — 이 컬럼이 비어 있으면 사진·생체의 worker_id 와 대조할 값이 없어
     -- **본인이 올린 사진도 못 지운다**(2026-07-27 제보, 9명 중 8명이 null 이었다).
     -- 값은 앱이 이미 쓰고 있는 규칙과 동일한 'EMP-'||username 이라 기존 데이터와 즉시 맞물린다.
-    -- 이미 값이 있는 계정은 건드리지 않는다(WHERE employee_id IS NULL) — 실제 사번 우선.
+    -- 이미 값이 있는 계정은 건드리지 않는다 — 실제 사번 우선.
+    -- 빈 문자열도 함께 잡는다: NULL 만 보면 공백 값이 남아 로그인 토큰의 workerId 가 빈 문자열로
+    -- 발급되고, 수집 라우트가 그것을 falsy 로 잡아 401 을 낸다.
+    -- 앱은 토큰을 정상 전송하는데도 거부되어 원인이 드러나지 않는다(2026-07-29).
     -- 멱등이라 재기동마다 돌아도 두 번째부터는 0행이다.
-    UPDATE users SET employee_id = 'EMP-' || username WHERE employee_id IS NULL;
+    UPDATE users SET employee_id = 'EMP-' || username WHERE employee_id IS NULL OR trim(employee_id) = '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
     -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;

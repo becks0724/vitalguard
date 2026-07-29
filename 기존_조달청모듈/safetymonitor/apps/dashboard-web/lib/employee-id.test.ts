@@ -41,7 +41,10 @@ test("서로 다른 로그인ID 는 서로 다른 사번을 만든다", () => {
 
 // 백필은 **비어 있는 계정만** 채워야 한다. 실제 사번(worker1 = EMP-6861)을 덮어쓰면
 // 그 사람의 기존 생체·미디어 귀속이 통째로 끊긴다.
-test("백필 SQL 은 employee_id 가 NULL 인 행만 갱신한다", () => {
+// 2026-07-29 — '빈 계정'의 정의에 빈 문자열을 추가했다. NULL 만 보면 '' 인 계정이 영영 안 고쳐져
+// 로그인 토큰의 workerId 가 빈 문자열로 나가고 수집이 401 로 죽는다. ''는 실제 사번이 아니므로
+// 덮어써도 귀속이 끊기지 않는다 — 아래 "값이 있으면 건드리지 않는다"는 성질은 그대로 지킨다.
+test("백필 SQL 은 사번이 비어 있는 행만 갱신한다(NULL·빈 문자열)", () => {
   const db = readFileSync(join(ROOT, "lib/db.ts"), "utf8");
   const backfill = db
     .split("\n")
@@ -51,6 +54,11 @@ test("백필 SQL 은 employee_id 가 NULL 인 행만 갱신한다", () => {
     backfill,
     /WHERE employee_id IS NULL/,
     "백필이 기존 사번까지 덮어쓴다 — 실제 사번 보유 계정의 데이터 귀속이 끊긴다",
+  );
+  assert.match(
+    backfill,
+    /trim\(employee_id\)\s*=\s*''/,
+    "빈 문자열이 대상에서 빠졌다 — 그 계정은 로그인 토큰에 사번이 안 실려 수집이 401 로 죽는다",
   );
   assert.match(backfill, /'EMP-'\s*\|\|\s*username/, "백필 규칙이 앱 파생값과 달라졌다");
 });

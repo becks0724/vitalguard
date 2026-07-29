@@ -9,6 +9,7 @@ import {
 } from "../../../../lib/admin-auth";
 import { bootstrapOwnerWorkerId, isAppJwtConfigured, signAppJwt } from "../../../../lib/app-jwt";
 import { findUserByUsername } from "../../../../lib/db";
+import { defaultEmployeeId } from "../../../../lib/employee-id";
 import { verifyPassword } from "../../../../lib/password";
 
 export const dynamic = "force-dynamic";
@@ -67,7 +68,14 @@ export async function POST(request: Request) {
   }
 
   const name = account.name ?? null;
-  const workerId = account.employee_id ?? null; // 사번 — 생체/미디어 데이터와 매칭
+  // 사번 — 생체/미디어 데이터와 매칭.
+  // `?? null` 만으로는 부족하다. `??` 는 null·undefined 만 거르므로 빈 문자열('')이 그대로 통과해
+  // workerId:"" 인 토큰이 발급되고, 수집 라우트의 `!claims?.workerId` 가 falsy 로 잡아 401 을 낸다.
+  // 앱은 토큰을 실어 보내는데도 거부되므로 원인이 드러나지 않는다(2026-07-29 배포 4회 롤백의 원인).
+  // 값이 비면 서버가 이미 쓰는 규칙(EMP-<username>)으로 되살린다 — 백필·앱 폴백과 같은 값이라
+  // 기존 생체·미디어 레코드와 즉시 맞물린다.
+  const storedEmployeeId = (account.employee_id ?? "").trim();
+  const workerId = storedEmployeeId || defaultEmployeeId(account.username) || null;
   const token = signAppJwt({ sub: account.username, role: account.role, name, workerId });
   return NextResponse.json({
     ok: true,

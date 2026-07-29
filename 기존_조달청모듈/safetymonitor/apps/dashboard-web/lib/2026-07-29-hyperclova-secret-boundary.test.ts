@@ -99,7 +99,14 @@ test("local dashboard command loads root env file and binds only to loopback", (
 
 test("vital stream requires an authorized dashboard reader and binds every write to the app JWT worker", () => {
   assert.match(vitalRouteSource, /if \(!verifyBasicAuth\(request\)\)/);
-  assert.match(vitalRouteSource, /verifyAppJwt\(bearerToken\(request\)\)/);
+  // 토큰은 반드시 bearerToken → verifyAppJwt 를 거쳐야 한다.
+  // 거부 사유 로깅을 위해 한 줄을 두 줄로 나눴으므로(rawToken 경유) 두 형태를 모두 허용한다.
+  assert.match(
+    vitalRouteSource,
+    /verifyAppJwt\((?:bearerToken\(request\)|rawToken)\)/,
+    "수집 인증이 앱 JWT 검증을 거치지 않는다",
+  );
+  assert.match(vitalRouteSource, /bearerToken\(request\)/, "Authorization 헤더에서 토큰을 뽑아야 한다");
   assert.match(vitalRouteSource, /bodyIsBoundToWorker\(body, claims\.workerId\)/);
   assert.doesNotMatch(vitalRouteSource, /ingestAuthStatus\(request\)/);
 });
