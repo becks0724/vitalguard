@@ -314,7 +314,7 @@ function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose:
       aria-modal="true"
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
@@ -437,7 +437,7 @@ function GasConfigEditModal({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
@@ -1176,7 +1176,7 @@ function AedManagementModal({
       aria-modal="true"
     >
       <div
-        className={`w-full max-w-md overflow-hidden rounded-2xl border-2 ${accent} bg-canvas dark:bg-surface-dark`}
+        className={`max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border-2 ${accent} bg-canvas dark:bg-surface-dark`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`flex items-center gap-2 px-5 py-3 ${headBg}`}>
@@ -1299,7 +1299,7 @@ function AedConfigEditModal({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 border-b border-hairline bg-surface-soft px-5 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">

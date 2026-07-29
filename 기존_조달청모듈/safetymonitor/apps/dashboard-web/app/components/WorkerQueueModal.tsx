@@ -44,7 +44,7 @@ export function WorkerQueueModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-xl rounded-md border border-hairline-strong bg-canvas p-5 dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-md border border-hairline-strong bg-canvas p-5 dark:border-white/10 dark:bg-surface-dark"
       >
         <header className="mb-3 flex items-center justify-between gap-3 border-b border-zinc-200 pb-3 dark:border-white/10">
           <div>

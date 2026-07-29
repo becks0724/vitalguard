@@ -6296,7 +6296,7 @@ function JobTitleEditModal({
       aria-modal="true"
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-hairline px-5 py-3 dark:border-white/10">

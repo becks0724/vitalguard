@@ -106,7 +106,7 @@ export function SessionKeeper({
       aria-label="세션 만료 안내"
       className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4 backdrop-blur-[2px]"
     >
-      <div className="w-full max-w-sm rounded-2xl border border-hairline bg-surface-card p-5 shadow-xl dark:border-white/10 dark:bg-surface-dark-elevated">
+      <div className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-hairline bg-surface-card p-5 shadow-xl dark:border-white/10 dark:bg-surface-dark-elevated">
         <div className="flex items-center gap-2">
           <span
             className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${
