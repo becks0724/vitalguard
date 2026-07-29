@@ -12,3 +12,16 @@ onlyBuiltDependencies:
   - better-sqlite3
   - esbuild
   - sharp
+# CI `pnpm audit --audit-level=high` 게이트의 명시 예외 — 감사(2026-07-29) 시점의 기존 high 8건.
+# 대부분 exceljs 하위 의존(4주차 overrides 정리 대상). 새 취약점 유입만 게이트가 잡는다.
+# 항목을 지우려면 해당 GHSA 가 실제 해소(의존 업데이트/overrides)됐는지 pnpm audit 로 확인할 것.
+auditConfig:
+  ignoreGhsas:
+    - GHSA-7c78-jf6q-g5cm # tmp 경로순회 (exceljs 하위)
+    - GHSA-3jxr-9vmj-r5cp # brace-expansion DoS
+    - GHSA-mh99-v99m-4gvg # brace-expansion DoS
+    - GHSA-52cp-r559-cp3m # js-yaml CPU DoS
+    - GHSA-vcrf-j523-4mrf # aws-cdk-lib (AWS 트랙 보류·미도달)
+    - GHSA-f88m-g3jw-g9cj # sharp/libvips (next/image 미사용·미도달)
+    - GHSA-6g55-p6wh-862q # postcss 파일 읽기 (빌드타임)
+    - GHSA-r28c-9q8g-f849 # postcss 경로순회 (빌드타임)

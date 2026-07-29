@@ -28,13 +28,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # 액션은 SHA 핀 — 태그는 이동 가능해 공급망 변조 표면이 된다(감사 CI-PIN-01). 동작 무변경(당시 v4 SHA).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11.1.3
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -42,6 +43,12 @@ jobs:
 
       - name: 의존성 설치
         run: pnpm install --frozen-lockfile
+
+      # 공급망 감시(감사 SEC-SUPPLY-01) — 기존 high 8건(exceljs 계열 등)은 pnpm-workspace.yaml 의
+      # auditConfig.ignoreGhsas 에 명시 예외(4주차 overrides 정리 대상)로 두고,
+      # 새로 유입되는 high 이상만 여기서 차단한다.
+      - name: 의존성 취약점 감사
+        run: pnpm audit --audit-level=high
 
       # packages/*/dist 는 gitignore 라 clean clone 엔 없다. dashboard-web 이
       # @safetymonitor/schemas 타입을 dist 에서 찾으므로 먼저 빌드해야 한다.
