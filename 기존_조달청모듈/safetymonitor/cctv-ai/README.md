@@ -180,6 +180,50 @@ gcloud builds submit --config cloudbuild.dashboard.yaml \
 끊김 0 을 원하면 엣지에서 박스를 그려 보내는 display-only 방식(CAM-02 패턴)이 정답이다.
 PPE 착용 판정은 초당 3~5회면 충분하다.
 
+## 폰 → 젯슨 추론 → 관제웹 (2026-07-29)
+
+`edge/phone_ppe_relay.py` — 아이폰 카메라를 **젯슨에서 우리 학습 모델로 추론**한 뒤 이 서버로 중계한다.
+Cloud Run 은 표시만 하므로(`/cctv/ingest3?drawn=1`) 서버 추론 부하가 0 이고 카메라를 늘릴 여지가 생긴다.
+
+```
+iPhone(사파리·Tailscale)
+  │ https://yahboom-1.<tailnet>.ts.net:8443/    ← 젯슨이 캡처 페이지를 직접 서빙
+  ▼
+Jetson  yolo26 TensorRT 14.7ms · 박스·한글 라벨 · 고정 cadence 로 push(지터 흡수)
+  │ POST /cctv/ingest3?drawn=1&persons=&violations=&compliance=
+  ▼
+Cloud Run  추론 없이 그대로 표시(display-only)  →  관제웹 CAM-03
+```
+
+### 왜 Tailscale HTTPS 인가
+
+브라우저 `getUserMedia` 는 **보안 컨텍스트에서만** 동작한다. 평문 HTTP·자체서명으로는 사파리가 카메라를 안 준다.
+`sudo tailscale cert <name>.ts.net` 으로 **유효한 Let's Encrypt 인증서**를 받아 젯슨이 직접 HTTPS 로 서빙한다.
+발급 후 `chown jetson:jetson` 필요(root 소유면 Flask 가 못 읽는다).
+
+### 기동
+
+```bash
+CCTV_BASE=https://cctv-ai-....run.app python3 phone_ppe_relay.py
+# 튜닝: CAP_FPS · CAP_INFLIGHT · CAP_W · CAP_H · CAP_Q · PUSH_FPS · PPE_ENGINE · PPE_CONF
+```
+
+### ★ 실측 한계 — 약 4.8 fps 는 아이폰 쪽 천장이다
+
+| 설정 | 결과 |
+|---|---|
+| 640×360 · Q0.5 · 목표 5 | 4.80 fps |
+| 640×360 · Q0.5 · 목표 8 · 슬롯 4 | 4.80 fps |
+| 480×270 · Q0.4 · 목표 8 | 4.75~5.20 fps |
+
+**해상도를 44% 줄여도, 목표·슬롯을 올려도 오르지 않는다.** 네트워크·인코딩·젯슨(추론 14.7ms·CPU 6%)이
+전부 배제되고 남는 것은 **iOS Safari 의 타이머 스로틀(≈208ms)** 이다. 페이지 JS 로는 우회할 수 없다.
+
+5fps 를 넘기려면 방식을 바꿔야 한다 — **WebCodecs `VideoEncoder`**(Safari 17+·H.264 하드웨어) 또는
+**RTMP 송출앱 + 젯슨 `mediamtx`**(개발 0·30fps). WebSocket 은 전송이 병목이 아니므로 효과가 없다.
+
+PPE 착용 판정에 필요한 갱신율은 초당 3~5회라 **현재 4.8fps 로 목적에는 충분하다.**
+
 ## 실모델 적용 현황
 
 - **CAM-01 = 실제 YOLOv8n + 차량 속도추정 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
