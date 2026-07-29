@@ -157,6 +157,29 @@ gcloud builds submit --config cloudbuild.dashboard.yaml \
 # 이어서 gcloud run deploy vitalguard-dashboard --image <digest> ...
 ```
 
+## 라이브 송출 끊김 완화 (2026-07-29)
+
+폰 송출 테스트에서 영상이 심하게 끊겼다. 서버 구성(cpu4·`cpu-throttling=false`·`OMP/MKL_NUM_THREADS=1`·
+`maxScale 1`)은 정상이었고, 클립 워커도 폰 라이브 중에는 이미 추론을 스킵하고 있었다.
+
+**원인 = 왕복 직렬화.** 캡처 페이지가 `sending` 가드로 한 번에 한 장만 보내는데,
+왕복(인코딩 10~30ms + 업로드 + 서버 디코드·그리기 10~30ms + 응답)이 `setInterval` 주기 200ms 를
+넘으면 다음 tick 이 통째로 스킵된다. 왕복 250ms → 실효 2.5fps → 관제웹도 그대로 2.5fps.
+
+| 수정 | 위치 | 효과 |
+|---|---|---|
+| **① 파이프라이닝** | `CAPTURE_HTML` — `sending` → `inflight`(최대 3) + 5초 abort | 왕복이 길어도 5fps 유지 |
+| **② 즉시 응답** | `ingest_ppe` — 프레임만 받고 200 반환, 처리는 `_ppe_live_process` 백그라운드 | 왕복에서 서버 처리시간 제거 |
+| **③ 디코드 스레드풀** | `_decode_frame` | `cv2.imdecode` 의 이벤트 루프 블로킹 제거 |
+
+파이프라이닝은 프레임이 겹쳐 도착하므로 **`draw_ts` 비교로 늦게 끝난 옛 프레임을 폐기**한다
+(안 하면 오래된 화면이 최신을 덮는다). JPEG SOI(`\xff\xd8`) 로 싸게 걸러 디코드 없이 400 을 낸다.
+캡처 페이지에 **실측 fps** 를 표시하므로 다음 테스트에서 개선폭을 바로 볼 수 있다.
+
+**남는 한계** — 매 프레임 개별 HTTP POST 방식의 천장은 5~8fps 다. 그 이상은 WebRTC/RTMP 가 필요하고,
+끊김 0 을 원하면 엣지에서 박스를 그려 보내는 display-only 방식(CAM-02 패턴)이 정답이다.
+PPE 착용 판정은 초당 3~5회면 충분하다.
+
 ## 실모델 적용 현황
 
 - **CAM-01 = 실제 YOLOv8n + 차량 속도추정 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
