@@ -191,8 +191,14 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   const prevMerged = mergeLatestByWorker(prevWorkerSamples)[0];
   // 화면 갱신용 in-memory ring (최근 500). DB 는 무한 축적 (산업재해 자료 대비).
   mockStore.samples = [...mockStore.samples, sample].slice(-500);
+  // 영속과 경보 기록을 분리 — 종전엔 한 try 라서 persistSample 실패(풀 고갈·비번 사고)가 SOS·낙상
+  // 경보 기록·텔레그램까지 삼켰다(감사 DB-POOL-02, 2026-06-30 실발생). 샘플 저장은 잃어도 경보는 간다.
   try {
     await persistSample(sample);
+  } catch (error) {
+    console.error("[store] DB persist failed:", error);
+  }
+  try {
     // SOS/낙상 이벤트는 알림 이력에 기록(중복은 DB UNIQUE 로 무시) — AF4.
     if (sample.manualSos) {
       await recordAlert({
@@ -226,7 +232,7 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
       }
     }
   } catch (error) {
-    console.error("[store] DB persist failed:", error);
+    console.error("[store] 경보 기록 실패:", error);
   }
   return sample;
 }

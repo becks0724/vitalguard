@@ -193,6 +193,10 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_vs_worker_ts ON vital_samples(worker_id, ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts ON vital_samples(ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts_id ON vital_samples(ts, id);
+    -- 멱등 적재 키 — (worker_id, ts) UNIQUE 로 재전송·backlog flush 중복 방지(alerts 와 동일 패턴, 감사 BE-IDEM-01).
+    -- 라이브 DB 엔 운영 마이그레이션으로 이미 존재(uq_vs_worker_ts, 2026-06-29 수동 생성·중복 0건 실측) → 즉시 skip.
+    -- 빈/신규 환경만 여기서 보장. 대량 중복 dedup 은 initSchema 가 아니라 운영 마이그레이션에서 수행(라이브 락 방지).
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_vs_worker_ts ON vital_samples(worker_id, ts);
     -- 수신 출처는 원본 실측 테이블에 명시한다. 과거 행은 출처를 추정하지 않고 legacy 로 보존한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS data_origin TEXT NOT NULL DEFAULT 'legacy_unclassified_vitalguard';
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS source TEXT;
@@ -720,7 +724,9 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     raw_json: JSON.stringify(sample),
   };
   const { text, values } = buildInsert("vital_samples", cols);
-  await q(text, values);
+  // 멱등 적재 — 같은 (worker_id, ts) 재전송/backlog flush 는 중복 무시(감사 BE-IDEM-01).
+  // 종전엔 유니크 위반이 23505 예외로 터져 호출측 catch 에서 실제 장애와 같은 신호가 됐다(DB-POOL-02).
+  await q(text + " ON CONFLICT (worker_id, ts) DO NOTHING", values);
 }
 
 // 목업은 실데이터와 구조적으로 분리된 data_mockup 으로만 저장한다.
@@ -1396,12 +1402,21 @@ export async function recordAlert(input: {
   type: AlertType;
   ts: string;
 }): Promise<void> {
-  const { rowCount } = await q(
-    `INSERT INTO alerts (worker_id, worker_name, type, ts)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (worker_id, type, ts) DO NOTHING`,
-    [input.workerId, input.workerName ?? null, input.type, input.ts],
-  );
+  let rowCount: number;
+  try {
+    ({ rowCount } = await q(
+      `INSERT INTO alerts (worker_id, worker_name, type, ts)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (worker_id, type, ts) DO NOTHING`,
+      [input.workerId, input.workerName ?? null, input.type, input.ts],
+    ));
+  } catch (error) {
+    // DB 장애가 통지까지 삼키면 안 된다(감사 DB-POOL-02 — 2026-06-30 실발생: DB 비번 사고 구간의
+    // SOS·낙상 텔레그램 무음 유실). 기록은 잃어도 통지는 보낸다. dedup(rowCount) 판정이 불가한
+    // 상태라 재전송분 중복 통지 가능성은 감수한다. 원래 에러는 다시 던져 호출측 실패 표현을 보존.
+    await notifyAlertTelegram(input);
+    throw error;
+  }
   if (rowCount > 0) {
     // notifyAlertTelegram 은 미설정 시 no-op·실패 삼킴이라 여기서 await 해도 기록·수집을 막지 않는다.
     await notifyAlertTelegram(input);
