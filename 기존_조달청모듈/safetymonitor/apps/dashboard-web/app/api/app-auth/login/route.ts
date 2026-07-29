@@ -7,7 +7,7 @@ import {
   recordLoginResult,
   verifyCredentials,
 } from "../../../../lib/admin-auth";
-import { isAppJwtConfigured, signAppJwt } from "../../../../lib/app-jwt";
+import { bootstrapOwnerWorkerId, isAppJwtConfigured, signAppJwt } from "../../../../lib/app-jwt";
 import { findUserByUsername } from "../../../../lib/db";
 import { verifyPassword } from "../../../../lib/password";
 
@@ -43,11 +43,12 @@ export async function POST(request: Request) {
   // 1) env owner(부트스트랩 관리자) 우선.
   if (verifyCredentials(id, password)) {
     recordLoginResult(lockKey, true);
-    const token = signAppJwt({ sub: id, role: "owner", name: null, workerId: null });
+    const workerId = bootstrapOwnerWorkerId(id);
+    const token = signAppJwt({ sub: id, role: "owner", name: null, workerId });
     return NextResponse.json({
       ok: true,
       token,
-      user: { id, name: null, role: "owner", workerId: null },
+      user: { id, name: null, role: "owner", workerId },
     });
   }
 

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { test } from "node:test";
 
-import { signAppJwt, verifyAppJwt, bearerToken, isAppJwtConfigured } from "./app-jwt";
+import { bootstrapOwnerWorkerId, signAppJwt, verifyAppJwt, bearerToken, isAppJwtConfigured } from "./app-jwt";
 
 const withSecret = (fn: () => void) => {
   const prev = process.env.APP_JWT_SECRET;
@@ -26,6 +26,18 @@ test("JWT — 서명 후 검증 왕복(클레임 보존)", () => {
     assert.equal(claims.name, "장우진");
     assert.equal(claims.workerId, "EMP-6861");
     assert.ok(claims.exp > claims.iat);
+  });
+});
+
+test("JWT — 부트스트랩 소유자도 안정적인 workerId로 생체 전송에 바인딩", () => {
+  withSecret(() => {
+    const workerId = bootstrapOwnerWorkerId("admin");
+    assert.match(workerId, /^owner-[a-f0-9]{16}$/);
+    assert.equal(workerId, bootstrapOwnerWorkerId("admin"));
+    assert.notEqual(workerId, bootstrapOwnerWorkerId("admin2"));
+
+    const claims = verifyAppJwt(signAppJwt({ sub: "admin", role: "owner", name: null, workerId }));
+    assert.equal(claims?.workerId, workerId);
   });
 });
 

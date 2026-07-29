@@ -1,5 +1,5 @@
 // 앱(iPhone/Apple Watch) 인증 토큰 — HMAC-SHA256 서명 JWT(무의존, node:crypto). 서버 저장 없이 어느 인스턴스든 검증.
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 const TTL_SEC = 30 * 24 * 60 * 60; // 30일 — 현장 앱은 재로그인 빈도를 낮춘다.
 
@@ -15,6 +15,15 @@ export type AppJwtClaims = {
 // 시크릿 미설정이면 앱 인증 비활성(로그인 라우트는 503, 검증은 null).
 export function isAppJwtConfigured(): boolean {
   return Boolean(process.env.APP_JWT_SECRET);
+}
+
+// DB 행이 없는 부트스트랩 소유자도 생체 전송의 사번 바인딩을 만족해야 한다.
+// 로그인 ID 원문은 생체 레코드에 남기지 않고, 안정적인 불투명 식별자로만 사용한다.
+export function bootstrapOwnerWorkerId(id: string): string {
+  const normalized = id.trim();
+  if (!normalized) throw new Error("bootstrap owner ID가 비어 있습니다");
+  const digest = createHash("sha256").update(normalized).digest("hex").slice(0, 16);
+  return `owner-${digest}`;
 }
 
 function b64urlJson(obj: unknown): string {
