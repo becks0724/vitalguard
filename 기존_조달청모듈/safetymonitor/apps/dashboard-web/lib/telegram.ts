@@ -30,11 +30,11 @@ function formatKst(iso: string): string {
 }
 
 // 텔레그램 전송 본문 — 순수 함수(테스트 가능). 종류·작업자·발생시각.
+// 실명은 싣지 않는다(감사 SEC-PRIV-01) — 텔레그램은 국외 SaaS 라 실명+건강상태 조합이 민감정보
+// 국외이전이 된다. 사번만으로도 관제 식별은 충분하고, 실명은 관제웹(국내 시스템)에서 확인한다.
 export function formatAlertMessage(input: AlertNotifyInput): string {
   const label = ALERT_LABEL[input.type] ?? input.type;
-  const name = input.workerName?.trim();
-  const who = name ? `${name} (${input.workerId})` : input.workerId;
-  return [`${label}`, `작업자 ${who}`, `발생 ${formatKst(input.ts)}`].join("\n");
+  return [`${label}`, `작업자 ${input.workerId}`, `발생 ${formatKst(input.ts)}`].join("\n");
 }
 
 // 텔레그램 임의 텍스트 전송(공용) — 미설정이면 no-op, 실패/타임아웃은 삼킨다(절대 throw 하지 않음).

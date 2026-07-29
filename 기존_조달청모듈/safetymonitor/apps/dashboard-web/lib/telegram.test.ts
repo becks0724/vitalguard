@@ -4,7 +4,7 @@ import { test } from "node:test";
 
 import { formatAlertMessage, notifyAlertTelegram } from "./telegram.js";
 
-test("포맷 — 작업자명 있으면 '이름 (사번)' 병기", () => {
+test("포맷 — 실명은 싣지 않고 사번만(국외이전 최소화, 감사 SEC-PRIV-01)", () => {
   const msg = formatAlertMessage({
     type: "sos",
     workerId: "EMP-6861",
@@ -12,11 +12,12 @@ test("포맷 — 작업자명 있으면 '이름 (사번)' 병기", () => {
     ts: "2026-07-23T13:15:30Z", // KST 22:15:30
   });
   assert.ok(msg.includes("🆘 SOS 긴급요청"));
-  assert.ok(msg.includes("장우진 (EMP-6861)"));
+  assert.ok(msg.includes("EMP-6861"));
+  assert.ok(!msg.includes("장우진")); // 실명 미포함 — 되돌리면 여기서 실패
   assert.ok(msg.includes("07-23 22:15:30"));
 });
 
-test("포맷 — 작업자명 없으면 사번만", () => {
+test("포맷 — 작업자명 미제공이어도 동일하게 사번만", () => {
   const msg = formatAlertMessage({
     type: "fall",
     workerId: "EMP-1024",
@@ -24,7 +25,6 @@ test("포맷 — 작업자명 없으면 사번만", () => {
   });
   assert.ok(msg.includes("🚨 낙상 감지"));
   assert.ok(msg.includes("EMP-1024"));
-  assert.ok(!msg.includes("(EMP-1024)")); // 이름 없으면 괄호 병기 없음
 });
 
 test("포맷 — 5종 라벨 매핑", () => {
