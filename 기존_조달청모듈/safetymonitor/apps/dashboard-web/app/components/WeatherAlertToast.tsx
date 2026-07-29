@@ -9,6 +9,7 @@ import {
   SEVERITY_LABEL,
   type RuleEvaluation,
 } from "../../lib/weather-rules";
+import FitToViewport from "./FitToViewport";
 
 type Props = {
   alerts: RuleEvaluation[];
@@ -52,9 +53,11 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 dark:bg-black/70"
     >
+      {/* 스크롤 대신 화면 비율에 맞춰 축소해 한 화면에 담는다. 내용이 들어가면 배율 1 = 기존과 동일. */}
+      <FitToViewport className="w-full max-w-md">
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-lg border ${borderTone} bg-canvas dark:bg-surface-dark`}
+        className={`overflow-hidden rounded-lg border ${borderTone} bg-canvas dark:bg-surface-dark`}
       >
         {/* 헤더 — 위험 빨강 / 주의 amber */}
         <div className={`flex items-center justify-between gap-2 px-3 py-2 ${headerTone}`}>
@@ -144,6 +147,7 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
           확인/조치완료 = DB 기록 후 팝업 억제 · 항목 클릭 = 정책 근거 · 1분 후 자동 닫힘
         </p>
       </div>
+      </FitToViewport>
     </div>
   );
 }

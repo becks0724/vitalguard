@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { VitalSample } from "@safetymonitor/schemas";
 import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
 
+import FitToViewport from "./FitToViewport";
 import { NearestEmergency } from "./HospitalPanel";
 import { heartRateStatus, spo2Status, type Status } from "../../lib/severity";
 
@@ -189,12 +190,12 @@ export function SosAlertModal({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 dark:bg-black/70"
       onClick={onDismiss}
     >
-      {/* 화면이 낮으면 넘친 부분이 잘려 119 신고 버튼에 손이 닿지 않았다. 바깥 p-4(상하 2rem)를 뺀
-          높이로 상한을 두고 넘치면 스크롤한다. overflow-hidden → y-auto 로 바꿔도 둥근 모서리는
-          그대로 잘린다(overflow auto 도 클리핑한다). */}
+      {/* 화면이 낮으면 119 신고 버튼에 손이 닿지 않았다. 스크롤 대신 **비율 그대로 축소해 한 화면에**
+          담는다(FitToViewport). 내용이 이미 들어가면 배율 1 이라 아무것도 바뀌지 않는다. */}
+      <FitToViewport className="w-full max-w-md">
       <div
         onClick={(e) => e.stopPropagation()}
-        className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-red-500/60 bg-canvas shadow-xl dark:border-red-500/50 dark:bg-surface-dark"
+        className="overflow-hidden rounded-2xl border border-red-500/60 bg-canvas shadow-xl dark:border-red-500/50 dark:bg-surface-dark"
       >
         <header className="flex items-center justify-between gap-3 border-b border-red-500/30 bg-red-50 px-5 py-3 dark:border-red-500/30 dark:bg-red-500/10">
           <div className="flex min-w-0 items-center gap-2">
@@ -373,6 +374,7 @@ export function SosAlertModal({
           </section>
         </div>
       </div>
+      </FitToViewport>
     </div>
   );
 }
