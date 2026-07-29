@@ -118,6 +118,12 @@ type AssignmentOutputPolicyRule = {
   when?: (context: AssignmentOutputPolicyContext) => boolean;
   /** pattern 으로 표현하기 어려운 서버 사실값 누락은 이 계층에서 결정적으로 검사한다. */
   violates?: (reply: string, context: AssignmentOutputPolicyContext) => boolean;
+  /**
+   * "guidance" 규칙은 instruction 을 프롬프트에 넣어 모델을 '유도'만 하고, 위반으로 세지 않는다
+   * (= 규칙 엔진 폴백을 유발하지 않는다). 서버 사실이 화면에서 별도로 보장되는 경우에 쓴다.
+   * 기본값은 "hard"(위반 시 교정→폴백).
+   */
+  enforcement?: "hard" | "guidance";
 };
 
 /**
@@ -206,25 +212,23 @@ export const AI_REPLY_POLICY: {
         "직전 답변이 서버 판정에 없는 미래 배치를 암시했다. 현재 배치 가능 작업은 0종이므로 작업 가능·진행·허용·투입·배치 권고·배치 검토 표현 없이, 등록된 고위험 작업의 배제 권고·안전 이벤트·관리자 확인만 설명해라.",
     },
     {
+      // 서버 확정 작업 목록은 UI(AssignmentChatBoard '서버 판정 작업 목록' 카드)가 답변 아래에
+      // 항상 결정적으로 렌더한다(누락·환각 불가). 따라서 CLOVA 문장이 작업명을 일부 뭉뚱그려도
+      // 정보 손실이 아니며, 이를 규칙 엔진 폴백 사유로 삼지 않는다(enforcement: "guidance").
+      // instruction 은 CLOVA 가 자연스럽게 열거하도록 '유도'만 한다. 판정과 반대되는 서술(모순)은
+      // 아래 배치 권한 언어·배치 가능 0종 규칙이 계속 hard 로 잡는다.
       layer: "RESPONSE_INTEGRITY",
       code: "TASK_LIST_DISCLOSURE",
-      label: "서버 확정 작업 목록 누락",
+      label: "서버 확정 작업 목록 안내",
+      enforcement: "guidance",
       pattern: /$^/,
       when: (context) => (context.taskLists ?? []).some((list) =>
         [list.blockedTags, list.allowedTags, list.pendingTags].some((tags) => tags.length > 0),
       ),
-      violates: (reply, context) => {
-        const normalized = reply.replace(/\s+/g, " ");
-        return (context.taskLists ?? []).some((list) =>
-          [...list.blockedTags, ...list.allowedTags, ...list.pendingTags].some(
-            (tag) => !normalized.includes(tag),
-          ),
-        );
-      },
       instruction:
-        "서버가 제공한 배제 권고 작업·배치 가능 작업·판단 보류 작업이 있으면, 각 작업명을 빠짐없이 그대로 열거할 것. '일부 작업'처럼 뭉뚱그리거나 서버에 없는 작업명을 추가하지 말 것.",
+        "서버가 제공한 배제 권고 작업·배치 가능 작업·판단 보류 작업이 있으면 각 작업명을 그대로 열거하면 좋다(화면에도 서버 확정 목록이 함께 표시된다). '일부 작업'처럼 뭉뚱그려도 되지만, 서버에 없는 작업명을 새로 만들지는 말 것.",
       repair:
-        "직전 답변이 서버가 확정한 작업 목록을 누락했다. 서버 판정 데이터의 배제 권고 작업·배치 가능 작업·판단 보류 작업 이름을 각각 빠짐없이 그대로 열거하고, 일부 작업 같은 모호한 표현을 쓰지 말 것.",
+        "서버가 확정한 배제 권고 작업·배치 가능 작업·판단 보류 작업 이름을 그대로 쓰고, 서버 판정에 없는 작업명을 만들지 말 것.",
     },
   ],
 };
@@ -265,6 +269,8 @@ export function findAiReplyPolicyViolations(
 ): AiReplyPolicyViolation[] {
   const normalized = reply.replace(/\s+/g, " ");
   return activeOutputPolicyRules(context)
+    // guidance 규칙은 프롬프트 유도 전용 — 위반(폴백)으로 세지 않는다.
+    .filter((rule) => rule.enforcement !== "guidance")
     .filter((rule) =>
       rule.violates
         ? rule.violates(normalized, context)

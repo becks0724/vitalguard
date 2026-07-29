@@ -58,7 +58,7 @@ test("사람의 컨디션 단정 대신 배치 참고 등급을 요구한다", (
   );
 });
 
-test("서버 확정 작업명은 CLOVA 답변에서 빠짐없이 열거해야 한다", () => {
+test("서버 확정 작업 목록은 UI 카드가 보장하므로 CLOVA 작업명 누락은 폴백 사유가 아니다(유도만)", () => {
   const context = {
     allowedCount: 4,
     taskLists: [
@@ -70,21 +70,26 @@ test("서버 확정 작업명은 CLOVA 답변에서 빠짐없이 열거해야 �
       },
     ],
   };
+  // 작업명을 '일부 작업'으로 뭉뚱그려도 위반이 아니다 — 화면 카드가 서버 목록을 항상 표시하므로
+  // CLOVA 자연어 문장을 버리고 규칙 텍스트로 폴백하지 않는다.
   assert.deepEqual(
     findAiReplyPolicyViolations(
       "배치 참고 등급은 주의입니다. 일부 고위험 작업은 배제 권고 대상입니다.",
       context,
-    ).map((violation) => violation.code),
-    ["TASK_LIST_DISCLOSURE"],
+    ),
+    [],
   );
+  // 전부 열거해도 물론 위반이 아니다.
   assert.deepEqual(
     findAiReplyPolicyViolations(
-      "배치 참고 등급은 주의입니다. 배제 권고 작업은 고소작업, 중장비/양중입니다. 배치 가능 작업은 굴착/흙막이, 밀폐공간, 해체/철거, 도장/화기입니다.",
+      "배제 권고 작업은 고소작업, 중장비/양중입니다. 배치 가능 작업은 굴착/흙막이, 밀폐공간, 해체/철거, 도장/화기입니다.",
       context,
     ),
     [],
   );
+  // instruction(유도)은 여전히 프롬프트에 포함돼 CLOVA 가 작업명을 자연스럽게 열거하도록 이끈다.
   assert.match(assignmentOutputPolicyInstruction(context), /서버 확정 작업 목록/);
+  assert.match(assignmentOutputPolicyInstruction(context), /각 작업명을 그대로 열거하면 좋다/);
 });
 
 test("배치 가능 0종이면 근거 없는 일반 작업 허용을 감지한다", () => {
