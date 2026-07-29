@@ -6,7 +6,8 @@ import CoreML
 
 final class FallMLPipeline {
     static let vetoThreshold = 0.675      // work_veto precision≥0.95 운영점 — 이 이상이면 "작업 확실" 기각
-    static let impactThreshold = 0.710    // impact fpr5% 운영점
+    // v5 impact model operating point. The model is never a standalone alert source.
+    static let impactThreshold = 0.3876582891869371
     static let recoveryThreshold = 0.35   // 비회복 asym(애매하면 위험 쪽)
     static let fs = 50.0
 

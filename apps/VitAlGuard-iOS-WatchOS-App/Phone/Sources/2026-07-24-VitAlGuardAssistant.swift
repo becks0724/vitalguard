@@ -180,7 +180,7 @@ private enum VitAlGuardAssistantKeychain {
     }
 }
 
-final class VitAlGuardAssistantViewController: UIViewController, UITextViewDelegate, PHPickerViewControllerDelegate, UIDocumentPickerDelegate {
+final class VitAlGuardAssistantViewController: UIViewController, UITextViewDelegate, PHPickerViewControllerDelegate, UIDocumentPickerDelegate, UIGestureRecognizerDelegate {
     var onCloseRequest: (() -> Void)?
 
     private let usageBar = UIView()
@@ -253,10 +253,29 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         Task { await refreshChatContract() }
     }
 
+    @objc private func dismissKeyboardForBlankTap() {
+        view.endEditing(true)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var touchedView = touch.view
+        while let candidate = touchedView {
+            if candidate is UIControl || candidate is UITextView || candidate is UITextField {
+                return false
+            }
+            touchedView = candidate.superview
+        }
+        return true
+    }
+
     private func configureUI() {
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.keyboardDismissMode = .onDrag
+        scroll.keyboardDismissMode = .interactive
+        let dismissKeyboardTap = UITapGestureRecognizer(target: self, action: #selector(dismissKeyboardForBlankTap))
+        dismissKeyboardTap.cancelsTouchesInView = false
+        dismissKeyboardTap.delegate = self
+        scroll.addGestureRecognizer(dismissKeyboardTap)
         view.addSubview(scroll)
         rootScrollView = scroll
 

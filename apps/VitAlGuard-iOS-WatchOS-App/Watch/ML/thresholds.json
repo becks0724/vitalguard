@@ -5,7 +5,21 @@
     "recall": 0.15384615384615385
   },
   "impact": {
-    "threshold_fpr05": 0.7097829218232665,
-    "pr_auc": 0.46036859043830525
-  }
+    "threshold_fpr05": 0.3876582891869371,
+    "pr_auc": 0.5043891187376371,
+    "label_rule": "fall AND peakG>=8.0 (조심 낙상은 학습 제외)",
+    "strong_fall_g": 8.0,
+    "role": "suppressor",
+    "suppress_below": 0.05,
+    "suppress_evidence": {
+      "kills_strong_fall_pct": 4.9,
+      "kills_walk_pct": 99.2,
+      "kills_sit_pct": 100.0,
+      "kills_throw_pct": 90.2,
+      "kills_hammer_pct": 50.7,
+      "kills_pound_pct": 74.7
+    },
+    "note": "단독 경보 금지. 임계를 올려도 정밀도가 0.51~0.56 에서 정체하므로 주 탐지기로는 부적합. 규칙 후보 위에서 억제기로만 사용한다(fail-open)."
+  },
+  "version": "v5"
 }
