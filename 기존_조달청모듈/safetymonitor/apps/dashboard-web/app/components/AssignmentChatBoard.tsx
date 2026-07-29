@@ -72,6 +72,28 @@ const GRADE_BADGE: Record<
   },
 };
 
+// 서버 판정 작업 목록의 작업별 판정 셀 — 신호등 배지와 같은 색 문법을 재사용한다.
+const TASK_VERDICT: Record<
+  "blocked" | "allowed" | "pending",
+  { label: string; dot: string; chip: string }
+> = {
+  blocked: {
+    label: "배제 권고",
+    dot: "bg-red-500",
+    chip: "border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
+  },
+  allowed: {
+    label: "배치 가능",
+    dot: "bg-emerald-500",
+    chip: "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  },
+  pending: {
+    label: "판단 보류",
+    dot: "bg-zinc-400",
+    chip: "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-white/10 dark:bg-white/5 dark:text-zinc-300",
+  },
+};
+
 const SUGGESTIONS = [
   "전체 작업자 컨디션 확인해줘",
   "EMP-6861 오늘 밀폐공간 배치 가능해?",
@@ -238,22 +260,54 @@ export default function AssignmentChatBoard() {
               ) : null}
             </div>
             {m.role === "assistant" && m.taskSummaries && m.taskSummaries.length > 0 ? (
-              <div className="w-[85%] max-w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200">
-                <div className="mb-1 font-semibold text-zinc-800 dark:text-zinc-100">서버 판정 작업 목록</div>
-                {m.taskSummaries.map((summary) => (
-                  <div key={summary.workerId} className="space-y-0.5">
-                    <div className="font-medium">{summary.workerId}</div>
-                    {summary.blockedTags.length > 0 ? (
-                      <div>배제 권고: {summary.blockedTags.join(", ")}</div>
-                    ) : null}
-                    {summary.allowedTags.length > 0 ? (
-                      <div>배치 가능: {summary.allowedTags.join(", ")}</div>
-                    ) : null}
-                    {summary.pendingTags.length > 0 ? (
-                      <div>판단 보류: {summary.pendingTags.join(", ")}</div>
-                    ) : null}
-                  </div>
-                ))}
+              <div className="w-[85%] max-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white text-xs dark:border-white/10 dark:bg-white/5">
+                <div className="border-b border-zinc-200 px-3 py-2 font-semibold text-zinc-800 dark:border-white/10 dark:text-zinc-100">
+                  서버 판정 작업 목록
+                </div>
+                {m.taskSummaries.map((summary) => {
+                  const rows = [
+                    ...summary.blockedTags.map((tag) => ({ tag, kind: "blocked" as const })),
+                    ...summary.allowedTags.map((tag) => ({ tag, kind: "allowed" as const })),
+                    ...summary.pendingTags.map((tag) => ({ tag, kind: "pending" as const })),
+                  ];
+                  return (
+                    <div key={summary.workerId} className="border-b border-zinc-100 last:border-b-0 dark:border-white/5">
+                      <div className="bg-zinc-50 px-3 py-1 font-medium text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
+                        {summary.workerId}
+                      </div>
+                      {rows.length > 0 ? (
+                        <table className="w-full border-collapse">
+                          <tbody>
+                            {rows.map((row, ri) => {
+                              const meta = TASK_VERDICT[row.kind];
+                              return (
+                                <tr
+                                  key={`${row.tag}-${ri}`}
+                                  className="border-t border-zinc-100 first:border-t-0 dark:border-white/5"
+                                >
+                                  <td className="px-3 py-1.5 text-zinc-700 dark:text-zinc-200">{row.tag}</td>
+                                  <td className="px-3 py-1.5 text-right">
+                                    <span
+                                      className={
+                                        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium " +
+                                        meta.chip
+                                      }
+                                    >
+                                      <span className={"h-1.5 w-1.5 rounded-full " + meta.dot} />
+                                      {meta.label}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="px-3 py-1.5 text-zinc-400">등록된 위험작업 없음</div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
             {m.role === "assistant" && m.candidates && m.candidates.length > 0 ? (
