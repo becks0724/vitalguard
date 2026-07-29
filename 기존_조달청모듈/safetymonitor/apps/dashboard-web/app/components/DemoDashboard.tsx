@@ -1806,7 +1806,8 @@ function HeaderCalendarPopup({
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [labels, setLabels] = useState<ScheduleLabelDef[]>(DEFAULT_LABELS);
-  // 라벨 편집 권한 — 서버(/api/calendar/labels GET)가 내려주는 값. 기본은 감춤(모르면 안 보인다).
+  // 라벨 편집 권한(총괄 관리자 또는 admin_access 보유자) — 서버(/api/calendar/labels GET)가
+  // 내려주는 값을 그대로 쓴다. 기본은 감춤(모르면 안 보인다).
   const [labelsCanEdit, setLabelsCanEdit] = useState(false);
   const [formDate, setFormDate] = useState<Date | null>(null);
   // 모달을 편집 모드로 열 때 대상 일정 id — 목록의 [수정] 이 형식 모달을 그 일정으로 채워 연다.
@@ -1945,7 +1946,7 @@ function HeaderCalendarPopup({
       if (seq === scheduleFetchSeqRef.current) {
         setEvents(serverEvents);
         setLabels(serverLabels.length > 0 ? serverLabels : DEFAULT_LABELS);
-        // 라벨 편집(전체교체 PUT)은 총괄 관리자 전용 — 서버 판정을 받아쓴다.
+        // 라벨 편집(전체교체 PUT) 권한 — 서버 판정을 받아쓴다.
         setLabelsCanEdit(lbJson.canEdit === true);
         if (inspByDate) setInspectionByDate(inspByDate);
       }

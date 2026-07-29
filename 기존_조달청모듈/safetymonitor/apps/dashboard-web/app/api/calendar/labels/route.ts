@@ -1,7 +1,7 @@
 // 일정 캘린더 라벨(이름·색상) 조회·전체교체 API — localStorage 승격(서버 단일 진실 소스)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth, verifyOwner } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import { listCalendarLabels, replaceCalendarLabels } from "../../../../lib/db";
 
@@ -25,20 +25,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
   const labels = await listCalendarLabels();
-  // 편집 가능 여부를 서버가 계산해 내려준다 — 화면이 role 을 다시 판정하면 언젠가 어긋난다.
-  // 앱 로그인 JWT 로 조회하는 경우는 읽기 전용이므로 false 다.
-  return NextResponse.json({ ok: true, labels, canEdit: verifyOwner(request) });
+  // 편집 가능 여부를 서버가 계산해 내려준다 — 화면이 역할을 다시 판정하면 언젠가 어긋난다.
+  // 앱 로그인 JWT 로 조회하는 경우는 세션이 없어 false 다(읽기 전용).
+  return NextResponse.json({ ok: true, labels, canEdit: await hasAdminMenuAccess(request) });
 }
 
 export async function PUT(request: Request) {
   // 라벨은 **전체 교체**다 — 지운 라벨을 쓰던 남의 일정이 조용히 첫 라벨로 밀린다.
-  // 일정과 달리 소유자 개념이 없어 작성자 대조가 불가능하므로 총괄 관리자(owner) 전용으로 둔다.
+  // 일정과 달리 소유자 개념이 없어 작성자 대조가 불가능하므로 부여받은 권한으로 좁힌다.
+  //
+  // 게이트는 관리자 메뉴와 같은 축(hasAdminMenuAccess) = owner 이거나 owner 가 admin_access 를
+  // 부여한 계정. 자가취득이 불가한 기존 플래그라 새 권한 축을 만들지 않는다.
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
-  if (!verifyOwner(request)) {
+  if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(
-      { ok: false, error: "라벨 편집은 총괄 관리자만 가능합니다" },
+      { ok: false, error: "라벨 편집 권한이 없습니다(총괄 관리자에게 요청하세요)" },
       { status: 403 },
     );
   }
