@@ -12,6 +12,11 @@ import WatchKit
 final class WorkoutManager: NSObject, ObservableObject {
     private static let nfcFeatureEnabled = true
     private static let unresolvedFallIncidentKey = "vitalguard.watch.unresolvedFallIncidentID"
+    private static let unresolvedFallIncidentAtKey = "vitalguard.watch.unresolvedFallIncidentAt"
+    // 억제키 만료 — 진짜 낙상(autoEscalated)·수동 SOS·프롬프트 중 앱 종료는 키를 지우는 경로가
+    // 없어 이후 모든 낙상 경보가 영구 차단되던 결함(감사 WCH-DATA-01). 중복 경보 억제라는 원래
+    // 목적은 이 시간 안에서 유지되고, 이후의 두 번째 낙상은 다시 경보된다.
+    private static let unresolvedFallIncidentTTL: TimeInterval = 5 * 60
     @Published var authorized = false
     @Published var isRunning = false
     @Published var latestHeartRate: Double?
@@ -93,25 +98,37 @@ final class WorkoutManager: NSObject, ObservableObject {
     private let hrHistoryKeepSec: TimeInterval = 90
     private let fallPromptTimeoutSec: TimeInterval = 20
     private var manualSyncRequestToken: NSObjectProtocol?
+    private var identityWipedToken: NSObjectProtocol?
     private static let wristTemperatureValidRange: ClosedRange<Double> = 20.0...45.0
     private static let wristTemperatureCacheRetention: TimeInterval = 24 * 60 * 60
 
     private var unresolvedFallIncidentID: String? {
-        let identifier = UserDefaults.standard
+        let defaults = UserDefaults.standard
+        let identifier = defaults
             .string(forKey: Self.unresolvedFallIncidentKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return identifier.isEmpty ? nil : identifier
+        guard !identifier.isEmpty else { return nil }
+        // 만료 판정 — 저장 시각이 없거나(구버전 잔존물) TTL 초과면 키를 제거하고 nil 로 본다.
+        let markedAt = defaults.double(forKey: Self.unresolvedFallIncidentAtKey)
+        if markedAt <= 0 || Date().timeIntervalSince1970 - markedAt > Self.unresolvedFallIncidentTTL {
+            defaults.removeObject(forKey: Self.unresolvedFallIncidentKey)
+            defaults.removeObject(forKey: Self.unresolvedFallIncidentAtKey)
+            return nil
+        }
+        return identifier
     }
 
     private func markFallIncidentUnresolved(_ candidateId: String) {
         guard !candidateId.isEmpty else { return }
         UserDefaults.standard.set(candidateId, forKey: Self.unresolvedFallIncidentKey)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.unresolvedFallIncidentAtKey)
     }
 
     private func clearFallIncidentIfMatches(_ candidateId: String) {
         guard let unresolved = unresolvedFallIncidentID else { return }
         guard candidateId.isEmpty || unresolved == candidateId else { return }
         UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentKey)
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentAtKey)
     }
 
     private struct HeartRatePoint {
@@ -159,6 +176,15 @@ final class WorkoutManager: NSObject, ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.manualSyncNow()
+            }
+        }
+        identityWipedToken = NotificationCenter.default.addObserver(
+            forName: .vitalguardWatchIdentityWiped,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleIdentityWiped()
             }
         }
         if Self.nfcFeatureEnabled {
@@ -328,9 +354,22 @@ final class WorkoutManager: NSObject, ObservableObject {
         lastStatus = "배터리 모드 적용"
     }
 
+    // 신원 소거 연동 — 이전 착용자 스코프의 잔존 상태(미전송분·미해결 낙상 억제키)를 함께 지운다(감사 WCH-PAIR-02).
+    private func handleIdentityWiped() {
+        transmitter.clearPendingAndBacklog()
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentKey)
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentAtKey)
+        activeFallPrompt = nil
+        fallPromptTask?.cancel()
+        fallPromptTask = nil
+    }
+
     deinit {
         if let manualSyncRequestToken {
             NotificationCenter.default.removeObserver(manualSyncRequestToken)
+        }
+        if let identityWipedToken {
+            NotificationCenter.default.removeObserver(identityWipedToken)
         }
         if let nfcScanResultToken {
             NotificationCenter.default.removeObserver(nfcScanResultToken)

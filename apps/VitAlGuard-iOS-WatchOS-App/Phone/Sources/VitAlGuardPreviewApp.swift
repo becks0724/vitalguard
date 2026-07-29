@@ -3179,6 +3179,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         let storedEmployeeId = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
+            // 워치가 큐잉된 옛 컨텍스트를 걸러내는 순서 기준(감사 WCH-PAIR-01) — 모든 발행 경로에 부여.
+            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": true,
             // WatchConnectivity application context is encrypted by the paired-device channel.
             // The Watch persists this only in device-only Keychain and uses it solely for vital ingest.
@@ -3213,6 +3215,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
     private func signedOutContext(syncInterval: Double) -> [String: Any] {
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
+            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": false,
             "appAuthJWT": "",
             "loginId": "",
@@ -3245,6 +3248,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         )
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
+            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": true,
             // Keep this login-specific update path equivalent to currentContext().
             // The paired Watch stores the token in its device-only Keychain for vital ingest only.
@@ -3278,6 +3282,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         guard WCSession.isSupported() else { return }
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
+            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": false,
             "loginId": "",
             "employeeId": "",

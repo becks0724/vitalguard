@@ -75,6 +75,14 @@ final class VitalTransmitter {
         trimBacklog()
     }
 
+    // 신원 소거 시 호출 — 이전 착용자 사번으로 쌓인 미전송분(윈도 누적·backlog)을 메모리·영속
+    // 양쪽에서 폐기한다(감사 WCH-PAIR-02: 다음 착용자 로그인 후 flush 되면 이전 사번으로 기록됨).
+    func clearPendingAndBacklog() {
+        pending.removeAll()
+        backlog.removeAll()
+        persistBacklog()
+    }
+
     // backlog 를 UserDefaults 에 저장(비었으면 키 제거). 모든 backlog 변경 직후 호출.
     private func persistBacklog() {
         if backlog.isEmpty {

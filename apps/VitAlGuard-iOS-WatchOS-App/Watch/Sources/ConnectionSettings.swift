@@ -131,6 +131,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let sensorPowerModeKey = "watchSensorPowerMode"
     private static let energyEfficiencyMigrationKey = "watchEnergyEfficiencyMigration.v1"
     private static let languageCodeKey = "watchLanguageCode"
+    // 마지막으로 적용한 폰 컨텍스트의 seq — 큐잉된 옛 컨텍스트가 최신 상태를 뒤집지 않게 순서 비교(감사 WCH-PAIR-01).
+    private static let lastAppliedContextSeqKey = "watchLastAppliedContextSeq"
     // 마지막으로 적용된 번들 기본 URL 의 스탬프. 새 빌드에서 defaultURLString 이 바뀌면(재설치)
     // 저장된 옛 URL 을 자동으로 새 기본값으로 교체 → 터널 회전 후 재설치 시 인앱 수정 없이 즉시 반영.
     private static let urlStampKey = "receiverURLStamp"
@@ -287,17 +289,30 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func signOut() {
+        wipeIdentityScopedState()
+    }
+
+    // 신원 소거 — 로그아웃·사용자 전환 시 이전 착용자 흔적(로그인·사번·이름·역할·토큰)을 전부
+    // 지운다(감사 WCH-PAIR-02: 종전엔 지워지는 영속 키 0/18 → 다음 착용자 생체가 이전 사번으로 기록).
+    // 미전송 backlog·미해결 낙상 억제키는 소유 객체(VitalTransmitter·WorkoutManager)가 알림을 받아 지운다.
+    func wipeIdentityScopedState() {
         loginId = ""
         appMode = .worker
         serverRole = "worker"
         canManageDashboard = false
+        workerName = Self.defaultWorkerName
+        employeeId = Self.defaultEmployeeId
+        WatchAppCredentialStore.save("")
+        NotificationCenter.default.post(name: .vitalguardWatchIdentityWiped, object: nil)
     }
 
     func activatePhoneSession() {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
-        applyPhoneContext(WCSession.default.applicationContext)
+        // receivedApplicationContext = 폰이 보낸 것. applicationContext 는 "내가 마지막으로 보낸 것"이라
+        // source 가드에서 항상 걸러져 시작 시 폰 컨텍스트가 반영되지 않았다(감사 WCH-PAIR-03).
+        applyPhoneContext(WCSession.default.receivedApplicationContext)
     }
 
     func syncLoginFromPhone() {
@@ -400,6 +415,13 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     private func applyPhoneContext(_ context: [String: Any]) {
         guard context["source"] as? String == "VitAlGuard-iPhone" else { return }
+        // 순서 비교 — transferUserInfo 폴백·중복 채널로 큐잉된 옛 컨텍스트가 최신 로그인/로그아웃을
+        // 뒤집지 않게, 폰이 부여한 단조증가 contextSeq 로 걸러낸다(감사 WCH-PAIR-01 권고).
+        // seq 없는 구버전 폰 페이로드는 종전대로 항상 적용한다(하위호환).
+        if let seq = context["contextSeq"] as? Double {
+            guard seq > UserDefaults.standard.double(forKey: Self.lastAppliedContextSeqKey) else { return }
+            UserDefaults.standard.set(seq, forKey: Self.lastAppliedContextSeqKey)
+        }
         let loggedIn = context["loggedIn"] as? Bool
         let incomingId = (context["loginId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingMode = WatchAppMode(rawValue: context["mode"] as? String ?? "") ?? Self.mode(for: incomingId)
@@ -429,14 +451,11 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
                 self.serverRole = incomingServerRole
                 self.canManageDashboard = incomingCanManage
                 self.employeeId = incomingEmployeeId.isEmpty ? Self.employeeId(for: incomingId) : incomingEmployeeId
-            } else if loggedIn == false, !self.loginId.isEmpty, incomingId.isEmpty {
-                // Older queued contexts can arrive after a fresh iPhone login. Do not let
-                // an empty stale payload flip an already-synced admin watch back to worker.
             } else if loggedIn == false {
-                self.loginId = ""
-                self.appMode = .worker
-                self.serverRole = "worker"
-                self.canManageDashboard = false
+                // 폰 로그아웃 반영 — 종전엔 "!loginId.isEmpty && incomingId.isEmpty" 를 잡는 빈 스테일
+                // 가드 분기가 정확히 로그아웃 페이로드를 삼켜 no-op 이었다(감사 WCH-PAIR-01).
+                // 스테일 컨텍스트는 위 contextSeq 비교가 걸러내므로 여기서는 신원을 전부 지운다.
+                self.wipeIdentityScopedState()
             } else if !incomingId.isEmpty {
                 self.loginId = incomingId
                 self.appMode = incomingMode
@@ -892,6 +911,7 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 }
 
 extension Notification.Name {
+    static let vitalguardWatchIdentityWiped = Notification.Name("vitalguard.watch.identityWiped")
     static let vitalguardWatchManualSyncRequest = Notification.Name("vitalguard.watch.manualSyncRequest")
     static let vitalguardWatchNfcScanResult = Notification.Name("vitalguard.watch.nfcScanResult")
     static let vitalguardWatchFallAlertClear = Notification.Name("vitalguard.watch.fallAlertClear")
