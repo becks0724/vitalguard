@@ -11,6 +11,16 @@ struct SettingsView: View {
 
     var body: some View {
         List {
+            Section(L("앱 정보")) {
+                HStack {
+                    Text(L("Apple Watch 앱"))
+                    Spacer()
+                    Text("\(L("버전")) \(appVersion) · \(L("빌드")) \(appBuild)")
+                        .foregroundStyle(WatchTheme.muted)
+                }
+                .font(.caption2.weight(.semibold))
+            }
+
             Section(L("iPhone 계정 연동")) {
                 HStack {
                     Text(settings.loginId.isEmpty ? L("워치 단독 모드") : settings.loginId)
@@ -192,6 +202,14 @@ struct SettingsView: View {
 
     private func L(_ text: String) -> String {
         settings.localized(text)
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+    }
+
+    private var appBuild: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
     }
 }
 

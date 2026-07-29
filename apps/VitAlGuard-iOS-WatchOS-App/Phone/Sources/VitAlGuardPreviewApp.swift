@@ -3578,12 +3578,16 @@ final class DashboardSyncService: NSObject {
             return
         }
 
-        beginBackgroundAllowance()
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard applyVitalAuthorization(to: &request) else {
+            completion?(false, "관제웹 로그인 JWT가 없어 생체 전송을 보류했습니다.")
+            return
+        }
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.timeoutInterval = 20
+        beginBackgroundAllowance()
 
         // 화면이 떠 있는 동안에는 background URLSession 대신 일반 세션으로 바로 전송한다.
         // background URLSession은 신뢰성은 높지만 watch↔phone↔dashboard 최초 연결을 늦출 수 있다.
@@ -3609,6 +3613,14 @@ final class DashboardSyncService: NSObject {
         completions[task.taskIdentifier] = completion
         uploadFiles[task.taskIdentifier] = fileURL
         task.resume()
+    }
+
+    private func applyVitalAuthorization(to request: inout URLRequest) -> Bool {
+        let token = DashboardCredentialStore.loadAppJWT()?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else { return false }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return true
     }
 
     private func completeUpload(error: Error?, statusCode: Int, completion: Completion?) {
@@ -16908,6 +16920,8 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
             ])
         }
 
+        formStack.addArrangedSubview(sectionTitle("앱 정보"))
+        formStack.addArrangedSubview(appVersionRow())
         formStack.addArrangedSubview(sectionTitle("화면 모드"))
         formStack.addArrangedSubview(themeModeRow())
         formStack.addArrangedSubview(sectionTitle("VitAlGuard 초기 사용방법"))
@@ -17049,6 +17063,38 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         label.textColor = textColor
         label.font = UIFont.systemFont(ofSize: 20, weight: .black)
         return label
+    }
+
+    private func appVersionRow() -> UIView {
+        let row = UIView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        applyGlass(to: row, cornerRadius: 24)
+
+        let title = UILabel()
+        title.translatesAutoresizingMaskIntoConstraints = false
+        title.text = "iPhone 앱"
+        title.textColor = textColor
+        title.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+
+        let version = UILabel()
+        version.translatesAutoresizingMaskIntoConstraints = false
+        let marketing = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
+        version.text = "버전 \(marketing) · 빌드 \(build)"
+        version.textColor = detailTextColor
+        version.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+
+        row.addSubview(title)
+        row.addSubview(version)
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 52),
+            title.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 18),
+            title.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            version.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -18),
+            version.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            version.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12)
+        ])
+        return row
     }
 
     private func input(_ field: UITextField, placeholder: String) -> UIView {

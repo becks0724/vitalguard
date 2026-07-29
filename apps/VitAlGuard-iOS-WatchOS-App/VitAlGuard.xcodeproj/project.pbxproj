@@ -527,7 +527,7 @@
 				CODE_SIGN_ENTITLEMENTS = Phone/BundleTemplate/VitAlGuard.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Phone/BundleTemplate/Info.plist;
@@ -536,7 +536,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard;
 				PRODUCT_NAME = VitAlGuard;
 				SDKROOT = iphoneos;
@@ -615,7 +615,7 @@
 				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				CODE_SIGN_ENTITLEMENTS = Phone/Widgets/VitAlGuardWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -625,7 +625,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.widgets;
 				PRODUCT_NAME = VitAlGuardWidgets;
 				SDKROOT = iphoneos;
@@ -641,7 +641,7 @@
 				APP_SHORTCUTS_ENABLE_FLEXIBLE_MATCHING = NO;
 				CODE_SIGN_ENTITLEMENTS = Phone/Widgets/VitAlGuardWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -651,7 +651,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.widgets;
 				PRODUCT_NAME = VitAlGuardWidgets;
 				SDKROOT = iphoneos;
@@ -668,12 +668,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Watch/SupportingFiles/VitAlGuardForWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/SupportingFiles/Info.plist;
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.watch;
 				PRODUCT_NAME = VitAlGuardWatch;
 				RECEIVER_URL_DEFAULT = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital";
@@ -691,12 +691,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Watch/SupportingFiles/VitAlGuardForWatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Watch/SupportingFiles/Info.plist;
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard.watch;
 				PRODUCT_NAME = VitAlGuardWatch;
 				RECEIVER_URL_DEFAULT = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital";
@@ -713,7 +713,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Phone/BundleTemplate/VitAlGuard.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 80;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = R2684PTQQZ;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Phone/BundleTemplate/Info.plist;
@@ -722,7 +722,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 8.0;
+				MARKETING_VERSION = 8.1;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yangjeehoo.vitalguard;
 				PRODUCT_NAME = VitAlGuard;
 				SDKROOT = iphoneos;
