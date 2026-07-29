@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { clearSessionToken, getSessionToken } from "./LoginGate";
+import { ASSIGNMENT_CHAT_CONTRACT, type AssignmentChatContract } from "../../lib/assignment-chat-contract";
 
 // 규칙 엔진의 확정 판정 요약 — 신호등 배지는 LLM 문장이 아니라 이 값으로 그린다.
 type VerdictBadge = {
@@ -101,11 +102,11 @@ const SUGGESTIONS = [
 ];
 
 export default function AssignmentChatBoard() {
+  const [contract, setContract] = useState<AssignmentChatContract>(ASSIGNMENT_CHAT_CONTRACT);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      text:
-        "작업자 사번(EMP-…)을 포함해 질문해 주세요.\n예: \"EMP-6861 오늘 고소작업 배치 가능해?\"\n등급·배제 권고는 최근 24시간 워치 실측 기반의 안전 기준 참고 정보입니다.",
+      text: ASSIGNMENT_CHAT_CONTRACT.welcomeMessage,
       source: "rule",
     },
   ]);
@@ -115,6 +116,23 @@ export default function AssignmentChatBoard() {
   // 직전 단일 서버 판정의 가명 사번만 보관한다. 대화 전문/이름은 보내지 않아 주입·개인정보 표면을 늘리지 않는다.
   const [followUpWorkerIds, setFollowUpWorkerIds] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const token = getSessionToken();
+    if (!token) return;
+    void fetch("/api/assignment/chat", { headers: { authorization: `Bearer ${token}` }, cache: "no-store" })
+      .then(async (res) => (res.ok ? ((await res.json()) as { contract?: AssignmentChatContract }) : null))
+      .then((json) => {
+        if (!json?.contract) return;
+        setContract(json.contract);
+        setMessages((previous) =>
+          previous.length === 1 && previous[0]?.role === "assistant"
+            ? [{ ...previous[0], text: json.contract!.welcomeMessage }]
+            : previous,
+        );
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -338,7 +356,7 @@ export default function AssignmentChatBoard() {
 
       <div className="border-t border-zinc-200 px-5 py-3 dark:border-white/10">
         <div className="mb-2 flex flex-wrap gap-1.5">
-          {SUGGESTIONS.map((s) => (
+          {contract.suggestions.map((s) => (
             <button
               key={s}
               type="button"
@@ -360,7 +378,7 @@ export default function AssignmentChatBoard() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="질문을 입력하세요"
+            placeholder={contract.inputPlaceholder}
             className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-2.5 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-white/15 dark:bg-zinc-800 dark:text-zinc-100"
           />
           <button
@@ -368,12 +386,12 @@ export default function AssignmentChatBoard() {
             disabled={busy || input.trim().length === 0}
             className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
           >
-            질문
+            {contract.requestLabel}
           </button>
         </form>
         <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
           {disclaimer ??
-            "본 등급은 안전 기준 참고 정보이며 의료적 판단이 아닙니다. 최종 배치 결정 권한은 감독관에게 있습니다."}
+            contract.disclaimer}
         </p>
       </div>
     </div>

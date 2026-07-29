@@ -11,6 +11,16 @@ test("최소 유효 샘플(workerId+ts)은 통과한다", () => {
   assert.equal(r.success, true);
 });
 
+test("단말 source·서버 확정 출처 라벨은 수신 계약에 보존된다", () => {
+  const r = VitalSampleSchema.safeParse({
+    workerId: "EMP-1",
+    ts: TS,
+    source: "VitAlGuard-iPhone",
+    dataOrigin: "ios_data_vitalguard",
+  });
+  assert.equal(r.success, true);
+});
+
 test("workerId 누락은 거부한다", () => {
   assert.equal(VitalSampleSchema.safeParse({ ts: TS }).success, false);
 });

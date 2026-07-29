@@ -1,6 +1,17 @@
 // 생체 시계열 (VitalStream) — Watch → 폰 → IoT → DDB 단일 샘플
 import { z } from "zod";
 
+// 수신 단말 출처는 서버가 source 를 기준으로 확정한다. dataOrigin 은 클라이언트 입력을
+// 신뢰하지 않고, 수집 경계에서 이 목록 중 하나로 덮어써 DB·관제 표시를 일관되게 유지한다.
+export const VITAL_DATA_ORIGINS = [
+  "ios_data_vitalguard",
+  "watchos_data_vitalguard",
+  "mockup_ios_data_vitalguard",
+  "mockup_watchos_data_vitalguard",
+] as const;
+export const VitalDataOriginSchema = z.enum(VITAL_DATA_ORIGINS);
+export type VitalDataOrigin = z.infer<typeof VitalDataOriginSchema>;
+
 export const VitalSampleSchema = z.object({
   // 길이·문자셋 제한 — workerId 는 서버 로그(`[vital] … workerId=…`)와 버킷 키에 그대로 들어간다.
   // 무제한이면 개행을 넣어 로그 라인을 위조하거나 100KB 문자열로 로그를 부풀릴 수 있다(감사 DLT-SCHEMA).
@@ -10,6 +21,9 @@ export const VitalSampleSchema = z.object({
     .max(64)
     .regex(/^[A-Za-z0-9._:-]+$/, "workerId 는 영숫자와 . _ : - 만 허용"),
   ts: z.string().datetime(),
+  // 단말이 선언한 송신기 식별자. 서버는 이 값으로 실 iPhone·Watch와 목업을 분리한다.
+  source: z.string().min(1).max(80).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+  dataOrigin: VitalDataOriginSchema.optional(),
   workerName: z.string().min(1).max(40).optional(),
   employeeId: z.string().min(1).max(40).optional(),
   jobTitle: z.string().min(1).max(40).optional(), // 직급/직책 — 폰 ⚙️ 발신값(관제 웹 입력은 worker_profile 오버라이드)

@@ -6,7 +6,9 @@
 //   이름·원시 생체(심박 수치 등)는 전달하지 않는다. 국내 사업자(네이버클라우드)라 국외이전 비해당.
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
+import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
+import { ASSIGNMENT_CHAT_CONTRACT } from "../../../../lib/assignment-chat-contract";
 import { assessWorker, type WorkerAssignment } from "../../../../lib/assignment-service";
 import {
   formatChatRuleFallback,
@@ -15,6 +17,8 @@ import {
 } from "../../../../lib/assignment-chat-presentation";
 import { CONDITION_DISCLAIMER, GRADE_LABEL } from "../../../../lib/worker-condition";
 import { getMonitorSlots, getWorkerAliasMap, listAllWorkers } from "../../../../lib/db";
+import { clientIpFromRequest } from "../../../../lib/client-ip";
+import { consumeToken } from "../../../../lib/rate-limit";
 import {
   assignmentOutputPolicyInstruction,
   assignmentOutputPolicyRepairInstruction,
@@ -34,8 +38,76 @@ export const dynamic = "force-dynamic";
 const CLOVA_MODEL = process.env.CLOVA_MODEL ?? "HCX-005";
 const MAX_WORKERS_PER_QUERY = 3;
 const MAX_ALL_WORKERS = 20; // '전체 작업자' 요약 시 평가 상한.
+const MAX_MESSAGE_CHARACTERS = 1_200;
+const MAX_REQUEST_BYTES = 8_192;
+const CHAT_RATE_LIMIT = 30;
+const CHAT_RATE_WINDOW_MS = 60_000;
 
 const SYSTEM_PROMPT = assignmentSystemInstruction();
+
+function hyperClovaAPIKey(): string {
+  return (
+    process.env.CLOVASTUDIO_API_KEY ??
+    process.env.CLOVA_API_KEY ??
+    process.env.HYPERCLOVA_API_KEY ??
+    ""
+  ).trim();
+}
+
+/**
+ * iPhone/Watch 로그인용 APP_JWT_SECRET은 대시보드 세션 비밀과 분리한다.
+ * 다른 작업자의 배치 정보를 조회할 수 없도록 감독자 역할만 허용한다.
+ */
+async function canUseAssignmentChat(request: Request): Promise<boolean> {
+  if (await hasAdminMenuAccess(request)) return true;
+  const appSession = verifyAppJwt(bearerToken(request));
+  return appSession?.role === "owner" || appSession?.role === "admin";
+}
+
+class RequestTooLargeError extends Error {}
+
+async function readBoundedJson(request: Request): Promise<{ message?: unknown; followUpWorkerIds?: unknown }> {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null && (!/^\d+$/.test(declaredLength) || Number(declaredLength) > MAX_REQUEST_BYTES)) {
+    throw new RequestTooLargeError();
+  }
+  if (!request.body) return {};
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_REQUEST_BYTES) throw new RequestTooLargeError();
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(body)) as { message?: unknown; followUpWorkerIds?: unknown };
+}
+
+function chatRateAllowed(request: Request): boolean {
+  return consumeToken(`assignment-chat:${clientIpFromRequest(request)}`, CHAT_RATE_LIMIT, CHAT_RATE_WINDOW_MS);
+}
+
+export async function GET(request: Request) {
+  if (!(await canUseAssignmentChat(request))) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  if (!chatRateAllowed(request)) {
+    return NextResponse.json({ ok: false, error: "too_many_requests" }, { status: 429 });
+  }
+  return NextResponse.json({ ok: true, contract: ASSIGNMENT_CHAT_CONTRACT }, { headers: { "Cache-Control": "private, max-age=60" } });
+}
 
 async function clovaReply(
   question: string,
@@ -43,7 +115,7 @@ async function clovaReply(
   outputPolicy: string,
   repairInstruction?: string,
 ): Promise<string> {
-  const key = process.env.CLOVA_API_KEY;
+  const key = hyperClovaAPIKey();
   if (!key) throw new Error("CLOVA_API_KEY not set");
   // Chat Completions v3(HCX-005)는 요청당 system 메시지를 하나만 허용한다.
   // 기본 지침·동적 출력 정책·교정 지침을 분리하면 400이므로 하나로 합친다.
@@ -119,20 +191,40 @@ async function resolveByName(message: string): Promise<{ workerId: string; name:
 }
 
 export async function POST(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  if (!(await canUseAssignmentChat(request))) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  if (!chatRateAllowed(request)) {
+    return NextResponse.json({ ok: false, error: "too_many_requests" }, { status: 429 });
+  }
+  let body: { message?: unknown; followUpWorkerIds?: unknown };
+  try {
+    body = await readBoundedJson(request);
+  } catch (error) {
+    if (error instanceof RequestTooLargeError) {
+      return NextResponse.json(
+        { ok: false, error: "message_too_large", maxCharacters: MAX_MESSAGE_CHARACTERS },
+        { status: 413 },
+      );
+    }
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
   }
   let message = "";
   let followUpWorkerIds: string[] = [];
   try {
-    const body = (await request.json()) as { message?: unknown; followUpWorkerIds?: unknown };
     message = typeof body.message === "string" ? body.message.trim() : "";
     followUpWorkerIds = parseFollowUpWorkerIds(body.followUpWorkerIds);
   } catch {
-    /* fallthrough → 400 */
+    return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
   }
   if (!message) {
     return NextResponse.json({ ok: false, error: "message required" }, { status: 400 });
+  }
+  if (message.length > MAX_MESSAGE_CHARACTERS) {
+    return NextResponse.json(
+      { ok: false, error: "message_too_large", maxCharacters: MAX_MESSAGE_CHARACTERS },
+      { status: 413 },
+    );
   }
 
   // 질문에서 작업자 ID 추출(EMP-…/VW-… 사번 패턴, 가명 ID).

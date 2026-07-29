@@ -1,9 +1,12 @@
-import { VitalSample, parseResilientVitalSample } from "@safetymonitor/schemas";
+import { type VitalDataOrigin, VitalSample, parseResilientVitalSample } from "@safetymonitor/schemas";
 
 import {
   persistSample,
+  persistDataMockup,
   updateFallCandidateState,
   totalPersisted as dbTotalPersisted,
+  totalDataMockupPersisted as dbTotalDataMockupPersisted,
+  recentDataMockupSamples,
   listAllWorkers,
   getWorkerProfiles,
   getWorkerAliasMap,
@@ -29,6 +32,32 @@ const RESERVED_PREFIX_RE = /^(test_|smoke_|infra_|reserved_)/i;
 
 export function isReservedTestWorker(workerId: string) {
   return RESERVED_TEST_IDS.has(workerId) || RESERVED_PREFIX_RE.test(workerId);
+}
+
+// 단말 source 는 앱이 보낸 식별자이고, DB 표기값은 이 서버 매핑으로만 확정한다.
+// 알 수 없는 source 는 실데이터·목업 어느 쪽에도 저장하지 않아 원본 오염을 차단한다.
+export function classifyVitalDataOrigin(source: string | undefined): VitalDataOrigin | null {
+  switch (source) {
+    case "VitAlGuard-iPhone":
+      return "ios_data_vitalguard";
+    case "VitAlGuard-WatchVitals":
+    case "VitAlGuard-Watch-background":
+      return "watchos_data_vitalguard";
+    case "VitAlGuard-Mock-iPhone":
+    case "VitAlGuard-Mock-iOS":
+    case "mockup_ios_data_vitalguard":
+      return "mockup_ios_data_vitalguard";
+    case "VitAlGuard-Mock-Watch":
+    case "VitAlGuard-Mock-watchOS":
+    case "mockup_watchos_data_vitalguard":
+      return "mockup_watchos_data_vitalguard";
+    default:
+      return null;
+  }
+}
+
+function isDataMockupOrigin(origin: VitalDataOrigin): boolean {
+  return origin === "mockup_ios_data_vitalguard" || origin === "mockup_watchos_data_vitalguard";
 }
 
 // 메트릭별 생체 위험 판정 — alerts "vital" 전이 감지용(hr/spo2/temp 독립 추적).
@@ -120,9 +149,28 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
     );
   });
   // 작업자 ID 병합 — 별칭(secondary)을 주 ID(primary)로 정규화해 같은 사람을 1카드로 합친다.
-  const sample = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
-  if (isReservedTestWorker(sample.workerId)) {
+  const resolved = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
+  if (isReservedTestWorker(resolved.workerId)) {
     return null;
+  }
+  const dataOrigin = classifyVitalDataOrigin(resolved.source);
+  if (!dataOrigin) {
+    console.warn(`[vital] 미분류 source 차단 — workerId=${resolved.workerId}`);
+    return null;
+  }
+  const sample = { ...resolved, dataOrigin };
+  // 빈 샘플 미영속 — 실측 신호가 하나도 없는 샘플(화면 "—")은 수신하지 않는다.
+  if (!hasMonitorableSignal(sample)) {
+    return null;
+  }
+  // 목업은 낙상 후보 후속 갱신·알림 이력보다 먼저 분리한다. 그래야 목업이 vital_samples 행을 갱신할 수 없다.
+  if (isDataMockupOrigin(dataOrigin)) {
+    try {
+      await persistDataMockup(sample);
+    } catch (error) {
+      console.error("[store] data_mockup persist failed:", error);
+    }
+    return sample;
   }
   // 낙상 후보 후속 업데이트(HR 추적/확인 프롬프트 결과) — 기존 candidate 행만 보강하고, 실제 경보
   // 플래그가 없는 메타데이터 샘플은 실시간 ring/알림에 넣지 않는다. 경보(sample.fallDetected/manualSos)는
@@ -134,12 +182,6 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   ) {
     await updateFallCandidateState(sample);
     if (!sample.fallDetected && !sample.manualSos) return sample;
-  }
-  // 빈 샘플 미영속 — 실측 신호가 하나도 없는 샘플(화면 "—")은 수신하지 않는다(ring·DB 양쪽 제외).
-  // 상시 접속 데모/관리자 기기가 값 없이 계속 POST 하는 빈 하트비트가 vital_samples 에 무한 누적돼
-  // "DB 영속 누적" 카운트를 부풀리는 것을 막는다. 실 생체값·이벤트·낙상 후보 샘플은 전부 보존된다.
-  if (!hasMonitorableSignal(sample)) {
-    return null;
   }
   // 생체 위험 전이 감지용 — 추가 전 이 워커의 병합(sticky) 상태.
   // 같은 워커 샘플은 ring 에서 한 번만 필터해 prev/cur 두 병합에 재사용(중복 filter 제거).
@@ -192,6 +234,14 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
 // DB 에 누적된 총 sample 건수 — UI 라벨 "DB 영속 N건 누적" 표시용
 export async function totalPersisted(): Promise<number> {
   return dbTotalPersisted();
+}
+
+export async function totalDataMockupPersisted(): Promise<number> {
+  return dbTotalDataMockupPersisted();
+}
+
+export async function dataMockupSamples(): Promise<VitalSample[]> {
+  return recentDataMockupSamples();
 }
 
 // 워커별 DB 누적 건수 — 각 작업자 카드의 "실시간 수집 DB 누적 N건" 표시용.

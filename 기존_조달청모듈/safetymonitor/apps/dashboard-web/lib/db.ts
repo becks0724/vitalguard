@@ -2,7 +2,7 @@
 // 캠퍼스 Postgres(DATABASE_URL). better-sqlite3(동기) → pg(비동기) 전환 — GCP Cloud Run 대비.
 // 모든 공개 함수는 async. 스키마는 첫 쿼리 시 멱등 생성(ensureSchema, CREATE TABLE IF NOT EXISTS).
 import pg, { Pool } from "pg";
-import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
+import { VitalSampleSchema, type VitalDataOrigin, type VitalSample, type CctvFallEvent } from "@safetymonitor/schemas";
 
 import {
   calendarEventScopeClause,
@@ -193,6 +193,34 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_vs_worker_ts ON vital_samples(worker_id, ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts ON vital_samples(ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts_id ON vital_samples(ts, id);
+    -- 수신 출처는 원본 실측 테이블에 명시한다. 과거 행은 출처를 추정하지 않고 legacy 로 보존한다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS data_origin TEXT NOT NULL DEFAULT 'legacy_unclassified_vitalguard';
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS source TEXT;
+    CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
+
+    -- 목업은 vital_samples 에 절대 적재하지 않는다. iPhone·Watch 목업도 각각 명시해 혼합 집계를 막는다.
+    CREATE TABLE IF NOT EXISTS data_mockup (
+      id SERIAL PRIMARY KEY,
+      data_origin TEXT NOT NULL CHECK (data_origin IN ('mockup_ios_data_vitalguard', 'mockup_watchos_data_vitalguard')),
+      source TEXT NOT NULL,
+      worker_id TEXT NOT NULL,
+      worker_name TEXT,
+      employee_id TEXT,
+      ts TEXT NOT NULL,
+      received_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      raw_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_data_mockup_origin_ts ON data_mockup(data_origin, ts DESC);
+
+    -- TablePlus 무료 버전에서도 한 번의 조회로 출처별 건수·워커·최신 시각을 검증할 수 있는 읽기 전용 요약.
+    CREATE OR REPLACE VIEW vital_data_origin_summary AS
+      SELECT data_origin, COUNT(*)::bigint AS sample_count, COUNT(DISTINCT worker_id)::bigint AS worker_count, MAX(ts) AS latest_ts
+      FROM vital_samples
+      GROUP BY data_origin
+      UNION ALL
+      SELECT data_origin, COUNT(*)::bigint AS sample_count, COUNT(DISTINCT worker_id)::bigint AS worker_count, MAX(ts) AS latest_ts
+      FROM data_mockup
+      GROUP BY data_origin;
 
     CREATE TABLE IF NOT EXISTS weather_log (
       id SERIAL PRIMARY KEY,
@@ -631,7 +659,15 @@ function buildInsert(
 
 // 단건 insert — sample 은 zod 검증 통과한 정상 값
 export async function persistSample(sample: VitalSample): Promise<void> {
+  if (
+    sample.dataOrigin !== "ios_data_vitalguard" &&
+    sample.dataOrigin !== "watchos_data_vitalguard"
+  ) {
+    throw new Error("실데이터 테이블에는 iPhone 또는 Watch 실측 출처만 저장할 수 있습니다");
+  }
   const cols: Record<string, unknown> = {
+    data_origin: sample.dataOrigin,
+    source: sample.source ?? null,
     worker_id: sample.workerId,
     worker_name: sample.workerName ?? null,
     employee_id: sample.employeeId ?? null,
@@ -687,6 +723,26 @@ export async function persistSample(sample: VitalSample): Promise<void> {
   await q(text, values);
 }
 
+// 목업은 실데이터와 구조적으로 분리된 data_mockup 으로만 저장한다.
+export async function persistDataMockup(sample: VitalSample): Promise<void> {
+  if (
+    sample.dataOrigin !== "mockup_ios_data_vitalguard" &&
+    sample.dataOrigin !== "mockup_watchos_data_vitalguard"
+  ) {
+    throw new Error("data_mockup에는 목업 출처만 저장할 수 있습니다");
+  }
+  const { text, values } = buildInsert("data_mockup", {
+    data_origin: sample.dataOrigin,
+    source: sample.source ?? "VitAlGuard-Mock",
+    worker_id: sample.workerId,
+    worker_name: sample.workerName ?? null,
+    employee_id: sample.employeeId ?? null,
+    ts: sample.ts,
+    raw_json: JSON.stringify(sample),
+  });
+  await q(text, values);
+}
+
 export async function updateFallCandidateState(sample: VitalSample): Promise<boolean> {
   const { rowCount } = await q(
     `UPDATE vital_samples
@@ -721,6 +777,29 @@ export async function updateFallCandidateState(sample: VitalSample): Promise<boo
 export async function totalPersisted(): Promise<number> {
   const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM vital_samples");
   return rows[0]?.n ?? 0;
+}
+
+export async function totalDataMockupPersisted(): Promise<number> {
+  const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM data_mockup");
+  return rows[0]?.n ?? 0;
+}
+
+// 대시보드의 data_mockup 전용 섹션용. 파싱 실패한 과거/손상 목업은 실데이터 화면으로 새지 않게 제외한다.
+export async function recentDataMockupSamples(limit = 40): Promise<VitalSample[]> {
+  const { rows } = await q<{ raw_json: string; data_origin: VitalDataOrigin }>(
+    "SELECT raw_json, data_origin FROM data_mockup ORDER BY ts DESC, id DESC LIMIT $1",
+    [Math.min(Math.max(limit, 1), 100)],
+  );
+  const samples: VitalSample[] = [];
+  for (const row of rows) {
+    try {
+      const parsed = VitalSampleSchema.safeParse(JSON.parse(row.raw_json));
+      if (parsed.success) samples.push({ ...parsed.data, dataOrigin: row.data_origin });
+    } catch {
+      // 목업 원문 손상은 해당 목업 행만 건너뛰며 운영 실측 스트림에는 영향을 주지 않는다.
+    }
+  }
+  return samples;
 }
 
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위

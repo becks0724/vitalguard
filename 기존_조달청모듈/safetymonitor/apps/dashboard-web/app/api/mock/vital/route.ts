@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import type { VitalSample } from "@safetymonitor/schemas";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
-import { ingestAuthStatus } from "../../../../lib/ingest-auth";
+import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import {
@@ -12,6 +12,8 @@ import {
   latestByWorker,
   recentSamples,
   totalPersisted,
+  totalDataMockupPersisted,
+  dataMockupSamples,
   workerAliases,
   workerProfiles,
 } from "../store";
@@ -35,12 +37,20 @@ function redactPii(sample: VitalSample, exposePii: boolean): VitalSample {
 }
 
 export async function GET(request: Request) {
-  const exposePii = EXPOSE_PII && verifyBasicAuth(request);
+  // 관제 생체 스트림은 URL을 아는 누구에게도 공개하지 않는다. PII opt-in은 추가 노출 범위만
+  // 정하며, 원본 생체·목업 데이터 자체의 조회 권한을 대신하지 않는다.
+  if (!verifyBasicAuth(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
+  const exposePii = EXPOSE_PII;
   const aliasMap = await workerAliases();
   return NextResponse.json({
     latest: latestByWorker(aliasMap).map((s) => redactPii(s, exposePii)),
     recent: recentSamples().map((s) => redactPii(s, exposePii)),
     totalPersisted: await totalPersisted(),
+    // 목업은 실측 스트림과 별도 data_mockup 섹션으로만 반환한다.
+    dataMockup: (await dataMockupSamples()).map((s) => redactPii(s, exposePii)),
+    dataMockupPersisted: await totalDataMockupPersisted(),
     countsByWorker: await countsByWorker(),
     workerProfiles: await workerProfiles(),
     workerAliases: aliasMap,
@@ -51,8 +61,6 @@ export async function GET(request: Request) {
 }
 
 // 무인증 수집 전송 경고(soft 모드) — 프로세스당 1회만(5초 폴 로그 스팸 방지).
-let warnedUnauthedVital = false;
-
 // 배치 항목 수 상한(감사 BE-VALID-01) — 레이트리밋은 "요청 수"만 세므로 한 요청에 수십만 건을
 // 담는 단일 폭탄은 막지 못한다. 항목마다 zod 파싱 + DB INSERT 가 돌아 요청 하나로 인스턴스를
 // 묶어둘 수 있다.
@@ -61,6 +69,47 @@ let warnedUnauthedVital = false;
 // 오프라인 후 재전송 시 backlog 전체를 1배열로 보내므로 정상 최대치가 300 이고, 여기에
 // 여유를 둬 500 으로 잡는다. 정상 트래픽은 자르지 않고 폭탄만 막는 자리다.
 const MAX_BATCH_ITEMS = 500;
+// 500건 backlog가 정상 최대치여도, JSON 본문 자체가 수십 MB이면 request.json() 단계에서
+// 메모리/CPU가 먼저 소모된다. Content-Length가 없거나 거짓이어도 stream 합계로 다시 제한한다.
+const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+
+class PayloadTooLargeError extends Error {}
+
+async function readBoundedJson(request: Request): Promise<unknown> {
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_REQUEST_BYTES) {
+    throw new PayloadTooLargeError();
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) throw new SyntaxError("요청 본문이 없습니다");
+
+  const decoder = new TextDecoder();
+  let receivedBytes = 0;
+  let bodyText = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    receivedBytes += value.byteLength;
+    if (receivedBytes > MAX_REQUEST_BYTES) {
+      await reader.cancel();
+      throw new PayloadTooLargeError();
+    }
+    bodyText += decoder.decode(value, { stream: true });
+  }
+  bodyText += decoder.decode();
+  return JSON.parse(bodyText);
+}
+
+function bodyIsBoundToWorker(body: unknown, workerId: string): boolean {
+  const samples = Array.isArray(body) ? body : [body];
+  return samples.length > 0 && samples.every(
+    (sample) =>
+      typeof sample === "object" &&
+      sample !== null &&
+      (sample as { workerId?: unknown }).workerId === workerId,
+  );
+}
 
 export async function POST(request: Request) {
   // 빈도 제한 — 무토큰 수용(soft) 상태라 위조 주입 비용이 0 이었다(감사 BE-RATE-01).
@@ -73,17 +122,17 @@ export async function POST(request: Request) {
       { status: 429 },
     );
   }
-  // 토큰 병행(soft) — 유효 토큰 있으면 인증, 무토큰은 한시 허용(경고), 무효 토큰은 거부.
-  const auth = ingestAuthStatus(request);
-  if (auth === "invalid") {
+  // 생체·낙상·SOS 데이터는 관제 판단을 바꾸므로, Watch/iPhone 앱 JWT의 사번과 본문 사번이
+  // 정확히 같을 때만 수용한다. 범용 업로드 토큰은 이 개인 생체 경로에서 허용하지 않는다.
+  const claims = verifyAppJwt(bearerToken(request));
+  if (!claims?.workerId) {
     return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
   }
-  if (auth === "none" && !warnedUnauthedVital) {
-    warnedUnauthedVital = true;
-    console.warn("[vital] 무인증 수집 전송 수용 중(soft) — 발표 후 토큰 필수화 예정");
-  }
   try {
-    const body = await request.json();
+    const body = await readBoundedJson(request);
+    if (!bodyIsBoundToWorker(body, claims.workerId)) {
+      return NextResponse.json({ ok: false, error: "토큰 사번과 수집 사번이 일치하지 않습니다" }, { status: 403 });
+    }
 
     // 워치 배칭 전송 — 한 요청에 샘플 배열(라디오 기상 1회). 단일 객체도 그대로 허용(폰 호환).
     if (Array.isArray(body)) {
@@ -168,6 +217,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, sample }, { status: 201 });
   } catch (error: unknown) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json(
+        { ok: false, error: `요청 본문은 최대 ${MAX_REQUEST_BYTES / 1024 / 1024}MB까지 허용됩니다` },
+        { status: 413 },
+      );
+    }
     console.error("POST Error:", error);
     if (error instanceof ZodError) {
       return NextResponse.json(

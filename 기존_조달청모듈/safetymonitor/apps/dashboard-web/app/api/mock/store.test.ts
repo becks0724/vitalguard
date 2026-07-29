@@ -11,6 +11,7 @@ import {
   hasMonitorableSignal,
   hasNewDangerMetric,
   isReservedTestWorker,
+  classifyVitalDataOrigin,
   mergeLatestByWorker,
   vitalDanger,
 } from "./store";
@@ -29,6 +30,14 @@ test("isReservedTestWorker — 진단/예약 ID 는 차단, 실 작업자는 통
   assert.equal(isReservedTestWorker("reserved_test_worker"), true);
   assert.equal(isReservedTestWorker("EMP-1024"), false);
   assert.equal(isReservedTestWorker("demo_ios_01"), false);
+});
+
+test("classifyVitalDataOrigin — 실 iPhone·Watch와 기기별 목업을 분리한다", () => {
+  assert.equal(classifyVitalDataOrigin("VitAlGuard-iPhone"), "ios_data_vitalguard");
+  assert.equal(classifyVitalDataOrigin("VitAlGuard-WatchVitals"), "watchos_data_vitalguard");
+  assert.equal(classifyVitalDataOrigin("VitAlGuard-Mock-iPhone"), "mockup_ios_data_vitalguard");
+  assert.equal(classifyVitalDataOrigin("VitAlGuard-Mock-Watch"), "mockup_watchos_data_vitalguard");
+  assert.equal(classifyVitalDataOrigin("demo"), null);
 });
 
 test("mergeLatestByWorker — reserved 워커는 결과에서 제외", () => {

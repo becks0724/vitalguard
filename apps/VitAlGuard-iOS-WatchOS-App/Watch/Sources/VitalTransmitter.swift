@@ -29,6 +29,13 @@ final class VitalTransmitter {
     private var workerName: String { ConnectionSettings.currentWorkerName() }
     private var employeeId: String { ConnectionSettings.currentEmployeeId() }
 
+    private func applyAppAuthorization(to request: inout URLRequest) -> Bool {
+        let token = ConnectionSettings.currentAppJWT().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return false }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return true
+    }
+
     // 배칭 — 라디오 기상 횟수를 줄이려고 HR 샘플을 윈도에 모았다가 주기마다 1배열로 전송.
     // flushInterval 을 낮추면 대시보드 신선도↑·배터리 소모↑ (5초면 종전 동작). 30초가 기본.
     private var pending: [[String: Any]] = []   // 현재 윈도 누적분(아직 미전송)
@@ -386,6 +393,7 @@ final class VitalTransmitter {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard applyAppAuthorization(to: &req) else { return "아이폰 관제 로그인 동기화 필요" }
         req.httpBody = body
         req.timeoutInterval = 12
         do {
@@ -446,6 +454,11 @@ final class VitalTransmitter {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard applyAppAuthorization(to: &req) else {
+            backlog.insert(contentsOf: batch, at: 0); trimBacklog()
+            onResult?(false, "아이폰 로그인 동기화 필요 → 버퍼", backlog.count, 0)
+            return
+        }
         req.httpBody = body
         req.timeoutInterval = 15
         do {
@@ -473,6 +486,11 @@ final class VitalTransmitter {
         var req = URLRequest(url: endpoint)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        guard applyAppAuthorization(to: &req) else {
+            backlog.insert(contentsOf: batch, at: 0); trimBacklog()
+            onResult?(false, "아이폰 로그인 동기화 필요 → 버퍼", backlog.count, 0)
+            return
+        }
         req.httpBody = body
         req.timeoutInterval = 15
         do {

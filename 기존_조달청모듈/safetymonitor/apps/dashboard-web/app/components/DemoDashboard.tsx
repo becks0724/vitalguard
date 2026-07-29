@@ -116,6 +116,8 @@ type MockVitalResponse = {
   latest: VitalSample[];
   recent: VitalSample[];
   totalPersisted?: number;
+  dataMockup?: VitalSample[];
+  dataMockupPersisted?: number;
   countsByWorker?: Record<string, number>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
   workerProfiles?: Record<string, string>;
@@ -130,27 +132,6 @@ const TABLE_ROW_PX = 48;
 const TABLE_GRID =
   "grid items-center gap-x-2 grid-cols-[1.75rem_minmax(8rem,1.2fr)_5.5rem_4.5rem_4.5rem_6rem_5.5rem_5rem_3.5rem_4.5rem_5rem_4.5rem_3rem]";
 
-// 테스트용 가상 작업자 12명 — 대기 큐에 항상 노출(슬롯 등록 → 표 세로 자동 슬라이딩 검증용).
-// 서버로 전송되지 않는 클라이언트 전용 픽스처. ts 는 렌더 시 현재 시각으로 주입.
-// VW-004(주의)·VW-005(위험) 는 이상 자동 스크롤+빨강 링 시연용. 나머지는 정상치(순수 슬라이딩 검증).
-const VIRTUAL_WORKER_TEMPLATES: Omit<VitalSample, "ts">[] = [
-  { workerId: "VW-001", workerName: "가상작업자 1", employeeId: "VW-001", jobTitle: "현장소장", heartRate: 78, spo2: 98, skinTempC: 36.4, batteryPct: 88 },
-  { workerId: "VW-002", workerName: "가상작업자 2", employeeId: "VW-002", jobTitle: "안전관리자", heartRate: 82, spo2: 97, skinTempC: 36.6, batteryPct: 76 },
-  { workerId: "VW-003", workerName: "가상작업자 3", employeeId: "VW-003", jobTitle: "공사부장", heartRate: 75, spo2: 99, skinTempC: 36.3, batteryPct: 64 },
-  { workerId: "VW-004", workerName: "가상작업자 4", employeeId: "VW-004", jobTitle: "작업반장", heartRate: 118, spo2: 94, skinTempC: 36.9, batteryPct: 55 },
-  { workerId: "VW-005", workerName: "가상작업자 5", employeeId: "VW-005", jobTitle: "철근공", heartRate: 138, spo2: 88, skinTempC: 37.5, batteryPct: 41 },
-  { workerId: "VW-006", workerName: "가상작업자 6", employeeId: "VW-006", jobTitle: "형틀목공", heartRate: 80, spo2: 98, skinTempC: 36.5, batteryPct: 92 },
-  { workerId: "VW-007", workerName: "가상작업자 7", employeeId: "VW-007", jobTitle: "전기공", heartRate: 72, spo2: 99, skinTempC: 36.2, batteryPct: 81 },
-  { workerId: "VW-008", workerName: "가상작업자 8", employeeId: "VW-008", jobTitle: "배관공", heartRate: 88, spo2: 97, skinTempC: 36.7, batteryPct: 69 },
-  { workerId: "VW-009", workerName: "가상작업자 9", employeeId: "VW-009", jobTitle: "타워크레인 기사", heartRate: 76, spo2: 98, skinTempC: 36.4, batteryPct: 73 },
-  { workerId: "VW-010", workerName: "가상작업자 10", employeeId: "VW-010", jobTitle: "콘크리트공", heartRate: 84, spo2: 96, skinTempC: 36.5, batteryPct: 58 },
-  { workerId: "VW-011", workerName: "가상작업자 11", employeeId: "VW-011", jobTitle: "비계공", heartRate: 79, spo2: 99, skinTempC: 36.3, batteryPct: 90 },
-  { workerId: "VW-012", workerName: "가상작업자 12", employeeId: "VW-012", jobTitle: "신호수", heartRate: 81, spo2: 98, skinTempC: 36.6, batteryPct: 47 },
-];
-
-function isVirtualWorker(workerId: string | undefined): boolean {
-  return !!workerId && workerId.startsWith("VW-");
-}
 type SlotAssignments = (string | null)[];
 
 function loadSlots(): SlotAssignments {
@@ -4022,17 +4003,8 @@ export function DemoDashboard() {
     }
   }
 
-  // 실제 수신 워커 + 가상 워커(테스트용). 실제가 우선, ts 는 "수신 중"처럼 보이도록 주입.
-  // ts 를 매초 바뀌는 now 가 아니라 data.latest 변경 시각에 고정해 latestMap→pendingWorkers→fieldCoords
-  // 체인이 1초마다 재계산되지 않게 한다(신호 강도 freshness 는 별도 now state 로 평가).
-  const allLatest = useMemo(() => {
-    const realIds = new Set(data.latest.map((s) => s.workerId));
-    const stampIso = new Date().toISOString();
-    const virtuals: VitalSample[] = VIRTUAL_WORKER_TEMPLATES.filter(
-      (v) => !realIds.has(v.workerId),
-    ).map((v) => ({ ...v, ts: stampIso }));
-    return [...data.latest, ...virtuals];
-  }, [data.latest]);
+  // 작업자 관제에는 실측 스트림만 사용한다. 목업은 data_mockup 전용 섹션에만 표시한다.
+  const allLatest = useMemo(() => data.latest, [data.latest]);
 
   const latestMap = useMemo(() => {
     return new Map(allLatest.map((sample) => [sample.workerId, sample]));
@@ -4531,9 +4503,7 @@ export function DemoDashboard() {
       } else {
         const reason = !s
           ? "미접속 — 수신 샘플 없음"
-          : isVirtualWorker(workerId)
-            ? "가상 작업자(테스트) — GPS 없음"
-            : typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)
+          : typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)
               ? "GPS 미포함 — 위치 권한·로그인 게이트 확인"
               : "한국 범위 밖 좌표 — 표시 제외";
         excluded.push({ workerId, name: s?.workerName ?? workerId, reason });
@@ -5577,7 +5547,7 @@ export function DemoDashboard() {
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
                           count={data.countsByWorker?.[entry.workerId] ?? 0}
-                          isVirtual={isVirtualWorker(entry.workerId)}
+                          isVirtual={false}
                           jobTitle={
                             data.workerProfiles?.[entry.workerId] ??
                             latestMap.get(entry.workerId)?.jobTitle
@@ -5617,7 +5587,7 @@ export function DemoDashboard() {
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
                           count={data.countsByWorker?.[entry.workerId] ?? 0}
-                          isVirtual={isVirtualWorker(entry.workerId)}
+                          isVirtual={false}
                           jobTitle={
                             data.workerProfiles?.[entry.workerId] ??
                             latestMap.get(entry.workerId)?.jobTitle
@@ -5857,6 +5827,7 @@ export function DemoDashboard() {
 
       {/* 실시간 수집 · DB 영속 스트립 — ERP: 스마트경리 활성 시 숨김(속보 티커와 동일 사유). */}
       {pagerIdx !== 2 && (
+      <>
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
         <button
           type="button"
@@ -5881,6 +5852,7 @@ export function DemoDashboard() {
               <thead className="sticky top-0 bg-surface-soft text-xs text-body dark:bg-surface-dark dark:text-on-dark-soft">
                 <tr>
                   <th className="px-4 py-3">시간</th>
+                  <th className="px-4 py-3">출처</th>
                   <th className="px-4 py-3">작업자</th>
                   <th className="px-4 py-3">심박 (bpm)</th>
                   <th className="px-4 py-3">산소포화도 (%)</th>
@@ -5897,6 +5869,7 @@ export function DemoDashboard() {
                 {data.recent.map((sample, index) => (
                   <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
                     <td className="px-4 py-3 font-mono">{formatTime(sample.ts)}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{sample.dataOrigin ?? "legacy_unclassified_vitalguard"}</td>
                     <td className="px-4 py-3">{workerCell(sample)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
@@ -5918,6 +5891,49 @@ export function DemoDashboard() {
           </div>
         )}
       </section>
+      <section className="overflow-hidden rounded-xl border border-dashed border-amber-300 bg-amber-50/40 dark:border-amber-500/40 dark:bg-amber-500/5">
+        <div className="flex items-center justify-between gap-3 px-6 py-4 text-sm text-amber-950 dark:text-amber-100">
+          <div>
+            <span className="font-mono font-semibold">data_mockup</span>
+            <span className="ml-2 text-xs font-normal text-amber-800 dark:text-amber-200">
+              실데이터 집계·경보·작업자 관제에서 제외된 iPhone/Watch 목업
+            </span>
+          </div>
+          <span className="shrink-0 font-mono text-xs">
+            {(data.dataMockupPersisted ?? 0).toLocaleString()}건
+          </span>
+        </div>
+        {logExpanded && (
+          <div className="wx-cards-scroll max-h-64 overflow-auto border-t border-amber-200/80 dark:border-amber-500/30">
+            <table className="w-full text-left text-sm">
+              <thead className="sticky top-0 bg-amber-100/80 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
+                <tr>
+                  <th className="px-4 py-3">시간</th>
+                  <th className="px-4 py-3">출처</th>
+                  <th className="px-4 py-3">작업자</th>
+                  <th className="px-4 py-3">심박 (bpm)</th>
+                  <th className="px-4 py-3">산소포화도 (%)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data.dataMockup ?? []).map((sample, index) => (
+                  <tr key={`mockup-${sample.workerId}-${sample.ts}-${index}`} className="border-t border-amber-200/70 dark:border-amber-500/20">
+                    <td className="px-4 py-3 font-mono">{formatTime(sample.ts)}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{sample.dataOrigin}</td>
+                    <td className="px-4 py-3">{workerCell(sample)}</td>
+                    <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
+                    <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
+                  </tr>
+                ))}
+                {(data.dataMockup ?? []).length === 0 && (
+                  <tr><td className="px-4 py-3 text-sm text-amber-800 dark:text-amber-200" colSpan={5}>현재 저장된 목업 데이터가 없습니다.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      </>
       )}
     </main>
   );

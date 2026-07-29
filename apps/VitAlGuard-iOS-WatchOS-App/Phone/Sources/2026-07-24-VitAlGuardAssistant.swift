@@ -7,6 +7,65 @@ import UniformTypeIdentifiers
 private struct ChatMessage: Codable {
     let role: String
     let content: String
+    let source: String?
+    let taskSummaries: [TaskSummary]?
+
+    init(
+        role: String,
+        content: String,
+        source: String? = nil,
+        taskSummaries: [TaskSummary]? = nil
+    ) {
+        self.role = role
+        self.content = content
+        self.source = source
+        self.taskSummaries = taskSummaries
+    }
+}
+
+/// 관제 대시보드가 규칙 엔진에서 확정한 작업 목록입니다.
+/// 문장형 AI 답변과 분리하여 iPhone에서도 표 형태로 안전하게 보여 줍니다.
+private struct TaskSummary: Codable {
+    let workerId: String
+    let blockedTags: [String]
+    let allowedTags: [String]
+    let pendingTags: [String]
+}
+
+private struct AssignmentChatContract: Decodable {
+    let version: String
+    let welcomeMessage: String
+    let suggestions: [String]
+    let inputPlaceholder: String
+    let requestLabel: String
+    let loadingMessage: String
+    let genericError: String
+    let sessionExpired: String
+    let disclaimer: String
+
+    static let fallback = AssignmentChatContract(
+        version: "fallback",
+        welcomeMessage: "작업자 사번(EMP-…)을 포함해 질문해 주세요.\n예: \"EMP-6861 오늘 고소작업 배치 가능해?\"\n등급·배제 권고는 최근 24시간 워치 실측 기반의 안전 기준 참고 정보입니다.",
+        suggestions: [],
+        inputPlaceholder: "질문을 입력하세요",
+        requestLabel: "질문",
+        loadingMessage: "판정 조회 중…",
+        genericError: "응답 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        sessionExpired: "로그인 세션이 만료되었습니다. 잠시 후 로그인 화면으로 이동합니다.",
+        disclaimer: "본 등급은 안전 기준 참고 정보이며 의료적 판단이 아닙니다. 최종 배치 결정 권한은 감독관에게 있습니다."
+    )
+}
+
+private struct AssignmentChatResponse: Decodable {
+    let ok: Bool
+    let reply: String?
+    let source: String?
+    let disclaimer: String?
+    let error: String?
+    let assignments: [Assignment]?
+    let taskSummaries: [TaskSummary]?
+
+    struct Assignment: Decodable { let workerId: String }
 }
 
 private enum AssistantAttachmentKind: String {
@@ -113,6 +172,12 @@ private enum VitAlGuardAssistantKeychain {
             throw AssistantError.keychainDeleteFailed(status)
         }
     }
+
+    static func removeLegacyProviderKeys() {
+        AssistantProvider.allCases.forEach { provider in
+            try? remove(provider)
+        }
+    }
 }
 
 final class VitAlGuardAssistantViewController: UIViewController, UITextViewDelegate, PHPickerViewControllerDelegate, UIDocumentPickerDelegate {
@@ -158,6 +223,8 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
     private var totalTokens = 0
     private let messageInputContainer = UIView()
     private var pendingAttachments: [AssistantAttachment] = []
+    private var chatContract = AssignmentChatContract.fallback
+    private var followUpWorkerIds: [String] = []
     private var isMessageEditMode = false
     private var selectedMessageIndexes = Set<Int>()
     private var activeProvider: AssistantProvider {
@@ -178,8 +245,12 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         navigationItem.title = ""
 
         configureUI()
+        VitAlGuardAssistantKeychain.removeLegacyProviderKeys()
         loadSavedState()
         seedMessagesIfNeeded()
+        apiKeyButton.isHidden = true
+        setKeySettingsVisible(false, animated: false)
+        Task { await refreshChatContract() }
     }
 
     private func configureUI() {
@@ -202,19 +273,23 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         keyField.autocorrectionType = .no
         keyField.clearButtonMode = .whileEditing
 
-        saveButton.setTitle("저장", for: .normal)
+        var saveConfig = UIButton.Configuration.filled()
+        saveConfig.title = "저장"
+        saveConfig.baseBackgroundColor = .systemBlue
+        saveConfig.baseForegroundColor = .white
+        saveConfig.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14)
+        saveButton.configuration = saveConfig
         saveButton.addTarget(self, action: #selector(saveKeyTapped), for: .touchUpInside)
         saveButton.layer.cornerRadius = 10
-        saveButton.backgroundColor = UIColor.systemBlue
-        saveButton.setTitleColor(.white, for: .normal)
-        saveButton.contentEdgeInsets = UIEdgeInsets(top: 11, left: 14, bottom: 11, right: 14)
 
-        deleteButton.setImage(UIImage(systemName: "trash"), for: .normal)
+        var deleteConfig = UIButton.Configuration.filled()
+        deleteConfig.image = UIImage(systemName: "trash")
+        deleteConfig.baseBackgroundColor = .systemRed
+        deleteConfig.baseForegroundColor = .white
+        deleteConfig.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14)
+        deleteButton.configuration = deleteConfig
         deleteButton.addTarget(self, action: #selector(deleteKeyTapped), for: .touchUpInside)
         deleteButton.layer.cornerRadius = 10
-        deleteButton.backgroundColor = UIColor.systemRed
-        deleteButton.setTitleColor(.white, for: .normal)
-        deleteButton.contentEdgeInsets = UIEdgeInsets(top: 11, left: 14, bottom: 11, right: 14)
 
         refreshButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
         refreshButton.tintColor = .systemGray
@@ -283,22 +358,26 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         attachmentButton.accessibilityLabel = "사진, 동영상 또는 파일 첨부"
         attachmentButton.translatesAutoresizingMaskIntoConstraints = false
         attachmentButton.addTarget(self, action: #selector(attachmentTapped), for: .touchUpInside)
-        sendButton.setImage(UIImage(systemName: "arrow.up"), for: .normal)
+        var sendConfig = UIButton.Configuration.filled()
+        sendConfig.image = UIImage(systemName: "arrow.up")
+        sendConfig.baseBackgroundColor = .systemBlue
+        sendConfig.baseForegroundColor = .white
+        sendConfig.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 16, bottom: 11, trailing: 16)
+        sendButton.configuration = sendConfig
         sendButton.accessibilityLabel = "메시지 전송"
         sendButton.addTarget(self, action: #selector(sendTapped), for: .touchUpInside)
         sendButton.translatesAutoresizingMaskIntoConstraints = false
         sendButton.tintColor = .white
         sendButton.layer.cornerRadius = 20
-        sendButton.backgroundColor = UIColor.systemBlue
-        sendButton.setTitleColor(.white, for: .normal)
-        sendButton.contentEdgeInsets = UIEdgeInsets(top: 11, left: 16, bottom: 11, right: 16)
 
-        clearButton.setTitle("채팅 초기화", for: .normal)
+        var clearConfig = UIButton.Configuration.filled()
+        clearConfig.title = "채팅 초기화"
+        clearConfig.baseBackgroundColor = .systemGray
+        clearConfig.baseForegroundColor = .white
+        clearConfig.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 14, bottom: 11, trailing: 14)
+        clearButton.configuration = clearConfig
         clearButton.addTarget(self, action: #selector(clearTapped), for: .touchUpInside)
         clearButton.layer.cornerRadius = 10
-        clearButton.backgroundColor = UIColor.systemGray
-        clearButton.setTitleColor(.white, for: .normal)
-        clearButton.contentEdgeInsets = UIEdgeInsets(top: 11, left: 14, bottom: 11, right: 14)
 
         messageInputContainer.translatesAutoresizingMaskIntoConstraints = false
         messageInputContainer.backgroundColor = UIColor.secondarySystemBackground
@@ -378,6 +457,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             messagesContentView.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 14),
             messagesContentView.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -14),
             messagesContentView.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -12),
+            messagesContentView.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -28),
             messagesStack.topAnchor.constraint(equalTo: messagesContentView.topAnchor),
             messagesStack.leadingAnchor.constraint(equalTo: messagesContentView.leadingAnchor),
             messagesStack.trailingAnchor.constraint(equalTo: messagesContentView.trailingAnchor),
@@ -572,9 +652,9 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         return label
     }
 
-    private func makeMessageBubble(_ role: String, _ text: String, index: Int) -> UIView {
-        let isUser = role == "user"
-        let isSystem = role == "system"
+    private func makeMessageBubble(_ message: ChatMessage, index: Int) -> UIView {
+        let isUser = message.role == "user"
+        let isSystem = message.role == "system"
 
         let row = UIStackView()
         row.axis = .horizontal
@@ -612,15 +692,33 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         label.numberOfLines = 0
         label.font = .preferredFont(forTextStyle: .body)
         label.adjustsFontForContentSizeCategory = true
-        label.text = text
+        label.text = message.content
         label.textColor = isUser ? .white : .label
 
-        bubbleContainer.addSubview(label)
+        let bubbleContent = UIStackView()
+        bubbleContent.translatesAutoresizingMaskIntoConstraints = false
+        bubbleContent.axis = .vertical
+        bubbleContent.alignment = .fill
+        bubbleContent.spacing = 8
+        bubbleContent.addArrangedSubview(label)
+        if !isUser, let taskSummaries = message.taskSummaries, !taskSummaries.isEmpty {
+            bubbleContent.addArrangedSubview(makeTaskSummaryTable(taskSummaries))
+        }
+        if !isUser, let source = message.source {
+            let sourceLabel = UILabel()
+            sourceLabel.font = .preferredFont(forTextStyle: .caption2)
+            sourceLabel.adjustsFontForContentSizeCategory = true
+            sourceLabel.textColor = .secondaryLabel
+            sourceLabel.text = source == "clova" ? "HyperCLOVA X · 판정은 규칙 엔진" : "규칙 엔진 응답"
+            bubbleContent.addArrangedSubview(sourceLabel)
+        }
+
+        bubbleContainer.addSubview(bubbleContent)
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 10),
-            label.bottomAnchor.constraint(equalTo: bubbleContainer.bottomAnchor, constant: -10),
-            label.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 12),
-            label.trailingAnchor.constraint(equalTo: bubbleContainer.trailingAnchor, constant: -12)
+            bubbleContent.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 10),
+            bubbleContent.bottomAnchor.constraint(equalTo: bubbleContainer.bottomAnchor, constant: -10),
+            bubbleContent.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 12),
+            bubbleContent.trailingAnchor.constraint(equalTo: bubbleContainer.trailingAnchor, constant: -12)
         ])
 
         let leftSpacer = UIView()
@@ -633,9 +731,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         if isUser {
             row.addArrangedSubview(leftSpacer)
             row.addArrangedSubview(bubbleContainer)
-            row.addArrangedSubview(UIView())
         } else {
-            row.addArrangedSubview(UIView())
             row.addArrangedSubview(bubbleContainer)
             row.addArrangedSubview(rightSpacer)
         }
@@ -666,12 +762,70 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         return editableRow
     }
 
+    private func makeTaskSummaryTable(_ summaries: [TaskSummary]) -> UIView {
+        let table = UIStackView()
+        table.axis = .vertical
+        table.spacing = 0
+        table.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.64)
+        table.layer.cornerRadius = 10
+        table.layer.masksToBounds = true
+
+        let title = UILabel()
+        title.font = .preferredFont(forTextStyle: .caption1)
+        title.adjustsFontForContentSizeCategory = true
+        title.textColor = .label
+        title.text = "서버 판정 작업 목록"
+        let titleContainer = UIView()
+        titleContainer.backgroundColor = UIColor.separator.withAlphaComponent(0.16)
+        titleContainer.addSubview(title)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: titleContainer.topAnchor, constant: 6),
+            title.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor, constant: -6),
+            title.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor, constant: 8),
+            title.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor, constant: -8)
+        ])
+        table.addArrangedSubview(titleContainer)
+
+        for summary in summaries {
+            let row = UIStackView()
+            row.axis = .vertical
+            row.spacing = 3
+            row.isLayoutMarginsRelativeArrangement = true
+            row.layoutMargins = UIEdgeInsets(top: 7, left: 8, bottom: 7, right: 8)
+
+            let worker = UILabel()
+            worker.font = .preferredFont(forTextStyle: .caption1)
+            worker.adjustsFontForContentSizeCategory = true
+            worker.textColor = .label
+            worker.text = summary.workerId
+            row.addArrangedSubview(worker)
+
+            addTaskSummaryRow("배제 권고", values: summary.blockedTags, to: row)
+            addTaskSummaryRow("배치 가능", values: summary.allowedTags, to: row)
+            addTaskSummaryRow("판단 보류", values: summary.pendingTags, to: row)
+            table.addArrangedSubview(row)
+        }
+        return table
+    }
+
+    private func addTaskSummaryRow(_ title: String, values: [String], to stack: UIStackView) {
+        guard !values.isEmpty else { return }
+        let row = UILabel()
+        row.font = .preferredFont(forTextStyle: .caption2)
+        row.adjustsFontForContentSizeCategory = true
+        row.numberOfLines = 0
+        row.textColor = .secondaryLabel
+        row.text = "\(title)  \(values.joined(separator: ", "))"
+        stack.addArrangedSubview(row)
+    }
+
     private func seedMessagesIfNeeded() {
         if messages.isEmpty {
             messages.append(
                 ChatMessage(
                     role: "system",
-                    content: "안전보조 챗봇입니다. 질문을 입력하면 119/안전 안내 중심으로 짧게 도움을 드립니다."
+                    content: chatContract.welcomeMessage
                 )
             )
             rebuildMessageBubbles()
@@ -685,7 +839,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         }
 
         for (index, message) in messages.enumerated() {
-            messagesStack.addArrangedSubview(makeMessageBubble(message.role, message.content, index: index))
+            messagesStack.addArrangedSubview(makeMessageBubble(message, index: index))
         }
 
         scrollToBottomOfChat()
@@ -705,7 +859,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         let tokenText = totalTokens > 0
             ? " / 토큰: 총 \(totalTokens)"
             : ""
-        usageLabel.text = "\(activeProvider.title) · 요청 \(requestCount)건"
+        usageLabel.text = "관제 서버 · 요청 \(requestCount)건"
         if tokenText.isEmpty {
             usageTokenLabel.text = "최근 응답 토큰: 없음"
         } else {
@@ -714,19 +868,19 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
     }
 
     private func loadSavedState() {
-        let storedProviders = AssistantProvider.allCases.filter { VitAlGuardAssistantKeychain.load($0) != nil }
-        if storedProviders.isEmpty {
-            statusLabel.text = "저장된 API 키가 없습니다. OpenAI 또는 HyperCLOVA 중 하나를 저장해 주세요."
-            setKeySettingsVisible(true, animated: false)
-        } else {
-            let providerNames = storedProviders.map(\.title).joined(separator: ", ")
-            statusLabel.text = "저장됨: \(providerNames). 선택한 제공자 키가 없으면 다른 저장 키를 사용합니다."
-            setKeySettingsVisible(false, animated: false)
-        }
+        statusLabel.text = vitalGuardAssistantSessionToken().isEmpty
+            ? "관제 계정 로그인이 필요합니다."
+            : "관제 서버의 안전 어시스턴트에 연결됩니다."
+        setKeySettingsVisible(false, animated: false)
         updateUsageLabel()
     }
 
-    private func appendLog(_ role: String, text: String) {
+    private func appendLog(
+        _ role: String,
+        text: String,
+        source: String? = nil,
+        taskSummaries: [TaskSummary]? = nil
+    ) {
         let marker: String
         if role == "user" {
             marker = "user"
@@ -735,7 +889,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         } else {
             marker = "system"
         }
-        messages.append(ChatMessage(role: marker, content: text))
+        messages.append(ChatMessage(role: marker, content: text, source: source, taskSummaries: taskSummaries))
         rebuildMessageBubbles()
     }
 
@@ -851,6 +1005,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         messages.removeAll()
         seedMessagesIfNeeded()
         statusLabel.text = "채팅이 새로고침되었습니다."
+        Task { await refreshChatContract() }
     }
 
     @objc private func messageEditTapped() {
@@ -935,23 +1090,15 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             return
         }
 
-        guard let credential = availableCredential() else {
-            statusLabel.text = "OpenAI 또는 HyperCLOVA API 키를 하나 이상 저장해 주세요."
+        guard !vitalGuardAssistantSessionToken().isEmpty else {
+            statusLabel.text = "관제 계정 로그인 세션이 필요합니다."
             statusLabel.textColor = .systemOrange
-            setKeySettingsVisible(true, animated: true)
             return
         }
 
-        if credential.provider != activeProvider {
-            providerControl.selectedSegmentIndex = credential.provider.rawValue
-            updateProviderField()
-            updateUsageLabel()
-        }
-
-        let context = attachmentContext()
         let attachmentSummary = pendingAttachments.isEmpty
             ? ""
-            : "\n\n첨부: \(pendingAttachments.map { "\($0.kind.title) \($0.displayName)" }.joined(separator: ", "))"
+            : "\n\n첨부: \(pendingAttachments.count)개 (관제 챗봇과 동일하게 파일명·원본은 전송하지 않음)"
         appendLog("user", text: question + attachmentSummary)
         pendingAttachments.removeAll()
         rebuildAttachmentPreviews()
@@ -961,11 +1108,12 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             updateUsageLabel()
         }
         updateBusy(true)
-        statusLabel.text = "답변을 기다리는 중..."
+        statusLabel.text = chatContract.loadingMessage
         statusLabel.textColor = .secondaryLabel
 
         Task {
-            await requestAssistantReply(question: question + context, provider: credential.provider, apiKey: credential.apiKey)
+            await refreshChatContract()
+            await requestAssistantReply(question: question)
             Task { @MainActor in
                 updateBusy(false)
             }
@@ -1067,15 +1215,20 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
 
         for attachment in pendingAttachments {
             let chip = UIButton(type: .system)
-            chip.setImage(UIImage(systemName: attachment.kind.symbol), for: .normal)
-            chip.setTitle("  \(attachment.displayName)  ×", for: .normal)
+            var config = UIButton.Configuration.bordered()
+            config.image = UIImage(systemName: attachment.kind.symbol)
+            config.title = "\(attachment.displayName)  ×"
+            config.imagePadding = 6
+            config.baseBackgroundColor = .systemBackground
+            config.baseForegroundColor = .systemBlue
+            config.contentInsets = NSDirectionalEdgeInsets(top: 7, leading: 10, bottom: 7, trailing: 10)
+            chip.configuration = config
             chip.tintColor = .systemBlue
             chip.titleLabel?.font = .systemFont(ofSize: 13, weight: .semibold)
             chip.backgroundColor = UIColor.systemBackground
             chip.layer.cornerRadius = 16
             chip.layer.borderWidth = 1 / UIScreen.main.scale
             chip.layer.borderColor = UIColor.separator.withAlphaComponent(0.5).cgColor
-            chip.contentEdgeInsets = UIEdgeInsets(top: 7, left: 10, bottom: 7, right: 10)
             chip.accessibilityLabel = "\(attachment.kind.title) \(attachment.displayName), 순서 변경 또는 제거"
             chip.accessibilityIdentifier = attachment.id.uuidString
             chip.addTarget(self, action: #selector(editAttachmentTapped(_:)), for: .touchUpInside)
@@ -1126,16 +1279,10 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         rebuildAttachmentPreviews()
     }
 
-    private func attachmentContext() -> String {
-        guard !pendingAttachments.isEmpty else { return "" }
-        let details = pendingAttachments.map { "\($0.kind.title): \($0.displayName)" }.joined(separator: ", ")
-        return "\n\n[사용자가 첨부한 항목: \(details)]\n파일 원본이 아닌 파일명과 유형만 전달되었습니다. 원본 내용을 볼 수 없으면 사용자에게 필요한 정보를 설명해 달라고 요청하세요."
-    }
-
     @MainActor
-    private func requestAssistantReply(question: String, provider: AssistantProvider, apiKey: String) async {
+    private func requestAssistantReply(question: String) async {
         do {
-            let (answer, usage) = try await fetchAnswer(question: question, provider: provider, apiKey: apiKey)
+            let (answer, usage, response) = try await fetchServerAnswer(question: question)
             if let usage {
                 Task { @MainActor in
                     totalPromptTokens += usage.promptTokens
@@ -1144,8 +1291,18 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
                     updateUsageLabel()
                 }
             }
-            appendLog("assistant", text: answer)
-            statusLabel.text = "\(provider.title) 응답을 받았습니다."
+            if let assignments = response.assignments, assignments.count == 1 {
+                followUpWorkerIds = [assignments[0].workerId]
+            } else {
+                followUpWorkerIds = []
+            }
+            appendLog(
+                "assistant",
+                text: answer,
+                source: response.source,
+                taskSummaries: response.taskSummaries
+            )
+            statusLabel.text = "관제 서버 응답을 받았습니다."
             statusLabel.textColor = .systemGreen
         } catch {
             if let assistantError = error as? AssistantError {
@@ -1157,12 +1314,61 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         }
     }
 
-    private func buildMessages(for question: String) -> [ChatMessage] {
-        let recentPairs = messages.suffix(8)
-        var payload = [ChatMessage(role: "system", content: systemPrompt)]
-        payload.append(contentsOf: recentPairs.map { ChatMessage(role: $0.role, content: $0.content) })
-        payload.append(ChatMessage(role: "user", content: question))
-        return payload
+    private func fetchServerAnswer(question: String) async throws -> (String, UsageSnapshot?, AssignmentChatResponse) {
+        guard let url = vitalGuardAssistantEndpoint() else {
+            throw AssistantError.invalidResponse
+        }
+        let token = vitalGuardAssistantSessionToken()
+        guard !token.isEmpty else {
+            throw AssistantError.httpError(401)
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 30
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.addValue("medium", forHTTPHeaderField: "x-assignment-chat-usage-level")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["message": question, "followUpWorkerIds": followUpWorkerIds])
+
+        let session = URLSession(configuration: .ephemeral)
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw AssistantError.invalidResponse
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw AssistantError.httpError(http.statusCode)
+        }
+        guard let response = try? JSONDecoder().decode(AssignmentChatResponse.self, from: data),
+              response.ok,
+              let reply = response.reply,
+              !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw AssistantError.invalidResponse
+        }
+        return (reply.trimmingCharacters(in: .whitespacesAndNewlines), nil, response)
+    }
+
+    @MainActor
+    private func refreshChatContract() async {
+        guard let endpoint = vitalGuardAssistantEndpoint(), !vitalGuardAssistantSessionToken().isEmpty else { return }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(vitalGuardAssistantSessionToken())", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await URLSession(configuration: .ephemeral).data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let payload = try? JSONDecoder().decode(ChatContractPayload.self, from: data),
+              payload.ok else { return }
+        chatContract = payload.contract
+        if messages.count == 1, messages[0].role == "system" {
+            messages[0] = ChatMessage(role: "system", content: chatContract.welcomeMessage)
+            rebuildMessageBubbles()
+        }
+    }
+
+    private struct ChatContractPayload: Decodable {
+        let ok: Bool
+        let contract: AssignmentChatContract
     }
 
     private struct UsageSnapshot {
@@ -1171,141 +1377,6 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         let totalTokens: Int
     }
 
-    private func fetchAnswer(question: String, provider: AssistantProvider, apiKey: String) async throws -> (String, UsageSnapshot?) {
-        switch provider {
-        case .openAI:
-            return try await fetchOpenAIAnswer(question: question, apiKey: apiKey)
-        case .hyperCLOVA:
-            return try await fetchHyperCLOVAAnswer(question: question, apiKey: apiKey)
-        }
-    }
-
-    private func fetchHyperCLOVAAnswer(question: String, apiKey: String) async throws -> (String, UsageSnapshot?) {
-        let url = URL(string: "https://clovastudio.stream.ntruss.com/v3/chat-completions/HCX-005")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 45
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let requestBody = HyperCLOVARequest(
-            messages: buildMessages(for: question),
-            temperature: 0.1,
-            topP: 0.8,
-            maxTokens: 900
-        )
-        let encoded = try JSONEncoder().encode(requestBody)
-        request.httpBody = encoded
-
-        let session = URLSession(configuration: .ephemeral)
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AssistantError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AssistantError.httpError(http.statusCode)
-        }
-
-        let usage = parseUsage(from: data)
-
-        do {
-            if let reply = try? JSONDecoder().decode(HyperCLOVAReply.self, from: data),
-               let first = reply.result?.message?.content, !first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return (first.trimmingCharacters(in: .whitespacesAndNewlines), usage)
-            }
-            if let reply = try? JSONDecoder().decode(ChatReply.self, from: data),
-               let first = reply.choices.first?.message.content,
-               !first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return (first.trimmingCharacters(in: .whitespacesAndNewlines), usage)
-            }
-            if let errorPayload = try? JSONDecoder().decode(ChatErrorPayload.self, from: data),
-               let msg = errorPayload.error?.message {
-                throw AssistantError.serverMessage(msg)
-            }
-            throw AssistantError.invalidResponse
-        }
-    }
-
-    private func fetchOpenAIAnswer(question: String, apiKey: String) async throws -> (String, UsageSnapshot?) {
-        let url = URL(string: "https://api.openai.com/v1/chat/completions")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 45
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(
-            OpenAIRequest(
-                model: "chat-latest",
-                messages: buildMessages(for: question),
-                temperature: 0.2,
-                maxTokens: 900
-            )
-        )
-
-        let session = URLSession(configuration: .ephemeral)
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw AssistantError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw AssistantError.httpError(http.statusCode)
-        }
-
-        let usage = parseUsage(from: data)
-        if let reply = try? JSONDecoder().decode(ChatReply.self, from: data),
-           let first = reply.choices.first?.message.content,
-           !first.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return (first.trimmingCharacters(in: .whitespacesAndNewlines), usage)
-        }
-        if let errorPayload = try? JSONDecoder().decode(ChatErrorPayload.self, from: data),
-           let message = errorPayload.error?.message {
-            throw AssistantError.serverMessage(message)
-        }
-        throw AssistantError.invalidResponse
-    }
-
-    private func parseUsage(from data: Data) -> UsageSnapshot? {
-        guard let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-
-        let usage: [String: Any]? = {
-            if let usage = raw["result"] as? [String: Any], let nested = usage["usage"] as? [String: Any] {
-                return nested
-            }
-            if let usage = raw["usage"] as? [String: Any] {
-                return usage
-            }
-            return nil
-        }()
-
-        guard let usage = usage else { return nil }
-
-        let promptTokens = parseInt(usage["promptTokens"]) ?? parseInt(usage["prompt_tokens"]) ?? 0
-        let completionTokens = parseInt(usage["completionTokens"]) ?? parseInt(usage["completion_tokens"]) ?? 0
-        let totalTokens = parseInt(usage["totalTokens"]) ?? parseInt(usage["total_tokens"]) ?? (promptTokens + completionTokens)
-
-        if promptTokens == 0 && completionTokens == 0 && totalTokens == 0 {
-            return nil
-        }
-        return UsageSnapshot(promptTokens: promptTokens, completionTokens: completionTokens, totalTokens: totalTokens)
-    }
-
-    private func parseInt(_ value: Any?) -> Int? {
-        if let intValue = value as? Int {
-            return intValue
-        }
-        if let doubleValue = value as? Double {
-            return Int(doubleValue)
-        }
-        if let number = value as? NSNumber {
-            return number.intValue
-        }
-        if let string = value as? String {
-            return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        return nil
-    }
 }
 
 private enum AssistantError: Error {
@@ -1337,7 +1408,7 @@ private enum AssistantError: Error {
         case .httpError(let code):
             switch code {
             case 401:
-                return "API 키 인증 실패(401). 키를 다시 저장해 주세요."
+                return "관제 계정 로그인이 필요합니다(401). 다시 로그인해 주세요."
             case 429:
                 return "요청이 과도합니다(429). 잠시 후 재시도해 주세요."
             default:

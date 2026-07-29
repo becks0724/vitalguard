@@ -3180,6 +3180,9 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
             "loggedIn": true,
+            // WatchConnectivity application context is encrypted by the paired-device channel.
+            // The Watch persists this only in device-only Keychain and uses it solely for vital ingest.
+            "appAuthJWT": DashboardCredentialStore.loadAppJWT()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "loginId": resolvedId,
             "employeeId": storedEmployeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: resolvedId) : storedEmployeeId,
             "mode": mode.rawValue,
@@ -3211,6 +3214,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
             "loggedIn": false,
+            "appAuthJWT": "",
             "loginId": "",
             "employeeId": "",
             "mode": AppMode.worker.rawValue,
@@ -3242,6 +3246,9 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
             "loggedIn": true,
+            // Keep this login-specific update path equivalent to currentContext().
+            // The paired Watch stores the token in its device-only Keychain for vital ingest only.
+            "appAuthJWT": DashboardCredentialStore.loadAppJWT()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "loginId": resolvedId,
             "employeeId": storedEmployeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: resolvedId) : storedEmployeeId,
             "mode": mode.rawValue,
@@ -3844,7 +3851,7 @@ final class DashboardSyncService: NSObject {
     }
 }
 
-private final class DashboardBackgroundRefreshOperation: Operation {
+private final class DashboardBackgroundRefreshOperation: Operation, @unchecked Sendable {
     override func main() {
         if isCancelled { return }
         let semaphore = DispatchSemaphore(value: 0)
@@ -4461,6 +4468,24 @@ private enum VitalGuardLinks {
     static let safetyMonitor = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
     static let appAPI = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital"
     static let appAuthLogin = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/app-auth/login"
+}
+
+func vitalGuardAssistantSessionToken() -> String {
+    DashboardCredentialStore.loadAppJWT()?
+        .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+}
+
+func vitalGuardAssistantEndpoint() -> URL? {
+#if DEBUG
+    if let override = ProcessInfo.processInfo.environment["VITALGUARD_ASSISTANT_ENDPOINT"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+       !override.isEmpty {
+        return URL(string: override)
+    }
+    return URL(string: "http://localhost:3000/api/assignment/chat")
+#else
+    return URL(string: "\(VitalGuardLinks.safetyMonitor)/api/assignment/chat")
+#endif
 }
 
 private enum DashboardConnectionState {
@@ -5912,7 +5937,11 @@ private final class FieldJournalEntryViewController: UIViewController, UITextVie
         areaButton.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
         areaButton.backgroundColor = .secondarySystemBackground
         areaButton.layer.cornerRadius = 16
-        areaButton.contentEdgeInsets = UIEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        var areaConfig = UIButton.Configuration.plain()
+        areaConfig.baseBackgroundColor = .secondarySystemBackground
+        areaConfig.baseForegroundColor = .label
+        areaConfig.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
+        areaButton.configuration = areaConfig
         areaButton.addTarget(self, action: #selector(showAreaPicker), for: .touchUpInside)
 
         datePicker.datePickerMode = .dateAndTime
@@ -5992,7 +6021,6 @@ private final class FieldJournalEntryViewController: UIViewController, UITextVie
         button.backgroundColor = .secondarySystemBackground
         button.layer.cornerRadius = 14
         button.layer.cornerCurve = .continuous
-        button.contentEdgeInsets = UIEdgeInsets(top: 12, left: 10, bottom: 12, right: 10)
         button.titleLabel?.font = UIFont.systemFont(ofSize: 13, weight: .black)
         var config = UIButton.Configuration.filled()
         config.title = title
@@ -6000,6 +6028,7 @@ private final class FieldJournalEntryViewController: UIViewController, UITextVie
         config.imagePadding = 6
         config.baseBackgroundColor = .secondarySystemBackground
         config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 12, leading: 10, bottom: 12, trailing: 10)
         config.cornerStyle = .medium
         button.configuration = config
         button.addAction(UIAction { [weak self] _ in
@@ -6025,7 +6054,12 @@ private final class FieldJournalEntryViewController: UIViewController, UITextVie
     }
 
     private func applyKind() {
-        areaButton.setTitle("\(selectedKind.areaTitle): \(selectedArea)  >", for: .normal)
+        var config = areaButton.configuration ?? UIButton.Configuration.plain()
+        config.title = "\(selectedKind.areaTitle): \(selectedArea)  >"
+        config.baseBackgroundColor = .secondarySystemBackground
+        config.baseForegroundColor = .label
+        config.contentInsets = NSDirectionalEdgeInsets(top: 14, leading: 16, bottom: 14, trailing: 16)
+        areaButton.configuration = config
         contentView.accessibilityLabel = selectedKind.contentTitle
         if contentView.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             contentView.text = ""
@@ -12373,7 +12407,7 @@ final class VitAlGuardPreviewController: UIViewController,
         exporter.shouldOptimizeForNetworkUse = true
         exporter.videoComposition = videoComp
 
-        return await withCheckedContinuation { continuation in
+        return await withCheckedContinuation { [exporter] continuation in
             exporter.exportAsynchronously {
                 if exporter.status == .completed {
                     continuation.resume(returning: outputURL)
@@ -12921,7 +12955,6 @@ final class VitAlGuardPreviewController: UIViewController,
         completion: @escaping (Bool, String) -> Void
     ) {
         let formatter = ISO8601DateFormatter()
-        let workerName = currentWorkerNameForUpload()
         let fileName = "comment-\(Int(entry.date.timeIntervalSince1970)).txt"
         let relatedLine = entry.relatedRecordTitle.map { "\n관련 파일: \($0)" } ?? ""
         let fileText = "\(entry.text)\(relatedLine)"
@@ -14738,22 +14771,30 @@ final class VitAlGuardPreviewController: UIViewController,
         return items
     }
 
+    private func setApplicationBadgeCount(_ count: Int) {
+        if #available(iOS 17.0, *) {
+            UNUserNotificationCenter.current().setBadgeCount(count)
+        } else {
+            UIApplication.shared.applicationIconBadgeNumber = count
+        }
+    }
+
     private func saveLocalAlerts(_ items: [[String: String]]) {
         let trimmed = Array(items.prefix(20))
         if let data = try? JSONSerialization.data(withJSONObject: trimmed) {
             UserDefaults.standard.set(data, forKey: PreviewSettingsKey.localAlerts)
         }
-        UIApplication.shared.applicationIconBadgeNumber = unreadLocalAlertsCount(in: trimmed)
+        setApplicationBadgeCount(unreadLocalAlertsCount(in: trimmed))
     }
 
     private func clearLocalAlerts() {
         UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.localAlerts)
-        UIApplication.shared.applicationIconBadgeNumber = 0
+        setApplicationBadgeCount(0)
     }
 
     private func markLocalAlertsRead(_ items: [[String: String]]) {
         saveLocalAlerts(items)
-        UIApplication.shared.applicationIconBadgeNumber = 0
+        setApplicationBadgeCount(0)
     }
 
     private func unreadLocalAlertsCount() -> Int {
@@ -16114,7 +16155,7 @@ final class WalletIdentityViewController: UIViewController, UITextFieldDelegate 
     }
 
     private func loadSavedValues() {
-        var payload = WalletIdentityPayload.load(role: appMode)
+        let payload = WalletIdentityPayload.load(role: appMode)
         for item in fields {
             item.field.text = payload[keyPath: item.keyPath]
         }
@@ -16158,7 +16199,7 @@ final class WalletIdentityViewController: UIViewController, UITextFieldDelegate 
 
     @objc private func addToWallet() {
         view.endEditing(true)
-        var payload = currentPayload()
+        let payload = currentPayload()
         payload.save()
         PhoneWatchBridge.shared.publishCurrentSession()
 

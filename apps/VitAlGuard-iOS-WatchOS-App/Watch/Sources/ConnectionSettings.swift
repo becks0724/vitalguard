@@ -5,6 +5,31 @@ import Foundation
 import Combine
 import WatchConnectivity
 import CoreLocation
+import Security
+
+private enum WatchAppCredentialStore {
+    private static let service = "com.yangjeehoo.vitalguard.watch.dashboard"
+    private static let account = "appAuthJWT"
+
+    static func save(_ token: String) {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        SecItemDelete(query as CFDictionary)
+        guard !token.isEmpty, let data = token.data(using: .utf8) else { return }
+        var item = query
+        item[kSecValueData as String] = data
+        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        SecItemAdd(item as CFDictionary, nil)
+    }
+
+    static func load() -> String {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var raw: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &raw) == errSecSuccess,
+              let data = raw as? Data,
+              let token = String(data: data, encoding: .utf8) else { return "" }
+        return token
+    }
+}
 
 enum WatchSensorPowerMode: String, CaseIterable, Hashable {
     case extreme
@@ -111,7 +136,14 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let urlStampKey = "receiverURLStamp"
 
     @Published var urlString: String {
-        didSet { UserDefaults.standard.set(urlString, forKey: Self.urlKey) }
+        didSet {
+            let normalized = Self.normalizedReceiverURLString(urlString)
+            if urlString != normalized {
+                urlString = normalized
+                return
+            }
+            UserDefaults.standard.set(urlString, forKey: Self.urlKey)
+        }
     }
     @Published var workerName: String {
         didSet { UserDefaults.standard.set(workerName, forKey: Self.nameKey) }
@@ -382,6 +414,13 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         let incomingEndpoint = (context["endpointURL"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingEmployeeId = (context["employeeId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingLanguageCode = (context["languageCode"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let incomingAppJWT = (context["appAuthJWT"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if loggedIn == true, !incomingAppJWT.isEmpty {
+            WatchAppCredentialStore.save(incomingAppJWT)
+        } else if loggedIn == false {
+            WatchAppCredentialStore.save("")
+        }
 
         DispatchQueue.main.async {
             if loggedIn == true, !incomingId.isEmpty {
@@ -430,6 +469,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             self.languageCode = incomingLanguageCode
         }
     }
+
+    static func currentAppJWT() -> String { WatchAppCredentialStore.load() }
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
 
@@ -713,14 +754,14 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     static func normalizedReceiverURLString(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, var components = URLComponents(string: trimmed) else {
+        guard !trimmed.isEmpty,
+              let bundledURL = URL(string: bundledDefaultURLString()),
+              let components = URLComponents(string: trimmed),
+              components.scheme == "https",
+              components.host?.lowercased() == bundledURL.host?.lowercased(),
+              components.path == "/api/mock/vital"
+        else {
             return fallbackURLString
-        }
-        if components.scheme == nil {
-            components.scheme = "https"
-        }
-        if components.path.isEmpty || components.path == "/" || components.path == "/api/mock" {
-            components.path = "/api/mock/vital"
         }
         return components.url?.absoluteString ?? fallbackURLString
     }
