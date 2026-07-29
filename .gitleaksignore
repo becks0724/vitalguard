@@ -1,0 +1,6 @@
+# gitleaks 오탐 제외 목록. 한 줄에 Fingerprint 하나.
+# 실제 키를 여기 넣어 넘기지 말 것 — 실제 키는 제거 + 로테이션이 답이다.
+
+# app-jwt 단위테스트가 쓰는 더미 시크릿 "test-secret-0123456789" (실제 자격증명 아님)
+e8d71b442269517738dc251d80393b51fcbbad0d:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-jwt.test.ts:generic-api-key:10
+기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-jwt.test.ts:generic-api-key:10
