@@ -767,6 +767,14 @@ async def _ppe_live_infer(frame, ts):
             _ppe_live["infering"] = False
 
 
+def _qint(q, key: str, default: int = 0) -> int:
+    # 쿼리 정수 파싱 — 엣지가 보낸 통계가 비거나 깨져도 표시가 죽지 않게.
+    try:
+        return int(float(q.get(key, default)))
+    except (TypeError, ValueError):
+        return default
+
+
 def _decode_frame(data: bytes):
     # ③ 디코드를 스레드풀에서 — 이벤트 루프를 막지 않는다(요청이 겹쳐도 HTTP 응답이 밀리지 않음).
     arr = np.frombuffer(data, np.uint8)
@@ -822,6 +830,24 @@ async def ingest_ppe(request: Request):
     if len(data) < 4 or data[:2] != b"\xff\xd8":  # JPEG SOI — 디코드 없이 싸게 거른다
         return JSONResponse({"ok": False, "error": "not a jpeg"}, status_code=400)
     now = time.time()
+    q = request.query_params
+    if q.get("drawn") in ("1", "true", "yes"):
+        # ★ 엣지(젯슨)가 이미 박스를 그려 보낸 프레임 — 서버 추론 없이 그대로 표시(display-only).
+        #   CAM-02(/cctv/ingest2)와 같은 방식. 서버 CPU 를 쓰지 않아 카메라 확장에 유리하고,
+        #   추론이 젯슨 TensorRT(우리 학습 모델)라 Cloud Run CPU 추론보다 빠르고 정확도도 우리 것을 쓴다.
+        st = {"person_count": _qint(q, "persons"), "fall_count": _qint(q, "fall"),
+              "violation_count": _qint(q, "violations"),
+              "compliance_rate": _qint(q, "compliance", 100),
+              "no_hardhat_count": _qint(q, "no_hardhat"), "hardhat_count": _qint(q, "hardhat"),
+              "no_vest_count": _qint(q, "no_vest"), "vest_count": _qint(q, "vest")}
+        with _ppe_live_lock:
+            _ppe_live["frame"] = data
+            _ppe_live["stats"] = st
+            _ppe_live["ts"] = now
+            _ppe_live["draw_ts"] = now
+        return JSONResponse({"ok": True, "persons": st["person_count"], "fall": st["fall_count"],
+                            "violations": st["violation_count"], "compliance": st["compliance_rate"],
+                            "mode": "drawn"})
     with _ppe_live_lock:
         _ppe_live["ts"] = now  # 즉시 라이브로 표시 → 클립 워커가 CPU 를 양보한다
         stats = _ppe_live["stats"]
