@@ -849,7 +849,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             lastStatus = "ML 자가검증 실패 - 낙상 감시 중지"
         } else {
             mlFusionEnabled = true
-            mlPipelineStatus = "ML-first 관전 · 6/6 검증 완료"
+            mlPipelineStatus = "ML-first 관전 · v5 스키마 검증 완료"
             transmitter.updateMLPipelineStatus(isActive: true)
             lastStatus = "ML 자가검증 완료 · ML-first 관전 활성"
         }

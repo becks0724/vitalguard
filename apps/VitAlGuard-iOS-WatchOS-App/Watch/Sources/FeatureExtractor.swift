@@ -1,6 +1,6 @@
 // C2 — features.py 의 88 핸드크래프트 피처를 수치 동일하게 Swift 포팅.
 // 채널 7개(accel xyz + gyro xyz + |accel|) × 12 시간/주파수 피처 + 도메인 4개 = 88.
-// numpy 와의 일치는 ml_selfcheck.json(파이썬 정답지) 대조로 검증한다(MLSelfCheck.swift).
+// v5에서는 MLSelfCheck가 88개 특성 스키마와 Core ML 입출력을 검증한다.
 //
 // ponytail: DFT는 O(n²) 나이브 구현 — n≤150·이벤트 시에만 실행이라 ~ms, vDSP 세팅 비용이 더 큼.
 import Foundation
