@@ -105,7 +105,8 @@ PPE_REAL = False     # CAM-03 실모델(Hexmon) 로드 여부
 # 폰/엣지 라이브(ON override) — /cctv/ingest3 가 갱신. ts 기준 PPE_LIVE_TTL 내면 클립 대신 이걸 노출.
 # 끊김 방지: 표시(매 프레임 캐시 박스 그리기)와 탐지(throttle Hexmon 백그라운드)를 분리한다. dets=캐시 박스, infering=추론 진행중.
 _ppe_live_lock = threading.Lock()
-_ppe_live = {"frame": b"", "dets": [], "stats": None, "ts": 0.0, "infer_ts": 0.0, "infering": False}
+_ppe_live = {"frame": b"", "dets": [], "stats": None, "ts": 0.0, "draw_ts": 0.0,
+             "infer_ts": 0.0, "infering": False}  # draw_ts = 마지막으로 그린 프레임 시각(늦게 온 옛 프레임 폐기용)
 PPE_LIVE_INFER_INTERVAL = float(os.environ.get("PPE_LIVE_INFER_INTERVAL", "0.3"))  # 라이브 탐지 cadence(초). 표시 fps와 무관(전체 품질 유지).
 
 # Hexmon 모델 단일 인스턴스 — 클립 워커와 인제스트 핸들러가 공유(추론 직렬화).
@@ -598,11 +599,13 @@ CAPTURE_HTML = """<!DOCTYPE html>
   <button id="btn">▶ 송출 시작</button>
   <div id="stat">대기 중 — '송출 시작'을 누르세요.</div>
 <script>
-const FPS = 5, QUALITY = 0.5, CW = 640, CH = 360;
+// ① 파이프라이닝 — 전송을 직렬화하지 않고 최대 MAX_INFLIGHT 개를 동시에 띄운다.
+//    직렬이면 실효 fps = 1/왕복 이라, 왕복 250ms 에서 tick(200ms) 이 통째로 스킵돼 2.5fps 까지 떨어졌다.
+const FPS = 5, QUALITY = 0.5, CW = 640, CH = 360, MAX_INFLIGHT = 3, SEND_TIMEOUT_MS = 5000;
 const v = document.getElementById('v'), btn = document.getElementById('btn'), stat = document.getElementById('stat');
 const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
 const ctx = canvas.getContext('2d');
-let stream = null, timer = null, running = false, sending = false, sent = 0, wakeLock = null;
+let stream = null, timer = null, running = false, inflight = 0, sent = 0, startedAt = 0, wakeLock = null;
 
 async function lockScreen() {
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
@@ -611,21 +614,26 @@ function unlockScreen() { try { if (wakeLock) { wakeLock.release(); wakeLock = n
 document.addEventListener('visibilitychange', () => { if (running && document.visibilityState === 'visible') lockScreen(); });
 
 function tick() {
-  if (!running || sending || !v.videoWidth) return;
+  if (!running || inflight >= MAX_INFLIGHT || !v.videoWidth) return;
   const scale = Math.max(CW / v.videoWidth, CH / v.videoHeight);
   const dw = v.videoWidth * scale, dh = v.videoHeight * scale;
   ctx.drawImage(v, (CW - dw) / 2, (CH - dh) / 2, dw, dh);
-  sending = true;
+  inflight++;
   canvas.toBlob(async (blob) => {
-    if (!blob) { sending = false; return; }
+    if (!blob) { inflight--; return; }
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), SEND_TIMEOUT_MS);  // 멈춘 요청이 슬롯을 영구 점유하지 않게
     try {
-      const r = await fetch('/cctv/ingest3', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob });
+      const r = await fetch('/cctv/ingest3', { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: blob, signal: ac.signal });
       const j = await r.json();
       sent++;
-      if (j.ok) stat.innerHTML = '<span class="big">송출 중 · ' + sent + ' 프레임</span><br>작업자 ' + j.persons + ' · 위반 ' + j.violations + ' · 낙상 ' + j.fall + ' · 준수율 ' + j.compliance + '%';
+      const secs = startedAt ? (Date.now() - startedAt) / 1000 : 0;
+      const fps = secs > 1 ? (sent / secs).toFixed(1) : '--';
+      if (j.ok) stat.innerHTML = '<span class="big">송출 중 · ' + sent + ' 프레임 · ' + fps + ' fps</span><br>작업자 ' + j.persons + ' · 위반 ' + j.violations + ' · 낙상 ' + j.fall + ' · 준수율 ' + j.compliance + '%';
       else stat.textContent = '서버 응답: ' + (j.error || '오류') + ' (재시도 중)';
     } catch (e) { stat.textContent = '전송 오류 — 네트워크 확인 (재시도 중)'; }
-    sending = false;
+    clearTimeout(to);
+    inflight--;
   }, 'image/jpeg', QUALITY);
 }
 
@@ -635,7 +643,7 @@ async function start() {
   } catch (e) { stat.textContent = '카메라 접근 실패 — 권한을 허용하고 HTTPS 인지 확인하세요. (' + e.name + ')'; return; }
   v.srcObject = stream; await v.play();
   await lockScreen();
-  running = true; sent = 0; timer = setInterval(tick, Math.round(1000 / FPS));
+  running = true; sent = 0; inflight = 0; startedAt = Date.now(); timer = setInterval(tick, Math.round(1000 / FPS));
   btn.textContent = '■ 송출 중지'; btn.classList.add('on'); stat.textContent = '카메라 시작 — 전송 준비 중...';
 }
 function stop() {
@@ -759,39 +767,65 @@ async def _ppe_live_infer(frame, ts):
             _ppe_live["infering"] = False
 
 
-@app.post("/cctv/ingest3")
-async def ingest_ppe(request: Request):
-    # 엣지/폰이 JPEG 프레임(raw body)을 POST. 표시=매 프레임 즉시(캐시 박스만 그리기), 탐지=throttle Hexmon(백그라운드, 전체 품질).
-    data = await request.body()
-    if not data:
-        return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
+def _decode_frame(data: bytes):
+    # ③ 디코드를 스레드풀에서 — 이벤트 루프를 막지 않는다(요청이 겹쳐도 HTTP 응답이 밀리지 않음).
     arr = np.frombuffer(data, np.uint8)
     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if frame is None:
-        return JSONResponse({"ok": False, "error": "decode failed"}, status_code=400)
+        return None
     if frame.shape[1] != OW3 or frame.shape[0] != OH3:
         frame = cv2.resize(frame, (OW3, OH3))
+    return frame
+
+
+async def _ppe_live_process(data: bytes, ts: float):
+    # ② 응답 경로 밖에서 디코드 → 그리기 → (throttle)추론.
+    #    파이프라이닝으로 프레임이 겹쳐 들어오므로, 늦게 끝난 옛 프레임은 draw_ts 비교로 버린다.
+    need = False
+    try:
+        frame = await run_in_threadpool(_decode_frame, data)
+        if frame is None:
+            print("[cctv-ai] live decode failed (non-jpeg or corrupt)")
+            return
+        with _ppe_live_lock:
+            if ts < _ppe_live["draw_ts"]:
+                return  # 이미 더 새 프레임이 그려졌다 — 폐기
+            dets = _ppe_live["dets"]
+            need = (ts - _ppe_live["infer_ts"] >= PPE_LIVE_INFER_INTERVAL) and not _ppe_live["infering"]
+            if need:
+                _ppe_live["infering"] = True
+        jpg = await run_in_threadpool(_draw_live, frame, dets)
+        with _ppe_live_lock:
+            if jpg and ts >= _ppe_live["draw_ts"]:
+                _ppe_live["frame"] = jpg
+                _ppe_live["draw_ts"] = ts
+        if need:
+            need = False  # 이후 infering 해제는 _ppe_live_infer 의 finally 가 담당
+            await _ppe_live_infer(frame, ts)
+    except Exception as e:
+        print(f"[cctv-ai] live process error ({e})")
+    finally:
+        if need:  # 추론에 못 넘기고 빠져나온 경우만 여기서 해제
+            with _ppe_live_lock:
+                _ppe_live["infering"] = False
+
+
+@app.post("/cctv/ingest3")
+async def ingest_ppe(request: Request):
+    # 엣지/폰이 JPEG 프레임(raw body)을 POST.
+    # ★ 응답을 먼저 준다 — 디코드·그리기·추론은 전부 백그라운드로 넘긴다.
+    #   폰의 왕복 시간에서 서버 처리시간(디코드+그리기 10~30ms)이 빠지고,
+    #   캡처 페이지의 in-flight 파이프라이닝과 합쳐 실효 fps 가 오른다(끊김 완화).
+    data = await request.body()
+    if not data:
+        return JSONResponse({"ok": False, "error": "empty body"}, status_code=400)
+    if len(data) < 4 or data[:2] != b"\xff\xd8":  # JPEG SOI — 디코드 없이 싸게 거른다
+        return JSONResponse({"ok": False, "error": "not a jpeg"}, status_code=400)
     now = time.time()
     with _ppe_live_lock:
-        dets = _ppe_live["dets"]
+        _ppe_live["ts"] = now  # 즉시 라이브로 표시 → 클립 워커가 CPU 를 양보한다
         stats = _ppe_live["stats"]
-        need = (now - _ppe_live["infer_ts"] >= PPE_LIVE_INFER_INTERVAL) and not _ppe_live["infering"]
-        if need:
-            _ppe_live["infering"] = True
-    try:
-        jpg = await run_in_threadpool(_draw_live, frame, dets)
-    except Exception as e:
-        print(f"[cctv-ai] live draw error ({e})")
-        with _ppe_live_lock:
-            if need:
-                _ppe_live["infering"] = False
-        return JSONResponse({"ok": False, "error": "draw failed"}, status_code=500)
-    with _ppe_live_lock:
-        if jpg:
-            _ppe_live["frame"] = jpg
-        _ppe_live["ts"] = now
-    if need:
-        asyncio.create_task(_ppe_live_infer(frame.copy(), now))
+    asyncio.create_task(_ppe_live_process(data, now))
     s = stats or {"person_count": 0, "fall_count": 0, "violation_count": 0, "compliance_rate": 100}
     return JSONResponse({"ok": True, "persons": s["person_count"], "fall": s["fall_count"],
                         "violations": s["violation_count"], "compliance": s["compliance_rate"]})
