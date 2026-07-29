@@ -53,9 +53,9 @@
 - [x] ⚠️ **함정** — kaggle 은 import 시점에 인증을 요구해 `_ensure` 가 죽었다
 - [x] ⚠️ **함정** — GPU 자동 튜닝이 미적용(옛 노트북)이라 A100인데 T4 설정으로 돌았다
 
-### 4차 — 진행 중
+### 4차 — 진행 중 (19/30 에포크 · 완료 예상 07-29 19:26)
 
-- [ ] `ppe_yolo26_colab_v4.ipynb` 실행
+- [x] `ppe_yolo26_colab_v4.ipynb` 실행 — 세션 재개 후 8.7분/에포크(초기 19.4분)
 - [ ] SH17 `head`·`helmet` 제거 확인 (리매핑 출력에서 sh17 기여 0)
 - [ ] `helmet : head` 0.6~0.8 확인
 - [ ] **홀드아웃 시퀀스 12개 예약 + 누수 검사 통과**
@@ -125,6 +125,19 @@
 - [ ] 안전화 판정 — **`foot` 사용 불가**, `shoes` 0.409 로 부분 대체
 - [ ] 현행 `vyra_ppe.pt` 대비 개선 확인
 
+## 6-1. 관제웹 라이브 투입 — ✅ 완료 (2026-07-29)
+
+- [x] **우리 모델이 관제웹 CAM-03 에 실전 투입** — `Live (Jetson TensorRT) PPE (yolo26)`
+- [x] 아이폰 → 젯슨 → Cloud Run → 관제웹 경로 구축 (`edge/phone_ppe_relay.py`)
+- [x] `getUserMedia` HTTPS 관문 해결 — `tailscale cert` 유효 인증서
+- [x] `ingest3?drawn=1` display-only 모드 — Cloud Run 추론 부하 0
+- [x] 끊김 수정 — 왕복 직렬화 해소로 **3.2 → 4.89 fps**
+- [x] ⚠️ **전송 천장 약 4.8 fps 규명** — iOS Safari 타이머 스로틀(≈208ms)
+      해상도 44% 감소·목표 상향·슬롯 증설 전부 무효로 확인
+- [x] 실전 판정 — 사람 2명·안전모 미착용 2건 정확 (Hexmon 은 person 0명)
+- [ ] 4차 가중치로 엔진 재변환 → 릴레이 `PPE_ENGINE` 교체
+- [ ] (선택) 30fps 필요 시 WebCodecs 또는 RTMP
+
 ## 7. 마무리
 
 - [x] 산출 가중치 `_nc` 접미사 확인 (상용 파이프라인 차단)
@@ -132,4 +145,5 @@
 - [x] 젯슨 배포 산출물 — `ppe_yolo26s_640_v3_nc.{pt,onnx,engine}`
 - [x] 경과 기록 — `docs/ppe-ml-run-20260729.md`
 - [ ] 데이터셋별 라이선스·상용 반입 가능 여부 표 확정
-- [ ] shadow 모드 계획 수립 (현행·신규 동시 추론 비교 후 교체)
+- [x] 라이브 shadow 시작 — 같은 장면을 Hexmon(CAM-03 클립)·우리 모델(폰 라이브)이 판정
+- [ ] 정식 shadow — 같은 홀드아웃에 두 모델을 태워 수치 비교

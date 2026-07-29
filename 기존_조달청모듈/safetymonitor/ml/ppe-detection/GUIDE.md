@@ -1,6 +1,6 @@
 # 실행 가이드 — PPE 학습·성능 테스트
 
-**최종 갱신 2026-07-29 · 현재 단계 = 4차 학습**
+**최종 갱신 2026-07-29 · 현재 단계 = 4차 학습(19/30) · 관제웹 라이브 투입 완료**
 
 이 문서만 보고 진행할 수 있게 썼다. 배경·근거는 [README.md](README.md)·[context-notes.md](context-notes.md),
 전체 경과는 [docs/ppe-ml-run-20260729.md](../../docs/ppe-ml-run-20260729.md), 진행 체크는 [checklist.md](checklist.md).
@@ -9,9 +9,10 @@
 
 ## ★ 지금 할 일
 
-1. **4차 학습 실행** — `ppe_yolo26_colab_v4.ipynb` (Drive `vitalguard-ppe/`)
+1. **4차 학습 완주 대기** — 19/30 에포크 · 완료 예상 07-29 19:26
 2. 끝나면 **예약 홀드아웃 평가** → `head` P 로 성패 판정
-3. (병행) **사진 촬영 30장** — 유일하게 남은 독립 시험지
+3. **4차 가중치를 젯슨에 반영** — `.pt` 전송 → 엔진 변환 → 릴레이 `PPE_ENGINE` 교체
+4. (병행) **사진 촬영 30장** — 유일하게 남은 독립 시험지
 
 ---
 
@@ -22,6 +23,8 @@
   미착용은 클래스로 두지 않고 `head`(맨머리) 검출로 코드 판정
 - **★ 젯슨 배포 판정 = 완결** — 파이프라인 켠 상태 **70.7 fps**(최저 61.1) · RAM 여유 2.2GB
 - **★ 3차 엔진이 젯슨에 상주** — `ppe_yolo26s_640_v3_nc.engine`. 4차는 `.pt` 만 올리면 된다
+- **★ 관제웹 라이브 경로 완성** — 아이폰 → 젯슨(우리 모델 추론) → Cloud Run(표시만) → CAM-03.
+  절차·한계는 [cctv-ai/README.md](../../cctv-ai/README.md), 소스는 `cctv-ai/edge/phone_ppe_relay.py`
 - **비상업 데이터 포함** — 산출 가중치에 `_nc` 가 자동으로 붙는다. 상용 빌드 반입 금지
 - **엔진 변환은 젯슨에서만** — 코랩에서 만든 `.engine` 은 못 쓴다
 
@@ -260,6 +263,37 @@ python3 -c "from ultralytics import YOLO; \
 pip install -U --no-deps ultralytics    # 올바름
 pip install -U ultralytics              # PyPI torch 가 NVIDIA 빌드를 덮어써 CUDA 사망
 ```
+
+---
+
+## 관제웹 라이브 재기동 (폰 → 젯슨 → CAM-03)
+
+```bash
+# ① Cloud Run 켜기 (사용자 직접 실행 — 분류기 차단)
+gcloud run services update cctv-ai --region asia-northeast3 \
+  --ingress all --min-instances 1 --max-instances 1
+
+# ② 젯슨 릴레이
+ssh jetson@yahboom-1
+CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app \
+  nohup python3 phone_ppe_relay.py > relay.log 2>&1 &
+
+# ③ 아이폰 사파리 (Tailscale 앱 연결 상태)
+#    jetson-1.tailnet.invalid:8443
+```
+
+⚠️ **카카오톡 인앱 브라우저는 카메라를 못 쓴다.** 사파리 주소창에 직접 입력할 것.
+⚠️ Cloud Run 은 `--min-instances 1 --no-cpu-throttling` 이라 **상시 과금**. 끝나면 반드시 OFF.
+
+```bash
+gcloud run services update cctv-ai --region asia-northeast3 \
+  --ingress internal --min-instances 0
+```
+
+**4차 가중치 반영** — `.pt` 를 젯슨에 올려 엔진 변환 후 `PPE_ENGINE=<새 엔진>` 으로 릴레이를 띄우면
+라이브에 즉시 반영된다.
+
+전송은 **약 4.8 fps 가 천장**이다(iOS Safari 타이머 스로틀). PPE 판정에 필요한 3~5회/초에는 충분하다.
 
 ---
 
