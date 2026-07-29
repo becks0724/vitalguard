@@ -27,7 +27,7 @@
 | Cloud Run 서비스 | `vitalguard-dashboard` |
 | Artifact Registry 이미지 | `asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard:latest` |
 | Cloud Build 파일 | `cloudbuild.dashboard.yaml` |
-| 배포 소스 루트 | `2026-07-29-VitAlGuard-8.0-80-primary-release-v2/기존_조달청모듈/safetymonitor` |
+| 배포 소스 기준 | [GitHub main · `기존_조달청모듈/safetymonitor`](https://github.com/becks0724/vitalguard/tree/main/%EA%B8%B0%EC%A1%B4_%EC%A1%B0%EB%8B%AC%EC%B2%AD%EB%AA%A8%EB%93%88/safetymonitor) |
 
 배포 담당자 권한:
 
@@ -206,4 +206,3 @@ PASS
 ```
 
 하나라도 충족하지 않으면 배포 완료로 선언하지 않고, 롤백 또는 원인 확인 상태로 기록한다.
-
