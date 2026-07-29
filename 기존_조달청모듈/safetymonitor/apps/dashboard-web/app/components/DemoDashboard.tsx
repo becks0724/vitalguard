@@ -710,6 +710,11 @@ type CalendarEvent = {
   hazardType?: string;
   // 등록자(서버 세션 username) — 서버가 최초 등록 시 저장, 클라는 표시만.
   createdBy?: string;
+  // 마지막 수정 시각(ISO) — 서버가 갱신 시에만 채운다. 없으면 등록 후 수정 이력 없음.
+  updatedAt?: string;
+  // 수정·삭제 가능 여부 — **서버 판정을 받아쓰기만 한다**. 화면이 같은 규칙(작성자·총괄)을
+  // 다시 구현하면 언젠가 어긋나고, 그때 사용자는 "버튼은 있는데 눌러도 안 된다"를 겪는다.
+  canEdit?: boolean;
 };
 
 // 옛 localStorage 키 — 서버 승격 후에는 1회 마이그레이션 원본·서버 조회 실패 시 읽기 폴백으로만 사용.
@@ -823,6 +828,9 @@ function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
       endTime: typeof r.end_time === "string" ? r.end_time : undefined,
       hazardType: typeof r.hazard_type === "string" ? r.hazard_type : undefined,
       createdBy: typeof r.created_by === "string" ? r.created_by : undefined,
+      updatedAt: typeof r.updated_at === "string" ? r.updated_at : undefined,
+      // 서버가 안 내려주면 감춘다 — 모르면 버튼을 보이지 않는 쪽이 안전하다.
+      canEdit: r.canEdit === true,
     }));
 }
 
@@ -896,6 +904,15 @@ function toDateKey(d: Date) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// 날짜 입력(type=date)은 비우면 "" 가 오므로 저장 전에 형식을 확인한다(서버 검증과 동일 형식).
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// dateKey → 로컬 Date. new Date("2026-07-31") 은 UTC 로 해석돼 KST 에서 하루 밀리므로 직접 조립한다.
+function dateFromKey(dateKey: string): Date {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
 }
 
 // 캘린더 배지 — '이미 본' 현장 사진(미디어) id 집합을 localStorage 에 보관(카카오톡 미확인 방식).
@@ -1057,6 +1074,19 @@ function formatScheduleTime(event: CalendarEvent): string {
   if (event.startTime) return formatKoreanTime(event.startTime);
   if (event.endTime) return `~ ${formatKoreanTime(event.endTime)}`;
   return "";
+}
+
+// 마지막 수정 시각 표시 — 서버는 갱신 시에만 updated_at 을 채우므로 없으면 수정 이력이 없다.
+// 형식이 깨진 값은 표시하지 않는다("Invalid Date" 노출 방지).
+function formatScheduleEdited(updatedAt: string | undefined): string {
+  if (!updatedAt) return "";
+  const d = new Date(updatedAt);
+  if (Number.isNaN(d.getTime())) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `수정 ${m}/${day} ${hh}:${mm}`;
 }
 
 function parseTime24(value: string) {
@@ -1252,20 +1282,29 @@ function CalendarEventChip({
 }
 
 function ScheduleEventFormModal({
+  dateKey,
   events,
   labels,
+  labelsCanEdit,
+  initialEditId,
   onLabelsChange,
   onAdd,
   onUpdate,
   onDelete,
   onClose,
 }: {
+  // 모달이 열린 기준 날짜 — 신규 등록의 기본값이자 편집 취소 시 되돌아갈 값.
+  dateKey: string;
   events: CalendarEvent[];
   labels: ScheduleLabelDef[];
+  // 라벨 편집(전체교체)은 총괄 관리자 전용 — 서버 판정을 받아쓴다.
+  labelsCanEdit: boolean;
+  // 목록의 [수정] 으로 열렸을 때 처음부터 편집 상태로 채울 대상.
+  initialEditId: string | null;
   onLabelsChange: (labels: ScheduleLabelDef[]) => void;
-  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">) => void;
-  onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">) => void;
-  onDelete: (id: string) => void;
+  onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => void;
+  onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => void;
+  onDelete: (event: CalendarEvent) => void;
   onClose: () => void;
 }) {
   const [title, setTitle] = useState("");
@@ -1274,17 +1313,33 @@ function ScheduleEventFormModal({
   const [endTime, setEndTime] = useState("");
   // 위험작업 유형 — "" = 없음(일반 일정).
   const [hazardType, setHazardType] = useState("");
+  // 저장될 날짜 — 수정 시 다른 날로 옮길 수 있다. 신규는 모달을 연 날짜에서 시작.
+  const [dateDraft, setDateDraft] = useState(dateKey);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setTitle("");
     setLabelId(labels[0]?.id ?? "");
     setStartTime("");
     setEndTime("");
     setHazardType("");
+    setDateDraft(dateKey);
     setEditingId(null);
-  };
+  }, [labels, dateKey]);
+
+  const startEdit = useCallback(
+    (event: CalendarEvent) => {
+      setEditingId(event.id);
+      setTitle(event.title);
+      setLabelId(labels.some((l) => l.id === event.labelId) ? event.labelId : labels[0]?.id ?? "");
+      setStartTime(event.startTime ?? "");
+      setEndTime(event.endTime ?? "");
+      setHazardType(event.hazardType ?? "");
+      setDateDraft(event.dateKey);
+    },
+    [labels],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1301,18 +1356,24 @@ function ScheduleEventFormModal({
     }
   }, [labels, labelId]);
 
-  const startEdit = (event: CalendarEvent) => {
-    setEditingId(event.id);
-    setTitle(event.title);
-    setLabelId(labels.some((l) => l.id === event.labelId) ? event.labelId : labels[0]?.id ?? "");
-    setStartTime(event.startTime ?? "");
-    setEndTime(event.endTime ?? "");
-    setHazardType(event.hazardType ?? "");
-  };
+  // 목록의 [수정] 으로 열린 경우 — 대상 일정으로 폼을 채운 상태로 시작한다.
+  const appliedInitialRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialEditId || appliedInitialRef.current === initialEditId) return;
+    const target = events.find((e) => e.id === initialEditId);
+    if (!target) return;
+    appliedInitialRef.current = initialEditId;
+    startEdit(target);
+  }, [initialEditId, events, startEdit]);
+
+  // 편집 중이던 일정이 목록에서 사라지면(삭제 확정) 폼을 되돌린다 — 지워진 대상에 저장하지 않는다.
+  useEffect(() => {
+    if (editingId && !events.some((e) => e.id === editingId)) resetForm();
+  }, [events, editingId, resetForm]);
 
   const handleSubmit = () => {
     const trimmed = title.trim();
-    if (!trimmed || !labelId) return;
+    if (!trimmed || !labelId || !DATE_KEY_RE.test(dateDraft)) return;
     const draft = {
       title: trimmed,
       labelId,
@@ -1321,9 +1382,9 @@ function ScheduleEventFormModal({
       hazardType: hazardType || undefined,
     };
     if (editingId) {
-      onUpdate(editingId, draft);
+      onUpdate(editingId, draft, dateDraft);
     } else {
-      onAdd(draft);
+      onAdd(draft, dateDraft);
     }
     resetForm();
   };
@@ -1362,7 +1423,9 @@ function ScheduleEventFormModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3 dark:border-white/10">
-          <p className="text-sm font-bold text-ink dark:text-on-dark">일정 등록</p>
+          <p className="text-sm font-bold text-ink dark:text-on-dark">
+            {editingId ? "일정 수정" : "일정 등록"}
+          </p>
           <button
             type="button"
             onClick={onClose}
@@ -1402,28 +1465,32 @@ function ScheduleEventFormModal({
                           등록 {event.createdBy}
                         </span>
                       )}
+                      {formatScheduleEdited(event.updatedAt) && (
+                        <span className="text-[9px] text-muted dark:text-on-dark-soft">
+                          {formatScheduleEdited(event.updatedAt)}
+                        </span>
+                      )}
                     </div>
                     <CalendarEventChip event={event} color={findLabelDef(labels, event.labelId).color} />
                   </div>
-                  <div className="flex shrink-0 flex-col gap-1">
-                    <button
-                      type="button"
-                      onClick={() => startEdit(event)}
-                      className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink transition hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10"
-                    >
-                      수정
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDelete(event.id);
-                        if (editingId === event.id) resetForm();
-                      }}
-                      className="rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                    >
-                      삭제
-                    </button>
-                  </div>
+                  {event.canEdit && (
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => startEdit(event)}
+                        className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink transition hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10"
+                      >
+                        수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(event)}
+                        className="rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -1431,6 +1498,18 @@ function ScheduleEventFormModal({
         )}
 
         <div className="space-y-3 px-4 py-3">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              일정 날짜
+            </label>
+            <input
+              type="date"
+              value={dateDraft}
+              onChange={(e) => setDateDraft(e.target.value)}
+              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+            />
+          </div>
+
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               일정 제목
@@ -1451,14 +1530,16 @@ function ScheduleEventFormModal({
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <p className="text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 라벨</p>
-              <button
-                type="button"
-                onClick={() => setLabelEditOpen((v) => !v)}
-                className="rounded-lg px-2 py-0.5 text-[11px] font-medium text-brand-accent transition hover:bg-surface-strong dark:text-primary dark:hover:bg-white/10"
-                aria-expanded={labelEditOpen}
-              >
-                {labelEditOpen ? "편집 완료" : "라벨 편집"}
-              </button>
+              {labelsCanEdit && (
+                <button
+                  type="button"
+                  onClick={() => setLabelEditOpen((v) => !v)}
+                  className="rounded-lg px-2 py-0.5 text-[11px] font-medium text-brand-accent transition hover:bg-surface-strong dark:text-primary dark:hover:bg-white/10"
+                  aria-expanded={labelEditOpen}
+                >
+                  {labelEditOpen ? "편집 완료" : "라벨 편집"}
+                </button>
+              )}
             </div>
             <div className="flex flex-wrap gap-2">
               {labels.map((l) => (
@@ -1612,7 +1693,7 @@ function ScheduleEventFormModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!title.trim()}
+            disabled={!title.trim() || !DATE_KEY_RE.test(dateDraft)}
             className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
           >
             {editingId ? "수정 완료" : "일정 추가"}
@@ -1725,7 +1806,15 @@ function HeaderCalendarPopup({
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [labels, setLabels] = useState<ScheduleLabelDef[]>(DEFAULT_LABELS);
+  // 라벨 편집 권한 — 서버(/api/calendar/labels GET)가 내려주는 값. 기본은 감춤(모르면 안 보인다).
+  const [labelsCanEdit, setLabelsCanEdit] = useState(false);
   const [formDate, setFormDate] = useState<Date | null>(null);
+  // 모달을 편집 모드로 열 때 대상 일정 id — 목록의 [수정] 이 형식 모달을 그 일정으로 채워 연다.
+  const [formEditId, setFormEditId] = useState<string | null>(null);
+  // 삭제 확인 대기 중인 일정 — 즉시 삭제 + 낙관적 반영이라 오클릭 시 복구가 불가능했다.
+  const [pendingDelete, setPendingDelete] = useState<CalendarEvent | null>(null);
+  // 서버가 쓰기를 거부한 사유(주로 권한 부족) — 조용히 되돌리면 사용자는 고장으로 읽는다.
+  const [writeError, setWriteError] = useState<string | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
   const [hoverDateKey, setHoverDateKey] = useState<string | null>(null);
   // 현장 GPS 좌표 기반 일일 예보 — dateKey(YYYY-MM-DD) → WMO weatherCode. 예보 창(오늘~+6일)만 채워짐.
@@ -1842,7 +1931,11 @@ function HeaderCalendarPopup({
       ]);
       if (!evRes.ok || !lbRes.ok) return null;
       const evJson = (await evRes.json()) as { ok?: boolean; events?: unknown[] };
-      const lbJson = (await lbRes.json()) as { ok?: boolean; labels?: unknown[] };
+      const lbJson = (await lbRes.json()) as {
+        ok?: boolean;
+        labels?: unknown[];
+        canEdit?: boolean;
+      };
       if (!evJson.ok || !Array.isArray(evJson.events) || !lbJson.ok || !Array.isArray(lbJson.labels)) {
         return null;
       }
@@ -1852,6 +1945,8 @@ function HeaderCalendarPopup({
       if (seq === scheduleFetchSeqRef.current) {
         setEvents(serverEvents);
         setLabels(serverLabels.length > 0 ? serverLabels : DEFAULT_LABELS);
+        // 라벨 편집(전체교체 PUT)은 총괄 관리자 전용 — 서버 판정을 받아쓴다.
+        setLabelsCanEdit(lbJson.canEdit === true);
         if (inspByDate) setInspectionByDate(inspByDate);
       }
       return { labelCount: serverLabels.length };
@@ -2088,6 +2183,8 @@ function HeaderCalendarPopup({
             "Content-Type": "application/json",
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           };
+          // 403 = 옮길 권한이 없다(남의 일정 id·라벨 편집 불가) = 옮길 필요도 없다.
+          // 여기서 throw 하면 플래그가 안 찍혀 팝업을 열 때마다 영원히 재시도한다.
           let uploaded = false;
           for (const ev of localEvents) {
             const res = await fetch("/api/calendar/events", {
@@ -2095,8 +2192,8 @@ function HeaderCalendarPopup({
               headers: jsonHeaders,
               body: JSON.stringify(ev),
             });
-            if (!res.ok) throw new Error("migrate failed");
-            uploaded = true;
+            if (!res.ok && res.status !== 403) throw new Error("migrate failed");
+            if (res.ok) uploaded = true;
           }
           // 라벨은 전체교체(PUT)라 다른 관리자가 저장한 서버 라벨을 덮지 않게 서버가 비어 있을 때만.
           if (hadLocalLabels && result.labelCount === 0) {
@@ -2105,8 +2202,8 @@ function HeaderCalendarPopup({
               headers: jsonHeaders,
               body: JSON.stringify({ labels: loadCalendarLabels() }),
             });
-            if (!res.ok) throw new Error("migrate failed");
-            uploaded = true;
+            if (!res.ok && res.status !== 403) throw new Error("migrate failed");
+            if (res.ok) uploaded = true;
           }
           window.localStorage.setItem(CALENDAR_MIGRATED_KEY, new Date().toISOString());
           if (uploaded && active) await fetchSchedule(viewDate);
@@ -2155,6 +2252,8 @@ function HeaderCalendarPopup({
     setViewDate(now);
     setSelected(now);
     setFormDate(null);
+    setFormEditId(null);
+    setPendingDelete(null);
     setPlanOpen(false);
     setHoverDateKey(null);
     setDragPos(null); // 열 때마다 기본 위치로 리셋
@@ -2164,13 +2263,15 @@ function HeaderCalendarPopup({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (formDate) setFormDate(null);
+        // 삭제 확인이 떠 있으면 그것부터 닫는다(가장 위 레이어 우선).
+        if (pendingDelete) setPendingDelete(null);
+        else if (formDate) setFormDate(null);
         else onClose();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, formDate]);
+  }, [open, onClose, formDate, pendingDelete]);
 
   // 헤더 드래그 — 플로팅 창 자유 이동(pointer capture). 버튼 위 클릭은 드래그 시작 안 함(액션 보존).
   const onDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -2279,6 +2380,15 @@ function HeaderCalendarPopup({
 
   // 일정 CUD — 낙관적 로컬 반영 후 서버 반영(업서트). 실패 시 서버 상태 재조회로 복원.
   // 성공 시 서버 확정 행(등록자 등 서버 부여 필드 포함)으로 해당 일정을 치환.
+  // 서버 거부 사유를 그대로 보여준다 — 권한 부족(403)을 조용히 되돌리면 사용자는 고장으로 읽는다.
+  const reportWriteFailure = async (res: Response, fallback: string) => {
+    const message = await res
+      .json()
+      .then((j: { error?: unknown }) => (typeof j.error === "string" ? j.error : fallback))
+      .catch(() => fallback);
+    setWriteError(message);
+  };
+
   const persistEvent = (event: CalendarEvent) => {
     const token = getSessionToken();
     void fetch("/api/calendar/events", {
@@ -2291,6 +2401,7 @@ function HeaderCalendarPopup({
     })
       .then(async (res) => {
         if (!res.ok) {
+          await reportWriteFailure(res, "일정을 저장하지 못했습니다");
           fetchSchedule(viewDate);
           return;
         }
@@ -2303,13 +2414,14 @@ function HeaderCalendarPopup({
       .catch(() => fetchSchedule(viewDate));
   };
 
-  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">) => {
-    if (!formDate) return;
-    const dateKey = toDateKey(formDate);
+  const handleAddEvent = (draft: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => {
     const event: CalendarEvent = {
       ...draft,
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${dateKey}`,
       dateKey,
+      // 방금 내가 만든 일정이므로 확정 응답 전까지 편집 가능으로 둔다(버튼 깜빡임 방지).
+      // 서버 확정 행이 도착하면 그 판정으로 치환된다.
+      canEdit: true,
     };
     setEvents((prev) => [...prev, event]);
     persistEvent(event);
@@ -2322,16 +2434,24 @@ function HeaderCalendarPopup({
       method: "DELETE",
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     })
-      .then((res) => {
-        if (!res.ok) fetchSchedule(viewDate);
+      .then(async (res) => {
+        if (!res.ok) {
+          await reportWriteFailure(res, "일정을 삭제하지 못했습니다");
+          fetchSchedule(viewDate);
+        }
       })
       .catch(() => fetchSchedule(viewDate));
   };
 
-  const handleUpdateEvent = (id: string, draft: Omit<CalendarEvent, "id" | "dateKey">) => {
+  // dateKey 를 draft 에 포함해 받는다 — 수정 시 다른 날짜로 옮길 수 있어야 한다.
+  const handleUpdateEvent = (
+    id: string,
+    draft: Omit<CalendarEvent, "id" | "dateKey">,
+    dateKey: string,
+  ) => {
     const current = events.find((event) => event.id === id);
     if (!current) return;
-    const updated = { ...current, ...draft };
+    const updated = { ...current, ...draft, dateKey };
     setEvents((prev) => prev.map((event) => (event.id === id ? updated : event)));
     persistEvent(updated);
   };
@@ -2745,7 +2865,10 @@ function HeaderCalendarPopup({
                 <p className="text-[11px] font-semibold text-muted dark:text-on-dark-soft">선택 날짜 일정</p>
                 <button
                   type="button"
-                  onClick={() => setFormDate(selected)}
+                  onClick={() => {
+                    setFormEditId(null);
+                    setFormDate(selected);
+                  }}
                   className="inline-flex items-center gap-1 rounded-lg bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
                 >
                   <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
@@ -2761,10 +2884,47 @@ function HeaderCalendarPopup({
                     const warning = hazardWarningForEvent(event);
                     return (
                       <div key={event.id} className="space-y-0.5">
-                        <CalendarEventChip
-                          event={event}
-                          color={findLabelDef(labels, event.labelId).color}
-                        />
+                        {/* 수정·삭제는 서버가 내려준 canEdit 로만 노출한다(작성자 본인·총괄 관리자). */}
+                        <div className="flex items-center gap-1">
+                          <div className="min-w-0 flex-1">
+                            <CalendarEventChip
+                              event={event}
+                              color={findLabelDef(labels, event.labelId).color}
+                            />
+                          </div>
+                          {event.canEdit && (
+                            <div className="flex shrink-0 items-center gap-0.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormEditId(event.id);
+                                  setFormDate(dateFromKey(event.dateKey));
+                                }}
+                                aria-label={`${event.title} 일정 수정`}
+                                title="수정"
+                                className="grid h-6 w-6 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+                              >
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M12 20h9" />
+                                  <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingDelete(event)}
+                                aria-label={`${event.title} 일정 삭제`}
+                                title="삭제"
+                                className="grid h-6 w-6 place-items-center rounded-lg text-muted transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                              >
+                                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M3 6h18" />
+                                  <path d="M8 6V4h8v2" />
+                                  <path d="M19 6l-1 14H6L5 6" />
+                                </svg>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                         {warning && (
                           <div
                             className={[
@@ -3101,15 +3261,105 @@ function HeaderCalendarPopup({
 
         {formDate && (
           <ScheduleEventFormModal
+            dateKey={toDateKey(formDate)}
             events={eventsByDate[toDateKey(formDate)] ?? []}
             labels={labels}
+            labelsCanEdit={labelsCanEdit}
+            initialEditId={formEditId}
             onLabelsChange={handleLabelsChange}
             onAdd={handleAddEvent}
             onUpdate={handleUpdateEvent}
-            onDelete={handleDeleteEvent}
-            onClose={() => setFormDate(null)}
+            onDelete={setPendingDelete}
+            onClose={() => {
+              setFormDate(null);
+              setFormEditId(null);
+            }}
           />
         )}
+
+        {pendingDelete && (
+          <ScheduleDeleteConfirm
+            event={pendingDelete}
+            label={findLabelDef(labels, pendingDelete.labelId)}
+            onCancel={() => setPendingDelete(null)}
+            onConfirm={() => {
+              handleDeleteEvent(pendingDelete.id);
+              setPendingDelete(null);
+            }}
+          />
+        )}
+
+        {writeError && (
+          <div className="absolute inset-x-0 bottom-0 z-20 border-t border-red-200 bg-red-50 px-4 py-2.5 dark:border-red-500/30 dark:bg-red-950/80">
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-[11px] leading-snug text-red-700 dark:text-red-300">
+                {writeError}
+              </p>
+              <button
+                type="button"
+                onClick={() => setWriteError(null)}
+                className="shrink-0 rounded-lg px-2 py-0.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-100 dark:text-red-300 dark:hover:bg-red-500/20"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 일정 삭제 확인 — 삭제는 낙관적 반영 후 서버 요청이라 되돌릴 수 없다. 한 단계를 둔다.
+function ScheduleDeleteConfirm({
+  event,
+  label,
+  onCancel,
+  onConfirm,
+}: {
+  event: CalendarEvent;
+  label: ScheduleLabelDef;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label="일정 삭제 확인"
+    >
+      <div
+        className="w-full max-w-[320px] rounded-2xl border border-hairline-strong bg-canvas p-4 dark:border-white/10 dark:bg-surface-dark"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-sm font-bold text-ink dark:text-on-dark">일정을 삭제할까요?</p>
+        <div className="mt-2.5 rounded-xl border border-hairline bg-surface-soft px-2.5 py-2 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <CalendarEventChip event={event} color={label.color} />
+          <p className="mt-1 px-2 text-[10px] text-muted dark:text-on-dark-soft">
+            {formatDateKeyLabel(event.dateKey)}
+          </p>
+        </div>
+        <p className="mt-2 text-[11px] leading-snug text-muted dark:text-on-dark-soft">
+          삭제하면 되돌릴 수 없습니다.
+        </p>
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition hover:bg-surface-strong dark:hover:bg-white/10"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-red-700"
+          >
+            삭제
+          </button>
+        </div>
       </div>
     </div>
   );

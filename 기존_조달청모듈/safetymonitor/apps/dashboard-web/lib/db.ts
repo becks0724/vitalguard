@@ -4,12 +4,16 @@
 import pg, { Pool } from "pg";
 import type { VitalSample, CctvFallEvent } from "@safetymonitor/schemas";
 
+import {
+  calendarEventScopeClause,
+  type CalendarEventScope,
+} from "./calendar-event-scope";
 import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
 import { notifyAlertTelegram } from "./telegram";
 
-export type { CommentScope, MediaScope };
+export type { CalendarEventScope, CommentScope, MediaScope };
 
 // int8(BIGINT)·COUNT/SUM 결과를 문자열이 아니라 number 로 받는다(금액·집계가 string 으로 새는 것 방지).
 // 원화 금액이 2^53 을 넘지 않으므로 parseInt 안전. (OID 20 = int8)
@@ -2716,16 +2720,36 @@ export async function listCalendarEvents(
 }
 
 // 일정 업서트 — id 충돌 시 내용 갱신(클라 마이그레이션 재전송에도 멱등).
-export async function upsertCalendarEvent(input: {
-  id: string;
-  dateKey: string;
-  title: string;
-  labelId: string;
-  startTime?: string | null;
-  endTime?: string | null;
-  hazardType?: string | null;
-  createdBy?: string | null;
-}): Promise<CalendarEventRow> {
+//
+// 갱신 분기에만 소유권 조건을 건다. id 를 클라가 만들어 보내므로(멱등 마이그레이션 요건),
+// 조건이 없으면 "신규 등록"으로 위장해 남의 일정을 덮어쓸 수 있다. 신규 INSERT 는 충돌이
+// 없으니 조건과 무관하다. 남의 일정이면 DO UPDATE 가 걸러져 **반환 행이 없다** → null.
+//
+// created_by 는 SET 목록에 넣지 않는다 — 수정해도 최초 등록자가 보존돼야 한다.
+export async function upsertCalendarEvent(
+  input: {
+    id: string;
+    dateKey: string;
+    title: string;
+    labelId: string;
+    startTime?: string | null;
+    endTime?: string | null;
+    hazardType?: string | null;
+    createdBy?: string | null;
+  },
+  scope: CalendarEventScope,
+): Promise<CalendarEventRow | null> {
+  const params: unknown[] = [
+    input.id,
+    input.dateKey,
+    input.title,
+    input.labelId,
+    input.startTime ?? null,
+    input.endTime ?? null,
+    input.hazardType ?? null,
+    input.createdBy ?? null,
+  ];
+  const clause = calendarEventScopeClause(scope, params);
   const { rows } = await q<CalendarEventRow>(
     `INSERT INTO calendar_event (id, date_key, title, label_id, start_time, end_time, hazard_type, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -2737,23 +2761,24 @@ export async function upsertCalendarEvent(input: {
          end_time = EXCLUDED.end_time,
          hazard_type = EXCLUDED.hazard_type,
          updated_at = ${NOW_ISO}
+       WHERE TRUE${clause}
        RETURNING *`,
-    [
-      input.id,
-      input.dateKey,
-      input.title,
-      input.labelId,
-      input.startTime ?? null,
-      input.endTime ?? null,
-      input.hazardType ?? null,
-      input.createdBy ?? null,
-    ],
+    params,
   );
-  return rows[0]!;
+  return rows[0] ?? null;
 }
 
-export async function deleteCalendarEvent(id: string): Promise<boolean> {
-  const { rowCount } = await q("DELETE FROM calendar_event WHERE id = $1", [id]);
+// 남의 일정이면 rowCount 0 → 호출부가 403 으로 응답한다.
+export async function deleteCalendarEvent(
+  id: string,
+  scope: CalendarEventScope,
+): Promise<boolean> {
+  const params: unknown[] = [id];
+  const clause = calendarEventScopeClause(scope, params);
+  const { rowCount } = await q(
+    `DELETE FROM calendar_event WHERE id = $1${clause}`,
+    params,
+  );
   return rowCount > 0;
 }
 

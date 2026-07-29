@@ -1,7 +1,7 @@
 // 일정 캘린더 라벨(이름·색상) 조회·전체교체 API — localStorage 승격(서버 단일 진실 소스)
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { verifyBasicAuth, verifyOwner } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import { listCalendarLabels, replaceCalendarLabels } from "../../../../lib/db";
 
@@ -25,12 +25,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
   const labels = await listCalendarLabels();
-  return NextResponse.json({ ok: true, labels });
+  // 편집 가능 여부를 서버가 계산해 내려준다 — 화면이 role 을 다시 판정하면 언젠가 어긋난다.
+  // 앱 로그인 JWT 로 조회하는 경우는 읽기 전용이므로 false 다.
+  return NextResponse.json({ ok: true, labels, canEdit: verifyOwner(request) });
 }
 
 export async function PUT(request: Request) {
+  // 라벨은 **전체 교체**다 — 지운 라벨을 쓰던 남의 일정이 조용히 첫 라벨로 밀린다.
+  // 일정과 달리 소유자 개념이 없어 작성자 대조가 불가능하므로 총괄 관리자(owner) 전용으로 둔다.
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+  }
+  if (!verifyOwner(request)) {
+    return NextResponse.json(
+      { ok: false, error: "라벨 편집은 총괄 관리자만 가능합니다" },
+      { status: 403 },
+    );
   }
   let body: Record<string, unknown>;
   try {

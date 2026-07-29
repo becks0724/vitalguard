@@ -4,6 +4,10 @@ import { NextResponse } from "next/server";
 import { getSession, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
+  calendarEventMatchesScope,
+  type CalendarEventScope,
+} from "../../../../lib/calendar-event-scope";
+import {
   deleteCalendarEvent,
   listCalendarEvents,
   upsertCalendarEvent,
@@ -14,6 +18,32 @@ export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
+
+// 수정·삭제 권한 범위 — 일정을 등록한 본인, 또는 owner(총괄 관리자).
+//
+// 일정은 관제 웹에서만 등록되므로 사진(lib/media-scope.ts)과 달리 사번 환산이 없다.
+// 올리는 쪽과 지우는 쪽이 같은 신원 체계(세션 username)라 그대로 대조한다.
+//
+// 앱 로그인 JWT 는 조회 전용이다 — 일정을 등록하는 앱 화면이 없으므로 쓰기 범위를 주지 않는다.
+// 판정 불가는 항상 거부 쪽이다. "신원 없음 → 범위 없음(전체 허용)"으로 떨어지면 인가 구멍이 된다.
+function eventWriteScope(request: Request): CalendarEventScope | null {
+  const session = getSession(request);
+  if (!session) return null;
+  if (session.role === "owner") return "moderator";
+  return { createdBy: session.username };
+}
+
+// 쓰기가 0행일 때의 응답 — 사진(404 로 덮어 존재를 숨김)과 다르게 간다.
+// 일정 목록은 로그인한 전원에게 보이므로 존재를 숨길 실익이 없고, 404 는 사용자가
+// "일정이 사라졌나"로 오해한다. 총괄 관리자는 소유권 조건이 아예 없으므로 0행 = 정말 없는 것이다.
+function eventWriteDenied(scope: CalendarEventScope, action: string): NextResponse {
+  return scope === "moderator"
+    ? NextResponse.json({ ok: false, error: "일정을 찾을 수 없습니다" }, { status: 404 })
+    : NextResponse.json(
+        { ok: false, error: `작성자 또는 총괄 관리자만 일정을 ${action}할 수 있습니다` },
+        { status: 403 },
+      );
+}
 
 export async function GET(request: Request) {
   // 조회 = 대시보드 세션 또는 앱 로그인 JWT — 캘린더 미디어 GET 과 동일 게이트(읽기 전용).
@@ -29,13 +59,21 @@ export async function GET(request: Request) {
       { status: 400 },
     );
   }
-  const events = await listCalendarEvents(from, to);
+  // 항목별 수정·삭제 가능 여부를 서버가 계산해 내려준다 — 화면이 같은 규칙을 다시 구현하면
+  // 언젠가 어긋나고, 그때 사용자는 "버튼은 있는데 눌러도 안 된다"를 겪는다(단일 소스).
+  const scope = eventWriteScope(request);
+  const rows = await listCalendarEvents(from, to);
+  const events = rows.map((e) => ({
+    ...e,
+    canEdit: scope !== null && calendarEventMatchesScope(e.created_by, scope),
+  }));
   return NextResponse.json({ ok: true, events });
 }
 
 export async function POST(request: Request) {
-  // 등록·수정 = 유효 대시보드 세션(로그인 관제자) — 기존 localStorage 시절 UX 와 동일 범위.
-  if (!verifyBasicAuth(request)) {
+  // 등록·수정 = 유효 대시보드 세션(로그인 관제자). 수정은 등록 본인·총괄 관리자로 좁힌다.
+  const scope = eventWriteScope(request);
+  if (!scope) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
   let body: Record<string, unknown>;
@@ -67,27 +105,34 @@ export async function POST(request: Request) {
     typeof body.id === "string" && body.id.trim() && body.id.length <= 80
       ? body.id.trim()
       : crypto.randomUUID();
-  const event = await upsertCalendarEvent({
-    id,
-    dateKey,
-    title,
-    labelId,
-    startTime: timeOf(body.startTime),
-    endTime: timeOf(body.endTime),
-    hazardType: hazardRaw,
-    createdBy: getSession(request)?.username ?? null,
-  });
-  return NextResponse.json({ ok: true, event }, { status: 201 });
+  const event = await upsertCalendarEvent(
+    {
+      id,
+      dateKey,
+      title,
+      labelId,
+      startTime: timeOf(body.startTime),
+      endTime: timeOf(body.endTime),
+      hazardType: hazardRaw,
+      createdBy: getSession(request)?.username ?? null,
+    },
+    scope,
+  );
+  // 반환 행이 없다 = 이미 있는 id 인데 남의 일정이다(신규 INSERT 는 충돌이 없어 항상 반환된다).
+  if (!event) return eventWriteDenied(scope, "수정");
+  return NextResponse.json({ ok: true, event: { ...event, canEdit: true } }, { status: 201 });
 }
 
 export async function DELETE(request: Request) {
-  if (!verifyBasicAuth(request)) {
+  const scope = eventWriteScope(request);
+  if (!scope) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
   const id = new URL(request.url).searchParams.get("id") ?? "";
   if (!id) {
     return NextResponse.json({ ok: false, error: "id 필요" }, { status: 400 });
   }
-  const removed = await deleteCalendarEvent(id);
-  return NextResponse.json({ ok: removed }, { status: removed ? 200 : 404 });
+  const removed = await deleteCalendarEvent(id, scope);
+  if (!removed) return eventWriteDenied(scope, "삭제");
+  return NextResponse.json({ ok: true });
 }
