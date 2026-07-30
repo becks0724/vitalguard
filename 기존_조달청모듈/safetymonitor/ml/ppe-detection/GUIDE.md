@@ -2,6 +2,8 @@
 
 **최종 갱신 2026-07-30 · 4차 게이트 통과 · 도메인 얽힘 발견 · 5차 노트북 준비 완료 → 학습 실행 대기**
 
+**팀원과 교대로 돌린다면 [RUNBOOK-5차-협업.md](RUNBOOK-5차-협업.md) 를 먼저 읽을 것** — 동시 실행은 체크포인트를 조용히 망가뜨린다.
+
 이 문서만 보고 진행할 수 있게 썼다. 배경·근거는 [README.md](README.md)·[context-notes.md](context-notes.md),
 전체 경과는 [docs/ppe-ml-run-20260729.md](../../docs/ppe-ml-run-20260729.md), 진행 체크는 [checklist.md](checklist.md).
 

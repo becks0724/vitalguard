@@ -4,6 +4,7 @@ CCTV 엣지에서 안전모·안전조끼·안전화 착용 여부를 판정하�
 현행 라이브 모델(CAM-03 Hexmon `vyra_ppe.pt`)을 **교체할 수 있는지** 숫자로 판정하는 것이 목적이다.
 
 - **★ 실행 가이드 → [GUIDE.md](GUIDE.md)** — 처음이면 여기부터. 진행 순서·확인 포인트·트러블슈팅
+- **★ 협업 런북 → [RUNBOOK-5차-협업.md](RUNBOOK-5차-협업.md)** — 팀원과 교대로 5차를 돌릴 때 (동시 실행 금지·인수인계)
 - **5차 학습 노트북 → [ppe_yolo26_colab_v5.ipynb](ppe_yolo26_colab_v5.ipynb)** — 도메인 얽힘 해소 (현재 사용 · 실행 대기)
 - 4차 노트북 → [ppe_yolo26_colab_v4.ipynb](ppe_yolo26_colab_v4.ipynb) — 라벨 정합 + 홀드아웃 예약 (판정 게이트 통과본)
 - 3차 → [v3](ppe_yolo26_colab_v3.ipynb) · 2차 → [v2](ppe_yolo26_colab_v2.ipynb) · 1차 → [v1](ppe_yolo26_colab.ipynb) (기록 보존)
