@@ -163,6 +163,28 @@
 - [x] ⚠️ 429 stuck 함정 — 켠 직후 "no available instance" → `RESTART` env 로 복구
 - [ ] (선택) 30fps 필요 시 WebCodecs 또는 RTMP
 
+## 6-2. 5차 학습 — 도메인 얽힘 해소 (노트북 완성 · 실행 대기)
+
+- [x] **노트북 작성** — `ppe_yolo26_colab_v5.ipynb` 30셀
+- [x] `SH17_HEAD_FILTER` — `helmet` 과 IoU>0.3 겹치지 않는 `head` 만 채택,
+      SH17 `helmet` 박스는 정의가 달라 전량 제외 (`sh17_head_filter()` in 유틸 셀)
+- [x] `SOURCE_CLASSES['sh17']` 에 `head` 추가 — SH17 이 진짜 미착용 머리를 기여한다
+- [x] `E63_PERSON_PSEUDO` — COCO(`yolo11n.pt`)로 `e63_*`·`hhw_*` **train 분할**에
+      `person` 라벨 추가. val·홀드아웃 제외(순환 방지) · 기존 person 라벨 이미지 건너뜀
+      (HHW 중복 방지) · `.person_pseudo_done` 마커로 재실행 이중 추가 차단
+- [x] `HHW_FRACTION 0.45` · `SCALE 0.8` · `EPOCHS 30` · 홀드아웃 예약 0.30 유지
+- [x] 평가 참고값 3차 → **4차 `fair_eval` 실측**으로 교체 (같은 방식끼리 비교)
+- [x] 0절 팀원 계정 절차 · 9절 `vyra_ppe.pt` 기준선 비교 셀 (다른 에이전트 작업분 계승)
+- [x] **로컬 검증** — 코드 셀 18개 구문 · IoU 검산 3 · 필터 시뮬 5 ·
+      `remap` end-to-end (착용 머리 2·helmet 2 제거 / 미착용 1 채택 / 좌표·타 클래스 보존)
+- [ ] **5차 학습 실행** — A100 약 4.8시간. 컴퓨팅 단위 먼저 확인
+- [ ] `helmet R ≥ 0.70` (4차 0.433 복원)
+- [ ] 홀드아웃 `head P ≥ 0.70` 유지 (4차 0.800 에서 회귀하면 실패)
+- [ ] 미착용 알림 게이트 유지 `R ≥ 0.90 @ P ≥ 0.85`
+- [ ] **★ 도메인 교차 — E63 밖에서 `head` 검출 > 0** (GoPro 재시험).
+      홀드아웃도 E63 이라 이 항목은 홀드아웃으로 절대 측정되지 않는다
+- [ ] 5차 가중치 젯슨 재변환 + CAM-03 반영
+
 ## 7. 마무리
 
 - [x] 산출 가중치 `_nc` 접미사 확인 (상용 파이프라인 차단)
