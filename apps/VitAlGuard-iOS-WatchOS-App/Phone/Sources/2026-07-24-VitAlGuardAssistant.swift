@@ -7,6 +7,65 @@ import UniformTypeIdentifiers
 private struct ChatMessage: Codable {
     let role: String
     let content: String
+    let source: String?
+    let taskSummaries: [TaskSummary]?
+
+    init(
+        role: String,
+        content: String,
+        source: String? = nil,
+        taskSummaries: [TaskSummary]? = nil
+    ) {
+        self.role = role
+        self.content = content
+        self.source = source
+        self.taskSummaries = taskSummaries
+    }
+}
+
+/// 관제 대시보드가 규칙 엔진에서 확정한 작업 목록입니다.
+/// 문장형 AI 답변과 분리하여 iPhone에서도 표 형태로 안전하게 보여 줍니다.
+private struct TaskSummary: Codable {
+    let workerId: String
+    let blockedTags: [String]
+    let allowedTags: [String]
+    let pendingTags: [String]
+}
+
+private struct AssignmentChatContract: Decodable {
+    let version: String
+    let welcomeMessage: String
+    let suggestions: [String]
+    let inputPlaceholder: String
+    let requestLabel: String
+    let loadingMessage: String
+    let genericError: String
+    let sessionExpired: String
+    let disclaimer: String
+
+    static let fallback = AssignmentChatContract(
+        version: "fallback",
+        welcomeMessage: "작업자 사번(EMP-…)을 포함해 질문해 주세요.\n예: \"EMP-6861 오늘 고소작업 배치 가능해?\"\n등급·배제 권고는 최근 24시간 워치 실측 기반의 안전 기준 참고 정보입니다.",
+        suggestions: [],
+        inputPlaceholder: "질문을 입력하세요",
+        requestLabel: "질문",
+        loadingMessage: "판정 조회 중…",
+        genericError: "응답 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        sessionExpired: "로그인 세션이 만료되었습니다. 잠시 후 로그인 화면으로 이동합니다.",
+        disclaimer: "본 등급은 안전 기준 참고 정보이며 의료적 판단이 아닙니다. 최종 배치 결정 권한은 감독관에게 있습니다."
+    )
+}
+
+private struct AssignmentChatResponse: Decodable {
+    let ok: Bool
+    let reply: String?
+    let source: String?
+    let disclaimer: String?
+    let error: String?
+    let assignments: [Assignment]?
+    let taskSummaries: [TaskSummary]?
+
+    struct Assignment: Decodable { let workerId: String }
 }
 
 private enum AssistantAttachmentKind: String {
@@ -158,6 +217,8 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
     private var totalTokens = 0
     private let messageInputContainer = UIView()
     private var pendingAttachments: [AssistantAttachment] = []
+    private var chatContract = AssignmentChatContract.fallback
+    private var followUpWorkerIds: [String] = []
     private var isMessageEditMode = false
     private var selectedMessageIndexes = Set<Int>()
     private var activeProvider: AssistantProvider {
@@ -182,6 +243,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         seedMessagesIfNeeded()
         apiKeyButton.isHidden = true
         setKeySettingsVisible(false, animated: false)
+        Task { await refreshChatContract() }
     }
 
     @objc private func dismissKeyboardForBlankTap() {
@@ -603,9 +665,9 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         return label
     }
 
-    private func makeMessageBubble(_ role: String, _ text: String, index: Int) -> UIView {
-        let isUser = role == "user"
-        let isSystem = role == "system"
+    private func makeMessageBubble(_ message: ChatMessage, index: Int) -> UIView {
+        let isUser = message.role == "user"
+        let isSystem = message.role == "system"
 
         let row = UIStackView()
         row.axis = .horizontal
@@ -643,15 +705,33 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         label.numberOfLines = 0
         label.font = .preferredFont(forTextStyle: .body)
         label.adjustsFontForContentSizeCategory = true
-        label.text = text
+        label.text = message.content
         label.textColor = isUser ? .white : .label
 
-        bubbleContainer.addSubview(label)
+        let bubbleContent = UIStackView()
+        bubbleContent.translatesAutoresizingMaskIntoConstraints = false
+        bubbleContent.axis = .vertical
+        bubbleContent.alignment = .fill
+        bubbleContent.spacing = 8
+        bubbleContent.addArrangedSubview(label)
+        if !isUser, let taskSummaries = message.taskSummaries, !taskSummaries.isEmpty {
+            bubbleContent.addArrangedSubview(makeTaskSummaryTable(taskSummaries))
+        }
+        if !isUser, let source = message.source {
+            let sourceLabel = UILabel()
+            sourceLabel.font = .preferredFont(forTextStyle: .caption2)
+            sourceLabel.adjustsFontForContentSizeCategory = true
+            sourceLabel.textColor = .secondaryLabel
+            sourceLabel.text = source == "clova" ? "HyperCLOVA X · 판정은 규칙 엔진" : "규칙 엔진 응답"
+            bubbleContent.addArrangedSubview(sourceLabel)
+        }
+
+        bubbleContainer.addSubview(bubbleContent)
         NSLayoutConstraint.activate([
-            label.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 10),
-            label.bottomAnchor.constraint(equalTo: bubbleContainer.bottomAnchor, constant: -10),
-            label.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 12),
-            label.trailingAnchor.constraint(equalTo: bubbleContainer.trailingAnchor, constant: -12)
+            bubbleContent.topAnchor.constraint(equalTo: bubbleContainer.topAnchor, constant: 10),
+            bubbleContent.bottomAnchor.constraint(equalTo: bubbleContainer.bottomAnchor, constant: -10),
+            bubbleContent.leadingAnchor.constraint(equalTo: bubbleContainer.leadingAnchor, constant: 12),
+            bubbleContent.trailingAnchor.constraint(equalTo: bubbleContainer.trailingAnchor, constant: -12)
         ])
 
         let leftSpacer = UIView()
@@ -695,12 +775,70 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         return editableRow
     }
 
+    private func makeTaskSummaryTable(_ summaries: [TaskSummary]) -> UIView {
+        let table = UIStackView()
+        table.axis = .vertical
+        table.spacing = 0
+        table.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.64)
+        table.layer.cornerRadius = 10
+        table.layer.masksToBounds = true
+
+        let title = UILabel()
+        title.font = .preferredFont(forTextStyle: .caption1)
+        title.adjustsFontForContentSizeCategory = true
+        title.textColor = .label
+        title.text = "서버 판정 작업 목록"
+        let titleContainer = UIView()
+        titleContainer.backgroundColor = UIColor.separator.withAlphaComponent(0.16)
+        titleContainer.addSubview(title)
+        title.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: titleContainer.topAnchor, constant: 6),
+            title.bottomAnchor.constraint(equalTo: titleContainer.bottomAnchor, constant: -6),
+            title.leadingAnchor.constraint(equalTo: titleContainer.leadingAnchor, constant: 8),
+            title.trailingAnchor.constraint(equalTo: titleContainer.trailingAnchor, constant: -8)
+        ])
+        table.addArrangedSubview(titleContainer)
+
+        for summary in summaries {
+            let row = UIStackView()
+            row.axis = .vertical
+            row.spacing = 3
+            row.isLayoutMarginsRelativeArrangement = true
+            row.layoutMargins = UIEdgeInsets(top: 7, left: 8, bottom: 7, right: 8)
+
+            let worker = UILabel()
+            worker.font = .preferredFont(forTextStyle: .caption1)
+            worker.adjustsFontForContentSizeCategory = true
+            worker.textColor = .label
+            worker.text = summary.workerId
+            row.addArrangedSubview(worker)
+
+            addTaskSummaryRow("배제 권고", values: summary.blockedTags, to: row)
+            addTaskSummaryRow("배치 가능", values: summary.allowedTags, to: row)
+            addTaskSummaryRow("판단 보류", values: summary.pendingTags, to: row)
+            table.addArrangedSubview(row)
+        }
+        return table
+    }
+
+    private func addTaskSummaryRow(_ title: String, values: [String], to stack: UIStackView) {
+        guard !values.isEmpty else { return }
+        let row = UILabel()
+        row.font = .preferredFont(forTextStyle: .caption2)
+        row.adjustsFontForContentSizeCategory = true
+        row.numberOfLines = 0
+        row.textColor = .secondaryLabel
+        row.text = "\(title)  \(values.joined(separator: ", "))"
+        stack.addArrangedSubview(row)
+    }
+
     private func seedMessagesIfNeeded() {
         if messages.isEmpty {
             messages.append(
                 ChatMessage(
                     role: "system",
-                    content: "안전보조 챗봇입니다. 질문을 입력하면 119/안전 안내 중심으로 짧게 도움을 드립니다."
+                    content: chatContract.welcomeMessage
                 )
             )
             rebuildMessageBubbles()
@@ -714,7 +852,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         }
 
         for (index, message) in messages.enumerated() {
-            messagesStack.addArrangedSubview(makeMessageBubble(message.role, message.content, index: index))
+            messagesStack.addArrangedSubview(makeMessageBubble(message, index: index))
         }
 
         scrollToBottomOfChat()
@@ -750,7 +888,12 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         updateUsageLabel()
     }
 
-    private func appendLog(_ role: String, text: String) {
+    private func appendLog(
+        _ role: String,
+        text: String,
+        source: String? = nil,
+        taskSummaries: [TaskSummary]? = nil
+    ) {
         let marker: String
         if role == "user" {
             marker = "user"
@@ -759,7 +902,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         } else {
             marker = "system"
         }
-        messages.append(ChatMessage(role: marker, content: text))
+        messages.append(ChatMessage(role: marker, content: text, source: source, taskSummaries: taskSummaries))
         rebuildMessageBubbles()
     }
 
@@ -875,6 +1018,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         messages.removeAll()
         seedMessagesIfNeeded()
         statusLabel.text = "채팅이 새로고침되었습니다."
+        Task { await refreshChatContract() }
     }
 
     @objc private func messageEditTapped() {
@@ -965,10 +1109,9 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
             return
         }
 
-        let context = attachmentContext()
         let attachmentSummary = pendingAttachments.isEmpty
             ? ""
-            : "\n\n첨부: \(pendingAttachments.map { "\($0.kind.title) \($0.displayName)" }.joined(separator: ", "))"
+            : "\n\n첨부: \(pendingAttachments.count)개 (파일명·원본은 서버로 전송하지 않음)"
         appendLog("user", text: question + attachmentSummary)
         pendingAttachments.removeAll()
         rebuildAttachmentPreviews()
@@ -982,7 +1125,8 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         statusLabel.textColor = .secondaryLabel
 
         Task {
-            await requestAssistantReply(question: question + context)
+            await refreshChatContract()
+            await requestAssistantReply(question: question)
             Task { @MainActor in
                 updateBusy(false)
             }
@@ -1148,16 +1292,10 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         rebuildAttachmentPreviews()
     }
 
-    private func attachmentContext() -> String {
-        guard !pendingAttachments.isEmpty else { return "" }
-        let details = pendingAttachments.map { "\($0.kind.title): \($0.displayName)" }.joined(separator: ", ")
-        return "\n\n[사용자가 첨부한 항목: \(details)]\n파일 원본이 아닌 파일명과 유형만 전달되었습니다. 원본 내용을 볼 수 없으면 사용자에게 필요한 정보를 설명해 달라고 요청하세요."
-    }
-
     @MainActor
     private func requestAssistantReply(question: String) async {
         do {
-            let (answer, usage) = try await fetchServerAnswer(question: question)
+            let (answer, usage, response) = try await fetchServerAnswer(question: question)
             if let usage {
                 Task { @MainActor in
                     totalPromptTokens += usage.promptTokens
@@ -1166,7 +1304,17 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
                     updateUsageLabel()
                 }
             }
-            appendLog("assistant", text: answer)
+            if let assignments = response.assignments, assignments.count == 1 {
+                followUpWorkerIds = [assignments[0].workerId]
+            } else {
+                followUpWorkerIds = []
+            }
+            appendLog(
+                "assistant",
+                text: answer,
+                source: response.source,
+                taskSummaries: response.taskSummaries
+            )
             statusLabel.text = "관제 서버 응답을 받았습니다."
             statusLabel.textColor = .systemGreen
         } catch {
@@ -1179,7 +1327,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         }
     }
 
-    private func fetchServerAnswer(question: String) async throws -> (String, UsageSnapshot?) {
+    private func fetchServerAnswer(question: String) async throws -> (String, UsageSnapshot?, AssignmentChatResponse) {
         guard let url = vitalGuardAssistantEndpoint() else {
             throw AssistantError.invalidResponse
         }
@@ -1193,12 +1341,7 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         request.addValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.addValue("medium", forHTTPHeaderField: "x-assignment-chat-usage-level")
-#if DEBUG
-        if url.host == "localhost" || url.host == "127.0.0.1" || url.host == "::1" {
-            request.addValue("1", forHTTPHeaderField: "x-vitalguard-local-debug")
-        }
-#endif
-        request.httpBody = try JSONSerialization.data(withJSONObject: ["message": question])
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["message": question, "followUpWorkerIds": followUpWorkerIds])
 
         let session = URLSession(configuration: .ephemeral)
         let (data, response) = try await session.data(for: request)
@@ -1208,13 +1351,37 @@ final class VitAlGuardAssistantViewController: UIViewController, UITextViewDeleg
         guard (200..<300).contains(http.statusCode) else {
             throw AssistantError.httpError(http.statusCode)
         }
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              object["ok"] as? Bool == true,
-              let reply = object["reply"] as? String,
+        guard let decoded = try? JSONDecoder().decode(AssignmentChatResponse.self, from: data),
+              decoded.ok,
+              let reply = decoded.reply,
               !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw AssistantError.invalidResponse
         }
-        return (reply.trimmingCharacters(in: .whitespacesAndNewlines), nil)
+        return (reply.trimmingCharacters(in: .whitespacesAndNewlines), nil, decoded)
+    }
+
+    @MainActor
+    private func refreshChatContract() async {
+        guard let endpoint = vitalGuardAssistantEndpoint(), !vitalGuardAssistantSessionToken().isEmpty else { return }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(vitalGuardAssistantSessionToken())", forHTTPHeaderField: "Authorization")
+        guard let (data, response) = try? await URLSession(configuration: .ephemeral).data(for: request),
+              let http = response as? HTTPURLResponse,
+              (200..<300).contains(http.statusCode),
+              let payload = try? JSONDecoder().decode(ChatContractPayload.self, from: data),
+              payload.ok else { return }
+        chatContract = payload.contract
+        if messages.count == 1, messages[0].role == "system" {
+            messages[0] = ChatMessage(role: "system", content: chatContract.welcomeMessage)
+            rebuildMessageBubbles()
+        }
+    }
+
+    private struct ChatContractPayload: Decodable {
+        let ok: Bool
+        let contract: AssignmentChatContract
     }
 
     private struct UsageSnapshot {

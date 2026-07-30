@@ -10806,10 +10806,27 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     func presentAppLockIfNeeded() {
-        guard PhoneAppLockStore.shared.isLocked, presentedViewController == nil else { return }
+        guard PhoneAppLockStore.shared.isLocked else { return }
+        let presenter = topMostPresenter(from: self)
+        guard !(presenter is PhoneAppLockViewController) else { return }
         let lock = PhoneAppLockViewController()
         lock.modalPresentationStyle = .fullScreen
-        present(lock, animated: false)
+        presenter.present(lock, animated: false)
+    }
+
+    private func topMostPresenter(from controller: UIViewController) -> UIViewController {
+        if let presented = controller.presentedViewController, !presented.isBeingDismissed {
+            return topMostPresenter(from: presented)
+        }
+        if let navigation = controller as? UINavigationController,
+           let visible = navigation.visibleViewController {
+            return topMostPresenter(from: visible)
+        }
+        if let tab = controller as? UITabBarController,
+           let selected = tab.selectedViewController {
+            return topMostPresenter(from: selected)
+        }
+        return controller
     }
 
     @objc private func openSettings() {

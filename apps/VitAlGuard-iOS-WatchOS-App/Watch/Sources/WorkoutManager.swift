@@ -12,6 +12,10 @@ import WatchKit
 final class WorkoutManager: NSObject, ObservableObject {
     private static let nfcFeatureEnabled = true
     private static let unresolvedFallIncidentKey = "vitalguard.watch.unresolvedFallIncidentID"
+    private static let unresolvedFallIncidentAtKey = "vitalguard.watch.unresolvedFallIncidentAt"
+    private static let unresolvedFallIncidentWorkerKey = "vitalguard.watch.unresolvedFallIncidentWorkerID"
+    // 이전 세션이 종료되어도 중복 경보 억제는 짧게 유지하되, 이후 실제 낙상까지 막지 않는다.
+    private static let unresolvedFallIncidentTTL: TimeInterval = 5 * 60
     @Published var authorized = false
     @Published var isRunning = false
     @Published var latestHeartRate: Double?
@@ -97,21 +101,42 @@ final class WorkoutManager: NSObject, ObservableObject {
     private static let wristTemperatureCacheRetention: TimeInterval = 24 * 60 * 60
 
     private var unresolvedFallIncidentID: String? {
-        let identifier = UserDefaults.standard
+        let defaults = UserDefaults.standard
+        let identifier = defaults
             .string(forKey: Self.unresolvedFallIncidentKey)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return identifier.isEmpty ? nil : identifier
+        guard !identifier.isEmpty else { return nil }
+        let markedAt = defaults.double(forKey: Self.unresolvedFallIncidentAtKey)
+        let recordedWorker = defaults.string(forKey: Self.unresolvedFallIncidentWorkerKey)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let currentWorker = ConnectionSettings.currentWorkerId().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard markedAt > 0,
+              Date().timeIntervalSince1970 - markedAt <= Self.unresolvedFallIncidentTTL,
+              !recordedWorker.isEmpty,
+              recordedWorker == currentWorker else {
+            clearStoredFallIncident()
+            return nil
+        }
+        return identifier
     }
 
     private func markFallIncidentUnresolved(_ candidateId: String) {
         guard !candidateId.isEmpty else { return }
         UserDefaults.standard.set(candidateId, forKey: Self.unresolvedFallIncidentKey)
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: Self.unresolvedFallIncidentAtKey)
+        UserDefaults.standard.set(ConnectionSettings.currentWorkerId(), forKey: Self.unresolvedFallIncidentWorkerKey)
     }
 
     private func clearFallIncidentIfMatches(_ candidateId: String) {
         guard let unresolved = unresolvedFallIncidentID else { return }
         guard candidateId.isEmpty || unresolved == candidateId else { return }
+        clearStoredFallIncident()
+    }
+
+    private func clearStoredFallIncident() {
         UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentKey)
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentAtKey)
+        UserDefaults.standard.removeObject(forKey: Self.unresolvedFallIncidentWorkerKey)
     }
 
     private struct HeartRatePoint {
@@ -595,9 +620,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         activeFallPrompt = nil
         let resolvedOutcome: FallPromptOutcome =
             outcome == .autoEscalated && !hasRecentOnWristEvidence ? .safetyHold : outcome
-        if resolvedOutcome == .dismissed || resolvedOutcome == .safetyHold {
-            clearFallIncidentIfMatches(prompt.id)
-        }
+        clearFallIncidentIfMatches(prompt.id)
 
         let responseSec = max(0, Date().timeIntervalSince(prompt.detectedAt))
         transmitter.sendFallPromptResult(
