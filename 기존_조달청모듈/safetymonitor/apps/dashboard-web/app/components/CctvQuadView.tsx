@@ -482,65 +482,106 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
 }
 
 // PPE(안전모) 감지 스트립 — 팝업 영상 하단에 준수율·안전모/조끼 착용 현황을 60초 폴링으로 표시.
+// PPE 통계 폴링 주기·신선도 임계.
+// 60초 폴링은 PPE 판정 갱신율(초당 3~5회 판정)에 비해 너무 성겨서, 서버가 올라온 뒤에도
+// 최대 1분 동안 옛 화면이 남았다. 8초로 줄인다.
+// 신선도 임계는 폴링의 3배 여유(24초)를 두고 30초 — 일시적 폴 실패 한 번으로 깜빡이지 않는다.
+const PPE_POLL_MS = 8_000;
+const PPE_STALE_MS = 30_000;
+
 function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: string }) {
-  const [stats, setStats] = useState<{
-    violation_count: number;
-    compliance_rate: number;
-    no_hardhat_count: number;
-    no_vest_count: number;
-    hardhat_count: number;
-    vest_count: number;
-    person_count: number;
+  const [rx, setRx] = useState<{
+    data: {
+      violation_count: number;
+      compliance_rate: number;
+      no_hardhat_count: number;
+      no_vest_count: number;
+      hardhat_count: number;
+      vest_count: number;
+      person_count: number;
+    };
+    at: number;
   } | null>(null);
+  // 폴이 실패하면 setRx 가 안 일어나 리렌더도 없다 → 신선도 표시가 갱신되지 않는다.
+  // 성패와 무관하게 갱신해 stale 판정이 화면에 반영되게 한다.
+  const [probedAt, setProbedAt] = useState(0);
 
   useEffect(() => {
     let active = true;
     const poll = async () => {
       try {
         const res = await fetch(`${aiApi}/cctv/stats${suffix}`);
-        if (!res.ok) return;
-        const r = await res.json();
-        if (active) setStats(r);
+        if (res.ok) {
+          const r = await res.json();
+          if (active) setRx({ data: r, at: Date.now() });
+        }
       } catch {
-        /* 서버 미연결 — 다음 폴에서 재시도 */
+        /* 서버 미연결 — 다음 폴에서 재시도. 값은 두고 신선도로 판정한다 */
       }
+      if (active) setProbedAt(Date.now());
     };
     poll();
-    const id = setInterval(poll, 60000);
+    const id = setInterval(poll, PPE_POLL_MS);
     return () => {
       active = false;
       clearInterval(id);
     };
   }, [aiApi, suffix]);
 
+  // ★ 수신이 없을 때 "준수율 100%"로 보이면 안 된다.
+  //   관제자가 화면을 믿고 넘어가는 false-OK 다(생체 연결끊김 게이트와 같은 이유).
+  //   한 번도 못 받았으면 '수신 대기', 받다가 끊겼으면 '연결끊김' 으로 강등하고 수치는 가린다.
+  const stale = rx !== null && probedAt - rx.at > PPE_STALE_MS;
+  const live = rx !== null && !stale;
+  const stats = live ? rx.data : null;
   const violations = stats?.violation_count ?? 0;
-  const rate = stats?.compliance_rate ?? 100;
+  const rate = stats?.compliance_rate;
+  const linkLabel = rx === null ? "수신 대기" : "연결끊김";
   const chips = [
-    { label: "안전모", ok: stats?.hardhat_count ?? 0, no: stats?.no_hardhat_count ?? 0 },
-    { label: "안전조끼", ok: stats?.vest_count ?? 0, no: stats?.no_vest_count ?? 0 },
+    { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count },
+    { label: "안전조끼", ok: stats?.vest_count, no: stats?.no_vest_count },
   ];
 
   return (
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-semibold">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${violations > 0 ? "bg-red-500" : "bg-emerald-400"}`} />
+          <span
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              !live ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
+            }`}
+          />
           PPE 안전모 감지
         </span>
         <span className="text-[11px] text-zinc-400">
-          YOLOv8 · 작업자 {stats?.person_count ?? 0}명 · 준수율{" "}
-          <span className={rate >= 100 ? "text-emerald-300" : rate >= 50 ? "text-amber-300" : "text-red-300"}>
-            {Math.round(rate)}%
-          </span>
-          {violations > 0 && <span className="ml-1.5 font-bold text-red-300">· 위반 {violations}건</span>}
+          {live ? (
+            <>
+              YOLOv8 · 작업자 {stats?.person_count ?? 0}명 · 준수율{" "}
+              <span
+                className={
+                  (rate ?? 0) >= 100 ? "text-emerald-300" : (rate ?? 0) >= 50 ? "text-amber-300" : "text-red-300"
+                }
+              >
+                {Math.round(rate ?? 0)}%
+              </span>
+              {violations > 0 && <span className="ml-1.5 font-bold text-red-300">· 위반 {violations}건</span>}
+            </>
+          ) : (
+            <>
+              YOLOv8 · <span className="font-semibold text-zinc-300">{linkLabel}</span> · 준수율{" "}
+              <span className="text-zinc-400">—</span>
+            </>
+          )}
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
         {chips.map((c) => (
           <span key={c.label} className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs">
             <span className="text-zinc-300">{c.label}</span>
-            <span className="text-emerald-300">착용 {c.ok}</span>
-            <span className={c.no > 0 ? "font-bold text-red-300" : "text-zinc-500"}>미착용 {c.no}</span>
+            <span className={live ? "text-emerald-300" : "text-zinc-500"}>착용 {live ? c.ok ?? 0 : "—"}</span>
+            <span className={live && (c.no ?? 0) > 0 ? "font-bold text-red-300" : "text-zinc-500"}>
+              미착용 {live ? c.no ?? 0 : "—"}
+            </span>
           </span>
         ))}
       </div>
