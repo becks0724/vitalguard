@@ -1,12 +1,18 @@
 // 관리자 회원가입 — 신규 계정을 status=pending 으로 저장(승인제). 승인 전엔 로그인 불가.
+// 가입 유형(VitAlGuard 관리자 / 회원사 관리자)은 role 이 아니라 org_type 으로 저장한다(앱 호환).
 import { NextResponse } from "next/server";
 
+import {
+  checkPassword,
+  checkUsername,
+  isValidBirthDate,
+  passwordMessage,
+  usernameMessage,
+} from "../../../../lib/account-policy";
 import { isAllowedCompany } from "../../../../lib/companies";
 import { createUser } from "../../../../lib/db";
+import { DEFAULT_ORG_TYPE, isOrgType } from "../../../../lib/org-type";
 import { hashPassword } from "../../../../lib/password";
-
-// env owner 와 혼동되는 아이디는 가입 차단(로그인 1순위가 env owner 라 그림자 계정 방지).
-const RESERVED = new Set(["admin", "owner", "root", "administrator", "superuser"]);
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -19,26 +25,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "입력 형식 오류" }, { status: 400 });
   }
 
-  const { username, password, name, company, phone, carrier, email } = body as {
-    username?: unknown;
-    password?: unknown;
-    name?: unknown;
-    company?: unknown;
-    phone?: unknown;
-    carrier?: unknown;
-    email?: unknown;
-  };
-  // 6개 항목 전부 필수 — 회사·아이디·비밀번호·이름·연락처·이메일.
+  const { username, password, name, company, phone, carrier, email, birthDate, orgType } =
+    body as {
+      username?: unknown;
+      password?: unknown;
+      name?: unknown;
+      company?: unknown;
+      phone?: unknown;
+      carrier?: unknown;
+      email?: unknown;
+      birthDate?: unknown;
+      orgType?: unknown;
+    };
+  // 7개 항목 전부 필수 — 회사·아이디·비밀번호·이름·연락처·생년월일·이메일.
   if (
     typeof username !== "string" ||
     typeof password !== "string" ||
     typeof name !== "string" ||
     typeof company !== "string" ||
     typeof phone !== "string" ||
-    typeof email !== "string"
+    typeof email !== "string" ||
+    typeof birthDate !== "string"
   ) {
     return NextResponse.json(
-      { ok: false, error: "모든 항목(회사·아이디·비밀번호·이름·연락처·이메일)을 입력해주세요." },
+      {
+        ok: false,
+        error: "모든 항목(회사·아이디·비밀번호·이름·연락처·생년월일·이메일)을 입력해주세요.",
+      },
       { status: 400 },
     );
   }
@@ -48,12 +61,21 @@ export async function POST(request: Request) {
   const personName = name.trim();
   const tel = phone.trim();
   const mail = email.trim();
-  if (!coName || !personName || !tel || !mail) {
+  const birth = birthDate.trim();
+  if (!coName || !personName || !tel || !mail || !birth) {
     return NextResponse.json(
       { ok: false, error: "모든 항목을 입력해주세요." },
       { status: 400 },
     );
   }
+  // 가입 유형 — 미지정이면 회원사 관리자. 목록 밖 값은 거부(API 직접 호출 우회 차단).
+  if (orgType !== undefined && !isOrgType(orgType)) {
+    return NextResponse.json(
+      { ok: false, error: "가입 유형이 올바르지 않습니다." },
+      { status: 400 },
+    );
+  }
+  const kind = isOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
   // B2B — 승인된 기업(상호)만 가입 허용.
   if (!isAllowedCompany(coName)) {
     return NextResponse.json(
@@ -61,21 +83,24 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (!/^[a-zA-Z0-9._-]{3,40}$/.test(uname)) {
+  const idVerdict = checkUsername(uname);
+  if (idVerdict !== "ok") {
     return NextResponse.json(
-      { ok: false, error: "아이디는 3~40자의 영문·숫자·. _ - 만 사용할 수 있습니다." },
+      { ok: false, error: usernameMessage(idVerdict) },
       { status: 400 },
     );
   }
-  if (RESERVED.has(uname.toLowerCase())) {
+  if (!isValidBirthDate(birth)) {
     return NextResponse.json(
-      { ok: false, error: "사용할 수 없는 아이디입니다." },
+      { ok: false, error: "생년월일이 올바르지 않습니다." },
       { status: 400 },
     );
   }
-  if (password.length < 8) {
+  // 비밀번호 — 길이 + 본인 생년월일·연락처 포함 금지(클라와 같은 함수).
+  const pwVerdict = checkPassword(password, { birthDate: birth, phone: tel });
+  if (pwVerdict !== "ok") {
     return NextResponse.json(
-      { ok: false, error: "비밀번호는 8자 이상이어야 합니다." },
+      { ok: false, error: passwordMessage(pwVerdict) },
       { status: 400 },
     );
   }
@@ -105,6 +130,8 @@ export async function POST(request: Request) {
     email: mail.slice(0, 120),
     emailVerified: false,
     passwordHash,
+    birthDate: birth,
+    orgType: kind,
   });
   if (!user) {
     return NextResponse.json(

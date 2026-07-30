@@ -1,10 +1,12 @@
 // 회원 본인 정보 — 로그인한 가입 회원(role=admin)이 자기 가입 정보를 조회/수정. 세션의 username 기준(클라가 보낸 id 신뢰 안 함).
 import { NextResponse } from "next/server";
 
+import { checkPassword, passwordMessage } from "../../../../lib/account-policy";
 import { getSession } from "../../../../lib/admin-auth";
 import { isAllowedCompany } from "../../../../lib/companies";
 import { employeeIdTakenByOther, findUserByUsername, updateUserProfile } from "../../../../lib/db";
 import { DEMO_ENABLED, getDemoProfile, updateDemoProfile } from "../../../../lib/demo-members";
+import { canApproveUsers } from "../../../../lib/org-type";
 import { hashPassword, verifyPassword } from "../../../../lib/password";
 
 // 내 정보 조회 — 폼 프리필용(민감값 제외).
@@ -21,6 +23,7 @@ export async function GET(request: Request) {
       profile: null,
       role: session.role,
       adminAccess: true,
+      canManageUsers: true, // env owner = 부트스트랩 승인자
     });
   }
   // 로컬 데모 회원 — DATABASE_URL 미설정 시 DB 대신 in-memory 프로필.
@@ -40,10 +43,15 @@ export async function GET(request: Request) {
     editable: true,
     role: "admin",
     adminAccess: u.admin_access,
+    // 사용자 관리 화면 노출 여부 — 서버 게이트(verifyUserAdmin)와 같은 판정을 그대로 내려준다.
+    // 클라가 규칙을 다시 구현하면 둘이 어긋난다.
+    canManageUsers: canApproveUsers(u),
     profile: {
       username: u.username,
       name: u.name,
       company: u.company,
+      org_type: u.org_type,
+      birth_date: u.birth_date,
       phone: u.phone,
       carrier: u.carrier,
       email: u.email,
@@ -211,9 +219,14 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-    if (newPassword.length < 8) {
+    // 가입과 같은 정책 — 길이 + 본인 생년월일·연락처 포함 금지(값은 DB 의 본인 행에서 읽는다).
+    const pwVerdict = checkPassword(newPassword, {
+      birthDate: u.birth_date,
+      phone: u.phone,
+    });
+    if (pwVerdict !== "ok") {
       return NextResponse.json(
-        { ok: false, error: "새 비밀번호는 8자 이상이어야 합니다." },
+        { ok: false, error: passwordMessage(pwVerdict) },
         { status: 400 },
       );
     }

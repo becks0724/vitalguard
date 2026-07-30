@@ -114,6 +114,54 @@ tsc 0 · 단위 44/44 · API e2e(:3100)= 중복확인(admin→reserved/신규→
 ## 검증 도구 (2026-06-23)
 - **dev-browser**(SawyerHood) 로컬 설치·적용(커밋 `62e1c02`, `.claude/settings.json` 자동승인). 이 머신은 npm 없는 pnpm 전용이라 데몬 런타임을 `pnpm -C ~/.dev-browser install` + `playwright install chromium` 로 직접 구성(`.claude/skills/dev-browser/SKILL.md` 환경 노트). 라이브 관제웹 검증에 사용.
 
+## 가입 구조 개편 — VG관리자/회원사 관리자 2분기 (2026-07-30)
+
+사용자 요청 = 가입을 "VitAlGuard 관리자 / 회원사 관리자 / 작업자" 로 구분. 작업자 자체가입은 **미구현 확정**
+(관제웹 사용자는 협력사 관리자이고, 작업자↔웨어러블 매칭은 차후 관제웹에서 디바이스 모델명·이름으로 직접 매칭).
+
+### ★ A안 채택 — role 을 늘리지 않고 `org_type` 컬럼으로 구분
+`role` 에 `vg_admin` 같은 값을 추가하면 **이미 배포된 iOS 앱이 로그인 불가**가 된다.
+앱은 서버 role 을 `owner`/`admin`/`worker` 셋만 해석하고(`VitAlGuardPreviewApp.swift` `modeForServerRole` 14255행,
+`normalizedAppServerRole` 3965행), 모르는 값이면 아이디 접두사로 추정(`modeForLoginID` 14244행)한 뒤
+그마저 실패하면 "서버 계정 역할을 앱 모드로 해석할 수 없습니다" 로 **로그인 자체가 실패**한다.
+→ `role` 은 그대로 두고 `users.org_type`(`vitalguard`|`member`)을 신설한다. 앱·워치 코드 변경 0, 재배포 불필요.
+확장 경로도 열려 있다 — 나중에 앱이 이 구분을 알아야 하면 앱 JWT 에 클레임을 추가하면 되고,
+구버전 앱은 모르는 클레임을 무시한다.
+
+(기각) B안 = role 확장 + 앱 응답에서만 옛 값으로 번역. 번역 지점이 로그인 하나가 아니다 —
+앱 JWT role 을 직접 비교하는 `assignment/chat/route.ts:70`·`calendar/media/route.ts:160` 에서 누락하면
+**에러 없이 권한만 조용히 사라진다**. (기각) C안 = 앱 업데이트. 심사 제출 불가 상태 + 구버전 잔존 기간 로그인 불가.
+
+### 결정
+1. **승인 권한** — `.env` owner 는 부트스트랩으로 남기고, 실 운영 승인은 **`admin_access` 를 받은 VG관리자**가 한다.
+   `/api/admin/users` 게이트를 `verifyOwner` → `verifyUserAdmin`(owner 또는 VG관리자+admin_access)으로 확대.
+   부여/회수(`grant_admin`/`revoke_admin`)와 서버 강제는 이미 있어 새로 만들 것이 없다.
+2. **아이디 형식 자유** — 4~20자(국내 통용), 공백·제어문자만 금지, 한글·대문자·특수기호 허용.
+   **예약어 금지는 유지**(admin/owner/root… — env owner 그림자 계정 방지). 로그인 라우트는 형식 검증을 하지 않으므로
+   길이를 좁혀도 기존 계정 로그인에 영향 없다.
+3. **비밀번호** — 8자 이상 **20자 미만**(=8~19자, 요청 문구 그대로). 대문자·특수기호 허용.
+   생년월일(`YYYYMMDD`/`YYMMDD`)·연락처(전체 11자리/뒤 8자리)가 **포함되면 거부**. 가입·비번변경 양쪽 적용.
+4. **생년월일** — `users.birth_date` 신규. 비번 판정 입력이라 폼에서 비밀번호보다 위에 둔다.
+5. **정책 단일 소스** — 아이디·비번 규칙이 서버 2곳(register·check-username)+클라 1곳으로 흩어져 있었다.
+   `lib/account-policy.ts` 순수 함수로 모으고 세 곳이 같은 함수를 쓴다.
+6. **회사(상호) 목록** — 현행 코드 상수(`lib/companies.ts`) 유지. 회원사 테이블·관리 UI 는 이번 범위 밖.
+7. **현장 스코프 권한**("협력사 관리자는 해당 현장건만") — **2단계로 분리**. DB 에 현장 엔티티가 없다
+   (`site_info_daily` 는 `snapshot_date UNIQUE` 로 날짜당 1행 = 단일 현장 전제). 이건 가입 변경이 아니라
+   멀티 현장 도입이라 조회 계층 전반이 대상이다. ⚠ 그때 앱도 함께 봐야 한다 —
+   앱은 role=`admin` 이면 현장정보 저장·캘린더 수정 권한을 주므로(`appServerRoleCanManageDashboard` 3977행)
+   회원사 관리자도 앱에서는 관리자 권한을 갖는다.
+8. **사번(`employee_id`)은 이번 변경에 안전** — 아이디 자유화로 `EMP-한글` 이 생길 수 있으나,
+   ① 생체데이터를 만드는 작업자 계정은 여전히 관리자가 사번을 지정해 만들고
+   ② 관리자 사번의 용도는 사진 소유권 문자열 비교뿐이며
+   ③ 앱·서버 어디에도 사번을 URL 쿼리에 넣는 코드가 없다(전부 JSON 본문·JWT) → 인코딩 문제도 없다.
+
+### 별건으로 분리한 것(각각 사용자 승인 후)
+- 기존 실가입자 4명(장우진·김태곤·양지후·김수영) `org_type='vitalguard'` 백필 — 라이브 DB 쓰기.
+- **작업자 계정의 관제웹 로그인 차단** — 지금 `/api/admin/login` 은 DB 계정이면 `user.role` 을 보지 않고
+  무조건 admin 세션을 발급한다(`login/route.ts:112`). 앱용 작업자 계정으로 관제웹에 들어가진다.
+  수정은 조건문 2줄이고 앱 로그인(`/api/app-auth/login`)과는 무관하지만, 적용 전 라이브에서
+  `role='worker'` 계정 목록을 읽어 실사용자가 없는지 확인해야 한다.
+
 ## 현재 상태 / 다음 (2026-06-23 종합)
 - **전부 origin/main 푸시 완료**(`ff6887f`·`4aba061` + 직전 `7c10ec6` 회원가입 보안·`62e1c02` dev-browser). tsc 0·테스트 44/44·lint 에러 0.
 - **라이브(Cloud Run) 미반영** — GitHub 만 반영. 라이브 배포 시 `gcloud builds submit`+`run deploy` 필요.

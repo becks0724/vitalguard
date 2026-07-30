@@ -4,6 +4,7 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { clientIpFromRequest } from "./client-ip";
 import { findUserByUsername } from "./db";
+import { canApproveUsers } from "./org-type";
 import {
   signSessionJwt,
   verifySessionJwt,
@@ -163,9 +164,19 @@ export function getSession(request: Request): SessionInfo | null {
   return null;
 }
 
-// owner(env 관리자) 권한 확인 — 사용자 관리(승인/거절) API 보호용.
+// owner(env 관리자) 권한 확인 — 부트스트랩 계정 전용 판정.
 export function verifyOwner(request: Request): boolean {
   return getSession(request)?.role === "owner";
+}
+
+// 가입자 승인 권한 — owner(env 부트스트랩) 이거나, 관리 권한을 부여받은 VitAlGuard 관리자.
+// 사용자 관리(승인·거절·탈퇴·권한부여) API 보호용. UI 숨김이 아니라 서버에서 실제 차단한다.
+export async function verifyUserAdmin(request: Request): Promise<boolean> {
+  const session = getSession(request);
+  if (!session) return false;
+  if (session.role === "owner") return true;
+  const user = await findUserByUsername(session.username).catch(() => null);
+  return !!user && canApproveUsers(user);
 }
 
 // 앱 업로드 토큰 일치 검사 — 어디서 온 토큰이든(헤더/폼 필드) env APP_UPLOAD_TOKEN 과 비교.

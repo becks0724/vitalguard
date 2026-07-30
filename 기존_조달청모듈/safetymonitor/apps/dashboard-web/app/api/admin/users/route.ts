@@ -1,7 +1,7 @@
-// 사용자 관리 — owner(env 관리자) 전용. GET 목록 조회, POST 승인/거절(가입 신청 처리).
+// 사용자 관리 — owner(env 관리자) 또는 관리 권한을 받은 VitAlGuard 관리자. GET 목록 조회, POST 승인/거절.
 import { NextResponse } from "next/server";
 
-import { getSession, verifyOwner } from "../../../../lib/admin-auth";
+import { getSession, verifyUserAdmin } from "../../../../lib/admin-auth";
 import { hashPassword } from "../../../../lib/password";
 import {
   createWorkerAccount,
@@ -26,7 +26,9 @@ function publicUser(u: UserRow) {
     email_verified: u.email_verified,
     auth_provider: u.auth_provider,
     role: u.role,
+    org_type: u.org_type,
     status: u.status,
+    birth_date: u.birth_date,
     department: u.department,
     job_title: u.job_title,
     admin_access: u.admin_access,
@@ -37,8 +39,8 @@ function publicUser(u: UserRow) {
 }
 
 export async function GET(request: Request) {
-  if (!verifyOwner(request)) {
-    return NextResponse.json({ ok: false, error: "owner 권한이 필요합니다." }, { status: 401 });
+  if (!(await verifyUserAdmin(request))) {
+    return NextResponse.json({ ok: false, error: "관리 권한이 필요합니다." }, { status: 401 });
   }
   const users = (await listUsers()).map(publicUser);
   return NextResponse.json({ ok: true, users });
@@ -46,8 +48,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const session = getSession(request);
-  if (session?.role !== "owner") {
-    return NextResponse.json({ ok: false, error: "owner 권한이 필요합니다." }, { status: 401 });
+  if (!session || !(await verifyUserAdmin(request))) {
+    return NextResponse.json({ ok: false, error: "관리 권한이 필요합니다." }, { status: 401 });
   }
 
   let body: unknown;

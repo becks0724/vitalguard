@@ -598,6 +598,13 @@ async function initSchema(): Promise<void> {
     -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_phone TEXT;
+    -- 생년월일(가입 필수) — 비밀번호에 생년월일을 못 넣게 막는 판정 입력이기도 하다.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT;
+    -- 가입 유형 — VitAlGuard 소속 관리자('vitalguard') vs 회원사 관리자('member').
+    -- ★ role 을 늘리지 않고 이 컬럼으로 나눈다. 배포된 iOS 앱이 role 을 owner/admin/worker 셋만
+    -- 해석해서(modeForServerRole), 새 role 값을 주면 앱 로그인이 실패한다. 기존 행은 'member' 가 되고
+    -- VitAlGuard 소속은 별도 백필로 올린다.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS org_type TEXT NOT NULL DEFAULT 'member';
 
     -- 모바일 refresh token 세션. 토큰 원문은 Keychain/Android Keystore와 요청 본문에만 존재하고
     -- DB에는 SHA-256 해시만 보관한다. 로그아웃·사용자 비활성화 시 해당 행을 폐기할 수 있다.
@@ -2434,7 +2441,9 @@ export type UserRow = {
   auth_provider: string; // 'password' | 'google'
   google_sub: string | null;
   role: string;
+  org_type: string; // 'vitalguard'(VitAlGuard 관리자) | 'member'(회원사 관리자)
   status: string; // pending | approved | rejected
+  birth_date: string | null; // YYYY-MM-DD
   department: string | null;
   job_title: string | null;
   employee_id: string | null;
@@ -2456,6 +2465,8 @@ export async function createUser(input: {
   email: string | null;
   emailVerified: boolean;
   passwordHash: string;
+  birthDate: string | null;
+  orgType: string; // 'vitalguard' | 'member'
 }): Promise<UserRow | null> {
   const { text, values } = buildInsert("users", {
     username: input.username,
@@ -2466,6 +2477,8 @@ export async function createUser(input: {
     email: input.email,
     email_verified: input.emailVerified,
     password_hash: input.passwordHash,
+    birth_date: input.birthDate,
+    org_type: input.orgType,
     // 가입 시점에 사번 기본값을 넣는다 — null 로 두면 그 계정만 사진 소유권 대조가
     // 불가능해져 "본인 사진을 못 지우는" 상태로 태어난다. 실제 사번은 프로필에서 덮어쓴다.
     employee_id: defaultEmployeeId(input.username),
@@ -2755,6 +2768,7 @@ export async function createGoogleUser(input: {
   name: string | null;
   company: string;
   phone: string;
+  orgType: string; // 'vitalguard' | 'member'
 }): Promise<UserRow | null> {
   const { text, values } = buildInsert("users", {
     username: input.email,
@@ -2762,6 +2776,7 @@ export async function createGoogleUser(input: {
     company: input.company,
     phone: input.phone,
     email: input.email,
+    org_type: input.orgType,
     auth_provider: "google",
     google_sub: input.googleSub,
     // 구글 가입도 동일 — username 이 이메일이라 사번은 'EMP-<이메일>' 이 된다.

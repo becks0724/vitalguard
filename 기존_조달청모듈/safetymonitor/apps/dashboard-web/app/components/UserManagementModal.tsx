@@ -1,8 +1,9 @@
-// owner 전용 사용자 관리 — DB 스키마 그대로 테이블 표시 + 승인/거절/재승인/탈퇴 + 실시간 갱신(폴링). /api/admin/users (Bearer 토큰).
+// 사용자 관리(owner·관리 권한 VitAlGuard 관리자) — DB 스키마 그대로 테이블 표시 + 승인/거절/재승인/탈퇴 + 실시간 갱신(폴링). /api/admin/users (Bearer 토큰).
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { orgTypeLabel } from "../../lib/org-type";
 import { getSessionToken } from "./LoginGate";
 
 type User = {
@@ -16,7 +17,9 @@ type User = {
   email_verified: boolean;
   auth_provider: string;
   role: string;
+  org_type: string; // 'vitalguard' | 'member'
   status: string;
+  birth_date: string | null;
   department: string | null;
   job_title: string | null;
   admin_access: boolean;
@@ -356,6 +359,8 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                     <th className={TH}>ID</th>
                     <th className={TH}>아이디</th>
                     <th className={TH}>이름</th>
+                    <th className={TH}>생년월일</th>
+                    <th className={TH}>가입유형</th>
                     <th className={TH}>회사</th>
                     <th className={TH}>부서</th>
                     <th className={TH}>직책</th>
@@ -388,6 +393,10 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                         {u.username}
                       </td>
                       <td className={TD}>{u.name ?? "-"}</td>
+                      <td className={TD}>{u.birth_date ?? "-"}</td>
+                      <td className={TD}>
+                        {u.role === "worker" ? "작업자" : orgTypeLabel(u.org_type)}
+                      </td>
                       <td className={TD}>{u.company ?? "-"}</td>
                       {editProfileId === u.id ? (
                         <>

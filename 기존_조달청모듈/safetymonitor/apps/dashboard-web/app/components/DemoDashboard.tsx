@@ -3541,6 +3541,9 @@ export function DemoDashboard() {
   const [role, setRole] = useState<string | null>(null);
   // 관리자 메뉴(CSV 등) 접근 권한 — owner 거나 owner가 부여한 admin_access. 서버에서도 강제.
   const [adminAccess, setAdminAccess] = useState(false);
+  // 사용자 관리(가입 승인) 권한 — owner 또는 관리 권한을 받은 VitAlGuard 관리자.
+  // 판정은 서버(/api/admin/profile)가 내려준 값을 그대로 쓴다(게이트와 동일 규칙 보장).
+  const [canManageUsers, setCanManageUsers] = useState(false);
   // 로그인 상태 칩 표시용 — 이름/직책/사번/아이디. 환경 관리자(owner)는 프로필이 없어 null("관리자"로 표시).
   const [loginInfo, setLoginInfo] = useState<{
     name: string | null;
@@ -3562,6 +3565,7 @@ export function DemoDashboard() {
       .then((j) => {
         if (j?.ok) {
           setAdminAccess(!!j.adminAccess);
+          setCanManageUsers(!!j.canManageUsers);
           const p = j.profile;
           setLoginInfo(
             p
@@ -5157,12 +5161,12 @@ export function DemoDashboard() {
                     },
                   ]
                 : []),
-              // owner(env 관리자)만 노출 — 가입 신청 승인/거절.
-              ...(role === "owner"
+              // owner(env 관리자) 또는 관리 권한을 받은 VitAlGuard 관리자만 노출 — 가입 신청 승인/거절.
+              ...(role === "owner" || canManageUsers
                 ? [
                     {
                       title: "사용자 관리",
-                      tooltip: "관리자 가입 신청 승인/거절 (owner 전용)",
+                      tooltip: "가입 신청 승인/거절 (owner·VitAlGuard 관리자)",
                       onSelect: () => setUsersOpen(true),
                       icon: (
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

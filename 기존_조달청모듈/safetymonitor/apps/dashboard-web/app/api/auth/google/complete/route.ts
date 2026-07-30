@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { isAllowedCompany } from "../../../../../lib/companies";
 import { createGoogleUser } from "../../../../../lib/db";
 import { readCookie, verifyPayload } from "../../../../../lib/google-oauth";
+import { DEFAULT_ORG_TYPE, isOrgType } from "../../../../../lib/org-type";
 
 export async function POST(request: Request) {
   const ticket = verifyPayload(readCookie(request, "vg_gsignup"));
@@ -20,7 +21,11 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
-  const { company, phone } = (body ?? {}) as { company?: unknown; phone?: unknown };
+  const { company, phone, orgType } = (body ?? {}) as {
+    company?: unknown;
+    phone?: unknown;
+    orgType?: unknown;
+  };
   if (typeof company !== "string" || typeof phone !== "string") {
     return NextResponse.json(
       { ok: false, error: "회사(상호)·연락처는 필수입니다." },
@@ -39,6 +44,10 @@ export async function POST(request: Request) {
   if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
     return NextResponse.json({ ok: false, error: "연락처 형식이 올바르지 않습니다." }, { status: 400 });
   }
+  // 가입 유형 — 미지정이면 회원사 관리자. 목록 밖 값은 거부.
+  if (orgType !== undefined && !isOrgType(orgType)) {
+    return NextResponse.json({ ok: false, error: "가입 유형이 올바르지 않습니다." }, { status: 400 });
+  }
 
   const user = await createGoogleUser({
     googleSub: ticket.sub,
@@ -46,6 +55,7 @@ export async function POST(request: Request) {
     name: typeof ticket.name === "string" ? ticket.name : null,
     company: coName.slice(0, 100),
     phone: tel.slice(0, 20),
+    orgType: isOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE,
   });
   if (!user) {
     const dup = NextResponse.json(

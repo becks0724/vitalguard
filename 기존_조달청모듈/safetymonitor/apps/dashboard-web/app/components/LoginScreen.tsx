@@ -3,8 +3,17 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
+import {
+  PASSWORD_MAX,
+  PASSWORD_MIN,
+  USERNAME_MAX,
+  USERNAME_MIN,
+  checkPassword,
+  checkUsername,
+} from "../../lib/account-policy";
 import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
 import { ALLOWED_COMPANIES } from "../../lib/companies";
+import { DEFAULT_ORG_TYPE, type OrgType } from "../../lib/org-type";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { LoginShaderBackground } from "./LoginShaderBackground";
@@ -33,6 +42,11 @@ type Strings = {
   footer: string;
   // 회원가입(승인제)
   signupTitle: string;
+  // 가입 유형(VitAlGuard 관리자 / 회원사 관리자) — DB 에는 org_type 으로 저장
+  orgTypeLabel: string;
+  orgTypeVitalguard: string;
+  orgTypeMember: string;
+  birthLabel: string;
   companyLabel: string;
   companyPlaceholder: string;
   companySelect: string;
@@ -52,6 +66,9 @@ type Strings = {
   haveAccount: string;
   pwMismatch: string;
   pwTooShort: string;
+  pwTooLong: string;
+  pwHasBirth: string;
+  pwHasPhone: string;
   fillAll: string;
   invalidEmail: string;
   signupSuccess: string;
@@ -111,6 +128,10 @@ const T: Record<Lang, Strings> = {
     networkError: "로그인 요청 중 오류가 발생했습니다. 다시 시도하세요.",
     footer: "발표용 프로토타입 · (주)바이탈가드",
     signupTitle: "관리자 회원가입",
+    orgTypeLabel: "가입 유형",
+    orgTypeVitalguard: "VitAlGuard 관리자",
+    orgTypeMember: "회원사 관리자",
+    birthLabel: "생년월일",
     companyLabel: "회사(상호)",
     companyPlaceholder: "(주)바이탈가드",
     companySelect: "회사(상호) 선택",
@@ -129,7 +150,10 @@ const T: Record<Lang, Strings> = {
     noAccount: "계정이 없으신가요?",
     haveAccount: "이미 계정이 있으신가요?",
     pwMismatch: "비밀번호가 일치하지 않습니다.",
-    pwTooShort: "비밀번호는 8자 이상이어야 합니다.",
+    pwTooShort: `비밀번호는 ${PASSWORD_MIN}자 이상이어야 합니다.`,
+    pwTooLong: `비밀번호는 ${PASSWORD_MAX}자 이하여야 합니다.`,
+    pwHasBirth: "비밀번호에 생년월일을 넣을 수 없습니다.",
+    pwHasPhone: "비밀번호에 연락처를 넣을 수 없습니다.",
     fillAll: "모든 항목을 입력해주세요.",
     invalidEmail: "이메일 형식이 올바르지 않습니다.",
     signupSuccess: "가입 신청이 완료됐습니다. 관리자 승인 후 로그인할 수 있습니다.",
@@ -137,7 +161,7 @@ const T: Record<Lang, Strings> = {
     idChecking: "확인 중…",
     idAvailable: "사용 가능한 ID입니다.",
     idTaken: "이미 사용 중인 ID입니다.",
-    idInvalid: "3~40자의 영문·숫자·. _ - 만 사용할 수 있습니다.",
+    idInvalid: `${USERNAME_MIN}~${USERNAME_MAX}자이며 공백은 쓸 수 없습니다.`,
     idReserved: "사용할 수 없는 ID입니다.",
     idNeedCheck: "ID 중복 확인을 해주세요.",
     carrierLabel: "통신사",
@@ -180,6 +204,10 @@ const T: Record<Lang, Strings> = {
     networkError: "An error occurred while signing in. Please try again.",
     footer: "Demo prototype · VitAlGuard Inc.",
     signupTitle: "Admin sign-up",
+    orgTypeLabel: "Account type",
+    orgTypeVitalguard: "VitAlGuard admin",
+    orgTypeMember: "Member company admin",
+    birthLabel: "Date of birth",
     companyLabel: "Company",
     companyPlaceholder: "VitAlGuard Inc.",
     companySelect: "Select company",
@@ -198,7 +226,10 @@ const T: Record<Lang, Strings> = {
     noAccount: "No account?",
     haveAccount: "Already have an account?",
     pwMismatch: "Passwords do not match.",
-    pwTooShort: "Password must be at least 8 characters.",
+    pwTooShort: `Password must be at least ${PASSWORD_MIN} characters.`,
+    pwTooLong: `Password must be at most ${PASSWORD_MAX} characters.`,
+    pwHasBirth: "Password must not contain your date of birth.",
+    pwHasPhone: "Password must not contain your phone number.",
     fillAll: "Please fill in all fields.",
     invalidEmail: "Invalid email format.",
     signupSuccess: "Sign-up requested. You can sign in after admin approval.",
@@ -206,7 +237,7 @@ const T: Record<Lang, Strings> = {
     idChecking: "Checking…",
     idAvailable: "ID is available.",
     idTaken: "ID is already taken.",
-    idInvalid: "3–40 chars: letters, digits, . _ - only.",
+    idInvalid: `${USERNAME_MIN}–${USERNAME_MAX} chars, no spaces.`,
     idReserved: "This ID is reserved.",
     idNeedCheck: "Please check ID availability.",
     carrierLabel: "Carrier",
@@ -360,10 +391,13 @@ export function LoginScreen({
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  // 회원가입 입력(6항목 전부 필수) + 가입 성공 안내(로그인 모드 상단에 표시).
+  // 회원가입 입력(전 항목 필수) + 가입 성공 안내(로그인 모드 상단에 표시).
+  // 가입 유형 — role 이 아니라 org_type 으로 저장(배포된 앱이 role 3종만 해석하므로).
+  const [sOrgType, setSOrgType] = useState<OrgType>(DEFAULT_ORG_TYPE);
   const [sCompany, setSCompany] = useState("");
   const [sId, setSId] = useState("");
   const [sName, setSName] = useState("");
+  const [sBirth, setSBirth] = useState("");
   const [sPw, setSPw] = useState("");
   const [sPw2, setSPw2] = useState("");
   const [signupMsg, setSignupMsg] = useState<string | null>(null);
@@ -381,7 +415,8 @@ export function LoginScreen({
   const [emailLocal, setEmailLocal] = useState("");
   const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]!);
   const [emailDomainCustom, setEmailDomainCustom] = useState("");
-  // 구글 가입 추가정보(회사·연락처) — 구글 인증 후 입력 단계.
+  // 구글 가입 추가정보(유형·회사·연락처) — 구글 인증 후 입력 단계.
+  const [gOrgType, setGOrgType] = useState<OrgType>(DEFAULT_ORG_TYPE);
   const [gCompany, setGCompany] = useState("");
   const [gPhone, setGPhone] = useState("");
   // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰/역할(null = 아직 로그인 폼 단계).
@@ -415,7 +450,21 @@ export function LoginScreen({
   const composedPhone = `${phonePrefix}-${phoneMid}-${phoneLast}`;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composedEmail);
   const phoneValid = /^\d{3,4}$/.test(phoneMid) && /^\d{4}$/.test(phoneLast);
-  const pwTooShortLive = sPw.length > 0 && sPw.length < 8;
+  // 비밀번호 — 서버(register)와 같은 함수로 라이브 판정. 길이 + 본인 생년월일·연락처 포함 금지.
+  const pwVerdict =
+    sPw.length > 0
+      ? checkPassword(sPw, { birthDate: sBirth, phone: composedPhone })
+      : "ok";
+  const pwVerdictMsg =
+    pwVerdict === "too_short"
+      ? t.pwTooShort
+      : pwVerdict === "too_long"
+        ? t.pwTooLong
+        : pwVerdict === "has_birth"
+          ? t.pwHasBirth
+          : pwVerdict === "has_phone"
+            ? t.pwHasPhone
+            : null;
   const pwMismatchLive = sPw2.length > 0 && sPw !== sPw2;
 
   // 구글 콜백 복귀 처리 — ?gsignup(추가정보 단계) / ?gmsg(안내). 처리 후 URL 정리.
@@ -478,6 +527,7 @@ export function LoginScreen({
         !sCompany.trim() ||
         !sId.trim() ||
         !sName.trim() ||
+        !sBirth ||
         !phoneValid ||
         !carrierBase ||
         (carrierBase === "알뜰폰" && !mvno) ||
@@ -497,8 +547,8 @@ export function LoginScreen({
         setError(t.invalidEmail);
         return;
       }
-      if (sPw.length < 8) {
-        setError(t.pwTooShort);
+      if (pwVerdictMsg) {
+        setError(pwVerdictMsg);
         return;
       }
       if (sPw !== sPw2) {
@@ -511,9 +561,11 @@ export function LoginScreen({
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
+            orgType: sOrgType,
             company: sCompany.trim(),
             username: sId.trim(),
             name: sName.trim(),
+            birthDate: sBirth,
             phone: composedPhone,
             carrier: composeCarrier(carrierBase, mvno),
             email: composedEmail,
@@ -528,9 +580,11 @@ export function LoginScreen({
         // 성공 → 로그인 모드로 돌아가 안내 노출, 입력 전부 초기화.
         setMode("login");
         setSignupMsg(t.signupSuccess);
+        setSOrgType(DEFAULT_ORG_TYPE);
         setSCompany("");
         setSId("");
         setSName("");
+        setSBirth("");
         setPhonePrefix("010");
         setPhoneMid("");
         setPhoneLast("");
@@ -549,9 +603,11 @@ export function LoginScreen({
       }
     },
     [
+      sOrgType,
       sCompany,
       sId,
       sName,
+      sBirth,
       phoneValid,
       carrierBase,
       mvno,
@@ -561,6 +617,7 @@ export function LoginScreen({
       composedEmail,
       emailValid,
       idCheck,
+      pwVerdictMsg,
       sPw,
       sPw2,
       submitting,
@@ -571,8 +628,10 @@ export function LoginScreen({
   // ID 중복 확인 — /api/admin/check-username.
   const handleCheckId = useCallback(async () => {
     const u = sId.trim();
-    if (!/^[a-zA-Z0-9._-]{3,40}$/.test(u)) {
-      setIdCheck("invalid");
+    // 서버(check-username·register)와 같은 함수로 선판정 — 어긋나면 "확인은 통과, 가입은 거부"가 된다.
+    const verdict = checkUsername(u);
+    if (verdict !== "ok") {
+      setIdCheck(verdict);
       return;
     }
     setIdCheck("checking");
@@ -619,7 +678,11 @@ export function LoginScreen({
         const res = await fetch("/api/auth/google/complete", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ company: gCompany.trim(), phone: gPhone.trim() }),
+          body: JSON.stringify({
+            orgType: gOrgType,
+            company: gCompany.trim(),
+            phone: gPhone.trim(),
+          }),
         });
         const json = (await res.json()) as { ok?: boolean; error?: string };
         if (!res.ok || !json.ok) {
@@ -628,6 +691,7 @@ export function LoginScreen({
         }
         setMode("login");
         setSignupMsg(t.signupSuccess);
+        setGOrgType(DEFAULT_ORG_TYPE);
         setGCompany("");
         setGPhone("");
       } catch {
@@ -636,7 +700,7 @@ export function LoginScreen({
         setSubmitting(false);
       }
     },
-    [gCompany, gPhone, submitting, t],
+    [gOrgType, gCompany, gPhone, submitting, t],
   );
 
   // 현장 선택 완료 → 대시보드 입장. 현장정보 프리셋은 "다른 현장으로 전환할 때만" 적용한다.
@@ -824,6 +888,34 @@ export function LoginScreen({
           <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
             {t.signupTitle}
           </p>
+          {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
+          <div>
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.orgTypeLabel}
+            </span>
+            <div className="mt-1 grid grid-cols-2 gap-1.5">
+              {(
+                [
+                  ["vitalguard", t.orgTypeVitalguard],
+                  ["member", t.orgTypeMember],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSOrgType(value)}
+                  aria-pressed={sOrgType === value}
+                  className={`rounded-xl border px-3 py-3 text-xs font-semibold backdrop-blur-md transition ${
+                    sOrgType === value
+                      ? "border-white/70 bg-white/25 text-white"
+                      : "border-white/25 bg-white/10 text-white/70 hover:bg-white/15"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
@@ -900,6 +992,24 @@ export function LoginScreen({
               autoComplete="name"
               required
               className={INPUT_CLASS}
+            />
+          </label>
+          {/* 생년월일 — 비밀번호에 생년월일을 못 넣게 막는 판정 입력이라 비밀번호보다 위에 둔다. */}
+          <label className="block">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.birthLabel}
+            </span>
+            <input
+              type="date"
+              value={sBirth}
+              onChange={(e) => {
+                setSBirth(e.target.value);
+                setError(null);
+              }}
+              max={new Date().toISOString().slice(0, 10)}
+              autoComplete="bday"
+              required
+              className={`${INPUT_CLASS} [color-scheme:dark]`}
             />
           </label>
           <div>
@@ -1051,10 +1161,10 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          {/* 비밀번호 길이 — 입력값 기반 라이브 판정(8자 채우면 즉시 사라짐). */}
-          {pwTooShortLive && (
+          {/* 비밀번호 규칙 — 입력값 기반 라이브 판정(요건을 채우면 즉시 사라짐). */}
+          {pwVerdictMsg && (
             <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
-              {t.pwTooShort}
+              {pwVerdictMsg}
             </p>
           )}
           <label className="block">
@@ -1093,6 +1203,7 @@ export function LoginScreen({
               !sCompany ||
               !sId ||
               !sName ||
+              !sBirth ||
               !phoneValid ||
               !carrierBase ||
               (carrierBase === "알뜰폰" && !mvno) ||
@@ -1101,7 +1212,7 @@ export function LoginScreen({
               !sPw ||
               !sPw2 ||
               idCheck !== "available" ||
-              sPw.length < 8 ||
+              pwVerdict !== "ok" ||
               sPw !== sPw2
             }
             label={submitting ? t.signupSubmitting : t.signupSubmit}
@@ -1134,6 +1245,34 @@ export function LoginScreen({
           <p className="text-center text-[11px] leading-relaxed text-white/70 drop-shadow">
             {t.gcompleteDesc}
           </p>
+          {/* 가입 유형 — 일반 가입 폼과 동일(구글 계정도 org_type 으로 분류). */}
+          <div>
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.orgTypeLabel}
+            </span>
+            <div className="mt-1 grid grid-cols-2 gap-1.5">
+              {(
+                [
+                  ["vitalguard", t.orgTypeVitalguard],
+                  ["member", t.orgTypeMember],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setGOrgType(value)}
+                  aria-pressed={gOrgType === value}
+                  className={`rounded-xl border px-3 py-3 text-xs font-semibold backdrop-blur-md transition ${
+                    gOrgType === value
+                      ? "border-white/70 bg-white/25 text-white"
+                      : "border-white/25 bg-white/10 text-white/70 hover:bg-white/15"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}

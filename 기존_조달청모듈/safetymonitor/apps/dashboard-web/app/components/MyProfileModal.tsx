@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { checkPassword, passwordMessage } from "../../lib/account-policy";
 import { CARRIERS, MVNO_NETS, composeCarrier, parseCarrier } from "../../lib/carriers";
 import { ALLOWED_COMPANIES } from "../../lib/companies";
 import { GUARDIAN_RELATIONS, composeGuardian, parseGuardian } from "../../lib/guardian";
@@ -37,6 +38,7 @@ type Profile = {
   carrier: string | null;
   email: string | null;
   auth_provider: string;
+  birth_date: string | null;
   department: string | null;
   job_title: string | null;
   employee_id: string | null;
@@ -59,6 +61,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false);
 
   const [username, setUsername] = useState("");
+  // 생년월일 — 표시·수정은 하지 않고, 새 비밀번호에 생년월일이 들어갔는지 판정하는 입력으로만 쓴다.
+  const [birthDate, setBirthDate] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [provider, setProvider] = useState("password");
   const [name, setName] = useState("");
@@ -114,6 +118,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         }
         const p = j.profile;
         setUsername(p.username);
+        setBirthDate(p.birth_date ?? null);
         setEmail(p.email ?? "");
         setProvider(p.auth_provider);
         setName(p.name ?? "");
@@ -168,8 +173,10 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setError("현재 비밀번호를 입력해주세요.");
         return;
       }
-      if (newPw.length < 8) {
-        setError("새 비밀번호는 8자 이상이어야 합니다.");
+      // 가입과 같은 정책 — 길이 + 본인 생년월일·연락처 포함 금지. 서버(profile POST)가 최종 게이트.
+      const pwVerdict = checkPassword(newPw, { birthDate, phone: composedPhone });
+      if (pwVerdict !== "ok") {
+        setError(passwordMessage(pwVerdict));
         return;
       }
       if (newPw !== newPw2) {
@@ -213,7 +220,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
     } finally {
       setSaving(false);
     }
-  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, guardianPersonName, guardianRelation, guardianRelationCustom, guardianPhone, curPw, newPw, newPw2]);
+  }, [name, company, phoneValid, composedPhone, carrierBase, mvno, department, jobTitle, employeeId, guardianPersonName, guardianRelation, guardianRelationCustom, guardianPhone, birthDate, curPw, newPw, newPw2]);
 
   return (
     <div
