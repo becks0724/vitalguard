@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession, verifyAppUploadToken, verifyBasicAuth } from "../../../../lib/admin-auth";
-import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
+import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
   listCalendarMedia,
   listCommentsForMedia,
@@ -34,7 +34,11 @@ export async function GET(request: Request) {
   // 조회 = 대시보드 세션 또는 앱 로그인 JWT(owner/admin/worker) 수용 — 현장 앱이 캘린더 미디어를 표시.
   // 등록(POST)/수정(PATCH)/삭제(DELETE)는 기존 인증 유지(POST 는 앱 업로드 토큰 병행).
   if (!verifyBasicAuth(request) && verifyAppJwt(bearerToken(request)) === null) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+    // 401 은 네 가지 실패를 한 응답으로 뭉갠다. 사유는 서버 로그로만 남기고,
+    // 응답에는 앱이 스스로 복구 가능한지(action)만 실어 재로그인을 유도한다.
+    const d = diagnoseAppAuth(request);
+    console.warn(`[calendar/media] ${d.logLine}`);
+    return NextResponse.json({ ok: false, error: "인증 필요", action: d.action }, { status: 401 });
   }
   const url = new URL(request.url);
   const from = url.searchParams.get("from") ?? "";

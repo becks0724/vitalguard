@@ -3,7 +3,7 @@ import { ZodError } from "zod";
 import type { VitalSample } from "@safetymonitor/schemas";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
-import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
+import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
 import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import {
@@ -124,20 +124,16 @@ export async function POST(request: Request) {
   }
   // 생체·낙상·SOS 데이터는 관제 판단을 바꾸므로, Watch/iPhone 앱 JWT의 사번과 본문 사번이
   // 정확히 같을 때만 수용한다. 범용 업로드 토큰은 이 개인 생체 경로에서 허용하지 않는다.
-  const rawToken = bearerToken(request);
-  const claims = verifyAppJwt(rawToken);
+  const claims = verifyAppJwt(bearerToken(request));
   if (!claims?.workerId) {
-    // 거부 사유를 남긴다 — 401 만 보고는 "토큰이 없다/서명이 틀렸다/만료됐다/사번이 안 실렸다"를
-    // 구분할 수 없어, 앱이 토큰을 정상 전송하는데도 원인을 못 찾고 배포를 되돌리게 된다(2026-07-29 실제 4회).
-    // 토큰 문자열·서명은 절대 찍지 않는다. 발급 시각(iat)은 "백필 이전에 발급된 낡은 토큰"을 가르는 판별자다.
-    const reason = !rawToken ? "no_token" : !claims ? "verify_failed" : "no_worker_id";
-    console.warn(
-      `[vital] 인증 거부(${reason}) — sub=${claims?.sub ?? "n/a"} workerId=${JSON.stringify(claims?.workerId ?? null)}` +
-        ` iat=${claims?.iat ? new Date(claims.iat * 1000).toISOString() : "n/a"}` +
-        ` exp=${claims?.exp ? new Date(claims.exp * 1000).toISOString() : "n/a"}` +
-        ` ua=${request.headers.get("user-agent") ?? "n/a"}`,
+    // 사유는 서버 로그로만 남긴다(응답에 넣으면 서명 성공 여부가 외부로 샌다).
+    // 응답에는 앱이 스스로 복구 가능한지(action)만 실어, 조용히 실패하는 대신 재로그인을 띄우게 한다.
+    const d = diagnoseAppAuth(request, { requireWorkerId: true });
+    console.warn(`[vital] ${d.logLine}`);
+    return NextResponse.json(
+      { ok: false, error: "유효하지 않은 토큰", action: d.action },
+      { status: 401 },
     );
-    return NextResponse.json({ ok: false, error: "유효하지 않은 토큰" }, { status: 401 });
   }
   try {
     const body = await readBoundedJson(request);

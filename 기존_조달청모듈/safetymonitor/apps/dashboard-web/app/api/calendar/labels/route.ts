@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
-import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
+import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
 import { listCalendarLabels, replaceCalendarLabels } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,11 @@ const MAX_LABELS = 12;
 
 export async function GET(request: Request) {
   if (!verifyBasicAuth(request) && verifyAppJwt(bearerToken(request)) === null) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+    // 401 은 네 가지 실패를 한 응답으로 뭉갠다. 사유는 서버 로그로만 남기고,
+    // 응답에는 앱이 스스로 복구 가능한지(action)만 실어 재로그인을 유도한다.
+    const d = diagnoseAppAuth(request);
+    console.warn(`[calendar/labels] ${d.logLine}`);
+    return NextResponse.json({ ok: false, error: "인증 필요", action: d.action }, { status: 401 });
   }
   const labels = await listCalendarLabels();
   // 편집 가능 여부를 서버가 계산해 내려준다 — 화면이 역할을 다시 판정하면 언젠가 어긋난다.

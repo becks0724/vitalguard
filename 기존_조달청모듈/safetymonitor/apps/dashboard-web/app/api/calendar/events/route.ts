@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession, verifyBasicAuth } from "../../../../lib/admin-auth";
-import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
+import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
   calendarEventMatchesScope,
   type CalendarEventScope,
@@ -48,7 +48,11 @@ function eventWriteDenied(scope: CalendarEventScope, action: string): NextRespon
 export async function GET(request: Request) {
   // 조회 = 대시보드 세션 또는 앱 로그인 JWT — 캘린더 미디어 GET 과 동일 게이트(읽기 전용).
   if (!verifyBasicAuth(request) && verifyAppJwt(bearerToken(request)) === null) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+    // 401 은 네 가지 실패를 한 응답으로 뭉갠다. 사유는 서버 로그로만 남기고,
+    // 응답에는 앱이 스스로 복구 가능한지(action)만 실어 재로그인을 유도한다.
+    const d = diagnoseAppAuth(request);
+    console.warn(`[calendar/events] ${d.logLine}`);
+    return NextResponse.json({ ok: false, error: "인증 필요", action: d.action }, { status: 401 });
   }
   const url = new URL(request.url);
   const from = url.searchParams.get("from") ?? "";
