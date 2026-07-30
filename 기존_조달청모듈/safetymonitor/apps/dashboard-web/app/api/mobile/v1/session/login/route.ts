@@ -1,20 +1,20 @@
+// 모바일 세션 로그인 — 단기 access + 회전 refresh 발급(레거시 /api/app-auth/login 과 병행).
+// 자격 검증은 lib/app-login 이 담당한다. 라우트마다 계정 조회·사번 결정을 복제하면 한쪽만 고친 채
+// 다른 쪽이 남는다 — 2026-07-29 에 사번이 빈 문자열로 토큰에 실려 수집이 401 이 되고 배포를 4회
+// 롤백한 사고가 그 형태였다. 여기는 특히 위험한데, 발급한 사번이 세션 행에 저장돼 refresh 마다
+// 30일 동안 그대로 재발급되기 때문이다.
 import { NextResponse } from "next/server";
 
+import { clientIpFromXff } from "../../../../../../lib/admin-auth";
 import {
-  clientIpFromXff,
-  loginLockRemainingMs,
-  recordLoginResult,
-  verifyCredentials,
-} from "../../../../../../lib/admin-auth";
-import {
-  bootstrapOwnerWorkerId,
   createMobileRefreshToken,
   isAppJwtConfigured,
   mobileRefreshExpiryIso,
   signMobileAccessJwt,
 } from "../../../../../../lib/app-jwt";
-import { createMobileAppSession, findUserByUsername } from "../../../../../../lib/db";
-import { verifyPassword } from "../../../../../../lib/password";
+import { authenticateAppLogin, countsAsPasswordSuccess } from "../../../../../../lib/app-login";
+import { createMobileAppSession } from "../../../../../../lib/db";
+import { loginLockRemainingMs, recordLoginResult } from "../../../../../../lib/login-attempts";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
   }
 
   const lockKey = `mobile-v1:${clientIpFromXff(request)}:${id}`;
-  const lockMs = loginLockRemainingMs(lockKey);
+  const lockMs = await loginLockRemainingMs(lockKey);
   if (lockMs > 0) {
     return NextResponse.json(
       { ok: false, error: "too_many_attempts", retryAfterSec: Math.ceil(lockMs / 1000) },
@@ -49,36 +49,20 @@ export async function POST(request: Request) {
     );
   }
 
-  let role: string;
-  let name: string | null;
-  let workerId: string | null;
-  if (verifyCredentials(id, password)) {
-    role = "owner";
-    name = null;
-    workerId = bootstrapOwnerWorkerId(id);
-  } else {
-    const account = await findUserByUsername(id);
-    const passwordOK = account?.password_hash
-      ? await verifyPassword(password, account.password_hash)
-      : false;
-    if (!account || !passwordOK) {
-      recordLoginResult(lockKey, false);
-      return NextResponse.json({ ok: false, error: "invalid_credentials" }, { status: 401 });
-    }
-    if (account.status !== "approved") {
-      return NextResponse.json({ ok: false, error: "not_approved" }, { status: 403 });
-    }
-    role = account.role;
-    name = account.name ?? null;
-    workerId = account.employee_id ?? null;
-  }
-  recordLoginResult(lockKey, true);
+  const outcome = await authenticateAppLogin(id, password);
+  await recordLoginResult(lockKey, countsAsPasswordSuccess(outcome));
 
+  if (!outcome.ok) {
+    const status = outcome.reason === "not_approved" ? 403 : 401;
+    return NextResponse.json({ ok: false, error: outcome.reason }, { status });
+  }
+
+  const { sub, role, name, workerId } = outcome.principal;
   const refresh = createMobileRefreshToken();
   const expiresAt = mobileRefreshExpiryIso();
   await createMobileAppSession({
     sessionId: refresh.sessionId,
-    username: id,
+    username: sub,
     role,
     name,
     workerId,
@@ -88,7 +72,7 @@ export async function POST(request: Request) {
     expiresAt,
   });
   const accessToken = signMobileAccessJwt({
-    sub: id,
+    sub,
     role,
     name,
     workerId,
@@ -100,6 +84,6 @@ export async function POST(request: Request) {
     refreshToken: refresh.token,
     accessExpiresInSec: 15 * 60,
     refreshExpiresAt: expiresAt,
-    user: { id, name, role, workerId },
+    user: { id: sub, name, role, workerId },
   });
 }

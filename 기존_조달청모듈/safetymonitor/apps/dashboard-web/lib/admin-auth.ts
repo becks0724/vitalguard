@@ -57,65 +57,14 @@ export function verifyCredentials(id: string, password: string): boolean {
 }
 
 // ── 로그인 시도 제한(무차별 대입 방어) ──────────────────────────────────────
-// 잠금 키(요청 IP + id)별 연속 실패 횟수를 세고, 임계 초과 시 일정 시간 잠근다(in-memory, 프로세스 단위).
-// 공개 cloudflared 터널 URL 노출 시 약한 비번 사전대입을 실효성 없게 만든다.
-// 키를 'ip:id' 로 두면 한 공격자가 임의 id 로 다른 관리자를 잠그는 targeted lockout(DoS)을 막는다.
-const MAX_FAILS = 5;
-const LOCKOUT_MS = 5 * 60 * 1000; // 5분
-const MAX_ATTEMPT_ENTRIES = 5000; // Map 무한 증식 방지 상한
-
-type AttemptRecord = { fails: number; lockedUntil: number };
-const globalForAttempts = globalThis as typeof globalThis & {
-  __safetyMonitorLoginAttempts?: Map<string, AttemptRecord>;
-};
-const loginAttempts: Map<string, AttemptRecord> =
-  globalForAttempts.__safetyMonitorLoginAttempts ??
-  (globalForAttempts.__safetyMonitorLoginAttempts = new Map());
-
-// 만료된(잠금 풀린·실패 0) 항목 정리 + 상한 초과 시 오래된 항목 제거.
-function sweepLoginAttempts(): void {
-  const now = Date.now();
-  for (const [key, rec] of loginAttempts) {
-    // 잠금이 풀렸고 누적 실패도 없는 항목은 더 보관할 이유가 없다.
-    if (rec.lockedUntil <= now && rec.fails === 0) loginAttempts.delete(key);
-  }
-  // 그래도 상한을 넘으면 삽입 순서가 오래된 항목부터 제거(Map 은 삽입 순서 유지).
-  while (loginAttempts.size > MAX_ATTEMPT_ENTRIES) {
-    const oldest = loginAttempts.keys().next().value;
-    if (oldest === undefined) break;
-    loginAttempts.delete(oldest);
-  }
-}
+// 잠금 카운터 자체는 lib/login-attempts 로 옮겼다 — Cloud Run 다중 인스턴스에서 프로세스 메모리로는
+// 인스턴스마다 따로 세어 실효 한도가 늘어나기 때문(인스턴스 공유 저장 + 메모리 폴백).
 
 // 신뢰 클라이언트 IP — Cloud Run 등 신뢰 프록시는 실제 클라 IP 를 X-Forwarded-For 최우측에 append 한다.
 // 최좌측 값은 클라이언트가 임의로 넣을 수 있어(위조), 매 요청 XFF 를 바꿔 (ip,id) 잠금을 절대 발동 안 하게
 // 하던 우회를 만든다 → 최우측(신뢰 프록시가 본 실 IP)을 잠금 키 IP 로 사용한다.
 export function clientIpFromXff(request: Request): string {
   return clientIpFromRequest(request);
-}
-
-// 남은 잠금 시간(ms). 0 이면 잠기지 않음. key = 'ip:id'(login route 에서 조합).
-export function loginLockRemainingMs(key: string): number {
-  const rec = loginAttempts.get(key);
-  if (!rec) return 0;
-  const remaining = rec.lockedUntil - Date.now();
-  return remaining > 0 ? remaining : 0;
-}
-
-// 로그인 결과 기록 — 성공 시 카운터 리셋, 실패 누적이 임계 도달 시 잠금. key = 'ip:id'.
-export function recordLoginResult(key: string, ok: boolean): void {
-  if (ok) {
-    loginAttempts.delete(key);
-    return;
-  }
-  const rec = loginAttempts.get(key) ?? { fails: 0, lockedUntil: 0 };
-  rec.fails += 1;
-  if (rec.fails >= MAX_FAILS) {
-    rec.lockedUntil = Date.now() + LOCKOUT_MS;
-    rec.fails = 0; // 잠금 발동 후 카운터 리셋(잠금 해제 시 다시 MAX_FAILS 기회)
-  }
-  loginAttempts.set(key, rec);
-  sweepLoginAttempts();
 }
 
 // ── 세션 토큰(무상태 JWT) ─────────────────────────────────────────────────────

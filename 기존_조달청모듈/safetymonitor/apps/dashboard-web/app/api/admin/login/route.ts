@@ -4,10 +4,9 @@ import { NextResponse } from "next/server";
 import {
   clientIpFromXff,
   createSession,
-  loginLockRemainingMs,
-  recordLoginResult,
   verifyCredentials,
 } from "../../../../lib/admin-auth";
+import { loginLockRemainingMs, recordLoginResult } from "../../../../lib/login-attempts";
 import { findUserByUsername } from "../../../../lib/db";
 import { DEMO_ENABLED, verifyDemoMember } from "../../../../lib/demo-members";
 import { verifyPassword } from "../../../../lib/password";
@@ -44,7 +43,7 @@ export async function POST(request: Request) {
   const lockKey = `${ip}:${id}`;
 
   // 무차별 대입 방어 — (ip,id) 별 연속 실패 임계 초과 시 일정 시간 잠금(429).
-  const lockMs = loginLockRemainingMs(lockKey);
+  const lockMs = await loginLockRemainingMs(lockKey);
   if (lockMs > 0) {
     return NextResponse.json(
       {
@@ -57,7 +56,7 @@ export async function POST(request: Request) {
 
   // 1) env owner(최초 승인자) 우선 — 일치 시 owner 세션 발급.
   if (verifyCredentials(id, password)) {
-    recordLoginResult(lockKey, true);
+    await recordLoginResult(lockKey, true);
     return NextResponse.json({
       ok: true,
       token: createSession("owner", id),
@@ -68,7 +67,7 @@ export async function POST(request: Request) {
   // 1.5) 로컬 데모 회원 — DATABASE_URL 미설정(로컬 dev) 시만. 실 서버(DB 연결)에선 비활성 → 아래 DB 사용.
   if (DEMO_ENABLED) {
     const ok = verifyDemoMember(id, password);
-    recordLoginResult(lockKey, ok);
+    await recordLoginResult(lockKey, ok);
     if (!ok) {
       return NextResponse.json(
         { ok: false, error: "관리자 ID 또는 비밀번호가 일치하지 않습니다." },
@@ -86,7 +85,7 @@ export async function POST(request: Request) {
       ? await verifyPassword(password, user.password_hash)
       : false;
   // 비번 일치=잠금 리셋(미승인이라도 brute-force 아님), 불일치=실패 누적.
-  recordLoginResult(lockKey, pwOk);
+  await recordLoginResult(lockKey, pwOk);
   if (!user || !pwOk) {
     return NextResponse.json(
       { ok: false, error: "관리자 ID 또는 비밀번호가 일치하지 않습니다." },

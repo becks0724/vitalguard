@@ -533,6 +533,17 @@ async function initSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_cfe_camera_ts ON cctv_fall_events(camera_id, ts);
     CREATE INDEX IF NOT EXISTS idx_cfe_ts ON cctv_fall_events(ts);
 
+    -- 로그인 시도 잠금 — 인스턴스 간 공유. 잠금 카운터가 프로세스 메모리에만 있으면 Cloud Run 이
+    -- 1~4 인스턴스로 뜨는 동안 인스턴스마다 따로 세어 실효 한도가 인스턴스 수만큼 늘어난다.
+    -- 다른 테이블과 달리 ts 를 TEXT 가 아닌 timestamptz 로 둔다 — 잠금 판정이 '남은 시간' 계산이라
+    -- 문자열 비교로는 못 하고 interval 연산이 필요하다.
+    CREATE TABLE IF NOT EXISTS login_attempt (
+      lock_key TEXT PRIMARY KEY,
+      fails INTEGER NOT NULL DEFAULT 0,
+      locked_until TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -2483,6 +2494,44 @@ export async function findUserByUsername(username: string): Promise<UserRow | nu
     username,
   ]);
   return rows[0] ?? null;
+}
+
+// ── 로그인 시도 잠금(인스턴스 공유) ─────────────────────────────────────────
+// 정책(임계·잠금시간)은 lib/login-attempts 가 갖고, 여기는 저장만 한다.
+
+/** 남은 잠금 시간(ms). 기록이 없거나 이미 풀렸으면 0. */
+export async function readLoginLockMs(lockKey: string): Promise<number> {
+  const { rows } = await q<{ ms: number }>(
+    `SELECT GREATEST(0, CEIL(EXTRACT(EPOCH FROM (locked_until - now())) * 1000))::bigint AS ms
+       FROM login_attempt WHERE lock_key = $1 AND locked_until IS NOT NULL`,
+    [lockKey],
+  );
+  return rows[0]?.ms ?? 0;
+}
+
+// 실패 1회 누적. 임계에 닿으면 잠금을 걸고 카운터를 0 으로 되돌린다(인메모리 구현과 같은 규칙).
+// 읽고-쓰기를 나누면 두 인스턴스가 동시에 실패했을 때 한쪽 증가분이 사라지므로 한 문장으로 처리한다.
+export async function recordLoginFailure(
+  lockKey: string,
+  maxFails: number,
+  lockoutMs: number,
+): Promise<void> {
+  await q(
+    `INSERT INTO login_attempt AS a (lock_key, fails, locked_until, updated_at)
+     VALUES ($1, 1, NULL, now())
+     ON CONFLICT (lock_key) DO UPDATE SET
+       fails = CASE WHEN a.fails + 1 >= $2 THEN 0 ELSE a.fails + 1 END,
+       locked_until = CASE WHEN a.fails + 1 >= $2
+                           THEN now() + make_interval(secs => $3::double precision / 1000)
+                           ELSE a.locked_until END,
+       updated_at = now()`,
+    [lockKey, maxFails, lockoutMs],
+  );
+}
+
+/** 로그인 성공 — 해당 키의 실패 기록 제거. */
+export async function clearLoginAttempts(lockKey: string): Promise<void> {
+  await q("DELETE FROM login_attempt WHERE lock_key = $1", [lockKey]);
 }
 
 export async function createMobileAppSession(input: {

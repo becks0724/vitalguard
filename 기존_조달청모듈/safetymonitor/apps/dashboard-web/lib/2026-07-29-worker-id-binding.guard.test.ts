@@ -15,7 +15,15 @@ import { test } from "node:test";
 import { defaultEmployeeId } from "./employee-id";
 
 const root = resolve(__dirname, "..");
-const loginRoute = readFileSync(resolve(root, "app/api/app-auth/login/route.ts"), "utf8");
+// 사번 판정은 2026-07-30 에 라우트에서 lib/app-login 으로 옮겼다.
+// 이유: 같은 날 추가된 모바일 세션 라우트가 `account.employee_id ?? null` 을 그대로 다시 써서
+// 이 가드가 막으려던 형태가 재발했다. 가드가 '한 라우트 파일'만 보고 있었기 때문에 못 잡았다.
+// → 판정은 모듈 한 곳에서만 하고, 가드는 **로그인 라우트 전체**가 그 모듈에 위임하는지 본다.
+const loginModule = readFileSync(resolve(root, "lib/app-login.ts"), "utf8");
+const LOGIN_ROUTES = [
+  "app/api/app-auth/login/route.ts",
+  "app/api/mobile/v1/session/login/route.ts",
+];
 const dbSource = readFileSync(resolve(root, "lib/db.ts"), "utf8");
 const vitalRoute = readFileSync(resolve(root, "app/api/mock/vital/route.ts"), "utf8");
 
@@ -26,18 +34,32 @@ test("빈 문자열 사번은 falsy 라 수집 게이트를 통과하지 못한�
   assert.match(vitalRoute, /!claims\?\.workerId/, "수집 라우트의 게이트 형태가 바뀌면 이 가드를 재검토할 것");
 });
 
-test("로그인 라우트는 빈 사번을 그대로 토큰에 넣지 않는다", () => {
+test("사번 판정 모듈은 빈 사번을 그대로 토큰에 넣지 않는다", () => {
   assert.doesNotMatch(
-    loginRoute,
+    loginModule,
     /workerId\s*=\s*account\.employee_id\s*\?\?\s*null/,
     "`account.employee_id ?? null` 은 빈 문자열을 통과시킨다 — trim 후 폴백해야 한다",
   );
-  assert.match(loginRoute, /\.trim\(\)/, "저장된 사번은 trim 해서 공백만 있는 값도 걸러야 한다");
+  assert.match(loginModule, /\.trim\(\)/, "저장된 사번은 trim 해서 공백만 있는 값도 걸러야 한다");
   assert.match(
-    loginRoute,
+    loginModule,
     /defaultEmployeeId\(account\.username\)/,
     "비어 있으면 서버가 이미 쓰는 규칙(EMP-<username>)으로 되살려야 한다",
   );
+});
+
+test("모든 로그인 라우트가 사번을 직접 만지지 않고 공용 모듈에 위임한다", () => {
+  // 라우트가 늘어날 때마다 판정이 복제되는 것이 이 사고의 재발 경로다.
+  // 새 로그인 라우트를 추가하면 위 LOGIN_ROUTES 에도 넣어야 한다.
+  for (const path of LOGIN_ROUTES) {
+    const src = readFileSync(resolve(root, path), "utf8");
+    assert.doesNotMatch(
+      src,
+      /employee_id/,
+      `${path} 가 사번을 다시 만지면 모듈과 갈라진다 — authenticateAppLogin 결과를 그대로 써야 한다`,
+    );
+    assert.match(src, /authenticateAppLogin/, `${path} 는 공용 검증 모듈을 호출해야 한다`);
+  }
 });
 
 test("스키마 백필은 NULL 뿐 아니라 빈 문자열도 되살린다", () => {
