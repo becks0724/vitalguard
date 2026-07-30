@@ -16,6 +16,7 @@ GoPro HERO9 --USB-net UDP 8554--> Jetson(이 스크립트) --HTTP--> cctv-ai(/cc
 """
 
 import os
+import re
 import statistics
 import threading
 import time
@@ -28,7 +29,7 @@ import numpy as np
 from flask import Flask, Response, jsonify
 from PIL import Image, ImageDraw, ImageFont
 
-ENGINE = os.environ.get("PPE_ENGINE", "/home/jetson/ppe_yolo26s_640_v4_nc.engine")
+ENGINE = os.environ.get("PPE_ENGINE", "/home/jetson/ppe_yolo26s_640_v5_nc.engine")
 CCTV_BASE = os.environ.get("CCTV_BASE", "").rstrip("/")
 GOPRO_IP = os.environ.get("GOPRO_IP", "172.23.102.51")
 GOPRO_RES = os.environ.get("GOPRO_RES", "1080")
@@ -38,7 +39,13 @@ INFER_FPS = float(os.environ.get("INFER_FPS", "12"))   # 추론 cadence (엔진 
 PUSH_FPS = float(os.environ.get("PUSH_FPS", "6"))      # Cloud Run 푸시 cadence (429 회피)
 PORT = int(os.environ.get("PORT", "8444"))
 FONT_PATH = os.environ.get("FONT", "/home/jetson/NanumGothic-Regular.ttf")
-CONF = float(os.environ.get("PPE_CONF", "0.15"))       # 4차 권장 운영 임계
+CONF = float(os.environ.get("PPE_CONF", "0.30"))       # 5차 권장 운영 임계
+
+# ★ 헤더 라벨은 엔진 파일명에서 뽑는다. 하드코딩하면 엔진만 바꿨을 때
+#   관제웹에 옛 차수가 그대로 떠서 나중에 어느 모델이 돌았는지 알 수 없게 된다
+#   (실제로 v5 엔진인데 헤더가 "yolo26 v4" 로 나갔다).
+_mv = re.search(r"_(v\d+)_", os.path.basename(ENGINE))
+ENGINE_TAG = _mv.group(1) if _mv else os.path.basename(ENGINE).replace(".engine", "")
 OW, OH = 640, 360
 HEADER_H = 22
 
@@ -120,7 +127,8 @@ def draw(frame, dets, ms, fps):
     d = ImageDraw.Draw(img)
     f, fs = _fonts()
     d.rectangle((0, 0, OW, HEADER_H), fill=(0, 0, 0))
-    d.text((8, 3), "CAM-03  GoPro (Jetson TensorRT)  PPE (yolo26 v4)", font=f, fill=(240, 240, 240))
+    d.text((8, 3), f"CAM-03  GoPro (Jetson TensorRT)  PPE (yolo26 {ENGINE_TAG})",
+           font=f, fill=(240, 240, 240))
     d.text((OW - 150, 3), f"{ms:.0f}ms {fps:.0f}fps {time.strftime('%H:%M:%S')}",
            font=f, fill=(230, 90, 90))
     for name, (x1, y1, x2, y2), conf in dets:
