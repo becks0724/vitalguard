@@ -15,6 +15,7 @@ final class VitAlGuardWatchAppDelegate: NSObject, WKApplicationDelegate {
 struct VitAlGuardForWatchApp: App {
     @WKApplicationDelegateAdaptor private var appDelegate: VitAlGuardWatchAppDelegate
     @StateObject private var settings = ConnectionSettings()
+    @StateObject private var appLock = WatchAppLockStore.shared
 
     var body: some Scene {
         WindowGroup {
@@ -23,6 +24,7 @@ struct VitAlGuardForWatchApp: App {
             }
             .environmentObject(appDelegate.workout)
             .environmentObject(settings)
+            .environmentObject(appLock)
         }
     }
 }

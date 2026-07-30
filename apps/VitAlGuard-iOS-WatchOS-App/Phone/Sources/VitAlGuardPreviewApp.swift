@@ -2,11 +2,13 @@ import AVFoundation
 import AVKit
 import AuthenticationServices
 import BackgroundTasks
+import CryptoKit
 import CoreImage
 import Security
 import CoreLocation
 import CoreNFC
 import MapKit
+import LocalAuthentication
 import Photos
 import PassKit
 import QuickLook
@@ -2806,7 +2808,12 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     func applicationDidBecomeActive(_ application: UIApplication) {
         PhoneWatchBridge.shared.publishCurrentSession()
         rootPreviewController?.resumeContinuousDashboardSync()
+        rootPreviewController?.presentAppLockIfNeeded()
         NotificationCenter.default.post(name: .vitalGuardQuickActionRequested, object: nil)
+    }
+
+    func applicationWillResignActive(_ application: UIApplication) {
+        PhoneAppLockStore.shared.lockIfNeeded()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
@@ -3194,7 +3201,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "sensorPowerMode": SensorPowerMode.saved.rawValue,
             "languageCode": AppLanguage.savedLanguageCode,
             "endpointURL": VitalGuardLinks.appAPI,
-            "dashboardURL": VitalGuardLinks.safetyMonitor
+            "dashboardURL": VitalGuardLinks.safetyMonitor,
+            "developerModeEnabled": VitalGuardDeveloperConfiguration.isEnabled
         ]
         appendUpdatePolicy(to: &context)
         appendWalletIdentity(to: &context, mode: mode)
@@ -3225,7 +3233,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "sensorPowerMode": SensorPowerMode.saved.rawValue,
             "languageCode": AppLanguage.savedLanguageCode,
             "endpointURL": VitalGuardLinks.appAPI,
-            "dashboardURL": VitalGuardLinks.safetyMonitor
+            "dashboardURL": VitalGuardLinks.safetyMonitor,
+            "developerModeEnabled": VitalGuardDeveloperConfiguration.isEnabled
         ]
         appendUpdatePolicy(to: &context)
         return context
@@ -3256,7 +3265,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "sensorPowerMode": SensorPowerMode.saved.rawValue,
             "languageCode": AppLanguage.savedLanguageCode,
             "endpointURL": VitalGuardLinks.appAPI,
-            "dashboardURL": VitalGuardLinks.safetyMonitor
+            "dashboardURL": VitalGuardLinks.safetyMonitor,
+            "developerModeEnabled": VitalGuardDeveloperConfiguration.isEnabled
         ]
         appendUpdatePolicy(to: &context)
         appendWalletIdentity(to: &context, mode: mode)
@@ -3286,7 +3296,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             "sensorPowerMode": SensorPowerMode.saved.rawValue,
             "languageCode": AppLanguage.savedLanguageCode,
             "endpointURL": VitalGuardLinks.appAPI,
-            "dashboardURL": VitalGuardLinks.safetyMonitor
+            "dashboardURL": VitalGuardLinks.safetyMonitor,
+            "developerModeEnabled": VitalGuardDeveloperConfiguration.isEnabled
         ]
         appendUpdatePolicy(to: &context)
         do {
@@ -3661,6 +3672,10 @@ final class DashboardSyncService: NSObject {
     }
 
     private func applyVitalAuthorization(to request: inout URLRequest) -> Bool {
+        // 관리자 변경 주소라도 HTTPS의 현재 구성 서버에만 세션을 붙인다.
+        // URL을 바꾸면 VitalGuardDeveloperConfiguration이 세션을 폐기하므로
+        // 이전 서버의 bearer token이 새 서버로 전달되지 않는다.
+        guard VitalGuardLinks.isConfiguredServerURL(request.url) else { return false }
         let token = DashboardCredentialStore.loadAppJWT()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !token.isEmpty else { return false }
@@ -3953,6 +3968,7 @@ private enum PreviewSettingsKey {
     static let dashboardTyphoonLiveContentEnabled = "preview.dashboardTyphoonLiveContentEnabled"
     static let dashboardSpecialVideoLiveContentEnabled = "preview.dashboardSpecialVideoLiveContentEnabled"
     static let languageCode = "preview.languageCode"
+    static let developerModeEnabled = "preview.developerModeEnabled"
     static let loggedInId = "preview.loggedInId"
     static let appServerRole = "preview.appServerRole"
     static let forceSignedOut = "preview.forceSignedOut"
@@ -4517,12 +4533,24 @@ private enum DashboardCredentialStore {
 }
 
 private enum VitalGuardLinks {
-    static let safetyMonitor = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
-    static let appAPI = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital"
-    static let appAuthLogin = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/app-auth/login"
-    static let mobileSessionLogin = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/login"
-    static let mobileSessionRefresh = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/refresh"
-    static let mobileSessionLogout = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/logout"
+    static let bundledSafetyMonitor = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
+    static let bundledAppAPI = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital"
+
+    // 개발자 모드의 주소 변경은 이 단일 경계에서만 반영한다. DB/JWT/AI 비밀값은
+    // 절대 앱 설정으로 이동하지 않으며, 변경 후에는 반드시 새 서버에서 재로그인한다.
+    static var safetyMonitor: String { VitalGuardDeveloperConfiguration.dashboardURLString }
+    static var appAPI: String { VitalGuardDeveloperConfiguration.vitalEndpointURLString }
+    static var appAuthLogin: String { "\(safetyMonitor)/api/app-auth/login" }
+    static var mobileSessionLogin: String { "\(safetyMonitor)/api/mobile/v1/session/login" }
+    static var mobileSessionRefresh: String { "\(safetyMonitor)/api/mobile/v1/session/refresh" }
+    static var mobileSessionLogout: String { "\(safetyMonitor)/api/mobile/v1/session/logout" }
+
+    static func isConfiguredServerURL(_ url: URL?) -> Bool {
+        guard let url, url.scheme?.lowercased() == "https",
+              let expected = URL(string: safetyMonitor),
+              let expectedHost = expected.host?.lowercased() else { return false }
+        return url.host?.lowercased() == expectedHost && url.port == expected.port
+    }
 }
 
 private struct AuthErrorBody: Decodable {
@@ -4533,6 +4561,8 @@ private extension Notification.Name {
     static let vitalGuardReauthenticationRequired = Notification.Name("vitalGuard.reauthenticationRequired")
 }
 
+// Keychain과 Watch의 최소 로그인 컨텍스트만 비운다. 워치의 실측 backlog는 유지되어
+// 재로그인 후 Watch → Phone → API 파이프라인에서 재전송된다.
 private func vitalGuardRequireReauthentication() {
     DashboardCredentialStore.deleteMobileSession()
     let defaults = UserDefaults.standard
@@ -7407,7 +7437,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func settingsTabPanel() -> UIView {
-        let panel = panelView(height: 332)
+        let panel = panelView(height: 384)
         let title = label("설정", size: 22, weight: .black, color: textColor)
         let sub = label("계정, GPS 항상 허용, Watch 주기, 워터마크, 대시보드 URL을 한 곳에서 조정합니다.", size: 12, weight: .semibold, color: secondaryTextColor)
         sub.numberOfLines = 2
@@ -7422,6 +7452,9 @@ final class VitAlGuardPreviewController: UIViewController,
         open.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
         let ai = buttonPillForActionRow("VitAlGuard 챗봇", foreground: textColor, background: tileColor)
         ai.addTarget(self, action: #selector(openAIChatAssistant), for: .touchUpInside)
+        let developer = buttonPillForActionRow("개발자 모드", foreground: .white, background: .systemIndigo)
+        developer.accessibilityIdentifier = "vitalguard.developer-mode"
+        developer.addTarget(self, action: #selector(openDeveloperMode), for: .touchUpInside)
         let layout = buttonPillForActionRow("홈 섹션 순서", foreground: textColor, background: tileColor)
         layout.addTarget(self, action: #selector(openHomeLayout), for: .touchUpInside)
 
@@ -7430,6 +7463,7 @@ final class VitAlGuardPreviewController: UIViewController,
         panel.addSubview(chips)
         panel.addSubview(open)
         panel.addSubview(ai)
+        panel.addSubview(developer)
         panel.addSubview(layout)
         NSLayoutConstraint.activate([
             title.topAnchor.constraint(equalTo: panel.topAnchor, constant: 20),
@@ -7450,9 +7484,13 @@ final class VitAlGuardPreviewController: UIViewController,
             ai.trailingAnchor.constraint(equalTo: title.trailingAnchor),
             ai.topAnchor.constraint(equalTo: open.bottomAnchor, constant: 9),
             ai.heightAnchor.constraint(equalToConstant: 42),
+            developer.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            developer.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            developer.topAnchor.constraint(equalTo: ai.bottomAnchor, constant: 9),
+            developer.heightAnchor.constraint(equalToConstant: 42),
             layout.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             layout.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            layout.topAnchor.constraint(equalTo: ai.bottomAnchor, constant: 9),
+            layout.topAnchor.constraint(equalTo: developer.bottomAnchor, constant: 9),
             layout.heightAnchor.constraint(equalToConstant: 42),
             layout.bottomAnchor.constraint(lessThanOrEqualTo: panel.bottomAnchor, constant: -18)
         ])
@@ -9532,6 +9570,7 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func applyDashboardSummaryAuthorization(to request: inout URLRequest) -> Bool {
+        guard VitalGuardLinks.isConfiguredServerURL(request.url) else { return false }
         let token = DashboardCredentialStore.loadAppJWT()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !token.isEmpty {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -10766,6 +10805,13 @@ final class VitAlGuardPreviewController: UIViewController,
         return label
     }
 
+    func presentAppLockIfNeeded() {
+        guard PhoneAppLockStore.shared.isLocked, presentedViewController == nil else { return }
+        let lock = PhoneAppLockViewController()
+        lock.modalPresentationStyle = .fullScreen
+        present(lock, animated: false)
+    }
+
     @objc private func openSettings() {
         let settings = PreviewSettingsViewController()
         settings.overrideUserInterfaceStyle = savedThemeMode.interfaceStyle
@@ -10786,6 +10832,18 @@ final class VitAlGuardPreviewController: UIViewController,
             sheet.prefersGrabberVisible = true
         }
         present(nav, animated: true)
+    }
+
+    @objc private func openDeveloperMode() {
+        guard VitalGuardDeveloperConfiguration.isAvailableToCurrentUser else {
+            presentStatus("개발자 모드", message: "owner 또는 admin 계정으로 로그인한 업체 관리자만 사용할 수 있습니다.")
+            return
+        }
+        let controller = VitalGuardDeveloperModeViewController()
+        navigationController?.pushViewController(controller, animated: true)
+        if controller.navigationController == nil {
+            present(UINavigationController(rootViewController: controller), animated: true)
+        }
     }
 
     @objc private func openAIChatAssistant() {
@@ -14129,6 +14187,18 @@ final class VitAlGuardPreviewController: UIViewController,
         }
 
         isLoginRequestInFlight = true
+        performDashboardLogin(id: id, password: password, url: url, allowsLegacyFallback: true)
+    }
+
+    /// 운영 서버의 v1 세션 API가 아직 배포되지 않은 경우에만 기존 HTTPS 앱 인증 API를
+    /// 한 번 사용한다. 비밀번호를 저장하지 않으며, 401/403/429 등 실제 인증 실패에는
+    /// 절대 우회하지 않는다.
+    private func performDashboardLogin(
+        id: String,
+        password: String,
+        url: URL,
+        allowsLegacyFallback: Bool
+    ) {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 20
@@ -14143,13 +14213,22 @@ final class VitAlGuardPreviewController: UIViewController,
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.isLoginRequestInFlight = false
                 if let error {
+                    self.isLoginRequestInFlight = false
                     self.presentStatus("로그인 실패", message: error.localizedDescription)
                     return
                 }
 
                 let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                if statusCode == 404,
+                   allowsLegacyFallback,
+                   let legacyURL = URL(string: VitalGuardLinks.appAuthLogin),
+                   VitalGuardLinks.isConfiguredServerURL(legacyURL) {
+                    self.performDashboardLogin(id: id, password: password, url: legacyURL, allowsLegacyFallback: false)
+                    return
+                }
+
+                self.isLoginRequestInFlight = false
                 let decoded = data.flatMap { try? JSONDecoder().decode(AppAuthLoginResponse.self, from: $0) }
                 guard (200..<300).contains(statusCode),
                       decoded?.ok == true,
@@ -16902,9 +16981,9 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         endpointField.text = VitalGuardLinks.appAPI
         endpointField.isEnabled = false
         endpointField.clearButtonMode = .never
-        appUploadTokenField.text = defaults.string(forKey: vitalGuardUploadTokenDefaultsKey)
-        dashboardAdminIdField.text = defaults.string(forKey: PreviewSettingsKey.dashboardAdminId)
-        dashboardAdminPasswordField.text = DashboardCredentialStore.loadPassword()
+        appUploadTokenField.text = nil
+        dashboardAdminIdField.text = nil
+        dashboardAdminPasswordField.text = nil
         configureLanguageButton()
 
         let syncValue = defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
@@ -17014,6 +17093,8 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
         formStack.addArrangedSubview(sectionTitle("앱 정보"))
         formStack.addArrangedSubview(appVersionRow())
+        formStack.addArrangedSubview(appLockSettingsRow())
+        formStack.addArrangedSubview(developerModeSettingsRow())
 
         formStack.addArrangedSubview(sectionTitle("화면 모드"))
         formStack.addArrangedSubview(themeModeRow())
@@ -17028,12 +17109,12 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         formStack.addArrangedSubview(input(workerField, placeholder: "작업자 이름"))
         formStack.addArrangedSubview(input(employeeField, placeholder: "사원번호"))
 
+        // 비밀값/공유 업로드 토큰/관리자 비밀번호를 앱 설정에서 받지 않는다.
+        // 실제 API 인증은 로그인 세션과 서버 측 Secret Manager 경계만 사용한다.
+        defaults.removeObject(forKey: vitalGuardUploadTokenDefaultsKey)
+        DashboardCredentialStore.savePassword("")
         formStack.addArrangedSubview(sectionTitle("보안 API 연동 (읽기 전용)"))
         formStack.addArrangedSubview(input(endpointField, placeholder: VitalGuardLinks.appAPI))
-        formStack.addArrangedSubview(input(appUploadTokenField, placeholder: "APP_UPLOAD_TOKEN"))
-        formStack.addArrangedSubview(sectionTitle("대시보드 관리자 인증"))
-        formStack.addArrangedSubview(input(dashboardAdminIdField, placeholder: "관리자 ID"))
-        formStack.addArrangedSubview(input(dashboardAdminPasswordField, placeholder: "관리자 비밀번호 또는 API 비밀번호"))
 
         formStack.addArrangedSubview(sectionTitle("GPS 항상 허용"))
         formStack.addArrangedSubview(locationPermissionRow())
@@ -17189,6 +17270,36 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
             detail.centerYAnchor.constraint(equalTo: row.centerYAnchor)
         ])
         return row
+    }
+
+    private func appLockSettingsRow() -> UIView {
+        let button = actionButton(
+            title: PhoneAppLockStore.shared.isConfigured ? "앱 잠금 · 설정됨" : "앱 잠금 · 4자리 암호 설정",
+            action: #selector(openAppLockSettings)
+        )
+        button.accessibilityIdentifier = "vitalguard.app-lock"
+        return button
+    }
+
+    private func developerModeSettingsRow() -> UIView {
+        let title = VitalGuardDeveloperConfiguration.isEnabled ? "개발자 모드 · 켜짐" : "개발자 모드"
+        let button = actionButton(title: title, action: #selector(openDeveloperModeSettings))
+        button.accessibilityIdentifier = "vitalguard.developer-mode"
+        return button
+    }
+
+    @objc private func openAppLockSettings() {
+        navigationController?.pushViewController(PhoneAppLockSettingsViewController(), animated: true)
+    }
+
+    @objc private func openDeveloperModeSettings() {
+        guard VitalGuardDeveloperConfiguration.isAvailableToCurrentUser else {
+            let alert = UIAlertController(title: "개발자 모드", message: "owner 또는 admin 계정으로 로그인한 업체 관리자만 사용할 수 있습니다.", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "확인", style: .default))
+            present(alert, animated: true)
+            return
+        }
+        navigationController?.pushViewController(VitalGuardDeveloperModeViewController(), animated: true)
     }
 
     private func input(_ field: UITextField, placeholder: String) -> UIView {
@@ -18297,9 +18408,9 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         defaults.set(workerField.text ?? "", forKey: PreviewSettingsKey.workerName)
         defaults.set(employeeField.text ?? "", forKey: PreviewSettingsKey.employeeId)
         defaults.set(VitalGuardLinks.appAPI, forKey: PreviewSettingsKey.endpoint)
-        defaults.set(appUploadTokenField.text ?? "", forKey: vitalGuardUploadTokenDefaultsKey)
-        defaults.set(dashboardAdminIdField.text ?? "", forKey: PreviewSettingsKey.dashboardAdminId)
-        DashboardCredentialStore.savePassword(dashboardAdminPasswordField.text ?? "")
+        defaults.removeObject(forKey: vitalGuardUploadTokenDefaultsKey)
+        defaults.removeObject(forKey: PreviewSettingsKey.dashboardAdminId)
+        DashboardCredentialStore.savePassword("")
         let entered = Double(syncIntervalField.text ?? "") ?? Double(syncSlider.value)
         defaults.set(min(3599, max(5, entered.rounded())), forKey: PreviewSettingsKey.syncInterval)
         defaults.set(timeUpdatesSwitch.isOn, forKey: PreviewSettingsKey.timeBasedUpdatesEnabled)
@@ -18443,6 +18554,513 @@ private extension UIImage {
             return .rightMirrored
         @unknown default:
             return .up
+        }
+    }
+}
+
+// MARK: - V8.4 local administrator developer mode
+
+/// Local, administrator-only endpoint configuration. This intentionally contains no
+/// database strings, API keys, JWTs, refresh tokens, or upload credentials.
+private enum VitalGuardDeveloperConfiguration {
+    private static let dashboardURLKey = "preview.developer.dashboardURL"
+    private static let vitalURLKey = "preview.developer.vitalURL"
+
+    static var isEnabled: Bool {
+        UserDefaults.standard.bool(forKey: PreviewSettingsKey.developerModeEnabled)
+    }
+
+    static var isAvailableToCurrentUser: Bool {
+        let role = UserDefaults.standard.string(forKey: PreviewSettingsKey.appServerRole)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() ?? ""
+        let hasSession = !(UserDefaults.standard.string(forKey: PreviewSettingsKey.loggedInId)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        return hasSession && ["owner", "admin"].contains(role)
+    }
+
+    static var dashboardURLString: String {
+        guard isEnabled,
+              let saved = UserDefaults.standard.string(forKey: dashboardURLKey),
+              let url = normalizedBaseURL(saved) else { return VitalGuardLinks.bundledSafetyMonitor }
+        return url.absoluteString
+    }
+
+    static var vitalEndpointURLString: String {
+        guard isEnabled,
+              let saved = UserDefaults.standard.string(forKey: vitalURLKey),
+              let url = normalizedVitalURL(saved, dashboardURL: dashboardURLString) else { return VitalGuardLinks.bundledAppAPI }
+        return url.absoluteString
+    }
+
+    static func save(dashboard: String, vitalEndpoint: String) throws {
+        guard isAvailableToCurrentUser else { throw ConfigurationError.notAdministrator }
+        guard let base = normalizedBaseURL(dashboard) else { throw ConfigurationError.invalidDashboardURL }
+        guard let vital = normalizedVitalURL(vitalEndpoint, dashboardURL: base.absoluteString) else {
+            throw ConfigurationError.invalidVitalURL
+        }
+        let defaults = UserDefaults.standard
+        let changed = dashboardURLString != base.absoluteString || vitalEndpointURLString != vital.absoluteString || !isEnabled
+        defaults.set(true, forKey: PreviewSettingsKey.developerModeEnabled)
+        defaults.set(base.absoluteString, forKey: dashboardURLKey)
+        defaults.set(vital.absoluteString, forKey: vitalURLKey)
+        defaults.set(vital.absoluteString, forKey: PreviewSettingsKey.endpoint)
+        if changed {
+            // A bearer token is bound to the server that issued it; do not reuse it after a route change.
+            vitalGuardRequireReauthentication()
+        }
+        PhoneWatchBridge.shared.publishCurrentSession()
+    }
+
+    static func disable() {
+        let defaults = UserDefaults.standard
+        defaults.set(false, forKey: PreviewSettingsKey.developerModeEnabled)
+        defaults.removeObject(forKey: dashboardURLKey)
+        defaults.removeObject(forKey: vitalURLKey)
+        defaults.set(VitalGuardLinks.bundledAppAPI, forKey: PreviewSettingsKey.endpoint)
+        PhoneWatchBridge.shared.publishCurrentSession()
+    }
+
+    static func prefilledDashboardURL() -> String { dashboardURLString }
+    static func prefilledVitalURL() -> String { vitalEndpointURLString }
+
+    private static func normalizedBaseURL(_ raw: String) -> URL? {
+        guard var components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.port == nil || components.port == 443,
+              components.query == nil, components.fragment == nil else { return nil }
+        components.path = components.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        guard components.path.isEmpty else { return nil }
+        return components.url
+    }
+
+    private static func normalizedVitalURL(_ raw: String, dashboardURL: String) -> URL? {
+        guard let dashboard = normalizedBaseURL(dashboardURL),
+              var components = URLComponents(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
+              components.scheme?.lowercased() == "https",
+              components.host?.lowercased() == dashboard.host?.lowercased(),
+              components.port == dashboard.port,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.path.hasPrefix("/api/") else { return nil }
+        components.path = components.path.replacingOccurrences(of: "//", with: "/")
+        return components.url
+    }
+
+    enum ConfigurationError: LocalizedError {
+        case notAdministrator, invalidDashboardURL, invalidVitalURL
+        var errorDescription: String? {
+            switch self {
+            case .notAdministrator: return "개발자 모드는 owner 또는 admin 계정에서만 사용할 수 있습니다."
+            case .invalidDashboardURL: return "관제 서버 주소는 HTTPS의 도메인 루트 주소여야 합니다."
+            case .invalidVitalURL: return "연동 URL은 같은 HTTPS 도메인의 /api/ 경로여야 합니다."
+            }
+        }
+    }
+}
+
+private final class VitalGuardDeveloperModeViewController: UIViewController {
+    private let dashboardField = UITextField()
+    private let vitalField = UITextField()
+    private let statusLabel = UILabel()
+    private let stack = UIStackView()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "개발자 모드"
+        view.backgroundColor = .systemBackground
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "개발자 모드 끄기", style: .done, target: self, action: #selector(disableMode))
+        navigationItem.rightBarButtonItem?.tintColor = .systemRed
+        build()
+    }
+
+    private func build() {
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 22),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+        ])
+
+        let warning = UILabel()
+        warning.numberOfLines = 0
+        warning.text = "업체 관리자 전용입니다. DB 주소, 비밀번호, JWT, AI API 키는 이 화면에서 다루지 않습니다. 주소를 저장하면 현재 로그인 세션은 즉시 종료됩니다."
+        warning.font = .preferredFont(forTextStyle: .footnote)
+        warning.textColor = .secondaryLabel
+        stack.addArrangedSubview(warning)
+        stack.addArrangedSubview(label("관제 서버 URL"))
+        configure(dashboardField, value: VitalGuardDeveloperConfiguration.prefilledDashboardURL(), keyboard: .URL)
+        stack.addArrangedSubview(dashboardField)
+        stack.addArrangedSubview(label("생체 연동 URL"))
+        configure(vitalField, value: VitalGuardDeveloperConfiguration.prefilledVitalURL(), keyboard: .URL)
+        stack.addArrangedSubview(vitalField)
+        let saveButton = UIButton(type: .system)
+        saveButton.configuration = .filled()
+        saveButton.configuration?.title = "보안 확인 후 저장"
+        saveButton.addTarget(self, action: #selector(save), for: .touchUpInside)
+        stack.addArrangedSubview(saveButton)
+        statusLabel.numberOfLines = 0
+        statusLabel.font = .preferredFont(forTextStyle: .footnote)
+        statusLabel.textColor = .secondaryLabel
+        stack.addArrangedSubview(statusLabel)
+    }
+
+    private func label(_ text: String) -> UILabel {
+        let view = UILabel()
+        view.text = text
+        view.font = .preferredFont(forTextStyle: .headline)
+        return view
+    }
+
+    private func configure(_ field: UITextField, value: String, keyboard: UIKeyboardType) {
+        field.text = value
+        field.keyboardType = keyboard
+        field.textContentType = .URL
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        field.borderStyle = .roundedRect
+    }
+
+    @objc private func save() {
+        authenticate(reason: "서버 주소를 변경하려면 기기 인증이 필요합니다.") { [weak self] success in
+            guard let self, success else { return }
+            do {
+                try VitalGuardDeveloperConfiguration.save(
+                    dashboard: self.dashboardField.text ?? "",
+                    vitalEndpoint: self.vitalField.text ?? ""
+                )
+                self.statusLabel.text = "저장되었습니다. 새 서버에서 다시 로그인해 주세요."
+            } catch {
+                self.statusLabel.text = error.localizedDescription
+                self.statusLabel.textColor = .systemRed
+            }
+        }
+    }
+
+    @objc private func disableMode() {
+        authenticate(reason: "개발자 모드를 끄려면 기기 인증이 필요합니다.") { [weak self] success in
+            guard let self, success else { return }
+            VitalGuardDeveloperConfiguration.disable()
+            self.navigationController?.popViewController(animated: true)
+        }
+    }
+
+    private func authenticate(reason: String, completion: @escaping (Bool) -> Void) {
+        guard VitalGuardDeveloperConfiguration.isAvailableToCurrentUser else {
+            statusLabel.text = "owner 또는 admin 계정으로 로그인한 뒤 사용할 수 있습니다."
+            statusLabel.textColor = .systemRed
+            completion(false)
+            return
+        }
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            statusLabel.text = "이 기기의 암호 또는 생체 인증을 사용할 수 없습니다."
+            statusLabel.textColor = .systemRed
+            completion(false)
+            return
+        }
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+            DispatchQueue.main.async { completion(success) }
+        }
+    }
+}
+
+// MARK: - V8.4 local app lock
+
+private final class PhoneAppLockStore {
+    static let shared = PhoneAppLockStore()
+    private let service = "com.yangjeehoo.vitalguard.app-lock.v84"
+    private let account = "pin-verifier"
+    private let biometricKey = "preview.appLockBiometricsEnabled"
+    private let failuresKey = "preview.appLockFailures"
+    private let lockoutKey = "preview.appLockLockoutUntil"
+    private(set) var isLocked = false
+
+    var isConfigured: Bool { loadVerifier() != nil }
+    var biometricsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: biometricKey) }
+        set { UserDefaults.standard.set(newValue, forKey: biometricKey) }
+    }
+    var lockoutUntil: Date? { UserDefaults.standard.object(forKey: lockoutKey) as? Date }
+
+    func lockIfNeeded() {
+        let loggedIn = !(UserDefaults.standard.string(forKey: PreviewSettingsKey.loggedInId)?.isEmpty ?? true)
+        isLocked = isConfigured && loggedIn
+    }
+
+    func unlock() { isLocked = false }
+
+    func configure(pin: String, biometricsEnabled: Bool) throws {
+        guard isValid(pin) else { throw LockError.invalidPIN }
+        let salt = randomSalt()
+        let data = salt + Data(pin.utf8)
+        let verifier = salt + Data(SHA256.hash(data: data))
+        guard saveVerifier(verifier) else { throw LockError.keychainUnavailable }
+        self.biometricsEnabled = biometricsEnabled
+        resetFailures()
+        unlock()
+    }
+
+    func verify(pin: String) -> Result<Void, LockError> {
+        if let until = lockoutUntil, until > Date() { return .failure(.temporarilyLocked(until)) }
+        guard let verifier = loadVerifier(), verifier.count == 48 else { return .failure(.notConfigured) }
+        let salt = verifier.prefix(16)
+        let expected = verifier.suffix(32)
+        let candidate = Data(SHA256.hash(data: salt + Data(pin.utf8)))
+        guard constantTimeEqual(candidate, expected) else {
+            recordFailure()
+            return .failure(.invalidPIN)
+        }
+        resetFailures()
+        unlock()
+        return .success(())
+    }
+
+    func remove() {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        SecItemDelete(query as CFDictionary)
+        biometricsEnabled = false
+        resetFailures()
+        unlock()
+    }
+
+    private func saveVerifier(_ verifier: Data) -> Bool {
+        remove()
+        let item: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: verifier,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
+        ]
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+    }
+
+    private func loadVerifier() -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var value: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess else { return nil }
+        return value as? Data
+    }
+
+    private func isValid(_ pin: String) -> Bool { pin.count == 4 && pin.allSatisfy(\.isNumber) }
+    private func randomSalt() -> Data { Data((0..<16).map { _ in UInt8.random(in: .min ... .max) }) }
+    private func constantTimeEqual(_ lhs: Data, _ rhs: Data.SubSequence) -> Bool {
+        guard lhs.count == rhs.count else { return false }
+        return zip(lhs, rhs).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
+    }
+    private func recordFailure() {
+        let defaults = UserDefaults.standard
+        let failures = defaults.integer(forKey: failuresKey) + 1
+        defaults.set(failures, forKey: failuresKey)
+        if failures >= 5 {
+            defaults.set(Date(timeIntervalSinceNow: 30), forKey: lockoutKey)
+            defaults.set(0, forKey: failuresKey)
+        }
+    }
+    private func resetFailures() {
+        UserDefaults.standard.removeObject(forKey: failuresKey)
+        UserDefaults.standard.removeObject(forKey: lockoutKey)
+    }
+
+    enum LockError: LocalizedError {
+        case invalidPIN, notConfigured, temporarilyLocked(Date), keychainUnavailable
+        var errorDescription: String? {
+            switch self {
+            case .invalidPIN: return "4자리 숫자 암호를 확인해 주세요."
+            case .notConfigured: return "앱 잠금이 설정되지 않았습니다."
+            case .temporarilyLocked(let date): return "입력이 잠시 제한되었습니다. \(Int(date.timeIntervalSinceNow.rounded(.up)))초 후 다시 시도해 주세요."
+            case .keychainUnavailable: return "이 iPhone의 기기 암호를 켠 뒤 다시 시도해 주세요."
+            }
+        }
+    }
+}
+
+private final class PhoneAppLockSettingsViewController: UIViewController {
+    private let stack = UIStackView()
+    private let biometricSwitch = UISwitch()
+    private let detail = UILabel()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "앱 잠금"
+        view.backgroundColor = .systemBackground
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 22),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+        ])
+        refresh()
+    }
+
+    private func refresh() {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let store = PhoneAppLockStore.shared
+        let title = UILabel()
+        title.text = store.isConfigured ? "4자리 앱 암호가 설정되어 있습니다." : "로그인 뒤 앱을 다시 열 때 4자리 암호를 요구합니다."
+        title.numberOfLines = 0
+        stack.addArrangedSubview(title)
+        let biometric = UIStackView()
+        biometric.axis = .horizontal
+        let label = UILabel()
+        label.text = "Face ID / Touch ID 사용"
+        biometric.addArrangedSubview(label)
+        biometric.addArrangedSubview(UIView())
+        biometricSwitch.isOn = store.biometricsEnabled
+        biometricSwitch.isEnabled = store.isConfigured
+        biometric.addArrangedSubview(biometricSwitch)
+        biometricSwitch.addTarget(self, action: #selector(biometricChanged), for: .valueChanged)
+        stack.addArrangedSubview(biometric)
+
+        let primary = UIButton(type: .system)
+        primary.configuration = .filled()
+        primary.configuration?.title = store.isConfigured ? "암호 변경" : "4자리 암호 설정"
+        primary.addTarget(self, action: #selector(setOrChangePIN), for: .touchUpInside)
+        stack.addArrangedSubview(primary)
+        if store.isConfigured {
+            let remove = UIButton(type: .system)
+            remove.configuration = .bordered()
+            remove.configuration?.title = "앱 잠금 해제"
+            remove.configuration?.baseForegroundColor = .systemRed
+            remove.addTarget(self, action: #selector(removePIN), for: .touchUpInside)
+            stack.addArrangedSubview(remove)
+        }
+        detail.numberOfLines = 0
+        detail.font = .preferredFont(forTextStyle: .footnote)
+        detail.textColor = .secondaryLabel
+        detail.text = "암호 원문은 저장하지 않습니다. 검증값은 이 기기의 Keychain에만 보관되며, 5회 틀리면 30초간 입력이 제한됩니다."
+        stack.addArrangedSubview(detail)
+    }
+
+    @objc private func biometricChanged() { PhoneAppLockStore.shared.biometricsEnabled = biometricSwitch.isOn }
+
+    @objc private func setOrChangePIN() {
+        if PhoneAppLockStore.shared.isConfigured {
+            requestExistingPIN { [weak self] valid in if valid { self?.presentNewPIN() } }
+        } else { presentNewPIN() }
+    }
+
+    private func presentNewPIN() {
+        let alert = UIAlertController(title: "4자리 암호", message: "새 앱 잠금 암호를 두 번 입력해 주세요.", preferredStyle: .alert)
+        alert.addTextField { field in field.isSecureTextEntry = true; field.keyboardType = .numberPad; field.placeholder = "새 암호" }
+        alert.addTextField { field in field.isSecureTextEntry = true; field.keyboardType = .numberPad; field.placeholder = "암호 확인" }
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel))
+        alert.addAction(UIAlertAction(title: "저장", style: .default) { [weak self, weak alert] _ in
+            let first = alert?.textFields?.first?.text ?? ""
+            let second = alert?.textFields?.last?.text ?? ""
+            guard first == second else { self?.showError("두 암호가 일치하지 않습니다."); return }
+            do {
+                try PhoneAppLockStore.shared.configure(pin: first, biometricsEnabled: self?.biometricSwitch.isOn ?? false)
+                self?.refresh()
+            } catch { self?.showError(error.localizedDescription) }
+        })
+        present(alert, animated: true)
+    }
+
+    @objc private func removePIN() {
+        requestExistingPIN { [weak self] valid in
+            guard valid else { return }
+            PhoneAppLockStore.shared.remove()
+            self?.refresh()
+        }
+    }
+
+    private func requestExistingPIN(completion: @escaping (Bool) -> Void) {
+        let alert = UIAlertController(title: "현재 암호 확인", message: "앱 잠금 설정을 변경하려면 현재 4자리 암호를 입력해 주세요.", preferredStyle: .alert)
+        alert.addTextField { field in field.isSecureTextEntry = true; field.keyboardType = .numberPad; field.placeholder = "현재 암호" }
+        alert.addAction(UIAlertAction(title: "취소", style: .cancel) { _ in completion(false) })
+        alert.addAction(UIAlertAction(title: "확인", style: .default) { [weak self, weak alert] _ in
+            switch PhoneAppLockStore.shared.verify(pin: alert?.textFields?.first?.text ?? "") {
+            case .success: completion(true)
+            case .failure(let error): self?.showError(error.localizedDescription); completion(false)
+            }
+        })
+        present(alert, animated: true)
+    }
+
+    private func showError(_ message: String) {
+        let alert = UIAlertController(title: "앱 잠금", message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "확인", style: .default))
+        present(alert, animated: true)
+    }
+}
+
+private final class PhoneAppLockViewController: UIViewController {
+    private let pinField = UITextField()
+    private let message = UILabel()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        modalPresentationStyle = .fullScreen
+        let stack = UIStackView()
+        stack.axis = .vertical
+        stack.spacing = 16
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor)
+        ])
+        let title = UILabel()
+        title.text = "VitAlGuard 잠김"
+        title.font = .preferredFont(forTextStyle: .title2)
+        title.textAlignment = .center
+        stack.addArrangedSubview(title)
+        message.text = "4자리 앱 암호를 입력해 주세요."
+        message.numberOfLines = 0
+        message.textAlignment = .center
+        stack.addArrangedSubview(message)
+        pinField.isSecureTextEntry = true
+        pinField.keyboardType = .numberPad
+        pinField.placeholder = "4자리 암호"
+        pinField.borderStyle = .roundedRect
+        stack.addArrangedSubview(pinField)
+        let unlock = UIButton(type: .system)
+        unlock.configuration = .filled()
+        unlock.configuration?.title = "잠금 해제"
+        unlock.addTarget(self, action: #selector(unlockWithPIN), for: .touchUpInside)
+        stack.addArrangedSubview(unlock)
+        if PhoneAppLockStore.shared.biometricsEnabled {
+            let biometric = UIButton(type: .system)
+            biometric.configuration = .bordered()
+            biometric.configuration?.title = "Face ID / Touch ID로 해제"
+            biometric.addTarget(self, action: #selector(unlockWithBiometrics), for: .touchUpInside)
+            stack.addArrangedSubview(biometric)
+        }
+    }
+
+    @objc private func unlockWithPIN() {
+        switch PhoneAppLockStore.shared.verify(pin: pinField.text ?? "") {
+        case .success: dismiss(animated: true)
+        case .failure(let error): message.text = error.localizedDescription; message.textColor = .systemRed; pinField.text = ""
+        }
+    }
+
+    @objc private func unlockWithBiometrics() {
+        let context = LAContext()
+        context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "VitAlGuard 앱 잠금을 해제합니다.") { success, error in
+            DispatchQueue.main.async {
+                if success { PhoneAppLockStore.shared.unlock(); self.dismiss(animated: true) }
+                else { self.message.text = error?.localizedDescription ?? "생체 인증에 실패했습니다."; self.message.textColor = .systemRed }
+            }
         }
     }
 }

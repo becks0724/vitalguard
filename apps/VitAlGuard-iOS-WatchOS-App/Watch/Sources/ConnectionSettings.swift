@@ -98,6 +98,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     // 기본값 — 빌드 설정(RECEIVER_URL_DEFAULT) 미주입/무효 시의 최종 폴백.
     static let defaultURLString =
         "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital"
+    static let defaultDashboardURLString =
+        "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
     private static let fallbackURLString = defaultURLString
     static let defaultWorkerName = "워치PoC"
     static let defaultEmployeeId = "EMP-9001"
@@ -116,6 +118,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let sensorPowerModeKey = "watchSensorPowerMode"
     private static let energyEfficiencyMigrationKey = "watchEnergyEfficiencyMigration.v1"
     private static let languageCodeKey = "watchLanguageCode"
+    private static let developerModeEnabledKey = "watchDeveloperModeEnabled"
+    private static let dashboardURLKey = "watchDashboardURL"
     // 마지막으로 적용된 번들 기본 URL 의 스탬프. 새 빌드에서 defaultURLString 이 바뀌면(재설치)
     // 저장된 옛 URL 을 자동으로 새 기본값으로 교체 → 터널 회전 후 재설치 시 인앱 수정 없이 즉시 반영.
     private static let urlStampKey = "receiverURLStamp"
@@ -143,6 +147,12 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
     @Published var languageCode: String {
         didSet { UserDefaults.standard.set(languageCode, forKey: Self.languageCodeKey) }
+    }
+    @Published var developerModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(developerModeEnabled, forKey: Self.developerModeEnabledKey) }
+    }
+    @Published var dashboardURLString: String {
+        didSet { UserDefaults.standard.set(dashboardURLString, forKey: Self.dashboardURLKey) }
     }
     @Published var sensorPowerMode: WatchSensorPowerMode {
         didSet {
@@ -215,6 +225,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         canManageDashboard = d.object(forKey: Self.canManageDashboardKey) as? Bool
             ?? Self.canManageDashboard(for: initialServerRole, fallbackMode: initialMode)
         languageCode = d.string(forKey: Self.languageCodeKey) ?? ""
+        developerModeEnabled = d.bool(forKey: Self.developerModeEnabledKey)
+        dashboardURLString = d.string(forKey: Self.dashboardURLKey) ?? Self.defaultDashboardURLString
         let rawSensorMode = d.string(forKey: Self.sensorPowerModeKey) ?? WatchSensorPowerMode.balanced.rawValue
         sensorPowerMode = WatchSensorPowerMode(rawValue: rawSensorMode) ?? .balanced
         let savedInterval = d.object(forKey: Self.syncIntervalKey) as? Double ?? 300
@@ -397,6 +409,8 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         let incomingEndpoint = (context["endpointURL"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingEmployeeId = (context["employeeId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingLanguageCode = (context["languageCode"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let incomingDeveloperModeEnabled = context["developerModeEnabled"] as? Bool
+        let incomingDashboardURL = (context["dashboardURL"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         DispatchQueue.main.async {
             if loggedIn == true, !incomingId.isEmpty {
@@ -441,6 +455,12 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             }
             if !incomingEndpoint.isEmpty, URL(string: incomingEndpoint) != nil {
                 self.urlString = Self.normalizedReceiverURLString(incomingEndpoint)
+            }
+            if let incomingDeveloperModeEnabled {
+                self.developerModeEnabled = incomingDeveloperModeEnabled
+            }
+            if !incomingDashboardURL.isEmpty, URL(string: incomingDashboardURL)?.scheme?.lowercased() == "https" {
+                self.dashboardURLString = incomingDashboardURL
             }
             self.languageCode = incomingLanguageCode
         }
