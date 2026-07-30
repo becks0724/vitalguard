@@ -39,8 +39,9 @@
       (`console.info` 대신 반환값. 로그는 Phase C 호출부에서)
 - [x] `isFresh()` 신선도 게이트 — `FRESH_WINDOW_MS = 3시간` 상수로 노출
 - [x] 단위 테스트 (`app/lib/disaster-msg.test.ts`)
-  - [x] 100건 파싱 성공 · invalid 0 · 실종자 31건 **전량 차단**
-  - [x] 교통통제 4건 차단 · 호우 61 + 산사태 4 = 65건 통과 · `unknownTypes = ["교통통제","기타"]`
+  - [x] 100건 파싱 성공 · invalid 0 · **실종자 27건 전량 차단**
+  - [x] 교통통제 4건·도로통제 2건 차단 · 통과 67건 · `unknownTypes = ["교통통제","기타"]`
+        (초안엔 "'기타' 31건 = 전부 실종자"라 적었으나 실측 결과 27건이다 — D-15)
   - [x] **통과분에 "찾습니다" 문자 0건** — 개인정보 차단 직접 검증 (D-10)
   - [x] KST 파싱 — `TZ=UTC` 로 돌려 시각이 안 밀리는지 (**로컬 맥=KST 라 이 테스트가 유일한 방어선**)
   - [x] KST 09시 이전 → UTC 전날 롤오버 · 형식 불일치 → null · 하이픈 구분자 허용
@@ -50,7 +51,7 @@
 
 ---
 
-## Phase B — 지역매칭(시·도) ✅ 완료 (2026-07-30) · ⚠️ D-14 미결
+## Phase B — 지역매칭(시·도) ✅ 완료 (2026-07-30)
 
 - [x] `matchSite(msgs, lat, lon)` — 기존 자산 재사용, 신규 지역 로직 **작성 금지** (D-04)
   - [x] `latLonToSido(lat, lon)` → 현장 시·도
@@ -83,9 +84,6 @@
 
 **완료 판정.** 위 케이스 통과. 좌표는 테스트 상수로 고정. ✅
 
-**최종 검증(2026-07-30).** `disaster-msg.test.ts` 27건 + `kma-regions.test.ts` 8건 ·
-전체 `npm test` **436 pass / 0 fail** (TZ=UTC·TZ=Asia/Seoul 양쪽) · tsc 0 · lint 0.
-
 ✅ **D-15 해소 — ②안 재승격 채택** (2026-07-30)
 - [x] `senderOrg()` — 본문 `[기관명]` 추출, 표기 없으면 `null`
 - [x] `isEvacuationNotice()` — **비경찰청 + 대피 키워드** 두 조건 AND
@@ -96,12 +94,6 @@
 
 **최종 검증(2026-07-30).** `disaster-msg.test.ts` **33건** + `kma-regions.test.ts` 8건 ·
 전체 `npm test` **442 pass / 0 fail** (TZ=UTC·Asia/Seoul) · tsc 0 · lint 0.
-
-**결과.** `disaster-msg.test.ts` **25건 통과**(TZ=UTC·TZ=Asia/Seoul 양쪽) · 전체 `npm test` **432 pass / 0 fail** · tsc 0 · lint 0.
-
-⚠️ **미결 — D-14.** `latLonToSido` 가 도(道) 현장을 인접 광역시로 오판한다(주요 34곳 중 17곳 오판·정확도 50%).
-경기·경남·경북·전남 현장은 시·도 판정이 틀려 **재난문자 알림이 nearby 로 새어 미발송**된다.
-현재 "알려진 결함 가드" 테스트로 고정해 둠. **처리 방침 결정 후 Phase D 진입.**
 
 ---
 
