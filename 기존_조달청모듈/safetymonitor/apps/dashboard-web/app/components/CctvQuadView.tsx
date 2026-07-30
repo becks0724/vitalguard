@@ -533,9 +533,14 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
   }>(aiApi, suffix);
 
   const violations = stats?.violation_count ?? 0;
-  const chips = [
-    { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count },
-    { label: "안전조끼", ok: stats?.vest_count, no: stats?.no_vest_count },
+  // ★ 안전조끼는 과업 범위 외(2026-07-30 결정) — 착용 판정을 하지 않는다.
+  //   엣지의 no_vest_count 는 하드코딩 0(판정 미구현)이라 "미착용 0" 이 화면에서는
+  //   판정 결과로 읽혔다. 수치를 내보내는 대신 범위 외임을 명시한다.
+  //   근거 = docs/ppe-ml-run-20260729.md 12절 (학습 1,028개 · 배포 도메인 라벨 0 ·
+  //   한국 공개셋에 조끼 없음 · person P 0.593 로 포함관계 판정도 불안정).
+  const chips: { label: string; ok?: number; no?: number; scoped: boolean }[] = [
+    { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count, scoped: true },
+    { label: "안전조끼", scoped: false },
   ];
 
   return (
@@ -575,15 +580,26 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         </span>
       </div>
       <div className="flex flex-wrap gap-2">
-        {chips.map((c) => (
-          <span key={c.label} className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs">
-            <span className="text-zinc-300">{c.label}</span>
-            <span className={stats ? "text-emerald-300" : "text-zinc-500"}>착용 {stats ? (c.ok ?? 0) : "—"}</span>
-            <span className={stats && (c.no ?? 0) > 0 ? "font-bold text-red-300" : "text-zinc-500"}>
-              미착용 {stats ? (c.no ?? 0) : "—"}
+        {chips.map((c) =>
+          c.scoped ? (
+            <span key={c.label} className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs">
+              <span className="text-zinc-300">{c.label}</span>
+              <span className={stats ? "text-emerald-300" : "text-zinc-500"}>착용 {stats ? (c.ok ?? 0) : "—"}</span>
+              <span className={stats && (c.no ?? 0) > 0 ? "font-bold text-red-300" : "text-zinc-500"}>
+                미착용 {stats ? (c.no ?? 0) : "—"}
+              </span>
             </span>
-          </span>
-        ))}
+          ) : (
+            <span
+              key={c.label}
+              title="안전조끼는 현재 판정 범위 밖입니다. 검출은 하되 착용 여부는 판정하지 않습니다."
+              className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1 text-xs"
+            >
+              <span className="text-zinc-500">{c.label}</span>
+              <span className="text-zinc-500">판정 범위 외</span>
+            </span>
+          ),
+        )}
       </div>
     </div>
   );
