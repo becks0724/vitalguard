@@ -224,6 +224,38 @@ CCTV_BASE=https://cctv-ai-....run.app python3 phone_ppe_relay.py
 
 PPE 착용 판정에 필요한 갱신율은 초당 3~5회라 **현재 4.8fps 로 목적에는 충분하다.**
 
+## ⚠️ 429 stuck — 켠 직후 전 엔드포인트 "Rate exceeded" (2026-07-30 재발)
+
+`--min-instances 1` 로 켠 직후 모든 엔드포인트가 **HTTP 429 `Rate exceeded`** 를 냈다.
+컨테이너 로그는 `INFO: Uvicorn running` 으로 정상이었고(크래시 아님),
+요청 로그에 **`The request was aborted because there was no available instance`** 가 찍혔다.
+단일 인스턴스가 요청을 받지 못하는 stuck 상태다.
+
+```bash
+gcloud run services update cctv-ai --region asia-northeast3 \
+  --update-env-vars RESTART=$(date +%s)     # 새 리비전 강제 → 즉시 복구
+```
+
+**켠 직후 429 가 보이면 진단하지 말고 바로 RESTART 를 걸 것.** 07-06·07-08 에 이어 세 번째다.
+`--max-instances 1` 은 절대 올리지 않는다(폰 override 상태가 인스턴스별로 갈린다).
+
+## 4차 모델 반영 (2026-07-30)
+
+젯슨 릴레이의 엔진만 바꾸면 라이브에 즉시 반영된다.
+
+```bash
+PPE_ENGINE=/home/jetson/ppe_yolo26s_640_v4_nc.engine \
+CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app \
+  nohup python3 phone_ppe_relay.py > relay.log 2>&1 &
+```
+
+실측 = 추론 **14.5~14.9ms** · 아이폰 전송 **5.09 fps** · 푸시 오류 0 · 관제웹 헤더 `PPE (yolo26)`.
+
+⚠️ **4차 모델은 CCTV 부감 화각 전용이다.** 학습 데이터의 머리 크기가 정규화 높이
+중앙값 0.051(최대 0.141)이라, 근거리 인물(0.19~0.31)의 머리는 검출되지 않는다.
+`person` 은 잡히지만 `head`·`helmet` 이 안 잡혀 착용 판정이 서지 않는다.
+바디캠 용도로 쓰려면 근거리 데이터 또는 `scale` 증강 상향이 필요하다.
+
 ## 실모델 적용 현황
 
 - **CAM-01 = 실제 YOLOv8n + 차량 속도추정 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
