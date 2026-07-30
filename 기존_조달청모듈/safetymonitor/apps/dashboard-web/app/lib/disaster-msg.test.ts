@@ -5,12 +5,15 @@ import { test } from "node:test";
 
 import {
   FRESH_WINDOW_MS,
+  PROMOTED_TYPE,
   filterWatched,
+  isEvacuationNotice,
   isFresh,
   matchSite,
   msgRegionMatchesSido,
   normalize,
   parseKstToMs,
+  senderOrg,
   type DisasterMsg,
 } from "./disaster-msg";
 import { DISASTER_MSG_SAMPLE } from "./disaster-msg-sample";
@@ -71,21 +74,69 @@ test("normalize — 긴급재난은 샘플 1건(경기 안산 단원구·호우)
 });
 
 // ── 재해유형 화이트리스트 ────────────────────────────────────────────────────
-test("filterWatched — 호우 61 + 산사태 4 = 65건만 통과", () => {
-  assert.equal(WATCHED.length, 65);
+test("filterWatched — 호우 61 + 산사태 4 + 재승격 2 = 67건 통과", () => {
+  assert.equal(WATCHED.length, 67);
   assert.equal(WATCHED.filter((m) => m.type === "호우").length, 61);
   assert.equal(WATCHED.filter((m) => m.type === "산사태").length, 4);
+  assert.equal(WATCHED.filter((m) => m.type === PROMOTED_TYPE).length, 2);
 });
 
-test("filterWatched — 실종자('기타' 31건)·교통통제 4건 전량 차단", () => {
+test("filterWatched — 실종자 27건·도로통제·교통통제는 계속 차단", () => {
   assert.deepEqual(UNKNOWN.sort(), ["교통통제", "기타"]);
-  assert.equal(ALL.length - WATCHED.length, 35);
+  assert.equal(ALL.length - WATCHED.length, 33);
 });
 
 test("filterWatched — 통과분에 개인정보(실종자 안내) 문자가 한 건도 없다", () => {
   // 실종자 문자는 실명·나이·키·몸무게·인상착의를 담는다. 화이트리스트가 저장 이전에 막아야 한다(D-10).
   const leaked = WATCHED.filter((m) => m.message.includes("찾습니다"));
   assert.deepEqual(leaked, [], "개인정보 포함 문자가 화이트리스트를 통과했다");
+});
+
+// ── '기타' 재승격 (D-15) ─────────────────────────────────────────────────────
+test("재승격 — '기타' 중 하천 수위 대피 안내 2건만 되살아난다", () => {
+  const promoted = WATCHED.filter((m) => m.type === PROMOTED_TYPE);
+  assert.equal(promoted.length, 2);
+  const orgs = promoted.map((m) => senderOrg(m.message)).sort();
+  assert.deepEqual(orgs, ["경기도청", "한국수자원공사"]);
+  assert.ok(promoted.every((m) => m.message.includes("대피")));
+});
+
+test("★ 재승격 불변식 — 통과분 전체에 개인정보(실종자) 문자가 0건", () => {
+  // 재승격은 개인정보 차단을 뚫는 경로가 될 수 있다. 조건을 바꿔도 이 불변식은 유지돼야 한다.
+  assert.deepEqual(WATCHED.filter((m) => m.message.includes("찾습니다")), []);
+  assert.deepEqual(WATCHED.filter((m) => senderOrg(m.message)?.includes("경찰청")), []);
+});
+
+test("재승격 — 경찰청 발신은 대피 키워드가 있어도 되살아나지 않는다", () => {
+  const police: DisasterMsg = {
+    ...(ALL[0] as DisasterMsg),
+    type: "기타",
+    message: "[서울경찰청] 실종자 수색 중 인근 주민은 대피 바랍니다",
+  };
+  assert.equal(isEvacuationNotice(police), false);
+  assert.equal(filterWatched([police]).watched.length, 0);
+});
+
+test("재승격 — 기관 표기가 없으면 되살리지 않는다(판정 근거 없음)", () => {
+  const anon: DisasterMsg = {
+    ...(ALL[0] as DisasterMsg),
+    type: "기타",
+    message: "하천 수위 상승으로 즉시 대피 바랍니다",
+  };
+  assert.equal(senderOrg(anon.message), null);
+  assert.equal(isEvacuationNotice(anon), false);
+});
+
+test("재승격 — 대피 키워드가 없으면 되살리지 않는다(사천시 도로통제 케이스)", () => {
+  const roadwork = ALL.find((m) => m.message.includes("싱크홀 복구작업")) as DisasterMsg;
+  assert.equal(roadwork.type, "기타");
+  assert.equal(isEvacuationNotice(roadwork), false);
+});
+
+test("senderOrg — 대괄호 발신기관 추출", () => {
+  assert.equal(senderOrg("[경기도청] 임진강 수위"), "경기도청");
+  assert.equal(senderOrg("발신기관 없음"), null);
+  assert.equal(senderOrg("[] 빈 기관"), null);
 });
 
 test("filterWatched — 모르는 유형은 버리되 목록으로 되돌려준다", () => {

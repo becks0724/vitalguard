@@ -99,7 +99,32 @@ export function isWatchedType(type: string): boolean {
   return WATCHED.has(type.trim());
 }
 
+// ── '기타' 재승격 ────────────────────────────────────────────────────────────
+// DST_SE_NM='기타' 에는 실종자 찾기(개인정보)뿐 아니라 진짜 재난 대피 안내가 섞여 온다.
+// 샘플 31건 = 실종자 27 + 도로통제 2 + 하천 수위 대피 2(주암댐 방류·임진강 수위 상승).
+// 유형만 보면 후자 2건을 함께 버리므로, 아래 두 조건을 모두 만족할 때만 되살린다(D-15).
+//   ① 발신기관이 경찰청이 아님 — 실측상 실종자 27건 = 전부 경찰청, 경찰청 27건 = 전부 실종자
+//   ② 본문에 대피 키워드 — 실측상 실종자 문자에 "대피" 0건
+// 기관 표기가 없으면 되살리지 않는다(판정 근거가 없을 때는 버리는 쪽이 안전).
+export const PROMOTED_TYPE = "대피안내";
+export const EVACUATION_KEYWORDS = ["대피"] as const;
+
+// "[경기도청] 임진강 수위…" → "경기도청". 대괄호 표기가 없으면 null.
+export function senderOrg(message: string): string | null {
+  if (!message.startsWith("[")) return null;
+  const close = message.indexOf("]");
+  return close > 1 ? message.slice(1, close) : null;
+}
+
+export function isEvacuationNotice(msg: DisasterMsg): boolean {
+  const org = senderOrg(msg.message);
+  if (org === null || org.includes("경찰청")) return false;
+  return EVACUATION_KEYWORDS.some((k) => msg.message.includes(k));
+}
+
 // 통과분 + 처음 보는 유형 목록(중복 제거) — 후자는 호출부가 로그로 남겨 목록 확장 근거로 쓴다.
+// 재승격분은 type 을 PROMOTED_TYPE 으로 바꿔 내보낸다 — 알림 itemKey 가 유형 단위라
+// "disaster:기타" 같은 의미 불명 키가 생기지 않게 하기 위해서다(D-09).
 export function filterWatched(msgs: DisasterMsg[]): {
   watched: DisasterMsg[];
   unknownTypes: string[];
@@ -108,6 +133,7 @@ export function filterWatched(msgs: DisasterMsg[]): {
   const unknown = new Set<string>();
   for (const m of msgs) {
     if (isWatchedType(m.type)) watched.push(m);
+    else if (isEvacuationNotice(m)) watched.push({ ...m, type: PROMOTED_TYPE });
     else unknown.add(m.type);
   }
   return { watched, unknownTypes: [...unknown] };
