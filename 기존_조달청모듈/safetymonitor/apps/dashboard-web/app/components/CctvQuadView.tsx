@@ -343,33 +343,67 @@ function CameraTile({
 
 // AI 감지 통계 스트립 — 팝업 영상 하단에 실시간 감지 내용(클래스별 카운트)을 60초 폴링으로 표시.
 // suffix 로 객체감지 소스 분기(CAM-01 /cctv/stats · CAM-03 /cctv/stats3).
-function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string }) {
-  const [stats, setStats] = useState<{
-    fps: number;
-    total: number;
-    byClass: { label: string; count: number }[];
-    alertsLastMinute: number;
-  } | null>(null);
+// AI 통계 폴링 공용 훅 — 객체·낙상·PPE 세 스트립이 같은 구조를 세 번 반복하고 있었다.
+// 폴링 주기·신선도 판정·미수신 표시를 한 곳에 모은다.
+//
+// ★ 미수신을 "이상 없음" 으로 보이게 하면 안 된다.
+//   PPE 는 `compliance_rate ?? 100` 으로 준수율 100% 를, 낙상은 초록 점 + "감지 대상 없음" 으로
+//   안전한 상태를 표시했다. 관제자가 화면을 믿고 넘어가는 false-OK 다
+//   (생체 연결끊김 게이트 STALE_MS 와 같은 이유).
+//   data 가 null 이면 미수신이고 label 이 그 사유다. 호출부는 수치를 가려야 한다.
+//
+// 폴링 60초는 감지 갱신율에 비해 너무 성겨서, 서버가 올라온 뒤에도 최대 1분 옛 화면이 남았다.
+// 신선도 임계는 폴 실패 한 번으로 깜빡이지 않게 폴링의 약 4배를 둔다.
+const AI_POLL_MS = 8_000;
+const AI_STALE_MS = 30_000;
+
+function useAiStats<T>(aiApi: string, suffix: string) {
+  const [rx, setRx] = useState<{ data: T; at: number } | null>(null);
+  // 폴이 실패하면 setRx 가 안 일어나 리렌더도 없다 → 신선도 표시가 갱신되지 않는다.
+  // 성패와 무관하게 갱신해 stale 판정이 화면에 반영되게 한다.
+  const [probedAt, setProbedAt] = useState(0);
 
   useEffect(() => {
     let active = true;
     const poll = async () => {
       try {
         const res = await fetch(`${aiApi}/cctv/stats${suffix}`);
-        if (!res.ok) return;
-        const s = await res.json();
-        if (active) setStats(s);
+        if (res.ok) {
+          const r = (await res.json()) as T;
+          if (active) setRx({ data: r, at: Date.now() });
+        }
       } catch {
-        /* 서버 미연결 — 다음 폴에서 재시도 */
+        /* 서버 미연결 — 다음 폴에서 재시도. 값은 두고 신선도로 판정한다 */
       }
+      if (active) setProbedAt(Date.now());
     };
     poll();
-    const id = setInterval(poll, 60000);
+    const id = setInterval(poll, AI_POLL_MS);
     return () => {
       active = false;
       clearInterval(id);
     };
   }, [aiApi, suffix]);
+
+  const fresh = rx !== null && probedAt - rx.at <= AI_STALE_MS;
+  return {
+    data: fresh ? rx.data : null,
+    // 미수신 사유 — 한 번도 못 받았는가, 받다가 끊겼는가
+    label: rx === null ? "수신 대기" : "연결끊김",
+  };
+}
+
+// 미수신 안내 — 세 스트립 공통 문구.
+const AI_NO_RX = "수신 없음 — 연결 확인 필요";
+
+// 객체감지 스트립(CAM-01) — 팝업 영상 하단에 클래스별 감지 수를 표시.
+function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string }) {
+  const { data: stats, label } = useAiStats<{
+    fps: number;
+    total: number;
+    byClass: { label: string; count: number }[];
+    alertsLastMinute: number;
+  }>(aiApi, suffix);
 
   const emoji: Record<string, string> = {
     보행자: "🚶",
@@ -385,14 +419,23 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-semibold">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className={`inline-block h-1.5 w-1.5 rounded-full ${stats ? "bg-emerald-400" : "bg-zinc-500"}`} />
           실시간 감지
         </span>
         <span className="text-[11px] text-zinc-400">
-          YOLOv8 · {stats ? `${stats.fps} fps` : "—"} · 총 {stats?.total ?? 0}
+          {stats ? (
+            <>
+              YOLOv8 · {stats.fps} fps · 총 {stats.total}
+            </>
+          ) : (
+            <>
+              YOLOv8 · <span className="font-semibold text-zinc-300">{label}</span> · 총{" "}
+              <span className="text-zinc-400">—</span>
+            </>
+          )}
         </span>
       </div>
-      {items.length > 0 ? (
+      {stats && items.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {items.map((c) => (
             <span
@@ -406,39 +449,21 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
           ))}
         </div>
       ) : (
-        <p className="text-[11px] text-zinc-500">감지된 객체 없음</p>
+        <p className="text-[11px] text-zinc-500">{stats ? "감지된 객체 없음" : AI_NO_RX}</p>
       )}
     </div>
   );
 }
 
-// 낙상 감지 스트립 — 팝업 영상 하단에 상태별(정상/불안정/누움/낙상) 인원을 60초 폴링으로 표시.
+// 낙상 감지 스트립(CAM-02) — 상태별(정상/불안정/누움/낙상) 인원.
+// ⚠️ 표시 전용이다. 실제 낙상 경보는 서버 폴러(lib/cctv-fall-poller.ts)가 /cctv/stats2 를
+//    1.5초 주기로 따로 폴링해 decideFusion 으로 낸다. 이 스트립이 미수신이어도 경보는 별개다.
 function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: string }) {
-  const [stats, setStats] = useState<{
+  const { data: stats, label } = useAiStats<{
     total: number;
     fallen: number;
     byStatus: { status: string; label: string; count: number }[];
-  } | null>(null);
-
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${aiApi}/cctv/stats${suffix}`);
-        if (!res.ok) return;
-        const s = await res.json();
-        if (active) setStats(s);
-      } catch {
-        /* 서버 미연결 — 다음 폴에서 재시도 */
-      }
-    };
-    poll();
-    const id = setInterval(poll, 60000);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [aiApi, suffix]);
+  }>(aiApi, suffix);
 
   // 상태별 칩 색상 — 정상(초록)/불안정(앰버)/누움(주황)/낙상(빨강).
   const style: Record<string, string> = {
@@ -454,15 +479,29 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-semibold">
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${fallen > 0 ? "bg-red-500" : "bg-emerald-400"}`} />
+          {/* 미수신에 초록 점을 켜면 "이상 없음" 으로 읽힌다 — 회색으로 강등한다 */}
+          <span
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              !stats ? "bg-zinc-500" : fallen > 0 ? "bg-red-500" : "bg-emerald-400"
+            }`}
+          />
           낙상 감지
         </span>
         <span className="text-[11px] text-zinc-400">
-          YOLOv8-pose · 대상 {stats?.total ?? 0}명
-          {fallen > 0 && <span className="ml-1.5 font-bold text-red-300">· 낙상 {fallen}건</span>}
+          {stats ? (
+            <>
+              YOLOv8-pose · 대상 {stats.total}명
+              {fallen > 0 && <span className="ml-1.5 font-bold text-red-300">· 낙상 {fallen}건</span>}
+            </>
+          ) : (
+            <>
+              YOLOv8-pose · <span className="font-semibold text-zinc-300">{label}</span> · 대상{" "}
+              <span className="text-zinc-400">—</span>
+            </>
+          )}
         </span>
       </div>
-      {items.length > 0 ? (
+      {stats && items.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {items.map((c) => (
             <span
@@ -475,68 +514,25 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
           ))}
         </div>
       ) : (
-        <p className="text-[11px] text-zinc-500">감지 대상 없음</p>
+        <p className="text-[11px] text-zinc-500">{stats ? "감지 대상 없음" : AI_NO_RX}</p>
       )}
     </div>
   );
 }
 
-// PPE(안전모) 감지 스트립 — 팝업 영상 하단에 준수율·안전모/조끼 착용 현황을 60초 폴링으로 표시.
-// PPE 통계 폴링 주기·신선도 임계.
-// 60초 폴링은 PPE 판정 갱신율(초당 3~5회 판정)에 비해 너무 성겨서, 서버가 올라온 뒤에도
-// 최대 1분 동안 옛 화면이 남았다. 8초로 줄인다.
-// 신선도 임계는 폴링의 3배 여유(24초)를 두고 30초 — 일시적 폴 실패 한 번으로 깜빡이지 않는다.
-const PPE_POLL_MS = 8_000;
-const PPE_STALE_MS = 30_000;
-
+// PPE(안전모) 감지 스트립(CAM-03) — 준수율·안전모/조끼 착용 현황.
 function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: string }) {
-  const [rx, setRx] = useState<{
-    data: {
-      violation_count: number;
-      compliance_rate: number;
-      no_hardhat_count: number;
-      no_vest_count: number;
-      hardhat_count: number;
-      vest_count: number;
-      person_count: number;
-    };
-    at: number;
-  } | null>(null);
-  // 폴이 실패하면 setRx 가 안 일어나 리렌더도 없다 → 신선도 표시가 갱신되지 않는다.
-  // 성패와 무관하게 갱신해 stale 판정이 화면에 반영되게 한다.
-  const [probedAt, setProbedAt] = useState(0);
+  const { data: stats, label } = useAiStats<{
+    violation_count: number;
+    compliance_rate: number;
+    no_hardhat_count: number;
+    no_vest_count: number;
+    hardhat_count: number;
+    vest_count: number;
+    person_count: number;
+  }>(aiApi, suffix);
 
-  useEffect(() => {
-    let active = true;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${aiApi}/cctv/stats${suffix}`);
-        if (res.ok) {
-          const r = await res.json();
-          if (active) setRx({ data: r, at: Date.now() });
-        }
-      } catch {
-        /* 서버 미연결 — 다음 폴에서 재시도. 값은 두고 신선도로 판정한다 */
-      }
-      if (active) setProbedAt(Date.now());
-    };
-    poll();
-    const id = setInterval(poll, PPE_POLL_MS);
-    return () => {
-      active = false;
-      clearInterval(id);
-    };
-  }, [aiApi, suffix]);
-
-  // ★ 수신이 없을 때 "준수율 100%"로 보이면 안 된다.
-  //   관제자가 화면을 믿고 넘어가는 false-OK 다(생체 연결끊김 게이트와 같은 이유).
-  //   한 번도 못 받았으면 '수신 대기', 받다가 끊겼으면 '연결끊김' 으로 강등하고 수치는 가린다.
-  const stale = rx !== null && probedAt - rx.at > PPE_STALE_MS;
-  const live = rx !== null && !stale;
-  const stats = live ? rx.data : null;
   const violations = stats?.violation_count ?? 0;
-  const rate = stats?.compliance_rate;
-  const linkLabel = rx === null ? "수신 대기" : "연결끊김";
   const chips = [
     { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count },
     { label: "안전조끼", ok: stats?.vest_count, no: stats?.no_vest_count },
@@ -548,27 +544,31 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         <span className="flex items-center gap-1.5 text-xs font-semibold">
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${
-              !live ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
+              !stats ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
             }`}
           />
           PPE 안전모 감지
         </span>
         <span className="text-[11px] text-zinc-400">
-          {live ? (
+          {stats ? (
             <>
-              YOLOv8 · 작업자 {stats?.person_count ?? 0}명 · 준수율{" "}
+              YOLOv8 · 작업자 {stats.person_count}명 · 준수율{" "}
               <span
                 className={
-                  (rate ?? 0) >= 100 ? "text-emerald-300" : (rate ?? 0) >= 50 ? "text-amber-300" : "text-red-300"
+                  stats.compliance_rate >= 100
+                    ? "text-emerald-300"
+                    : stats.compliance_rate >= 50
+                      ? "text-amber-300"
+                      : "text-red-300"
                 }
               >
-                {Math.round(rate ?? 0)}%
+                {Math.round(stats.compliance_rate)}%
               </span>
               {violations > 0 && <span className="ml-1.5 font-bold text-red-300">· 위반 {violations}건</span>}
             </>
           ) : (
             <>
-              YOLOv8 · <span className="font-semibold text-zinc-300">{linkLabel}</span> · 준수율{" "}
+              YOLOv8 · <span className="font-semibold text-zinc-300">{label}</span> · 준수율{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
@@ -578,9 +578,9 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         {chips.map((c) => (
           <span key={c.label} className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs">
             <span className="text-zinc-300">{c.label}</span>
-            <span className={live ? "text-emerald-300" : "text-zinc-500"}>착용 {live ? c.ok ?? 0 : "—"}</span>
-            <span className={live && (c.no ?? 0) > 0 ? "font-bold text-red-300" : "text-zinc-500"}>
-              미착용 {live ? c.no ?? 0 : "—"}
+            <span className={stats ? "text-emerald-300" : "text-zinc-500"}>착용 {stats ? (c.ok ?? 0) : "—"}</span>
+            <span className={stats && (c.no ?? 0) > 0 ? "font-bold text-red-300" : "text-zinc-500"}>
+              미착용 {stats ? (c.no ?? 0) : "—"}
             </span>
           </span>
         ))}
@@ -588,7 +588,6 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
     </div>
   );
 }
-
 // 클릭한 카메라를 확대 표시하는 팝업 — 캐러셀 transform 에 갇히지 않도록 body 로 portal.
 function CctvModal({
   cam,
