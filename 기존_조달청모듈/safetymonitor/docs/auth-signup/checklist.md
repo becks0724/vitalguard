@@ -54,7 +54,7 @@
 - [x] `/api/admin/profile` GET·POST — 세션 username 기준 본인 행만 / 비번변경은 현재 비번 검증
 - [x] `updateUserProfile`(db) / 검증 — tsc 0·API e2e(조회·수정·비번변경·owner403·비인증401)·UI
 
-## Phase G — 가입 구조 개편(VG관리자/회원사 관리자 2분기) 🚧 진행 중 (2026-07-30)
+## Phase G — 가입 구조 개편(VG관리자/회원사 관리자 2분기) ✅ 코드 완료 (2026-07-30, 커밋 `77041db`)
 
 > **계획.** 가입을 유형별로 나눈다. VitAlGuard 관리자와 회원사 관리자를 구분해 저장하고,
 > 승인 권한을 `.env` 단독에서 "권한을 부여받은 VG관리자" 까지 넓힌다. 작업자 자체가입은 만들지 않는다.
@@ -66,18 +66,18 @@
 > ③ 아이디 4~20자·비번 8~19자(생년월일·연락처 포함 금지)가 서버·클라 양쪽에서 걸린다
 > ④ tsc 0 · lint 0 err · 단위 테스트 전건 통과 · `next build` 성공
 
-- [ ] `lib/account-policy.ts` 신규 — 아이디(4~20자·공백/제어문자 금지·예약어)·비밀번호(8~19자·생년월일/연락처 포함 금지) 단일 소스 + 단위 테스트
-- [ ] `lib/db.ts` — `users` 에 `birth_date`·`org_type`(기본 `member`) 멱등 ALTER + `UserRow`·`createUser` 확장
-- [ ] `lib/admin-auth.ts` — 승인 권한 게이트 `verifyUserAdmin`(owner 또는 VG관리자+`admin_access`)
-- [ ] `POST /api/admin/register` — 가입 유형(`orgType`)·생년월일 수신·검증, 새 아이디/비번 정책 적용
-- [ ] `GET /api/admin/check-username` — 새 아이디 정책으로 교체
-- [ ] `GET/POST /api/admin/users` — 게이트를 `verifyUserAdmin` 으로, 응답에 유형·생년월일 추가
-- [ ] `POST /api/auth/google/complete` — 유형 선택 추가(기본 `member`)
-- [ ] `LoginScreen` — 가입 유형 선택(VitAlGuard 관리자 / 회원사 관리자) + 생년월일 필드 + 새 정책 문구
-- [ ] `UserManagementModal` — 유형·생년월일 열 추가
-- [ ] `DemoDashboard` — '사용자 관리' 탭 노출을 승인 권한자까지 확대
-- [ ] `MyProfileModal` / `POST /api/admin/profile` — 비밀번호 변경에 같은 정책 적용
-- [ ] 검증 — tsc · lint · test · `next build`
+- [x] `lib/account-policy.ts` 신규 — 아이디(4~20자·공백/제어문자 금지·예약어)·비밀번호(8~19자·생년월일/연락처 포함 금지) 단일 소스 + 단위 테스트
+- [x] `lib/db.ts` — `users` 에 `birth_date`·`org_type`(기본 `member`) 멱등 ALTER + `UserRow`·`createUser` 확장
+- [x] `lib/admin-auth.ts` — 승인 권한 게이트 `verifyUserAdmin`(owner 또는 VG관리자+`admin_access`)
+- [x] `POST /api/admin/register` — 가입 유형(`orgType`)·생년월일 수신·검증, 새 아이디/비번 정책 적용
+- [x] `GET /api/admin/check-username` — 새 아이디 정책으로 교체
+- [x] `GET/POST /api/admin/users` — 게이트를 `verifyUserAdmin` 으로, 응답에 유형·생년월일 추가
+- [x] `POST /api/auth/google/complete` — 유형 선택 추가(기본 `member`)
+- [x] `LoginScreen` — 가입 유형 선택(VitAlGuard 관리자 / 회원사 관리자) + 생년월일 필드 + 새 정책 문구
+- [x] `UserManagementModal` — 유형·생년월일 열 추가
+- [x] `DemoDashboard` — '사용자 관리' 탭 노출을 승인 권한자까지 확대
+- [x] `MyProfileModal` / `POST /api/admin/profile` — 비밀번호 변경에 같은 정책 적용
+- [x] 검증 — tsc 0 · lint 0err(기존 warn4) · test **407** · `next build` SUCCESS · 실 라우트 400 분기 10건 · 폼 UI 캡처
 - [ ] (별건, 승인 후) 기존 실가입자 4명(장우진·김태곤·양지후·김수영) `org_type='vitalguard'` 백필
 - [ ] (별건, 승인 후) 작업자 계정의 관제웹 로그인 차단(`/api/admin/login` 에서 `role='worker'` 403)
 
