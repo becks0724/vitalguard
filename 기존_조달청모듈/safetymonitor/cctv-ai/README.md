@@ -256,6 +256,43 @@ CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app \
 `person` 은 잡히지만 `head`·`helmet` 이 안 잡혀 착용 판정이 서지 않는다.
 바디캠 용도로 쓰려면 근거리 데이터 또는 `scale` 증강 상향이 필요하다.
 
+## GoPro 를 CCTV 대체로 — 엣지 추론 경로 (2026-07-30)
+
+`edge/gopro_ppe_edge.py` — GoPro HERO9 UDP 스트림을 젯슨에서 yolo26 으로 추론해 중계한다.
+`edge/phone_ppe_relay.py` 와 같은 구조인데 입력만 UDP 스트림이다.
+
+```
+GoPro HERO9 (USB-net UDP 8554) → 젯슨 yolo26 TensorRT → /cctv/ingest3?drawn=1 → CAM-03
+실측 = 스트림 30.1 fps · 추론 14.8ms · 재연결 0회
+```
+
+아이폰 경로의 두 병목(**iOS Safari 타이머 스로틀 4.8fps · 근거리 화각**)이 둘 다 사라진다.
+유선이라 6배 빠르고 높이 거치로 CCTV 부감 화각이 재현된다.
+
+### 접속 방식 — `/dev/video` 가 없다
+
+GoPro HERO9 는 USB 연결 시 `cdc_ether` 로 **usb-net 인터페이스**(`enx...`, 172.23.102.53/24)를 만들고
+영상은 **UDP** 로 보낸다. V4L2 장치가 아니다.
+
+```bash
+lsusb | grep 2672:0052                                        # GoPro HERO9
+curl "http://172.23.102.51/gp/gpWebcam/START?res=1080&fov=4"  # 0=Wide 4=Narrow 6=Linear
+curl "http://172.23.102.51/gp/gpWebcam/STATUS"                # status 2 = 스트리밍
+curl "http://172.23.102.51/gp/gpWebcam/STOP"                  # 종료(전력 절약)
+```
+
+`cv2.VideoCapture("udp://0.0.0.0:8554?overrun_nonfatal=1&fifo_size=5000000", cv2.CAP_FFMPEG)`
+· open 에 약 6.6초 · 배터리 0% 라 **USB 연결이 곧 전원**이다.
+
+### `/health` 의 `head_size` — 화각 조건 계측
+
+검출된 머리 박스의 정규화 높이를 누적해 학습 분포(중앙값 0.051 · 5~95% 0.033~0.086)와 대조한다.
+거리를 조정하며 이 숫자를 맞추면 배포 화각 조건이 잡힌다.
+
+⚠️ **단 스케일이 맞아도 도메인이 다르면 검출되지 않는다.** 사무실에서 13,038프레임을 돌렸으나
+`head` 0건이었다(같은 모델이 E63 실이미지에서는 정상 검출). 학습 데이터의 클래스별 도메인이
+갈려 있어서다 — 상세는 `docs/ppe-ml-run-20260729.md` 9-1절.
+
 ## 실모델 적용 현황
 
 - **CAM-01 = 실제 YOLOv8n + 차량 속도추정 적용 완료.** `_object_worker()`(백그라운드 스레드)가 `samples/cam01.mp4` 를
