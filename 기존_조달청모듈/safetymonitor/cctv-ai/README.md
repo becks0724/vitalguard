@@ -239,22 +239,55 @@ gcloud run services update cctv-ai --region asia-northeast3 \
 **켠 직후 429 가 보이면 진단하지 말고 바로 RESTART 를 걸 것.** 07-06·07-08 에 이어 세 번째다.
 `--max-instances 1` 은 절대 올리지 않는다(폰 override 상태가 인스턴스별로 갈린다).
 
-## 4차 모델 반영 (2026-07-30)
+## ★ 5차 모델 = 현행 운영 기준 (2026-07-30)
 
 젯슨 릴레이의 엔진만 바꾸면 라이브에 즉시 반영된다.
 
 ```bash
-PPE_ENGINE=/home/jetson/ppe_yolo26s_640_v4_nc.engine \
+PPE_ENGINE=/home/jetson/ppe_yolo26s_640_v5_nc.engine \
+PPE_CONF=0.30 \
 CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app \
-  nohup python3 phone_ppe_relay.py > relay.log 2>&1 &
+  nohup python3 gopro_ppe_edge.py > relay.log 2>&1 &      # 폰 경로면 phone_ppe_relay.py
 ```
 
-실측 = 추론 **14.5~14.9ms** · 아이폰 전송 **5.09 fps** · 푸시 오류 0 · 관제웹 헤더 `PPE (yolo26)`.
+| | 값 | 근거 |
+|---|---|---|
+| 엔진 | `ppe_yolo26s_640_v5_nc.engine` | 변환 490.5초 · 21.3MB · Peak GPU 100MiB(경고 0) |
+| **운영 `conf`** | **0.30** | 홀드아웃 게이트 통과구간 0.10~0.50 중 여유분 확보(P 1.000 · R 0.966 · 오탐 0). 도메인 밖(사무실)에서도 누적 2,827개 검출 |
+| 실측 | 추론 **14.5~15.0ms** · GoPro **30.0 fps** · 재연결 0 | 아이폰 경로는 4.8fps 천장(iOS Safari 스로틀) |
+| 헤더 | `PPE (yolo26 v5)` | 엔진 파일명에서 자동 추출(`ENGINE_TAG`) — 하드코딩 금지 |
 
-⚠️ **4차 모델은 CCTV 부감 화각 전용이다.** 학습 데이터의 머리 크기가 정규화 높이
-중앙값 0.051(최대 0.141)이라, 근거리 인물(0.19~0.31)의 머리는 검출되지 않는다.
-`person` 은 잡히지만 `head`·`helmet` 이 안 잡혀 착용 판정이 서지 않는다.
-바디캠 용도로 쓰려면 근거리 데이터 또는 `scale` 증강 상향이 필요하다.
+### ★★ 과금 0 으로 검증하는 법 — `CCTV_BASE` 를 비운다
+
+`gopro_ppe_edge.py` 는 `CCTV_BASE` 미설정 시 **로컬 확인 전용**으로 돈다(푸시 없음).
+검출 여부·박스 크기 분포는 `/health` 로 전부 읽히므로 **cctv-ai 를 켜지 않고 판정할 수 있다.**
+
+```bash
+PPE_ENGINE=/home/jetson/ppe_yolo26s_640_v5_nc.engine PPE_CONF=0.30 \
+  nohup python3 gopro_ppe_edge.py > v5.log 2>&1 &        # CCTV_BASE 없음
+curl -s localhost:8444/health | python3 -m json.tool
+```
+
+`head_size`(정규화 높이 중앙값·`in_train_range_pct`)로 **화각이 학습 분포에 드는지**까지 본다.
+도메인 교차 검증(v4 ↔ v5 A/B)을 이 방식으로 클라우드 과금 0 에 끝냈다.
+
+### 4차 → 5차에서 무엇이 바뀌었나
+
+4차는 **CCTV 부감 화각 전용**이었다. 오전에는 "근거리 미검출 = 스케일 한계"로 진단했으나
+**틀렸다** — GoPro 로 학습 스케일(0.037~0.10)을 맞춰도 `head` 가 0건이었다.
+진짜 원인은 **도메인 얽힘**(클래스마다 학습 출처가 갈려 클래스가 장면 유형에 묶인 것)이었다.
+
+5차가 그것을 고쳤다. **같은 GoPro·같은 장면·같은 `conf 0.15`** 로 엔진만 바꿔 대조한 결과.
+
+```
+v5  infers 1,458 · 누적 head 박스 4,000(버퍼 만재) · person 8
+v4  infers 1,245 · 누적 head 박스     0            · person 7
+```
+
+person 이 거의 같은데 **v4 만 머리를 못 잡았다** = 원인은 모델뿐이다.
+
+⚠️ 운영 종료 시 **푸셔 kill + GoPro 웹캠 STOP + cctv-ai OFF** 를 반드시 할 것
+(`--min-instances 1 --no-cpu-throttling` = 상시 과금).
 
 ## GoPro 를 CCTV 대체로 — 엣지 추론 경로 (2026-07-30)
 
@@ -327,7 +360,7 @@ curl "http://172.23.102.51/gp/gpWebcam/STOP"                  # 종료(전력 �
 pkill -f detector.py     # 자체 콘솔 중지(UDP 충돌 해소)
 cd ~/vg_edge_poc
 CCTV_BASE=https://cctv-ai-7r2vb5q5qa-du.a.run.app GOPRO_RES=7 PUSH_FPS=5 \
-  setsid nohup python3 dash_push.py > dash.log 2>&1 < /dev/null &
+  nohup python3 dash_push.py > dash.log 2>&1 < /dev/null &   # ⚠️ 젯슨에 setsid 없음(Exit 127)
 ```
 
 ### 서버 배포 (★ 사용자 직접 실행 — 분류기 차단)
