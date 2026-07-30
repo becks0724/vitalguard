@@ -28,6 +28,10 @@ const watchSettingsSource = readFileSync(
   resolve(dashboardRoot, "../../../../apps/VitAlGuard-iOS-WatchOS-App/Watch/Sources/ConnectionSettings.swift"),
   "utf8",
 );
+const watchVitalTransmitterSource = readFileSync(
+  resolve(dashboardRoot, "../../../../apps/VitAlGuard-iOS-WatchOS-App/Watch/Sources/VitalTransmitter.swift"),
+  "utf8",
+);
 
 test("HyperCLOVA key is accepted only from server environment variables", () => {
   assert.doesNotMatch(routeSource, /x-hyperclova-api-key/i);
@@ -103,7 +107,7 @@ test("vital stream requires an authorized dashboard reader and binds every write
   // 거부 사유 로깅을 위해 한 줄을 두 줄로 나눴으므로(rawToken 경유) 두 형태를 모두 허용한다.
   assert.match(
     vitalRouteSource,
-    /verifyAppJwt\((?:bearerToken\(request\)|rawToken)\)/,
+    /verifyAppJwt\((?:bearerToken\(request\)|rawToken|token)\)/,
     "수집 인증이 앱 JWT 검증을 거치지 않는다",
   );
   assert.match(vitalRouteSource, /bearerToken\(request\)/, "Authorization 헤더에서 토큰을 뽑아야 한다");
@@ -111,8 +115,11 @@ test("vital stream requires an authorized dashboard reader and binds every write
   assert.doesNotMatch(vitalRouteSource, /ingestAuthStatus\(request\)/);
 });
 
-test("Watch sends its JWT only to the bundled production ingest endpoint", () => {
-  assert.match(watchSettingsSource, /components\.scheme == "https"/);
-  assert.match(watchSettingsSource, /components\.host\?\.lowercased\(\) == bundledURL\.host\?\.lowercased\(\)/);
-  assert.match(watchSettingsSource, /components\.path == "\/api\/mock\/vital"/);
+test("Watch deletes legacy JWT state and relays vitals through the paired iPhone", () => {
+  assert.match(watchSettingsSource, /d\.removeObject\(forKey: "appAuthJWT"\)/);
+  assert.match(watchSettingsSource, /purgeLegacyWatchAppJWT\(\)/);
+  assert.match(watchVitalTransmitterSource, /relayBatchToPhone/);
+  assert.match(watchVitalTransmitterSource, /"watchVitalBatch": batch/);
+  assert.match(watchVitalTransmitterSource, /session\.sendMessage\(payload/);
+  assert.doesNotMatch(watchVitalTransmitterSource, /URLSession/);
 });
