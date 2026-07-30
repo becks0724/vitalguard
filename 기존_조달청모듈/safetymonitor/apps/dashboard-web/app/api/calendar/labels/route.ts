@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
-import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
+import { bearerToken, diagnoseAppAuth, mobileUnauthorizedAction, verifyAppJwt } from "../../../../lib/app-jwt";
 import { listCalendarLabels, replaceCalendarLabels } from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
