@@ -1,6 +1,6 @@
 # 실행 가이드 — PPE 학습·성능 테스트
 
-**최종 갱신 2026-07-30 · 4차 게이트 통과 · 다음 = 사진 30장(스케일 검증)**
+**최종 갱신 2026-07-30 · 4차 게이트 통과 · 도메인 얽힘 발견 · 다음 = 5차**
 
 이 문서만 보고 진행할 수 있게 썼다. 배경·근거는 [README.md](README.md)·[context-notes.md](context-notes.md),
 전체 경과는 [docs/ppe-ml-run-20260729.md](../../docs/ppe-ml-run-20260729.md), 진행 체크는 [checklist.md](checklist.md).
@@ -12,11 +12,17 @@
 **4차는 판정 게이트를 통과했다**(`R 0.941 @ P 0.999` · `head P 0.800`).
 젯슨 엔진 변환·라이브 반영도 끝났다. 남은 것은 하나다.
 
-1. **★ 사진 30장 촬영 (거리 3m·6m·10m)** — 4차 모델이 **CCTV 부감 화각 전용**임이 드러났다.
-   근거리 머리(0.19~0.31)는 학습 범위(중앙값 0.051·최대 0.141) 밖이라 검출되지 않는다.
-   **거리별 검출 단절점이 배포 조건**이 된다
-2. 현행 `vyra_ppe.pt` 대비 정식 비교
-3. (선택) 5차 — `HHW 0.45` + `scale 0.7~0.9`
+1. **★ 5차 학습 — 도메인 얽힘 해소**
+   GoPro 로 학습 스케일을 맞춰도 `head` 0건이었다. 원인은 스케일이 아니라
+   **클래스마다 학습 도메인이 갈린 것**이다(E63 장면 `person` 0 · 사무실 `head` 0).
+   ```python
+   SH17_HEAD_FILTER  = True   # helmet 과 겹치지 않는 head 만 (약 20% 잔존)
+   E63_PERSON_PSEUDO = True   # E63 에 person 자동 라벨
+   HHW_FRACTION      = 0.45   # helmet recall 복원
+   scale             = 0.7
+   ```
+2. 현행 `vyra_ppe.pt` 대비 비교 — **5차 이후에**
+3. 사진 30장 (도메인이 다른 시험지)
 
 ---
 
@@ -298,6 +304,40 @@ gcloud run services update cctv-ai --region asia-northeast3 \
 라이브에 즉시 반영된다.
 
 전송은 **약 4.8 fps 가 천장**이다(iOS Safari 타이머 스로틀). PPE 판정에 필요한 3~5회/초에는 충분하다.
+
+---
+
+## GoPro 를 CCTV 대체로 쓰기 (2026-07-30 검증)
+
+아이폰의 두 병목(iOS Safari 타이머 스로틀 4.8fps · 근거리 화각)이 GoPro 로 둘 다 해소된다.
+
+```bash
+# ① GoPro HERO9 를 젯슨에 USB-C 로 연결 (배터리 0% 라 USB 가 곧 전원)
+#    lsusb 에 2672:0052 · cdc_ether 로 enx... 인터페이스(172.23.102.53/24) 생성 확인
+# ② cctv-ai 켜기 (사용자 직접)
+# ③ 젯슨 엣지 스크립트
+ssh jetson@yahboom-1
+cd ~/vg_edge_poc
+CCTV_BASE=https://cctv-ai-569797426568.asia-northeast3.run.app \
+  GOPRO_FOV=4 INFER_FPS=12 PUSH_FPS=6 \
+  nohup python3 gopro_ppe_edge.py > gopro_edge.log 2>&1 &
+# ④ 확인
+curl -s localhost:8444/health | python3 -m json.tool     # head_size 로 화각 조건 확인
+curl -s localhost:8444/snapshot -o /tmp/s.jpg
+# ⑤ 종료 — 웹캠 모드도 꺼서 전력 절약
+pkill -f gopro_ppe_edge.py
+curl -s "http://172.23.102.51/gp/gpWebcam/STOP"
+```
+
+실측 = **스트림 30.1 fps · 추론 14.8ms · 재연결 0회**.
+스트림은 `/dev/video` 가 아니라 **UDP**(`udp://0.0.0.0:8554`) — cv2 + `CAP_FFMPEG`, open 약 6.6초.
+화각은 `GOPRO_FOV` 로 지정(0=Wide 4=Narrow 6=Linear). 광각일수록 사람이 작게 찍힌다.
+
+`/health` 의 **`head_size`** 가 이 테스트의 핵심 계측이다 — 검출된 머리 박스의 정규화 높이가
+학습 범위(0.033~0.086)에 드는지 실시간으로 보여준다. 거리를 조정하며 이 숫자를 맞춘다.
+
+⚠️ 단 **스케일이 맞아도 도메인이 다르면 검출되지 않는다**(2026-07-30 확인).
+사무실에서 13,038프레임을 돌렸으나 `head` 0건이었다. 5차 전에는 E63 유사 환경에서만 의미가 있다.
 
 ---
 
