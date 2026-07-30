@@ -190,11 +190,38 @@ test("matchSite — 인근 시·도 발령은 nearby 로만 잡힌다(알림 대
   );
 });
 
-// ── ⚠️ 알려진 결함 가드 ──────────────────────────────────────────────────────
-// latLonToSido 는 17개 시·도 중심점 최근접이라 광역시가 인접한 도(道) 지역을 잡아먹는다.
-// 이 테스트는 "고쳐졌는지"를 알리는 신호다 — 통과하면 결함이 남아 있다는 뜻이고,
-// 실패하면 판정이 개선됐다는 뜻이므로 위 matchSite 기대값을 함께 갱신한다.
-test("⚠️ 알려진 결함 — 경기·경남 현장이 인접 광역시로 오판된다(context-notes D-14)", () => {
-  assert.equal(latLonToSido(37.3219, 126.8309).name, "인천", "안산 → 경기 로 고쳐졌다면 이 테스트를 갱신");
-  assert.equal(latLonToSido(35.2281, 128.6811).name, "부산", "창원 → 경남 으로 고쳐졌다면 이 테스트를 갱신");
+// ── 광역시 인접 도(道) 현장 — D-14 해소 후 정상 동작 ─────────────────────────
+// 다중 시드 판정 이전에는 안산→인천·창원→부산으로 오판돼 아래 발령이 전부 nearby 로 새고
+// 알림이 발사되지 않았다. 시드 판정이 되돌아가면 이 테스트들이 먼저 깨진다.
+test("matchSite — 안산 현장은 경기 안산 긴급재난을 site 로 잡는다(D-14 회귀 고정)", () => {
+  const ansan: [number, number] = [37.3219, 126.8309];
+  assert.equal(latLonToSido(...ansan).name, "경기");
+  const urgent = WATCHED.filter((m) => m.step === "긴급재난");
+  const hits = matchSite(urgent, ...ansan);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0]?.scope, "site", "site 가 아니면 알림 게이트를 못 넘어 미발송된다");
+  assert.deepEqual(hits[0]?.matchedRegions, ["경기도 안산시 단원구 풍도동"]);
+});
+
+test("matchSite — 창원 현장은 '경상남도 전체' 발령을 site 로 잡는다(D-14 회귀 고정)", () => {
+  const changwon: [number, number] = [35.2281, 128.6811];
+  assert.equal(latLonToSido(...changwon).name, "경남");
+  const site = matchSite(WATCHED, ...changwon).filter((h) => h.scope === "site");
+  assert.ok(site.some((h) => h.matchedRegions.includes("경상남도 전체")));
+  assert.ok(
+    site.every((h) => h.matchedRegions.some((r) => r.includes("경상남") || r.includes("경남"))),
+    "site 에 경남 아닌 발령이 섞이면 안 된다",
+  );
+});
+
+test("msgRegionMatchesSido — 임진강 수계 발령이 경기 현장에 매칭된다(괄호 폴백 통합)", () => {
+  // ⚠️ 이 문자는 DST_SE_NM='기타' 라 화이트리스트에서 걸러진다(context-notes D-15).
+  //    여기서는 지역 매칭 로직만 검증한다 — 유형 필터 이전 단계.
+  const imjin = ALL.find((m) => m.message.includes("임진강 수위 상승")) as DisasterMsg;
+  const gyeonggi = latLonToSido(37.6584, 126.832); // 고양
+  assert.equal(gyeonggi.name, "경기");
+  const hits = matchSite([imjin], 37.6584, 126.832);
+  assert.equal(hits[0]?.scope, "site");
+  // 첫 토큰은 head 가 하천명이라 괄호 폴백으로, 둘째 토큰은 head 매칭으로 잡힌다.
+  assert.equal(hits[0]?.matchedRegions.length, 2);
 });
