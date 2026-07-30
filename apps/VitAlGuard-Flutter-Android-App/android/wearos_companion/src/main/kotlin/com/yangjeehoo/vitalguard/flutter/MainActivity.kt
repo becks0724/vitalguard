@@ -24,9 +24,10 @@ class MainActivity : Activity() {
         layout.addView(TextView(this).apply { text = "VitAlGuard Watch"; textSize = 18f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
         layout.addView(TextView(this).apply { text = currentIdentity(); textSize = 11f; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER })
         status = TextView(this).apply {
-            text = currentStatus(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 12f; setPadding(16, 18, 16, 18)
+            gravity = Gravity.CENTER; textSize = 12f; setPadding(16, 18, 16, 18)
             background = rounded(Color.rgb(18, 18, 18), Color.DKGRAY, 28)
         }
+        renderStatus(currentStatus(), hasSyncedSession())
         layout.addView(status, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 14 })
         layout.addView(Button(this).apply {
             text = "휴대폰 세션 요청"; setTextColor(Color.WHITE); setOnClickListener { requestPhoneSync() }
@@ -42,7 +43,12 @@ class MainActivity : Activity() {
         setStroke(1, stroke)
     }
 
-    override fun onResume() { super.onResume(); status.text = currentStatus() }
+    override fun onResume() { super.onResume(); renderStatus(currentStatus(), hasSyncedSession()) }
+
+    private fun renderStatus(message: String, success: Boolean?, failure: Boolean = false) {
+        status.text = message
+        status.setTextColor(when { success == true -> Color.rgb(0, 168, 102); failure -> Color.rgb(255, 49, 49); else -> Color.LTGRAY })
+    }
 
     private fun currentStatus(): String {
         val prefs = getSharedPreferences("vitalguard_watch", MODE_PRIVATE)
@@ -57,7 +63,11 @@ class MainActivity : Activity() {
     private fun requestPhoneSync() {
         Wearable.getNodeClient(this).connectedNodes.addOnSuccessListener { nodes ->
             nodes.forEach { node -> Wearable.getMessageClient(this).sendMessage(node.id, "/vitalguard/request-session", ByteArray(0)) }
-            status.text = if (nodes.isEmpty()) "연결된 Android 휴대폰이 없습니다." else "휴대폰에 세션을 요청했습니다."
+            if (nodes.isEmpty()) renderStatus("휴대폰 릴레이 연결 실패", success = false, failure = true)
+            else renderStatus("휴대폰에 세션을 요청했습니다.", success = null)
+        }.addOnFailureListener {
+            renderStatus("휴대폰 릴레이 연결 실패", success = false, failure = true)
         }
     }
 }
+    private fun hasSyncedSession(): Boolean = getSharedPreferences("vitalguard_watch", MODE_PRIVATE).getBoolean("session_synced", false)

@@ -20,6 +20,7 @@ class VitalWatchListenerService : WearableListenerService() {
                 getSharedPreferences("vitalguard_watch", MODE_PRIVATE).edit()
                     .putString("session_identity", "$name · $role")
                     .putString("session_status", "$employee 세션 동기화됨\n실측 심박·움직임 권한을 승인한 후 전송합니다.")
+                    .putBoolean("session_synced", true)
                     .apply()
             }
         }

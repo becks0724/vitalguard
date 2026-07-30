@@ -696,8 +696,9 @@ class _WatchPage extends StatelessWidget {
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            status.reachable ? 'Watch 연결됨' : 'Watch 연결 대기',
-                            style: const TextStyle(
+                            status.reachable ? 'Watch 연결됨' : 'Watch 연결 실패',
+                            style: TextStyle(
+                              color: status.reachable ? _green : _red,
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
                             ),

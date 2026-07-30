@@ -16,7 +16,7 @@ class CompanionStatus {
       detail = '이 기기에서 시계 연결 상태를 확인합니다.';
   final bool supported, reachable;
   final String platform, detail;
-  String get title => reachable ? '$platform 연결됨' : '$platform 연결 대기';
+  String get title => reachable ? '$platform 연결됨' : '$platform 연결 실패';
 }
 
 class BridgeResult {

@@ -845,12 +845,15 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     static func shouldTransmitLiveHeartRate(boosted: Bool, lastSentAt: Date?, now: Date) -> Bool {
-        if boosted { return true }
         let interval: TimeInterval
-        switch currentSensorPowerMode() {
-        case .extreme: interval = 5
-        case .balanced: interval = max(60, currentSyncIntervalSeconds())
-        case .lowPower: interval = 300
+        if boosted {
+            interval = 1
+        } else {
+            switch currentSensorPowerMode() {
+            case .extreme: interval = 5
+            case .balanced: interval = max(60, currentSyncIntervalSeconds())
+            case .lowPower: interval = 300
+            }
         }
         guard let lastSentAt else { return true }
         return now.timeIntervalSince(lastSentAt) >= interval

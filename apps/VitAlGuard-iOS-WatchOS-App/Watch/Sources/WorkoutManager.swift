@@ -83,6 +83,8 @@ final class WorkoutManager: NSObject, ObservableObject {
     private var evidenceCaptureUntil: Date?
     private var lastHeartRateTransmitAt: Date?
     private var lastHeartRateAt: Date?
+    private var lastSpO2MeasuredAt: Date?
+    private var isSpo2EvidenceConditionActive = false
     private var isSensorSnapshotReadInFlight = false
     private var nfcScanResultToken: NSObjectProtocol?
     private var fallAlertClearToken: NSObjectProtocol?
@@ -96,6 +98,8 @@ final class WorkoutManager: NSObject, ObservableObject {
     private let hrPostWindowSec: TimeInterval = 30
     private let hrHistoryKeepSec: TimeInterval = 90
     private let fallPromptTimeoutSec: TimeInterval = 20
+    private let spo2EvidenceThreshold = 92.0
+    private let spo2EvidenceFreshnessSec: TimeInterval = 2 * 60
     private var manualSyncRequestToken: NSObjectProtocol?
     private static let wristTemperatureValidRange: ClosedRange<Double> = 20.0...45.0
     private static let wristTemperatureCacheRetention: TimeInterval = 24 * 60 * 60
@@ -169,10 +173,11 @@ final class WorkoutManager: NSObject, ObservableObject {
             self.lastStatus = status
             self.bufferedCount = buffered
         }
-        spo2Reader.onUpdate = { [weak self] pct in
+        spo2Reader.onUpdate = { [weak self] pct, measuredAt in
             guard let self else { return }
             self.latestSpO2 = pct
-            self.handleSafetySignalIfNeeded(spo2: pct)
+            self.lastSpO2MeasuredAt = measuredAt
+            self.handleSafetySignalIfNeeded(spo2: pct, spo2MeasuredAt: measuredAt)
             if self.isEvidenceCaptureActive() || ConnectionSettings.currentSensorPowerMode() == .extreme {
                 self.publishMeasuredSnapshot()
             }
@@ -560,7 +565,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             inputs.barometricPressureKPa = latestBarometricPressureKPa
             inputs.accelerationMagnitudeG = latestAccelerationMagnitudeG
             inputs.rotationRateRadS = latestRotationRateRadS
-            handleSafetySignalIfNeeded(spo2: latestSpO2, ecg: latestECGStatus)
+            handleSafetySignalIfNeeded(ecg: latestECGStatus)
             lastSensorSyncAt = Date()
             // 시간 기반 타이머가 실행 중이더라도, 직전 90초 안에 워치가 측정한 유효 심박이
             // 없으면 과거 HealthKit 합계·기본값만 반복 전송하지 않는다.
@@ -568,7 +573,7 @@ final class WorkoutManager: NSObject, ObservableObject {
                 lastStatus = "실측 심박 대기 — 전송 보류"
                 return
             }
-            transmitter.sendStress(inputs, heartRate: latestHeartRate, spo2: latestSpO2, forceFlush: forceFlush || boosted)
+            transmitter.sendStress(inputs, heartRate: latestHeartRate, spo2: latestSpO2, heartRateMeasuredAt: lastHeartRateAt, spo2MeasuredAt: lastSpO2MeasuredAt, forceFlush: forceFlush || boosted)
             publishMeasuredSnapshot()
         }
     }
@@ -765,6 +770,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             lastError = nil
             lastStatus = "수집 시작"
             lastStressAt = nil
+            isSpo2EvidenceConditionActive = false
             requestWatchLocationPermissionIfNeeded()
             spo2Reader.start()
             configureFallMonitoringForCurrentMode()
@@ -856,6 +862,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         fallPromptTask?.cancel()
         fallPromptTask = nil
         activeFallPrompt = nil
+        isSpo2EvidenceConditionActive = false
         transmitter.flushPending()   // 윈도에 남은 미전송 샘플 마저 전송.
         stopBackgroundSyncTimer()
         spo2Reader.stop()
@@ -896,6 +903,7 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
         Task { @MainActor in
             self.lastError = "세션 오류: \(error.localizedDescription)"
             self.isRunning = false
+            self.isSpo2EvidenceConditionActive = false
             self.spo2Reader.stop()
             self.stopFallMonitoring()
             self.stopAltitudeUpdates()
@@ -920,13 +928,14 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
         guard let stats = workoutBuilder.statistics(for: hrType),
               let quantity = stats.mostRecentQuantity() else { return }
         let bpm = quantity.doubleValue(for: unit)
+        let measuredAt = stats.mostRecentQuantityDateInterval()?.end ?? Date()
         Task { @MainActor in
             let now = Date()
-            self.recordHeartRate(bpm, at: now)
+            self.recordHeartRate(bpm, at: measuredAt)
             self.latestHeartRate = bpm
             self.handleSafetySignalIfNeeded(heartRate: bpm)
             if self.shouldTransmitHeartRate(now: now) {
-                self.transmitter.send(heartRate: bpm, spo2: self.latestSpO2)
+                self.transmitter.send(heartRate: bpm, spo2: self.latestSpO2, heartRateMeasuredAt: measuredAt, spo2MeasuredAt: self.lastSpO2MeasuredAt)
             }
             if self.isEvidenceCaptureActive(now: now) || ConnectionSettings.currentSensorPowerMode() == .extreme {
                 self.publishMeasuredSnapshot()
@@ -1028,16 +1037,28 @@ private extension WorkoutManager {
         return true
     }
 
-    func handleSafetySignalIfNeeded(heartRate: Double? = nil, spo2: Double? = nil, ecg: String? = nil) {
+    func handleSafetySignalIfNeeded(heartRate: Double? = nil, spo2: Double? = nil, spo2MeasuredAt: Date? = nil, ecg: String? = nil) {
         if let heartRate, heartRate >= 130 || heartRate <= 45 {
             activateEvidenceCaptureWindow(reason: "심박 이상")
         }
-        if let spo2, spo2 > 0, spo2 < 92 {
-            activateEvidenceCaptureWindow(reason: "산소포화도 이상")
+        if let spo2, let spo2MeasuredAt {
+            handleFreshSpO2SafetySignal(spo2, measuredAt: spo2MeasuredAt)
         }
         if let ecg, !ecg.isEmpty, ecg != "--", ecg != "동리듬" {
             activateEvidenceCaptureWindow(reason: "ECG 이상")
         }
+    }
+
+    private func handleFreshSpO2SafetySignal(_ spo2: Double, measuredAt: Date) {
+        let now = Date()
+        guard measuredAt <= now, now.timeIntervalSince(measuredAt) <= spo2EvidenceFreshnessSec, spo2.isFinite, (50...100).contains(spo2) else { return }
+        guard spo2 < spo2EvidenceThreshold else {
+            isSpo2EvidenceConditionActive = false
+            return
+        }
+        guard !isSpo2EvidenceConditionActive else { return }
+        isSpo2EvidenceConditionActive = true
+        activateEvidenceCaptureWindow(reason: "산소포화도 이상")
     }
 
     func startBackgroundSyncTimer() {

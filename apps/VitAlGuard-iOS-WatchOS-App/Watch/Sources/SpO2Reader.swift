@@ -5,8 +5,9 @@ import Foundation
 import HealthKit
 
 final class SpO2Reader {
-    // 최신 SpO₂ 퍼센트(0~100) — 항상 메인 큐에서 호출.
-    var onUpdate: ((Double) -> Void)?
+    // 최신 SpO₂ 퍼센트와 실제 HealthKit 측정 시각 — 항상 메인 큐에서 호출.
+    // 캐시가 재사용되어도 이 콜백은 새 HealthKit 샘플에만 발생한다.
+    var onUpdate: ((Double, Date) -> Void)?
 
     private let store: HKHealthStore
     private let type = HKQuantityType(.oxygenSaturation)
@@ -23,7 +24,7 @@ final class SpO2Reader {
                     .filter(StressInputsReader.isAppleWatchSample)
                     .max(by: { $0.endDate < $1.endDate }) else { return }
             let pct = latest.quantity.doubleValue(for: .percent()) * 100.0
-            OperationQueue.main.addOperation { self.onUpdate?(pct) }
+            OperationQueue.main.addOperation { self.onUpdate?(pct, latest.endDate) }
         }
         let q = HKAnchoredObjectQuery(
             type: type,

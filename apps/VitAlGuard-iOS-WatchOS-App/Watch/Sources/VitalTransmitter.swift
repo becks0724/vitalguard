@@ -127,7 +127,7 @@ final class VitalTransmitter {
     }
 
     // 정상 폴 — HR(연속) + 최신 SpO₂(있으면 동봉). 배칭 윈도에 누적.
-    func send(heartRate: Double, spo2: Double?) {
+    func send(heartRate: Double, spo2: Double?, heartRateMeasuredAt: Date? = nil, spo2MeasuredAt: Date? = nil) {
         guard canTransmitMeasuredWatchData else {
             onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
             return
@@ -140,6 +140,8 @@ final class VitalTransmitter {
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartRate"] = Int(heartRate.rounded())
         if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
+        if let heartRateMeasuredAt { payload["heartRateMeasuredAt"] = iso.string(from: heartRateMeasuredAt) }
+        if let spo2MeasuredAt { payload["spo2MeasuredAt"] = iso.string(from: spo2MeasuredAt) }
         enqueuePending(payload)
     }
 
@@ -337,7 +339,7 @@ final class VitalTransmitter {
     }
 
     // 스트레스 입력 60초 sub-cadence — raw 7종 + 최신 HR/SpO₂. 배칭 윈도에 누적(다음 flush 에 동반).
-    func sendStress(_ s: StressInputs, heartRate: Double?, spo2: Double?, forceFlush: Bool = false) {
+    func sendStress(_ s: StressInputs, heartRate: Double?, spo2: Double?, heartRateMeasuredAt: Date? = nil, spo2MeasuredAt: Date? = nil, forceFlush: Bool = false) {
         // 백그라운드 타이머가 HealthKit의 과거 일일 합계만 반복 전송하지 않도록, 현재
         // 워치에서 얻은 유효 심박이 있을 때만 이 경로를 연다. 실제 낙상/SOS는 별도 경로다.
         guard canTransmitMeasuredWatchData else {
@@ -352,6 +354,8 @@ final class VitalTransmitter {
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartRate"] = Int(heartRate.rounded())
         if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
+        if let heartRateMeasuredAt { payload["heartRateMeasuredAt"] = iso.string(from: heartRateMeasuredAt) }
+        if let spo2MeasuredAt { payload["spo2MeasuredAt"] = iso.string(from: spo2MeasuredAt) }
         if let v = s.hrvSdnnMs { payload["hrvSdnnMs"] = (v * 100).rounded() / 100 }
         if let v = s.restingHeartRate { payload["restingHeartRate"] = Int(v.rounded()) }
         if let v = s.walkingHeartRate { payload["walkingHeartRate"] = Int(v.rounded()) }
