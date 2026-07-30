@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '2026-07-30-mobile-session.dart';
 import 'platform/companion_bridge.dart';
 import 'vital_domain.dart';
 
@@ -16,8 +17,46 @@ const _red = Color(0xFFFF3131);
 
 void main() => runApp(const VitAlGuardApp());
 
-class VitAlGuardApp extends StatelessWidget {
+class VitAlGuardApp extends StatefulWidget {
   const VitAlGuardApp({super.key});
+
+  @override
+  State<VitAlGuardApp> createState() => _VitAlGuardAppState();
+}
+
+class _VitAlGuardAppState extends State<VitAlGuardApp> {
+  final _sessions = MobileSessionStore();
+  final _companion = CompanionBridge();
+  MobileSession? _session;
+  var _restoring = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_restore());
+  }
+
+  Future<void> _restore() async {
+    final restored = await _sessions.restore();
+    if (restored == null) {
+      await _companion.sync(WatchContext.signedOut());
+    }
+    if (!mounted) return;
+    setState(() {
+      _session = restored;
+      _restoring = false;
+    });
+  }
+
+  Future<void> _signedIn(MobileSession session) async {
+    setState(() => _session = session);
+  }
+
+  Future<void> _signOut() async {
+    final session = _session;
+    setState(() => _session = null);
+    await _sessions.signOut(session);
+  }
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -38,24 +77,114 @@ class VitAlGuardApp extends StatelessWidget {
         child: child ?? const SizedBox.shrink(),
       );
     },
-    home: const VitAlGuardHome(),
+    home: _restoring
+        ? const Scaffold(body: Center(child: CircularProgressIndicator()))
+        : _session == null
+        ? _LoginPage(store: _sessions, onSignedIn: _signedIn)
+        : VitAlGuardHome(session: _session!, onSignOut: _signOut),
   );
 }
 
 class VitAlGuardHome extends StatefulWidget {
-  const VitAlGuardHome({super.key});
+  const VitAlGuardHome({super.key, required this.session, required this.onSignOut});
+  final MobileSession session;
+  final Future<void> Function() onSignOut;
   @override
   State<VitAlGuardHome> createState() => _VitAlGuardHomeState();
+}
+
+class _LoginPage extends StatefulWidget {
+  const _LoginPage({required this.store, required this.onSignedIn});
+  final MobileSessionStore store;
+  final Future<void> Function(MobileSession session) onSignedIn;
+
+  @override
+  State<_LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<_LoginPage> {
+  final _id = TextEditingController();
+  final _password = TextEditingController();
+  var _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _id.dispose();
+    _password.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_id.text.trim().isEmpty || _password.text.isEmpty) {
+      setState(() => _error = '아이디와 비밀번호를 입력해 주세요.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final session = await widget.store.signIn(id: _id.text, password: _password.text);
+      _password.clear();
+      await widget.onSignedIn(session);
+    } on MobileAuthException catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.statusCode == 429 && error.retryAfter != null
+          ? '로그인 시도가 제한되었습니다. ${error.retryAfter}초 후 다시 시도해 주세요.'
+          : error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = '보안 API에 연결하지 못했습니다. 네트워크를 확인해 주세요.');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: _GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const _LogoMark(size: 70),
+                const SizedBox(height: 18),
+                const Text('VitAlGuard 로그인', textAlign: TextAlign.center, style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 8),
+                const Text('관제 웹 계정으로 앱에 직접 로그인합니다.\n비밀번호는 저장하지 않습니다.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+                const SizedBox(height: 24),
+                TextField(controller: _id, autocorrect: false, enableSuggestions: false, decoration: const InputDecoration(labelText: '아이디')),
+                const SizedBox(height: 12),
+                TextField(controller: _password, obscureText: true, enableSuggestions: false, autocorrect: false, onSubmitted: (_) => _submit(), decoration: const InputDecoration(labelText: '비밀번호')),
+                if (_error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(_error!, style: const TextStyle(color: _red)),
+                ],
+                const SizedBox(height: 20),
+                FilledButton(
+                  onPressed: _submitting ? null : _submit,
+                  child: _submitting ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('로그인'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _VitAlGuardHomeState extends State<VitAlGuardHome> {
   final _bridge = CompanionBridge();
   final _detector = FallDetector();
-  final _vitals = VitalSnapshot.demo();
+  final _vitals = const VitalSnapshot(heartRate: 0, spo2: 0, steps: 0, batteryPct: 0);
   CompanionStatus _companion = const CompanionStatus.unsupported();
   var _tab = 0;
   var _alert = false;
-  var _syncText = '관제웹 연결됨 · 대시보드 응답 정상';
+  var _syncText = '보안 API 세션 연결됨 · 실측 데이터 동기화 대기';
 
   @override
   void initState() {
@@ -71,9 +200,11 @@ class _VitAlGuardHomeState extends State<VitAlGuardHome> {
   Future<void> _sync() async {
     final outcome = await _bridge.sync(
       WatchContext.worker(
-        loginId: 'admin',
-        employeeId: 'EMP-admin',
+        loginId: widget.session.loginId,
+        employeeId: widget.session.employeeId,
         intervalSeconds: 300,
+        displayName: widget.session.name,
+        role: widget.session.role,
       ),
     );
     if (!mounted) return;
@@ -111,10 +242,15 @@ class _VitAlGuardHomeState extends State<VitAlGuardHome> {
     }
   }
 
+  Future<void> _logout() async {
+    await _bridge.sync(WatchContext.signedOut());
+    await widget.onSignOut();
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _HomePage(vitals: _vitals, syncText: _syncText, onRefresh: _refresh),
+      _HomePage(session: widget.session, vitals: _vitals, syncText: _syncText, onRefresh: _refresh),
       _WatchPage(
         vitals: _vitals,
         status: _companion,
@@ -123,7 +259,7 @@ class _VitAlGuardHomeState extends State<VitAlGuardHome> {
       ),
       const _CctvPage(),
       _HealthPage(vitals: _vitals),
-      const _SettingsPage(),
+      _SettingsPage(session: widget.session, onSignOut: _logout),
     ];
     return Scaffold(
       extendBody: true,
@@ -146,10 +282,12 @@ class _VitAlGuardHomeState extends State<VitAlGuardHome> {
 
 class _HomePage extends StatelessWidget {
   const _HomePage({
+    required this.session,
     required this.vitals,
     required this.syncText,
     required this.onRefresh,
   });
+  final MobileSession session;
   final VitalSnapshot vitals;
   final String syncText;
   final Future<void> Function() onRefresh;
@@ -158,9 +296,9 @@ class _HomePage extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.fromLTRB(14, 16, 14, 118),
     children: [
-      const _IdentityCard(),
+      _IdentityCard(session: session),
       const SizedBox(height: 12),
-      _ConnectionCard(syncText: syncText, onRefresh: onRefresh),
+      _ConnectionCard(session: session, syncText: syncText, onRefresh: onRefresh),
       const SizedBox(height: 12),
       const _SignalCard(),
       const SizedBox(height: 12),
@@ -172,12 +310,13 @@ class _HomePage extends StatelessWidget {
 }
 
 class _IdentityCard extends StatelessWidget {
-  const _IdentityCard();
+  const _IdentityCard({required this.session});
+  final MobileSession session;
   @override
   Widget build(BuildContext context) => _GlassCard(
     child: Column(
       children: [
-        const Row(
+        Row(
           children: [
             _LogoMark(size: 62),
             SizedBox(width: 12),
@@ -189,7 +328,7 @@ class _IdentityCard extends StatelessWidget {
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'VitAlGuard 관리자',
+                      'VitAlGuard ${session.canManage ? '관리자' : '작업자'}',
                       style: TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
@@ -252,7 +391,8 @@ class _IdentityCard extends StatelessWidget {
 }
 
 class _ConnectionCard extends StatelessWidget {
-  const _ConnectionCard({required this.syncText, required this.onRefresh});
+  const _ConnectionCard({required this.session, required this.syncText, required this.onRefresh});
+  final MobileSession session;
   final String syncText;
   final Future<void> Function() onRefresh;
   @override
@@ -263,7 +403,7 @@ class _ConnectionCard extends StatelessWidget {
         Row(
           children: [
             const Expanded(
-              child: _TrafficPill(label: '관제웹 연결됨', color: _green),
+              child: _TrafficPill(label: '보안 API 연결됨', color: _green),
             ),
             const _RoundAction(icon: Icons.watch_outlined),
             const SizedBox(width: 8),
@@ -274,13 +414,13 @@ class _ConnectionCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 10),
-        const Text(
-          'admin',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+        Text(
+          session.name.isEmpty ? session.loginId : session.name,
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
         ),
-        const Text(
-          '관리자 모드',
-          style: TextStyle(
+        Text(
+          session.canManage ? '관리자 모드' : '작업자 모드',
+          style: const TextStyle(
             color: Color(0xFF147BFF),
             fontSize: 16,
             fontWeight: FontWeight.w700,
@@ -750,7 +890,10 @@ class _HealthPage extends StatelessWidget {
 }
 
 class _SettingsPage extends StatelessWidget {
-  const _SettingsPage();
+  const _SettingsPage({required this.session, required this.onSignOut});
+  final MobileSession session;
+  final Future<void> Function() onSignOut;
+
   @override
   Widget build(BuildContext context) => _SubPage(
     title: '설정',
@@ -759,12 +902,16 @@ class _SettingsPage extends StatelessWidget {
         _SettingsRow(
           icon: Icons.person_outline,
           title: '계정 및 작업자',
-          detail: 'admin · 관리자 모드',
+          detail: '${session.loginId} · ${session.canManage ? '관리자' : '작업자'} 모드',
           onTap: () => _openDetail(
             context,
             title: '계정 및 작업자',
             summary: '현장 계정과 작업자 권한을 확인합니다.',
-            items: const ['로그인 계정: admin', '역할: 관리자', '작업자 식별자: EMP-admin'],
+            items: [
+              '로그인 계정: ${session.loginId}',
+              '역할: ${session.role}',
+              '작업자 식별자: ${session.employeeId}',
+            ],
           ),
         ),
         _SettingsRow(
@@ -800,17 +947,26 @@ class _SettingsPage extends StatelessWidget {
         _SettingsRow(
           icon: Icons.cloud_outlined,
           title: '관제 대시보드',
-          detail: '연결 상태 및 API 주소 설정',
+          detail: '읽기 전용 보안 API 주소',
           onTap: () => _openDetail(
             context,
             title: '관제 대시보드',
             summary: '안전 신호와 CCTV 상태를 관제 웹으로 전달하는 연결입니다.',
             items: const [
-              '상태: 연결됨',
+              '상태: 인증된 세션',
               '데이터: 안전 신호·Watch 문맥',
-              '인증 정보는 기기 보안 저장소에서 관리',
+              'API 주소는 앱에서 관리하며 수정할 수 없음',
+              '인증 정보는 Android Keystore에서 관리',
             ],
           ),
+        ),
+        _SettingsRow(
+          icon: Icons.logout,
+          title: '로그아웃',
+          detail: '이 기기와 Wear OS의 세션을 지웁니다.',
+          onTap: () async {
+            await onSignOut();
+          },
         ),
       ],
     ),

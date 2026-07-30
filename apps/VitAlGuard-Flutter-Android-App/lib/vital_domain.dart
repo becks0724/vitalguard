@@ -11,21 +11,30 @@ class VitalSnapshot {
 }
 
 class WatchContext {
-  const WatchContext({
-    required this.loginId,
-    required this.employeeId,
-    required this.intervalSeconds,
-  });
   factory WatchContext.worker({
     required String loginId,
     required String employeeId,
     required int intervalSeconds,
+    String displayName = '',
+    String role = 'worker',
   }) => WatchContext(
     loginId: loginId,
     employeeId: employeeId,
     intervalSeconds: intervalSeconds.clamp(5, 3599).toInt(),
+    displayName: displayName,
+    role: role,
   );
-  final String loginId, employeeId;
+  factory WatchContext.signedOut() => const WatchContext(
+    loginId: '', employeeId: '', intervalSeconds: 300, displayName: '', role: 'worker',
+  );
+  const WatchContext({
+    required this.loginId,
+    required this.employeeId,
+    required this.intervalSeconds,
+    this.displayName = '',
+    this.role = 'worker',
+  });
+  final String loginId, employeeId, displayName, role;
   final int intervalSeconds;
   Map<String, Object> toMap() => {
     'source': 'VitAlGuard-Flutter',
@@ -33,7 +42,9 @@ class WatchContext {
     'loggedIn': loginId.isNotEmpty,
     'loginId': loginId,
     'employeeId': employeeId,
-    'mode': 'worker',
+    'mode': role == 'owner' || role == 'admin' ? 'admin' : 'worker',
+    'role': role,
+    'displayName': displayName,
     'syncIntervalSeconds': intervalSeconds,
     'fallDetectionMode': 'rule_three_signal',
   };

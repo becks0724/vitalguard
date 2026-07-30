@@ -5,6 +5,9 @@
 
 # VitAlGuard — 건설현장 안전 통합 모니터링
 
+> **8.4 / 84 보안 모바일 릴리스:** 앱 내 로그인, 토큰 회전, 휴대폰 릴레이 및 읽기 전용 API URL의 한·영 상세는 [2026-07-30-vitalguard-8.4-secure-mobile-release.md](2026-07-30-vitalguard-8.4-secure-mobile-release.md)를 참고하세요.
+> **8.4 / 84 secure mobile release:** See the bilingual [release notes](2026-07-30-vitalguard-8.4-secure-mobile-release.md) for in-app login, token rotation, phone relay, and the read-only API URL.
+
 조달청 조달데이터 AI 활용 창업경진대회 프로젝트.
 **근로자 생체·낙상(Apple Watch) + 현장 CCTV AI + 가스 감지 + AED 상태 경보**를 하나의 관제
 대시보드로 통합해, 사고를 감지·확정·전파하는 시스템이다.

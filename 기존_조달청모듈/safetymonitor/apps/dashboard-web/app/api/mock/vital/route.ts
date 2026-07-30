@@ -124,7 +124,8 @@ export async function POST(request: Request) {
   }
   // 생체·낙상·SOS 데이터는 관제 판단을 바꾸므로, Watch/iPhone 앱 JWT의 사번과 본문 사번이
   // 정확히 같을 때만 수용한다. 범용 업로드 토큰은 이 개인 생체 경로에서 허용하지 않는다.
-  const claims = verifyAppJwt(bearerToken(request));
+  const token = bearerToken(request);
+  const claims = verifyAppJwt(token);
   if (!claims?.workerId) {
     // 사유는 서버 로그로만 남긴다(응답에 넣으면 서명 성공 여부가 외부로 샌다).
     // 응답에는 앱이 스스로 복구 가능한지(action)만 실어, 조용히 실패하는 대신 재로그인을 띄우게 한다.

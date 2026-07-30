@@ -1,5 +1,5 @@
 name: vitalguard_flutter
-description: "VitAlGuard 8.0 (80) Flutter phone client with Apple Watch and Wear OS companion bridges."
+description: "VitAlGuard 8.4 (84) secure mobile client with Android and Wear OS companion bridges."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 8.0.0+80
+version: 8.4.0+84
 
 environment:
   sdk: ^3.12.2
@@ -34,6 +34,8 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_secure_storage: ^10.0.0
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

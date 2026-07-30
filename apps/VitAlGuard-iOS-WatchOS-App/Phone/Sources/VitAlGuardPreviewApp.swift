@@ -613,6 +613,8 @@ private extension JSONDecoder {
 private struct AppAuthLoginResponse: Decodable {
     let ok: Bool
     let token: String?
+    let accessToken: String?
+    let refreshToken: String?
     let user: AppAuthUser?
     let error: String?
     let retryAfterSec: Int?
@@ -3179,12 +3181,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         let storedEmployeeId = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
-            // 워치가 큐잉된 옛 컨텍스트를 걸러내는 순서 기준(감사 WCH-PAIR-01) — 모든 발행 경로에 부여.
-            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": true,
-            // WatchConnectivity application context is encrypted by the paired-device channel.
-            // The Watch persists this only in device-only Keychain and uses it solely for vital ingest.
-            "appAuthJWT": DashboardCredentialStore.loadAppJWT()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "loginId": resolvedId,
             "employeeId": storedEmployeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: resolvedId) : storedEmployeeId,
             "mode": mode.rawValue,
@@ -3215,9 +3212,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
     private func signedOutContext(syncInterval: Double) -> [String: Any] {
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
-            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": false,
-            "appAuthJWT": "",
             "loginId": "",
             "employeeId": "",
             "mode": AppMode.worker.rawValue,
@@ -3248,11 +3243,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         )
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
-            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": true,
-            // Keep this login-specific update path equivalent to currentContext().
-            // The paired Watch stores the token in its device-only Keychain for vital ingest only.
-            "appAuthJWT": DashboardCredentialStore.loadAppJWT()?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             "loginId": resolvedId,
             "employeeId": storedEmployeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: resolvedId) : storedEmployeeId,
             "mode": mode.rawValue,
@@ -3282,7 +3273,6 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         guard WCSession.isSupported() else { return }
         var context: [String: Any] = [
             "source": "VitAlGuard-iPhone",
-            "contextSeq": Date().timeIntervalSince1970,
             "loggedIn": false,
             "loginId": "",
             "employeeId": "",
@@ -3437,6 +3427,9 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
                 )
             }
             replyHandler(["status": "watchNfcScanAccepted", "requestId": requestId])
+        } else if let batch = message["watchVitalBatch"] as? [[String: Any]] {
+            batch.forEach(applyWatchVitals)
+            replyHandler(["status": "vitalsRelayed", "count": batch.count])
         } else if isWatchVitalsPayload(message) {
             applyWatchVitals(message)
             replyHandler(["status": "vitalsAccepted"])
@@ -3455,13 +3448,17 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
                     userInfo: ["requestId": requestId]
                 )
             }
+        } else if let batch = message["watchVitalBatch"] as? [[String: Any]] {
+            batch.forEach(applyWatchVitals)
         } else if isWatchVitalsPayload(message) {
             applyWatchVitals(message)
         }
     }
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        if isWatchVitalsPayload(applicationContext) {
+        if let batch = applicationContext["watchVitalBatch"] as? [[String: Any]] {
+            batch.forEach(applyWatchVitals)
+        } else if isWatchVitalsPayload(applicationContext) {
             applyWatchVitals(applicationContext)
         }
     }
@@ -3480,6 +3477,8 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
                     userInfo: ["requestId": requestId]
                 )
             }
+        } else if let batch = userInfo["watchVitalBatch"] as? [[String: Any]] {
+            batch.forEach(applyWatchVitals)
         } else if isWatchVitalsPayload(userInfo) {
             applyWatchVitals(userInfo)
         }
@@ -3505,6 +3504,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
 
     private func applyWatchVitals(_ payload: [String: Any]) {
         guard PhoneMeasuredVitalSnapshot.store(payload) else { return }
+        DashboardSyncService.shared.uploadMeasuredWatchPayload(payload)
         DispatchQueue.main.async {
             if let updatedString = payload["updatedAt"] as? String,
                let updatedAt = ISO8601DateFormatter().date(from: updatedString) {
@@ -3560,6 +3560,24 @@ final class DashboardSyncService: NSObject {
         VitAlGuardDashboardShared.normalizedEndpoint(from: raw)
     }
 
+    func uploadMeasuredWatchPayload(_ payload: [String: Any]) {
+        guard isWatchVitalsPayload(payload) else { return }
+        let endpointString = normalizedEndpoint(from: UserDefaults.standard.string(forKey: PreviewSettingsKey.endpoint))
+        guard let endpoint = URL(string: endpointString),
+              JSONSerialization.isValidJSONObject([payload]),
+              let body = try? JSONSerialization.data(withJSONObject: [payload]) else {
+            return
+        }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 20
+        guard applyVitalAuthorization(to: &request) else { return }
+        URLSession.shared.uploadTask(with: request, from: body) { data, response, _ in
+            self.handleUnauthorizedResponse(data: data, response: response)
+        }.resume()
+    }
+
     func checkReceiverConnection(
         reason: String,
         fallDetected: Bool = false,
@@ -3592,8 +3610,9 @@ final class DashboardSyncService: NSObject {
         // 화면이 떠 있는 동안에는 background URLSession 대신 일반 세션으로 바로 전송한다.
         // background URLSession은 신뢰성은 높지만 watch↔phone↔dashboard 최초 연결을 늦출 수 있다.
         if UIApplication.shared.applicationState == .active {
-            URLSession.shared.uploadTask(with: request, from: body) { _, response, error in
+            URLSession.shared.uploadTask(with: request, from: body) { data, response, error in
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                self.handleUnauthorizedResponse(data: data, response: response)
                 self.completeUpload(error: error, statusCode: code, completion: completion)
             }.resume()
             return
@@ -3615,14 +3634,6 @@ final class DashboardSyncService: NSObject {
         task.resume()
     }
 
-    private func applyVitalAuthorization(to request: inout URLRequest) -> Bool {
-        let token = DashboardCredentialStore.loadAppJWT()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !token.isEmpty else { return false }
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return true
-    }
-
     private func completeUpload(error: Error?, statusCode: Int, completion: Completion?) {
         endBackgroundAllowance()
         let ok = error == nil && (200..<300).contains(statusCode)
@@ -3642,6 +3653,19 @@ final class DashboardSyncService: NSObject {
         DispatchQueue.main.async {
             completion?(ok, message)
         }
+    }
+
+    // action=reauth만 세션을 폐기한다. action이 없거나 none이면 자동 재시도하지 않는다.
+    private func handleUnauthorizedResponse(data: Data?, response: URLResponse?) {
+        vitalGuardHandleUnauthorizedResponse(data: data, response: response)
+    }
+
+    private func applyVitalAuthorization(to request: inout URLRequest) -> Bool {
+        let token = DashboardCredentialStore.loadAppJWT()?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !token.isEmpty else { return false }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return true
     }
 
     func enqueueContinuousUpdate(reason: String = "iphone_background_continuous_update", completion: Completion? = nil) {
@@ -4422,19 +4446,16 @@ private enum DashboardCredentialStore {
     private static let service = "com.yangjeehoo.vitalguard.dashboard"
     private static let passwordAccount = "adminPassword"
     private static let appJWTAccount = "appAuthJWT"
+    private static let refreshTokenAccount = "mobileRefreshToken"
 
     static func savePassword(_ password: String) {
-        save(password, account: passwordAccount)
+        // V8.4부터 비밀번호는 앱에 보관하지 않는다. 과거 항목도 즉시 제거한다.
+        delete(account: passwordAccount)
     }
 
     static func loadPassword() -> String? {
-        load(account: passwordAccount)
-    }
-
-    // 로그아웃 시 관리자 비밀번호 잔존 제거(감사 IOS-KEY-01) — iOS 는 앱을 지워도 Keychain 이
-    // 남으므로, 삭제 경로가 없으면 기기 이양·공용 단말에서 다음 사용자에게 그대로 넘어간다.
-    static func deletePassword() {
         delete(account: passwordAccount)
+        return nil
     }
 
     static func saveAppJWT(_ token: String) {
@@ -4447,6 +4468,14 @@ private enum DashboardCredentialStore {
 
     static func deleteAppJWT() {
         delete(account: appJWTAccount)
+    }
+
+    static func saveRefreshToken(_ token: String) { save(token, account: refreshTokenAccount) }
+    static func loadRefreshToken() -> String? { load(account: refreshTokenAccount) }
+    static func deleteMobileSession() {
+        delete(account: appJWTAccount)
+        delete(account: refreshTokenAccount)
+        delete(account: passwordAccount)
     }
 
     private static func save(_ value: String, account: String) {
@@ -4491,6 +4520,45 @@ private enum VitalGuardLinks {
     static let safetyMonitor = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
     static let appAPI = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital"
     static let appAuthLogin = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/app-auth/login"
+    static let mobileSessionLogin = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/login"
+    static let mobileSessionRefresh = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/refresh"
+    static let mobileSessionLogout = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mobile/v1/session/logout"
+}
+
+private struct AuthErrorBody: Decodable {
+    let action: String?
+}
+
+private extension Notification.Name {
+    static let vitalGuardReauthenticationRequired = Notification.Name("vitalGuard.reauthenticationRequired")
+}
+
+private func vitalGuardRequireReauthentication() {
+    DashboardCredentialStore.deleteMobileSession()
+    let defaults = UserDefaults.standard
+    defaults.set(true, forKey: PreviewSettingsKey.forceSignedOut)
+    defaults.removeObject(forKey: PreviewSettingsKey.loggedInId)
+    defaults.removeObject(forKey: PreviewSettingsKey.employeeId)
+    defaults.removeObject(forKey: PreviewSettingsKey.workerName)
+    defaults.removeObject(forKey: PreviewSettingsKey.appMode)
+    defaults.removeObject(forKey: PreviewSettingsKey.appServerRole)
+    defaults.synchronize()
+    PhoneWatchBridge.shared.publishSignedOut(
+        syncInterval: defaults.object(forKey: PreviewSettingsKey.syncInterval) as? Double ?? 300
+    )
+    DispatchQueue.main.async {
+        NotificationCenter.default.post(name: .vitalGuardReauthenticationRequired, object: nil)
+    }
+}
+
+private func vitalGuardHandleUnauthorizedResponse(data: Data?, response: URLResponse?) {
+    guard (response as? HTTPURLResponse)?.statusCode == 401,
+          let data,
+          let body = try? JSONDecoder().decode(AuthErrorBody.self, from: data),
+          body.action == "reauth" else {
+        return
+    }
+    vitalGuardRequireReauthentication()
 }
 
 func vitalGuardAssistantSessionToken() -> String {
@@ -6877,6 +6945,12 @@ final class VitAlGuardPreviewController: UIViewController,
             name: .vitalGuardFallResponseRequested,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleReauthenticationRequired),
+            name: .vitalGuardReauthenticationRequired,
+            object: nil
+        )
         buildInterface()
         if #available(iOS 17.0, *) {
             traitRegistration = registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (controller: VitAlGuardPreviewController, _) in
@@ -6885,6 +6959,19 @@ final class VitAlGuardPreviewController: UIViewController,
             }
         }
         consumePendingQuickAction()
+    }
+
+    @objc private func handleReauthenticationRequired() {
+        isLoginRequestInFlight = false
+        stopDashboardAutoSync()
+        dashboardRadarTimer?.invalidate()
+        dashboardRadarTimer = nil
+        dashboardRadarIsPlaying = false
+        activeMainTab = .home
+        loginField.text = ""
+        passwordField.text = ""
+        buildInterface()
+        presentStatus("다시 로그인 필요", message: "세션이 만료되었거나 이전 인증 형식입니다. ID와 비밀번호로 다시 로그인해 주세요.")
     }
 
     // 이전 빌드는 iPhone→Watch 주기를 60초 이상으로 강제했다. 이번 실시간 관제 전환 시
@@ -9363,29 +9450,17 @@ final class VitAlGuardPreviewController: UIViewController,
             return
         }
         hasAttemptedDashboardSummaryTokenRefresh = true
-        let id = UserDefaults.standard.string(forKey: PreviewSettingsKey.dashboardAdminId)?
+        let refreshToken = DashboardCredentialStore.loadRefreshToken()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let password = DashboardCredentialStore.loadPassword()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !id.isEmpty,
-              !password.isEmpty else {
+        guard !refreshToken.isEmpty else {
             completion(false)
             return
         }
-        let loginURLs = [
-            VitalGuardLinks.appAuthLogin,
-            "\(VitalGuardLinks.safetyMonitor)/api/admin/login"
-        ].compactMap(URL.init(string:))
-        requestDashboardSummaryJWT(loginURLs, id: id, password: password, completion: completion)
+        requestDashboardSummaryJWT(refreshToken: refreshToken, completion: completion)
     }
 
-    private func requestDashboardSummaryJWT(
-        _ loginURLs: [URL],
-        id: String,
-        password: String,
-        completion: @escaping (Bool) -> Void
-    ) {
-        guard let loginURL = loginURLs.first else {
+    private func requestDashboardSummaryJWT(refreshToken: String, completion: @escaping (Bool) -> Void) {
+        guard let loginURL = URL(string: VitalGuardLinks.mobileSessionRefresh) else {
             completion(false)
             return
         }
@@ -9393,18 +9468,22 @@ final class VitAlGuardPreviewController: UIViewController,
         request.httpMethod = "POST"
         request.timeoutInterval = 10
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["id": id, "password": password])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["refreshToken": refreshToken])
         URLSession.shared.dataTask(with: request) { data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            vitalGuardHandleUnauthorizedResponse(data: data, response: response)
             let login = data.flatMap { try? JSONDecoder().decode(AppAuthLoginResponse.self, from: $0) }
             guard (200..<300).contains(statusCode),
                   login?.ok == true,
-                  let token = login?.token?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  let token = login?.accessToken?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !token.isEmpty else {
-                self.requestDashboardSummaryJWT(Array(loginURLs.dropFirst()), id: id, password: password, completion: completion)
+                completion(false)
                 return
             }
             DashboardCredentialStore.saveAppJWT(token)
+            if let refreshToken = login?.refreshToken, !refreshToken.isEmpty {
+                DashboardCredentialStore.saveRefreshToken(refreshToken)
+            }
             completion(true)
         }.resume()
     }
@@ -14044,7 +14123,7 @@ final class VitAlGuardPreviewController: UIViewController,
             return
         }
         guard !isLoginRequestInFlight else { return }
-        guard let url = URL(string: VitalGuardLinks.appAuthLogin) else {
+        guard let url = URL(string: VitalGuardLinks.mobileSessionLogin) else {
             presentStatus("로그인 실패", message: "앱 로그인 API 주소를 만들 수 없습니다.")
             return
         }
@@ -14056,7 +14135,9 @@ final class VitAlGuardPreviewController: UIViewController,
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "id": id,
-            "password": password
+            "password": password,
+            "platform": "ios",
+            "deviceName": UIDevice.current.model
         ])
 
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -14072,7 +14153,7 @@ final class VitAlGuardPreviewController: UIViewController,
                 let decoded = data.flatMap { try? JSONDecoder().decode(AppAuthLoginResponse.self, from: $0) }
                 guard (200..<300).contains(statusCode),
                       decoded?.ok == true,
-                      let token = decoded?.token?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      let token = (decoded?.accessToken ?? decoded?.token)?.trimmingCharacters(in: .whitespacesAndNewlines),
                       !token.isEmpty,
                       let user = decoded?.user
                 else {
@@ -14080,7 +14161,7 @@ final class VitAlGuardPreviewController: UIViewController,
                     return
                 }
 
-                self.applyAppAuthSession(token: token, user: user)
+                self.applyAppAuthSession(token: token, refreshToken: decoded?.refreshToken, user: user)
             }
         }.resume()
     }
@@ -14089,7 +14170,7 @@ final class VitAlGuardPreviewController: UIViewController,
         passwordField.becomeFirstResponder()
     }
 
-    private func applyAppAuthSession(token: String, user: AppAuthUser) {
+    private func applyAppAuthSession(token: String, refreshToken: String? = nil, user: AppAuthUser) {
         let id = user.id.trimmingCharacters(in: .whitespacesAndNewlines)
         let role = user.role.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = user.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -14109,6 +14190,9 @@ final class VitAlGuardPreviewController: UIViewController,
         UserDefaults.standard.set(employeeId, forKey: PreviewSettingsKey.employeeId)
         UserDefaults.standard.set(displayName, forKey: PreviewSettingsKey.workerName)
         DashboardCredentialStore.saveAppJWT(token)
+        if let refreshToken, !refreshToken.isEmpty {
+            DashboardCredentialStore.saveRefreshToken(refreshToken)
+        }
         hasAttemptedDashboardSummaryTokenRefresh = false
         VitAlGuardSharedStorage.saveAppMode(mode)
         VitAlGuardSharedStorage.saveWalletIdentityPayload([
@@ -14279,8 +14363,14 @@ final class VitAlGuardPreviewController: UIViewController,
         UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appMode)
         UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appServerRole)
         UserDefaults.standard.synchronize()
-        DashboardCredentialStore.deleteAppJWT()
-        DashboardCredentialStore.deletePassword()
+        let accessToken = DashboardCredentialStore.loadAppJWT() ?? ""
+        if let logoutURL = URL(string: VitalGuardLinks.mobileSessionLogout), !accessToken.isEmpty {
+            var request = URLRequest(url: logoutURL)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+            URLSession.shared.dataTask(with: request).resume()
+        }
+        DashboardCredentialStore.deleteMobileSession()
         VitAlGuardSharedStorage.saveAppMode(.worker)
         WidgetCenter.shared.reloadAllTimelines()
         PhoneWatchBridge.shared.publishSignedOut(syncInterval: Double(syncIntervalSeconds))
@@ -16809,7 +16899,9 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let defaults = UserDefaults.standard
         workerField.text = defaults.string(forKey: PreviewSettingsKey.workerName)
         employeeField.text = defaults.string(forKey: PreviewSettingsKey.employeeId)
-        endpointField.text = DashboardSyncService.shared.normalizedEndpoint(from: defaults.string(forKey: PreviewSettingsKey.endpoint))
+        endpointField.text = VitalGuardLinks.appAPI
+        endpointField.isEnabled = false
+        endpointField.clearButtonMode = .never
         appUploadTokenField.text = defaults.string(forKey: vitalGuardUploadTokenDefaultsKey)
         dashboardAdminIdField.text = defaults.string(forKey: PreviewSettingsKey.dashboardAdminId)
         dashboardAdminPasswordField.text = DashboardCredentialStore.loadPassword()
@@ -16922,6 +17014,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
         formStack.addArrangedSubview(sectionTitle("앱 정보"))
         formStack.addArrangedSubview(appVersionRow())
+
         formStack.addArrangedSubview(sectionTitle("화면 모드"))
         formStack.addArrangedSubview(themeModeRow())
         formStack.addArrangedSubview(sectionTitle("VitAlGuard 초기 사용방법"))
@@ -16935,7 +17028,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         formStack.addArrangedSubview(input(workerField, placeholder: "작업자 이름"))
         formStack.addArrangedSubview(input(employeeField, placeholder: "사원번호"))
 
-        formStack.addArrangedSubview(sectionTitle("대시보드 연동"))
+        formStack.addArrangedSubview(sectionTitle("보안 API 연동 (읽기 전용)"))
         formStack.addArrangedSubview(input(endpointField, placeholder: VitalGuardLinks.appAPI))
         formStack.addArrangedSubview(input(appUploadTokenField, placeholder: "APP_UPLOAD_TOKEN"))
         formStack.addArrangedSubview(sectionTitle("대시보드 관리자 인증"))
@@ -17076,23 +17169,24 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         title.textColor = textColor
         title.font = UIFont.systemFont(ofSize: 16, weight: .bold)
 
-        let version = UILabel()
-        version.translatesAutoresizingMaskIntoConstraints = false
-        let marketing = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "-"
-        version.text = "버전 \(marketing) · 빌드 \(build)"
-        version.textColor = detailTextColor
-        version.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
+        let detail = UILabel()
+        detail.translatesAutoresizingMaskIntoConstraints = false
+        detail.text = "버전 \(version) · 빌드 \(build)"
+        detail.textColor = detailTextColor
+        detail.font = UIFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+        detail.textAlignment = .right
 
         row.addSubview(title)
-        row.addSubview(version)
+        row.addSubview(detail)
         NSLayoutConstraint.activate([
-            row.heightAnchor.constraint(equalToConstant: 52),
+            row.heightAnchor.constraint(equalToConstant: 56),
             title.leadingAnchor.constraint(equalTo: row.leadingAnchor, constant: 18),
             title.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            version.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -18),
-            version.centerYAnchor.constraint(equalTo: row.centerYAnchor),
-            version.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12)
+            detail.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 12),
+            detail.trailingAnchor.constraint(equalTo: row.trailingAnchor, constant: -18),
+            detail.centerYAnchor.constraint(equalTo: row.centerYAnchor)
         ])
         return row
     }
@@ -17112,6 +17206,8 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         if field === endpointField {
             field.keyboardType = .URL
             field.textContentType = .URL
+            field.isEnabled = false
+            field.clearButtonMode = .never
         } else if field === appUploadTokenField {
             field.isSecureTextEntry = true
             field.textContentType = .password
@@ -18200,7 +18296,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let defaults = UserDefaults.standard
         defaults.set(workerField.text ?? "", forKey: PreviewSettingsKey.workerName)
         defaults.set(employeeField.text ?? "", forKey: PreviewSettingsKey.employeeId)
-        defaults.set(DashboardSyncService.shared.normalizedEndpoint(from: endpointField.text), forKey: PreviewSettingsKey.endpoint)
+        defaults.set(VitalGuardLinks.appAPI, forKey: PreviewSettingsKey.endpoint)
         defaults.set(appUploadTokenField.text ?? "", forKey: vitalGuardUploadTokenDefaultsKey)
         defaults.set(dashboardAdminIdField.text ?? "", forKey: PreviewSettingsKey.dashboardAdminId)
         DashboardCredentialStore.savePassword(dashboardAdminPasswordField.text ?? "")
@@ -18244,9 +18340,6 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         textField.resignFirstResponder()
-        if textField === endpointField {
-            endpointField.text = DashboardSyncService.shared.normalizedEndpoint(from: endpointField.text)
-        }
         return true
     }
 

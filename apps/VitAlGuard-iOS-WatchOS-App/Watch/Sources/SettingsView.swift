@@ -1,4 +1,4 @@
-// 워치 인앱 설정 — 연동 URL 편집 + 연결 테스트(재빌드·재설치 없이 터널 URL 교체)
+// 워치 인앱 설정 — 앱 관리형 연동 URL 표시와 iPhone 릴레이 연결 테스트
 import SwiftUI
 
 struct SettingsView: View {
@@ -17,6 +17,7 @@ struct SettingsView: View {
                     Spacer()
                     Text("\(L("버전")) \(appVersion) · \(L("빌드")) \(appBuild)")
                         .foregroundStyle(WatchTheme.muted)
+                        .monospacedDigit()
                 }
                 .font(.caption2.weight(.semibold))
             }
@@ -53,15 +54,12 @@ struct SettingsView: View {
             }
 
             Section(L("연동 URL")) {
-                TextField("https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/mock/vital", text: $settings.urlString)
+                Text(settings.urlString)
                     .font(.caption2)
-                    .textInputAutocapitalization(.never)
-                Button(L("기본값 복원")) {
-                    settings.urlString = ConnectionSettings.bundledDefaultURLString()
-                    testResult = nil
-                }
-                .font(.caption2)
-                    .tint(WatchTheme.muted)
+                    .foregroundStyle(WatchTheme.muted)
+                Text(L("보안을 위해 앱에서 관리되는 HTTPS 주소이며 수정할 수 없습니다."))
+                    .font(.caption2)
+                    .foregroundStyle(WatchTheme.muted)
             }
 
             Section(L("GPS 항상 허용")) {

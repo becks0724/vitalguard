@@ -41,7 +41,7 @@ export async function PUT(request: Request) {
   // 게이트는 관리자 메뉴와 같은 축(hasAdminMenuAccess) = owner 이거나 owner 가 admin_access 를
   // 부여한 계정. 자가취득이 불가한 기존 플래그라 새 권한 축을 만들지 않는다.
   if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "인증 필요", action: mobileUnauthorizedAction(bearerToken(request)) }, { status: 401 });
   }
   if (!(await hasAdminMenuAccess(request))) {
     return NextResponse.json(

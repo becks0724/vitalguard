@@ -21,8 +21,8 @@ class MainActivity : Activity() {
             setPadding(24, 24, 24, 24)
             setBackgroundColor(Color.BLACK)
         }
-        layout.addView(TextView(this).apply { text = "VitAlGuard-관리자"; textSize = 18f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
-        layout.addView(TextView(this).apply { text = "admin · 현장 생체 관제"; textSize = 11f; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER })
+        layout.addView(TextView(this).apply { text = "VitAlGuard Watch"; textSize = 18f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
+        layout.addView(TextView(this).apply { text = currentIdentity(); textSize = 11f; setTextColor(Color.LTGRAY); gravity = Gravity.CENTER })
         status = TextView(this).apply {
             text = currentStatus(); gravity = Gravity.CENTER; setTextColor(Color.WHITE); textSize = 12f; setPadding(16, 18, 16, 18)
             background = rounded(Color.rgb(18, 18, 18), Color.DKGRAY, 28)
@@ -47,6 +47,11 @@ class MainActivity : Activity() {
     private fun currentStatus(): String {
         val prefs = getSharedPreferences("vitalguard_watch", MODE_PRIVATE)
         return prefs.getString("session_status", "휴대폰 세션을 기다리는 중입니다.\n실측 센서 권한은 시계에서 별도로 승인해야 합니다.")!!
+    }
+
+    private fun currentIdentity(): String {
+        val prefs = getSharedPreferences("vitalguard_watch", MODE_PRIVATE)
+        return prefs.getString("session_identity", "휴대폰 로그인 대기")!!
     }
 
     private fun requestPhoneSync() {

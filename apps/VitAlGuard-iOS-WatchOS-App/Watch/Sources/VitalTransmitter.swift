@@ -1,8 +1,9 @@
-// 수집된 심박을 관제 웹(/api/mock/vital)으로 전송하고, 실패 시 버퍼링 후 재전송하는 전송기
+// 수집된 심박을 관제 수집 API로 전송하고, 실패 시 버퍼링 후 재전송하는 전송기
 // VitalSampleSchema 와 동일 페이로드(workerId/ts ISO/heartRate/batteryPct). 분석은 폰·서버가 수행, 워치는 raw 전송만.
 import Foundation
 import CoreLocation
 import WatchKit
+import WatchConnectivity
 
 struct FallHrTrajectory {
     let preMean10s: Double?
@@ -19,8 +20,7 @@ final class VitalTransmitter {
     // 배칭이라 한 번의 전송으로 여러 샘플이 나가므로 sentDelta 로 누적 카운트를 올린다.
     var onResult: ((Bool, String, Int, Int) -> Void)?
 
-    // 연동 URL 은 ConnectionSettings(UserDefaults)에서 매 전송 시 동적으로 읽는다.
-    // → 워치 설정에서 URL 을 바꾸면 재빌드·재시작 없이 다음 전송부터 즉시 반영.
+    // 서버 주소는 앱이 관리한다. 워치 전송은 이 주소에 직접 접속하지 않고 iPhone으로 릴레이한다.
     private var endpoint: URL? { ConnectionSettings.currentURL() }
 
     // 작업자 식별 — 설정(UserDefaults)에서 매 전송 시 동적으로 읽는다(설정에서 바꾸면 즉시 반영).
@@ -28,13 +28,6 @@ final class VitalTransmitter {
     private var workerId: String { ConnectionSettings.currentWorkerId() }
     private var workerName: String { ConnectionSettings.currentWorkerName() }
     private var employeeId: String { ConnectionSettings.currentEmployeeId() }
-
-    private func applyAppAuthorization(to request: inout URLRequest) -> Bool {
-        let token = ConnectionSettings.currentAppJWT().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { return false }
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return true
-    }
 
     // 배칭 — 라디오 기상 횟수를 줄이려고 HR 샘플을 윈도에 모았다가 주기마다 1배열로 전송.
     // flushInterval 을 낮추면 대시보드 신선도↑·배터리 소모↑ (5초면 종전 동작). 30초가 기본.
@@ -53,7 +46,10 @@ final class VitalTransmitter {
 
     // 전송 실패분(backlog)을 UserDefaults 에 영속화 — 앱 종료/크래시 후에도 미전송 데이터를
     // 잃지 않도록 복원(AF2). backlog 변경 시마다 저장하고, init 에서 복원한다.
-    private let backlogKey = "vital_backlog_v1"
+    // v1 대기열은 실측 검증 게이트가 없던 앱이 남긴 값이다. 새 버전에서 이를 재전송하면
+    // 오래된/검증 불가 값이 관제에 섞일 수 있으므로 한 번 폐기하고, 이후에는 v2만 사용한다.
+    private let backlogKey = "vital_backlog_v2"
+    private let legacyBacklogKeys = ["vital_backlog_v1"]
 
     private let iso: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -63,7 +59,14 @@ final class VitalTransmitter {
 
     init() {
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
+        discardLegacyBacklog()
         restoreBacklog()
+    }
+
+    private func discardLegacyBacklog() {
+        for key in legacyBacklogKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
     }
 
     // 앱 시작 시 영속 backlog 복원 — 직전 실행에서 미전송으로 남은 샘플을 다음 전송에 함께 보낸다.
@@ -73,14 +76,6 @@ final class VitalTransmitter {
         else { return }
         backlog = arr
         trimBacklog()
-    }
-
-    // 신원 소거 시 호출 — 이전 착용자 사번으로 쌓인 미전송분(윈도 누적·backlog)을 메모리·영속
-    // 양쪽에서 폐기한다(감사 WCH-PAIR-02: 다음 착용자 로그인 후 flush 되면 이전 사번으로 기록됨).
-    func clearPendingAndBacklog() {
-        pending.removeAll()
-        backlog.removeAll()
-        persistBacklog()
     }
 
     // backlog 를 UserDefaults 에 저장(비었으면 키 제거). 모든 backlog 변경 직후 호출.
@@ -133,21 +128,37 @@ final class VitalTransmitter {
 
     // 정상 폴 — HR(연속) + 최신 SpO₂(있으면 동봉). 배칭 윈도에 누적.
     func send(heartRate: Double, spo2: Double?) {
+        guard canTransmitMeasuredWatchData else {
+            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
+            return
+        }
+        guard let heartRate = validatedHeartRate(heartRate) else {
+            onResult?(false, "실측 심박 대기 — 전송 보류", backlog.count, 0)
+            return
+        }
         var payload = basePayload()
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartRate"] = Int(heartRate.rounded())
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
         enqueuePending(payload)
     }
 
     // 잠금/백그라운드 유지용 heartbeat — 새 심박 이벤트가 잠시 없어도 최신 스냅샷과 GPS를 관제에 남긴다.
     func sendSnapshot(_ snapshot: MeasuredVitalSnapshot, forceFlush: Bool = true) {
+        guard canTransmitMeasuredWatchData else {
+            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
+            return
+        }
+        guard let heartRate = validatedHeartRate(snapshot.heartRate) else {
+            onResult?(false, "실측 심박 대기 — 백그라운드 전송 보류", backlog.count, 0)
+            return
+        }
         var payload = basePayload()
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartbeat"] = true
         payload["source"] = "VitAlGuard-Watch-background"
-        if let heartRate = snapshot.heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 = snapshot.spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        payload["heartRate"] = Int(heartRate.rounded())
+        if let spo2 = validatedSpO2(snapshot.spo2) { payload["spo2"] = Int(spo2.rounded()) }
         if let ecgStatus = snapshot.ecgStatus { payload["ecgStatus"] = ecgStatus }
         if let steps = snapshot.steps { payload["steps"] = steps }
         if let wristTemperatureC = snapshot.wristTemperatureC {
@@ -327,10 +338,20 @@ final class VitalTransmitter {
 
     // 스트레스 입력 60초 sub-cadence — raw 7종 + 최신 HR/SpO₂. 배칭 윈도에 누적(다음 flush 에 동반).
     func sendStress(_ s: StressInputs, heartRate: Double?, spo2: Double?, forceFlush: Bool = false) {
+        // 백그라운드 타이머가 HealthKit의 과거 일일 합계만 반복 전송하지 않도록, 현재
+        // 워치에서 얻은 유효 심박이 있을 때만 이 경로를 연다. 실제 낙상/SOS는 별도 경로다.
+        guard canTransmitMeasuredWatchData else {
+            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
+            return
+        }
+        guard let heartRate = validatedHeartRate(heartRate) else {
+            onResult?(false, "실측 심박 대기 — 주기 전송 보류", backlog.count, 0)
+            return
+        }
         var payload = basePayload()
         payload["source"] = "VitAlGuard-WatchVitals"
-        if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        payload["heartRate"] = Int(heartRate.rounded())
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
         if let v = s.hrvSdnnMs { payload["hrvSdnnMs"] = (v * 100).rounded() / 100 }
         if let v = s.restingHeartRate { payload["restingHeartRate"] = Int(v.rounded()) }
         if let v = s.walkingHeartRate { payload["walkingHeartRate"] = Int(v.rounded()) }
@@ -386,31 +407,12 @@ final class VitalTransmitter {
     // 세션 종료 시 윈도에 남은 미전송분을 마저 전송.
     func flushPending() { flush(force: true) }
 
-    // 설정 화면용 연결 테스트 — reserved 워커로 POST(센서값은 넣지 않아 DB 실측 데이터를 오염시키지 않음).
-    // 수신 경로(터널→dev) 전체를 검증하고 결과 문구를 반환.
+    // 설정 화면용 연결 테스트. 워치는 iPhone 릴레이에만 연결하고 서버 인증은 iPhone이 담당한다.
     func testConnection() async -> String {
-        guard let endpoint else { return "연동 URL 형식 오류" }
-        let payload: [String: Any] = [
-            "workerId": "smoke_test",
-            "ts": iso.string(from: Date()),
-            "source": "VitAlGuard-Watch-connection-check"
-        ]
-        guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
-            return "요청 생성 실패"
-        }
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        guard applyAppAuthorization(to: &req) else { return "아이폰 관제 로그인 동기화 필요" }
-        req.httpBody = body
-        req.timeoutInterval = 12
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            return (200..<300).contains(code) ? "연결 OK (\(code))" : "응답 오류 HTTP \(code)"
-        } catch {
-            return "연결 실패 — URL/터널 확인"
-        }
+        guard WCSession.isSupported() else { return "iPhone 릴레이를 지원하지 않는 기기입니다" }
+        let session = WCSession.default
+        session.activate()
+        return session.isReachable ? "iPhone 릴레이 연결됨" : "iPhone 연결 대기 중"
     }
 
     // 윈도에 샘플을 쌓고, 첫 샘플로 윈도를 열고, flushInterval 경과 시 배열로 전송.
@@ -425,6 +427,26 @@ final class VitalTransmitter {
             return
         }
         if now.timeIntervalSince(last) >= flushInterval { flush() }
+    }
+
+    private func validatedHeartRate(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, (20...250).contains(value) else { return nil }
+        return value
+    }
+
+    // 시뮬레이터는 어떤 주기·시간대에서도 관제 원본으로 보낼 수 없다.
+    // 실물 Apple Watch에서 들어온 값만 전송 경로에 진입한다.
+    private var canTransmitMeasuredWatchData: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    private func validatedSpO2(_ value: Double?) -> Double? {
+        guard let value, value.isFinite, (50...100).contains(value) else { return nil }
+        return value
     }
 
     // 윈도 강제 플러시 타이머 무장 — flushInterval 후 1회 발화. 윈도가 아직 비지 않았으면 강제 전송.
@@ -449,76 +471,48 @@ final class VitalTransmitter {
         let batch = pending
         pending.removeAll()
         guard !batch.isEmpty else { return }
-        guard let endpoint else {
-            backlog.append(contentsOf: batch); trimBacklog()
-            onResult?(false, "연동 URL 없음 → 버퍼", backlog.count, 0)
-            return
-        }
-        Task { await postBatch(batch, endpoint: endpoint) }
+        relayBatchToPhone(batch)
     }
 
-    private func postBatch(_ batch: [[String: Any]], endpoint: URL) async {
-        guard let body = try? JSONSerialization.data(withJSONObject: batch) else { return }
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        guard applyAppAuthorization(to: &req) else {
+    private func relayBatchToPhone(_ batch: [[String: Any]]) {
+        guard WCSession.isSupported() else {
             backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-            onResult?(false, "아이폰 로그인 동기화 필요 → 버퍼", backlog.count, 0)
+            onResult?(false, "iPhone 릴레이 미지원 → 버퍼", backlog.count, 0)
             return
         }
-        req.httpBody = body
-        req.timeoutInterval = 15
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if (200..<300).contains(code) {
-                onResult?(true, "전송 OK (\(code), \(batch.count)건)", backlog.count, batch.count)
-                await drainBacklog(endpoint: endpoint)
-            } else {
-                backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-                onResult?(false, "HTTP \(code) → 버퍼", backlog.count, 0)
-            }
-        } catch {
-            backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-            onResult?(false, "전송 실패 → 버퍼", backlog.count, 0)
-        }
-    }
-
-    // 전송 성공 직후 호출 — 오프라인 동안 쌓인 backlog 를 1배열로 마저 전송.
-    private func drainBacklog(endpoint: URL) async {
-        guard !backlog.isEmpty else { return }
-        let batch = backlog
-        backlog.removeAll()
-        guard let body = try? JSONSerialization.data(withJSONObject: batch) else { return }
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        guard applyAppAuthorization(to: &req) else {
-            backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-            onResult?(false, "아이폰 로그인 동기화 필요 → 버퍼", backlog.count, 0)
+        let payload: [String: Any] = [
+            "source": "VitAlGuard-Watch",
+            "watchVitalBatch": batch
+        ]
+        let session = WCSession.default
+        session.activate()
+        guard session.isReachable else {
+            session.transferUserInfo(payload)
+            onResult?(true, "iPhone 전달 대기열 (\(batch.count)건)", backlog.count, batch.count)
             return
         }
-        req.httpBody = body
-        req.timeoutInterval = 15
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if (200..<300).contains(code) {
-                persistBacklog()   // backlog 비워짐 → 영속 저장도 제거
-                onResult?(true, "버퍼 비움 (\(batch.count)건)", 0, batch.count)
-            } else {
-                backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-                onResult?(false, "버퍼 재전송 중단 (HTTP \(code))", backlog.count, 0)
+        session.sendMessage(payload, replyHandler: { [weak self] reply in
+            Task { @MainActor in
+                guard reply["status"] as? String == "vitalsRelayed" else {
+                    self?.backlog.insert(contentsOf: batch, at: 0)
+                    self?.trimBacklog()
+                    self?.onResult?(false, "iPhone 릴레이 확인 실패 → 버퍼", self?.backlog.count ?? 0, 0)
+                    return
+                }
+                self?.onResult?(true, "iPhone 릴레이 완료 (\(batch.count)건)", self?.backlog.count ?? 0, batch.count)
             }
-        } catch {
-            backlog.insert(contentsOf: batch, at: 0); trimBacklog()
-            onResult?(false, "버퍼 재전송 중단", backlog.count, 0)
-        }
+        }, errorHandler: { [weak self] _ in
+            Task { @MainActor in
+                self?.backlog.insert(contentsOf: batch, at: 0)
+                self?.trimBacklog()
+                self?.onResult?(false, "iPhone 릴레이 실패 → 버퍼", self?.backlog.count ?? 0, 0)
+            }
+        })
     }
 
     private func trimBacklog() {
         if backlog.count > maxBacklog { backlog.removeFirst(backlog.count - maxBacklog) }
         persistBacklog()
     }
+
 }

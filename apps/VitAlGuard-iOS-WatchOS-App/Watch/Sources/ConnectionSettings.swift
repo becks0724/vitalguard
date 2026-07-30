@@ -1,34 +1,19 @@
-// 워치 인앱 설정 스토어 — 연동 URL + 작업자 프로필(이름/사원번호) 편집·영속
-// 정식 HTTPS 대시보드 API를 기본값으로 사용하고, iPhone 앱에서 받은 로그인/연동 정보를 함께 반영한다.
+// 워치 인앱 설정 스토어 — 앱이 관리하는 읽기 전용 HTTPS 주소와 작업자 최소 컨텍스트를 보관한다.
+// 워치는 인증 토큰을 보관하지 않으며 iPhone 앱에서 받은 로그인/연동 최소 정보를 함께 반영한다.
 // 작업자 식별자(workerId)는 사원번호에서 파생 → 대시보드에서 폰/다른 워치와 자동 분리.
 import Foundation
 import Combine
+import Security
 import WatchConnectivity
 import CoreLocation
-import Security
 
-private enum WatchAppCredentialStore {
-    private static let service = "com.yangjeehoo.vitalguard.watch.dashboard"
-    private static let account = "appAuthJWT"
-
-    static func save(_ token: String) {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-        SecItemDelete(query as CFDictionary)
-        guard !token.isEmpty, let data = token.data(using: .utf8) else { return }
-        var item = query
-        item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
-    }
-
-    static func load() -> String {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-        var raw: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &raw) == errSecSuccess,
-              let data = raw as? Data,
-              let token = String(data: data, encoding: .utf8) else { return "" }
-        return token
-    }
+private func purgeLegacyWatchAppJWT() {
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: "com.yangjeehoo.vitalguard.watch",
+        kSecAttrAccount as String: "appAuthJWT"
+    ]
+    SecItemDelete(query as CFDictionary)
 }
 
 enum WatchSensorPowerMode: String, CaseIterable, Hashable {
@@ -131,21 +116,12 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let sensorPowerModeKey = "watchSensorPowerMode"
     private static let energyEfficiencyMigrationKey = "watchEnergyEfficiencyMigration.v1"
     private static let languageCodeKey = "watchLanguageCode"
-    // 마지막으로 적용한 폰 컨텍스트의 seq — 큐잉된 옛 컨텍스트가 최신 상태를 뒤집지 않게 순서 비교(감사 WCH-PAIR-01).
-    private static let lastAppliedContextSeqKey = "watchLastAppliedContextSeq"
     // 마지막으로 적용된 번들 기본 URL 의 스탬프. 새 빌드에서 defaultURLString 이 바뀌면(재설치)
     // 저장된 옛 URL 을 자동으로 새 기본값으로 교체 → 터널 회전 후 재설치 시 인앱 수정 없이 즉시 반영.
     private static let urlStampKey = "receiverURLStamp"
 
     @Published var urlString: String {
-        didSet {
-            let normalized = Self.normalizedReceiverURLString(urlString)
-            if urlString != normalized {
-                urlString = normalized
-                return
-            }
-            UserDefaults.standard.set(urlString, forKey: Self.urlKey)
-        }
+        didSet { UserDefaults.standard.set(urlString, forKey: Self.urlKey) }
     }
     @Published var workerName: String {
         didSet { UserDefaults.standard.set(workerName, forKey: Self.nameKey) }
@@ -221,6 +197,9 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     override init() {
         let d = UserDefaults.standard
+        // 8.3 이하에서 남은 Watch JWT는 8.4 첫 실행에 바로 폐기한다.
+        d.removeObject(forKey: "appAuthJWT")
+        purgeLegacyWatchAppJWT()
         Self.migrateEnergyEfficiencyDefaultsIfNeeded(d)
         let bundledDefaultURL = Self.bundledDefaultURLString()
         Self.migrateDefaultURLIfNeeded(d, bundledDefaultURL: bundledDefaultURL)
@@ -289,30 +268,19 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     func signOut() {
-        wipeIdentityScopedState()
-    }
-
-    // 신원 소거 — 로그아웃·사용자 전환 시 이전 착용자 흔적(로그인·사번·이름·역할·토큰)을 전부
-    // 지운다(감사 WCH-PAIR-02: 종전엔 지워지는 영속 키 0/18 → 다음 착용자 생체가 이전 사번으로 기록).
-    // 미전송 backlog·미해결 낙상 억제키는 소유 객체(VitalTransmitter·WorkoutManager)가 알림을 받아 지운다.
-    func wipeIdentityScopedState() {
         loginId = ""
         appMode = .worker
         serverRole = "worker"
         canManageDashboard = false
-        workerName = Self.defaultWorkerName
-        employeeId = Self.defaultEmployeeId
-        WatchAppCredentialStore.save("")
-        NotificationCenter.default.post(name: .vitalguardWatchIdentityWiped, object: nil)
+        UserDefaults.standard.removeObject(forKey: "vital_backlog_v2")
+        UserDefaults.standard.removeObject(forKey: "vital_backlog")
     }
 
     func activatePhoneSession() {
         guard WCSession.isSupported() else { return }
         WCSession.default.delegate = self
         WCSession.default.activate()
-        // receivedApplicationContext = 폰이 보낸 것. applicationContext 는 "내가 마지막으로 보낸 것"이라
-        // source 가드에서 항상 걸러져 시작 시 폰 컨텍스트가 반영되지 않았다(감사 WCH-PAIR-03).
-        applyPhoneContext(WCSession.default.receivedApplicationContext)
+        applyPhoneContext(WCSession.default.applicationContext)
     }
 
     func syncLoginFromPhone() {
@@ -415,13 +383,6 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     private func applyPhoneContext(_ context: [String: Any]) {
         guard context["source"] as? String == "VitAlGuard-iPhone" else { return }
-        // 순서 비교 — transferUserInfo 폴백·중복 채널로 큐잉된 옛 컨텍스트가 최신 로그인/로그아웃을
-        // 뒤집지 않게, 폰이 부여한 단조증가 contextSeq 로 걸러낸다(감사 WCH-PAIR-01 권고).
-        // seq 없는 구버전 폰 페이로드는 종전대로 항상 적용한다(하위호환).
-        if let seq = context["contextSeq"] as? Double {
-            guard seq > UserDefaults.standard.double(forKey: Self.lastAppliedContextSeqKey) else { return }
-            UserDefaults.standard.set(seq, forKey: Self.lastAppliedContextSeqKey)
-        }
         let loggedIn = context["loggedIn"] as? Bool
         let incomingId = (context["loginId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingMode = WatchAppMode(rawValue: context["mode"] as? String ?? "") ?? Self.mode(for: incomingId)
@@ -436,13 +397,6 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
         let incomingEndpoint = (context["endpointURL"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingEmployeeId = (context["employeeId"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let incomingLanguageCode = (context["languageCode"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let incomingAppJWT = (context["appAuthJWT"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if loggedIn == true, !incomingAppJWT.isEmpty {
-            WatchAppCredentialStore.save(incomingAppJWT)
-        } else if loggedIn == false {
-            WatchAppCredentialStore.save("")
-        }
 
         DispatchQueue.main.async {
             if loggedIn == true, !incomingId.isEmpty {
@@ -451,11 +405,14 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
                 self.serverRole = incomingServerRole
                 self.canManageDashboard = incomingCanManage
                 self.employeeId = incomingEmployeeId.isEmpty ? Self.employeeId(for: incomingId) : incomingEmployeeId
+            } else if loggedIn == false, !self.loginId.isEmpty, incomingId.isEmpty {
+                // Older queued contexts can arrive after a fresh iPhone login. Do not let
+                // an empty stale payload flip an already-synced admin watch back to worker.
             } else if loggedIn == false {
-                // 폰 로그아웃 반영 — 종전엔 "!loginId.isEmpty && incomingId.isEmpty" 를 잡는 빈 스테일
-                // 가드 분기가 정확히 로그아웃 페이로드를 삼켜 no-op 이었다(감사 WCH-PAIR-01).
-                // 스테일 컨텍스트는 위 contextSeq 비교가 걸러내므로 여기서는 신원을 전부 지운다.
-                self.wipeIdentityScopedState()
+                self.loginId = ""
+                self.appMode = .worker
+                self.serverRole = "worker"
+                self.canManageDashboard = false
             } else if !incomingId.isEmpty {
                 self.loginId = incomingId
                 self.appMode = incomingMode
@@ -488,8 +445,6 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             self.languageCode = incomingLanguageCode
         }
     }
-
-    static func currentAppJWT() -> String { WatchAppCredentialStore.load() }
 
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
 
@@ -773,14 +728,14 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     static func normalizedReceiverURLString(_ raw: String) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let bundledURL = URL(string: bundledDefaultURLString()),
-              let components = URLComponents(string: trimmed),
-              components.scheme == "https",
-              components.host?.lowercased() == bundledURL.host?.lowercased(),
-              components.path == "/api/mock/vital"
-        else {
+        guard !trimmed.isEmpty, var components = URLComponents(string: trimmed) else {
             return fallbackURLString
+        }
+        if components.scheme == nil {
+            components.scheme = "https"
+        }
+        if components.path.isEmpty || components.path == "/" || components.path == "/api/mock" {
+            components.path = "/api/mock/vital"
         }
         return components.url?.absoluteString ?? fallbackURLString
     }
@@ -911,7 +866,6 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 }
 
 extension Notification.Name {
-    static let vitalguardWatchIdentityWiped = Notification.Name("vitalguard.watch.identityWiped")
     static let vitalguardWatchManualSyncRequest = Notification.Name("vitalguard.watch.manualSyncRequest")
     static let vitalguardWatchNfcScanResult = Notification.Name("vitalguard.watch.nfcScanResult")
     static let vitalguardWatchFallAlertClear = Notification.Name("vitalguard.watch.fallAlertClear")

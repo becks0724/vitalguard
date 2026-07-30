@@ -100,6 +100,23 @@ export type SiteInfoRow = {
   recorded_at: string;
 };
 
+// 모바일 단말의 갱신 토큰은 평문을 저장하지 않는다. 이 테이블은 사용자별 기기 세션 폐기와
+// 회전(refresh-token rotation)을 위해서만 사용하며, PostgreSQL 접속정보는 여전히 서버에만 있다.
+export type MobileAppSessionRow = {
+  session_id: string;
+  username: string;
+  role: string;
+  name: string | null;
+  worker_id: string | null;
+  refresh_token_hash: string;
+  device_name: string | null;
+  platform: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 const globalForDb = globalThis as typeof globalThis & {
   __safetyMonitorPgPool?: Pool;
   __safetyMonitorSchemaReady?: Promise<void>;
@@ -562,6 +579,28 @@ async function initSchema(): Promise<void> {
     -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_phone TEXT;
+
+    -- 모바일 refresh token 세션. 토큰 원문은 Keychain/Android Keystore와 요청 본문에만 존재하고
+    -- DB에는 SHA-256 해시만 보관한다. 로그아웃·사용자 비활성화 시 해당 행을 폐기할 수 있다.
+    CREATE TABLE IF NOT EXISTS mobile_app_session (
+      session_id TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      role TEXT NOT NULL,
+      name TEXT,
+      worker_id TEXT,
+      refresh_token_hash TEXT UNIQUE NOT NULL,
+      device_name TEXT,
+      platform TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_mobile_app_session_user ON mobile_app_session(username);
+    CREATE INDEX IF NOT EXISTS idx_mobile_app_session_active ON mobile_app_session(expires_at) WHERE revoked_at IS NULL;
+    ALTER TABLE mobile_app_session ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'worker';
+    ALTER TABLE mobile_app_session ADD COLUMN IF NOT EXISTS name TEXT;
+    ALTER TABLE mobile_app_session ADD COLUMN IF NOT EXISTS worker_id TEXT;
 
     -- 클라우드 브릿지 — 앱 OCR 미디어(이미지/영상)를 날짜에 매칭해 캘린더에 표시.
     -- 스토리지 비종속: media_url(표시용)만 채워도 동작, provider/key는 Phase 2(오브젝트 스토리지) 보강.
@@ -2444,6 +2483,80 @@ export async function findUserByUsername(username: string): Promise<UserRow | nu
     username,
   ]);
   return rows[0] ?? null;
+}
+
+export async function createMobileAppSession(input: {
+  sessionId: string;
+  username: string;
+  role: string;
+  name: string | null;
+  workerId: string | null;
+  refreshTokenHash: string;
+  deviceName: string | null;
+  platform: string | null;
+  expiresAt: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO mobile_app_session
+      (session_id, username, role, name, worker_id, refresh_token_hash, device_name, platform, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      input.sessionId,
+      input.username,
+      input.role,
+      input.name,
+      input.workerId,
+      input.refreshTokenHash,
+      input.deviceName,
+      input.platform,
+      input.expiresAt,
+    ],
+  );
+}
+
+export async function findActiveMobileAppSession(
+  refreshTokenHash: string,
+): Promise<MobileAppSessionRow | null> {
+  const { rows } = await q<MobileAppSessionRow>(
+    `SELECT * FROM mobile_app_session
+      WHERE refresh_token_hash = $1
+        AND revoked_at IS NULL
+        AND expires_at > ${NOW_ISO}
+      LIMIT 1`,
+    [refreshTokenHash],
+  );
+  return rows[0] ?? null;
+}
+
+// Refresh 토큰은 매 사용 시 교체한다. 이미 회전된 토큰을 다시 쓰면 행이 없으므로 재로그인이 필요하다.
+export async function rotateMobileAppSession(input: {
+  sessionId: string;
+  previousRefreshTokenHash: string;
+  nextRefreshTokenHash: string;
+  expiresAt: string;
+}): Promise<boolean> {
+  const { rowCount } = await q(
+    `UPDATE mobile_app_session
+        SET refresh_token_hash = $3,
+            expires_at = $4,
+            updated_at = ${NOW_ISO}
+      WHERE session_id = $1
+        AND refresh_token_hash = $2
+        AND revoked_at IS NULL
+        AND expires_at > ${NOW_ISO}`,
+    [input.sessionId, input.previousRefreshTokenHash, input.nextRefreshTokenHash, input.expiresAt],
+  );
+  return rowCount === 1;
+}
+
+export async function revokeMobileAppSession(sessionId: string): Promise<void> {
+  await q(
+    `UPDATE mobile_app_session
+        SET revoked_at = COALESCE(revoked_at, ${NOW_ISO}),
+            updated_at = ${NOW_ISO}
+      WHERE session_id = $1`,
+    [sessionId],
+  );
 }
 
 // 사번(employee_id)이 다른 사용자에게 이미 쓰이는지 — 자가 프로필 수정 시 타인 사번 도용(귀속 위조) 차단용.

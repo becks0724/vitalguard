@@ -78,7 +78,7 @@ export async function POST(request: Request) {
   // 등록·수정 = 유효 대시보드 세션(로그인 관제자). 수정은 등록 본인·총괄 관리자로 좁힌다.
   const scope = eventWriteScope(request);
   if (!scope) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "인증 필요", action: mobileUnauthorizedAction(bearerToken(request)) }, { status: 401 });
   }
   let body: Record<string, unknown>;
   try {

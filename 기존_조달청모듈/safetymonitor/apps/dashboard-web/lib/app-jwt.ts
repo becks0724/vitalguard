@@ -1,13 +1,19 @@
 // 앱(iPhone/Apple Watch) 인증 토큰 — HMAC-SHA256 서명 JWT(무의존, node:crypto). 서버 저장 없이 어느 인스턴스든 검증.
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
-const TTL_SEC = 30 * 24 * 60 * 60; // 30일 — 현장 앱은 재로그인 빈도를 낮춘다.
+const LEGACY_TTL_SEC = 30 * 24 * 60 * 60;
+const MOBILE_ACCESS_TTL_SEC = 15 * 60;
+export const MOBILE_REFRESH_TTL_SEC = 30 * 24 * 60 * 60;
 
 export type AppJwtClaims = {
   sub: string; // 로그인 ID(username)
   role: string; // owner | admin | worker
   name: string | null;
   workerId: string | null; // 사번(employee_id)
+  aud?: "vitalguard-mobile";
+  tokenUse?: "access";
+  sessionId?: string;
+  v?: number;
   iat: number;
   exp: number;
 };
@@ -23,7 +29,7 @@ export function isAppJwtConfigured(): boolean {
 // 원인을 못 찾아 배포를 4회 롤백했다. 사유는 **서버 로그로만** 남기고 응답에는 넣지 않는다
 // (서명 성공/실패를 외부에 알려주면 키 추측의 성공 여부를 흘리게 된다).
 
-export type AppAuthFailure = "no_token" | "verify_failed" | "no_worker_id";
+export type AppAuthFailure = "no_token" | "verify_failed" | "expired" | "no_worker_id";
 
 /** 클라이언트가 스스로 복구할 수 있는가. 응답에 이 값만 실어 앱이 재로그인을 띄우게 한다. */
 export type AppAuthAction = "reauth" | "none";
@@ -44,20 +50,23 @@ export function diagnoseAppAuth(
   opts: { requireWorkerId?: boolean } = {},
 ): AppAuthDiagnosis {
   const raw = bearerToken(request);
+  const signedClaims = verifiedAppJwtClaims(raw);
   const claims = verifyAppJwt(raw);
   const reason: AppAuthFailure = !raw
     ? "no_token"
-    : !claims
+    : !signedClaims
       ? "verify_failed"
+      : !claims
+        ? "expired"
       : "no_worker_id";
   // 재로그인으로 풀리는 경우 — 토큰이 없거나(로그아웃 상태), 만료·구 스키마(사번 누락).
   // 서명 자체가 틀린 경우는 앱이 재로그인해도 같은 결과라 none 으로 둔다.
   const action: AppAuthAction = reason === "verify_failed" ? "none" : "reauth";
   const iso = (t?: number) => (t ? new Date(t * 1000).toISOString() : "n/a");
   const logLine =
-    `인증 거부(${reason}) — sub=${claims?.sub ?? "n/a"}` +
-    ` workerId=${JSON.stringify(claims?.workerId ?? null)}` +
-    ` iat=${iso(claims?.iat)} exp=${iso(claims?.exp)}` +
+    `인증 거부(${reason}) — sub=${(claims ?? signedClaims)?.sub ?? "n/a"}` +
+    ` workerId=${JSON.stringify((claims ?? signedClaims)?.workerId ?? null)}` +
+    ` iat=${iso((claims ?? signedClaims)?.iat)} exp=${iso((claims ?? signedClaims)?.exp)}` +
     ` requireWorkerId=${opts.requireWorkerId ? "y" : "n"}` +
     ` ua=${request.headers.get("user-agent") ?? "n/a"}`;
   return { reason, action, logLine };
@@ -76,25 +85,62 @@ function b64urlJson(obj: unknown): string {
   return Buffer.from(JSON.stringify(obj)).toString("base64url");
 }
 
-// {sub, role, name, workerId} 로 30일 만료 JWT 발급. 시크릿 미설정 시 throw(라우트가 사전 차단).
+function signJwt(input: {
+  sub: string;
+  role: string;
+  name: string | null;
+  workerId: string | null;
+  aud?: "vitalguard-mobile";
+  tokenUse?: "access";
+  sessionId?: string;
+  v?: number;
+}, ttlSec: number): string {
+  const secret = process.env.APP_JWT_SECRET ?? "";
+  if (!secret) throw new Error("APP_JWT_SECRET 미설정");
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64urlJson({ alg: "HS256", typ: "JWT" });
+  const payload = b64urlJson({ ...input, iat: now, exp: now + ttlSec });
+  const data = `${header}.${payload}`;
+  const sig = createHmac("sha256", secret).update(data).digest("base64url");
+  return `${data}.${sig}`;
+}
+
+// 기존 앱과의 호환용 JWT. 새 모바일 클라이언트는 아래의 15분 access token을 사용한다.
 export function signAppJwt(input: {
   sub: string;
   role: string;
   name: string | null;
   workerId: string | null;
 }): string {
-  const secret = process.env.APP_JWT_SECRET ?? "";
-  if (!secret) throw new Error("APP_JWT_SECRET 미설정");
-  const now = Math.floor(Date.now() / 1000);
-  const header = b64urlJson({ alg: "HS256", typ: "JWT" });
-  const payload = b64urlJson({ ...input, iat: now, exp: now + TTL_SEC });
-  const data = `${header}.${payload}`;
-  const sig = createHmac("sha256", secret).update(data).digest("base64url");
-  return `${data}.${sig}`;
+  return signJwt(input, LEGACY_TTL_SEC);
 }
 
-// Bearer 토큰 검증 — 서명·만료 확인 후 클레임 반환. 실패/미설정/변조 시 null.
-export function verifyAppJwt(token: string | null | undefined): AppJwtClaims | null {
+export function createMobileRefreshToken(): { token: string; tokenHash: string; sessionId: string } {
+  const token = randomBytes(48).toString("base64url");
+  return { token, tokenHash: hashMobileRefreshToken(token), sessionId: randomUUID() };
+}
+
+export function hashMobileRefreshToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function mobileRefreshExpiryIso(now = Date.now()): string {
+  return new Date(now + MOBILE_REFRESH_TTL_SEC * 1000).toISOString();
+}
+
+export function signMobileAccessJwt(input: {
+  sub: string;
+  role: string;
+  name: string | null;
+  workerId: string | null;
+  sessionId: string;
+}): string {
+  return signJwt({ ...input, aud: "vitalguard-mobile", tokenUse: "access", v: 2 }, MOBILE_ACCESS_TTL_SEC);
+}
+
+// 서명만 확인한다. 만료 판단과 401 action 판정을 같은 검증 결과에 기반하게 해,
+// 변조 토큰을 "재로그인"으로 오인하지 않는다.
+function verifiedAppJwtClaims(token: string | null | undefined): AppJwtClaims | null {
   const secret = process.env.APP_JWT_SECRET ?? "";
   if (!secret || !token) return null;
   const parts = token.split(".");
@@ -110,8 +156,43 @@ export function verifyAppJwt(token: string | null | undefined): AppJwtClaims | n
   } catch {
     return null;
   }
-  if (typeof claims.exp !== "number" || Math.floor(Date.now() / 1000) > claims.exp) return null;
+  if (typeof claims.exp !== "number") return null;
   return claims;
+}
+
+// Bearer 토큰 검증 — 서명·만료 확인 후 클레임 반환. 실패/미설정/변조 시 null.
+export function verifyAppJwt(token: string | null | undefined): AppJwtClaims | null {
+  const claims = verifiedAppJwtClaims(token);
+  if (!claims || Math.floor(Date.now() / 1000) > claims.exp) return null;
+  return claims;
+}
+
+export function verifyMobileAccessJwt(token: string | null | undefined): AppJwtClaims | null {
+  const claims = verifyAppJwt(token);
+  if (
+    claims?.aud !== "vitalguard-mobile" ||
+    claims.tokenUse !== "access" ||
+    claims.v !== 2 ||
+    typeof claims.sessionId !== "string" ||
+    claims.sessionId.length === 0
+  ) {
+    return null;
+  }
+  return claims;
+}
+
+// 401 본문의 action 계약. 재로그인으로 복구 가능한 정상 서명 토큰(만료·구 클레임·토큰 없음)만
+// reauth를 내보내고, 서명 불일치/변조는 none으로 둬 반복 시도를 유도하지 않는다.
+export function mobileUnauthorizedAction(token: string | null | undefined): "reauth" | "none" {
+  if (!token) return "reauth";
+  const claims = verifiedAppJwtClaims(token);
+  if (!claims) return "none";
+  if (Math.floor(Date.now() / 1000) > claims.exp) return "reauth";
+  if (!claims.workerId) return "reauth";
+  if (claims.aud === "vitalguard-mobile" && (claims.tokenUse !== "access" || claims.v !== 2)) {
+    return "reauth";
+  }
+  return "none";
 }
 
 // Authorization: Bearer <token> 에서 토큰만 추출(없으면 null).
