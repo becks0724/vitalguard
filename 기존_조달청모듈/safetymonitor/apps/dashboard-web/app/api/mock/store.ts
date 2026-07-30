@@ -1,4 +1,9 @@
-import { type VitalDataOrigin, VitalSample, parseResilientVitalSample } from "@safetymonitor/schemas";
+import {
+  type VitalDataOrigin,
+  VitalSample,
+  VitalSampleSchema,
+  parseResilientVitalSample,
+} from "@safetymonitor/schemas";
 
 import {
   persistSample,
@@ -131,7 +136,29 @@ async function resolvePrimaryWorkerId(workerId: string): Promise<string> {
   return _aliasCache.map[workerId] ?? workerId;
 }
 
+// 스키마에 없는 필드는 zod 가 조용히 버린다. 그 침묵이 같은 사고를 네 번 냈다 —
+// accelerationMagnitudeG(감사 BND-CONTRACT-01) · mlFallPipelineActive(2026-07-27) ·
+// heartbeat·locationTimestamp·watchDeviceModel(2026-07-30). 매번 "앱은 보내는데 서버엔 없다"였고,
+// raw_json 도 파싱 **이후** 값이라 사후 복구조차 안 됐다.
+// 값을 받아주지는 않되(스키마 변경 없이 임의 필드 저장은 위험), 버리고 있다는 사실은 남긴다.
+// 이름당 1회만 경고 — 5초 주기 전송이라 매 건 찍으면 로그가 덮인다.
+const KNOWN_SAMPLE_FIELDS = new Set([...Object.keys(VitalSampleSchema.shape), "hr"]);
+const warnedUnknownFields = new Set<string>();
+
+function warnUnknownFields(input: unknown): void {
+  if (typeof input !== "object" || input === null) return;
+  const unknown = Object.keys(input).filter(
+    (k) => !KNOWN_SAMPLE_FIELDS.has(k) && !warnedUnknownFields.has(k),
+  );
+  if (unknown.length === 0) return;
+  for (const k of unknown) warnedUnknownFields.add(k);
+  console.warn(
+    `[vital] 스키마에 없는 필드 수신 — 저장되지 않고 버려집니다: ${unknown.join(", ")}`,
+  );
+}
+
 export async function addSample(input: unknown): Promise<VitalSample | null> {
+  warnUnknownFields(input);
   const normalized =
     typeof input === "object" && input !== null && "hr" in input
       ? {

@@ -217,6 +217,14 @@ async function initSchema(): Promise<void> {
     -- 수신 출처는 원본 실측 테이블에 명시한다. 과거 행은 출처를 추정하지 않고 legacy 로 보존한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS data_origin TEXT NOT NULL DEFAULT 'legacy_unclassified_vitalguard';
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS source TEXT;
+    -- 값의 '측정 시각' — ts(전송 시각)와 다르다. 이게 없으면 "5초마다 실측"과
+    -- "직전 값을 5초마다 복사"를 서버가 구분할 방법이 없다(2026-07-30 조사).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heart_rate_measured_at TEXT;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS spo2_measured_at TEXT;
+    -- 백그라운드 하트비트 = 새 심박 없이 최신 스냅샷을 재전송한 행(심박이 복사본).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heartbeat INTEGER;
+    -- 착용 기기 — 혈중산소 센서 유무(Series 6+/Ultra)를 가려 SpO2 결측 원인을 확정한다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS watch_device_model TEXT;
     CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
 
     -- 목업은 vital_samples 에 절대 적재하지 않는다. iPhone·Watch 목업도 각각 명시해 혼합 집계를 막는다.
@@ -774,6 +782,11 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     hr_post_peak_30s: sample.hrPostPeak30s ?? null,
     hr_delta_mean: sample.hrDeltaMean ?? null,
     hr_delta_peak: sample.hrDeltaPeak ?? null,
+    // 측정 시각·복사 표식 — ts 하나로는 실측인지 직전 값 복사인지 못 가린다.
+    heart_rate_measured_at: sample.heartRateMeasuredAt ?? null,
+    spo2_measured_at: sample.spo2MeasuredAt ?? null,
+    heartbeat: sample.heartbeat === true ? 1 : sample.heartbeat === false ? 0 : null,
+    watch_device_model: sample.watchDeviceModel ?? null,
     raw_json: JSON.stringify(sample),
   };
   const { text, values } = buildInsert("vital_samples", cols);

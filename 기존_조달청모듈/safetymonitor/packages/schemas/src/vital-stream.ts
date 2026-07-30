@@ -30,6 +30,26 @@ export const VitalSampleSchema = z.object({
 
   heartRate: z.number().min(20).max(250).optional(),
   spo2: z.number().min(50).max(100).optional(),
+
+  // ── 값의 '측정 시각' (2026-07-30) ─────────────────────────────────────────
+  // ts 는 **전송 시각**이지 측정 시각이 아니다. 워치는 새 심박이 올 때마다 전송하면서
+  // SpO2 는 캐시된 마지막 값(latestSpO2)을 신선도 검사 없이 함께 붙인다
+  // (WorkoutManager: `send(heartRate: bpm, spo2: self.latestSpO2)`).
+  // 그래서 5초마다 들어온 SpO2 19만 건이 실제로는 1,390번의 측정을 복사한 것이었다.
+  // 값만 보고는 "같은 값이 나온 진짜 재측정"과 "직전 값 복사"를 구분할 수 없다 —
+  // 시각이 있어야 구분된다. GPS 는 이미 locationTimestamp 로 같은 일을 하고 있다.
+  // 앱이 HKSample.startDate / HKStatistics.mostRecentQuantityDateInterval() 로 채워 보낸다.
+  heartRateMeasuredAt: z.string().datetime().optional(),
+  spo2MeasuredAt: z.string().datetime().optional(),
+  // 워치가 이미 보내는데 스키마에 없어 버려지던 것들 ↓
+  // 백그라운드 하트비트 표식 — true 면 새 심박 이벤트 없이 **최신 스냅샷을 재전송**한 행이다
+  // (VitalTransmitter.sendSnapshot). 즉 이 행의 심박은 실측이 아니라 직전 값 복사다.
+  heartbeat: z.boolean().optional(),
+  // 값의 측정 시각(GPS) — 위 두 필드와 같은 목적. 앱이 이미 보내고 있다.
+  locationTimestamp: z.string().datetime().optional(),
+  // 착용 기기 — 혈중산소 센서는 Series 6 이상·Ultra 에만 있다. 어떤 계정의 SpO2 가 비는 것이
+  // 기기 세대 때문인지 수집 실패인지 이 값 없이는 못 가린다.
+  watchDeviceModel: z.string().min(1).max(60).optional(),
   accelMagnitudeG: z.number().min(0).max(20).optional(),
   motionStillSec: z.number().min(0).optional(),
   skinTempC: z.number().min(20).max(45).optional(),
