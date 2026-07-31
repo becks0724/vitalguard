@@ -5640,6 +5640,7 @@ export function DemoDashboard() {
           workerCount={fieldCoords.count}
           coordSource={coordSource}
           refreshNonce={weatherRefreshNonce}
+          worker={workerSignal}
         />
       )}
 

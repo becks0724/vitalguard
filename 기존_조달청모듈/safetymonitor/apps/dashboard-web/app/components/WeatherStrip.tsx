@@ -539,7 +539,7 @@ export function WeatherStrip({
 
   return (
     <>
-      <section className="min-w-0 overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
+      <section className={`min-w-0 overflow-hidden rounded-xl border border-hairline bg-canvas py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated ${layout === "list" ? "px-3" : "px-6"}`}>
         <div className="mb-2.5 flex items-center justify-between gap-3 text-xs text-body dark:text-on-dark-soft">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-semibold text-ink dark:text-on-dark">현장 환경</span>
@@ -587,14 +587,15 @@ export function WeatherStrip({
                     name={it.icon ?? "cloud"}
                     className="h-[18px] w-[18px] shrink-0 text-body dark:text-on-dark-soft"
                   />
-                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-tight text-muted dark:text-on-dark-soft">
+                  {/* 라이트모드 가독성 — text-muted(#999)는 흰 배경에서 너무 흐리다 → text-body(#60646c). */}
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-tight text-body dark:text-on-dark-soft">
                     {it.label}
                   </span>
                   <span className={`shrink-0 text-sm font-semibold tabular-nums ${VALUE_CLASS[it.evaluation.currentSeverity]}`}>
                     {it.value}
                   </span>
                   {it.sub && (
-                    <span className="shrink-0 text-[10px] font-medium text-muted-soft dark:text-on-dark-soft/70">
+                    <span className="shrink-0 text-[10px] font-medium text-muted dark:text-on-dark-soft/80">
                       {it.sub}
                     </span>
                   )}
