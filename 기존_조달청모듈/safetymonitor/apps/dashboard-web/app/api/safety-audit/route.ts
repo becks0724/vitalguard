@@ -8,6 +8,14 @@ import { MAIN_SITE_ID, mockWorkerDayAudit } from "../../lib/site-workerdays-mock
 
 export const dynamic = "force-dynamic";
 
+// 감사 대상 기간(KST 달력일) — 기본값은 '최근 90일 롤링' 이 아니라 고정 구간이다.
+// 안전관리비 정산은 계약기간·정산기준일 기준으로 하는 것이지 굴러가는 창으로 하지 않는다.
+// 롤링이면 같은 현장을 어제 보고 오늘 다시 봤을 때 계상액 ÷ 출역이 달라져 감사 근거가 되지 못하고,
+// 기준일 이후 새로 들어온 출역이 판정(청구수량 ÷ 실측인원)을 조용히 바꾼다.
+// from = 워치 출역 수집 개시일, to = 검증 기준일. 호출부가 ?from&to 로 덮어쓸 수 있다.
+const AUDIT_PERIOD_FROM = "2026-06-22";
+const AUDIT_PERIOD_TO = "2026-07-30";
+
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
@@ -16,10 +24,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: { code: "BAD_ID", message: "공고 id 가 필요합니다" } }, { status: 400 });
     }
 
-    // 출역 집계 기간 — 기본 최근 90일.
-    const now = new Date();
-    const from = url.searchParams.get("from") ?? new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const to = url.searchParams.get("to") ?? now.toISOString();
+    const from = url.searchParams.get("from") ?? AUDIT_PERIOD_FROM;
+    const to = url.searchParams.get("to") ?? AUDIT_PERIOD_TO;
 
     const detail = await getNoticeDetail(id);
     if (!detail.notice) {

@@ -38,7 +38,7 @@ type Audit = {
   byDay: { day: string; workers: number; safetyWorkers: number }[];
   note: string;
 };
-type AuditResp = { source: "live" | "mock"; notice: Notice; audit: Audit };
+type AuditResp = { source: "live" | "mock"; notice: Notice; audit: Audit; period?: { from: string; to: string } };
 
 function won(n: number | null | undefined): string {
   return n == null ? "-" : `${Math.round(n).toLocaleString("ko-KR")}원`;
@@ -230,6 +230,12 @@ export default function SafetyCostAuditBoard() {
                       <span className="text-[10px] font-normal text-muted"> worker-day</span>
                     </div>
                     <div className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">작업자 {a.distinctWorkers}명 · {a.days}일</div>
+                    {/* 감사 기간 명시 — 롤링 창이면 같은 현장을 다시 볼 때 값이 달라져 감사 근거가 못 된다. */}
+                    {data?.period && (
+                      <div className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+                        검증 기간 {data.period.from.slice(0, 10)} ~ {data.period.to.slice(0, 10)}
+                      </div>
+                    )}
                   </div>
                 </div>
 
