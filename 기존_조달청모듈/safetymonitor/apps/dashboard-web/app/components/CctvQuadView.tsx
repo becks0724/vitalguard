@@ -37,6 +37,20 @@ const CAMERAS: Cam[] = [
   { id: "CAM-08", location: "가설 전기실" },
 ];
 
+// 타일 푸터에 적는 추론 모델명 — 여기 한 곳에서만 관리한다(종전엔 6군데 하드코딩이라 조용히 낡았다).
+// 근거(실제 로드되는 것) —
+//   object = cctv-ai `YOLO_MODEL` 기본값 `yolov8n.pt`
+//   fall   = 서버 추론 없음(합성/엣지 display-only). 표기는 종전 값 유지.
+//   ppe    = 젯슨 엣지 `PPE_ENGINE` 기본값 `ppe_yolo26s_640_v5_nc.engine`(현 운영 경로).
+//            ⚠ 엣지 미수신 시 cctv-ai 가 번들 클립을 `vyra_ppe.pt`(Hexmon·YOLOv8m)로 추론하는
+//            폴백이 있다. 그 경로가 다시 주 경로가 되면 이 값도 바꿔야 한다.
+//            엣지가 프레임에 굽는 오버레이(`PPE (yolo26 v5)`)와 어긋나면 한 화면에서 모순이 된다.
+const AI_MODEL_LABEL: Record<AiKind, string> = {
+  object: "YOLOv8",
+  fall: "YOLOv8-pose",
+  ppe: "YOLO26s v5",
+};
+
 // CCTV/보안 카메라 라인 아이콘 (대시보드 모노톤 테마와 동일).
 function CameraIcon({ size = 40 }: { size?: number }) {
   return (
@@ -425,11 +439,11 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              YOLOv8 · {stats.fps} fps · 총 {stats.total}
+              {AI_MODEL_LABEL.object} · {stats.fps} fps · 총 {stats.total}
             </>
           ) : (
             <>
-              YOLOv8 · <span className="font-semibold text-zinc-300">{label}</span> · 총{" "}
+              {AI_MODEL_LABEL.object} · <span className="font-semibold text-zinc-300">{label}</span> · 총{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
@@ -490,12 +504,12 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              YOLOv8-pose · 대상 {stats.total}명
+              {AI_MODEL_LABEL.fall} · 대상 {stats.total}명
               {fallen > 0 && <span className="ml-1.5 font-bold text-red-300">· 낙상 {fallen}건</span>}
             </>
           ) : (
             <>
-              YOLOv8-pose · <span className="font-semibold text-zinc-300">{label}</span> · 대상{" "}
+              {AI_MODEL_LABEL.fall} · <span className="font-semibold text-zinc-300">{label}</span> · 대상{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
@@ -557,7 +571,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              YOLOv8 · 작업자 {stats.person_count}명 · 준수율{" "}
+              {AI_MODEL_LABEL.ppe} · 작업자 {stats.person_count}명 · 준수율{" "}
               <span
                 className={
                   stats.compliance_rate >= 100
@@ -573,7 +587,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
             </>
           ) : (
             <>
-              YOLOv8 · <span className="font-semibold text-zinc-300">{label}</span> · 준수율{" "}
+              {AI_MODEL_LABEL.ppe} · <span className="font-semibold text-zinc-300">{label}</span> · 준수율{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
