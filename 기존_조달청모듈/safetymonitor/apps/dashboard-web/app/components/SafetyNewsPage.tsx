@@ -31,7 +31,8 @@ function Panel({
       ].join(" ")}
     >
       <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5">
-        <h3 className="text-xs font-bold text-ink dark:text-on-dark">{title}</h3>
+        {/* 패널 제목 — 기존 text-xs(12px) 대비 20% 확대(14.4px). 배지는 원래 크기를 유지한다. */}
+        <h3 className="text-[14.4px] font-bold leading-tight text-ink dark:text-on-dark">{title}</h3>
         {badge}
       </div>
       <div className="min-h-0 flex-1">{children}</div>

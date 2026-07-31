@@ -3406,6 +3406,7 @@ export function DemoDashboard() {
   //    한 칸 밀려서 상수로 뽑았다(pages 배열 순서와 반드시 함께 본다).
   const [pagerIdx, setPagerIdx] = useState(0);
   const ERP_PAGE_IDX = 3; // pages 배열의 'ERP: 스마트경리' 위치
+  const NEWS_PAGE_IDX = 1; // pages 배열의 '안전뉴스' 위치
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -5811,8 +5812,10 @@ export function DemoDashboard() {
         />
       )}
 
-      {/* 실시간 수집 · DB 영속 스트립 — ERP: 스마트경리 활성 시 숨김(속보 티커와 동일 사유). */}
-      {pagerIdx !== ERP_PAGE_IDX && (
+      {/* 실시간 수집 · DB 영속 스트립(+ data_mockup) — 관제·안전관리비 검증 탭에서만 노출.
+          ERP: 스마트경리 = 별개 시스템을 한 화면에 최대한 보여주려 숨김.
+          안전뉴스 = 탭 주제(재난·재해 정보)와 무관해 제외(사용자 결정 2026-07-31). */}
+      {pagerIdx !== ERP_PAGE_IDX && pagerIdx !== NEWS_PAGE_IDX && (
       <>
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
         <button
