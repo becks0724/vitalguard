@@ -54,8 +54,10 @@ function SquareFit({ children }: { children: React.ReactNode }) {
     const el = ref.current;
     if (!el) return;
     const measure = () => {
-      const r = el.getBoundingClientRect();
-      setSide(Math.floor(Math.min(r.width, r.height)));
+      // getBoundingClientRect 는 조상의 CSS transform(scale)이 걸리면 축소된 값을 준다.
+      // 그 값을 다시 인라인 크기로 쓰면 이중 축소돼 지도가 작아지고 여백만 커진다(사이드 패널에서 발생).
+      // offsetWidth/Height 는 transform 영향을 받지 않는 레이아웃 크기라 어디에 놓여도 정확하다.
+      setSide(Math.floor(Math.min(el.offsetWidth, el.offsetHeight)));
     };
     measure();
     const ro = new ResizeObserver(measure);

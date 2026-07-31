@@ -60,8 +60,10 @@ function useHospitals(
 
 function HospitalRow({ h }: { h: Hospital }) {
   return (
-    <li className="flex items-start justify-between gap-2 border-b border-hairline py-1.5 last:border-0 dark:border-white/10">
-      <div className="min-w-0">
+    <li className="flex items-start gap-2 border-b border-hairline py-1.5 last:border-0 dark:border-white/10">
+      {/* flex-1 로 남는 폭을 채운다 — 없으면 justify-between 이 '지도' 버튼을 끝으로 밀어
+          텍스트와 버튼 사이에 큰 빈 공간이 생긴다(사이드 패널처럼 폭이 좁을 때 특히 눈에 띈다). */}
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-[13px] font-semibold text-ink dark:text-on-dark">
             {h.name}

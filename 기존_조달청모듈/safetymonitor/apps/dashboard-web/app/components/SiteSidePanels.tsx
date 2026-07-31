@@ -138,7 +138,10 @@ function Handle({
 // 네이티브 크기(420×360)로 렌더한 뒤 transform: scale 로 비율 그대로 축소해 좌측 여백 안에 넣는다
 // (현장 환경·안전 신호등과 같은 296px 경계를 넘지 않게 — 사용자 요청).
 const PANEL_W = 296;
-const NATIVE_W = 420;
+// 네이티브 폭을 420 → 340 으로 줄였다. 두 가지를 동시에 해결한다 —
+//  ① 레이더는 정사각(min(가로,세로))으로 맞춰지므로 폭이 넓을수록 좌우 여백만 커진다.
+//  ② 축소율이 0.705 → 0.87 로 완화돼 글자가 그만큼 커진다(가독성).
+const NATIVE_W = 340;
 const NATIVE_H = 360;
 const SCALE = PANEL_W / NATIVE_W;
 
