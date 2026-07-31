@@ -6,20 +6,25 @@
 
 ---
 
-## Phase 0 — 활용신청·명세 확정 ⬜ (사용자 직접)
+## Phase 0 — 활용신청·명세 확정 ✅ 완료 (2026-07-31)
 
-- [ ] safetydata.go.kr 회원가입 → `행정안전부_긴급재난문자`(dataSn=228) 활용신청
-- [ ] **아이피 항목 = `*.*.*.*`(전체 허용)** 로 기재 — Cloud Run 아웃바운드 IP 는 고정이 아니다(D-13)
-- [ ] 사유란이 있으면 "서버리스(Cloud Run) 환경으로 아웃바운드 IP 고정 불가" 명시
-- [ ] 승인 후 명세서에서 확인 — **인터페이스 ID**(`DSSP-IF-00247` 추정·미확인)
-- [ ] 확인 — 요청 파라미터명(`serviceKey` 대문자 K 여부·`returnType`·`pageNo`·`numOfRows`)
-- [ ] 확인 — **지역·기간 필터 파라미터 존재 여부**(없으면 전국 최신 N건 수신 후 클라 필터)
-- [ ] 확인 — **일일 호출 제한**(100건 추정) → 폴링 주기 확정 근거(D-12)
-- [ ] 확인 — 응답 래핑 구조(`{header, body:[]}`)·필드명이 CSV 와 동일한지
-- [ ] 실제 200 응답 1건 확보 → `docs/disaster-msg/sample-response.json` 로 보관
-- [ ] `SAFETYDATA_SERVICE_KEY` 를 Secret Manager 에 등록(키가 유일한 방어선 — D-13)
+- [x] safetydata.go.kr 회원가입 → `행정안전부_긴급재난문자`(dataSn=228) 활용신청
+- [x] **아이피 항목 = `*.*.*.*`(전체 허용)** 로 기재 — Cloud Run 아웃바운드 IP 는 고정이 아니다(D-13)
+- [x] 사유란이 있으면 "서버리스(Cloud Run) 환경으로 아웃바운드 IP 고정 불가" 명시
+- [x] **인터페이스 ID = `DSSP-IF-00247`** — 발급 내역의 URL 로 확정(추정이 맞았다)
+- [x] 파라미터 = `serviceKey`(대문자 K 맞음)·`returnType=json`·`pageNo`·`numOfRows` · 키 16자 특수문자 없음
+- [x] ★ **`crtDt=YYYYMMDD` 날짜 필터 작동**(57,119 → 16건) · `rgnNm` 지역 필터도 있으나 미사용 (D-17)
+- [x] 확인 — **일일 호출 1000건**(추정 100건은 오류) → 폴링 5분 주기 확정 (D-12)
+- [x] 확인 — **만료일자 2027-07-31** · 유저아이피 `*.*.*.*` 등록됨 (D-16)
+- [x] 응답 = `{header, numOfRows, pageNo, totalCount, body:[]}` · 필드명 CSV 동일, **`SN` 만 number** (D-17)
+- [x] 실 호출 200 `NORMAL SERVICE` 확인 · 응답 구조는 D-17 에 기록
+      (JSON 파일로 커밋하지 않는다 — 실데이터에 실종자 개인정보가 섞인다, D-10)
+- [ ] `SAFETYDATA_SERVICE_KEY` — 로컬 `.env.local` + 프로덕션 Secret Manager 등록
+      (시크릿 생성 → `secretAccessor` 개별 바인딩 → `--update-secrets` 1회 연결 — D-13)
 
-**완료 판정.** 실 API 200 응답 1건 + 명세 6항목 확정.
+- [x] ★ **실데이터 end-to-end 검증** — 오늘 17건을 Phase A~B 에 통과(폭염 15건 매칭·개인정보 0)
+
+**완료 판정.** 실 API 200 + 명세 6항목 확정 + 실데이터 파이프라인 통과. ✅
 
 ---
 
@@ -97,19 +102,38 @@
 
 ---
 
-## Phase C — 실 API 어댑터·캐시 ⬜ (Phase 0 선행)
+## Phase C — 실 API 어댑터·캐시 ✅ 완료 (2026-07-31)
 
-- [ ] `serviceKey()` — `SAFETYDATA_SERVICE_KEY` 없으면 `null` → **목업 폴백**(`kma.ts` 정책 답습)
-- [ ] `fetchDisasterMsgs()` — 실 API 호출 → `normalize()` 입력과 **동일한 배열** 반환
-- [ ] `source: "live" | "mock"` 구분 반환 (알림 발사 게이트에 필수 — D-11)
-- [ ] 인메모리 캐시 TTL **15분** (`kma.ts` 의 `globalThis` 맵 패턴 재사용 — D-12)
-- [ ] `numOfRows` — 지역 필터 파라미터가 없으면 200~300 (호우 상황 대비)
-- [ ] SN 집합 중복 제거 — **증분 커서 금지**, 신선도 윈도우와 같은 기간만 보관 (D-08)
-- [ ] 목업/실API 산출 형태가 동일한지 대조 테스트
-- [ ] ⚠️ **재승격분 육안 확인** — 실 데이터에서 `PROMOTED_TYPE` 로 통과한 문자에
-      개인정보가 섞이지 않았는지 1회 점검(불변식 테스트는 픽스처에만 성립 — D-15 한계)
+`app/lib/disaster-msg-api.ts` (server-only) 신설. 순수 로직은 `disaster-msg.ts` 에 그대로 둔다.
 
-**완료 판정.** 키 없을 때 목업 200 · 키 있을 때 live 200, 두 응답 형태 동일.
+- [x] `serviceKey()` — `SAFETYDATA_SERVICE_KEY` 없으면 `null` → 목업 폴백(`kma.ts` 정책 답습)
+- [x] `fetchDisasterMsgs(now?)` — `crtDt` + `numOfRows=1000` 호출 → 정규화 → 유형필터까지 수행
+  - [x] `queryDates()` — 평시 오늘 1건, **KST 00:00~03:00 에는 전날도**(신선도 3시간이 자정을 걸침)
+  - [x] `dedupeBySn()` — 두 날짜 결과 병합 시 중복 제거. 증분 커서 금지(SN 비연속 — D-08)
+  - [x] ⚠️ 응답 정렬 미신뢰 — 하루치 전건을 받아 우리가 필터 (D-17)
+- [x] `source: "live" | "mock"` 반환 (알림 발사 게이트용 — D-11)
+- [x] ★ **빈 body 를 목업으로 떨어뜨리지 않는다** — 재난 없는 날 가짜 경보 방지 (D-19)
+- [x] 인메모리 캐시 TTL **5분** · 캐시 키에 조회 날짜 포함(자정 경계 안전)
+- [x] `rgnNm` 서버측 지역 필터 **미사용** — 시·도 매칭은 우리가 한다 (D-17)
+- [x] ⚠️ 실 API 실패 시 `console.error` — 폴백이 아니라 장애다 (D-16)
+- [x] 로그는 `warn`/`error` 만(ESLint `no-console`) · 상시 차단 유형은 로그 제외 (D-19)
+- [x] 🐛 **실 API 의 `SN` 은 number** — `String(r.SN).trim()` (D-18)
+- [x] 🐛 **`REG_YMD`/`MDFCN_YMD` 는 나노초 타임스탬프** — 날짜 부분만 비교 (D-18)
+
+**실동작 검증(2026-07-31).**
+```
+목업 경로   source=mock · 2건 · 신선도 통과 2 · 부산 현장 매칭 2 · 긴급재난 1
+실 API      source=live · 34건(폭염) · 224ms · 개인정보 통과 0건
+캐시        2회차 0ms 적중
+당진/포항   site 6·7 · nearby 6·3
+키 오류     resultCode 30 SERVICE KEY IS NOT REGISTERED → console.error + mock 폴백
+```
+
+- [ ] ⚠️ **재승격분 육안 확인** — 오늘 재승격 0건(대피 문자 미발생)이라 **미확인**.
+      실제 `대피안내` 가 나온 날 개인정보가 섞이지 않았는지 1회 점검 (D-15 한계)
+
+**완료 판정.** 목업·실API·캐시·실패 4경로 실동작 확인. ✅
+검증 = `npm test` **453 pass / 0 fail** (TZ=UTC·Asia/Seoul) · tsc 0 · lint 0.
 
 ---
 
@@ -154,3 +178,4 @@
 - [ ] 멀티 현장 — 작업자가 흩어지면 GPS 평균이 무의미해진다. 현장별 좌표로 전환 필요 (D-05 한계)
 - [ ] 시·군·구 단위 정밀 매칭 — 지금은 의도적으로 시·도 고정 (D-05)
 - [ ] 고정 아웃바운드 IP 확보 — Cloud NAT 상시 과금이라 보류 (D-13)
+- [ ] **2027-07-31 인증키 만료** — 캘린더 등록 필요. 만료돼도 화면은 멀쩡하고 내용만 가짜가 된다 (D-16)
