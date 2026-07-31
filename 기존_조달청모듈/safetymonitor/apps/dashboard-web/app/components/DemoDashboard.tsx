@@ -523,7 +523,8 @@ function GaugePanel({
   const [open, setOpen] = useState(false); // 현장정보 펼침 — 평시 접힘(바 높이 유지).
 
   return (
-    <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
+    // py-3(12px) → py-2(8px) — 바를 8px 낮춘다(사용자 요청). 게이지·숫자 크기는 그대로 둔다.
+    <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-2 dark:border-white/10 dark:bg-surface-dark">
       <div className="flex items-center gap-4">
         {/* 좁은 화면에서는 두 게이지가 바짝 붙어 읽기 어려워 세로로 접는다(md 미만). */}
         <div className="grid min-w-0 flex-1 gap-x-6 gap-y-2 md:grid-cols-2">
@@ -5310,6 +5311,10 @@ export function DemoDashboard() {
       <GaugePanel siteInfo={siteInfo} nowMs={now} lastAccidentTs={lastAccidentTs} />
 
       <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
+        {/* 좌:우 = 746:420 (64:36). 우측은 정사각 지도(레이더·태풍)가 주인공이라
+            지도 변 = min(우측 폭, 우측 높이) 다 — 폭만 넓히면 지도는 그대로고 여백만 커진다
+            (실측 폭 420→660 에서 지도 213 고정 · 여백 104→224). 그래서 폭은 420 으로 두고
+            아래 캐러셀 높이를 420 으로 올려 폭≈높이를 맞춘다(지도 213→418). */}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch">
           {/* 좌측 — 안전 신호등 + 오늘 위험작업 칩.
               ★ lg 에서는 내용을 absolute 로 띄워 이 칸이 행 높이를 정하지 못하게 한다.
@@ -5358,7 +5363,12 @@ export function DemoDashboard() {
           {/* 우측 — 그룹 캐러셀(실시간 레이더·태풍 진로·특보영상·인근 병원). 자동회전 없음·수동 전환만.
               '현황 요약'(공정률·무사고 + 수신 요약)은 삭제 — 게이지는 상단 가로 바로, 수신 요약은 폐기(사용자 요청). */}
           <WidgetCarousel
-            className="min-h-[300px]"
+            // 277 = 좌측 신호등의 최대 높이(가스·AED 펼침 실측)와 정확히 같은 값 —
+            // 그 상태에서 우측 하단선이 신호등 하단선과 딱 맞는다(사용자 요청).
+            // 펼친 행에 따라 높이를 따라가게 하면 우측·바깥 박스가 같이 움직여 앞서 고친
+            // 흔들림이 재발하므로 최대값으로 고정한다.
+            // ⚠ 신호등 펼침 문구가 바뀌어 높이가 달라지면 이 값도 다시 재야 한다.
+            className="min-h-[277px]"
             autoRotate={false}
             pages={[
               { title: "실시간 레이더", content: <RadarRealtime /> },
