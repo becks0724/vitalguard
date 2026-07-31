@@ -489,7 +489,8 @@ function GaugeRow({
   );
 }
 
-// 우상단 패널 — 공정률(상) + 무사고(하)를 한 박스에 상하로 구분해 동일 구성으로 배치.
+// 관제 탭 최상단 가로 바 — 공정률·무사고를 좌우로 나란히 둔다(사용자 요청).
+// 종전에는 우상단 캐러셀 '현황 요약' 안에 상하로 있었고, 그 페이지는 수신 요약과 함께 삭제됐다.
 function GaugePanel({
   siteInfo,
   nowMs,
@@ -514,7 +515,8 @@ function GaugePanel({
   const sStatus = s.known ? `목표 ${s.target}일까지 ${s.toGo}일` : "착수일 미입력";
 
   return (
-    <div className="flex shrink-0 flex-col justify-center gap-1 rounded-xl bg-canvas p-2 dark:bg-surface-dark">
+    // 좁은 화면에서는 두 게이지가 바짝 붙어 읽기 어려워 세로로 접는다(md 미만).
+    <section className="grid gap-x-6 gap-y-2 overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark md:grid-cols-2">
       <GaugeRow
         title="공정률"
         status={pStatus}
@@ -524,7 +526,6 @@ function GaugePanel({
         known={pKnown}
         ariaLabel="현장 공정률"
       />
-      <div className="border-t border-hairline dark:border-white/10" />
       <GaugeRow
         title="무사고"
         status={sStatus}
@@ -534,7 +535,7 @@ function GaugePanel({
         known={s.known}
         ariaLabel="무사고 연속 일수"
       />
-    </div>
+    </section>
   );
 }
 
@@ -5248,6 +5249,9 @@ export function DemoDashboard() {
             title: "실시간 현장 관제",
             content: (
               <div className="flex flex-col gap-4">
+      {/* 공정률·무사고 — 탭 바로 아래 전체 폭 가로 바(사용자 요청). */}
+      <GaugePanel siteInfo={siteInfo} nowMs={now} lastAccidentTs={lastAccidentTs} />
+
       <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch">
           {/* 좌측 — 히어로 카피 + 안전 신호등 + 현장정보/재해사례 캐러셀 */}
@@ -5306,33 +5310,12 @@ export function DemoDashboard() {
             </section>
           </div>
 
-          {/* 우측 — 그룹 캐러셀(현황 요약·실시간 레이더·태풍 진로·특보영상). 자동회전 없음·수동 전환만 */}
+          {/* 우측 — 그룹 캐러셀(실시간 레이더·태풍 진로·특보영상·인근 병원). 자동회전 없음·수동 전환만.
+              '현황 요약'(공정률·무사고 + 수신 요약)은 삭제 — 게이지는 상단 가로 바로, 수신 요약은 폐기(사용자 요청). */}
           <WidgetCarousel
             className="min-h-[300px]"
             autoRotate={false}
             pages={[
-              {
-                title: "현황 요약",
-                content: (
-                  <div className="flex h-full flex-col justify-center gap-1.5 p-2">
-                    <GaugePanel siteInfo={siteInfo} nowMs={now} lastAccidentTs={lastAccidentTs} />
-                    <div className="flex flex-col rounded-xl bg-canvas p-2.5 dark:bg-surface-dark">
-                      <div className="flex items-center justify-between border-b border-hairline pb-1.5 dark:border-white/10">
-                        <span className="text-sm font-semibold text-ink dark:text-on-dark">수신 요약</span>
-                        <span className="rounded-pill bg-primary px-2.5 py-0.5 text-xs font-semibold text-on-primary">
-                          LIVE
-                        </span>
-                      </div>
-                      <div className="mt-2 grid grid-cols-2 gap-1.5">
-                        <SummaryStat label="등록 작업자" value={`${slots.filter(Boolean).length}`} />
-                        <SummaryStat label="대기 작업자" value={`${pendingWorkers.length}`} />
-                        <SummaryStat label="최근 표시" value={`${data.recent.length}`} />
-                        <SummaryStat label="DB 누적" value={(data.totalPersisted ?? 0).toLocaleString()} roll />
-                      </div>
-                    </div>
-                  </div>
-                ),
-              },
               { title: "실시간 레이더", content: <RadarRealtime /> },
               {
                 title: "태풍 진로",
@@ -6687,23 +6670,5 @@ function TrafficLight({ status, stale }: { status: VitalStatus; stale?: boolean 
       title={`종합 상태: ${label}`}
       className={`inline-block h-3 w-3 shrink-0 rounded-full ring-1 ring-hairline dark:ring-white/20 ${cls}`}
     />
-  );
-}
-
-// roll=true 면 값을 헤더 시계와 같은 롤링(.clock-roll-char) 애니메이션으로 표시(바뀐 자리만 굴러감).
-function SummaryStat({ label, value, roll = false }: { label: string; value: string; roll?: boolean }) {
-  return (
-    <div className="flex min-h-0 flex-col justify-center rounded-lg bg-surface-soft px-2.5 py-1 dark:bg-surface-dark-elevated">
-      <div className="text-xs leading-tight text-body dark:text-on-dark-soft">{label}</div>
-      <div className="font-mono text-base font-medium leading-tight text-ink dark:text-on-dark">
-        {roll ? (
-          <span className="tabular-nums">
-            <RollingChars text={value} />
-          </span>
-        ) : (
-          value
-        )}
-      </div>
-    </div>
   );
 }
