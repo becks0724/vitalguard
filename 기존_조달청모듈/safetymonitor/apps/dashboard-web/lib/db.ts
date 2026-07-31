@@ -149,20 +149,38 @@ function getPool(): Pool {
 const NOW_ISO =
   `to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
-// 스키마 멱등 생성 — 첫 쿼리 시 1회(메모이즈). 실패 시 캐시 해제해 다음 호출이 재시도.
+// 스키마 초기화 DDL 의 잠금 대기 상한 — 다른 세션의 긴 조회가 ACCESS EXCLUSIVE 를 막고 있어도
+// 여기서 끊는다. 이 대기를 안 끊으면 대기 중인 DDL 뒤로 모든 조회가 FIFO 로 줄서서 API 전체가 죽는다
+// (2026-07-30 실제 장애 — 58분짜리 조회 하나가 관제웹 전 라우트를 500 으로 만들었다).
+const SCHEMA_LOCK_TIMEOUT = "3s";
+// 초기화 실패 후 재시도 유예 — 유예가 없으면 잠금이 풀릴 때까지 매 요청이 lock_timeout 만큼 지연된다.
+const SCHEMA_RETRY_BACKOFF_MS = 60_000;
+let schemaRetryAfter = 0;
+
+// 스키마 멱등 생성 — 첫 쿼리 시 1회(메모이즈).
+// 실패는 치명적으로 다루지 않는다 — 운영 DB 에는 이미 스키마가 있으므로 조회는 계속 되어야 한다.
+// 정말 테이블이 없으면 이어지는 쿼리가 자기 오류로 실패하므로 문제가 가려지지도 않는다.
 async function ensureSchema(): Promise<void> {
   if (!globalForDb.__safetyMonitorSchemaReady) {
+    if (Date.now() < schemaRetryAfter) return; // 유예 중 — 기존 스키마로 진행
     globalForDb.__safetyMonitorSchemaReady = initSchema().catch((e) => {
       globalForDb.__safetyMonitorSchemaReady = undefined;
-      throw e;
+      schemaRetryAfter = Date.now() + SCHEMA_RETRY_BACKOFF_MS;
+      console.error(
+        "[db] 스키마 초기화 실패 — 기존 스키마로 계속 진행(60초 후 재시도)",
+        e,
+      );
     });
   }
   return globalForDb.__safetyMonitorSchemaReady;
 }
 
 async function initSchema(): Promise<void> {
-  const pool = getPool();
-  await pool.query(`
+  // 전용 커넥션 — lock_timeout 은 세션 설정이라 풀 공유 커넥션에 남으면 일반 쿼리까지 영향받는다.
+  const client = await getPool().connect();
+  try {
+    await client.query(`SET lock_timeout = '${SCHEMA_LOCK_TIMEOUT}'`);
+    await client.query(`
     CREATE TABLE IF NOT EXISTS vital_samples (
       id SERIAL PRIMARY KEY,
       worker_id TEXT NOT NULL,
@@ -703,6 +721,11 @@ async function initSchema(): Promise<void> {
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
   `);
+  } finally {
+    // 커넥션을 풀에 돌려주기 전 세션 설정 복구 — 남기면 일반 쿼리도 3초에 잠금 포기하게 된다.
+    await client.query("RESET lock_timeout").catch(() => {});
+    client.release();
+  }
 }
 
 // 쿼리 헬퍼 — 스키마 보장 후 실행. rows + rowCount 반환.
