@@ -34,7 +34,9 @@ function hm(ts: string): string {
 
 export function IndoorEnvRows() {
   const [latest, setLatest] = useState<Latest | null>(null);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // 신선도 기준 시각 — 응답 헤더의 서버 시계다. 브라우저 Date.now() 를 쓰면 PC 시계가
+  // 1분 이상 어긋난 사용자에게만 멀쩡한 값이 '수신 지연'으로 보인다(실제 발생).
+  const [serverNowMs, setServerNowMs] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -42,12 +44,15 @@ export function IndoorEnvRows() {
       fetch("/api/gaspod/telemetry?n=1", { cache: "no-store" })
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
+          // Date 헤더는 초 단위지만 60초 게이트에는 충분하다. 없으면 신선도 판정을 포기한다
+          // (클라 시계로 대신 재면 이 버그가 그대로 돌아온다).
+          const d = Date.parse(r.headers.get("date") ?? "");
+          return r.json().then((j) => ({ j, serverNow: Number.isNaN(d) ? null : d }));
         })
-        .then((j: { ok?: boolean; latest?: Latest | null }) => {
+        .then(({ j, serverNow }: { j: { ok?: boolean; latest?: Latest | null }; serverNow: number | null }) => {
           if (!alive) return;
           setLatest(j.ok && j.latest ? j.latest : null);
-          setNowMs(Date.now());
+          setServerNowMs(serverNow);
         })
         .catch(() => {
           if (alive) setLatest(null);
@@ -61,7 +66,10 @@ export function IndoorEnvRows() {
     };
   }, []);
 
-  const ageMs = latest ? nowMs - new Date(latest.ts).getTime() : Infinity;
+  // 서버 시각을 못 얻으면(헤더 없음) 신선도를 못 재므로 값은 그대로 보여준다 —
+  // 잴 수 없는 것을 '오래됐다'로 단정하면 멀쩡한 실측값을 가린다.
+  const ageMs =
+    latest && serverNowMs !== null ? serverNowMs - new Date(latest.ts).getTime() : 0;
   const fresh = latest !== null && ageMs <= FRESH_MS;
 
   const rows: Row[] = fresh
