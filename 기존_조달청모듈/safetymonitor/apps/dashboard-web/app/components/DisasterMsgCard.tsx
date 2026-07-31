@@ -4,6 +4,8 @@
 
 import { useEffect, useState } from "react";
 
+import { shortRegionLabel } from "../lib/disaster-msg";
+
 type MsgView = {
   sn: number;
   type: string;
@@ -109,6 +111,30 @@ export function DisasterMsgCard({
   const nearbyTypes = [...new Set(data.nearby.map((m) => m.type))];
   const nearbySidos = [...new Set(data.nearby.flatMap((m) => m.sidos))];
 
+  // 신호등 칩 — 발령이 있는 시·군을 이름+색점으로 나열해 인근 상태를 한눈에 본다.
+  // 같은 지역이 여러 문자에 걸리면 가장 높은 단계를 쓰고, 현장(site)이 인근보다 앞선다.
+  const RANK = { caution: 1, danger: 2 } as const;
+  const chipMap = new Map<string, { name: string; severity: "caution" | "danger"; site: boolean }>();
+  for (const [isSite, list] of [
+    [true, data.site],
+    [false, data.nearby],
+  ] as const) {
+    for (const m of list) {
+      const sev = m.step === "긴급재난" ? "danger" : "caution";
+      for (const r of m.regions) {
+        const name = shortRegionLabel(r);
+        const prev = chipMap.get(name);
+        if (!prev) chipMap.set(name, { name, severity: sev, site: isSite });
+        else {
+          if (RANK[sev] > RANK[prev.severity]) prev.severity = sev;
+          if (isSite) prev.site = true;
+        }
+      }
+    }
+  }
+  const chips = [...chipMap.values()].sort((a, b) => Number(b.site) - Number(a.site));
+  const CHIP_MAX = 12;
+
   return (
     <div className="no-scrollbar flex h-full flex-col gap-2 overflow-y-auto px-3 pb-3 pt-1.5">
       {/* 현장과 인근을 같은 형식(점·유형·지역)으로 나란히 — 인근도 지역명까지 보여준다.
@@ -119,6 +145,31 @@ export function DisasterMsgCard({
           <span className="text-xs font-semibold text-ink dark:text-on-dark">{data.summary}</span>
           <span className="text-[10px] text-muted dark:text-on-dark-soft">{data.sido}</span>
         </span>
+        {/* 지역별 신호등 — 현장·인근을 가리지 않고 발령이 있는 시·군을 색점+이름으로 나열 */}
+        {chips.length > 0 && (
+          <span className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+            {chips.slice(0, CHIP_MAX).map((c) => (
+              <span
+                key={c.name}
+                title={c.site ? "현장 시·도 발령" : "인근 시·도 발령(참고)"}
+                className={[
+                  "inline-flex shrink-0 items-center gap-1 rounded-pill border px-1.5 py-0.5 text-[10px]",
+                  c.site
+                    ? "border-hairline-strong bg-surface-soft font-semibold text-ink dark:border-white/15 dark:bg-white/5 dark:text-on-dark"
+                    : "border-hairline text-body dark:border-white/10 dark:text-on-dark-soft",
+                ].join(" ")}
+              >
+                <span aria-hidden className={`inline-block h-1.5 w-1.5 rounded-full ${DOT[c.severity]}`} />
+                {c.name}
+              </span>
+            ))}
+            {chips.length > CHIP_MAX && (
+              <span className="shrink-0 text-[10px] text-muted dark:text-on-dark-soft">
+                +{chips.length - CHIP_MAX}
+              </span>
+            )}
+          </span>
+        )}
         {data.nearby.length > 0 && (
           <span className="ml-auto flex shrink-0 items-center gap-1.5">
             <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[nearbySeverity]}`} />

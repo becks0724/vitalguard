@@ -22,6 +22,7 @@ import {
   parseKstToMs,
   queryDates,
   senderOrg,
+  shortRegionLabel,
   type DisasterMsg,
   type RawDisasterMsg,
 } from "./disaster-msg";
@@ -436,4 +437,23 @@ test("msgRegionMatchesSido — 임진강 수계 발령이 경기 현장에 매�
   assert.equal(hits[0]?.scope, "site");
   // 첫 토큰은 head 가 하천명이라 괄호 폴백으로, 둘째 토큰은 head 매칭으로 잡힌다.
   assert.equal(hits[0]?.matchedRegions.length, 2);
+});
+
+// ── 지역 라벨(신호등 칩) ─────────────────────────────────────────────────────
+test("shortRegionLabel — 시·군·구를 짧게(첫 토큰은 시·도라 건너뛴다)", () => {
+  assert.equal(shortRegionLabel("전남광주통합특별시 완도군"), "완도");
+  assert.equal(shortRegionLabel("전남광주통합특별시 보성군 "), "보성");
+  assert.equal(shortRegionLabel("경기도 안산시 단원구 풍도동"), "안산");
+  assert.equal(shortRegionLabel("경상북도 포항시 남구"), "포항");
+  assert.equal(shortRegionLabel("서울특별시 강남구"), "강남");
+});
+
+test("shortRegionLabel — 하위 지역이 없으면 시·도를 줄여 '전역'", () => {
+  assert.equal(shortRegionLabel("경상남도 전체"), "경남 전역");
+  assert.equal(shortRegionLabel("전북특별자치도 전체"), "전북 전역");
+  assert.equal(shortRegionLabel("서울특별시 전체"), "서울 전역");
+});
+
+test("shortRegionLabel — 하천 수계 표기는 괄호 안 행정구역을 쓴다", () => {
+  assert.equal(shortRegionLabel("임진강 수계지역(경기도 연천군,파주시)"), "연천");
 });

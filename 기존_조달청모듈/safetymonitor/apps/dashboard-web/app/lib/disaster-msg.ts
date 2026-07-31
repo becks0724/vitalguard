@@ -215,6 +215,36 @@ export type MatchedDisasterMsg = {
   sidos: string[]; // 매칭된 시·도 이름 — site 는 현장 시·도, nearby 는 걸린 인근 시·도(복수 가능)
 };
 
+// ── 지역 라벨 ────────────────────────────────────────────────────────────────
+// 수신지역 토큰 → 신호등 칩에 쓸 짧은 지명. 첫 토큰은 항상 시·도(서울특별시·전남광주통합특별시…)라
+// 건너뛰고 두 번째(시·군·구)를 쓴다. "경상남도 전체" 처럼 하위가 없으면 시·도를 줄여 "경남 전역".
+const SIDO_SHORT: Array<[RegExp, string]> = [
+  [/^서울/, "서울"], [/^부산/, "부산"], [/^대구/, "대구"], [/^인천/, "인천"],
+  [/^대전/, "대전"], [/^울산/, "울산"], [/^세종/, "세종"], [/^제주/, "제주"],
+  [/^경기/, "경기"], [/^강원/, "강원"], [/^충청북|^충북/, "충북"], [/^충청남|^충남/, "충남"],
+  [/^전북|^전라북/, "전북"], [/^전남광주/, "전남·광주"], [/^전라남|^전남/, "전남"],
+  [/^경상북|^경북/, "경북"], [/^경상남|^경남/, "경남"], [/^광주/, "광주"],
+];
+
+function shortSido(name: string): string {
+  for (const [re, short] of SIDO_SHORT) if (re.test(name)) return short;
+  return name;
+}
+
+export function shortRegionLabel(token: string): string {
+  // 괄호 안이 실제 행정구역인 케이스(임진강 수계지역(경기도 연천군,파주시))는 괄호 안을 쓴다.
+  const open = token.indexOf("(");
+  const head = (open >= 0 ? token.slice(0, open) : token).trim();
+  const inner = open >= 0 ? token.slice(open + 1).replace(/\)$/, "").split(",")[0]?.trim() : "";
+  const base = /^[가-힣]+(특별시|광역시|특별자치시|특별자치도|도)/.test(head) || !inner ? head : inner;
+
+  const parts = base.split(/\s+/).filter(Boolean);
+  const first = parts[0] ?? token.trim();
+  const second = parts[1];
+  if (!second || second === "전체") return `${shortSido(first)} 전역`;
+  return second.replace(/(특별시|광역시|시|군|구)$/, "") || second;
+}
+
 // ── 알림 항목 ────────────────────────────────────────────────────────────────
 // 알림 상태를 관리할 전체 유형. PROMOTED_TYPE 이 WATCHED_TYPES 에 없으므로 반드시 함께 넣는다(D-15).
 export const ALERT_TYPES: readonly string[] = [...WATCHED_TYPES, PROMOTED_TYPE];
