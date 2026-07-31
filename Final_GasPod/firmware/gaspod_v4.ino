@@ -25,6 +25,9 @@
 
 const char* SERVER_URL = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app/api/gaspod/telemetry";
 const char* DEVICE_ID  = "gaspod-01";
+// 서버 수신 인증 토큰 — 서버 APP_UPLOAD_TOKEN 과 동일 값. 플래시 직전 실제 값으로 교체(리포 커밋 시 마스킹).
+// 서버가 GASPOD_REQUIRE_TOKEN=true 로 켜지면 이 헤더 없는 요청은 401. 켜기 전이면 없어도 수신됨(soft).
+const char* UPLOAD_TOKEN = "<APP_UPLOAD_TOKEN>";
 const unsigned long POST_INTERVAL = 5000;
 
 WiFiMulti wifiMulti;
@@ -51,6 +54,7 @@ void postTelemetry(){
   http.setTimeout(4000);
   if(!http.begin(client, SERVER_URL)) { Serial.println("[net] begin 실패"); return; }
   http.addHeader("Content-Type","application/json");
+  http.addHeader("x-app-upload-token", UPLOAD_TOKEN);  // 서버 수신 인증(정적 토큰)
   char body[360];
   snprintf(body,sizeof(body),
     "{\"device_id\":\"%s\",\"o2\":%.1f,\"temp\":%.1f,\"humidity\":%.0f,\"pressure\":%.1f,"
