@@ -10,22 +10,38 @@ import { WeatherStrip } from "./WeatherStrip";
 
 type PanelKey = "env" | "signal";
 
+// 헤더 우측 아이콘들과 같은 규격 — viewBox 24 · fill none · stroke currentColor · strokeWidth 2 · round cap.
+// 크기만 헤더(16px)보다 20% 큰 20px 로 둔다(손잡이가 좁고 세로라 눈에 덜 띈다 — 사용자 요청).
+const ICON_PROPS = {
+  viewBox: "0 0 24 24",
+  width: 20,
+  height: 20,
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+  "aria-hidden": true,
+} as const;
+
 function EnvIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg {...ICON_PROPS}>
       <path d="M12 3v2m0 14v2M5.6 5.6l1.4 1.4m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4" />
       <circle cx="12" cy="12" r="3.5" />
     </svg>
   );
 }
 
+// 신호등 — 이전 rect 는 폭 8 에 굵은 선이라 작은 크기에서 속이 메워져 파란 덩어리로 보였다.
+// 하우징을 넓히고(폭 10) 선을 얇게 해 램프 3개가 구분되게 한다.
 function SignalIcon() {
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="8" y="2.5" width="8" height="19" rx="4" />
-      <circle cx="12" cy="7" r="1.4" />
-      <circle cx="12" cy="12" r="1.4" />
-      <circle cx="12" cy="17" r="1.4" />
+    <svg {...ICON_PROPS}>
+      <rect x="7" y="2.5" width="10" height="19" rx="5" />
+      <circle cx="12" cy="7.5" r="1.7" />
+      <circle cx="12" cy="12" r="1.7" />
+      <circle cx="12" cy="16.5" r="1.7" />
     </svg>
   );
 }
