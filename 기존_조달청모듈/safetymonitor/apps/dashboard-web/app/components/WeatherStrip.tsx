@@ -160,7 +160,9 @@ export function WeatherStrip({
   refreshing,
   refreshNonce,
   layout = "strip",
-}: Props & { layout?: "strip" | "list" }) {
+  // 경보 팝업 주체 — 화면에 뜬 인스턴스가 하나뿐일 때만 true 여야 한다(아래 렌더 주석).
+  showAlertToast = layout !== "list",
+}: Props & { layout?: "strip" | "list"; showAlertToast?: boolean }) {
   // 호버 시 정지가 아니라 22% 속도로 감속(InfiniteSlider 방식) — 끊김 없이 흐르며 읽을 수 있게.
   const scrollRef = useMarqueeScroll<HTMLDivElement>(0.5, "x", 0.22);
   const [data, setData] = useState<WeatherResponse | null>(null);
@@ -642,9 +644,10 @@ export function WeatherStrip({
         />
       )}
 
-      {/* 경보 팝업은 화면에 하나만 — layout="list"(좌측 호버 패널)는 보조 표시라 띄우지 않는다.
-          두 인스턴스가 모두 띄우면 같은 경보 모달이 겹쳐 뜨고 확인/조치 기록도 이중으로 남는다. */}
-      {layout !== "list" && alerts.length > 0 && (
+      {/* 경보 팝업은 화면에 하나만 — 두 인스턴스가 모두 띄우면 같은 경보 모달이 겹쳐 뜨고
+          확인/조치 기록도 이중으로 남는다. 그래서 보조 표시인 layout="list" 는 기본으로 띄우지 않되,
+          그 인스턴스가 화면의 유일한 현장 환경일 때만(관제 탭 고정 패널) 호출부가 켠다. */}
+      {showAlertToast && alerts.length > 0 && (
         <WeatherAlertToast
           key={alerts.map((a) => `${a.itemKey}:${a.currentSeverity}`).join("|")}
           alerts={alerts}

@@ -94,23 +94,19 @@ import {
 } from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
-import { WeatherStrip, weatherLabel } from "./WeatherStrip";
+import { weatherLabel } from "./WeatherStrip";
 import { WeatherIcon, weatherIconKey } from "./WeatherIcons";
 import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
 import { SafetyNewsPage } from "./SafetyNewsPage";
-import { SiteSidePanels, type PanelKey } from "./SiteSidePanels";
+import { SiteSidePanels } from "./SiteSidePanels";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import ErpDemoPage from "../erp/page";
 import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
-
-// 관제 탭(0)에서 좌측에 고정할 사이드 손잡이 — 나머지 5종은 그 탭 화면에 이미 있다.
-// 매 렌더 새 배열이 되면 SiteSidePanels 의 useMemo 가 무의미해지므로 모듈 상수로 둔다.
-const SITE_TAB_PANELS: readonly PanelKey[] = ["env"];
 
 type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "fall";
 type Selection = { workerId: string; metric: HistoryMetric };
@@ -5357,15 +5353,7 @@ export function DemoDashboard() {
         </div>
       </section>
 
-      <WeatherStrip
-        lat={effLat}
-        lon={effLon}
-        workerCount={fieldCoords.count}
-        coordSource={coordSource}
-        onRefresh={refreshFieldWeather}
-        refreshing={locRefreshing}
-        refreshNonce={weatherRefreshNonce}
-      />
+      {/* 현장 환경 가로 스트립은 좌측 고정 패널로 대체(사용자 요청) — SiteSidePanels 의 pinned="env". */}
 
       {/* 작업자 모니터링 + 가스 누출 감지기 + 심장 제세동기 알림 + CCTV 관제 — 4페이지 캐러셀(‹ › 수동 전환만, 자동회전 없음) */}
       <WidgetCarousel
@@ -5635,8 +5623,8 @@ export function DemoDashboard() {
 
       {/* 산업재해 사망 속보 티커는 '안전뉴스' 탭 목록으로 이관(docs/safety-news-tab N-03). */}
 
-      {/* 좌측 사이드 패널 — 모든 탭에 손잡이를 띄운다. 관제 탭(0)은 나머지 5종이 이미 화면에 있으므로
-          현장 환경만 남긴다(사용자 요청). 그 외 탭은 6종 전부. */}
+      {/* 좌측 사이드 패널 — 관제 탭(0)은 현장 환경 하나만 늘 펼쳐 두고(가로 스트립을 대체),
+          그 외 탭(안전뉴스·안전관리비 검증·ERP)은 6종을 손잡이로 열고 닫는다. */}
       <SiteSidePanels
         lat={effLat}
         lon={effLon}
@@ -5645,7 +5633,9 @@ export function DemoDashboard() {
         refreshNonce={weatherRefreshNonce}
         worker={workerSignal}
         region={siteRegion}
-        panels={pagerIdx === 0 ? SITE_TAB_PANELS : undefined}
+        pinned={pagerIdx === 0 ? "env" : undefined}
+        onRefresh={refreshFieldWeather}
+        refreshing={locRefreshing}
       />
 
       {queueModalSlot !== null && (

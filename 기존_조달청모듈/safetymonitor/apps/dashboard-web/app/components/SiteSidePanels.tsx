@@ -1,9 +1,9 @@
 // 좌측 사이드 패널 — 좌측 손잡이를 눌러 각각 따로 열고 닫는다(호버가 아니라 클릭 — 사용자 요청).
 // 손잡이는 서로 독립이고 한 번에 하나만 열린다. 레이아웃은 세로 리스트다.
-// 어떤 손잡이를 띄울지는 `panels` 로 탭마다 고른다(관제 탭은 현장 환경만 — 사용자 요청).
+// `pinned` 를 주면 그 패널 하나만 손잡이로 두고 늘 펼쳐 둔다(관제 탭의 현장 환경 — 사용자 요청).
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import { HospitalPanel } from "./HospitalPanel";
 import { RadarRealtime } from "./RadarRealtime";
@@ -12,16 +12,7 @@ import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
 import { WeatherStrip } from "./WeatherStrip";
 
-export type PanelKey = "env" | "signal" | "radar" | "typhoon" | "video" | "hospital";
-
-export const ALL_PANELS: readonly PanelKey[] = [
-  "env",
-  "signal",
-  "radar",
-  "typhoon",
-  "video",
-  "hospital",
-];
+type PanelKey = "env" | "signal" | "radar" | "typhoon" | "video" | "hospital";
 
 // 헤더 우측 아이콘들과 같은 규격 — viewBox 24 · fill none · stroke currentColor · strokeWidth 2 · round cap.
 // 크기만 헤더(16px)보다 20% 큰 20px 로 둔다(손잡이가 좁고 세로라 눈에 덜 띈다 — 사용자 요청).
@@ -100,7 +91,7 @@ function HospitalIcon() {
   );
 }
 
-// 손잡이 정의 — 순서가 곧 화면 위→아래 순서다. 표시 여부는 `panels` 가 고른다.
+// 손잡이 정의 — 순서가 곧 화면 위→아래 순서다. 표시 여부는 `pinned` 가 고른다.
 const HANDLES: readonly { key: PanelKey; label: string; Icon: () => React.ReactElement }[] = [
   { key: "env", label: "현장 환경", Icon: EnvIcon },
   { key: "signal", label: "안전 신호등", Icon: SignalIcon },
@@ -110,6 +101,15 @@ const HANDLES: readonly { key: PanelKey; label: string; Icon: () => React.ReactE
   { key: "hospital", label: "인근 병원", Icon: HospitalIcon },
 ];
 
+// 색은 챗봇 버튼과 같은 blue 계열 — text-muted 는 라이트모드 흰 배경에서 거의 안 보인다.
+const HANDLE_BASE =
+  "flex w-8 shrink-0 flex-col items-center rounded-r-lg border border-l-0 py-2.5 shadow-sm backdrop-blur transition-all duration-300 ease-out";
+const HANDLE_ON = "border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-600";
+const HANDLE_OFF =
+  "border-hairline bg-canvas/95 text-blue-600 hover:text-blue-700 dark:border-white/10 dark:bg-surface-dark/95 dark:text-blue-400 dark:hover:text-blue-300";
+
+// onClick 이 없으면 고정 패널의 손잡이다 — 누를 것이 없으므로 버튼이 아니라 아이콘 표식으로 둔다
+// (제목은 바로 옆 패널 헤더가 이미 보여준다).
 function Handle({
   label,
   active,
@@ -118,10 +118,19 @@ function Handle({
 }: {
   label: string;
   active: boolean;
-  onClick: () => void;
+  onClick?: () => void;
   children: React.ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
+
+  if (!onClick) {
+    return (
+      <div className={`${HANDLE_BASE} ${HANDLE_ON}`} title={label}>
+        <span className="grid h-5 w-5 shrink-0 place-items-center">{children}</span>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
@@ -133,14 +142,9 @@ function Handle({
       aria-expanded={active}
       aria-label={`${label} ${active ? "닫기" : "열기"}`}
       title={`${label} ${active ? "닫기" : "열기"}`}
-      // 색은 챗봇 버튼과 같은 blue 계열 — text-muted 는 라이트모드 흰 배경에서 거의 안 보인다.
-      className={[
-        "flex w-8 shrink-0 flex-col items-center rounded-r-lg border border-l-0 py-2.5 shadow-sm backdrop-blur transition-all duration-300 ease-out",
-        expanded ? "gap-1.5" : "gap-0",
-        active
-          ? "border-blue-600 bg-blue-600 text-white dark:border-blue-500 dark:bg-blue-600"
-          : "border-hairline bg-canvas/95 text-blue-600 hover:text-blue-700 dark:border-white/10 dark:bg-surface-dark/95 dark:text-blue-400 dark:hover:text-blue-300",
-      ].join(" ")}
+      className={[HANDLE_BASE, expanded ? "gap-1.5" : "gap-0", active ? HANDLE_ON : HANDLE_OFF].join(
+        " ",
+      )}
     >
       <span className="grid h-5 w-5 shrink-0 place-items-center">{children}</span>
       <span
@@ -204,7 +208,9 @@ export function SiteSidePanels({
   refreshNonce,
   worker,
   region,
-  panels = ALL_PANELS,
+  pinned,
+  onRefresh,
+  refreshing,
 }: {
   lat?: number;
   lon?: number;
@@ -213,20 +219,25 @@ export function SiteSidePanels({
   refreshNonce?: number;
   worker: WorkerSignal;
   region: string; // 인근 병원 지역 검색 키워드(예: "광주 동구") — HospitalPanel 이 필수로 받는다
-  panels?: readonly PanelKey[]; // 띄울 손잡이(기본 6종 전부)
+  pinned?: PanelKey; // 주면 그 패널만 손잡이로 두고 늘 펼쳐 둔다(닫기 없음)
+  onRefresh?: () => void; // 현장 환경 수동 새로고침(좌표 재캡처) — 고정 패널이 스트립을 대신할 때 필요
+  refreshing?: boolean;
 }) {
   const [openKey, setOpenKey] = useState<PanelKey | null>(null);
-  const shown = useMemo(() => HANDLES.filter((h) => panels.includes(h.key)), [panels]);
-  // 탭을 옮겨 손잡이 목록이 줄면 열려 있던 패널이 손잡이 없이 남는다 — 목록에 없으면 닫힌 것으로 본다.
-  const open = openKey !== null && panels.includes(openKey) ? openKey : null;
-  const toggle = (key: PanelKey) => () => setOpenKey((prev) => (prev === key ? null : key));
+  const shown = pinned ? HANDLES.filter((h) => h.key === pinned) : HANDLES;
+  const open = pinned ?? openKey;
 
   return (
     // top-44 = 상단 헤더+탭바 아래. 이보다 위면 패널이 탭 바를 덮어 탭 클릭을 막는다.
     <div className="fixed left-0 top-44 z-40 hidden items-start lg:flex">
       <div className="flex shrink-0 flex-col gap-2">
         {shown.map(({ key, label, Icon }) => (
-          <Handle key={key} label={label} active={open === key} onClick={toggle(key)}>
+          <Handle
+            key={key}
+            label={label}
+            active={open === key}
+            onClick={pinned ? undefined : () => setOpenKey((prev) => (prev === key ? null : key))}
+          >
             <Icon />
           </Handle>
         ))}
@@ -234,18 +245,21 @@ export function SiteSidePanels({
 
       {open && (
         <div className="relative ml-1 w-[296px]">
-          {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다. */}
-          <button
-            type="button"
-            onClick={() => setOpenKey(null)}
-            aria-label="패널 닫기"
-            title="닫기"
-            className="absolute -right-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-hairline bg-canvas text-body shadow-md transition-colors hover:bg-surface-strong hover:text-ink dark:border-white/15 dark:bg-surface-dark dark:text-on-dark-soft dark:hover:bg-white/10 dark:hover:text-on-dark"
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
+          {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다.
+              고정 패널은 닫을 수 없으므로 띄우지 않는다. */}
+          {!pinned && (
+            <button
+              type="button"
+              onClick={() => setOpenKey(null)}
+              aria-label="패널 닫기"
+              title="닫기"
+              className="absolute -right-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-hairline bg-canvas text-body shadow-md transition-colors hover:bg-surface-strong hover:text-ink dark:border-white/15 dark:bg-surface-dark dark:text-on-dark-soft dark:hover:bg-white/10 dark:hover:text-on-dark"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          )}
           {open === "env" && (
             <WeatherStrip
               lat={lat}
@@ -253,6 +267,10 @@ export function SiteSidePanels({
               workerCount={workerCount}
               coordSource={coordSource}
               refreshNonce={refreshNonce}
+              onRefresh={onRefresh}
+              refreshing={refreshing}
+              // 고정 패널이면 화면에 뜬 현장 환경이 이것뿐이라 경보 팝업 주체가 된다(스트립을 대신).
+              showAlertToast={pinned === "env"}
               layout="list"
             />
           )}
