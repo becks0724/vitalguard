@@ -117,14 +117,26 @@ enum VitAlGuardDashboardShared {
             "jobTitle": mode == .admin ? "안전 관리자" : "현장 근로자",
             "manualSos": reason == "sos",
             "fallDetected": isFallDetected && reason != "fall_demo",
-            "source": "VitAlGuard-iPhone",
+            "source": simulatorVitalSource(),
             "appMode": mode.rawValue,
             "syncReason": reason
         ]
         if !loginId.isEmpty {
             output["loginId"] = loginId
         }
+#if targetEnvironment(simulator)
+        output["simulatorDeviceModel"] = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "iPhone Simulator"
+        output["simulatorIdentifier"] = ProcessInfo.processInfo.environment["SIMULATOR_UDID"]
+#endif
         return output
+    }
+
+    private static func simulatorVitalSource() -> String {
+#if targetEnvironment(simulator)
+        return "VitAlGuard-Mock-iOS"
+#else
+        return "VitAlGuard-iPhone"
+#endif
     }
 }
 

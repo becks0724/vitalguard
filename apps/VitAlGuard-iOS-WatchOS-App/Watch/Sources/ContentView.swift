@@ -5,13 +5,11 @@ import WatchKit
 struct ContentView: View {
     @EnvironmentObject private var workout: WorkoutManager
     @EnvironmentObject private var settings: ConnectionSettings
-    @EnvironmentObject private var appLock: WatchAppLockStore
-    @Environment(\.scenePhase) private var scenePhase
     @State private var showSosConfirm = false
     @State private var showWatchLogoMenu = false
 
     var body: some View {
-        ZStack {
+        Group {
             if let prompt = workout.activeFallPrompt {
                 FallPromptView(prompt: prompt)
             } else {
@@ -30,19 +28,8 @@ struct ContentView: View {
                     .padding(.bottom, 10)
                 }
             }
-            if appLock.isLocked {
-                WatchAppLockView()
-            }
         }
         .background(WatchTheme.bg)
-        .onAppear {
-            if settings.isLoggedIn { appLock.lockIfNeeded() }
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if settings.isLoggedIn && (phase == .inactive || phase == .background) {
-                appLock.lockIfNeeded()
-            }
-        }
     }
 
 // MARK: 헤더 — 브랜드 로고 + 워드마크 + 연결 점 + 설정 진입

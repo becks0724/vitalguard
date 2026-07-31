@@ -1,0 +1,41 @@
+name: Publish VitAlGuard source release
+
+on:
+  push:
+    tags:
+      - 'v*-build.*'
+      - 'vitalguard-v*-build.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub source release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          normalized_tag="${TAG#vitalguard-v}"
+          normalized_tag="${normalized_tag#v}"
+          version="${normalized_tag%-build.*}"
+          build="${normalized_tag##*-build.}"
+          pushed_at="$(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M:%S KST')"
+          title="VitAlGuard ${version} (Build ${build})"
+          notes=$(printf '%s\n' \
+            '## VitAlGuard 소스 릴리스' \
+            '' \
+            "- 버전: ${version}" \
+            "- 빌드번호: ${build}" \
+            "- 푸시 날짜: ${pushed_at}" \
+            '' \
+            '이 Release에는 Mac의 Xcode에서 열 수 있는 iPhone 및 Apple Watch 소스가 연결되어 있습니다.' \
+            'Apple 인증서, 프로비저닝 프로파일, IPA 및 개인 설정은 포함하지 않습니다.')
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes"
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$title" --notes "$notes"
+          fi

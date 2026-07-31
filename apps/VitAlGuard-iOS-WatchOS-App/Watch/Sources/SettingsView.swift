@@ -1,14 +1,12 @@
 // 워치 인앱 설정 — 앱 관리형 연동 URL 표시와 iPhone 릴레이 연결 테스트
 import SwiftUI
-import CryptoKit
-import LocalAuthentication
-import Security
+import Foundation
 
 struct SettingsView: View {
     @EnvironmentObject private var settings: ConnectionSettings
     @EnvironmentObject private var workout: WorkoutManager
 
-    @State private var testResult: String?
+    @State private var testResult: WatchRelayConnectionResult?
     @State private var testing = false
     @State private var phoneSyncMessage: String?
 
@@ -25,25 +23,13 @@ struct SettingsView: View {
                 .font(.caption2.weight(.semibold))
 
                 NavigationLink {
-                    WatchAppLockSettingsView()
-                } label: {
-                    HStack {
-                        Text(L("앱 잠금"))
-                        Spacer()
-                        Text(WatchAppLockStore.shared.isConfigured ? L("설정됨") : L("꺼짐"))
-                            .foregroundStyle(WatchTheme.brand)
-                    }
-                    .font(.caption2.weight(.semibold))
-                }
-
-                NavigationLink {
                     WatchDeveloperModeView()
                 } label: {
                     HStack {
                         Text(L("개발자 모드"))
                         Spacer()
-                        Text(settings.developerModeEnabled ? L("iPhone에서 켜짐") : L("꺼짐"))
-                            .foregroundStyle(settings.developerModeEnabled ? WatchTheme.warn : WatchTheme.muted)
+                        Text(settings.isWatchDeveloperModeEnabled ? L("켜짐") : L("꺼짐"))
+                            .foregroundStyle(settings.isWatchDeveloperModeEnabled ? WatchTheme.ok : WatchTheme.muted)
                     }
                     .font(.caption2.weight(.semibold))
                 }
@@ -132,9 +118,9 @@ struct SettingsView: View {
                 .tint(WatchTheme.brand)
 
                 if let testResult {
-                    Text(L(testResult))
+                    Text(L(testResult.message))
                         .font(.caption2)
-                        .foregroundStyle(testResult.hasPrefix("연결 OK") ? WatchTheme.ok : WatchTheme.danger)
+                        .foregroundStyle(testResult.isSuccess ? WatchTheme.ok : WatchTheme.danger)
                 }
             }
 
@@ -406,175 +392,6 @@ private struct CrownTickRing: View {
     }
 }
 
-// MARK: - Watch local app lock and developer-mode status
-
-final class WatchAppLockStore: ObservableObject {
-    static let shared = WatchAppLockStore()
-    private let service = "com.yangjeehoo.vitalguard.watch.app-lock.v84"
-    private let account = "pin-verifier"
-    private let deviceAuthKey = "watchAppLockDeviceAuthEnabled"
-    @Published private(set) var isLocked = false
-
-    var isConfigured: Bool { verifier() != nil }
-    var deviceAuthenticationEnabled: Bool {
-        get { UserDefaults.standard.bool(forKey: deviceAuthKey) }
-        set { UserDefaults.standard.set(newValue, forKey: deviceAuthKey) }
-    }
-
-    func lockIfNeeded() { if isConfigured { isLocked = true } }
-    func unlock() { isLocked = false }
-
-    func configure(pin: String, deviceAuthenticationEnabled: Bool) -> Bool {
-        guard pin.count == 4, pin.allSatisfy(\.isNumber) else { return false }
-        let salt = Data((0..<16).map { _ in UInt8.random(in: .min ... .max) })
-        let hash = Data(SHA256.hash(data: salt + Data(pin.utf8)))
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-        SecItemDelete(query as CFDictionary)
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: salt + hash,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
-        ]
-        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { return false }
-        self.deviceAuthenticationEnabled = deviceAuthenticationEnabled
-        unlock()
-        return true
-    }
-
-    func verify(_ pin: String) -> Bool {
-        guard let saved = verifier(), saved.count == 48 else { return false }
-        let salt = saved.prefix(16)
-        let expected = saved.suffix(32)
-        let actual = Data(SHA256.hash(data: Data(salt) + Data(pin.utf8)))
-        guard actual.count == expected.count else { return false }
-        let matched = zip(actual, expected).reduce(UInt8(0)) { $0 | ($1.0 ^ $1.1) } == 0
-        if matched { unlock() }
-        return matched
-    }
-
-    func remove() {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-        SecItemDelete(query as CFDictionary)
-        deviceAuthenticationEnabled = false
-        unlock()
-    }
-
-    func unlockWithDeviceAuthentication(completion: @escaping (Bool) -> Void) {
-        let context = LAContext()
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "VitAlGuard 워치 앱 잠금을 해제합니다.") { success, _ in
-            DispatchQueue.main.async {
-                if success { self.unlock() }
-                completion(success)
-            }
-        }
-    }
-
-    private func verifier() -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var value: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess else { return nil }
-        return value as? Data
-    }
-}
-
-private struct WatchAppLockSettingsView: View {
-    @EnvironmentObject private var appLock: WatchAppLockStore
-    @State private var first = ""
-    @State private var confirm = ""
-    @State private var deviceAuthentication = WatchAppLockStore.shared.deviceAuthenticationEnabled
-    @State private var status = ""
-
-    var body: some View {
-        Form {
-            Section("앱 잠금") {
-                if !appLock.isConfigured {
-                    SecureField("4자리 암호", text: $first)
-                    SecureField("암호 확인", text: $confirm)
-                    Toggle("워치 기기 암호 인증", isOn: $deviceAuthentication)
-                    Button("4자리 암호 저장") {
-                        guard first == confirm, appLock.configure(pin: first, deviceAuthenticationEnabled: deviceAuthentication) else {
-                            status = "4자리 숫자 암호를 다시 확인해 주세요."
-                            return
-                        }
-                        first = ""; confirm = ""; status = "앱 잠금을 설정했습니다."
-                    }
-                } else {
-                    Text("4자리 암호가 이 워치의 Keychain에 저장되어 있습니다.")
-                        .font(.caption2)
-                    Toggle("워치 기기 암호 인증", isOn: $deviceAuthentication)
-                        .onChange(of: deviceAuthentication) { _, value in appLock.deviceAuthenticationEnabled = value }
-                    Button("앱 잠금 해제", role: .destructive) { appLock.remove() }
-                }
-                if !status.isEmpty { Text(status).font(.caption2).foregroundStyle(WatchTheme.muted) }
-            }
-        }
-        .navigationTitle("앱 잠금")
-    }
-}
-
-private struct WatchDeveloperModeView: View {
-    @EnvironmentObject private var settings: ConnectionSettings
-    var body: some View {
-        List {
-            Section("개발자 모드") {
-                Text(settings.developerModeEnabled ? "켜짐 · iPhone 관리자 설정에서 관리 중" : "꺼짐")
-                    .foregroundStyle(settings.developerModeEnabled ? WatchTheme.warn : WatchTheme.muted)
-                Text("보안을 위해 DB 주소, API 키, 로그인 토큰은 워치에서 보거나 입력할 수 없습니다. 서버 및 연동 URL은 인증된 iPhone 관리자 앱에서만 변경됩니다.")
-                    .font(.caption2)
-                    .foregroundStyle(WatchTheme.muted)
-            }
-            Section("동기화된 연동 정보") {
-                Text(settings.urlString).font(.caption2)
-                Text(settings.dashboardURLString).font(.caption2).foregroundStyle(WatchTheme.muted)
-            }
-        }
-        .navigationTitle("개발자 모드")
-    }
-}
-
-struct WatchAppLockView: View {
-    @EnvironmentObject private var appLock: WatchAppLockStore
-    @State private var pin = ""
-    @State private var message = "4자리 앱 암호를 입력해 주세요."
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 10) {
-                Image(systemName: "lock.fill")
-                    .font(.title2)
-                    .foregroundStyle(WatchTheme.brand)
-                Text("VitAlGuard 잠김").font(.headline)
-                Text(message).font(.caption2).multilineTextAlignment(.center).foregroundStyle(WatchTheme.muted)
-                SecureField("4자리 암호", text: $pin)
-                    .multilineTextAlignment(.center)
-                Button("잠금 해제") {
-                    if appLock.verify(pin) { pin = "" }
-                    else { pin = ""; message = "암호가 올바르지 않습니다." }
-                }
-                .buttonStyle(.borderedProminent)
-                if appLock.deviceAuthenticationEnabled {
-                    Button("워치 기기 암호") {
-                        appLock.unlockWithDeviceAuthentication { success in
-                            if !success { message = "기기 암호 인증에 실패했습니다." }
-                        }
-                    }
-                    .font(.caption2)
-                }
-            }
-            .padding()
-        }
-    }
-}
-
 private struct MinuteMarkerLabels: View {
     private let markers: [(String, CGFloat, CGFloat)] = [
         ("55", -36, -62),
@@ -600,5 +417,38 @@ private struct MinuteMarkerLabels: View {
             }
         }
         .frame(width: 170, height: 170)
+    }
+}
+
+
+private struct WatchDeveloperModeView: View {
+    @EnvironmentObject private var settings: ConnectionSettings
+    var body: some View {
+        List {
+            Section("개발자 모드") {
+                Toggle("개발자 모드", isOn: $settings.watchDeveloperModeEnabled)
+                    .disabled(!settings.canManageDashboard)
+                Text(settings.isWatchDeveloperModeEnabled ? "켜짐 · 이 Apple Watch에서만 적용됨" : "꺼짐")
+                    .foregroundStyle(settings.isWatchDeveloperModeEnabled ? WatchTheme.ok : WatchTheme.muted)
+                if settings.isWatchDeveloperModeEnabled {
+                    Button("개발자 모드 끄기", role: .destructive) {
+                        settings.watchDeveloperModeEnabled = false
+                    }
+                }
+                if !settings.canManageDashboard {
+                    Text("개발자 모드는 관리자 계정에서만 켤 수 있습니다.")
+                        .font(.caption2)
+                        .foregroundStyle(WatchTheme.danger)
+                }
+                Text("보안을 위해 DB 주소, API 키, 로그인 토큰은 워치에서 보거나 입력할 수 없습니다. 서버 및 연동 URL은 인증된 iPhone 관리자 앱에서만 변경됩니다.")
+                    .font(.caption2)
+                    .foregroundStyle(WatchTheme.muted)
+            }
+            Section("동기화된 연동 정보") {
+                Text(settings.urlString).font(.caption2)
+                Text(settings.dashboardURLString).font(.caption2).foregroundStyle(WatchTheme.muted)
+            }
+        }
+        .navigationTitle("개발자 모드")
     }
 }

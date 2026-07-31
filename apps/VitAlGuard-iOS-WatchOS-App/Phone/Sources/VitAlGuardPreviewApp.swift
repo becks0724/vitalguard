@@ -23,6 +23,14 @@ import WebKit
 import WidgetKit
 import UniformTypeIdentifiers
 
+private final class SendableAssetExporter: @unchecked Sendable {
+    let value: AVAssetExportSession
+
+    init(_ value: AVAssetExportSession) {
+        self.value = value
+    }
+}
+
 // CoreNFC 세션은 entitlement가 없으면 런타임에서 보안 오류로 종료된다.
 // 앱은 기능을 노출하되, 권한/프로파일 미준비 시 사용자와 Watch에 명확한 오류를 돌려준다.
 private let isNFCFeatureEnabled = true
@@ -2806,17 +2814,29 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        PhoneWatchBridge.shared.publishCurrentSession()
-        rootPreviewController?.resumeContinuousDashboardSync()
-        rootPreviewController?.presentAppLockIfNeeded()
-        NotificationCenter.default.post(name: .vitalGuardQuickActionRequested, object: nil)
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let resumeAction = PhoneAppLockStore.shared.resolveResumeAction()
+            if resumeAction == .autoLogout {
+                self.rootPreviewController?.logoutSession()
+                return
+            }
+            PhoneWatchBridge.shared.publishCurrentSession()
+            self.rootPreviewController?.resumeContinuousDashboardSync()
+            if resumeAction == .lock {
+                self.rootPreviewController?.presentAppLockIfNeeded()
+            }
+
+            NotificationCenter.default.post(name: .vitalGuardQuickActionRequested, object: nil)
+        }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
-        PhoneAppLockStore.shared.lockIfNeeded()
+        PhoneAppLockStore.shared.recordBackgroundedAt()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        PhoneAppLockStore.shared.recordBackgroundedAt()
         rootPreviewController?.prepareContinuousBackgroundSync()
         scheduleDashboardBackgroundRefresh()
     }
@@ -3428,6 +3448,25 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
         } else if message["request"] as? String == "loginContext" {
             replyHandler(currentContext())
             publishCurrentSession()
+        } else if message["request"] as? String == "watchRelayHealthCheck" {
+            // Watch는 인증 정보 없이 연결 검사만 요청한다. 실제 API 인증과 저장은 iPhone의
+            // Keychain 세션을 사용하는 DashboardSyncService에서만 수행한다.
+            let context = currentContext()
+            guard context["loggedIn"] as? Bool == true else {
+                replyHandler([
+                    "status": "watchRelayDashboardChecked",
+                    "ok": false,
+                    "source": "VitAlGuard-iPhone"
+                ])
+                return
+            }
+            DashboardSyncService.shared.checkReceiverConnection(reason: "watch_relay_health_check") { ok, _ in
+                replyHandler([
+                    "status": "watchRelayDashboardChecked",
+                    "ok": ok,
+                    "source": "VitAlGuard-iPhone"
+                ])
+            }
         } else if message["request"] as? String == "watchNfcScan" {
             let requestId = message["requestId"] as? String ?? UUID().uuidString
             DispatchQueue.main.async {
@@ -3439,7 +3478,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
             }
             replyHandler(["status": "watchNfcScanAccepted", "requestId": requestId])
         } else if let batch = message["watchVitalBatch"] as? [[String: Any]] {
-            batch.forEach(applyWatchVitals)
+            applyWatchVitalBatch(batch)
             replyHandler(["status": "vitalsRelayed", "count": batch.count])
         } else if isWatchVitalsPayload(message) {
             applyWatchVitals(message)
@@ -3460,7 +3499,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
                 )
             }
         } else if let batch = message["watchVitalBatch"] as? [[String: Any]] {
-            batch.forEach(applyWatchVitals)
+            applyWatchVitalBatch(batch)
         } else if isWatchVitalsPayload(message) {
             applyWatchVitals(message)
         }
@@ -3468,7 +3507,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
         if let batch = applicationContext["watchVitalBatch"] as? [[String: Any]] {
-            batch.forEach(applyWatchVitals)
+            applyWatchVitalBatch(batch)
         } else if isWatchVitalsPayload(applicationContext) {
             applyWatchVitals(applicationContext)
         }
@@ -3489,7 +3528,7 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
                 )
             }
         } else if let batch = userInfo["watchVitalBatch"] as? [[String: Any]] {
-            batch.forEach(applyWatchVitals)
+            applyWatchVitalBatch(batch)
         } else if isWatchVitalsPayload(userInfo) {
             applyWatchVitals(userInfo)
         }
@@ -3514,19 +3553,27 @@ final class PhoneWatchBridge: NSObject, WCSessionDelegate {
     }
 
     private func applyWatchVitals(_ payload: [String: Any]) {
-        guard PhoneMeasuredVitalSnapshot.store(payload) else { return }
-        DashboardSyncService.shared.uploadMeasuredWatchPayload(payload)
+        applyWatchVitalBatch([payload])
+    }
+
+    private func applyWatchVitalBatch(_ payloads: [[String: Any]]) {
+        let acceptedPayloads = payloads.filter { PhoneMeasuredVitalSnapshot.store($0) }
+        guard let latestPayload = acceptedPayloads.last else { return }
+        DashboardSyncService.shared.uploadMeasuredWatchPayloads(acceptedPayloads)
         DispatchQueue.main.async {
-            if let updatedString = payload["updatedAt"] as? String,
+            if let updatedString = latestPayload["updatedAt"] as? String,
                let updatedAt = ISO8601DateFormatter().date(from: updatedString) {
                 UserDefaults.standard.set(updatedAt, forKey: PreviewSettingsKey.lastWatchSync)
             } else {
                 UserDefaults.standard.set(Date(), forKey: PreviewSettingsKey.lastWatchSync)
             }
-            if self.shouldRefreshVitalsUI() {
-                WidgetCenter.shared.reloadAllTimelines()
-            }
-            NotificationCenter.default.post(name: Self.didReceiveWatchVitalsNotification, object: nil)
+            guard self.shouldRefreshVitalsUI() else { return }
+            WidgetCenter.shared.reloadAllTimelines()
+            NotificationCenter.default.post(
+                name: Self.didReceiveWatchVitalsNotification,
+                object: nil,
+                userInfo: latestPayload
+            )
         }
     }
 
@@ -3572,11 +3619,26 @@ final class DashboardSyncService: NSObject {
     }
 
     func uploadMeasuredWatchPayload(_ payload: [String: Any]) {
-        guard isWatchVitalsPayload(payload) else { return }
+        uploadMeasuredWatchPayloads([payload])
+    }
+
+    func uploadMeasuredWatchPayloads(_ payloads: [[String: Any]]) {
+        var acceptedPayloads = payloads.filter(isWatchVitalsPayload)
+        guard !acceptedPayloads.isEmpty else { return }
+#if targetEnvironment(simulator)
+        // Watch 시뮬레이터가 Phone으로 릴레이한 값도 운영 Watch 출처로는 절대 전송하지 않는다.
+        acceptedPayloads = acceptedPayloads.map { payload in
+            var mockPayload = payload
+            mockPayload["source"] = "VitAlGuard-Mock-Watch"
+            mockPayload["simulatorDeviceModel"] = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? "iPhone Simulator"
+            mockPayload["simulatorIdentifier"] = ProcessInfo.processInfo.environment["SIMULATOR_UDID"]
+            return mockPayload
+        }
+#endif
         let endpointString = normalizedEndpoint(from: UserDefaults.standard.string(forKey: PreviewSettingsKey.endpoint))
         guard let endpoint = URL(string: endpointString),
-              JSONSerialization.isValidJSONObject([payload]),
-              let body = try? JSONSerialization.data(withJSONObject: [payload]) else {
+              JSONSerialization.isValidJSONObject(acceptedPayloads),
+              let body = try? JSONSerialization.data(withJSONObject: acceptedPayloads) else {
             return
         }
         var request = URLRequest(url: endpoint)
@@ -4000,6 +4062,9 @@ private enum PreviewSettingsKey {
     static let watermarkBackgroundColor = "preview.watermark.backgroundColor"
     static let watermarkBackgroundAlpha = "preview.watermark.backgroundAlpha"
     static let watermarkPosition = "preview.watermark.position"
+    static let appLockTimeoutMinutes = "preview.appLockTimeoutMinutes"
+    static let autoLogoutTimeoutMinutes = "preview.autoLogoutTimeoutMinutes"
+    static let appBackgroundedAt = "preview.appBackgroundedAt"
 }
 
 private func normalizedAppServerRole(_ rawRole: String?, fallbackMode: AppMode) -> String {
@@ -4585,7 +4650,7 @@ private func vitalGuardHandleUnauthorizedResponse(data: Data?, response: URLResp
     guard (response as? HTTPURLResponse)?.statusCode == 401,
           let data,
           let body = try? JSONDecoder().decode(AuthErrorBody.self, from: data),
-          body.action == "reauth" else {
+          body.action?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "reauth" else {
         return
     }
     vitalGuardRequireReauthentication()
@@ -6906,9 +6971,15 @@ final class VitAlGuardPreviewController: UIViewController,
     private var lastDashboardHomeSummaryRefreshAt: Date?
     private var hasAttemptedDashboardSummaryTokenRefresh = false
     private var dashboardHomeSummaryError: String?
+    private var isBuildInterfaceInProgress = false
+    private var isBuildInterfacePending = false
+    private var buildInterfaceLastRunAt = Date.distantPast
+    private var buildInterfaceThrottleWorkItem: DispatchWorkItem?
+    private let buildInterfaceThrottleInterval: TimeInterval = 0.12
     private var isUploadBusy = false
     private var isLoginRequestInFlight = false
     private var isPresentingAIChat = false
+    private var needsInitialHomeScrollReset = true
     private static var didShowIntroGuideThisLaunch = false
     private static var isIntroGuideMutedForThisLaunch = false
     private var didAttemptIntroGuidePresentation = false
@@ -7167,11 +7238,52 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func buildInterface() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in
+                self?.buildInterface()
+            }
+            return
+        }
+
+        if isBuildInterfaceInProgress {
+            isBuildInterfacePending = true
+            return
+        }
+
+        let now = Date()
+        let sinceLastRun = now.timeIntervalSince(buildInterfaceLastRunAt)
+        if sinceLastRun < buildInterfaceThrottleInterval {
+            isBuildInterfacePending = true
+            buildInterfaceThrottleWorkItem?.cancel()
+            let delay = buildInterfaceThrottleInterval - sinceLastRun
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.buildInterface()
+            }
+            buildInterfaceThrottleWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+            return
+        }
+
+        buildInterfaceLastRunAt = now
+        isBuildInterfaceInProgress = true
+        defer {
+            isBuildInterfaceInProgress = false
+            buildInterfaceThrottleWorkItem = nil
+            if isBuildInterfacePending {
+                isBuildInterfacePending = false
+                buildInterface()
+            }
+        }
+
         HomeSection.migrateAdminDefaultIfNeeded()
         applySavedTheme()
         removeDashboardInlineLiveContent()
-        let previousOffset = pendingScrollOffsetToRestore ?? rootScrollView?.contentOffset
+        let shouldResetHomeScroll = loggedInID != nil && activeMainTab == .home && needsInitialHomeScrollReset
+        let previousOffset = shouldResetHomeScroll ? nil : (pendingScrollOffsetToRestore ?? rootScrollView?.contentOffset)
         pendingScrollOffsetToRestore = nil
+        if shouldResetHomeScroll {
+            needsInitialHomeScrollReset = false
+        }
         let shouldRestoreScroll = loggedInID != nil && previousOffset != nil
         view.subviews.forEach { $0.removeFromSuperview() }
         view.backgroundColor = pageColor
@@ -7307,7 +7419,16 @@ final class VitAlGuardPreviewController: UIViewController,
             }
         }
 
-        if shouldRestoreScroll, let previousOffset {
+        if shouldResetHomeScroll {
+            DispatchQueue.main.async { [weak self, weak scroll] in
+                guard let self, let scroll, scroll.window != nil else { return }
+                self.view.layoutIfNeeded()
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: -scroll.adjustedContentInset.top),
+                    animated: false
+                )
+            }
+        } else if shouldRestoreScroll, let previousOffset {
             DispatchQueue.main.async { [weak self, weak scroll] in
                 guard let self, let scroll, scroll.window != nil else { return }
                 self.view.layoutIfNeeded()
@@ -9509,7 +9630,12 @@ final class VitAlGuardPreviewController: UIViewController,
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["refreshToken": refreshToken])
         URLSession.shared.dataTask(with: request) { data, response, _ in
             let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            vitalGuardHandleUnauthorizedResponse(data: data, response: response)
+            let unauthorizedAction = data
+                .flatMap { try? JSONDecoder().decode(AuthErrorBody.self, from: $0) }
+                .flatMap { $0.action?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            if unauthorizedAction != "refresh" {
+                vitalGuardHandleUnauthorizedResponse(data: data, response: response)
+            }
             let login = data.flatMap { try? JSONDecoder().decode(AppAuthLoginResponse.self, from: $0) }
             guard (200..<300).contains(statusCode),
                   login?.ok == true,
@@ -10806,27 +10932,10 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     func presentAppLockIfNeeded() {
-        guard PhoneAppLockStore.shared.isLocked else { return }
-        let presenter = topMostPresenter(from: self)
-        guard !(presenter is PhoneAppLockViewController) else { return }
+        guard PhoneAppLockStore.shared.isLocked, presentedViewController == nil else { return }
         let lock = PhoneAppLockViewController()
         lock.modalPresentationStyle = .fullScreen
-        presenter.present(lock, animated: false)
-    }
-
-    private func topMostPresenter(from controller: UIViewController) -> UIViewController {
-        if let presented = controller.presentedViewController, !presented.isBeingDismissed {
-            return topMostPresenter(from: presented)
-        }
-        if let navigation = controller as? UINavigationController,
-           let visible = navigation.visibleViewController {
-            return topMostPresenter(from: visible)
-        }
-        if let tab = controller as? UITabBarController,
-           let selected = tab.selectedViewController {
-            return topMostPresenter(from: selected)
-        }
-        return controller
+        present(lock, animated: false)
     }
 
     @objc private func openSettings() {
@@ -10875,13 +10984,16 @@ final class VitAlGuardPreviewController: UIViewController,
         nav.modalPresentationStyle = .fullScreen
 
         assistant.onCloseRequest = { [weak self, weak nav] in
-            nav?.dismiss(animated: true)
-            self?.isPresentingAIChat = false
+            guard let nav else {
+                self?.isPresentingAIChat = false
+                return
+            }
+            nav.dismiss(animated: true) { [weak self] in
+                self?.isPresentingAIChat = false
+            }
         }
 
-        present(nav, animated: true) { [weak self] in
-            self?.isPresentingAIChat = false
-        }
+        present(nav, animated: true)
     }
 
     @objc private func openHomeLayout() {
@@ -12584,12 +12696,13 @@ final class VitAlGuardPreviewController: UIViewController,
         exporter.shouldOptimizeForNetworkUse = true
         exporter.videoComposition = videoComp
 
-        return await withCheckedContinuation { [exporter] continuation in
-            exporter.exportAsynchronously {
-                if exporter.status == .completed {
+        let exporterBox = SendableAssetExporter(exporter)
+        return await withCheckedContinuation { continuation in
+            exporterBox.value.exportAsynchronously {
+                if exporterBox.value.status == .completed {
                     continuation.resume(returning: outputURL)
                 } else {
-                    print("video watermark export failed: \(exporter.error?.localizedDescription ?? "unknown")")
+                    print("video watermark export failed: \(exporterBox.value.error?.localizedDescription ?? "unknown")")
                     continuation.resume(returning: sourceURL)
                 }
             }
@@ -14304,6 +14417,9 @@ final class VitAlGuardPreviewController: UIViewController,
         loginField.resignFirstResponder()
         passwordField.text = ""
         passwordField.resignFirstResponder()
+        activeMainTab = .home
+        needsInitialHomeScrollReset = true
+        pendingScrollOffsetToRestore = nil
         buildInterface()
     }
 
@@ -14443,7 +14559,7 @@ final class VitAlGuardPreviewController: UIViewController,
         }
     }
 
-    @objc private func logoutSession() {
+    @objc fileprivate func logoutSession() {
         view.endEditing(true)
         isLoginRequestInFlight = false
         stopDashboardAutoSync()
@@ -14451,6 +14567,8 @@ final class VitAlGuardPreviewController: UIViewController,
         dashboardRadarTimer = nil
         dashboardRadarIsPlaying = false
         activeMainTab = .home
+        needsInitialHomeScrollReset = true
+        pendingScrollOffsetToRestore = nil
         rootScrollView?.setContentOffset(.zero, animated: false)
         UserDefaults.standard.set(true, forKey: PreviewSettingsKey.forceSignedOut)
         UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.loggedInId)
@@ -14527,10 +14645,11 @@ final class VitAlGuardPreviewController: UIViewController,
             presentFallConfirmationIfNeeded(fallAlert)
             return
         }
+        guard loggedInID != nil else { return }
         if let message = watchAnomalyMessage(from: PhoneMeasuredVitalSnapshot.current), shouldRecordWatchAnomalyAlert() {
             recordLocalAlert(title: "Watch 생체 이상", message: message)
-        } else {
-            buildInterface()
+        } else if presentedViewController == nil, !isPresentingAIChat {
+            rebuildInterfacePreservingScrollPosition()
         }
     }
 
@@ -18805,6 +18924,66 @@ private final class PhoneAppLockStore {
         set { UserDefaults.standard.set(newValue, forKey: biometricKey) }
     }
     var lockoutUntil: Date? { UserDefaults.standard.object(forKey: lockoutKey) as? Date }
+    private var appLockTimeoutMinutes: Double {
+        let saved = UserDefaults.standard.integer(forKey: PreviewSettingsKey.appLockTimeoutMinutes)
+        return saved > 0 ? Double(saved) : 5
+    }
+    private var autoLogoutTimeoutMinutes: Double {
+        let saved = UserDefaults.standard.integer(forKey: PreviewSettingsKey.autoLogoutTimeoutMinutes)
+        return saved > 0 ? Double(saved) : 30
+    }
+
+    enum ResumeAction {
+        case none
+        case lock
+        case autoLogout
+    }
+
+    func recordBackgroundedAt() {
+        guard isConfigured else {
+            UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appBackgroundedAt)
+            return
+        }
+        UserDefaults.standard.set(Date(), forKey: PreviewSettingsKey.appBackgroundedAt)
+    }
+
+    func resolveResumeAction() -> ResumeAction {
+        guard isConfigured else {
+            UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appBackgroundedAt)
+            isLocked = false
+            return .none
+        }
+
+        let loggedIn = !(UserDefaults.standard.string(forKey: PreviewSettingsKey.loggedInId)?
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        guard loggedIn else {
+            UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appBackgroundedAt)
+            isLocked = false
+            return .none
+        }
+
+        guard let backgroundedAt = UserDefaults.standard.object(forKey: PreviewSettingsKey.appBackgroundedAt) as? Date else {
+            isLocked = false
+            return .none
+        }
+
+        let elapsedMinutes = Date().timeIntervalSince(backgroundedAt) / 60.0
+        let effectiveAutoLogoutMinutes = max(autoLogoutTimeoutMinutes, appLockTimeoutMinutes)
+        UserDefaults.standard.removeObject(forKey: PreviewSettingsKey.appBackgroundedAt)
+
+        if elapsedMinutes >= effectiveAutoLogoutMinutes {
+            isLocked = false
+            return .autoLogout
+        }
+
+        if elapsedMinutes >= appLockTimeoutMinutes {
+            isLocked = true
+            return .lock
+        }
+
+        isLocked = false
+        return .none
+    }
 
     func lockIfNeeded() {
         let loggedIn = !(UserDefaults.standard.string(forKey: PreviewSettingsKey.loggedInId)?.isEmpty ?? true)

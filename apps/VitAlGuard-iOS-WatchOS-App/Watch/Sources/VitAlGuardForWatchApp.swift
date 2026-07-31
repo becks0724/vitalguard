@@ -1,6 +1,7 @@
 // watchOS PoC 앱 진입점 — WorkoutManager + ConnectionSettings 를 환경 객체로 주입, 설정 네비게이션
 import AppIntents
 import SwiftUI
+import Security
 
 @MainActor
 final class VitAlGuardWatchAppDelegate: NSObject, WKApplicationDelegate {
@@ -15,7 +16,9 @@ final class VitAlGuardWatchAppDelegate: NSObject, WKApplicationDelegate {
 struct VitAlGuardForWatchApp: App {
     @WKApplicationDelegateAdaptor private var appDelegate: VitAlGuardWatchAppDelegate
     @StateObject private var settings = ConnectionSettings()
-    @StateObject private var appLock = WatchAppLockStore.shared
+    init() {
+        removeLegacyWatchAppLockArtifacts()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -24,7 +27,17 @@ struct VitAlGuardForWatchApp: App {
             }
             .environmentObject(appDelegate.workout)
             .environmentObject(settings)
-            .environmentObject(appLock)
         }
     }
+}
+
+private func removeLegacyWatchAppLockArtifacts() {
+    let service = "com.yangjeehoo.vitalguard.watch.app-lock.v84"
+    let account = "pin-verifier"
+    let query: [String: Any] = [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account
+    ]
+    SecItemDelete(query as CFDictionary)
 }

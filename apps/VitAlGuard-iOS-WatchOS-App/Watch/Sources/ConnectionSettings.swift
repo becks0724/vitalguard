@@ -119,6 +119,7 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     private static let energyEfficiencyMigrationKey = "watchEnergyEfficiencyMigration.v1"
     private static let languageCodeKey = "watchLanguageCode"
     private static let developerModeEnabledKey = "watchDeveloperModeEnabled"
+    private static let localDeveloperModeEnabledKey = "watchLocalDeveloperModeEnabled"
     private static let dashboardURLKey = "watchDashboardURL"
     // 마지막으로 적용된 번들 기본 URL 의 스탬프. 새 빌드에서 defaultURLString 이 바뀌면(재설치)
     // 저장된 옛 URL 을 자동으로 새 기본값으로 교체 → 터널 회전 후 재설치 시 인앱 수정 없이 즉시 반영.
@@ -150,6 +151,11 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
     @Published var developerModeEnabled: Bool {
         didSet { UserDefaults.standard.set(developerModeEnabled, forKey: Self.developerModeEnabledKey) }
+    }
+    /// iPhone 동기화와 별개인 Watch 로컬 개발자 보기 모드입니다. 연결 주소·토큰은
+    /// 이 값으로도 변경할 수 없으며, 현장 관리자만 설정 화면에서 전환할 수 있습니다.
+    @Published var watchDeveloperModeEnabled: Bool {
+        didSet { UserDefaults.standard.set(watchDeveloperModeEnabled, forKey: Self.localDeveloperModeEnabledKey) }
     }
     @Published var dashboardURLString: String {
         didSet { UserDefaults.standard.set(dashboardURLString, forKey: Self.dashboardURLKey) }
@@ -226,6 +232,7 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
             ?? Self.canManageDashboard(for: initialServerRole, fallbackMode: initialMode)
         languageCode = d.string(forKey: Self.languageCodeKey) ?? ""
         developerModeEnabled = d.bool(forKey: Self.developerModeEnabledKey)
+        watchDeveloperModeEnabled = d.bool(forKey: Self.localDeveloperModeEnabledKey)
         dashboardURLString = d.string(forKey: Self.dashboardURLKey) ?? Self.defaultDashboardURLString
         let rawSensorMode = d.string(forKey: Self.sensorPowerModeKey) ?? WatchSensorPowerMode.balanced.rawValue
         sensorPowerMode = WatchSensorPowerMode(rawValue: rawSensorMode) ?? .balanced
@@ -251,6 +258,10 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
 
     var serverRoleTitle: String {
         Self.serverRoleTitle(serverRole)
+    }
+
+    var isWatchDeveloperModeEnabled: Bool {
+        watchDeveloperModeEnabled
     }
 
     var permissionSummary: String {
@@ -845,15 +856,12 @@ final class ConnectionSettings: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     static func shouldTransmitLiveHeartRate(boosted: Bool, lastSentAt: Date?, now: Date) -> Bool {
+        if boosted { return true }
         let interval: TimeInterval
-        if boosted {
-            interval = 1
-        } else {
-            switch currentSensorPowerMode() {
-            case .extreme: interval = 5
-            case .balanced: interval = max(60, currentSyncIntervalSeconds())
-            case .lowPower: interval = 300
-            }
+        switch currentSensorPowerMode() {
+        case .extreme: interval = 5
+        case .balanced: interval = max(60, currentSyncIntervalSeconds())
+        case .lowPower: interval = 300
         }
         guard let lastSentAt else { return true }
         return now.timeIntervalSince(lastSentAt) >= interval

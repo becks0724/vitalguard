@@ -14,11 +14,27 @@ struct FallHrTrajectory {
     let deltaPeak: Double?
 }
 
+/// 설정 화면에서 사용하는 연결 검사 결과입니다. 단순히 Bluetooth가 켜져 있는지가 아니라
+/// iPhone이 인증된 관제 API까지 요청을 수락한 경우에만 성공으로 표시합니다.
+struct WatchRelayConnectionResult: Equatable {
+    let isSuccess: Bool
+    let message: String
+
+    static let relayUnavailable = WatchRelayConnectionResult(
+        isSuccess: false,
+        message: "iPhone 릴레이 연결 실패"
+    )
+}
+
 @MainActor
 final class VitalTransmitter {
     // (ok, 상태문구, 버퍼건수, 이번에 전송된 샘플수) 콜백 — WorkoutManager 가 @Published 로 반영.
     // 배칭이라 한 번의 전송으로 여러 샘플이 나가므로 sentDelta 로 누적 카운트를 올린다.
     var onResult: ((Bool, String, Int, Int) -> Void)?
+
+    // WorkoutManager가 제공하는 실물 Watch 착용·최근 심박 증거. 전송기 자체는 HealthKit을
+    // 소유하지 않으므로, 모든 송신 경로가 이 클로저를 통해 같은 실측 기준을 사용한다.
+    var hasFreshOnWristEvidence: (() -> Bool)?
 
     // 서버 주소는 앱이 관리한다. 워치 전송은 이 주소에 직접 접속하지 않고 iPhone으로 릴레이한다.
     private var endpoint: URL? { ConnectionSettings.currentURL() }
@@ -127,11 +143,8 @@ final class VitalTransmitter {
     }
 
     // 정상 폴 — HR(연속) + 최신 SpO₂(있으면 동봉). 배칭 윈도에 누적.
-    func send(heartRate: Double, spo2: Double?, heartRateMeasuredAt: Date? = nil, spo2MeasuredAt: Date? = nil) {
-        guard canTransmitMeasuredWatchData else {
-            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
-            return
-        }
+    func send(heartRate: Double, spo2: Double?) {
+        guard requireMeasuredWatchData() else { return }
         guard let heartRate = validatedHeartRate(heartRate) else {
             onResult?(false, "실측 심박 대기 — 전송 보류", backlog.count, 0)
             return
@@ -140,17 +153,12 @@ final class VitalTransmitter {
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartRate"] = Int(heartRate.rounded())
         if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
-        if let heartRateMeasuredAt { payload["heartRateMeasuredAt"] = iso.string(from: heartRateMeasuredAt) }
-        if let spo2MeasuredAt { payload["spo2MeasuredAt"] = iso.string(from: spo2MeasuredAt) }
         enqueuePending(payload)
     }
 
     // 잠금/백그라운드 유지용 heartbeat — 새 심박 이벤트가 잠시 없어도 최신 스냅샷과 GPS를 관제에 남긴다.
     func sendSnapshot(_ snapshot: MeasuredVitalSnapshot, forceFlush: Bool = true) {
-        guard canTransmitMeasuredWatchData else {
-            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
-            return
-        }
+        guard requireMeasuredWatchData() else { return }
         guard let heartRate = validatedHeartRate(snapshot.heartRate) else {
             onResult?(false, "실측 심박 대기 — 백그라운드 전송 보류", backlog.count, 0)
             return
@@ -241,6 +249,7 @@ final class VitalTransmitter {
         // 관제웹은 후보행도 낙상 이벤트로 표시할 수 있다. Watch 경보로 확정되지 않은
         // 후보(ML 기각·미착용·미해결 사건)는 전송하지 않아 유령 낙상 행을 막는다.
         guard isFall else { return }
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["fallCandidate"] = true
         payload["fallCandidateId"] = candidateId
@@ -262,10 +271,10 @@ final class VitalTransmitter {
         // A missing outcome is interpreted by the phone as a pending prompt.
         // Mark rejected candidates explicitly so they cannot become an alert.
         payload["fallPromptOutcome"] = isFall ? "pending" : "not_alerted"
-        if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
-        if let v = hrTrajectory.preMean10s { payload["hrPreMean10s"] = (v * 10).rounded() / 10 }
-        if let v = hrTrajectory.impactHr { payload["hrAtImpact"] = Int(v.rounded()) }
+        if let heartRate = validatedHeartRate(heartRate) { payload["heartRate"] = Int(heartRate.rounded()) }
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
+        if let v = validatedHeartRate(hrTrajectory.preMean10s) { payload["hrPreMean10s"] = (v * 10).rounded() / 10 }
+        if let v = validatedHeartRate(hrTrajectory.impactHr) { payload["hrAtImpact"] = Int(v.rounded()) }
         // post-impact HR follow-up 는 초기 후보행이 먼저 생겨야 같은 candidateId 로 업데이트 가능하다.
         // 따라서 양성/음성 공통으로 후보행은 즉시 전송해 DB 기준행을 확정한다.
         pending.append(payload)
@@ -273,6 +282,7 @@ final class VitalTransmitter {
     }
 
     func sendFallPromptResult(candidateId: String, outcome: String, responseSec: Double) {
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["fallCandidateId"] = candidateId
         payload["fallUpdatePhase"] = "prompt_result"
@@ -283,13 +293,14 @@ final class VitalTransmitter {
     }
 
     func sendFallHrFollowup(candidateId: String, trajectory: FallHrTrajectory) {
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["fallCandidateId"] = candidateId
         payload["fallUpdatePhase"] = "post_impact_followup"
-        if let v = trajectory.postMean30s { payload["hrPostMean30s"] = (v * 10).rounded() / 10 }
-        if let v = trajectory.postPeak30s { payload["hrPostPeak30s"] = Int(v.rounded()) }
-        if let v = trajectory.deltaMean { payload["hrDeltaMean"] = (v * 10).rounded() / 10 }
-        if let v = trajectory.deltaPeak { payload["hrDeltaPeak"] = (v * 10).rounded() / 10 }
+        if let v = validatedHeartRate(trajectory.postMean30s) { payload["hrPostMean30s"] = (v * 10).rounded() / 10 }
+        if let v = validatedHeartRate(trajectory.postPeak30s) { payload["hrPostPeak30s"] = Int(v.rounded()) }
+        if let v = trajectory.deltaMean, v.isFinite { payload["hrDeltaMean"] = (v * 10).rounded() / 10 }
+        if let v = trajectory.deltaPeak, v.isFinite { payload["hrDeltaPeak"] = (v * 10).rounded() / 10 }
         pending.append(payload)
         flush(force: true)
     }
@@ -300,13 +311,14 @@ final class VitalTransmitter {
         heartRate: Double?,
         spo2: Double?
     ) {
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["fallDetected"] = true
         payload["fallCandidateId"] = candidateId
         payload["fallPromptOutcome"] = "auto_escalated"
         payload["fallPromptResponseSec"] = (responseSec * 10).rounded() / 10
-        if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        if let heartRate = validatedHeartRate(heartRate) { payload["heartRate"] = Int(heartRate.rounded()) }
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
         pending.append(payload)
         flush(force: true)
     }
@@ -317,35 +329,34 @@ final class VitalTransmitter {
         heartRate: Double?,
         spo2: Double?
     ) {
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["manualSos"] = true
         payload["fallCandidateId"] = candidateId
         payload["fallPromptOutcome"] = "manual_sos"
         payload["fallPromptResponseSec"] = (responseSec * 10).rounded() / 10
-        if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        if let heartRate = validatedHeartRate(heartRate) { payload["heartRate"] = Int(heartRate.rounded()) }
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
         pending.append(payload)
         flush(force: true)
     }
 
     // 워치 단독 SOS — 작업자가 워치에서 직접 발신(폰 잠금/워치만 착용 대비). 긴급이라 즉시 전송.
     func sendSos(heartRate: Double?, spo2: Double?) {
+        guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["manualSos"] = true
-        if let heartRate { payload["heartRate"] = Int(heartRate.rounded()) }
-        if let spo2 { payload["spo2"] = Int(spo2.rounded()) }
+        if let heartRate = validatedHeartRate(heartRate) { payload["heartRate"] = Int(heartRate.rounded()) }
+        if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
         pending.append(payload)
         flush(force: true)
     }
 
     // 스트레스 입력 60초 sub-cadence — raw 7종 + 최신 HR/SpO₂. 배칭 윈도에 누적(다음 flush 에 동반).
-    func sendStress(_ s: StressInputs, heartRate: Double?, spo2: Double?, heartRateMeasuredAt: Date? = nil, spo2MeasuredAt: Date? = nil, forceFlush: Bool = false) {
+    func sendStress(_ s: StressInputs, heartRate: Double?, spo2: Double?, forceFlush: Bool = false) {
         // 백그라운드 타이머가 HealthKit의 과거 일일 합계만 반복 전송하지 않도록, 현재
         // 워치에서 얻은 유효 심박이 있을 때만 이 경로를 연다. 실제 낙상/SOS는 별도 경로다.
-        guard canTransmitMeasuredWatchData else {
-            onResult?(false, "실물 Apple Watch 확인 전송 보류", backlog.count, 0)
-            return
-        }
+        guard requireMeasuredWatchData() else { return }
         guard let heartRate = validatedHeartRate(heartRate) else {
             onResult?(false, "실측 심박 대기 — 주기 전송 보류", backlog.count, 0)
             return
@@ -354,8 +365,6 @@ final class VitalTransmitter {
         payload["source"] = "VitAlGuard-WatchVitals"
         payload["heartRate"] = Int(heartRate.rounded())
         if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }
-        if let heartRateMeasuredAt { payload["heartRateMeasuredAt"] = iso.string(from: heartRateMeasuredAt) }
-        if let spo2MeasuredAt { payload["spo2MeasuredAt"] = iso.string(from: spo2MeasuredAt) }
         if let v = s.hrvSdnnMs { payload["hrvSdnnMs"] = (v * 100).rounded() / 100 }
         if let v = s.restingHeartRate { payload["restingHeartRate"] = Int(v.rounded()) }
         if let v = s.walkingHeartRate { payload["walkingHeartRate"] = Int(v.rounded()) }
@@ -411,12 +420,32 @@ final class VitalTransmitter {
     // 세션 종료 시 윈도에 남은 미전송분을 마저 전송.
     func flushPending() { flush(force: true) }
 
-    // 설정 화면용 연결 테스트. 워치는 iPhone 릴레이에만 연결하고 서버 인증은 iPhone이 담당한다.
-    func testConnection() async -> String {
-        guard WCSession.isSupported() else { return "iPhone 릴레이를 지원하지 않는 기기입니다" }
+    // 설정 화면용 연결 테스트. 워치는 iPhone 릴레이에만 연결하고, iPhone이 인증된 API
+    // 연결 검사를 완료해 답장을 보내야 성공이다. 비밀번호나 JWT는 이 메시지에 담지 않는다.
+    func testConnection() async -> WatchRelayConnectionResult {
+        guard WCSession.isSupported() else {
+            return WatchRelayConnectionResult(isSuccess: false, message: "iPhone 릴레이 연결 실패")
+        }
         let session = WCSession.default
         session.activate()
-        return session.isReachable ? "iPhone 릴레이 연결됨" : "iPhone 연결 대기 중"
+        guard session.isReachable else { return .relayUnavailable }
+
+        return await withCheckedContinuation { continuation in
+            let request: [String: Any] = [
+                "source": "VitAlGuard-Watch",
+                "request": "watchRelayHealthCheck"
+            ]
+            session.sendMessage(request, replyHandler: { reply in
+                let ok = reply["status"] as? String == "watchRelayDashboardChecked"
+                    && reply["ok"] as? Bool == true
+                continuation.resume(returning: WatchRelayConnectionResult(
+                    isSuccess: ok,
+                    message: ok ? "iPhone 릴레이 및 관제웹 연결됨" : "iPhone 릴레이 연결 실패"
+                ))
+            }, errorHandler: { _ in
+                continuation.resume(returning: .relayUnavailable)
+            })
+        }
     }
 
     // 윈도에 샘플을 쌓고, 첫 샘플로 윈도를 열고, flushInterval 경과 시 배열로 전송.
@@ -438,13 +467,20 @@ final class VitalTransmitter {
         return value
     }
 
-    // 시뮬레이터는 어떤 주기·시간대에서도 관제 원본으로 보낼 수 없다.
-    // 실물 Apple Watch에서 들어온 값만 전송 경로에 진입한다.
+    private func requireMeasuredWatchData() -> Bool {
+        guard canTransmitMeasuredWatchData else {
+            onResult?(false, "실측 심박·착용 증거 확인 전송 보류", backlog.count, 0)
+            return false
+        }
+        return true
+    }
+
+    // 시뮬레이터 및 최근 착용 증거가 없는 실물 Watch는 어떤 경로로도 관제 원본을 보낼 수 없다.
     private var canTransmitMeasuredWatchData: Bool {
         #if targetEnvironment(simulator)
         return false
         #else
-        return true
+        return hasFreshOnWristEvidence?() == true
         #endif
     }
 
