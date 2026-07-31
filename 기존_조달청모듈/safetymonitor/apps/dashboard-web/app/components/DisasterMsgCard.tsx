@@ -44,10 +44,12 @@ export function DisasterMsgCard({
   lat,
   lon,
   onSourceChange,
+  reloadKey = 0,
 }: {
   lat?: number;
   lon?: number;
   onSourceChange?: (source: "live" | "mock" | null) => void;
+  reloadKey?: number; // 값이 바뀌면 다시 조회(패널 헤더 새로고침 버튼)
 }) {
   const [data, setData] = useState<Payload | null>(null);
   // 좌표가 있는데도 조회에 실패한 상태 — "발령 없음"과 반드시 구분한다(false-OK 방지).
@@ -83,7 +85,7 @@ export function DisasterMsgCard({
       alive = false;
       clearInterval(id);
     };
-  }, [lat, lon, onSourceChange]);
+  }, [lat, lon, onSourceChange, reloadKey]);
 
   // 좌표 없음·조회 실패는 회색 "수신 대기" — 0 으로 채워 "발령 없음"처럼 보이면 false-OK 다.
   if (typeof lat !== "number" || typeof lon !== "number" || failed || !data) {

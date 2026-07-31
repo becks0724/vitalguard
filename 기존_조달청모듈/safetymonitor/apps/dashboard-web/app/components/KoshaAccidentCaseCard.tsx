@@ -19,9 +19,11 @@ type Payload = {
 
 export function KoshaAccidentCaseCard({
   onSourceChange,
+  reloadKey = 0,
 }: {
-  // 데이터 출처(실시간/샘플) 를 부모(캐러셀 헤더 배지)로 올림. source 변경 시 호출.
+  // 데이터 출처(실시간/샘플) 를 부모(패널 헤더 배지)로 올림. source 변경 시 호출.
   onSourceChange?: (source: "live" | "mock" | null) => void;
+  reloadKey?: number; // 값이 바뀌면 다시 조회(패널 헤더 새로고침 버튼)
 } = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [selected, setSelected] = useState<Item | null>(null);
@@ -47,7 +49,7 @@ export function KoshaAccidentCaseCard({
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [reloadKey]);
 
   // 출처 변경을 부모로 통지 → 캐러셀 헤더 배지 갱신. onSourceChange 는 안정적(상위 setState)이라 무한루프 없음.
   useEffect(() => {

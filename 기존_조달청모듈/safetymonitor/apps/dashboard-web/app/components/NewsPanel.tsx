@@ -24,7 +24,7 @@ function toneOf(seed: string): string {
   return FALLBACK_TONES[h % FALLBACK_TONES.length] as string;
 }
 
-export function NewsPanel() {
+export function NewsPanel({ reloadKey = 0 }: { reloadKey?: number } = {}) {
   const [data, setData] = useState<NewsResult | null>(null);
   const [error, setError] = useState(false);
   // og:image 가 있어도 매체가 핫링크를 막으면 로드에 실패한다 → 그 카드만 폴백으로 전환.
@@ -63,7 +63,7 @@ export function NewsPanel() {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [reloadKey]);
 
   const items = data?.items ?? [];
   const nowMs = Date.now();

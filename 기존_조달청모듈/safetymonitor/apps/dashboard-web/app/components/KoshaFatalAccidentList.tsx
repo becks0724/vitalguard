@@ -17,8 +17,10 @@ type Payload = {
 
 export function KoshaFatalAccidentList({
   onSourceChange,
+  reloadKey = 0,
 }: {
   onSourceChange?: (source: "live" | "mock") => void;
+  reloadKey?: number; // 값이 바뀌면 다시 조회(패널 헤더 새로고침 버튼)
 }) {
   const scrollRef = useMarqueeScroll<HTMLDivElement>(0.35, "x");
   const [data, setData] = useState<Payload | null>(null);
@@ -44,7 +46,7 @@ export function KoshaFatalAccidentList({
       alive = false;
       clearInterval(id);
     };
-  }, [onSourceChange]);
+  }, [onSourceChange, reloadKey]);
 
   const items = data?.items ?? [];
   if (items.length === 0) {
