@@ -47,9 +47,7 @@ import {
 import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-schedule";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
-import { KoshaAccidentCaseCard } from "./KoshaAccidentCaseCard";
 import { getSessionRole, getSessionToken, useSession } from "./LoginGate";
-import { KoshaAccidentTicker } from "./KoshaAccidentTicker";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
 import {
   WorkerGpsMap,
@@ -69,7 +67,6 @@ import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
 import { HospitalPanel } from "./HospitalPanel";
-import { NewsPanel } from "./NewsPanel";
 import { extractRegion } from "../lib/hospital";
 import {
   GEOFENCE_INITIAL,
@@ -102,6 +99,7 @@ import { WeatherIcon, weatherIconKey } from "./WeatherIcons";
 import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
+import { SafetyNewsPage } from "./SafetyNewsPage";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import ErpDemoPage from "../erp/page";
@@ -3403,8 +3401,11 @@ export function DemoDashboard() {
   });
   const [logExpanded, setLogExpanded] = useState(false);
   const [selection, setSelection] = useState<Selection | null>(null);
-  // 상단 페이저 활성 페이지 — ERP: 스마트경리(3번째 탭) 활성 시 하단 부속 UI(속보 티커·DB 스트립) 숨김.
+  // 상단 페이저 활성 페이지 — ERP: 스마트경리 활성 시 하단 부속 UI(DB 스트립) 숨김.
+  // ⚠️ 탭을 추가·재배열하면 이 인덱스가 밀린다. 매직넘버 2 를 쓰다 '안전뉴스' 탭 삽입으로
+  //    한 칸 밀려서 상수로 뽑았다(pages 배열 순서와 반드시 함께 본다).
   const [pagerIdx, setPagerIdx] = useState(0);
+  const ERP_PAGE_IDX = 3; // pages 배열의 'ERP: 스마트경리' 위치
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -3606,7 +3607,6 @@ export function DemoDashboard() {
   // 작업자 뷰 — table: 기존 표 / map: GPS 위성지도(마커 호버 시 생체 툴팁). 세션 한정(영속 없음).
   const [workerView, setWorkerView] = useState<"table" | "map">("table");
   // 국내 재해사례 데이터 출처 — 캐러셀 헤더 배지(좌측 화살표 우측)로 표시. 카드가 fetch 후 통지.
-  const [koshaSource, setKoshaSource] = useState<"live" | "mock" | null>(null);
 
   // SSR/CSR mismatch 회피 — mount 후 1회 localStorage 로드(빠른 페인트), 이어서 서버(공유 관제) 슬롯으로 덮어쓰기.
   useEffect(() => {
@@ -5285,41 +5285,23 @@ export function DemoDashboard() {
                 </button>
               )}
             </div>
-            {/* 현장정보 + 국내재해사례 — 좌우 화살표 캐러셀(‹ 제목 N/M ›). 자동회전 없음·수동 전환만 */}
-            <WidgetCarousel
-              className="h-[140px]"
-              autoRotate={false}
-              pages={[
-                {
-                  title: "현장정보",
-                  content: (
-                    <div className="grid h-full w-full grid-cols-3 gap-1 p-1.5 max-[640px]:grid-cols-2">
-                      {siteInfoRows(siteInfo).map((item) => (
-                        <div key={item.label} className="flex min-w-0 flex-col justify-center rounded-lg bg-surface-card px-2.5 py-0.5 dark:bg-surface-dark-elevated">
-                          <div className="text-[10px] leading-tight text-body dark:text-on-dark-soft">{item.label}</div>
-                          <div className="truncate text-[13px] font-semibold leading-tight text-ink dark:text-on-dark">
-                            {item.value}
-                          </div>
-                        </div>
-                      ))}
+            {/* 현장정보 — 국내 재해사례·산업 안전뉴스는 '안전뉴스' 탭으로 이관되어
+                캐러셀(‹ 제목 N/M ›)이 1/1 이 되므로 단독 카드로 바꿨다(docs/safety-news-tab N-04). */}
+            <section className="flex h-[140px] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface-card dark:border-white/10 dark:bg-surface-dark-elevated">
+              <div className="flex shrink-0 items-center border-b border-hairline px-3 py-1.5 dark:border-white/10">
+                <h3 className="text-xs font-bold text-ink dark:text-on-dark">현장정보</h3>
+              </div>
+              <div className="grid min-h-0 flex-1 grid-cols-3 gap-1 p-1.5 max-[640px]:grid-cols-2">
+                {siteInfoRows(siteInfo).map((item) => (
+                  <div key={item.label} className="flex min-w-0 flex-col justify-center rounded-lg bg-surface-card px-2.5 py-0.5 dark:bg-surface-dark-elevated">
+                    <div className="text-[10px] leading-tight text-body dark:text-on-dark-soft">{item.label}</div>
+                    <div className="truncate text-[13px] font-semibold leading-tight text-ink dark:text-on-dark">
+                      {item.value}
                     </div>
-                  ),
-                },
-                {
-                  title: "국내 재해사례",
-                  content: <KoshaAccidentCaseCard onSourceChange={setKoshaSource} />,
-                  headerAccessory: koshaSource ? (
-                    <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-[10px] font-semibold text-body dark:bg-white/10 dark:text-on-dark-soft">
-                      {koshaSource === "live" ? "KOSHA 실시간" : "샘플"}
-                    </span>
-                  ) : null,
-                },
-                {
-                  title: "산업 안전뉴스",
-                  content: <NewsPanel />,
-                },
-              ]}
-            />
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
 
           {/* 우측 — 그룹 캐러셀(현황 요약·실시간 레이더·태풍 진로·특보영상). 자동회전 없음·수동 전환만 */}
@@ -5619,6 +5601,12 @@ export function DemoDashboard() {
             ),
           },
           {
+            // 안전뉴스 — 재난문자·산업재해 속보·국내 재해사례·산업 안전뉴스를 한 화면에 모았다.
+            // 좌측 캐러셀(재해사례·뉴스)과 하단 상시 티커(속보)를 여기로 이관 — docs/safety-news-tab/.
+            title: "안전뉴스",
+            content: <SafetyNewsPage lat={effLat} lon={effLon} />,
+          },
+          {
             title: "안전관리비 검증",
             content: <SafetyVerificationTabs />,
           },
@@ -5639,9 +5627,7 @@ export function DemoDashboard() {
         <SiteMetricChartPanel metric={siteChart} onClose={() => setSiteChart(null)} />
       )}
 
-      {/* 전국 산업재해 사망 속보 — KOSHA OpenAPI (작업자 모니터링 하단으로 이동).
-          ERP: 스마트경리(pagerIdx 2) 활성 시 숨김 — ERP 화면을 한 화면에 최대한 노출(언마운트=마퀴·폴링도 정지). */}
-      {pagerIdx !== 2 && <KoshaAccidentTicker />}
+      {/* 산업재해 사망 속보 티커는 '안전뉴스' 탭 목록으로 이관(docs/safety-news-tab N-03). */}
 
       {queueModalSlot !== null && (
         <WorkerQueueModal
@@ -5826,7 +5812,7 @@ export function DemoDashboard() {
       )}
 
       {/* 실시간 수집 · DB 영속 스트립 — ERP: 스마트경리 활성 시 숨김(속보 티커와 동일 사유). */}
-      {pagerIdx !== 2 && (
+      {pagerIdx !== ERP_PAGE_IDX && (
       <>
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
         <button
