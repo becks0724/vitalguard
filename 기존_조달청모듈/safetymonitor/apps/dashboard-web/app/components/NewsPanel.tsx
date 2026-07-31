@@ -89,9 +89,10 @@ export function NewsPanel() {
     );
   }
 
-  // 헤드라인 뉴스 형식 — 좌측 섬네일 + 제목/요약/매체 한 행씩 세로로. 5행쯤 보이고 나머지는 스크롤.
+  // 헤드라인 뉴스 형식 — 좌측 섬네일 + 제목/요약/매체 한 행씩 세로로.
+  // 높이는 4행(약 320px)으로 묶는다 — 안전뉴스 탭 전체가 한 화면에 들어오게 하려는 것(사용자 목적).
   return (
-    <div className="no-scrollbar max-h-[400px] overflow-y-auto px-3 pb-3">
+    <div className="no-scrollbar max-h-[320px] overflow-y-auto px-3 pb-3">
       <ul className="divide-y divide-hairline dark:divide-white/10">
         {items.map((it) => {
           const showImg = it.image && !broken[it.link];

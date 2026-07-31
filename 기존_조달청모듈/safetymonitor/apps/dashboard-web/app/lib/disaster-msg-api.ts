@@ -156,6 +156,7 @@ export type DisasterMsgView = {
   step: EmergencyStep;
   atMs: number;
   regions: string[]; // 매칭된 수신지역 토큰
+  sidos: string[]; // 매칭된 시·도(인근은 복수 가능) — 화면이 "인근 전남·전북"을 표기하는 데 쓴다
   message: string;
 };
 
@@ -176,6 +177,7 @@ function toView(h: MatchedDisasterMsg): DisasterMsgView {
     step: h.msg.step,
     atMs: h.msg.createdAtMs,
     regions: h.matchedRegions.map((r) => r.trim()),
+    sidos: h.sidos,
     message: h.msg.message,
   };
 }

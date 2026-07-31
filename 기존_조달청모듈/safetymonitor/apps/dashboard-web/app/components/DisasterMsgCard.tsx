@@ -10,6 +10,7 @@ type MsgView = {
   step: "긴급재난" | "안전안내";
   atMs: number;
   regions: string[];
+  sidos: string[];
   message: string;
 };
 type Payload = {
@@ -98,15 +99,38 @@ export function DisasterMsgCard({
     );
   }
 
+  // 인근 상태는 현장과 같은 잣대로 계산한다(긴급재난 → danger / 그 외 발령 → caution).
+  const nearbySeverity: Payload["severity"] =
+    data.nearby.length === 0
+      ? "normal"
+      : data.nearby.some((m) => m.step === "긴급재난")
+        ? "danger"
+        : "caution";
+  const nearbyTypes = [...new Set(data.nearby.map((m) => m.type))];
+  const nearbySidos = [...new Set(data.nearby.flatMap((m) => m.sidos))];
+
   return (
     <div className="no-scrollbar flex h-full flex-col gap-2 overflow-y-auto px-3 pb-3 pt-1.5">
-      <div className="flex items-center gap-1.5">
-        <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[data.severity]}`} />
-        <span className="text-xs font-semibold text-ink dark:text-on-dark">{data.summary}</span>
-        <span className="text-[10px] text-muted dark:text-on-dark-soft">{data.sido}</span>
+      {/* 현장과 인근을 같은 형식(점·유형·지역)으로 나란히 — 인근도 지역명까지 보여준다.
+          인근은 알림 대상이 아니지만(D-05) 상태는 같은 잣대로 읽히게 한다. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[data.severity]}`} />
+          <span className="text-xs font-semibold text-ink dark:text-on-dark">{data.summary}</span>
+          <span className="text-[10px] text-muted dark:text-on-dark-soft">{data.sido}</span>
+        </span>
         {data.nearby.length > 0 && (
-          <span className="ml-auto shrink-0 rounded-pill bg-surface-strong px-2 py-0.5 text-[10px] font-semibold text-body dark:bg-white/10 dark:text-on-dark-soft">
-            인근 {data.nearby.length}건 참고
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            <span aria-hidden className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[nearbySeverity]}`} />
+            <span className="text-xs font-semibold text-body dark:text-on-dark-soft">
+              {nearbyTypes.join(" · ")}
+            </span>
+            <span className="text-[10px] text-muted dark:text-on-dark-soft">
+              인근 {nearbySidos.join("·")}
+            </span>
+            <span className="shrink-0 rounded-pill bg-surface-strong px-2 py-0.5 text-[10px] font-semibold text-body dark:bg-white/10 dark:text-on-dark-soft">
+              {data.nearby.length}건 참고
+            </span>
           </span>
         )}
       </div>

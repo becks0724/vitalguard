@@ -212,6 +212,7 @@ export type MatchedDisasterMsg = {
   msg: DisasterMsg;
   scope: MsgScope;
   matchedRegions: string[];
+  sidos: string[]; // 매칭된 시·도 이름 — site 는 현장 시·도, nearby 는 걸린 인근 시·도(복수 가능)
 };
 
 // ── 알림 항목 ────────────────────────────────────────────────────────────────
@@ -272,13 +273,24 @@ export function matchSite(msgs: DisasterMsg[], lat: number, lon: number): Matche
   for (const msg of msgs) {
     const siteHits = msg.regions.filter((r) => msgRegionMatchesSido(r, own.keywords));
     if (siteHits.length > 0) {
-      out.push({ msg, scope: "site", matchedRegions: siteHits });
+      out.push({ msg, scope: "site", matchedRegions: siteHits, sidos: [own.name] });
       continue;
     }
-    const nearHits = msg.regions.filter((r) =>
-      near.some((s) => msgRegionMatchesSido(r, s.keywords)),
+    // 어느 인근 시·도가 걸렸는지 남긴다 — 화면이 "인근 전남·전북" 처럼 지역명을 보여줄 수 있게.
+    const nearMatched = near.filter((s) =>
+      msg.regions.some((r) => msgRegionMatchesSido(r, s.keywords)),
     );
-    if (nearHits.length > 0) out.push({ msg, scope: "nearby", matchedRegions: nearHits });
+    if (nearMatched.length > 0) {
+      const nearHits = msg.regions.filter((r) =>
+        nearMatched.some((s) => msgRegionMatchesSido(r, s.keywords)),
+      );
+      out.push({
+        msg,
+        scope: "nearby",
+        matchedRegions: nearHits,
+        sidos: nearMatched.map((s) => s.name),
+      });
+    }
   }
   return out;
 }
