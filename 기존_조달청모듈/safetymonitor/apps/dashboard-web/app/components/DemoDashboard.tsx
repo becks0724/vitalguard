@@ -493,6 +493,8 @@ function GaugeRow({
   );
 }
 
+const PANEL_ID = "site-gauge-siteinfo"; // 펼침 영역 — 토글 버튼의 aria-controls 대상.
+
 // 관제 탭 최상단 가로 바 — 공정률·무사고를 좌우로 나란히 둔다(사용자 요청).
 // 종전에는 우상단 캐러셀 '현황 요약' 안에 상하로 있었고, 그 페이지는 수신 요약과 함께 삭제됐다.
 function GaugePanel({
@@ -518,27 +520,78 @@ function GaugePanel({
   const s = computeSafetyStreak(siteInfo.startDate, lastAccidentTs, nowMs);
   const sStatus = s.known ? `목표 ${s.target}일까지 ${s.toGo}일` : "착수일 미입력";
 
+  const [open, setOpen] = useState(false); // 현장정보 펼침 — 평시 접힘(바 높이 유지).
+
   return (
-    // 좁은 화면에서는 두 게이지가 바짝 붙어 읽기 어려워 세로로 접는다(md 미만).
-    <section className="grid gap-x-6 gap-y-2 overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark md:grid-cols-2">
-      <GaugeRow
-        title="공정률"
-        status={pStatus}
-        value={`${p.pct.toFixed(1)}%`}
-        note={`경과 ${p.elapsedDays}일 / 총 ${p.totalDays}일`}
-        pct={p.pct}
-        known={pKnown}
-        ariaLabel="현장 공정률"
-      />
-      <GaugeRow
-        title="무사고"
-        status={sStatus}
-        value={`${s.days}일`}
-        note={s.reset ? "사고 후 재집계" : "연속 무사고"}
-        pct={s.pct}
-        known={s.known}
-        ariaLabel="무사고 연속 일수"
-      />
+    <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
+      <div className="flex items-center gap-4">
+        {/* 좁은 화면에서는 두 게이지가 바짝 붙어 읽기 어려워 세로로 접는다(md 미만). */}
+        <div className="grid min-w-0 flex-1 gap-x-6 gap-y-2 md:grid-cols-2">
+          <GaugeRow
+            title="공정률"
+            status={pStatus}
+            value={`${p.pct.toFixed(1)}%`}
+            note={`경과 ${p.elapsedDays}일 / 총 ${p.totalDays}일`}
+            pct={p.pct}
+            known={pKnown}
+            ariaLabel="현장 공정률"
+          />
+          <GaugeRow
+            title="무사고"
+            status={sStatus}
+            value={`${s.days}일`}
+            note={s.reset ? "사고 후 재집계" : "연속 무사고"}
+            pct={s.pct}
+            known={s.known}
+            ariaLabel="무사고 연속 일수"
+          />
+        </div>
+        {/* 펼침 — 현장정보를 이 바 아래로 접었다 편다(사용자 요청). */}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls={PANEL_ID}
+          aria-label={`현장정보 ${open ? "접기" : "펼치기"}`}
+          title={`현장정보 ${open ? "접기" : "펼치기"}`}
+          className="flex shrink-0 items-center gap-1 rounded-lg border border-hairline px-2 py-1 text-[11px] font-medium text-body transition-colors hover:bg-surface-strong hover:text-ink dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/10 dark:hover:text-on-dark"
+        >
+          현장정보
+          <svg
+            viewBox="0 0 24 24"
+            width="13"
+            height="13"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
+      {open && (
+        // 6항목을 한 줄로(사용자 요청) — 라벨·값을 나란히 두고 폭이 모자라면 값만 줄인다.
+        // 좁은 화면에서는 한 줄에 다 못 넣으므로 접어 내린다(잘라 감추는 것보다 낫다).
+        <div
+          id={PANEL_ID}
+          className="mt-2.5 flex flex-wrap items-baseline gap-x-5 gap-y-1.5 border-t border-hairline pt-2.5 dark:border-white/10"
+        >
+          {siteInfoRows(siteInfo).map((item) => (
+            <div key={item.label} className="flex min-w-0 items-baseline gap-1.5">
+              <span className="shrink-0 text-[10px] leading-none text-body dark:text-on-dark-soft">
+                {item.label}
+              </span>
+              <span className="truncate text-[13px] font-semibold leading-none text-ink dark:text-on-dark">
+                {item.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -5295,23 +5348,7 @@ export function DemoDashboard() {
                 </button>
               )}
             </div>
-            {/* 현장정보 — 국내 재해사례·산업 안전뉴스는 '안전뉴스' 탭으로 이관되어
-                캐러셀(‹ 제목 N/M ›)이 1/1 이 되므로 단독 카드로 바꿨다(docs/safety-news-tab N-04). */}
-            <section className="flex h-[140px] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-surface-card dark:border-white/10 dark:bg-surface-dark-elevated">
-              <div className="flex shrink-0 items-center border-b border-hairline px-3 py-1.5 dark:border-white/10">
-                <h3 className="text-xs font-bold text-ink dark:text-on-dark">현장정보</h3>
-              </div>
-              <div className="grid min-h-0 flex-1 grid-cols-3 gap-1 p-1.5 max-[640px]:grid-cols-2">
-                {siteInfoRows(siteInfo).map((item) => (
-                  <div key={item.label} className="flex min-w-0 flex-col justify-center rounded-lg bg-surface-card px-2.5 py-0.5 dark:bg-surface-dark-elevated">
-                    <div className="text-[10px] leading-tight text-body dark:text-on-dark-soft">{item.label}</div>
-                    <div className="truncate text-[13px] font-semibold leading-tight text-ink dark:text-on-dark">
-                      {item.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+            {/* 현장정보 카드는 상단 게이지 바의 '현장정보' 펼침으로 일원화(사용자 요청) — GaugePanel 참조. */}
           </div>
 
           {/* 우측 — 그룹 캐러셀(실시간 레이더·태풍 진로·특보영상·인근 병원). 자동회전 없음·수동 전환만.
