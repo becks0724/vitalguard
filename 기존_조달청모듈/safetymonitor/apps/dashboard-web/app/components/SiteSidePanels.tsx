@@ -3,7 +3,7 @@
 // `pinned` 를 주면 그 패널 하나만 손잡이로 두고 늘 펼쳐 둔다(관제 탭의 현장 환경 — 사용자 요청).
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { HospitalPanel } from "./HospitalPanel";
 import { RadarRealtime } from "./RadarRealtime";
@@ -200,6 +200,25 @@ function FramedInner({ title, children }: { title?: string; children: React.Reac
   );
 }
 
+// 고정 패널은 fixed 라 폭을 차지하지 않는다 — 본문이 가운데 정렬이므로 좌측 여백이
+// 손잡이+패널 폭(332px)보다 좁으면 본문을 덮는다. 실측 본문 폭 1231px 기준
+// 여백 332px 를 확보하는 최소 뷰포트 = 1231 + 332×2 = 1895px. 그보다 좁으면 접어서
+// 손잡이만 두고 다른 탭과 같은 클릭 토글로 돌린다(사용자 결정 — 넓은 화면 배치는 불변).
+const PINNED_MIN_WIDTH = 1895;
+
+function useWideEnoughToPin(): boolean {
+  // SSR·첫 렌더는 좁은 쪽으로 본다 — 덮는 것보다 접혀 있는 편이 안전하다.
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${PINNED_MIN_WIDTH}px)`);
+    const sync = () => setWide(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return wide;
+}
+
 export function SiteSidePanels({
   lat,
   lon,
@@ -224,8 +243,12 @@ export function SiteSidePanels({
   refreshing?: boolean;
 }) {
   const [openKey, setOpenKey] = useState<PanelKey | null>(null);
+  // 좁은 화면에서는 고정을 풀고 접는다(본문을 덮지 않게).
+  const wideEnough = useWideEnoughToPin();
+  const isPinned = pinned !== undefined && wideEnough;
   const shown = pinned ? HANDLES.filter((h) => h.key === pinned) : HANDLES;
-  const open = pinned ?? openKey;
+  // 고정 탭에서는 그 패널만 다룬다 — 다른 탭에서 열어둔 키가 남아 손잡이 없는 패널이 뜨지 않게.
+  const open = pinned ? (isPinned || openKey === pinned ? pinned : null) : openKey;
 
   return (
     // top-44 = 상단 헤더+탭바 아래. 이보다 위면 패널이 탭 바를 덮어 탭 클릭을 막는다.
@@ -236,7 +259,7 @@ export function SiteSidePanels({
             key={key}
             label={label}
             active={open === key}
-            onClick={pinned ? undefined : () => setOpenKey((prev) => (prev === key ? null : key))}
+            onClick={isPinned ? undefined : () => setOpenKey((prev) => (prev === key ? null : key))}
           >
             <Icon />
           </Handle>
@@ -247,7 +270,7 @@ export function SiteSidePanels({
         <div className="relative ml-1 w-[296px]">
           {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다.
               고정 패널은 닫을 수 없으므로 띄우지 않는다. */}
-          {!pinned && (
+          {!isPinned && (
             <button
               type="button"
               onClick={() => setOpenKey(null)}
@@ -269,7 +292,8 @@ export function SiteSidePanels({
               refreshNonce={refreshNonce}
               onRefresh={onRefresh}
               refreshing={refreshing}
-              // 고정 패널이면 화면에 뜬 현장 환경이 이것뿐이라 경보 팝업 주체가 된다(스트립을 대신).
+              // 고정 탭에서는 화면에 뜬 현장 환경이 이것뿐이라 경보 팝업 주체가 된다(스트립을 대신).
+              // isPinned 가 아니라 pinned 로 판정한다 — 좁은 화면에서 접혔다가 열어도 주체는 그대로다.
               showAlertToast={pinned === "env"}
               layout="list"
             />
