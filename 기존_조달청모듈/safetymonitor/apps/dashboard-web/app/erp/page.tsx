@@ -42,11 +42,12 @@ const COMPANIES: Company[] = [
     name: "스마트인재개발원",
     siteName: "광주 스마트인재개발원 신축 공사",
     client: "광주광역시",
-    period: "2026년 1월 2일 ~ 2027년 6월 30일",
+    period: "2026년 1월 2일 ~ 2026년 11월 30일",
     type: "건축공사",
-    material: 4_500_000_000,
-    provided: 500_000_000,
-    labor: 3_200_000_000,
+    // 대상액 합계 9억 — g2b-mock 의 targetAmount 와 일치시켜 예비검증(①)과 사용계획서 계상액이 갈리지 않게 한다.
+    material: 420_000_000,
+    provided: 60_000_000,
+    labor: 420_000_000,
     winRate: 78.5,
   },
   {
@@ -110,10 +111,12 @@ const PLAN_SPLIT = [0.1, 0.3, 0.2, 0.08, 0.2, 0.12, 0, 0, 0];
 // shopKey = 종합쇼핑몰 검색용 세부품명(품목명이 복합어라 직접 검색이 안 되는 항목만 지정).
 type PpePlanItem = { name: string; spec: string; uom?: string; qty: number; unit: number; shopKey?: string };
 const PPE_PLAN: Record<string, PpePlanItem[]> = {
+  // 9억 규모 2층 부속동 신축 — 상시 배치 4명 기준 1인 1개 계획. 청구(SEED_INVOICES)는 안전대만 8개라
+  // ④증액 검증에서 안전대 한 품목만 빨간 칩으로 뜬다(안전모·안전화는 계획=청구=실측 → 정상).
   "SITE-SMARTHRD-2026": [
-    { name: "안전모", spec: "AB형 통풍·KCs", uom: "개", qty: 16, unit: 25_000 },
-    { name: "안전화", spec: "6인치 절연·KCs", uom: "족", qty: 14, unit: 60_000 },
-    { name: "안전대", spec: "그네식 더블 죔줄·KCs", uom: "개", qty: 8, unit: 80_000 },
+    { name: "안전모", spec: "AB형 통풍·KCs", uom: "개", qty: 4, unit: 25_000 },
+    { name: "안전화", spec: "6인치 절연·KCs", uom: "족", qty: 4, unit: 60_000 },
+    { name: "안전대", spec: "그네식 더블 죔줄·KCs", uom: "개", qty: 4, unit: 80_000 },
   ],
   // ① 내진성능 보강(6명) — 치핑·천공 실리카(방진 1급), 철골 용접, 에폭시 수지 접촉.
   R26TE13895124: [
@@ -182,8 +185,8 @@ function inv(
 // 수량은 현장별 워치 실측 인원과 다르게 구성 → 증액 검증 판정(정상/주의/의심)이 현장마다 갈리게.
 const SEED_INVOICES: Invoice[] = [
   inv("SITE-SMARTHRD-2026", "20260617-41000012-77120034", "2026-06-17", "대한안전산업(주)", "123-81-45678", [
-    { name: "안전모", spec: "AB형 통풍", qty: 14, unit: 25_000 },
-    { name: "안전화", spec: "6인치 절연", qty: 12, unit: 60_000 },
+    { name: "안전모", spec: "AB형 통풍", qty: 4, unit: 25_000 },
+    { name: "안전화", spec: "6인치 절연", qty: 4, unit: 60_000 },
     { name: "안전대", spec: "그네식 더블", qty: 8, unit: 80_000 },
   ]),
   inv("R26TE13895124", "20260702-52000341-90233412", "2026-07-02", "충남세이프텍(주)", "312-86-01234", [
