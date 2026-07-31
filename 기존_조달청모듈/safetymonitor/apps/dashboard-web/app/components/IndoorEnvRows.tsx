@@ -84,13 +84,32 @@ export function IndoorEnvRows() {
         { icon: "pressure", label: "기압", value: "—", unit: "hPa" },
       ];
 
+  // 수신 상태 표시 — 현장 환경 헤더의 점·라벨과 같은 3단 구성(실시간 / 지연 / 대기).
+  // 값이 없거나 오래됐으면 시각 대신 상태를 적는다 — 빈칸은 '정상'으로 오독된다.
+  const dotCls = fresh
+    ? "bg-semantic-up"
+    : latest
+      ? "bg-amber-400 vital-blink-caution"
+      : "bg-muted/50 dark:bg-white/20";
+  const dotLabel = fresh ? "실시간" : latest ? "수신 지연" : "미수신";
+  const dotTitle = fresh
+    ? `${latest.device_id} 실시간 수신 중 — ${hm(latest.ts)} 측정`
+    : latest
+      ? `${Math.round(ageMs / 1000)}초째 새 값 없음 — 마지막 수신 ${hm(latest.ts)}`
+      : "가스포드 미수신 — 기기 연결 대기";
+
   return (
     <div className="mt-2.5 border-t border-hairline pt-2.5 dark:border-white/10">
       <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-body dark:text-on-dark-soft">
         <span className="font-semibold text-ink dark:text-on-dark">실내 현장 환경</span>
-        {/* 값이 없거나 오래됐으면 시각 대신 상태를 적는다 — 빈칸은 '정상'으로 오독된다. */}
-        <span className="font-mono text-[10px] text-body dark:text-on-dark-soft">
-          {fresh ? `${latest.device_id} · ${hm(latest.ts)}` : latest ? "수신 지연" : "미수신"}
+        <span className="inline-flex shrink-0 items-center gap-1.5" title={dotTitle}>
+          {fresh && (
+            <span className="font-mono text-[10px] text-body dark:text-on-dark-soft">
+              {latest.device_id} · {hm(latest.ts)}
+            </span>
+          )}
+          <span className={`h-2.5 w-2.5 rounded-full ring-1 ring-hairline ${dotCls}`} />
+          <span className="text-[11px] font-medium text-muted dark:text-on-dark-soft">{dotLabel}</span>
         </span>
       </div>
       <ul className="flex flex-col gap-1">
