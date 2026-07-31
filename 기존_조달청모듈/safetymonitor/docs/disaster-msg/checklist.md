@@ -173,17 +173,38 @@ cron/env-check  키 없음 → 503
 
 ---
 
-## Phase E — 검증·배포 ⬜
+## Phase E — 검증·배포 ✅ 완료 (2026-07-31)
 
-- [ ] `pnpm typecheck` 0건
-- [ ] `pnpm lint` 0건 (**빼지 않는다** — 과거 Cloud Build 에서만 깨진 전례)
-- [ ] `pnpm test` 전건 통과
-- [ ] `git fetch` — origin 전진 확인(병렬 세션 레이스)
-- [ ] `/deploy` 절차로 빌드 → 배포 → 라이브 HTTP 200 + 카드 셀렉터 검증
-- [ ] 배포 후 `SAFETYDATA_SERVICE_KEY` 시크릿 주입 확인(누락 시 조용히 목업으로 떨어진다)
-- [ ] Cloud Scheduler 크론 1회 수동 실행 → 로그로 호출 확인
+- [x] `pnpm typecheck` 0건
+- [x] `pnpm lint` 0건
+- [x] `pnpm test` 490 pass / 0 fail
+- [x] `git fetch` — origin 동기(ahead 0 · behind 0) · 워킹트리 0건
+- [x] 빌드 `4fabc718` (3M37S · digest `sha256:c2722d93`) · 커밋 `2764303`
+- [x] **BUILT == HEAD 대조 통과**(L-09 병렬 세션 레이스 방지)
+- [x] `SAFETYDATA_SERVICE_KEY` — Secret Manager 생성 + `secretAccessor` 바인딩 +
+      `--update-secrets` 로 배포에 연결(env 24 → 25개). 키는 stdin 으로만 전달(argv·파일 미경유)
+- [x] **트래픽 전환** `00223-vot` → **`00198-qk7` 100%**
+- [x] 라이브 검증 — `/` HTTP 200 · **`/api/disaster-msg` `source=live`**
+      (광주 · caution · 폭염 · site 7 / nearby 3) · 파라미터 누락 400 ·
+      화면 탭 4개 · 패널 4개 · 신호등 칩 10개
+- [x] `harness/5-observability/run-log.md` 기록
 
-**완료 판정.** 라이브에서 실 API `source: "live"` 응답 + 호출 카운트가 일 제한 안.
+### ★★ 배포 함정 — `deploy` 성공 메시지가 트래픽 전환을 보장하지 않는다
+
+`gcloud run deploy` 가 **"deployed and is serving 100 percent"** 를 출력했는데
+실제로는 새 리비전이 **0%** 였다. 기존 트래픽이 구 리비전(`00223-vot`)에
+`verify` 태그와 함께 **명시 고정**돼 있었기 때문이다.
+
+```
+deploy 직후   00198-qk7 (새 이미지)   0%
+              00223-vot (구 이미지) 100%   ← verify 태그 고정
+```
+
+메시지만 믿었으면 **구 이미지가 서비스되는 채로 "배포 완료"를 보고**할 뻔했다.
+→ **`update-traffic --to-revisions <새 리비전>=100` 을 별도로 실행**하고
+`revisions describe` 로 **digest 를 대조**해야 한다.
+
+**완료 판정.** 라이브 `source: "live"` 확인 · 트래픽 새 리비전 100%. ✅
 
 ---
 
