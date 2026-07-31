@@ -14,6 +14,7 @@
 // refresh 해도 같은 클레임이 재발급되므로 반드시 reauth 여야 한다 — 이 구분이 핵심이고
 // 뒤집히면 무한 재로그인 또는 무한 refresh 중 하나에 빠진다.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import { diagnoseAppAuth, mobileUnauthorizedAction, signAppJwt, signMobileAccessJwt } from "./app-jwt";
@@ -113,4 +114,13 @@ test("diagnoseAppAuth 도 만료를 refresh 로 분류한다", () => {
       Date.now = real;
     }
   });
+});
+
+// action 을 하드코딩한 라우트가 있으면 만료/재로그인 구분이 그 자리에서 무너진다.
+// /me 가 실제로 그랬다 — 분류 함수를 고쳐도 하드코딩이 덮어써 수정이 무력했다.
+// refresh·logout 의 하드코딩은 의도된 것이다: 그 401 은 세션 자체가 없다는 뜻이라 재로그인이 맞다.
+test("세션 me 라우트는 action 을 하드코딩하지 않고 분류 함수를 쓴다", () => {
+  const src = readFileSync("app/api/mobile/v1/session/me/route.ts", "utf8");
+  assert.match(src, /action: mobileUnauthorizedAction\(/, "me 가 action 을 하드코딩하고 있다");
+  assert.doesNotMatch(src, /action: "reauth"/, "하드코딩된 reauth 가 남아 있다");
 });
