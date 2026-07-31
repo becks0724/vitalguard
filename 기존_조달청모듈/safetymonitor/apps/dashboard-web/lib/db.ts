@@ -923,14 +923,32 @@ export async function auditWorkerDays(opts: {
   // 출역 집계일을 KST 달력일로 통일 — ts 는 UTC ISO 라 substr(ts,1,10)(UTC일)로 버킷팅하면 KST
   // 00:00~08:59 샘플이 전날로 빠져 site/weather 의 KST일 산출물과 어긋난다(안전관리비 교차검증 오류).
   // ts::timestamptz AT TIME ZONE 'Asia/Seoul' 로 KST 달력일을 뽑아 WHERE·GROUP BY 모두 KST일 기준으로.
+  //
+  // 인원 산정 규칙 두 가지 — 안전관리비 판정(청구수량 ÷ 실측인원)이 인원 수에 직결되므로 필수다.
+  // ① 별칭 폴딩: 한 사람이 폰·워치에서 다른 ID 로 들어오면(EMP-7276/WORKER7276/worker7276 …)
+  //    worker_alias 로 주 ID 에 접는다. 안 접으면 1명이 여러 명으로 세어져 인원이 부풀고,
+  //    청구수량 ÷ 인원 비율이 낮아져 과다 산정이 탐지되지 않는다(적발 실패 방향의 오차).
+  // ② 승인 계정 한정: 출역으로 인정하려면 users 의 승인된 근로자 계정이어야 한다. 장비 계정
+  //    (AED-08), 시뮬레이터·데모·디버그 단말은 사람이 아니므로 출역이 아니다. 이름 규칙으로
+  //    거르면 새 이름이 생길 때마다 뚫리므로, 신원 대장(users)을 단일 기준으로 삼는다.
   const { rows } = await q<{ day: string; worker_id: string; job_title: string | null }>(
-    `SELECT to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
-            worker_id, MAX(job_title) AS job_title
-       FROM vital_samples
-       WHERE to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') >= $1
-         AND to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') <= $2
-         AND worker_id !~ '^(reserved|test|smoke|infra)_'
-       GROUP BY to_char(ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD'), worker_id`,
+    `WITH folded AS (
+       SELECT to_char(v.ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
+              COALESCE(a.primary_worker_id, v.worker_id) AS worker_id,
+              MAX(v.job_title) AS job_title
+         FROM vital_samples v
+         LEFT JOIN worker_alias a ON a.secondary_worker_id = v.worker_id
+        WHERE to_char(v.ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') >= $1
+          AND to_char(v.ts::timestamptz AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') <= $2
+          AND v.worker_id !~ '^(reserved|test|smoke|infra)_'
+        GROUP BY 1, 2
+     )
+     SELECT f.day, f.worker_id, f.job_title
+       FROM folded f
+      WHERE EXISTS (
+        SELECT 1 FROM users u
+         WHERE u.employee_id = f.worker_id AND u.status = 'approved'
+      )`,
     [opts.from, opts.to],
   );
 
