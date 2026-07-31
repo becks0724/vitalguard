@@ -2733,15 +2733,16 @@ export async function setUserAdminAccess(
   return rows[0] ?? null;
 }
 
-// 부서/직책 직접 수정 — owner 가 사용자 관리에서 각 사용자 값을 편집(id 기준). 본인 자가입력과 별개.
+// 회사(상호)/부서/직책 직접 수정 — 관리 권한자가 사용자 관리에서 각 사용자 값을 편집(id 기준). 본인 자가입력과 별개.
 export async function setUserProfileFields(
   id: number,
+  company: string | null,
   department: string | null,
   jobTitle: string | null,
 ): Promise<UserRow | null> {
   const { rows } = await q<UserRow>(
-    "UPDATE users SET department = $1, job_title = $2 WHERE id = $3 RETURNING *",
-    [department, jobTitle, id],
+    "UPDATE users SET company = $1, department = $2, job_title = $3 WHERE id = $4 RETURNING *",
+    [company, department, jobTitle, id],
   );
   return rows[0] ?? null;
 }

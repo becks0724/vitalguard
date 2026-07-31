@@ -108,9 +108,10 @@ export async function POST(request: Request) {
     );
   }
 
-  // 부서/직책 직접 수정 — owner 가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
+  // 회사(상호)/부서/직책 직접 수정 — 관리 권한자가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
   if (action === "set_profile") {
-    const { department, jobTitle } = (body ?? {}) as {
+    const { company, department, jobTitle } = (body ?? {}) as {
+      company?: unknown;
       department?: unknown;
       jobTitle?: unknown;
     };
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
       const t = v.trim();
       return t.length > 0 ? t : null;
     };
-    const updated = await setUserProfileFields(id, norm(department), norm(jobTitle));
+    const updated = await setUserProfileFields(id, norm(company), norm(department), norm(jobTitle));
     if (!updated) {
       return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }

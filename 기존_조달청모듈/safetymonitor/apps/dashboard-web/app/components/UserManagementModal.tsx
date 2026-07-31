@@ -68,8 +68,9 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  // 부서/직책 인라인 편집(owner가 각 사용자 값 직접 수정). 편집 중 행은 폴링이 덮어쓰지 않도록 별도 draft 보관.
+  // 회사(상호)/부서/직책 인라인 편집(관리 권한자가 각 사용자 값 직접 수정). 편집 중 행은 폴링이 덮어쓰지 않도록 별도 draft 보관.
   const [editProfileId, setEditProfileId] = useState<number | null>(null);
+  const [companyDraft, setCompanyDraft] = useState("");
   const [deptDraft, setDeptDraft] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
   // 근로자 계정 추가 폼(앱 로그인용, role=worker).
@@ -151,6 +152,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
 
   const startEditProfile = useCallback((u: User) => {
     setEditProfileId(u.id);
+    setCompanyDraft(u.company ?? "");
     setDeptDraft(u.department ?? "");
     setTitleDraft(u.job_title ?? "");
     setError(null);
@@ -170,13 +172,14 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
           body: JSON.stringify({
             id,
             action: "set_profile",
+            company: companyDraft.trim() || null,
             department: deptDraft.trim() || null,
             jobTitle: titleDraft.trim() || null,
           }),
         });
         const json = (await res.json()) as { ok?: boolean; error?: string };
         if (!res.ok || !json.ok) {
-          setError(json.error || "부서/직책 저장에 실패했습니다.");
+          setError(json.error || "상호/부서/직책 저장에 실패했습니다.");
           return;
         }
         setEditProfileId(null);
@@ -187,7 +190,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
         setBusyId(null);
       }
     },
-    [deptDraft, titleDraft, load],
+    [companyDraft, deptDraft, titleDraft, load],
   );
 
   // 근로자 로그인 계정 생성 — 앱이 관제웹 계정으로 로그인할 수 있게 owner 가 발급.
@@ -397,9 +400,21 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       <td className={TD}>
                         {u.role === "worker" ? "작업자" : orgTypeLabel(u.org_type)}
                       </td>
-                      <td className={TD}>{u.company ?? "-"}</td>
                       {editProfileId === u.id ? (
                         <>
+                          <td className={TD}>
+                            <input
+                              value={companyDraft}
+                              onChange={(e) => setCompanyDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveProfile(u.id);
+                                if (e.key === "Escape") setEditProfileId(null);
+                              }}
+                              placeholder="상호"
+                              autoFocus
+                              className="w-24 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
+                            />
+                          </td>
                           <td className={TD}>
                             <input
                               value={deptDraft}
@@ -409,7 +424,6 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                                 if (e.key === "Escape") setEditProfileId(null);
                               }}
                               placeholder="부서"
-                              autoFocus
                               className="w-20 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
                             />
                           </td>
@@ -449,7 +463,17 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             <button
                               type="button"
                               onClick={() => startEditProfile(u)}
-                              title="부서/직책 수정"
+                              title="상호/부서/직책 수정"
+                              className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
+                            >
+                              {u.company ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
+                            </button>
+                          </td>
+                          <td className={TD}>
+                            <button
+                              type="button"
+                              onClick={() => startEditProfile(u)}
+                              title="상호/부서/직책 수정"
                               className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
                             >
                               {u.department ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
@@ -459,7 +483,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             <button
                               type="button"
                               onClick={() => startEditProfile(u)}
-                              title="부서/직책 수정"
+                              title="상호/부서/직책 수정"
                               className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
                             >
                               {u.job_title ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
