@@ -92,6 +92,17 @@ export async function POST(request: Request) {
       { status: 401 },
     );
   }
+  // 작업자 계정은 관제 웹 대상이 아니다 — 모바일 앱(/api/app-auth/login) 전용.
+  // 승인 상태보다 먼저 본다(승인돼도 들어올 수 없으므로 "승인 대기" 안내는 오해를 준다).
+  if (user.role === "worker") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "작업자 계정은 관제 웹에 로그인할 수 없습니다. 모바일 앱을 이용하세요.",
+      },
+      { status: 403 },
+    );
+  }
   if (user.status === "pending") {
     return NextResponse.json(
       { ok: false, error: "가입 승인 대기 중입니다. 관리자 승인 후 로그인할 수 있습니다." },
