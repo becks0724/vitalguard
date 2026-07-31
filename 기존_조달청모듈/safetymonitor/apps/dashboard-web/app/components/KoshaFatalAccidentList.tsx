@@ -59,18 +59,22 @@ export function KoshaFatalAccidentList({
         {[0, 1].map((copy) => (
           <div key={copy} className="flex gap-2" aria-hidden={copy === 1}>
             {items.map((it) => (
+              // 한 줄 카드 — 폭은 내용에 맞추고(whitespace-nowrap) 줄바꿈만 막는다.
+              // 고정 폭 + truncate 로 하면 긴 제목이 잘려 사고 내용을 못 읽는다.
               <article
                 key={`${copy}-${it.id}`}
-                className="flex w-[290px] shrink-0 flex-col justify-center gap-1 rounded-lg border border-semantic-down/25 bg-semantic-down/5 px-3 py-2 dark:border-semantic-down/30 dark:bg-semantic-down/10"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-semantic-down/25 bg-semantic-down/5 px-3 py-2 dark:border-semantic-down/30 dark:bg-semantic-down/10"
               >
-                <div className="flex items-center gap-1.5 text-[10px] text-muted dark:text-on-dark-soft">
-                  <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-semantic-down" />
-                  {it.date ? <span className="font-mono tabular-nums">{it.date}</span> : null}
-                  {it.place ? <span className="truncate">{it.place}</span> : null}
-                </div>
-                <p className="line-clamp-2 text-xs font-medium leading-snug text-ink dark:text-on-dark">
-                  {it.title}
-                </p>
+                <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-semantic-down" />
+                {it.date ? (
+                  <span className="font-mono text-[10px] tabular-nums text-muted dark:text-on-dark-soft">
+                    {it.date}
+                  </span>
+                ) : null}
+                {it.place ? (
+                  <span className="text-[10px] text-muted dark:text-on-dark-soft">{it.place}</span>
+                ) : null}
+                <span className="text-xs font-medium text-ink dark:text-on-dark">{it.title}</span>
               </article>
             ))}
           </div>

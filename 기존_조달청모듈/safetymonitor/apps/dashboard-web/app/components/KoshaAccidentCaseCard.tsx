@@ -74,14 +74,14 @@ export function KoshaAccidentCaseCard({
                     onClick={() => setSelected(it)}
                     title="클릭하여 사고 경위 전문 보기"
                     tabIndex={copy === 1 ? -1 : undefined}
-                    className="flex w-[270px] shrink-0 flex-col items-start justify-center gap-1 rounded-lg border border-hairline bg-canvas px-3 py-2 text-left transition hover:ring-1 hover:ring-primary-ring dark:border-white/10 dark:bg-surface-dark"
+                    className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-canvas px-3 py-2 text-left transition hover:ring-1 hover:ring-primary-ring dark:border-white/10 dark:bg-surface-dark"
                   >
                     {it.business && (
                       <span className="shrink-0 rounded bg-surface-card px-1.5 py-0.5 text-[10px] font-semibold text-ink dark:bg-white/10 dark:text-on-dark">
                         {it.business}
                       </span>
                     )}
-                    <span className="line-clamp-2 text-xs font-semibold leading-snug text-ink dark:text-on-dark">
+                    <span className="text-xs font-semibold text-ink dark:text-on-dark">
                       {it.title}
                     </span>
                   </button>
