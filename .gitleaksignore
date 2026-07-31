@@ -7,3 +7,6 @@ e8d71b442269517738dc251d80393b51fcbbad0d:기존_조달청모듈/safetymonitor/ap
 
 # 인증 거부 진단 단위테스트의 동일 더미 값. 이 과거 커밋·파일·규칙 한 건만 제외한다.
 e353486f3490a3e5ebc828874922e1b3ddfa6749:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-auth-diagnosis.test.ts:generic-api-key:18
+
+# 만료 토큰 refresh 가드 테스트의 동일 더미 값.
+c643959ce95335a791ee5563d22d4609cc8ed068:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/2026-07-31-expired-token-refresh.guard.test.ts:generic-api-key:23
