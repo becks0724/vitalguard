@@ -1,13 +1,11 @@
 // 현장 통합 안전 신호등 — 현장기상·작업자·가스 감지기·AED 4개 카테고리 severity 를 한 보드에 표출.
-// 각 행은 2줄(요약 + 핵심 영향/골든타임)이며 클릭 시 상세 안내 팝업을 연다.
+// 각 행은 클릭 시 그 자리에서 상세를 펼친다(종전 전체화면 팝업 → 인라인 아코디언, 사용자 요청).
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { createPortal } from "react-dom";
 
 import { aedDetail, gasDetail, type LampDetail } from "./SiteSafetyTables";
 import { getSessionToken } from "./LoginGate";
-import FitToViewport from "./FitToViewport";
 
 function formatTodayBoardDate() {
   const now = new Date();
@@ -140,7 +138,7 @@ export function SafetySignalBoard({
   worker: WorkerSignal;
 }) {
   const [weather, setWeather] = useState<KmaWarning | null>(null);
-  const [openRow, setOpenRow] = useState<LampRow | null>(null);
+  const [openRow, setOpenRow] = useState<string | null>(null); // 펼친 행 label(하나만)
 
   useEffect(() => {
     if (typeof lat !== "number" || typeof lon !== "number") {
@@ -223,7 +221,9 @@ export function SafetySignalBoard({
   const o = STYLE[overall];
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-hairline bg-surface-soft px-3 py-2 dark:border-white/10 dark:bg-surface-dark-elevated">
+    // 내용 높이에 맞춘다 — h-full + justify-between 이던 시절엔 남는 높이가 행 사이로 분배돼
+    // 현장정보 카드를 뺀 뒤 4행이 크게 벌어졌다(사용자 요청으로 원래 밀도 복원).
+    <div className="flex flex-col rounded-xl border border-hairline bg-surface-soft px-3 py-2 dark:border-white/10 dark:bg-surface-dark-elevated">
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-body dark:text-on-dark-soft">
           현장 통합 안전 신호등 — {formatTodayBoardDate()}
@@ -234,92 +234,86 @@ export function SafetySignalBoard({
           <span className={`text-[10px] font-semibold ${o.text}`}>{o.label}</span>
         </span>
       </div>
-      <div className="flex flex-1 flex-col justify-between gap-1">
+      <div className="flex flex-col gap-1">
         {rows.map((r) => {
           const s = STYLE[r.sev];
+          const open = openRow === r.label;
+          const panelId = `signal-row-${r.icon}`;
           return (
-            <button
-              key={r.label}
-              type="button"
-              onClick={() => setOpenRow(r)}
-              title={`${r.summary} · ${r.short} — 클릭 시 상세`}
-              className="flex w-full items-center gap-2 rounded-lg bg-canvas px-2 py-1.5 text-left transition hover:ring-1 hover:ring-ink/15 dark:bg-surface-dark"
-            >
-              <BoardIcon name={r.icon} className="h-[18px] w-[18px] shrink-0 text-body dark:text-on-dark-soft" />
-              <span className="w-14 shrink-0 text-[11px] font-semibold text-ink dark:text-on-dark">{r.label}</span>
-              <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-hairline dark:ring-white/20 ${s.dot} ${s.blink}`} />
-              <span className={`shrink-0 text-[11px] font-semibold ${s.text}`}>{s.label}</span>
-              <span className="min-w-0 flex-1 truncate text-[10px] text-body dark:text-on-dark-soft">
-                {r.summary} · {r.short}
-              </span>
-            </button>
+            <div key={r.label}>
+              <button
+                type="button"
+                onClick={() => setOpenRow(open ? null : r.label)}
+                aria-expanded={open}
+                aria-controls={panelId}
+                title={`${r.summary} · ${r.short} — 클릭 시 ${open ? "접기" : "상세 펼치기"}`}
+                className={`flex w-full items-center gap-2 bg-canvas px-2 py-1.5 text-left transition hover:ring-1 hover:ring-ink/15 dark:bg-surface-dark ${
+                  open ? "rounded-t-lg" : "rounded-lg"
+                }`}
+              >
+                <BoardIcon name={r.icon} className="h-[18px] w-[18px] shrink-0 text-body dark:text-on-dark-soft" />
+                <span className="w-14 shrink-0 text-[11px] font-semibold text-ink dark:text-on-dark">{r.label}</span>
+                <span className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-hairline dark:ring-white/20 ${s.dot} ${s.blink}`} />
+                <span className={`shrink-0 text-[11px] font-semibold ${s.text}`}>{s.label}</span>
+                <span className="min-w-0 flex-1 truncate text-[10px] text-body dark:text-on-dark-soft">
+                  {r.summary} · {r.short}
+                </span>
+                <svg
+                  viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
+                  strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                  className={`shrink-0 text-muted transition-transform duration-200 dark:text-on-dark-soft ${open ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              {open && <SignalRowDetail id={panelId} row={r} />}
+            </div>
           );
         })}
       </div>
-
-      {openRow &&
-        typeof document !== "undefined" &&
-        createPortal(<SignalDetailModal row={openRow} onClose={() => setOpenRow(null)} />, document.body)}
     </div>
   );
 }
 
-// 상세 안내 팝업 — 영향/기준/골든타임/위치. ESC·배경 클릭 닫기.
-function SignalDetailModal({ row, onClose }: { row: LampRow; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+// 펼침 요약 — '작업자 영향'과 '권장 대응' 2줄만 남긴다(사용자 요청).
+// 라벨이 항목마다 달라(가스=측정/노출 기준, AED=교환 임박/관리책임자) 인덱스가 아니라 라벨로 고른다.
+// 둘 다 없거나 하나뿐이면 원래 순서대로 앞에서 채운다 — 빈 펼침이 되지 않게.
+const SUMMARY_LABEL = /영향|대응/;
+function summaryLines(lines: LampDetail["lines"]): LampDetail["lines"] {
+  const picked = lines.filter((l) => SUMMARY_LABEL.test(l.label));
+  const filled = [...picked];
+  for (const l of lines) {
+    if (filled.length >= 2) break;
+    if (!filled.includes(l)) filled.push(l);
+  }
+  // 원문 순서를 지킨다 — '대응'이 '측정'보다 앞에 오면 읽는 순서가 뒤집힌다.
+  return lines.filter((l) => filled.includes(l)).slice(0, 2);
+}
 
-  const s = STYLE[row.sev];
-  const accent =
-    row.sev === "danger"
-      ? "border-semantic-down"
-      : row.sev === "caution"
-        ? "border-amber-400"
-        : row.sev === "normal"
-          ? "border-semantic-up"
-          : "border-hairline dark:border-white/15";
-
+// 행 펼침 상세 — 팝업이 아니라 그 자리에서 연다. 라벨 폭을 좁히고 글자를 줄여 컴팩트하게.
+function SignalRowDetail({ id, row }: { id: string; row: LampRow }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose} role="dialog" aria-modal="true">
-      {/* 스크롤 대신 화면 비율에 맞춰 축소해 한 화면에 담는다. 내용이 들어가면 배율 1 = 기존과 동일. */}
-      <FitToViewport className="w-full max-w-md">
-      <div
-        className={`overflow-hidden rounded-2xl border-2 ${accent} bg-canvas dark:bg-surface-dark`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center gap-2 px-5 py-3" style={{ background: "color-mix(in srgb, currentColor 10%, transparent)" }}>
-          <BoardIcon name={row.icon} className="h-5 w-5 shrink-0 text-body dark:text-on-dark-soft" />
-          <span className={`inline-block h-3 w-3 shrink-0 rounded-full ${s.dot} ${s.blink}`} />
-          <span className={`text-sm font-bold ${s.text}`}>{row.detail.title}</span>
-        </div>
-        <div className="space-y-2 px-5 py-4 text-sm text-ink dark:text-on-dark">
-          {row.detail.lines.map((ln, i) => (
-            <div key={i} className="grid grid-cols-[5.5rem_1fr] items-start gap-2">
-              {/* 괄호 부속어((골든타임)/(추정))는 좁은 라벨 컬럼에서 단어 중간 깨짐 방지 위해 다음 줄로 */}
-              <span className="whitespace-pre-line text-xs font-semibold leading-snug text-muted dark:text-on-dark-soft">
-                {ln.label.replace("(", "\n(")}
-              </span>
-              <span className="text-xs leading-relaxed">{ln.text}</span>
-            </div>
-          ))}
-          <div className="grid grid-cols-[5.5rem_1fr] gap-2 border-t border-hairline pt-2 dark:border-white/10">
-            <span className="text-xs font-semibold text-muted dark:text-on-dark-soft">위치</span>
-            <span className="text-xs leading-relaxed">{row.detail.location}</span>
+    <div
+      id={id}
+      className="rounded-b-lg border-t border-hairline bg-canvas px-2.5 py-2 dark:border-white/10 dark:bg-surface-dark"
+    >
+      <div className="space-y-1">
+        {summaryLines(row.detail.lines).map((ln, i) => (
+          <div key={i} className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
+            <span className="whitespace-pre-line text-[10px] font-semibold leading-snug text-muted dark:text-on-dark-soft">
+              {ln.label.replace("(", "\n(")}
+            </span>
+            <span className="text-[10px] leading-snug text-ink dark:text-on-dark">{ln.text}</span>
           </div>
-          {row.detail.note && <p className="pt-1 text-[10px] text-muted dark:text-on-dark-soft">※ {row.detail.note}</p>}
+        ))}
+        <div className="grid grid-cols-[4.5rem_1fr] gap-2 border-t border-hairline pt-1 dark:border-white/10">
+          <span className="text-[10px] font-semibold text-muted dark:text-on-dark-soft">위치</span>
+          <span className="text-[10px] leading-snug text-ink dark:text-on-dark">{row.detail.location}</span>
         </div>
-        <div className="flex justify-end border-t border-hairline px-5 py-3 dark:border-white/10">
-          <button type="button" onClick={onClose} className="rounded-lg bg-surface-strong px-4 py-1.5 text-sm font-semibold text-body hover:opacity-90 dark:bg-white/10 dark:text-on-dark">
-            닫기
-          </button>
-        </div>
+        {row.detail.note && (
+          <p className="pt-0.5 text-[9px] leading-snug text-muted dark:text-on-dark-soft">※ {row.detail.note}</p>
+        )}
       </div>
-      </FitToViewport>
     </div>
   );
 }

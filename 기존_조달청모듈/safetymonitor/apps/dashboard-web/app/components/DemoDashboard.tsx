@@ -5311,9 +5311,13 @@ export function DemoDashboard() {
 
       <section className="overflow-hidden rounded-xl border border-hairline-strong bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch">
-          {/* 좌측 — 히어로 카피 + 안전 신호등 + 현장정보/재해사례 캐러셀 */}
-          <div className="flex min-w-0 flex-col gap-4">
-            <div className="flex min-w-0 flex-1 flex-col">
+          {/* 좌측 — 안전 신호등 + 오늘 위험작업 칩.
+              ★ lg 에서는 내용을 absolute 로 띄워 이 칸이 행 높이를 정하지 못하게 한다.
+              in-flow 로 두면 신호등 행을 펼칠 때(가스 140px·AED 154px) 좌측이 우측을 넘어서고,
+              items-stretch 라 우측 레이더 패널과 바깥 박스까지 함께 커진다(실측 300→326px).
+              행 높이는 우측 캐러셀이 정하고, 좌측은 넘치면 자기 안에서 스크롤한다. */}
+          <div className="relative flex min-w-0 flex-col gap-4">
+            <div className="flex min-w-0 flex-1 flex-col lg:absolute lg:inset-0 lg:overflow-y-auto">
               <div className="flex-1">
                 <SafetySignalBoard lat={effLat} lon={effLon} worker={workerSignal} />
               </div>
