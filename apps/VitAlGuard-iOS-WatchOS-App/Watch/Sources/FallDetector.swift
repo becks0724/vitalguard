@@ -22,6 +22,7 @@ struct FallCandidate {
 final class FallDetector {
     var onCandidate: ((FallCandidate) -> Void)?
     var onMotionSample: ((_ accelerationMagnitudeG: Double, _ rotationRateRadS: Double) -> Void)?
+    var onMovement: (() -> Void)?
     /// Raw samples for ML-first shadow inference. This is never derived from a
     /// rule candidate, so the 2.8G threshold cannot gate ML observations.
     var onIMUSample: ((ImuSample) -> Void)?
@@ -41,6 +42,8 @@ final class FallDetector {
     private let tumbleRotThresholdRadS = 6.0
     private let refractorySec = 8.0
     private let maxIntegrationDtSec = 0.1
+    private let movementBandG = 0.15
+    private let movementRotRadS = 0.8
 
     private var eventSampleBoostUntil: Date?
     private var impactAt: Date?
@@ -52,6 +55,7 @@ final class FallDetector {
     private var lastFreefallAt: Date?
     private var lastFallAt: Date?
     private var lastMotionPublishAt: Date?
+    private var lastMovementNotifyAt: Date?
 
     init(sampleHz: Double = 50, eventSampleHz: Double = 50, motionPublishInterval: TimeInterval = 1) {
         self.sampleHz = max(10, sampleHz)
@@ -91,6 +95,11 @@ final class FallDetector {
     }
 
     private func process(totalG: Double, rotationMagnitude: Double, at now: Date) {
+        let moved = abs(totalG - 1) > movementBandG || rotationMagnitude > movementRotRadS
+        if moved, lastMovementNotifyAt.map({ now.timeIntervalSince($0) > 0.5 }) ?? true {
+            lastMovementNotifyAt = now
+            OperationQueue.main.addOperation { [weak self] in self?.onMovement?() }
+        }
         if let lastFallAt, now.timeIntervalSince(lastFallAt) < refractorySec { return }
         if totalG <= freefallG { lastFreefallAt = now }
         if totalG >= impactThresholdG {

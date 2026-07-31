@@ -11,8 +11,8 @@ android {
         applicationId = "com.yangjeehoo.vitalguard.flutter"
         minSdk = 30
         targetSdk = 36
-        versionCode = 84
-        versionName = "8.4"
+        versionCode = 87
+        versionName = "8.7"
     }
 
     compileOptions {

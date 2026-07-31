@@ -92,6 +92,11 @@ final class WorkoutManager: NSObject, ObservableObject {
     private let hrPostWindowSec: TimeInterval = 30
     private let hrHistoryKeepSec: TimeInterval = 90
     private let fallPromptTimeoutSec: TimeInterval = 20
+    private let fallMovementGraceSec: TimeInterval = 1.5
+    private let fallMovementConfirmationSec: TimeInterval = 1.5
+    private let fallMovementSampleGapSec: TimeInterval = 0.9
+    private var movementEvidenceStartedAt: Date?
+    private var lastMovementSampleAt: Date?
     private var manualSyncRequestToken: NSObjectProtocol?
     private static let wristTemperatureValidRange: ClosedRange<Double> = 20.0...45.0
     private static let wristTemperatureCacheRetention: TimeInterval = 24 * 60 * 60
@@ -134,6 +139,7 @@ final class WorkoutManager: NSObject, ObservableObject {
         case manualSos = "manual_sos"
         case autoEscalated = "auto_escalated"
         case safetyHold = "safety_hold_no_on_wrist"
+        case movedCancelled = "moved_cancelled"
     }
 
     override init() {
@@ -286,6 +292,9 @@ final class WorkoutManager: NSObject, ObservableObject {
             self.latestAccelerationMagnitudeG = accelerationMagnitudeG
             self.latestRotationRateRadS = rotationRateRadS
         }
+        detector.onMovement = { [weak self] in
+            self?.handleMovementDuringPrompt()
+        }
         detector.onCandidate = { [weak self] candidate in
             Task { @MainActor in self?.handleCandidate(candidate) }
         }
@@ -403,7 +412,17 @@ final class WorkoutManager: NSObject, ObservableObject {
                 format: "낙상 후보 %.1fG · 정지 %.1fs — 확인 대기", candidate.peakG, candidate.stillSec
             )
         } else if mlVerdict?.vetoedByML == true {
-            lastFallText = String(format: "작업 동작 ML 판정으로 낙상 알림 억제 · work %.2f", mlVerdict?.wvProb ?? 0)
+            if mlVerdict?.rejectedByImpactML == true {
+                lastFallText = String(
+                    format: "impact ML 판정으로 낙상 알림 억제 · impact %.2f",
+                    mlVerdict?.impProb ?? 0
+                )
+            } else {
+                lastFallText = String(
+                    format: "작업 동작 ML 판정으로 낙상 알림 억제 · work %.2f",
+                    mlVerdict?.wvProb ?? 0
+                )
+            }
         }
         transmitter.sendFallCandidate(
             candidateId: candidateId,
@@ -421,7 +440,7 @@ final class WorkoutManager: NSObject, ObservableObject {
             mlImpactProb: mlVerdict?.impProb,
             mlRecoveryProb: nil,
             mlVetoedByML: mlVerdict?.vetoedByML ?? false,
-            mlRejectedByImpactML: false,
+            mlRejectedByImpactML: mlVerdict?.rejectedByImpactML ?? false,
             mlRescuedByML: false,
             mlShouldAlert: mlVerdict?.shouldAlert
         )
@@ -574,6 +593,8 @@ final class WorkoutManager: NSObject, ObservableObject {
             startedHeartRate: latestHeartRate,
             remainingSec: Int(fallPromptTimeoutSec)
         )
+        movementEvidenceStartedAt = nil
+        lastMovementSampleAt = nil
         markFallIncidentUnresolved(candidateId)
         lastStatus = "낙상 확인 대기"
         playPromptAlert()
@@ -591,14 +612,31 @@ final class WorkoutManager: NSObject, ObservableObject {
         }
     }
 
+    private func handleMovementDuringPrompt() {
+        let now = Date()
+        guard let prompt = activeFallPrompt else { return }
+        guard now.timeIntervalSince(prompt.detectedAt) > fallMovementGraceSec else { return }
+        if let lastMovementSampleAt,
+           now.timeIntervalSince(lastMovementSampleAt) <= fallMovementSampleGapSec {
+            if movementEvidenceStartedAt == nil {
+                movementEvidenceStartedAt = lastMovementSampleAt
+            }
+        } else {
+            movementEvidenceStartedAt = now
+        }
+        lastMovementSampleAt = now
+        guard let movementEvidenceStartedAt,
+              now.timeIntervalSince(movementEvidenceStartedAt) >= fallMovementConfirmationSec else { return }
+        completeFallPrompt(.movedCancelled)
+    }
+
     private func completeFallPrompt(_ outcome: FallPromptOutcome) {
         guard let prompt = activeFallPrompt else { return }
         fallPromptTask?.cancel()
         fallPromptTask = nil
         activeFallPrompt = nil
-        let resolvedOutcome: FallPromptOutcome =
-            outcome == .autoEscalated && !hasRecentOnWristEvidence ? .safetyHold : outcome
-        if resolvedOutcome == .dismissed || resolvedOutcome == .safetyHold {
+        let resolvedOutcome = outcome
+        if resolvedOutcome == .dismissed || resolvedOutcome == .safetyHold || resolvedOutcome == .movedCancelled {
             clearFallIncidentIfMatches(prompt.id)
         }
 
@@ -641,6 +679,9 @@ final class WorkoutManager: NSObject, ObservableObject {
         case .safetyHold:
             lastStatus = "낙상 경보 안전 보류"
             lastFallText = "착용·심박 신호 미확인"
+        case .movedCancelled:
+            lastStatus = "움직임 감지로 낙상 후보 자동 취소"
+            lastFallText = String(format: "움직임 확인 · %.1f초 후 자동 취소", responseSec)
         }
     }
 

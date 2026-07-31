@@ -49,6 +49,7 @@ final class MLFirstShadowPipeline {
         guard shouldEvaluate(at: sample.at), let fastWindow = makeFastWindow() else { return }
         lastEvaluationAt = sample.at
         let fast = pipeline.fastPredictions(fastWindow.window)
+        guard fast.workVeto.isValid, fast.impact.isValid else { return }
         let isCandidate = fast.impact.label && !fast.workVeto.label
         emit(Observation(phase: .fast, observedAt: sample.at, eventAt: fastWindow.eventAt, impact: fast.impact, workVeto: fast.workVeto, isModelCandidate: isCandidate, recovery: nil))
         if isCandidate, pendingRecovery == nil {

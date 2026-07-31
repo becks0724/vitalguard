@@ -8,6 +8,7 @@ final class MLFusion {
         let wvProb: Double?
         let impProb: Double?
         let vetoedByML: Bool
+        let rejectedByImpactML: Bool
         var shouldAlert: Bool { !vetoedByML && candidate.isFall }
     }
 
@@ -28,15 +29,48 @@ final class MLFusion {
     private func tryFuse() {
         guard let (candidate, candidateAt) = pendingCandidate, let (window, windowAt) = pendingWindow, abs(candidateAt.timeIntervalSince(windowAt)) <= pairWindowSec else { return }
         pendingCandidate = nil; pendingWindow = nil
-        guard let pipeline else { onVerdict?(Verdict(candidate: candidate, wvProb: nil, impProb: nil, vetoedByML: false)); return }
-        let probabilities = pipeline.probs(window)
-        let vetoed = candidate.isFall && probabilities.wv >= FallMLPipeline.vetoThreshold
-        onVerdict?(Verdict(candidate: candidate, wvProb: probabilities.wv, impProb: probabilities.imp, vetoedByML: vetoed))
+        guard let pipeline else {
+            onVerdict?(
+                Verdict(
+                    candidate: candidate,
+                    wvProb: nil,
+                    impProb: nil,
+                    vetoedByML: false,
+                    rejectedByImpactML: false
+                )
+            )
+            return
+        }
+        let predictions = pipeline.fastPredictions(window)
+        let workVetoProbability = predictions.workVeto.isValid ? predictions.workVeto.probability : nil
+        let impactProbability = predictions.impact.isValid ? predictions.impact.probability : nil
+        let rejectedByImpact = candidate.isFall
+            && impactProbability.map { $0 < FallMLPipeline.impactSuppressBelow } == true
+        let vetoed = candidate.isFall && (
+            workVetoProbability.map { $0 >= FallMLPipeline.vetoThreshold } == true || rejectedByImpact
+        )
+        onVerdict?(
+            Verdict(
+                candidate: candidate,
+                wvProb: workVetoProbability,
+                impProb: impactProbability,
+                vetoedByML: vetoed,
+                rejectedByImpactML: rejectedByImpact
+            )
+        )
     }
 
     private func flushIfStale() {
         guard let (candidate, candidateAt) = pendingCandidate, Date().timeIntervalSince(candidateAt) >= pairWindowSec else { return }
         pendingCandidate = nil
-        onVerdict?(Verdict(candidate: candidate, wvProb: nil, impProb: nil, vetoedByML: false))
+        onVerdict?(
+            Verdict(
+                candidate: candidate,
+                wvProb: nil,
+                impProb: nil,
+                vetoedByML: false,
+                rejectedByImpactML: false
+            )
+        )
     }
 }

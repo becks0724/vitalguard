@@ -8,6 +8,7 @@ final class FallMLPipeline {
     static let vetoThreshold = 0.675      // work_veto precision≥0.95 운영점 — 이 이상이면 "작업 확실" 기각
     // v5 impact model operating point. The model is never a standalone alert source.
     static let impactThreshold = 0.3876582891869371
+    static let impactSuppressBelow = 0.05 // v5 인계 기준: 규칙 후보가 확실히 낙상이 아닐 때만 억제
     static let recoveryThreshold = 0.35   // 비회복 asym(애매하면 위험 쪽)
     static let fs = 50.0
 
@@ -19,6 +20,9 @@ final class FallMLPipeline {
         let probability: Double
         /// Uses the Core ML model's learned label, not a physical G threshold.
         let label: Bool
+        /// False means inference failed or returned malformed output. Callers
+        /// must fail open rather than interpreting the failure as probability 0.
+        let isValid: Bool
     }
 
     struct FastPredictions {
@@ -71,7 +75,8 @@ final class FallMLPipeline {
 
     func nonrecoveryPrediction(_ window: ImuWindow, spanSec: Double) -> Prediction? {
         let samples = window.samples.map { $0.map(Double.init) }
-        return prediction(recovery, samples, fs: Double(samples.count) / max(1, spanSec))
+        let result = prediction(recovery, samples, fs: Double(samples.count) / max(1, spanSec))
+        return result.isValid ? result : nil
     }
 
     /// 자가검증용 — task 이름으로 해당 모델 확률 조회.
@@ -99,13 +104,19 @@ final class FallMLPipeline {
 
     private func prediction(_ model: MLModel, _ samples: [[Double]], fs: Double = FallMLPipeline.fs) -> Prediction {
         let feat = FeatureExtractor.extract(samples, fs: fs)
-        guard let arr = try? MLMultiArray(shape: [88], dataType: .double) else { return Prediction(probability: 0, label: false) }
+        guard let arr = try? MLMultiArray(shape: [88], dataType: .double) else {
+            return Prediction(probability: 0, label: false, isValid: false)
+        }
         for (i, v) in feat.enumerated() { arr[i] = NSNumber(value: v) }
         guard let inp = try? MLDictionaryFeatureProvider(dictionary: ["features": arr]),
               let out = try? model.prediction(from: inp),
-              let dict = out.featureValue(for: "classProbability")?.dictionaryValue else { return Prediction(probability: 0, label: false) }
-        let probability = dict[Int64(1) as NSNumber]?.doubleValue ?? dict[1 as NSNumber]?.doubleValue ?? 0
+              let dict = out.featureValue(for: "classProbability")?.dictionaryValue,
+              let probability = dict[Int64(1) as NSNumber]?.doubleValue ?? dict[1 as NSNumber]?.doubleValue,
+              probability.isFinite,
+              (0...1).contains(probability) else {
+            return Prediction(probability: 0, label: false, isValid: false)
+        }
         let label = out.featureValue(for: "label")?.int64Value == 1
-        return Prediction(probability: probability, label: label)
+        return Prediction(probability: probability, label: label, isValid: true)
     }
 }

@@ -2796,6 +2796,29 @@ private final class SafetySignalDetailViewController: UIViewController {
     }
 }
 
+private final class TouchTrackingWindow: UIWindow {
+    var interactionDidChange: ((Bool) -> Void)?
+    private var isTouchActive = false
+
+    override func sendEvent(_ event: UIEvent) {
+        let hasActiveTouch = event.allTouches?.contains {
+            $0.phase == .began || $0.phase == .moved || $0.phase == .stationary
+        } == true
+
+        if hasActiveTouch, !isTouchActive {
+            isTouchActive = true
+            interactionDidChange?(true)
+        }
+
+        super.sendEvent(event)
+
+        if !hasActiveTouch, isTouchActive {
+            isTouchActive = false
+            interactionDidChange?(false)
+        }
+    }
+}
+
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     private static let dashboardRefreshTaskIdentifier = "com.yangjeehoo.vitalguard.dashboard-refresh"
@@ -2887,7 +2910,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
 
     private func installRootWindow() {
         let controller = VitAlGuardPreviewController()
-        let window = UIWindow(frame: UIScreen.main.bounds)
+        let window = TouchTrackingWindow(frame: UIScreen.main.bounds)
+        window.interactionDidChange = { [weak controller] isActive in
+            controller?.setUserTouchActive(isActive)
+        }
         window.rootViewController = controller
         window.overrideUserInterfaceStyle = AppDelegate.savedThemeMode.interfaceStyle
         window.makeKeyAndVisible()
@@ -6973,6 +6999,7 @@ final class VitAlGuardPreviewController: UIViewController,
     private var dashboardHomeSummaryError: String?
     private var isBuildInterfaceInProgress = false
     private var isBuildInterfacePending = false
+    private var isUserTouchActive = false
     private var buildInterfaceLastRunAt = Date.distantPast
     private var buildInterfaceThrottleWorkItem: DispatchWorkItem?
     private let buildInterfaceThrottleInterval: TimeInterval = 0.12
@@ -7245,6 +7272,11 @@ final class VitAlGuardPreviewController: UIViewController,
             return
         }
 
+        guard !isUserTouchActive else {
+            isBuildInterfacePending = true
+            return
+        }
+
         if isBuildInterfaceInProgress {
             isBuildInterfacePending = true
             return
@@ -7439,6 +7471,16 @@ final class VitAlGuardPreviewController: UIViewController,
             }
         }
         VitAlGuardRuntimeTranslator.shared.localize(view: view)
+    }
+
+    fileprivate func setUserTouchActive(_ isActive: Bool) {
+        guard isUserTouchActive != isActive else { return }
+        isUserTouchActive = isActive
+        guard !isActive, isBuildInterfacePending else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isUserTouchActive, self.isBuildInterfacePending else { return }
+            self.buildInterface()
+        }
     }
 
     private func rebuildInterfacePreservingScrollPosition() {
@@ -10932,10 +10974,15 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     func presentAppLockIfNeeded() {
-        guard PhoneAppLockStore.shared.isLocked, presentedViewController == nil else { return }
+        guard PhoneAppLockStore.shared.isLocked else { return }
+        var presenter: UIViewController = self
+        while let presented = presenter.presentedViewController {
+            if presented is PhoneAppLockViewController { return }
+            presenter = presented
+        }
         let lock = PhoneAppLockViewController()
         lock.modalPresentationStyle = .fullScreen
-        present(lock, animated: false)
+        presenter.present(lock, animated: false)
     }
 
     @objc private func openSettings() {
@@ -14648,7 +14695,9 @@ final class VitAlGuardPreviewController: UIViewController,
         guard loggedInID != nil else { return }
         if let message = watchAnomalyMessage(from: PhoneMeasuredVitalSnapshot.current), shouldRecordWatchAnomalyAlert() {
             recordLocalAlert(title: "Watch 생체 이상", message: message)
-        } else if presentedViewController == nil, !isPresentingAIChat {
+        } else if presentedViewController == nil,
+                  !isPresentingAIChat,
+                  activeMainTab == .home || activeMainTab == .watch {
             rebuildInterfacePreservingScrollPosition()
         }
     }
@@ -18754,7 +18803,9 @@ private enum VitalGuardDeveloperConfiguration {
         defaults.removeObject(forKey: dashboardURLKey)
         defaults.removeObject(forKey: vitalURLKey)
         defaults.set(VitalGuardLinks.bundledAppAPI, forKey: PreviewSettingsKey.endpoint)
-        PhoneWatchBridge.shared.publishCurrentSession()
+        // The active bearer and refresh tokens belong to the custom server.
+        // Never reuse them after switching back to the bundled endpoint.
+        vitalGuardRequireReauthentication()
     }
 
     static func prefilledDashboardURL() -> String { dashboardURLString }
