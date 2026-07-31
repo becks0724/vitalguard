@@ -1,9 +1,9 @@
-// 좌측 사이드 패널 — 관제 탭 밖(안전뉴스·안전관리비 검증·ERP)에서는 현장 환경·안전 신호등이
-// 화면에 없으므로, 좌측 손잡이를 눌러 각각 따로 열고 닫는다(호버가 아니라 클릭 — 사용자 요청).
-// 두 손잡이는 독립이고 한 번에 하나만 열린다. 레이아웃은 세로 리스트다.
+// 좌측 사이드 패널 — 좌측 손잡이를 눌러 각각 따로 열고 닫는다(호버가 아니라 클릭 — 사용자 요청).
+// 손잡이는 서로 독립이고 한 번에 하나만 열린다. 레이아웃은 세로 리스트다.
+// 어떤 손잡이를 띄울지는 `panels` 로 탭마다 고른다(관제 탭은 현장 환경만 — 사용자 요청).
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { HospitalPanel } from "./HospitalPanel";
 import { RadarRealtime } from "./RadarRealtime";
@@ -12,7 +12,16 @@ import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
 import { WeatherStrip } from "./WeatherStrip";
 
-type PanelKey = "env" | "signal" | "radar" | "typhoon" | "video" | "hospital";
+export type PanelKey = "env" | "signal" | "radar" | "typhoon" | "video" | "hospital";
+
+export const ALL_PANELS: readonly PanelKey[] = [
+  "env",
+  "signal",
+  "radar",
+  "typhoon",
+  "video",
+  "hospital",
+];
 
 // 헤더 우측 아이콘들과 같은 규격 — viewBox 24 · fill none · stroke currentColor · strokeWidth 2 · round cap.
 // 크기만 헤더(16px)보다 20% 큰 20px 로 둔다(손잡이가 좁고 세로라 눈에 덜 띈다 — 사용자 요청).
@@ -90,6 +99,16 @@ function HospitalIcon() {
     </svg>
   );
 }
+
+// 손잡이 정의 — 순서가 곧 화면 위→아래 순서다. 표시 여부는 `panels` 가 고른다.
+const HANDLES: readonly { key: PanelKey; label: string; Icon: () => React.ReactElement }[] = [
+  { key: "env", label: "현장 환경", Icon: EnvIcon },
+  { key: "signal", label: "안전 신호등", Icon: SignalIcon },
+  { key: "radar", label: "실시간 레이더", Icon: RadarIcon },
+  { key: "typhoon", label: "태풍 진로", Icon: TyphoonIcon },
+  { key: "video", label: "특보 영상", Icon: VideoIcon },
+  { key: "hospital", label: "인근 병원", Icon: HospitalIcon },
+];
 
 function Handle({
   label,
@@ -185,6 +204,7 @@ export function SiteSidePanels({
   refreshNonce,
   worker,
   region,
+  panels = ALL_PANELS,
 }: {
   lat?: number;
   lon?: number;
@@ -193,32 +213,23 @@ export function SiteSidePanels({
   refreshNonce?: number;
   worker: WorkerSignal;
   region: string; // 인근 병원 지역 검색 키워드(예: "광주 동구") — HospitalPanel 이 필수로 받는다
+  panels?: readonly PanelKey[]; // 띄울 손잡이(기본 6종 전부)
 }) {
-  const [open, setOpen] = useState<PanelKey | null>(null);
-  const toggle = (key: PanelKey) => () => setOpen((prev) => (prev === key ? null : key));
+  const [openKey, setOpenKey] = useState<PanelKey | null>(null);
+  const shown = useMemo(() => HANDLES.filter((h) => panels.includes(h.key)), [panels]);
+  // 탭을 옮겨 손잡이 목록이 줄면 열려 있던 패널이 손잡이 없이 남는다 — 목록에 없으면 닫힌 것으로 본다.
+  const open = openKey !== null && panels.includes(openKey) ? openKey : null;
+  const toggle = (key: PanelKey) => () => setOpenKey((prev) => (prev === key ? null : key));
 
   return (
     // top-44 = 상단 헤더+탭바 아래. 이보다 위면 패널이 탭 바를 덮어 탭 클릭을 막는다.
     <div className="fixed left-0 top-44 z-40 hidden items-start lg:flex">
       <div className="flex shrink-0 flex-col gap-2">
-        <Handle label="현장 환경" active={open === "env"} onClick={toggle("env")}>
-          <EnvIcon />
-        </Handle>
-        <Handle label="안전 신호등" active={open === "signal"} onClick={toggle("signal")}>
-          <SignalIcon />
-        </Handle>
-        <Handle label="실시간 레이더" active={open === "radar"} onClick={toggle("radar")}>
-          <RadarIcon />
-        </Handle>
-        <Handle label="태풍 진로" active={open === "typhoon"} onClick={toggle("typhoon")}>
-          <TyphoonIcon />
-        </Handle>
-        <Handle label="특보 영상" active={open === "video"} onClick={toggle("video")}>
-          <VideoIcon />
-        </Handle>
-        <Handle label="인근 병원" active={open === "hospital"} onClick={toggle("hospital")}>
-          <HospitalIcon />
-        </Handle>
+        {shown.map(({ key, label, Icon }) => (
+          <Handle key={key} label={label} active={open === key} onClick={toggle(key)}>
+            <Icon />
+          </Handle>
+        ))}
       </div>
 
       {open && (
@@ -226,7 +237,7 @@ export function SiteSidePanels({
           {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다. */}
           <button
             type="button"
-            onClick={() => setOpen(null)}
+            onClick={() => setOpenKey(null)}
             aria-label="패널 닫기"
             title="닫기"
             className="absolute -right-2 -top-2 z-10 flex h-6 w-6 items-center justify-center rounded-full border border-hairline bg-canvas text-body shadow-md transition-colors hover:bg-surface-strong hover:text-ink dark:border-white/15 dark:bg-surface-dark dark:text-on-dark-soft dark:hover:bg-white/10 dark:hover:text-on-dark"

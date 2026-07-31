@@ -100,13 +100,17 @@ import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
 import { SafetyNewsPage } from "./SafetyNewsPage";
-import { SiteSidePanels } from "./SiteSidePanels";
+import { SiteSidePanels, type PanelKey } from "./SiteSidePanels";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import ErpDemoPage from "../erp/page";
 import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
+
+// 관제 탭(0)에서 좌측에 고정할 사이드 손잡이 — 나머지 5종은 그 탭 화면에 이미 있다.
+// 매 렌더 새 배열이 되면 SiteSidePanels 의 useMemo 가 무의미해지므로 모듈 상수로 둔다.
+const SITE_TAB_PANELS: readonly PanelKey[] = ["env"];
 
 type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "fall";
 type Selection = { workerId: string; metric: HistoryMetric };
@@ -5631,19 +5635,18 @@ export function DemoDashboard() {
 
       {/* 산업재해 사망 속보 티커는 '안전뉴스' 탭 목록으로 이관(docs/safety-news-tab N-03). */}
 
-      {/* 좌측 사이드 패널(현장 환경 · 안전 신호등) — 관제 탭(0)에는 둘 다 화면에 있으므로 띄우지 않는다.
-          나머지 탭(안전뉴스·안전관리비 검증·ERP)에서만 손잡이를 눌러 각각 열고 닫는다. */}
-      {pagerIdx !== 0 && (
-        <SiteSidePanels
-          lat={effLat}
-          lon={effLon}
-          workerCount={fieldCoords.count}
-          coordSource={coordSource}
-          refreshNonce={weatherRefreshNonce}
-          worker={workerSignal}
-          region={siteRegion}
-        />
-      )}
+      {/* 좌측 사이드 패널 — 모든 탭에 손잡이를 띄운다. 관제 탭(0)은 나머지 5종이 이미 화면에 있으므로
+          현장 환경만 남긴다(사용자 요청). 그 외 탭은 6종 전부. */}
+      <SiteSidePanels
+        lat={effLat}
+        lon={effLon}
+        workerCount={fieldCoords.count}
+        coordSource={coordSource}
+        refreshNonce={weatherRefreshNonce}
+        worker={workerSignal}
+        region={siteRegion}
+        panels={pagerIdx === 0 ? SITE_TAB_PANELS : undefined}
+      />
 
       {queueModalSlot !== null && (
         <WorkerQueueModal
