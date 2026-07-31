@@ -283,6 +283,10 @@ export function SiteSidePanels({
               </svg>
             </button>
           )}
+          {/* 화면이 낮으면 패널 아래쪽이 잘려 손댈 수 없다(실내 현장 환경이 붙으며 실제로 발생).
+              top-44(176px) + 아래 여백 32px 를 뺀 높이로 제한하고 넘치면 스크롤한다.
+              닫기 버튼은 이 박스 밖에 둔다 — 안에 넣으면 overflow 가 모서리 밖 위치를 잘라낸다. */}
+          <div className="max-h-[calc(100vh-13rem)] overflow-y-auto">
           {open === "env" && (
             <WeatherStrip
               lat={lat}
@@ -320,6 +324,7 @@ export function SiteSidePanels({
               <HospitalPanel lat={lat} lon={lon} region={region} />
             </Framed>
           )}
+          </div>
         </div>
       )}
     </div>

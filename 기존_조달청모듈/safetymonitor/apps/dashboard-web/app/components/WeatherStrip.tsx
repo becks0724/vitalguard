@@ -22,6 +22,7 @@ import {
   type ThresholdStep,
 } from "../../lib/weather-rules";
 import { getSessionToken } from "./LoginGate";
+import { IndoorEnvRows } from "./IndoorEnvRows";
 import { WeatherAlertToast } from "./WeatherAlertToast";
 import { WeatherIcon, weatherIconKey } from "./WeatherIcons";
 import {
@@ -576,7 +577,8 @@ export function WeatherStrip({
         {/* list = 좌측 호버 패널용 세로 목록(가로 오토슬라이딩 금지 — 사용자 요청).
             항목 클릭 시 정책 근거 모달은 strip 과 동일하게 동작한다. */}
         {layout === "list" ? (
-          <ul className="flex flex-col gap-1">
+          <>
+            <ul className="flex flex-col gap-1">
             {items.map((it) => (
               <li key={it.label}>
                 <button
@@ -604,7 +606,10 @@ export function WeatherStrip({
                 </button>
               </li>
             ))}
-          </ul>
+            </ul>
+            {/* 실내(가스포드 실기기 온습압) — 위 항목은 전부 실외 기상이라 구분해 아래에 붙인다. */}
+            <IndoorEnvRows />
+          </>
         ) : (
         <div
           ref={scrollRef}

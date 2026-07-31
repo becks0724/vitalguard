@@ -15,6 +15,7 @@ type WeatherIconName =
   | "thermometer"
   | "feels"
   | "humidity"
+  | "pressure"
   | "discomfort"
   | "dust"
   | "wind"
@@ -129,6 +130,16 @@ function Paths({ name }: { name: string }) {
       );
     case "humidity":
       return <path d="M12 3.2s5.8 6 5.8 10.2a5.8 5.8 0 0 1-11.6 0C6.2 9.2 12 3.2 12 3.2Z" />;
+    // 기압 — 다이얼 눈금 + 바늘(아네로이드 기압계).
+    case "pressure":
+      return (
+        <>
+          <circle cx="12" cy="12" r="8.6" />
+          <path d="M12 3.4v1.8M20.6 12h-1.8M12 20.6v-1.8M3.4 12h1.8" />
+          <path d="M12 12 15.8 8.6" />
+          <circle cx="12" cy="12" r="1.1" />
+        </>
+      );
     case "discomfort":
       return (
         <>
