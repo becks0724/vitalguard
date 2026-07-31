@@ -134,11 +134,36 @@ function Handle({
   );
 }
 
+// 레이더·태풍·영상·병원은 원래 420px 폭 캐러셀 콘텐츠다. 폭만 296px 로 줄이면 지도·영상이 뭉개지므로
+// 네이티브 크기(420×360)로 렌더한 뒤 transform: scale 로 비율 그대로 축소해 좌측 여백 안에 넣는다
+// (현장 환경·안전 신호등과 같은 296px 경계를 넘지 않게 — 사용자 요청).
+const PANEL_W = 296;
+const NATIVE_W = 420;
+const NATIVE_H = 360;
+const SCALE = PANEL_W / NATIVE_W;
+
 // 캐러셀 밖에서 쓰려면 외곽 박스가 필요하다(WidgetCarousel 이 하던 역할).
 // title 은 자체 제목이 없는 컴포넌트에만 준다 — 태풍 진로·인근 병원은 본문에 제목이 있어 넣으면 중복된다.
 function Framed({ title, children }: { title?: string; children: React.ReactNode }) {
   return (
-    <section className="flex h-[360px] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
+    <div style={{ width: PANEL_W, height: NATIVE_H * SCALE }} className="overflow-hidden">
+      <div
+        style={{
+          width: NATIVE_W,
+          height: NATIVE_H,
+          transform: `scale(${SCALE})`,
+          transformOrigin: "top left",
+        }}
+      >
+        <FramedInner title={title}>{children}</FramedInner>
+      </div>
+    </div>
+  );
+}
+
+function FramedInner({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex h-full flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
       {title && (
         <div className="shrink-0 border-b border-hairline px-3 py-2 dark:border-white/10">
           <h3 className="text-[14.4px] font-bold leading-tight text-ink dark:text-on-dark">{title}</h3>
@@ -194,10 +219,7 @@ export function SiteSidePanels({
       </div>
 
       {open && (
-        // 레이더·태풍·영상·병원은 원래 420px 폭 캐러셀에 있던 것이라 좁게 넣으면 내용이 뭉갠다.
-        <div
-          className={`relative ml-1 ${open === "env" || open === "signal" ? "w-[296px]" : "w-[420px]"}`}
-        >
+        <div className="relative ml-1 w-[296px]">
           {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다. */}
           <button
             type="button"
