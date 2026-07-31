@@ -6,13 +6,16 @@ import { test } from "node:test";
 import {
   FRESH_WINDOW_MS,
   PROMOTED_TYPE,
+  dedupeBySn,
   filterWatched,
   isEvacuationNotice,
   isFresh,
+  kstYmd,
   matchSite,
   msgRegionMatchesSido,
   normalize,
   parseKstToMs,
+  queryDates,
   senderOrg,
   type DisasterMsg,
   type RawDisasterMsg,
@@ -66,6 +69,21 @@ test("normalize — SN 이 숫자로 와도 파싱된다(실 API=number · CSV=s
   const r = normalize([numeric]);
   assert.equal(r.invalid.length, 0);
   assert.equal(r.msgs[0]?.sn, 263732);
+});
+
+test("normalize — 실 API 의 나노초 타임스탬프를 정정 발령으로 오탐하지 않는다", () => {
+  // 실 API 는 REG_YMD/MDFCN_YMD 를 "2026/07/31 08:22:17.000000000" 으로 주고
+  // MDFCN 이 항상 REG 보다 몇 분 뒤(내부 처리 시각)라, 그대로 비교하면 전건이 정정으로 잡힌다.
+  const base = DISASTER_MSG_SAMPLE[0] as RawDisasterMsg;
+  const sameDay = normalize([
+    { ...base, REG_YMD: "2026/07/31 08:22:17.000000000", MDFCN_YMD: "2026/07/31 08:32:07.000000000" },
+  ]);
+  assert.equal(sameDay.msgs[0]?.revised, false, "같은 날 처리시각 차이는 정정이 아니다");
+
+  const nextDay = normalize([
+    { ...base, REG_YMD: "2026/07/31 23:58:00.000000000", MDFCN_YMD: "2026/08/01 00:10:00.000000000" },
+  ]);
+  assert.equal(nextDay.msgs[0]?.revised, true, "날짜가 바뀌면 정정으로 본다");
 });
 
 test("normalize — 샘플은 정정 발령(MDFCN≠REG) 0건", () => {
@@ -170,6 +188,42 @@ test("isFresh — 윈도우를 1ms 넘기면 만료(= 해제 역할)", () => {
 
 test("isFresh — 발령 시각이 미래인 문자는 배제(시계 오차·형식 오류 방어)", () => {
   assert.equal(isFresh(BASE, BASE.createdAtMs - 1), false);
+});
+
+// ── 조회 날짜(KST) ───────────────────────────────────────────────────────────
+test("kstYmd — UTC 자정 전후에도 KST 날짜를 준다(Cloud Run 은 UTC)", () => {
+  // 2026-07-30 15:00 UTC = 2026-07-31 00:00 KST → 이미 31일이다.
+  assert.equal(kstYmd(new Date(Date.UTC(2026, 6, 30, 15, 0, 0))), "20260731");
+  assert.equal(kstYmd(new Date(Date.UTC(2026, 6, 30, 14, 59, 59))), "20260730");
+});
+
+test("queryDates — 낮에는 오늘 하루만 조회한다(폴링당 1회)", () => {
+  // 2026-07-31 01:00 UTC = 10:00 KST
+  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 31, 1, 0, 0))), ["20260731"]);
+});
+
+test("queryDates — 신선도 윈도우가 자정을 걸치면 전날도 조회한다", () => {
+  // 2026-07-30 16:30 UTC = 2026-07-31 01:30 KST → 어제 23시 발령이 아직 신선하다.
+  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 30, 16, 30, 0))), [
+    "20260730",
+    "20260731",
+  ]);
+});
+
+test("queryDates — 경계 KST 03:00 부터는 오늘만(윈도우가 자정을 안 넘김)", () => {
+  const at = (utcHour: number, min = 0) => new Date(Date.UTC(2026, 6, 30, utcHour, min, 0));
+  assert.deepEqual(queryDates(at(18)), ["20260731"]); // KST 03:00
+  assert.deepEqual(queryDates(at(17, 59)), ["20260730", "20260731"]); // KST 02:59
+});
+
+test("dedupeBySn — SN 중복 제거, 순서 보존, number/string 혼용 허용", () => {
+  const mk = (sn: string | number) => ({ ...(DISASTER_MSG_SAMPLE[0] as RawDisasterMsg), SN: sn });
+  const out = dedupeBySn([mk(1), mk("1"), mk(2), mk(1)]);
+  assert.equal(out.length, 2);
+  assert.deepEqual(
+    out.map((r) => String(r.SN)),
+    ["1", "2"],
+  );
 });
 
 // ── 지역 토큰 분리 ───────────────────────────────────────────────────────────

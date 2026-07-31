@@ -102,22 +102,38 @@
 
 ---
 
-## Phase C — 실 API 어댑터·캐시 ⬜ (Phase 0 선행)
+## Phase C — 실 API 어댑터·캐시 ✅ 완료 (2026-07-31)
 
-- [ ] `serviceKey()` — `SAFETYDATA_SERVICE_KEY` 없으면 `null` → **목업 폴백**(`kma.ts` 정책 답습)
-- [ ] `fetchDisasterMsgs()` — `crtDt=오늘(KST)` + `numOfRows=1000` 1회 호출 → `normalize()` 입력 배열
-  - [ ] KST 00:00~03:00 에는 **전날 `crtDt` 도 조회**(신선도 3시간 윈도우가 자정을 걸친다 — D-17)
-  - [ ] ⚠️ **응답 정렬을 신뢰하지 않는다** — 시각순도 SN순도 아니다(실측). 하루치 전건을 받아 우리가 필터
-- [ ] `source: "live" | "mock"` 구분 반환 (알림 발사 게이트에 필수 — D-11)
-- [ ] 인메모리 캐시 TTL **5분** (`kma.ts` 의 `globalThis` 맵 패턴 재사용 — D-12)
-- [ ] ⚠️ **키가 설정됐는데 목업으로 떨어지면 경고 로그** — 폴백과 장애를 구분한다 (D-16)
-- [ ] `rgnNm` 서버측 지역 필터는 **쓰지 않는다** — 시·도 매칭은 우리가 한다(표기 변화 위험, D-17)
-- [ ] SN 집합 중복 제거 — **증분 커서 금지**, 신선도 윈도우와 같은 기간만 보관 (D-08)
-- [ ] 목업/실API 산출 형태가 동일한지 대조 테스트
-- [ ] ⚠️ **재승격분 육안 확인** — 실 데이터에서 `PROMOTED_TYPE` 로 통과한 문자에
-      개인정보가 섞이지 않았는지 1회 점검(불변식 테스트는 픽스처에만 성립 — D-15 한계)
+`app/lib/disaster-msg-api.ts` (server-only) 신설. 순수 로직은 `disaster-msg.ts` 에 그대로 둔다.
 
-**완료 판정.** 키 없을 때 목업 200 · 키 있을 때 live 200, 두 응답 형태 동일.
+- [x] `serviceKey()` — `SAFETYDATA_SERVICE_KEY` 없으면 `null` → 목업 폴백(`kma.ts` 정책 답습)
+- [x] `fetchDisasterMsgs(now?)` — `crtDt` + `numOfRows=1000` 호출 → 정규화 → 유형필터까지 수행
+  - [x] `queryDates()` — 평시 오늘 1건, **KST 00:00~03:00 에는 전날도**(신선도 3시간이 자정을 걸침)
+  - [x] `dedupeBySn()` — 두 날짜 결과 병합 시 중복 제거. 증분 커서 금지(SN 비연속 — D-08)
+  - [x] ⚠️ 응답 정렬 미신뢰 — 하루치 전건을 받아 우리가 필터 (D-17)
+- [x] `source: "live" | "mock"` 반환 (알림 발사 게이트용 — D-11)
+- [x] ★ **빈 body 를 목업으로 떨어뜨리지 않는다** — 재난 없는 날 가짜 경보 방지 (D-19)
+- [x] 인메모리 캐시 TTL **5분** · 캐시 키에 조회 날짜 포함(자정 경계 안전)
+- [x] `rgnNm` 서버측 지역 필터 **미사용** — 시·도 매칭은 우리가 한다 (D-17)
+- [x] ⚠️ 실 API 실패 시 `console.error` — 폴백이 아니라 장애다 (D-16)
+- [x] 로그는 `warn`/`error` 만(ESLint `no-console`) · 상시 차단 유형은 로그 제외 (D-19)
+- [x] 🐛 **실 API 의 `SN` 은 number** — `String(r.SN).trim()` (D-18)
+- [x] 🐛 **`REG_YMD`/`MDFCN_YMD` 는 나노초 타임스탬프** — 날짜 부분만 비교 (D-18)
+
+**실동작 검증(2026-07-31).**
+```
+목업 경로   source=mock · 2건 · 신선도 통과 2 · 부산 현장 매칭 2 · 긴급재난 1
+실 API      source=live · 34건(폭염) · 224ms · 개인정보 통과 0건
+캐시        2회차 0ms 적중
+당진/포항   site 6·7 · nearby 6·3
+키 오류     resultCode 30 SERVICE KEY IS NOT REGISTERED → console.error + mock 폴백
+```
+
+- [ ] ⚠️ **재승격분 육안 확인** — 오늘 재승격 0건(대피 문자 미발생)이라 **미확인**.
+      실제 `대피안내` 가 나온 날 개인정보가 섞이지 않았는지 1회 점검 (D-15 한계)
+
+**완료 판정.** 목업·실API·캐시·실패 4경로 실동작 확인. ✅
+검증 = `npm test` **453 pass / 0 fail** (TZ=UTC·Asia/Seoul) · tsc 0 · lint 0.
 
 ---
 

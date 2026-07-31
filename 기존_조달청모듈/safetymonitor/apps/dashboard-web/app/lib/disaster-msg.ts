@@ -50,6 +50,14 @@ export function parseKstToMs(s: string): number | null {
   );
 }
 
+// REG_YMD·MDFCN_YMD 의 날짜 부분만 뽑는다.
+// CSV 는 "2023-09-19" 인데 실 API 는 "2026/07/31 08:22:17.000000000"(나노초 포함)로 오고,
+// 게다가 MDFCN 이 REG 보다 항상 몇 분 뒤(내부 처리 시각)라 문자열 그대로 비교하면
+// 전건이 "정정 발령"으로 잡혀 폴링마다 로그를 도배한다. 필드명(YMD)대로 날짜만 본다.
+function ymdPart(s: string): string {
+  return s.trim().slice(0, 10).replace(/\//g, "-");
+}
+
 // ── 정규화 ──────────────────────────────────────────────────────────────────
 // 파싱 실패분은 버리지 않고 invalid 로 되돌려준다 — 조용한 0건은 "재난 없음"과 구별되지 않는다.
 export function normalize(raws: RawDisasterMsg[]): {
@@ -73,7 +81,7 @@ export function normalize(raws: RawDisasterMsg[]): {
       regions: splitRegions(r.RCPTN_RGN_NM ?? ""),
       step,
       type: (r.DST_SE_NM ?? "").trim(),
-      revised: (r.MDFCN_YMD ?? "").trim() !== (r.REG_YMD ?? "").trim(),
+      revised: ymdPart(r.MDFCN_YMD ?? "") !== ymdPart(r.REG_YMD ?? ""),
     });
   }
   return { msgs, invalid };
@@ -148,6 +156,35 @@ export const FRESH_WINDOW_MS = 3 * 60 * 60 * 1000;
 export function isFresh(msg: DisasterMsg, nowMs: number): boolean {
   const age = nowMs - msg.createdAtMs;
   return age >= 0 && age <= FRESH_WINDOW_MS;
+}
+
+// ── 조회 날짜(KST) ───────────────────────────────────────────────────────────
+// 실 API 의 crtDt 는 KST 기준 YYYYMMDD 다. 서버가 UTC(Cloud Run)여도 같은 값이 나와야 한다.
+export function kstYmd(d: Date): string {
+  const k = new Date(d.getTime() + KST_OFFSET_HOURS * 3_600_000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${k.getUTCFullYear()}${p(k.getUTCMonth() + 1)}${p(k.getUTCDate())}`;
+}
+
+// 조회할 crtDt 목록 — 신선도 윈도우가 자정을 걸치면 전날 것도 받아야 한다.
+// 예: KST 01:30 폴링 시 어제 23:00 발령이 아직 신선(3시간)인데 crtDt=오늘 에는 안 들어온다.
+// 대부분의 시간대에는 1건만 반환 → 폴링당 호출 1회(D-17 예산 계산의 근거).
+export function queryDates(now: Date): string[] {
+  const kstHour = new Date(now.getTime() + KST_OFFSET_HOURS * 3_600_000).getUTCHours();
+  const today = kstYmd(now);
+  if (kstHour * 3_600_000 >= FRESH_WINDOW_MS) return [today];
+  return [kstYmd(new Date(now.getTime() - 24 * 3_600_000)), today];
+}
+
+// 두 날짜 조회 결과를 합칠 때의 SN 중복 제거. 증분 커서는 쓰지 않는다(SN 비연속 — D-08).
+export function dedupeBySn(raws: RawDisasterMsg[]): RawDisasterMsg[] {
+  const seen = new Set<string>();
+  return raws.filter((r) => {
+    const k = String(r.SN ?? "");
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 
 // ── 현장 시·도 매칭 ──────────────────────────────────────────────────────────
