@@ -21,12 +21,14 @@ const INPUT_CLS =
   "min-w-0 rounded-md border border-hairline bg-surface-soft px-2 py-1 text-[11px] tabular-nums text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark";
 
 // 시연용 데모 값(S9 시나리오 — 대한안전산업 → 시공사 청구건)
+// supplyAmount 는 tax_invoice(SITE-SMARTHRD-2026, 승인번호 동일)의 공급가액과 같아야 한다.
+// 어긋나면 같은 세금계산서를 ②사용 축과 ④증액 축이 다른 금액으로 말하게 된다.
 const DEMO_INVOICE = {
   supplierBno: "410-00-01277",
   buyerBno: "617-81-00124",
   approvalNo: "20260617-41000012-77120034",
   writeDate: "20260617",
-  supplyAmount: "1710000",
+  supplyAmount: "980000",
 };
 
 export default function BusinessVerifyCard() {

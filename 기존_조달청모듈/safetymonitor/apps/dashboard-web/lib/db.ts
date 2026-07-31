@@ -245,6 +245,23 @@ async function initSchema(): Promise<void> {
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS watch_device_model TEXT;
     CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
 
+    -- ts 는 TEXT 라 ORDER BY·범위비교·MAX 가 전부 문자열 비교로 돈다. 고정폭 ISO-UTC 는
+    -- 사전순 = 시간순이 보장되지만 밀리초 없는 '…46Z' 가 섞이면 깨진다('.' 0x2E < 'Z' 0x5A
+    -- 라 '…46.500Z' 가 앞으로 정렬돼 시간이 거꾸로 간다). 스키마 정규화(canonicalIsoMs)로
+    -- 새 행은 막고, 여기서 DB 가 거부하게 해 다른 경로로도 못 들어오게 굳힌다.
+    -- NOT VALID = 기존 행 재검사 생략(백필 후 VALIDATE CONSTRAINT 로 승격). 신규 INSERT 는 즉시 적용된다.
+    -- 정규식에 백슬래시를 쓰지 않는다 — 이 SQL 은 템플릿 리터럴이라 숫자 클래스 축약형이
+    -- JS 단계에서 백슬래시를 잃고 평문 문자로 죽어 제약이 조용히 무력화된다
+    -- (lint no-useless-escape 가 실제로 잡았다). [0-9]·[.] 로 표현한다.
+    DO $ts_fmt$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_vital_ts_iso_ms'
+      ) THEN
+        ALTER TABLE vital_samples ADD CONSTRAINT chk_vital_ts_iso_ms
+          CHECK (ts ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[.][0-9]{3}Z$') NOT VALID;
+      END IF;
+    END $ts_fmt$;
+
     -- 목업은 vital_samples 에 절대 적재하지 않는다. iPhone·Watch 목업도 각각 명시해 혼합 집계를 막는다.
     CREATE TABLE IF NOT EXISTS data_mockup (
       id SERIAL PRIMARY KEY,

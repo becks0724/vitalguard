@@ -31,8 +31,21 @@ export function isAppJwtConfigured(): boolean {
 
 export type AppAuthFailure = "no_token" | "verify_failed" | "expired" | "no_worker_id";
 
-/** 클라이언트가 스스로 복구할 수 있는가. 응답에 이 값만 실어 앱이 재로그인을 띄우게 한다. */
-export type AppAuthAction = "reauth" | "none";
+/**
+ * 클라이언트가 스스로 복구할 수 있는가. 응답에 이 값만 실어 앱이 무엇을 할지 정하게 한다.
+ *
+ * refresh — 액세스 토큰만 만료. 세션은 살아 있으므로 /session/refresh 로 회복된다.
+ * reauth  — ID·비밀번호 재입력이 필요(토큰 없음·구 스키마).
+ * none    — 서명 불일치. 재로그인해도 같은 결과라 반복 시도를 유도하지 않는다.
+ *
+ * ★ refresh 를 reauth 와 분리하는 이유(2026-07-31 실측):
+ * 앱은 401 + action:"reauth" 를 받으면 deleteMobileSession() 으로 키체인을 비우는데
+ * 거기엔 refresh 토큰도 들어 있다. 액세스 토큰 수명이 15분이라 앱을 그 이상 놔뒀다 켜면
+ * 만료 401 → 세션 삭제 → 뒤이은 refresh 시도가 토큰을 못 찾아 실패 → "다시 로그인 필요".
+ * mobile_app_session 13건이 전부 updated_at == created_at(회전 0회)였던 원인이 이것이다.
+ * 만료를 refresh 로 내보내면 앱의 삭제 가드에 걸리지 않아 기존 회복 경로가 그대로 살아난다.
+ */
+export type AppAuthAction = "reauth" | "refresh" | "none";
 
 export type AppAuthDiagnosis = {
   reason: AppAuthFailure;
@@ -59,9 +72,12 @@ export function diagnoseAppAuth(
       : !claims
         ? "expired"
       : "no_worker_id";
-  // 재로그인으로 풀리는 경우 — 토큰이 없거나(로그아웃 상태), 만료·구 스키마(사번 누락).
-  // 서명 자체가 틀린 경우는 앱이 재로그인해도 같은 결과라 none 으로 둔다.
-  const action: AppAuthAction = reason === "verify_failed" ? "none" : "reauth";
+  // 서명 자체가 틀린 경우는 앱이 재로그인해도 같은 결과라 none.
+  // 만료(서명은 정상)는 세션이 살아 있으므로 refresh 로 회복된다 — 재로그인을 요구하면
+  // 앱이 refresh 토큰까지 지워 회복 수단을 스스로 없앤다.
+  // 사번 누락·구 스키마는 refresh 해도 같은 클레임이 나오므로 재로그인이 맞다.
+  const action: AppAuthAction =
+    reason === "verify_failed" ? "none" : reason === "expired" ? "refresh" : "reauth";
   const iso = (t?: number) => (t ? new Date(t * 1000).toISOString() : "n/a");
   const logLine =
     `인증 거부(${reason}) — sub=${(claims ?? signedClaims)?.sub ?? "n/a"}` +
@@ -181,17 +197,19 @@ export function verifyMobileAccessJwt(token: string | null | undefined): AppJwtC
   return claims;
 }
 
-// 401 본문의 action 계약. 재로그인으로 복구 가능한 정상 서명 토큰(만료·구 클레임·토큰 없음)만
-// reauth를 내보내고, 서명 불일치/변조는 none으로 둬 반복 시도를 유도하지 않는다.
-export function mobileUnauthorizedAction(token: string | null | undefined): "reauth" | "none" {
+// 401 본문의 action 계약. 서명 불일치/변조는 none 으로 둬 반복 시도를 유도하지 않는다.
+// 만료는 refresh(세션 살아 있음), 구 스키마·무토큰은 reauth(재로그인해야 클레임이 바뀐다).
+// 판정 순서 주의 — 구 스키마 검사가 만료보다 앞이다. 만료된 구 스키마 토큰을 refresh 로
+// 보내면 같은 결함을 가진 토큰이 다시 발급돼 무한 반복에 빠진다.
+export function mobileUnauthorizedAction(token: string | null | undefined): AppAuthAction {
   if (!token) return "reauth";
   const claims = verifiedAppJwtClaims(token);
   if (!claims) return "none";
-  if (Math.floor(Date.now() / 1000) > claims.exp) return "reauth";
   if (!claims.workerId) return "reauth";
   if (claims.aud === "vitalguard-mobile" && (claims.tokenUse !== "access" || claims.v !== 2)) {
     return "reauth";
   }
+  if (Math.floor(Date.now() / 1000) > claims.exp) return "refresh";
   return "none";
 }
 
