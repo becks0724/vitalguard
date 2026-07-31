@@ -2508,31 +2508,6 @@ export async function createUser(input: {
   return rows[0] ?? null;
 }
 
-// 근로자 로그인 계정 생성(owner) — role=worker·즉시 승인·사번(employee_id) 매칭. 앱 로그인용.
-export async function createWorkerAccount(input: {
-  username: string;
-  name: string | null;
-  employeeId: string | null;
-  passwordHash: string;
-  approvedBy: string;
-}): Promise<UserRow | null> {
-  const { text, values } = buildInsert("users", {
-    username: input.username,
-    name: input.name,
-    password_hash: input.passwordHash,
-    auth_provider: "password",
-    role: "worker",
-    status: "approved",
-    employee_id: input.employeeId,
-    approved_by: input.approvedBy,
-  });
-  const { rows } = await q<UserRow>(
-    `${text} ON CONFLICT (username) DO NOTHING RETURNING *`,
-    values,
-  );
-  return rows[0] ?? null;
-}
-
 export async function findUserByUsername(username: string): Promise<UserRow | null> {
   const { rows } = await q<UserRow>("SELECT * FROM users WHERE username = $1", [
     username,
@@ -2751,15 +2726,16 @@ export async function setUserAdminAccess(
   return rows[0] ?? null;
 }
 
-// 부서/직책 직접 수정 — owner 가 사용자 관리에서 각 사용자 값을 편집(id 기준). 본인 자가입력과 별개.
+// 회사(상호)/부서/직책 직접 수정 — 관리 권한자가 사용자 관리에서 각 사용자 값을 편집(id 기준). 본인 자가입력과 별개.
 export async function setUserProfileFields(
   id: number,
+  company: string | null,
   department: string | null,
   jobTitle: string | null,
 ): Promise<UserRow | null> {
   const { rows } = await q<UserRow>(
-    "UPDATE users SET department = $1, job_title = $2 WHERE id = $3 RETURNING *",
-    [department, jobTitle, id],
+    "UPDATE users SET company = $1, department = $2, job_title = $3 WHERE id = $4 RETURNING *",
+    [company, department, jobTitle, id],
   );
   return rows[0] ?? null;
 }

@@ -68,18 +68,11 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [syncedAt, setSyncedAt] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  // 부서/직책 인라인 편집(owner가 각 사용자 값 직접 수정). 편집 중 행은 폴링이 덮어쓰지 않도록 별도 draft 보관.
+  // 회사(상호)/부서/직책 인라인 편집(관리 권한자가 각 사용자 값 직접 수정). 편집 중 행은 폴링이 덮어쓰지 않도록 별도 draft 보관.
   const [editProfileId, setEditProfileId] = useState<number | null>(null);
+  const [companyDraft, setCompanyDraft] = useState("");
   const [deptDraft, setDeptDraft] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
-  // 근로자 계정 추가 폼(앱 로그인용, role=worker).
-  const [showAddWorker, setShowAddWorker] = useState(false);
-  const [wUsername, setWUsername] = useState("");
-  const [wName, setWName] = useState("");
-  const [wEmpId, setWEmpId] = useState("");
-  const [wPassword, setWPassword] = useState("");
-  const [addingWorker, setAddingWorker] = useState(false);
-
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
@@ -151,6 +144,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
 
   const startEditProfile = useCallback((u: User) => {
     setEditProfileId(u.id);
+    setCompanyDraft(u.company ?? "");
     setDeptDraft(u.department ?? "");
     setTitleDraft(u.job_title ?? "");
     setError(null);
@@ -170,13 +164,14 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
           body: JSON.stringify({
             id,
             action: "set_profile",
+            company: companyDraft.trim() || null,
             department: deptDraft.trim() || null,
             jobTitle: titleDraft.trim() || null,
           }),
         });
         const json = (await res.json()) as { ok?: boolean; error?: string };
         if (!res.ok || !json.ok) {
-          setError(json.error || "부서/직책 저장에 실패했습니다.");
+          setError(json.error || "상호/부서/직책 저장에 실패했습니다.");
           return;
         }
         setEditProfileId(null);
@@ -187,49 +182,8 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
         setBusyId(null);
       }
     },
-    [deptDraft, titleDraft, load],
+    [companyDraft, deptDraft, titleDraft, load],
   );
-
-  // 근로자 로그인 계정 생성 — 앱이 관제웹 계정으로 로그인할 수 있게 owner 가 발급.
-  const createWorker = useCallback(async () => {
-    if (wUsername.trim().length < 3 || wPassword.length < 6) {
-      setError("아이디(3자 이상)와 비밀번호(6자 이상)를 입력하세요.");
-      return;
-    }
-    setAddingWorker(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/admin/users", {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${getSessionToken() ?? ""}`,
-        },
-        body: JSON.stringify({
-          action: "create_worker",
-          username: wUsername.trim(),
-          name: wName.trim() || null,
-          employeeId: wEmpId.trim() || null,
-          password: wPassword,
-        }),
-      });
-      const json = (await res.json()) as { ok?: boolean; error?: string };
-      if (!res.ok || !json.ok) {
-        setError(json.error || "근로자 계정 생성에 실패했습니다.");
-        return;
-      }
-      setWUsername("");
-      setWName("");
-      setWEmpId("");
-      setWPassword("");
-      setShowAddWorker(false);
-      await load();
-    } catch {
-      setError("네트워크 오류로 생성에 실패했습니다.");
-    } finally {
-      setAddingWorker(false);
-    }
-  }, [wUsername, wName, wEmpId, wPassword, load]);
 
   const pending = users?.filter((u) => u.status === "pending").length ?? 0;
   const approved = users?.filter((u) => u.status === "approved").length ?? 0;
@@ -284,54 +238,6 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             자동 갱신 60초{syncedAt ? ` · 최근 ${syncedAt}` : ""}
           </span>
-        </div>
-
-        {/* 근로자 계정 추가(owner) — 앱(iPhone/Apple Watch) 로그인용 role=worker 계정 생성 */}
-        <div className="border-b border-hairline px-5 py-2 dark:border-white/10">
-          <button
-            type="button"
-            onClick={() => setShowAddWorker((v) => !v)}
-            className="text-xs font-semibold text-primary hover:underline"
-          >
-            {showAddWorker ? "− 근로자 추가 닫기" : "+ 근로자 계정 추가 (앱 로그인용)"}
-          </button>
-          {showAddWorker && (
-            <div className="mt-2 flex flex-wrap items-end gap-2">
-              {(
-                [
-                  ["아이디*", wUsername, setWUsername, "worker01", "text"],
-                  ["이름", wName, setWName, "장우진", "text"],
-                  ["사번(workerId)", wEmpId, setWEmpId, "EMP-6861", "text"],
-                  ["비밀번호*", wPassword, setWPassword, "6자 이상", "password"],
-                ] as const
-              ).map(([label, value, setter, placeholder, type]) => (
-                <label
-                  key={label}
-                  className="flex flex-col gap-0.5 text-[10px] text-muted dark:text-on-dark-soft"
-                >
-                  {label}
-                  <input
-                    type={type}
-                    value={value}
-                    onChange={(e) => setter(e.target.value)}
-                    placeholder={placeholder}
-                    className="w-32 rounded-lg border border-hairline bg-canvas px-2 py-1 text-[12px] text-ink outline-none focus:border-primary dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
-                  />
-                </label>
-              ))}
-              <button
-                type="button"
-                onClick={createWorker}
-                disabled={addingWorker}
-                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary active:scale-95 disabled:opacity-50"
-              >
-                {addingWorker ? "생성 중…" : "생성"}
-              </button>
-              <span className="text-[10px] text-muted dark:text-on-dark-soft">
-                생성 즉시 승인 · 앱에서 이 아이디/비번으로 로그인
-              </span>
-            </div>
-          )}
         </div>
 
         {/* 본문 — DB 스키마 테이블 */}
@@ -397,9 +303,21 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       <td className={TD}>
                         {u.role === "worker" ? "작업자" : orgTypeLabel(u.org_type)}
                       </td>
-                      <td className={TD}>{u.company ?? "-"}</td>
                       {editProfileId === u.id ? (
                         <>
+                          <td className={TD}>
+                            <input
+                              value={companyDraft}
+                              onChange={(e) => setCompanyDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveProfile(u.id);
+                                if (e.key === "Escape") setEditProfileId(null);
+                              }}
+                              placeholder="상호"
+                              autoFocus
+                              className="w-24 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
+                            />
+                          </td>
                           <td className={TD}>
                             <input
                               value={deptDraft}
@@ -409,7 +327,6 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                                 if (e.key === "Escape") setEditProfileId(null);
                               }}
                               placeholder="부서"
-                              autoFocus
                               className="w-20 rounded-md border border-hairline bg-canvas px-1.5 py-0.5 text-[11px] text-ink outline-none focus:border-primary dark:border-white/15 dark:bg-surface-dark-elevated dark:text-on-dark"
                             />
                           </td>
@@ -449,7 +366,17 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             <button
                               type="button"
                               onClick={() => startEditProfile(u)}
-                              title="부서/직책 수정"
+                              title="상호/부서/직책 수정"
+                              className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
+                            >
+                              {u.company ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
+                            </button>
+                          </td>
+                          <td className={TD}>
+                            <button
+                              type="button"
+                              onClick={() => startEditProfile(u)}
+                              title="상호/부서/직책 수정"
                               className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
                             >
                               {u.department ?? <span className="text-muted dark:text-on-dark-soft">-</span>}
@@ -459,7 +386,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             <button
                               type="button"
                               onClick={() => startEditProfile(u)}
-                              title="부서/직책 수정"
+                              title="상호/부서/직책 수정"
                               className="rounded px-1 py-0.5 text-left hover:bg-surface-strong dark:hover:bg-white/10"
                             >
                               {u.job_title ?? <span className="text-muted dark:text-on-dark-soft">-</span>}

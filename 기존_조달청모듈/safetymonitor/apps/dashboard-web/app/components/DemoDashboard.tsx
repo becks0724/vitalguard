@@ -5082,7 +5082,7 @@ export function DemoDashboard() {
         <HeaderClock />
 
         <div className="flex min-w-0 items-center gap-2">
-          {/* 로그인 상태 칩 — 표시 전용(클릭 없음). 접속점 + 이름/직책/사번/아이디.
+          {/* 로그인 상태 칩 — 표시 전용(클릭 없음). 접속점 + 이름/직책만(사번·아이디 비노출).
               내 정보 수정 진입은 dock '내 정보' 아이콘 + 비밀번호 게이트로만(보안). */}
           {role && (
             <div
@@ -5105,10 +5105,6 @@ export function DemoDashboard() {
                   <span className="shrink-0 truncate font-semibold text-ink dark:text-on-dark">
                     {loginInfo?.name ?? loginInfo?.username ?? "관리자"}
                     {loginInfo?.jobTitle ? ` ${loginInfo.jobTitle}` : ""}
-                  </span>
-                  <span className="truncate text-muted dark:text-on-dark-soft">
-                    {loginInfo?.employeeId ? `· 사번 ${loginInfo.employeeId} ` : ""}
-                    {loginInfo?.username ? `· ${loginInfo.username}` : ""}
                   </span>
                 </>
               )}

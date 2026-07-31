@@ -2,9 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { getSession, verifyUserAdmin } from "../../../../lib/admin-auth";
-import { hashPassword } from "../../../../lib/password";
 import {
-  createWorkerAccount,
   deleteUser,
   listUsers,
   setUserStatus,
@@ -60,46 +58,6 @@ export async function POST(request: Request) {
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
 
-  // 근로자 로그인 계정 생성 — id 없이(신규) username·이름·사번·비번으로. 앱 로그인용(role=worker·즉시 승인).
-  if (action === "create_worker") {
-    const { username, name, employeeId, password } = (body ?? {}) as {
-      username?: unknown;
-      name?: unknown;
-      employeeId?: unknown;
-      password?: unknown;
-    };
-    if (
-      typeof username !== "string" ||
-      username.trim().length < 3 ||
-      typeof password !== "string" ||
-      password.length < 6
-    ) {
-      return NextResponse.json(
-        { ok: false, error: "아이디(3자 이상)와 비밀번호(6자 이상)가 필요합니다." },
-        { status: 400 },
-      );
-    }
-    const norm = (v: unknown): string | null => {
-      if (typeof v !== "string") return null;
-      const t = v.trim();
-      return t.length > 0 ? t : null;
-    };
-    const created = await createWorkerAccount({
-      username: username.trim(),
-      name: norm(name),
-      employeeId: norm(employeeId),
-      passwordHash: await hashPassword(password),
-      approvedBy: session.username,
-    });
-    if (!created) {
-      return NextResponse.json(
-        { ok: false, error: "이미 존재하는 아이디입니다." },
-        { status: 409 },
-      );
-    }
-    return NextResponse.json({ ok: true, user: publicUser(created) });
-  }
-
   const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "set_profile"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
@@ -108,9 +66,10 @@ export async function POST(request: Request) {
     );
   }
 
-  // 부서/직책 직접 수정 — owner 가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
+  // 회사(상호)/부서/직책 직접 수정 — 관리 권한자가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
   if (action === "set_profile") {
-    const { department, jobTitle } = (body ?? {}) as {
+    const { company, department, jobTitle } = (body ?? {}) as {
+      company?: unknown;
       department?: unknown;
       jobTitle?: unknown;
     };
@@ -119,7 +78,7 @@ export async function POST(request: Request) {
       const t = v.trim();
       return t.length > 0 ? t : null;
     };
-    const updated = await setUserProfileFields(id, norm(department), norm(jobTitle));
+    const updated = await setUserProfileFields(id, norm(company), norm(department), norm(jobTitle));
     if (!updated) {
       return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
     }
