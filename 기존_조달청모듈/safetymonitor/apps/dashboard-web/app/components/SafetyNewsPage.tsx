@@ -75,8 +75,9 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
         <KoshaFatalAccidentList onSourceChange={onFatal} />
       </Panel>
 
+      {/* 높이 150px = 요약줄 + 발령 2건(행당 50px). 그 이상은 스크롤 — 화면을 덜 차지하게(사용자 요청). */}
       <Panel title="긴급재난문자" accent badge={<SourceBadge source={disasterSource} />}>
-        <div className="h-[220px]">
+        <div className="h-[150px]">
           <DisasterMsgCard lat={lat} lon={lon} onSourceChange={onDisaster} />
         </div>
       </Panel>

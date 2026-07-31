@@ -1,6 +1,6 @@
 "use client";
 // 산업 안전뉴스 패널 — 산업현장·산업재해·산업안전 법규 관련 실시간 기사(네이버 뉴스검색).
-// 안전뉴스 탭의 전체 폭 섬네일 카드 가로 나열(수동 좌우 스크롤).
+// 안전뉴스 탭의 헤드라인 뉴스 형식 — 좌측 섬네일 + 제목/요약/매체를 한 행씩 세로 목록으로.
 // ★ 섬네일은 서버가 og:image 로 추출해 내려준다(app/lib/og-image.ts) — 네이버 뉴스검색 API
 //   자체는 이미지를 주지 않는다. 추출 실패·핫링크 차단분은 매체 이니셜 블록으로 폴백한다.
 // /api/news 프록시에서 조회(서버 15분 캐시) + 10분 폴링. 키 미설정·무결과는 graceful 안내.
@@ -89,57 +89,64 @@ export function NewsPanel() {
     );
   }
 
+  // 헤드라인 뉴스 형식 — 좌측 섬네일 + 제목/요약/매체 한 행씩 세로로. 5행쯤 보이고 나머지는 스크롤.
   return (
-    <div className="no-scrollbar overflow-x-auto overflow-y-hidden px-3 pb-3">
-      <div className="flex w-max gap-2.5">
+    <div className="no-scrollbar max-h-[400px] overflow-y-auto px-3 pb-3">
+      <ul className="divide-y divide-hairline dark:divide-white/10">
         {items.map((it) => {
           const showImg = it.image && !broken[it.link];
           return (
-            <a
-              key={it.link}
-              href={it.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={it.title}
-              className="group flex w-[230px] shrink-0 flex-col overflow-hidden rounded-lg border border-hairline bg-canvas transition hover:ring-1 hover:ring-primary-ring dark:border-white/10 dark:bg-surface-dark"
-            >
-              <div className="h-[124px] w-full overflow-hidden bg-surface-card dark:bg-surface-dark-elevated">
-                {showImg ? (
-                  // 외부 CDN 이미지 — 도메인이 매체마다 달라 next/image(remotePatterns) 대신 img.
-                  // referrerPolicy=no-referrer 로 Referer 검사식 핫링크 차단을 최대한 피한다.
-                  <img
-                    src={it.image}
-                    alt=""
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={() => setBroken((prev) => ({ ...prev, [it.link]: true }))}
-                    className="h-full w-full object-cover transition group-hover:scale-[1.03]"
-                  />
-                ) : (
-                  <div
-                    className={`flex h-full w-full items-center justify-center text-sm font-bold ${toneOf(it.source || it.title)}`}
-                  >
-                    {(it.source || "NEWS").slice(0, 2).toUpperCase()}
-                  </div>
-                )}
-              </div>
-              <div className="flex min-w-0 flex-1 flex-col gap-1 px-2.5 py-2">
-                <p className="line-clamp-2 text-xs font-semibold leading-snug text-ink group-hover:text-primary dark:text-on-dark">
-                  {it.title}
-                </p>
-                <div className="mt-auto flex items-center gap-1.5 text-[10px] text-muted dark:text-on-dark-soft">
-                  {it.source && <span className="truncate">{it.source}</span>}
-                  {it.pubDateMs !== undefined && (
-                    <span className="shrink-0 tabular-nums">
-                      {formatRelativeTime(it.pubDateMs, nowMs)}
-                    </span>
+            <li key={it.link}>
+              <a
+                href={it.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={it.title}
+                className="group flex items-start gap-3 py-2.5"
+              >
+                <div className="h-[62px] w-[92px] shrink-0 overflow-hidden rounded-md bg-surface-card dark:bg-surface-dark-elevated">
+                  {showImg ? (
+                    // 외부 CDN 이미지 — 도메인이 매체마다 달라 next/image(remotePatterns) 대신 img.
+                    // referrerPolicy=no-referrer 로 Referer 검사식 핫링크 차단을 최대한 피한다.
+                    <img
+                      src={it.image}
+                      alt=""
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={() => setBroken((prev) => ({ ...prev, [it.link]: true }))}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className={`flex h-full w-full items-center justify-center text-xs font-bold ${toneOf(it.source || it.title)}`}
+                    >
+                      {(it.source || "NEWS").slice(0, 2).toUpperCase()}
+                    </div>
                   )}
                 </div>
-              </div>
-            </a>
+                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <p className="line-clamp-1 text-[13px] font-bold leading-snug text-ink group-hover:text-primary dark:text-on-dark">
+                    {it.title}
+                  </p>
+                  {it.description && (
+                    <p className="line-clamp-1 text-[11px] leading-snug text-body dark:text-on-dark-soft">
+                      {it.description}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted dark:text-on-dark-soft">
+                    {it.source && <span className="truncate">{it.source}</span>}
+                    {it.pubDateMs !== undefined && (
+                      <span className="shrink-0 tabular-nums">
+                        {formatRelativeTime(it.pubDateMs, nowMs)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </a>
+            </li>
           );
         })}
-      </div>
+      </ul>
     </div>
   );
 }
