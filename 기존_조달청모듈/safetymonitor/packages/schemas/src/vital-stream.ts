@@ -12,6 +12,21 @@ export const VITAL_DATA_ORIGINS = [
 export const VitalDataOriginSchema = z.enum(VITAL_DATA_ORIGINS);
 export type VitalDataOrigin = z.infer<typeof VitalDataOriginSchema>;
 
+// ts 정규화 — 단말이 준 ISO 문자열을 밀리초 3자리 고정폭(YYYY-MM-DDTHH:MM:SS.mmmZ)으로 통일한다.
+//
+// 왜 필요한가: ts 는 DB 에서 TEXT 이고 `ORDER BY ts`·`WHERE ts >= $1`·`MAX(ts)` 가 전부
+// 문자열 비교로 돈다. 고정폭 ISO-UTC 는 사전순 = 시간순이 보장되지만, 밀리초가 없는
+// '2026-07-30T23:01:46Z' 가 섞이면 그 보장이 깨진다 — '.'(0x2E) < 'Z'(0x5A) 라
+// '…46.500Z' 가 '…46Z' 보다 앞으로 정렬돼 시간이 거꾸로 간다(2026-07-31 라이브에서
+// vital_samples 27,191행·8.2% 실측, 간격 계산에 음수가 나와 발견).
+// z.string().datetime() 은 두 형식을 모두 통과시키므로 검증만으로는 못 막는다.
+//
+// 여기서 접는 이유: ts 를 쓰는 경로(vital_samples, 그리고 그 값을 그대로 받는 alerts)가
+// 이 스키마를 공통 경계로 지난다. raw_json 도 파싱 후 저장이라 함께 정규화된다.
+export function canonicalIsoMs(value: string): string {
+  return new Date(value).toISOString();
+}
+
 export const VitalSampleSchema = z.object({
   // 길이·문자셋 제한 — workerId 는 서버 로그(`[vital] … workerId=…`)와 버킷 키에 그대로 들어간다.
   // 무제한이면 개행을 넣어 로그 라인을 위조하거나 100KB 문자열로 로그를 부풀릴 수 있다(감사 DLT-SCHEMA).
@@ -20,7 +35,7 @@ export const VitalSampleSchema = z.object({
     .min(1)
     .max(64)
     .regex(/^[A-Za-z0-9._:-]+$/, "workerId 는 영숫자와 . _ : - 만 허용"),
-  ts: z.string().datetime(),
+  ts: z.string().datetime().transform(canonicalIsoMs),
   // 단말이 선언한 송신기 식별자. 서버는 이 값으로 실 iPhone·Watch와 목업을 분리한다.
   source: z.string().min(1).max(80).regex(/^[A-Za-z0-9._:-]+$/).optional(),
   dataOrigin: VitalDataOriginSchema.optional(),
