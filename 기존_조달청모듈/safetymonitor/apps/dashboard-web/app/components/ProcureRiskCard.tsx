@@ -44,6 +44,7 @@ function scoreChip(score: number): { label: string; cls: string } {
 
 function verdictBadge(v: SafetyCostCheck["verdict"]): { label: string; cls: string } {
   if (v === "과소계상_의심") return { label: "과소계상 의심", cls: "bg-[#cf202f]/12 text-semantic-down dark:bg-[#cf202f]/25" };
+  if (v === "과다계상_의심") return { label: "과다계상 의심", cls: "bg-[#cf202f]/12 text-semantic-down dark:bg-[#cf202f]/25" };
   if (v === "검토필요") return { label: "검토 필요", cls: "bg-amber-400/20 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300" };
   return { label: "정상", cls: "bg-[#05b169]/12 text-semantic-up dark:bg-[#05b169]/25" };
 }

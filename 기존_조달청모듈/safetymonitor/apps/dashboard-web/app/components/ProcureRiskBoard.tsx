@@ -22,11 +22,11 @@ function scoreText(score: number): string {
 }
 // 판정 칩 톤(가시성)
 function verdictChip(v: string): string {
-  if (v === "과소계상_의심") return "bg-[#cf202f]/12 text-semantic-down dark:bg-[#cf202f]/25";
+  if (v === "과소계상_의심" || v === "과다계상_의심") return "bg-[#cf202f]/12 text-semantic-down dark:bg-[#cf202f]/25";
   if (v === "검토필요") return "bg-amber-400/20 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300";
   return "bg-[#05b169]/12 text-semantic-up dark:bg-[#05b169]/25";
 }
-const VERDICT_SHORT: Record<string, string> = { "과소계상_의심": "과소계상 의심", "검토필요": "검토 필요", "정상": "정상" };
+const VERDICT_SHORT: Record<string, string> = { "과소계상_의심": "과소계상 의심", "과다계상_의심": "과다계상 의심", "검토필요": "검토 필요", "정상": "정상" };
 
 export default function ProcureRiskBoard() {
   const [items, setItems] = useState<ProcureRiskDetail[]>([]);

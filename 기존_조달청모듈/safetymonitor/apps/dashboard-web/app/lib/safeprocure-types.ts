@@ -10,7 +10,9 @@ export type ConstructionType =
   | "특수건설공사";
 
 /** 안전관리비 예비검증 판정 — '탐지'가 아닌 '의심/검토' (과장 금지 원칙). */
-export type SafetyCostVerdict = "정상" | "과소계상_의심" | "검토필요";
+// 과다계상_의심 은 위법 판정이 아니다 — 법정 요율은 '최소' 계상 기준이라 초과 계상 자체는 적법하다.
+// 다만 현저한 초과는 대상액 부풀리기·집행 미달의 선행 신호라 실집행(③) 과 함께 볼 대상으로 선별한다.
+export type SafetyCostVerdict = "정상" | "과소계상_의심" | "과다계상_의심" | "검토필요";
 
 /** 대상액 구간. */
 export type CostBracket = "under5" | "mid" | "over50";

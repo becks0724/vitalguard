@@ -1,6 +1,6 @@
 // 안전관리비 예비검증 룰엔진 — 결정적(AI 아님) 계산으로 신뢰성 확보.
 // 산업안전보건관리비 법정 계상요율(공사종류 × 대상액 구간)로 기준 안전관리비를 산정하고,
-// 공고/계약에 명시된 값과 비교해 '정상 / 과소계상_의심 / 검토필요' 로 분류한다.
+// 공고/계약에 명시된 값과 비교해 '정상 / 과소계상_의심 / 과다계상_의심 / 검토필요' 로 분류한다.
 // 핵심 원칙: 입력이 부족하면 단정하지 않고 '검토필요'로 강등(과장 금지).
 import type {
   ConstructionType,
@@ -124,10 +124,17 @@ export function computeRequiredSafetyCost(
   return { requiredCost, rateApplied, baseAdded, bracket, formula };
 }
 
+// 과다계상 선별 배수 — 법정 계상액의 이 배수를 넘으면 '과다계상_의심'.
+// 1.3 인 이유: 법정 요율은 '최소' 기준이라 초과 계상 자체는 적법하고, 설계변경·공종 특성으로 20~30%
+// 차이는 흔하다. 그 위부터를 대상액 부풀리기·집행 미달 가능성이 있는 검토 대상으로 좁힌다.
+// 단정이 아니라 선별이므로 '_의심' 이며, 확정은 실집행(③ 워치 출역) 대조와 발주처 판단 몫이다.
+export const OVER_APPROPRIATION_RATIO = 1.3;
+
 /**
  * 안전관리비 예비검증.
  * - 대상액이 추정가격 근사(baseAmountIsApprox)거나 명시 안전관리비가 없으면 → '검토필요'(단정 금지).
  * - 명시값이 기준액보다 작으면 → '과소계상_의심'.
+ * - 명시값이 기준액의 OVER_APPROPRIATION_RATIO 배를 넘으면 → '과다계상_의심'.
  * - 그 외 → '정상'.
  */
 export function evaluateSafetyCost(input: SafetyCostInput): SafetyCostCheck {
@@ -146,6 +153,8 @@ export function evaluateSafetyCost(input: SafetyCostInput): SafetyCostCheck {
     verdict = "검토필요";
   } else if ((declaredCost as number) < requiredCost) {
     verdict = "과소계상_의심";
+  } else if ((declaredCost as number) > requiredCost * OVER_APPROPRIATION_RATIO) {
+    verdict = "과다계상_의심";
   } else {
     verdict = "정상";
   }
