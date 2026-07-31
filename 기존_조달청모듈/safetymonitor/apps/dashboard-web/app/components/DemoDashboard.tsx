@@ -100,6 +100,7 @@ import { WidgetCarousel } from "./WidgetCarousel";
 import { CctvQuadView } from "./CctvQuadView";
 import { WorkerQueueModal } from "./WorkerQueueModal";
 import { SafetyNewsPage } from "./SafetyNewsPage";
+import { SiteEnvHoverPanel } from "./SiteEnvHoverPanel";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
 import { SectionPager } from "./SectionPager";
 import ErpDemoPage from "../erp/page";
@@ -5629,6 +5630,18 @@ export function DemoDashboard() {
       )}
 
       {/* 산업재해 사망 속보 티커는 '안전뉴스' 탭 목록으로 이관(docs/safety-news-tab N-03). */}
+
+      {/* 현장 환경 좌측 호버 패널 — 관제 탭(0)에는 스트립이 화면에 있으므로 띄우지 않는다.
+          나머지 탭(안전뉴스·안전관리비 검증·ERP)에서만 좌측 손잡이로 같은 정보를 볼 수 있게 한다. */}
+      {pagerIdx !== 0 && (
+        <SiteEnvHoverPanel
+          lat={effLat}
+          lon={effLon}
+          workerCount={fieldCoords.count}
+          coordSource={coordSource}
+          refreshNonce={weatherRefreshNonce}
+        />
+      )}
 
       {queueModalSlot !== null && (
         <WorkerQueueModal

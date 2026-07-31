@@ -159,7 +159,8 @@ export function WeatherStrip({
   onRefresh,
   refreshing,
   refreshNonce,
-}: Props) {
+  layout = "strip",
+}: Props & { layout?: "strip" | "list" }) {
   // 호버 시 정지가 아니라 22% 속도로 감속(InfiniteSlider 방식) — 끊김 없이 흐르며 읽을 수 있게.
   const scrollRef = useMarqueeScroll<HTMLDivElement>(0.5, "x", 0.22);
   const [data, setData] = useState<WeatherResponse | null>(null);
@@ -542,12 +543,15 @@ export function WeatherStrip({
         <div className="mb-2.5 flex items-center justify-between gap-3 text-xs text-body dark:text-on-dark-soft">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-semibold text-ink dark:text-on-dark">현장 환경</span>
-            <span className="text-body dark:text-on-dark-soft">
-              · 작업자 {workerCount}명 GPS 평균 ({data.lat?.toFixed(3)}, {data.lon?.toFixed(3)})
-            </span>
+            {/* 좁은 호버 패널(list)에서는 부제가 여러 줄로 뭉쳐 읽기 어렵다 → 갱신 시각만 남긴다. */}
+            {layout !== "list" && (
+              <span className="text-body dark:text-on-dark-soft">
+                · 작업자 {workerCount}명 GPS 평균 ({data.lat?.toFixed(3)}, {data.lon?.toFixed(3)})
+              </span>
+            )}
             {updatedAt && (
               <span className="font-mono text-body dark:text-on-dark-soft">
-                · 업데이트 {updatedAt}
+                · {layout === "list" ? updatedAt.slice(-5) : `업데이트 ${updatedAt}`}
               </span>
             )}
             {/* 갱신 실패 중이나 직전 데이터를 유지 표시 — 오래된 값이 실시간처럼 보이지 않게 '갱신 지연' 경고. */}
@@ -558,14 +562,47 @@ export function WeatherStrip({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <span className="text-body dark:text-on-dark-soft">
-              {data.cached ? "캐시" : "실시간"} · Open-Meteo · 항목 클릭 시 정책 근거
-            </span>
+            {/* 좁은 패널에서는 우측 statusControls(좌표 출처)와 글자가 겹쳐 읽혀 혼동된다 → 생략. */}
+            {layout !== "list" && (
+              <span className="text-body dark:text-on-dark-soft">
+                {data.cached ? "캐시" : "실시간"} · Open-Meteo · 항목 클릭 시 정책 근거
+              </span>
+            )}
             {statusControls}
           </div>
         </div>
-        {/* 무한 슬라이드 티커 — 끊김 없이 흐르고, 호버 시 정지가 아니라 감속(InfiniteSlider 방식).
-            좌우 가장자리는 mask 로 자연스럽게 페이드(별도 그라데이션 오버레이 불필요). */}
+        {/* list = 좌측 호버 패널용 세로 목록(가로 오토슬라이딩 금지 — 사용자 요청).
+            항목 클릭 시 정책 근거 모달은 strip 과 동일하게 동작한다. */}
+        {layout === "list" ? (
+          <ul className="flex flex-col gap-1">
+            {items.map((it) => (
+              <li key={it.label}>
+                <button
+                  type="button"
+                  onClick={() => setSelected(it.evaluation)}
+                  title={`${it.label} 정책 근거 보기`}
+                  className="flex w-full items-center gap-2 rounded-lg border border-hairline/70 bg-surface-soft/70 px-2.5 py-1.5 text-left transition-colors hover:border-ink/20 hover:bg-surface-card dark:border-white/10 dark:bg-white/[0.04] dark:hover:bg-white/[0.08]"
+                >
+                  <WeatherIcon
+                    name={it.icon ?? "cloud"}
+                    className="h-[18px] w-[18px] shrink-0 text-body dark:text-on-dark-soft"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[11px] font-medium tracking-tight text-muted dark:text-on-dark-soft">
+                    {it.label}
+                  </span>
+                  <span className={`shrink-0 text-sm font-semibold tabular-nums ${VALUE_CLASS[it.evaluation.currentSeverity]}`}>
+                    {it.value}
+                  </span>
+                  {it.sub && (
+                    <span className="shrink-0 text-[10px] font-medium text-muted-soft dark:text-on-dark-soft/70">
+                      {it.sub}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
         <div
           ref={scrollRef}
           className="no-scrollbar relative w-full min-w-0 max-w-full overflow-x-auto overflow-y-hidden py-1 [mask-image:linear-gradient(to_right,transparent,#000_4%,#000_96%,transparent)] [-webkit-mask-image:linear-gradient(to_right,transparent,#000_4%,#000_96%,transparent)]"
@@ -593,6 +630,7 @@ export function WeatherStrip({
             ))}
           </div>
         </div>
+        )}
       </section>
 
       {selected && (
@@ -603,7 +641,9 @@ export function WeatherStrip({
         />
       )}
 
-      {alerts.length > 0 && (
+      {/* 경보 팝업은 화면에 하나만 — layout="list"(좌측 호버 패널)는 보조 표시라 띄우지 않는다.
+          두 인스턴스가 모두 띄우면 같은 경보 모달이 겹쳐 뜨고 확인/조치 기록도 이중으로 남는다. */}
+      {layout !== "list" && alerts.length > 0 && (
         <WeatherAlertToast
           key={alerts.map((a) => `${a.itemKey}:${a.currentSeverity}`).join("|")}
           alerts={alerts}
