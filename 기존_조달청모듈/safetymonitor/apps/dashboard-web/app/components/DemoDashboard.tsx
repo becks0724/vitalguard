@@ -427,7 +427,8 @@ function computeSafetyStreak(
   return { known: true, days, target, pct: Math.min(100, (days / target) * 100), toGo: target - days, reset };
 }
 
-// 공통 게이지 1줄 — 라벨 + 큰 숫자 + 0~100% RGB 바. 공정률·무사고 동일 구성(컴팩트).
+// 공통 게이지 1줄 — [라벨 + 큰 숫자 + 경과] + 0~100% RGB 바를 가로로 나란히(사용자 요청).
+// 줄 높이(h-5)를 바깥에서 정하고 게이지는 h-full 로 받아 글자와 바 높이를 같게 맞춘다.
 // 착수/준공일 footer 는 바로 아래 현장정보 패널과 중복이라 생략(높이 절약).
 function GaugeRow({
   title,
@@ -447,20 +448,23 @@ function GaugeRow({
   ariaLabel: string;
 }) {
   return (
-    <div>
-      {/* 1줄 — 라벨 + 값 + 경과/총 */}
-      <div className="flex items-baseline gap-2">
-        <span className="shrink-0 text-[13px] font-semibold text-ink dark:text-on-dark">{title}</span>
+    // items-stretch(기본) — 게이지가 텍스트 줄 높이를 그대로 받아 둘이 정확히 같아진다(고정값 없음).
+    <div className="flex items-stretch gap-2.5">
+      {/* 좌 — 라벨 + 값 + 경과/총 */}
+      <div className="flex shrink-0 items-baseline gap-1.5">
+        <span className="text-[13px] font-semibold leading-none text-ink dark:text-on-dark">{title}</span>
         <span className="font-mono text-[17px] font-semibold leading-none text-ink dark:text-on-dark">
           {known ? value : "--"}
         </span>
         {known && note && (
-          <span className="truncate font-mono text-[10px] text-body dark:text-on-dark-soft">{note}</span>
+          <span className="whitespace-nowrap font-mono text-[10px] leading-none text-body dark:text-on-dark-soft">
+            {note}
+          </span>
         )}
       </div>
-      {/* 2줄 — 게이지 바 (오른쪽 끝 안쪽에 상태 텍스트 삽입) */}
+      {/* 우 — 게이지 바 (오른쪽 끝 안쪽에 상태 텍스트 삽입). 남는 폭을 전부 쓴다. */}
       <div
-        className="relative mt-1 h-4 w-full overflow-hidden rounded-md ring-1 ring-black/10 dark:ring-white/10"
+        className="relative min-w-0 flex-1 overflow-hidden rounded-md ring-1 ring-black/10 dark:ring-white/10"
         style={{ background: PROGRESS_GRADIENT }}
         role="progressbar"
         aria-valuenow={known ? Math.round(pct) : undefined}
