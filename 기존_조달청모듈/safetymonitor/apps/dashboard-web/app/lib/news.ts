@@ -7,6 +7,7 @@ export type NewsItem = {
   description: string; // 요약(태그·엔티티 제거)
   source: string; // 언론사 도메인(originallink 호스트, www 제거) — 없으면 ""
   pubDateMs?: number; // 발행시각(파싱 성공 시 epoch ms)
+  image?: string; // 기사 대표 이미지(og:image) — 네이버 API 가 안 주므로 서버가 별도 추출(og-image.ts)
 };
 
 export type NewsResult = {

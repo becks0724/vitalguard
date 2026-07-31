@@ -1,5 +1,6 @@
-// 국내 재해사례 카드 — KOSHA 국내재해사례(callApiId 1060) 최신 건을 업종칩+제목+경위 요약으로 표시.
-// 현장정보와 같은 박스(위젯 스택)에 들어가도록 h-full 고정 높이·내부 세로 스크롤 구성.
+// 국내 재해사례 카드 — KOSHA 국내재해사례(callApiId 1060) 최신 건을 업종칩+제목으로 표시.
+// 안전뉴스 탭의 전체 폭 가로 슬라이딩 카드(자동 흐름·호버 시 정지·수동 좌우 스크롤). 2벌 복제로 seamless.
+// 클릭하면 사고 경위 전문 모달(캐러셀 transform 영향을 피하려 body 포털).
 "use client";
 
 import { useEffect, useState } from "react";
@@ -24,8 +25,8 @@ export function KoshaAccidentCaseCard({
 } = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [selected, setSelected] = useState<Item | null>(null);
-  // 세로 자동 스크롤(느리게). 호버/터치 시 정지 → 수동 스크롤 우선.
-  const scrollRef = useMarqueeScroll<HTMLDivElement>(0.3, "y");
+  // 가로 자동 스크롤(느리게). 호버/터치 시 정지 → 수동 스크롤 우선.
+  const scrollRef = useMarqueeScroll<HTMLDivElement>(0.3, "x");
 
   useEffect(() => {
     let alive = true;
@@ -57,39 +58,39 @@ export function KoshaAccidentCaseCard({
 
   // 외곽 박스·제목·출처 배지는 WidgetCarousel 헤더가 제공 → 여기선 리스트만(h-full 채움).
   return (
-    <div className="flex h-full flex-col px-3 pb-3 pt-1.5">
-      {/* 제목만 표시 + 세로 자동 스크롤(2벌 복제 seamless) + 수동 스크롤(호버 시 자동 정지) */}
-      <div ref={scrollRef} className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-        {items.length === 0 ? (
-          <p className="py-2 text-center text-xs text-muted dark:text-on-dark-soft">
-            불러오는 중…
-          </p>
-        ) : (
-          [0, 1].map((copy) => (
-            <div key={copy} className="flex flex-col" aria-hidden={copy === 1}>
-              {items.map((it) => (
-                <button
-                  key={`${copy}-${it.id}`}
-                  type="button"
-                  onClick={() => setSelected(it)}
-                  title="클릭하여 사고 경위 전문 보기"
-                  tabIndex={copy === 1 ? -1 : undefined}
-                  className="mb-1 flex w-full items-center gap-1.5 rounded-lg bg-canvas px-2.5 py-1 text-left transition hover:ring-1 hover:ring-primary-ring dark:bg-surface-dark"
-                >
-                  {it.business && (
-                    <span className="shrink-0 rounded bg-surface-card px-1.5 py-0.5 text-[10px] font-semibold text-ink">
-                      {it.business}
+    <div className="px-3 pb-3">
+      {/* 가로 자동 스크롤(2벌 복제 seamless) + 수동 스크롤(호버 시 자동 정지) */}
+      {items.length === 0 ? (
+        <p className="py-6 text-center text-xs text-muted dark:text-on-dark-soft">불러오는 중…</p>
+      ) : (
+        <div ref={scrollRef} className="no-scrollbar overflow-x-auto overflow-y-hidden">
+          <div className="flex w-max gap-2">
+            {[0, 1].map((copy) => (
+              <div key={copy} className="flex gap-2" aria-hidden={copy === 1}>
+                {items.map((it) => (
+                  <button
+                    key={`${copy}-${it.id}`}
+                    type="button"
+                    onClick={() => setSelected(it)}
+                    title="클릭하여 사고 경위 전문 보기"
+                    tabIndex={copy === 1 ? -1 : undefined}
+                    className="flex w-[270px] shrink-0 flex-col items-start justify-center gap-1 rounded-lg border border-hairline bg-canvas px-3 py-2 text-left transition hover:ring-1 hover:ring-primary-ring dark:border-white/10 dark:bg-surface-dark"
+                  >
+                    {it.business && (
+                      <span className="shrink-0 rounded bg-surface-card px-1.5 py-0.5 text-[10px] font-semibold text-ink dark:bg-white/10 dark:text-on-dark">
+                        {it.business}
+                      </span>
+                    )}
+                    <span className="line-clamp-2 text-xs font-semibold leading-snug text-ink dark:text-on-dark">
+                      {it.title}
                     </span>
-                  )}
-                  <span className="truncate text-xs font-semibold text-ink dark:text-on-dark">
-                    {it.title}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ))
-        )}
-      </div>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 캐러셀 페이지의 transform 이 fixed 의 컨테이닝 블록이 되어 박스 안에 갇히므로,
           모달은 createPortal 로 body 에 렌더해 전체 화면 오버레이로 띄운다. */}

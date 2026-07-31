@@ -24,18 +24,18 @@ function Panel({
   return (
     <section
       className={[
-        "flex h-[280px] min-w-0 flex-col overflow-hidden rounded-xl border bg-canvas dark:bg-surface-dark",
+        "min-w-0 overflow-hidden rounded-xl border bg-canvas dark:bg-surface-dark",
         accent
           ? "border-semantic-down/30 dark:border-semantic-down/30"
           : "border-hairline-strong dark:border-white/10",
       ].join(" ")}
     >
-      <div className="flex shrink-0 items-center gap-2 px-3 pt-2.5">
+      <div className="flex items-center gap-2 px-3 pb-1.5 pt-2.5">
         {/* 패널 제목 — 기존 text-xs(12px) 대비 20% 확대(14.4px). 배지는 원래 크기를 유지한다. */}
         <h3 className="text-[14.4px] font-bold leading-tight text-ink dark:text-on-dark">{title}</h3>
         {badge}
       </div>
-      <div className="min-h-0 flex-1">{children}</div>
+      {children}
     </section>
   );
 }
@@ -59,12 +59,10 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
   const onFatal = useCallback((s: "live" | "mock") => setFatalSource(s), []);
   const onKosha = useCallback((s: "live" | "mock" | null) => setKoshaSource(s), []);
 
+  // 전체 폭 4단 스택 — 가로 슬라이딩(속보·재해사례)은 폭이 넓을수록 유리하고,
+  // 목록(재난문자)·섬네일 카드(뉴스)는 한 줄에 더 많이 담긴다(사용자 레이아웃 결정 2026-07-31).
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {/* 위 — 지금 벌어지는 일 */}
-      <Panel title="긴급재난문자" accent badge={<SourceBadge source={disasterSource} />}>
-        <DisasterMsgCard lat={lat} lon={lon} onSourceChange={onDisaster} />
-      </Panel>
+    <div className="flex flex-col gap-4">
       <Panel
         title="산업재해 속보"
         accent
@@ -77,12 +75,18 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
         <KoshaFatalAccidentList onSourceChange={onFatal} />
       </Panel>
 
-      {/* 아래 — 참고 자료 */}
-      <Panel title="국내 재해사례" badge={<SourceBadge source={koshaSource} />}>
-        <KoshaAccidentCaseCard onSourceChange={onKosha} />
+      <Panel title="긴급재난문자" accent badge={<SourceBadge source={disasterSource} />}>
+        <div className="h-[220px]">
+          <DisasterMsgCard lat={lat} lon={lon} onSourceChange={onDisaster} />
+        </div>
       </Panel>
+
       <Panel title="산업 안전뉴스">
         <NewsPanel />
+      </Panel>
+
+      <Panel title="국내 재해사례" badge={<SourceBadge source={koshaSource} />}>
+        <KoshaAccidentCaseCard onSourceChange={onKosha} />
       </Panel>
     </div>
   );

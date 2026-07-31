@@ -4,6 +4,8 @@
 //   - NAVER_SEARCH_CLIENT_ID/SECRET 미설정 → configured:false (대시보드 무중단, 패널이 키 미설정 안내).
 import "server-only";
 
+import { ogImagesFor } from "./og-image";
+
 import {
   parseNaverNewsItem,
   type NaverNewsRaw,
@@ -92,9 +94,18 @@ export async function searchSafetyNews(): Promise<NewsResult> {
   // 발행시각 내림차순(최신 우선), 미상은 뒤로.
   items.sort((a, b) => (b.pubDateMs ?? 0) - (a.pubDateMs ?? 0));
 
+  // 대표 이미지(og:image) 부착 — 네이버 뉴스검색 API 는 이미지를 주지 않는다.
+  // 노출 대상(MAX_TOTAL)만 조회하고, 실패분은 image 없이 그대로 둔다(카드가 대체 시각물로 폴백).
+  const shown = items.slice(0, MAX_TOTAL);
+  const ogMap = await ogImagesFor(shown.map((i) => i.link));
+  const withImage = shown.map((i) => {
+    const image = ogMap.get(i.link);
+    return image ? { ...i, image } : i;
+  });
+
   const data: NewsResult = {
     configured: true,
-    items: items.slice(0, MAX_TOTAL),
+    items: withImage,
     fetchedAt,
     ...(authFailed && items.length === 0
       ? {

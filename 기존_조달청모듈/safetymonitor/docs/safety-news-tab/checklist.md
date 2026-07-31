@@ -75,3 +75,24 @@
 ERP: 스마트경리   (기존대로 숨김)
 ```
 검증 = 제목 실측 `font-size: 14.4px`(120%) · tsc 0 · lint 0 · 473 pass / 0 fail.
+
+---
+
+## Phase 4 — 2차 레이아웃(전체 폭 4단) ✅ (2026-07-31)
+
+- [x] `SafetyNewsPage` 2×2 → **전체 폭 4단 스택**(속보 / 재난문자 / 안전뉴스 / 재해사례) (N-06)
+- [x] `KoshaFatalAccidentList` 세로 목록 → **가로 슬라이딩 카드**(`useMarqueeScroll(0.35,"x")`)
+- [x] `KoshaAccidentCaseCard` 세로(`"y"`) → **가로(`"x"`) 슬라이딩 카드**(모달 유지)
+- [x] `NewsPanel` → **섬네일 카드 가로 나열**(수동 스크롤)
+- [x] `app/lib/og-image.ts` — og:image 서버 추출 + 6시간 캐시 (N-07)
+- [x] `NewsItem.image` 추가 · `naver-news.ts` 가 노출분만 이미지 부착
+- [x] 섬네일 폴백 — 추출 실패·핫링크 차단(`onError`) 시 매체 이니셜 + 해시 색상
+
+**실동작 검증(`next dev` 로컬).**
+```
+OG 추출        기사 10건 성공률 10/10 · 2,110ms · 캐시 0ms
+패널 순서      산업재해 속보 / 긴급재난문자 / 산업 안전뉴스 / 국내 재해사례
+섬네일         화면 내 카드 5개 중 4개 실제 이미지, 1개 폴백(정상 동작)
+반응형         420px 에서 페이지 가로 오버플로 없음
+```
+검증 = tsc 0 · lint 0 · `npm test` 473 pass / 0 fail. ⚠️ 배포하지 않음.
