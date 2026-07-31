@@ -259,6 +259,13 @@
 - [x] 로컬 가중치 보관 — `~/Documents/조달청-공모전 관련자료/YOLO ML DATA/`
 - [x] 젯슨 배포 산출물 — `ppe_yolo26s_640_v3_nc.{pt,onnx,engine}`
 - [x] 경과 기록 — `docs/ppe-ml-run-20260729.md`
-- [ ] 데이터셋별 라이선스·상용 반입 가능 여부 표 확정
+- [x] **데이터셋별 라이선스·상용 반입 가능 여부 표 확정** → [docs/ppe-license-matrix.md](../../docs/ppe-license-matrix.md)
+      결론 = **데이터를 전부 갈아엎어도 상용 납품이 안 된다.** 최대 걸림돌은 데이터가 아니라
+      **Ultralytics AGPL-3.0**(파생 저작물 전체 + 가중치 소스 공개 의무 · 네트워크 서비스도 해당).
+      상용 데이터만으로 남는 클래스는 `head`·`helmet`·`person`·`safety_vest` 넷뿐이고
+      `foot`·`shoes`·`hands`·`gloves`(SH17 단독)·`no_safety_shoes`(507 단독)는 전멸한다
+      - [ ] HHW·CSS 라이선스 원본 확인 — 다음 학습 세션에서 `cat /content/raw/{hhw,css}/README.dataset.txt`
+      - [ ] AI Hub 학습 산출 가중치의 제3자 납품 가능 여부 — 해석 문제라 사전 문의 권장
+      - [ ] Ultralytics Enterprise 견적 — 상용화 착수 시
 - [x] 라이브 shadow 시작 — 같은 장면을 Hexmon(CAM-03 클립)·우리 모델(폰 라이브)이 판정
 - [ ] 정식 shadow — 같은 홀드아웃에 두 모델을 태워 수치 비교
