@@ -15,6 +15,7 @@ import {
   parseKstToMs,
   senderOrg,
   type DisasterMsg,
+  type RawDisasterMsg,
 } from "./disaster-msg";
 import { DISASTER_MSG_SAMPLE } from "./disaster-msg-sample";
 import { latLonToSido } from "./kma-regions";
@@ -56,6 +57,15 @@ test("normalize — 파싱 실패분은 조용히 사라지지 않고 invalid �
   const r = normalize([broken]);
   assert.equal(r.msgs.length, 0);
   assert.equal(r.invalid.length, 1);
+});
+
+test("normalize — SN 이 숫자로 와도 파싱된다(실 API=number · CSV=string)", () => {
+  // 2026-07-31 실 API 호출에서 터진 회귀. 골든 픽스처는 CSV 출신이라 전부 문자열이었고
+  // JSON 응답의 SN 만 number 라 .trim() 이 죽었다 — 픽스처로는 잡을 수 없는 종류의 결함이다.
+  const numeric = { ...(DISASTER_MSG_SAMPLE[0] as RawDisasterMsg), SN: 263732 };
+  const r = normalize([numeric]);
+  assert.equal(r.invalid.length, 0);
+  assert.equal(r.msgs[0]?.sn, 263732);
 });
 
 test("normalize — 샘플은 정정 발령(MDFCN≠REG) 0건", () => {

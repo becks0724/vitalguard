@@ -4,8 +4,9 @@
 import { latLonToSido, nearbySidos, regionMatchesSido, SIDO, splitRegions } from "./kma-regions";
 
 // API/CSV 원본 레코드 — 필드명은 원본 표기(대문자 스네이크) 그대로.
+// ⚠️ SN 은 CSV 에서 문자열, 실 API(JSON) 에서 숫자로 온다. 같은 데이터인데 형이 다르다.
 export type RawDisasterMsg = {
-  SN: string;
+  SN: string | number;
   CRT_DT: string;
   MSG_CN: string;
   RCPTN_RGN_NM: string;
@@ -59,7 +60,7 @@ export function normalize(raws: RawDisasterMsg[]): {
   const invalid: RawDisasterMsg[] = [];
   for (const r of raws) {
     const createdAtMs = parseKstToMs(r.CRT_DT ?? "");
-    const sn = Number((r.SN ?? "").trim());
+    const sn = Number(String(r.SN ?? "").trim());
     if (createdAtMs === null || !Number.isFinite(sn)) {
       invalid.push(r);
       continue;
