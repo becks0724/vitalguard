@@ -20,6 +20,54 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
   정직한 표기(`합성`·`엣지 판정`)로 교체 필요.
 - 영상·모델·의존성이 없으면 해당 카메라는 **합성으로 자동 폴백**(배포 견고성).
 
+## ⚠️ 현재 상태 (2026-08-01 00:42 기준)
+
+```
+cctv-ai (Cloud Run)   OFF   min-instances 0 · ingress internal · 외부 404 · 과금 0
+Jetson (yahboom-1)    OFF   2026-08-01 00:42 원격 종료 (밀폐 공간 발열 대응)
+```
+
+**젯슨은 원격으로 다시 켤 수 없다** — Orin Nano 개발자 키트에는 IPMI·BMC 가 없고
+Wake-on-LAN 도 무의미하다(기기가 꺼지면 Tailscale 자체가 죽는다).
+**물리적 전원 공급이 필요하다**(2026-08-03 예정).
+
+### 재개 절차
+
+```bash
+# 1) 물리적으로 전원 공급 → 자동 부팅 (tailscaled·ssh 가 enabled)
+# 2) 약 1분 뒤
+tailscale status | grep yahboom-1        # offline 표시가 사라지면 완료
+ssh jetson@yahboom-1 'uptime'            # ★ IP 가 아니라 호스트명으로 — known_hosts 가 이름 기준
+```
+
+**설정 복구는 없다.** 엔진(v3·v4·v5)·스크립트·Tailscale 인증서 전부 디스크에 남아 있다.
+
+### 종료 직전 기준선 (재개 후 대조용)
+
+```
+tj-thermal 50.2 °C · load 0.01 · MAXN_SUPER · 가동 4일 15시간 · 추론 프로세스 0
+설정 임계   70 °C 팬 가속 · 99 °C 스로틀 · 104 °C 종료
+```
+
+재개 직후 유휴 온도가 **55 °C 를 넘으면 주변 온도가 오른 것**이다.
+그때는 `sudo nvpmodel -m 1`(15W 모드)로 낮춰 둔다 — 원격으로 되돌릴 수 있다.
+
+### 종료 전 백업 (젯슨에만 있던 것)
+
+```
+~/Documents/조달청-공모전 관련자료/JETSON-BACKUP-20260801/   3.7 MB · 13개
+  vg_edge_poc/v4_gopro.log · v5_gopro.log   ★ 도메인 교차 검증 원본 로그
+  vg_edge_poc/v5c30.log · live_v5.log       운영 conf 0.30 실측
+  export_v3/v4.log · v5_export.log          엔진 변환 실측
+  orbbec_push*.log · ppe_push.log · relay.log · gopro_test.jpg
+```
+
+가중치 `.pt` 3종은 맥과 **SHA-256 일치**, 엣지 스크립트 2종은 저장소와 **해시 동일**을
+확인한 뒤 종료했다. `.engine`·`.onnx` 는 기기 종속이라 원래 옮길 수 없고 `.pt` 에서
+약 8분이면 재생성된다.
+
+---
+
 ## 엔드포인트 계약 (대시보드가 거는 것)
 
 | 경로 | 형식 | 비고 |
