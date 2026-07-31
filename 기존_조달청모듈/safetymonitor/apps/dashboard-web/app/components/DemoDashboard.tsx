@@ -5641,6 +5641,7 @@ export function DemoDashboard() {
           coordSource={coordSource}
           refreshNonce={weatherRefreshNonce}
           worker={workerSignal}
+          region={siteRegion}
         />
       )}
 

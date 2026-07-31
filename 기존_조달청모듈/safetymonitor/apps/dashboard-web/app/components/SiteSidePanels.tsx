@@ -5,10 +5,14 @@
 
 import { useState } from "react";
 
+import { HospitalPanel } from "./HospitalPanel";
+import { RadarRealtime } from "./RadarRealtime";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
+import { TyphoonTrack } from "./TyphoonTrack";
+import { WarningVideoPanel } from "./WarningVideoPanel";
 import { WeatherStrip } from "./WeatherStrip";
 
-type PanelKey = "env" | "signal";
+type PanelKey = "env" | "signal" | "radar" | "typhoon" | "video" | "hospital";
 
 // 헤더 우측 아이콘들과 같은 규격 — viewBox 24 · fill none · stroke currentColor · strokeWidth 2 · round cap.
 // 크기만 헤더(16px)보다 20% 큰 20px 로 둔다(손잡이가 좁고 세로라 눈에 덜 띈다 — 사용자 요청).
@@ -48,6 +52,45 @@ function SignalIcon() {
 
 // 헤더의 ExpandableTabs 와 같은 방식 — 평시엔 아이콘만, 마우스가 닿으면 라벨이 펼쳐진다.
 // 라벨이 세로쓰기라 헤더의 maxWidth 대신 maxHeight 로 전환한다(인라인 스타일 = JIT 타이밍 회피, 헤더와 동일).
+function RadarIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 12 19 6" />
+    </svg>
+  );
+}
+
+function TyphoonIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M12 12a4 4 0 1 0-3.2-6.4" />
+      <path d="M12 12a4 4 0 1 1 3.2 6.4" />
+      <path d="M20 8c-2.5-3-6-4.5-9.5-3.5" />
+      <path d="M4 16c2.5 3 6 4.5 9.5 3.5" />
+    </svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <rect x="2.5" y="5" width="14" height="14" rx="2.5" />
+      <path d="m16.5 10 5-3v10l-5-3" />
+    </svg>
+  );
+}
+
+function HospitalIcon() {
+  return (
+    <svg {...ICON_PROPS}>
+      <path d="M4 21V8l8-5 8 5v13" />
+      <path d="M12 10v6M9 13h6" />
+    </svg>
+  );
+}
+
 function Handle({
   label,
   active,
@@ -91,6 +134,21 @@ function Handle({
   );
 }
 
+// 캐러셀 밖에서 쓰려면 외곽 박스가 필요하다(WidgetCarousel 이 하던 역할).
+// title 은 자체 제목이 없는 컴포넌트에만 준다 — 태풍 진로·인근 병원은 본문에 제목이 있어 넣으면 중복된다.
+function Framed({ title, children }: { title?: string; children: React.ReactNode }) {
+  return (
+    <section className="flex h-[360px] flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
+      {title && (
+        <div className="shrink-0 border-b border-hairline px-3 py-2 dark:border-white/10">
+          <h3 className="text-[14.4px] font-bold leading-tight text-ink dark:text-on-dark">{title}</h3>
+        </div>
+      )}
+      <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+    </section>
+  );
+}
+
 export function SiteSidePanels({
   lat,
   lon,
@@ -98,6 +156,7 @@ export function SiteSidePanels({
   coordSource,
   refreshNonce,
   worker,
+  region,
 }: {
   lat?: number;
   lon?: number;
@@ -105,6 +164,7 @@ export function SiteSidePanels({
   coordSource?: "live" | "cached" | "none";
   refreshNonce?: number;
   worker: WorkerSignal;
+  region: string; // 인근 병원 지역 검색 키워드(예: "광주 동구") — HospitalPanel 이 필수로 받는다
 }) {
   const [open, setOpen] = useState<PanelKey | null>(null);
   const toggle = (key: PanelKey) => () => setOpen((prev) => (prev === key ? null : key));
@@ -119,10 +179,25 @@ export function SiteSidePanels({
         <Handle label="안전 신호등" active={open === "signal"} onClick={toggle("signal")}>
           <SignalIcon />
         </Handle>
+        <Handle label="실시간 레이더" active={open === "radar"} onClick={toggle("radar")}>
+          <RadarIcon />
+        </Handle>
+        <Handle label="태풍 진로" active={open === "typhoon"} onClick={toggle("typhoon")}>
+          <TyphoonIcon />
+        </Handle>
+        <Handle label="특보 영상" active={open === "video"} onClick={toggle("video")}>
+          <VideoIcon />
+        </Handle>
+        <Handle label="인근 병원" active={open === "hospital"} onClick={toggle("hospital")}>
+          <HospitalIcon />
+        </Handle>
       </div>
 
       {open && (
-        <div className="relative ml-1 w-[296px]">
+        // 레이더·태풍·영상·병원은 원래 420px 폭 캐러셀에 있던 것이라 좁게 넣으면 내용이 뭉갠다.
+        <div
+          className={`relative ml-1 ${open === "env" || open === "signal" ? "w-[296px]" : "w-[420px]"}`}
+        >
           {/* 닫기 — 패널 자체 헤더(우측 배지·상태 표시)와 겹치지 않게 모서리 바깥으로 살짝 뺀다. */}
           <button
             type="button"
@@ -135,7 +210,7 @@ export function SiteSidePanels({
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
-          {open === "env" ? (
+          {open === "env" && (
             <WeatherStrip
               lat={lat}
               lon={lon}
@@ -144,8 +219,28 @@ export function SiteSidePanels({
               refreshNonce={refreshNonce}
               layout="list"
             />
-          ) : (
-            <SafetySignalBoard lat={lat} lon={lon} worker={worker} />
+          )}
+          {open === "signal" && <SafetySignalBoard lat={lat} lon={lon} worker={worker} />}
+          {/* 아래 넷은 캐러셀 헤더가 제목을 주던 컴포넌트라 여기서 박스·제목을 씌운다. */}
+          {open === "radar" && (
+            <Framed title="실시간 레이더">
+              <RadarRealtime />
+            </Framed>
+          )}
+          {open === "typhoon" && (
+            <Framed>
+              <TyphoonTrack lat={lat} lon={lon} />
+            </Framed>
+          )}
+          {open === "video" && (
+            <Framed title="특보 영상">
+              <WarningVideoPanel lat={lat} lon={lon} />
+            </Framed>
+          )}
+          {open === "hospital" && (
+            <Framed>
+              <HospitalPanel lat={lat} lon={lon} region={region} />
+            </Framed>
           )}
         </div>
       )}
