@@ -123,3 +123,31 @@ fetch·폴링·HTTP 오류 처리 로직은 그대로 옮긴다.
 ⚠️ **캐시 때문에 첫 확인에서 섬네일이 안 보였다.** `naver-news.ts` 의 15분 인메모리 캐시가
 이미지 부착 **이전** 목록을 들고 있었다. dev 서버 재시작으로 해소 — 배포 후에도 최대 15분은
 구 데이터가 나온다(정상).
+
+
+---
+
+## N-08 · 🐛 `semantic-down/<opacity>` 클래스가 생성되지 않는다
+
+다크모드에서 위 두 패널(속보·재난문자) 프레임만 밝게 튄다는 지적에서 출발해 원인을 찾았다.
+
+**원인.** 색이 `tailwind.config.ts` 에 `"semantic-down": "var(--color-semantic-down)"` 로 잡혀 있고
+`globals.css` 의 `--color-semantic-down: #ef4444` 는 **hex** 다. Tailwind 는 이 형태에서
+투명도 변형(`/30`, `/5`)을 만들지 못한다(`rgb(var(--x) / <alpha-value>)` 형태여야 한다).
+
+**증상.** 클래스가 아예 생성되지 않아
+- `border-semantic-down/30` → 테두리 색 지정 없음 → **기본 gray-200(`rgb(229,231,235)`)** 으로 남는다.
+  라이트모드에선 티가 안 나지만 **다크모드에선 밝게 튀어** 다른 패널과 프레임이 갈려 보인다.
+- `bg-semantic-down/5` → **투명**(배경 없음).
+
+측정으로 확인했다 — 속보 카드 `borderColor rgb(229,231,235) · backgroundColor rgba(0,0,0,0)`.
+**`text-semantic-down`·`bg-semantic-down`(투명도 없는 것)은 정상 동작한다.**
+
+**조치(범위 한정).** 전역 색 정의를 고치면 앱 전체에 영향이 가므로 건드리지 않았다.
+안전뉴스 탭 컴포넌트에서만 레포 기본 토큰으로 교체했다 —
+`border-hairline dark:border-white/10` · `bg-canvas dark:bg-surface-dark` · 배지는 `bg-surface-strong`.
+경보 위계는 테두리가 아니라 **붉은 점·붉은 유형 배지·붉은 글자**가 담당한다.
+
+⚠️ **같은 패턴이 레포 다른 곳에도 남아 있다** — `SiteSafetyTables`(/15) · `DemoDashboard`(/5) ·
+`WeatherAlertToast`(/60). 이번 범위 밖이라 손대지 않았다. 전역으로 고치려면
+`--color-semantic-down: 239 68 68` + `rgb(var(--color-semantic-down) / <alpha-value>)` 로 바꿔야 한다.

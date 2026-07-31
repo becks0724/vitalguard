@@ -12,24 +12,19 @@ import { NewsPanel } from "./NewsPanel";
 
 function Panel({
   title,
-  accent,
   badge,
   children,
 }: {
   title: string;
-  accent?: boolean; // 경보 성격(재난문자·사망 속보) — 테두리로 위계를 준다
   badge?: ReactNode;
   children: ReactNode;
 }) {
+  // 네 패널의 프레임을 동일하게 유지한다(사용자 요청 2026-07-31).
+  // 이전엔 경보 성격 패널에 border-semantic-down/30 을 줬는데 그 클래스가 생성되지 않아
+  // 기본 gray-200 으로 떨어졌고, 다크모드에서만 밝게 튀어 위아래 프레임이 갈려 보였다.
+  // 위계는 테두리 대신 배지 색과 카드 안의 붉은 점이 담당한다.
   return (
-    <section
-      className={[
-        "min-w-0 overflow-hidden rounded-xl border bg-canvas dark:bg-surface-dark",
-        accent
-          ? "border-semantic-down/30 dark:border-semantic-down/30"
-          : "border-hairline-strong dark:border-white/10",
-      ].join(" ")}
-    >
+    <section className="min-w-0 overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark">
       <div className="flex items-center gap-2 px-3 pb-1.5 pt-2.5">
         {/* 패널 제목 — 기존 text-xs(12px) 대비 20% 확대(14.4px). 배지는 원래 크기를 유지한다. */}
         <h3 className="text-[14.4px] font-bold leading-tight text-ink dark:text-on-dark">{title}</h3>
@@ -65,9 +60,8 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
     <div className="flex flex-col gap-4">
       <Panel
         title="산업재해 속보"
-        accent
         badge={
-          <span className="rounded-pill bg-semantic-down/10 px-2 py-0.5 text-[10px] font-semibold text-semantic-down">
+          <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-[10px] font-semibold text-semantic-down dark:bg-white/10">
             {fatalSource === "live" ? "KOSHA 실시간" : fatalSource === "mock" ? "샘플" : "…"}
           </span>
         }
@@ -76,7 +70,7 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
       </Panel>
 
       {/* 높이 150px = 요약줄 + 발령 2건(행당 50px). 그 이상은 스크롤 — 화면을 덜 차지하게(사용자 요청). */}
-      <Panel title="긴급재난문자" accent badge={<SourceBadge source={disasterSource} />}>
+      <Panel title="긴급재난문자" badge={<SourceBadge source={disasterSource} />}>
         <div className="h-[150px]">
           <DisasterMsgCard lat={lat} lon={lon} onSourceChange={onDisaster} />
         </div>

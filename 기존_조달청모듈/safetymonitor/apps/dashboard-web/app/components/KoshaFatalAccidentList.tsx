@@ -63,7 +63,7 @@ export function KoshaFatalAccidentList({
               // 고정 폭 + truncate 로 하면 긴 제목이 잘려 사고 내용을 못 읽는다.
               <article
                 key={`${copy}-${it.id}`}
-                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-semantic-down/25 bg-semantic-down/5 px-3 py-2 dark:border-semantic-down/30 dark:bg-semantic-down/10"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-canvas px-3 py-2 dark:border-white/10 dark:bg-surface-dark"
               >
                 <span aria-hidden className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-semantic-down" />
                 {it.date ? (

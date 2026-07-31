@@ -146,9 +146,10 @@ export function DisasterMsgCard({
               key={m.sn}
               className={[
                 "rounded-lg px-2.5 py-1.5",
-                m.step === "긴급재난"
-                  ? "bg-semantic-down/5 dark:bg-semantic-down/10"
-                  : "bg-canvas dark:bg-surface-dark",
+                // 긴급재난 강조는 아래 유형 배지(붉은 바탕)가 담당한다.
+                // bg-semantic-down/5 는 이 프로젝트의 색 정의(var(hex))에서 클래스가 생성되지 않아
+                // 배경이 투명해지고 테두리만 기본 회색으로 남아 프레임이 어긋나 보였다.
+                "bg-canvas dark:bg-surface-dark",
               ].join(" ")}
             >
               <div className="flex items-center gap-1.5 text-[10px]">
