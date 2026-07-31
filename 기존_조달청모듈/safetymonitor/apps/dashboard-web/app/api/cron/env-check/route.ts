@@ -1,5 +1,5 @@
-// Cloud Scheduler 무인 트리거 — 저장된 현장 좌표로 날씨·기상특보를 서버가 주기 평가(브라우저 없이 알림 발송).
-// 실제 판정·억제·발송은 /api/weather·/api/kma-warning 이 이미 수행 → 여기선 좌표 조회 후 자체 호출만.
+// Cloud Scheduler 무인 트리거 — 저장된 현장 좌표로 날씨·기상특보·재난문자를 서버가 주기 평가(브라우저 없이 알림 발송).
+// 실제 판정·억제·발송은 /api/weather·/api/kma-warning·/api/disaster-msg 가 이미 수행 → 여기선 좌표 조회 후 자체 호출만.
 import { NextResponse } from "next/server";
 
 import { cronAuth } from "../../../../lib/cron-auth";
@@ -34,7 +34,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, skipped: "저장된 현장 좌표 없음(브라우저 최초 접속 필요)" });
   }
 
-  // 자체 라우트 호출 — 날씨(캐시미스 시 판정)·기상특보(live 특보)가 평가·억제·텔레그램 발송을 수행한다.
+  // 자체 라우트 호출 — 날씨(캐시미스 시 판정)·기상특보(live 특보)·재난문자가 평가·억제·텔레그램 발송을 수행한다.
   // Cloud Run 은 컨테이너에 http 로 프록시해 request.url 이 http origin 이 될 수 있음 → Host 헤더로 https 강제.
   const host = request.headers.get("host");
   const origin = host ? `https://${host}` : new URL(request.url).origin;
@@ -60,6 +60,15 @@ export async function GET(request: Request) {
     checked.kma = k.status;
   } catch {
     checked.kma = "error";
+  }
+  try {
+    const d = await fetch(`${origin}/api/disaster-msg?${query}`, {
+      cache: "no-store",
+      headers: cronHeaders,
+    });
+    checked.disasterMsg = d.status;
+  } catch {
+    checked.disasterMsg = "error";
   }
 
   return NextResponse.json({ ok: true, lat, lon, checked });

@@ -214,6 +214,55 @@ export type MatchedDisasterMsg = {
   matchedRegions: string[];
 };
 
+// ── 알림 항목 ────────────────────────────────────────────────────────────────
+// 알림 상태를 관리할 전체 유형. PROMOTED_TYPE 이 WATCHED_TYPES 에 없으므로 반드시 함께 넣는다(D-15).
+export const ALERT_TYPES: readonly string[] = [...WATCHED_TYPES, PROMOTED_TYPE];
+
+// lib/env-alert-notify.ts 의 EnvAlertItem 과 구조가 같다(구조적 타이핑으로 그대로 넘어간다).
+// 그쪽은 db(pg)를 import 하므로 여기서 참조하면 순수 모듈이 아니게 되어 단위테스트가 깨진다.
+export type DisasterAlertItem = {
+  itemKey: string;
+  itemLabel: string;
+  currentValue: string;
+  severity: "normal" | "caution" | "danger";
+  detail?: string;
+};
+
+function kstHm(ms: number): string {
+  const k = new Date(ms + KST_OFFSET_HOURS * 3_600_000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
+}
+
+// ★ 화이트리스트 전 유형을 매번 반환한다 — 신선한 발령이 없는 유형은 normal 이다.
+// 재난문자에는 해제 문자가 없어서 이 normal 이 곧 해제 역할을 한다(D-07).
+// 빠뜨리면 notifyEnvAlerts 의 전이 판정 때문에 유형당 알림이 **딱 한 번만** 가고 영영 안 간다.
+// 입력은 현장 시·도 매칭분(site)만 — 인근 시·도는 화면 참고용이라 알림 대상이 아니다(D-05).
+export function buildAlertItems(site: MatchedDisasterMsg[], nowMs: number): DisasterAlertItem[] {
+  return ALERT_TYPES.map((type) => {
+    const hits = site.filter((h) => h.msg.type === type && isFresh(h.msg, nowMs));
+    if (hits.length === 0) {
+      return { itemKey: `disaster:${type}`, itemLabel: "재난문자", currentValue: type, severity: "normal" as const };
+    }
+    // 대표 1건 — 긴급재난 우선, 같으면 최신.
+    const lead = [...hits].sort(
+      (a, b) =>
+        Number(b.msg.step === "긴급재난") - Number(a.msg.step === "긴급재난") ||
+        b.msg.createdAtMs - a.msg.createdAtMs,
+    )[0] as MatchedDisasterMsg;
+    const severity = hits.some((h) => h.msg.step === "긴급재난") ? "danger" : "caution";
+    const where = lead.matchedRegions.join(", ");
+    const more = hits.length > 1 ? ` 외 ${hits.length - 1}건` : "";
+    return {
+      itemKey: `disaster:${type}`,
+      itemLabel: "재난문자",
+      currentValue: `${type}${more}`,
+      severity: severity as "caution" | "danger",
+      detail: `${kstHm(lead.msg.createdAtMs)} 발령 · ${where}\n${lead.msg.message}`,
+    };
+  });
+}
+
 // 작업자 GPS 평균 좌표 → 시·도 단위 매칭. 시·군·구로 좁히지 않는다 —
 // 평균 좌표는 특정 지점이 아니고(경계를 넘나든다), 재난은 광역으로 번진다(D-05).
 export function matchSite(msgs: DisasterMsg[], lat: number, lon: number): MatchedDisasterMsg[] {

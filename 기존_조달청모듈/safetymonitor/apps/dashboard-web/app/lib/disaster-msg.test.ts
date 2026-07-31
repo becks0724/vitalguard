@@ -3,9 +3,14 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
+import { shouldSendEnv } from "../../lib/env-alert-notify";
+
 import {
+  ALERT_TYPES,
   FRESH_WINDOW_MS,
   PROMOTED_TYPE,
+  WATCHED_TYPES,
+  buildAlertItems,
   dedupeBySn,
   filterWatched,
   isEvacuationNotice,
@@ -302,6 +307,98 @@ test("matchSite — 인근 시·도 발령은 nearby 로만 잡힌다(알림 대
   assert.ok(
     nearby.every((h) => !h.matchedRegions.some((r) => r.includes("전북") || r.includes("전라북"))),
     "nearby 에 현장 시·도 발령이 섞이면 안 된다",
+  );
+});
+
+// ── 알림 항목 (D-07 · D-09 · D-15) ──────────────────────────────────────────
+const ANSAN: [number, number] = [37.3219, 126.8309];
+const URGENT = ALL.find((m) => m.step === "긴급재난") as DisasterMsg; // 경기 안산 · 호우 · 긴급재난
+const matchedAt = (msgs: DisasterMsg[], at: [number, number] = ANSAN) =>
+  matchSite(msgs, ...at).filter((h) => h.scope === "site");
+
+test("ALERT_TYPES — 화이트리스트 + 재승격 유형을 모두 포함한다", () => {
+  for (const t of WATCHED_TYPES) assert.ok(ALERT_TYPES.includes(t), `${t} 누락`);
+  assert.ok(ALERT_TYPES.includes(PROMOTED_TYPE), "PROMOTED_TYPE 누락 시 대피안내 알림이 1회만 간다");
+  assert.equal(ALERT_TYPES.length, WATCHED_TYPES.length + 1);
+});
+
+test("★ buildAlertItems — 발령 없는 유형도 매번 normal 로 낸다(D-07 해제 역할)", () => {
+  const items = buildAlertItems([], Date.now());
+  assert.equal(items.length, ALERT_TYPES.length, "일부 유형을 빼면 그 유형은 영영 해제되지 않는다");
+  assert.ok(items.every((i) => i.severity === "normal"));
+  assert.deepEqual(
+    items.map((i) => i.itemKey).sort(),
+    ALERT_TYPES.map((t) => `disaster:${t}`).sort(),
+  );
+});
+
+test("buildAlertItems — itemKey 는 유형 단위다(SN 이 들어가면 안 된다 — D-09)", () => {
+  const items = buildAlertItems(matchedAt([URGENT]), URGENT.createdAtMs);
+  assert.ok(items.every((i) => /^disaster:[^:]+$/.test(i.itemKey)));
+  assert.ok(items.every((i) => !i.itemKey.includes(String(URGENT.sn))));
+});
+
+test("buildAlertItems — 긴급재난은 danger, 안전안내는 caution", () => {
+  const at = URGENT.createdAtMs;
+  const danger = buildAlertItems(matchedAt([URGENT]), at).find((i) => i.itemKey === "disaster:호우");
+  assert.equal(danger?.severity, "danger");
+
+  const notice: DisasterMsg = { ...URGENT, step: "안전안내" };
+  const caution = buildAlertItems(matchedAt([notice]), at).find((i) => i.itemKey === "disaster:호우");
+  assert.equal(caution?.severity, "caution");
+});
+
+test("buildAlertItems — 신선도가 지난 발령은 normal 로 떨어진다", () => {
+  const stale = URGENT.createdAtMs + FRESH_WINDOW_MS + 1;
+  const item = buildAlertItems(matchedAt([URGENT]), stale).find((i) => i.itemKey === "disaster:호우");
+  assert.equal(item?.severity, "normal");
+});
+
+test("buildAlertItems — detail 에 발령시각·지역·본문이 담긴다", () => {
+  const item = buildAlertItems(matchedAt([URGENT]), URGENT.createdAtMs).find(
+    (i) => i.itemKey === "disaster:호우",
+  );
+  assert.equal(item?.itemLabel, "재난문자");
+  assert.match(item?.detail ?? "", /^\d{2}:\d{2} 발령 · 경기도 안산시 단원구 풍도동\n/);
+  assert.ok((item?.detail ?? "").includes("기상청"));
+});
+
+test("buildAlertItems — 같은 유형 여러 건이면 '외 N건'", () => {
+  const second: DisasterMsg = { ...URGENT, sn: URGENT.sn + 1, step: "안전안내" };
+  const item = buildAlertItems(matchedAt([URGENT, second]), URGENT.createdAtMs).find(
+    (i) => i.itemKey === "disaster:호우",
+  );
+  assert.equal(item?.currentValue, "호우 외 1건");
+  assert.equal(item?.severity, "danger", "한 건이라도 긴급재난이면 danger");
+});
+
+test("★★ D-07 전체 시퀀스 — 해제 후 재발령이 다시 발송된다", () => {
+  // notifyEnvAlerts 의 실제 억제 규칙(shouldSendEnv)으로 폴링 흐름을 그대로 재생한다.
+  const key = "disaster:호우";
+  const sev = (site: ReturnType<typeof matchedAt>, at: number) =>
+    buildAlertItems(site, at).find((i) => i.itemKey === key)?.severity ?? "normal";
+  const notice: DisasterMsg = { ...URGENT, step: "안전안내" };
+  const t = URGENT.createdAtMs;
+
+  let prev: "normal" | "caution" | "danger" | null = null;
+  const step = (site: ReturnType<typeof matchedAt>, at: number) => {
+    const next = sev(site, at);
+    const sent = shouldSendEnv(prev, next);
+    prev = next; // notifyEnvAlerts 는 발송 여부와 무관하게 상태를 갱신한다
+    return { next, sent };
+  };
+
+  assert.deepEqual(step([], t), { next: "normal", sent: false }, "① 발령 없음");
+  assert.deepEqual(step(matchedAt([notice]), t), { next: "caution", sent: true }, "② 첫 발령 → 발송");
+  assert.deepEqual(step(matchedAt([notice]), t + 60_000), { next: "caution", sent: false }, "③ 같은 발령 지속 → 억제");
+  assert.deepEqual(step(matchedAt([URGENT]), t + 120_000), { next: "danger", sent: true }, "④ 긴급재난 승격 → 발송");
+  const expired = t + FRESH_WINDOW_MS + 1;
+  assert.deepEqual(step(matchedAt([URGENT]), expired), { next: "normal", sent: false }, "⑤ 신선도 만료 = 해제");
+  const again: DisasterMsg = { ...notice, sn: 999999, createdAtMs: expired + 60_000 };
+  assert.deepEqual(
+    step(matchedAt([again]), expired + 60_000),
+    { next: "caution", sent: true },
+    "⑥ ★ 재발령 → 다시 발송(여기서 false 면 유형당 알림이 평생 1회다)",
   );
 });
 

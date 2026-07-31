@@ -4,13 +4,20 @@
 import "server-only";
 
 import {
+  buildAlertItems,
   dedupeBySn,
   filterWatched,
+  isFresh,
+  matchSite,
   normalize,
   queryDates,
+  type DisasterAlertItem,
   type DisasterMsg,
+  type EmergencyStep,
+  type MatchedDisasterMsg,
   type RawDisasterMsg,
 } from "./disaster-msg";
+import { latLonToSido } from "./kma-regions";
 
 const BASE = "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247";
 // 일일 호출 1000건 — 5분 주기(288회/일) + 자정 인근 전날 조회(약 36회) = 약 32%(D-17).
@@ -140,4 +147,69 @@ export async function fetchDisasterMsgs(now: Date = new Date()): Promise<Disaste
     console.error(`[disaster-msg] 실 API 실패 — 목업 폴백. ${(e as Error).message}`);
     return { source: "mock", msgs: filterWatched(normalize(mockRaws(now)).msgs).watched };
   }
+}
+
+// ── 현장 위치 기준 조회 ──────────────────────────────────────────────────────
+export type DisasterMsgView = {
+  sn: number;
+  type: string;
+  step: EmergencyStep;
+  atMs: number;
+  regions: string[]; // 매칭된 수신지역 토큰
+  message: string;
+};
+
+export type LocationDisasterMsgs = {
+  source: "live" | "mock";
+  sido: string;
+  severity: "normal" | "caution" | "danger";
+  summary: string;
+  site: DisasterMsgView[]; // 현장 시·도 발령 — 알림 대상
+  nearby: DisasterMsgView[]; // 인근 시·도(120km) — 화면 참고용, 알림 제외(D-05)
+  alertItems: DisasterAlertItem[]; // notifyEnvAlerts 입력(응답 JSON 에는 싣지 않는다)
+};
+
+function toView(h: MatchedDisasterMsg): DisasterMsgView {
+  return {
+    sn: h.msg.sn,
+    type: h.msg.type,
+    step: h.msg.step,
+    atMs: h.msg.createdAtMs,
+    regions: h.matchedRegions.map((r) => r.trim()),
+    message: h.msg.message,
+  };
+}
+
+// 작업자 GPS 평균 좌표(시·도)에 발령된 신선한 재난문자. kma.ts 의 warningsForLocation 과 같은 자리.
+export async function disasterMsgsForLocation(
+  lat: number,
+  lon: number,
+  now: Date = new Date(),
+): Promise<LocationDisasterMsgs> {
+  const { source, msgs } = await fetchDisasterMsgs(now);
+  const nowMs = now.getTime();
+  const fresh = msgs.filter((m) => isFresh(m, nowMs));
+  const matched = matchSite(fresh, lat, lon);
+  const siteHits = matched.filter((h) => h.scope === "site");
+  const nearbyHits = matched.filter((h) => h.scope === "nearby");
+
+  const severity: LocationDisasterMsgs["severity"] = siteHits.some(
+    (h) => h.msg.step === "긴급재난",
+  )
+    ? "danger"
+    : siteHits.length > 0
+      ? "caution"
+      : "normal";
+  const types = [...new Set(siteHits.map((h) => h.msg.type))];
+  const newestFirst = (a: DisasterMsgView, b: DisasterMsgView) => b.atMs - a.atMs;
+
+  return {
+    source,
+    sido: latLonToSido(lat, lon).name,
+    severity,
+    summary: types.length > 0 ? types.join(" · ") : "재난문자 없음",
+    site: siteHits.map(toView).sort(newestFirst),
+    nearby: nearbyHits.map(toView).sort(newestFirst),
+    alertItems: buildAlertItems(siteHits, nowMs),
+  };
 }

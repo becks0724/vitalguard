@@ -137,24 +137,39 @@
 
 ---
 
-## Phase D — 라우트·알림·크론 ⬜
+## Phase D — 라우트·알림·크론 🔶 백엔드 완료 (2026-07-31) · UI 미착수
 
-- [ ] `app/api/disaster-msg/route.ts` — `GET ?lat=&lon=` (`kma-warning/route.ts` 구조 답습)
-  - [ ] `lat`/`lon` 유한값 검증 → 없으면 400
-  - [ ] 알림 발사 조건 = `source === "live" && (verifyBasicAuth || cronAuth)` (D-11)
-  - [ ] 무인증 조회는 허용하되 `console.warn` 후 발사 건너뜀
-- [ ] `notifyEnvAlerts()` 연결
-  - [ ] `itemKey = "disaster:<유형>"` — **SN 금지** (D-09)
-  - [ ] `severity` — 긴급재난 → `danger` / 안전안내 → `caution`
-  - [ ] `detail` — 발령시각 · 지역 · 본문
-  - [ ] **★ 화이트리스트 전 유형을 매번 넘긴다** — 신선한 문자 없는 유형은 `normal` (D-07)
-        (빠뜨리면 유형당 알림이 **딱 한 번만** 가고 영영 안 간다)
-  - [ ] **★ 그 목록에 `PROMOTED_TYPE`("대피안내") 도 포함** — `WATCHED_TYPES` 에는 없다 (D-15)
-- [ ] 알림 억제 테스트 — 같은 유형 연속 폴링 시 1회만 발송, 신선도 만료 후 재발령 시 다시 발송
-- [ ] `app/api/cron/env-check/route.ts` — `/api/disaster-msg` 자체 호출 추가(좌표 조회는 기존 재사용)
-- [ ] 관제웹 표시 — 현장 시·도 발령분 + 인근 시·도는 "참고" 배지
+- [x] `app/lib/disaster-msg-api.ts` — `disasterMsgsForLocation(lat, lon, now?)`
+      (`kma.ts` 의 `warningsForLocation` 과 같은 자리. 라우트를 얇게 유지)
+- [x] `app/api/disaster-msg/route.ts` — `GET ?lat=&lon=` (`kma-warning/route.ts` 구조 답습)
+  - [x] 🐛 **`Number(null)`·`Number("")` 이 0 이라** 파라미터 누락이 "적도 앞바다 현장"으로
+        통과했다 → `coord()` 로 빈 값을 NaN 처리. 누락·빈값·문자·일부누락 4케이스 400 확인
+  - [x] 알림 발사 조건 = `source === "live" && (verifyBasicAuth || cronAuth)` (D-11)
+  - [x] 무인증 조회는 허용하되 `console.warn` 후 발사 건너뜀
+  - [x] `alertItems` 는 응답 JSON 에서 제외(내부 전용)
+- [x] `notifyEnvAlerts()` 연결 — `buildAlertItems()` 결과를 그대로 전달
+  - [x] `itemKey = "disaster:<유형>"` — SN 금지 (D-09)
+  - [x] `severity` — 긴급재난 → `danger` / 안전안내 → `caution`
+  - [x] `detail` — `HH:MM 발령 · 지역` + 본문 · 여러 건이면 `currentValue` 에 "외 N건"
+  - [x] **★ `ALERT_TYPES` = 화이트리스트 전 유형 + `PROMOTED_TYPE`** — 발령 없는 유형도
+        매번 `normal` 로 넘긴다(D-07 해제 역할 · D-15)
+- [x] **★★ 알림 억제 시퀀스 테스트** — 실제 `shouldSendEnv` 로 6단계 재생
+      (발령없음 → 첫발령 발송 → 지속 억제 → 긴급재난 승격 발송 → 신선도 만료 해제 → **재발령 재발송**)
+- [x] `app/api/cron/env-check/route.ts` — `/api/disaster-msg` 자체 호출 추가
+- [ ] **관제웹 표시** — 현장 시·도 발령분 + 인근 시·도 "참고" 배지 (미착수)
 
-**완료 판정.** dev 에서 목업으로 카드 표시 + 텔레그램 1회 발송·2회차 억제 확인.
+**실동작 검증(2026-07-31 · `next dev`).**
+```
+파라미터 누락/빈값/문자/일부누락  → 400 (4케이스)
+당진(충남)  200 · source=live · severity=caution · summary=폭염 · site 7 · nearby 7
+서울        200 · severity=normal · summary=재난문자 없음 · site 0 · nearby 15
+alertItems 응답 노출 없음 · 무인증 알림 스킵 로그 확인
+cron/env-check  키 없음 → 503
+```
+⚠️ **인증 경로는 로컬에서 돌리지 않았다** — `notifyEnvAlerts` 가 프로덕션 DB 에 쓰고(L-04)
+실제 텔레그램을 발송한다. 라이브 검증은 Phase E 에서 크론 1회 실행으로 한다.
+
+**완료 판정(백엔드).** 라우트·알림·크론 실동작 확인. 검증 = **473 pass / 0 fail** · tsc 0 · lint 0.
 
 ---
 
