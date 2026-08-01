@@ -725,6 +725,10 @@ export function LoginScreen({
     [pendingToken, pendingRole, onLogin],
   );
 
+  // 회원가입은 입력 항목이 10개라 세로로 늘어놓으면 어떤 노트북에서도 스크롤이 생긴다(실측 1445px).
+  // 이 모드에서만 로고·브랜드 문구·여백을 줄이고 폼을 2열로 편다(실측 852px). 로그인 화면은 그대로 둔다.
+  const compact = pendingToken === null && mode === "signup";
+
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4 py-8 text-ink dark:bg-surface-dark dark:text-on-dark">
       {/* 배경 — MeshGradient 셰이더(콘텐츠 뒤 고정 레이어) */}
@@ -752,7 +756,11 @@ export function LoginScreen({
         </div>
 
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
-        <div className="flex w-full flex-col items-center px-6 py-10 md:w-1/2">
+        <div
+          className={`flex w-full flex-col items-center px-6 md:w-1/2 ${
+            compact ? "py-6" : "py-10"
+          }`}
+        >
           <div className="relative z-10 flex w-full flex-col items-center">
         {/* 중앙 로고 — 로그인 배경은 테마와 무관하게 항상 네이비 셰이더(LoginShaderBackground)라
             화이트 로고 고정. 투명 로고라 라이트 테마의 블루 워드마크(검정 글자)는 네이비에 묻힘. */}
@@ -761,11 +769,13 @@ export function LoginScreen({
             src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
             className="logo3d-badge"
+            // 회원가입에서만 136 → 96px. globals.css 의 고정 픽셀을 이기려면 클래스가 아니라 inline style 이어야 한다.
+            style={compact ? { width: 96, height: 96 } : undefined}
           />
         </div>
 
-        {/* 슬로건 + 문구 — 현장 선택 단계에선 숨김(로고만 유지) */}
-        {pendingToken === null && (
+        {/* 슬로건 + 문구 — 현장 선택 단계·회원가입에선 숨김(로고만 유지). 회원가입은 이 167px 를 폼에 내준다. */}
+        {pendingToken === null && !compact && (
           <>
         <p
           className="mt-6 text-sm uppercase tracking-wide text-sky-100 drop-shadow"
@@ -883,13 +893,18 @@ export function LoginScreen({
           </>
           ) : mode === "signup" ? (
           <>
-        {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능 */}
-        <form onSubmit={handleSignup} className="mt-8 w-full max-w-sm space-y-3">
-          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
+        {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능.
+            md 이상은 2열(폭 463px). md 미만은 사진이 빠져 폼이 좁아지므로 1열 유지.
+            입력 세로 패딩은 이 폼 안에서만 py-3 → py-2 로 줄인다 — 공유 상수를 고치면 로그인 폼까지 얇아진다. */}
+        <form
+          onSubmit={handleSignup}
+          className="mt-4 grid w-full max-w-sm grid-cols-1 gap-x-3 gap-y-2 [&_input]:py-2 [&_select]:py-2 md:max-w-none md:grid-cols-2"
+        >
+          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow md:col-span-2">
             {t.signupTitle}
           </p>
           {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
-          <div>
+          <div className="md:col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.orgTypeLabel}
             </span>
@@ -952,7 +967,8 @@ export function LoginScreen({
                 placeholder={t.idPlaceholder}
                 autoComplete="username"
                 required
-                className={`${FIELD_BASE} flex-1`}
+                // min-w-0 없으면 input 이 기본 최소 폭 아래로 안 줄어 2열에서 '중복 확인' 이 카드 밖으로 넘친다.
+                className={`${FIELD_BASE} min-w-0 flex-1`}
               />
               <button
                 type="button"
@@ -1012,7 +1028,7 @@ export function LoginScreen({
               className={`${INPUT_CLASS} [color-scheme:dark]`}
             />
           </label>
-          <div>
+          <div className="md:col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.phoneLabel}
             </span>
@@ -1057,7 +1073,7 @@ export function LoginScreen({
               />
             </div>
           </div>
-          <label className="block">
+          <label className="block md:col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.carrierLabel}
             </span>
@@ -1102,7 +1118,7 @@ export function LoginScreen({
               )}
             </div>
           </label>
-          <div>
+          <div className="md:col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.emailLabel}
             </span>
@@ -1161,12 +1177,6 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          {/* 비밀번호 규칙 — 입력값 기반 라이브 판정(요건을 채우면 즉시 사라짐). */}
-          {pwVerdictMsg && (
-            <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
-              {pwVerdictMsg}
-            </p>
-          )}
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.pwConfirmLabel}
@@ -1184,14 +1194,22 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          {pwMismatchLive && (
+          {/* 비밀번호 규칙 — 입력값 기반 라이브 판정(요건을 채우면 즉시 사라짐).
+              2열에서 비밀번호·확인이 같은 행에 오도록 두 입력 뒤로 모으고, 각 메시지는 자기 입력칸 아래 열에 둔다.
+              불일치는 col-start-2 로 고정 — 규칙 메시지가 없을 때도 '확인' 칸 아래에 남아야 한다. */}
+          {pwVerdictMsg && (
             <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
+              {pwVerdictMsg}
+            </p>
+          )}
+          {pwMismatchLive && (
+            <p className="text-[11px] font-semibold text-amber-200 drop-shadow md:col-start-2">
               {t.pwMismatch}
             </p>
           )}
 
           {error && (
-            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md">
+            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md md:col-span-2">
               {error}
             </p>
           )}
@@ -1216,11 +1234,11 @@ export function LoginScreen({
               sPw !== sPw2
             }
             label={submitting ? t.signupSubmitting : t.signupSubmit}
-            className="w-full"
+            className="w-full md:col-span-2"
           />
 
           {/* 로그인 전환 */}
-          <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
+          <p className="pt-1 text-center text-xs text-white/80 drop-shadow md:col-span-2">
             {t.haveAccount}{" "}
             <button
               type="button"
