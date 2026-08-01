@@ -101,23 +101,29 @@ function RadarTiles({
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-200 dark:bg-slate-800">
-      {/* 베이스맵 */}
+      {/* 베이스맵 — @2x(512px) 레티나 타일. 타일은 % 로 배치하므로 소스 해상도를 올려도
+          레이아웃은 그대로이고 선명도만 올라간다. 레이더만 512 로 올리면 배경이 상대적으로 흐려진다. */}
       {cells.map((t) => (
         <img
           key={`b-${t.x}-${t.y}`}
-          src={`https://a.basemaps.cartocdn.com/${base}/${zoom}/${t.x}/${t.y}.png`}
+          src={`https://a.basemaps.cartocdn.com/${base}/${zoom}/${t.x}/${t.y}@2x.png`}
           alt=""
           aria-hidden
           draggable={false}
           style={style(t.c, t.r)}
         />
       ))}
-      {/* 레이더 오버레이 */}
+      {/* 레이더 오버레이 — 512px.
+          ⚠️ URL 끝의 color(7)·snow(_1) 는 **RainViewer 무료 API 가 무시한다**(실측: 색상 0~8 이
+          전부 동일 md5, `1_1` 과 `1_0` 도 동일). 색상 스킴을 바꿔 가독성을 높이려는 시도는
+          이 API 에서 통하지 않으니 반복하지 말 것 — 실제로 먹는 것은 size 와 smooth 뿐이다.
+          근본 개선은 기상청 RadarImgInfoService(500m·5분) 이며 활용신청이 필요하다.
+          경위·후보 비교 = docs/radar-visual-upgrade.md */}
       {framePath &&
         cells.map((t) => (
           <img
             key={`r-${t.x}-${t.y}`}
-            src={`${host}${framePath}/256/${zoom}/${t.x}/${t.y}/7/1_1.png`}
+            src={`${host}${framePath}/512/${zoom}/${t.x}/${t.y}/7/1_1.png`}
             alt=""
             aria-hidden
             draggable={false}
