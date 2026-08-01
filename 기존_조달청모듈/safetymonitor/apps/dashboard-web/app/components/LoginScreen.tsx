@@ -730,7 +730,11 @@ export function LoginScreen({
   const compact = pendingToken === null && mode === "signup";
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4 py-8 text-ink dark:bg-surface-dark dark:text-on-dark">
+    <div
+      className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4 text-ink dark:bg-surface-dark dark:text-on-dark ${
+        compact ? "py-2 md:py-8" : "py-8"
+      }`}
+    >
       {/* 배경 — MeshGradient 셰이더(콘텐츠 뒤 고정 레이어) */}
       <LoginShaderBackground />
 
@@ -758,7 +762,7 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
         <div
           className={`flex w-full flex-col items-center px-6 md:w-1/2 ${
-            compact ? "py-6" : "py-10"
+            compact ? "py-2 md:py-6" : "py-10"
           }`}
         >
           <div className="relative z-10 flex w-full flex-col items-center">
@@ -768,9 +772,8 @@ export function LoginScreen({
           <img
             src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
-            className="logo3d-badge"
-            // 회원가입에서만 136 → 96px. globals.css 의 고정 픽셀을 이기려면 클래스가 아니라 inline style 이어야 한다.
-            style={compact ? { width: 96, height: 96 } : undefined}
+            // 회원가입에서만 축소(폰 64 · md 이상 96). globals.css 의 고정 픽셀(136)을 이기려면 ! 가 필요하다.
+            className={`logo3d-badge ${compact ? "!h-10 !w-10 md:!h-24 md:!w-24" : ""}`}
           />
         </div>
 
@@ -894,17 +897,17 @@ export function LoginScreen({
           ) : mode === "signup" ? (
           <>
         {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능.
-            md 이상은 2열(폭 463px). md 미만은 사진이 빠져 폼이 좁아지므로 1열 유지.
+            전 폭에서 2열 — 1열이면 카드가 데스크톱 1381px·폰 1010px 라 어디서도 스크롤이 생긴다.
             입력 세로 패딩은 이 폼 안에서만 py-3 → py-2 로 줄인다 — 공유 상수를 고치면 로그인 폼까지 얇아진다. */}
         <form
           onSubmit={handleSignup}
-          className="mt-4 grid w-full max-w-sm grid-cols-1 gap-x-3 gap-y-2 [&_input]:py-2 [&_select]:py-2 md:max-w-none md:grid-cols-2"
+          className="mt-4 grid w-full max-w-sm grid-cols-2 gap-x-3 gap-y-1 [&_input]:py-2 [&_select]:py-2 md:max-w-none md:gap-y-2"
         >
-          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow md:col-span-2">
+          <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow col-span-2">
             {t.signupTitle}
           </p>
           {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
-          <div className="md:col-span-2">
+          <div className="col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.orgTypeLabel}
             </span>
@@ -920,7 +923,7 @@ export function LoginScreen({
                   type="button"
                   onClick={() => setSOrgType(value)}
                   aria-pressed={sOrgType === value}
-                  className={`rounded-xl border px-3 py-3 text-xs font-semibold backdrop-blur-md transition ${
+                  className={`rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition md:py-3 ${
                     sOrgType === value
                       ? "border-white/70 bg-white/25 text-white"
                       : "border-white/25 bg-white/10 text-white/70 hover:bg-white/15"
@@ -1028,7 +1031,7 @@ export function LoginScreen({
               className={`${INPUT_CLASS} [color-scheme:dark]`}
             />
           </label>
-          <div className="md:col-span-2">
+          <div className="col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.phoneLabel}
             </span>
@@ -1073,7 +1076,7 @@ export function LoginScreen({
               />
             </div>
           </div>
-          <label className="block md:col-span-2">
+          <label className="block col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.carrierLabel}
             </span>
@@ -1118,7 +1121,7 @@ export function LoginScreen({
               )}
             </div>
           </label>
-          <div className="md:col-span-2">
+          <div className="col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.emailLabel}
             </span>
@@ -1203,13 +1206,13 @@ export function LoginScreen({
             </p>
           )}
           {pwMismatchLive && (
-            <p className="text-[11px] font-semibold text-amber-200 drop-shadow md:col-start-2">
+            <p className="text-[11px] font-semibold text-amber-200 drop-shadow col-start-2">
               {t.pwMismatch}
             </p>
           )}
 
           {error && (
-            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md md:col-span-2">
+            <p className="rounded-xl border border-red-300/50 bg-red-500/25 px-3 py-2 text-xs text-red-50 backdrop-blur-md col-span-2">
               {error}
             </p>
           )}
@@ -1234,11 +1237,11 @@ export function LoginScreen({
               sPw !== sPw2
             }
             label={submitting ? t.signupSubmitting : t.signupSubmit}
-            className="w-full md:col-span-2"
+            className="w-full col-span-2"
           />
 
           {/* 로그인 전환 */}
-          <p className="pt-1 text-center text-xs text-white/80 drop-shadow md:col-span-2">
+          <p className="pt-1 text-center text-xs text-white/80 drop-shadow col-span-2">
             {t.haveAccount}{" "}
             <button
               type="button"
