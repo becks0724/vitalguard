@@ -773,7 +773,7 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
         <div
           className={`flex w-full flex-col items-center px-6 md:w-1/2 ${
-            compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-10" : "py-10"
+            compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-6" : "py-10"
           }`}
         >
           <div className="relative z-10 flex w-full flex-col items-center">
@@ -800,7 +800,7 @@ export function LoginScreen({
           <>
         {/* 슬로건·설명은 폰에서 감춘다 — 둘이 96px 이고, 폰에서는 핵심 카피(line1) 하나만 남겨야 한 화면에 든다. */}
         <p
-          className="mt-6 hidden text-sm uppercase tracking-wide text-sky-100 drop-shadow md:block"
+          className="mt-4 hidden text-sm uppercase tracking-wide text-sky-100 drop-shadow md:block"
           style={{ fontFamily: "'Archivo Black', system-ui, sans-serif" }}
         >
           {t.slogan}
@@ -815,7 +815,7 @@ export function LoginScreen({
           {t.line1}
         </h1>
         <p
-          className={`mt-3 hidden min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow md:flex ${
+          className={`mt-2 hidden min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow md:flex ${
             lang === "en" ? "text-[10px]" : "text-sm"
           }`}
         >
@@ -830,7 +830,7 @@ export function LoginScreen({
         {/* 로그인 폼 — 폰에서만 여백과 라벨을 줄인다(라벨은 placeholder 와 같은 문구라 감춰도 잃는 게 없다). */}
         <form
           onSubmit={handleSubmit}
-          className="mt-4 w-full max-w-sm space-y-2 md:mt-8 md:space-y-3"
+          className="mt-4 w-full max-w-sm space-y-2 md:mt-5 md:space-y-3"
         >
           <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
             {t.subtitle}
@@ -908,7 +908,7 @@ export function LoginScreen({
         </form>
 
         {/* 푸터·스토어 배지는 폰에서 감춘다 — 둘이 168px 이고 로그인 자체에는 필요 없다. 데스크톱은 그대로. */}
-        <p className="mt-8 hidden text-xs text-white/70 drop-shadow md:block">
+        <p className="mt-4 hidden text-xs text-white/70 drop-shadow md:block">
           {t.footer}
         </p>
 
