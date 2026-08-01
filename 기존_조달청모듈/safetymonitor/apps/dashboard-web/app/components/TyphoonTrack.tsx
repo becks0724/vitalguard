@@ -377,32 +377,76 @@ function fmtTmFc(s?: string): string {
   return `${s.slice(4, 6)}/${s.slice(6, 8)} ${s.slice(8, 10)}:${s.slice(10, 12)}`;
 }
 
-// ── 작업현장 조기 경보 표시 — 판정(강풍/폭풍반경 영향권·예보점 선행)은 lib/typhoon-gate 순수 모듈 ──
+// ── 작업현장 조기 경보 표시 — 판정(기상청 구역 + 강풍/폭풍반경 하이브리드·예보 선행)은 lib/typhoon-gate ──
+// 6단계 = 구역 축(watch·alert·emergency) + 반경 축(approach·gale·storm). 결정·근거는 docs/typhoon-zone-hybrid.
 const ZONE_LABEL: Record<Zone, string> = {
   storm: "폭풍역 진입",
   gale: "강풍역 진입",
   approach: "영향권 접근",
+  emergency: "비상구역 진입",
+  alert: "경계구역 진입",
+  watch: "감시구역",
   none: "영향권 밖",
 };
-// 작업중지 안내 — 건설 작업중지 기준(산업안전보건기준에 관한 규칙 제37·143·383조).
+// 기상청 구역명 단독 표기 — 반경 축이 등급을 이겼을 때 구역 근거를 푸터에 병기하는 용도.
+const KMA_ZONE_LABEL: Record<Zone, string> = {
+  storm: "",
+  gale: "",
+  approach: "",
+  emergency: "비상구역",
+  alert: "경계구역",
+  watch: "감시구역",
+  none: "",
+};
+// 현재 시점(실측) 안내 — 건설 작업중지 기준(산업안전보건기준에 관한 규칙 제37·143·383조).
 const ZONE_ADVISORY: Record<Zone, string> = {
   storm: "전면 작업중지 · 순간풍속 25m/s급 — 타워크레인·고소·양중 중지·대피",
   gale: "작업중지 · 순간풍속 15m/s급 — 타워크레인 운전·철골·고소작업 중지",
   approach: "진입 대비 · 자재 결박·타워크레인 하강·가설물 점검",
+  emergency: "사전 대비 · 자재 결박·타워크레인 하강 준비·배수로 점검",
+  alert: "대비 검토 · 기상 정보 주시·가설물 상태 확인",
+  watch: "진로 주시",
+  none: "",
+};
+// 예보 시점 안내 — 등급은 예보대로 올리되 지시는 '대비' 수준으로 유지한다.
+// 5일 뒤 폭풍역 예보로 지금 "전면 작업중지·대피"를 띄우면 오작동이다(docs/typhoon-zone-hybrid T-05).
+const ZONE_FORECAST_ADVISORY: Record<Zone, string> = {
+  storm: "폭풍역 예보 · 대피계획 점검·타워크레인 하강 일정 확정",
+  gale: "강풍역 예보 · 자재 결박·타워크레인 하강·고소작업 일정 조정",
+  approach: "영향권 진입 예보 · 자재 결박·가설물 점검",
+  emergency: "비상구역 진입 예보 · 기상 정보 주시·대비 계획 수립",
+  alert: "경계구역 진입 예보 · 진로 주시",
+  watch: "진로 주시",
   none: "",
 };
 const ZONE_TEXT: Record<Zone, string> = {
   storm: "text-red-600 dark:text-red-300",
   gale: "text-orange-600 dark:text-orange-300",
   approach: "text-amber-600 dark:text-amber-300",
+  emergency: "text-amber-600 dark:text-amber-300",
+  alert: "text-sky-600 dark:text-sky-300",
+  watch: "text-zinc-500 dark:text-on-dark-soft",
   none: "text-zinc-500 dark:text-on-dark-soft",
 };
+// 색은 5종 — emergency 와 approach 가 amber 를 공유한다. 어휘 절약이 아니라 두 단계에서
+// 현장이 할 행동이 같기 때문이다(사전 대비). 등급·라벨·문구는 분리되어 있어 정보 손실이 없다.
 const ZONE_BANNER: Record<Zone, string> = {
   storm: "border-red-300 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300",
   gale: "border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-300",
   approach: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  emergency: "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  alert: "border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300",
+  watch: "",
   none: "",
 };
+
+// 도달 리드타임 — 통보문 시각끼리의 차이라 브라우저 시계와 무관하다(typhoon-gate.tmToMs).
+function fmtLead(h: number | null): string {
+  if (h === null || h <= 0) return "";
+  const hours = Math.round(h);
+  if (hours < 24) return `약 ${hours}시간 뒤`;
+  return `D-${Math.floor(hours / 24)} · 약 ${hours}시간 뒤`;
+}
 
 // 태풍(사이클론) 모노톤 라인 아이콘 — 다른 대시보드 아이콘과 동일 테마(currentColor 라인 SVG).
 // 눈(중심 원) + 회전하는 두 나선 팔로 태풍을 표현. 이모지(🌀) 대체.
@@ -464,14 +508,28 @@ function TrackingStopped({
   );
 }
 
-// 작업중지 안내 배너 — 영향권(폭풍역/강풍역/접근) 진입 시 건설 작업중지 조치를 색상으로 강조.
-// title = 원인 태풍 귀속 포함 라벨(예: "제9호 바비 · 강풍역 진입", 예보 선행 시 "(진로 예보)" 접미).
-function WorkStoppageBanner({ zone, title, advisory }: { zone: Zone; title: string; advisory: string }) {
-  if (zone === "none") return null;
+// 단계 배너 — 경계구역 이상에서 조치를 색상으로 강조(구역 단계 3종 + 영향권 단계 3종).
+// title = 원인 태풍 귀속 포함 라벨(예: "제9호 바비 · 비상구역 진입 예보"), lead = 예보 시 도달 리드타임.
+// watch(감시구역)는 배너를 띄우지 않는다 — 태풍 시즌 내내 점등되면 배너가 벽지가 된다(패널 텍스트로 충분).
+function ZoneBanner({
+  zone,
+  title,
+  advisory,
+  lead,
+}: {
+  zone: Zone;
+  title: string;
+  advisory: string;
+  lead: string;
+}) {
+  if (zone === "none" || zone === "watch") return null;
   return (
     <div className={`shrink-0 rounded-lg border px-2 py-1.5 text-center leading-tight ${ZONE_BANNER[zone]}`}>
       <span className="text-[11px] font-bold">{title}</span>
-      <span className="ml-1 text-[10px]">{advisory}</span>
+      <span className="ml-1 text-[10px]">
+        {lead && <span className="font-semibold">{lead} · </span>}
+        {advisory}
+      </span>
     </div>
   );
 }
@@ -561,8 +619,11 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     data.source === "mock" ? "활용신청 승인 후 실시간 가동" : "발효 중인 태풍 없음";
   // 표시 대상 = worst 태풍(발효 중) ?? 대표(샘플/없음 안내용). 헤더·지도·상세·모달이 같은 소스를 쓴다.
   const disp = active ?? typhoons[0] ?? data;
-  // 배너/푸터 존 라벨 — 예보점 선행 점등이면 "(진로 예보)" 접미로 근거를 구분.
-  const zoneLabelText = ZONE_LABEL[gate.zone] + (gate.forecast ? " (진로 예보)" : "");
+  // 배너/푸터 존 라벨 — 예보 선행 점등이면 "예보" 접미로 실측과 근거를 구분.
+  const zoneLabelText = ZONE_LABEL[gate.zone] + (gate.forecast ? " 예보" : "");
+  const leadText = gate.forecast ? fmtLead(gate.leadHours) : "";
+  // 반경 축이 등급을 이겼을 때만 구역 근거를 병기(등급 자체가 구역명이면 중복이다).
+  const kmaNote = KMA_ZONE_LABEL[gate.zone] ? "" : KMA_ZONE_LABEL[gate.kmaZone];
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -598,10 +659,11 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         <IdleNoThreat note={idleNote} />
       ) : gate.tracking ? (
         <>
-          <WorkStoppageBanner
+          <ZoneBanner
             zone={gate.zone}
             title={`${active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
-            advisory={ZONE_ADVISORY[gate.zone]}
+            advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
+            lead={leadText}
           />
           <button
             type="button"
@@ -650,6 +712,8 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
             <>
               {" · "}
               <span className={`font-semibold ${ZONE_TEXT[gate.zone]}`}>{zoneLabelText}</span>
+              {leadText ? ` · ${leadText}` : ""}
+              {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
               {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
               {gate.siteKm !== null
                 ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`

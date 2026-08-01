@@ -1,0 +1,60 @@
+# 태풍 구역·반경 하이브리드 — 체크리스트
+
+결정·근거는 [context-notes.md](./context-notes.md) T-01~T-08.
+
+## Phase 1 — 판정 모듈 (`app/lib/typhoon-gate.ts`) ✅
+
+- [x] `Zone` 타입 6단계 확장 (`watch`·`alert`·`emergency` 추가) · `ZONE_RANK` 갱신
+- [x] 구역 경계 상수 (`ALERT_ZONE` 25°N/135°E · `EMERGENCY_ZONE` 28°N/132°E)
+- [x] `classifyKmaZone(lat, lon)` — 비상 → 경계 → 감시 중첩 판정 (T-03)
+- [x] 반경 판정을 `radiusZoneAt()` 로 추출 (현재/예보점 공용)
+- [x] `tmToMs(tm)` — yyyyMMddHHmm(KST) → epoch ms (T-06)
+- [x] ★ 예보 스캔을 무조건 실행하도록 순서 변경 (T-04)
+- [x] 예보점에서 `rad25` 까지 판정 (T-05)
+- [x] `GateResult` 확장 — `kmaZone` · `radiusZone` · `leadHours` · `EMPTY_GATE` 갱신
+
+## Phase 2 — 테스트 (`app/lib/typhoon-gate.test.ts`) ✅ 12/12
+
+- [x] 기존 기대값 수정 — 원거리 `none`→`watch` · 소멸예보 `none`→`emergency` · 예보 적중 `approach`→`gale`
+- [x] `classifyKmaZone` 경계값 (25/28/132/135 정확히 위·아래 · 사각지대 없음)
+- [x] 하이브리드 worst-of — 소형 태풍 비상구역(구역 승) / 대형 태풍 강풍역(반경 승)
+- [x] ★ 회귀 — 현재 `emergency` 인데 예보가 `approach` 면 선행 점등 (T-04)
+- [x] 예보 폭풍역 판정 (`rad25` 적중 → `storm` + `forecast` + `leadHours 72`)
+- [x] `leadHours` — 24h/42h/72h · 자정·월 경계 · 파싱 실패 `null`
+
+## Phase 3 — 화면 (`app/components/TyphoonTrack.tsx`) ✅
+
+- [x] `ZONE_LABEL`·`ZONE_TEXT`·`ZONE_BANNER` 6단계 확장 (색 5종 · T-07)
+- [x] `KMA_ZONE_LABEL` — 반경 축이 이겼을 때 구역 근거 병기용
+- [x] `ZONE_FORECAST_ADVISORY` 신설 · `forecast` 로 분기 (T-05)
+- [x] `fmtLead()` 리드타임 표시 (`D-N · 약 N시간 뒤`)
+- [x] `watch` 는 배너 미표시 · 지도/푸터로만 (T-07)
+- [x] `WorkStoppageBanner` → `ZoneBanner` 로 역할 확장 반영
+- [x] 푸터에 리드타임·구역명 병기
+
+## Phase 4 — 검증
+
+- [x] `npx tsc --noEmit` — 0
+- [x] `npm run lint` — 0 errors (경고 4건은 기존 `scripts/injection-test.mjs`, 무관)
+- [x] `npm test` — 495 pass / 0 fail
+- [x] dev(`localhost:3111`) 실화면 확인 — 6단계 전부 + 리드타임 + 배너 색
+
+  | 단계 | 검증 방법 | 화면 결과 |
+  |---|---|---|
+  | `watch` | **라이브 실데이터**(제13호 돌핀 20.2°N·158.4°E) | 배너 없음 · 지도 표시 · 푸터 `감시구역 · 강풍반경 420km · 현장 3,496km` |
+  | `alert` | 합성 27°N·130°E | `경계구역 진입 · 대비 검토 — 기상 정보 주시·가설물 상태 확인` |
+  | `emergency` | 합성 30°N·128°E | `비상구역 진입 · 사전 대비 — 자재 결박·타워크레인 하강 준비·배수로 점검` |
+  | `approach` | 합성 32°N·126.5°E | `영향권 접근 · 진입 대비` · 푸터에 `기상청 비상구역` 병기 |
+  | `gale` | 합성 33.5°N·126.5°E | `강풍역 진입 · 작업중지 — 순간풍속 15m/s급` · 현장 188km |
+  | `storm` | 합성 현장 직상공 rad25 120 | `폭풍역 진입 · 전면 작업중지` · 현장 0km |
+  | 예보+리드타임 | 현재 emergency + 42h 뒤 approach | `영향권 접근 예보 · D-1 · 약 42시간 뒤 · 자재 결박·가설물 점검` |
+
+  - 합성 검증은 `window.fetch` 래핑으로 `/api/typhoon` 응답만 교체(프로덕션·로컬 DB 무변경).
+    ⚠️ 탭·캐러셀이 **CSS 숨김이라 전환해도 언마운트되지 않는다** → 리로드 직후 패치를 심어야 재fetch 를 잡는다.
+    `page.addInitScript` 는 이 샌드박스에서 실패한다(`__transport_receive ... expected object`).
+  - 신규 `sky` 배너 색 실제 생성 확인 — `rgba(14,165,233,0.1)` / border `0.3` (커스텀 토큰이 아닌 표준 팔레트라
+    `semantic-down/<opacity>` 미생성 이슈와 무관).
+  - 검증 후 override 해제 → 라이브(돌핀) 복귀 확인.
+
+- [x] 커밋
+- [ ] 배포 — **사용자 승인 대기**(이번 범위는 dev 확인까지)
