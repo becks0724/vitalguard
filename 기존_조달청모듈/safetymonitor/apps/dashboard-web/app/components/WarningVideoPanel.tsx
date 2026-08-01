@@ -256,10 +256,21 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
   }, [active]);
 
   // ── 상태별 렌더 ──
+  // 재생 중에는 아이콘 자리에 '← 목록' 을 둔다 — 헤더 아래 별도 줄을 없애 그만큼 영상 높이를 준다.
   const Header = (
     <div className="flex shrink-0 items-center justify-between gap-2">
       <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold text-ink dark:text-on-dark">
-        <VideoIcon className="shrink-0" />
+        {playing ? (
+          <button
+            type="button"
+            onClick={() => setPlaying(null)}
+            className="shrink-0 rounded border border-zinc-300 px-1.5 py-0.5 text-[11px] font-normal text-body hover:bg-zinc-100 dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/5"
+          >
+            ← 목록
+          </button>
+        ) : (
+          <VideoIcon className="shrink-0" />
+        )}
         <span className="truncate">특보 대응 영상</span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
@@ -313,13 +324,6 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
 
       {playing ? (
         <div className="flex min-h-0 flex-1 flex-col gap-1.5">
-          <button
-            type="button"
-            onClick={() => setPlaying(null)}
-            className="shrink-0 self-start rounded border border-zinc-300 px-2 py-0.5 text-[11px] text-body hover:bg-zinc-100 dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/5"
-          >
-            ← 목록
-          </button>
           <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-black">
             <iframe
               className="absolute inset-0 h-full w-full"
@@ -380,10 +384,6 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
             : "관련 공식 영상 없음"}
         </div>
       )}
-
-      <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
-        {liveOn ? "실시간 특보 생방송(주요 방송사)" : (yt?.note ?? "검색")} · 참고용(공식 지침 우선)
-      </p>
     </div>
   );
 }
