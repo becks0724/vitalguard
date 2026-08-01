@@ -24,6 +24,7 @@ type TrackPoint = {
   maxWindMs?: number;
   rad25?: string;
   rad15?: string;
+  radPr?: string; // 70% 확률반경(km) — 예보점에만. 강풍반경이 아니라 중심이 있을 수 있는 범위.
 };
 // 태풍 1개 레코드 — 서버 typhoons 배열 원소이자 하위호환 스프레드 필드(구 단일 payload)와 동형.
 type TyphoonRec = {
@@ -63,6 +64,13 @@ function worldYToLat(y: number, z: number): number {
 // 하한 2 — 패널 지도가 131px 이라 원거리 태풍(감시구역)과 현장을 한 화면에 담으려면 z3 으로는 모자란다
 // (z3 은 경도 31.5° 가 179px 이라 131px 캔버스를 넘겨 양쪽 마커가 전부 화면 밖으로 나갔다).
 const MIN_Z = 2;
+
+// 웹 메르카토르 km → 픽셀. 해상도는 위도에 따라 달라지므로(고위도일수록 축척이 커진다)
+// 반경 원을 그릴 때 해당 지점의 위도로 환산해야 실제 크기가 맞는다.
+function kmToPx(km: number, lat: number, z: number): number {
+  const metersPerPx = (156543.03392804097 * Math.cos(lat * D2R)) / 2 ** z;
+  return (km * 1000) / metersPerPx;
+}
 const MAX_Z = 11;
 const clampZoom = (z: number) => Math.max(MIN_Z, Math.min(MAX_Z, z));
 const clampLat = (l: number) => Math.max(8, Math.min(55, l));
@@ -291,6 +299,7 @@ function SlippyMap({
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   let polyPts: { x: number; y: number }[] = [];
   let sitePt: { x: number; y: number } | null = null;
+  let prCircles: { x: number; y: number; r: number }[] = [];
   if (view && size.w > 0) {
     const z = view.zoom;
     const tlx = lonToWorldX(view.center.lon, z) - size.w / 2;
@@ -321,6 +330,14 @@ function SlippyMap({
     if (typeof siteLat === "number" && typeof siteLon === "number") {
       sitePt = { x: lonToWorldX(siteLon, z) - tlx, y: latToWorldY(siteLat, z) - tly };
     }
+    // 70% 확률반경 원 — 예보점에만 있다(관측 위치는 오차 개념이 없다).
+    prCircles = track.flatMap((p, i) => {
+      if (i <= currentIndex) return [];
+      const km = p.radPr ? Number.parseFloat(p.radPr) : NaN;
+      const pt = polyPts[i];
+      if (!pt || !Number.isFinite(km) || km <= 0) return [];
+      return [{ x: pt.x, y: pt.y, r: kmToPx(km, p.lat, z) }];
+    });
   }
   const curPt = polyPts[currentIndex] ?? null;
   // 현재 지점을 경계로 나눈다(현재 점은 양쪽에 포함 — 선이 끊기지 않게).
@@ -372,6 +389,22 @@ function SlippyMap({
           height={size.h}
           aria-hidden
         >
+          {/* 70% 확률반경 — 예보 위치의 불확실성. 맨 아래에 깔아 진로선·마커를 가리지 않게 한다.
+              작은 인라인 지도에서는 원 7개가 겹쳐 지저분해지므로 확대 팝업에서만 표시한다.
+              ⚠️ 강풍 범위가 아니라 '중심이 있을 수 있는 범위'다(범례에 명시). */}
+          {interactive &&
+            prCircles.map((c, i) => (
+              <circle
+                key={`pr-${i}`}
+                cx={c.x}
+                cy={c.y}
+                r={c.r}
+                fill="rgba(248,113,113,0.08)"
+                stroke="rgba(248,113,113,0.40)"
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+            ))}
           {/* 현장 마커 — 태풍과의 거리를 눈으로 읽게 한다(태풍 점보다 먼저 그려 겹칠 때 태풍이 위로). */}
           {sitePt && (
             <g>
@@ -986,7 +1019,7 @@ function TyphoonModal({
             <p className="text-center text-[12px] font-medium leading-tight text-white/90">
               {t.source === "mock"
                 ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
-                : `Esri 위성 · 태풍 심볼=현재 위치, 실선=지나온 경로, 점선=예보 진로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
+                : `태풍 심볼=현재 위치 · 실선=지나온 경로 · 점선=예보 진로 · 옅은 원=70% 확률반경(중심이 있을 범위, 강풍 범위 아님) · 휠/＋−·드래그${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
             </p>
           </div>
         </div>
