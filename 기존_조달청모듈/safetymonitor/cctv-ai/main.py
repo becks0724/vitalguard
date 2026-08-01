@@ -383,12 +383,14 @@ def object_stats(t):
 
 
 def fall_stats(t):
+    # source — 이 서버가 만든 합성값. 대시보드 푸터가 판정 주체를 정직하게 적기 위해 필요하다
+    # (엣지 푸시분은 ingest2 에서 "edge" 를 넣는다). 없는 모델명을 적으면 허위 표기가 된다.
     a = fall_state(t)
     ko2en = {"정상": "normal", "불안정": "unstable", "누움": "lying", "낙상": "fallen"}
     cnt = {}
     for x in a:
         cnt[x["status"]] = cnt.get(x["status"], 0) + 1
-    return {"total": len(a), "fallen": cnt.get("낙상", 0),
+    return {"source": "synthetic", "total": len(a), "fallen": cnt.get("낙상", 0),
             "byStatus": [{"status": ko2en[k], "label": k, "count": v} for k, v in cnt.items()]}
 
 
@@ -877,7 +879,7 @@ async def ingest_fall_live(request: Request):
         fall = int(qp.get("fall", "0"))
     except ValueError:
         persons, fall = 0, 0
-    stats = {"total": persons, "fallen": fall,
+    stats = {"source": "edge", "total": persons, "fallen": fall,
              "byStatus": [{"status": "normal", "label": "정상", "count": max(persons - fall, 0)},
                           {"status": "fallen", "label": "낙상", "count": fall}]}
     with _cam2_lock:

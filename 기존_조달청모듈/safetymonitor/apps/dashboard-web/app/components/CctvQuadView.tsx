@@ -40,16 +40,26 @@ const CAMERAS: Cam[] = [
 // 타일 푸터에 적는 추론 모델명 — 여기 한 곳에서만 관리한다(종전엔 6군데 하드코딩이라 조용히 낡았다).
 // 근거(실제 로드되는 것) —
 //   object = cctv-ai `YOLO_MODEL` 기본값 `yolov8n.pt`
-//   fall   = 서버 추론 없음(합성/엣지 display-only). 표기는 종전 값 유지.
 //   ppe    = 젯슨 엣지 `PPE_ENGINE` 기본값 `ppe_yolo26s_640_v5_nc.engine`(현 운영 경로).
 //            ⚠ 엣지 미수신 시 cctv-ai 가 번들 클립을 `vyra_ppe.pt`(Hexmon·YOLOv8m)로 추론하는
 //            폴백이 있다. 그 경로가 다시 주 경로가 되면 이 값도 바꿔야 한다.
 //            엣지가 프레임에 굽는 오버레이(`PPE (yolo26 v5)`)와 어긋나면 한 화면에서 모순이 된다.
-const AI_MODEL_LABEL: Record<AiKind, string> = {
+// 낙상(fall)은 여기 없다 — 아래 FALL_SOURCE_LABEL 참조.
+const AI_MODEL_LABEL: Record<Exclude<AiKind, "fall">, string> = {
   object: "YOLOv8",
-  fall: "YOLOv8-pose",
   ppe: "YOLO26s v5",
 };
+
+// CAM-02 낙상은 판정 주체가 고정돼 있지 않다 — 젯슨 엣지가 박스를 그려 push 중이면 엣지 판정이고,
+// 3초 무수신이면 cctv-ai 의 합성 시뮬레이션(OpenCV·모델 로드 없음)으로 복귀한다(`CAM2_LIVE_TTL`).
+// 종전 표기 `YOLOv8-pose` 는 어느 경로에도 없는 모델명이었다 — 화면의 허위 표기라 소스 표기로 바꾼다.
+// 판정 주체는 `stats2.source` 로만 알 수 있다(엣지 프레임에 굽는 라벨은 영상 안이라 읽을 수 없다).
+// ⚠ `source` 를 안 실어 보내는 구버전 cctv-ai 면 미상으로 남긴다 — 둘 중 하나로 찍으면 그게 다시 허위 표기다.
+const FALL_SOURCE_LABEL: Record<string, string> = {
+  edge: "엣지 판정(젯슨)",
+  synthetic: "합성 시뮬레이션",
+};
+const FALL_SOURCE_UNKNOWN = "판정 소스 미상";
 
 // CCTV/보안 카메라 라인 아이콘 (대시보드 모노톤 테마와 동일).
 function CameraIcon({ size = 40 }: { size?: number }) {
@@ -474,6 +484,7 @@ function DetectionStrip({ aiApi, suffix = "" }: { aiApi: string; suffix?: string
 //    1.5초 주기로 따로 폴링해 decideFusion 으로 낸다. 이 스트립이 미수신이어도 경보는 별개다.
 function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: string }) {
   const { data: stats, label } = useAiStats<{
+    source?: string;
     total: number;
     fallen: number;
     byStatus: { status: string; label: string; count: number }[];
@@ -488,6 +499,8 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
   };
   const items = stats?.byStatus ?? [];
   const fallen = stats?.fallen ?? 0;
+  // 미수신이면 어느 쪽도 돌고 있지 않다 — 소스 표기 자체를 내지 않는다(사유 문구가 그 자리를 대신한다).
+  const source = stats ? (FALL_SOURCE_LABEL[stats.source ?? ""] ?? FALL_SOURCE_UNKNOWN) : null;
 
   return (
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
@@ -504,12 +517,12 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              {AI_MODEL_LABEL.fall} · 대상 {stats.total}명
+              {source} · 대상 {stats.total}명
               {fallen > 0 && <span className="ml-1.5 font-bold text-red-300">· 낙상 {fallen}건</span>}
             </>
           ) : (
             <>
-              {AI_MODEL_LABEL.fall} · <span className="font-semibold text-zinc-300">{label}</span> · 대상{" "}
+              <span className="font-semibold text-zinc-300">{label}</span> · 대상{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
