@@ -60,7 +60,9 @@ function worldYToLat(y: number, z: number): number {
   return Math.atan(Math.sinh(n)) / D2R;
 }
 
-const MIN_Z = 3;
+// 하한 2 — 패널 지도가 131px 이라 원거리 태풍(감시구역)과 현장을 한 화면에 담으려면 z3 으로는 모자란다
+// (z3 은 경도 31.5° 가 179px 이라 131px 캔버스를 넘겨 양쪽 마커가 전부 화면 밖으로 나갔다).
+const MIN_Z = 2;
 const MAX_Z = 11;
 const clampZoom = (z: number) => Math.max(MIN_Z, Math.min(MAX_Z, z));
 const clampLat = (l: number) => Math.max(8, Math.min(55, l));
@@ -98,14 +100,57 @@ type View = { center: { lat: number; lon: number }; zoom: number };
 
 // 정식 슬리피맵 — 위성 타일을 center+zoom 으로 실시간 배치(확대 시 더 높은 줌 타일을 로드 → 항상 선명).
 // interactive=true 면 휠 줌(커서 기준)+드래그 팬+버튼. false 면 진로에 맞춰 자동 프레이밍만(정적).
+// 프레이밍 최소 스팬(도) — 진로점이 1개거나 태풍이 현장 바로 위면 bbox 가 점이 되어 최대 줌으로 튄다.
+// 고줌 원양 타일은 특징 없는 바다라 화면이 배경색만 남는다(감시구역 단계에서 실제로 그렇게 보였다).
+const MIN_FIT_SPAN_DEG = 4;
+
+// 주어진 점들이 화면 80% 안에 들어오는 최대 줌으로 프레이밍. 최소 줌에서도 못 담으면 null.
+// ★ null 을 돌려주는 것이 핵심 — 예전 구현은 못 담아도 조용히 MIN_Z 를 쓰는 바람에 마커가
+//   화면 밖에 그려지고도 지도는 멀쩡해 보였다(빈 바다만 보이는 원인).
+function frameOf(pts: { lat: number; lon: number }[], w: number, h: number): View | null {
+  if (pts.length === 0 || w === 0 || h === 0) return null;
+  let minLat = Infinity,
+    maxLat = -Infinity,
+    minLon = Infinity,
+    maxLon = -Infinity;
+  for (const p of pts) {
+    minLat = Math.min(minLat, p.lat);
+    maxLat = Math.max(maxLat, p.lat);
+    minLon = Math.min(minLon, p.lon);
+    maxLon = Math.max(maxLon, p.lon);
+  }
+  // 점에 가까운 bbox 는 최소 스팬으로 넓힌다(과확대 방지).
+  if (maxLat - minLat < MIN_FIT_SPAN_DEG) {
+    const c = (minLat + maxLat) / 2;
+    minLat = c - MIN_FIT_SPAN_DEG / 2;
+    maxLat = c + MIN_FIT_SPAN_DEG / 2;
+  }
+  if (maxLon - minLon < MIN_FIT_SPAN_DEG) {
+    const c = (minLon + maxLon) / 2;
+    minLon = c - MIN_FIT_SPAN_DEG / 2;
+    maxLon = c + MIN_FIT_SPAN_DEG / 2;
+  }
+  const center = { lat: (minLat + maxLat) / 2, lon: (minLon + maxLon) / 2 };
+  for (let z = MAX_Z; z >= MIN_Z; z--) {
+    const spanX = Math.abs(lonToWorldX(maxLon, z) - lonToWorldX(minLon, z));
+    const spanY = Math.abs(latToWorldY(minLat, z) - latToWorldY(maxLat, z));
+    if (spanX <= w * 0.8 && spanY <= h * 0.8) return { center, zoom: z };
+  }
+  return null;
+}
+
 function SlippyMap({
   track,
   currentIndex,
   interactive,
+  siteLat,
+  siteLon,
 }: {
   track: TrackPoint[];
   currentIndex: number;
   interactive: boolean;
+  siteLat?: number;
+  siteLon?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -134,33 +179,24 @@ function SlippyMap({
   }, []);
 
   // 진로 bbox 가 화면 80% 안에 들어오는 최대 줌으로 프레이밍.
+  // bbox 에 현장 좌표를 함께 넣는다 — 원거리 태풍(감시구역)에서 태풍만 확대하면 바다밖에 안 보인다.
+  // 태풍과 현장이 한 화면에 있어야 "얼마나 떨어져 있는가"가 눈으로 읽힌다.
+  // 1차 = 진로 + 현장(거리 맥락). 화면에 못 담으면 2차 = 진로만. 둘 다 실패하면 진로 시작점 기준 최소 줌.
   const fit = useCallback(
     (w: number, h: number): View => {
-      if (track.length === 0) return { center: { lat: 34, lon: 128 }, zoom: 5 };
-      let minLat = Infinity,
-        maxLat = -Infinity,
-        minLon = Infinity,
-        maxLon = -Infinity;
-      for (const p of track) {
-        minLat = Math.min(minLat, p.lat);
-        maxLat = Math.max(maxLat, p.lat);
-        minLon = Math.min(minLon, p.lon);
-        maxLon = Math.max(maxLon, p.lon);
-      }
-      const center = { lat: (minLat + maxLat) / 2, lon: (minLon + maxLon) / 2 };
-      if (w === 0 || h === 0) return { center, zoom: 5 };
-      let zoom = MIN_Z;
-      for (let z = MAX_Z; z >= MIN_Z; z--) {
-        const spanX = Math.abs(lonToWorldX(maxLon, z) - lonToWorldX(minLon, z));
-        const spanY = Math.abs(latToWorldY(minLat, z) - latToWorldY(maxLat, z));
-        if (spanX <= w * 0.8 && spanY <= h * 0.8) {
-          zoom = z;
-          break;
-        }
-      }
-      return { center, zoom };
+      const trackPts = track.map((p) => ({ lat: p.lat, lon: p.lon }));
+      const first = trackPts[0];
+      if (!first) return { center: { lat: 34, lon: 128 }, zoom: 5 };
+      const withSite =
+        typeof siteLat === "number" && typeof siteLon === "number"
+          ? [...trackPts, { lat: siteLat, lon: siteLon }]
+          : trackPts;
+      return (
+        frameOf(withSite, w, h) ??
+        frameOf(trackPts, w, h) ?? { center: { lat: first.lat, lon: first.lon }, zoom: MIN_Z }
+      );
     },
-    [track],
+    [track, siteLat, siteLon],
   );
 
   // 초기/리핏 — interactive 면 1회만(사용자 조작 보존), static 이면 size/track 변경 시 갱신.
@@ -241,6 +277,7 @@ function SlippyMap({
   // ── 타일/진로 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   let polyPts: { x: number; y: number }[] = [];
+  let sitePt: { x: number; y: number } | null = null;
   if (view && size.w > 0) {
     const z = view.zoom;
     const tlx = lonToWorldX(view.center.lon, z) - size.w / 2;
@@ -268,6 +305,9 @@ function SlippyMap({
       x: lonToWorldX(p.lon, z) - tlx,
       y: latToWorldY(p.lat, z) - tly,
     }));
+    if (typeof siteLat === "number" && typeof siteLon === "number") {
+      sitePt = { x: lonToWorldX(siteLon, z) - tlx, y: latToWorldY(siteLat, z) - tly };
+    }
   }
 
   return (
@@ -315,6 +355,24 @@ function SlippyMap({
           height={size.h}
           aria-hidden
         >
+          {/* 현장 마커 — 태풍과의 거리를 눈으로 읽게 한다(태풍 점보다 먼저 그려 겹칠 때 태풍이 위로). */}
+          {sitePt && (
+            <g>
+              <circle cx={sitePt.x} cy={sitePt.y} r={5} fill="#38bdf8" stroke="#fff" strokeWidth={1.6} />
+              <text
+                x={sitePt.x}
+                y={sitePt.y - 8}
+                textAnchor="middle"
+                fill="#fff"
+                stroke="#0f172a"
+                strokeWidth={2.5}
+                paintOrder="stroke"
+                style={{ fontSize: 10, fontWeight: 700 }}
+              >
+                현장
+              </text>
+            </g>
+          )}
           {polyPts.length > 1 && (
             <polyline
               points={polyPts.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -410,12 +468,14 @@ const ZONE_ADVISORY: Record<Zone, string> = {
 };
 // 예보 시점 안내 — 등급은 예보대로 올리되 지시는 '대비' 수준으로 유지한다.
 // 5일 뒤 폭풍역 예보로 지금 "전면 작업중지·대피"를 띄우면 오작동이다(docs/typhoon-zone-hybrid T-05).
+// 등급명은 배너 제목이 이미 말하므로 여기서 반복하지 않는다(반복하면 배너가 세 줄이 되어
+// flex-1 인 지도를 0 까지 밀어낸다 — 실제로 진로 5점 예보에서 지도가 통째로 사라졌다).
 const ZONE_FORECAST_ADVISORY: Record<Zone, string> = {
-  storm: "폭풍역 예보 · 대피계획 점검·타워크레인 하강 일정 확정",
-  gale: "강풍역 예보 · 자재 결박·타워크레인 하강·고소작업 일정 조정",
-  approach: "영향권 진입 예보 · 자재 결박·가설물 점검",
-  emergency: "비상구역 진입 예보 · 기상 정보 주시·대비 계획 수립",
-  alert: "경계구역 진입 예보 · 진로 주시",
+  storm: "대피계획 점검·타워크레인 하강 확정",
+  gale: "자재 결박·타워크레인 하강·고소작업 조정",
+  approach: "자재 결박·가설물 점검",
+  emergency: "기상 정보 주시·대비 계획 수립",
+  alert: "진로 주시",
   watch: "진로 주시",
   none: "",
 };
@@ -525,11 +585,11 @@ function ZoneBanner({
   if (zone === "none" || zone === "watch") return null;
   return (
     <div className={`shrink-0 rounded-lg border px-2 py-1.5 text-center leading-tight ${ZONE_BANNER[zone]}`}>
-      <span className="text-[11px] font-bold">{title}</span>
-      <span className="ml-1 text-[10px]">
-        {lead && <span className="font-semibold">{lead} · </span>}
-        {advisory}
+      <span className="text-[11px] font-bold">
+        {title}
+        {lead ? ` · ${lead}` : ""}
       </span>
+      <span className="ml-1 text-[10px]">{advisory}</span>
     </div>
   );
 }
@@ -659,20 +719,29 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         <IdleNoThreat note={idleNote} />
       ) : gate.tracking ? (
         <>
+          {/* 태풍명은 헤더에 이미 있다 — 쌍태풍일 때만 원인 귀속을 위해 배너에도 넣는다.
+              배너가 한 줄 길어지면 flex-1 인 지도가 0 까지 눌린다(실측). */}
           <ZoneBanner
             zone={gate.zone}
-            title={`${active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
+            title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
             advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
             lead={leadText}
           />
+          {/* min-h — 배너가 길어져도 지도가 사라지지 않게 하는 하한(지도 없는 '태풍 진로'는 무의미하다). */}
           <button
             type="button"
             onClick={() => setOpen(true)}
             title="클릭하여 크게 보기"
-            className="group relative flex min-h-0 flex-1"
+            className="group relative flex min-h-[88px] flex-1"
           >
             <SquareFit>
-              <SlippyMap track={disp.track} currentIndex={disp.currentIndex} interactive={false} />
+              <SlippyMap
+                track={disp.track}
+                currentIndex={disp.currentIndex}
+                interactive={false}
+                siteLat={lat}
+                siteLon={lon}
+              />
             </SquareFit>
             <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
               ⤢ 크게 보기
@@ -730,7 +799,10 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
 
       {open &&
         typeof document !== "undefined" &&
-        createPortal(<TyphoonModal t={disp} onClose={() => setOpen(false)} />, document.body)}
+        createPortal(
+          <TyphoonModal t={disp} onClose={() => setOpen(false)} siteLat={lat} siteLon={lon} />,
+          document.body,
+        )}
     </div>
   );
 }
@@ -750,7 +822,17 @@ function Stat({ label, value, unit }: { label: string; value: string; unit?: str
 
 // 확대 팝업 — 정식 슬리피맵(위성, 휠/버튼 줌 + 드래그 팬) + 현재 정보. 배경/ESC/닫기 해제.
 // t = 인라인 지도와 동일한 표시 대상 태풍(worst) — 크게 보기에서 다른 진로가 뜨지 않게 단일 소스.
-function TyphoonModal({ t, onClose }: { t: TyphoonRec; onClose: () => void }) {
+function TyphoonModal({
+  t,
+  onClose,
+  siteLat,
+  siteLon,
+}: {
+  t: TyphoonRec;
+  onClose: () => void;
+  siteLat?: number;
+  siteLon?: number;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -794,7 +876,13 @@ function TyphoonModal({ t, onClose }: { t: TyphoonRec; onClose: () => void }) {
         <div className="shrink-0 overflow-hidden bg-slate-100 p-3 dark:bg-black/40">
           <div className="h-[60vh] w-full">
             <SquareFit>
-              <SlippyMap track={t.track} currentIndex={t.currentIndex} interactive />
+              <SlippyMap
+                track={t.track}
+                currentIndex={t.currentIndex}
+                interactive
+                siteLat={siteLat}
+                siteLon={siteLon}
+              />
             </SquareFit>
           </div>
         </div>
