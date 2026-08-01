@@ -1,0 +1,7 @@
+# 릴리스 머지가 main 의 앱-서버 챗 계약 파일을 구버전 스냅샷으로 덮지 못하게 — 충돌 시 main(ours) 승리.
+# 드라이버 설정은 클론마다 1회: 기존_조달청모듈/safetymonitor/scripts/install-git-guards.sh
+# ⚠ 충돌이 없는 조용한 덮어쓰기는 드라이버가 못 막는다 — pre-push 가드(check-app-contract.sh)가 2차 방어.
+apps/VitAlGuard-iOS-WatchOS-App/Phone/Sources/2026-07-24-VitAlGuardAssistant.swift merge=ours
+apps/VitAlGuard-iOS-WatchOS-App/Phone/Sources/VitAlGuardPreviewApp.swift merge=ours
+apps/VitAlGuard-iOS-WatchOS-App/Watch/Sources/ConnectionSettings.swift merge=ours
+apps/VitAlGuard-iOS-WatchOS-App/Watch/Sources/VitalTransmitter.swift merge=ours
