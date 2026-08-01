@@ -7,7 +7,14 @@
 // 응답 필드(공식): typSeq/typTm/typLat/typLon/typDir/typSp/typPs/typWs/typ15/typ25/typName/typEn/img/tmFc.
 import "server-only";
 
-import { groupTyphoonItems, type TrackPoint, type TyphoonInfo } from "./typhoon-parse";
+import {
+  groupTyphoonItems,
+  mergeForecast,
+  parseForecastItems,
+  pickCurrentIndex,
+  type TrackPoint,
+  type TyphoonInfo,
+} from "./typhoon-parse";
 
 export type { TrackPoint, TyphoonInfo };
 
@@ -63,13 +70,56 @@ function yyyymmdd(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// 태풍별 예보 진로(getTyphoonFcst) — 통보문(getTyphoonInfo)에는 예보점이 없어 별도 호출이 필요하다.
+// 필수 파라미터는 tmFc + typSeq 둘 다(하나만 주면 APPLICATION_ERROR). 태풍당 1회.
+// 응답에는 5일치 예보점과 radPr(70% 확률반경)이 들어 있다.
+async function fetchForecast(key: string, seq: string, tmFc: string): Promise<TrackPoint[]> {
+  const url =
+    `${BASE}/getTyphoonFcst?serviceKey=${key}&dataType=JSON&pageNo=1&numOfRows=50` +
+    `&tmFc=${encodeURIComponent(tmFc)}&typSeq=${encodeURIComponent(seq)}`;
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+  const text = await res.text();
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return []; // 미승인/장애 시 평문 응답 — 관측 궤적만으로 계속 동작
+  }
+  const root = json as {
+    response?: { header?: { resultCode?: string }; body?: { items?: { item?: unknown } } };
+  };
+  if (root?.response?.header?.resultCode !== "00") return [];
+  const raw = root.response?.body?.items?.item;
+  const items = (Array.isArray(raw) ? raw : raw ? [raw] : []) as Record<string, unknown>[];
+  return parseForecastItems(items);
+}
+
+// 각 태풍에 예보 진로를 붙인다. 예보 조회는 태풍마다 독립이라 하나가 실패해도 나머지는 살린다
+// (실패 시 관측 궤적만 남고 화면은 그대로 동작 — 예보 부재는 정상 상태다).
+async function attachForecasts(key: string, infos: TyphoonInfo[]): Promise<void> {
+  await Promise.all(
+    infos.map(async (info) => {
+      if (!info.seq || !info.tmFc) return;
+      try {
+        const fc = await fetchForecast(key, info.seq, info.tmFc);
+        if (fc.length === 0) return;
+        info.track = mergeForecast(info.track, fc);
+        info.currentIndex = pickCurrentIndex(info.track, info.tmFc); // 예보가 붙어도 현재는 마지막 관측
+      } catch {
+        // 관측 궤적 유지
+      }
+    }),
+  );
+}
+
 // 발효 중인 태풍 전부(한국 최근접 순). 목업은 비캐시(승인 즉시 자동 라이브), 라이브/없음은 30분 캐시.
 export async function getActiveTyphoons(): Promise<TyphoonInfo[]> {
   const key = serviceKey();
   if (!key) return [mockTyphoon("인증키 미설정 — 샘플 진로")];
 
-  // 캐시 키 v2 — 단일 객체 → 배열로 shape 변경(과거 "active" 키 stale 객체와 충돌 방지, kma.ts v2 회전 선례).
-  const cached = getCached<TyphoonInfo[]>("active-v2");
+  // 캐시 키 v3 — track 에 예보점(getTyphoonFcst)이 붙어 shape 이 바뀌었다. 회전하지 않으면 배포 후에도
+  // 관측점만 든 stale 배열이 30분간 서빙된다(v2 회전과 같은 이유).
+  const cached = getCached<TyphoonInfo[]>("active-v3");
   if (cached) return cached;
 
   try {
@@ -111,7 +161,8 @@ export async function getActiveTyphoons(): Promise<TyphoonInfo[]> {
       if (!Number.isFinite(total) || collected.length >= total || items.length === 0) break;
     }
     const infos = groupTyphoonItems(collected); // 발효 없음 → [] (빈 배열도 캐시 = 정상 무태풍)
-    setCached("active-v2", infos);
+    await attachForecasts(key, infos); // 예보 진로(5일)·확률반경 부착
+    setCached("active-v3", infos);
     return infos;
   } catch {
     return [mockTyphoon(UNAPPROVED_NOTE)];

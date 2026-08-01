@@ -183,6 +183,29 @@ test("computeGate — 예보점 폭풍반경(rad25)까지 판정한다", () => {
   assert.equal(g.leadHours, 72);
 });
 
+test("computeGate — 확률반경(radPr)은 예보 영향권을 넓힌다(강풍반경 대체가 아니라 가산)", () => {
+  // 예보점이 현장 ~688km · 강풍반경 300 → 300+300(접근 마진) = 600 < 688 이라 radPr 없으면 미점등.
+  const base = { tm: "202608010900", lat: 30.0, lon: 125.0, rad15: "150" };
+  const far = { tm: "202608030900", lat: 29.0, lon: 126.0, rad15: "300" };
+  const noPr = computeGate([base, far], 0, SITE.lat, SITE.lon);
+  assert.equal(noPr.zone, "emergency"); // 예보가 못 이겨 현재 구역 등급 유지
+  assert.equal(noPr.forecast, false);
+
+  // 같은 예보점에 확률반경 200 → 강풍역이 500 으로 넓어져 approach 진입.
+  const withPr = computeGate([base, { ...far, radPr: "200" }], 0, SITE.lat, SITE.lon);
+  assert.equal(withPr.zone, "approach");
+  assert.equal(withPr.forecast, true);
+
+  // 강풍반경이 0(소멸 예보)이면 확률반경을 더해도 영향권을 만들지 않는다.
+  const dead = computeGate(
+    [base, { tm: "202608030900", lat: 35.2, lon: 126.9, rad15: "0", radPr: "300" }],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+  assert.equal(dead.forecast, false);
+});
+
 test("tmToMs — KST 통보문 시각 파싱(형식 이상은 null)", () => {
   assert.equal(tmToMs("202608010900"), Date.UTC(2026, 7, 1, 0, 0)); // KST 09시 = UTC 00시
   assert.equal(tmToMs("202601010000") !== null, true);

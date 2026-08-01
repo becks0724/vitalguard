@@ -9,6 +9,9 @@ export type GateTrackPoint = {
   lon: number;
   rad15?: string; // 강풍반경(15m/s) km 문자열
   rad25?: string; // 폭풍반경(25m/s) km 문자열
+  // 70% 확률반경(km) — 예보점에만 존재. ⚠️ 강풍반경이 아니라 '중심이 있을 수 있는 범위'다.
+  // 강풍반경 자리에 넣으면 판정 근거가 통째로 바뀐다(풍속 도달 범위 ≠ 위치 오차).
+  radPr?: string;
 };
 
 // 판정 등급 6단계 — 앞 3개는 구역 축(태풍 중심 위치), 뒤 3개는 반경 축(현장 영향권).
@@ -179,10 +182,20 @@ export function computeGate(
     // 구역 축은 위경도만 보므로 그대로 산출된다(강풍역이 소멸해도 중심이 비상구역이면 감시 대상).
     const gale15 = hasExplicitRadius(p.rad15) ? parseRadiusKm(p.rad15) : galeKm;
     const storm25 = hasExplicitRadius(p.rad25) ? parseRadiusKm(p.rad25) : stormKm;
+    // 확률반경만큼 중심이 현장 쪽으로 치우쳐 있을 수 있다 → 그만큼 영향권을 넓혀 보수적으로 본다.
+    // 반경이 0(미제공·소멸 예보)인 축에는 더하지 않는다 — 더하면 없던 영향권이 생긴다.
+    const prKm = parseRadiusKm(p.radPr);
     const pRadius =
       hasExplicitRadius(p.rad15) && gale15 <= 0
         ? "none"
-        : radiusZoneAt(p.lat, p.lon, gale15, storm25, lat, lon);
+        : radiusZoneAt(
+            p.lat,
+            p.lon,
+            gale15 > 0 ? gale15 + prKm : 0,
+            storm25 > 0 ? storm25 + prKm : 0,
+            lat,
+            lon,
+          );
     const pZone = worst(classifyKmaZone(p.lat, p.lon), pRadius);
     if (ZONE_RANK[pZone] > ZONE_RANK[fcZone]) {
       fcZone = pZone;

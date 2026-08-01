@@ -12,6 +12,9 @@ export type TrackPoint = {
   maxWindMs?: number; // typWs — 최대풍속(m/s)
   rad25?: string; // typ25 — 25m/s 반경
   rad15?: string; // typ15 — 15m/s 반경
+  // radPr — 70% 확률반경(km). 예보점에만 있다(getTyphoonFcst).
+  // ⚠️ 강풍반경이 아니라 '태풍 중심이 있을 수 있는 범위'다. 둘을 바꿔 쓰면 판정 근거가 통째로 달라진다.
+  radPr?: string;
 };
 
 export type TyphoonInfo = {
@@ -46,6 +49,33 @@ function tmFcToMs(tmFc: string): number | null {
 // 소멸 간주 임계 — 통보문 간격(3~6시간)의 2배. 마지막 통보문이 이보다 오래되면 태풍 종료(약화·소멸)로 보고
 // 제외한다. 조회 창(2일) 안에 남은 죽은 태풍이 live 로 부활해 작업중지 배너를 점등하는 것 방지.
 export const TMFC_STALE_MS = 12 * 60 * 60 * 1000;
+
+// getTyphoonFcst(태풍예상정보) 행 → TrackPoint. 통보문과 필드명이 다르다(typLat/typTm → lat/tm).
+// 이 응답에만 radPr(70% 확률반경)이 있고, tm 은 미래 시각(발표 후 24~120시간)이다.
+export function parseForecastItems(items: Record<string, unknown>[]): TrackPoint[] {
+  return items
+    .map((it) => ({
+      tm: String(it.tm ?? ""),
+      lat: num(it.lat) ?? NaN,
+      lon: num(it.lon) ?? NaN,
+      dir: it.dir ? String(it.dir) : undefined,
+      speedKmh: num(it.sp),
+      pressureHpa: num(it.ps),
+      maxWindMs: num(it.ws),
+      rad25: it.rad25 ? String(it.rad25) : undefined,
+      rad15: it.rad15 ? String(it.rad15) : undefined,
+      radPr: it.radPr ? String(it.radPr) : undefined,
+    }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
+    .sort((a, b) => a.tm.localeCompare(b.tm));
+}
+
+// 관측 궤적 + 예보 진로 병합 — 같은 시각이 겹치면 관측을 남긴다(예보는 어디까지나 추정).
+export function mergeForecast(observed: TrackPoint[], forecast: TrackPoint[]): TrackPoint[] {
+  const seen = new Set(observed.map((p) => String(p.tm).slice(0, 12)));
+  const added = forecast.filter((p) => !seen.has(String(p.tm).slice(0, 12)));
+  return [...observed, ...added].sort((a, b) => String(a.tm).localeCompare(String(b.tm)));
+}
 
 // 통보문 시각(tmFc) 이하의 마지막 지점 = 현재 관측 위치(그 뒤 typTm 은 예보 위치).
 // track 이 시간순 정렬돼 있다는 전제(groupTyphoonItems 가 보장). 최근접이 아니라 '이하의 마지막'인 이유는
