@@ -59,6 +59,9 @@ test("화면 선택지는 전부 서버 게이트를 통과한다 — 어긋나�
 // ── 서버 게이트 가드 — 라우트가 유형을 보지 않는 검증으로 되돌아가는 것을 막는다.
 const here = dirname(fileURLToPath(import.meta.url));
 // 프로필 수정도 포함한다 — 가입 때만 막으면 가입 후 회사를 바꿔 우회할 수 있다.
+// ★ /api/admin/users 는 의도적으로 제외한다(2026-08-01, 사용자 결정) — 권한자가 회원사를 추가·교정하는
+//   관리 기능이라 유형에 묶으면 정당한 운영이 막힌다. 여기에 넣지 말 것.
+//   그 기능 자체는 admin-users-company-edit.guard.test.ts 가 별도로 지킨다.
 const ROUTES = [
   resolve(here, "../app/api/admin/register/route.ts"),
   resolve(here, "../app/api/auth/google/complete/route.ts"),
