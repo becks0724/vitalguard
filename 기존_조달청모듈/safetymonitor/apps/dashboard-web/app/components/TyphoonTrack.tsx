@@ -934,7 +934,18 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
       {open &&
         typeof document !== "undefined" &&
         createPortal(
-          <TyphoonModal t={disp} onClose={() => setOpen(false)} siteLat={lat} siteLon={lon} />,
+          <TyphoonModal
+            t={disp}
+            onClose={() => setOpen(false)}
+            siteLat={lat}
+            siteLon={lon}
+            banner={{
+              zone: gate.zone,
+              title: `${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`,
+              advisory: (gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone],
+              lead: leadText,
+            }}
+          />,
           document.body,
         )}
     </div>
@@ -976,11 +987,14 @@ function TyphoonModal({
   onClose,
   siteLat,
   siteLon,
+  banner,
 }: {
   t: TyphoonRec;
   onClose: () => void;
   siteLat?: number;
   siteLon?: number;
+  // 인라인과 같은 경보 배너 — 확대했다고 등급·리드타임이 사라지면 안 된다.
+  banner?: { zone: Zone; title: string; advisory: string; lead: string };
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -991,6 +1005,8 @@ function TyphoonModal({
   }, [onClose]);
 
   const cur = t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null;
+  // 배너가 실제로 그려지는 경우에만 상단을 비운다(watch·영향권 밖은 ZoneBanner 가 null 을 낸다).
+  const bannerOn = !!banner && banner.zone !== "none" && banner.zone !== "watch";
 
   return (
     <div
@@ -1024,7 +1040,7 @@ function TyphoonModal({
           </button>
         </header>
 
-        {/* 지도가 팝업 본체를 꽉 채우고(정사각 제한 없음) 관측값·안내는 그 위에 얹는다. */}
+        {/* 지도가 팝업 본체를 꽉 채우고(정사각 제한 없음) 경보 배너·관측값·안내를 그 위에 얹는다. */}
         <div className="relative h-[72vh] w-full shrink-0 overflow-hidden">
           <SlippyMap
             track={t.track}
@@ -1032,7 +1048,15 @@ function TyphoonModal({
             interactive
             siteLat={siteLat}
             siteLon={siteLon}
+            padTop={bannerOn ? 62 : 0}
           />
+          {/* 좌우 여백은 줌 뱃지(좌상단)와 확대·축소 컨트롤(우상단)을 피하기 위한 것 —
+              전체 폭으로 깔면 배너가 그 위에 덮여 버튼을 못 누른다. */}
+          {banner && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 py-2 pl-12 pr-14">
+              <ZoneBanner {...banner} onMap />
+            </div>
+          )}
           <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-3 pt-10">
             {cur && (
               <div className="grid grid-cols-3 gap-2">
