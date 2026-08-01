@@ -58,12 +58,14 @@ test("화면 선택지는 전부 서버 게이트를 통과한다 — 어긋나�
 
 // ── 서버 게이트 가드 — 라우트가 유형을 보지 않는 검증으로 되돌아가는 것을 막는다.
 const here = dirname(fileURLToPath(import.meta.url));
+// 프로필 수정도 포함한다 — 가입 때만 막으면 가입 후 회사를 바꿔 우회할 수 있다.
 const ROUTES = [
   resolve(here, "../app/api/admin/register/route.ts"),
   resolve(here, "../app/api/auth/google/complete/route.ts"),
+  resolve(here, "../app/api/admin/profile/route.ts"),
 ];
 
-test("가입 라우트는 유형을 함께 보는 게이트를 쓴다", () => {
+test("가입·프로필 라우트는 유형을 함께 보는 게이트를 쓴다", () => {
   for (const path of ROUTES) {
     const src = readFileSync(path, "utf8");
     assert.match(src, /isAllowedCompanyForOrgType\(/, path);

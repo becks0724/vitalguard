@@ -4,12 +4,17 @@
 //   ⚠ 아래 비밀번호는 로컬 시연 전용. 실 서버 인증과 무관(DEMO 비활성). 커밋 시 노출 유의.
 //   in-memory(프로세스 단위) — 내 정보 수정(POST) 반영, dev 재시작 시 초기값으로 리셋.
 
+import { DEFAULT_ORG_TYPE } from "./org-type";
+
 export const DEMO_ENABLED = !process.env.DATABASE_URL;
 
 export type DemoProfile = {
   username: string;
   name: string | null;
   company: string | null;
+  // 가입 유형 — 회사(상호) 선택지를 정한다. 실 DB 경로와 같은 검증을 타게 하려고 데모에도 둔다
+  // (없으면 로컬에서만 유형 검증이 통과해 "로컬은 되는데 서버는 거부"가 된다).
+  org_type: string;
   phone: string | null;
   carrier: string | null;
   email: string | null;
@@ -34,6 +39,7 @@ function seed(): Map<string, DemoEntry> {
           username: "admin3470",
           name: "현장안전관리자",
           company: null, // 내 정보에서 승인 회사 선택(저장 시 검증)
+          org_type: DEFAULT_ORG_TYPE,
           phone: null,
           carrier: null,
           email: "admin3470@safetymonitor.local",

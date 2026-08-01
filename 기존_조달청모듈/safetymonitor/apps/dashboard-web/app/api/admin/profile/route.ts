@@ -3,10 +3,10 @@ import { NextResponse } from "next/server";
 
 import { checkPassword, passwordMessage } from "../../../../lib/account-policy";
 import { getSession } from "../../../../lib/admin-auth";
-import { isAllowedCompany } from "../../../../lib/companies";
+import { isAllowedCompanyForOrgType } from "../../../../lib/companies";
 import { employeeIdTakenByOther, findUserByUsername, updateUserProfile } from "../../../../lib/db";
 import { DEMO_ENABLED, getDemoProfile, updateDemoProfile } from "../../../../lib/demo-members";
-import { canApproveUsers } from "../../../../lib/org-type";
+import { DEFAULT_ORG_TYPE, canApproveUsers, isOrgType } from "../../../../lib/org-type";
 import { hashPassword, verifyPassword } from "../../../../lib/password";
 
 // 내 정보 조회 — 폼 프리필용(민감값 제외).
@@ -110,8 +110,12 @@ export async function POST(request: Request) {
     const tel = d.phone.trim();
     const car = typeof d.carrier === "string" ? d.carrier.trim() : "";
     if (!nm) return NextResponse.json({ ok: false, error: "이름을 입력해주세요." }, { status: 400 });
-    if (!isAllowedCompany(co)) {
-      return NextResponse.json({ ok: false, error: "승인되지 않은 회사(상호)입니다." }, { status: 400 });
+    // 회사(상호)는 이 계정의 가입 유형이 쓸 수 있는 것만 — 유형은 자가 수정 대상이 아니라 저장된 값을 쓴다.
+    if (!isAllowedCompanyForOrgType(co, isOrgType(p.org_type) ? p.org_type : DEFAULT_ORG_TYPE)) {
+      return NextResponse.json(
+        { ok: false, error: "가입 유형에 맞지 않는 회사(상호)입니다." },
+        { status: 400 },
+      );
     }
     if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
       return NextResponse.json({ ok: false, error: "연락처 형식이 올바르지 않습니다." }, { status: 400 });
@@ -175,9 +179,11 @@ export async function POST(request: Request) {
   if (!personName) {
     return NextResponse.json({ ok: false, error: "이름을 입력해주세요." }, { status: 400 });
   }
-  if (!isAllowedCompany(coName)) {
+  // 회사(상호)는 이 계정의 가입 유형이 쓸 수 있는 것만 — 유형은 자가 수정 대상이 아니라 DB 값을 그대로 쓴다.
+  // 가입 때만 막으면 가입 후 프로필에서 바꿔 우회할 수 있다.
+  if (!isAllowedCompanyForOrgType(coName, isOrgType(u.org_type) ? u.org_type : DEFAULT_ORG_TYPE)) {
     return NextResponse.json(
-      { ok: false, error: "승인되지 않은 회사(상호)입니다." },
+      { ok: false, error: "가입 유형에 맞지 않는 회사(상호)입니다." },
       { status: 400 },
     );
   }

@@ -5,8 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 
 import { checkPassword, passwordMessage } from "../../lib/account-policy";
 import { CARRIERS, MVNO_NETS, composeCarrier, parseCarrier } from "../../lib/carriers";
-import { ALLOWED_COMPANIES } from "../../lib/companies";
+import { companiesForOrgType } from "../../lib/companies";
 import { GUARDIAN_RELATIONS, composeGuardian, parseGuardian } from "../../lib/guardian";
+import { DEFAULT_ORG_TYPE, isOrgType, type OrgType } from "../../lib/org-type";
 import { getSessionToken } from "./LoginGate";
 
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
@@ -34,6 +35,7 @@ type Profile = {
   username: string;
   name: string | null;
   company: string | null;
+  org_type: string | null;
   phone: string | null;
   carrier: string | null;
   email: string | null;
@@ -67,6 +69,8 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [provider, setProvider] = useState("password");
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
+  // 가입 유형 — 회사(상호) 선택지를 정한다. 본인이 바꿀 수 없는 값이라 서버가 준 것을 그대로 쓴다.
+  const [orgType, setOrgType] = useState<OrgType>(DEFAULT_ORG_TYPE);
   const [department, setDepartment] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -123,6 +127,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         setProvider(p.auth_provider);
         setName(p.name ?? "");
         setCompany(p.company ?? "");
+        setOrgType(isOrgType(p.org_type) ? p.org_type : DEFAULT_ORG_TYPE);
         setDepartment(p.department ?? "");
         setJobTitle(p.job_title ?? "");
         setEmployeeId(p.employee_id ?? "");
@@ -302,8 +307,9 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                   style={SELECT_CHEVRON}
                   className={SELECT_FULL}
                 >
+                  {/* 선택지는 이 계정의 가입 유형이 정한다 — 서버가 거부할 상호를 화면에 띄우지 않는다. */}
                   <option value="">회사(상호) 선택</option>
-                  {ALLOWED_COMPANIES.map((c) => (
+                  {companiesForOrgType(orgType).map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
