@@ -166,12 +166,15 @@ function SlippyMap({
   interactive,
   siteLat,
   siteLon,
+  padTop = 0,
 }: {
   track: TrackPoint[];
   currentIndex: number;
   interactive: boolean;
   siteLat?: number;
   siteLon?: number;
+  // 상단을 덮는 오버레이(경보 배너) 높이. 그만큼 비워두지 않으면 진로·현장 마커가 배너 뒤로 숨는다.
+  padTop?: number;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -212,12 +215,20 @@ function SlippyMap({
         typeof siteLat === "number" && typeof siteLon === "number"
           ? [...trackPts, { lat: siteLat, lon: siteLon }]
           : trackPts;
-      return (
-        frameOf(withSite, w, h) ??
-        frameOf(trackPts, w, h) ?? { center: { lat: first.lat, lon: first.lon }, zoom: MIN_Z }
-      );
+      // 배너가 덮는 상단만큼 가용 높이를 줄여 줌을 정하고, 그 다음 중심을 북쪽으로 밀어
+      // 콘텐츠 전체가 배너 아래 영역의 한가운데로 오게 한다(줌만 낮추면 여전히 상단이 가린다).
+      const usableH = Math.max(40, h - padTop);
+      const view =
+        frameOf(withSite, w, usableH) ??
+        frameOf(trackPts, w, usableH) ?? { center: { lat: first.lat, lon: first.lon }, zoom: MIN_Z };
+      if (padTop <= 0) return view;
+      const shifted = latToWorldY(view.center.lat, view.zoom) - padTop / 2;
+      return {
+        center: { lat: worldYToLat(shifted, view.zoom), lon: view.center.lon },
+        zoom: view.zoom,
+      };
     },
-    [track, siteLat, siteLon],
+    [track, siteLat, siteLon, padTop],
   );
 
   // 초기/리핏 — interactive 면 1회만(사용자 조작 보존), static 이면 size/track 변경 시 갱신.
@@ -573,6 +584,18 @@ const ZONE_BANNER: Record<Zone, string> = {
   none: "",
 };
 
+// 지도 위 배너 — 어두운 위성 배경에 얹히므로 반투명 검정 바탕 + 등급색 테두리·밝은 글씨로 간다.
+// 라이트 모드 배경색(bg-sky-50 등)을 그대로 쓰면 지도를 가리고, 다크 변형(bg-sky-500/10)은 너무 투명해 안 읽힌다.
+const ZONE_BANNER_ON_MAP: Record<Zone, string> = {
+  storm: "border-red-400/70 text-red-200",
+  gale: "border-orange-400/70 text-orange-200",
+  approach: "border-amber-400/70 text-amber-200",
+  emergency: "border-amber-400/70 text-amber-200",
+  alert: "border-sky-400/70 text-sky-200",
+  watch: "",
+  none: "",
+};
+
 // 도달 리드타임 — 통보문 시각끼리의 차이라 브라우저 시계와 무관하다(typhoon-gate.tmToMs).
 function fmtLead(h: number | null): string {
   if (h === null || h <= 0) return "";
@@ -649,15 +672,20 @@ function ZoneBanner({
   title,
   advisory,
   lead,
+  onMap,
 }: {
   zone: Zone;
   title: string;
   advisory: string;
   lead: string;
+  onMap?: boolean;
 }) {
   if (zone === "none" || zone === "watch") return null;
+  const skin = onMap
+    ? `bg-black/65 backdrop-blur-[2px] ${ZONE_BANNER_ON_MAP[zone]}`
+    : `shrink-0 ${ZONE_BANNER[zone]}`;
   return (
-    <div className={`shrink-0 rounded-lg border px-2 py-1.5 text-center leading-tight ${ZONE_BANNER[zone]}`}>
+    <div className={`rounded-lg border px-2 py-1.5 text-center leading-tight ${skin}`}>
       <span className="text-[11px] font-bold">
         {title}
         {lead ? ` · ${lead}` : ""}
@@ -757,6 +785,8 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   const leadText = gate.forecast ? fmtLead(gate.leadHours) : "";
   // 반경 축이 등급을 이겼을 때만 구역 근거를 병기(등급 자체가 구역명이면 중복이다).
   const kmaNote = KMA_ZONE_LABEL[gate.zone] ? "" : KMA_ZONE_LABEL[gate.kmaZone];
+  // 배너 표시 여부 — 감시(watch)·영향권 밖에서는 배너가 없어 푸터가 등급을 말해야 한다.
+  const bannerShown = gate.zone !== "none" && gate.zone !== "watch";
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -778,13 +808,19 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
       {realThreat &&
         (gate.tracking ? (
           <>
-            {" · "}
-            <span
-              className={`font-semibold ${onMap ? ZONE_TEXT_ON_MAP[gate.zone] : ZONE_TEXT[gate.zone]}`}
-            >
-              {zoneLabelText}
-            </span>
-            {leadText ? ` · ${leadText}` : ""}
+            {/* 지도 위에서는 등급·리드타임을 상단 배너가 이미 말한다 — 여기 또 쓰면 같은 화면에 두 번이다.
+                단 배너가 없는 감시(watch) 단계에서는 여기가 유일한 표시이므로 남긴다. */}
+            {!(onMap && bannerShown) && (
+              <>
+                {" · "}
+                <span
+                  className={`font-semibold ${onMap ? ZONE_TEXT_ON_MAP[gate.zone] : ZONE_TEXT[gate.zone]}`}
+                >
+                  {zoneLabelText}
+                </span>
+                {leadText ? ` · ${leadText}` : ""}
+              </>
+            )}
             {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
             {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
             {gate.siteKm !== null
@@ -833,14 +869,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         </>
       ) : gate.tracking ? (
         <>
-          {/* 태풍명은 헤더에 이미 있다 — 쌍태풍일 때만 원인 귀속을 위해 배너에도 넣는다. */}
-          <ZoneBanner
-            zone={gate.zone}
-            title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
-            advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
-            lead={leadText}
-          />
-          {/* 지도가 카드를 꽉 채우고(정사각 제한 없음) 관측값·출처는 그 위에 얹는다.
+          {/* 지도가 카드를 꽉 채우고(정사각 제한 없음) 경보 배너·관측값·출처를 모두 그 위에 얹는다.
               텍스트를 아래로 빼면 그만큼 지도가 줄어든다 — 지도가 이 패널의 본체다. */}
           <button
             type="button"
@@ -854,8 +883,19 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
               interactive={false}
               siteLat={lat}
               siteLon={lon}
+              padTop={bannerShown ? 46 : 0}
             />
-            <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
+            {/* 상단 = 등급·리드타임·조치. 태풍명은 헤더에 있으므로 쌍태풍일 때만 귀속을 위해 넣는다. */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-1.5">
+              <ZoneBanner
+                zone={gate.zone}
+                title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
+                advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
+                lead={leadText}
+                onMap
+              />
+            </div>
+            <span className="pointer-events-none absolute right-1.5 top-1.5 z-20 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
               ⤢ 크게 보기
             </span>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-1.5 pb-1.5 pt-6">
