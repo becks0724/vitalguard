@@ -7,6 +7,7 @@ import {
   decodeEntities,
   formatRelativeTime,
   hostnameOf,
+  isExcludedNews,
   parseNaverNewsItem,
   parsePubDateMs,
   stripHtml,
@@ -50,6 +51,23 @@ test("formatRelativeTime — 방금/분/시간/일, 7일 이상은 날짜", () =
   // 10일 전 → yyyy.mm.dd
   assert.equal(formatRelativeTime(Date.parse("2026-06-23T12:00:00+09:00"), now), "2026.06.23");
   assert.equal(formatRelativeTime(undefined, now), "");
+});
+
+test("isExcludedNews — 증권·보험·법률 홍보·채용 노이즈 제외", () => {
+  // 증권(테마주) — 제목에 제외어
+  assert.equal(isExcludedNews("중대재해처벌법 관련주 급등", "안전 장비 업체 주목"), true);
+  // 보험 재테크 — 요약에 제외어
+  assert.equal(isExcludedNews("산재 대비 어떻게", "보험료 절감 노하우를 소개한다"), true);
+  // 법률 서비스 홍보
+  assert.equal(isExcludedNews("중대재해 전문 변호사가 말하는 대응법", ""), true);
+  // 채용 공고
+  assert.equal(isExcludedNews("안전관리자 채용 공고", "OO건설 모집"), true);
+});
+
+test("isExcludedNews — 정상 사고·정책 기사는 통과", () => {
+  assert.equal(isExcludedNews("건설현장 추락 사고로 1명 사망", "고용노동부가 작업중지 명령"), false);
+  assert.equal(isExcludedNews("밀폐공간 질식 사고 잇따라", "환기 조치 미비가 원인"), false);
+  assert.equal(isExcludedNews("폭염 속 온열질환 산재 급증", "옥외 작업자 보호 대책 시행"), false);
 });
 
 test("parseNaverNewsItem — 링크는 네이버 우선·언론사는 원문 도메인·태그 제거", () => {

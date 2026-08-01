@@ -91,3 +91,30 @@ export function parseNaverNewsItem(raw: NaverNewsRaw): NewsItem {
     pubDateMs: parsePubDateMs(raw.pubDate),
   };
 }
+
+// 노이즈 제외어 — 증권(테마주)·보험 재테크·법률 서비스 홍보·채용 공고성 기사.
+// 네이버 검색 API 는 `-제외어` 연산자를 공식 지원하지 않으므로 서버 후처리로 거른다.
+export const NEWS_EXCLUDE_KEYWORDS = [
+  // 증권 — 중대재해처벌법 관련주 기사
+  "관련주",
+  "테마주",
+  "수혜주",
+  "주가",
+  // 보험 — 산재보험 재테크·보험사 홍보
+  "보험료",
+  "보험금",
+  // 법률 서비스 홍보
+  "변호사",
+  "법률사무소",
+  "로펌",
+  // 채용·행사 공고
+  "채용",
+  "모집",
+  "공모전",
+] as const;
+
+// 제목·요약에 제외어가 하나라도 포함되면 true(노이즈 기사로 판정).
+export function isExcludedNews(title: string, description: string): boolean {
+  const text = `${title} ${description}`;
+  return NEWS_EXCLUDE_KEYWORDS.some((k) => text.includes(k));
+}

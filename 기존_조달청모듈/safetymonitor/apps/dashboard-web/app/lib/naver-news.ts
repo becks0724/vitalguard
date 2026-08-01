@@ -7,6 +7,7 @@ import "server-only";
 import { ogImagesFor } from "./og-image";
 
 import {
+  isExcludedNews,
   parseNaverNewsItem,
   type NaverNewsRaw,
   type NewsItem,
@@ -22,8 +23,18 @@ const TTL_MS = 15 * 60 * 1000; // 15분 — 뉴스는 수시 갱신되나 쿼터
 const PER_QUERY = 20; // 쿼리당 최대(뉴스검색 display 최대 100, 절약)
 const MAX_TOTAL = 30; // 병합 후 최대 노출
 
-// 산업 안전 뉴스 검색어 — 산업현장·산업재해·산업안전 법규.
-const QUERIES = ["산업재해", "중대재해처벌법", "산업안전보건", "건설현장 사고"];
+// 산업 안전 뉴스 검색어 — 산업현장·산업재해·산업안전 법규 + 주요 사고 유형(추락·질식·온열·끼임).
+// 검색어당 15분마다 1호출 — 8개 × 96회/일 = 768회로 일 쿼터(25,000) 대비 여유.
+const QUERIES = [
+  "산업재해",
+  "중대재해처벌법",
+  "산업안전보건",
+  "건설현장 사고",
+  "추락 사고 건설",
+  "질식 사고 밀폐공간",
+  "온열질환 작업자",
+  "끼임 사고",
+];
 
 function creds(): { id: string; secret: string } | null {
   const id = process.env.NAVER_SEARCH_CLIENT_ID?.trim();
@@ -83,6 +94,7 @@ export async function searchSafetyNews(): Promise<NewsResult> {
     for (const raw of raws) {
       const it = parseNaverNewsItem(raw);
       if (!it.title || !it.link) continue;
+      if (isExcludedNews(it.title, it.description)) continue; // 증권·보험·홍보성 노이즈 제외
       const tkey = it.title.replace(/\s+/g, " ").trim();
       if (seenLink.has(it.link) || seenTitle.has(tkey)) continue;
       seenLink.add(it.link);
