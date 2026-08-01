@@ -8,6 +8,7 @@ import { test } from "node:test";
 import { decideFusion, type FusionInputs } from "@safetymonitor/analyzers";
 import type { CctvFallEvent } from "@safetymonitor/schemas";
 
+import { isPollableUrl } from "./cctv-fall-poller.js";
 import { cctvStatsToEvent } from "./cctv-poller.js";
 
 const VISION_TS = "2026-05-21T10:00:05.000Z"; // 영상 관측
@@ -24,6 +25,16 @@ function visionFrom(event: CctvFallEvent): FusionInputs["vision"] {
     availability: "available",
   };
 }
+
+test("isPollableUrl — 서버에서 폴링 가능한 절대 URL 만 통과", () => {
+  assert.equal(isPollableUrl("https://cctv-ai-569797426568.asia-northeast3.run.app"), true);
+  assert.equal(isPollableUrl("http://localhost:8000"), true);
+  // ★ 회귀 고정 — 브라우저 프록시 경로는 서버 fetch 에서 Invalid URL 이라 폴러가 무한 실패했다.
+  assert.equal(isPollableUrl("/ai-cctv"), false);
+  assert.equal(isPollableUrl("localhost:8000"), false); // 스킴 없음
+  assert.equal(isPollableUrl(""), false);
+  assert.equal(isPollableUrl("   "), false);
+});
 
 test("A. 폴러 — fallen 상승전이에서만 이벤트 생성", () => {
   const ctx = { cameraId: "CAM-02", ts: VISION_TS };

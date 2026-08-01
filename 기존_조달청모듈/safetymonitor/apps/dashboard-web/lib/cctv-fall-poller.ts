@@ -11,6 +11,14 @@ const AI_URL = process.env.NEXT_PUBLIC_AI_CCTV_API ?? "";
 // HMR/다중 import 시 중복 기동 방지 — mockStore 와 동일한 globalThis 캐시 패턴.
 const g = globalThis as typeof globalThis & { __cctvFallPollerStarted?: boolean };
 
+// 서버 fetch 는 절대 URL 만 받는다. 이 값은 브라우저와 공유되는 NEXT_PUBLIC_ 변수라
+// 프록시용 상대 경로("/ai-cctv")가 들어올 수 있는데, 그건 브라우저에서만 유효하다.
+// 걸러내지 않으면 폴 주기마다 Invalid URL 로 실패한다 — 재시도해도 영원히 성공하지 않고,
+// 1.5초마다 스택 트레이스를 찍어 다른 문제의 로그를 덮는다(실제로 dev 진단을 방해했다).
+export function isPollableUrl(u: string): boolean {
+  return /^https?:\/\//i.test(u.trim());
+}
+
 // 서버 기동 시 1회 호출(instrumentation.register). AI_URL 미설정이면 미기동(경보만 워치 단독).
 export function startCctvFallPoller(): void {
   if (g.__cctvFallPollerStarted) return;
@@ -18,8 +26,16 @@ export function startCctvFallPoller(): void {
     console.warn("[cctv-fall-poller] NEXT_PUBLIC_AI_CCTV_API 미설정 — CCTV 낙상 폴러 미기동");
     return;
   }
+  if (!isPollableUrl(AI_URL)) {
+    console.warn(
+      `[cctv-fall-poller] NEXT_PUBLIC_AI_CCTV_API 가 절대 URL 이 아님("${AI_URL}") — ` +
+        "서버에서는 폴링할 수 없어 미기동(브라우저 프록시 경로는 서버 fetch 에 쓸 수 없다)",
+    );
+    return;
+  }
   g.__cctvFallPollerStarted = true;
   let prevFallen = 0;
+  let failStreak = 0; // 연속 폴 실패 횟수 — 로그를 솎아내는 기준(아래 catch 참고)
   // 폴 주기만큼만 시간 해상도가 있다(설계 §9) — silent cap 금지, 기동 시 명시 로그(warn 로 노출).
   console.warn(
     `[cctv-fall-poller] 기동 — ${AI_URL}/cctv/stats2, ${POLL_MS}ms 주기(시간해상도=폴주기), CAM-02`,
@@ -29,6 +45,10 @@ export function startCctvFallPoller(): void {
     try {
       const res = await fetch(`${AI_URL}/cctv/stats2`, { cache: "no-store" });
       if (!res.ok) return;
+      if (failStreak > 0) {
+        console.warn(`[cctv-fall-poller] 폴 복구 — 직전까지 ${failStreak}회 연속 실패`);
+        failStreak = 0;
+      }
       const stats = (await res.json()) as CctvStats;
       const event = cctvStatsToEvent(stats, prevFallen, {
         cameraId: CAM02_ID,
@@ -42,7 +62,12 @@ export function startCctvFallPoller(): void {
       }
     } catch (e) {
       // 폴 실패는 다음 주기에 재시도 — 루프는 죽지 않는다(cctv-ai 재기동/일시장애 대비).
-      console.error("[cctv-fall-poller] 폴 실패(다음 주기 재시도)", e);
+      // 다만 cctv-ai 가 꺼져 있으면 실패가 무한히 이어진다. 주기마다 스택을 찍으면
+      // 시간당 2,400줄이 쌓여 다른 문제의 로그를 덮으므로 첫 실패와 이후 100회마다만 남긴다.
+      failStreak += 1;
+      if (failStreak === 1 || failStreak % 100 === 0) {
+        console.error(`[cctv-fall-poller] 폴 실패 ${failStreak}회 연속(다음 주기 재시도)`, e);
+      }
     }
   };
 
