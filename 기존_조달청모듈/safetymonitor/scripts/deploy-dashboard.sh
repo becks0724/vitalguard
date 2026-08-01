@@ -9,7 +9,10 @@
 # 사용.  기존_조달청모듈/safetymonitor/scripts/deploy-dashboard.sh
 #   DRY_RUN=1         gcloud 쓰기 호출 없이 계획만 출력(상태검사·검증·아카이브는 실제 수행)
 #   SKIP_VERIFY=1     tsc·lint·test 생략(같은 HEAD 를 방금 검증했을 때만)
-#   ALLOW_DIRTY=1     빌드 범위 미커밋 변경 무시(검증 트리 ≠ 배포 이미지가 됨 — 알고 강행할 때만)
+#   ALLOW_DIRTY=1     빌드 범위 미커밋 변경 무시(이미지엔 HEAD 만 실린다).
+#                     이때 검증은 워킹트리가 아니라 **아카이브에서** 수행한다 — 갈라진 채 워킹트리로
+#                     재면 "검증한 것 ≠ 배포한 것"이 되어, 미커밋 변경이 타입 오류를 가려주고 있었을 때
+#                     검증은 통과하고 이미지가 깨진다. 대가로 의존성 설치가 붙어 수 분 더 걸린다.
 #   ALLOW_UNPUSHED=1  origin/main 미반영 커밋 배포 허용
 #   AI_URL=…          _AI_URL 치환 재정의(기본 cctv-ai 프로덕션)
 set -euo pipefail
@@ -53,22 +56,7 @@ else
   echo "HEAD=$SHA (origin 동기 · 빌드 범위 clean)"
 fi
 
-say "1/5 선검증 tsc·lint·test (L-10 — 3종 전부)"
-if [ "${SKIP_VERIFY:-}" = 1 ]; then
-  echo "SKIP_VERIFY=1 — 생략(같은 HEAD 직전 검증 전제)"
-else
-  VLOG=$(mktemp)
-  (cd "$SUBTREE/apps/dashboard-web" && npx tsc --noEmit) >"$VLOG" 2>&1 \
-    || { tail -30 "$VLOG"; die "typecheck 실패"; }
-  (cd "$SUBTREE" && pnpm lint) >"$VLOG" 2>&1 \
-    || { tail -30 "$VLOG"; die "lint 실패"; }
-  (cd "$SUBTREE" && pnpm test) >"$VLOG" 2>&1 \
-    || { grep -E "^not ok|# fail|# pass" "$VLOG" | head -20; die "test 실패"; }
-  grep -hE "^apps/dashboard-web test: # (tests|pass|fail)" "$VLOG" || true
-  rm -f "$VLOG"
-fi
-
-say "2/5 커밋 고정 아카이브 (이미지=HEAD 보증 · L-32)"
+say "1/5 커밋 고정 아카이브 (이미지=HEAD 보증 · L-32)"
 TMP=$(mktemp -d /tmp/vg-deploy.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 git -c core.quotepath=false archive "HEAD:$SUBTREE" | tar -x -C "$TMP"
@@ -78,6 +66,47 @@ done
 N=$(find "$TMP" -type f | wc -l | tr -d ' ')
 [ "$N" -gt 100 ] || die "아카이브 파일 ${N}개 — 추출 실패 의심(조용한 0 금지)"
 echo "아카이브 ${N}파일 → $TMP"
+
+say "2/5 선검증 tsc·lint·test (L-10 — 3종 전부)"
+# 검증 대상은 **배포될 트리**여야 한다. clean 이면 워킹트리 = HEAD 라 워킹트리에서 재며(node_modules
+# 재사용으로 빠르다), ALLOW_DIRTY 강행이면 둘이 갈라지므로 아카이브에서 잰다.
+# 갈라진 채 워킹트리로 검증하면 "검증한 것 ≠ 배포한 것"이 된다 — 미커밋 변경이 타입 오류를
+# 가려주고 있었다면 검증은 통과하고 이미지는 깨진다(2026-08-01 ALLOW_DIRTY 배포에서 드러난 구멍).
+if [ "${SKIP_VERIFY:-}" = 1 ]; then
+  echo "SKIP_VERIFY=1 — 생략(같은 HEAD 직전 검증 전제)"
+else
+  VLOG=$(mktemp)
+  if [ -n "$DIRTY" ]; then
+    echo "⚠ dirty 강행 — 워킹트리 대신 아카이브에서 검증(검증=이미지 보장). 의존성 설치가 필요해 수 분 걸린다."
+    (cd "$TMP" && pnpm install --frozen-lockfile) >"$VLOG" 2>&1 \
+      || { tail -30 "$VLOG"; die "아카이브 pnpm install 실패"; }
+    # analyzers·schemas 는 dist 를 import 한다 — 빌드 전에는 tsc 가 대량 실패한다.
+    (cd "$TMP" && pnpm -r --filter=./packages/* build) >"$VLOG" 2>&1 \
+      || { tail -30 "$VLOG"; die "packages 빌드 실패"; }
+    # ⚠️ subtree 아카이브에는 **레포 루트의 iOS/워치 앱 소스가 없다**(빌드 컨텍스트가 safetymonitor 라서).
+    #    그 파일을 readFileSync 로 읽는 계약 가드는 모듈 로드에서 죽어 테스트 10개가 통째로 빠진다
+    #    (실측 513 → 503 + 파일 실패 1). **이미지에 안 들어가는 자산의 계약 검사라 배포 안전성과 무관**하므로
+    #    아카이브 검증에서만 제외한다 — 워킹트리 검증(clean 경로)에서는 그대로 돈다.
+    ARCHIVE_SKIP="lib/2026-07-29-hyperclova-secret-boundary.test.ts"
+    for t in $ARCHIVE_SKIP; do
+      [ -f "$TMP/apps/dashboard-web/$t" ] || die "제외 대상 $t 이 아카이브에 없다 — 경로가 바뀌었는지 확인"
+      rm -f "$TMP/apps/dashboard-web/$t"
+      echo "  제외(레포 루트 참조·이미지 밖 자산 가드): $t"
+    done
+    VROOT="$TMP"
+  else
+    VROOT="$SUBTREE"
+  fi
+  (cd "$VROOT/apps/dashboard-web" && npx tsc --noEmit) >"$VLOG" 2>&1 \
+    || { tail -30 "$VLOG"; die "typecheck 실패"; }
+  (cd "$VROOT" && pnpm lint) >"$VLOG" 2>&1 \
+    || { tail -30 "$VLOG"; die "lint 실패"; }
+  (cd "$VROOT" && pnpm test) >"$VLOG" 2>&1 \
+    || { grep -E "^not ok|# fail|# pass" "$VLOG" | head -20; die "test 실패"; }
+  grep -hE "^apps/dashboard-web test: # (tests|pass|fail)" "$VLOG" || true
+  echo "검증 트리 = $([ -n "$DIRTY" ] && echo "아카이브(HEAD 고정)" || echo "워킹트리(= HEAD)")"
+  rm -f "$VLOG"
+fi
 
 say "3/5 빌드 (Cloud Build · _AI_URL=$AI_URL)"
 if [ "${DRY_RUN:-}" = 1 ]; then
@@ -132,4 +161,9 @@ echo "digest   $DIGEST (서빙 대조 일치)"
 echo "commit   $SHA (라벨 ${LBL:-서비스에만 기록됨})"
 echo "env      ${ENVN}개 (직전 ${PREV_ENVN}개 — 줄었으면 조사)"
 echo "HTTP     200"
+# dirty 강행 사실은 0단계에서 한 번 보이지만 긴 빌드 로그에 묻힌다 — 요약에 다시 남긴다.
+if [ -n "$DIRTY" ]; then
+  echo "⚠ ALLOW_DIRTY 강행 — 아래 미커밋 변경은 이미지에 없다(검증은 아카이브에서 수행):"
+  echo "$DIRTY" | sed 's/^/           /'
+fi
 echo "남은 수동 단계 — 변경 기능 라이브 실측(브라우저) + harness/5-observability/run-log.md 기록"
