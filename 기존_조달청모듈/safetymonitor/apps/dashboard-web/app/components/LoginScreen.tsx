@@ -301,9 +301,16 @@ const SELECT_CHEVRON = {
   backgroundSize: "1.1rem 1.1rem",
 };
 
-// 인라인 보조 버튼(중복 확인·인증번호 받기·확인).
+// 회원가입 라벨 — 폰에서만 시각적으로 감춘다(sr-only 라 스크린리더에는 남는다).
+// placeholder·선택지 첫 항목으로 뜻이 드러나는 필드에만 쓴다. 회사·ID·이름·생년월일은
+// 그 자체로 알아볼 수 없어(홍길동·mm/dd/yyyy) 폰에서도 라벨을 남긴다.
+const LABEL_PHONE_HIDDEN =
+  "sr-only text-xs font-semibold text-white/90 drop-shadow md:not-sr-only";
+
+// 인라인 보조 버튼(중복 확인). 폰에서는 ID 입력과 반쪽 칸을 나눠 쓰므로 버튼을 줄여 입력 폭을 넘겨준다
+// — 안 줄이면 375px 에서 입력이 60px 로 좁아져 placeholder 가 '관리:' 까지만 보인다.
 const MINI_BTN =
-  "shrink-0 rounded-xl border border-white/30 bg-white/15 px-3 py-3 text-xs font-semibold text-white backdrop-blur-md transition hover:bg-white/25 disabled:opacity-50";
+  "shrink-0 rounded-xl border border-white/30 bg-white/15 px-2 py-2 text-[11px] font-semibold text-white backdrop-blur-md transition hover:bg-white/25 disabled:opacity-50 md:px-3 md:py-3 md:text-xs";
 
 // 이메일 도메인 옵션. (통신사·알뜰폰 망 옵션은 lib/carriers)
 const EMAIL_DOMAINS = [
@@ -773,7 +780,7 @@ export function LoginScreen({
             src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
             // 회원가입에서만 축소(폰 64 · md 이상 96). globals.css 의 고정 픽셀(136)을 이기려면 ! 가 필요하다.
-            className={`logo3d-badge ${compact ? "!h-10 !w-10 md:!h-24 md:!w-24" : ""}`}
+            className={`logo3d-badge ${compact ? "!h-8 !w-8 md:!h-24 md:!w-24" : ""}`}
           />
         </div>
 
@@ -908,9 +915,7 @@ export function LoginScreen({
           </p>
           {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
           <div className="col-span-2">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.orgTypeLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.orgTypeLabel}</span>
             <div className="mt-1 grid grid-cols-2 gap-1.5">
               {(
                 [
@@ -1032,9 +1037,7 @@ export function LoginScreen({
             />
           </label>
           <div className="col-span-2">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.phoneLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.phoneLabel}</span>
             <div className="mt-1 flex items-center gap-1.5">
               <select
                 value={phonePrefix}
@@ -1077,9 +1080,7 @@ export function LoginScreen({
             </div>
           </div>
           <label className="block col-span-2">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.carrierLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.carrierLabel}</span>
             <div className="mt-1 flex gap-1.5">
               <select
                 value={carrierBase}
@@ -1122,9 +1123,7 @@ export function LoginScreen({
             </div>
           </label>
           <div className="col-span-2">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.emailLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.emailLabel}</span>
             <div className="mt-1 flex items-center gap-1.5">
               <input
                 type="text"
@@ -1164,9 +1163,7 @@ export function LoginScreen({
 
           </div>
           <label className="block">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.pwLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.pwLabel}</span>
             <input
               type="password"
               value={sPw}
@@ -1181,9 +1178,7 @@ export function LoginScreen({
             />
           </label>
           <label className="block">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.pwConfirmLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.pwConfirmLabel}</span>
             <input
               type="password"
               value={sPw2}
