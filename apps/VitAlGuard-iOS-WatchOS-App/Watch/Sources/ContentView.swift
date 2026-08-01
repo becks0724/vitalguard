@@ -96,7 +96,7 @@ struct ContentView: View {
                     Text(L("관리자 관제"))
                         .font(.system(size: 15, weight: .heavy, design: .rounded))
                         .foregroundStyle(.white)
-                    Text(L("작업자 38명 · CCTV 8대 · 주의 1"))
+                    Text(L("실측 Watch 동기화 상태만 표시"))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(WatchTheme.muted)
                         .lineLimit(2)
@@ -106,9 +106,8 @@ struct ContentView: View {
                     .glassButtonStyle(WatchTheme.ok, minWidth: 40)
             }
             HStack(spacing: 6) {
-                AdminMiniMetric(title: L("위험"), value: "1", tint: WatchTheme.danger)
-                AdminMiniMetric(title: L("주의"), value: "3", tint: WatchTheme.warn)
-                AdminMiniMetric(title: L("정상"), value: "34", tint: WatchTheme.ok)
+                AdminMiniMetric(title: L("수집"), value: workout.isRunning ? L("진행") : L("대기"), tint: workout.isRunning ? WatchTheme.ok : WatchTheme.muted)
+                AdminMiniMetric(title: L("관제"), value: settings.dashboardConnectionState == .connected ? L("연결") : L("확인 필요"), tint: settings.dashboardConnectionState == .connected ? WatchTheme.ok : WatchTheme.warn)
             }
             Text(L("수동 업데이트로 스마트폰 앱과 웹 대시보드에 워치 생체 데이터를 즉시 동기화합니다."))
                 .font(.system(size: 10))

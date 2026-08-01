@@ -9,6 +9,7 @@ final class FallMLPipeline {
     // v5 impact model operating point. The model is never a standalone alert source.
     static let impactThreshold = 0.3876582891869371
     static let impactSuppressBelow = 0.05 // v5 인계 기준: 규칙 후보가 확실히 낙상이 아닐 때만 억제
+    static let strongFallThresholdG = 8.0 // v5 impact label rule: strong fall only
     static let recoveryThreshold = 0.35   // 비회복 asym(애매하면 위험 쪽)
     static let fs = 50.0
 

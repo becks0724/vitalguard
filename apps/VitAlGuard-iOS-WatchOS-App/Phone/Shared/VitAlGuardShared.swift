@@ -30,6 +30,39 @@ enum VitAlGuardLocationUpdatePolicy {
     }
 }
 
+/// 평시 위치 전송은 작업시간과 작업구역 안에서만 허용한다.
+/// 사고 이벤트는 이 정책과 무관하게 incident_snapshot 으로 별도 저장한다.
+enum VitAlGuardWorkTrackingPolicy {
+    static let defaultStartMinutes = 7 * 60
+    static let defaultEndMinutes = 19 * 60
+
+    static func isWithinWorkHours(
+        date: Date = Date(),
+        calendar: Calendar = Calendar(identifier: .gregorian),
+        startMinutes: Int = defaultStartMinutes,
+        endMinutes: Int = defaultEndMinutes
+    ) -> Bool {
+        var localCalendar = calendar
+        localCalendar.timeZone = .current
+        let components = localCalendar.dateComponents([.hour, .minute], from: date)
+        guard let hour = components.hour, let minute = components.minute else { return false }
+        let current = hour * 60 + minute
+        let start = max(0, min(1_439, startMinutes))
+        let end = max(0, min(1_439, endMinutes))
+        if start == end { return false }
+        return start < end ? (start...end).contains(current) : current >= start || current <= end
+    }
+
+    static func isWithinWorkArea(
+        location: CLLocation,
+        center: CLLocation,
+        radiusMeters: CLLocationDistance
+    ) -> Bool {
+        guard location.horizontalAccuracy > 0 else { return false }
+        return location.distance(from: center) <= VitAlGuardLocationUpdatePolicy.clampedRadius(radiusMeters)
+    }
+}
+
 enum VitAlGuardQuickAction: String, Codable, Hashable {
     case sos
     case callManager
@@ -100,20 +133,11 @@ enum VitAlGuardDashboardShared {
         isFallDetected: Bool = false,
         date: Date = Date()
     ) -> [String: Any] {
-        let workerId: String
-        if !employeeId.isEmpty {
-            workerId = employeeId
-        } else if !loginId.isEmpty {
-            workerId = loginId
-        } else {
-            workerId = mode == .admin ? "admin001" : "worker001"
-        }
+        let workerId = employeeId.isEmpty ? loginId : employeeId
 
         var output: [String: Any] = [
             "workerId": workerId,
             "ts": ISO8601DateFormatter().string(from: date),
-            "workerName": workerName.isEmpty ? (mode == .admin ? "관리자 \(workerId)" : workerId) : workerName,
-            "employeeId": employeeId.isEmpty ? workerId : employeeId,
             "jobTitle": mode == .admin ? "안전 관리자" : "현장 근로자",
             "manualSos": reason == "sos",
             "fallDetected": isFallDetected && reason != "fall_demo",
@@ -121,6 +145,8 @@ enum VitAlGuardDashboardShared {
             "appMode": mode.rawValue,
             "syncReason": reason
         ]
+        if !workerName.isEmpty { output["workerName"] = workerName }
+        if !employeeId.isEmpty { output["employeeId"] = employeeId }
         if !loginId.isEmpty {
             output["loginId"] = loginId
         }
