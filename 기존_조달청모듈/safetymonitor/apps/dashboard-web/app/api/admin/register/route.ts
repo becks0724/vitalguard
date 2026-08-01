@@ -9,7 +9,7 @@ import {
   passwordMessage,
   usernameMessage,
 } from "../../../../lib/account-policy";
-import { isAllowedCompany } from "../../../../lib/companies";
+import { isAllowedCompanyForOrgType } from "../../../../lib/companies";
 import { createUser } from "../../../../lib/db";
 import { DEFAULT_ORG_TYPE, isOrgType } from "../../../../lib/org-type";
 import { hashPassword } from "../../../../lib/password";
@@ -76,10 +76,11 @@ export async function POST(request: Request) {
     );
   }
   const kind = isOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
-  // B2B — 승인된 기업(상호)만 가입 허용.
-  if (!isAllowedCompany(coName)) {
+  // B2B — 승인된 기업(상호)만, 그리고 그 가입 유형이 쓸 수 있는 상호만 허용.
+  // 화면에서 선택지를 좁히는 것만으로는 이 요청을 직접 만들어 보내는 것을 못 막는다.
+  if (!isAllowedCompanyForOrgType(coName, kind)) {
     return NextResponse.json(
-      { ok: false, error: "승인되지 않은 회사(상호)입니다." },
+      { ok: false, error: "가입 유형에 맞지 않는 회사(상호)입니다." },
       { status: 400 },
     );
   }

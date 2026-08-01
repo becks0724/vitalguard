@@ -12,7 +12,7 @@ import {
   checkUsername,
 } from "../../lib/account-policy";
 import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
-import { ALLOWED_COMPANIES } from "../../lib/companies";
+import { VITALGUARD_COMPANY, companiesForOrgType } from "../../lib/companies";
 import { DEFAULT_ORG_TYPE, type OrgType } from "../../lib/org-type";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
@@ -942,7 +942,12 @@ export function LoginScreen({
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setSOrgType(value)}
+                  onClick={() => {
+                    setSOrgType(value);
+                    // 유형이 바뀌면 고를 수 있는 상호가 달라진다 — 자사 유형은 단일이라 바로 채우고,
+                    // 회원사는 비워 다시 고르게 한다(안 비우면 이전 유형의 상호가 남아 제출된다).
+                    setSCompany(value === "vitalguard" ? VITALGUARD_COMPANY : "");
+                  }}
                   aria-pressed={sOrgType === value}
                   className={`rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition md:py-3 ${
                     sOrgType === value
@@ -959,6 +964,7 @@ export function LoginScreen({
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
+            {/* 선택지는 가입 유형이 정한다 — VitAlGuard 관리자는 자사 1개뿐이라 고를 것이 없다. */}
             <select
               value={sCompany}
               onChange={(e) => setSCompany(e.target.value)}
@@ -966,10 +972,12 @@ export function LoginScreen({
               style={SELECT_CHEVRON}
               className={SELECT_CLASS}
             >
-              <option value="" className="text-black">
-                {t.companySelect}
-              </option>
-              {ALLOWED_COMPANIES.map((c) => (
+              {sOrgType !== "vitalguard" && (
+                <option value="" className="text-black">
+                  {t.companySelect}
+                </option>
+              )}
+              {companiesForOrgType(sOrgType).map((c) => (
                 <option key={c} value={c} className="text-black">
                   {c}
                 </option>
@@ -1292,7 +1300,10 @@ export function LoginScreen({
                 <button
                   key={value}
                   type="button"
-                  onClick={() => setGOrgType(value)}
+                  onClick={() => {
+                    setGOrgType(value);
+                    setGCompany(value === "vitalguard" ? VITALGUARD_COMPANY : "");
+                  }}
                   aria-pressed={gOrgType === value}
                   className={`rounded-xl border px-3 py-3 text-xs font-semibold backdrop-blur-md transition ${
                     gOrgType === value
@@ -1316,10 +1327,12 @@ export function LoginScreen({
               style={SELECT_CHEVRON}
               className={SELECT_CLASS}
             >
-              <option value="" className="text-black">
-                {t.companySelect}
-              </option>
-              {ALLOWED_COMPANIES.map((c) => (
+              {gOrgType !== "vitalguard" && (
+                <option value="" className="text-black">
+                  {t.companySelect}
+                </option>
+              )}
+              {companiesForOrgType(gOrgType).map((c) => (
                 <option key={c} value={c} className="text-black">
                   {c}
                 </option>
