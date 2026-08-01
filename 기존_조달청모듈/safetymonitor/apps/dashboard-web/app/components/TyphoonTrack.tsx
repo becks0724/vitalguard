@@ -73,29 +73,6 @@ const SAT = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
 const REF =
   "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile";
 
-// 부모 영역을 측정해 가장 큰 정사각형을 중앙 배치(flex 컨텍스트 무관 채움).
-function SquareFit({ children }: { children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [side, setSide] = useState(0);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      setSide(Math.floor(Math.min(r.width, r.height)));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-  return (
-    <div ref={ref} className="flex h-full w-full items-center justify-center">
-      <div style={{ width: side || "100%", height: side || "100%" }}>{children}</div>
-    </div>
-  );
-}
-
 type View = { center: { lat: number; lon: number }; zoom: number };
 
 // 정식 슬리피맵 — 위성 타일을 center+zoom 으로 실시간 배치(확대 시 더 높은 줌 타일을 로드 → 항상 선명).
@@ -137,6 +114,42 @@ function frameOf(pts: { lat: number; lon: number }[], w: number, h: number): Vie
     if (spanX <= w * 0.8 && spanY <= h * 0.8) return { center, zoom: z };
   }
   return null;
+}
+
+// 태풍 마커 — 붉은 점 대신 회전하는 나선(태풍 심볼). 위성(어두운 바다) 위에서 읽히도록 흰 외곽선을 깐다.
+// 회전은 SMIL(animateTransform) — CSS 키프레임 없이 SVG 안에서 끝난다.
+function TyphoonMarker({ x, y, size = 30 }: { x: number; y: number; size?: number }) {
+  const s = size / 24;
+  const arms = (
+    <>
+      <path d="M12 5c3.6 0 6 2 6 4.6 0 1.9-1.6 3.1-3.4 3.1" />
+      <path d="M12 19c-3.6 0-6-2-6-4.6 0-1.9 1.6-3.1 3.4-3.1" />
+    </>
+  );
+  return (
+    <g transform={`translate(${x - 12 * s} ${y - 12 * s}) scale(${s})`}>
+      <g>
+        <animateTransform
+          attributeName="transform"
+          type="rotate"
+          from="0 12 12"
+          to="360 12 12"
+          dur="14s"
+          repeatCount="indefinite"
+        />
+        <g fill="none" stroke="#0f172a" strokeWidth={5.2} strokeLinecap="round" opacity={0.55}>
+          {arms}
+        </g>
+        <g fill="none" stroke="#fff" strokeWidth={3.6} strokeLinecap="round">
+          {arms}
+        </g>
+        <g fill="none" stroke="#ef4444" strokeWidth={1.9} strokeLinecap="round">
+          {arms}
+        </g>
+      </g>
+      <circle cx={12} cy={12} r={2.4} fill="#ef4444" stroke="#fff" strokeWidth={1.5} />
+    </g>
+  );
 }
 
 function SlippyMap({
@@ -309,6 +322,7 @@ function SlippyMap({
       sitePt = { x: lonToWorldX(siteLon, z) - tlx, y: latToWorldY(siteLat, z) - tly };
     }
   }
+  const curPt = polyPts[currentIndex] ?? null;
 
   return (
     <div
@@ -383,20 +397,21 @@ function SlippyMap({
               strokeLinejoin="round"
             />
           )}
-          {polyPts.map((p, i) => {
-            const cur = i === currentIndex;
-            return (
+          {/* 예보/관측 지점은 작은 점, 현재 위치만 태풍 심볼(회전 나선). */}
+          {polyPts.map((p, i) =>
+            i === currentIndex ? null : (
               <circle
                 key={i}
                 cx={p.x}
                 cy={p.y}
-                r={cur ? 7 : 4.5}
-                fill={cur ? "#ef4444" : "rgba(248,113,113,0.7)"}
+                r={4.5}
+                fill="rgba(248,113,113,0.7)"
                 stroke="#fff"
-                strokeWidth={cur ? 2 : 1.3}
+                strokeWidth={1.3}
               />
-            );
-          })}
+            ),
+          )}
+          {curPt && <TyphoonMarker x={curPt.x} y={curPt.y} size={interactive ? 44 : 30} />}
         </svg>
       )}
 
@@ -487,6 +502,16 @@ const ZONE_TEXT: Record<Zone, string> = {
   alert: "text-sky-600 dark:text-sky-300",
   watch: "text-zinc-500 dark:text-on-dark-soft",
   none: "text-zinc-500 dark:text-on-dark-soft",
+};
+// 지도 위(항상 어두운 위성 배경)에 얹을 때 쓰는 밝은 톤 — 라이트 모드 색을 그대로 쓰면 읽히지 않는다.
+const ZONE_TEXT_ON_MAP: Record<Zone, string> = {
+  storm: "text-red-300",
+  gale: "text-orange-300",
+  approach: "text-amber-300",
+  emergency: "text-amber-300",
+  alert: "text-sky-300",
+  watch: "text-zinc-200",
+  none: "text-zinc-200",
 };
 // 색은 5종 — emergency 와 approach 가 amber 를 공유한다. 어휘 절약이 아니라 두 단계에서
 // 현장이 할 행동이 같기 때문이다(사전 대비). 등급·라벨·문구는 분리되어 있어 정보 손실이 없다.
@@ -694,6 +719,42 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         ? "bg-amber-500 text-white"
         : "bg-zinc-400 text-white dark:bg-white/15";
 
+  // 출처·판정 요약 — 지도가 있으면 지도 위 오버레이(onMap = 밝은 톤), 없으면 패널 아래 기본 톤.
+  const footerContent = (onMap: boolean) => (
+    <>
+      {!realThreat
+        ? data.source === "mock"
+          ? "샘플 데이터 · 활용신청 승인 후 실시간 가동"
+          : "현재 발효 중인 태풍 없음 · 레이더 대기"
+        : `기상청 태풍정보${disp.tmFc ? ` · ${fmtTmFc(disp.tmFc)} 발표` : ""}`}
+      {realThreat &&
+        (gate.tracking ? (
+          <>
+            {" · "}
+            <span
+              className={`font-semibold ${onMap ? ZONE_TEXT_ON_MAP[gate.zone] : ZONE_TEXT[gate.zone]}`}
+            >
+              {zoneLabelText}
+            </span>
+            {leadText ? ` · ${leadText}` : ""}
+            {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
+            {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
+            {gate.siteKm !== null
+              ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`
+              : ` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
+            {liveList.length > 1 ? ` · 발효 태풍 ${liveList.length}개 감시` : ""}
+          </>
+        ) : (
+          <>
+            {" · "}
+            <span className="font-semibold text-zinc-500 dark:text-on-dark-soft">
+              국토 강풍 영향권 밖 · 추적 중지
+            </span>
+          </>
+        ))}
+    </>
+  );
+
   return (
     <div className="flex h-full flex-col gap-1.5 p-2">
       <div className="flex shrink-0 items-center justify-between gap-2">
@@ -716,86 +777,71 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
       </div>
 
       {!realThreat ? (
-        <IdleNoThreat note={idleNote} />
+        <>
+          <IdleNoThreat note={idleNote} />
+          <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
+            {footerContent(false)}
+          </p>
+        </>
       ) : gate.tracking ? (
         <>
-          {/* 태풍명은 헤더에 이미 있다 — 쌍태풍일 때만 원인 귀속을 위해 배너에도 넣는다.
-              배너가 한 줄 길어지면 flex-1 인 지도가 0 까지 눌린다(실측). */}
+          {/* 태풍명은 헤더에 이미 있다 — 쌍태풍일 때만 원인 귀속을 위해 배너에도 넣는다. */}
           <ZoneBanner
             zone={gate.zone}
             title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
             advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
             lead={leadText}
           />
-          {/* min-h — 배너가 길어져도 지도가 사라지지 않게 하는 하한(지도 없는 '태풍 진로'는 무의미하다). */}
+          {/* 지도가 카드를 꽉 채우고(정사각 제한 없음) 관측값·출처는 그 위에 얹는다.
+              텍스트를 아래로 빼면 그만큼 지도가 줄어든다 — 지도가 이 패널의 본체다. */}
           <button
             type="button"
             onClick={() => setOpen(true)}
             title="클릭하여 크게 보기"
-            className="group relative flex min-h-[88px] flex-1"
+            className="group relative flex min-h-[120px] flex-1 overflow-hidden rounded-lg"
           >
-            <SquareFit>
-              <SlippyMap
-                track={disp.track}
-                currentIndex={disp.currentIndex}
-                interactive={false}
-                siteLat={lat}
-                siteLon={lon}
-              />
-            </SquareFit>
+            <SlippyMap
+              track={disp.track}
+              currentIndex={disp.currentIndex}
+              interactive={false}
+              siteLat={lat}
+              siteLon={lon}
+            />
             <span className="pointer-events-none absolute right-1.5 top-1.5 z-10 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
               ⤢ 크게 보기
             </span>
-          </button>
-
-          {cur && (
-            <div className="grid shrink-0 grid-cols-3 gap-1.5">
-              <Stat label="중심기압" value={cur.pressureHpa !== undefined ? `${cur.pressureHpa}` : "--"} unit="hPa" />
-              <Stat label="최대풍속" value={cur.maxWindMs !== undefined ? `${cur.maxWindMs}` : "--"} unit="m/s" />
-              <Stat
-                label="이동"
-                value={cur.dir ?? "--"}
-                unit={cur.speedKmh !== undefined ? `${cur.speedKmh}km/h` : ""}
-              />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-1 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-1.5 pb-1.5 pt-6">
+              {cur && (
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Stat label="중심기압" value={cur.pressureHpa !== undefined ? `${cur.pressureHpa}` : "--"} unit="hPa" />
+                  <Stat label="최대풍속" value={cur.maxWindMs !== undefined ? `${cur.maxWindMs}` : "--"} unit="m/s" />
+                  <Stat
+                    label="이동"
+                    value={cur.dir ?? "--"}
+                    unit={cur.speedKmh !== undefined ? `${cur.speedKmh}km/h` : ""}
+                  />
+                </div>
+              )}
+              <p className="text-center text-[11px] font-medium leading-tight text-white">
+                {footerContent(true)}
+              </p>
             </div>
-          )}
+          </button>
         </>
       ) : (
-        <TrackingStopped
-          entries={liveList.map((t, i) => ({
-            label: typhoonLabel(t),
-            cur: t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null,
-            gate: gates[i] ?? EMPTY_GATE,
-          }))}
-        />
+        <>
+          <TrackingStopped
+            entries={liveList.map((t, i) => ({
+              label: typhoonLabel(t),
+              cur: t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null,
+              gate: gates[i] ?? EMPTY_GATE,
+            }))}
+          />
+          <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
+            {footerContent(false)}
+          </p>
+        </>
       )}
-
-      <p className="shrink-0 text-center text-[10px] text-muted dark:text-on-dark-soft">
-        {!realThreat
-          ? data.source === "mock"
-            ? "샘플 데이터 · 활용신청 승인 후 실시간 가동"
-            : "현재 발효 중인 태풍 없음 · 레이더 대기"
-          : `기상청 태풍정보${disp.tmFc ? ` · ${fmtTmFc(disp.tmFc)} 발표` : ""}`}
-        {realThreat &&
-          (gate.tracking ? (
-            <>
-              {" · "}
-              <span className={`font-semibold ${ZONE_TEXT[gate.zone]}`}>{zoneLabelText}</span>
-              {leadText ? ` · ${leadText}` : ""}
-              {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
-              {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
-              {gate.siteKm !== null
-                ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`
-                : ` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
-              {liveList.length > 1 ? ` · 발효 태풍 ${liveList.length}개 감시` : ""}
-            </>
-          ) : (
-            <>
-              {" · "}
-              <span className="font-semibold text-zinc-500 dark:text-on-dark-soft">국토 강풍 영향권 밖 · 추적 중지</span>
-            </>
-          ))}
-      </p>
 
       {open &&
         typeof document !== "undefined" &&
@@ -807,14 +853,29 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   );
 }
 
-function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
-  // 라벨 + 값 + 단위를 한 줄로 표시. 텍스트를 줄여 좁은 박스(패널 크기 불변) 안에 줄바꿈 없이 들어가게 한다.
+// 관측값 — 지도 위에 얹히므로 반투명 검정 배경 + 흰 글씨로 위성 배경과 분리한다.
+// big = 확대 팝업용(인라인보다 한 단계 큰 활자).
+function Stat({
+  label,
+  value,
+  unit,
+  big,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  big?: boolean;
+}) {
   return (
-    <div className="flex min-h-[2.25rem] items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-canvas px-1.5 py-1 text-center dark:bg-surface-dark">
-      <span className="text-[9px] text-muted dark:text-on-dark-soft">{label}</span>
-      <span className="font-mono text-[11px] font-bold leading-none text-ink dark:text-on-dark">
+    <div className="flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-black/55 px-2 py-1 text-center backdrop-blur-[2px]">
+      <span className={`text-white/75 ${big ? "text-[12px]" : "text-[10px]"}`}>{label}</span>
+      <span className={`font-mono font-bold leading-none text-white ${big ? "text-[18px]" : "text-[14px]"}`}>
         {value}
-        {unit && <span className="ml-0.5 text-[8px] font-normal text-muted dark:text-on-dark-soft">{unit}</span>}
+        {unit && (
+          <span className={`ml-0.5 font-normal text-white/75 ${big ? "text-[11px]" : "text-[10px]"}`}>
+            {unit}
+          </span>
+        )}
       </span>
     </div>
   );
@@ -873,37 +934,44 @@ function TyphoonModal({
           </button>
         </header>
 
-        <div className="shrink-0 overflow-hidden bg-slate-100 p-3 dark:bg-black/40">
-          <div className="h-[60vh] w-full">
-            <SquareFit>
-              <SlippyMap
-                track={t.track}
-                currentIndex={t.currentIndex}
-                interactive
-                siteLat={siteLat}
-                siteLon={siteLon}
-              />
-            </SquareFit>
+        {/* 지도가 팝업 본체를 꽉 채우고(정사각 제한 없음) 관측값·안내는 그 위에 얹는다. */}
+        <div className="relative h-[72vh] w-full shrink-0 overflow-hidden">
+          <SlippyMap
+            track={t.track}
+            currentIndex={t.currentIndex}
+            interactive
+            siteLat={siteLat}
+            siteLon={siteLon}
+          />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex flex-col gap-2 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-3 pt-10">
+            {cur && (
+              <div className="grid grid-cols-3 gap-2">
+                <Stat
+                  label="중심기압"
+                  value={cur.pressureHpa !== undefined ? `${cur.pressureHpa}` : "--"}
+                  unit="hPa"
+                  big
+                />
+                <Stat
+                  label="최대풍속"
+                  value={cur.maxWindMs !== undefined ? `${cur.maxWindMs}` : "--"}
+                  unit="m/s"
+                  big
+                />
+                <Stat
+                  label="이동"
+                  value={cur.dir ?? "--"}
+                  unit={cur.speedKmh !== undefined ? `${cur.speedKmh}km/h` : ""}
+                  big
+                />
+              </div>
+            )}
+            <p className="text-center text-[12px] font-medium leading-tight text-white/90">
+              {t.source === "mock"
+                ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
+                : `Esri 위성 · 태풍 심볼=현재 위치, 점선=이동 경로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
+            </p>
           </div>
-        </div>
-
-        <div className="shrink-0 border-t border-hairline px-4 py-2.5 dark:border-white/10">
-          {cur && (
-            <div className="grid grid-cols-3 gap-2">
-              <Stat label="중심기압" value={cur.pressureHpa !== undefined ? `${cur.pressureHpa}` : "--"} unit="hPa" />
-              <Stat label="최대풍속" value={cur.maxWindMs !== undefined ? `${cur.maxWindMs}` : "--"} unit="m/s" />
-              <Stat
-                label="이동"
-                value={cur.dir ?? "--"}
-                unit={cur.speedKmh !== undefined ? `${cur.speedKmh}km/h` : ""}
-              />
-            </div>
-          )}
-          <p className="mt-1.5 text-center text-[10px] text-muted dark:text-on-dark-soft">
-            {t.source === "mock"
-              ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
-              : `Esri 위성 · 빨강 점=현재 위치, 점선=이동 경로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
-          </p>
         </div>
       </div>
     </div>
