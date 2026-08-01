@@ -431,12 +431,13 @@ function SlippyMap({
 
       {interactive && (
         <>
-          <div className="absolute right-2 top-2 z-10 flex flex-col gap-1">
+          <div className="absolute right-2 top-2 z-10 flex flex-col gap-1.5">
             <MapBtn label="＋" onClick={() => zoomBy(1)} title="확대" />
             <MapBtn label="－" onClick={() => zoomBy(-1)} title="축소" />
-            <MapBtn label="⤾" onClick={reset} title="원래대로" />
+            <MapBtn label="↺" onClick={reset} title="원래대로" />
           </div>
-          <div className="pointer-events-none absolute bottom-2 left-2 z-10 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[10px] text-white">
+          {/* 줌 뱃지는 위쪽에 — 아래에 두면 하단 관측값 오버레이에 반쯤 가린다. */}
+          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white">
             z{view?.zoom ?? "-"}
           </div>
         </>
@@ -452,7 +453,7 @@ function MapBtn({ label, onClick, title }: { label: string; onClick: () => void;
       onClick={onClick}
       title={title}
       onPointerDown={(e) => e.stopPropagation()}
-      className="flex h-7 w-7 items-center justify-center rounded bg-black/55 text-sm font-bold text-white transition hover:bg-black/80"
+      className="flex h-10 w-10 items-center justify-center rounded-md bg-black/60 text-xl font-bold leading-none text-white transition hover:bg-black/85"
     >
       {label}
     </button>
@@ -926,9 +927,11 @@ function TyphoonModal({
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 dark:bg-black/80"
     >
+      {/* 폭 — 궤적이 쌓이면 경도 스팬이 넓어진다(돌핀 40°). max-w-lg(512px) 에서는 z4 가 안 들어가
+          z3 으로 떨어지며 호주까지 나왔다. 넓혀야 태풍–현장 관계가 적정 배율로 보인다. */}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
       >
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-hairline px-4 py-2.5 dark:border-white/10">
           <div className="flex min-w-0 items-center gap-2">

@@ -264,6 +264,55 @@ test("msgRegionMatchesSido — head 가 시·도면 괄호는 보지 않는다(�
   assert.equal(msgRegionMatchesSido("경기도(광주, 하남)", GYEONGGI), true);
 });
 
+test("msgRegionMatchesSido — 공백 표기 '경기도 광주시' 는 광주광역시가 아니다(실측 오탐)", () => {
+  // 재난문자는 시·도와 시·군·구를 공백으로 잇는다. 토큰 전체를 부분문자열 검사하면
+  // 하위 지명이 시·도로 읽혀 광주 현장에 경기 광주시 폭염이 뜬다(2026-07-31 19:46 실측).
+  assert.equal(msgRegionMatchesSido("경기도 광주시 ", GWANGJU), false);
+  assert.equal(msgRegionMatchesSido("경기도 광주시 ", GYEONGGI), true);
+});
+
+// ── 2026 행정통합 — '전남광주통합특별시' 안에서 광주·전남 가르기 ─────────────
+const JEONNAM = ["전라남", "전남"];
+
+test("msgRegionMatchesSido — 통합시 발령은 시·군·구로 광주/전남을 가른다", () => {
+  // 광주 관할 5개 구는 광주만, 전남 시·군은 전남만. 이 구분이 없으면 두 현장이 같은 목록을 본다.
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 광산구 ", GWANGJU), true);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 광산구 ", JEONNAM), false);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 목포시 ", GWANGJU), false);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 목포시 ", JEONNAM), true);
+  // '광주시' 표기도 광주 관할로 본다(구 단위가 아니라 시 단위로 오는 경우).
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 광주시 ", GWANGJU), true);
+});
+
+test("msgRegionMatchesSido — 통합시 전역 발령은 광주·전남 둘 다 자기 발령", () => {
+  // 하위 지명이 없으면 통합시 전체 발령이다. 한쪽만 주면 나머지 현장이 재난을 놓친다.
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 ", GWANGJU), true);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 ", JEONNAM), true);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 전체", GWANGJU), true);
+  assert.equal(msgRegionMatchesSido("전남광주통합특별시 전체", JEONNAM), true);
+});
+
+test("matchSite — 광주 현장이 전남 시·군 발령을 site 로 받지 않는다", () => {
+  const gwangju: [number, number] = [35.1595, 126.8526];
+  assert.equal(latLonToSido(...gwangju).name, "광주");
+  const heat = ["전남광주통합특별시 광산구 ", "전남광주통합특별시 목포시 ", "경기도 광주시 "].map(
+    (region, i): DisasterMsg => ({
+      sn: 700000 + i,
+      createdAtMs: Date.UTC(2026, 7, 1, 3, 0, 0),
+      message: `[테스트] ${region.trim()} 폭염`,
+      regions: [region],
+      step: "안전안내",
+      type: "폭염",
+      revised: false,
+    }),
+  );
+  const site = matchSite(heat, ...gwangju).filter((h) => h.scope === "site");
+  assert.deepEqual(
+    site.map((h) => h.matchedRegions[0]?.trim()),
+    ["전남광주통합특별시 광산구"],
+  );
+});
+
 // ── 현장 매칭 ────────────────────────────────────────────────────────────────
 // 좌표는 latLonToSido 가 정확히 판정하는 지점만 쓴다(광역시 인접 도 지역은 오판 — 아래 가드 테스트).
 const JEONJU: [number, number] = [35.8242, 127.148];

@@ -1,7 +1,7 @@
 // 긴급재난문자(행정안전부) 순수 로직 — 정규화·재해유형 화이트리스트·신선도·현장 시·도 매칭.
 // server-only 인 API 호출부와 분리해 단위테스트 가능하게 유지(kma.ts ↔ kma-regions.ts 와 같은 구조).
 // 결정 근거는 docs/disaster-msg/context-notes.md.
-import { latLonToSido, nearbySidos, regionMatchesSido, SIDO, splitRegions } from "./kma-regions";
+import { latLonToSido, nearbySidos, SIDO, splitRegions } from "./kma-regions";
 
 // API/CSV 원본 레코드 — 필드명은 원본 표기(대문자 스네이크) 그대로.
 // ⚠️ SN 은 CSV 에서 문자열, 실 API(JSON) 에서 숫자로 온다. 같은 데이터인데 형이 다르다.
@@ -192,18 +192,46 @@ export function dedupeBySn(raws: RawDisasterMsg[]): RawDisasterMsg[] {
 //   기상특보 t6  "경기도(안산, 시흥)"                 head=시·도 / 괄호=하위 시·군·구
 //   재난문자     "임진강 수계지역(경기도 연천군,파주시)" head=하천명(행정구역 아님) / 괄호=실제 행정구역
 // 그래서 head 매칭만 쓰면 하천 수계 발령을 통째로 놓친다. head 가 어떤 시·도도 아닐 때에만
-// 괄호 안을 본다 — head 가 시·도이면(예: "경기도(광주, 하남)") 괄호를 보지 않으므로
-// 경기 광주시가 광주광역시로 오매칭되는 기존 함정은 그대로 막힌다.
+// 괄호 안을 본다 — head 가 시·도이면(예: "경기도(광주, 하남)") 괄호를 보지 않는다.
+
+// ★ 2026 행정통합 — 광주광역시와 전라남도가 "전남광주통합특별시" 한 이름을 쓴다.
+// 시·도 문자열만 보면 두 현장이 구별되지 않아, 광주 현장에 목포·여수(100km+) 발령이
+// site 로 잡히고 알림까지 나갔다(실측 2026-07-31~08-01 실 API 337건 — 광주 현장 site 50건 중
+// 광주 관할은 광산구 1건, 전남 시·군이 47건). 그래서 두 번째 토큰(시·군·구)으로 가른다.
+// 하위가 없으면(= 통합시 전역 발령) 양쪽 다 자기 발령으로 본다.
+const MERGED_SIDO = "전남광주통합특별시";
+const GWANGJU_DISTRICTS = ["동구", "서구", "남구", "북구", "광산구"];
+
+function mergedSidoKeywords(district: string): string[] | null {
+  if (district === "" || district === "전체") return null; // 전역 발령 — 광주·전남 둘 다
+  const name =
+    district.startsWith("광주") || GWANGJU_DISTRICTS.includes(district) ? "광주" : "전남";
+  return SIDO.find((s) => s.name === name)?.keywords ?? null;
+}
+
+// 재난문자 수신지역은 "시·도 시·군·구" 를 공백으로 이은 한 토큰이다(기상특보처럼 괄호로 감싸지 않는다).
+// 토큰 전체를 부분문자열 검사하면 하위 시·군·구 이름까지 시·도로 읽혀 "경기도 광주시" 가
+// 광주광역시 현장에 잡힌다(실측 2건). 첫 공백 앞(시·도명)만 본다.
+function headSidoMatches(head: string, keywords: string[]): boolean {
+  const parts = head.split(/\s+/);
+  const sido = parts[0] ?? "";
+  if (!keywords.some((k) => sido.includes(k))) return false;
+  if (!sido.startsWith(MERGED_SIDO)) return true;
+  const owner = mergedSidoKeywords(parts[1] ?? "");
+  return owner === null || owner.some((k) => keywords.includes(k));
+}
+
 export function msgRegionMatchesSido(region: string, keywords: string[]): boolean {
-  if (regionMatchesSido(region, keywords)) return true;
   const open = region.indexOf("(");
+  const head = (open < 0 ? region : region.slice(0, open)).trim();
+  if (headSidoMatches(head, keywords)) return true;
   if (open < 0) return false;
-  const head = region.slice(0, open).trim();
-  const headIsSido = SIDO.some((s) => s.keywords.some((k) => head.includes(k)));
+  const headSido = head.split(/\s+/)[0] ?? "";
+  const headIsSido = SIDO.some((s) => s.keywords.some((k) => headSido.includes(k)));
   if (headIsSido) return false;
   const close = region.lastIndexOf(")");
   const inner = region.slice(open + 1, close > open ? close : undefined);
-  return keywords.some((k) => inner.includes(k));
+  return inner.split(",").some((t) => headSidoMatches(t.trim(), keywords));
 }
 
 // scope — site = 현장 시·도 발령(알림 대상) / nearby = 인근 시·도(반경 120km, 화면 참고 표시만).
