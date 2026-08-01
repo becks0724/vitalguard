@@ -3682,6 +3682,15 @@ final class DashboardSyncService: NSObject {
         fallDetected: Bool = false,
         completion: Completion? = nil
     ) {
+        let eventType = dashboardEventType(for: reason)
+        let isIncident = ["manager_call", "location_share", "manual_sos", "fall_detected"].contains(eventType)
+        let defaults = UserDefaults.standard
+        let loginId = defaults.string(forKey: PreviewSettingsKey.loggedInId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let employeeId = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if isIncident && (loginId.isEmpty || employeeId.isEmpty) {
+            completion?(false, "로그인 사용자와 작업자 identity가 없어 안전 이벤트를 저장하지 않았습니다.")
+            return
+        }
         let endpointString = normalizedEndpoint(from: UserDefaults.standard.string(forKey: PreviewSettingsKey.endpoint))
         guard let endpoint = URL(string: endpointString) else {
             completion?(false, "대시보드 URL 형식이 올바르지 않습니다.")
@@ -3879,34 +3888,44 @@ final class DashboardSyncService: NSObject {
             ?? defaults.string(forKey: PreviewSettingsKey.appMode)
             ?? AppMode.worker.rawValue
         let mode = AppMode(rawValue: rawMode) ?? .worker
-        let employeeId = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? vitalGuardEmployeeIdentifier(for: loginId)
+        let employeeId = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         var payload = VitAlGuardDashboardShared.payload(
             loginId: loginId,
-            employeeId: employeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: loginId) : employeeId,
+            employeeId: employeeId,
             workerName: defaults.string(forKey: PreviewSettingsKey.workerName)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             mode: mode,
             reason: reason,
             isFallDetected: fallDetected
         )
         let actorName = defaults.string(forKey: PreviewSettingsKey.workerName)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let resolvedLogin = loginId.isEmpty ? (mode == .admin ? "admin7276" : "worker7276") : loginId
-        let resolvedEmployee = employeeId.isEmpty ? vitalGuardEmployeeIdentifier(for: resolvedLogin) : employeeId
-        payload["eventType"] = dashboardEventType(for: reason)
-        payload["actionLabel"] = dashboardActionLabel(for: reason)
-        payload["actorName"] = actorName.isEmpty ? "양지후" : actorName
-        payload["loginId"] = resolvedLogin
-        payload["employeeId"] = resolvedEmployee
-        payload["actorDisplayText"] = "\((actorName.isEmpty ? "양지후" : actorName)), \(resolvedLogin), \(resolvedEmployee)"
+        let eventType = dashboardEventType(for: reason)
+        let isSafetyEvent = ["manager_call", "location_share", "manual_sos", "fall_detected"].contains(eventType)
+        let isIncident = isSafetyEvent
+        let trackingActive = isWorkTrackingActive()
+        if isSafetyEvent { payload["eventType"] = eventType }
+        if isSafetyEvent || trackingActive {
+            payload["trackingMode"] = isIncident ? "incident_snapshot" : "work_hours_zone"
+            payload["workAreaId"] = defaults.string(forKey: PreviewSettingsKey.workAreaId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "active-site"
+        }
+        if !loginId.isEmpty { payload["loginId"] = loginId }
+        if !employeeId.isEmpty { payload["employeeId"] = employeeId }
+        if !actorName.isEmpty { payload["actorName"] = actorName }
+        if isSafetyEvent { payload["eventId"] = UUID().uuidString }
         if defaults.object(forKey: PreviewSettingsKey.lastLocationLatitude) != nil,
            defaults.object(forKey: PreviewSettingsKey.lastLocationLongitude) != nil {
-            payload["latitude"] = defaults.double(forKey: PreviewSettingsKey.lastLocationLatitude)
-            payload["longitude"] = defaults.double(forKey: PreviewSettingsKey.lastLocationLongitude)
-            payload["locationAccuracyMeters"] = defaults.double(forKey: PreviewSettingsKey.lastLocationAccuracy)
             if let timestamp = defaults.object(forKey: PreviewSettingsKey.lastLocationTimestamp) as? Date {
-                payload["locationTimestamp"] = ISO8601DateFormatter().string(from: timestamp)
+                let fresh = Date().timeIntervalSince(timestamp) <= 300
+                if isIncident || (trackingActive && fresh) {
+                    payload["latitude"] = defaults.double(forKey: PreviewSettingsKey.lastLocationLatitude)
+                    payload["longitude"] = defaults.double(forKey: PreviewSettingsKey.lastLocationLongitude)
+                    payload["locationAccuracyMeters"] = defaults.double(forKey: PreviewSettingsKey.lastLocationAccuracy)
+                    payload["locationTimestamp"] = ISO8601DateFormatter().string(from: timestamp)
+                    payload["locationSource"] = "iphone"
+                    payload["locationUnavailable"] = false
+                }
             }
         }
+        if isSafetyEvent && payload["latitude"] == nil { payload["locationUnavailable"] = true }
         if let watch = VitAlGuardSharedStorage.loadWatchSnapshot() {
             let values = watch.values
             payload["watchReceivedAt"] = ISO8601DateFormatter().string(from: watch.receivedAt)
@@ -3965,20 +3984,47 @@ final class DashboardSyncService: NSObject {
 
     private func dashboardEventType(for reason: String) -> String {
         switch reason {
-        case "sos", "action_button_sos": return "sos"
+        case "sos", "action_button_sos": return "manual_sos"
         case "manager_call", "action_button_manager_call": return "manager_call"
         case "location_share", "action_button_location_share": return "location_share"
+        case "fall", "manual_fall": return "fall_detected"
         default: return reason
         }
     }
 
     private func dashboardActionLabel(for reason: String) -> String {
         switch dashboardEventType(for: reason) {
-        case "sos": return "SOS"
+        case "manual_sos": return "SOS"
         case "manager_call": return "관리자 호출"
         case "location_share": return "위치 공유"
+        case "fall_detected": return "낙상 감지"
         default: return "VitAlGuard 동기화"
         }
+    }
+
+    private func isWorkTrackingActive() -> Bool {
+        let defaults = UserDefaults.standard
+        let start = defaults.object(forKey: PreviewSettingsKey.workStartMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultStartMinutes
+        let end = defaults.object(forKey: PreviewSettingsKey.workEndMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultEndMinutes
+        guard VitAlGuardWorkTrackingPolicy.isWithinWorkHours(startMinutes: start, endMinutes: end),
+              defaults.object(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled) == nil || defaults.bool(forKey: PreviewSettingsKey.locationBasedUpdatesEnabled),
+              defaults.object(forKey: PreviewSettingsKey.lastLocationLatitude) != nil,
+              defaults.object(forKey: PreviewSettingsKey.lastLocationLongitude) != nil,
+              defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLatitude) != nil,
+              defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLongitude) != nil else { return false }
+        let current = CLLocation(
+            latitude: defaults.double(forKey: PreviewSettingsKey.lastLocationLatitude),
+            longitude: defaults.double(forKey: PreviewSettingsKey.lastLocationLongitude)
+        )
+        let center = CLLocation(
+            latitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLatitude),
+            longitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLongitude)
+        )
+        return VitAlGuardWorkTrackingPolicy.isWithinWorkArea(
+            location: current,
+            center: center,
+            radiusMeters: defaults.object(forKey: PreviewSettingsKey.locationUpdateRadiusMeters) as? Double ?? 500
+        )
     }
 
     private func beginBackgroundAllowance() {
@@ -4064,6 +4110,11 @@ private enum PreviewSettingsKey {
     static let timeBasedUpdatesEnabled = "preview.updates.timeEnabled"
     static let locationBasedUpdatesEnabled = "preview.updates.locationEnabled"
     static let locationUpdateRadiusMeters = "preview.updates.locationRadiusMeters"
+    static let workStartMinutes = "preview.workTracking.startMinutes"
+    static let workEndMinutes = "preview.workTracking.endMinutes"
+    static let workAreaId = "preview.workTracking.areaId"
+    static let workAreaAnchorLatitude = "preview.workTracking.anchorLatitude"
+    static let workAreaAnchorLongitude = "preview.workTracking.anchorLongitude"
     static let realTimeSyncMigration = "preview.realTimeSyncMigration.v1"
     static let energyEfficiencyMigration = "preview.energyEfficiencyMigration.v1"
     static let lastWatchSync = "preview.lastWatchSync"
@@ -6954,6 +7005,7 @@ final class VitAlGuardPreviewController: UIViewController,
     private weak var cctvRefreshControl: UIRefreshControl?
     private weak var watchRefreshControl: UIRefreshControl?
     // 당겨서 새로고침 임계점을 넘겼을 때 Safari와 같은 명확한 중간 강도의 피드백을 준다.
+    // 당김 임계점에서 기존 중간 강도의 피드백을 한 번 울리되, 미리 준비해 지연을 줄인다.
     private let pullRefreshFeedback = UIImpactFeedbackGenerator(style: .medium)
     private weak var loginPanelView: UIView?
     private weak var activeJournalEditor: FieldJournalEntryViewController?
@@ -7000,8 +7052,10 @@ final class VitAlGuardPreviewController: UIViewController,
     private var isBuildInterfaceInProgress = false
     private var isBuildInterfacePending = false
     private var isUserTouchActive = false
+    private var isScrollInteractionActive = false
     private var buildInterfaceLastRunAt = Date.distantPast
     private var buildInterfaceThrottleWorkItem: DispatchWorkItem?
+    private var pendingInterfaceBuildWorkItem: DispatchWorkItem?
     private let buildInterfaceThrottleInterval: TimeInterval = 0.12
     private var isUploadBusy = false
     private var isLoginRequestInFlight = false
@@ -7141,6 +7195,8 @@ final class VitAlGuardPreviewController: UIViewController,
         dashboardRadarTimer?.invalidate()
         dashboardHomeSummaryTimer?.invalidate()
         dashboardConnectionTimer?.invalidate()
+        buildInterfaceThrottleWorkItem?.cancel()
+        pendingInterfaceBuildWorkItem?.cancel()
     }
 
     private var savedThemeMode: PreviewThemeMode {
@@ -7272,7 +7328,7 @@ final class VitAlGuardPreviewController: UIViewController,
             return
         }
 
-        guard !isUserTouchActive else {
+        guard !isUserTouchActive, !isScrollInteractionActive else {
             isBuildInterfacePending = true
             return
         }
@@ -7302,8 +7358,7 @@ final class VitAlGuardPreviewController: UIViewController,
             isBuildInterfaceInProgress = false
             buildInterfaceThrottleWorkItem = nil
             if isBuildInterfacePending {
-                isBuildInterfacePending = false
-                buildInterface()
+                schedulePendingInterfaceBuild()
             }
         }
 
@@ -7317,12 +7372,17 @@ final class VitAlGuardPreviewController: UIViewController,
             needsInitialHomeScrollReset = false
         }
         let shouldRestoreScroll = loggedInID != nil && previousOffset != nil
-        view.subviews.forEach { $0.removeFromSuperview() }
+        UIView.performWithoutAnimation {
+            view.subviews.forEach { $0.removeFromSuperview() }
+        }
         view.backgroundColor = pageColor
 
         let scroll = UIScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
         scroll.alwaysBounceVertical = true
+        scroll.delaysContentTouches = false
+        scroll.canCancelContentTouches = true
+        scroll.delegate = self
         scroll.contentInsetAdjustmentBehavior = .never
         scroll.keyboardDismissMode = .interactive
         rootScrollView = scroll
@@ -7331,6 +7391,7 @@ final class VitAlGuardPreviewController: UIViewController,
         watchRefreshControl = nil
         let refreshControl = UIRefreshControl()
         refreshControl.tintColor = textColor
+        pullRefreshFeedback.prepare()
         refreshControl.attributedTitle = NSAttributedString(
             string: refreshTitle(for: activeMainTab),
             attributes: [
@@ -7430,7 +7491,9 @@ final class VitAlGuardPreviewController: UIViewController,
         startDashboardConnectionMonitorIfNeeded()
         refreshLiveActivity()
         refreshDashboardCCTVIfNeeded()
-        refreshDashboardHomeSummaryIfNeeded()
+        if activeMainTab == .home {
+            refreshDashboardHomeSummaryIfNeeded()
+        }
         if activeMainTab == .home, dashboardWeatherPageIndex == 0 {
             startDashboardHomeSummaryTimerIfNeeded()
         } else {
@@ -7476,11 +7539,32 @@ final class VitAlGuardPreviewController: UIViewController,
     fileprivate func setUserTouchActive(_ isActive: Bool) {
         guard isUserTouchActive != isActive else { return }
         isUserTouchActive = isActive
-        guard !isActive, isBuildInterfacePending else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isUserTouchActive, self.isBuildInterfacePending else { return }
+        guard !isActive else { return }
+        schedulePendingInterfaceBuild()
+    }
+
+    private func setScrollInteractionActive(_ isActive: Bool) {
+        guard isScrollInteractionActive != isActive else { return }
+        isScrollInteractionActive = isActive
+        guard !isActive else { return }
+        schedulePendingInterfaceBuild()
+    }
+
+    private func schedulePendingInterfaceBuild() {
+        guard isBuildInterfacePending, !isUserTouchActive, !isScrollInteractionActive else { return }
+        isBuildInterfacePending = false
+        pendingInterfaceBuildWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self, !self.isUserTouchActive, !self.isScrollInteractionActive else {
+                self?.isBuildInterfacePending = true
+                return
+            }
+            self.pendingInterfaceBuildWorkItem = nil
             self.buildInterface()
         }
+        pendingInterfaceBuildWorkItem = workItem
+        // 손가락을 뗀 직후의 UIScrollView 감속·Core Animation 커밋이 끝난 뒤 재구성한다.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22, execute: workItem)
     }
 
     private func rebuildInterfacePreservingScrollPosition() {
@@ -8690,11 +8774,11 @@ final class VitAlGuardPreviewController: UIViewController,
             DashboardCCTVFeed(id: "CAM-01", name: "정문 출입구", meta: "CAM-01 · Front Gate · 객체 감지", state: "AI", color: UIColor(red: 0.00, green: 0.74, blue: 0.48, alpha: 1.0), streamURL: nil, mjpegURL: dashboardCCTVStreamURL(suffix: ""), thumbnailURL: nil, order: 0),
             DashboardCCTVFeed(id: "CAM-02", name: "지하 기계실", meta: "CAM-02 · GoPro EDGE · 낙상AI", state: "낙상AI", color: UIColor(red: 0.92, green: 0.22, blue: 0.38, alpha: 1.0), streamURL: nil, mjpegURL: dashboardCCTVStreamURL(suffix: "2"), thumbnailURL: nil, order: 1),
             DashboardCCTVFeed(id: "CAM-03", name: "현장 작업구역(GoPro)", meta: "CAM-03 · Live (Edge) · PPE (Hexmon)", state: "PPE", color: UIColor(red: 0.96, green: 0.62, blue: 0.0, alpha: 1.0), streamURL: nil, mjpegURL: dashboardCCTVStreamURL(suffix: "3"), thumbnailURL: nil, order: 2),
-            DashboardCCTVFeed(id: "CAM-04", name: "자재 야적장", meta: "샘플 영상 · 자체 카메라 연동 시 실시간", state: "연결", color: UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0), streamURL: nil, thumbnailURL: nil, order: 3),
-            DashboardCCTVFeed(id: "CAM-05", name: "동측 비계", meta: "샘플 영상 · 자체 카메라 연동 시 실시간", state: "연결", color: UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0), streamURL: nil, thumbnailURL: nil, order: 4),
-            DashboardCCTVFeed(id: "CAM-06", name: "콘크리트 타설구역", meta: "샘플 영상 · 자체 카메라 연동 시 실시간", state: "연결", color: UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0), streamURL: nil, thumbnailURL: nil, order: 5),
-            DashboardCCTVFeed(id: "CAM-07", name: "후문 차량 통제", meta: "샘플 영상 · 자체 카메라 연동 시 실시간", state: "연결", color: UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0), streamURL: nil, thumbnailURL: nil, order: 6),
-            DashboardCCTVFeed(id: "CAM-08", name: "가설 전기실", meta: "샘플 영상 · 자체 카메라 연동 시 실시간", state: "연결", color: UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0), streamURL: nil, thumbnailURL: nil, order: 7)
+            DashboardCCTVFeed(id: "CAM-04", name: "자재 야적장", meta: "영상 URL 미구성 · 연결 불가", state: "미연결", color: UIColor.systemGray, streamURL: nil, thumbnailURL: nil, order: 3),
+            DashboardCCTVFeed(id: "CAM-05", name: "동측 비계", meta: "영상 URL 미구성 · 연결 불가", state: "미연결", color: UIColor.systemGray, streamURL: nil, thumbnailURL: nil, order: 4),
+            DashboardCCTVFeed(id: "CAM-06", name: "콘크리트 타설구역", meta: "영상 URL 미구성 · 연결 불가", state: "미연결", color: UIColor.systemGray, streamURL: nil, thumbnailURL: nil, order: 5),
+            DashboardCCTVFeed(id: "CAM-07", name: "후문 차량 통제", meta: "영상 URL 미구성 · 연결 불가", state: "미연결", color: UIColor.systemGray, streamURL: nil, thumbnailURL: nil, order: 6),
+            DashboardCCTVFeed(id: "CAM-08", name: "가설 전기실", meta: "영상 URL 미구성 · 연결 불가", state: "미연결", color: UIColor.systemGray, streamURL: nil, thumbnailURL: nil, order: 7)
         ]
     }
 
@@ -9526,7 +9610,9 @@ final class VitAlGuardPreviewController: UIViewController,
             isDashboardHomeSummaryRefreshInFlight = false
             dashboardHomeSummarySnapshot = nil
             dashboardHomeSummaryError = "관제 관리자 인증이 필요합니다"
-            rebuildInterfacePreservingScrollPosition()
+            if activeMainTab == .home {
+                rebuildInterfacePreservingScrollPosition()
+            }
             return
         }
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
@@ -9543,7 +9629,9 @@ final class VitAlGuardPreviewController: UIViewController,
                     self.dashboardHomeSummaryError = code == 401 || code == 403
                         ? "관제 관리자 인증을 확인하세요"
                         : error?.localizedDescription ?? "관제 현황 요약을 받지 못했습니다"
-                    self.rebuildInterfacePreservingScrollPosition()
+                    if self.activeMainTab == .home {
+                        self.rebuildInterfacePreservingScrollPosition()
+                    }
                 }
                 return
             }
@@ -9553,7 +9641,9 @@ final class VitAlGuardPreviewController: UIViewController,
                     self.isDashboardHomeSummaryRefreshInFlight = false
                     self.dashboardHomeSummarySnapshot = enrichedSnapshot
                     self.dashboardHomeSummaryError = nil
-                    self.rebuildInterfacePreservingScrollPosition()
+                    if self.activeMainTab == .home {
+                        self.rebuildInterfacePreservingScrollPosition()
+                    }
                 }
             }
         }.resume()
@@ -12209,6 +12299,31 @@ final class VitAlGuardPreviewController: UIViewController,
         )
     }
 
+    private func isWithinWorkTrackingArea(_ location: CLLocation) -> Bool {
+        let defaults = UserDefaults.standard
+        let start = defaults.object(forKey: PreviewSettingsKey.workStartMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultStartMinutes
+        let end = defaults.object(forKey: PreviewSettingsKey.workEndMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultEndMinutes
+        guard isTimeBasedUpdatesEnabled,
+              isLocationBasedUpdatesEnabled,
+              VitAlGuardWorkTrackingPolicy.isWithinWorkHours(startMinutes: start, endMinutes: end),
+              location.horizontalAccuracy > 0 else { return false }
+        if defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLatitude) == nil
+            || defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLongitude) == nil {
+            defaults.set(location.coordinate.latitude, forKey: PreviewSettingsKey.workAreaAnchorLatitude)
+            defaults.set(location.coordinate.longitude, forKey: PreviewSettingsKey.workAreaAnchorLongitude)
+            return true
+        }
+        let center = CLLocation(
+            latitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLatitude),
+            longitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLongitude)
+        )
+        return VitAlGuardWorkTrackingPolicy.isWithinWorkArea(
+            location: location,
+            center: center,
+            radiusMeters: locationUpdateRadiusMeters
+        )
+    }
+
     private func configureLocationBoundaryMonitoring(using location: CLLocation?) {
         let identifier = "com.yangjeehoo.vitalguard.location-boundary"
         watermarkLocationManager.monitoredRegions
@@ -12219,8 +12334,16 @@ final class VitAlGuardPreviewController: UIViewController,
               CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self),
               let location,
               location.horizontalAccuracy >= 0 else { return }
+        let defaults = UserDefaults.standard
+        let center = (defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLatitude) != nil
+            && defaults.object(forKey: PreviewSettingsKey.workAreaAnchorLongitude) != nil)
+            ? CLLocation(
+                latitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLatitude),
+                longitude: defaults.double(forKey: PreviewSettingsKey.workAreaAnchorLongitude)
+            )
+            : location
         let region = CLCircularRegion(
-            center: location.coordinate,
+            center: center.coordinate,
             radius: VitAlGuardLocationUpdatePolicy.clampedRadius(locationUpdateRadiusMeters),
             identifier: identifier
         )
@@ -13672,7 +13795,7 @@ final class VitAlGuardPreviewController: UIViewController,
         lastKnownWatermarkLocation = latest
         let forceLocationBoundarySync = locationBoundaryRefreshPending
         locationBoundaryRefreshPending = false
-        let shouldPublishToDashboard = isLocationBasedUpdatesEnabled && (
+        let shouldPublishToDashboard = isWithinWorkTrackingArea(latest) && (
             forceLocationBoundarySync || VitAlGuardLocationUpdatePolicy.shouldPublish(
                 location: latest,
                 after: cachedDashboardLocation(),
@@ -13727,6 +13850,15 @@ final class VitAlGuardPreviewController: UIViewController,
         guard region.identifier == "com.yangjeehoo.vitalguard.location-boundary",
               isLocationBasedUpdatesEnabled else { return }
         locationBoundaryRefreshPending = true
+        manager.stopUpdatingLocation()
+    }
+
+    func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
+        guard region.identifier == "com.yangjeehoo.vitalguard.location-boundary",
+              isTimeBasedUpdatesEnabled,
+              isLocationBasedUpdatesEnabled else { return }
+        manager.startUpdatingLocation()
+        locationBoundaryRefreshPending = true
         manager.requestLocation()
     }
 
@@ -13737,7 +13869,13 @@ final class VitAlGuardPreviewController: UIViewController,
             : defaults.bool(forKey: PreviewSettingsKey.autoCollection)
     }
 
-    private var shouldKeepContinuousLocationUpdates: Bool { false }
+    private var shouldKeepContinuousLocationUpdates: Bool {
+        isTimeBasedUpdatesEnabled && isLocationBasedUpdatesEnabled &&
+            VitAlGuardWorkTrackingPolicy.isWithinWorkHours(
+                startMinutes: UserDefaults.standard.object(forKey: PreviewSettingsKey.workStartMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultStartMinutes,
+                endMinutes: UserDefaults.standard.object(forKey: PreviewSettingsKey.workEndMinutes) as? Int ?? VitAlGuardWorkTrackingPolicy.defaultEndMinutes
+            )
+    }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         print("location update failed: \(error.localizedDescription)")
@@ -15077,8 +15215,8 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     @objc private func showSOS() {
-        DashboardSyncService.shared.checkReceiverConnection(reason: "sos") { [weak self] _, message in
-            self?.presentStatus("SOS", message: "SOS 요청을 웹 대시보드로 전송했습니다.\n\(message)")
+        DashboardSyncService.shared.checkReceiverConnection(reason: "sos") { [weak self] ok, message in
+            self?.presentStatus(ok ? "SOS" : "SOS 전송 실패", message: ok ? "SOS 이벤트를 서버에 저장했습니다.\n\(message)" : message)
         }
     }
 
@@ -15113,15 +15251,15 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     @objc private func showCall() {
-        DashboardSyncService.shared.checkReceiverConnection(reason: "manager_call") { [weak self] _, message in
-            self?.presentStatus("관리자 호출", message: "현재 위치와 Watch 데이터를 포함해 관리자 호출을 전송했습니다.\n\(message)")
+        DashboardSyncService.shared.checkReceiverConnection(reason: "manager_call") { [weak self] ok, message in
+            self?.presentStatus(ok ? "관리자 호출" : "관리자 호출 실패", message: ok ? "관리자 호출 이벤트를 서버에 저장했습니다.\n\(message)" : message)
         }
     }
 
     @objc private func showShare() {
         requestLocationPermissionForWatermark()
-        DashboardSyncService.shared.checkReceiverConnection(reason: "location_share") { [weak self] _, message in
-            self?.presentStatus("위치 공유", message: "작업자 위치와 근처 CCTV 링크를 웹 대시보드와 동기화했습니다.\n\(message)")
+        DashboardSyncService.shared.checkReceiverConnection(reason: "location_share") { [weak self] ok, message in
+            self?.presentStatus(ok ? "위치 공유 요청 기록" : "위치 공유 실패", message: ok ? "위치 공유 요청 이벤트를 서버에 저장했습니다. 실제 좌표가 없으면 위치 미확보 상태로 기록됩니다.\n\(message)" : message)
         }
     }
 
@@ -16693,6 +16831,28 @@ final class WalletIdentityViewController: UIViewController, UITextFieldDelegate 
     }
 }
 
+extension VitAlGuardPreviewController: UIScrollViewDelegate {
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        guard scrollView === rootScrollView else { return }
+        setScrollInteractionActive(true)
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === rootScrollView, !decelerate else { return }
+        setScrollInteractionActive(false)
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === rootScrollView else { return }
+        setScrollInteractionActive(false)
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        guard scrollView === rootScrollView else { return }
+        setScrollInteractionActive(false)
+    }
+}
+
 extension VitAlGuardPreviewController: UITabBarDelegate {
     func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
         if tabBar.accessibilityIdentifier == "dashboardWeatherPageTabBar" {
@@ -17937,12 +18097,12 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let locationCard = policyCard()
 
         let timeTitle = policyTitle("시간 기준 자동 업데이트")
-        let timeDetail = policyDetail("선택한 주기마다 Watch 상태를 안전하게 동기화합니다.")
-        let timeStatus = policyCaption("연동 주기는 위에서 설정")
+        let timeDetail = policyDetail("작업시간(기본 07:00~19:00)에만 평시 위치를 실시간 동기화합니다.")
+        let timeStatus = policyCaption("사고 이벤트는 시간 제한 없이 별도 기록")
         timeUpdatesSwitch.translatesAutoresizingMaskIntoConstraints = false
 
-        let locationTitle = policyTitle("위치 이탈 시 자동 업데이트")
-        let locationDetail = policyDetail("기준 위치에서 반경을 벗어날 때만 한 번 갱신합니다.")
+        let locationTitle = policyTitle("작업구역 내 실시간 위치")
+        let locationDetail = policyDetail("작업구역 기준 반경 안에서만 평시 위치를 추적합니다. 사고 위치는 이벤트 snapshot으로 저장합니다.")
         let radiusTitle = policyCaption("이탈 반경")
         let rangeCaption = policyCaption("100m ~ 5km")
         locationUpdatesSwitch.translatesAutoresizingMaskIntoConstraints = false

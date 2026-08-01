@@ -1,7 +1,8 @@
 import Foundation
 
-/// Existing rule-alert path with ML work-motion veto. It remains fail-open when
-/// a model or window is unavailable; it is intentionally separate from ML-first shadow observations.
+/// Existing rule-alert path with ML work-motion and impact suppression. A
+/// missing model or unmatched window is held rather than emitted as an alert;
+/// ML-first shadow observations remain separate from this alert path.
 final class MLFusion {
     struct Verdict {
         let candidate: FallCandidate
@@ -29,25 +30,21 @@ final class MLFusion {
     private func tryFuse() {
         guard let (candidate, candidateAt) = pendingCandidate, let (window, windowAt) = pendingWindow, abs(candidateAt.timeIntervalSince(windowAt)) <= pairWindowSec else { return }
         pendingCandidate = nil; pendingWindow = nil
-        guard let pipeline else {
-            onVerdict?(
-                Verdict(
-                    candidate: candidate,
-                    wvProb: nil,
-                    impProb: nil,
-                    vetoedByML: false,
-                    rejectedByImpactML: false
-                )
-            )
-            return
-        }
+        guard let pipeline else { return }
         let predictions = pipeline.fastPredictions(window)
-        let workVetoProbability = predictions.workVeto.isValid ? predictions.workVeto.probability : nil
-        let impactProbability = predictions.impact.isValid ? predictions.impact.probability : nil
-        let rejectedByImpact = candidate.isFall
-            && impactProbability.map { $0 < FallMLPipeline.impactSuppressBelow } == true
+        // v5 is an ML-gated alert path. A malformed/failed prediction is not
+        // evidence that the candidate is safe; drop the candidate instead of
+        // letting a nil probability bypass both suppressors.
+        guard predictions.workVeto.isValid, predictions.impact.isValid else { return }
+        let workVetoProbability = predictions.workVeto.probability
+        let impactProbability = predictions.impact.probability
+        let rejectedByImpact = candidate.isFall && (
+            impactProbability < FallMLPipeline.impactSuppressBelow
+                || (candidate.peakG < FallMLPipeline.strongFallThresholdG
+                    && impactProbability < FallMLPipeline.impactThreshold)
+        )
         let vetoed = candidate.isFall && (
-            workVetoProbability.map { $0 >= FallMLPipeline.vetoThreshold } == true || rejectedByImpact
+            workVetoProbability >= FallMLPipeline.vetoThreshold || rejectedByImpact
         )
         onVerdict?(
             Verdict(
@@ -61,16 +58,8 @@ final class MLFusion {
     }
 
     private func flushIfStale() {
-        guard let (candidate, candidateAt) = pendingCandidate, Date().timeIntervalSince(candidateAt) >= pairWindowSec else { return }
+        guard let (_, candidateAt) = pendingCandidate, Date().timeIntervalSince(candidateAt) >= pairWindowSec else { return }
         pendingCandidate = nil
-        onVerdict?(
-            Verdict(
-                candidate: candidate,
-                wvProb: nil,
-                impProb: nil,
-                vetoedByML: false,
-                rejectedByImpactML: false
-            )
-        )
+        pendingWindow = nil
     }
 }

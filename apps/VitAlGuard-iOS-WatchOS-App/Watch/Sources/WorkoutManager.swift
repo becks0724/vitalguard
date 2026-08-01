@@ -296,7 +296,14 @@ final class WorkoutManager: NSObject, ObservableObject {
             self?.handleMovementDuringPrompt()
         }
         detector.onCandidate = { [weak self] candidate in
-            Task { @MainActor in self?.handleCandidate(candidate) }
+            Task { @MainActor in
+                guard let self else { return }
+                guard self.mlFusionEnabled else {
+                    self.lastStatus = "ML 자가검증 미완료 — 낙상 후보 보류"
+                    return
+                }
+                self.handleCandidate(candidate)
+            }
         }
         if mlFusionEnabled {
             let fusion = MLFusion()
