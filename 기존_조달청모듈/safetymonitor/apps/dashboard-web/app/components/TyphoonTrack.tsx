@@ -596,6 +596,32 @@ const ZONE_BANNER_ON_MAP: Record<Zone, string> = {
   none: "",
 };
 
+// 상단 배너 높이를 실측해 지도 프레이밍이 피할 여백을 돌려준다.
+// ⚠️ 고정값(예: 46px)으로 두면 배너 문구가 길어져 2줄이 되는 순간 마커가 다시 가려진다.
+//    실제로 태풍특보 라벨이 붙으면서 한 줄이 늘어날 수 있게 됐다 — 콘텐츠에 값을 묶지 않는다.
+// ⚠️ callback ref 로 구현한다 — 배너는 조건부 렌더라 요소가 나타났다 사라진다.
+//    RefObject + useEffect(deps) 조합은 그 시점을 놓치고, 무엇보다 이 훅을 조건부 위치에서
+//    호출하게 되면 Rules of Hooks 위반이다(실제로 early return 뒤에 두었다가 앱이 죽었다).
+//    callback ref 는 마운트/언마운트 때 정확히 호출되므로 훅은 최상단에서 무조건 부르면 된다.
+function useOverlayHeight(): [(el: HTMLDivElement | null) => void, number] {
+  const [h, setH] = useState(0);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    roRef.current?.disconnect();
+    roRef.current = null;
+    if (!el) {
+      setH(0);
+      return;
+    }
+    const measure = () => setH(Math.ceil(el.getBoundingClientRect().height));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    roRef.current = ro;
+  }, []);
+  return [setRef, h];
+}
+
 // 도달 리드타임 — 통보문 시각끼리의 차이라 브라우저 시계와 무관하다(typhoon-gate.tmToMs).
 function fmtLead(h: number | null): string {
   if (h === null || h <= 0) return "";
@@ -673,20 +699,27 @@ function ZoneBanner({
   advisory,
   lead,
   onMap,
+  warning,
 }: {
   zone: Zone;
   title: string;
   advisory: string;
   lead: string;
   onMap?: boolean;
+  // 기상청 태풍특보(발효 중) — 자체 반경·구역 판정과 별개 축이고 **작업중지의 법적 근거**다.
+  // 특보가 떠 있으면 자체 판정이 낮아도(감시 단계라 배너가 없어도) 배너를 띄운다.
+  warning?: string;
 }) {
-  if (zone === "none" || zone === "watch") return null;
+  if (!warning && (zone === "none" || zone === "watch")) return null;
+  // 감시/밖 단계는 배너 색이 비어 있으므로, 특보로 띄우는 경우 경계(alert) 톤을 빌린다.
+  const tone: Zone = zone === "none" || zone === "watch" ? "alert" : zone;
   const skin = onMap
-    ? `bg-black/65 backdrop-blur-[2px] ${ZONE_BANNER_ON_MAP[zone]}`
-    : `shrink-0 ${ZONE_BANNER[zone]}`;
+    ? `bg-black/65 backdrop-blur-[2px] ${ZONE_BANNER_ON_MAP[tone]}`
+    : `shrink-0 ${ZONE_BANNER[tone]}`;
   return (
     <div className={`rounded-lg border px-2 py-1.5 text-center leading-tight ${skin}`}>
       <span className="text-[11px] font-bold">
+        {warning ? `${warning} · ` : ""}
         {title}
         {lead ? ` · ${lead}` : ""}
       </span>
@@ -714,6 +747,13 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  // 현장 시·도의 발효 태풍특보 — 공식 특보는 작업중지의 법적 근거라, 자체 판정(구역·반경)과
+  // 어긋날 때 그 사실이 화면에 드러나야 한다. 같은 화면에 특보 데이터가 있는데 이 패널만
+  // 안 보고 있었다. WeatherStrip 과 같은 라우트를 쓰고(자체 fetch 패턴 유지) 태풍 관련만 남긴다.
+  const [typhoonWarnings, setTyphoonWarnings] = useState<string[]>([]);
+  // 배너 높이 실측 — 특보 라벨이 붙으면 문구가 길어져 줄 수가 달라진다(고정값 금지).
+  // ★ 훅은 조건·early return 과 무관하게 최상단에서 부른다.
+  const [bannerBoxRef, bannerBoxH] = useOverlayHeight();
 
   useEffect(() => {
     let alive = true;
@@ -735,6 +775,32 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
       clearInterval(id);
     };
   }, []);
+
+  // 태풍특보 조회 — 통보문과 같은 30분 주기(특보는 자주 바뀌지 않는다).
+  useEffect(() => {
+    if (typeof lat !== "number" || typeof lon !== "number") return;
+    let alive = true;
+    const load = () =>
+      fetch(`/api/kma-warning?lat=${lat}&lon=${lon}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((j: { ok?: boolean; warnings?: { type?: string }[] }) => {
+          if (!alive || !j.ok) return;
+          setTyphoonWarnings(
+            (j.warnings ?? [])
+              .map((w) => String(w.type ?? ""))
+              .filter((t) => t.includes("태풍")),
+          );
+        })
+        .catch(() => {
+          // 특보 조회 실패는 태풍 진로 표시를 막지 않는다(부가 정보).
+        });
+    load();
+    const id = setInterval(load, 30 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [lat, lon]);
 
   // 발효 태풍 배열 — 신 서버는 typhoons 동봉, 구 응답(서버 캐시·배포 시차)은 단일 payload 폴백.
   const typhoons = useMemo<TyphoonRec[]>(() => {
@@ -785,8 +851,11 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   const leadText = gate.forecast ? fmtLead(gate.leadHours) : "";
   // 반경 축이 등급을 이겼을 때만 구역 근거를 병기(등급 자체가 구역명이면 중복이다).
   const kmaNote = KMA_ZONE_LABEL[gate.zone] ? "" : KMA_ZONE_LABEL[gate.kmaZone];
+  // 발효 태풍특보 라벨 — 예: "태풍경보 발효"(복수면 "태풍주의보·태풍경보 발효").
+  const warnLabel = typhoonWarnings.length > 0 ? `${typhoonWarnings.join("·")} 발효` : "";
   // 배너 표시 여부 — 감시(watch)·영향권 밖에서는 배너가 없어 푸터가 등급을 말해야 한다.
-  const bannerShown = gate.zone !== "none" && gate.zone !== "watch";
+  // 단 **특보가 발효 중이면 감시 단계여도 배너를 띄운다**(공식 특보가 화면에서 사라지면 안 된다).
+  const bannerShown = warnLabel !== "" || (gate.zone !== "none" && gate.zone !== "watch");
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -821,6 +890,8 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
                 {leadText ? ` · ${leadText}` : ""}
               </>
             )}
+            {/* 특보는 배너에도 있지만, 배너가 잘리거나 못 볼 수 있어 출처 줄에도 남긴다. */}
+            {warnLabel ? ` · 기상청 ${warnLabel}` : ""}
             {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
             {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
             {gate.siteKm !== null
@@ -883,16 +954,17 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
               interactive={false}
               siteLat={lat}
               siteLon={lon}
-              padTop={bannerShown ? 46 : 0}
+              padTop={bannerBoxH > 0 ? bannerBoxH + 6 : 0}
             />
             {/* 상단 = 등급·리드타임·조치. 태풍명은 헤더에 있으므로 쌍태풍일 때만 귀속을 위해 넣는다. */}
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 p-1.5">
+            <div ref={bannerBoxRef} className="pointer-events-none absolute inset-x-0 top-0 z-10 p-1.5">
               <ZoneBanner
                 zone={gate.zone}
                 title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
                 advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
                 lead={leadText}
                 onMap
+                warning={warnLabel}
               />
             </div>
             <span className="pointer-events-none absolute right-1.5 top-1.5 z-20 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold text-white opacity-0 transition group-hover:opacity-100">
@@ -944,6 +1016,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
               title: `${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`,
               advisory: (gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone],
               lead: leadText,
+              warning: warnLabel,
             }}
           />,
           document.body,
@@ -994,7 +1067,7 @@ function TyphoonModal({
   siteLat?: number;
   siteLon?: number;
   // 인라인과 같은 경보 배너 — 확대했다고 등급·리드타임이 사라지면 안 된다.
-  banner?: { zone: Zone; title: string; advisory: string; lead: string };
+  banner?: { zone: Zone; title: string; advisory: string; lead: string; warning?: string };
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1004,9 +1077,8 @@ function TyphoonModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const [bannerBoxRef, bannerBoxH] = useOverlayHeight();
   const cur = t.track[Math.min(t.currentIndex, t.track.length - 1)] ?? null;
-  // 배너가 실제로 그려지는 경우에만 상단을 비운다(watch·영향권 밖은 ZoneBanner 가 null 을 낸다).
-  const bannerOn = !!banner && banner.zone !== "none" && banner.zone !== "watch";
 
   return (
     <div
@@ -1048,12 +1120,12 @@ function TyphoonModal({
             interactive
             siteLat={siteLat}
             siteLon={siteLon}
-            padTop={bannerOn ? 62 : 0}
+            padTop={bannerBoxH > 0 ? bannerBoxH + 8 : 0}
           />
           {/* 좌우 여백은 줌 뱃지(좌상단)와 확대·축소 컨트롤(우상단)을 피하기 위한 것 —
               전체 폭으로 깔면 배너가 그 위에 덮여 버튼을 못 누른다. */}
           {banner && (
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 py-2 pl-12 pr-14">
+            <div ref={bannerBoxRef} className="pointer-events-none absolute inset-x-0 top-0 z-10 py-2 pl-12 pr-14">
               <ZoneBanner {...banner} onMap />
             </div>
           )}
