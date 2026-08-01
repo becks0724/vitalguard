@@ -323,6 +323,9 @@ function SlippyMap({
     }
   }
   const curPt = polyPts[currentIndex] ?? null;
+  // 현재 지점을 경계로 나눈다(현재 점은 양쪽에 포함 — 선이 끊기지 않게).
+  const pastPts = polyPts.slice(0, Math.min(currentIndex + 1, polyPts.length));
+  const futurePts = polyPts.slice(Math.max(0, Math.min(currentIndex, polyPts.length - 1)));
 
   return (
     <div
@@ -387,9 +390,20 @@ function SlippyMap({
               </text>
             </g>
           )}
-          {polyPts.length > 1 && (
+          {/* 지나온 경로 = 실선, 예보 진로 = 점선. 안전 판단 화면에서 둘을 같은 선으로 그리면
+              '앞으로 갈 길'로 오독된다 — 실제로 지나온 곳과 예측은 신뢰도가 다르다. */}
+          {pastPts.length > 1 && (
             <polyline
-              points={polyPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              points={pastPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#f87171"
+              strokeWidth={2.5}
+              strokeLinejoin="round"
+            />
+          )}
+          {futurePts.length > 1 && (
+            <polyline
+              points={futurePts.map((p) => `${p.x},${p.y}`).join(" ")}
               fill="none"
               stroke="#f87171"
               strokeWidth={2.5}
@@ -969,7 +983,7 @@ function TyphoonModal({
             <p className="text-center text-[12px] font-medium leading-tight text-white/90">
               {t.source === "mock"
                 ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
-                : `Esri 위성 · 태풍 심볼=현재 위치, 점선=이동 경로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
+                : `Esri 위성 · 태풍 심볼=현재 위치, 실선=지나온 경로, 점선=예보 진로 · 휠/＋− 확대 · 드래그 이동${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
             </p>
           </div>
         </div>
