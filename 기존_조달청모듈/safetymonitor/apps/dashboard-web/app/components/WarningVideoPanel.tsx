@@ -272,6 +272,17 @@ export function WarningVideoPanel({ lat, lon }: { lat?: number; lon?: number }) 
           <VideoIcon className="shrink-0" />
         )}
         <span className="truncate">특보 대응 영상</span>
+        {/* 면책 — 하단 안내 줄을 지울 때 함께 사라졌던 표기(S-17). 이 파일 상단 주석이 정책으로 적어 둔
+            항목이라 되살리되, 줄을 다시 만들면 그때 번 영상 높이를 도로 뱉는다 → 헤더 제목 옆(높이 0).
+            ⚠ 원문 `참고용(공식 지침 우선)` 을 그대로 쓰면 예비특보 배지가 붙었을 때 402px 에서
+              제목이 잘린다(실측 leftW 199 + rightW 203 + gap 8 = 410 > 402) → 보이는 글자는 `참고용`,
+              나머지 문장은 title 로 넘긴다. 호버해야 보이는 면책은 표기로 안 치므로 두 겹으로 둔다. */}
+        <span
+          title="이 영상은 참고용입니다. 기상청·관계기관의 공식 지침이 우선합니다."
+          className="shrink-0 text-[10px] font-normal text-muted dark:text-on-dark-soft"
+        >
+          참고용
+        </span>
       </span>
       <span className="flex shrink-0 items-center gap-1.5">
         {badge && (
