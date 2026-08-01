@@ -125,17 +125,16 @@ export function HospitalPanel({
 
   return (
     <div className="flex h-full flex-col p-2">
-      <div className="flex items-center justify-between border-b border-hairline pb-1.5 dark:border-white/10">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-semibold text-ink dark:text-on-dark">
-            인근 병원
+      {/* 새로고침은 제목·배지 옆에 둔다 — 우측 끝에 두면 사이드 패널 닫기 ✕(모서리 바깥) 바로 아래라 오클릭된다. */}
+      <div className="flex items-center gap-1.5 border-b border-hairline pb-1.5 dark:border-white/10">
+        <span className="text-sm font-semibold text-ink dark:text-on-dark">
+          인근 병원
+        </span>
+        {region && (
+          <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
+            {region}
           </span>
-          {region && (
-            <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-body dark:bg-white/10 dark:text-on-dark-soft">
-              {region}
-            </span>
-          )}
-        </div>
+        )}
         <button
           type="button"
           onClick={refresh}
