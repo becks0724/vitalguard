@@ -301,8 +301,8 @@ const SELECT_CHEVRON = {
   backgroundSize: "1.1rem 1.1rem",
 };
 
-// 회원가입 라벨 — 폰에서만 시각적으로 감춘다(sr-only 라 스크린리더에는 남는다).
-// placeholder·선택지 첫 항목으로 뜻이 드러나는 필드에만 쓴다. 회사·ID·이름·생년월일은
+// 폼 라벨 — 폰에서만 시각적으로 감춘다(sr-only 라 스크린리더에는 남는다).
+// placeholder·선택지 첫 항목으로 뜻이 드러나는 필드에만 쓴다. 회원가입의 회사·ID·이름·생년월일은
 // 그 자체로 알아볼 수 없어(홍길동·mm/dd/yyyy) 폰에서도 라벨을 남긴다.
 const LABEL_PHONE_HIDDEN =
   "sr-only text-xs font-semibold text-white/90 drop-shadow md:not-sr-only";
@@ -733,13 +733,17 @@ export function LoginScreen({
   );
 
   // 회원가입은 입력 항목이 10개라 세로로 늘어놓으면 어떤 노트북에서도 스크롤이 생긴다(실측 1445px).
-  // 이 모드에서만 로고·브랜드 문구·여백을 줄이고 폼을 2열로 편다(실측 852px). 로그인 화면은 그대로 둔다.
+  // 이 모드에서만 로고·브랜드 문구·여백을 줄이고 폼을 2열로 편다(실측 데스크톱 788 · 폰 524px).
   const compact = pendingToken === null && mode === "signup";
+
+  // 로그인은 데스크톱에선 거의 맞는데 폰에서만 크게 넘친다(SE 카드 919px). md 미만에서만 줄인다 —
+  // 데스크톱 로그인 화면은 로고 136·브랜드 문구 3줄·푸터·스토어 배지 전부 그대로다.
+  const loginCompact = pendingToken === null && mode === "login";
 
   return (
     <div
       className={`relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4 text-ink dark:bg-surface-dark dark:text-on-dark ${
-        compact ? "py-2 md:py-8" : "py-8"
+        compact ? "py-2 md:py-8" : loginCompact ? "py-3 md:py-8" : "py-8"
       }`}
     >
       {/* 배경 — MeshGradient 셰이더(콘텐츠 뒤 고정 레이어) */}
@@ -769,7 +773,7 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
         <div
           className={`flex w-full flex-col items-center px-6 md:w-1/2 ${
-            compact ? "py-2 md:py-6" : "py-10"
+            compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-10" : "py-10"
           }`}
         >
           <div className="relative z-10 flex w-full flex-col items-center">
@@ -779,23 +783,31 @@ export function LoginScreen({
           <img
             src="/brand/vitalguard-logo-dark.png"
             alt="VitAlGuard Industrial Safety OS"
-            // 회원가입에서만 축소(폰 64 · md 이상 96). globals.css 의 고정 픽셀(136)을 이기려면 ! 가 필요하다.
-            className={`logo3d-badge ${compact ? "!h-8 !w-8 md:!h-24 md:!w-24" : ""}`}
+            // 폰에서만 축소 — 회원가입 32 / 로그인 64. globals.css 의 고정 픽셀(136)을 이기려면 ! 가 필요하고,
+            // md 이상 값도 명시해야 한다(회원가입 96 · 로그인은 원래 크기 136).
+            className={`logo3d-badge ${
+              compact
+                ? "!h-8 !w-8 md:!h-24 md:!w-24"
+                : loginCompact
+                  ? "!h-16 !w-16 md:!h-[8.5rem] md:!w-[8.5rem]"
+                  : ""
+            }`}
           />
         </div>
 
         {/* 슬로건 + 문구 — 현장 선택 단계·회원가입에선 숨김(로고만 유지). 회원가입은 이 167px 를 폼에 내준다. */}
         {pendingToken === null && !compact && (
           <>
+        {/* 슬로건·설명은 폰에서 감춘다 — 둘이 96px 이고, 폰에서는 핵심 카피(line1) 하나만 남겨야 한 화면에 든다. */}
         <p
-          className="mt-6 text-sm uppercase tracking-wide text-sky-100 drop-shadow"
+          className="mt-6 hidden text-sm uppercase tracking-wide text-sky-100 drop-shadow md:block"
           style={{ fontFamily: "'Archivo Black', system-ui, sans-serif" }}
         >
           {t.slogan}
         </p>
         {/* 한↔영 전환 시 레이아웃 높이 고정 — min-h 로 영역 예약 + 영문은 폰트 축소해 1줄 유지(한글과 동일 높이). */}
         <h1
-          className={`mt-2.5 flex min-h-[30px] flex-col items-center justify-center whitespace-pre-line text-center leading-snug tracking-[-0.4px] text-white drop-shadow-lg ${
+          className={`mt-4 flex min-h-[30px] flex-col items-center justify-center whitespace-pre-line text-center leading-snug tracking-[-0.4px] text-white drop-shadow-lg md:mt-2.5 ${
             lang === "en" ? "text-[15px]" : "text-[22px]"
           }`}
           style={{ fontFamily: "'Archivo Black', 'Do Hyeon', system-ui, sans-serif" }}
@@ -803,7 +815,7 @@ export function LoginScreen({
           {t.line1}
         </h1>
         <p
-          className={`mt-3 flex min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow ${
+          className={`mt-3 hidden min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow md:flex ${
             lang === "en" ? "text-[10px]" : "text-sm"
           }`}
         >
@@ -815,15 +827,16 @@ export function LoginScreen({
         {pendingToken === null ? (
           mode === "login" ? (
           <>
-        {/* 로그인 폼 */}
-        <form onSubmit={handleSubmit} className="mt-8 w-full max-w-sm space-y-3">
+        {/* 로그인 폼 — 폰에서만 여백과 라벨을 줄인다(라벨은 placeholder 와 같은 문구라 감춰도 잃는 게 없다). */}
+        <form
+          onSubmit={handleSubmit}
+          className="mt-4 w-full max-w-sm space-y-2 md:mt-8 md:space-y-3"
+        >
           <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow">
             {t.subtitle}
           </p>
           <label className="block">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.idLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.idLabel}</span>
             <input
               type="text"
               value={id}
@@ -835,9 +848,7 @@ export function LoginScreen({
             />
           </label>
           <label className="block">
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.pwLabel}
-            </span>
+            <span className={LABEL_PHONE_HIDDEN}>{t.pwLabel}</span>
             <input
               type="password"
               value={password}
@@ -896,10 +907,15 @@ export function LoginScreen({
           </p>
         </form>
 
-        <p className="mt-8 text-xs text-white/70 drop-shadow">{t.footer}</p>
+        {/* 푸터·스토어 배지는 폰에서 감춘다 — 둘이 168px 이고 로그인 자체에는 필요 없다. 데스크톱은 그대로. */}
+        <p className="mt-8 hidden text-xs text-white/70 drop-shadow md:block">
+          {t.footer}
+        </p>
 
         {/* 스토어 다운로드 배지 — 중앙 정렬(App Store / Google Play) */}
-        <StoreBadges />
+        <div className="hidden md:block">
+          <StoreBadges />
+        </div>
           </>
           ) : mode === "signup" ? (
           <>
