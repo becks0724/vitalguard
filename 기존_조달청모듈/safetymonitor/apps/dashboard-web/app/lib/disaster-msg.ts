@@ -100,6 +100,7 @@ export const WATCHED_TYPES = [
   "지진",
   "태풍",
   "산불",
+  "화재",
 ] as const;
 
 const WATCHED = new Set<string>(WATCHED_TYPES);
@@ -107,6 +108,29 @@ const WATCHED = new Set<string>(WATCHED_TYPES);
 export function isWatchedType(type: string): boolean {
   return WATCHED.has(type.trim());
 }
+
+// ── 화재위험경보 정기 캠페인 ─────────────────────────────────────────────────
+// 소방청이 하루 2회(약 13:50·19:30) 16개 시·도 전역으로 같은 내용을 보낸다. 지역이 전역이라
+// 어느 현장에서든 site 로 잡히고, 신선도 3시간 창 때문에 매일 두 번 알림이 발사된다.
+// 내용 자체는 현장에 유용해 화면에는 남기되(전기화재 예방 수칙), 알림에서만 뺀다.
+// 실측 2026-07-31~08-03 — 광주 site 화재 7건이 전부 이 문자, 실제 사고 문자는 광주 0건.
+// ⚠️ 유형까지 함께 본다 — 문구만 보면 다른 유형(폭염·호우 등)의 알림까지 조용히 막힐 수 있다.
+export const FIRE_CAMPAIGN_KEYWORD = "화재위험경보";
+
+export function isFireRiskCampaign(msg: DisasterMsg): boolean {
+  return msg.type.trim() === "화재" && msg.message.includes(FIRE_CAMPAIGN_KEYWORD);
+}
+
+// ── 긴급재난 단계는 유형으로 거르지 않는다 ───────────────────────────────────
+// EMRG_STEP_NM='긴급재난' 은 지자체·기상청이 최고 위급으로 보낸 것이라 유형 화이트리스트로
+// 거를 대상이 아니다. 실측 2026-07-01~ 4400건 중 긴급재난 58건의 유형 분포 —
+//   수집  산사태 9 · 호우 7 · 화재 2 · 산불 1                = 19건
+//   버려짐 (비어있음) 29 · 홍수 6 · 환경오염사고 4            = 39건 (67%)
+// 특히 기상청 극한호우("50mm/h 이상 강한 비로 침수 등 우려")는 DST_SE_NM 이 아예 비어서 오고,
+// 광주 남구도 1건 있었다(07-19 00:42). 가장 위급한 문자가 통째로 사라지고 있었다.
+// 화이트리스트 유형이면 그 유형을 유지하고, 목록 밖이면 단계 이름을 라벨로 묶는다 —
+// ALERT_TYPES 는 해제 역할 때문에 고정 목록이어야 해서 유형을 동적으로 늘릴 수 없다(D-07).
+export const URGENT_FALLBACK_TYPE = "긴급재난";
 
 // ── '기타' 재승격 ────────────────────────────────────────────────────────────
 // DST_SE_NM='기타' 에는 실종자 찾기(개인정보)뿐 아니라 진짜 재난 대피 안내가 섞여 온다.
@@ -142,6 +166,7 @@ export function filterWatched(msgs: DisasterMsg[]): {
   const unknown = new Set<string>();
   for (const m of msgs) {
     if (isWatchedType(m.type)) watched.push(m);
+    else if (m.step === "긴급재난") watched.push({ ...m, type: URGENT_FALLBACK_TYPE });
     else if (isEvacuationNotice(m)) watched.push({ ...m, type: PROMOTED_TYPE });
     else unknown.add(m.type);
   }
@@ -274,8 +299,13 @@ export function shortRegionLabel(token: string): string {
 }
 
 // ── 알림 항목 ────────────────────────────────────────────────────────────────
-// 알림 상태를 관리할 전체 유형. PROMOTED_TYPE 이 WATCHED_TYPES 에 없으므로 반드시 함께 넣는다(D-15).
-export const ALERT_TYPES: readonly string[] = [...WATCHED_TYPES, PROMOTED_TYPE];
+// 알림 상태를 관리할 전체 유형. PROMOTED_TYPE·URGENT_FALLBACK_TYPE 이 WATCHED_TYPES 에
+// 없으므로 반드시 함께 넣는다 — 빠뜨리면 그 유형은 영영 해제되지 않는다(D-15·D-07).
+export const ALERT_TYPES: readonly string[] = [
+  ...WATCHED_TYPES,
+  PROMOTED_TYPE,
+  URGENT_FALLBACK_TYPE,
+];
 
 // lib/env-alert-notify.ts 의 EnvAlertItem 과 구조가 같다(구조적 타이핑으로 그대로 넘어간다).
 // 그쪽은 db(pg)를 import 하므로 여기서 참조하면 순수 모듈이 아니게 되어 단위테스트가 깨진다.
@@ -299,7 +329,10 @@ function kstHm(ms: number): string {
 // 입력은 현장 시·도 매칭분(site)만 — 인근 시·도는 화면 참고용이라 알림 대상이 아니다(D-05).
 export function buildAlertItems(site: MatchedDisasterMsg[], nowMs: number): DisasterAlertItem[] {
   return ALERT_TYPES.map((type) => {
-    const hits = site.filter((h) => h.msg.type === type && isFresh(h.msg, nowMs));
+    // 화재위험경보 캠페인은 화면에만 남기고 알림에서 뺀다 — 매일 2회 같은 문자가 발사된다.
+    const hits = site.filter(
+      (h) => h.msg.type === type && isFresh(h.msg, nowMs) && !isFireRiskCampaign(h.msg),
+    );
     if (hits.length === 0) {
       return { itemKey: `disaster:${type}`, itemLabel: "재난문자", currentValue: type, severity: "normal" as const };
     }

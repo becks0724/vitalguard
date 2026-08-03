@@ -9,12 +9,15 @@ import {
   ALERT_TYPES,
   FRESH_WINDOW_MS,
   PROMOTED_TYPE,
+  URGENT_FALLBACK_TYPE,
   WATCHED_TYPES,
   buildAlertItems,
   dedupeBySn,
   filterWatched,
   isEvacuationNotice,
+  isFireRiskCampaign,
   isFresh,
+  isWatchedType,
   kstYmd,
   matchSite,
   msgRegionMatchesSido,
@@ -366,10 +369,14 @@ const URGENT = ALL.find((m) => m.step === "긴급재난") as DisasterMsg; // 경
 const matchedAt = (msgs: DisasterMsg[], at: [number, number] = ANSAN) =>
   matchSite(msgs, ...at).filter((h) => h.scope === "site");
 
-test("ALERT_TYPES — 화이트리스트 + 재승격 유형을 모두 포함한다", () => {
+test("ALERT_TYPES — 화이트리스트 + 재승격 + 긴급재난 라벨을 모두 포함한다", () => {
   for (const t of WATCHED_TYPES) assert.ok(ALERT_TYPES.includes(t), `${t} 누락`);
   assert.ok(ALERT_TYPES.includes(PROMOTED_TYPE), "PROMOTED_TYPE 누락 시 대피안내 알림이 1회만 간다");
-  assert.equal(ALERT_TYPES.length, WATCHED_TYPES.length + 1);
+  assert.ok(
+    ALERT_TYPES.includes(URGENT_FALLBACK_TYPE),
+    "URGENT_FALLBACK_TYPE 누락 시 긴급재난 알림이 1회만 간다",
+  );
+  assert.equal(ALERT_TYPES.length, WATCHED_TYPES.length + 2);
 });
 
 test("★ buildAlertItems — 발령 없는 유형도 매번 normal 로 낸다(D-07 해제 역할)", () => {
@@ -420,6 +427,124 @@ test("buildAlertItems — 같은 유형 여러 건이면 '외 N건'", () => {
   );
   assert.equal(item?.currentValue, "호우 외 1건");
   assert.equal(item?.severity, "danger", "한 건이라도 긴급재난이면 danger");
+});
+
+// ── 긴급재난은 유형으로 거르지 않는다 ────────────────────────────────────────
+// 실측 2026-07-01~ 4400건 중 긴급재난 58건의 67%(39건)가 유형 때문에 버려지고 있었다.
+// 기상청 극한호우는 DST_SE_NM 이 아예 비어서 온다(29건 전부 긴급재난 단계).
+const EXTREME_RAIN: DisasterMsg = {
+  sn: 820001,
+  createdAtMs: Date.UTC(2026, 6, 18, 15, 42, 29), // KST 07-19 00:42
+  message: "00:41 나주시 금천면 인근 50mm/h 이상 강한 비로 침수 등 우려(국민행동요령: cbs062.kma.go.kr)",
+  regions: ["전남광주통합특별시 남구 구소동 "],
+  step: "긴급재난",
+  type: "", // ← DST_SE_NM 이 null 로 온다
+  revised: false,
+};
+
+test("★ 유형이 비어 오는 기상청 극한호우 긴급재난을 버리지 않는다(실측 29건)", () => {
+  const { watched, unknownTypes } = filterWatched([EXTREME_RAIN]);
+  assert.equal(watched.length, 1, "가장 위급한 문자가 통째로 사라진다");
+  assert.equal(watched[0]?.type, URGENT_FALLBACK_TYPE);
+  assert.equal(unknownTypes.length, 0);
+});
+
+test("★ 화이트리스트 밖 유형이어도 긴급재난이면 받는다(홍수·환경오염사고)", () => {
+  const flood: DisasterMsg = { ...EXTREME_RAIN, sn: 820002, type: "홍수" };
+  const pollution: DisasterMsg = { ...EXTREME_RAIN, sn: 820003, type: "환경오염사고" };
+  const { watched } = filterWatched([flood, pollution]);
+  assert.equal(watched.length, 2);
+  assert.deepEqual(
+    watched.map((m) => m.type),
+    [URGENT_FALLBACK_TYPE, URGENT_FALLBACK_TYPE],
+  );
+});
+
+test("긴급재난이라도 화이트리스트 유형이면 원래 유형을 유지한다", () => {
+  const landslide: DisasterMsg = { ...EXTREME_RAIN, sn: 820004, type: "산사태" };
+  assert.equal(filterWatched([landslide]).watched[0]?.type, "산사태");
+});
+
+test("안전안내 단계의 화이트리스트 밖 유형은 그대로 버린다(무분별 수집 방지)", () => {
+  const notice: DisasterMsg = { ...EXTREME_RAIN, sn: 820005, type: "교통사고", step: "안전안내" };
+  const { watched, unknownTypes } = filterWatched([notice]);
+  assert.equal(watched.length, 0);
+  assert.deepEqual(unknownTypes, ["교통사고"]);
+});
+
+test("★ 긴급재난 극한호우가 광주 현장에 site 로 잡히고 danger 로 알림된다", () => {
+  const GWANGJU: [number, number] = [35.1595, 126.8526];
+  const site = matchedAt([EXTREME_RAIN], GWANGJU);
+  assert.equal(site.length, 1, "광주 남구 발령이 현장 발령으로 잡혀야 한다");
+  const promoted = filterWatched([EXTREME_RAIN]).watched;
+  const item = buildAlertItems(matchedAt(promoted, GWANGJU), EXTREME_RAIN.createdAtMs).find(
+    (i) => i.itemKey === `disaster:${URGENT_FALLBACK_TYPE}`,
+  );
+  assert.equal(item?.severity, "danger");
+  assert.ok((item?.detail ?? "").includes("50mm/h"));
+});
+
+// ── 화재 유형 + 정기 캠페인 알림 제외 ────────────────────────────────────────
+// 실측 2026-07-31~08-03 — 소방청이 하루 2회(13:50·19:30) 16개 시·도 전역으로 같은 문자를 보낸다.
+// 화면에는 남기되(전기화재 예방 수칙) 알림만 뺀다.
+const FIRE_CAMPAIGN: DisasterMsg = {
+  sn: 810001,
+  createdAtMs: Date.UTC(2026, 7, 3, 4, 50, 0), // KST 13:50
+  message:
+    "화재위험경보 ‘경계’ 발령 전기화재예방 알림 ▲실외기 주변 가연물 및 문어발식 콘센트 금지 ▲과열 시 중단 ▲손상된 전선 교체 ▲사용 후 플러그 뽑기[소방청]",
+  regions: ["경기도  ", "전남광주통합특별시  "],
+  step: "안전안내",
+  type: "화재",
+  revised: false,
+};
+const FIRE_INCIDENT: DisasterMsg = {
+  ...FIRE_CAMPAIGN,
+  sn: 810002,
+  message: "오늘 08:20 안산시 단원구 페인트 공장 화재 발생. 인근 주민은 먼 곳으로 대피하시기 바랍니다.[안산시]",
+  regions: ["경기도 안산시 단원구 "],
+};
+
+test("화재는 관심 유형이다 — 화재위험경보·공장화재가 수집 대상", () => {
+  assert.ok(isWatchedType("화재"));
+  assert.equal(filterWatched([FIRE_CAMPAIGN, FIRE_INCIDENT]).watched.length, 2);
+});
+
+test("isFireRiskCampaign — 정기 캠페인만 골라낸다(실제 사고 문자는 아니다)", () => {
+  assert.ok(isFireRiskCampaign(FIRE_CAMPAIGN));
+  assert.equal(isFireRiskCampaign(FIRE_INCIDENT), false);
+});
+
+test("★ isFireRiskCampaign — 유형 게이트: 화재가 아닌 유형은 문구가 같아도 캠페인이 아니다", () => {
+  // 문구만 보면 폭염·호우 문자가 이 문구를 인용했을 때 그 유형의 알림까지 조용히 막힌다.
+  const heatWithSameWords: DisasterMsg = { ...FIRE_CAMPAIGN, type: "폭염" };
+  assert.equal(isFireRiskCampaign(heatWithSameWords), false);
+});
+
+test("★ buildAlertItems — 화재위험경보 캠페인은 알림을 발사하지 않는다", () => {
+  const item = buildAlertItems(matchedAt([FIRE_CAMPAIGN]), FIRE_CAMPAIGN.createdAtMs).find(
+    (i) => i.itemKey === "disaster:화재",
+  );
+  assert.equal(item?.severity, "normal", "매일 2회 같은 문자가 텔레그램으로 나간다");
+});
+
+test("buildAlertItems — 실제 화재 사고는 그대로 알림 대상이다", () => {
+  const item = buildAlertItems(matchedAt([FIRE_INCIDENT]), FIRE_INCIDENT.createdAtMs).find(
+    (i) => i.itemKey === "disaster:화재",
+  );
+  assert.equal(item?.severity, "caution");
+});
+
+test("★ 캠페인 제외는 알림에만 적용된다 — 화면(site 매칭)에는 그대로 남는다", () => {
+  const site = matchedAt([FIRE_CAMPAIGN]);
+  assert.equal(site.length, 1, "화면에서도 사라지면 전기화재 예방 수칙을 아예 못 본다");
+});
+
+test("★ 폭염 등 날씨 유형은 이번 변경과 무관하게 그대로 알림이 간다", () => {
+  const heat: DisasterMsg = { ...URGENT, sn: 810003, type: "폭염", step: "안전안내" };
+  const rain: DisasterMsg = { ...URGENT, sn: 810004, type: "호우" };
+  const items = buildAlertItems(matchedAt([heat, rain]), URGENT.createdAtMs);
+  assert.equal(items.find((i) => i.itemKey === "disaster:폭염")?.severity, "caution");
+  assert.equal(items.find((i) => i.itemKey === "disaster:호우")?.severity, "danger");
 });
 
 test("★★ D-07 전체 시퀀스 — 해제 후 재발령이 다시 발송된다", () => {
