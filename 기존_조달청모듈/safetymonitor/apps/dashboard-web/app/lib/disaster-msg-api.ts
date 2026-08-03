@@ -22,8 +22,14 @@ import { latLonToSido } from "./kma-regions";
 const BASE = "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247";
 // 일일 호출 1000건 — 5분 주기(288회/일) + 자정 인근 전날 조회(약 36회) = 약 32%(D-17).
 const TTL_MS = 5 * 60 * 1000;
-// 하루치 전건을 한 번에 받는다. 응답 정렬이 시각순도 SN순도 아니라 페이징에 기댈 수 없다(D-17).
+// 한 번에 받는 최대 건수 — 서버가 1000 으로 캡한다(10000 을 요청해도 응답 numOfRows 가 1000).
+// crtDt 는 그 날짜 "이후" 누적을 주므로 발령이 몰리는 날에는 이 상한을 넘고, 넘으면 조용히 잘린다.
+// 응답 최상위 totalCount 로 잘림을 탐지해 다음 페이지를 이어받는다(실측 2026-08-03 — totalCount
+// 3491 건을 1000×4 페이지로 받으면 고유 SN 3491, 누락·중복 0). 정렬은 여전히 시각순이 아니지만
+// 전건을 다 받으므로 순서에 기대지 않는다(D-17 의 "페이징에 기댈 수 없다" 는 정렬에 관한 것).
 const NUM_OF_ROWS = 1000;
+// 페이지 상한 — 폴링당 최대 호출수를 묶어 일일 1000건 예산을 지킨다(평소 하루 200~270건이라 1페이지).
+const MAX_PAGES = 3;
 // 화이트리스트 밖이지만 이미 판단이 끝난 유형 — 로그로 알릴 필요가 없다(실종자 안내·도로 통제).
 const KNOWN_IGNORED_TYPES = new Set(["기타", "교통통제"]);
 
@@ -93,8 +99,12 @@ function mockRaws(now: Date): RawDisasterMsg[] {
 }
 
 // ── 실 API ──────────────────────────────────────────────────────────────────
-async function fetchDay(key: string, crtDt: string): Promise<RawDisasterMsg[]> {
-  const url = `${BASE}?serviceKey=${key}&returnType=json&pageNo=1&numOfRows=${NUM_OF_ROWS}&crtDt=${crtDt}`;
+async function fetchPage(
+  key: string,
+  crtDt: string,
+  pageNo: number,
+): Promise<{ rows: RawDisasterMsg[]; total: number }> {
+  const url = `${BASE}?serviceKey=${key}&returnType=json&pageNo=${pageNo}&numOfRows=${NUM_OF_ROWS}&crtDt=${crtDt}`;
   const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
   const json = await res.json();
   const code = json?.header?.resultCode;
@@ -104,7 +114,24 @@ async function fetchDay(key: string, crtDt: string): Promise<RawDisasterMsg[]> {
   // ★ body 가 빈 배열이면 "그날 재난문자가 없었다"는 정상 상태다. 목업으로 떨어뜨리면
   //   재난이 없는 날 관제 화면에 가짜 경보가 뜬다(kma.ts 가 실제로 겪은 사고 — resultCode 03 분기).
   const body = json?.body;
-  return Array.isArray(body) ? body : [];
+  return { rows: Array.isArray(body) ? body : [], total: Number(json?.totalCount) || 0 };
+}
+
+async function fetchDay(key: string, crtDt: string): Promise<RawDisasterMsg[]> {
+  const first = await fetchPage(key, crtDt, 1);
+  const rows = [...first.rows];
+  // 첫 페이지가 상한을 채웠고 아직 남았으면 이어받는다. 평소에는 이 루프가 한 번도 돌지 않는다.
+  for (let page = 2; rows.length < first.total && page <= MAX_PAGES; page++) {
+    const next = await fetchPage(key, crtDt, page);
+    if (next.rows.length === 0) break; // 예상보다 일찍 끝났다 — 무한 루프 방지.
+    rows.push(...next.rows);
+  }
+  if (first.total > rows.length) {
+    console.warn(
+      `[disaster-msg] ${crtDt} 전건 미수집 — ${rows.length}/${first.total}건(페이지 상한 ${MAX_PAGES}). 오래된 발령이 빠질 수 있다.`,
+    );
+  }
+  return rows;
 }
 
 export type DisasterFetch = { source: "live" | "mock"; msgs: DisasterMsg[] };
