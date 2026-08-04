@@ -142,12 +142,24 @@ gcloud run deploy "$SERVICE" --image "$IMAGE_REPO@$DIGEST" --region "$REGION" \
 
 say "5/5 서빙 검증 (deploy 메시지 불신 — describe 로만 판정 · L-20·L-33)"
 REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.latestCreatedRevisionName)')
-# ⚠️ status.traffic[0] 을 그대로 읽으면 안 된다 — 태그가 붙은 옛 리비전(예: tag=verify)이
-#    배열에 함께 들어가고 순서가 보장되지 않아, 실제로는 새 리비전 100% 인데도 매번
-#    "100% 아님" 오탐이 뜬다(2026-08-04 실측 — 배포 5회 연속). 태그 항목은 percent 가 비어 있다.
-#    **percent 를 가진 항목만** 골라 새 리비전 몫을 센다.
-TPCT=$(gcloud run services describe "$SERVICE" --region "$REGION" \
-  --format="value(status.traffic.filter(\"revisionName:$REV\").extract(percent))" 2>/dev/null | tr -d '[] ')
+# 트래픽 판정 — 두 가지를 함께 고쳐야 한다(2026-08-04 실측).
+#  ① `status.traffic[0]` 을 그대로 읽으면 안 된다. 태그가 붙은 옛 리비전(예: tag=verify)이
+#     배열에 함께 들어가고 순서가 보장되지 않아 **엉뚱한 리비전명**이 찍힌다.
+#     → `revisionName` 으로 필터해 새 리비전 몫만 본다.
+#  ② `gcloud run deploy` 직후 `describe` 는 아직 0% 를 준다(라우팅 전파에 수 초~수십 초).
+#     ①만 고치면 이번엔 "0%" 로 매번 경고가 뜬다 — 원인이 태그가 아니라 **조회 시점**이었다.
+#     → 짧게 재시도하며 기다린다. 그래도 100 이 아니면 그때는 진짜 보정 대상이다.
+# ⚠️ 경고가 상시화되면 진짜 경고를 못 알아본다. 오탐을 없애는 것이 이 블록의 목적이다.
+read_traffic_pct() {
+  gcloud run services describe "$SERVICE" --region "$REGION" \
+    --format="value(status.traffic.filter(\"revisionName:$REV\").extract(percent))" 2>/dev/null | tr -d '[] '
+}
+TPCT=$(read_traffic_pct)
+for _ in 1 2 3 4 5 6; do
+  [ "$TPCT" = "100" ] && break
+  sleep 5
+  TPCT=$(read_traffic_pct)
+done
 [ -n "$TPCT" ] || TPCT=0
 if [ "$TPCT" != "100" ]; then
   echo "⚠ 트래픽이 새 리비전 100% 아님(${REV}=${TPCT}%) → update-traffic 보정(2026-07-31 실사고 재발 방지)"
