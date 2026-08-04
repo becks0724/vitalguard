@@ -578,15 +578,42 @@ test("★ 유형이 비어 오는 기상청 극한호우 긴급재난을 버리�
   assert.equal(unknownTypes.length, 0);
 });
 
-test("★ 화이트리스트 밖 유형이어도 긴급재난이면 받는다(홍수·환경오염사고)", () => {
-  const flood: DisasterMsg = { ...EXTREME_RAIN, sn: 820002, type: "홍수" };
-  const pollution: DisasterMsg = { ...EXTREME_RAIN, sn: 820003, type: "환경오염사고" };
-  const { watched } = filterWatched([flood, pollution]);
+test("★ 화이트리스트 밖 유형이어도 긴급재난이면 받는다(붕괴·정전)", () => {
+  // ⚠️ 예시를 홍수·환경오염사고로 두면 안 된다 — D-30 에서 화이트리스트에 넣어 이제 원래 유형이
+  //    유지된다. 이 테스트가 보려는 것은 '목록 밖 유형' 이므로 실측에서 본 다른 유형을 쓴다.
+  const collapse: DisasterMsg = { ...EXTREME_RAIN, sn: 820002, type: "붕괴" };
+  const outage: DisasterMsg = { ...EXTREME_RAIN, sn: 820003, type: "정전" };
+  const { watched } = filterWatched([collapse, outage]);
   assert.equal(watched.length, 2);
   assert.deepEqual(
     watched.map((m) => m.type),
     [URGENT_FALLBACK_TYPE, URGENT_FALLBACK_TYPE],
   );
+});
+
+test("★ 홍수·환경오염사고는 안전안내 단계도 받는다(D-30 — 대피 지시가 담긴다)", () => {
+  // 종전에는 긴급재난 단계만 통과했다. 실측 — 홍수 35건 중 32건, 환경오염사고 18건 중 14건이
+  // 안전안내라 대부분이 버려지고 있었다.
+  const flood: DisasterMsg = {
+    ...EXTREME_RAIN,
+    sn: 820010,
+    type: "홍수",
+    step: "안전안내",
+    message: "[금강홍수통제소] 무한천 예산군(예산대교) 홍수주의보 발령, 하천변 이용을 자제하시기 바랍니다",
+  };
+  const spill: DisasterMsg = {
+    ...EXTREME_RAIN,
+    sn: 820011,
+    type: "환경오염사고",
+    step: "안전안내",
+    message: "[군산시] 소룡동 oci공장 화학사고 누출, 인근주민은 문창초등학교로 대피하여 주시기 바랍니다.",
+  };
+  const { watched } = filterWatched([flood, spill]);
+  assert.equal(watched.length, 2);
+  assert.deepEqual(watched.map((m) => m.type), ["홍수", "환경오염사고"], "원래 유형이 유지돼야 한다");
+  for (const t of ["홍수", "환경오염사고"]) {
+    assert.ok(ALERT_TYPES.includes(t), `${t} 가 ALERT_TYPES 에 없으면 알림이 1회만 가고 만다(D-07)`);
+  }
 });
 
 test("긴급재난이라도 화이트리스트 유형이면 원래 유형을 유지한다", () => {
