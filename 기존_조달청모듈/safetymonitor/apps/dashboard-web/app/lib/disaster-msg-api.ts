@@ -134,6 +134,11 @@ async function fetchDay(key: string, crtDt: string): Promise<RawDisasterMsg[]> {
   return rows;
 }
 
+// "2026/08/04 15:06:00" → "20260804". queryDates 가 주는 crtDt 형식과 맞춘다.
+function crtDtYmd(crtDt: string): string {
+  return String(crtDt ?? "").trim().slice(0, 10).replace(/[/-]/g, "");
+}
+
 export type DisasterFetch = { source: "live" | "mock"; msgs: DisasterMsg[] };
 
 // 관심 유형 재난문자(신선도·지역 무관 전건). 신선도·현장 매칭은 호출부에서.
@@ -165,6 +170,20 @@ export async function fetchDisasterMsgs(now: Date = new Date()): Promise<Disaste
     const novelTypes = unknownTypes.filter((t) => !KNOWN_IGNORED_TYPES.has(t));
     if (novelTypes.length > 0) {
       console.warn(`[disaster-msg] 처음 보는 유형 ${JSON.stringify(novelTypes)} — 관심 유형이면 WATCHED_TYPES 에 추가`);
+    }
+
+    // ★ 조회한 날짜의 발령이 응답에 하나도 없으면 정상 상태가 아니다.
+    // 실측 2026-08-04 15:07 — 외부 API 가 crtDt 를 무시하고 과거 데이터만 1000건 돌려줬다
+    // (8월인데 한파·전염병 유형이 섞여 왔다). 오늘 것이 없으니 신선도 게이트에서 전멸했고,
+    // 그 0건이 캐시되어 **5분 동안 관제 화면이 "재난문자 없음" 으로 굳었다**(실제 발생).
+    // 이런 응답은 캐시하지 않고 직전 값을 유지한다 — 다음 폴링이 곧 정상 응답을 받는다.
+    // ⚠️ raws 가 0건인 것은 이상이 아니다(그날 재난이 없으면 빈 배열이 정상 — D-19).
+    if (raws.length > 0 && !raws.some((r) => dates.includes(crtDtYmd(r.CRT_DT)))) {
+      console.error(
+        `[disaster-msg] 조회일(${cacheKey}) 발령이 응답에 없다 — 외부 API 이상(수신 ${raws.length}건). 캐시 갱신을 건너뛴다.`,
+      );
+      if (hit) return { source: "live", msgs: hit.msgs };
+      return { source: "live", msgs: watched };
     }
 
     cache.set(cacheKey, { ts: now.getTime(), msgs: watched });
