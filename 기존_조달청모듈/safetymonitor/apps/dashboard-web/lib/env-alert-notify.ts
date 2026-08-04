@@ -47,18 +47,35 @@ export function formatEnvAlertMessage(item: EnvAlertItem): string {
 }
 
 // 각 항목 상태를 갱신하고, 악화 전이(주의+)인 것만 텔레그램 발송. 한 항목 실패가 나머지를 막지 않는다.
+//
+// ★ 발송·건너뜀을 반드시 로그로 남긴다(L-35). 전에는 텔레그램을 쏘고 끝이라 "무엇을 왜 보냈는지"가
+// 아무 데도 남지 않았고, DB 에는 severity 만 있어 사후 추적이 불가능했다. 그래서 오알림 2건을
+// 17시간 뒤에야 **다른 작업의 라이브 검증 중 우연히** 발견했다(D-25). 판정 로직은 언제든 틀릴 수
+// 있고, 관측이 없으면 틀린 것을 알 방법이 없다.
+//
+// ⚠️ 전이가 없어 안 보낸 건은 남기지 않는다 — 유형 11종 × 5분 폴링이라 로그가 도배된다.
+// ⚠️ detail 은 첫 줄(시각·지역)만 — 본문 전문에는 개인정보가 섞일 수 있다(D-10).
 export async function notifyEnvAlerts(items: EnvAlertItem[]): Promise<void> {
   for (const item of items) {
     let prev: string | null;
     try {
       prev = await upsertEnvAlertState(item.itemKey, item.severity);
-    } catch {
-      continue; // 상태 저장 실패 — 이 항목 건너뜀
+    } catch (e) {
+      // 조용한 skip 은 "알림이 왜 안 갔는지" 를 사후에 알 수 없게 만든다.
+      console.error(
+        `[env-alert] 상태 저장 실패 — ${item.itemKey} 알림 건너뜀. ${(e as Error).message}`,
+      );
+      continue;
     }
     const prevSev: RuleSeverity | null =
       prev === "caution" || prev === "danger" || prev === "normal" ? prev : null;
-    if (shouldSendEnv(prevSev, item.severity)) {
-      await sendTelegramMessage(formatEnvAlertMessage(item));
-    }
+    if (!shouldSendEnv(prevSev, item.severity)) continue;
+
+    const result = await sendTelegramMessage(formatEnvAlertMessage(item));
+    const where = (item.detail ?? "").split("\n")[0] ?? "";
+    const line = `[env-alert] ${item.itemKey} ${prevSev ?? "none"}→${item.severity} · ${item.currentValue}${where ? ` · ${where}` : ""}`;
+    if (result === "sent") console.log(`${line} · 발송됨`);
+    else if (result === "skipped") console.warn(`${line} · 미발송(텔레그램 미배선)`);
+    else console.error(`${line} · 발송 실패`);
   }
 }

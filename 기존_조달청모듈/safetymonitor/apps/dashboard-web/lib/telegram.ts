@@ -37,12 +37,16 @@ export function formatAlertMessage(input: AlertNotifyInput): string {
   return [`${label}`, `작업자 ${input.workerId}`, `발생 ${formatKst(input.ts)}`].join("\n");
 }
 
+// 발송 결과 — 호출부가 "보냈다/못 보냈다" 를 로그로 남길 수 있게 돌려준다.
+// 전에는 void 라 실패도 미배선도 호출부에서 구별할 수 없었다(L-35).
+export type TelegramSendResult = "sent" | "skipped" | "failed";
+
 // 텔레그램 임의 텍스트 전송(공용) — 미설정이면 no-op, 실패/타임아웃은 삼킨다(절대 throw 하지 않음).
 // 작업자 알림(notifyAlertTelegram)·현장환경 알림(env-alert-notify) 이 공유한다.
-export async function sendTelegramMessage(text: string): Promise<void> {
+export async function sendTelegramMessage(text: string): Promise<TelegramSendResult> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return; // 미배선 환경 — 조용히 통과
+  if (!token || !chatId) return "skipped"; // 미배선 환경 — 던지지 않고 그 사실만 알린다
 
   try {
     const controller = new AbortController();
@@ -56,9 +60,13 @@ export async function sendTelegramMessage(text: string): Promise<void> {
     clearTimeout(timer);
     if (!res.ok) {
       console.warn(`[telegram] sendMessage 실패 (${res.status})`);
+      return "failed";
     }
-  } catch {
+    return "sent";
+  } catch (e) {
     // 네트워크/타임아웃 — 알림 전송 실패가 vital 수집·alert 기록을 막지 않도록 삼킨다.
+    console.warn(`[telegram] sendMessage 예외 — ${(e as Error).message}`);
+    return "failed";
   }
 }
 

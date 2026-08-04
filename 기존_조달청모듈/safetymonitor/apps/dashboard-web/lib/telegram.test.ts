@@ -2,7 +2,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { formatAlertMessage, notifyAlertTelegram } from "./telegram.js";
+import { formatAlertMessage, notifyAlertTelegram, sendTelegramMessage } from "./telegram.js";
 
 test("포맷 — 실명은 싣지 않고 사번만(국외이전 최소화, 감사 SEC-PRIV-01)", () => {
   const msg = formatAlertMessage({
@@ -62,5 +62,20 @@ test("전송 — 토큰/chat_id 미설정이면 no-op(throw 없이 resolve)", as
   } finally {
     if (prevToken !== undefined) process.env.TELEGRAM_BOT_TOKEN = prevToken;
     if (prevChat !== undefined) process.env.TELEGRAM_CHAT_ID = prevChat;
+  }
+});
+
+// ── 발송 결과 반환(L-35) ─────────────────────────────────────────────────────
+// void 였을 때는 호출부가 "보냈다/못 보냈다" 를 구별할 수 없어 알림 로그를 남길 수 없었다.
+test("sendTelegramMessage — 미배선이면 skipped 를 돌려준다(조용한 no-op 금지)", async () => {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  delete process.env.TELEGRAM_BOT_TOKEN;
+  delete process.env.TELEGRAM_CHAT_ID;
+  try {
+    assert.equal(await sendTelegramMessage("테스트"), "skipped");
+  } finally {
+    if (token !== undefined) process.env.TELEGRAM_BOT_TOKEN = token;
+    if (chat !== undefined) process.env.TELEGRAM_CHAT_ID = chat;
   }
 });
