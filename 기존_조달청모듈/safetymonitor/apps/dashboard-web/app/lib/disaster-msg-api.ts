@@ -239,6 +239,6 @@ export async function disasterMsgsForLocation(
     summary: types.length > 0 ? types.join(" · ") : "재난문자 없음",
     site: siteHits.map(toView).sort(newestFirst),
     nearby: nearbyHits.map(toView).sort(newestFirst),
-    alertItems: buildAlertItems(siteHits, nowMs),
+    alertItems: buildAlertItems(siteHits, nowMs, nearbyHits),
   };
 }

@@ -323,27 +323,45 @@ function kstHm(ms: number): string {
   return `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
 }
 
+// ── 인근 시·도 발령 중 알림으로 올릴 것 ─────────────────────────────────────
+// 기본은 현장(site)만 알림이었다(D-05). 사용자 요청으로 인근까지 넓히되 전부는 아니다 —
+// 인근 발령은 광주 현장 기준 하루 32~51건이고 거의 전부 폭염 안전안내다(실측 08-01~08-04 182건).
+// 폭염·대설 같은 광역 기상은 인근에서 나도 현장 대응이 달라지지 않으므로 화면 참고에 그대로 둔다.
+// 알림으로 올리는 것은 ① 긴급재난 단계(위급도 자체가 근거) ② 현장으로 번질 수 있는 유형.
+export const SPREADING_TYPES: readonly string[] = ["호우", "태풍", "산사태", "산불"];
+
+export function isNearbyAlertWorthy(msg: DisasterMsg): boolean {
+  return msg.step === "긴급재난" || SPREADING_TYPES.includes(msg.type);
+}
+
 // ★ 화이트리스트 전 유형을 매번 반환한다 — 신선한 발령이 없는 유형은 normal 이다.
 // 재난문자에는 해제 문자가 없어서 이 normal 이 곧 해제 역할을 한다(D-07).
 // 빠뜨리면 notifyEnvAlerts 의 전이 판정 때문에 유형당 알림이 **딱 한 번만** 가고 영영 안 간다.
-// 입력은 현장 시·도 매칭분(site)만 — 인근 시·도는 화면 참고용이라 알림 대상이 아니다(D-05).
-export function buildAlertItems(site: MatchedDisasterMsg[], nowMs: number): DisasterAlertItem[] {
+// site 는 전부, nearby 는 isNearbyAlertWorthy 통과분만 알림 대상이다(D-24).
+export function buildAlertItems(
+  site: MatchedDisasterMsg[],
+  nowMs: number,
+  nearby: readonly MatchedDisasterMsg[] = [],
+): DisasterAlertItem[] {
+  const pool = [...site, ...nearby.filter((h) => isNearbyAlertWorthy(h.msg))];
   return ALERT_TYPES.map((type) => {
     // 화재위험경보 캠페인은 화면에만 남기고 알림에서 뺀다 — 매일 2회 같은 문자가 발사된다.
-    const hits = site.filter(
+    const hits = pool.filter(
       (h) => h.msg.type === type && isFresh(h.msg, nowMs) && !isFireRiskCampaign(h.msg),
     );
     if (hits.length === 0) {
       return { itemKey: `disaster:${type}`, itemLabel: "재난문자", currentValue: type, severity: "normal" as const };
     }
-    // 대표 1건 — 긴급재난 우선, 같으면 최신.
+    // 대표 1건 — 긴급재난 우선(위급도), 같으면 현장 우선(관련도), 그다음 최신.
     const lead = [...hits].sort(
       (a, b) =>
         Number(b.msg.step === "긴급재난") - Number(a.msg.step === "긴급재난") ||
+        Number(b.scope === "site") - Number(a.scope === "site") ||
         b.msg.createdAtMs - a.msg.createdAtMs,
     )[0] as MatchedDisasterMsg;
     const severity = hits.some((h) => h.msg.step === "긴급재난") ? "danger" : "caution";
-    const where = lead.matchedRegions.join(", ");
+    // 인근 발령이 대표가 되면 반드시 밝힌다 — 안 밝히면 관제자가 현장 발령으로 읽는다.
+    const where = `${lead.scope === "nearby" ? "인근 " : ""}${lead.matchedRegions.join(", ")}`;
     const more = hits.length > 1 ? ` 외 ${hits.length - 1}건` : "";
     return {
       itemKey: `disaster:${type}`,

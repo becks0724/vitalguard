@@ -9,6 +9,7 @@ import {
   ALERT_TYPES,
   FRESH_WINDOW_MS,
   PROMOTED_TYPE,
+  SPREADING_TYPES,
   URGENT_FALLBACK_TYPE,
   WATCHED_TYPES,
   buildAlertItems,
@@ -427,6 +428,60 @@ test("buildAlertItems — 같은 유형 여러 건이면 '외 N건'", () => {
   );
   assert.equal(item?.currentValue, "호우 외 1건");
   assert.equal(item?.severity, "danger", "한 건이라도 긴급재난이면 danger");
+});
+
+// ── 인근 시·도 알림 범위(D-24) ───────────────────────────────────────────────
+// 사용자 요청으로 인근까지 넓히되, 긴급재난 단계 + 번지는 유형만. 광역 기상(폭염·대설)은 화면만.
+const nearbyAt = (msgs: DisasterMsg[], at: [number, number] = ANSAN) =>
+  matchSite(msgs, ...at).filter((h) => h.scope === "nearby");
+
+test("★ 인근 폭염 안전안내는 알림을 올리지 않는다(하루 32~51건 — 화면 참고만)", () => {
+  // 안산 현장 기준 인근 시·도(서울·인천 등) 발령을 만든다.
+  const heat: DisasterMsg = { ...URGENT, sn: 830001, type: "폭염", step: "안전안내", regions: ["서울특별시 "] };
+  const near = nearbyAt([heat]);
+  assert.equal(near.length, 1, "인근 매칭 자체는 되어야 한다(화면 참고)");
+  const item = buildAlertItems([], URGENT.createdAtMs, near).find((i) => i.itemKey === "disaster:폭염");
+  assert.equal(item?.severity, "normal");
+});
+
+test("★ 인근 긴급재난은 단계만으로 알림에 오른다", () => {
+  const flood: DisasterMsg = { ...URGENT, sn: 830002, type: "호우", step: "긴급재난", regions: ["서울특별시 "] };
+  const item = buildAlertItems([], URGENT.createdAtMs, nearbyAt([flood])).find((i) => i.itemKey === "disaster:호우");
+  assert.equal(item?.severity, "danger");
+});
+
+test("★ 인근 산사태는 안전안내여도 알림에 오른다(번지는 유형)", () => {
+  const slide: DisasterMsg = { ...URGENT, sn: 830003, type: "산사태", step: "안전안내", regions: ["서울특별시 "] };
+  const item = buildAlertItems([], URGENT.createdAtMs, nearbyAt([slide])).find((i) => i.itemKey === "disaster:산사태");
+  assert.equal(item?.severity, "caution");
+  for (const t of SPREADING_TYPES) assert.ok(ALERT_TYPES.includes(t), `${t} 가 ALERT_TYPES 에 없다`);
+});
+
+// detail 첫 줄만 본다 — 본문에도 "…대부동 인근에 시간당 50mm" 처럼 '인근' 이 들어간다.
+const whereLine = (detail?: string) => (detail ?? "").split("\n")[0] ?? "";
+
+test("★ 인근 발령이 대표가 되면 detail 에 '인근' 을 밝힌다", () => {
+  const slide: DisasterMsg = { ...URGENT, sn: 830004, type: "산사태", step: "안전안내", regions: ["서울특별시 "] };
+  const item = buildAlertItems([], URGENT.createdAtMs, nearbyAt([slide])).find((i) => i.itemKey === "disaster:산사태");
+  assert.match(whereLine(item?.detail), /발령 · 인근 /, "안 밝히면 관제자가 현장 발령으로 읽는다");
+});
+
+test("현장 발령이 있으면 인근보다 대표로 뽑힌다(같은 단계일 때)", () => {
+  const siteRain: DisasterMsg = { ...URGENT, sn: 830005, type: "호우", step: "안전안내" };
+  const nearRain: DisasterMsg = { ...URGENT, sn: 830006, type: "호우", step: "안전안내", regions: ["서울특별시 "] };
+  const item = buildAlertItems(
+    matchedAt([siteRain]),
+    URGENT.createdAtMs,
+    nearbyAt([nearRain]),
+  ).find((i) => i.itemKey === "disaster:호우");
+  assert.doesNotMatch(whereLine(item?.detail), /인근/);
+  assert.equal(item?.currentValue, "호우 외 1건");
+});
+
+test("buildAlertItems — nearby 를 안 넘기면 기존과 똑같이 동작한다(기본값)", () => {
+  const a = buildAlertItems(matchedAt([URGENT]), URGENT.createdAtMs);
+  const b = buildAlertItems(matchedAt([URGENT]), URGENT.createdAtMs, []);
+  assert.deepEqual(a, b);
 });
 
 // ── 긴급재난은 유형으로 거르지 않는다 ────────────────────────────────────────
