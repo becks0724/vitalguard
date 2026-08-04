@@ -124,7 +124,7 @@ export function SafetyNewsPage({ lat, lon }: { lat?: number; lon?: number }) {
       </Panel>
 
       {/* 높이 150px = 요약줄 + 발령 2건(행당 50px). 그 이상은 스크롤 — 화면을 덜 차지하게(사용자 요청). */}
-      <Panel title="긴급재난문자" onRefresh={bump("disaster")} badge={<SourceBadge source={disasterSource} />}>
+      <Panel title="행정안전부 긴급재난문자" onRefresh={bump("disaster")} badge={<SourceBadge source={disasterSource} />}>
         <div className="h-[150px]">
           <DisasterMsgCard lat={lat} lon={lon} onSourceChange={onDisaster} reloadKey={reload.disaster} />
         </div>
