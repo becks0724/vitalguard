@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 
-import { shortRegionLabel } from "../lib/disaster-msg";
+import { HISTORY_DAYS, shortRegionLabel } from "../lib/disaster-msg";
 
 type MsgView = {
   sn: number;
@@ -14,6 +14,7 @@ type MsgView = {
   regions: string[];
   sidos: string[];
   message: string;
+  fresh: boolean; // 신선도(3시간) 이내 — site 목록은 3일 누적이라 "지금" 과 구분해 그린다(D-29)
 };
 type Payload = {
   ok: boolean;
@@ -38,6 +39,19 @@ function hm(ms: number): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+// 지난 발령은 며칠 전인지가 시각보다 중요하다 — "오늘/어제/2일 전" 으로 묶어 보여준다.
+// KST 달력 날짜로 센다(경과 시간이 아니라) — 23:50 발령을 00:10 에 보면 "어제" 가 맞다.
+function kstDayIndex(ms: number): number {
+  return Math.floor((ms + 9 * 3_600_000) / 86_400_000);
+}
+
+function dayLabel(atMs: number, nowMs: number): string {
+  const diff = kstDayIndex(nowMs) - kstDayIndex(atMs);
+  if (diff <= 0) return "오늘";
+  if (diff === 1) return "어제";
+  return `${diff}일 전`;
 }
 
 export function DisasterMsgCard({
@@ -117,8 +131,10 @@ export function DisasterMsgCard({
   // 같은 지역이 여러 문자에 걸리면 가장 높은 단계를 쓰고, 현장(site)이 인근보다 앞선다.
   const RANK = { caution: 1, danger: 2 } as const;
   const chipMap = new Map<string, { name: string; severity: "caution" | "danger"; site: boolean }>();
+  // ⚠️ site 는 3일 누적이므로 칩에는 **신선분만** 넣는다(D-29). 신호등은 "지금" 을 말해야 하고,
+  //    3일 전 발령 지역이 색점으로 남으면 현재 상태를 잘못 읽는다.
   for (const [isSite, list] of [
-    [true, data.site],
+    [true, data.site.filter((m) => m.fresh)],
     [false, data.nearby],
   ] as const) {
     for (const m of list) {
@@ -136,6 +152,9 @@ export function DisasterMsgCard({
   }
   const chips = [...chipMap.values()].sort((a, b) => Number(b.site) - Number(a.site));
   const CHIP_MAX = 12;
+  // 지난 발령의 '어제/2일 전' 표기용. data 가 있어야 이 분기에 오고 data 는 useEffect 로만
+  // 채워지므로 SSR 에서는 실행되지 않는다(hydration 불일치 없음).
+  const nowMs = Date.now();
 
   return (
     <div className="no-scrollbar flex h-full flex-col gap-2 overflow-y-auto px-3 pb-3 pt-1.5">
@@ -190,10 +209,12 @@ export function DisasterMsgCard({
 
       {data.site.length === 0 ? (
         <p className="py-3 text-center text-xs text-muted dark:text-on-dark-soft">
-          현장 시·도에 발령된 재난문자가 없습니다.
+          최근 {HISTORY_DAYS}일간 현장 시·도에 발령된 재난문자가 없습니다.
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
+          {/* 3일 누적 목록(D-29). 신선분(3시간)은 그대로, 지난 것은 흐리게 + 며칠 전인지 표시.
+              지난 것을 지우지 않는 이유 = "지금 위험한가" 와 "최근에 무슨 일이 있었나" 는 다른 질문이다. */}
           {data.site.map((m) => (
             <li
               key={m.sn}
@@ -203,9 +224,15 @@ export function DisasterMsgCard({
                 // bg-semantic-down/5 는 이 프로젝트의 색 정의(var(hex))에서 클래스가 생성되지 않아
                 // 배경이 투명해지고 테두리만 기본 회색으로 남아 프레임이 어긋나 보였다.
                 "bg-canvas dark:bg-surface-dark",
+                m.fresh ? "" : "opacity-60",
               ].join(" ")}
             >
               <div className="flex items-center gap-1.5 text-[10px]">
+                {!m.fresh && (
+                  <span className="shrink-0 rounded bg-surface-strong px-1 py-0.5 font-semibold text-muted dark:bg-white/10 dark:text-on-dark-soft">
+                    {dayLabel(m.atMs, nowMs)}
+                  </span>
+                )}
                 <span className="font-mono tabular-nums text-muted dark:text-on-dark-soft">{hm(m.atMs)}</span>
                 <span
                   className={[

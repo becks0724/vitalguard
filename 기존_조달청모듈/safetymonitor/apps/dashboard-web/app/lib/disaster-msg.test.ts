@@ -8,6 +8,8 @@ import { shouldSendEnv } from "../../lib/env-alert-notify";
 import {
   ALERT_TYPES,
   FRESH_WINDOW_MS,
+  HISTORY_DAYS,
+  HISTORY_WINDOW_MS,
   PROMOTED_TYPE,
   SPREADING_TYPES,
   URGENT_FALLBACK_TYPE,
@@ -19,6 +21,7 @@ import {
   isFireRiskCampaign,
   isFresh,
   isPoliceNotice,
+  isWithinHistory,
   isWatchedType,
   kstYmd,
   matchSite,
@@ -214,23 +217,41 @@ test("kstYmd — UTC 자정 전후에도 KST 날짜를 준다(Cloud Run 은 UTC)
   assert.equal(kstYmd(new Date(Date.UTC(2026, 6, 30, 14, 59, 59))), "20260730");
 });
 
-test("queryDates — 낮에는 오늘 하루만 조회한다(폴링당 1회)", () => {
-  // 2026-07-31 01:00 UTC = 10:00 KST
-  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 31, 1, 0, 0))), ["20260731"]);
+// ── 조회 날짜 — 3일 누적(D-29) ──────────────────────────────────────────────
+// crtDt 는 그 날짜 "이후" 누적을 주므로(D-20 ③) 3일 전 하루만 조회하면 3일치가 전부 온다.
+// 그래서 화면을 3일로 넓혀도 호출은 폴링당 1회 그대로다.
+test("queryDates — 항상 3일 전 하루만 조회한다(폴링당 1회)", () => {
+  // 2026-07-31 01:00 UTC = 10:00 KST → 3일 전 = 07-28
+  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 31, 1, 0, 0))), ["20260728"]);
 });
 
-test("queryDates — 신선도 윈도우가 자정을 걸치면 전날도 조회한다", () => {
-  // 2026-07-30 16:30 UTC = 2026-07-31 01:30 KST → 어제 23시 발령이 아직 신선하다.
-  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 30, 16, 30, 0))), [
-    "20260730",
-    "20260731",
-  ]);
-});
-
-test("queryDates — 경계 KST 03:00 부터는 오늘만(윈도우가 자정을 안 넘김)", () => {
+test("queryDates — 시각과 무관하게 1건이다(종전엔 자정 인근에 2건이었다)", () => {
   const at = (utcHour: number, min = 0) => new Date(Date.UTC(2026, 6, 30, utcHour, min, 0));
-  assert.deepEqual(queryDates(at(18)), ["20260731"]); // KST 03:00
-  assert.deepEqual(queryDates(at(17, 59)), ["20260730", "20260731"]); // KST 02:59
+  for (const d of [at(1), at(17, 59), at(18), at(23)]) {
+    assert.equal(queryDates(d).length, 1, "조회가 2건이면 호출 예산 전제가 깨진다");
+  }
+});
+
+test("queryDates — KST 날짜로 센다(서버가 UTC 여도 같은 값)", () => {
+  // 2026-07-30 16:30 UTC = 2026-07-31 01:30 KST → 3일 전은 07-28
+  assert.deepEqual(queryDates(new Date(Date.UTC(2026, 6, 30, 16, 30, 0))), ["20260728"]);
+});
+
+test("★ 화면 누적 윈도우는 알림 신선도와 분리돼 있다(D-29)", () => {
+  // 신선도를 3일로 늘리면 3일 전 발령으로 알림이 계속 울린다 — 반드시 별개여야 한다(D-07).
+  assert.equal(FRESH_WINDOW_MS, 3 * 60 * 60 * 1000);
+  assert.equal(HISTORY_WINDOW_MS, HISTORY_DAYS * 24 * 60 * 60 * 1000);
+  assert.ok(HISTORY_WINDOW_MS > FRESH_WINDOW_MS);
+
+  const now = URGENT.createdAtMs + 26 * 60 * 60 * 1000; // 26시간 뒤
+  assert.equal(isFresh(URGENT, now), false, "알림 대상에서는 빠져야 한다");
+  assert.equal(isWithinHistory(URGENT, now), true, "화면 목록에는 남아야 한다");
+});
+
+test("isWithinHistory — 경계와 미래 발령", () => {
+  assert.equal(isWithinHistory(URGENT, URGENT.createdAtMs + HISTORY_WINDOW_MS), true);
+  assert.equal(isWithinHistory(URGENT, URGENT.createdAtMs + HISTORY_WINDOW_MS + 1), false);
+  assert.equal(isWithinHistory(URGENT, URGENT.createdAtMs - 1), false);
 });
 
 test("dedupeBySn — SN 중복 제거, 순서 보존, number/string 혼용 허용", () => {

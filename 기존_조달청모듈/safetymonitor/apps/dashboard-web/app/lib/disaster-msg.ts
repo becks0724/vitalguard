@@ -219,6 +219,19 @@ export function isFresh(msg: DisasterMsg, nowMs: number): boolean {
   return age >= 0 && age <= FRESH_WINDOW_MS;
 }
 
+// ── 화면 누적 윈도우 ────────────────────────────────────────────────────────
+// 화면 목록은 3일 누적으로 보여준다(사용자 요청 2026-08-04 — D-29). 3시간이 지나면 사라져
+// "무슨 일이 있었는지" 를 되짚을 수 없었다.
+// ⚠️ FRESH_WINDOW_MS 와 역할이 다르다. 신선도 3시간은 **알림 해제**를 겸하므로(D-07) 절대
+//    늘리면 안 된다 — 3일 전 발령으로 알림이 계속 울린다. 이 윈도우는 **표시 전용**이다.
+export const HISTORY_DAYS = 3;
+export const HISTORY_WINDOW_MS = HISTORY_DAYS * 24 * 60 * 60 * 1000;
+
+export function isWithinHistory(msg: DisasterMsg, nowMs: number): boolean {
+  const age = nowMs - msg.createdAtMs;
+  return age >= 0 && age <= HISTORY_WINDOW_MS;
+}
+
 // ── 조회 날짜(KST) ───────────────────────────────────────────────────────────
 // 실 API 의 crtDt 는 KST 기준 YYYYMMDD 다. 서버가 UTC(Cloud Run)여도 같은 값이 나와야 한다.
 export function kstYmd(d: Date): string {
@@ -227,14 +240,13 @@ export function kstYmd(d: Date): string {
   return `${k.getUTCFullYear()}${p(k.getUTCMonth() + 1)}${p(k.getUTCDate())}`;
 }
 
-// 조회할 crtDt 목록 — 신선도 윈도우가 자정을 걸치면 전날 것도 받아야 한다.
-// 예: KST 01:30 폴링 시 어제 23:00 발령이 아직 신선(3시간)인데 crtDt=오늘 에는 안 들어온다.
-// 대부분의 시간대에는 1건만 반환 → 폴링당 호출 1회(D-17 예산 계산의 근거).
+// 조회할 crtDt 목록 — **3일 전 하루만** 조회한다.
+// crtDt 는 그 날짜 "이후" 누적을 주므로(D-20 ③) 3일 전 하나로 3일치가 전부 온다.
+// 그래서 화면을 3일 누적으로 넓혀도 **호출 횟수가 늘지 않는다**(폴링당 1회 — D-17 예산 유지).
+// 오히려 종전에는 자정 인근에 2건을 조회했는데 이제 항상 1건이다.
+// 실측 2026-08-04 — crtDt=3일 전 totalCount 734건(1000 상한 이내). 폭증일은 페이징이 받는다.
 export function queryDates(now: Date): string[] {
-  const kstHour = new Date(now.getTime() + KST_OFFSET_HOURS * 3_600_000).getUTCHours();
-  const today = kstYmd(now);
-  if (kstHour * 3_600_000 >= FRESH_WINDOW_MS) return [today];
-  return [kstYmd(new Date(now.getTime() - 24 * 3_600_000)), today];
+  return [kstYmd(new Date(now.getTime() - HISTORY_WINDOW_MS))];
 }
 
 // 두 날짜 조회 결과를 합칠 때의 SN 중복 제거. 증분 커서는 쓰지 않는다(SN 비연속 — D-08).

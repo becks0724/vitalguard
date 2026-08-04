@@ -8,6 +8,7 @@ import {
   dedupeBySn,
   filterWatched,
   isFresh,
+  isWithinHistory,
   matchSite,
   normalize,
   queryDates,
@@ -20,7 +21,9 @@ import {
 import { latLonToSido } from "./kma-regions";
 
 const BASE = "https://www.safetydata.go.kr/V2/api/DSSP-IF-00247";
-// 일일 호출 1000건 — 5분 주기(288회/일) + 자정 인근 전날 조회(약 36회) = 약 32%(D-17).
+// 일일 호출 1000건 — 5분 주기(288회/일) = 약 29%(D-17).
+// 3일 누적 표시로 넓힌 뒤에도 조회는 폴링당 1회다(crtDt 누적 특성 — D-29). 종전에 자정 인근만
+// 2회 조회하던 것이 사라져 오히려 줄었다.
 const TTL_MS = 5 * 60 * 1000;
 // 한 번에 받는 최대 건수 — 서버가 1000 으로 캡한다(10000 을 요청해도 응답 numOfRows 가 1000).
 // crtDt 는 그 날짜 "이후" 누적을 주므로 발령이 몰리는 날에는 이 상한을 넘고, 넘으면 조용히 잘린다.
@@ -178,9 +181,12 @@ export async function fetchDisasterMsgs(now: Date = new Date()): Promise<Disaste
     // 그 0건이 캐시되어 **5분 동안 관제 화면이 "재난문자 없음" 으로 굳었다**(실제 발생).
     // 이런 응답은 캐시하지 않고 직전 값을 유지한다 — 다음 폴링이 곧 정상 응답을 받는다.
     // ⚠️ raws 가 0건인 것은 이상이 아니다(그날 재난이 없으면 빈 배열이 정상 — D-19).
-    if (raws.length > 0 && !raws.some((r) => dates.includes(crtDtYmd(r.CRT_DT)))) {
+    // ⚠️ "조회일 당일" 이 아니라 "조회 시작일 **이후**" 로 본다 — crtDt 는 누적을 주고(D-20 ③)
+    //    3일 전 당일에 발령이 0건인 날도 있다. 당일로 비교하면 정상 응답을 이상으로 오판한다.
+    const from = dates[0] ?? "";
+    if (raws.length > 0 && !raws.some((r) => crtDtYmd(r.CRT_DT) >= from)) {
       console.error(
-        `[disaster-msg] 조회일(${cacheKey}) 발령이 응답에 없다 — 외부 API 이상(수신 ${raws.length}건). 캐시 갱신을 건너뛴다.`,
+        `[disaster-msg] 조회 시작일(${from}) 이후 발령이 응답에 없다 — 외부 API 이상(수신 ${raws.length}건). 캐시 갱신을 건너뛴다.`,
       );
       if (hit) return { source: "live", msgs: hit.msgs };
       return { source: "live", msgs: watched };
@@ -204,6 +210,7 @@ export type DisasterMsgView = {
   regions: string[]; // 매칭된 수신지역 토큰
   sidos: string[]; // 매칭된 시·도(인근은 복수 가능) — 화면이 "인근 전남·전북"을 표기하는 데 쓴다
   message: string;
+  fresh: boolean; // 신선도(3시간) 이내인가 — 화면이 "지금" 과 "지난 3일" 을 구분해 그린다(D-29)
 };
 
 export type LocationDisasterMsgs = {
@@ -211,13 +218,14 @@ export type LocationDisasterMsgs = {
   sido: string;
   severity: "normal" | "caution" | "danger";
   summary: string;
-  site: DisasterMsgView[]; // 현장 시·도 발령 — 알림 대상
-  nearby: DisasterMsgView[]; // 인근 시·도(120km) — 화면 참고용, 알림 제외(D-05)
+  site: DisasterMsgView[]; // 현장 시·도 발령 — **3일 누적**(fresh 로 구분). 알림은 신선분만
+  nearby: DisasterMsgView[]; // 인근 시·도(120km) — 신선분만. 화면 참고용, 알림은 선별(D-24)
   alertItems: DisasterAlertItem[]; // notifyEnvAlerts 입력(응답 JSON 에는 싣지 않는다)
 };
 
-function toView(h: MatchedDisasterMsg): DisasterMsgView {
+function toView(h: MatchedDisasterMsg, fresh: boolean): DisasterMsgView {
   return {
+    fresh,
     sn: h.msg.sn,
     type: h.msg.type,
     step: h.msg.step,
@@ -228,7 +236,13 @@ function toView(h: MatchedDisasterMsg): DisasterMsgView {
   };
 }
 
-// 작업자 GPS 평균 좌표(시·도)에 발령된 신선한 재난문자. kma.ts 의 warningsForLocation 과 같은 자리.
+// 작업자 GPS 평균 좌표(시·도)에 발령된 재난문자.
+// ★ 두 윈도우를 쓴다(D-29) — 목록은 3일 누적, 판정은 신선분(3시간)만.
+//   site      3일 누적 · 각 항목에 fresh 플래그
+//   severity  신선분 기준 — 3일 전 위험을 지금 danger 로 칠하면 오해를 부른다
+//   summary   신선분 기준 — 상단 한 줄은 "지금" 을 말해야 한다
+//   nearby    신선분 기준 — 3일이면 고유 지역 38곳이라 칩이 폭증한다(실측)
+//   알림       신선분 기준 — 신선도는 해제 역할을 겸한다(D-07). 넓히면 계속 울린다
 export async function disasterMsgsForLocation(
   lat: number,
   lon: number,
@@ -236,19 +250,20 @@ export async function disasterMsgsForLocation(
 ): Promise<LocationDisasterMsgs> {
   const { source, msgs } = await fetchDisasterMsgs(now);
   const nowMs = now.getTime();
-  const fresh = msgs.filter((m) => isFresh(m, nowMs));
-  const matched = matchSite(fresh, lat, lon);
-  const siteHits = matched.filter((h) => h.scope === "site");
-  const nearbyHits = matched.filter((h) => h.scope === "nearby");
+  const history = msgs.filter((m) => isWithinHistory(m, nowMs));
+  const matched = matchSite(history, lat, lon);
+  const siteAll = matched.filter((h) => h.scope === "site");
+  const siteFresh = siteAll.filter((h) => isFresh(h.msg, nowMs));
+  const nearbyFresh = matched.filter((h) => h.scope === "nearby" && isFresh(h.msg, nowMs));
 
-  const severity: LocationDisasterMsgs["severity"] = siteHits.some(
+  const severity: LocationDisasterMsgs["severity"] = siteFresh.some(
     (h) => h.msg.step === "긴급재난",
   )
     ? "danger"
-    : siteHits.length > 0
+    : siteFresh.length > 0
       ? "caution"
       : "normal";
-  const types = [...new Set(siteHits.map((h) => h.msg.type))];
+  const types = [...new Set(siteFresh.map((h) => h.msg.type))];
   const newestFirst = (a: DisasterMsgView, b: DisasterMsgView) => b.atMs - a.atMs;
 
   return {
@@ -256,8 +271,8 @@ export async function disasterMsgsForLocation(
     sido: latLonToSido(lat, lon).name,
     severity,
     summary: types.length > 0 ? types.join(" · ") : "재난문자 없음",
-    site: siteHits.map(toView).sort(newestFirst),
-    nearby: nearbyHits.map(toView).sort(newestFirst),
-    alertItems: buildAlertItems(siteHits, nowMs, nearbyHits),
+    site: siteAll.map((h) => toView(h, isFresh(h.msg, nowMs))).sort(newestFirst),
+    nearby: nearbyFresh.map((h) => toView(h, true)).sort(newestFirst),
+    alertItems: buildAlertItems(siteFresh, nowMs, nearbyFresh),
   };
 }
