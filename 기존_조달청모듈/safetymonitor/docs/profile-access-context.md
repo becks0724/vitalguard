@@ -50,6 +50,21 @@
 
 **검증.** `tsc` 0 · `lint` 0 · `test` 544 pass. 데모 모드(`DATABASE_URL` 미설정) 로컬 서버에서 로그인 → dock → 비번 게이트 → 모달 저장 → 서버 재조회 → 칩 반영까지 브라우저 실측, 거부 4종(비번변경 400 · 타유형 상호 400 · 연락처 형식 400 · 미인증 401). DDL·UPSERT·UNION 은 실 Postgres 에 `BEGIN`→실행→`ROLLBACK`(`to_regclass` = null) — 프로덕션 DB 무변경(L-04).
 
+### owner 비밀번호를 바꾸는 절차 (앱 밖 · 실행 런북)
+
+`ADMIN_PASSWORD` 는 Cloud Run 평문 env 가 아니라 **Secret Manager 시크릿**(참조 키 `latest`)이다. 배포 스크립트는 이미지만 교체하고 env·시크릿을 보존하므로 코드 배포와 무관한 별도 작업이다.
+
+1. **금고에 새 버전 추가.** `read -rs NEWPW && printf '%s' "$NEWPW" | gcloud secrets versions add ADMIN_PASSWORD --data-file=-` — `echo` 금지(개행이 붙으면 정확 비교라 로그인이 막힌다, L-37). 콘솔이면 Secret Manager → `ADMIN_PASSWORD` → `+ 새 버전`, 입력 후 엔터 금지.
+2. **리비전 교체.** `gcloud run services update vitalguard-dashboard --region asia-northeast3 --update-secrets ADMIN_PASSWORD=ADMIN_PASSWORD:latest`. 시크릿은 **인스턴스 시작 시 1회 resolve** 되므로 이 단계 없이는 절대 안 바뀐다.
+3. **★ 트래픽이 새 리비전에 갔는지 확인.** 이 서비스는 `spec.traffic` 이 **리비전 이름으로 고정**돼 있어 새 리비전이 0% 로 남을 수 있다(콘솔 '새 버전 수정 및 배포'도 마찬가지). 안 넘어갔으면 `gcloud run services update-traffic … --to-revisions <새리비전>=100`.
+4. **판정은 옛 자격으로 한다.** 리비전 목록이 아니라 **옛 비번 로그인이 401 인가**로 확인한다. 회전 전에 같은 요청이 200 인 것을 먼저 찍어 두면 대조가 된다.
+5. **구 버전 비활성화** `gcloud secrets versions disable <n> --secret=ADMIN_PASSWORD`, **로컬 `.env.local`** 값 교체.
+6. **롤백** — 옛 리비전으로 트래픽 100% 되돌리면 옛 비번이 즉시 부활한다(구 버전을 아직 disable 안 했다면).
+
+**주의.** 세션 토큰은 `APP_JWT_SECRET` 서명 JWT라 **비밀번호를 바꿔도 기존 세션은 안 끊긴다**(TTL 8시간). 유출 대응이면 `APP_JWT_SECRET` 도 회전해야 하는데 그건 작업자 앱 토큰까지 무효화한다. 로그인 실패는 (IP, 아이디) 5회에 5분 잠금이라 옛 비번 확인은 1회만 한다.
+
+**2026-08-04 실행 기록.** 버전 2 발급·버전 1 disabled, 리비전 `00229-bdr` 100%, 옛 비번 `safety2026`(감사 노출값) 401 확인(회전 직전 200 실측 대조). 3단계에서 실제로 걸렸다 — 콘솔 배포로 `00229-bdr` 이 생겼지만 트래픽은 `00228-69g` 100% 인 채였고, 그 상태에서는 옛 비번이 그대로 통했다.
+
 ## 검증 결과 (통과)
 - tsc=0, next build=0.
 - 댓글 author_title "시스템 관리자" 캡처 + 화면 표시(이름·직책·사번·시각).
