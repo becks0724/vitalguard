@@ -18,6 +18,7 @@ import {
   isEvacuationNotice,
   isFireRiskCampaign,
   isFresh,
+  isPoliceNotice,
   isWatchedType,
   kstYmd,
   matchSite,
@@ -178,7 +179,13 @@ test("senderOrg — 대괄호 발신기관 추출", () => {
 });
 
 test("filterWatched — 모르는 유형은 버리되 목록으로 되돌려준다", () => {
-  const fake: DisasterMsg = { ...(ALL[0] as DisasterMsg), type: "화산" };
+  // ⚠️ 픽스처 ALL[0] 은 실종자 안내(경찰청 발신)라 D-28 가드에 먼저 걸려 unknownTypes 에 안 들어간다.
+  //    이 테스트가 보려는 것은 '모르는 유형' 처리이므로 경찰 표기가 없는 본문으로 바꾼다.
+  const fake: DisasterMsg = {
+    ...(ALL[0] as DisasterMsg),
+    type: "화산",
+    message: "[기상청] 화산 관측 안내",
+  };
   const r = filterWatched([fake]);
   assert.equal(r.watched.length, 0);
   assert.deepEqual(r.unknownTypes, ["화산"]);
@@ -496,6 +503,52 @@ const EXTREME_RAIN: DisasterMsg = {
   type: "", // ← DST_SE_NM 이 null 로 온다
   revised: false,
 };
+
+// ── 경찰 발신 제외(D-28) ─────────────────────────────────────────────────────
+// 실측 표본 5423건 — '경찰청|경찰서' 표기 603건이 전부 실종자 안내, 관심 유형엔 0건.
+const MISSING_PERSON: DisasterMsg = {
+  sn: 840001,
+  createdAtMs: Date.UTC(2026, 7, 4, 3, 0, 0),
+  // 실측 형태 — 맨 앞 대괄호가 없고 발신 표기는 지자체, 경찰은 본문 중간에 있다.
+  message: "함양군에서 실종된 김○○씨(남, 59년생)를 찾습니다. 특징:키 170cm, 65kg, 왜소한 체격 -함양경찰서- [함양군]",
+  regions: ["경상남도 함양군 "],
+  step: "안전안내",
+  type: "기타",
+  revised: false,
+};
+
+test("★★ 경찰 표기 실종자 안내는 제외된다 — senderOrg 로는 못 잡는 형태", () => {
+  assert.equal(senderOrg(MISSING_PERSON.message), null, "맨 앞 대괄호가 없어 발신기관을 못 뽑는다");
+  assert.ok(isPoliceNotice(MISSING_PERSON));
+  assert.equal(filterWatched([MISSING_PERSON]).watched.length, 0);
+});
+
+test("★★ 긴급재난 단계여도 경찰 표기면 제외된다(D-21 우회 경로 차단)", () => {
+  // 이 가드가 없으면 긴급재난 분기가 유형 불문 채택하므로 개인정보가 텔레그램으로 나간다.
+  const urgent: DisasterMsg = { ...MISSING_PERSON, sn: 840002, step: "긴급재난" };
+  assert.equal(filterWatched([urgent]).watched.length, 0);
+});
+
+test("★ 관심 유형이어도 경찰 표기면 제외된다", () => {
+  const typed: DisasterMsg = { ...MISSING_PERSON, sn: 840003, type: "호우", step: "긴급재난" };
+  assert.equal(filterWatched([typed]).watched.length, 0);
+});
+
+test("경찰 표기 제외는 정상 재난 문자에 영향을 주지 않는다", () => {
+  // 실측상 관심 유형 중 '경찰청|경찰서' 표기는 0건이다.
+  assert.equal(isPoliceNotice(URGENT), false);
+  assert.equal(filterWatched([URGENT]).watched.length, 1);
+});
+
+test("'경찰' 단독 문구는 제외 사유가 아니다(정상 문구 오검출 방지)", () => {
+  const cooperating: DisasterMsg = {
+    ...URGENT,
+    sn: 840004,
+    message: "[기상청] 산사태 우려 지역 통제 중. 경찰과 협력하여 우회로를 안내합니다.",
+  };
+  assert.equal(isPoliceNotice(cooperating), false);
+  assert.equal(filterWatched([cooperating]).watched.length, 1);
+});
 
 test("★ 유형이 비어 오는 기상청 극한호우 긴급재난을 버리지 않는다(실측 29건)", () => {
   const { watched, unknownTypes } = filterWatched([EXTREME_RAIN]);

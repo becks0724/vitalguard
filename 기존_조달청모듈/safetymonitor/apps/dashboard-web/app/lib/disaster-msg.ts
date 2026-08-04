@@ -170,6 +170,24 @@ export function isEvacuationNotice(msg: DisasterMsg): boolean {
   return EVACUATION_KEYWORDS.some((k) => msg.message.includes(k));
 }
 
+// ── 경찰 발신 제외 ──────────────────────────────────────────────────────────
+// 실종자 안내는 실명·나이·키·체격·인상착의를 담는다(D-10). 지금까지는 유형 '기타' 가 막아왔지만
+// **우연에 기대고 있었다** — D-21 이후 긴급재난 단계는 유형 불문 채택하므로, 경찰 문자가 그 경로로
+// 들어오면 개인정보가 그대로 텔레그램으로 나간다.
+//
+// ⚠️ senderOrg() 로는 못 잡는다. 실종자 문자는 맨 앞 대괄호가 없고 발신 표기가 지자체다 —
+//    "함양군에서 실종된 김○○씨(남, 59년생)를 찾습니다. 특징:키 170cm … -함양경찰서- [함양군]"
+//    그래서 본문 전체에서 경찰 표기를 본다.
+//
+// 실측 표본 5423건(07-01~08-04) — '경찰청|경찰서' 표기 603건이 **전부 '기타/안전안내'**(실종자
+// 안내)이고 관심 유형에는 0건이다. 즉 이 조건으로 정상 재난 문자를 막지 않는다.
+// '경찰' 단독은 쓰지 않는다 — "경찰과 협력하여" 같은 정상 문구에 걸린다.
+export const POLICE_MARKERS: readonly string[] = ["경찰청", "경찰서"];
+
+export function isPoliceNotice(msg: DisasterMsg): boolean {
+  return POLICE_MARKERS.some((m) => msg.message.includes(m));
+}
+
 // 통과분 + 처음 보는 유형 목록(중복 제거) — 후자는 호출부가 로그로 남겨 목록 확장 근거로 쓴다.
 // 재승격분은 type 을 PROMOTED_TYPE 으로 바꿔 내보낸다 — 알림 itemKey 가 유형 단위라
 // "disaster:기타" 같은 의미 불명 키가 생기지 않게 하기 위해서다(D-09).
@@ -180,6 +198,9 @@ export function filterWatched(msgs: DisasterMsg[]): {
   const watched: DisasterMsg[] = [];
   const unknown = new Set<string>();
   for (const m of msgs) {
+    // ★ 경찰 표기 문자는 단계·유형 불문 먼저 제외한다 — 개인정보가 섞인다(D-28).
+    //   긴급재난 분기보다 앞에 둬야 의미가 있다. 매일 오는 정상 차단이라 unknown 에도 넣지 않는다.
+    if (isPoliceNotice(m)) continue;
     if (isWatchedType(m.type)) watched.push(m);
     else if (m.step === "긴급재난") watched.push({ ...m, type: URGENT_FALLBACK_TYPE });
     else if (isEvacuationNotice(m)) watched.push({ ...m, type: PROMOTED_TYPE });
