@@ -569,6 +569,42 @@ test("isFireRiskCampaign — 정기 캠페인만 골라낸다(실제 사고 문�
   assert.equal(isFireRiskCampaign(FIRE_INCIDENT), false);
 });
 
+test("★★ isFireRiskCampaign — 소방청이 문구를 바꿔도 잡는다(D-25 실사고)", () => {
+  // 08-03 19:30 부터 실제로 이렇게 바뀌었고, 문구를 찾던 첫 판정이 그날 바로 뚫렸다.
+  const reworded: DisasterMsg = {
+    ...FIRE_CAMPAIGN,
+    sn: 810010,
+    message:
+      "폭염 장기화에 따른 전기화재 예방요령 알림 ▲실외기 주변 가연물 및 문어발식 콘센트 금지 ▲과열 시 중단 ▲손상된 전선 교체 ▲사용 후 플러그 뽑기[소방청]",
+  };
+  assert.ok(isFireRiskCampaign(reworded), "문구에 기대면 소방청이 바꿀 때마다 뚫린다");
+  assert.doesNotMatch(reworded.message, /화재위험경보/);
+});
+
+test("★ isFireRiskCampaign — 소방청이 긴급재난으로 보내면 알림을 막지 않는다", () => {
+  const urgentFromNfa: DisasterMsg = { ...FIRE_CAMPAIGN, sn: 810011, step: "긴급재난" };
+  assert.equal(isFireRiskCampaign(urgentFromNfa), false);
+});
+
+test("isFireRiskCampaign — 단일 시·도 전역 발령은 캠페인이 아니다(지자체 완진 안내)", () => {
+  const oneSido: DisasterMsg = {
+    ...FIRE_CAMPAIGN,
+    sn: 810012,
+    regions: ["울산광역시 "],
+    message: "남구 삼산동 KCC페인트 창고 화재가 완진되었습니다.[울산광역시]",
+  };
+  assert.equal(isFireRiskCampaign(oneSido), false);
+});
+
+test("isFireRiskCampaign — 하위 시·군·구가 붙은 다지역 발령은 캠페인이 아니다", () => {
+  const multiDistrict: DisasterMsg = {
+    ...FIRE_CAMPAIGN,
+    sn: 810013,
+    regions: ["경기도 고양시 덕양구 ", "경기도 고양시 일산서구 "],
+  };
+  assert.equal(isFireRiskCampaign(multiDistrict), false);
+});
+
 test("★ isFireRiskCampaign — 유형 게이트: 화재가 아닌 유형은 문구가 같아도 캠페인이 아니다", () => {
   // 문구만 보면 폭염·호우 문자가 이 문구를 인용했을 때 그 유형의 알림까지 조용히 막힌다.
   const heatWithSameWords: DisasterMsg = { ...FIRE_CAMPAIGN, type: "폭염" };
