@@ -108,7 +108,11 @@ async function fetchPage(
   pageNo: number,
 ): Promise<{ rows: RawDisasterMsg[]; total: number }> {
   const url = `${BASE}?serviceKey=${key}&returnType=json&pageNo=${pageNo}&numOfRows=${NUM_OF_ROWS}&crtDt=${crtDt}`;
-  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+  // ⚠️ 8초로는 부족하다 — 3일 누적 조회(D-29)로 건수가 200 → 990 대로 늘자 Cloud Run 에서
+  // 타임아웃이 나 **목업으로 폴백했고 관제 화면에 가짜 긴급재난이 떴다**(실사고 2026-08-04 08:11).
+  // 로컬에서 같은 요청이 219ms 인데 Cloud Run 은 8초를 넘겼다 — 아웃바운드 경로 차이다(D-13).
+  // 크론은 attemptDeadline 180s, 브라우저는 5분 캐시라 이 정도 여유는 부담이 되지 않는다.
+  const res = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(25_000) });
   const json = await res.json();
   const code = json?.header?.resultCode;
   if (code !== "00") {
@@ -196,7 +200,16 @@ export async function fetchDisasterMsgs(now: Date = new Date()): Promise<Disaste
     return { source: "live", msgs: watched };
   } catch (e) {
     // ⚠️ 키가 설정됐는데 목업으로 떨어졌다면 폴백이 아니라 장애다(인증키 만료 2027-07-31 — D-16).
-    console.error(`[disaster-msg] 실 API 실패 — 목업 폴백. ${(e as Error).message}`);
+    // ★ 직전 캐시가 있으면 목업보다 그것을 준다(D-31). 목업은 호우 긴급재난을 담고 있어
+    //   관제 화면에 **가짜 경보**가 뜬다 — 실사고 2026-08-04 08:11(타임아웃 → 목업 표시).
+    //   낡은 진짜 데이터가 그럴듯한 가짜보다 낫고, 신선도 게이트가 오래된 건 어차피 걸러낸다.
+    //   목업은 캐시조차 없는 첫 조회 실패 때만 — 그때는 화면이 비는 것보다 데모 연속성이 낫다(D-11).
+    console.error(`[disaster-msg] 실 API 실패. ${(e as Error).message}`);
+    if (hit) {
+      console.warn(`[disaster-msg] 직전 캐시로 응답한다(${Math.round((now.getTime() - hit.ts) / 1000)}초 전 수집).`);
+      return { source: "live", msgs: hit.msgs };
+    }
+    console.error("[disaster-msg] 캐시도 없어 목업으로 폴백 — 화면에 가짜 재난이 표시된다.");
     return { source: "mock", msgs: filterWatched(normalize(mockRaws(now)).msgs).watched };
   }
 }
