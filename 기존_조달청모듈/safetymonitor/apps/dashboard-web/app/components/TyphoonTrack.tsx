@@ -125,7 +125,16 @@ function frameOf(pts: { lat: number; lon: number }[], w: number, h: number): Vie
 }
 
 // 태풍 마커 — 붉은 점 대신 회전하는 나선(태풍 심볼). 위성(어두운 바다) 위에서 읽히도록 흰 외곽선을 깐다.
-// 회전은 SMIL(animateTransform) — CSS 키프레임 없이 SVG 안에서 끝난다.
+//
+// ⚠️ 회전은 CSS 애니메이션이다. 전에는 SMIL(animateTransform)이었는데 **화면에서 돌지 않았다**
+//    (사용자 제보 2026-08-04). SMIL 은 React 가 요소를 다시 만들 때마다 0도로 되돌아가고,
+//    이 지도는 ResizeObserver·view 갱신으로 리렌더가 잦아 14초 주기가 늘 0도 근처에 머문다.
+//    CSS 애니메이션은 요소가 새로 생겨도 즉시 진행하므로 재마운트에 영향받지 않는다.
+//    (SMIL 자체는 정상 동작함을 단독 재현으로 확인했다 — 마크업이 아니라 환경 문제였다.)
+//
+// 회전 중심 — 부모 <g> 가 translate(x,y) 로 **태풍 중심을 원점에 맞춰** 두므로 CSS
+// transform-origin 기본값(0 0)이 곧 회전축이다. 그리기 좌표(24×24 기준)는 안쪽 translate 로 되돌린다.
+// 이렇게 하면 transform-box·transform-origin 을 건드리지 않아도 정확히 중심에서 돈다.
 function TyphoonMarker({ x, y, size = 30 }: { x: number; y: number; size?: number }) {
   const s = size / 24;
   const arms = (
@@ -135,27 +144,22 @@ function TyphoonMarker({ x, y, size = 30 }: { x: number; y: number; size?: numbe
     </>
   );
   return (
-    <g transform={`translate(${x - 12 * s} ${y - 12 * s}) scale(${s})`}>
-      <g>
-        <animateTransform
-          attributeName="transform"
-          type="rotate"
-          from="0 12 12"
-          to="360 12 12"
-          dur="14s"
-          repeatCount="indefinite"
-        />
-        <g fill="none" stroke="#0f172a" strokeWidth={5.2} strokeLinecap="round" opacity={0.55}>
-          {arms}
-        </g>
-        <g fill="none" stroke="#fff" strokeWidth={3.6} strokeLinecap="round">
-          {arms}
-        </g>
-        <g fill="none" stroke="#ef4444" strokeWidth={1.9} strokeLinecap="round">
-          {arms}
+    <g transform={`translate(${x} ${y}) scale(${s})`}>
+      <g style={{ animation: "typhoon-spin 14s linear infinite" }}>
+        <g transform="translate(-12 -12)">
+          <g fill="none" stroke="#0f172a" strokeWidth={5.2} strokeLinecap="round" opacity={0.55}>
+            {arms}
+          </g>
+          <g fill="none" stroke="#fff" strokeWidth={3.6} strokeLinecap="round">
+            {arms}
+          </g>
+          <g fill="none" stroke="#ef4444" strokeWidth={1.9} strokeLinecap="round">
+            {arms}
+          </g>
         </g>
       </g>
-      <circle cx={12} cy={12} r={2.4} fill="#ef4444" stroke="#fff" strokeWidth={1.5} />
+      {/* 눈(중심)은 회전과 무관하게 원점에 고정 */}
+      <circle cx={0} cy={0} r={2.4} fill="#ef4444" stroke="#fff" strokeWidth={1.5} />
     </g>
   );
 }
