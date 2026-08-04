@@ -209,8 +209,11 @@ export async function fetchDisasterMsgs(now: Date = new Date()): Promise<Disaste
       console.warn(`[disaster-msg] 직전 캐시로 응답한다(${Math.round((now.getTime() - hit.ts) / 1000)}초 전 수집).`);
       return { source: "live", msgs: hit.msgs };
     }
-    console.error("[disaster-msg] 캐시도 없어 목업으로 폴백 — 화면에 가짜 재난이 표시된다.");
-    return { source: "mock", msgs: filterWatched(normalize(mockRaws(now)).msgs).watched };
+    // ★ 캐시도 없으면 목업을 주지 않는다(D-32 — 사용자 결정). 목업은 호우 긴급재난을 담고 있어
+    //   관제 화면에 **실제 재난과 구분되지 않는 가짜 경보**가 뜬다(실사고 2026-08-04 08:11).
+    //   던져서 호출부가 "연결 끊김" 을 표시하게 한다 — 모르는 상태를 아는 것이 가짜를 믿는 것보다 낫다.
+    //   ⚠️ 키 미설정(로컬 개발)의 목업은 그대로다 — 그건 실패가 아니라 의도된 데모 모드다(D-11).
+    throw e;
   }
 }
 

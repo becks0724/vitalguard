@@ -19,7 +19,16 @@ export async function GET(request: Request) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
     return NextResponse.json({ ok: false, error: "lat/lon 필요" }, { status: 400 });
   }
-  const { alertItems, ...data } = await disasterMsgsForLocation(lat, lon);
+  // 실 API 실패 + 직전 캐시 없음 → 503. 화면은 "연결 끊김" 을 표시한다(D-32).
+  // 종전에는 목업으로 폴백해 관제 화면에 가짜 긴급재난이 떴다 — 실제 재난과 구분되지 않는다.
+  let result: Awaited<ReturnType<typeof disasterMsgsForLocation>>;
+  try {
+    result = await disasterMsgsForLocation(lat, lon);
+  } catch (e) {
+    console.error(`[disaster-msg] 조회 실패 — 503 으로 알린다. ${(e as Error).message}`);
+    return NextResponse.json({ ok: false, error: "재난문자 조회 실패" }, { status: 503 });
+  }
+  const { alertItems, ...data } = result;
 
   // 발령 재난문자 자동 텔레그램 알림(긴급재난=위험·안전안내=주의 전이) — 실측(live)만(목업 오발송 방지).
   // 조회는 공개로 두되 알림 발사는 로그인 세션 또는 크론 키에서만 — 무인증 GET 으로 외부인이
