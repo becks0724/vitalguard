@@ -218,3 +218,41 @@
   `api.rainviewer.com`(157.90.66.200) 으로 나가는 TCP 연결이 `ETIMEDOUT`(IPv6 는 `EHOSTUNREACH`).
   `curl` 은 200 인데 Node fetch 만 실패한다. **라이브 서버 `/api/radar` 는 정상 프레임을 반환**한다.
   화면 문구가 `프레임 없음` 이라 원인(업스트림 연결 실패)을 감추는 점은 개선 여지.
+
+---
+
+## 태풍 마커 회전 — SMIL → CSS ✅ (2026-08-04 · 배포 `00228-69g`)
+
+사용자 제보 "지도에 태풍 심볼은 있는데 안 돈다".
+
+**조사 — 마크업이 아니라 앱 환경 문제였다.**
+
+```
+SMIL 단독 재현      정상 (2.51초에 78.7도 — 14초/360도 비율과 일치)
+SVG 구조·CSS 충돌   없음 (animateTransform 이 붙은 g 에 다른 transform 없음)
+pauseAnimations     호출 없음
+전역 애니 차단      없음 (prefers-reduced-motion 규칙은 .logo3d-badge 전용)
+데이터 연결         정상 (13호 돌핀 · source live · currentIndex 10/18)
+```
+
+**원인** — SMIL 은 React 가 요소를 다시 만들 때마다 0도로 리셋된다. 이 지도는 `ResizeObserver` ·
+`view` 갱신으로 리렌더가 잦아 **14초 주기가 늘 0도 근처**에 머문다 = 멈춘 것처럼 보인다.
+
+**수정** — CSS 애니메이션(`@keyframes typhoon-spin`)으로 교체. 요소가 새로 생겨도 즉시 진행한다.
+
+⚠️ **회전 중심은 구조로 해결했다.** SVG 에서 CSS `transform-origin` 은 `transform-box` 에 따라
+기준이 달라 다루기 까다롭다 → 부모 `<g transform="translate(x,y) scale(s)">` 가 **태풍 중심을
+원점에 맞추고**, 그리기 좌표(24×24)는 안쪽 `translate(-12,-12)` 로 되돌린다. 그러면
+`transform-origin` 기본값(0 0)이 곧 회전축이라 아무것도 건드리지 않아도 중심에서 돈다.
+
+**검증**
+```
+단독 재현   3초간 77.5도(기대 77.1) · 회전 중심 이동 0px
+라이브 실측  4초간 102.9도(기대 102.9) · animationPlayState running · duration 14s
+            중심 이동 0px · animateTransform 잔존 0건
+```
+
+💡 **세션 만료 모달 우회법** — 이날 브라우저 검증을 3회 이상 막았다.
+`sessionStorage.clear()` → `reload()` 하면 모달이 사라지고 로그인 화면으로 돌아간다.
+그다음 로그인 → 현장 입장 → 패널 클릭을 **단계마다 별도 스크립트로** 나누면 dev-browser
+30초 상한에 걸리지 않는다(한 스크립트에 몰면 대시보드 로딩만으로 초과).
