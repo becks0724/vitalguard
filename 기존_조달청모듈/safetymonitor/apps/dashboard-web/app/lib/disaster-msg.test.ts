@@ -3,7 +3,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { shouldSendEnv } from "../../lib/env-alert-notify";
+import { formatEnvAlertLog, shouldSendEnv } from "../../lib/env-alert-notify";
 
 import {
   ALERT_TYPES,
@@ -822,4 +822,41 @@ test("shortRegionLabel — 하위 지역이 없으면 시·도를 줄여 '전역
 
 test("shortRegionLabel — 하천 수계 표기는 괄호 안 행정구역을 쓴다", () => {
   assert.equal(shortRegionLabel("임진강 수계지역(경기도 연천군,파주시)"), "연천");
+});
+
+// ── 알림 발사 로그 형식(L-35·D-27) ──────────────────────────────────────────
+// 판정이 틀렸을 때 이 줄이 유일한 단서라, 형식이 조용히 바뀌지 않게 고정한다.
+// 실제 발사는 전이가 있어야 일어나 라이브에서 확인하기 어려우므로 순수 함수로 덮는다.
+test("★ formatEnvAlertLog — 전이·현재값·지역·결과가 한 줄에 들어간다", () => {
+  const line = formatEnvAlertLog(
+    { itemKey: "disaster:호우", itemLabel: "재난문자", currentValue: "호우 외 2건", severity: "danger",
+      detail: "14:42 발령 · 경기도 안산시 단원구\n[기상청] 시간당 50mm 이상 강한 비" },
+    null,
+    "sent",
+  );
+  assert.match(line, /^\[env-alert\] disaster:호우 none→danger · 호우 외 2건 · 14:42 발령 · 경기도 안산시 단원구 · 발송됨$/);
+});
+
+test("★ formatEnvAlertLog — 본문 전문은 넣지 않는다(개인정보 방어 — D-10)", () => {
+  const line = formatEnvAlertLog(
+    { itemKey: "disaster:호우", itemLabel: "재난문자", currentValue: "호우", severity: "caution",
+      detail: "14:42 발령 · 경기도\n본문에 개인정보가 섞일 수 있다" },
+    "normal",
+    "sent",
+  );
+  assert.doesNotMatch(line, /본문에 개인정보/);
+  assert.match(line, /normal→caution/);
+});
+
+test("formatEnvAlertLog — 발송 실패·미배선이 결과로 구분된다", () => {
+  const item = { itemKey: "disaster:화재", itemLabel: "재난문자", currentValue: "화재", severity: "caution" as const };
+  assert.match(formatEnvAlertLog(item, "normal", "failed"), /· 발송 실패$/);
+  assert.match(formatEnvAlertLog(item, "normal", "skipped"), /· 미발송\(텔레그램 미배선\)$/);
+});
+
+test("★ 인근 알림에 홍수가 포함된다(하천은 하류로 번진다)", () => {
+  assert.ok(SPREADING_TYPES.includes("홍수"));
+  const flood: DisasterMsg = { ...URGENT, sn: 850001, type: "홍수", step: "안전안내", regions: ["서울특별시 "] };
+  const item = buildAlertItems([], URGENT.createdAtMs, nearbyAt([flood])).find((i) => i.itemKey === "disaster:홍수");
+  assert.equal(item?.severity, "caution");
 });

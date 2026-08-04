@@ -382,7 +382,10 @@ function kstHm(ms: number): string {
 // 인근 발령은 광주 현장 기준 하루 32~51건이고 거의 전부 폭염 안전안내다(실측 08-01~08-04 182건).
 // 폭염·대설 같은 광역 기상은 인근에서 나도 현장 대응이 달라지지 않으므로 화면 참고에 그대로 둔다.
 // 알림으로 올리는 것은 ① 긴급재난 단계(위급도 자체가 근거) ② 현장으로 번질 수 있는 유형.
-export const SPREADING_TYPES: readonly string[] = ["호우", "태풍", "산사태", "산불"];
+// `홍수` 추가(2026-08-04) — 하천은 **하류로 번진다**. 인근 시·도 상류의 홍수주의보·댐 방류가
+// 현장 하천 수위로 이어지므로 인근이어도 알린다. 실측 문구가 그대로 근거다 —
+// "무한천 예산군(예산대교) 홍수주의보 발령… 하천변 이용을 자제" [금강홍수통제소]
+export const SPREADING_TYPES: readonly string[] = ["호우", "태풍", "산사태", "산불", "홍수"];
 
 export function isNearbyAlertWorthy(msg: DisasterMsg): boolean {
   return msg.step === "긴급재난" || SPREADING_TYPES.includes(msg.type);

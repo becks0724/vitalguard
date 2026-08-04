@@ -2,7 +2,7 @@
 // /api/weather·/api/kma-warning 라우트가 fresh 데이터 시점에 호출(브라우저 연동, 별도 cron 없음).
 
 import { upsertEnvAlertState } from "./db";
-import { sendTelegramMessage } from "./telegram";
+import { sendTelegramMessage, type TelegramSendResult } from "./telegram";
 import type { RuleEvaluation, RuleSeverity } from "./weather-rules";
 
 export type EnvAlertItem = {
@@ -46,6 +46,20 @@ export function formatEnvAlertMessage(item: EnvAlertItem): string {
   return lines.join("\n");
 }
 
+// 발사 로그 한 줄 — 순수 함수라 단위테스트로 형식을 고정할 수 있다.
+// 로그는 판정이 틀렸을 때 유일한 단서인데(L-35), 형식이 조용히 바뀌면 사후 추적이 어려워진다.
+// ⚠️ detail 은 첫 줄(시각·지역)만 — 본문 전문에는 개인정보가 섞일 수 있다(D-10).
+export function formatEnvAlertLog(
+  item: EnvAlertItem,
+  prev: RuleSeverity | null,
+  result: TelegramSendResult,
+): string {
+  const where = (item.detail ?? "").split("\n")[0] ?? "";
+  const tail =
+    result === "sent" ? "발송됨" : result === "skipped" ? "미발송(텔레그램 미배선)" : "발송 실패";
+  return `[env-alert] ${item.itemKey} ${prev ?? "none"}→${item.severity} · ${item.currentValue}${where ? ` · ${where}` : ""} · ${tail}`;
+}
+
 // 각 항목 상태를 갱신하고, 악화 전이(주의+)인 것만 텔레그램 발송. 한 항목 실패가 나머지를 막지 않는다.
 //
 // ★ 발송·건너뜀을 반드시 로그로 남긴다(L-35). 전에는 텔레그램을 쏘고 끝이라 "무엇을 왜 보냈는지"가
@@ -72,10 +86,9 @@ export async function notifyEnvAlerts(items: EnvAlertItem[]): Promise<void> {
     if (!shouldSendEnv(prevSev, item.severity)) continue;
 
     const result = await sendTelegramMessage(formatEnvAlertMessage(item));
-    const where = (item.detail ?? "").split("\n")[0] ?? "";
-    const line = `[env-alert] ${item.itemKey} ${prevSev ?? "none"}→${item.severity} · ${item.currentValue}${where ? ` · ${where}` : ""}`;
-    if (result === "sent") console.log(`${line} · 발송됨`);
-    else if (result === "skipped") console.warn(`${line} · 미발송(텔레그램 미배선)`);
-    else console.error(`${line} · 발송 실패`);
+    const line = formatEnvAlertLog(item, prevSev, result);
+    if (result === "sent") console.log(line);
+    else if (result === "skipped") console.warn(line);
+    else console.error(line);
   }
 }

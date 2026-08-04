@@ -142,10 +142,15 @@ gcloud run deploy "$SERVICE" --image "$IMAGE_REPO@$DIGEST" --region "$REGION" \
 
 say "5/5 서빙 검증 (deploy 메시지 불신 — describe 로만 판정 · L-20·L-33)"
 REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.latestCreatedRevisionName)')
-TREV=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.traffic[0].revisionName)')
-TPCT=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.traffic[0].percent)')
-if [ "$TREV" != "$REV" ] || [ "$TPCT" != "100" ]; then
-  echo "⚠ 트래픽이 새 리비전 100% 아님(${TREV}=${TPCT}%) → update-traffic 보정(2026-07-31 실사고 재발 방지)"
+# ⚠️ status.traffic[0] 을 그대로 읽으면 안 된다 — 태그가 붙은 옛 리비전(예: tag=verify)이
+#    배열에 함께 들어가고 순서가 보장되지 않아, 실제로는 새 리비전 100% 인데도 매번
+#    "100% 아님" 오탐이 뜬다(2026-08-04 실측 — 배포 5회 연속). 태그 항목은 percent 가 비어 있다.
+#    **percent 를 가진 항목만** 골라 새 리비전 몫을 센다.
+TPCT=$(gcloud run services describe "$SERVICE" --region "$REGION" \
+  --format="value(status.traffic.filter(\"revisionName:$REV\").extract(percent))" 2>/dev/null | tr -d '[] ')
+[ -n "$TPCT" ] || TPCT=0
+if [ "$TPCT" != "100" ]; then
+  echo "⚠ 트래픽이 새 리비전 100% 아님(${REV}=${TPCT}%) → update-traffic 보정(2026-07-31 실사고 재발 방지)"
   gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-revisions "$REV=100" --quiet >/dev/null
 fi
 RIMG=$(gcloud run revisions describe "$REV" --region "$REGION" --format='value(spec.containers[0].image)')
