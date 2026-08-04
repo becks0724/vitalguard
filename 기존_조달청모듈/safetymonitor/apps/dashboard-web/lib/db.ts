@@ -641,6 +641,24 @@ async function initSchema(): Promise<void> {
     -- VitAlGuard 소속은 별도 백필로 올린다.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS org_type TEXT NOT NULL DEFAULT 'member';
 
+    -- env 관리자(owner)의 내 정보 — 자격이 환경변수(ADMIN_ID/ADMIN_PASSWORD)라 users 행이 없다.
+    -- users 에 행을 만들면 '사용자 관리' 목록에 승인/거절 대상으로 뜨는데, 거절해도 로그인은
+    -- env 로 계속 되므로 화면과 실제가 어긋난다 → 프로필만 담는 별도 단일행 테이블로 분리한다.
+    -- 비밀번호는 여기 두지 않는다(자격은 env 가 단일 소스).
+    CREATE TABLE IF NOT EXISTS owner_profile (
+      username TEXT PRIMARY KEY,
+      name TEXT,
+      company TEXT,
+      phone TEXT,
+      carrier TEXT,
+      department TEXT,
+      job_title TEXT,
+      employee_id TEXT,
+      guardian_name TEXT,
+      guardian_phone TEXT,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
     -- 모바일 refresh token 세션. 토큰 원문은 Keychain/Android Keystore와 요청 본문에만 존재하고
     -- DB에는 SHA-256 해시만 보관한다. 로그아웃·사용자 비활성화 시 해당 행을 폐기할 수 있다.
     CREATE TABLE IF NOT EXISTS mobile_app_session (
@@ -2668,15 +2686,86 @@ export async function revokeMobileAppSession(sessionId: string): Promise<void> {
 }
 
 // 사번(employee_id)이 다른 사용자에게 이미 쓰이는지 — 자가 프로필 수정 시 타인 사번 도용(귀속 위조) 차단용.
+// owner_profile 도 함께 본다 — env 관리자도 사번을 갖게 되어(2026-08-04), 한쪽만 보면 두 계정이
+// 같은 사번을 갖고 생체·알람 귀속이 갈린다.
 export async function employeeIdTakenByOther(
   employeeId: string,
   username: string,
 ): Promise<boolean> {
   const { rows } = await q<{ one: number }>(
-    "SELECT 1 AS one FROM users WHERE employee_id = $1 AND username <> $2 LIMIT 1",
+    `SELECT 1 AS one FROM users WHERE employee_id = $1 AND username <> $2
+     UNION ALL
+     SELECT 1 AS one FROM owner_profile WHERE employee_id = $1 AND username <> $2
+     LIMIT 1`,
     [employeeId, username],
   );
   return rows.length > 0;
+}
+
+// ── env 관리자(owner) 내 정보 ───────────────────────────────────────────────
+// users 행이 없는 계정이라 프로필만 따로 담는다. 자격(아이디·비밀번호)은 env 가 단일 소스.
+export type OwnerProfileRow = {
+  username: string;
+  name: string | null;
+  company: string | null;
+  phone: string | null;
+  carrier: string | null;
+  department: string | null;
+  job_title: string | null;
+  employee_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+};
+
+export type OwnerProfilePatch = Omit<OwnerProfileRow, "username">;
+
+// 한 번도 저장하지 않았으면 행이 없다 — null 을 그대로 돌려주고 호출부가 빈 값으로 채운다.
+export async function getOwnerProfile(username: string): Promise<OwnerProfileRow | null> {
+  const { rows } = await q<OwnerProfileRow>(
+    `SELECT username, name, company, phone, carrier, department, job_title,
+            employee_id, guardian_name, guardian_phone
+       FROM owner_profile WHERE username = $1`,
+    [username],
+  );
+  return rows[0] ?? null;
+}
+
+export async function upsertOwnerProfile(
+  username: string,
+  p: OwnerProfilePatch,
+): Promise<OwnerProfileRow | null> {
+  const { rows } = await q<OwnerProfileRow>(
+    `INSERT INTO owner_profile
+       (username, name, company, phone, carrier, department, job_title,
+        employee_id, guardian_name, guardian_phone, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, ${NOW_ISO})
+     ON CONFLICT (username) DO UPDATE SET
+       name = excluded.name,
+       company = excluded.company,
+       phone = excluded.phone,
+       carrier = excluded.carrier,
+       department = excluded.department,
+       job_title = excluded.job_title,
+       employee_id = excluded.employee_id,
+       guardian_name = excluded.guardian_name,
+       guardian_phone = excluded.guardian_phone,
+       updated_at = excluded.updated_at
+     RETURNING username, name, company, phone, carrier, department, job_title,
+               employee_id, guardian_name, guardian_phone`,
+    [
+      username,
+      p.name,
+      p.company,
+      p.phone,
+      p.carrier,
+      p.department,
+      p.job_title,
+      p.employee_id,
+      p.guardian_name,
+      p.guardian_phone,
+    ],
+  );
+  return rows[0] ?? null;
 }
 
 // 사용자 관리 목록(owner UI) — 대기 → 승인 → 거절 순, 최신 가입 우선.

@@ -3606,7 +3606,8 @@ export function DemoDashboard() {
   // 사용자 관리(가입 승인) 권한 — owner 또는 관리 권한을 받은 VitAlGuard 관리자.
   // 판정은 서버(/api/admin/profile)가 내려준 값을 그대로 쓴다(게이트와 동일 규칙 보장).
   const [canManageUsers, setCanManageUsers] = useState(false);
-  // 로그인 상태 칩 표시용 — 이름/직책/사번/아이디. 환경 관리자(owner)는 프로필이 없어 null("관리자"로 표시).
+  // 로그인 상태 칩 표시용 — 이름/직책/사번/아이디. 환경 관리자(owner)도 '내 정보'로 등록한 값이 온다
+  // (미등록이면 필드가 null → 칩은 "관리자"로 표시).
   const [loginInfo, setLoginInfo] = useState<{
     name: string | null;
     jobTitle: string | null;
@@ -5156,7 +5157,11 @@ export function DemoDashboard() {
               </span>
               {role === "owner" ? (
                 <>
-                  <span className="font-semibold text-ink dark:text-on-dark">관리자</span>
+                  {/* 이름·직책은 owner 도 '내 정보'에서 등록한다 — 미등록이면 종전대로 "관리자". */}
+                  <span className="shrink-0 truncate font-semibold text-ink dark:text-on-dark">
+                    {loginInfo?.name ?? "관리자"}
+                    {loginInfo?.jobTitle ? ` ${loginInfo.jobTitle}` : ""}
+                  </span>
                   <span className="shrink-0 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700 dark:bg-violet-500/20 dark:text-violet-200">
                     총괄 관리자
                   </span>
@@ -5236,12 +5241,16 @@ export function DemoDashboard() {
                     },
                   ]
                 : []),
-              // 가입 회원(admin)만 노출 — 내 가입 정보 수정.
-              ...(role === "admin"
+              // 로그인 계정 본인 정보 수정 — env 관리자(owner)도 포함(2026-08-04).
+              // owner 는 users 행이 없어 빠져 있었는데, 그 계정에만 내 정보가 없는 상태였다.
+              ...(role === "admin" || role === "owner"
                 ? [
                     {
                       title: "내 정보",
-                      tooltip: "내 가입 정보 수정 (이름·회사·연락처·비밀번호)",
+                      tooltip:
+                        role === "owner"
+                          ? "내 관리자 정보 수정 (이름·회사·연락처·부서/직책·사번)"
+                          : "내 가입 정보 수정 (이름·회사·연락처·비밀번호)",
                       onSelect: () => setProfileGateOpen(true),
                       icon: (
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

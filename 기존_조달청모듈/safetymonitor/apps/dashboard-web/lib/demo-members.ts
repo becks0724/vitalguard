@@ -75,3 +75,31 @@ export function updateDemoProfile(username: string, patch: Partial<DemoProfile>)
   m.profile = { ...m.profile, ...patch };
   return m.profile;
 }
+
+// ── env 관리자(owner) 내 정보 ───────────────────────────────────────────────
+// 실서버는 owner_profile 테이블에 저장한다. DB 없는 로컬에서도 같은 흐름을 시연하려고 한 칸만 메모리에 둔다.
+// 비밀번호는 여기 없다 — owner 자격은 env(ADMIN_ID/ADMIN_PASSWORD)가 단일 소스.
+export type DemoOwnerProfile = {
+  name: string | null;
+  company: string | null;
+  phone: string | null;
+  carrier: string | null;
+  department: string | null;
+  job_title: string | null;
+  employee_id: string | null;
+  guardian_name: string | null;
+  guardian_phone: string | null;
+};
+
+const ownerG = globalThis as typeof globalThis & { __demoOwnerProfile?: Map<string, DemoOwnerProfile> };
+const ownerStore: Map<string, DemoOwnerProfile> =
+  ownerG.__demoOwnerProfile ?? (ownerG.__demoOwnerProfile = new Map());
+
+export function getDemoOwnerProfile(username: string): DemoOwnerProfile | null {
+  return ownerStore.get(username) ?? null;
+}
+
+export function setDemoOwnerProfile(username: string, p: DemoOwnerProfile): DemoOwnerProfile {
+  ownerStore.set(username, p);
+  return p;
+}

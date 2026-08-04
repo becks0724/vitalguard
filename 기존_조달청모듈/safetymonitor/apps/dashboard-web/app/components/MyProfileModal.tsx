@@ -1,4 +1,5 @@
-// 회원 본인 정보 수정 모달 — 로그인한 가입 회원(admin)이 이름·회사·연락처·통신사 + (선택)비밀번호 변경. /api/admin/profile (Bearer).
+// 본인 정보 수정 모달 — 로그인 계정이 이름·회사·연락처·통신사 + (선택)비밀번호 변경. /api/admin/profile (Bearer).
+// env 관리자(owner)도 같은 모달을 쓴다 — 이메일·비밀번호만 env 계정에 없는 값이라 자리를 달리 그린다.
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
@@ -58,6 +59,8 @@ function splitPhone(phone: string | null): { prefix: string; mid: string; last: 
 export function MyProfileModal({ onClose }: { onClose: () => void }) {
   const [loaded, setLoaded] = useState(false);
   const [editable, setEditable] = useState(true);
+  // env 관리자 여부 — 이메일이 없고 비밀번호가 배포 환경변수라 그 두 칸만 다르게 그린다.
+  const [envOwner, setEnvOwner] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false); // 저장 성공 → '변경 완료' 확인 다이얼로그 표시(예 클릭 시 모달 닫기).
   const [saving, setSaving] = useState(false);
@@ -107,6 +110,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
         const j = (await res.json()) as {
           ok?: boolean;
           editable?: boolean;
+          role?: string;
           profile?: Profile | null;
           error?: string;
         };
@@ -120,6 +124,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           setLoaded(true);
           return;
         }
+        setEnvOwner(j.role === "owner");
         const p = j.profile;
         setUsername(p.username);
         setBirthDate(p.birth_date ?? null);
@@ -240,7 +245,7 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
           <h2 className="text-sm font-bold text-ink dark:text-on-dark">
             내 정보 수정{" "}
             <span className="font-normal text-muted dark:text-on-dark-soft">
-              · 가입 정보 변경
+              · {envOwner ? "관리자 정보 변경" : "가입 정보 변경"}
             </span>
           </h2>
           <button
@@ -284,13 +289,17 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                   />
                 </label>
               </div>
-              <label className="block">
-                <span className={LBL}>
-                  이메일{" "}
-                  <span className="font-normal">(변경 불가 · 재인증 필요)</span>
-                </span>
-                <input value={email} readOnly className={FIELD_RO} />
-              </label>
+              {/* 이메일 — env 관리자 계정은 가입 절차가 없어 이메일 자체가 없다. 빈 칸을 그리면
+                  "입력하면 저장되는 값"으로 읽히므로 그 계정에선 칸을 내지 않는다. */}
+              {!envOwner && (
+                <label className="block">
+                  <span className={LBL}>
+                    이메일{" "}
+                    <span className="font-normal">(변경 불가 · 재인증 필요)</span>
+                  </span>
+                  <input value={email} readOnly className={FIELD_RO} />
+                </label>
+              )}
               <label className="block">
                 <span className={LBL}>이름</span>
                 <input
@@ -491,7 +500,13 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                   </span>
                 </button>
                 {pwOpen &&
-                  (provider !== "password" ? (
+                  (envOwner ? (
+                    // env 관리자 자격은 배포 환경변수(ADMIN_ID/ADMIN_PASSWORD)가 단일 소스다.
+                    // 여기서 바꾸게 하면 화면은 성공인데 실제 로그인 비번은 그대로가 된다.
+                    <p className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
+                      환경 관리자 계정의 비밀번호는 서버 환경변수(ADMIN_PASSWORD)로 관리합니다. 여기서는 변경할 수 없습니다.
+                    </p>
+                  ) : provider !== "password" ? (
                     <p className="mt-2 text-[11px] text-muted dark:text-on-dark-soft">
                       구글 로그인 계정은 비밀번호를 변경할 수 없습니다.
                     </p>

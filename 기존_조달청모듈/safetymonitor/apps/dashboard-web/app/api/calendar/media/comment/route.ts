@@ -7,28 +7,41 @@ import {
   updateCalendarMediaComment,
   deleteCalendarMediaComment,
   findUserByUsername,
+  getOwnerProfile,
   type CommentScope,
 } from "../../../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
 // 세션 → 작성자 표시정보(이름·직책·식별자·역할). 가입 사용자는 users.name/job_title,
-// env 관리자(owner)는 이름 "관리자"·직책 "시스템 관리자". author_id 는 사번 대용 username.
+// env 관리자(owner)는 users 행이 없어 '내 정보'(owner_profile)에 등록한 값을 쓴다.
+// author_id 는 사번 대용 username.
 async function resolveAuthor(request: Request) {
   const session = getSession(request);
   const username = session?.username ?? "admin";
   const role = session?.role ?? "owner";
+  if (role === "owner") {
+    // 미등록이면 종전 기본값 — 등록해 둔 이름·직책이 있는데 "시스템 관리자"로 찍으면 그게 틀린 표기다.
+    const p = await getOwnerProfile(username).catch(() => null);
+    return {
+      authorName: p?.name ?? "관리자",
+      authorId: username,
+      authorRole: role,
+      authorTitle: p?.job_title ?? "시스템 관리자",
+    };
+  }
   let user = null;
   try {
     user = await findUserByUsername(username);
   } catch {
     user = null;
   }
+  // 여기는 owner 가 아닌 경로만 온다(위에서 반환) — 이름 미등록이면 아이디로 표시.
   return {
-    authorName: user?.name ?? (role === "owner" ? "관리자" : username),
+    authorName: user?.name ?? username,
     authorId: username,
     authorRole: role,
-    authorTitle: user?.job_title ?? (role === "owner" ? "시스템 관리자" : null),
+    authorTitle: user?.job_title ?? null,
   };
 }
 
