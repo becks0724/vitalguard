@@ -7,6 +7,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import {
+  kmToPx,
+  latToWorldY,
+  lonToWorldX,
+  TILE,
+  worldXToLon,
+  worldYToLat,
+} from "../lib/slippy-tiles";
+import {
   computeGate,
   EMPTY_GATE,
   pickWorst,
@@ -43,34 +51,9 @@ type Payload = TyphoonRec & {
   typhoons?: TyphoonRec[]; // 다중 태풍(쌍태풍) — 구 서버 응답엔 없음(폴백 [data])
 };
 
-// ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
-const TILE = 256;
-const D2R = Math.PI / 180;
-function lonToWorldX(lon: number, z: number): number {
-  return ((lon + 180) / 360) * TILE * 2 ** z;
-}
-function latToWorldY(lat: number, z: number): number {
-  const r = lat * D2R;
-  return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * TILE * 2 ** z;
-}
-function worldXToLon(x: number, z: number): number {
-  return (x / (TILE * 2 ** z)) * 360 - 180;
-}
-function worldYToLat(y: number, z: number): number {
-  const n = Math.PI * (1 - 2 * (y / (TILE * 2 ** z)));
-  return Math.atan(Math.sinh(n)) / D2R;
-}
-
 // 하한 2 — 패널 지도가 131px 이라 원거리 태풍(감시구역)과 현장을 한 화면에 담으려면 z3 으로는 모자란다
 // (z3 은 경도 31.5° 가 179px 이라 131px 캔버스를 넘겨 양쪽 마커가 전부 화면 밖으로 나갔다).
 const MIN_Z = 2;
-
-// 웹 메르카토르 km → 픽셀. 해상도는 위도에 따라 달라지므로(고위도일수록 축척이 커진다)
-// 반경 원을 그릴 때 해당 지점의 위도로 환산해야 실제 크기가 맞는다.
-function kmToPx(km: number, lat: number, z: number): number {
-  const metersPerPx = (156543.03392804097 * Math.cos(lat * D2R)) / 2 ** z;
-  return (km * 1000) / metersPerPx;
-}
 const MAX_Z = 11;
 const clampZoom = (z: number) => Math.max(MIN_Z, Math.min(MAX_Z, z));
 const clampLat = (l: number) => Math.max(8, Math.min(55, l));
