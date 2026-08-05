@@ -142,24 +142,25 @@ gcloud run deploy "$SERVICE" --image "$IMAGE_REPO@$DIGEST" --region "$REGION" \
 
 say "5/5 서빙 검증 (deploy 메시지 불신 — describe 로만 판정 · L-20·L-33)"
 REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value(status.latestCreatedRevisionName)')
-# 트래픽 판정 — 세 번 고쳐서 여기까지 왔다(2026-08-04~05 실측). 순서대로 다 필요했다.
-#  ① `status.traffic[0]` 을 그대로 읽으면 안 된다. 태그가 붙은 옛 리비전(예: tag=verify)이
-#     배열에 함께 들어가고 순서가 보장되지 않아 **엉뚱한 리비전명**이 찍혔다.
-#     → `revisionName` 으로 필터한다.
-#  ② 그래도 "0%" 로 경고가 떴다. `gcloud run deploy` 직후 `status` 는 아직 0 이기 때문이다.
-#  ③ 재시도로 기다려도 부족했다 — **라우팅 전파가 60초 이상 걸린다**(배포 로그의
-#     `Routing traffic....(점 63개)....done` 이 그 시간이다). status 를 기다리는 것은
-#     매번 1분을 버리고 그동안 경고를 띄우는 셈이다.
+# 트래픽 판정 — 2026-08-04~05 실측. "0% 경고" 를 오탐으로 보고 판정식을 세 번 고쳤는데
+# **세 번 다 오진이었다.** 원인은 판정식이 아니라 서비스 설정이다.
 #
-# → **`spec.traffic` 으로 판정한다.** deploy 가 설정하는 "의도된 라우팅" 은 즉시 100 이고,
-#   `status` 는 그것을 뒤따를 뿐이다. 실제 서빙 여부는 아래 **digest 대조 + HTTP 200** 이 잡는다.
+# ★ 이 서비스는 트래픽이 **리비전 이름으로 고정(pinned)** 돼 있다 — `spec.traffic` 에
+#   `latestRevision: true` 가 없고 `revisionName` 항목만 있다. 그래서 `gcloud run deploy` 는
+#   새 리비전을 만들 뿐 라우팅을 옮기지 않고, 판정이 읽는 0% 는 **실제 상태**다.
+#   아래 `update-traffic` 은 오탐 대응이 아니라 **매 배포에 실제로 필요한 절차**이며 지금까지
+#   매번 성공해 왔다. 같은 뿌리로 시크릿 회전도 리비전을 갈아야만 반영된다(L-41).
+#
+# 판정은 `spec.traffic`(의도된 라우팅)으로 한다 — 보정 뒤 `status` 전파는 60초 넘게 걸려
+#   기다리면 배포마다 1분을 버린다. 실제 서빙 여부는 아래 **digest 대조 + HTTP 200** 이 잡고,
 #   `spec` 도 `describe` 결과이므로 "deploy 메시지를 믿지 않는다"(L-20·L-33)는 그대로 지킨다.
-# ⚠️ 경고가 상시화되면 진짜 경고를 못 알아본다. 오탐 제거가 이 블록의 목적이다.
+# ⚠️ `revisionName` 으로 필터할 것 — 태그가 붙은 옛 리비전(tag=verify)이 배열에 함께 들어가고
+#   순서가 보장되지 않아 `[0]` 을 읽으면 엉뚱한 리비전의 퍼센트가 나온다.
 TPCT=$(gcloud run services describe "$SERVICE" --region "$REGION" \
   --format="value(spec.traffic.filter(\"revisionName:$REV\").extract(percent))" 2>/dev/null | tr -d '[] ')
 [ -n "$TPCT" ] || TPCT=0
 if [ "$TPCT" != "100" ]; then
-  echo "⚠ 트래픽이 새 리비전 100% 아님(${REV}=${TPCT}%) → update-traffic 보정(2026-07-31 실사고 재발 방지)"
+  echo "트래픽이 리비전에 고정돼 있어 보정한다 — 정상 절차(${REV} ${TPCT}% → 100%)"
   gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-revisions "$REV=100" --quiet >/dev/null
 fi
 RIMG=$(gcloud run revisions describe "$REV" --region "$REGION" --format='value(spec.containers[0].image)')
