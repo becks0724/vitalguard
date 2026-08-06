@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { isoJstToTm } from "../lib/jma-typhoon-parse";
 import {
   kmToPx,
   latToWorldY,
@@ -46,9 +47,21 @@ type TyphoonRec = {
   currentIndex: number;
   note?: string;
 };
+// 일본 기상청(JMA) 참고 진로 — 표시 전용. 판정(computeGate)에는 절대 넣지 않는다.
+// seq = 태풍 순번으로, 기상청 typSeq 와 같은 축이라 이것으로 같은 태풍을 짝짓는다.
+type JmaRec = {
+  seq: number;
+  numberRaw: string;
+  name?: string;
+  nameEn?: string;
+  issueJst?: string;
+  track: TrackPoint[];
+  currentIndex: number;
+};
 type Payload = TyphoonRec & {
   ok: boolean;
   typhoons?: TyphoonRec[]; // 다중 태풍(쌍태풍) — 구 서버 응답엔 없음(폴백 [data])
+  jma?: JmaRec[]; // 참고 진로 — 구 서버 응답엔 없음(undefined = 참고선 없음)
 };
 
 // 하한 2 — 패널 지도가 131px 이라 원거리 태풍(감시구역)과 현장을 한 화면에 담으려면 z3 으로는 모자란다
@@ -154,6 +167,7 @@ function SlippyMap({
   siteLat,
   siteLon,
   padTop = 0,
+  refTrack,
 }: {
   track: TrackPoint[];
   currentIndex: number;
@@ -162,6 +176,9 @@ function SlippyMap({
   siteLon?: number;
   // 상단을 덮는 오버레이(경보 배너) 높이. 그만큼 비워두지 않으면 진로·현장 마커가 배너 뒤로 숨는다.
   padTop?: number;
+  // 타 기관(JMA) 참고 진로 — 표시 전용. **프레이밍(fit)에 넣지 않는다**:
+  // 참고 진로가 더 멀리 뻗으면 줌이 낮아져 정작 판정 근거인 기상청 진로가 작아진다.
+  refTrack?: TrackPoint[];
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -296,6 +313,7 @@ function SlippyMap({
   // ── 타일/진로 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   let polyPts: { x: number; y: number }[] = [];
+  let refPts: { x: number; y: number }[] = [];
   let sitePt: { x: number; y: number } | null = null;
   let prCircles: { x: number; y: number; r: number }[] = [];
   if (view && size.w > 0) {
@@ -325,6 +343,10 @@ function SlippyMap({
       x: lonToWorldX(p.lon, z) - tlx,
       y: latToWorldY(p.lat, z) - tly,
     }));
+    refPts = (refTrack ?? []).map((p) => ({
+      x: lonToWorldX(p.lon, z) - tlx,
+      y: latToWorldY(p.lat, z) - tly,
+    }));
     if (typeof siteLat === "number" && typeof siteLon === "number") {
       sitePt = { x: lonToWorldX(siteLon, z) - tlx, y: latToWorldY(siteLat, z) - tly };
     }
@@ -338,6 +360,7 @@ function SlippyMap({
     });
   }
   const curPt = polyPts[currentIndex] ?? null;
+  const refEnd = refPts[refPts.length - 1] ?? null;
   // 현재 지점을 경계로 나눈다(현재 점은 양쪽에 포함 — 선이 끊기지 않게).
   const pastPts = polyPts.slice(0, Math.min(currentIndex + 1, polyPts.length));
   const futurePts = polyPts.slice(Math.max(0, Math.min(currentIndex, polyPts.length - 1)));
@@ -403,6 +426,41 @@ function SlippyMap({
                 strokeDasharray="3 3"
               />
             ))}
+          {/* 타 기관(JMA) 참고 진로 — 기상청 진로보다 **먼저** 그려 겹칠 때 판정 근거가 위로 오게 한다.
+              색을 확실히 갈라 둔다(청록 vs 붉은색) — 같은 계열이면 어느 것이 판정 근거인지 읽히지 않는다.
+              점선인 이유는 전부 예보이기 때문이다(JMA 는 지나온 경로를 주지 않는다). */}
+          {refPts.length > 1 && (
+            <>
+              <polyline
+                points={refPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke="#0f172a"
+                strokeWidth={4}
+                strokeDasharray="5 4"
+                strokeLinejoin="round"
+                opacity={0.5}
+              />
+              <polyline
+                points={refPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                fill="none"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                strokeDasharray="5 4"
+                strokeLinejoin="round"
+              />
+              {/* 예보 끝점 — 참고 진로가 어디까지인지(115시간) 눈으로 잡아준다. */}
+              {refEnd && (
+                <circle
+                  cx={refEnd.x}
+                  cy={refEnd.y}
+                  r={3.2}
+                  fill="#38bdf8"
+                  stroke="#0f172a"
+                  strokeWidth={1.2}
+                />
+              )}
+            </>
+          )}
           {/* 현장 마커 — 태풍과의 거리를 눈으로 읽게 한다(태풍 점보다 먼저 그려 겹칠 때 태풍이 위로). */}
           {sitePt && (
             <g>
@@ -833,6 +891,12 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     data.source === "mock" ? "활용신청 승인 후 실시간 가동" : "발효 중인 태풍 없음";
   // 표시 대상 = worst 태풍(발효 중) ?? 대표(샘플/없음 안내용). 헤더·지도·상세·모달이 같은 소스를 쓴다.
   const disp = active ?? typhoons[0] ?? data;
+  // 표시 대상과 **같은 태풍**의 JMA 참고 진로. 태풍 번호로 짝지어 다른 태풍의 진로가 겹쳐 그려지지 않게 한다.
+  // 샘플(mock) 태풍에는 붙이지 않는다 — 가상 진로 옆의 실제 예보는 둘 다 진짜처럼 읽힌다.
+  const jmaRef =
+    disp.source === "live" && disp.seq
+      ? (data.jma?.find((j) => j.seq === Number(disp.seq)) ?? null)
+      : null;
   // 배너/푸터 존 라벨 — 예보 선행 점등이면 "예보" 접미로 실측과 근거를 구분.
   const zoneLabelText = ZONE_LABEL[gate.zone] + (gate.forecast ? " 예보" : "");
   const leadText = gate.forecast ? fmtLead(gate.leadHours) : "";
@@ -995,6 +1059,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
         createPortal(
           <TyphoonModal
             t={disp}
+            jma={jmaRef}
             onClose={() => setOpen(false)}
             siteLat={lat}
             siteLon={lon}
@@ -1044,12 +1109,16 @@ function Stat({
 // t = 인라인 지도와 동일한 표시 대상 태풍(worst) — 크게 보기에서 다른 진로가 뜨지 않게 단일 소스.
 function TyphoonModal({
   t,
+  jma,
   onClose,
   siteLat,
   siteLon,
   banner,
 }: {
   t: TyphoonRec;
+  // 같은 태풍의 JMA 참고 진로. 인라인(131~194px)에는 그리지 않는다 —
+  // 확률반경 원과 같은 이유로, 작은 지도에 선이 겹치면 판정 근거를 읽기 어려워진다.
+  jma?: JmaRec | null;
   onClose: () => void;
   siteLat?: number;
   siteLon?: number;
@@ -1108,6 +1177,7 @@ function TyphoonModal({
             siteLat={siteLat}
             siteLon={siteLon}
             padTop={bannerBoxH > 0 ? bannerBoxH + 8 : 0}
+            refTrack={jma?.track}
           />
           {/* 좌우 여백은 줌 뱃지(좌상단)와 확대·축소 컨트롤(우상단)을 피하기 위한 것 —
               전체 폭으로 깔면 배너가 그 위에 덮여 버튼을 못 누른다. */}
@@ -1144,6 +1214,19 @@ function TyphoonModal({
                 ? t.note ?? "샘플 진로 — 활용신청 승인 후 실시간"
                 : `태풍 심볼=현재 위치 · 실선=지나온 경로 · 점선=예보 진로 · 옅은 원=70% 확률반경(중심이 있을 범위, 강풍 범위 아님) · 휠/＋−·드래그${t.tmFc ? ` · ${fmtTmFc(t.tmFc)} 발표` : ""}`}
             </p>
+            {/* 참고 진로 범례 — **판정 미반영**을 문구로 못 박는다.
+                두 진로가 갈릴 때 현장이 무엇을 따라야 하는지가 화면에서 읽혀야 한다.
+                출처 표기는 JMA 이용규약(公共データ利用規約 1.0)상 의무다. */}
+            {jma && jma.track.length > 1 && (
+              <p
+                title="出典：気象庁ホームページ (https://www.jma.go.jp/bosai/typhoon/)"
+                className="flex items-center justify-center gap-1.5 text-center text-[11px] leading-tight text-sky-300"
+              >
+                <span aria-hidden className="inline-block w-5 border-t-2 border-dashed border-sky-400" />
+                일본 기상청 참고 진로 · 판정 미반영 · 출처 気象庁
+                {jma.issueJst ? ` · ${fmtTmFc(isoJstToTm(jma.issueJst))} 발표` : ""}
+              </p>
+            )}
           </div>
         </div>
       </div>
