@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { CLOUD_LAYERS, cloudTileUrl, cloudZoomFor, type CloudLayer } from "../lib/gibs-himawari";
 import { isoJstToTm } from "../lib/jma-typhoon-parse";
 import {
   kmToPx,
@@ -62,6 +63,8 @@ type Payload = TyphoonRec & {
   ok: boolean;
   typhoons?: TyphoonRec[]; // 다중 태풍(쌍태풍) — 구 서버 응답엔 없음(폴백 [data])
   jma?: JmaRec[]; // 참고 진로 — 구 서버 응답엔 없음(undefined = 참고선 없음)
+  // 구름 오버레이 타일 시각(서버 계산 · UTC). 없으면 구름 버튼을 내지 않는다.
+  himawariTime?: string;
 };
 
 // 하한 2 — 패널 지도가 131px 이라 원거리 태풍(감시구역)과 현장을 한 화면에 담으려면 z3 으로는 모자란다
@@ -168,6 +171,7 @@ function SlippyMap({
   siteLon,
   padTop = 0,
   refTrack,
+  cloudTime,
 }: {
   track: TrackPoint[];
   currentIndex: number;
@@ -179,11 +183,14 @@ function SlippyMap({
   // 타 기관(JMA) 참고 진로 — 표시 전용. **프레이밍(fit)에 넣지 않는다**:
   // 참고 진로가 더 멀리 뻗으면 줌이 낮아져 정작 판정 근거인 기상청 진로가 작아진다.
   refTrack?: TrackPoint[];
+  // NASA GIBS Himawari 타일 시각(서버 계산). 없으면 구름 오버레이를 제공하지 않는다.
+  cloudTime?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
   const [grabbing, setGrabbing] = useState(false);
+  const [cloudIdx, setCloudIdx] = useState(0);
   const fittedRef = useRef(false);
   const drag = useRef<{ px: number; py: number; cwx: number; cwy: number } | null>(null);
 
@@ -361,6 +368,43 @@ function SlippyMap({
   }
   const curPt = polyPts[currentIndex] ?? null;
   const refEnd = refPts[refPts.length - 1] ?? null;
+  // 구름 오버레이 — 0=끔, 1=적외, 2=가시. ☁ 버튼으로 순환한다(기본 꺼짐).
+  const cloudLayer: CloudLayer | null = cloudIdx > 0 ? (CLOUD_LAYERS[cloudIdx - 1] ?? null) : null;
+
+  // ── 구름 오버레이 타일(NASA GIBS · Himawari) ──
+  // 배경 타일과 **줌이 다를 수 있다**. 레이어 상한(적외 z6·가시 z7)을 넘는 줌에서는 상한 타일을
+  // 확대해 이어 붙인다 — 그렇게 하지 않으면 확대할 때 구름이 통째로 사라진다(빈 타일이 200 으로 온다).
+  const cloudTiles: {
+    key: string;
+    left: number;
+    top: number;
+    size: number;
+    z: number;
+    x: number;
+    y: number;
+  }[] = [];
+  if (cloudLayer && cloudTime && view && size.w > 0) {
+    const { z: cz, scale } = cloudZoomFor(cloudLayer, view.zoom);
+    const cs = TILE * scale; // 화면에 그려질 타일 한 변
+    // 배경과 같은 좌상단 지점을 cz 기준 월드 좌표로 환산(월드 좌표는 줌에 비례한다).
+    const ctlx = (lonToWorldX(view.center.lon, view.zoom) - size.w / 2) / scale;
+    const ctly = (latToWorldY(view.center.lat, view.zoom) - size.h / 2) / scale;
+    const cn = 2 ** cz;
+    for (let yt = Math.floor(ctly / TILE); yt <= Math.floor((ctly + size.h / scale) / TILE); yt++) {
+      if (yt < 0 || yt >= cn) continue;
+      for (let xt = Math.floor(ctlx / TILE); xt <= Math.floor((ctlx + size.w / scale) / TILE); xt++) {
+        cloudTiles.push({
+          key: `${cz}-${xt}-${yt}`,
+          left: (xt * TILE - ctlx) * scale,
+          top: (yt * TILE - ctly) * scale,
+          size: cs,
+          z: cz,
+          x: ((xt % cn) + cn) % cn,
+          y: yt,
+        });
+      }
+    }
+  }
   // 현재 지점을 경계로 나눈다(현재 점은 양쪽에 포함 — 선이 끊기지 않게).
   const pastPts = polyPts.slice(0, Math.min(currentIndex + 1, polyPts.length));
   const futurePts = polyPts.slice(Math.max(0, Math.min(currentIndex, polyPts.length - 1)));
@@ -391,6 +435,33 @@ function SlippyMap({
           style={{ position: "absolute", left: t.left, top: t.top, width: TILE, height: TILE, maxWidth: "none" }}
         />
       ))}
+      {/* 구름 오버레이(NASA GIBS · Himawari) — 위성 배경 위, 지명 라벨 아래.
+          screen 합성이라 어두운 화소(구름 없는 바다)는 비치고 밝은 구름만 얹힌다.
+          진로선·마커는 SVG 라 타일보다 뒤에 그려지므로 구름에 가리지 않는다. */}
+      {cloudLayer &&
+        cloudTime &&
+        cloudTiles.map((t) => {
+          const url = cloudTileUrl(cloudLayer, cloudTime, t.z, t.x, t.y);
+          return url ? (
+            <img
+              key={`c-${t.key}`}
+              src={url}
+              alt=""
+              aria-hidden
+              draggable={false}
+              style={{
+                position: "absolute",
+                left: t.left,
+                top: t.top,
+                width: t.size,
+                height: t.size,
+                maxWidth: "none",
+                mixBlendMode: "screen",
+                opacity: 0.8,
+              }}
+            />
+          ) : null;
+        })}
       {tiles.map((t) => (
         <img
           key={`r-${t.key}`}
@@ -524,10 +595,30 @@ function SlippyMap({
             <MapBtn label="＋" onClick={() => zoomBy(1)} title="확대" />
             <MapBtn label="－" onClick={() => zoomBy(-1)} title="축소" />
             <MapBtn label="↺" onClick={reset} title="원래대로" />
+            {cloudTime && (
+              <MapBtn
+                label="☁"
+                onClick={() => setCloudIdx((i) => (i + 1) % (CLOUD_LAYERS.length + 1))}
+                title={
+                  cloudLayer
+                    ? `구름 ${cloudLayer.label}(${cloudLayer.note}) — 누르면 전환`
+                    : "구름 영상 켜기(NASA GIBS · Himawari)"
+                }
+                active={cloudLayer !== null}
+              />
+            )}
           </div>
           {/* 줌 뱃지는 위쪽에 — 아래에 두면 하단 관측값 오버레이에 반쯤 가린다. */}
-          <div className="pointer-events-none absolute left-2 top-2 z-10 rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white">
-            z{view?.zoom ?? "-"}
+          <div className="pointer-events-none absolute left-2 top-2 z-10 flex flex-col items-start gap-1">
+            <span className="rounded bg-black/55 px-1.5 py-0.5 font-mono text-[11px] text-white">
+              z{view?.zoom ?? "-"}
+            </span>
+            {cloudLayer && cloudTime && (
+              // 켜져 있을 때만. 30~60분 지연이라 '지금'으로 읽히면 안 되고 출처도 여기서 밝힌다.
+              <span className="rounded bg-black/55 px-1.5 py-0.5 text-[10px] text-sky-200">
+                구름 {cloudLayer.label} · {cloudTime.slice(11, 16)}Z · NASA GIBS/Himawari
+              </span>
+            )}
           </div>
         </>
       )}
@@ -535,14 +626,27 @@ function SlippyMap({
   );
 }
 
-function MapBtn({ label, onClick, title }: { label: string; onClick: () => void; title?: string }) {
+function MapBtn({
+  label,
+  onClick,
+  title,
+  active,
+}: {
+  label: string;
+  onClick: () => void;
+  title?: string;
+  active?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={title}
+      aria-pressed={active}
       onPointerDown={(e) => e.stopPropagation()}
-      className="flex h-10 w-10 items-center justify-center rounded-md bg-black/60 text-xl font-bold leading-none text-white transition hover:bg-black/85"
+      className={`flex h-10 w-10 items-center justify-center rounded-md text-xl font-bold leading-none text-white transition ${
+        active ? "bg-sky-600/85 hover:bg-sky-500" : "bg-black/60 hover:bg-black/85"
+      }`}
     >
       {label}
     </button>
@@ -1060,6 +1164,7 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           <TyphoonModal
             t={disp}
             jma={jmaRef}
+            cloudTime={data.himawariTime}
             onClose={() => setOpen(false)}
             siteLat={lat}
             siteLon={lon}
@@ -1110,6 +1215,7 @@ function Stat({
 function TyphoonModal({
   t,
   jma,
+  cloudTime,
   onClose,
   siteLat,
   siteLon,
@@ -1119,6 +1225,8 @@ function TyphoonModal({
   // 같은 태풍의 JMA 참고 진로. 인라인(131~194px)에는 그리지 않는다 —
   // 확률반경 원과 같은 이유로, 작은 지도에 선이 겹치면 판정 근거를 읽기 어려워진다.
   jma?: JmaRec | null;
+  // 구름 오버레이 타일 시각(서버 계산). 팝업에서만 제공한다 — 인라인은 지도가 작아 구름이 진로를 덮는다.
+  cloudTime?: string;
   onClose: () => void;
   siteLat?: number;
   siteLon?: number;
@@ -1178,6 +1286,7 @@ function TyphoonModal({
             siteLon={siteLon}
             padTop={bannerBoxH > 0 ? bannerBoxH + 8 : 0}
             refTrack={jma?.track}
+            cloudTime={cloudTime}
           />
           {/* 좌우 여백은 줌 뱃지(좌상단)와 확대·축소 컨트롤(우상단)을 피하기 위한 것 —
               전체 폭으로 깔면 배너가 그 위에 덮여 버튼을 못 누른다. */}
