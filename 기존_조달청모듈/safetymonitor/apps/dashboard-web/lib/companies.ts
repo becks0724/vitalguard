@@ -7,7 +7,7 @@ import type { OrgType } from "./org-type";
 export const VITALGUARD_COMPANY = "VitAlGuard";
 
 // 회원사 — 회원사 관리자 유형의 선택지.
-export const MEMBER_COMPANIES = ["스마트인재개발원", "조달청", "고용노동부"];
+export const MEMBER_COMPANIES = ["스마트인재개발원", "조달청", "고용노동부", "행정안전부"];
 
 export const ALLOWED_COMPANIES = [VITALGUARD_COMPANY, ...MEMBER_COMPANIES];
 
