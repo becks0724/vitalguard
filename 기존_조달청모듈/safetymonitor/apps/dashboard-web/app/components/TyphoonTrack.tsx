@@ -870,10 +870,15 @@ function TyphoonSelect({
     };
     // 화면이 움직이면 잰 좌표가 어긋난다 — 따라다니게 만들지 말고 닫는다(단순함 우선).
     const close = () => setOpen(false);
-    // ⚠️ 캡처 단계라 **메뉴 자체의 스크롤**도 여기 걸린다 — 그대로 두면 목록을 스크롤하는 순간 닫힌다.
+    // ★ scroll 은 버블링하지 않아 캡처로 받아야 하는데, 캡처는 **문서 안 모든 스크롤**을 잡는다.
+    //   이 대시보드에는 매 프레임 `scrollLeft` 를 쓰는 마퀴 티커(현장 환경 스트립·KOSHA 목록,
+    //   `useMarqueeScroll`)가 상시 돌아서, 무조건 닫으면 **메뉴가 열린 지 16ms 만에 사라진다**
+    //   (2026-08-11 실제 증상 — 영상에서 90프레임 중 단 1프레임만 보였다).
+    //   좌표가 어긋나는 것은 **버튼을 품은 스크롤러**가 움직였을 때뿐이므로 그때만 닫는다.
     const onScroll = (e: Event) => {
-      if (menuRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
+      const btn = btnRef.current;
+      const t = e.target as Node | null;
+      if (btn && t?.contains?.(btn)) setOpen(false);
     };
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);

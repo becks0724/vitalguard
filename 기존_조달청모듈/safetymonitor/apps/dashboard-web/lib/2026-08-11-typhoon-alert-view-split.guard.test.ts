@@ -82,6 +82,26 @@ test("지도·관측값·참고 진로는 보기 선택을 따른다(선택이 �
   assert.match(source, /track=\{disp\.track\}/, "지도가 disp.track 을 그리지 않는다");
 });
 
+test("★ 드롭다운 닫기 조건 — 화면 어디의 스크롤에나 닫히면 안 된다(마퀴 티커 회귀 방지)", () => {
+  // scroll 은 버블링하지 않아 캡처로 받아야 하는데, 캡처는 문서 안 모든 스크롤을 잡는다.
+  // 이 대시보드에는 매 프레임 scrollLeft 를 쓰는 마퀴 티커(useMarqueeScroll — 현장 환경 스트립·
+  // KOSHA 목록)가 상시 돌아서, 무조건 닫으면 메뉴가 열린 지 16ms 만에 사라진다(2026-08-11 실제 증상).
+  const start = source.indexOf("const onScroll");
+  assert.ok(start >= 0, "onScroll 핸들러가 없다 — 스크롤 시 좌표가 어긋난 채로 남는다");
+  const body = source.slice(start, source.indexOf("\n    };", start));
+  assert.match(
+    body,
+    /contains\?\.\(btn\)|contains\(btn\)/,
+    "스크롤 출처가 버튼을 품는지 보지 않는다 — 티커 한 프레임에 메뉴가 닫힌다",
+  );
+  // 조건 없이 닫는 형태가 남아 있으면 안 된다.
+  assert.doesNotMatch(
+    body,
+    /^\s*setOpen\(false\);\s*$/m,
+    "onScroll 이 조건 없이 닫는다 — 화면 어디의 스크롤에나 메뉴가 사라진다",
+  );
+});
+
 test("선택 드롭다운이 가리키는 태풍은 실제로 지도에 뜬 태풍(disp)이다", () => {
   // viewSeq 를 그대로 넘기면 '자동(선택 없음)' 상태에서 value 가 "" 이 되어
   // 드롭다운이 빈 칸으로 보이고, 지도에는 worst 태풍이 떠 있어 둘이 어긋난다.

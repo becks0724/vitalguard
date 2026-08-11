@@ -376,6 +376,8 @@ API        기상청 13호 돌핀(17점) / 14호 구지라(6) / 15호 찬홈(11)
       · 패널 안 절대배치는 `overflow-hidden`+`scale` 에 잘리고, 네이티브 select 는 여는 방향을 OS 가 정한다
       · `createPortal(body)` + `getBoundingClientRect` 로 좌표 계산(scale 변환 반영된 화면 좌표)
       · 함정 2건 선제 차단 — 바깥클릭 닫기가 항목 `onClick` 을 죽이는 것 · 캡처 scroll 이 메뉴 자체 스크롤에 닫히는 것
+- [x] ⚠️ **배포 후 사고 수정** — 캡처 scroll 이 **마퀴 티커**(`useMarqueeScroll`, 매 프레임 `scrollLeft`)에 걸려
+      메뉴가 16ms 만에 닫혔다(화면녹화 90프레임 중 1프레임만 노출). 버튼을 품은 스크롤러일 때만 닫도록 수정 + 가드 1건
       · 접힌 버튼 = 등급 점 · 펼친 목록 = 태풍마다 등급 라벨 병기
 - [x] 소멸로 목록에서 빠진 선택은 자동 해제(`findIndex` 미발견 → 경보 대상)
 - [x] `발효 태풍 N개 감시` 삭제(T-19 이월 해소) · 헤더 `외 N` 삭제(드롭다운 조건과 같아 도달 불가)
@@ -386,9 +388,9 @@ API        기상청 13호 돌핀(17점) / 14호 구지라(6) / 15호 찬홈(11)
 ### 검증
 
 ```
-가드      typhoon-alert-view-split 5 pass / 0 fail (음성 대조 3건 통과)
+가드      typhoon-alert-view-split 6 pass / 0 fail (음성 대조 4건 통과)
 전체      tsc 0 · lint 0 errors
-          dashboard-web 585 pass (580 + 5) · schemas 38 · analyzers 50 = 673 pass / 0 fail
+          dashboard-web 586 pass (580 + 6) · schemas 38 · analyzers 50 = 674 pass / 0 fail
 레이아웃  드롭다운이 헤더 안이라 별도 행을 먹지 않는다(칩 행 대비 지도 높이 ~25px 회복)
 ```
 
