@@ -133,7 +133,8 @@ final class VitalBridge: NSObject {
                 let reason = json?["error"] as? String
                 let message: String
                 switch (status, reason) {
-                case (401, _): message = "아이디 또는 비밀번호가 올바르지 않습니다."
+                // 관제웹 로그인과 동일 문구 — 두 화면이 같은 로그인임을 문구까지 일치시킨다.
+                case (401, _): message = "아이디 또는 비밀번호가 일치하지 않습니다."
                 case (403, _): message = "미승인 계정입니다. 관리자 승인 후 이용하세요."
                 case (429, _): message = "시도가 너무 잦습니다. 잠시 후 다시 시도하세요."
                 default: message = "로그인 실패(\(status)\(reason.map { "·\($0)" } ?? ""))"

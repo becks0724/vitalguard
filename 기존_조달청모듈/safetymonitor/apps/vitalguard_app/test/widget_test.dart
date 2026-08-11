@@ -8,8 +8,10 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
     await tester.pump();
 
-    expect(find.text('로그인'), findsOneWidget);
-    expect(find.text('아이디'), findsOneWidget);
+    // '로그인' 은 부제목과 버튼 두 곳에 있다(관제웹과 동일 구성).
+    expect(find.text('로그인'), findsNWidgets(2));
+    expect(find.text('ID'), findsOneWidget);
     expect(find.text('비밀번호'), findsOneWidget);
+    expect(find.text('OPEN SAFETY · NEVER ALONE'), findsOneWidget);
   });
 }

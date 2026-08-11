@@ -126,12 +126,19 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 12),
                 const Text('VitAlGuard', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
-                const Text('관제웹 계정으로 로그인하세요', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
-                const SizedBox(height: 28),
+                // 관제웹 로그인과 동일한 브랜드·문구 — 작업자가 같은 로그인임을 바로 알게 한다.
+                const Text('OPEN SAFETY · NEVER ALONE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 12, letterSpacing: 1.2)),
+                const SizedBox(height: 20),
+                const Text('로그인', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                const Text('관제웹과 같은 ID·비밀번호를 사용합니다', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                const SizedBox(height: 24),
                 TextField(
                   controller: _idController,
                   autocorrect: false,
-                  decoration: const InputDecoration(labelText: '아이디', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(labelText: 'ID', border: OutlineInputBorder()),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -148,9 +155,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 FilledButton(
                   onPressed: _busy ? null : _login,
                   style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                  child: _busy
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('로그인'),
+                  child: _busy ? const Text('확인 중…') : const Text('로그인'),
                 ),
               ],
             ),
