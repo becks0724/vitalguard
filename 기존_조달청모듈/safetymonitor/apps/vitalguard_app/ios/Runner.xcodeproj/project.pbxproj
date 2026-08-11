@@ -22,6 +22,7 @@
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A53C8AA38CFA07CD5F33D473 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84264EFCC0DAD014BF186C92 /* ContentView.swift */; };
 		A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */; };
+		E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D15ED07A527684C73E409BE /* VitalBridge.swift */; };
 		E3685334E9EA58503BA4B9B3 /* VitalWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -73,6 +74,7 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		3D15ED07A527684C73E409BE /* VitalBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalBridge.swift; sourceTree = "<group>"; };
 		3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.example.plist; sourceTree = "<group>"; };
 		5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalPipeline.swift; sourceTree = "<group>"; };
 		58EA3DFF7C17BBD3277C2224 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
@@ -172,6 +174,7 @@
 				5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */,
 				E5222D3F029C4480289E1731 /* PoCConfig.plist */,
 				3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */,
+				3D15ED07A527684C73E409BE /* VitalBridge.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -395,6 +398,7 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */,
 				61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */,
+				E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

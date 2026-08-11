@@ -1,13 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<!-- 이 파일을 PoCConfig.plist 로 복사해 실값을 채운다. PoCConfig.plist 는 gitignore(토큰 커밋 금지). -->
+<!-- 개발용 서버 오버라이드 — 이 파일을 PoCConfig.plist 로 복사해 사용(gitignore).
+     DevBaseURLOverride 가 없으면 앱은 프로덕션 관제 서버를 사용한다.
+     토큰은 더 이상 여기 두지 않는다 — 앱 로그인(관제웹 계정)이 Keychain 에 저장한다. -->
 <dict>
-	<key>BaseURL</key>
+	<key>DevBaseURLOverride</key>
 	<string>https://YOUR-TUNNEL.trycloudflare.com</string>
-	<key>AppJWT</key>
-	<string>PASTE-APP-JWT-HERE</string>
-	<key>WorkerId</key>
-	<string>EMP-6861</string>
 </dict>
 </plist>

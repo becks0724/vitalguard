@@ -17,5 +17,9 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // Flutter UI ↔ 네이티브 브리지(로그인·상태 조회) 연결.
+    if let messenger = engineBridge.pluginRegistry.registrar(forPlugin: "VitalBridge")?.messenger() {
+      VitalBridge.shared.attach(messenger: messenger)
+    }
   }
 }

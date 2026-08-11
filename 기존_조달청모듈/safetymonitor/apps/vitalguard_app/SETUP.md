@@ -152,7 +152,11 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
   - [x] **1a 게이트 통과 (08-11)** — Release 빌드 스와이프 종료(15:20) 후 4분+ 연속 5초당 1건 서버 도착(POST 166→216·중단 0). iOS 가 WCSession 수신으로 강제종료 앱을 백그라운드 재기동함을 실증
     - ⚠ **debug 빌드로는 이 게이트를 판정할 수 없다** — 디버거 없는 재기동이 즉사해 4분간 도착 0건(교란 변수). 종료 구간 데이터는 transferUserInfo 큐에 보존돼 재실행 시 전량 도착(유실 0 실증)
     - ⚠ Flutter 템플릿의 프로젝트 Release 구성 `SUPPORTED_PLATFORMS=iphoneos` 가 워치 타깃에 상속돼 Release 빌드가 깨진다 — 워치 타깃에 `watchos watchsimulator` 명시로 해소(6f2e6ba)
-  - [ ] 1b — 프로덕션 전환(EMP-6861 실로그인) → 관제웹 실시간 확인 → 직후 APP_JWT_SECRET 회전(구 앱 토큰 일괄 폐기)
+  - [ ] 1b — 프로덕션 전환(관제웹 계정 실로그인) → 관제웹 실시간 확인 → 직후 APP_JWT_SECRET 회전(구 앱 토큰 일괄 폐기)
+    - [x] 관제웹 배포 — `/api/app/vital` 별칭 라이브(`00240-4m4`·무토큰 401 실측) — 08-11
+    - [x] 앱 로그인 구현 — Flutter 로그인 화면(관제웹 동일 id/pw) + VitalBridge(MethodChannel) + Keychain JWT + 파이프라인 자격 갱신·기본 서버=프로덕션(dev 는 `DevBaseURLOverride`) — 08-11
+    - [ ] 실기기 로그인 → 관제웹 실시간 표시 확인
+    - [ ] APP_JWT_SECRET 회전(확인 직후)
 
 ### 관제웹 수신 계약 요점 (실측 08-11)
 

@@ -20,6 +20,21 @@ final class VitalPipeline {
         let workerId: String
     }
 
+    // 기본 업로드 대상 = 프로덕션 관제 서버. 개발 터널 시험은 PoCConfig.plist 의 DevBaseURLOverride 로만.
+    private static let productionBaseURL = URL(string: "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app")!
+
+    static func resolvedBaseURL() -> URL {
+        if let url = Bundle.main.url(forResource: "PoCConfig", withExtension: "plist"),
+           let data = try? Data(contentsOf: url),
+           let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+           let override = dict["DevBaseURLOverride"] as? String,
+           override.hasPrefix("http"),
+           let overrideURL = URL(string: override) {
+            return overrideURL
+        }
+        return productionBaseURL
+    }
+
     private var config: Config?
     private var pending: [[String: Any]] = []
     private var uploading = false
@@ -48,39 +63,44 @@ final class VitalPipeline {
                 self.log.notice("파이프라인 가동 — 대상=\(cfg.baseURL.absoluteString, privacy: .public) workerId=\(cfg.workerId, privacy: .public) 보류 큐=\(self.pending.count, privacy: .public)건")
                 self.uploadLocked()
             } else {
-                self.log.notice("PoCConfig.plist 없음/불완전 — 업로드 비활성(Phase 0 수신 로그만 동작)")
+                self.log.notice("미로그인 — 업로드 비활성(수신·큐 적재는 계속, 로그인 후 일괄 전송)")
+            }
+        }
+    }
+
+    /// 로그인/로그아웃 직후 호출 — 자격을 다시 읽고 보류 큐를 밀어낸다.
+    func reloadAuth() {
+        work.async {
+            self.config = self.loadConfig()
+            if let cfg = self.config {
+                self.log.notice("자격 갱신 — workerId=\(cfg.workerId, privacy: .public), 보류 큐 \(self.pending.count, privacy: .public)건 전송 시도")
+                self.uploadLocked()
+            } else {
+                self.log.notice("로그아웃 — 업로드 비활성")
             }
         }
     }
 
     private func loadConfig() -> Config? {
-        guard let url = Bundle.main.url(forResource: "PoCConfig", withExtension: "plist"),
-              let data = try? Data(contentsOf: url),
-              let dict = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let base = dict["BaseURL"] as? String,
-              let baseURL = URL(string: base), base.hasPrefix("http"),
-              let token = dict["AppJWT"] as? String, !token.isEmpty,
-              let workerId = dict["WorkerId"] as? String, !workerId.isEmpty
+        guard let token = AuthStore.token, !token.isEmpty,
+              let workerId = AuthStore.workerId, !workerId.isEmpty
         else { return nil }
-        return Config(baseURL: baseURL, token: token, workerId: workerId)
+        return Config(baseURL: Self.resolvedBaseURL(), token: token, workerId: workerId)
     }
 
     // MARK: - 수신 (워치 hrBatch → VitalSample 변환)
 
     func ingest(payload: [String: Any]) {
         work.async {
-            guard let cfg = self.config else { return }
+            // 미로그인이어도 큐에는 쌓는다 — workerId 는 업로드 시점의 자격으로 붙인다(로그인 후 일괄 전송).
             let samples = payload["samples"] as? [[String: Any]] ?? []
             // 서버 계약 — ts 는 전송 시각, 측정 시각은 heartRateMeasuredAt 에 따로 싣는다.
             let sentAt = self.isoMs.string(from: Date())
             for s in samples {
                 guard let bpm = s["bpm"] as? Double else { continue }
                 var v: [String: Any] = [
-                    "workerId": cfg.workerId,
                     "ts": sentAt,
                     "heartRate": bpm,
-                    // 서버 source 화이트리스트 값 — 워치 측정 생체(watchos_data_vitalguard 로 분류됨).
-                    "source": "VitAlGuard-WatchVitals",
                 ]
                 if let t = s["ts"] as? Double {
                     v["heartRateMeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
@@ -122,7 +142,14 @@ final class VitalPipeline {
             }
         }
 
-        let batch = Array(pending.prefix(maxBatchPerRequest))
+        // 큐에는 자격 무관 원시 샘플만 있고, workerId·source 는 전송 시점 자격으로 붙인다.
+        let batch = Array(pending.prefix(maxBatchPerRequest)).map { item -> [String: Any] in
+            var v = item
+            v["workerId"] = cfg.workerId
+            // 서버 source 화이트리스트 값 — 워치 측정 생체(watchos_data_vitalguard 로 분류됨).
+            v["source"] = "VitAlGuard-WatchVitals"
+            return v
+        }
         var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/app/vital"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15

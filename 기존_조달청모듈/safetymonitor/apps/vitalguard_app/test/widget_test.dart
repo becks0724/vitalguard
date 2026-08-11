@@ -1,30 +1,15 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
+// 로그인 화면 스모크 테스트 — 핵심 입력 요소(아이디·비밀번호·로그인 버튼)가 렌더되는지 확인
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:vitalguard_app/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
-
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('로그인 화면 핵심 요소가 렌더된다', (tester) async {
+    await tester.pumpWidget(const MaterialApp(home: LoginScreen()));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.text('로그인'), findsOneWidget);
+    expect(find.text('아이디'), findsOneWidget);
+    expect(find.text('비밀번호'), findsOneWidget);
   });
 }
