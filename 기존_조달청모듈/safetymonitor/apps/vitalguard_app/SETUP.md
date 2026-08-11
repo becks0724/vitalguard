@@ -154,7 +154,7 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 
 ### 관제웹 수신 계약 요점 (실측 08-11)
 
-- `POST /api/mock/vital` — 앱 JWT(Bearer) 필수, 토큰 workerId=본문 workerId 일치 강제. 배열 최대 500건·2MB·IP당 분당 120요청.
+- **신규 앱 표준 경로 = `POST /api/app/vital`** (08-11 신설 별칭 — `/api/mock/vital` 과 동일 핸들러·인증·검증. 구 경로는 관제웹 GET·레거시용으로 유지). 앱 JWT(Bearer) 필수, 토큰 workerId=본문 workerId 일치 강제. 배열 최대 500건·2MB·IP당 분당 120요청. ⚠ 프로덕션에는 다음 dashboard 배포 때 반영(1b 선행 조건).
 - 필수 필드 `workerId`·`ts`(**전송 시각** ISO). 심박 `heartRate`(20~250)·측정 시각 `heartRateMeasuredAt`.
 - **`source` 는 서버 화이트리스트** — 워치 생체는 `VitAlGuard-WatchVitals`(→`watchos_data_vitalguard`). 미등록 source 는 201 이어도 dropped(조용한 유실 주의).
 - [ ] Phase 2 — VitalBridge + vital_stream.dart (Flutter 표시)

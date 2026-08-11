@@ -123,7 +123,7 @@ final class VitalPipeline {
         }
 
         let batch = Array(pending.prefix(maxBatchPerRequest))
-        var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/mock/vital"))
+        var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/app/vital"))
         request.httpMethod = "POST"
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
