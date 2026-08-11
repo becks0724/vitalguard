@@ -149,7 +149,9 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - [ ] Phase 1 — VitalPipeline (로컬 큐 + 서버 업로드)
   - [x] 1a 코드 — VitalPipeline.swift(파일 영속 큐·배치 500·JWT·BGTask·재시도) + PoCConfig.plist 주입(gitignore, 예시=PoCConfig.example.plist) — 08-11
   - [x] 1a 서버 계약 검증 — dev 서버(데모·프로덕션 무접촉·PoC 전용 시크릿) + cloudflared 터널 + 발급 JWT 로 `POST /api/mock/vital` **accepted:1**(`watchos_data_vitalguard` 분류) — 08-11
-  - [ ] 1a 게이트 — 아이폰 앱 스와이프 종료 → 워치 계속 전송 → dev 서버 로그 도착
+  - [x] **1a 게이트 통과 (08-11)** — Release 빌드 스와이프 종료(15:20) 후 4분+ 연속 5초당 1건 서버 도착(POST 166→216·중단 0). iOS 가 WCSession 수신으로 강제종료 앱을 백그라운드 재기동함을 실증
+    - ⚠ **debug 빌드로는 이 게이트를 판정할 수 없다** — 디버거 없는 재기동이 즉사해 4분간 도착 0건(교란 변수). 종료 구간 데이터는 transferUserInfo 큐에 보존돼 재실행 시 전량 도착(유실 0 실증)
+    - ⚠ Flutter 템플릿의 프로젝트 Release 구성 `SUPPORTED_PLATFORMS=iphoneos` 가 워치 타깃에 상속돼 Release 빌드가 깨진다 — 워치 타깃에 `watchos watchsimulator` 명시로 해소(6f2e6ba)
   - [ ] 1b — 프로덕션 전환(EMP-6861 실로그인) → 관제웹 실시간 확인 → 직후 APP_JWT_SECRET 회전(구 앱 토큰 일괄 폐기)
 
 ### 관제웹 수신 계약 요점 (실측 08-11)
