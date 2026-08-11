@@ -64,10 +64,21 @@ final class VitalBridge: NSObject {
     static let shared = VitalBridge()
     private override init() {}
 
+    private var eventSink: FlutterEventSink?
+
     func attach(messenger: FlutterBinaryMessenger) {
         let channel = FlutterMethodChannel(name: "vitalguard/bridge", binaryMessenger: messenger)
         channel.setMethodCallHandler { [weak self] call, result in
             self?.handle(call, result: result)
+        }
+        let events = FlutterEventChannel(name: "vitalguard/stream", binaryMessenger: messenger)
+        events.setStreamHandler(self)
+    }
+
+    /// 표시용 상태 이벤트를 Flutter 로 밀어준다. 어느 스레드에서 불러도 안전(채널 규약상 메인으로 전달).
+    func emit(_ payload: [String: Any]) {
+        DispatchQueue.main.async { [weak self] in
+            self?.eventSink?(payload)
         }
     }
 
@@ -142,5 +153,19 @@ final class VitalBridge: NSObject {
             VitalPipeline.shared.reloadAuth()
             finish(["ok": true, "workerId": workerId, "name": user["name"] as? String as Any])
         }.resume()
+    }
+}
+
+// MARK: - EventChannel (표시용 실시간 스트림)
+
+extension VitalBridge: FlutterStreamHandler {
+    func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        eventSink = events
+        return nil
+    }
+
+    func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        eventSink = nil
+        return nil
     }
 }

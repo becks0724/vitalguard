@@ -4,6 +4,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'vital_stream.dart';
+
 const MethodChannel _bridge = MethodChannel('vitalguard/bridge');
 
 void main() {
@@ -169,17 +171,43 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Timer? _timer;
   Map<String, dynamic> _status = const {};
+  StreamSubscription<VitalStreamEvent>? _sub;
+
+  // 실시간 표시 상태(EventChannel) — 폴링(_status)과 별개로 즉시 갱신된다.
+  double? _bpm;
+  DateTime? _measuredAt;
+  int? _seq;
+  int? _livePending;
+  bool _authRejected = false;
 
   @override
   void initState() {
     super.initState();
     _refresh();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+    try {
+      _sub = VitalStream.events().listen((e) {
+        if (!mounted) return;
+        setState(() {
+          if (e.type == 'hr') {
+            _bpm = e.bpm;
+            _measuredAt = e.measuredAt;
+            _seq = e.seq;
+          }
+          if (e.pending != null) _livePending = e.pending;
+          if (e.authRejected == true) _authRejected = true;
+          if (e.uploadOk == true) _authRejected = false;
+        });
+      });
+    } catch (_) {
+      // 브리지 부재(테스트 등)면 폴링 표시만 유지한다.
+    }
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _sub?.cancel();
     super.dispose();
   }
 
@@ -202,12 +230,20 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  String _measuredAgoText() {
+    final at = _measuredAt;
+    if (at == null) return '';
+    final sec = DateTime.now().difference(at).inSeconds;
+    return sec <= 1 ? '방금' : '$sec초 전';
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = _status['name'] as String? ?? '작업자';
     final workerId = _status['workerId'] as String? ?? '-';
-    final pending = _status['pending'] as int? ?? 0;
+    final pending = _livePending ?? _status['pending'] as int? ?? 0;
     final baseURL = _status['baseURL'] as String? ?? '';
+    final receiving = _bpm != null;
 
     return Scaffold(
       appBar: AppBar(
@@ -221,6 +257,44 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (_authRejected)
+              MaterialBanner(
+                backgroundColor: Colors.red.shade50,
+                content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
+                actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+              ),
+            // 실시간 심박 — 워치 → 폰 수신 즉시 갱신(EventChannel).
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Icon(Icons.favorite, color: receiving ? const Color(0xFFD32F2F) : Colors.grey, size: 32),
+                        const SizedBox(width: 10),
+                        Text(
+                          receiving ? _bpm!.toStringAsFixed(0) : '--',
+                          style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('bpm', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      receiving
+                          ? '측정 ${_measuredAgoText()} · 배치 #$_seq'
+                          : '워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             Card(
               child: ListTile(
                 leading: const Icon(Icons.badge_outlined),
@@ -237,11 +311,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건'),
                 subtitle: Text(baseURL, maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '심박 실시간 표시는 Phase 2 에서 제공됩니다.\n워치의 VitalWatch 앱에서 [시작]을 누르면 수집이 시작됩니다.',
-              style: TextStyle(color: Colors.grey),
             ),
           ],
         ),

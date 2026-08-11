@@ -113,6 +113,7 @@ final class VitalPipeline {
                 self.log.warning("큐 상한(\(self.maxQueue, privacy: .public)) 초과 — 오래된 \(overflow, privacy: .public)건 폐기")
             }
             self.persist()
+            VitalBridge.shared.emit(["type": "pipeline", "pending": self.pending.count])
             self.uploadLocked()
         }
     }
@@ -178,11 +179,13 @@ final class VitalPipeline {
                     self.pending.removeFirst(min(batch.count, self.pending.count))
                     self.persist()
                     self.log.notice("[UP] \(batch.count, privacy: .public)건 업로드 성공(\(status, privacy: .public)) — 잔여 큐 \(self.pending.count, privacy: .public)건")
+                    VitalBridge.shared.emit(["type": "pipeline", "pending": self.pending.count, "uploadOk": true])
                     finish()
                     // 잔여가 있으면 즉시 다음 배치.
                     self.uploadLocked()
                 case 401, 403:
                     self.log.error("업로드 인증 거부(\(status, privacy: .public)) — 토큰 확인 필요, 5분 후 재시도")
+                    VitalBridge.shared.emit(["type": "pipeline", "pending": self.pending.count, "uploadOk": false, "authRejected": true])
                     finish()
                     self.scheduleRetry(after: 300)
                 default:

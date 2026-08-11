@@ -34,6 +34,14 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm")
         // Phase 1 — 수신 배치를 업로드 파이프라인에 넘긴다(설정 없으면 파이프라인이 무시).
         VitalPipeline.shared.ingest(payload: payload)
+        // Phase 2 — 표시용 최신값을 Flutter 스트림으로 전달(경로는 표시 전용, 서버 전송과 무관).
+        if let bpm = latest {
+            var event: [String: Any] = ["type": "hr", "bpm": bpm, "seq": seq, "channel": channel]
+            if let ts = samples.last?["ts"] as? Double {
+                event["measuredAtMs"] = Int(ts * 1000)
+            }
+            VitalBridge.shared.emit(event)
+        }
     }
 
     // MARK: - WCSessionDelegate (iOS)

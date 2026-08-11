@@ -166,3 +166,5 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - 필수 필드 `workerId`·`ts`(**전송 시각** ISO). 심박 `heartRate`(20~250)·측정 시각 `heartRateMeasuredAt`.
 - **`source` 는 서버 화이트리스트** — 워치 생체는 `VitAlGuard-WatchVitals`(→`watchos_data_vitalguard`). 미등록 source 는 201 이어도 dropped(조용한 유실 주의).
 - [ ] Phase 2 — VitalBridge + vital_stream.dart (Flutter 표시)
+  - [x] 코드 — EventChannel `vitalguard/stream`(hr·pipeline 이벤트) + `lib/vital_stream.dart` + 홈 화면 실시간 심박/큐/인증거부 배너(재로그인 유도 — 1b 이월 ① 반영) — 08-11
+  - [ ] 실기기 게이트 — Flutter 화면에 최신 HR·큐 적체 실시간 갱신
