@@ -808,6 +808,60 @@ function typhoonLabel(t: TyphoonRec): string {
   return t.seq && t.seq !== "샘플" ? `제${t.seq}호 ${name}` : name;
 }
 
+// 칩 앞 점 — 태풍별 **자체 등급**을 한눈에 준다. 색 계열은 ZONE_TEXT 와 같게 맞춘다
+// (같은 등급에 화면마다 다른 색을 쓰면 색이 등급을 뜻하지 않게 된다).
+const ZONE_DOT: Record<Zone, string> = {
+  storm: "bg-red-500",
+  gale: "bg-orange-500",
+  approach: "bg-amber-500",
+  emergency: "bg-amber-500",
+  alert: "bg-sky-500",
+  watch: "bg-zinc-400 dark:bg-zinc-500",
+  none: "bg-zinc-300 dark:bg-white/25",
+};
+
+// 태풍 선택 칩 — 발효 태풍이 둘 이상일 때만 뜬다. 고른 태풍의 진로·관측값·참고 진로가 함께 바뀐다.
+// ⚠️ 경보 배너는 이 선택을 따르지 않는다 — 다른 태풍을 보는 동안 경보가 사라지면
+//    보기 편의 기능이 곧 경보 누락이 된다. 경보 주체는 늘 worst 태풍이고 배너가 이름을 밝힌다.
+function TyphoonChips({
+  list,
+  gates,
+  selectedSeq,
+  onSelect,
+}: {
+  list: TyphoonRec[];
+  gates: GateResult[];
+  selectedSeq?: string;
+  onSelect: (seq: string) => void;
+}) {
+  return (
+    <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto">
+      {list.map((t, i) => {
+        const zone = gates[i]?.zone ?? "none";
+        const on = t.seq !== undefined && t.seq === selectedSeq;
+        return (
+          <button
+            key={t.seq ?? i}
+            type="button"
+            onClick={() => t.seq && onSelect(t.seq)}
+            title={`${typhoonLabel(t)} — ${ZONE_LABEL[zone]}${on ? " (다시 누르면 경보 태풍으로)" : ""}`}
+            aria-pressed={on}
+            className={`flex shrink-0 items-center gap-1 rounded-pill border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
+              on
+                ? "border-ink/25 bg-ink text-white dark:border-white/25 dark:bg-white/85 dark:text-ink"
+                : "border-hairline bg-canvas text-body hover:bg-surface-strong dark:border-white/10 dark:bg-white/[0.04] dark:text-on-dark-soft dark:hover:bg-white/10"
+            }`}
+          >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[zone]}`} />
+            {t.seq ? `${t.seq}호 ` : ""}
+            {t.name ?? "태풍"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // 영향권 밖 — 추적 중지 패널(지도·상세 대신 발효 태풍별 거리만 안내, 쌍태풍이면 각각 한 줄).
 function TrackingStopped({
   entries,
@@ -896,6 +950,10 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  // 사용자가 고른 태풍(seq). null = 자동(경보 대상을 따라간다).
+  // 고른 태풍이 소멸해 목록에서 빠지면 아래 findIndex 가 못 찾아 자동으로 되돌아간다 —
+  // 없어진 태풍을 계속 가리키면 화면이 빈 채로 굳는다.
+  const [viewSeq, setViewSeq] = useState<string | null>(null);
   // 현장 시·도의 발효 태풍특보 — 공식 특보는 작업중지의 법적 근거라, 자체 판정(구역·반경)과
   // 어긋날 때 그 사실이 화면에 드러나야 한다. 같은 화면에 특보 데이터가 있는데 이 패널만
   // 안 보고 있었다. WeatherStrip 과 같은 라우트를 쓰고(자체 fetch 패턴 유지) 태풍 관련만 남긴다.
@@ -966,13 +1024,15 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
     () => liveList.map((t) => computeGate(t.track, t.currentIndex, lat, lon)),
     [liveList, lat, lon],
   );
+  // 경보 주체 = worst 태풍. **사용자의 보기 선택과 무관하게 유지한다** — 다른 태풍을 보는 동안
+  // 경보가 사라지면 보기 편의 기능이 곧 경보 누락이 된다.
   const worstIdx = gates.length > 0 ? pickWorst(gates) : -1;
   const active = worstIdx >= 0 ? (liveList[worstIdx] ?? null) : null;
   const gate = worstIdx >= 0 ? (gates[worstIdx] ?? EMPTY_GATE) : EMPTY_GATE;
-  const cur = useMemo<TrackPoint | null>(() => {
-    if (!active || active.track.length === 0) return null;
-    return active.track[Math.min(active.currentIndex, active.track.length - 1)] ?? null;
-  }, [active]);
+  // 보기 대상 = 고른 태풍(없으면 경보 대상). 지도·관측값·참고 진로·푸터가 이걸 따른다.
+  const viewIdx = viewSeq ? liveList.findIndex((t) => t.seq === viewSeq) : -1;
+  const viewed = viewIdx >= 0 ? (liveList[viewIdx] ?? null) : null;
+  const viewGate = viewIdx >= 0 ? (gates[viewIdx] ?? EMPTY_GATE) : gate;
 
   if (error) {
     return (
@@ -993,24 +1053,35 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   const realThreat = liveList.length > 0;
   const idleNote =
     data.source === "mock" ? "활용신청 승인 후 실시간 가동" : "발효 중인 태풍 없음";
-  // 표시 대상 = worst 태풍(발효 중) ?? 대표(샘플/없음 안내용). 헤더·지도·상세·모달이 같은 소스를 쓴다.
-  const disp = active ?? typhoons[0] ?? data;
+  // 표시 대상 = 고른 태풍 ?? worst 태풍(발효 중) ?? 대표(샘플/없음 안내용).
+  // 헤더·지도·관측값·상세·모달이 같은 소스를 쓴다. **배너만 이걸 따르지 않는다**(경보 = worst).
+  const disp = viewed ?? active ?? typhoons[0] ?? data;
+  const cur = disp.track[Math.min(disp.currentIndex, disp.track.length - 1)] ?? null;
   // 표시 대상과 **같은 태풍**의 JMA 참고 진로. 태풍 번호로 짝지어 다른 태풍의 진로가 겹쳐 그려지지 않게 한다.
   // 샘플(mock) 태풍에는 붙이지 않는다 — 가상 진로 옆의 실제 예보는 둘 다 진짜처럼 읽힌다.
   const jmaRef =
     disp.source === "live" && disp.seq
       ? (data.jma?.find((j) => j.seq === Number(disp.seq)) ?? null)
       : null;
-  // 배너/푸터 존 라벨 — 예보 선행 점등이면 "예보" 접미로 실측과 근거를 구분.
-  const zoneLabelText = ZONE_LABEL[gate.zone] + (gate.forecast ? " 예보" : "");
-  const leadText = gate.forecast ? fmtLead(gate.leadHours) : "";
+  // 존 라벨 — 예보 선행 점등이면 "예보" 접미로 실측과 근거를 구분.
+  // 배너(경보)는 worst 태풍, 푸터는 **보고 있는 태풍** 기준이다. 선택이 없으면 둘은 같은 값이다.
+  // 갈린 채로 한쪽 값을 돌려 쓰면 "찬홈 등급 옆에 페이러우 거리"처럼 근거가 뒤섞인다.
+  const alertZoneText = ZONE_LABEL[gate.zone] + (gate.forecast ? " 예보" : "");
+  const alertLeadText = gate.forecast ? fmtLead(gate.leadHours) : "";
+  const viewZoneText = ZONE_LABEL[viewGate.zone] + (viewGate.forecast ? " 예보" : "");
+  const viewLeadText = viewGate.forecast ? fmtLead(viewGate.leadHours) : "";
   // 반경 축이 등급을 이겼을 때만 구역 근거를 병기(등급 자체가 구역명이면 중복이다).
-  const kmaNote = KMA_ZONE_LABEL[gate.zone] ? "" : KMA_ZONE_LABEL[gate.kmaZone];
+  const kmaNote = KMA_ZONE_LABEL[viewGate.zone] ? "" : KMA_ZONE_LABEL[viewGate.kmaZone];
   // 발효 태풍특보 라벨 — 예: "태풍경보 발효"(복수면 "태풍주의보·태풍경보 발효").
   const warnLabel = typhoonWarnings.length > 0 ? `${typhoonWarnings.join("·")} 발효` : "";
   // 배너 표시 여부 — 감시(watch)·영향권 밖에서는 배너가 없어 푸터가 등급을 말해야 한다.
   // 단 **특보가 발효 중이면 감시 단계여도 배너를 띄운다**(공식 특보가 화면에서 사라지면 안 된다).
   const bannerShown = warnLabel !== "" || (gate.zone !== "none" && gate.zone !== "watch");
+  // 보고 있는 태풍 ≠ 경보 태풍. 이때는 푸터 등급을 "배너와 중복"이라고 생략하면 안 된다 —
+  // 배너는 남의 태풍 등급이라, 생략하면 보고 있는 태풍의 등급이 화면 어디에도 없게 된다.
+  const viewDiffers = viewed !== null && viewed !== active;
+  // 선택 칩 — 발효 태풍이 둘 이상이고 지도를 그리는 동안에만. 추적 중지 화면은 이미 전부 나열한다.
+  const chipsShown = realThreat && gate.tracking && liveList.length > 1;
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -1030,29 +1101,28 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           : "현재 발효 중인 태풍 없음 · 레이더 대기"
         : `기상청 태풍정보${disp.tmFc ? ` · ${fmtTmFc(disp.tmFc)} 발표` : ""}`}
       {realThreat &&
-        (gate.tracking ? (
+        (viewGate.tracking ? (
           <>
             {/* 지도 위에서는 등급·리드타임을 상단 배너가 이미 말한다 — 여기 또 쓰면 같은 화면에 두 번이다.
-                단 배너가 없는 감시(watch) 단계에서는 여기가 유일한 표시이므로 남긴다. */}
-            {!(onMap && bannerShown) && (
+                단 ① 배너가 없는 감시(watch) 단계 ② 배너가 **다른 태풍**의 경보일 때는 여기가 유일한 표시이므로 남긴다. */}
+            {!(onMap && bannerShown && !viewDiffers) && (
               <>
                 {" · "}
                 <span
-                  className={`font-semibold ${onMap ? ZONE_TEXT_ON_MAP[gate.zone] : ZONE_TEXT[gate.zone]}`}
+                  className={`font-semibold ${onMap ? ZONE_TEXT_ON_MAP[viewGate.zone] : ZONE_TEXT[viewGate.zone]}`}
                 >
-                  {zoneLabelText}
+                  {viewZoneText}
                 </span>
-                {leadText ? ` · ${leadText}` : ""}
+                {viewLeadText ? ` · ${viewLeadText}` : ""}
               </>
             )}
             {/* 특보는 배너에도 있지만, 배너가 잘리거나 못 볼 수 있어 출처 줄에도 남긴다. */}
             {warnLabel ? ` · 기상청 ${warnLabel}` : ""}
             {kmaNote ? ` · 기상청 ${kmaNote}` : ""}
-            {gate.galeKm > 0 ? ` · 강풍반경 ${Math.round(gate.galeKm).toLocaleString()}km` : ""}
-            {gate.siteKm !== null
-              ? ` · 현장 ${Math.round(gate.siteKm).toLocaleString()}km`
-              : ` · 한국 ${Math.round(gate.koreaKm ?? 0).toLocaleString()}km`}
-            {liveList.length > 1 ? ` · 발효 태풍 ${liveList.length}개 감시` : ""}
+            {viewGate.galeKm > 0 ? ` · 강풍반경 ${Math.round(viewGate.galeKm).toLocaleString()}km` : ""}
+            {viewGate.siteKm !== null
+              ? ` · 현장 ${Math.round(viewGate.siteKm).toLocaleString()}km`
+              : ` · 한국 ${Math.round(viewGate.koreaKm ?? 0).toLocaleString()}km`}
           </>
         ) : (
           <>
@@ -1077,7 +1147,8 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
               {disp.seq && disp.seq !== "샘플" ? `제${disp.seq}호 ` : ""}
               {disp.name}
               {disp.nameEn ? ` (${disp.nameEn})` : ""}
-              {liveList.length > 1 ? ` 외 ${liveList.length - 1}` : ""}
+              {/* 칩이 뜨면 나머지 태풍을 칩이 이름째 보여주므로 "외 N" 은 중복이다. */}
+              {liveList.length > 1 && !chipsShown ? ` 외 ${liveList.length - 1}` : ""}
             </span>
           )}
         </div>
@@ -1085,6 +1156,15 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           {badge}
         </span>
       </div>
+
+      {chipsShown && (
+        <TyphoonChips
+          list={liveList}
+          gates={gates}
+          selectedSeq={disp.seq}
+          onSelect={(seq) => setViewSeq((prev) => (prev === seq ? null : seq))}
+        />
+      )}
 
       {!realThreat ? (
         <>
@@ -1111,13 +1191,14 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
               siteLon={lon}
               padTop={bannerBoxH > 0 ? bannerBoxH + 6 : 0}
             />
-            {/* 상단 = 등급·리드타임·조치. 태풍명은 헤더에 있으므로 쌍태풍일 때만 귀속을 위해 넣는다. */}
+            {/* 상단 = 등급·리드타임·조치. **경보는 worst 태풍 기준이라 지도에 뜬 태풍과 다를 수 있다** —
+                쌍태풍이면 태풍명을 붙여 어느 태풍의 경보인지 밝힌다(헤더는 보고 있는 태풍을 가리킨다). */}
             <div ref={bannerBoxRef} className="pointer-events-none absolute inset-x-0 top-0 z-10 p-1.5">
               <ZoneBanner
                 zone={gate.zone}
-                title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`}
+                title={`${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${alertZoneText}`}
                 advisory={(gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone]}
-                lead={leadText}
+                lead={alertLeadText}
                 onMap
                 warning={warnLabel}
               />
@@ -1170,9 +1251,9 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
             siteLon={lon}
             banner={{
               zone: gate.zone,
-              title: `${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${zoneLabelText}`,
+              title: `${liveList.length > 1 && active ? `${typhoonLabel(active)} · ` : ""}${alertZoneText}`,
               advisory: (gate.forecast ? ZONE_FORECAST_ADVISORY : ZONE_ADVISORY)[gate.zone],
-              lead: leadText,
+              lead: alertLeadText,
               warning: warnLabel,
             }}
           />,
