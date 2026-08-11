@@ -364,7 +364,7 @@ API        기상청 13호 돌핀(17점) / 14호 구지라(6) / 15호 찬홈(11)
 
 ---
 
-## Phase 14 — 태풍 선택 칩 (2026-08-11 · 결정 T-20)
+## Phase 14 — 태풍 선택 드롭다운 (2026-08-11 · 결정 T-20)
 
 - [x] 상태 분리 — 경보 주체(`active`·`gate`=worst) vs 보기 대상(`viewed`·`viewGate`=선택)
 - [x] `disp = viewed ?? active ?? …` — 지도·관측값·JMA 참고 진로·확대 팝업이 함께 따라온다
@@ -372,19 +372,20 @@ API        기상청 13호 돌핀(17점) / 14호 구지라(6) / 15호 찬홈(11)
 - [x] 푸터는 `viewGate`·`view*` 로 통일 — 발표시각과 등급·거리가 다른 태풍이 되지 않게
 - [x] 등급 생략 예외(`viewDiffers`) — 배너가 남의 태풍 경보일 때는 푸터 등급을 남긴다
 - [x] 지도/추적중지 분기는 `gate.tracking` 유지 — 소멸 태풍을 골라도 진로는 볼 수 있어야 한다
-- [x] `TyphoonChips` — 등급 점(`ZONE_DOT`, ZONE_TEXT 와 같은 계열) + 선택 토글(다시 누르면 자동)
+- [x] `TyphoonSelect` — 헤더 태풍명 자리의 **네이티브 select**(커스텀 팝업은 overflow-hidden·scale 안에서 잘린다) + 등급 점(`ZONE_DOT`)
 - [x] 소멸로 목록에서 빠진 선택은 자동 해제(`findIndex` 미발견 → 경보 대상)
-- [x] `발효 태풍 N개 감시` 삭제(T-19 이월 해소) · 헤더 `외 N` 은 칩 없을 때만
+- [x] `발효 태풍 N개 감시` 삭제(T-19 이월 해소) · 헤더 `외 N` 삭제(드롭다운 조건과 같아 도달 불가)
 - [x] 가드 테스트 5건 — 렌더 인프라가 없어 소스 불변식으로 고정
-- [x] **가드 음성 대조** — 배너를 `viewGate` 로 / `disp` 에서 `viewed` 제거 → 각각 실패 확인 후 원복
+- [x] **가드 음성 대조 3건** — 배너를 `viewGate` 로 / `disp` 에서 `viewed` 제거 /
+      드롭다운 목록을 worst 하나로 → 각각 실패 확인 후 원복
 
 ### 검증
 
 ```
-가드      typhoon-alert-view-split 5 pass / 0 fail (음성 대조 2건 통과)
+가드      typhoon-alert-view-split 5 pass / 0 fail (음성 대조 3건 통과)
 전체      tsc 0 · lint 0 errors
           dashboard-web 585 pass (580 + 5) · schemas 38 · analyzers 50 = 673 pass / 0 fail
-레이아웃  사이드 패널(296px·scale 0.87) · 캐러셀(min-h 277px) 둘 다 지도 min-h 120px 여유
+레이아웃  드롭다운이 헤더 안이라 별도 행을 먹지 않는다(칩 행 대비 지도 높이 ~25px 회복)
 ```
 
 ### 이월

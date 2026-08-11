@@ -808,7 +808,7 @@ function typhoonLabel(t: TyphoonRec): string {
   return t.seq && t.seq !== "샘플" ? `제${t.seq}호 ${name}` : name;
 }
 
-// 칩 앞 점 — 태풍별 **자체 등급**을 한눈에 준다. 색 계열은 ZONE_TEXT 와 같게 맞춘다
+// 등급 점 — 고른 태풍의 **자체 등급**을 색으로 남긴다. 색 계열은 ZONE_TEXT 와 같게 맞춘다
 // (같은 등급에 화면마다 다른 색을 쓰면 색이 등급을 뜻하지 않게 된다).
 const ZONE_DOT: Record<Zone, string> = {
   storm: "bg-red-500",
@@ -820,45 +820,45 @@ const ZONE_DOT: Record<Zone, string> = {
   none: "bg-zinc-300 dark:bg-white/25",
 };
 
-// 태풍 선택 칩 — 발효 태풍이 둘 이상일 때만 뜬다. 고른 태풍의 진로·관측값·참고 진로가 함께 바뀐다.
+// 태풍 선택 드롭다운 — 발효 태풍이 둘 이상일 때 헤더의 태풍명 자리를 대신한다(사용자 요청).
+// 고른 태풍의 진로·관측값·참고 진로·확대 팝업이 함께 바뀐다.
+//
+// ⚠️ 커스텀 팝업이 아니라 **네이티브 select** 다. 이 패널은 사이드 패널에서 `overflow-hidden` +
+//    `transform: scale()` 안에 들어가고 캐러셀도 넘침을 자른다 — 절대배치 메뉴는 거기서 잘린다.
+//    네이티브 select 의 목록은 브라우저가 문서 밖에 그리므로 잘리지 않고, 바깥 클릭 닫기·ESC·
+//    키보드 이동·모바일 네이티브 피커까지 공짜로 따라온다.
+//
 // ⚠️ 경보 배너는 이 선택을 따르지 않는다 — 다른 태풍을 보는 동안 경보가 사라지면
 //    보기 편의 기능이 곧 경보 누락이 된다. 경보 주체는 늘 worst 태풍이고 배너가 이름을 밝힌다.
-function TyphoonChips({
+function TyphoonSelect({
   list,
-  gates,
+  zone,
   selectedSeq,
   onSelect,
 }: {
   list: TyphoonRec[];
-  gates: GateResult[];
+  zone: Zone; // 고른 태풍의 등급 — 점 색
   selectedSeq?: string;
   onSelect: (seq: string) => void;
 }) {
   return (
-    <div className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto">
-      {list.map((t, i) => {
-        const zone = gates[i]?.zone ?? "none";
-        const on = t.seq !== undefined && t.seq === selectedSeq;
-        return (
-          <button
-            key={t.seq ?? i}
-            type="button"
-            onClick={() => t.seq && onSelect(t.seq)}
-            title={`${typhoonLabel(t)} — ${ZONE_LABEL[zone]}${on ? " (다시 누르면 경보 태풍으로)" : ""}`}
-            aria-pressed={on}
-            className={`flex shrink-0 items-center gap-1 rounded-pill border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
-              on
-                ? "border-ink/25 bg-ink text-white dark:border-white/25 dark:bg-white/85 dark:text-ink"
-                : "border-hairline bg-canvas text-body hover:bg-surface-strong dark:border-white/10 dark:bg-white/[0.04] dark:text-on-dark-soft dark:hover:bg-white/10"
-            }`}
-          >
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[zone]}`} />
-            {t.seq ? `${t.seq}호 ` : ""}
-            {t.name ?? "태풍"}
-          </button>
-        );
-      })}
-    </div>
+    <span className="flex min-w-0 items-center gap-1">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[zone]}`} />
+      <select
+        value={selectedSeq ?? ""}
+        onChange={(e) => e.target.value && onSelect(e.target.value)}
+        aria-label="표시할 태풍"
+        title="표시할 태풍 선택 — 경보는 선택과 무관하게 가장 위험한 태풍 기준으로 유지된다"
+        className="min-w-0 max-w-[180px] cursor-pointer truncate rounded border border-hairline bg-canvas py-0.5 pl-1.5 pr-1 text-xs text-body transition-colors hover:border-ink/25 dark:border-white/15 dark:bg-white/[0.06] dark:text-on-dark-soft dark:hover:border-white/30"
+      >
+        {list.map((t, i) => (
+          <option key={t.seq ?? i} value={t.seq ?? ""}>
+            {typhoonLabel(t)}
+            {t.nameEn ? ` (${t.nameEn})` : ""}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
 
@@ -1080,8 +1080,9 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
   // 보고 있는 태풍 ≠ 경보 태풍. 이때는 푸터 등급을 "배너와 중복"이라고 생략하면 안 된다 —
   // 배너는 남의 태풍 등급이라, 생략하면 보고 있는 태풍의 등급이 화면 어디에도 없게 된다.
   const viewDiffers = viewed !== null && viewed !== active;
-  // 선택 칩 — 발효 태풍이 둘 이상이고 지도를 그리는 동안에만. 추적 중지 화면은 이미 전부 나열한다.
-  const chipsShown = realThreat && gate.tracking && liveList.length > 1;
+  // 선택 드롭다운 — 발효 태풍이 둘 이상일 때만(하나면 고를 것이 없다).
+  // 칩과 달리 헤더 안에 들어가므로 추적 중지 화면에서도 그대로 둔다 — 별도 행을 먹지 않는다.
+  const selectShown = liveList.length > 1;
 
   const badge =
     data.source === "live" ? "기상청 실시간" : data.source === "mock" ? "샘플(대기)" : "발효 없음";
@@ -1142,29 +1143,29 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           <span className="flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-on-dark">
             <TyphoonIcon /> 태풍 진로
           </span>
-          {disp.name && (
-            <span className="truncate text-xs text-body dark:text-on-dark-soft">
-              {disp.seq && disp.seq !== "샘플" ? `제${disp.seq}호 ` : ""}
-              {disp.name}
-              {disp.nameEn ? ` (${disp.nameEn})` : ""}
-              {/* 칩이 뜨면 나머지 태풍을 칩이 이름째 보여주므로 "외 N" 은 중복이다. */}
-              {liveList.length > 1 && !chipsShown ? ` 외 ${liveList.length - 1}` : ""}
-            </span>
+          {/* 발효 태풍이 둘 이상이면 이름 자리가 곧 선택 드롭다운이다(사용자 요청).
+              하나뿐이면 고를 것이 없으므로 종전대로 이름만 적는다. */}
+          {selectShown ? (
+            <TyphoonSelect
+              list={liveList}
+              zone={viewGate.zone}
+              selectedSeq={disp.seq}
+              onSelect={setViewSeq}
+            />
+          ) : (
+            disp.name && (
+              <span className="truncate text-xs text-body dark:text-on-dark-soft">
+                {disp.seq && disp.seq !== "샘플" ? `제${disp.seq}호 ` : ""}
+                {disp.name}
+                {disp.nameEn ? ` (${disp.nameEn})` : ""}
+              </span>
+            )
           )}
         </div>
         <span className={`shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-semibold ${badgeClass}`}>
           {badge}
         </span>
       </div>
-
-      {chipsShown && (
-        <TyphoonChips
-          list={liveList}
-          gates={gates}
-          selectedSeq={disp.seq}
-          onSelect={(seq) => setViewSeq((prev) => (prev === seq ? null : seq))}
-        />
-      )}
 
       {!realThreat ? (
         <>

@@ -82,11 +82,14 @@ test("지도·관측값·참고 진로는 보기 선택을 따른다(선택이 �
   assert.match(source, /track=\{disp\.track\}/, "지도가 disp.track 을 그리지 않는다");
 });
 
-test("칩의 선택 표시는 실제로 지도에 뜬 태풍(disp)을 가리킨다", () => {
-  // liveList 인덱스나 viewSeq 를 직접 넘기면 '자동(선택 없음)' 상태에서 아무 칩도 켜지지 않는다.
+test("선택 드롭다운이 가리키는 태풍은 실제로 지도에 뜬 태풍(disp)이다", () => {
+  // viewSeq 를 그대로 넘기면 '자동(선택 없음)' 상태에서 value 가 "" 이 되어
+  // 드롭다운이 빈 칸으로 보이고, 지도에는 worst 태풍이 떠 있어 둘이 어긋난다.
   assert.match(
     source,
     /selectedSeq=\{disp\.seq\}/,
-    "칩 하이라이트가 disp.seq 가 아니다 — 지도와 칩이 어긋난다",
+    "드롭다운 선택값이 disp.seq 가 아니다 — 지도와 드롭다운이 어긋난다",
   );
+  // 목록은 발효 태풍 전부여야 한다(worst 하나만 넘기면 고를 것이 없다).
+  assert.match(source, /list=\{liveList\}/, "드롭다운 목록이 liveList 가 아니다");
 });
