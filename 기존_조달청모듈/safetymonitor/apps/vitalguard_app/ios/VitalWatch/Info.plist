@@ -29,8 +29,8 @@
 		<string>workout-processing</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
-	<string>작업 중 심박수를 수집합니다</string>
+	<string>작업 중 심박수를 측정해 안전 모니터링에 사용하기 위해 건강 데이터 읽기 권한이 필요합니다.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>작업 세션을 기록합니다</string>
+	<string>작업 모니터링 세션(워크아웃) 기록을 위해 건강 데이터 쓰기 권한이 필요합니다.</string>
 </dict>
 </plist>

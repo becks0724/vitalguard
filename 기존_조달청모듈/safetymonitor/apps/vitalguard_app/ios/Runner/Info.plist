@@ -76,6 +76,8 @@
 		<string>com.vitalguard.upload</string>
 	</array>
 	<key>NSHealthShareUsageDescription</key>
-	<string>워치에서 전달된 생체 데이터를 처리합니다</string>
+	<string>워치에서 전달된 생체 데이터를 처리해 안전 모니터링에 사용하기 위해 건강 데이터 읽기 권한이 필요합니다.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>워치의 작업 모니터링 세션(워크아웃) 기록을 위해 건강 데이터 쓰기 권한이 필요합니다.</string>
 </dict>
 </plist>
