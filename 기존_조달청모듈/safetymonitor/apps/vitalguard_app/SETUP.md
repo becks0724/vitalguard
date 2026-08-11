@@ -147,4 +147,14 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - **Flutter debug 빌드는 홈 화면 단독 실행 시 즉시 종료가 정상** — Phase 0~2 동안 폰 앱은 항상 Xcode Run 으로 실행.
 - 서명 프로파일이 7일짜리(만료 08-18)로 발급됨 — 멤버십 상태 확인 전까지 **매주 Xcode 재실행 필요** 가능성.
 - [ ] Phase 1 — VitalPipeline (로컬 큐 + 서버 업로드)
+  - [x] 1a 코드 — VitalPipeline.swift(파일 영속 큐·배치 500·JWT·BGTask·재시도) + PoCConfig.plist 주입(gitignore, 예시=PoCConfig.example.plist) — 08-11
+  - [x] 1a 서버 계약 검증 — dev 서버(데모·프로덕션 무접촉·PoC 전용 시크릿) + cloudflared 터널 + 발급 JWT 로 `POST /api/mock/vital` **accepted:1**(`watchos_data_vitalguard` 분류) — 08-11
+  - [ ] 1a 게이트 — 아이폰 앱 스와이프 종료 → 워치 계속 전송 → dev 서버 로그 도착
+  - [ ] 1b — 프로덕션 전환(EMP-6861 실로그인) → 관제웹 실시간 확인 → 직후 APP_JWT_SECRET 회전(구 앱 토큰 일괄 폐기)
+
+### 관제웹 수신 계약 요점 (실측 08-11)
+
+- `POST /api/mock/vital` — 앱 JWT(Bearer) 필수, 토큰 workerId=본문 workerId 일치 강제. 배열 최대 500건·2MB·IP당 분당 120요청.
+- 필수 필드 `workerId`·`ts`(**전송 시각** ISO). 심박 `heartRate`(20~250)·측정 시각 `heartRateMeasuredAt`.
+- **`source` 는 서버 화이트리스트** — 워치 생체는 `VitAlGuard-WatchVitals`(→`watchos_data_vitalguard`). 미등록 source 는 201 이어도 dropped(조용한 유실 주의).
 - [ ] Phase 2 — VitalBridge + vital_stream.dart (Flutter 표시)

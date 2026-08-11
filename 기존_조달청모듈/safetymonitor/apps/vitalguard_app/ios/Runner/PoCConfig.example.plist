@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- 이 파일을 PoCConfig.plist 로 복사해 실값을 채운다. PoCConfig.plist 는 gitignore(토큰 커밋 금지). -->
+<dict>
+	<key>BaseURL</key>
+	<string>https://YOUR-TUNNEL.trycloudflare.com</string>
+	<key>AppJWT</key>
+	<string>PASTE-APP-JWT-HERE</string>
+	<key>WorkerId</key>
+	<string>EMP-6861</string>
+</dict>
+</plist>

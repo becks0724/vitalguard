@@ -32,6 +32,8 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         let latest = samples.last?["bpm"] as? Double
         let latestText = latest.map { String(format: "%.0f", $0) } ?? "--"
         log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm")
+        // Phase 1 — 수신 배치를 업로드 파이프라인에 넘긴다(설정 없으면 파이프라인이 무시).
+        VitalPipeline.shared.ingest(payload: payload)
     }
 
     // MARK: - WCSessionDelegate (iOS)

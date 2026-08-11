@@ -11,7 +11,9 @@
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		3DA0EFC7264FD6F15D4771EF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EA3DFF7C17BBD3277C2224 /* Foundation.framework */; };
+		3F9511CADAC6F67ED55FFDF2 /* PoCConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = E5222D3F029C4480289E1731 /* PoCConfig.plist */; };
 		4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */; };
+		61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		92292AEEEA9B7318A10FD9F7 /* VitalWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 734B76231052F47AAE6C8840 /* VitalWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -71,6 +73,8 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
+		3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.example.plist; sourceTree = "<group>"; };
+		5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalPipeline.swift; sourceTree = "<group>"; };
 		58EA3DFF7C17BBD3277C2224 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhoneReceiver.swift; sourceTree = "<group>"; };
 		734B76231052F47AAE6C8840 /* VitalWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitalWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -88,6 +92,7 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalWatchApp.swift; sourceTree = "<group>"; };
 		B667521F6AD57D6DF6F2E389 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E5222D3F029C4480289E1731 /* PoCConfig.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.plist; sourceTree = "<group>"; };
 		FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStreamer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -164,6 +169,9 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */,
+				5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */,
+				E5222D3F029C4480289E1731 /* PoCConfig.plist */,
+				3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -312,6 +320,7 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				3F9511CADAC6F67ED55FFDF2 /* PoCConfig.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -385,6 +394,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */,
+				61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
