@@ -11,6 +11,7 @@
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		3DA0EFC7264FD6F15D4771EF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EA3DFF7C17BBD3277C2224 /* Foundation.framework */; };
+		4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		92292AEEEA9B7318A10FD9F7 /* VitalWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 734B76231052F47AAE6C8840 /* VitalWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -18,6 +19,7 @@
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		A53C8AA38CFA07CD5F33D473 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84264EFCC0DAD014BF186C92 /* ContentView.swift */; };
+		A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */; };
 		E3685334E9EA58503BA4B9B3 /* VitalWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -70,6 +72,7 @@
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		58EA3DFF7C17BBD3277C2224 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhoneReceiver.swift; sourceTree = "<group>"; };
 		734B76231052F47AAE6C8840 /* VitalWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitalWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -85,6 +88,7 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalWatchApp.swift; sourceTree = "<group>"; };
 		B667521F6AD57D6DF6F2E389 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStreamer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -159,6 +163,7 @@
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
+				6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -170,6 +175,7 @@
 				84264EFCC0DAD014BF186C92 /* ContentView.swift */,
 				B667521F6AD57D6DF6F2E389 /* Info.plist */,
 				213CBD10071A259211BA20E9 /* VitalWatch.entitlements */,
+				FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */,
 			);
 			name = VitalWatch;
 			path = VitalWatch;
@@ -367,6 +373,7 @@
 			files = (
 				E3685334E9EA58503BA4B9B3 /* VitalWatchApp.swift in Sources */,
 				A53C8AA38CFA07CD5F33D473 /* ContentView.swift in Sources */,
+				A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -377,6 +384,7 @@
 				74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

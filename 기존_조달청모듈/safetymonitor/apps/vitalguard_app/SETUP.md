@@ -136,5 +136,7 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - [x] 권한·capability(HealthKit·WKBackgroundModes·BGTask) — 08-11
 - [x] 무서명 빌드 검증(Runner.app 안에 Watch/VitalWatch.app 임베드 확인) — 08-11
 - [ ] Phase 0 — WatchStreamer + PhoneReceiver (워치 HR → 폰 콘솔)
+  - [x] 코드 작성·타깃 등록·무서명 빌드 통과 — 08-11
+  - [ ] 실기기 게이트 — iOS 콘솔 5초 간격 HR 로그 + 워치 백그라운드 지속
 - [ ] Phase 1 — VitalPipeline (로컬 큐 + 서버 업로드)
 - [ ] Phase 2 — VitalBridge + vital_stream.dart (Flutter 표시)
