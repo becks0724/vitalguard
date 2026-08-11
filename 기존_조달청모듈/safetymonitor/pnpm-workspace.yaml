@@ -20,6 +20,10 @@ overrides:
   brace-expansion@1: 1.1.18
   brace-expansion@2: 2.1.4
   brace-expansion@5: 5.0.9
+# js-yaml CPU DoS(CVE-2026-59870)·nanoid 무한루프 2건(2026-08-10 유입 advisory) — 전부 같은 major 안의 패치.
+# eslint 경유(js-yaml)·postcss 경유(nanoid) 전이 의존이라 overrides 로 올린다(직접 의존인 pdfjs-dist 는 package.json 에서 상향).
+  js-yaml@4: 4.3.1
+  nanoid@3: 3.3.17
 # CI `pnpm audit --audit-level=high` 게이트의 명시 예외 — 감사(2026-07-29) 시점의 기존 high 8건.
 # 대부분 exceljs 하위 의존(4주차 overrides 정리 대상). 새 취약점 유입만 게이트가 잡는다.
 # 항목을 지우려면 해당 GHSA 가 실제 해소(의존 업데이트/overrides)됐는지 pnpm audit 로 확인할 것.
