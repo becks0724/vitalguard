@@ -246,9 +246,16 @@ final class VitalTransmitter {
         mlRescuedByML: Bool,
         mlShouldAlert: Bool?
     ) {
-        // 관제웹은 후보행도 낙상 이벤트로 표시할 수 있다. Watch 경보로 확정되지 않은
-        // 후보(ML 기각·미착용·미해결 사건)는 전송하지 않아 유령 낙상 행을 막는다.
-        guard isFall else { return }
+        // 관제웹은 후보행도 낙상 이벤트로 표시한다 — 단 판정 기준이 fallDecision=="fall" 이므로
+        // decision 이 rejected_* 인 행은 표시되지 않는다(DemoDashboard.tsx 의 후보 필터).
+        //
+        // 그래서 경보로 확정되지 않은 후보 중 **ML·규칙이 기각한 것만** 전송한다.
+        // 기각 사례가 서버에 남아야 오탐 라벨을 모을 수 있고, 그게 임계·ML 재학습의 재료다.
+        // (종전에는 전부 버려서 fall_labels 에 오탐 자료가 쌓이지 않았다.)
+        //
+        // 반면 decision 이 "fall" 인데 경보가 아닌 경우 = 미해결 사건이 이미 있어 억제된 양성이다.
+        // 이건 종전대로 버린다 — 보내면 위 필터를 통과해 같은 사고가 낙상으로 두 번 표시된다.
+        guard isFall || decision != "fall" else { return }
         guard requireMeasuredWatchData() else { return }
         var payload = basePayload()
         payload["fallCandidate"] = true
@@ -268,8 +275,8 @@ final class VitalTransmitter {
         payload["mlVetoedByML"] = mlVetoedByML
         payload["mlRejectedByImpactML"] = mlRejectedByImpactML
         payload["mlRescuedByML"] = mlRescuedByML
-        // A missing outcome is interpreted by the phone as a pending prompt.
-        // Mark rejected candidates explicitly so they cannot become an alert.
+        // 폰은 outcome 이 없으면 "확인 프롬프트 대기"로 읽는다(VitAlGuardPreviewApp.swift 의 isPendingCandidate).
+        // 기각 후보는 not_alerted 로 명시해 프롬프트도 경보도 뜨지 않게 한다.
         payload["fallPromptOutcome"] = isFall ? "pending" : "not_alerted"
         if let heartRate = validatedHeartRate(heartRate) { payload["heartRate"] = Int(heartRate.rounded()) }
         if let spo2 = validatedSpO2(spo2) { payload["spo2"] = Int(spo2.rounded()) }

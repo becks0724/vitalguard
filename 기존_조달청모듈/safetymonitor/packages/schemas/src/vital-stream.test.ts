@@ -167,6 +167,41 @@ test("fall 확인 프롬프트 결과 — outcome/responseSec 는 통과", () =>
   );
 });
 
+// 워치가 ML·규칙 기각 후보를 보내기 시작했다(VitalTransmitter.sendFallCandidate).
+// 오탐 학습 자료를 서버에 모으는 유일한 경로라, 이 페이로드가 스키마에서 막히면
+// 400 으로 조용히 사라진다. enum 두 개가 계약의 전부이므로 여기서 고정한다.
+test("ML 기각 낙상 후보 페이로드는 수신 계약을 통과한다", () => {
+  for (const decision of ["rejected_no_corroboration", "rejected_timeout"]) {
+    const r = VitalSampleSchema.safeParse({
+      workerId: "EMP-1",
+      ts: TS,
+      fallCandidate: true,
+      fallCandidateId: "123e4567-e89b-12d3-a456-426614174000",
+      fallDecision: decision,
+      fallUpdatePhase: "candidate",
+      fallPromptOutcome: "not_alerted",
+      accelMagnitudeG: 6.2,
+      motionStillSec: 1.5,
+      freefallPreceded: false,
+      peakRotationRadS: 3.1,
+    });
+    assert.equal(r.success, true, `${decision} 후보가 거부됨`);
+    // 경보는 fallDetected 로만 발화한다(store.ts). 기각 후보는 이 필드를 갖지 않아야 한다.
+    assert.equal(r.success && r.data.fallDetected, undefined);
+  }
+});
+
+test("기각 후보의 fallPromptOutcome='not_alerted' 는 pending 과 구분된다", () => {
+  const ok = VitalSampleSchema.safeParse({
+    workerId: "EMP-1",
+    ts: TS,
+    fallCandidate: true,
+    fallPromptOutcome: "not_alerted",
+  });
+  assert.equal(ok.success, true);
+  assert.equal(ok.success && ok.data.fallPromptOutcome, "not_alerted");
+});
+
 test("peakRotationRadS 경계 — 0~50 안은 통과, 초과는 거부", () => {
   assert.equal(
     VitalSampleSchema.safeParse({ workerId: "EMP-1", ts: TS, peakRotationRadS: 50 }).success,
