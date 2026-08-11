@@ -30,6 +30,25 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
       ],
+      // L-51 — 캡처 단계 scroll 은 문서 안 **모든** 스크롤을 받는다. 이 앱에는 매 프레임
+      // scrollLeft 를 쓰는 마퀴 티커(useMarqueeScroll)가 상시 돌아서, 오버레이를 무조건
+      // 닫으면 열린 지 16ms 만에 사라진다(2026-08-11 태풍 드롭다운 실사고).
+      // 정당한 사용은 disable 주석 + "무엇을 조건으로 좁혔는지" 근거를 함께 남긴다.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name='addEventListener'][arguments.0.value='scroll'][arguments.2.value=true]",
+          message:
+            "캡처 단계 scroll 리스너는 화면 전체의 스크롤을 받는다(마퀴 티커 포함) — 오버레이를 무조건 닫으면 즉시 사라진다. 대상이 앵커를 품는지(scrollTarget.contains(anchor)) 확인하는 조건을 넣고, 근거 주석과 함께 eslint-disable 하라. lessons L-51",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='addEventListener'][arguments.0.value='scroll'] Property[key.name='capture'][value.value=true]",
+          message:
+            "캡처 단계 scroll 리스너({capture:true})는 화면 전체의 스크롤을 받는다 — lessons L-51 참조.",
+        },
+      ],
     },
   },
 );

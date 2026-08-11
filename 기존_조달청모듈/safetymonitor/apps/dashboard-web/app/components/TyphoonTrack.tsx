@@ -883,6 +883,9 @@ function TyphoonSelect({
     window.addEventListener("mousedown", onDown);
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", close);
+    // 캡처가 필요하되(scroll 은 버블링하지 않는다) 위 onScroll 이 `t.contains(btn)` 으로
+    // **버튼을 품은 스크롤러**로 범위를 좁혔다 — 마퀴 티커의 스크롤은 여기 걸리지 않는다.
+    // eslint-disable-next-line no-restricted-syntax -- L-51: onScroll 이 앵커 포함 여부로 좁혔다
     window.addEventListener("scroll", onScroll, true);
     return () => {
       window.removeEventListener("mousedown", onDown);
