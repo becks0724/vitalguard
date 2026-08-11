@@ -808,7 +808,7 @@ function typhoonLabel(t: TyphoonRec): string {
   return t.seq && t.seq !== "샘플" ? `제${t.seq}호 ${name}` : name;
 }
 
-// 등급 점 — 고른 태풍의 **자체 등급**을 색으로 남긴다. 색 계열은 ZONE_TEXT 와 같게 맞춘다
+// 등급 점 — 태풍별 **자체 등급**을 색으로 준다. 색 계열은 ZONE_TEXT 와 같게 맞춘다
 // (같은 등급에 화면마다 다른 색을 쓰면 색이 등급을 뜻하지 않게 된다).
 const ZONE_DOT: Record<Zone, string> = {
   storm: "bg-red-500",
@@ -820,45 +820,156 @@ const ZONE_DOT: Record<Zone, string> = {
   none: "bg-zinc-300 dark:bg-white/25",
 };
 
-// 태풍 선택 드롭다운 — 발효 태풍이 둘 이상일 때 헤더의 태풍명 자리를 대신한다(사용자 요청).
+// 태풍 선택 드롭다운 — 발효 태풍이 둘 이상일 때 헤더의 태풍명 자리를 대신한다.
 // 고른 태풍의 진로·관측값·참고 진로·확대 팝업이 함께 바뀐다.
 //
-// ⚠️ 커스텀 팝업이 아니라 **네이티브 select** 다. 이 패널은 사이드 패널에서 `overflow-hidden` +
-//    `transform: scale()` 안에 들어가고 캐러셀도 넘침을 자른다 — 절대배치 메뉴는 거기서 잘린다.
-//    네이티브 select 의 목록은 브라우저가 문서 밖에 그리므로 잘리지 않고, 바깥 클릭 닫기·ESC·
-//    키보드 이동·모바일 네이티브 피커까지 공짜로 따라온다.
+// ⚠️ 네이티브 select 도, 패널 안 절대배치 메뉴도 쓸 수 없다 — 둘 다 실패했다.
+//    ① 패널 안 절대배치는 사이드 패널의 `overflow-hidden` + `transform: scale()` 에 **잘린다**
+//       (z-index 로 못 고친다 — 클리핑은 조상의 overflow 가 정한다).
+//    ② 네이티브 select 는 목록이 열리는 **방향을 OS 가 정해** 공간에 따라 아래로도 열린다.
+//    → 목록을 `createPortal` 로 body 에 띄우고(잘림 없음) 위치를 직접 계산해 **항상 위로** 연다.
+//
+// 좌표는 열 때마다 `getBoundingClientRect` 로 다시 잰다 — 이 패널은 `scale()` 변환 안에 있어
+// 레이아웃 좌표와 화면 좌표가 다르다. getBoundingClientRect 는 변환이 반영된 화면 좌표라
+// `position: fixed` 에 그대로 쓸 수 있다. 다만 한 번 잰 값이므로 스크롤·리사이즈에는 닫는다.
 //
 // ⚠️ 경보 배너는 이 선택을 따르지 않는다 — 다른 태풍을 보는 동안 경보가 사라지면
 //    보기 편의 기능이 곧 경보 누락이 된다. 경보 주체는 늘 worst 태풍이고 배너가 이름을 밝힌다.
+const MENU_MIN_W = 200;
+
 function TyphoonSelect({
   list,
-  zone,
+  gates,
   selectedSeq,
   onSelect,
 }: {
   list: TyphoonRec[];
-  zone: Zone; // 고른 태풍의 등급 — 점 색
+  gates: GateResult[];
   selectedSeq?: string;
   onSelect: (seq: string) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; bottom: number; width: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedIdx = list.findIndex((t) => t.seq !== undefined && t.seq === selectedSeq);
+  const selected = selectedIdx >= 0 ? list[selectedIdx] : list[0];
+  const selectedZone = gates[selectedIdx >= 0 ? selectedIdx : 0]?.zone ?? "none";
+
+  useEffect(() => {
+    if (!open) return;
+    // 바깥 클릭은 닫는다. 단 메뉴·버튼 안쪽은 제외 — 여기서 닫으면 항목이 언마운트돼 onClick 이 죽는다.
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    // 화면이 움직이면 잰 좌표가 어긋난다 — 따라다니게 만들지 말고 닫는다(단순함 우선).
+    const close = () => setOpen(false);
+    // ⚠️ 캡처 단계라 **메뉴 자체의 스크롤**도 여기 걸린다 — 그대로 두면 목록을 스크롤하는 순간 닫힌다.
+    const onScroll = (e: Event) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    setPos({
+      left: r.left,
+      bottom: window.innerHeight - r.top + 6, // 버튼 **위로** 6px 띄운다
+      width: Math.max(r.width, MENU_MIN_W),
+    });
+    setOpen(true);
+  };
+
   return (
-    <span className="flex min-w-0 items-center gap-1">
-      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[zone]}`} />
-      <select
-        value={selectedSeq ?? ""}
-        onChange={(e) => e.target.value && onSelect(e.target.value)}
-        aria-label="표시할 태풍"
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={toggle}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         title="표시할 태풍 선택 — 경보는 선택과 무관하게 가장 위험한 태풍 기준으로 유지된다"
-        className="min-w-0 max-w-[180px] cursor-pointer truncate rounded border border-hairline bg-canvas py-0.5 pl-1.5 pr-1 text-xs text-body transition-colors hover:border-ink/25 dark:border-white/15 dark:bg-white/[0.06] dark:text-on-dark-soft dark:hover:border-white/30"
+        className="flex min-w-0 items-center gap-1 rounded border border-hairline bg-canvas py-0.5 pl-1.5 pr-1 text-xs text-body transition-colors hover:border-ink/25 dark:border-white/15 dark:bg-white/[0.06] dark:text-on-dark-soft dark:hover:border-white/30"
       >
-        {list.map((t, i) => (
-          <option key={t.seq ?? i} value={t.seq ?? ""}>
-            {typhoonLabel(t)}
-            {t.nameEn ? ` (${t.nameEn})` : ""}
-          </option>
-        ))}
-      </select>
-    </span>
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[selectedZone]}`} />
+        <span className="min-w-0 max-w-[150px] truncate">
+          {selected ? typhoonLabel(selected) : "태풍"}
+          {selected?.nameEn ? ` (${selected.nameEn})` : ""}
+        </span>
+        {/* 화살표는 늘 위 — 목록이 항상 위로 열린다는 것을 방향으로 알린다. */}
+        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0">
+          <path d="M6 15l6-6 6 6" />
+        </svg>
+      </button>
+
+      {open &&
+        pos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="listbox"
+            aria-label="표시할 태풍"
+            style={{ position: "fixed", left: pos.left, bottom: pos.bottom, width: pos.width }}
+            className="z-[70] max-h-[40vh] overflow-y-auto rounded-lg border border-hairline bg-canvas p-1 shadow-xl dark:border-white/15 dark:bg-surface-dark-elevated"
+          >
+            {list.map((t, i) => {
+              const zone = gates[i]?.zone ?? "none";
+              const on = t.seq !== undefined && t.seq === selectedSeq;
+              return (
+                <button
+                  key={t.seq ?? i}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  onClick={() => {
+                    if (t.seq) onSelect(t.seq);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                    on
+                      ? "bg-ink font-semibold text-white dark:bg-white/85 dark:text-ink"
+                      : "text-body hover:bg-surface-strong dark:text-on-dark-soft dark:hover:bg-white/10"
+                  }`}
+                >
+                  <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${ZONE_DOT[zone]}`} />
+                  <span className="min-w-0 flex-1 truncate">
+                    {typhoonLabel(t)}
+                    {t.nameEn ? ` (${t.nameEn})` : ""}
+                  </span>
+                  {/* 등급은 여기서만 병기한다 — 접힌 버튼에 넣으면 좁은 헤더가 넘친다. */}
+                  <span className={`shrink-0 text-[10px] ${on ? "opacity-80" : "opacity-70"}`}>
+                    {ZONE_LABEL[zone]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 
@@ -1143,12 +1254,12 @@ export function TyphoonTrack({ lat, lon }: { lat?: number; lon?: number }) {
           <span className="flex items-center gap-1.5 text-sm font-semibold text-ink dark:text-on-dark">
             <TyphoonIcon /> 태풍 진로
           </span>
-          {/* 발효 태풍이 둘 이상이면 이름 자리가 곧 선택 드롭다운이다(사용자 요청).
+          {/* 발효 태풍이 둘 이상이면 이름 자리가 곧 선택 드롭다운이다(항상 위로 열린다).
               하나뿐이면 고를 것이 없으므로 종전대로 이름만 적는다. */}
           {selectShown ? (
             <TyphoonSelect
               list={liveList}
-              zone={viewGate.zone}
+              gates={gates}
               selectedSeq={disp.seq}
               onSelect={setViewSeq}
             />
