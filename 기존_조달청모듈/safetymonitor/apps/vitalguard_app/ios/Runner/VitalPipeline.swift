@@ -18,6 +18,7 @@ final class VitalPipeline {
         let baseURL: URL
         let token: String
         let workerId: String
+        let workerName: String?
     }
 
     // 기본 업로드 대상 = 프로덕션 관제 서버. 개발 터널 시험은 PoCConfig.plist 의 DevBaseURLOverride 로만.
@@ -85,7 +86,12 @@ final class VitalPipeline {
         guard let token = AuthStore.token, !token.isEmpty,
               let workerId = AuthStore.workerId, !workerId.isEmpty
         else { return nil }
-        return Config(baseURL: Self.resolvedBaseURL(), token: token, workerId: workerId)
+        return Config(
+            baseURL: Self.resolvedBaseURL(),
+            token: token,
+            workerId: workerId,
+            workerName: AuthStore.userName
+        )
     }
 
     // MARK: - 수신 (워치 hrBatch → VitalSample 변환)
@@ -149,6 +155,10 @@ final class VitalPipeline {
             v["workerId"] = cfg.workerId
             // 서버 source 화이트리스트 값 — 워치 측정 생체(watchos_data_vitalguard 로 분류됨).
             v["source"] = "VitAlGuard-WatchVitals"
+            // 관제웹 작업자 행 표기용 이름 — 로그인 계정 이름을 그대로 싣는다(관제웹 프로필 입력이 있으면 그쪽이 오버라이드).
+            if let name = cfg.workerName, !name.isEmpty {
+                v["workerName"] = name
+            }
             return v
         }
         var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/app/vital"))
