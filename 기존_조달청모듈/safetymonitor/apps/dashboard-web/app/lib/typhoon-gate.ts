@@ -1,6 +1,7 @@
 // 태풍 영향권 판정 순수 도메인 — 기상청 3구역(감시·경계·비상) + 강풍(rad15)/폭풍(rad25)반경 하이브리드.
 // 두 축은 기준점이 다르다(구역=태풍 중심의 절대 위경도 / 반경=현장 기준 상대 거리) → 대체가 아니라 worst-of 합성.
 // 현재 위치와 예보점을 모두 두 축으로 판정하고, 예보가 이기면 선행 경보 + 도달 리드타임을 낸다.
+// 단 **실측이 태풍 강도에 미달하면 그 지점의 구역 축은 빼고 반경 축만 남긴다**(T-19, 아래 참조).
 // 서버(typhoon.ts 정렬)·클라이언트(TyphoonTrack 게이팅) 양쪽에서 import 하는 무의존 순수 모듈(테스트 가능).
 
 export type GateTrackPoint = {
@@ -12,6 +13,7 @@ export type GateTrackPoint = {
   // 70% 확률반경(km) — 예보점에만 존재. ⚠️ 강풍반경이 아니라 '중심이 있을 수 있는 범위'다.
   // 강풍반경 자리에 넣으면 판정 근거가 통째로 바뀐다(풍속 도달 범위 ≠ 위치 오차).
   radPr?: string;
+  maxWindMs?: number; // typWs — 최대풍속(m/s). 태풍 강도 미달(열대저압부) 판정에 쓴다.
 };
 
 // 판정 등급 6단계 — 앞 3개는 구역 축(태풍 중심 위치), 뒤 3개는 반경 축(현장 영향권).
@@ -68,6 +70,16 @@ export function classifyKmaZone(lat: number, lon: number): Zone {
   if (lat >= EMERGENCY_ZONE.minLat && lon <= EMERGENCY_ZONE.maxLon) return "emergency";
   if (lat >= ALERT_ZONE.minLat && lon <= ALERT_ZONE.maxLon) return "alert";
   return "watch";
+}
+
+// 기상청 태풍 정의 — 중심 부근 최대풍속 17m/s 이상. 미만은 열대저압부(TD)이지 태풍이 아니다.
+export const TYPHOON_MIN_WIND_MS = 17;
+
+// 태풍 강도 미달(열대저압부) 여부 — 구역 축을 적용할 자격이 있는지 가른다.
+// ⚠️ 최대풍속이 **없으면 false**(강등하지 않는다). 강등은 경보를 끄는 방향이라 사실로 확인된 값에만 적용한다.
+// 값 미제공을 약화로 읽으면 상류 파싱이 한 번 실패했을 때 멀쩡한 태풍의 경보가 조용히 꺼진다.
+export function isBelowTyphoonStrength(p: GateTrackPoint): boolean {
+  return typeof p.maxWindMs === "number" && p.maxWindMs < TYPHOON_MIN_WIND_MS;
 }
 
 // 통보문 시각(typTm, KST yyyyMMddHHmm) → epoch ms. 형식 이상이면 null.
@@ -168,7 +180,14 @@ export function computeGate(
       : null;
 
   // ── 현재 시점 = 두 축의 worst-of ──
-  const kmaZone = classifyKmaZone(cur.lat, cur.lon);
+  // ★ 실측이 태풍 강도 미달(열대저압부)이면 구역 축을 합성에서 뺀다(T-19).
+  //   기상청 구역 정의에는 서쪽·남쪽 한계가 없어(T-08 기록된 한계) 중국 내륙에서 소멸 중인 저압부도
+  //   위경도만으로 비상구역이 된다 — 2026-08-11 제13호 돌핀(현장 1,208km·15m/s·예보점 없음)이
+  //   최고 등급 대표를 차지해 실제로 접근 중이던 제15호 찬홈을 화면에서 밀어냈다.
+  //   반경 축은 건드리지 않는다 — 약화해도 현장에 가까우면 현장 실거리로 여전히 점등한다(안전 손실 없음).
+  //   예보점에는 적용하지 않는다 — 실측 약화는 사실이지만 예보 약화는 추정이고,
+  //   추정을 근거로 경보를 끄면 예보가 빗나갔을 때 그대로 경보 공백이 된다.
+  const kmaZone = isBelowTyphoonStrength(cur) ? "none" : classifyKmaZone(cur.lat, cur.lon);
   const radiusZone = radiusZoneAt(cur.lat, cur.lon, galeKm, stormKm, lat, lon);
   const curZone = worst(kmaZone, radiusZone);
 

@@ -327,3 +327,37 @@ API        기상청 13호 돌핀(17점) / 14호 구지라(6) / 15호 찬홈(11)
   풍속 평균 시간 차이(1분 vs 10분) 처리가 전제다.
 - **ECMWF 앙상블** — BUFR 디코딩에 Python 사이드카가 필요(T-17 이월과 동일).
 - **투명도·인라인 포함 여부** — 실사용 중 붐빈다고 느껴지면 opacity 조정 또는 인라인 추가 재검토.
+
+---
+
+## Phase 13 — 소멸 태풍 구역 축 강등 (2026-08-11 · 결정 T-19)
+
+- [x] 증상 확인 — 라이브 실응답으로 돌핀(소멸)이 찬홈(접근)을 밀어내는 것 재현
+- [x] 원인 특정 — `classifyKmaZone` 반평면 정의(서쪽 한계 없음)에 T-08 로 기록된 한계
+- [x] `GateTrackPoint` 에 `maxWindMs` 추가(`TrackPoint` 에 이미 있어 파서·서버 변경 0)
+- [x] `TYPHOON_MIN_WIND_MS = 17` · `isBelowTyphoonStrength()` — 기상청 태풍 정의 기준
+- [x] `computeGate` 현재 지점만 구역 축 제외(예보점·반경 축은 무변경)
+- [x] `classifyKmaZone` 무변경 — 규정 구현은 그대로 두고 정책을 위에 얹는다
+- [x] 회귀 5건 — 17m/s 경계 · 미제공 미강등 · 돌핀 재현 · 예보 미강등 · 다중 태풍 대표 전환
+- [x] 실데이터 대조 — 라이브 `/api/typhoon` 응답을 수정 모듈에 통과(L-07)
+
+### 검증
+
+```
+단위테스트   typhoon-gate 18 pass / 0 fail (기존 13 + 신규 5)
+전체         tsc 0 · lint 0 errors
+             dashboard-web 580 pass (575 + 5) · schemas 38 · analyzers 50 = 668 pass / 0 fail
+
+라이브 실데이터 대조 (08-11 · 광주 현장 기준)
+  제13호 돌핀    zone=none   tracking=false  kmaZone=none   현장 1,208km   ← 강등됨
+  제15호 찬홈    zone=alert  tracking=true   forecast 36h   현장 1,510km   ← 대표 전환
+  제16호 페이러우 zone=watch  tracking=true                  현장 3,007km
+  화면 대표 = 제15호 찬홈 · 경계구역 진입 예보(36시간 후) · 배너 표시
+```
+
+### 이월
+
+- **태풍 선택 UI** — 돌핀·찬홈·페이러우를 골라 보기. `liveList`·`gates` 가 이미 다중이라
+  `active` 선택만 바꾸면 지도·상세·JMA 참고선이 따라온다. **경보 주체는 worst 유지**(보기와 분리).
+- **확대 팝업 다중 진로** — 인라인(296px)은 경도 폭 49도라 1px당 16km 로 뭉개져 팝업 전용이어야 한다.
+- **`발효 태풍 N개 감시` 카운트** — 강등 태풍 포함 여부, 선택 UI 와 함께 정리.

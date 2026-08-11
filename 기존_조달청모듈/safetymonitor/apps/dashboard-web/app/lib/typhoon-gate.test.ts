@@ -7,9 +7,11 @@ import {
   computeGate,
   EMPTY_GATE,
   haversineKm,
+  isBelowTyphoonStrength,
   parseRadiusKm,
   pickWorst,
   tmToMs,
+  TYPHOON_MIN_WIND_MS,
   type GateResult,
 } from "./typhoon-gate";
 
@@ -132,6 +134,103 @@ test("classifyKmaZone — 구역 경계값(포함 경계·중첩 포함 구조)"
   assert.equal(classifyKmaZone(24.9, 135), "watch");
   assert.equal(classifyKmaZone(30, 140), "watch");
   assert.equal(classifyKmaZone(13.3, 134.1), "watch"); // 하이선 발생 초기
+});
+
+test("isBelowTyphoonStrength — 기상청 태풍 기준 17m/s 경계, 값 없으면 강등하지 않는다", () => {
+  assert.equal(TYPHOON_MIN_WIND_MS, 17);
+  assert.equal(isBelowTyphoonStrength({ tm: "t", lat: 30, lon: 128, maxWindMs: 15 }), true);
+  assert.equal(isBelowTyphoonStrength({ tm: "t", lat: 30, lon: 128, maxWindMs: 16.9 }), true);
+  // 경계값 17 은 태풍이다(미달 아님).
+  assert.equal(isBelowTyphoonStrength({ tm: "t", lat: 30, lon: 128, maxWindMs: 17 }), false);
+  assert.equal(isBelowTyphoonStrength({ tm: "t", lat: 30, lon: 128, maxWindMs: 43 }), false);
+  // 미제공은 '약화'가 아니라 '모름' — 강등하면 상류 파싱 실패가 곧 경보 소등이 된다.
+  assert.equal(isBelowTyphoonStrength({ tm: "t", lat: 30, lon: 128 }), false);
+});
+
+test("★ computeGate — 실측이 태풍 강도 미달이면 구역 축을 뺀다 (제13호 돌핀 오탐 회귀 방지)", () => {
+  // 2026-08-11 실데이터 — 돌핀은 중국 내륙(30.7N/115.1E)에서 15m/s 로 약화했고 예보점이 없다(기상청 예보 종료).
+  // 구역 정의에 서쪽 한계가 없어 위경도만으로는 비상구역이라, 강등 전에는 이 태풍이 최고 등급 대표를 차지했다.
+  const dolphin = { tm: "202608110900", lat: 30.7, lon: 115.1, maxWindMs: 15 };
+  const g = computeGate([dolphin], 0, SITE.lat, SITE.lon);
+  assert.equal(g.kmaZone, "none"); // 구역 축 제외
+  assert.equal(g.radiusZone, "none"); // 강풍반경 없음 + 현장 1,208km → 폴백도 밖
+  assert.equal(g.zone, "none");
+  assert.equal(g.tracking, false);
+
+  // 같은 좌표라도 태풍 강도(17m/s 이상)면 구역 축이 그대로 산출된다 — 강등은 강도로만 판단한다.
+  const alive = computeGate([{ ...dolphin, maxWindMs: 20 }], 0, SITE.lat, SITE.lon);
+  assert.equal(alive.kmaZone, "emergency");
+  assert.equal(alive.zone, "emergency");
+
+  // 최대풍속 미제공(구 데이터·파싱 실패)은 강등하지 않는다 — 기존 동작 그대로.
+  const unknown = computeGate([{ tm: "202608110900", lat: 30.7, lon: 115.1 }], 0, SITE.lat, SITE.lon);
+  assert.equal(unknown.kmaZone, "emergency");
+  assert.equal(unknown.zone, "emergency");
+});
+
+test("★ computeGate — 강등은 실측에만 적용한다(예보점은 강등하지 않는다)", () => {
+  // A안의 핵심. 실측 약화는 사실이지만 예보 약화는 추정이라, 추정으로 경보를 끄면 예보가 빗나갈 때 공백이 된다.
+  // 현재는 강도 미달로 구역 축이 빠졌지만, 예보점이 강도 미달이어도 그 구역 축은 그대로 산출돼 선행 점등한다.
+  const g = computeGate(
+    [
+      { tm: "202608110900", lat: 30.7, lon: 115.1, maxWindMs: 15 }, // 현재 = 강등 → none
+      { tm: "202608120900", lat: 30.0, lon: 128.0, rad15: "0", maxWindMs: 15 }, // 예보 = 강도 미달이지만 비상구역
+    ],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+  assert.equal(g.kmaZone, "none");
+  assert.equal(g.zone, "emergency"); // 예보 구역 축이 살아 선행 점등
+  assert.equal(g.forecast, true);
+  assert.equal(g.leadHours, 24);
+});
+
+test("computeGate — 강도 미달이어도 현장에 가까우면 반경 축이 점등한다(안전 손실 없음)", () => {
+  // 강등은 구역 축만 뺀다. 열대저압부라도 강풍반경 안에 현장이 들어오면 현장 실거리로 그대로 점등한다.
+  const g = computeGate(
+    [{ tm: "1", lat: 35.2, lon: 126.9, rad15: "300", maxWindMs: 15 }],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+  assert.equal(g.kmaZone, "none"); // 구역 축은 빠졌지만
+  assert.equal(g.radiusZone, "gale"); // 반경 축이 살아 있다
+  assert.equal(g.zone, "gale");
+  assert.equal(g.tracking, true);
+});
+
+test("★ pickWorst — 소멸 태풍이 대표를 차지하지 않는다 (2026-08-11 돌핀·찬홈·페이러우 실데이터)", () => {
+  // 강등 전에는 돌핀(emergency)이 찬홈(alert)을 이겨 화면을 독점했다. 강등 후 대표는 실제 접근 중인 찬홈이어야 한다.
+  const dolphin = computeGate(
+    [{ tm: "202608110900", lat: 30.7, lon: 115.1, maxWindMs: 15 }],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+  const chanhom = computeGate(
+    [
+      { tm: "202608110900", lat: 36.8, lon: 143.6, rad15: "340", maxWindMs: 24 },
+      { tm: "202608122100", lat: 35.7, lon: 132.5, rad15: "0", radPr: "110", maxWindMs: 15 },
+    ],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+  const peilou = computeGate(
+    [{ tm: "202608110900", lat: 24.3, lon: 155.6, rad15: "260", maxWindMs: 24 }],
+    0,
+    SITE.lat,
+    SITE.lon,
+  );
+
+  assert.equal(dolphin.zone, "none");
+  assert.equal(chanhom.zone, "alert"); // 36시간 뒤 경계구역 진입 예보
+  assert.equal(chanhom.forecast, true);
+  assert.equal(chanhom.leadHours, 36);
+  assert.equal(peilou.zone, "watch"); // 북동진 이탈 — 감시만
+
+  assert.equal(pickWorst([dolphin, chanhom, peilou]), 1);
 });
 
 test("computeGate — 하이브리드 worst-of: 소형 태풍이 비상구역이면 반경 밖이어도 emergency", () => {
