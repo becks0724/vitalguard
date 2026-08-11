@@ -135,8 +135,16 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - [x] VitalWatch 워치 타깃 추가 + Embed Watch Content — 08-11
 - [x] 권한·capability(HealthKit·WKBackgroundModes·BGTask) — 08-11
 - [x] 무서명 빌드 검증(Runner.app 안에 Watch/VitalWatch.app 임베드 확인) — 08-11
-- [ ] Phase 0 — WatchStreamer + PhoneReceiver (워치 HR → 폰 콘솔)
+- [x] **Phase 0 — 실기기 게이트 통과 (08-11)** — BECKS iPhone(iOS 27 b5) + Apple Watch Ultra(watchOS 26.5)
   - [x] 코드 작성·타깃 등록·무서명 빌드 통과 — 08-11
-  - [ ] 실기기 게이트 — iOS 콘솔 5초 간격 HR 로그 + 워치 백그라운드 지속
+  - [x] 실기기 게이트 — `[HR] seq` 연속(유실 0)·5초 간격·sendMessage 채널·워치 백그라운드+손목 내림에서 지속 수신
+
+### Phase 0 실기기 트러블슈팅 기록 (재발 대비)
+
+- **HealthKit 사용 설명 문구가 짧으면 requestAuthorization 에서 크래시** — `NSInvalidArgumentException: The string "…" is an invalid value for NSHealthUpdateUsageDescription`. 서술형 긴 문구로 교체 + **컴패니언(Runner)에도 Share/Update 두 키**를 넣어 해소.
+- **Watch 앱 "설치" 무반응/무결성 에러 = 워치 개발자 모드 꺼짐**이 1순위 원인(설정 → 개인정보 보호 및 보안 → 개발자 모드 → 재부팅까지).
+- **iOS 베타 아이폰이 중계하는 Xcode↔워치 터널은 깨질 수 있다** — iOS 27 b4 에서 "device rejected the connection request", b5 업데이트 후 해소. 검증 기기는 안정판 권장.
+- **Flutter debug 빌드는 홈 화면 단독 실행 시 즉시 종료가 정상** — Phase 0~2 동안 폰 앱은 항상 Xcode Run 으로 실행.
+- 서명 프로파일이 7일짜리(만료 08-18)로 발급됨 — 멤버십 상태 확인 전까지 **매주 Xcode 재실행 필요** 가능성.
 - [ ] Phase 1 — VitalPipeline (로컬 큐 + 서버 업로드)
 - [ ] Phase 2 — VitalBridge + vital_stream.dart (Flutter 표시)
