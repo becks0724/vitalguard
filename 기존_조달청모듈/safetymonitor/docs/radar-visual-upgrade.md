@@ -150,3 +150,23 @@ OpenWeatherMap 강수 타일(무료 티어·색상 제한) · Windy(유료).
 **2026-08-05 로컬에서 정상 동작했다** — `/api/radar` 200(프레임 수신) · 타일 이미지도 전부 로드됐다.
 그날의 `ETIMEDOUT` 은 항구적 제약이 아니라 **일시적 네트워크 상태**였다. 로컬에서 안 뜬다고 코드를 의심하기 전에
 `curl https://api.rainviewer.com/public/weather-maps.json` 로 그 시점의 연결부터 확인할 것.
+
+## 2026-08-12 — 레이더가 이틀간 502 였다 (NAT 도입 부수 회귀 · 해소)
+
+가독성 이야기가 아니라 **아예 안 뜬 사고**의 기록이다. 이 문서 위쪽의 "로컬 dev 에서는 레이더가 아예 안 뜬다(코드 문제 아님)" 와 **증상은 닮았지만 원인이 다르다** — 그때는 이 맥에서 나가는 TCP 가 막힌 것이었고, 이번엔 **프로덕션이** 못 나갔다.
+
+**증상.** 관제 화면 `실시간 레이더` 가 `레이더 — 프레임 없음`. `/api/radar` 가 502(`fetch failed`)를 내는데 **실패까지 0.26~0.5초로 빠르다** — 라우트의 6초 `AbortSignal.timeout` 에 한참 못 미치므로 타임아웃이 아니다. 8-10 오후부터 200/502 가 섞이다 8-12 아침 6/6 전부 502.
+
+**원인.** Node `fetch`(undici)의 Happy Eyeballs 는 **주소 하나당 250ms 안에 TCP 연결이 끝나지 않으면 그 시도를 버린다**(`autoSelectFamilyAttemptTimeout`). **8-10 Cloud NAT 도입**(고정 아웃바운드 IP · 교훈 L-49·L-50)으로 경로가 길어지며 RainViewer(독일 Hetzner)까지 connect 가 **253~266ms** 가 됐고, 매번 완료 **6~16ms 전에** 잘렸다. 다음 후보인 IPv6(`2a01:4f8:…`)는 IPv4 전용 VPC 라 경로가 없어 즉시 실패한다. RainViewer 쪽 문제도, 코드 문제도 아니다.
+
+**★ curl 로 재면 정상으로 보인다.** VPC 프로브 VM 에서 **NAT IP 로 `curl` 이 A레코드 3개 전부 200**(`157.90.66.200`·`157.90.67.199`·`176.9.90.248`)이었다. 같은 VM 에서 `node:22-alpine` 으로 재현해야 드러난다 — `fetch` 5/5 ETIMEDOUT @254~255ms. **도구를 잘못 고르면 "네트워크는 정상"으로 결론난다.** connect 10회 실측 `0.2536~0.2663s`.
+
+**조치.** `instrumentation.ts` 기동 훅에서 `setDefaultAutoSelectFamilyAttemptTimeout(3000)` 전역 1회(커밋 `3a1931a` · 리비전 `00247-8p4`). 가드 = `lib/2026-08-12-connect-attempt-timeout.guard.test.ts`.
+
+**⚠ 로컬에서 재현되지 않는다.** 기본값이 런타임마다 달라 프로덕션 `node:22` 는 250ms, 로컬 `node:26` 은 이미 500ms 다. 이 문서 위쪽 "로컬에서 안 뜸" 항목과 헷갈리지 말 것 — **이번 건은 로컬이 오히려 멀쩡한 쪽**이다.
+
+**레이더에 국한된 이야기가 아니다.** 같은 경계에 **open-meteo 가 237~246ms** 로 붙어 있다(지금은 위 전역 설정이 덮는다). 이그레스 경로(VPC·NAT·프록시·리전)를 바꾸는 변경을 할 때는 외부 의존 호스트마다 `curl -4 -o /dev/null -w '%{time_connect}\n' https://<host>/` 를 10회 재서 250ms 대비 여유를 기록한다. 2026-08-12 기준 = JMA 24ms · 기상청 42ms(안전) / open-meteo 237~246ms(경계) / RainViewer 253~266ms(당시 고장).
+
+**타일은 무죄다.** 이 패널에서 **프레임 목록만 서버가 가져오고 타일은 브라우저가 직접 받는다**. 그래서 서버 이그레스가 죽어도 타일 요청은 멀쩡하고, 화면만 보면 정상으로 오판한다(8-10 배포 기록이 실제로 그렇게 적혔다). 판정은 `/api/radar` 응답의 `ok`·`frames` 길이로 한다.
+
+경위·교훈 전문 = `harness/4-guardrails/lessons.md` **L-52** · 결정 = `harness/context-notes.md`(2026-08-12) · 배포 기록 = `harness/5-observability/run-log.md`.
