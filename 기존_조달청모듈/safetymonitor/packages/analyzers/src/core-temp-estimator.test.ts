@@ -2,7 +2,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { estimateCoreTemp, CORE_TEMP_MIN_MINUTES, type HrPoint } from "./core-temp-estimator.js";
+import { estimateCoreTemp, estimateCoreTempSeries, CORE_TEMP_MIN_MINUTES, type HrPoint } from "./core-temp-estimator.js";
 
 const T0 = Date.parse("2026-08-12T00:00:00.000Z");
 
@@ -60,4 +60,29 @@ test("결정성 — 같은 입력이면 항상 같은 출력(무상태 재계산
   const a = estimateCoreTemp(series(90, 110))!;
   const b = estimateCoreTemp(series(90, 110))!;
   assert.deepEqual(a, b);
+});
+
+test("궤적 — 워밍업(30분) 전에는 점이 없고, 이후 분당 1점씩 이어진다", () => {
+  const s = estimateCoreTempSeries(series(60, 83));
+  assert.equal(s.length, 60 - 30 + 1, `점 수: ${s.length}`);
+  assert.ok(Math.abs(s[s.length - 1].tempC - 37.1) < 0.05);
+});
+
+test("궤적 — 60분 초과 공백은 세션을 끊고 재워밍업(끊긴 선), 60분 이내 공백은 이어진다", () => {
+  // 60분 수집 → 90분 공백(>60) → 40분 수집: 두 번째 세션은 30분 워밍업 후 11점만.
+  const twoSessions = [...series(60, 83), ...series(40, 83, 150)];
+  const s2 = estimateCoreTempSeries(twoSessions);
+  assert.equal(s2.length, 31 + 11, `세션 분리 실패: ${s2.length}`);
+  // 30분 공백(≤60)은 같은 세션 — 끊기지 않고 전 구간 점 유지.
+  const oneSession = [...series(60, 83), ...series(40, 83, 90)];
+  const s1 = estimateCoreTempSeries(oneSession);
+  assert.equal(s1.length, 31 + 40, `동일 세션 유지 실패: ${s1.length}`);
+});
+
+test("궤적 마지막 점 == estimateCoreTemp — 카드와 차트 숫자가 어긋나지 않는다", () => {
+  const pts = series(120, 110);
+  const s = estimateCoreTempSeries(pts);
+  const est = estimateCoreTemp(pts);
+  assert.ok(est);
+  assert.equal(est.tempC, s[s.length - 1].tempC);
 });

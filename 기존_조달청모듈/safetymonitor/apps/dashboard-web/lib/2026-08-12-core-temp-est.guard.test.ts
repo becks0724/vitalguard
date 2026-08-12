@@ -28,3 +28,21 @@ test("서버 추정 — analyzers 순수 함수 사용 + 예약/테스트 워커
   assert.match(fn, /estimateCoreTemp\(/, "analyzers 의 문헌 계수 구현을 쓰지 않음");
   assert.match(fn.slice(0, 2000), /isReservedTestWorker/, "예약 워커가 추정 대상에 들어감");
 });
+
+test("추세 차트 — 심박·추정은 실데이터 경로(real.ts), 추정은 7일 상한을 서버가 강제", () => {
+  const histRoute = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
+  assert.match(histRoute, /buildRealHistory\(/, "실데이터 분기가 없다 — 모의 곡선이 추정 추세인 척 그려진다");
+  assert.match(histRoute, /CORE_TEMP_EST_MAX_DAYS/, "추정 추세 기간 상한(7일)이 서버에서 빠졌다");
+});
+
+test("추세 차트 — 모의 생성기는 coreTempEst 를 만들지 않는다(가짜 추정 곡선 방어선)", () => {
+  const data = readFileSync(join(ROOT, "app", "api", "mock", "history", "data.ts"), "utf8");
+  assert.match(data, /if \(metric === "coreTempEst"\) return 0;/);
+});
+
+test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(참고선만)", () => {
+  const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
+  const sevFn = panel.slice(panel.indexOf("function metricPointSeverity"));
+  assert.match(sevFn, /case "coreTempEst":[\s\S]{0,200}?return undefined/, "추정 점이 판정 색을 받는다");
+  assert.doesNotMatch(panel, /coreTempStatus/, "패널이 추정값에 체온 판정을 다시 붙였다");
+});

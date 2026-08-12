@@ -940,6 +940,30 @@ export async function recentDataMockupSamples(limit = 40): Promise<VitalSample[]
 }
 
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위
+// 구간 심박 버킷 평균 — 추세 차트 실데이터(심박·심부체온 추정 궤적)용. 별칭 확장은 호출부가
+// ID 배열로 넘긴다(과거 이력이 secondary ID 로 저장돼 있어 primary 하나로는 비어 보인다).
+export async function heartRateBucketAverages(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+  bucketSec: number,
+): Promise<{ bucket_start_sec: number; bpm: number }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ bucket_start_sec: number; bpm: number }>(
+    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+            avg(heart_rate) AS bpm
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND heart_rate IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000), bucketSec],
+  );
+  return rows;
+}
+
 // 최근 심박 시계열 — 심부체온 추정(심박 기반 칼만필터)의 입력. 워커 구분 없이 창 전체를 받아
 // 호출부(store)가 별칭 접기 후 워커별로 나눈다. 표시 전용 경로라 실패해도 수집·판정과 무관.
 export async function recentHeartRates(

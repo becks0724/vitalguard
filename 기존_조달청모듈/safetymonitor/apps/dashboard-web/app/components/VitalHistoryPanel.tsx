@@ -4,11 +4,10 @@
 
 import { useEffect, useState, type MouseEvent } from "react";
 
-import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
+import { THRESHOLDS } from "@safetymonitor/analyzers";
 
 import {
   spo2Status,
-  coreTempStatus,
   workHeartRateStatus,
   WORK_HR,
   type Status,
@@ -16,7 +15,7 @@ import {
 
 import { RechartsLineChart, RechartsBarChart } from "./VitalChartsRecharts";
 
-type Metric = "heartRate" | "spo2" | "skinTempC" | "fall";
+type Metric = "heartRate" | "spo2" | "coreTempEst" | "fall";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
 
@@ -40,11 +39,12 @@ type HistoryResponse = {
 const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; decimals: number }> = {
   heartRate: { name: "심박", unit: "bpm", color: "#f87171", decimals: 0 },
   spo2: { name: "산소포화도", unit: "%", color: "#22d3ee", decimals: 0 },
-  skinTempC: { name: "손목 온도", unit: "℃", color: "#34d399", decimals: 1 },
+  // 워치 실측 손목온도는 서드파티 미개방(수면 전용 API)이라 탭에서 내림 — 심박 기반 추정으로 대체.
+  coreTempEst: { name: "체온(심박 추정)", unit: "℃", color: "#34d399", decimals: 1 },
   fall: { name: "낙상", unit: "회", color: "#facc15", decimals: 0 },
 };
 
-const METRICS: Metric[] = ["heartRate", "spo2", "skinTempC", "fall"];
+const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "fall"];
 
 const RANGES: { value: Range; label: string }[] = [
   { value: 1, label: "24시간" },
@@ -83,6 +83,16 @@ export function VitalHistoryPanel({
   const [chartType, setChartType] = useState<ChartType>("line");
   const [data, setData] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // 추정 탭 전환 시 서버 상한(7일)에 맞게 범위를 접는다 — 남아 있던 30일+·커스텀이 400 을 만들지 않게.
+    if (selection.metric === "coreTempEst" && (range > 7 || customRange)) {
+      setRange(range > 7 ? 7 : range);
+      setCustomRange(null);
+      setFromInput("");
+      setToInput("");
+    }
+  }, [selection.metric, range, customRange]);
 
   useEffect(() => {
     // 실측 데이터가 없는 메트릭은 fetch 건너뛰고 placeholder 표시.
@@ -144,10 +154,11 @@ export function VitalHistoryPanel({
 
   const meta = METRIC_LABEL[selection.metric];
 
-  // 체온(손목온도)일 때만 추정 체온(손목 + 0.5℃)을 요약·호버에 병기. 다른 메트릭은 미표시.
-  const isTemp = selection.metric === "skinTempC";
-  const coreSub = (v: number) => (isTemp ? `추정 ${estimateCoreTempC(v).toFixed(1)}℃` : undefined);
-  const coreHover = isTemp ? (v: number) => `추정 ${estimateCoreTempC(v).toFixed(1)}℃` : undefined;
+  // 심부체온 추정 탭 — 값 자체가 추정이라 별도 보조표기는 없고, 기간은 24시간·1주일만 제공한다
+  // (열 스트레스는 시간 단위 현상 — 장기 추정 추세는 검증 근거가 없다. 서버도 같은 제한을 강제).
+  const isEst = selection.metric === "coreTempEst";
+  const coreSub = (_v: number) => undefined;
+  const coreHover = undefined;
 
   // 24시간(range=1) 실시간 뷰 — 마지막 버킷(현재 시각)을 라이브 값으로 덮어 실시간 반영.
   // 대시보드가 2초마다 새 liveValue 로 리렌더 → 그래프 tip 이 실시간 표와 동기화. 일/월 집계·낙상은 원본 유지.
@@ -258,7 +269,7 @@ export function VitalHistoryPanel({
             ))}
           </div>
           <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
-            {RANGES.map((r) => (
+            {RANGES.filter((r) => !isEst || r.value <= 7).map((r) => (
               <button
                 key={r.value}
                 type="button"
@@ -273,7 +284,8 @@ export function VitalHistoryPanel({
               </button>
             ))}
           </div>
-          {/* 기간 설정 — 시작일/종료일 캘린더(연·월·일) 선택 */}
+          {/* 기간 설정 — 시작일/종료일 캘린더(연·월·일) 선택. 추정 탭은 7일 상한이라 프리셋만. */}
+          {!isEst && (
           <div
             className={`flex items-center gap-1 rounded border px-2 py-0.5 text-xs [color-scheme:light] dark:[color-scheme:dark] ${
               customRange
@@ -311,6 +323,7 @@ export function VitalHistoryPanel({
               </button>
             )}
           </div>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -495,15 +508,12 @@ function metricReferenceLines(metric: Metric): ReferenceLine[] {
         { value: THRESHOLDS.spo2.dangerPct, label: `위험 ${THRESHOLDS.spo2.dangerPct}`, color: REF_DANGER },
         { value: THRESHOLDS.spo2.cautionPct, label: `주의 ${THRESHOLDS.spo2.cautionPct}`, color: REF_CAUTION },
       ];
-    case "skinTempC": {
-      const off = THRESHOLDS.coreTemp.wristToCoreOffsetC;
-      const danger = THRESHOLDS.coreTemp.dangerC - off;
-      const caution = THRESHOLDS.coreTemp.cautionC - off;
+    case "coreTempEst":
+      // 값이 심부체온 추정치라 심부 임계를 그대로 긋는다(참고선 — 판정 아님).
       return [
-        { value: danger, label: `위험 ${danger.toFixed(1)}`, color: REF_DANGER },
-        { value: caution, label: `주의 ${caution.toFixed(1)}`, color: REF_CAUTION },
+        { value: THRESHOLDS.coreTemp.dangerC, label: `위험 ${THRESHOLDS.coreTemp.dangerC.toFixed(1)}`, color: REF_DANGER },
+        { value: THRESHOLDS.coreTemp.cautionC, label: `주의 ${THRESHOLDS.coreTemp.cautionC.toFixed(1)}`, color: REF_CAUTION },
       ];
-    }
     case "fall":
       return [];
   }
@@ -516,8 +526,9 @@ function metricPointSeverity(metric: Metric): ((value: number) => Status) | unde
       return workHeartRateStatus; // 작업 중 기준(작업부하 밴드)
     case "spo2":
       return spo2Status;
-    case "skinTempC":
-      return coreTempStatus;
+    case "coreTempEst":
+      // 추정치는 판정 미주입 원칙 — 점 강조·안전율 계산 없이 참고선만 둔다.
+      return undefined;
     case "fall":
       return undefined;
   }
