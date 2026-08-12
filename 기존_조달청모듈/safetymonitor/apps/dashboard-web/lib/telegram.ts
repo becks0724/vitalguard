@@ -29,12 +29,23 @@ function formatKst(iso: string): string {
   return `${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())} ${p(k.getUTCHours())}:${p(k.getUTCMinutes())}:${p(k.getUTCSeconds())}`;
 }
 
+// 이름 마스킹 — 2자는 끝 글자, 3자 이상은 가운데를 ○ 로 가린다. 1자·공백은 마스킹 불능이라 생략.
+export function maskWorkerName(name: string): string | null {
+  const n = name.trim();
+  if (n.length < 2) return null;
+  if (n.length === 2) return `${n[0]}○`;
+  return `${n[0]}${"○".repeat(n.length - 2)}${n[n.length - 1]}`;
+}
+
 // 텔레그램 전송 본문 — 순수 함수(테스트 가능). 종류·작업자·발생시각.
-// 실명은 싣지 않는다(감사 SEC-PRIV-01) — 텔레그램은 국외 SaaS 라 실명+건강상태 조합이 민감정보
-// 국외이전이 된다. 사번만으로도 관제 식별은 충분하고, 실명은 관제웹(국내 시스템)에서 확인한다.
+// 실명 원문은 싣지 않는다(감사 SEC-PRIV-01) — 텔레그램은 국외 SaaS 라 실명+건강상태 조합이
+// 민감정보 국외이전이 된다. 2026-08-12 사용자 결정으로 **마스킹 이름 + 사번**("장○진 (EMP-6861)")
+// 절충 표기를 채택 — 식별성은 얻고 실명 원문 이전은 피한다. 실명 확인은 관제웹(국내 시스템)에서.
 export function formatAlertMessage(input: AlertNotifyInput): string {
   const label = ALERT_LABEL[input.type] ?? input.type;
-  return [`${label}`, `작업자 ${input.workerId}`, `발생 ${formatKst(input.ts)}`].join("\n");
+  const masked = input.workerName ? maskWorkerName(input.workerName) : null;
+  const who = masked ? `${masked} (${input.workerId})` : input.workerId;
+  return [`${label}`, `작업자 ${who}`, `발생 ${formatKst(input.ts)}`].join("\n");
 }
 
 // 발송 결과 — 호출부가 "보냈다/못 보냈다" 를 로그로 남길 수 있게 돌려준다.

@@ -2,7 +2,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { formatAlertMessage, notifyAlertTelegram, sendTelegramMessage } from "./telegram.js";
+import { formatAlertMessage, maskWorkerName, notifyAlertTelegram, sendTelegramMessage } from "./telegram.js";
 
 test("포맷 — 실명은 싣지 않고 사번만(국외이전 최소화, 감사 SEC-PRIV-01)", () => {
   const msg = formatAlertMessage({
@@ -78,4 +78,25 @@ test("sendTelegramMessage — 미배선이면 skipped 를 돌려준다(조용한
     if (token !== undefined) process.env.TELEGRAM_BOT_TOKEN = token;
     if (chat !== undefined) process.env.TELEGRAM_CHAT_ID = chat;
   }
+});
+
+test("마스킹 표기 — workerName 있으면 '장○진 (사번)', 없으면 사번만(기존 동작 보존)", () => {
+  const withName = formatAlertMessage({
+    type: "vital",
+    workerId: "EMP-6861",
+    workerName: "장우진",
+    ts: "2026-08-12T05:30:00Z",
+  });
+  assert.match(withName, /작업자 장○진 \(EMP-6861\)/);
+  assert.doesNotMatch(withName, /장우진/, "실명 원문이 국외 SaaS 로 나가면 SEC-PRIV-01 위반");
+
+  const noName = formatAlertMessage({ type: "vital", workerId: "EMP-6861", ts: "2026-08-12T05:30:00Z" });
+  assert.match(noName, /작업자 EMP-6861/);
+});
+
+test("maskWorkerName — 2자는 끝 글자, 4자는 가운데 2자, 1자·공백은 null", () => {
+  assert.equal(maskWorkerName("장우"), "장○");
+  assert.equal(maskWorkerName("남궁우진"), "남○○진");
+  assert.equal(maskWorkerName("장"), null);
+  assert.equal(maskWorkerName("  "), null);
 });
