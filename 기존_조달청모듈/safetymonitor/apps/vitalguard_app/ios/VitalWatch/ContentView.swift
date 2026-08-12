@@ -16,6 +16,13 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // SpO₂ 는 기회 측정이라 상시 값이 아니다 — 측정된 시각과 함께 마지막 값만 보여준다.
+            if let spo2 = streamer.latestSpO2, let at = streamer.latestSpO2At {
+                Text("SpO₂ \(Int(spo2))% · \(at.formatted(date: .omitted, time: .shortened))")
+                    .font(.footnote)
+                    .foregroundStyle(.cyan)
+            }
+
             Text(streamer.statusText)
                 .font(.footnote)
                 .foregroundStyle(streamer.isRunning ? .green : .secondary)

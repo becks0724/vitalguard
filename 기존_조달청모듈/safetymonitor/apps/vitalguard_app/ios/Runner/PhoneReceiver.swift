@@ -29,15 +29,19 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         }
         let seq = payload["seq"] as? Int ?? -1
         let samples = payload["samples"] as? [[String: Any]] ?? []
-        let latest = samples.last?["bpm"] as? Double
+        // 배치에 spo2 단독 항목이 섞일 수 있어 "마지막 항목"이 아니라 "bpm 있는 마지막 항목"을 찾는다.
+        let latestHr = samples.last(where: { $0["bpm"] is Double })
+        let latest = latestHr?["bpm"] as? Double
         let latestText = latest.map { String(format: "%.0f", $0) } ?? "--"
-        log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm")
+        let spo2Count = samples.filter { $0["spo2"] is Double }.count
+        let spo2Text = spo2Count > 0 ? " spo2=\(spo2Count)건" : ""
+        log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm\(spo2Text, privacy: .public)")
         // Phase 1 — 수신 배치를 업로드 파이프라인에 넘긴다(설정 없으면 파이프라인이 무시).
         VitalPipeline.shared.ingest(payload: payload)
         // Phase 2 — 표시용 최신값을 Flutter 스트림으로 전달(경로는 표시 전용, 서버 전송과 무관).
         if let bpm = latest {
             var event: [String: Any] = ["type": "hr", "bpm": bpm, "seq": seq, "channel": channel]
-            if let ts = samples.last?["ts"] as? Double {
+            if let ts = latestHr?["ts"] as? Double {
                 event["measuredAtMs"] = Int(ts * 1000)
             }
             VitalBridge.shared.emit(event)

@@ -33,6 +33,7 @@ import {
 } from "@safetymonitor/analyzers";
 
 import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
+import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
 import {
   evaluateHazardKmaWarnings,
@@ -240,12 +241,14 @@ const STATUS_LABEL: Record<VitalStatus, string> = {
   danger: "위험",
 };
 
-// 카드 전체에 worst-of 상태 — 신호등 인디케이터 + 상태 배지 라벨용
-function overallStatus(sample?: VitalSample): VitalStatus {
+// 카드 전체에 worst-of 상태 — 신호등 인디케이터 + 상태 배지 라벨용.
+// nowMs 를 주면 SpO₂ 는 신선한 측정(30분 이내)만 판정에 넣는다 — 기회 측정이라 낡은 저산소 값이
+// 위험을 계속 점등하면 오탐이다. 미전달(레거시 호출)은 종전 동작 유지.
+function overallStatus(sample?: VitalSample, nowMs?: number): VitalStatus {
   if (!sample) return "idle";
   const statuses: VitalStatus[] = [
     heartRateStatus(sample.heartRate, workActivity(sample)), // 작업 중이면 작업부하 밴드
-    spo2Status(sample.spo2),
+    spo2Status(nowMs === undefined ? sample.spo2 : freshSpo2(sample, nowMs)),
     coreTempStatus(sample.skinTempC),
   ];
   if (statuses.includes("danger")) return "danger";
@@ -264,11 +267,11 @@ type WorkerStatus =
   | { label: "정상"; tone: "normal" }
   | { label: "대기"; tone: "idle" };
 
-function workerStatus(sample?: VitalSample): WorkerStatus {
+function workerStatus(sample?: VitalSample, nowMs?: number): WorkerStatus {
   if (!sample) return { label: "대기", tone: "idle" };
   if (sample.fallDetected) return { label: "낙상 감지", tone: "danger" };
   if (sample.manualSos) return { label: "SOS 요청", tone: "danger" };
-  const overall = overallStatus(sample);
+  const overall = overallStatus(sample, nowMs);
   if (overall === "danger") return { label: "위험", tone: "danger" };
   if (overall === "caution") return { label: "주의", tone: "caution" };
   if (overall === "normal") return { label: "정상", tone: "normal" };
@@ -4155,12 +4158,13 @@ export function DemoDashboard() {
       if (s.manualSos === true || s.fallDetected === true) continue;
       const danger =
         heartRateStatus(s.heartRate, workActivity(s)) === "danger" ||
-        spo2Status(s.spo2) === "danger" ||
+        // SpO₂ 는 신선한 측정(30분 이내)만 — 낡은 저산소 값이 경보를 계속 발화시키는 오탐 방지.
+        spo2Status(freshSpo2(s, now)) === "danger" ||
         coreTempStatus(s.skinTempC) === "danger";
       if (danger) out.push(s);
     }
     return out;
-  }, [data.latest]);
+  }, [data.latest, now]);
 
   // 생체 위험 자동 경보 — SOS 모달 우선, 이미 떠 있으면 skip, ack 안 된 첫 위험 워커 표시.
   useEffect(() => {
@@ -4545,7 +4549,7 @@ export function DemoDashboard() {
         lon >= 123.5 &&
         lon <= 132.5
       ) {
-        const status = workerStatus(s);
+        const status = workerStatus(s, now);
         const ageMs = now - Date.parse(s.ts);
         const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
         // STALE_MS(60초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 — 지도도 마지막 상태색
@@ -4873,11 +4877,11 @@ export function DemoDashboard() {
     for (let pos = 0; pos < filledSlots.length; pos++) {
       const slot = filledSlots[pos];
       if (!slot) continue;
-      const status = overallStatus(latestMap.get(slot.workerId));
+      const status = overallStatus(latestMap.get(slot.workerId), now);
       if (status === "caution" || status === "danger") return pos;
     }
     return -1;
-  }, [filledSlots, latestMap]);
+  }, [filledSlots, latestMap, now]);
 
   // 통합 안전 신호등용 — 등록 슬롯 작업자 worst-of status(낙상·SOS 포함) + 이상 상세.
   const workerSignal = useMemo<WorkerSignal>(() => {
@@ -4897,7 +4901,7 @@ export function DemoDashboard() {
       const outside = outsideWorkers.has(slot.workerId);
       // 가공하지 않은 생체 톤을 넘긴다 — 과거 여기서만 stale 을 미리 caution 으로 강등해
       // 표 행(원 톤 전달)과 결과가 갈렸다(감사 DLT-LIB-014).
-      const tone: WorkerStatus["tone"] = effectiveTone(workerStatus(sample).tone, {
+      const tone: WorkerStatus["tone"] = effectiveTone(workerStatus(sample, now).tone, {
         stale,
         outside,
       });
@@ -4912,7 +4916,7 @@ export function DemoDashboard() {
         if (sample?.fallDetected) ms.push("낙상");
         const hr = heartRateStatus(sample?.heartRate, workActivity(sample ?? {}));
         if (hr === "caution" || hr === "danger") ms.push("심박");
-        const sp = spo2Status(sample?.spo2);
+        const sp = spo2Status(freshSpo2(sample, now));
         if (sp === "caution" || sp === "danger") ms.push("SpO₂");
         const tp = coreTempStatus(sample?.skinTempC);
         if (tp === "caution" || tp === "danger") ms.push("체온");
@@ -5562,6 +5566,7 @@ export function DemoDashboard() {
                           sample={latestMap.get(entry.workerId)}
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
+                          nowMs={now}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -5602,6 +5607,7 @@ export function DemoDashboard() {
                           sample={latestMap.get(entry.workerId)}
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
+                          nowMs={now}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -6012,6 +6018,8 @@ type WorkerTableRowProps = {
   entry: { workerId: string; slotIndex: number };
   sample?: VitalSample;
   signal: 0 | 1 | 2 | 3 | 4;
+  // 신선도 판정·SpO₂ 측정 경과 표기용 현재 시각(부모의 1초 틱과 동일 시계)
+  nowMs: number;
   stress: StressResult;
   isAnomaly: boolean;
   // 구획(근무지) 이탈 중 — 생체와 별개로 신호등을 주의로 올린다(감사 후속·위치 연동).
@@ -6043,6 +6051,7 @@ function WorkerTableRow({
   entry,
   sample,
   signal,
+  nowMs,
   stress,
   isAnomaly,
   outside,
@@ -6064,8 +6073,8 @@ function WorkerTableRow({
   dragListeners,
 }: WorkerTableRowProps) {
   const workerId = entry.workerId;
-  const overallVital = overallStatus(sample);
-  const wstatus = workerStatus(sample);
+  const overallVital = overallStatus(sample, nowMs);
+  const wstatus = workerStatus(sample, nowMs);
   // 연결끊김 — sample 존재 + 신호 60초 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 60초 기준은 워치 30초 배칭 오탐 회피용(STALE_MS 주석 참조).
   const stale = sample !== undefined && signal === 0;
@@ -6185,14 +6194,33 @@ function WorkerTableRow({
         "심박 — 클릭 시 누적 추세",
       )}
 
-      {/* 5 SpO₂ */}
+      {/* 5 SpO₂ — 기회 측정: 새 측정 때만 값이 바뀌고, 측정 경과를 병기한다(갱신 구조).
+          30분 초과는 판정 제외(freshSpo2 → idle 회색) + "오래됨" 라벨 — sticky 값의 현재값 오독 방지. */}
       {metricCell(
         "spo2",
-        <span className="font-mono text-sm tabular-nums">
-          <span className={STATUS_CLASS[spo2Status(shown.spo2)]}>{formatInt(shown.spo2)}</span>
-          <span className="ml-0.5 text-[10px] text-muted">%</span>
-        </span>,
-        "산소포화도 — 클릭 시 누적 추세",
+        (() => {
+          // 나이는 원본 sample(측정 시각 보유)로 재고, 연결끊김 게이트(shown)가 값을 지웠으면 표기도 접는다.
+          const gatedOut = typeof shown.spo2 !== "number";
+          const age = gatedOut ? null : spo2AgeMs(sample, nowMs);
+          const isFresh = !gatedOut && freshSpo2(sample, nowMs) !== undefined;
+          return (
+            <span className="leading-tight">
+              <span className="font-mono text-sm tabular-nums">
+                <span className={STATUS_CLASS[spo2Status(isFresh ? shown.spo2 : undefined)]}>
+                  {formatInt(shown.spo2)}
+                </span>
+                <span className="ml-0.5 text-[10px] text-muted">%</span>
+              </span>
+              {age !== null && (
+                <span className="block text-[9px] leading-none text-muted">
+                  {formatSpo2Age(age)}
+                  {isFresh ? "" : " · 오래됨"}
+                </span>
+              )}
+            </span>
+          );
+        })(),
+        "산소포화도 — 새 측정 때만 갱신(측정 경과 병기) · 클릭 시 누적 추세",
       )}
 
       {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}

@@ -6,16 +6,35 @@ import WatchConnectivity
 final class WatchStreamer: NSObject, ObservableObject {
     @Published var isRunning = false
     @Published var latestBPM: Double?
+    @Published var latestSpO2: Double?
+    @Published var latestSpO2At: Date?
     @Published var batchesSent = 0
     @Published var statusText = "대기"
 
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
+    private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+    private var spo2Query: HKAnchoredObjectQuery?
     private var flushTimer: Timer?
     private var pendingSamples: [[String: Any]] = []
     private var seq = 0
+
+    // SpO₂ 앵커 영속 — 앱 재실행에도 이미 보낸 측정을 다시 받지 않는다(측정 1건 = 전송 1건).
+    private static let spo2AnchorKey = "spo2.anchor"
+    private var spo2Anchor: HKQueryAnchor? {
+        get {
+            guard let data = UserDefaults.standard.data(forKey: Self.spo2AnchorKey) else { return nil }
+            return try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
+        }
+        set {
+            guard let newValue,
+                  let data = try? NSKeyedArchiver.archivedData(withRootObject: newValue, requiringSecureCoding: true)
+            else { return }
+            UserDefaults.standard.set(data, forKey: Self.spo2AnchorKey)
+        }
+    }
 
     override init() {
         super.init()
@@ -30,7 +49,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         guard !isRunning else { return }
         statusText = "권한 요청 중"
         let toShare: Set<HKSampleType> = [HKObjectType.workoutType()]
-        let toRead: Set<HKObjectType> = [hrType]
+        let toRead: Set<HKObjectType> = [hrType, spo2Type]
         healthStore.requestAuthorization(toShare: toShare, read: toRead) { [weak self] granted, error in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -73,6 +92,7 @@ final class WatchStreamer: NSObject, ObservableObject {
                     self.isRunning = true
                     self.statusText = "수집 중"
                     self.startFlushTimer()
+                    self.startSpO2Query()
                 }
             }
         } catch {
@@ -124,9 +144,48 @@ final class WatchStreamer: NSObject, ObservableObject {
         batchesSent += 1
     }
 
+    // MARK: - SpO₂ (기회 측정 — 새 측정이 기록되는 순간에만 이벤트 수신 · 폴링·복사 전송 없음)
+
+    private func startSpO2Query() {
+        // 첫 실행(앵커 없음)은 지금 이후 측정만 — 과거 며칠치가 한꺼번에 배달되는 것을 막는다.
+        let predicate: NSPredicate? = spo2Anchor == nil
+            ? HKQuery.predicateForSamples(withStart: Date(), end: nil, options: [])
+            : nil
+        let query = HKAnchoredObjectQuery(
+            type: spo2Type,
+            predicate: predicate,
+            anchor: spo2Anchor,
+            limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, newAnchor, _ in
+            self?.ingestSpO2(samples: samples, anchor: newAnchor)
+        }
+        query.updateHandler = { [weak self] _, samples, _, newAnchor, _ in
+            self?.ingestSpO2(samples: samples, anchor: newAnchor)
+        }
+        healthStore.execute(query)
+        spo2Query = query
+    }
+
+    private func ingestSpO2(samples: [HKSample]?, anchor: HKQueryAnchor?) {
+        let quantities = (samples as? [HKQuantitySample]) ?? []
+        DispatchQueue.main.async {
+            if let anchor { self.spo2Anchor = anchor }
+            for s in quantities {
+                // HealthKit .percent() 는 0~1 분율 — 서버 계약(50~100)에 맞춰 ×100.
+                let pct = (s.quantity.doubleValue(for: .percent()) * 100).rounded()
+                self.latestSpO2 = pct
+                self.latestSpO2At = s.endDate
+                // ts = 측정 시각(endDate) — 폰이 spo2MeasuredAt 으로 매핑한다(전송 시각과 분리).
+                self.pendingSamples.append(["ts": s.endDate.timeIntervalSince1970, "spo2": pct])
+            }
+        }
+    }
+
     private func teardown() {
         flushTimer?.invalidate()
         flushTimer = nil
+        if let spo2Query { healthStore.stop(spo2Query) }
+        spo2Query = nil
         pendingSamples.removeAll()
         isRunning = false
         statusText = "대기"

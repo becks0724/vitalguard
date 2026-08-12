@@ -116,13 +116,23 @@ final class VitalPipeline {
             // 서버 계약 — ts 는 전송 시각, 측정 시각은 heartRateMeasuredAt 에 따로 싣는다.
             let sentAt = self.isoMs.string(from: Date())
             for s in samples {
-                guard let bpm = s["bpm"] as? Double else { continue }
-                var v: [String: Any] = [
-                    "ts": sentAt,
-                    "heartRate": bpm,
-                ]
-                if let t = s["ts"] as? Double {
-                    v["heartRateMeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
+                let bpm = s["bpm"] as? Double
+                let spo2 = s["spo2"] as? Double
+                guard bpm != nil || spo2 != nil else { continue }
+                var v: [String: Any] = ["ts": sentAt]
+                if let bpm {
+                    v["heartRate"] = bpm
+                    if let t = s["ts"] as? Double {
+                        v["heartRateMeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
+                    }
+                }
+                // SpO₂ 는 기회 측정 — 워치가 측정 1건당 1항목만 보내고(복사 전송 없음),
+                // ts(측정 시각)를 spo2MeasuredAt 으로 실어 화면·판정이 값의 나이를 알게 한다.
+                if let spo2 {
+                    v["spo2"] = spo2
+                    if let t = s["ts"] as? Double {
+                        v["spo2MeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
+                    }
                 }
                 self.pending.append(v)
             }
