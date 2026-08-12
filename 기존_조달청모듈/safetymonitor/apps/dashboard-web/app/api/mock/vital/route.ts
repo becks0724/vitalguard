@@ -9,7 +9,7 @@ import { consumeToken } from "../../../../lib/rate-limit";
 import {
   addSample,
   countsByWorker,
-  latestByWorker,
+  latestByWorkerWithSpo2,
   recentSamples,
   totalPersisted,
   totalDataMockupPersisted,
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
   const exposePii = EXPOSE_PII;
   const aliasMap = await workerAliases();
   return NextResponse.json({
-    latest: latestByWorker(aliasMap).map((s) => redactPii(s, exposePii)),
+    latest: (await latestByWorkerWithSpo2(aliasMap)).map((s) => redactPii(s, exposePii)),
     recent: recentSamples().map((s) => redactPii(s, exposePii)),
     totalPersisted: await totalPersisted(),
     // 목업은 실측 스트림과 별도 data_mockup 섹션으로만 반환한다.

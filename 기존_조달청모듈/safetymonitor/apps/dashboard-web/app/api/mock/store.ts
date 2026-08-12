@@ -12,11 +12,14 @@ import {
   totalPersisted as dbTotalPersisted,
   totalDataMockupPersisted as dbTotalDataMockupPersisted,
   recentDataMockupSamples,
+  latestSpo2ByWorker,
   listAllWorkers,
   getWorkerProfiles,
   getWorkerAliasMap,
   recordAlert,
 } from "../../../lib/db";
+import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
+import { overlayLatestSpo2 } from "../../../lib/spo2-overlay";
 import { heartRateStatus, spo2Status, coreTempStatus } from "../../../lib/severity";
 
 type Store = {
@@ -315,6 +318,19 @@ export function recentSamples(limit = 80) {
 
 export function latestByWorker(aliasMap?: Record<string, string>) {
   return mergeLatestByWorker(mockStore.samples, aliasMap);
+}
+
+// 최신 카드 + DB SpO₂ 겹침 — spo2 단독 행은 한 인스턴스 메모리에만 남으므로(갱신 구조),
+// 표시 시점에 DB 의 마지막 spo2 를 겹쳐 어느 인스턴스가 응답해도 같은 값을 보이게 한다.
+// DB 실패 시 겹침만 생략(메모리 병합 결과 그대로 — 조용한 500 방지).
+export async function latestByWorkerWithSpo2(aliasMap: Record<string, string>) {
+  const latest = latestByWorker(aliasMap);
+  try {
+    overlayLatestSpo2(latest, await latestSpo2ByWorker(), aliasMap, SPO2_FRESH_MS, Date.now());
+  } catch (e) {
+    console.warn("[vital] SpO₂ 겹침 실패 — 메모리 병합 결과로 응답", e);
+  }
+  return latest;
 }
 
 // 활동 분류 필드 신선도 TTL — 활동 전송(60초 sub-cadence)이 끊기면 마지막 'heavy' 활동이

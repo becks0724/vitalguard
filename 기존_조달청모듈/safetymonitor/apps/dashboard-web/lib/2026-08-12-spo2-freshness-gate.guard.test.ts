@@ -38,3 +38,12 @@ test("overallStatus — nowMs 를 받아 SpO₂ 를 신선도로 거른다(행 �
   assert.match(fn, /nowMs\?: number/, "overallStatus 에 nowMs 파라미터가 없다");
   assert.match(fn, /freshSpo2\(sample, nowMs\)/, "overallStatus 가 freshSpo2 를 쓰지 않는다");
 });
+
+test("vital GET — latest 는 DB SpO₂ 겹침 경유(latestByWorkerWithSpo2) — 인스턴스 메모리 단독 금지", () => {
+  const routeSrc = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+  assert.match(
+    routeSrc,
+    /latest: \(await latestByWorkerWithSpo2\(aliasMap\)\)/,
+    "GET latest 가 메모리 병합만 쓴다 — spo2 단독 행이 다른 인스턴스 응답에서 사라진다(2026-08-12 실측)",
+  );
+});

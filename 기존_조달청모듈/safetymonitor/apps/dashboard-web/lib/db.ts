@@ -940,6 +940,23 @@ export async function recentDataMockupSamples(limit = 40): Promise<VitalSample[]
 }
 
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위
+// 워커별 DB 의 마지막 SpO₂ 행 — 표시 겹침(lib/spo2-overlay)용. spo2 는 기회 측정이라 단독 행
+// 1건으로 오고, 인스턴스 메모리 병합만으로는 다른 인스턴스 응답에서 값이 빈다(2026-08-12 실측).
+// 창(window)을 신선 한도보다 넉넉히 잡고, 신선 판정 자체는 겹침 쪽에서 측정 시각으로 한다.
+export async function latestSpo2ByWorker(
+  windowMinutes = 40,
+): Promise<{ worker_id: string; spo2: number; spo2_measured_at: string | null; ts: string }[]> {
+  const { rows } = await q<{ worker_id: string; spo2: number; spo2_measured_at: string | null; ts: string }>(
+    `SELECT DISTINCT ON (worker_id) worker_id, spo2, spo2_measured_at, ts
+       FROM vital_samples
+      WHERE spo2 IS NOT NULL
+        AND ts::timestamptz > (now() - $1::interval)
+      ORDER BY worker_id, ts DESC`,
+    [`${windowMinutes} minutes`],
+  );
+  return rows;
+}
+
 export async function listAllWorkers(): Promise<WorkerSummary[]> {
   const { rows } = await q<WorkerSummary>(`
     SELECT
