@@ -120,6 +120,8 @@ type MockVitalResponse = {
   dataMockup?: VitalSample[];
   dataMockupPersisted?: number;
   countsByWorker?: Record<string, number>;
+  // 심박 기반 심부체온 추정(서버 칼만필터·표시 전용) — workerId(주 ID) → 추정.
+  coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
   workerProfiles?: Record<string, string>;
 };
@@ -5561,6 +5563,7 @@ export function DemoDashboard() {
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
+                          coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -5602,6 +5605,7 @@ export function DemoDashboard() {
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
+                          coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -6014,6 +6018,8 @@ type WorkerTableRowProps = {
   signal: 0 | 1 | 2 | 3 | 4;
   // 신선도 판정·SpO₂ 측정 경과 표기용 현재 시각(부모의 1초 틱과 동일 시계)
   nowMs: number;
+  // 심박 기반 심부체온 추정값(℃) — 실측(skinTempC) 없을 때만 표시 폴백. 판정 미주입.
+  coreTempEstC?: number;
   stress: StressResult;
   isAnomaly: boolean;
   // 구획(근무지) 이탈 중 — 생체와 별개로 신호등을 주의로 올린다(감사 후속·위치 연동).
@@ -6046,6 +6052,7 @@ function WorkerTableRow({
   sample,
   signal,
   nowMs,
+  coreTempEstC,
   stress,
   isAnomaly,
   outside,
@@ -6221,14 +6228,29 @@ function WorkerTableRow({
       {metricCell(
         "skinTempC",
         shown.skinTempC == null ? (
-          <span className="leading-tight" title={stale ? TEMP_STALE_TITLE : TEMP_UNAVAILABLE_TITLE}>
-            <span className="font-mono text-sm tabular-nums text-muted">
-              --<span className="ml-0.5 text-[10px]">℃</span>
+          // 실측 손목온도 없음 — 심박 기반 추정이 있고 연결이 살아 있으면 그것을 폴백 표시.
+          // "추정" 표기·판정 미주입은 의료 판정 아님 원칙(문헌 오차 ±0.3℃ 내외·선별 참고).
+          !stale && coreTempEstC != null ? (
+            <span
+              className="leading-tight"
+              title="심박 기반 심부체온 추정(문헌 오차 ±0.3℃ 내외) — 의료 판정 아님·열 스트레스 참고. 심박 억제 약물 복용자는 과소추정될 수 있음"
+            >
+              <span className="font-mono text-sm tabular-nums text-body dark:text-on-dark-soft">
+                ≈{formatTemp(coreTempEstC)}
+                <span className="ml-0.5 text-[10px] text-muted">℃</span>
+              </span>
+              <span className="block text-[9px] leading-none text-muted">심박 추정</span>
             </span>
-            <span className="block text-[9px] leading-none text-muted">
-              {stale ? "연결끊김" : "미수신"}
+          ) : (
+            <span className="leading-tight" title={stale ? TEMP_STALE_TITLE : TEMP_UNAVAILABLE_TITLE}>
+              <span className="font-mono text-sm tabular-nums text-muted">
+                --<span className="ml-0.5 text-[10px]">℃</span>
+              </span>
+              <span className="block text-[9px] leading-none text-muted">
+                {stale ? "연결끊김" : "미수신"}
+              </span>
             </span>
-          </span>
+          )
         ) : (
           <span className="leading-tight">
             <span className="font-mono text-sm tabular-nums">

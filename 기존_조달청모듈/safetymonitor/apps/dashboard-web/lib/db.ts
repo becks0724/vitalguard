@@ -940,6 +940,21 @@ export async function recentDataMockupSamples(limit = 40): Promise<VitalSample[]
 }
 
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위
+// 최근 심박 시계열 — 심부체온 추정(심박 기반 칼만필터)의 입력. 워커 구분 없이 창 전체를 받아
+// 호출부(store)가 별칭 접기 후 워커별로 나눈다. 표시 전용 경로라 실패해도 수집·판정과 무관.
+export async function recentHeartRates(
+  windowMinutes: number,
+): Promise<{ worker_id: string; ts: string; heart_rate: number }[]> {
+  const { rows } = await q<{ worker_id: string; ts: string; heart_rate: number }>(
+    `SELECT worker_id, ts, heart_rate FROM vital_samples
+      WHERE heart_rate IS NOT NULL
+        AND ts::timestamptz > (now() - $1::interval)
+      ORDER BY ts`,
+    [`${windowMinutes} minutes`],
+  );
+  return rows;
+}
+
 // 워커별 DB 의 마지막 SpO₂ 행 — 표시 겹침(lib/spo2-overlay)용. spo2 는 기회 측정이라 단독 행
 // 1건으로 오고, 인스턴스 메모리 병합만으로는 다른 인스턴스 응답에서 값이 빈다(2026-08-12 실측).
 // 창(window)을 신선 한도보다 넉넉히 잡고, 신선 판정 자체는 겹침 쪽에서 측정 시각으로 한다.
