@@ -1,12 +1,11 @@
 # gitleaks 오탐 제외 목록. 한 줄에 Fingerprint 하나.
 # 실제 키를 여기 넣어 넘기지 말 것 — 실제 키는 제거 + 로테이션이 답이다.
+#
+# ⚠ 커밋 SHA 로 핀한 항목은 히스토리 재작성에서 전부 무효가 된다(2026-08-12 실증 —
+# 레포 재작성 직후 Secret scan 이 이미 제외했던 2건을 재검출·실패). 이 파일의 대상은
+# 전부 "테스트 더미 값"이라 커밋 무관 file:rule:line 형식으로 등록한다.
 
-# app-jwt 단위테스트가 쓰는 더미 시크릿 "test-secret-0123456789" (실제 자격증명 아님)
-e8d71b442269517738dc251d80393b51fcbbad0d:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-jwt.test.ts:generic-api-key:10
+# 단위테스트 공용 더미 시크릿 "test-secret-0123456789" (실제 자격증명 아님)
 기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-jwt.test.ts:generic-api-key:10
-
-# 인증 거부 진단 단위테스트의 동일 더미 값. 이 과거 커밋·파일·규칙 한 건만 제외한다.
-e353486f3490a3e5ebc828874922e1b3ddfa6749:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-auth-diagnosis.test.ts:generic-api-key:18
-
-# 만료 토큰 refresh 가드 테스트의 동일 더미 값.
-c643959ce95335a791ee5563d22d4609cc8ed068:기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/2026-07-31-expired-token-refresh.guard.test.ts:generic-api-key:23
+기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-auth-diagnosis.test.ts:generic-api-key:18
+기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/2026-07-31-expired-token-refresh.guard.test.ts:generic-api-key:23
