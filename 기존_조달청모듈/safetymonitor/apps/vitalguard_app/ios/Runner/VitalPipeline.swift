@@ -82,6 +82,19 @@ final class VitalPipeline {
         }
     }
 
+    /// 계정 교체 시 잔여 큐 폐기 — 직전 계정 구간에 쌓인 미전송 샘플이 새 사번으로 귀속되는 것을 막는다.
+    /// 로그인 직후 reloadAuth 보다 먼저 호출된다(같은 직렬 큐라 폐기가 업로드보다 앞선다).
+    func purgeQueue(reason: String) {
+        work.async {
+            guard !self.pending.isEmpty else { return }
+            let count = self.pending.count
+            self.pending.removeAll()
+            self.persist()
+            self.log.notice("큐 \(count, privacy: .public)건 폐기 — \(reason, privacy: .public)")
+            VitalBridge.shared.emit(["type": "pipeline", "pending": 0])
+        }
+    }
+
     private func loadConfig() -> Config? {
         guard let token = AuthStore.token, !token.isEmpty,
               let workerId = AuthStore.workerId, !workerId.isEmpty

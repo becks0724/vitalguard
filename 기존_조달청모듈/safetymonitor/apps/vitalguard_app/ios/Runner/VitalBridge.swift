@@ -53,6 +53,12 @@ enum AuthStore {
         set { UserDefaults.standard.set(newValue, forKey: "auth.userName") }
     }
 
+    /// 마지막으로 로그인에 성공한 사번 — 계정 교체 감지용이라 로그아웃(clearAll)에도 지우지 않는다.
+    static var lastWorkerId: String? {
+        get { UserDefaults.standard.string(forKey: "auth.lastWorkerId") }
+        set { UserDefaults.standard.set(newValue, forKey: "auth.lastWorkerId") }
+    }
+
     static func clearAll() {
         clearToken()
         UserDefaults.standard.removeObject(forKey: "auth.workerId")
@@ -148,6 +154,11 @@ final class VitalBridge: NSObject {
                 finish(["ok": false, "error": "이 계정에는 사번이 등록돼 있지 않아 생체 전송을 시작할 수 없습니다."])
                 return
             }
+            // 계정 교체 감지 — 직전 로그인 사번과 다르면 미전송 잔여 큐를 폐기한다(새 사번으로 오귀속 방지).
+            if let previous = AuthStore.lastWorkerId, !previous.isEmpty, previous != workerId {
+                VitalPipeline.shared.purgeQueue(reason: "계정 교체 \(previous) → \(workerId)")
+            }
+            AuthStore.lastWorkerId = workerId
             AuthStore.saveToken(token)
             AuthStore.workerId = workerId
             AuthStore.userName = user["name"] as? String
