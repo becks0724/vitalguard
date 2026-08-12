@@ -92,6 +92,7 @@ import {
   effectiveTone,
   gateStaleVitals,
   withOutsideMetric,
+  workerSignalCopy,
 } from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -4889,6 +4890,9 @@ export function DemoDashboard() {
     let sev: VitalStatus = "idle";
     let count = 0;
     const issues: { name: string; metrics: string }[] = [];
+    // 생체 미수신이라 **판정 자체가 불가능했던** 작업자 — 등록 인원에는 들어가지만 "정상"이 아니다.
+    // 이 분리가 없으면 이상 0명일 때 대기 인원까지 "정상 N명 · 전 작업자 정상 범위"로 나간다.
+    const waitingNames: string[] = [];
     for (const slot of filledSlots) {
       if (!slot) continue;
       count += 1;
@@ -4922,37 +4926,27 @@ export function DemoDashboard() {
         if (tp === "caution" || tp === "danger") ms.push("체온");
         const withLoc = withOutsideMetric(ms, outside);
         issues.push({ name, metrics: withLoc.length ? withLoc.join("·") : "이상" });
+      } else if (tone === "idle") {
+        // 생체 샘플이 없어 판정 자체를 못 한 작업자. stale 이면 effectiveTone 이 caution 으로
+        // 올리므로 여기 오지 않는다 — 즉 이 목록은 순수한 '수신 대기'다.
+        waitingNames.push(name);
       }
     }
-    const anomaly = issues.length;
-    const first = issues[0];
-    const summary =
-      count === 0 ? "작업자 대기" : anomaly > 0 ? `이상 ${anomaly}명 / 전체 ${count}명` : `정상 ${count}명`;
-    const short =
-      count === 0
-        ? "작업자 등록 대기"
-        : anomaly > 0 && first
-          ? first.metrics === "연결끊김"
-            ? `${first.name} 연결끊김 — 즉시 연락·현장 확인`
-            : `${first.name} ${first.metrics} 이상 — 심정지·SOS 골든타임 4분`
-          : "전 작업자 정상 범위";
+    // 문구 산출은 순수 함수에 위임 — 등록 인원과 **판정된 인원**을 분리해 적는다(가드 테스트로 고정).
+    const copy = workerSignalCopy({
+      count,
+      evaluated: count - waitingNames.length,
+      issues,
+      waitingNames,
+    });
     return {
       sev,
-      summary,
-      short,
+      summary: copy.summary,
+      short: copy.short,
       detail: {
-        title: anomaly > 0 ? `작업자 이상 ${anomaly}명 / 전체 ${count}명` : count > 0 ? `작업자 정상 (${count}명)` : "작업자 대기",
+        title: copy.title,
         location: "작업자 GPS · 작업자 모니터링 표 참조",
-        lines:
-          anomaly > 0
-            ? [
-                ...issues.map((it, idx) => ({ label: `이상 ${idx + 1}`, text: `${it.name} — ${it.metrics}` })),
-                { label: "골든타임", text: "심정지·SOS 4분 / 낙상 후 의식없음 즉시 / 열사병 즉시 냉각·수분" },
-                { label: "권장 대응", text: "해당 작업자 카드·생체 확인. SOS 시 119·보호자 연락, 낙상 시 의식·외상 확인." },
-              ]
-            : count > 0
-              ? [{ label: "상태", text: `등록 ${count}명 전부 정상 범위(심박·SpO₂·체온·낙상·SOS)` }]
-              : [{ label: "안내", text: "빈 슬롯에 작업자 등록 시 실시간 평가됩니다." }],
+        lines: copy.lines,
       },
     };
   }, [filledSlots, latestMap, now, outsideWorkers]);

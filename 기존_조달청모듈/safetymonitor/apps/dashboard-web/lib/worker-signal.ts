@@ -89,3 +89,110 @@ export function withOutsideMetric(metrics: string[], outside: boolean): string[]
   if (!outside) return metrics;
   return [...metrics, "구획이탈"];
 }
+
+/** 신호등 상세 줄 — 라벨 + 본문. */
+export type SignalLine = { label: string; text: string };
+
+/** 신호등 작업자 항목 문구 산출 입력 — 등록 인원과 판정된 인원을 분리해 받는다. */
+export type WorkerTally = {
+  /** 등록(채워진) 슬롯 인원 */
+  count: number;
+  /** 생체 판정이 실제로 가능했던 인원(tone !== "idle") */
+  evaluated: number;
+  /** 이상 명단 */
+  issues: { name: string; metrics: string }[];
+  /** 생체 미수신이라 판정 대상이 아니었던 작업자 표시명 */
+  waitingNames: string[];
+};
+
+function waitingLine(names: string[]): SignalLine[] {
+  if (names.length === 0) return [];
+  return [{ label: "수신 대기", text: `${names.join("·")} — 생체 미수신이라 판정 대상이 아니다.` }];
+}
+
+/**
+ * 신호등 작업자 항목 문구 — **등록 인원과 실제 판정된 인원을 반드시 구분해서** 적는다.
+ *
+ * 2026-08-12 결함 — 생체 샘플이 없는 작업자(tone `idle` · 표에서는 대기)는 이상 명단에 들어가지
+ * 않는데 인원수에는 함께 세어졌다. 그래서 4명 중 1명만 수신 중인데도 신호등이 "정상 4명 ·
+ * 전 작업자 정상 범위 · 등록 4명 전부 정상 범위(심박·SpO₂·체온·낙상·SOS)" 로 표시했다.
+ * **한 번도 받은 적 없는 값 5종을 정상이라고 단언하는 문장**이라 관리자가 "4명이 감시되고 있다"고
+ * 오독한다. 2026-07-30 CCTV "미수신 → 준수율 100%" 와 같은 false-OK 계열이다.
+ *
+ * 원인은 `isStale(undefined) === false` 가 아니다 — 등록만 해두고 출근 전인 작업자를 "연결끊김"
+ * 으로 알리면 오탐이므로 그 판정은 옳다. 잘못은 그 다음, **idle 을 정상으로 셈한 집계**에 있다.
+ *
+ * ★ 톤은 올리지 않는다 — 대기를 매번 주의로 띄우면 경보 피로가 생긴다. 처방은 사실을 문장으로
+ * 구분해 적는 것이고, 그래서 이 함수는 **문구만** 만든다(`sev` 는 호출부의 worst-of 를 유지).
+ */
+export function workerSignalCopy(t: WorkerTally): {
+  summary: string;
+  short: string;
+  title: string;
+  lines: SignalLine[];
+} {
+  const anomaly = t.issues.length;
+  const first = t.issues[0];
+  const waiting = t.waitingNames.length;
+
+  if (t.count === 0) {
+    return {
+      summary: "작업자 대기",
+      short: "작업자 등록 대기",
+      title: "작업자 대기",
+      lines: [{ label: "안내", text: "빈 슬롯에 작업자 등록 시 실시간 평가됩니다." }],
+    };
+  }
+
+  if (anomaly > 0 && first) {
+    return {
+      summary: `이상 ${anomaly}명 / 전체 ${t.count}명`,
+      short:
+        first.metrics === "연결끊김"
+          ? `${first.name} 연결끊김 — 즉시 연락·현장 확인`
+          : `${first.name} ${first.metrics} 이상 — 심정지·SOS 골든타임 4분`,
+      title: `작업자 이상 ${anomaly}명 / 전체 ${t.count}명`,
+      lines: [
+        ...t.issues.map((it, idx) => ({ label: `이상 ${idx + 1}`, text: `${it.name} — ${it.metrics}` })),
+        ...waitingLine(t.waitingNames),
+        { label: "골든타임", text: "심정지·SOS 4분 / 낙상 후 의식없음 즉시 / 열사병 즉시 냉각·수분" },
+        {
+          label: "권장 대응",
+          text: "해당 작업자 카드·생체 확인. SOS 시 119·보호자 연락, 낙상 시 의식·외상 확인.",
+        },
+      ],
+    };
+  }
+
+  // 이상 0명 — 여기서 "전원 정상" 이라고 적으면 안 된다. 판정된 인원만 정상이라고 적는다.
+  if (t.evaluated === 0) {
+    return {
+      summary: `대기 ${t.count}명`,
+      short: `${t.count}명 전원 수신 대기 — 생체 판정 없음`,
+      title: `작업자 수신 대기 (${t.count}명)`,
+      lines: [
+        { label: "상태", text: `등록 ${t.count}명 전원 생체 미수신 — 정상 여부를 판정하지 못했다.` },
+        ...waitingLine(t.waitingNames),
+      ],
+    };
+  }
+
+  if (waiting > 0) {
+    return {
+      summary: `정상 ${t.evaluated}명 · 대기 ${waiting}명`,
+      short: `정상 ${t.evaluated}명 · ${waiting}명 수신 대기`,
+      title: `작업자 정상 ${t.evaluated}명 · 대기 ${waiting}명 (등록 ${t.count}명)`,
+      lines: [
+        { label: "상태", text: `판정 ${t.evaluated}명 정상 범위(심박·SpO₂·체온·낙상·SOS)` },
+        ...waitingLine(t.waitingNames),
+      ],
+    };
+  }
+
+  return {
+    summary: `정상 ${t.count}명`,
+    short: "전 작업자 정상 범위",
+    title: `작업자 정상 (${t.count}명)`,
+    lines: [{ label: "상태", text: `등록 ${t.count}명 전부 정상 범위(심박·SpO₂·체온·낙상·SOS)` }],
+  };
+}
