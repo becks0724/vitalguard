@@ -279,11 +279,17 @@ export async function dataMockupSamples(): Promise<VitalSample[]> {
 
 // 워커별 DB 누적 건수 — 각 작업자 카드의 "실시간 수집 DB 누적 N건" 표시용.
 // 기존 관리자용 GROUP BY 집계(listAllWorkers)를 재사용한다.
-export async function countsByWorker(): Promise<Record<string, number>> {
+// 별칭(secondary→primary)은 주 ID 로 접어 합산한다 — 카드는 주 ID 로 합쳐지는데 누적만
+// 원시 ID 로 남으면 병합된 작업자의 누적이 축소 표시된다(2026-08-12 EMP-6861 20.4만→4,942 실사례).
+export async function countsByWorker(
+  aliasMap?: Record<string, string>,
+): Promise<Record<string, number>> {
+  const aliases = aliasMap ?? (await workerAliases());
   const out: Record<string, number> = {};
   for (const w of await listAllWorkers()) {
     if (isReservedTestWorker(w.worker_id)) continue;
-    out[w.worker_id] = w.sample_count;
+    const key = aliases[w.worker_id] ?? w.worker_id;
+    out[key] = (out[key] ?? 0) + w.sample_count;
   }
   return out;
 }

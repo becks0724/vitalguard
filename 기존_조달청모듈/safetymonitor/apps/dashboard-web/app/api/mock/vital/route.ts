@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     // 목업은 실측 스트림과 별도 data_mockup 섹션으로만 반환한다.
     dataMockup: (await dataMockupSamples()).map((s) => redactPii(s, exposePii)),
     dataMockupPersisted: await totalDataMockupPersisted(),
-    countsByWorker: await countsByWorker(),
+    countsByWorker: await countsByWorker(aliasMap),
     workerProfiles: await workerProfiles(),
     workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
