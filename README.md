@@ -3,60 +3,77 @@
   <img src="VitAlGuard_logo/vitalguardlogo.dark.png#gh-dark-mode-only" alt="VitAlGuard" width="360">
 </p>
 
-# VitAlGuard — 건설현장 안전 통합 모니터링
+# VitAlGuard — Industrial Safety OS
 
-> **8.4 / 84 보안 모바일 릴리스:** 앱 내 로그인, 토큰 회전, 휴대폰 릴레이 및 읽기 전용 API URL의 한·영 상세는 [2026-07-30-vitalguard-8.4-secure-mobile-release.md](2026-07-30-vitalguard-8.4-secure-mobile-release.md)를 참고하세요.
-> **8.4 / 84 secure mobile release:** See the bilingual [release notes](2026-07-30-vitalguard-8.4-secure-mobile-release.md) for in-app login, token rotation, phone relay, and the read-only API URL.
+**산업현장 생체·환경 통합 관제 기반, 건설현장 안전관리비 실집행 검증 플랫폼.**
+나라장터 조달데이터와 현장 IoT·AI로 **계상된 안전관리비가 작업자에게 실제 도달했는지** 검증한다.
+(조달청 조달데이터 AI 활용 창업경진대회 · 아이디어 부문 통합본선 — 팀 VitAlGuard)
 
-조달청 조달데이터 AI 활용 창업경진대회 프로젝트.
-**근로자 생체·낙상(Apple Watch) + 현장 CCTV AI + 가스 감지 + AED 상태 경보**를 하나의 관제
-대시보드로 통합해, 사고를 감지·확정·전파하는 시스템이다.
+> **문제의 정식화** — 예산이 부족한 것이 아니라, 계상된 예산이 현장에 도달했는지
+> **확인할 수 없는 것**이 문제다. 현행 구조는 시공사 서류를 시공사 서류로 검증한다.
+
+## 시스템 구조 — 조달이 기준을 세우고, 현장 실측이 그 기준을 확인한다
 
 ```
-[Apple Watch]──생체·낙상(온디바이스 ML 3종)──┐
-[CCTV + AI ]──영상 이벤트────────────────────┤
-[가스포드   ]──O₂·CO·H₂S·온습도──────────────┼──▶ [관제서버/대시보드] ──▶ 알림·조치
-[AED 알람   ]◀──상태 폴링(경보 출력)──────────┘            │
-                                                        [DB (PostgreSQL)]
+축① ERP·조달 모듈 (기준)                     축② 산업안전 플랫폼 (현장 물증)
+  나라장터 입찰·계약·낙찰 ──┐          ┌── [Apple Watch] 생체·낙상 (온디바이스 ML 3종)
+  종합쇼핑몰 품목 단가     ──┤          ├── [CCTV + AI ] 보호구 착용 판정 (엣지 추론)
+  국세청 사업자 진위       ──┤          ├── [가스포드   ] O₂·CO·H₂S·온습도
+  법제처 요율 고시        ──┘          └── [AED 알람   ] 구급장비 준비상태
+            │                                     │
+            ▼                                     ▼
+        [ VitAlGuard 검증 엔진 — 4축 교차대조 · 기준액 룰엔진 ]
+          ① 장부↔사람  ② 돈↔장부  ③ 사람↔대장  ④ 증빙(시각·GPS)
+            │
+            ▼
+        [관제 대시보드 + PostgreSQL] ──▶ 주간 검증 보고서 · 알림 · 조치
 ```
+
+- 공공데이터 **12종 실연동** (전부 클라이언트 구현·실응답 확인)
+- 판정 원칙: 입력이 부족하면 단정하지 않고 **검토필요로 강등** — 최종 판단은 사람
+- 금액 산정은 AI가 아닌 **결정적 계산** — 행정 판단의 근거는 재현 가능해야 하므로
 
 ## 저장소 지도
 
 | 폴더 | 내용 |
 |---|---|
+| [`ML 3종 모듈/`](ML%203종%20모듈/) | **워치 낙상 ML 모듈** — 판정 코어·모델 3종·검증 게이트·통합가이드 (모듈 단위 관리) |
+| [`apps/`](apps/) | 현행 앱 — VitAlGuard-iOS-WatchOS-App, VitAlGuard-Flutter-Android-App |
 | [`hardware/`](hardware/) | **현장 물리 장치** — AED 알람(라즈베리파이), 가스포드 요약·링크 |
 | [`Final_GasPod/`](Final_GasPod/) | 가스포드 v4.2 확정 문서·펌웨어·서버 연동 가이드 |
 | [`db/`](db/) | DB 스키마·감사·통합 문서 (fall_ml / imu_collect / integrated / audit 등) |
-| [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 워치·폰 앱, 대시보드, cctv-ai, ml/fall-detection 등 기존 모듈 |
-| [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 계산 모듈(safeprocure) |
+| [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai, ml/fall-detection, 구 PoC 앱 |
+| [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
 | [`VitAlGuard_logo/`](VitAlGuard_logo/) | 로고 에셋 (라이트/다크) |
 
-## 핵심 구성 요소
+## AI는 규칙이 실패하는 세 지점에만 쓴다
 
-### 1. 워치 낙상 감지 — 실데이터 학습 ML 3종, 온디바이스 추론
-Apple Watch 위에서 Core ML로 실시간 추론 (서버 왕복 없음, event-gated로 배터리 보호):
+### 1. 워치 낙상 감지 — 온디바이스 ML 3종 (주)
+IMU 88특징 → Core ML 직접 추론 (서버 왕복 없음, event-gated 배터리 보호):
 
-| 모델 | 알고리즘 | 역할 |
-|---|---|---|
-| work_veto | RandomForest | 작업동작(망치질 등) 오탐 기각 — precision 우선(≥0.95) 운영 |
-| impact | SVM-RBF | 낙상 충격 판별 보조 증거 |
-| recovery | Logistic | 충격 후 회복/비회복 — 애매하면 위험 쪽(asym 0.35) |
+| 모델 | 역할 |
+|---|---|
+| work_veto | 작업동작을 낙상 후보에서 기각 (precision≥0.95 운영) |
+| impact | 고G 충격 이벤트 판정 — 증거 전용 |
+| recovery | 쓰러짐 후 **미회복만** 경보 |
 
-판정 구조 = 규칙(충격 게이트·무활동)이 1차축, ML은 기각권·보조 증거, 최종 확정은
-카운트다운+무반응(사용자 확인). 팀 4명 실수집 데이터(600+ 윈도)로 학습, LOSO 평가,
-실기기 시나리오·25시간 착용 검증 완료. 워치/폰 앱 코드:
-[VitAlGuard-for-iOS-WatchOS](https://github.com/yangjeehoo/VitAlGuard-for-iOS-WatchOS)
+- 오탐 **-79%** (75→16건) · 4명 600+윈도 **LOSO 평가** · 실기기 시나리오·25시간 착용 검증
+- **ML 단독 경보 금지** — 억제기로만 배치, 경보 확정 권한은 본인 무반응 확인(카운트다운)에 있음
+- 모듈·검증 게이트·통합 방법: [`ML 3종 모듈/`](ML%203종%20모듈/)
 
-### 2. 가스포드 — 밀폐공간 가스 감지 (ESP32-S3)
-O₂·CO·H₂S·온습도 측정, 현장 부저·LED 경보 + 서버 전송. 상세: [`hardware/`](hardware/)
+### 2. CCTV 보호구 착용 판정 (부)
+국내 현장 데이터 재학습(AI Hub E63 등 35,227장) · Jetson Orin Nano TensorRT 엣지 추론 ·
+미착용 알림 재현율 **0.987** — 결과 프레임만 전송(대역폭·프라이버시 동시 해결).
 
-### 3. AED 알람 — AED 상태 현장 경보 (Raspberry Pi)
-관제서버 폴링으로 AED 배터리·패드 상태를 LED·사이렌으로 표시. 상세: [`hardware/AED_alarm/`](hardware/AED_alarm/)
+### 3. 공고문 위험작업 추출 — LLM 환각 차단 3단 (부)
+키워드 선별(결정적) → LLM 구조화 추출 → **근거 원문 검증 100%** (불일치 폐기) —
+환각은 담당 공무원에게 도달하지 않는다.
 
-### 4. 관제 대시보드·DB
-Cloud Run 배포 대시보드 + PostgreSQL. 스키마·감사 문서는 [`db/`](db/),
-기존 모듈(대시보드·cctv-ai 포함)은 [`기존_조달청모듈/safetymonitor/`](기존_조달청모듈/safetymonitor/).
+## 현장 하드웨어
+
+- **가스포드** (ESP32-S3): 밀폐공간 O₂·CO·H₂S·온습도 — 현장 즉시 경보 + 5초 주기 서버 전송 → [`hardware/`](hardware/)
+- **AED 알람** (Raspberry Pi): AED 배터리·패드 상태를 서버 판정으로 받아 현장 빛·사이렌 경보 → [`hardware/AED_alarm/`](hardware/AED_alarm/)
 
 ---
-문서 기준일: 2026-07-08
+문서 기준일: 2026-08-12 · 내용 기준: 통합본선 발표자료 V2.9
