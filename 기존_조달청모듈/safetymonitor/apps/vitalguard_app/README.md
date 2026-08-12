@@ -3,18 +3,18 @@
 기존 iOS/워치 앱 코드를 활용하지 않는 **완전 신규 애플리케이션**(2026-08-11 사용자 결정).
 Apple Watch 가 심박을 수집하고, 아이폰 네이티브가 큐·업로드를 전담하며, 관제웹이 실시간 모니터링한다.
 
-## 상태 — ✅ PoC 완결 (2026-08-11)
+## 상태 — ✅ PoC 완결 (08-11) + 확장 완결 (08-12)
 
-Phase 0(워치→폰 수신) · 1(강제종료 생존 + 관제웹 프로덕션 연동) · 2(폰 화면 실시간 표시) **세 게이트 실기기 전부 통과.**
+Phase 0~2 실기기 전부 통과(08-11). 08-12 확장 = **신원 정식화(EMP-6861·별칭 병합)** · **SpO₂ 갱신 구조**(측정 1건=1행·값+경과·30분 게이트) · **심부체온 추정**(심박 칼만·표시 전용) · **추세 차트 실데이터 3종**(심박·체온 추정 궤적·SpO₂ 24h 시간축 점) · 배터리 6.4%/h(풀시프트 가능).
 게이트 기록·트러블슈팅·운영 이월 항목 = **[SETUP.md](./SETUP.md)** (이 모듈의 단일 진실 소스).
 
 ## 구조 (계층 원칙 — 생체 데이터는 Dart 미경유)
 
 | 레이어 | 파일 | 책임 |
 |---|---|---|
-| Watch (SwiftUI) | `ios/VitalWatch/WatchStreamer.swift` | HKWorkoutSession HR 수집·5초 배치·WCSession 송신(sendMessage→transferUserInfo 폴백) |
+| Watch (SwiftUI) | `ios/VitalWatch/WatchStreamer.swift` | HKWorkoutSession HR 수집 + SpO₂ anchored query(측정 이벤트만·앵커 영속)·5초 배치·WCSession 송신(sendMessage→transferUserInfo 폴백) |
 | iOS 네이티브 | `ios/Runner/PhoneReceiver.swift` | WCSession 수신·콘솔 로그 |
-| iOS 네이티브 | `ios/Runner/VitalPipeline.swift` | 파일 영속 큐(유실 0)·`POST /api/app/vital` JWT 업로드·BGTask 재시도 |
+| iOS 네이티브 | `ios/Runner/VitalPipeline.swift` | 파일 영속 큐(유실 0)·`POST /api/app/vital` JWT 업로드(heartRate·spo2+측정시각·workerName 부착)·BGTask 재시도·계정 교체 시 큐 폐기 |
 | iOS 네이티브 | `ios/Runner/VitalBridge.swift` | Flutter MethodChannel(로그인·상태) + EventChannel `vitalguard/stream` |
 | Flutter | `lib/main.dart` · `lib/vital_stream.dart` | 로그인(관제웹 계정 공용)·실시간 심박/큐 표시 **만** |
 
