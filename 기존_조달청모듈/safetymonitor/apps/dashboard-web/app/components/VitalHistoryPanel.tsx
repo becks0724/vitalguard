@@ -13,7 +13,7 @@ import {
   type Status,
 } from "../../lib/severity";
 
-import { RechartsLineChart, RechartsBarChart } from "./VitalChartsRecharts";
+import { RechartsLineChart, RechartsBarChart, RechartsTimeDotChart } from "./VitalChartsRecharts";
 
 type Metric = "heartRate" | "spo2" | "coreTempEst" | "fall";
 type Range = 1 | 7 | 30 | 60 | 365;
@@ -32,8 +32,10 @@ type HistoryResponse = {
   range: Range | 0; // 0 = 사용자 지정 기간(from/to)
   from?: string;
   to?: string;
-  points: { date: string; label?: string; value: number }[];
+  points: { date: string; label?: string; value: number; tsMs?: number }[];
   summary: { min: number; max: number; avg: number };
+  windowFromMs?: number;
+  windowToMs?: number;
 };
 
 const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; decimals: number }> = {
@@ -167,6 +169,8 @@ export function VitalHistoryPanel({
     customRange === null &&
     range === 1 &&
     selection.metric !== "fall" &&
+    // SpO₂ 는 측정 이벤트 배열이라 마지막 점을 라이브 값으로 덮으면 측정 기록이 왜곡된다.
+    selection.metric !== "spo2" &&
     typeof liveValue === "number" &&
     Number.isFinite(liveValue) &&
     data.points.length > 0;
@@ -340,6 +344,17 @@ export function VitalHistoryPanel({
           <EmptyMetricPlaceholder metricName={meta.name} />
         ) : loading && !data ? (
           <p className="text-xs text-zinc-600 dark:text-zinc-400">불러오는 중...</p>
+        ) : data && data.points.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 rounded border border-dashed border-zinc-300 bg-zinc-50 px-6 py-12 text-center dark:border-white/15 dark:bg-white/[0.02]">
+            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+              선택 기간에 {meta.name} 데이터가 없습니다
+            </span>
+            {selection.metric === "spo2" && (
+              <p className="max-w-md text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                SpO₂ 는 손목이 정지했을 때만 걸리는 기회 측정입니다 — 워치 혈중 산소 앱에서 수동 측정하면 즉시 기록됩니다.
+              </p>
+            )}
+          </div>
         ) : data ? (
           <>
             <div className="mb-3 flex flex-wrap items-stretch gap-2">
@@ -368,7 +383,24 @@ export function VitalHistoryPanel({
                 pointSeverity: metricPointSeverity(selection.metric),
                 hoverExtra: coreHover,
               };
-              const isBar = selection.metric === "fall" || chartType === "bar";
+              // SpO₂ = 희소 이벤트 측정 — 24시간 뷰는 실제 측정 시각 위치의 점(dot)으로,
+              // 그 외 기간은 막대로(곡선으로 이으면 측정 없는 시간대가 연속 측정처럼 오독된다).
+              const spo2Dots =
+                selection.metric === "spo2" &&
+                data.windowFromMs != null &&
+                data.windowToMs != null &&
+                data.windowToMs - data.windowFromMs <= 86_400_000 * 1.01 &&
+                displayPoints.every((p) => typeof p.tsMs === "number");
+              if (spo2Dots) {
+                return (
+                  <RechartsTimeDotChart
+                    {...chartProps}
+                    points={displayPoints as { date: string; label?: string; value: number; tsMs: number }[]}
+                    domain={[data.windowFromMs!, data.windowToMs!]}
+                  />
+                );
+              }
+              const isBar = selection.metric === "fall" || selection.metric === "spo2" || chartType === "bar";
               return isBar ? <RechartsBarChart {...chartProps} /> : <RechartsLineChart {...chartProps} />;
             })()}
           </>

@@ -7,6 +7,8 @@ export type HistoryPoint = {
   date: string;
   label?: string;
   value: number;
+  /** 실데이터 경로 전용 — 측정 시각(epoch ms). 24시간 뷰의 시간축 점 배치에 쓴다. */
+  tsMs?: number;
 };
 
 export type HistoryRange = 1 | 7 | 30 | 60 | 365;

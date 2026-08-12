@@ -46,3 +46,12 @@ test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(�
   assert.match(sevFn, /case "coreTempEst":[\s\S]{0,200}?return undefined/, "추정 점이 판정 색을 받는다");
   assert.doesNotMatch(panel, /coreTempStatus/, "패널이 추정값에 체온 판정을 다시 붙였다");
 });
+
+test("SpO₂ 추세 — 실데이터 경로 편입 + 24시간 뷰는 측정 시각 위치의 점(dot)", () => {
+  const histRoute = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
+  assert.match(histRoute, /REAL_METRICS: RealMetric\[\] = \["heartRate", "coreTempEst", "spo2"\]/);
+  const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
+  assert.match(panel, /RechartsTimeDotChart/, "24시간 점 차트 미배선 — 균등 간격이 측정 분포를 오독시킨다");
+  const real = readFileSync(join(ROOT, "app", "api", "mock", "history", "real.ts"), "utf8");
+  assert.match(real, /spo2MeasurementsBetween/, "SpO₂ 추세가 실측 행을 읽지 않는다");
+});

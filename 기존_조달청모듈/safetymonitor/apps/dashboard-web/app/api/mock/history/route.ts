@@ -16,7 +16,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const ALLOWED_METRICS: HistoryMetric[] = ["heartRate", "spo2", "coreTempEst", "fall"];
 const ALLOWED_RANGES: HistoryRange[] = [1, 7, 30, 60, 365];
-const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst"];
+const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2"];
 
 // KST 달력일 경계 → epoch ms. 프리셋(days)은 "지금부터 N일 전".
 const kstDayStartMs = (day: string) => Date.parse(`${day}T00:00:00+09:00`);
@@ -67,6 +67,8 @@ export async function GET(request: Request) {
       range: 0,
       from,
       to,
+      windowFromMs: isReal ? fromMs : undefined,
+      windowToMs: isReal ? toMs : undefined,
       points,
       summary: metric === "fall" ? summarizeCount(points) : summarize(points),
       source: isReal ? (metric === "coreTempEst" ? "estimated" : "measured") : "mock",
@@ -86,13 +88,17 @@ export async function GET(request: Request) {
     );
   }
 
+  const presetToMs = Date.now();
+  const presetFromMs = presetToMs - range * 86_400_000;
   const points = isReal
-    ? await buildRealHistory(workerId, metric as RealMetric, Date.now() - range * 86_400_000, Date.now())
+    ? await buildRealHistory(workerId, metric as RealMetric, presetFromMs, presetToMs)
     : buildHistory(workerId, metric, range);
   return NextResponse.json({
     workerId,
     metric,
     range,
+    windowFromMs: isReal ? presetFromMs : undefined,
+    windowToMs: isReal ? presetToMs : undefined,
     points,
     summary: metric === "fall" ? summarizeCount(points) : summarize(points),
     source: isReal ? (metric === "coreTempEst" ? "estimated" : "measured") : "mock",

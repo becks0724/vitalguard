@@ -221,6 +221,8 @@ function hasLiveMetric(
 ): boolean {
   if (metric === "fall") return lastFallTs !== undefined;
   if (metric === "coreTempEst") return typeof coreTempEstC === "number";
+  // SpO₂ = 기회 측정 — "지금 신선한 값"이 아니라 "기간 내 측정"이 기준이라 항상 열고 서버 데이터로 판정.
+  if (metric === "spo2") return true;
   if (!sample) return false;
   const value = sample[metric];
   return typeof value === "number" && Number.isFinite(value);

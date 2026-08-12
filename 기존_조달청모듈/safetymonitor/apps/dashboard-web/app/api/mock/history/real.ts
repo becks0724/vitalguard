@@ -5,11 +5,11 @@
 // 추정 궤적은 카드와 같은 analyzers 구현·같은 계수를 쓴다 — 화면 간 숫자가 어긋나지 않는다.
 import { estimateCoreTempSeries, type HrPoint } from "@safetymonitor/analyzers";
 
-import { getWorkerAliasMap, heartRateBucketAverages } from "../../../../lib/db";
+import { getWorkerAliasMap, heartRateBucketAverages, spo2MeasurementsBetween } from "../../../../lib/db";
 
 import type { HistoryPoint } from "./data";
 
-export type RealMetric = "heartRate" | "coreTempEst";
+export type RealMetric = "heartRate" | "coreTempEst" | "spo2";
 
 /** 추정 궤적 제공 상한(일) — 열 스트레스는 시간 단위 현상이고 장기 추정 추세는 검증 근거가 없다. */
 export const CORE_TEMP_EST_MAX_DAYS = 7;
@@ -55,6 +55,35 @@ export async function buildRealHistory(
 ): Promise<HistoryPoint[]> {
   const spanDays = Math.max((toMs - fromMs) / 86_400_000, 1 / 24);
   const ids = await aliasIdsOf(workerId);
+
+  if (metric === "spo2") {
+    // 기회 측정 — 측정 1건 = 점 1개(곡선으로 잇지 않도록 패널이 막대 강제). ≤7일 = 원본 점,
+    // 30일+ = KST 일평균 + 측정 횟수 병기(2026-08-12 사용자 결정 — 점 수백 개는 안 읽힌다).
+    const rows = await spo2MeasurementsBetween(ids, fromMs, toMs);
+    if (spanDays <= 7) {
+      return rows.map((r) => {
+        const at = Date.parse(r.spo2_measured_at ?? r.ts);
+        const { date, label } = kstLabel(at, spanDays);
+        return { date, label, value: Math.round(Number(r.spo2)), tsMs: at };
+      });
+    }
+    const byDay = new Map<string, { sum: number; n: number }>();
+    for (const r of rows) {
+      const at = Date.parse(r.spo2_measured_at ?? r.ts);
+      const { date } = kstLabel(at, spanDays);
+      const b = byDay.get(date) ?? { sum: 0, n: 0 };
+      b.sum += Number(r.spo2);
+      b.n += 1;
+      byDay.set(date, b);
+    }
+    return [...byDay.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+      .map(([date, b]) => ({
+        date,
+        label: `${date.slice(5)}·${b.n}회`,
+        value: Math.round(b.sum / b.n),
+      }));
+  }
 
   if (metric === "heartRate") {
     const rows = await heartRateBucketAverages(ids, fromMs, toMs, hrBucketSec(spanDays));

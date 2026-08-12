@@ -989,6 +989,25 @@ export async function recentHeartRates(
   return rows;
 }
 
+// 구간 SpO₂ 실측 행 — 추세 차트용(측정 1건 = 점 1개). 기회 측정이라 행 수가 적다(하루 수 건).
+export async function spo2MeasurementsBetween(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+): Promise<{ ts: string; spo2: number; spo2_measured_at: string | null }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ ts: string; spo2: number; spo2_measured_at: string | null }>(
+    `SELECT ts, spo2, spo2_measured_at FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND spo2 IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      ORDER BY COALESCE(spo2_measured_at, ts)`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000)],
+  );
+  return rows;
+}
+
 // 워커별 DB 의 마지막 SpO₂ 행 — 표시 겹침(lib/spo2-overlay)용. spo2 는 기회 측정이라 단독 행
 // 1건으로 오고, 인스턴스 메모리 병합만으로는 다른 인스턴스 응답에서 값이 빈다(2026-08-12 실측).
 // 창(window)을 신선 한도보다 넉넉히 잡고, 신선 판정 자체는 겹침 쪽에서 측정 시각으로 한다.

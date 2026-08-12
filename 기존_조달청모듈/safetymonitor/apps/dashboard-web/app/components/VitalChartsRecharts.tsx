@@ -9,6 +9,7 @@ import {
   ComposedChart,
   ReferenceLine,
   ResponsiveContainer,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -241,6 +242,94 @@ export function RechartsBarChart({
           </Bar>
           {renderReferenceLines(refs)}
         </ReBarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// 시간축 점 차트 — 기회 측정(SpO₂ 등)의 24시간 뷰 전용. 점을 균등 간격이 아니라
+// **실제 측정 시각 위치**에 찍는다(2026-08-12 사용자 요청). 측정 없는 시간대는 빈 공간으로
+// 남는 것이 정직한 표현이다(균등 간격은 세 측정이 하루에 고르게 있었던 것처럼 오독된다).
+type TimeChartPoint = ChartPoint & { tsMs: number };
+
+function kstHm(ms: number): string {
+  const k = new Date(ms + 9 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
+}
+
+export function RechartsTimeDotChart({
+  points,
+  color,
+  unit,
+  decimals,
+  referenceLines,
+  pointSeverity,
+  hoverExtra,
+  domain,
+}: Props & { points: TimeChartPoint[]; domain: [number, number] }) {
+  const refs = referenceLines ?? [];
+  if (points.length === 0) {
+    return <p className="text-xs text-zinc-400">데이터 없음</p>;
+  }
+  const yd = yDomain(points, decimals, refs.map((r) => r.value));
+  // 시간축 눈금 — 도메인을 6등분(24시간 뷰면 4시간 간격).
+  const ticks = Array.from({ length: 7 }, (_, i) =>
+    Math.round(domain[0] + ((domain[1] - domain[0]) * i) / 6),
+  );
+
+  return (
+    <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={points} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
+          <XAxis
+            dataKey="tsMs"
+            type="number"
+            domain={domain}
+            ticks={ticks}
+            tickFormatter={(v: number) => kstHm(v)}
+            tick={AXIS_TICK}
+            tickLine={false}
+            axisLine={{ stroke: "currentColor", strokeOpacity: 0.25 }}
+          />
+          <YAxis
+            domain={yd}
+            tick={AXIS_TICK}
+            tickLine={false}
+            axisLine={false}
+            width={40}
+            tickFormatter={(v: number) => v.toFixed(decimals)}
+          />
+          <Tooltip
+            isAnimationActive={false}
+            cursor={{ stroke: color, strokeOpacity: 0.4, strokeDasharray: "3 3" }}
+            content={
+              <ChartTooltip color={color} unit={unit} decimals={decimals} hoverExtra={hoverExtra} />
+            }
+          />
+          <Scatter
+            dataKey="value"
+            isAnimationActive={false}
+            shape={(sp: { cx?: number; cy?: number; payload?: TimeChartPoint }) => {
+              const { cx, cy, payload } = sp;
+              if (cx == null || cy == null || !payload) return <g />;
+              const sev = pointSeverity?.(payload.value);
+              const abn = sev === "danger" || sev === "caution";
+              return (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={abn ? 6 : 5}
+                  fill={sevColor(sev, color)}
+                  stroke="#ffffff"
+                  strokeOpacity={abn ? 0.95 : 0.7}
+                  strokeWidth={1.5}
+                />
+              );
+            }}
+          />
+          {renderReferenceLines(refs)}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
