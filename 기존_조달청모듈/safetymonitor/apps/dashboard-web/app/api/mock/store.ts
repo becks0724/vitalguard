@@ -6,6 +6,11 @@ import {
 } from "@safetymonitor/schemas";
 
 import {
+  estimateCoreTemp,
+  type HrPoint,
+} from "@safetymonitor/analyzers";
+
+import {
   persistSample,
   persistDataMockup,
   updateFallCandidateState,
@@ -16,6 +21,7 @@ import {
   listAllWorkers,
   getWorkerProfiles,
   getWorkerAliasMap,
+  recentHeartRates,
   recordAlert,
 } from "../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
@@ -318,6 +324,47 @@ export function recentSamples(limit = 80) {
 
 export function latestByWorker(aliasMap?: Record<string, string>) {
   return mergeLatestByWorker(mockStore.samples, aliasMap);
+}
+
+// 심부체온 추정(심박 기반·표시 전용) — 워커별 최근 3시간 심박을 별칭 접기 후 칼만필터로
+// 매번 무상태 재계산한다(인스턴스 메모리 상태 금지 — SpO₂ 겹침과 같은 이유·결과 결정적).
+// 1분 해상도 알고리즘이라 60초 캐시로 폴링 부하를 막는다. 실패 시 빈 맵(표시만 생략).
+const CORE_TEMP_WINDOW_MINUTES = 180;
+const CORE_TEMP_CACHE_MS = 60_000;
+export type CoreTempEstMap = Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
+let _coreTempCache: { at: number; map: CoreTempEstMap } | null = null;
+
+export async function coreTempEstimates(aliasMap: Record<string, string>): Promise<CoreTempEstMap> {
+  const now = Date.now();
+  if (_coreTempCache && now - _coreTempCache.at < CORE_TEMP_CACHE_MS) return _coreTempCache.map;
+  try {
+    const rows = await recentHeartRates(CORE_TEMP_WINDOW_MINUTES);
+    const byPrimary = new Map<string, HrPoint[]>();
+    for (const r of rows) {
+      if (isReservedTestWorker(r.worker_id)) continue;
+      const key = aliasMap[r.worker_id] ?? r.worker_id;
+      const tsMs = Date.parse(r.ts);
+      if (Number.isNaN(tsMs)) continue;
+      const arr = byPrimary.get(key) ?? [];
+      arr.push({ tsMs, bpm: r.heart_rate });
+      byPrimary.set(key, arr);
+    }
+    const map: CoreTempEstMap = {};
+    for (const [workerId, points] of byPrimary) {
+      const est = estimateCoreTemp(points);
+      if (!est) continue; // 워밍업(유효 30분) 미달 — 표시하지 않는 것이 정직
+      map[workerId] = {
+        tempC: Math.round(est.tempC * 10) / 10,
+        basisMinutes: est.basisMinutes,
+        lastHrTs: new Date(est.lastHrTsMs).toISOString(),
+      };
+    }
+    _coreTempCache = { at: now, map };
+    return map;
+  } catch (e) {
+    console.warn("[vital] 심부체온 추정 실패 — 표시 생략", e);
+    return _coreTempCache?.map ?? {};
+  }
 }
 
 // 최신 카드 + DB SpO₂ 겹침 — spo2 단독 행은 한 인스턴스 메모리에만 남으므로(갱신 구조),

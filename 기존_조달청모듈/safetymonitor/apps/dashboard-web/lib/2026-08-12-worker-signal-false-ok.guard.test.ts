@@ -10,7 +10,7 @@
 // 이 레포에는 렌더 테스트 인프라가 없다. 문구 산출을 순수 함수로 빼고 출력 문자열로 고정한다.
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { workerSignalCopy } from "./worker-signal";
+import { workerSignalCopy, type WorkerTally } from "./worker-signal";
 
 test("제보 재현 — 4명 등록 · 1명만 수신: 전원 정상이라고 말하지 않는다", () => {
   const c = workerSignalCopy({
@@ -84,6 +84,24 @@ test("이상 + 대기 동시 — 경보를 유지하면서 대기 인원도 함�
   assert.ok(c.short.includes("연결끊김"), `경보가 대기 문구에 밀렸다 — ${c.short}`);
   assert.ok(c.lines.some((l) => l.label === "수신 대기"), "대기 명단이 빠졌다");
 });
+
+// SafetySignalBoard 는 행을 `{summary} · {short}` 로 **이어 붙여** 한 줄로 렌더한다.
+// short 가 summary 의 수치를 되풀이하면 "정상 1명 · 대기 3명 · 정상 1명 · 3명 수신 대기" 처럼
+// 말을 더듬는다(2026-08-12 첫 배포에서 실제로 그렇게 나갔다). 대기 분기의 short 는 수치가 아니라
+// 의미를 담아야 하므로 숫자를 아예 금지한다 — 이상 분기는 골든타임 "4분" 이 필요해 제외.
+const rowCases: [string, WorkerTally][] = [
+  ["정상+대기 혼재", { count: 4, evaluated: 1, issues: [], waitingNames: ["A", "B", "C"] }],
+  ["전원 미수신", { count: 3, evaluated: 0, issues: [], waitingNames: ["A", "B", "C"] }],
+];
+for (const [label, tally] of rowCases) {
+  test(`${label} — 행 한 줄에서 수치가 겹쳐 읽히지 않는다`, () => {
+    const c = workerSignalCopy(tally);
+    assert.ok(
+      !/\d/.test(c.short),
+      `short 에 숫자가 있어 summary 와 겹친다 — "${c.summary} · ${c.short}"`,
+    );
+  });
+}
 
 test("등록 0명 — 종전대로 '작업자 대기'", () => {
   const c = workerSignalCopy({ count: 0, evaluated: 0, issues: [], waitingNames: [] });

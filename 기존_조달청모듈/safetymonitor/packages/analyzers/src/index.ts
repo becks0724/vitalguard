@@ -8,3 +8,4 @@ export * from "./spo2.js";
 export * from "./hyperthermia.js";
 export * from "./stress-index.js";
 export * from "./fusion.js";
+export * from "./core-temp-estimator.js";
