@@ -110,7 +110,7 @@ import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
 
-type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "fall";
+type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "fall";
 type Selection = { workerId: string; metric: HistoryMetric };
 
 type MockVitalResponse = {
@@ -217,8 +217,10 @@ function hasLiveMetric(
   sample: VitalSample | undefined,
   metric: HistoryMetric,
   lastFallTs: string | undefined,
+  coreTempEstC?: number,
 ): boolean {
   if (metric === "fall") return lastFallTs !== undefined;
+  if (metric === "coreTempEst") return typeof coreTempEstC === "number";
   if (!sample) return false;
   const value = sample[metric];
   return typeof value === "number" && Number.isFinite(value);
@@ -5857,10 +5859,14 @@ export function DemoDashboard() {
             latestMap.get(selection.workerId),
             selection.metric,
             lastFallByWorker.get(selection.workerId),
+            data.coreTempEst?.[selection.workerId]?.tempC,
           )}
           liveValue={(() => {
             // 선택 작업자·메트릭의 현재 라이브 값 — 2초 폴 리렌더마다 갱신 → 그래프 24시간 뷰 마지막 점 실시간 반영.
             if (selection.metric === "fall") return null;
+            if (selection.metric === "coreTempEst") {
+              return data.coreTempEst?.[selection.workerId]?.tempC ?? null;
+            }
             const v = latestMap.get(selection.workerId)?.[selection.metric];
             return typeof v === "number" && Number.isFinite(v) ? v : null;
           })()}
@@ -6226,7 +6232,7 @@ function WorkerTableRow({
 
       {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}
       {metricCell(
-        "skinTempC",
+        "coreTempEst",
         shown.skinTempC == null ? (
           // 실측 손목온도 없음 — 심박 기반 추정이 있고 연결이 살아 있으면 그것을 폴백 표시.
           // "추정" 표기·판정 미주입은 의료 판정 아님 원칙(문헌 오차 ±0.3℃ 내외·선별 참고).
