@@ -124,6 +124,11 @@ function waitingLine(names: string[]): SignalLine[] {
  *
  * ★ 톤은 올리지 않는다 — 대기를 매번 주의로 띄우면 경보 피로가 생긴다. 처방은 사실을 문장으로
  * 구분해 적는 것이고, 그래서 이 함수는 **문구만** 만든다(`sev` 는 호출부의 worst-of 를 유지).
+ *
+ * ⚠ `summary` 와 `short` 는 `SafetySignalBoard` 가 **`{summary} · {short}` 로 항상 이어 붙여**
+ * 한 줄로 렌더한다. 그래서 **short 에 summary 의 수치를 반복하면 안 된다** — 첫 배포에서
+ * `정상 1명 · 대기 3명 · 정상 1명 · 3명 수신 대기` 로 말을 더듬었다(2026-08-12 라이브 실측).
+ * summary 는 인원 배분, short 는 그 의미를 담는다.
  */
 export function workerSignalCopy(t: WorkerTally): {
   summary: string;
@@ -168,7 +173,7 @@ export function workerSignalCopy(t: WorkerTally): {
   if (t.evaluated === 0) {
     return {
       summary: `대기 ${t.count}명`,
-      short: `${t.count}명 전원 수신 대기 — 생체 판정 없음`,
+      short: "전원 생체 미수신 — 정상 여부 판정 불가",
       title: `작업자 수신 대기 (${t.count}명)`,
       lines: [
         { label: "상태", text: `등록 ${t.count}명 전원 생체 미수신 — 정상 여부를 판정하지 못했다.` },
@@ -180,7 +185,7 @@ export function workerSignalCopy(t: WorkerTally): {
   if (waiting > 0) {
     return {
       summary: `정상 ${t.evaluated}명 · 대기 ${waiting}명`,
-      short: `정상 ${t.evaluated}명 · ${waiting}명 수신 대기`,
+      short: "대기 작업자는 생체 미수신 — 판정 대상 아님",
       title: `작업자 정상 ${t.evaluated}명 · 대기 ${waiting}명 (등록 ${t.count}명)`,
       lines: [
         { label: "상태", text: `판정 ${t.evaluated}명 정상 범위(심박·SpO₂·체온·낙상·SOS)` },
