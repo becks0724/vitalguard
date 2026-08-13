@@ -27,5 +27,5 @@
 ## Phase 3 — 검증·기록
 
 - [x] verify 3종(tsc·lint·test) + 가드 음성 대조
-- [ ] 라이브 배포(사용자 /deploy) + 등록→조회→CSV 실측
+- [x] 라이브 배포(사용자 /deploy) + 등록→조회→CSV 실측 — 배포 `00262-gz9`(08-13)·사용자 라이브 등록·정상 작동 확인(08-13 12:2x)
 - [x] 보존 정책 명문화 — db.ts 주석·context-notes(체크리스트 겸)·CLAUDE.md Status(트랙 종료 시)
