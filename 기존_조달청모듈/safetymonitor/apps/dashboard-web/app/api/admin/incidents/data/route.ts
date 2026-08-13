@@ -86,7 +86,9 @@ export async function GET(request: Request) {
           tsMs: Date.parse(r.spo2_measured_at ?? r.ts),
           value: Math.round(r.spo2),
         }))
-        .filter((p) => Number.isFinite(p.tsMs)),
+        // SQL 은 전송 시각(ts)으로 거르지만 표시는 측정 시각 — 큐 지연 전송분의 측정 시각이
+        // 창 밖이면 제외한다(dev 실측에서 발견: 전날 측정이 아침 창에 실려 축 밖 점이 됐다).
+        .filter((p) => Number.isFinite(p.tsMs) && p.tsMs >= fromMs && p.tsMs < toMs),
       activeEnergyKcal: aeRows.map((r) => ({
         tsMs: r.bucket_start_sec * 1000,
         value: Math.round(r.kcal * 100) / 100,
