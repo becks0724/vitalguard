@@ -236,7 +236,8 @@ Phase 0/1 은 Flutter 를 건드리지 않는다. 브리지를 먼저 얹으면 
 - [x] 폰 `VitalPipeline.swift` — `ae` → `activeEnergyKcal` 매핑(서버 '구간 합' 계약 그대로) / `PhoneReceiver.swift` 로그에 `ae=+N.NNkcal` 합계
 - [x] **서버 변경 0건** — `activeEnergyKcal` 이 구 앱 스트레스 수집(P0) 유산으로 스키마(0~200·리질리언트 파서에서 strippable=안전 방향)·DB 컬럼 `active_energy_kcal`·insert 매핑까지 이미 존재. 재사용 확인만 했다
 - [x] 무서명 Release 빌드 통과(08-13 · Watch companion 포함)
-- [ ] **실기기 게이트** — Xcode Run 설치 → 워치 앱 시작 시 HealthKit 시트에서 **'활동 에너지' 읽기 허용**(★ 새 read 타입이라 권한 시트가 다시 뜬다) → 몇 분 착용·활동 → 워치 `활동 N.N kcal` 표시 ↔ 폰 로그 `ae=+…kcal` ↔ DB `active_energy_kcal` 3자 대조
+- [x] **실기기 게이트 통과(08-13 10:16)** — DB 도착 실증: 5초당 1행·**심박과 같은 행에 병합**(hr=108·ae=+0.41kcal = 행 수 불증가 설계 작동)·세션 4분간 51행 합 19.05kcal(분당 ≈5kcal — 심박 105~110 활동 수준과 정합)·워치 `활동 N.N kcal` 표시 확인
+- **★ 함정(08-13 실증) — 아이폰 Xcode Run 의 워치 임베드 전달이 조용히 실패/지연될 수 있다.** 증상 = 새 read 권한 시트가 안 뜨고 신규 UI 줄이 없음(구빌드 잔존인데 실패 표시가 없다). 해법 = **스킴을 `VitalWatch` 로 바꿔 Apple Watch 대상 직접 Run(수동 설치)** — 첫 Run 은 터널 준비로 수 분. 워치가 목록에 없으면 1순위 = 워치 개발자 모드.
 - [ ] (후속·별도 결정) ② 저활동·고심박 패턴 감지 표시 → ③ 단계형 예방 알림(알림 정책 사용자 확인 필요)
 
 **완결 후 개선 (08-11 저녁 · 실기기 확인 완료)**
