@@ -42,10 +42,13 @@ test("③ 패널 — 심박 오버레이는 ≤1주 창에서만·활동은 라�
 });
 
 test("④ 복합 차트 — 심박 선은 withTimeGaps + connectNulls=false + dot 없음", () => {
-  const s = section(charts, "export function RechartsActivityComboChart", 4200);
+  // 고정 길이 창은 코드가 자라면 검사 대상이 창 밖으로 밀린다(Customized 추가로 실제 발생) —
+  // 컴포넌트 시작~심박 선 블록까지 넉넉히 자르고, 선 속성은 심박 Line 앵커에서 정밀 검사.
+  const s = section(charts, "export function RechartsActivityComboChart", 8000);
   assert.match(s, /withTimeGaps\(heartRate\)/, "심박 결측 끊기가 사라짐");
-  assert.match(s, /^\s*connectNulls=\{false\}/m, "끊긴 자리를 직선으로 잇게 됨");
-  assert.match(s, /^\s*dot=\{false\}/m, "결측 null 점에 점이 찍히는 경로가 열림");
+  const hrLine = section(s, 'name="심박 (bpm)"', 500);
+  assert.match(hrLine, /^\s*connectNulls=\{false\}/m, "끊긴 자리를 직선으로 잇게 됨");
+  assert.match(hrLine, /^\s*dot=\{false\}/m, "결측 null 점에 점이 찍히는 경로가 열림");
 });
 
 test("패널 탭 — 활동이 메트릭 목록에 있고 라벨 단위는 kcal", () => {
