@@ -7,6 +7,7 @@ import {
   BarChart as ReBarChart,
   Cell,
   ComposedChart,
+  Customized,
   Legend,
   Line,
   ReferenceLine,
@@ -304,6 +305,9 @@ export function RechartsActivityComboChart({
   // 심박 선만 결측을 끊는다 — 막대는 없는 버킷 자체가 빈 공간이라 이미 정직하다.
   const hrData = heartRate && heartRate.length > 0 ? withTimeGaps(heartRate) : null;
   const actMax = Math.max(...activity.map((p) => p.value));
+  // ★ 시간축(type=number) 위의 Bar 는 recharts 가 밴드 폭을 계산하지 못해 명시하지 않으면
+  //   0px 로 그려진다(라이브 실측 2026-08-13 — 막대가 통째로 안 보였다). 점 수로 폭을 잡는다.
+  const barSize = activity.length > 200 ? 2 : activity.length > 90 ? 3 : activity.length > 40 ? 6 : 12;
 
   return (
     <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
@@ -322,6 +326,7 @@ export function RechartsActivityComboChart({
             minTickGap={28}
             allowDuplicatedCategory={false}
           />
+          {/* 단위는 축 라벨 대신 범례에 싣는다 — insideTop 계열 라벨이 첫 눈금 숫자와 겹쳤다(라이브 실측). */}
           <YAxis
             yAxisId="act"
             domain={[0, Math.max(actMax * 1.2, 0.5)]}
@@ -330,7 +335,6 @@ export function RechartsActivityComboChart({
             axisLine={false}
             width={40}
             tickFormatter={(v: number) => v.toFixed(actMax < 5 ? 1 : 0)}
-            label={{ value: "kcal", position: "insideTopLeft", fontSize: 10, fill: ACT_COLOR, dy: -10 }}
           />
           {hrData && (
             <YAxis
@@ -342,34 +346,71 @@ export function RechartsActivityComboChart({
               axisLine={false}
               width={36}
               tickFormatter={(v: number) => String(Math.round(v))}
-              label={{ value: "bpm", position: "insideTopRight", fontSize: 10, fill: HR_COLOR, dy: -10 }}
             />
           )}
           <Tooltip
             isAnimationActive={false}
             labelFormatter={(v) => formatTimeTick(Number(v), spanMs)}
             formatter={(value, name) => [
-              typeof value === "number" ? (name === "활동" ? `${value.toFixed(2)} kcal` : `${Math.round(value)} bpm`) : "—",
+              typeof value === "number"
+                ? (String(name).startsWith("활동") ? `${value.toFixed(2)} kcal` : `${Math.round(value)} bpm`)
+                : "—",
               String(name),
             ]}
             contentStyle={{ fontSize: 12, borderRadius: 6 }}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
+          {/* ★ 시간축(type=number) + 시리즈별 data 조합에서 recharts <Bar> 는 도형 좌표를 만들지
+              못한다(빈 <g> — barSize·custom shape 로도 불가, 2026-08-13 dev 실측 2회).
+              그래서 역할을 나눈다 — <Bar> 는 범례·툴팁 항목 담당(도형은 안 그려짐),
+              시각은 아래 <Customized> 가 x·y 스케일에서 직접 rect 를 그린다(공식 탈출구). */}
           <Bar
             yAxisId="act"
-            name="활동"
+            name="활동 (kcal)"
             data={activity}
             dataKey="value"
             fill={ACT_COLOR}
-            fillOpacity={0.85}
-            radius={[2, 2, 0, 0]}
-            maxBarSize={10}
             isAnimationActive={false}
+          />
+          <Customized
+            component={(props: unknown) => {
+              const { xAxisMap, yAxisMap } = props as {
+                xAxisMap?: Record<string, { scale: (v: number) => number }>;
+                yAxisMap?: Record<string, { scale: (v: number) => number }>;
+              };
+              const xScale = xAxisMap ? Object.values(xAxisMap)[0]?.scale : undefined;
+              const yScale = yAxisMap?.["act"]?.scale;
+              if (!xScale || !yScale) return <g />;
+              const y0 = yScale(0);
+              return (
+                <g>
+                  {activity.map((p, i) => {
+                    const xx = xScale(p.tsMs);
+                    const yy = yScale(p.value);
+                    if (!Number.isFinite(xx) || !Number.isFinite(yy) || !Number.isFinite(y0)) return null;
+                    const h = y0 - yy;
+                    if (h <= 0) return null;
+                    return (
+                      <rect
+                        key={`act-${i}`}
+                        x={xx - barSize / 2}
+                        y={yy}
+                        width={barSize}
+                        height={h}
+                        rx={1}
+                        fill={ACT_COLOR}
+                        fillOpacity={0.85}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            }}
           />
           {hrData && (
             <Line
               yAxisId="hr"
-              name="심박"
+              name="심박 (bpm)"
               data={hrData}
               dataKey="value"
               stroke={HR_COLOR}
