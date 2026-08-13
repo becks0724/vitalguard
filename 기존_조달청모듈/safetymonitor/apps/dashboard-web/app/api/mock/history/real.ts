@@ -35,7 +35,8 @@ function kstLabel(ms: number, spanDays: number): { date: string; label: string }
 }
 
 // 별칭 확장 — primary 로 접힌 카드의 과거 이력은 secondary ID 행에 있다(신원 전환 이력).
-async function aliasIdsOf(workerId: string): Promise<string[]> {
+// export = 사고 조사 뷰(admin/incidents/data)도 같은 확장을 쓴다(중복 구현 방지).
+export async function aliasIdsOf(workerId: string): Promise<string[]> {
   try {
     const aliasMap = await getWorkerAliasMap();
     const ids = Object.entries(aliasMap)

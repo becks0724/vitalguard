@@ -384,6 +384,21 @@ async function initSchema(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 
+    -- 사고(산업재해) 등록 원장 — 사고 조사 뷰의 앵커 + 보존 마킹(2026-08-13 사용자 결정).
+    -- ★ 보존 정책: 등록된 사고의 구간(occurred_at ± 조사 창 이상, 최소 ±24h)은 **3년 보존**(KOSHA 축).
+    --   생체 원시 데이터(vital_samples 등)에 리텐션(자동 삭제)을 도입하는 사람은 반드시 이 테이블을
+    --   선조회해 해당 구간을 삭제 대상에서 제외해야 한다. 현재는 전체가 무삭제라 지울 코드가 없다.
+    -- 사고 행 삭제 API 는 의도적으로 없다(감사 자료 — 오등록 정정은 별도 결정 사항).
+    CREATE TABLE IF NOT EXISTS incidents (
+      id SERIAL PRIMARY KEY,
+      worker_id TEXT NOT NULL,
+      occurred_at TEXT NOT NULL,
+      note TEXT,
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_incidents_worker ON incidents(worker_id, occurred_at);
+
     -- 현장환경(날씨/특보) 자동 텔레그램 알림 억제 상태 — item_key 별 마지막 발송 severity.
     -- 악화 전이(정상→주의/위험)일 때만 재발송, 정상 복귀 시 리셋. 사람이 누른 ack(env_alert_ack)와 별개.
     CREATE TABLE IF NOT EXISTS env_alert_state (
@@ -1713,6 +1728,83 @@ export async function ackAlertByKey(
     [ackBy, workerId, type],
   );
   return rowCount;
+}
+
+// ── 사고(산업재해) 등록 원장 — 조사 뷰 앵커 + 3년 보존 마킹 ────────────────
+export type IncidentRow = {
+  id: number;
+  worker_id: string;
+  occurred_at: string;
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+// 사고 등록 — append-only(삭제 함수 없음·감사 자료). occurred_at 은 canonical ISO ms 로 저장.
+export async function insertIncident(input: {
+  workerId: string;
+  occurredAt: string;
+  note?: string | null;
+  createdBy?: string | null;
+}): Promise<IncidentRow> {
+  const { rows } = await q<IncidentRow>(
+    `INSERT INTO incidents (worker_id, occurred_at, note, created_by)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+    [input.workerId, input.occurredAt, input.note ?? null, input.createdBy ?? null],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("incidents INSERT 가 행을 반환하지 않음");
+  return row;
+}
+
+export async function listIncidents(limit = 200): Promise<IncidentRow[]> {
+  const { rows } = await q<IncidentRow>(
+    "SELECT * FROM incidents ORDER BY occurred_at DESC, id DESC LIMIT $1",
+    [limit],
+  );
+  return rows;
+}
+
+// 구간 알림(SOS·낙상) — 사고 조사 창의 이벤트 타임라인용. ack(대응) 시각·대응자 포함.
+export async function alertsBetween(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+): Promise<AlertRow[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<AlertRow>(
+    `SELECT * FROM alerts
+      WHERE worker_id = ANY($1)
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      ORDER BY ts`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000)],
+  );
+  return rows;
+}
+
+// 구간 활동 에너지 버킷 합 — 사고 조사 창의 활동 축(작업 강도 재구성)용.
+// 행 값은 5초 구간 증분(kcal)이라 SUM 이 곧 그 버킷의 소모량이다.
+export async function activeEnergyBucketSums(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+  bucketSec: number,
+): Promise<{ bucket_start_sec: number; kcal: number }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ bucket_start_sec: number; kcal: number }>(
+    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+            sum(active_energy_kcal) AS kcal
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND active_energy_kcal IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000), bucketSec],
+  );
+  return rows;
 }
 
 // ── 현장 환경 경보 확인/조치 기록 ──────────────────────────────────────────

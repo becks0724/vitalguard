@@ -7,6 +7,7 @@ import type { WorkerSummary, ExportRow, EnvAlertAckRow, AlertRow } from "../../l
 import type { Status } from "../../lib/severity";
 import { SEVERITY_BADGE_CLASS, SEVERITY_LABEL } from "../../lib/weather-rules";
 import { GlassTabBar } from "./GlassTabBar";
+import { IncidentReviewPanel } from "./IncidentReview";
 
 // 관리자 메뉴 탭 — 리퀴드글래스 탭바(캐러셀과 동일 컴포넌트) 순서.
 const ADMIN_TABS = [
@@ -15,6 +16,7 @@ const ADMIN_TABS = [
   "작업자 ID 병합",
   "환경·특보 이력",
   "SOS·낙상 이력",
+  "사고 조사",
 ];
 
 type PreviewRow = ExportRow & {
@@ -753,6 +755,9 @@ function ExportPanel({
       {tab === 3 && <EnvAlertAckPanel token={token} onAuthFail={onAuthFail} />}
 
       {tab === 4 && <AlertAckPanel token={token} onAuthFail={onAuthFail} />}
+
+      {/* 사고 조사(2026-08-13) — 사고 등록(3년 보존 마킹)·전후 창 통합 조회·보고 CSV */}
+      {tab === 5 && <IncidentReviewPanel token={token} onAuthFail={onAuthFail} workers={workers} />}
     </div>
   );
 }
