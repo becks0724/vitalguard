@@ -4533,13 +4533,29 @@ export function DemoDashboard() {
 
   // 워커별 스트레스 지수 — 행 렌더마다 인라인 계산하던 것을 채워진 슬롯 기준 1회 계산해 Map 으로 공유.
   // (자동 슬라이딩 복제본까지 같은 workerId 를 여러 번 그리므로 인라인 호출 시 중복 비용 발생)
+  // hrvBacked = 이 지수에 HRV(심박과 독립인 유일한 신호)가 실제로 들어갔는가.
+  //   화면 문구를 산출 근거에 맞추려고 함께 계산한다 — 없으면 계산식에서 zHrv 항이 0 이 되고
+  //   활동 보정 초과심박만 남아, 지수가 사실상 **심박의 단조 변환**이 된다.
+  //   ⚠ 상시 워크아웃 구조에서는 대개 없다 — watchOS 가 워크아웃 중 심호흡 세션을 거부하고
+  //     배경 HRV 측정도 일어나지 않는다(2026-08-13 실기기 실증). 그래도 앱이 꺼진 사이 측정분이
+  //     앵커로 들어오는 경우가 있어 고정 문구가 아니라 샘플별 조건부로 둔다.
   const stressByWorker = useMemo(() => {
-    const map = new Map<string, StressResult>();
+    const map = new Map<string, { result: StressResult; hrvBacked: boolean }>();
     for (const { workerId } of filledSlots) {
-      map.set(workerId, computeStressIndex(stressInputsFromSample(latestMap.get(workerId) ?? {})));
+      const inputs = stressInputsFromSample(latestMap.get(workerId) ?? {});
+      map.set(workerId, { result: computeStressIndex(inputs), hrvBacked: inputs.hrvSdnnMs !== undefined });
     }
     return map;
   }, [filledSlots, latestMap]);
+
+  // 표 행이 쓰는 진입점 — 캐시에 없으면(슬롯 밖 표시 등) 그 자리에서 계산한다.
+  // 호출부가 둘(자동 슬라이딩 복제본)이라 폴백을 인라인으로 두면 같은 식이 두 벌 생긴다.
+  const stressFor = (workerId: string) => {
+    const hit = stressByWorker.get(workerId);
+    if (hit) return hit;
+    const inputs = stressInputsFromSample(latestMap.get(workerId) ?? {});
+    return { result: computeStressIndex(inputs), hrvBacked: inputs.hrvSdnnMs !== undefined };
+  };
 
   // 첫 빈 슬롯 — "+ 작업자 등록" 버튼이 여는 대상. 없으면(-1) 버튼 비활성.
   const firstEmptySlot = useMemo(() => slots.findIndex((id) => id === null), [slots]);
@@ -5583,10 +5599,7 @@ export function DemoDashboard() {
                           nowMs={now}
                           coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
                           heatPattern={data.heatPattern?.[entry.workerId]}
-                          stress={
-                            stressByWorker.get(entry.workerId) ??
-                            computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
-                          }
+                          stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
@@ -5626,10 +5639,7 @@ export function DemoDashboard() {
                           nowMs={now}
                           coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
                           heatPattern={data.heatPattern?.[entry.workerId]}
-                          stress={
-                            stressByWorker.get(entry.workerId) ??
-                            computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
-                          }
+                          stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
@@ -6063,7 +6073,8 @@ type WorkerTableRowProps = {
   coreTempEstC?: number;
   // 저활동·고심박 패턴(온열 ②) — 있으면 flagged 상태. 체온 추정 셀의 주석(툴팁·라벨)에만 쓴다.
   heatPattern?: { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number };
-  stress: StressResult;
+  /** hrvBacked = 이 지수에 HRV 가 실제로 들어갔는가(칩 문구를 산출 근거에 맞추는 데 쓴다). */
+  stress: { result: StressResult; hrvBacked: boolean };
   isAnomaly: boolean;
   // 구획(근무지) 이탈 중 — 생체와 별개로 신호등을 주의로 올린다(감사 후속·위치 연동).
   outside?: boolean;
@@ -6342,7 +6353,7 @@ function WorkerTableRow({
 
       {/* 8 스트레스 */}
       <div className="flex items-center justify-center">
-        <StressChip result={stress} />
+        <StressChip result={stress.result} hrvBacked={stress.hrvBacked} />
       </div>
 
       {/* 9 신호 */}
@@ -6796,7 +6807,17 @@ const STRESS_CLASS: Record<StressLevel, string> = {
   danger: "border-semantic-down text-semantic-down vital-blink-danger",
 };
 
-function StressChip({ result }: { result: StressResult }) {
+// 스트레스 칩 — 표시가 **실제 산출 근거**와 어긋나지 않게 한다.
+//
+// ⚠️ HRV 가 없으면 지수는 심박의 단조 변환에 가깝다. 계산식에서 HRV 항(zHrv)과 호흡 항(zRr)이
+//    0 이 되고 활동 보정 초과심박만 남기 때문이다. 그런데 상시 워크아웃 구조에서는 HRV 가
+//    거의 안 들어온다 — watchOS 가 워크아웃 중 심호흡 세션을 거부하고 배경 측정도 일어나지
+//    않는다(2026-08-13 실기기 실증. 수집 코드는 정상이며 세션을 끄면 즉시 도착한다).
+//    종전 툴팁은 조건 없이 "활동 보정 초과심박 + HRV" 라고 적어 **없는 근거를 있다고 말했다**.
+//    관제자가 심박과 독립인 신호가 반영된 줄로 오독하면 같은 정보를 두 번 세는 셈이 된다.
+// 그래서 고정 문구가 아니라 그 샘플에 HRV 가 실렸는지로 갈라 쓴다(앱이 꺼진 사이 측정분이
+//    앵커로 들어오는 경우가 있어 "항상 없다"고 단정할 수도 없다).
+function StressChip({ result, hrvBacked }: { result: StressResult; hrvBacked: boolean }) {
   if (result.calibrating || result.index === null) {
     return (
       <span
@@ -6807,12 +6828,17 @@ function StressChip({ result }: { result: StressResult }) {
       </span>
     );
   }
+  const title = hrvBacked
+    ? "스트레스 지수 0~100 — 활동 보정 초과심박 + HRV · 참고용 추정 · 의료 진단 아님"
+    : "스트레스 지수 0~100 — 활동 보정 초과심박 기반(심박 파생) · HRV 미반영이라 심박과 독립인 신호는 없다 · 참고용 추정 · 의료 진단 아님";
   return (
     <span
-      title="스트레스 지수 0~100 (활동 보정 초과심박 + HRV) · 참고용 추정 · 의료 진단 아님"
+      title={title}
       className={`shrink-0 whitespace-nowrap rounded-pill border px-2 py-0.5 font-mono text-[10px] font-semibold tabular-nums ${STRESS_CLASS[result.level]}`}
     >
       스트레스 {result.index}
+      {/* 심박 파생임을 칩에서도 드러낸다 — 툴팁은 호버해야 보이고, 호버하지 않는 관제자가 다수다. */}
+      {!hrvBacked && <span className="ml-1 font-sans font-normal opacity-70">· 심박 기반</span>}
     </span>
   );
 }
