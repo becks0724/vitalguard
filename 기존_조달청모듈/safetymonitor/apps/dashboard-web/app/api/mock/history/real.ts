@@ -89,8 +89,11 @@ export async function buildRealHistory(
   if (metric === "heartRate") {
     const rows = await heartRateBucketAverages(ids, fromMs, toMs, hrBucketSec(spanDays));
     return rows.map((r) => {
-      const { date, label } = kstLabel(r.bucket_start_sec * 1000, spanDays);
-      return { date, label, value: Math.round(Number(r.bpm)) };
+      const at = r.bucket_start_sec * 1000;
+      const { date, label } = kstLabel(at, spanDays);
+      // tsMs = 버킷 시작 시각. 차트가 이 값으로 시간축을 잡고 결측 구간을 끊는다 —
+      // 없으면 카테고리 축으로 떨어져 16시간 공백이 2시간 간격과 같은 폭으로 그려진다.
+      return { date, label, value: Math.round(Number(r.bpm)), tsMs: at };
     });
   }
 
@@ -110,7 +113,9 @@ export async function buildRealHistory(
   return [...bins.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([bin, b]) => {
-      const { date, label } = kstLabel(bin * 1000, spanDays);
-      return { date, label, value: Math.round((b.sum / b.n) * 10) / 10 };
+      const at = bin * 1000;
+      const { date, label } = kstLabel(at, spanDays);
+      // 심박과 같은 이유로 tsMs 를 함께 싣는다(시간축·결측 끊기).
+      return { date, label, value: Math.round((b.sum / b.n) * 10) / 10, tsMs: at };
     });
 }

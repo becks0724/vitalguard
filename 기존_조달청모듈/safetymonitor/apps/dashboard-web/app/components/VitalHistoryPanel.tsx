@@ -400,8 +400,20 @@ export function VitalHistoryPanel({
                   />
                 );
               }
+              // 선 차트는 시간축으로 그린다 — 창을 넘겨 주면 점이 실제 시각 위치에 놓이고
+              // 결측 구간에서 선이 끊긴다. 종전 카테고리 축은 점을 균등 배치해
+              // 밤새 비어 있던 16시간을 2시간 간격과 같은 폭으로 그렸다(2026-08-13 제보).
+              // 창이 없거나 tsMs 없는 경로(모의 낙상)는 차트 쪽에서 카테고리 축으로 떨어진다.
+              const timeDomain: [number, number] | undefined =
+                data.windowFromMs != null && data.windowToMs != null
+                  ? [data.windowFromMs, data.windowToMs]
+                  : undefined;
               const isBar = selection.metric === "fall" || selection.metric === "spo2" || chartType === "bar";
-              return isBar ? <RechartsBarChart {...chartProps} /> : <RechartsLineChart {...chartProps} />;
+              return isBar ? (
+                <RechartsBarChart {...chartProps} />
+              ) : (
+                <RechartsLineChart {...chartProps} domain={timeDomain} />
+              );
             })()}
           </>
         ) : (

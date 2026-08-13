@@ -15,9 +15,10 @@ import {
   YAxis,
 } from "recharts";
 
+import { formatTimeTick, hasFullTimestamps, withTimeGaps } from "../../lib/chart-gaps";
 import type { Status } from "../../lib/severity";
 
-type ChartPoint = { date: string; label?: string; value: number };
+type ChartPoint = { date: string; label?: string; value: number; tsMs?: number };
 type ReferenceLineSpec = { value: number; label: string; color?: string };
 
 type Props = {
@@ -28,7 +29,26 @@ type Props = {
   referenceLines?: ReferenceLineSpec[];
   pointSeverity?: (value: number) => Status;
   hoverExtra?: (value: number) => string;
+  /** 조회 창 [from, to] (epoch ms). 주면 시간축을 쓰고, 없으면 카테고리 축으로 떨어진다. */
+  domain?: [number, number];
 };
+
+// 시간축을 쓸 수 있는 조건 — 창이 주어졌고 모든 점에 측정 시각이 있을 때.
+// 모의 경로(낙상)는 tsMs 가 없어 여기서 자동으로 카테고리 축으로 떨어진다.
+function timeAxisProps(points: ChartPoint[], domain: [number, number] | undefined) {
+  if (!domain || !hasFullTimestamps(points)) return null;
+  const spanMs = domain[1] - domain[0];
+  return {
+    data: withTimeGaps(points),
+    axis: {
+      dataKey: "tsMs" as const,
+      type: "number" as const,
+      domain,
+      scale: "time" as const,
+      tickFormatter: (v: number) => formatTimeTick(v, spanMs),
+    },
+  };
+}
 
 // 이상치(주의/위험)만 강조색, 그 외는 메트릭 기본색.
 function sevColor(sev: Status | undefined, fallback: string): string {
@@ -113,19 +133,22 @@ export function RechartsLineChart({
   referenceLines,
   pointSeverity,
   hoverExtra,
+  domain,
 }: Props) {
   const refs = referenceLines ?? [];
   if (points.length === 0) {
     return <p className="text-xs text-zinc-400">데이터 없음</p>;
   }
-  const domain = yDomain(points, decimals, refs.map((r) => r.value));
+  const yDom = yDomain(points, decimals, refs.map((r) => r.value));
   const gid = `rc-line-${color.replace(/[^a-z0-9]/gi, "")}`;
   const dense = points.length > 30;
+  // 시간축이 가능하면 결측을 끊은 데이터로 그린다(withTimeGaps + connectNulls={false}).
+  const t = timeAxisProps(points, domain);
 
   return (
     <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={points} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
+        <ComposedChart data={t ? t.data : points} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity={0.22} />
@@ -133,7 +156,7 @@ export function RechartsLineChart({
             </linearGradient>
           </defs>
           <XAxis
-            dataKey={xTickLabel}
+            {...(t ? t.axis : { dataKey: xTickLabel })}
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={{ stroke: "currentColor", strokeOpacity: 0.25 }}
@@ -141,7 +164,7 @@ export function RechartsLineChart({
             minTickGap={28}
           />
           <YAxis
-            domain={domain}
+            domain={yDom}
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={false}
@@ -162,9 +185,18 @@ export function RechartsLineChart({
             strokeWidth={2.6}
             fill={`url(#${gid})`}
             isAnimationActive={false}
-            dot={(dotProps: { cx?: number; cy?: number; index?: number; payload?: ChartPoint }) => {
+            // 결측 자리에 끼운 null 점에서 선을 끊는다 — 이 값이 true 면 공백을 가로지르는
+            // 직선이 그려져 시간축으로 바꾼 의미가 사라진다.
+            connectNulls={false}
+            dot={(dotProps: {
+              cx?: number;
+              cy?: number;
+              index?: number;
+              payload?: { value: number | null };
+            }) => {
               const { cx, cy, index, payload } = dotProps;
-              if (cx == null || cy == null || !payload) {
+              // payload.value 가 null 인 자리는 '데이터 없음' 표식이라 점을 찍지 않는다.
+              if (cx == null || cy == null || !payload || payload.value == null) {
                 return <g key={`dot-empty-${index ?? 0}`} />;
               }
               const sev = pointSeverity?.(payload.value);
