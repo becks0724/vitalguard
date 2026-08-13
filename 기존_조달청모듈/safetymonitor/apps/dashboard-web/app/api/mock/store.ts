@@ -7,6 +7,7 @@ import {
 
 import {
   estimateCoreTemp,
+  estimateCoreTempSeries,
   type HrPoint,
 } from "@safetymonitor/analyzers";
 
@@ -24,10 +25,18 @@ import {
   recentHeartRates,
   recentHrEnergy,
   recordAlert,
+  upsertEnvAlertState,
 } from "../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
 import { overlayLatestSpo2 } from "../../../lib/spo2-overlay";
 import { detectLowActivityHighHr, type HrEnergyPoint } from "../../../lib/heat-pattern";
+import {
+  decideHeatNotify,
+  evaluateHeatStage,
+  formatHeatMessage,
+  type HeatStage,
+} from "../../../lib/heat-alert";
+import { sendTelegramMessage } from "../../../lib/telegram";
 import { heartRateStatus, spo2Status, coreTempStatus } from "../../../lib/severity";
 
 type Store = {
@@ -417,6 +426,81 @@ export async function heatPatterns(aliasMap: Record<string, string>): Promise<He
   } catch (e) {
     console.warn("[vital] 저활동·고심박 패턴 판정 실패 — 표시 생략", e);
     return _heatPatternCache?.map ?? {};
+  }
+}
+
+// 온열 단계(온열 ③) — 워커별 최근 3시간 심박 → 추정 체온 궤적 → 단계 판정(주의·경고).
+// 심부체온·패턴과 같은 골격(무상태 재계산·60초 캐시·실패 시 표시·알림 생략).
+const HEAT_STAGE_CACHE_MS = 60_000;
+export type HeatStageMap = Record<string, HeatStage>;
+let _heatStageCache: { at: number; map: HeatStageMap } | null = null;
+
+export async function heatStages(aliasMap: Record<string, string>): Promise<HeatStageMap> {
+  const now = Date.now();
+  if (_heatStageCache && now - _heatStageCache.at < HEAT_STAGE_CACHE_MS) return _heatStageCache.map;
+  try {
+    const [rows, patterns] = await Promise.all([
+      recentHeartRates(CORE_TEMP_WINDOW_MINUTES),
+      heatPatterns(aliasMap),
+    ]);
+    const byPrimary = new Map<string, HrPoint[]>();
+    for (const r of rows) {
+      if (isReservedTestWorker(r.worker_id)) continue;
+      const key = aliasMap[r.worker_id] ?? r.worker_id;
+      const tsMs = Date.parse(r.ts);
+      if (Number.isNaN(tsMs)) continue;
+      const arr = byPrimary.get(key) ?? [];
+      arr.push({ tsMs, bpm: r.heart_rate });
+      byPrimary.set(key, arr);
+    }
+    const map: HeatStageMap = {};
+    for (const [workerId, points] of byPrimary) {
+      const series = estimateCoreTempSeries(points).map((p) => ({ tsMs: p.tsMs, tempC: p.tempC }));
+      const stage = evaluateHeatStage(series, patterns[workerId] != null, now);
+      if (stage) map[workerId] = stage;
+    }
+    _heatStageCache = { at: now, map };
+    return map;
+  } catch (e) {
+    console.warn("[vital] 온열 단계 판정 실패 — 표시·알림 생략", e);
+    return _heatStageCache?.map ?? {};
+  }
+}
+
+// 온열 알림 발사(온열 ③) — vital POST 수신 경로에서 호출(작업자가 데이터를 보내는 동안만 판정).
+// 60초 스로틀 + env_alert_state 전이 엔진 재사용(item_key = heat:{워커}) — 악화 전이만 발송,
+// 호전은 조용히 상태 갱신, 해제는 발송했던 단계가 있을 때만 1건. 실패는 삼킨다(수집 불가침).
+let _heatNotifyLastAt = 0;
+
+export async function notifyHeatIfDue(): Promise<void> {
+  const now = Date.now();
+  if (now - _heatNotifyLastAt < HEAT_STAGE_CACHE_MS) return;
+  _heatNotifyLastAt = now;
+  try {
+    const aliasMap = await getWorkerAliasMap();
+    const stages = await heatStages(aliasMap);
+    // 이름은 인메모리 최신 카드에서 — 온열 단계가 뜨는 워커는 지금 송신 중이라 메모리에 있다.
+    const latest = latestByWorker(aliasMap);
+    // 발송했던 워커의 해제 판정을 위해 "단계 없음" 워커도 상태를 접어야 한다 — 현재 단계 워커 ∪
+    // 최신 카드 워커를 함께 순회(상태 테이블 전수 조회 없이 활성 워커만 다룬다).
+    const ids = new Set<string>([...Object.keys(stages), ...latest.map((s) => s.workerId)]);
+    for (const workerId of ids) {
+      if (isReservedTestWorker(workerId)) continue;
+      const next = stages[workerId] ?? null;
+      const prev = await upsertEnvAlertState(`heat:${workerId}`, next ?? "normal");
+      const { notify } = decideHeatNotify(prev, next);
+      if (!notify) continue;
+      const workerName = latest.find((s) => s.workerId === workerId)?.workerName ?? null;
+      const result = await sendTelegramMessage(
+        formatHeatMessage({ stage: notify, workerId, workerName }),
+      );
+      // 발사 이력은 반드시 로그로 남긴다(D-27 계열 — 무음 발사는 오발송을 며칠 뒤에야 알게 한다).
+      console.warn(
+        `[heat-alert] ${workerId} ${prev ?? "(없음)"}→${next ?? "normal"} 발송=${notify} 결과=${result}`,
+      );
+    }
+  } catch (e) {
+    console.warn("[vital] 온열 알림 처리 실패 — 다음 주기 재시도", e);
   }
 }
 

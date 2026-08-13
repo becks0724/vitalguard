@@ -2,7 +2,12 @@
 //
 // 왜 가드인가 — 이 패턴은 온열 전조 "신호"이지 판정이 아니다. workerStatus/overallStatus/
 // signalLevel 에 넣으면 타입이 맞아 tsc·기능 테스트가 전부 통과한 채, 검증 안 된 임계
-// (100bpm·1.5kcal/분)가 경보 기준으로 승격된다. 경보 연동(③)은 알림 정책과 함께 별도 결정 사항.
+// (100bpm·1.5kcal/분)가 경보 기준으로 승격된다.
+//
+// ★ 2026-08-13 개정 — 온열 ③(사용자 결정)이 통제된 예외 1개를 추가했다: heatStage(패턴 원값이
+// 아니라 판정된 "단계")의 warning 만 신호등 톤 합성에 주의로 얹는다. 그 경계는
+// 2026-08-13-heat-alert-boundary 가드가 지키고, 이 파일은 원래 경계(패턴 원값의 생체 판정
+// 함수 미주입)를 계속 지킨다 — 두 가드는 다른 층이다.
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";

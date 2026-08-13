@@ -24,7 +24,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { VitalSample } from "@safetymonitor/schemas";
 import {
-  THRESHOLDS,
   estimateCoreTempC,
   computeStressIndex,
   stressInputsFromSample,
@@ -93,6 +92,7 @@ import {
   gateStaleVitals,
   withOutsideMetric,
   workerSignalCopy,
+  worseTone,
 } from "../../lib/worker-signal";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -124,6 +124,11 @@ type MockVitalResponse = {
   coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
   // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — flagged 워커만 실린다. 판정 미주입.
   heatPattern?: Record<string, { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }>;
+  // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등(사용자 결정 08-13).
+  // workerStatus/overallStatus(생체 판정)에는 여전히 미주입 — 통제된 예외는 신호등 톤 합성뿐.
+  heatStage?: Record<string, "caution" | "warning">;
+  // 별칭 맵(secondary → primary) — 실시간 수집 행(발신 ID)을 추정 맵(주 ID 키)에 잇는 데 쓴다.
+  workerAliases?: Record<string, string>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
   workerProfiles?: Record<string, string>;
 };
@@ -4912,10 +4917,15 @@ export function DemoDashboard() {
       const outside = outsideWorkers.has(slot.workerId);
       // 가공하지 않은 생체 톤을 넘긴다 — 과거 여기서만 stale 을 미리 caution 으로 강등해
       // 표 행(원 톤 전달)과 결과가 갈렸다(감사 DLT-LIB-014).
-      const tone: WorkerStatus["tone"] = effectiveTone(workerStatus(sample, now).tone, {
+      // 온열 경고(온열 ③·사용자 결정 08-13) — warning 단계만 신호등을 최소 주의로 올린다.
+      // caution 단계는 텔레그램·표시 전용(신호등 불변). 생체 판정(workerStatus)은 건드리지 않고
+      // 톤 합성에만 얹는다 — stale 이면 온열 판정도 낡은 데이터라 얹지 않는다.
+      const heatWarning = !stale && data.heatStage?.[slot.workerId] === "warning";
+      const baseTone = effectiveTone(workerStatus(sample, now).tone, {
         stale,
         outside,
       });
+      const tone: WorkerStatus["tone"] = heatWarning ? worseTone(baseTone, "caution") : baseTone;
       if (rank[tone] > rank[sev]) sev = tone;
       const name = sample?.workerName?.trim() || sample?.employeeId?.trim() || slot.workerId;
       if (stale) {
@@ -4931,6 +4941,7 @@ export function DemoDashboard() {
         if (sp === "caution" || sp === "danger") ms.push("SpO₂");
         const tp = coreTempStatus(sample?.skinTempC);
         if (tp === "caution" || tp === "danger") ms.push("체온");
+        if (heatWarning) ms.push("온열 경고");
         const withLoc = withOutsideMetric(ms, outside);
         issues.push({ name, metrics: withLoc.length ? withLoc.join("·") : "이상" });
       } else if (tone === "idle") {
@@ -4956,7 +4967,7 @@ export function DemoDashboard() {
         lines: copy.lines,
       },
     };
-  }, [filledSlots, latestMap, now, outsideWorkers]);
+  }, [filledSlots, latestMap, now, outsideWorkers, data.heatStage]);
 
   // 이상 발생 시 해당 행으로 자동 스크롤 — 자동 모드에서만(수동 정렬 존중). 빨강 링은 모드 무관.
   useEffect(() => {
@@ -5923,10 +5934,10 @@ export function DemoDashboard() {
                   <th className="px-4 py-3">작업자</th>
                   <th className="px-4 py-3">심박 (bpm)</th>
                   <th className="px-4 py-3">산소포화도 (%)</th>
-                  <th className="px-4 py-3">손목 온도 (℃)</th>
+                  {/* 손목 온도 열 삭제(08-13 사용자 결정) — Apple 실시간 미개방이라 상시 "--" 였다. */}
                   <th
                     className="px-4 py-3"
-                    title={`손목 온도 + ${THRESHOLDS.coreTemp.wristToCoreOffsetC}℃ 보정 (단순 추정 · 의학 진단 아님)`}
+                    title="심박 기반 심부체온 추정(칼만필터·1분 해상도 현재 추정치) — 의료 판정 아님"
                   >
                     체온 추정 (℃)
                   </th>
@@ -5940,16 +5951,14 @@ export function DemoDashboard() {
                     <td className="px-4 py-3">{workerCell(sample)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
-                    <td
-                      className="px-4 py-3 font-mono"
-                      title={sample.skinTempC == null ? TEMP_UNAVAILABLE_TITLE : undefined}
-                    >
-                      {formatTemp(sample.skinTempC)}
-                    </td>
+                    {/* 칼만 추정(HR 기반)의 현재 추정치 — 행 워커(별칭 접기)의 1분 해상도 값이라
+                        같은 워커의 최근 행들에는 같은 값이 붙는 것이 정직한 표현이다. */}
                     <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
-                      {sample.skinTempC == null
-                        ? "--"
-                        : formatTemp(estimateCoreTempC(sample.skinTempC))}
+                      {(() => {
+                        const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
+                        const est = data.coreTempEst?.[primary]?.tempC;
+                        return est == null ? "--" : `≈${formatTemp(est)}`;
+                      })()}
                     </td>
                   </tr>
                 ))}

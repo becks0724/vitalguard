@@ -11,6 +11,8 @@ import {
   countsByWorker,
   coreTempEstimates,
   heatPatterns,
+  heatStages,
+  notifyHeatIfDue,
   latestByWorkerWithSpo2,
   recentSamples,
   totalPersisted,
@@ -58,6 +60,8 @@ export async function GET(request: Request) {
     coreTempEst: await coreTempEstimates(aliasMap),
     // 저활동·고심박 패턴(온열 ②·표시 주석 전용·판정 미주입) — flagged 워커만 실린다.
     heatPattern: await heatPatterns(aliasMap),
+    // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등에 쓰인다(사용자 결정).
+    heatStage: await heatStages(aliasMap),
     workerProfiles: await workerProfiles(),
     workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
@@ -207,6 +211,9 @@ export async function POST(request: Request) {
           last = sample;
         }
       }
+      // 온열 예방 알림(온열 ③) — 수집이 곧 판정 틱. 60초 스로틀 내장·fire-and-forget
+      // (실패·지연이 수집 응답을 막지 않는다). 데이터가 안 오면 판정도 없다 — 의도된 동작.
+      void notifyHeatIfDue();
       // 검증 실패는 항상 드러낸다 — 과거에는 응급 플래그 샘플만 경고를 남겨, 평상시 샘플이
       // 통째로 버려지는 상황(감사 BND-LOSS-01)이 201 ok 뒤에 완전히 가려져 있었다.
       if (droppedInvalid > 0) {
