@@ -3475,8 +3475,7 @@ export function DemoDashboard() {
   // ⚠️ 탭을 추가·재배열하면 이 인덱스가 밀린다. 매직넘버 2 를 쓰다 '안전뉴스' 탭 삽입으로
   //    한 칸 밀려서 상수로 뽑았다(pages 배열 순서와 반드시 함께 본다).
   const [pagerIdx, setPagerIdx] = useState(0);
-  const ERP_PAGE_IDX = 3; // pages 배열의 'ERP: 스마트경리' 위치
-  const NEWS_PAGE_IDX = 1; // pages 배열의 '안전뉴스' 위치
+  const MONITOR_PAGE_IDX = 0; // pages 배열의 '실시간 현장 관제' 위치
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -5677,7 +5676,7 @@ export function DemoDashboard() {
           탭을 옮겨도 selection/siteChart 가 살아 있으면 안전뉴스·안전관리비 검증·ERP 화면
           맨 아래에 그대로 따라붙었다(2026-08-13 제보). 상태는 지우지 않고 렌더만 막는다 —
           관제 탭으로 돌아오면 보던 차트가 그대로 있다. */}
-      {pagerIdx === 0 && siteChart && (
+      {pagerIdx === MONITOR_PAGE_IDX && siteChart && (
         <SiteMetricChartPanel metric={siteChart} onClose={() => setSiteChart(null)} />
       )}
 
@@ -5858,7 +5857,7 @@ export function DemoDashboard() {
       )}
 
       {/* 관제 탭(0) 전용 — 위 siteChart 와 같은 이유(다른 탭에 따라붙는 것을 막는다). */}
-      {pagerIdx === 0 && selection && (
+      {pagerIdx === MONITOR_PAGE_IDX && selection && (
         <VitalHistoryPanel
           selection={selection}
           workerName={latestMap.get(selection.workerId)?.workerName}
@@ -5885,10 +5884,12 @@ export function DemoDashboard() {
         />
       )}
 
-      {/* 실시간 수집 · DB 영속 스트립(+ data_mockup) — 관제·안전관리비 검증 탭에서만 노출.
+      {/* 실시간 수집 · DB 영속 스트립(+ data_mockup) — 관제 탭(0)에서만 노출.
           ERP: 스마트경리 = 별개 시스템을 한 화면에 최대한 보여주려 숨김.
-          안전뉴스 = 탭 주제(재난·재해 정보)와 무관해 제외(사용자 결정 2026-07-31). */}
-      {pagerIdx !== ERP_PAGE_IDX && pagerIdx !== NEWS_PAGE_IDX && (
+          안전뉴스 = 탭 주제(재난·재해 정보)와 무관해 제외(사용자 결정 2026-07-31).
+          안전관리비 검증 = 계상·집행 검증 화면이라 생체 수집 로그와 무관해 제외
+          (사용자 결정 2026-08-13 — 같은 날 하단 차트 2종을 관제 전용으로 좁힌 것과 같은 정리). */}
+      {pagerIdx === MONITOR_PAGE_IDX && (
       <>
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas dark:border-white/10 dark:bg-surface-dark-elevated">
         <button

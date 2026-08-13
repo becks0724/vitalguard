@@ -13,19 +13,39 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
 
-test("작업자 생체 차트 — 관제 탭(0)에서만 렌더한다", () => {
+test("관제 탭 인덱스는 상수로 둔다 — 매직넘버는 탭 삽입 때 조용히 밀린다", () => {
+  assert.match(dash, /const MONITOR_PAGE_IDX = 0;/, "페이지 인덱스 상수가 사라졌다");
+});
+
+test("작업자 생체 차트 — 관제 탭에서만 렌더한다", () => {
   assert.match(
     dash,
-    /\{pagerIdx === 0 && selection && \(\s*<VitalHistoryPanel/,
+    /\{pagerIdx === MONITOR_PAGE_IDX && selection && \(\s*<VitalHistoryPanel/,
     "탭 조건이 없다 — 안전뉴스·안전관리비 검증·ERP 하단에 생체 차트가 따라붙는다",
   );
 });
 
-test("설비(가스·AED) 차트 — 관제 탭(0)에서만 렌더한다", () => {
+test("설비(가스·AED) 차트 — 관제 탭에서만 렌더한다", () => {
   assert.match(
     dash,
-    /\{pagerIdx === 0 && siteChart && \(\s*<SiteMetricChartPanel/,
+    /\{pagerIdx === MONITOR_PAGE_IDX && siteChart && \(\s*<SiteMetricChartPanel/,
     "탭 조건이 없다 — 다른 탭 하단에 설비 차트가 따라붙는다",
+  );
+});
+
+test("실시간 수집 · DB 영속 스트립(+ data_mockup) — 관제 탭에서만 렌더한다", () => {
+  // 2026-08-13 사용자 결정으로 안전관리비 검증 탭에서도 뺐다(종전엔 ERP·안전뉴스만 제외).
+  // 스트립과 data_mockup 섹션은 같은 프래그먼트라 조건 하나가 둘을 함께 가린다.
+  const at = dash.indexOf("실시간 수집 · DB 영속 스트립");
+  assert.ok(at > 0, "스트립 주석을 찾지 못했다 — 가드 재작성 필요");
+  const gateAt = dash.indexOf("{pagerIdx === MONITOR_PAGE_IDX && (", at);
+  assert.ok(gateAt > at, "스트립 게이트가 없다 — 안전관리비 검증·ERP·안전뉴스에도 노출된다");
+  const mockAt = dash.indexOf("data_mockup", gateAt);
+  assert.ok(mockAt > gateAt, "data_mockup 섹션이 스트립 게이트보다 앞에 있다");
+  assert.doesNotMatch(
+    dash.slice(gateAt + 40, mockAt),
+    /pagerIdx/,
+    "게이트와 data_mockup 사이에 다른 탭 조건이 끼었다 — 둘이 한 조건을 공유하지 않는다",
   );
 });
 
