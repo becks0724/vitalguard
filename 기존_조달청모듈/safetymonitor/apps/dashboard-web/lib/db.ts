@@ -137,7 +137,13 @@ function getPool(): Pool {
     //   (Node TLS 기본 검증이 그대로 걸림) — 서버 인증서가 자체 서명이라 접속 자체가 거부된다(실측).
     //   "SSL 켜야지" 하고 DATABASE_URL 에 `sslmode=require` 만 붙이면 전 API 가 DB 접속 실패로 죽는다.
     //   (pg-connection-string 2.14 파서가 직접 경고: prefer/require/verify-ca 는 verify-full 별칭.)
-    //   올바른 전환 = ① 정석: 서버 CA 를 받아 ssl.ca(sslrootcert) 지정 — 검증 유지
+    //   ★ 추가 함정(2026-08-13 실측 — 옆 세션): 현 서버 인증서는 SAN 이 없고 CN=postgres 라
+    //     호스트명(project-db-campus.smhrd.com)과 영원히 불일치 → **CA 를 지정해도 verify-full 은
+    //     구조적으로 불가**(자체 서명 여부와 별개). 검증 수준을 올리는 실제 선택지 =
+    //     ⓐ 검증 없는 암호화(현행 ②안) ⓑ server.crt 확보 + checkServerIdentity 생략(CA 검증만)
+    //     ⓒ 팀원이 SAN 포함 재발급 후 verify-full. 인증서 유효기간 = ~2036-08(갱신 부담 없음).
+    //   올바른 전환 = ① 정석: 서버 CA 를 받아 ssl.ca(sslrootcert) 지정 — 단 위 SAN 함정으로
+    //     호스트명 검증 생략(checkServerIdentity)이 동반돼야 접속된다
     //   ② libpq 호환: `uselibpqcompat=true&sslmode=require` — 검증 없이 암호화만이지만 같은 URL 이
     //     psql 등 다른 클라이언트에서도 동일하게 동작(URL 을 여러 곳에서 공유하면 이쪽이 사고가 적다)
     //   ③ 차선: `sslmode=no-verify` — ②와 보안 수준은 같으나 node-postgres 전용 확장이라 비호환.
