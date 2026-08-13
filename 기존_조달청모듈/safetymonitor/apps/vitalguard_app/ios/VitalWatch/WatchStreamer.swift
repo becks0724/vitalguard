@@ -8,12 +8,16 @@ final class WatchStreamer: NSObject, ObservableObject {
     @Published var latestBPM: Double?
     @Published var latestSpO2: Double?
     @Published var latestSpO2At: Date?
+    @Published var sessionEnergyKcal: Double = 0
     @Published var batchesSent = 0
     @Published var statusText = "대기"
 
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
     private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
+    private let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
+    // 활동 에너지(온열 ①) — 이미 배치에 실어 보낸 몫. 세션 누적(sessionEnergyKcal)과의 차가 다음 증분이다.
+    private var energyReportedKcal: Double = 0
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var spo2Query: HKAnchoredObjectQuery?
@@ -49,7 +53,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         guard !isRunning else { return }
         statusText = "권한 요청 중"
         let toShare: Set<HKSampleType> = [HKObjectType.workoutType()]
-        let toRead: Set<HKObjectType> = [hrType, spo2Type]
+        let toRead: Set<HKObjectType> = [hrType, spo2Type, energyType]
         healthStore.requestAuthorization(toShare: toShare, read: toRead) { [weak self] granted, error in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -68,6 +72,8 @@ final class WatchStreamer: NSObject, ObservableObject {
     }
 
     private func beginWorkout() {
+        sessionEnergyKcal = 0
+        energyReportedKcal = 0
         let config = HKWorkoutConfiguration()
         config.activityType = .other
         config.locationType = .indoor
@@ -115,6 +121,22 @@ final class WatchStreamer: NSObject, ObservableObject {
         // 새 샘플이 없어도 5초마다 최신값 1건을 실어 보낸다 — 게이트(5초 간격 콘솔 로그)의 심장박동 역할.
         if pendingSamples.isEmpty, let bpm = latestBPM {
             pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
+        }
+        // 활동 에너지(온열 ①) — 세션 누적에서 이미 보낸 몫을 뺀 5초 구간 증분만 싣는다.
+        // 누적이 뒤로 가면(세션 재시작) 기준만 재설정하고 이번 구간은 건너뛴다.
+        let energyDelta = sessionEnergyKcal - energyReportedKcal
+        if energyDelta < 0 {
+            energyReportedKcal = sessionEnergyKcal
+        } else if energyDelta >= 0.01 {
+            let rounded = (energyDelta * 100).rounded() / 100
+            // 심박 항목이 있으면 같은 항목에 얹는다(서버 행 수 불증가) — 없으면 에너지 단독 항목.
+            if let idx = pendingSamples.lastIndex(where: { $0["bpm"] is Double }) {
+                pendingSamples[idx]["ae"] = rounded
+            } else {
+                pendingSamples.append(["ts": Date().timeIntervalSince1970, "ae": rounded])
+            }
+            // 반올림 잔여분을 다음 구간으로 이월한다(= 로 덮으면 잔여가 영영 유실).
+            energyReportedKcal += rounded
         }
         guard !pendingSamples.isEmpty else { return }
         seq += 1
@@ -187,6 +209,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         if let spo2Query { healthStore.stop(spo2Query) }
         spo2Query = nil
         pendingSamples.removeAll()
+        energyReportedKcal = 0
         isRunning = false
         statusText = "대기"
         session = nil
@@ -223,13 +246,22 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
 
 extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
     func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        guard collectedTypes.contains(hrType),
-              let stats = workoutBuilder.statistics(for: hrType),
-              let quantity = stats.mostRecentQuantity() else { return }
-        let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
-        DispatchQueue.main.async {
-            self.latestBPM = bpm
-            self.pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
+        if collectedTypes.contains(hrType),
+           let stats = workoutBuilder.statistics(for: hrType),
+           let quantity = stats.mostRecentQuantity() {
+            let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            DispatchQueue.main.async {
+                self.latestBPM = bpm
+                self.pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
+            }
+        }
+        // 활동 에너지(온열 ①) — 여기서는 세션 누적치만 갱신한다. 증분 계산·적재는 flush(5초)가 담당.
+        if collectedTypes.contains(energyType),
+           let sum = workoutBuilder.statistics(for: energyType)?.sumQuantity() {
+            let kcal = sum.doubleValue(for: .kilocalorie())
+            DispatchQueue.main.async {
+                self.sessionEnergyKcal = kcal
+            }
         }
     }
 

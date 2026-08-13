@@ -118,7 +118,8 @@ final class VitalPipeline {
             for s in samples {
                 let bpm = s["bpm"] as? Double
                 let spo2 = s["spo2"] as? Double
-                guard bpm != nil || spo2 != nil else { continue }
+                let ae = s["ae"] as? Double
+                guard bpm != nil || spo2 != nil || ae != nil else { continue }
                 var v: [String: Any] = ["ts": sentAt]
                 if let bpm {
                     v["heartRate"] = bpm
@@ -133,6 +134,11 @@ final class VitalPipeline {
                     if let t = s["ts"] as? Double {
                         v["spo2MeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
                     }
+                }
+                // 활동 에너지(온열 ①) — 직전 배치 이후 5초 구간의 소모 증분(kcal).
+                // 서버 스키마 activeEnergyKcal 의 '구간 합' 계약에 그대로 맞는다(분당 소모율은 서버 집계).
+                if let ae {
+                    v["activeEnergyKcal"] = ae
                 }
                 self.pending.append(v)
             }

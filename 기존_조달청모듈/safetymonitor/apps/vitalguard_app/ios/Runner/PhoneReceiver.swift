@@ -35,7 +35,10 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         let latestText = latest.map { String(format: "%.0f", $0) } ?? "--"
         let spo2Count = samples.filter { $0["spo2"] is Double }.count
         let spo2Text = spo2Count > 0 ? " spo2=\(spo2Count)건" : ""
-        log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm\(spo2Text, privacy: .public)")
+        // 활동 에너지(온열 ①) — 배치에 실린 증분 합. 워치 화면 누적과 대조하는 현장 검증 지표.
+        let aeSum = samples.compactMap { $0["ae"] as? Double }.reduce(0, +)
+        let aeText = aeSum > 0 ? String(format: " ae=+%.2fkcal", aeSum) : ""
+        log.notice("[HR] seq=\(seq, privacy: .public) 채널=\(channel, privacy: .public) 샘플=\(samples.count, privacy: .public)건 최신=\(latestText, privacy: .public)bpm\(spo2Text, privacy: .public)\(aeText, privacy: .public)")
         // Phase 1 — 수신 배치를 업로드 파이프라인에 넘긴다(설정 없으면 파이프라인이 무시).
         VitalPipeline.shared.ingest(payload: payload)
         // Phase 2 — 표시용 최신값을 Flutter 스트림으로 전달(경로는 표시 전용, 서버 전송과 무관).

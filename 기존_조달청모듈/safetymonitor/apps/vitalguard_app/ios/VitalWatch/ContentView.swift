@@ -23,6 +23,13 @@ struct ContentView: View {
                     .foregroundStyle(.cyan)
             }
 
+            // 활동 에너지(온열 ①) — 세션 누적 소모. 현장 검증용(폰 로그·DB 도착값과 대조).
+            if streamer.isRunning, streamer.sessionEnergyKcal > 0 {
+                Text("활동 \(streamer.sessionEnergyKcal, specifier: "%.1f") kcal")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+
             Text(streamer.statusText)
                 .font(.footnote)
                 .foregroundStyle(streamer.isRunning ? .green : .secondary)
