@@ -142,6 +142,8 @@ function getPool(): Pool {
     //     구조적으로 불가**(자체 서명 여부와 별개). 검증 수준을 올리는 실제 선택지 =
     //     ⓐ 검증 없는 암호화(현행 ②안) ⓑ server.crt 확보 + checkServerIdentity 생략(CA 검증만)
     //     ⓒ 팀원이 SAN 포함 재발급 후 verify-full. 인증서 유효기간 = ~2036-08(갱신 부담 없음).
+    //     → 08-13 확정: DB 서버 관리 주체(학원) 요청 경로 폐쇄로 ⓑ·ⓒ 도달 불가 —
+    //       **이 DB 의 검증 상한 = ⓐ(검증 없는 암호화)** 로 종결. hostssl 강제도 없음(재론 불필요).
     //   올바른 전환 = ① 정석: 서버 CA 를 받아 ssl.ca(sslrootcert) 지정 — 단 위 SAN 함정으로
     //     호스트명 검증 생략(checkServerIdentity)이 동반돼야 접속된다
     //   ② libpq 호환: `uselibpqcompat=true&sslmode=require` — 검증 없이 암호화만이지만 같은 URL 이
