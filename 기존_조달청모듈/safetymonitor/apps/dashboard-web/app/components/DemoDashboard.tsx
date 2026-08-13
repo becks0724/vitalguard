@@ -122,6 +122,8 @@ type MockVitalResponse = {
   countsByWorker?: Record<string, number>;
   // 심박 기반 심부체온 추정(서버 칼만필터·표시 전용) — workerId(주 ID) → 추정.
   coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
+  // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — flagged 워커만 실린다. 판정 미주입.
+  heatPattern?: Record<string, { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
   workerProfiles?: Record<string, string>;
 };
@@ -5567,6 +5569,7 @@ export function DemoDashboard() {
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
                           coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
+                          heatPattern={data.heatPattern?.[entry.workerId]}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -5609,6 +5612,7 @@ export function DemoDashboard() {
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
                           coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
+                          heatPattern={data.heatPattern?.[entry.workerId]}
                           stress={
                             stressByWorker.get(entry.workerId) ??
                             computeStressIndex(stressInputsFromSample(latestMap.get(entry.workerId) ?? {}))
@@ -6035,6 +6039,8 @@ type WorkerTableRowProps = {
   nowMs: number;
   // 심박 기반 심부체온 추정값(℃) — 실측(skinTempC) 없을 때만 표시 폴백. 판정 미주입.
   coreTempEstC?: number;
+  // 저활동·고심박 패턴(온열 ②) — 있으면 flagged 상태. 체온 추정 셀의 주석(툴팁·라벨)에만 쓴다.
+  heatPattern?: { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number };
   stress: StressResult;
   isAnomaly: boolean;
   // 구획(근무지) 이탈 중 — 생체와 별개로 신호등을 주의로 올린다(감사 후속·위치 연동).
@@ -6068,6 +6074,7 @@ function WorkerTableRow({
   signal,
   nowMs,
   coreTempEstC,
+  heatPattern,
   stress,
   isAnomaly,
   outside,
@@ -6248,13 +6255,25 @@ function WorkerTableRow({
           !stale && coreTempEstC != null ? (
             <span
               className="leading-tight"
-              title="심박 기반 심부체온 추정(문헌 오차 ±0.3℃ 내외) — 의료 판정 아님·열 스트레스 참고. 심박 억제 약물 복용자는 과소추정될 수 있음"
+              title={
+                "심박 기반 심부체온 추정(문헌 오차 ±0.3℃ 내외) — 의료 판정 아님·열 스트레스 참고. 심박 억제 약물 복용자는 과소추정될 수 있음" +
+                (heatPattern
+                  ? `\n⚠ 저활동·고심박 ${heatPattern.coveredMinutes}분 지속(평균 ${heatPattern.hrAvg}bpm · ${heatPattern.aeKcalPerMin}kcal/분) — 열 축적·탈수 또는 긴장·카페인 가능. 추정치가 과대일 수 있어 휴식·수분 확인 권장`
+                  : "")
+              }
             >
               <span className="font-mono text-sm tabular-nums text-body dark:text-on-dark-soft">
                 ≈{formatTemp(coreTempEstC)}
                 <span className="ml-0.5 text-[10px] text-muted">℃</span>
               </span>
-              <span className="block text-[9px] leading-none text-muted">심박 추정</span>
+              {heatPattern ? (
+                // 저활동·고심박 주석(온열 ②) — 표시 라벨만 바꾼다. 상태색·판정·경보는 불변(판정 미주입).
+                <span className="block text-[9px] leading-none text-amber-600 dark:text-amber-300">
+                  ⚠ 저활동·고심박
+                </span>
+              ) : (
+                <span className="block text-[9px] leading-none text-muted">심박 추정</span>
+              )}
             </span>
           ) : (
             <span className="leading-tight" title={stale ? TEMP_STALE_TITLE : TEMP_UNAVAILABLE_TITLE}>

@@ -22,10 +22,12 @@ import {
   getWorkerProfiles,
   getWorkerAliasMap,
   recentHeartRates,
+  recentHrEnergy,
   recordAlert,
 } from "../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
 import { overlayLatestSpo2 } from "../../../lib/spo2-overlay";
+import { detectLowActivityHighHr, type HrEnergyPoint } from "../../../lib/heat-pattern";
 import { heartRateStatus, spo2Status, coreTempStatus } from "../../../lib/severity";
 
 type Store = {
@@ -364,6 +366,57 @@ export async function coreTempEstimates(aliasMap: Record<string, string>): Promi
   } catch (e) {
     console.warn("[vital] 심부체온 추정 실패 — 표시 생략", e);
     return _coreTempCache?.map ?? {};
+  }
+}
+
+// 저활동·고심박 패턴(온열 ②·표시 주석 전용) — 워커별 최근 시계열을 별칭 접기 후 순수 함수로
+// 판정한다. 심부체온 추정과 같은 골격(무상태 재계산·60초 캐시·실패 시 표시만 생략) —
+// flagged 인 워커만 맵에 싣는다(정상·판정불가는 주석이 없으므로 응답에 실을 이유가 없다).
+// 조회 창 45분 > 판정 창 15분 — 초과분은 에너지 파이프라인 존재 확인용(heat-pattern 참조).
+const HEAT_PATTERN_LOOKBACK_MINUTES = 45;
+const HEAT_PATTERN_CACHE_MS = 60_000;
+export type HeatPatternMap = Record<
+  string,
+  { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }
+>;
+let _heatPatternCache: { at: number; map: HeatPatternMap } | null = null;
+
+export async function heatPatterns(aliasMap: Record<string, string>): Promise<HeatPatternMap> {
+  const now = Date.now();
+  if (_heatPatternCache && now - _heatPatternCache.at < HEAT_PATTERN_CACHE_MS) {
+    return _heatPatternCache.map;
+  }
+  try {
+    const rows = await recentHrEnergy(HEAT_PATTERN_LOOKBACK_MINUTES);
+    const byPrimary = new Map<string, HrEnergyPoint[]>();
+    for (const r of rows) {
+      if (isReservedTestWorker(r.worker_id)) continue;
+      const key = aliasMap[r.worker_id] ?? r.worker_id;
+      const tsMs = Date.parse(r.ts);
+      if (Number.isNaN(tsMs)) continue;
+      const arr = byPrimary.get(key) ?? [];
+      arr.push({
+        tsMs,
+        hr: r.heart_rate ?? undefined,
+        aeKcal: r.active_energy_kcal ?? undefined,
+      });
+      byPrimary.set(key, arr);
+    }
+    const map: HeatPatternMap = {};
+    for (const [workerId, points] of byPrimary) {
+      const res = detectLowActivityHighHr(points, now);
+      if (!res?.flagged) continue;
+      map[workerId] = {
+        hrAvg: res.hrAvg,
+        aeKcalPerMin: res.aeKcalPerMin,
+        coveredMinutes: res.coveredMinutes,
+      };
+    }
+    _heatPatternCache = { at: now, map };
+    return map;
+  } catch (e) {
+    console.warn("[vital] 저활동·고심박 패턴 판정 실패 — 표시 생략", e);
+    return _heatPatternCache?.map ?? {};
   }
 }
 

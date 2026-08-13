@@ -989,6 +989,27 @@ export async function recentHeartRates(
   return rows;
 }
 
+// 최근 심박+활동에너지 시계열 — 저활동·고심박 패턴(온열 ②·표시 주석 전용)의 입력.
+// 창(15분)보다 긴 구간을 받는 이유 = 에너지 파이프라인 존재 확인(15분 내내 쉬면 증분 0 이
+// 정상이라, 구간 전체에 ae 가 한 건도 없어야 "미수집 워커"로 구분된다). 실패해도 표시만 생략.
+export async function recentHrEnergy(
+  windowMinutes: number,
+): Promise<{ worker_id: string; ts: string; heart_rate: number | null; active_energy_kcal: number | null }[]> {
+  const { rows } = await q<{
+    worker_id: string;
+    ts: string;
+    heart_rate: number | null;
+    active_energy_kcal: number | null;
+  }>(
+    `SELECT worker_id, ts, heart_rate, active_energy_kcal FROM vital_samples
+      WHERE (heart_rate IS NOT NULL OR active_energy_kcal IS NOT NULL)
+        AND ts::timestamptz > (now() - $1::interval)
+      ORDER BY ts`,
+    [`${windowMinutes} minutes`],
+  );
+  return rows;
+}
+
 // 구간 SpO₂ 실측 행 — 추세 차트용(측정 1건 = 점 1개). 기회 측정이라 행 수가 적다(하루 수 건).
 export async function spo2MeasurementsBetween(
   workerIds: string[],

@@ -10,6 +10,7 @@ import {
   addSample,
   countsByWorker,
   coreTempEstimates,
+  heatPatterns,
   latestByWorkerWithSpo2,
   recentSamples,
   totalPersisted,
@@ -55,6 +56,8 @@ export async function GET(request: Request) {
     countsByWorker: await countsByWorker(aliasMap),
     // 심박 기반 심부체온 추정(표시 전용·판정 미주입) — PII 아님(파생 지표).
     coreTempEst: await coreTempEstimates(aliasMap),
+    // 저활동·고심박 패턴(온열 ②·표시 주석 전용·판정 미주입) — flagged 워커만 실린다.
+    heatPattern: await heatPatterns(aliasMap),
     workerProfiles: await workerProfiles(),
     workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
