@@ -156,10 +156,19 @@ REV=$(gcloud run services describe "$SERVICE" --region "$REGION" --format='value
 #   `spec` 도 `describe` 결과이므로 "deploy 메시지를 믿지 않는다"(L-20·L-33)는 그대로 지킨다.
 # ⚠️ `revisionName` 으로 필터할 것 — 태그가 붙은 옛 리비전(tag=verify)이 배열에 함께 들어가고
 #   순서가 보장되지 않아 `[0]` 을 읽으면 엉뚱한 리비전의 퍼센트가 나온다.
+# ⚠️ 두 라우팅 모드를 모두 다뤄야 한다(2026-08-13 사용자 결정으로 latestRevision 전환).
+#   ① latestRevision: true  — 배포가 알아서 최신으로 넘어간다. 보정하면 **오히려 되돌린다**.
+#   ② revisionName 고정      — 배포가 라우팅을 안 옮기므로 보정이 필요하다.
+#   ①의 항목에는 `revisionName` 필드가 아예 없어, 아래 revisionName 필터가 빈 값을 낸다.
+#   그것을 0% 로 읽고 보정하면 매 배포마다 ①이 ②로 되돌아간다(전환 당일 실제로 발견).
+LATEST_PCT=$(gcloud run services describe "$SERVICE" --region "$REGION" \
+  --format="value(spec.traffic.filter(\"latestRevision:true\").extract(percent))" 2>/dev/null | tr -d '[] ')
 TPCT=$(gcloud run services describe "$SERVICE" --region "$REGION" \
   --format="value(spec.traffic.filter(\"revisionName:$REV\").extract(percent))" 2>/dev/null | tr -d '[] ')
 [ -n "$TPCT" ] || TPCT=0
-if [ "$TPCT" != "100" ]; then
+if [ "$LATEST_PCT" = "100" ]; then
+  echo "트래픽 = 최신 리비전 자동 추종(latestRevision 100%) — 보정하지 않는다(보정하면 고정으로 되돌아간다)"
+elif [ "$TPCT" != "100" ]; then
   echo "트래픽이 리비전에 고정돼 있어 보정한다 — 정상 절차(${REV} ${TPCT}% → 100%)"
   gcloud run services update-traffic "$SERVICE" --region "$REGION" --to-revisions "$REV=100" --quiet >/dev/null
 fi
