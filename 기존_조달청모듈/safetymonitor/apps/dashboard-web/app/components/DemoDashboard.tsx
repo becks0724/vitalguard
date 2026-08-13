@@ -5672,7 +5672,12 @@ export function DemoDashboard() {
         ]}
       />
 
-      {siteChart && (
+      {/* 하단 차트 2종(설비·작업자 생체)은 관제 탭(0) 전용이다.
+          여는 표(가스·AED·작업자 모니터링)가 전부 관제 탭 안에 있는데 패널만 페이저 바깥이라,
+          탭을 옮겨도 selection/siteChart 가 살아 있으면 안전뉴스·안전관리비 검증·ERP 화면
+          맨 아래에 그대로 따라붙었다(2026-08-13 제보). 상태는 지우지 않고 렌더만 막는다 —
+          관제 탭으로 돌아오면 보던 차트가 그대로 있다. */}
+      {pagerIdx === 0 && siteChart && (
         <SiteMetricChartPanel metric={siteChart} onClose={() => setSiteChart(null)} />
       )}
 
@@ -5852,7 +5857,8 @@ export function DemoDashboard() {
         />
       )}
 
-      {selection && (
+      {/* 관제 탭(0) 전용 — 위 siteChart 와 같은 이유(다른 탭에 따라붙는 것을 막는다). */}
+      {pagerIdx === 0 && selection && (
         <VitalHistoryPanel
           selection={selection}
           workerName={latestMap.get(selection.workerId)?.workerName}
