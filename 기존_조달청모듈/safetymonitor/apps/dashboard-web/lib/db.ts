@@ -810,6 +810,12 @@ async function q<T = Record<string, unknown>>(
   return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
 }
 
+// DB 헬스 왕복(/api/health/db 전용) — 데이터 접근 없는 SELECT 1. q 는 비공개를 유지한다
+// (범용 쿼리 함수를 export 하면 라우트들이 db.ts 의 함수 계약을 우회해 임의 SQL 을 뿌리게 된다).
+export async function dbPing(): Promise<void> {
+  await q("SELECT 1");
+}
+
 // 동적 INSERT 빌더 — 컬럼 수 많은 insert(miscount 방지).
 function buildInsert(
   table: string,

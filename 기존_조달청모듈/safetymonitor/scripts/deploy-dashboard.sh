@@ -136,6 +136,9 @@ if [ "${DRY_RUN:-}" = 1 ]; then
 fi
 PREV_ENVN=$(gcloud run services describe "$SERVICE" --region "$REGION" \
   --format='value(spec.template.spec.containers[0].env.len())' 2>/dev/null || echo "?")
+# 롤백 원터치용 — 배포 직전 서빙 리비전을 기억해 완료 요약에 롤백 한 줄을 인쇄한다.
+PREV_REV=$(gcloud run services describe "$SERVICE" --region "$REGION" \
+  --format='value(status.traffic.filter("percent:100").extract(revisionName))' 2>/dev/null | tr -d '[] ' || true)
 gcloud run deploy "$SERVICE" --image "$IMAGE_REPO@$DIGEST" --region "$REGION" \
   --update-labels commit-sha="$SHA" --quiet >/dev/null 2>&1 \
   || die "gcloud run deploy 실패"
@@ -179,6 +182,21 @@ LBL=$(gcloud run revisions describe "$REV" --region "$REGION" --format='value(me
 HTTP=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$LIVE_URL")
 [ "$HTTP" = 200 ] || die "라이브 HTTP $HTTP"
 
+# 라우트 검증(L-52 + DB 왕복) — 화면 대신 서버 응답으로 판정한다. 외부 의존 4종은 이그레스
+# 도미노(레이더 502 를 이틀 놓친 사고)를, health/db 는 DB 커넥션 이상(외부 4종은 전부
+# 외부 API 경유라 DB 장애를 못 본다 — 2026-08-13 보완)을 잡는다. 실패는 경고만 — 배포는
+# 이미 전환됐으므로 판단은 사람 몫이고, 아래 롤백 한 줄이 준비돼 있다.
+ROUTE_FAIL=""
+echo "라우트 검증 —"
+for p in "radar" "typhoon" "weather?lat=35.16&lon=126.85" "disaster-msg?lat=35.16&lon=126.85" "health/db"; do
+  RBODY=$(curl -s -m 25 "$LIVE_URL/api/$p" | head -c 40 || true)
+  case "$RBODY" in
+    '{"ok":true'*) printf '  %-14s ok\n' "${p%%\?*}" ;;
+    *) printf '  %-14s ✖ %s\n' "${p%%\?*}" "$RBODY"; ROUTE_FAIL=1 ;;
+  esac
+done
+[ -z "$ROUTE_FAIL" ] || echo "⚠ 라우트 검증 실패 항목 있음 — 원인 확인 후 필요 시 아래 롤백"
+
 say "완료"
 echo "리비전   $REV (100%)"
 echo "digest   $DIGEST (서빙 대조 일치)"
@@ -189,5 +207,35 @@ echo "HTTP     200"
 if [ -n "$DIRTY" ]; then
   echo "⚠ ALLOW_DIRTY 강행 — 아래 미커밋 변경은 이미지에 없다(검증은 아카이브에서 수행):"
   echo "$DIRTY" | sed 's/^/           /'
+fi
+# 롤백 원터치 — 비상시 검색 없이 복사-실행. latest 모드 전환(2026-08-13)으로 배포 즉시
+# 트래픽이 넘어가므로, 되돌릴 좌표를 항상 손에 쥐고 있어야 한다.
+if [ -n "${PREV_REV:-}" ] && [ "$PREV_REV" != "$REV" ]; then
+  echo "롤백     gcloud run services update-traffic $SERVICE --region $REGION --to-revisions $PREV_REV=100"
+  echo "         ⚠ 롤백은 트래픽을 고정(pinned)으로 되돌린다 — 사태 수습 후 자동 추종 복원은"
+  echo "           gcloud run services update-traffic $SERVICE --region $REGION --to-latest"
+  echo "           을 한 번 더. 안 하면 다음 배포부터 조용히 옛(고정) 동작으로 돌아간다."
+fi
+
+say "6/6 사후 관찰 90초 (latest 자동 전환 대응 — 새 리비전 런타임 감시)"
+# pinned 시절의 "0% 검사 여유"가 사라진 대가를 여기서 지불한다 — 전환 직후 90초간
+# 새 리비전의 5xx·DB 커넥션 타임아웃을 30초 간격 3회 관찰한다. 경고만 하고 죽지 않는다
+# (이미 라이브 — 자동 롤백은 오탐 시 더 위험, 판단은 위 롤백 한 줄로 사람이).
+OBS_WARN=""
+for i in 1 2 3; do
+  sleep 30
+  FIVEXX=$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.revision_name=\"$REV\" AND httpRequest.status>=500" \
+    --freshness=5m --format='value(httpRequest.status)' 2>/dev/null | grep -c . || true)
+  DBTO=$(gcloud logging read "resource.type=\"cloud_run_revision\" AND resource.labels.revision_name=\"$REV\" AND \"Connection terminated due to connection timeout\"" \
+    --freshness=5m --format='value(timestamp)' 2>/dev/null | grep -c . || true)
+  echo "  [$((i*30))초] 5xx=${FIVEXX}건 · DB타임아웃=${DBTO}건"
+  [ "${FIVEXX:-0}" -gt 0 ] && OBS_WARN=1
+  # DB 타임아웃은 에피소드성 기저(시간당 0~4건)가 있어 5분 창 3건 초과만 경고(08-13 실측 기준).
+  [ "${DBTO:-0}" -gt 3 ] && OBS_WARN=1
+done
+if [ -n "$OBS_WARN" ]; then
+  echo "⚠ 사후 관찰 경고 — 새 리비전에서 5xx 또는 DB 타임아웃 초과. 로그 확인 후 필요 시 위 롤백 한 줄."
+else
+  echo "  사후 관찰 정상 — 5xx 0건 · DB 타임아웃 기저 범위"
 fi
 echo "남은 수동 단계 — 변경 기능 라이브 실측(브라우저) + harness/5-observability/run-log.md 기록"
