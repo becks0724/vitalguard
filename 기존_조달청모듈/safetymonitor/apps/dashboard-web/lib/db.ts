@@ -146,6 +146,7 @@ function getPool(): Pool {
     //     호스트명 검증 생략(checkServerIdentity)이 동반돼야 접속된다
     //   ② libpq 호환: `uselibpqcompat=true&sslmode=require` — 검증 없이 암호화만이지만 같은 URL 이
     //     psql 등 다른 클라이언트에서도 동일하게 동작(URL 을 여러 곳에서 공유하면 이쪽이 사고가 적다)
+    //     ★ 실측 검증됨(08-13) — 프로덕션 v4·로컬 .env.local 모두 이 형태로 pg_stat_ssl TLSv1.3 확인
     //   ③ 차선: `sslmode=no-verify` — ②와 보안 수준은 같으나 node-postgres 전용 확장이라 비호환.
     //   어느 쪽이든 env 는 시작 시 1회 resolve 라 새 리비전 배포가 동반돼야 한다(L-41 계열).
     const pool = new Pool({
