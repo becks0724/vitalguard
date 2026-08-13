@@ -110,7 +110,7 @@ import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
 
-type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "fall";
+type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall";
 type Selection = { workerId: string; metric: HistoryMetric };
 
 type MockVitalResponse = {
@@ -230,6 +230,8 @@ function hasLiveMetric(
   if (metric === "coreTempEst") return typeof coreTempEstC === "number";
   // SpO₂ = 기회 측정 — "지금 신선한 값"이 아니라 "기간 내 측정"이 기준이라 항상 열고 서버 데이터로 판정.
   if (metric === "spo2") return true;
+  // 활동 = 구간 합 이력 — 지금 정지 중(증분 없음)이어도 기간 내 이력은 있다. 서버 데이터로 판정.
+  if (metric === "activity") return true;
   if (!sample) return false;
   const value = sample[metric];
   return typeof value === "number" && Number.isFinite(value);
@@ -5886,6 +5888,8 @@ export function DemoDashboard() {
           liveValue={(() => {
             // 선택 작업자·메트릭의 현재 라이브 값 — 2초 폴 리렌더마다 갱신 → 그래프 24시간 뷰 마지막 점 실시간 반영.
             if (selection.metric === "fall") return null;
+            // 활동 = 버킷 합이라 순간값으로 마지막 점을 덮지 않는다(단위 불일치).
+            if (selection.metric === "activity") return null;
             if (selection.metric === "coreTempEst") {
               return data.coreTempEst?.[selection.workerId]?.tempC ?? null;
             }

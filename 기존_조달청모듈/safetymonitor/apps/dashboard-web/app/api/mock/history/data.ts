@@ -1,7 +1,7 @@
 // 발표용 mock 누적 데이터 — workerId + metric + day 로 deterministic 일별 평균 생성
 // fall 은 시간/일 buckets 당 감지 건수 (count) 로 표현
 // coreTempEst 는 실데이터 경로(real.ts) 전용 — 모의 생성기(PROFILES)에는 넣지 않는다(가짜 추정 곡선 방지).
-export type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "fall";
+export type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "activity" | "fall";
 
 export type HistoryPoint = {
   date: string;
@@ -173,8 +173,9 @@ function numericValueAt(
   span: number,
   i: number,
 ) {
-  // coreTempEst 는 실데이터 경로 전용 — 모의 곡선을 만들지 않는다(라우트가 선분기·여기는 방어선).
+  // coreTempEst·activity 는 실데이터 경로 전용 — 모의 곡선을 만들지 않는다(라우트가 선분기·여기는 방어선).
   if (metric === "coreTempEst") return 0;
+  if (metric === "activity") return 0;
   const profile = PROFILES[metric];
   const seasonal = Math.sin((i / span) * Math.PI * 2) * profile.amplitude * 0.6;
   const noise = (hashSeed(workerId, metric, seed) - 0.5) * 2 * profile.jitter;

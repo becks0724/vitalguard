@@ -49,7 +49,12 @@ test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(�
 
 test("SpO₂ 추세 — 실데이터 경로 편입 + 24시간 뷰는 측정 시각 위치의 점(dot)", () => {
   const histRoute = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
-  assert.match(histRoute, /REAL_METRICS: RealMetric\[\] = \["heartRate", "coreTempEst", "spo2"\]/);
+  // 정확 목록이 아니라 멤버십으로 본다 — 새 실데이터 지표(activity 등) 추가가 이 가드를 깨면 안 된다.
+  // 지키려는 것은 "spo2 가 실데이터 경로에 있다"이지 "목록이 셋뿐이다"가 아니다(2026-08-13 완화).
+  const realMetricsLine = histRoute.match(/REAL_METRICS: RealMetric\[\] = \[[^\]]*\]/)?.[0] ?? "";
+  for (const m of ["heartRate", "coreTempEst", "spo2"]) {
+    assert.ok(realMetricsLine.includes(`"${m}"`), `${m} 이 실데이터 경로에서 빠짐`);
+  }
   const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
   assert.match(panel, /RechartsTimeDotChart/, "24시간 점 차트 미배선 — 균등 간격이 측정 분포를 오독시킨다");
   const real = readFileSync(join(ROOT, "app", "api", "mock", "history", "real.ts"), "utf8");

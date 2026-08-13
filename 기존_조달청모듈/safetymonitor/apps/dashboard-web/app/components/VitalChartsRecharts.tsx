@@ -7,6 +7,8 @@ import {
   BarChart as ReBarChart,
   Cell,
   ComposedChart,
+  Legend,
+  Line,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -15,7 +17,7 @@ import {
   YAxis,
 } from "recharts";
 
-import { formatTimeTick, hasFullTimestamps, withTimeGaps } from "../../lib/chart-gaps";
+import { formatTimeTick, hasFullTimestamps, withTimeGaps, type TimedPoint } from "../../lib/chart-gaps";
 import type { Status } from "../../lib/severity";
 
 type ChartPoint = { date: string; label?: string; value: number; tsMs?: number };
@@ -274,6 +276,110 @@ export function RechartsBarChart({
           </Bar>
           {renderReferenceLines(refs)}
         </ReBarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// 활동(부하)+심박(반응) 복합 차트 — 작업 강도 판독용(2026-08-13 사용자 승인).
+// 활동 = 왼쪽 축 막대(kcal 구간 합·실측), 심박 = 오른쪽 축 선(bpm 버킷 평균·실측).
+// "막대는 낮은데 선이 높은 구간" = 저활동·고심박(온열 전조)이 육안으로 잡히는 것이 목적.
+// 두 시리즈 모두 시간축(tsMs) 필수 — 한쪽만 카테고리로 떨어지면 시간이 어긋나 바로 오독이다.
+export function RechartsActivityComboChart({
+  activity,
+  heartRate,
+  domain,
+}: {
+  activity: TimedPoint[];
+  /** ≤7일 뷰에서만 전달 — 장기 뷰의 심박 일평균은 착용 시간의 함수라 오버레이하지 않는다. */
+  heartRate?: TimedPoint[] | null;
+  domain: [number, number];
+}) {
+  if (activity.length === 0) {
+    return <p className="text-xs text-zinc-400">데이터 없음</p>;
+  }
+  const spanMs = domain[1] - domain[0];
+  const ACT_COLOR = "#fb923c";
+  const HR_COLOR = "#f87171";
+  // 심박 선만 결측을 끊는다 — 막대는 없는 버킷 자체가 빈 공간이라 이미 정직하다.
+  const hrData = heartRate && heartRate.length > 0 ? withTimeGaps(heartRate) : null;
+  const actMax = Math.max(...activity.map((p) => p.value));
+
+  return (
+    <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart margin={{ top: 12, right: 4, bottom: 4, left: 0 }}>
+          <XAxis
+            dataKey="tsMs"
+            type="number"
+            domain={domain}
+            scale="time"
+            tickFormatter={(v: number) => formatTimeTick(v, spanMs)}
+            tick={AXIS_TICK}
+            tickLine={false}
+            axisLine={{ stroke: "currentColor", strokeOpacity: 0.25 }}
+            interval="preserveStartEnd"
+            minTickGap={28}
+            allowDuplicatedCategory={false}
+          />
+          <YAxis
+            yAxisId="act"
+            domain={[0, Math.max(actMax * 1.2, 0.5)]}
+            tick={AXIS_TICK}
+            tickLine={false}
+            axisLine={false}
+            width={40}
+            tickFormatter={(v: number) => v.toFixed(actMax < 5 ? 1 : 0)}
+            label={{ value: "kcal", position: "insideTopLeft", fontSize: 10, fill: ACT_COLOR, dy: -10 }}
+          />
+          {hrData && (
+            <YAxis
+              yAxisId="hr"
+              orientation="right"
+              domain={["dataMin - 10", "dataMax + 10"]}
+              tick={AXIS_TICK}
+              tickLine={false}
+              axisLine={false}
+              width={36}
+              tickFormatter={(v: number) => String(Math.round(v))}
+              label={{ value: "bpm", position: "insideTopRight", fontSize: 10, fill: HR_COLOR, dy: -10 }}
+            />
+          )}
+          <Tooltip
+            isAnimationActive={false}
+            labelFormatter={(v) => formatTimeTick(Number(v), spanMs)}
+            formatter={(value, name) => [
+              typeof value === "number" ? (name === "활동" ? `${value.toFixed(2)} kcal` : `${Math.round(value)} bpm`) : "—",
+              String(name),
+            ]}
+            contentStyle={{ fontSize: 12, borderRadius: 6 }}
+          />
+          <Legend wrapperStyle={{ fontSize: 11 }} />
+          <Bar
+            yAxisId="act"
+            name="활동"
+            data={activity}
+            dataKey="value"
+            fill={ACT_COLOR}
+            fillOpacity={0.85}
+            radius={[2, 2, 0, 0]}
+            maxBarSize={10}
+            isAnimationActive={false}
+          />
+          {hrData && (
+            <Line
+              yAxisId="hr"
+              name="심박"
+              data={hrData}
+              dataKey="value"
+              stroke={HR_COLOR}
+              strokeWidth={1.8}
+              dot={false}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   );

@@ -14,9 +14,9 @@ import { buildRealHistory, CORE_TEMP_EST_MAX_DAYS, type RealMetric } from "./rea
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const ALLOWED_METRICS: HistoryMetric[] = ["heartRate", "spo2", "coreTempEst", "fall"];
+const ALLOWED_METRICS: HistoryMetric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall"];
 const ALLOWED_RANGES: HistoryRange[] = [1, 7, 30, 60, 365];
-const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2"];
+const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2", "activity"];
 
 // KST 달력일 경계 → epoch ms. 프리셋(days)은 "지금부터 N일 전".
 const kstDayStartMs = (day: string) => Date.parse(`${day}T00:00:00+09:00`);

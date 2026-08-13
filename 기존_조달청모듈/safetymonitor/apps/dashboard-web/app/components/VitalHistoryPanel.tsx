@@ -13,9 +13,14 @@ import {
   type Status,
 } from "../../lib/severity";
 
-import { RechartsLineChart, RechartsBarChart, RechartsTimeDotChart } from "./VitalChartsRecharts";
+import {
+  RechartsLineChart,
+  RechartsBarChart,
+  RechartsTimeDotChart,
+  RechartsActivityComboChart,
+} from "./VitalChartsRecharts";
 
-type Metric = "heartRate" | "spo2" | "coreTempEst" | "fall";
+type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
 
@@ -43,10 +48,12 @@ const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; 
   spo2: { name: "산소포화도", unit: "%", color: "#22d3ee", decimals: 0 },
   // 워치 실측 손목온도는 서드파티 미개방(수면 전용 API)이라 탭에서 내림 — 심박 기반 추정으로 대체.
   coreTempEst: { name: "체온(심박 추정)", unit: "℃", color: "#34d399", decimals: 1 },
+  // 활동 = 작업 강도 축(kcal 구간 합·실측) — ≤1주 뷰는 심박 선 오버레이 복합 차트(사용자 승인 08-13).
+  activity: { name: "활동", unit: "kcal", color: "#fb923c", decimals: 2 },
   fall: { name: "낙상", unit: "회", color: "#facc15", decimals: 0 },
 };
 
-const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "fall"];
+const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall"];
 
 const RANGES: { value: Range; label: string }[] = [
   { value: 1, label: "24시간" },
@@ -84,6 +91,8 @@ export function VitalHistoryPanel({
   const [toInput, setToInput] = useState("");
   const [chartType, setChartType] = useState<ChartType>("line");
   const [data, setData] = useState<HistoryResponse | null>(null);
+  // 활동 탭 심박 오버레이(≤1주 뷰) — 같은 창을 heartRate 로 한 번 더 조회해 겹친다.
+  const [hrOverlay, setHrOverlay] = useState<HistoryResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -149,6 +158,21 @@ export function VitalHistoryPanel({
         }
       });
 
+    // 활동 탭 오버레이 — 같은 창의 심박을 병렬 조회. 실패해도 막대(활동)만 그리면 되므로 조용히 생략.
+    setHrOverlay(null);
+    if (selection.metric === "activity") {
+      const hrParams = new URLSearchParams(params);
+      hrParams.set("metric", "heartRate");
+      fetch(`/api/mock/history?${hrParams.toString()}`, { cache: "no-store" })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((json: HistoryResponse | null) => {
+          if (active && json && json.workerId === requested.workerId && json.metric === "heartRate") {
+            setHrOverlay(json);
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
       active = false;
     };
@@ -171,6 +195,8 @@ export function VitalHistoryPanel({
     selection.metric !== "fall" &&
     // SpO₂ 는 측정 이벤트 배열이라 마지막 점을 라이브 값으로 덮으면 측정 기록이 왜곡된다.
     selection.metric !== "spo2" &&
+    // 활동은 버킷 "합"이라 순간값으로 덮으면 단위가 어긋난다(kcal 합 ↔ 순간 증분).
+    selection.metric !== "activity" &&
     typeof liveValue === "number" &&
     Number.isFinite(liveValue) &&
     data.points.length > 0;
@@ -254,6 +280,8 @@ export function VitalHistoryPanel({
           <span className="text-xs text-zinc-600 dark:text-zinc-400">누적 추세</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* 활동 탭은 복합(막대+심박 선) 고정 — 라인/막대 선택이 의미 없다. */}
+          {selection.metric !== "activity" && (
           <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
             {CHART_TYPES.map((t) => (
               <button
@@ -272,6 +300,7 @@ export function VitalHistoryPanel({
               </button>
             ))}
           </div>
+          )}
           <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
             {RANGES.filter((r) => !isEst || r.value <= 7).map((r) => (
               <button
@@ -354,6 +383,11 @@ export function VitalHistoryPanel({
                 SpO₂ 는 손목이 정지했을 때만 걸리는 기회 측정입니다 — 워치 혈중 산소 앱에서 수동 측정하면 즉시 기록됩니다.
               </p>
             )}
+            {selection.metric === "activity" && (
+              <p className="max-w-md text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
+                활동 에너지는 2026-08-13부터 수집을 시작했습니다 — 그 이전 기간에는 데이터가 없습니다.
+              </p>
+            )}
           </div>
         ) : data ? (
           <>
@@ -363,6 +397,19 @@ export function VitalHistoryPanel({
                   <SummaryCell label="총 건수" value={displaySummary.min} unit={meta.unit} decimals={0} color={meta.color} />
                   <SummaryCell label="시간/일 최대" value={displaySummary.max} unit={meta.unit} decimals={0} color={meta.color} />
                   <SummaryCell label="평균" value={displaySummary.avg} unit={meta.unit} decimals={2} color={meta.color} />
+                </>
+              ) : selection.metric === "activity" ? (
+                // 작업 강도의 머리기사 = 총 소모(합산량). 평균·최대는 구간(버킷) 기준.
+                <>
+                  <SummaryCell
+                    label="총 소모"
+                    value={displayPoints.reduce((a, p) => a + p.value, 0)}
+                    unit={meta.unit}
+                    decimals={1}
+                    color={meta.color}
+                  />
+                  <SummaryCell label="구간 최대" value={displaySummary.max} unit={meta.unit} decimals={meta.decimals} color={meta.color} />
+                  <SummaryCell label="구간 평균" value={displaySummary.avg} unit={meta.unit} decimals={meta.decimals} color={meta.color} />
                 </>
               ) : (
                 <>
@@ -383,6 +430,30 @@ export function VitalHistoryPanel({
                 pointSeverity: metricPointSeverity(selection.metric),
                 hoverExtra: coreHover,
               };
+              // 활동 = 복합 차트(막대 kcal + ≤1주 뷰 심박 선 오버레이) — 시간축 필수.
+              // 장기 뷰의 심박 일평균은 착용 시간의 함수라 오버레이하지 않는다(체온 상한과 같은 원칙).
+              if (
+                selection.metric === "activity" &&
+                data.windowFromMs != null &&
+                data.windowToMs != null &&
+                displayPoints.every((p) => typeof p.tsMs === "number")
+              ) {
+                const spanMs = data.windowToMs - data.windowFromMs;
+                const overlayPts =
+                  spanMs <= 86_400_000 * 7.01 &&
+                  hrOverlay &&
+                  hrOverlay.points.length > 0 &&
+                  hrOverlay.points.every((p) => typeof p.tsMs === "number")
+                    ? (hrOverlay.points as { date: string; value: number; tsMs: number }[])
+                    : null;
+                return (
+                  <RechartsActivityComboChart
+                    activity={displayPoints as { date: string; value: number; tsMs: number }[]}
+                    heartRate={overlayPts}
+                    domain={[data.windowFromMs, data.windowToMs]}
+                  />
+                );
+              }
               // SpO₂ = 희소 이벤트 측정 — 24시간 뷰는 실제 측정 시각 위치의 점(dot)으로,
               // 그 외 기간은 막대로(곡선으로 이으면 측정 없는 시간대가 연속 측정처럼 오독된다).
               const spo2Dots =
@@ -558,6 +629,9 @@ function metricReferenceLines(metric: Metric): ReferenceLine[] {
         { value: THRESHOLDS.coreTemp.dangerC, label: `위험 ${THRESHOLDS.coreTemp.dangerC.toFixed(1)}`, color: REF_DANGER },
         { value: THRESHOLDS.coreTemp.cautionC, label: `주의 ${THRESHOLDS.coreTemp.cautionC.toFixed(1)}`, color: REF_CAUTION },
       ];
+    case "activity":
+      // 활동량에는 안전 임계가 없다 — 부하 판독은 심박 오버레이와의 대비가 담당.
+      return [];
     case "fall":
       return [];
   }
@@ -572,6 +646,8 @@ function metricPointSeverity(metric: Metric): ((value: number) => Status) | unde
       return spo2Status;
     case "coreTempEst":
       // 추정치는 판정 미주입 원칙 — 점 강조·안전율 계산 없이 참고선만 둔다.
+      return undefined;
+    case "activity":
       return undefined;
     case "fall":
       return undefined;

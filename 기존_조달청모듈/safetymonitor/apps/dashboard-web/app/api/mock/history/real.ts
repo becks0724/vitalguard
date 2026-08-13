@@ -5,11 +5,16 @@
 // 추정 궤적은 카드와 같은 analyzers 구현·같은 계수를 쓴다 — 화면 간 숫자가 어긋나지 않는다.
 import { estimateCoreTempSeries, type HrPoint } from "@safetymonitor/analyzers";
 
-import { getWorkerAliasMap, heartRateBucketAverages, spo2MeasurementsBetween } from "../../../../lib/db";
+import {
+  activeEnergyBucketSums,
+  getWorkerAliasMap,
+  heartRateBucketAverages,
+  spo2MeasurementsBetween,
+} from "../../../../lib/db";
 
 import type { HistoryPoint } from "./data";
 
-export type RealMetric = "heartRate" | "coreTempEst" | "spo2";
+export type RealMetric = "heartRate" | "coreTempEst" | "spo2" | "activity";
 
 /** 추정 궤적 제공 상한(일) — 열 스트레스는 시간 단위 현상이고 장기 추정 추세는 검증 근거가 없다. */
 export const CORE_TEMP_EST_MAX_DAYS = 7;
@@ -84,6 +89,20 @@ export async function buildRealHistory(
         label: `${date.slice(5)}·${b.n}회`,
         value: Math.round(b.sum / b.n),
       }));
+  }
+
+  if (metric === "activity") {
+    // 작업 강도 축(온열 3축의 '활동') — 5초 소모 증분(kcal)의 구간 합. 합산량이라 일·주 단위로
+    // 접어도 왜곡이 없다(추정 체온의 7일 상한 같은 제약 불필요). 버킷에 행이 없으면 점을 만들지
+    // 않는다 — 0 으로 채우면 미착용·미수집이 "무활동"으로 오독된다(수신 공백은 차트가 끊어 보인다).
+    const bucketSec = spanDays <= 1 ? 300 : spanDays <= 7 ? 3600 : 86_400;
+    const rows = await activeEnergyBucketSums(ids, fromMs, toMs, bucketSec);
+    return rows.map((r) => {
+      const at = r.bucket_start_sec * 1000;
+      const { date, label } = kstLabel(at, spanDays);
+      // tsMs = 버킷 시작(시간축·결측 끊기 — 심박과 동일 계약).
+      return { date, label, value: Math.round(Number(r.kcal) * 100) / 100, tsMs: at };
+    });
   }
 
   if (metric === "heartRate") {
