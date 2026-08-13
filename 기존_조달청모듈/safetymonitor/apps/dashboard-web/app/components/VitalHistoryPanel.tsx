@@ -19,6 +19,7 @@ import {
   RechartsTimeDotChart,
   RechartsActivityComboChart,
 } from "./VitalChartsRecharts";
+import { getSessionToken } from "./LoginGate";
 
 type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall";
 type Range = 1 | 7 | 30 | 60 | 365;
@@ -135,8 +136,13 @@ export function VitalHistoryPanel({
     );
     // 요청 시점 선택을 캡처 — 지연 응답이 새 선택 위에 덮이지 않게 커밋 전 대조한다.
     const requested = { workerId: selection.workerId, metric: selection.metric, range, customRange };
+    // 생체 시계열은 인증 게이트 뒤(2026-08-13 수리) — vital 폴링과 같은 세션 토큰을 동봉한다.
+    const token = getSessionToken();
+    const authHeaders: HeadersInit | undefined = token
+      ? { Authorization: `Bearer ${token}` }
+      : undefined;
 
-    fetch(`/api/mock/history?${params.toString()}`, { cache: "no-store" })
+    fetch(`/api/mock/history?${params.toString()}`, { cache: "no-store", headers: authHeaders })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: HistoryResponse | null) => {
         if (active) {
@@ -163,7 +169,7 @@ export function VitalHistoryPanel({
     if (selection.metric === "activity") {
       const hrParams = new URLSearchParams(params);
       hrParams.set("metric", "heartRate");
-      fetch(`/api/mock/history?${hrParams.toString()}`, { cache: "no-store" })
+      fetch(`/api/mock/history?${hrParams.toString()}`, { cache: "no-store", headers: authHeaders })
         .then((res) => (res.ok ? res.json() : null))
         .then((json: HistoryResponse | null) => {
           if (active && json && json.workerId === requested.workerId && json.metric === "heartRate") {

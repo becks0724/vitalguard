@@ -2,6 +2,7 @@
 // 심박·심부체온 추정(coreTempEst)은 DB 실데이터 경로(real.ts), SpO₂·낙상은 아직 모의 경로(이월).
 import { NextResponse } from "next/server";
 
+import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import {
   buildHistory,
   buildHistoryBetween,
@@ -22,6 +23,12 @@ const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2", "activit
 const kstDayStartMs = (day: string) => Date.parse(`${day}T00:00:00+09:00`);
 
 export async function GET(request: Request) {
+  // 생체 시계열은 로그인 세션에만 — 2026-08-12 실데이터화로 이 라우트가 실측 심박·활동을 내주게
+  // 됐는데 게이트가 없어 사번만 알면 무인증 조회가 가능했다(2026-08-13 발견·수리). vital GET 과
+  // 같은 게이트(verifyBasicAuth)·같은 이유("관제 생체 스트림은 URL 을 아는 누구에게도 공개하지 않는다").
+  if (!verifyBasicAuth(request)) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  }
   const { searchParams } = new URL(request.url);
   const workerId = searchParams.get("workerId");
   const metric = searchParams.get("metric") as HistoryMetric | null;
