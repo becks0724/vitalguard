@@ -122,7 +122,10 @@ const globalForDb = globalThis as typeof globalThis & {
   __safetyMonitorSchemaReady?: Promise<void>;
 };
 
-// 단일 Pool(HMR/serverless 안전) — DATABASE_URL 의 sslmode=disable 를 pg 가 존중(캠퍼스 DB는 SSL 미지원).
+// 단일 Pool(HMR/serverless 안전) — SSL 여부는 DATABASE_URL 파라미터가 정한다(코드는 그대로 전달).
+// ★ 현행(2026-08-13 전수 조사): 프로덕션 시크릿 v4 = `uselibpqcompat=true&sslmode=require`(아래 ②안)
+//   → TLSv1.3 암호화 접속 실측. 서버 인증서 = 자체서명(CN=postgres·만료 2036-08). 서버는 TLS
+//   비강제라 평문도 여전히 허용되며 로컬 .env.local(disable)은 평문으로 붙는다.
 function getPool(): Pool {
   if (!globalForDb.__safetyMonitorPgPool) {
     const connectionString = process.env.DATABASE_URL;
