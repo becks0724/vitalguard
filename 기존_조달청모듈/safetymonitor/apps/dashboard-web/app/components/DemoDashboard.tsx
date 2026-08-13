@@ -5930,7 +5930,12 @@ export function DemoDashboard() {
               <thead className="sticky top-0 bg-surface-soft text-xs text-body dark:bg-surface-dark dark:text-on-dark-soft">
                 <tr>
                   <th className="px-4 py-3">시간</th>
-                  <th className="px-4 py-3">출처</th>
+                  {/* 출처 열 → 활동 에너지(08-13 사용자 결정) — 전 행 동일한 dataOrigin 은 시간 셀
+                      툴팁으로 격하하고, 행별로 변하는 실데이터(5초 소모 증분)를 올린다.
+                      빈 칸("--")이 잦은 것이 정상 — 정지 상태는 증분 0.01kcal 미만이라 항목이 없다. */}
+                  <th className="px-4 py-3" title="직전 5초 구간의 활동 에너지 소모(워치 실측 증분) — 빈 칸=저활동 또는 미수집(구 앱)">
+                    활동 (kcal)
+                  </th>
                   <th className="px-4 py-3">작업자</th>
                   <th className="px-4 py-3">심박 (bpm)</th>
                   <th className="px-4 py-3">산소포화도 (%)</th>
@@ -5946,8 +5951,12 @@ export function DemoDashboard() {
               <tbody>
                 {data.recent.map((sample, index) => (
                   <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
-                    <td className="px-4 py-3 font-mono">{formatTime(sample.ts)}</td>
-                    <td className="px-4 py-3 font-mono text-xs">{sample.dataOrigin ?? "legacy_unclassified_vitalguard"}</td>
+                    <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                      {formatTime(sample.ts)}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {sample.activeEnergyKcal == null ? "--" : sample.activeEnergyKcal.toFixed(2)}
+                    </td>
                     <td className="px-4 py-3">{workerCell(sample)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
