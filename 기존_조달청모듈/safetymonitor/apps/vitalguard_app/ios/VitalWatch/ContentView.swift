@@ -30,6 +30,15 @@ struct ContentView: View {
                     .foregroundStyle(.orange)
             }
 
+            // 스트레스 입력 — HRV 는 표본 빈도 자체가 미지수라(작업 중 시간당 0~수 건 예상)
+            // 이 줄이 실기기 게이트의 판정 근거다. 0 건이면 수집 자체가 성립하지 않는다는 뜻.
+            if streamer.isRunning {
+                Text(streamer.latestHrvMs.map { String(format: "HRV %.0fms · %d건", $0, streamer.discreteSent) }
+                    ?? "HRV 대기 · \(streamer.discreteSent)건")
+                    .font(.footnote)
+                    .foregroundStyle(streamer.latestHrvMs == nil ? Color.secondary : Color.purple)
+            }
+
             Text(streamer.statusText)
                 .font(.footnote)
                 .foregroundStyle(streamer.isRunning ? .green : .secondary)

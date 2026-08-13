@@ -119,7 +119,17 @@ final class VitalPipeline {
                 let bpm = s["bpm"] as? Double
                 let spo2 = s["spo2"] as? Double
                 let ae = s["ae"] as? Double
-                guard bpm != nil || spo2 != nil || ae != nil else { continue }
+                // 스트레스 입력 — 워치는 짧은 키로 보내고 여기서 서버 스키마 이름으로 바꾼다.
+                let hrv = s["hrv"] as? Double
+                let rhr = s["rhr"] as? Double
+                let whr = s["whr"] as? Double
+                let rr = s["rr"] as? Double
+                let stp = s["stp"] as? Int
+                let flt = s["flt"] as? Int
+                guard bpm != nil || spo2 != nil || ae != nil
+                    || hrv != nil || rhr != nil || whr != nil || rr != nil
+                    || stp != nil || flt != nil
+                else { continue }
                 var v: [String: Any] = ["ts": sentAt]
                 if let bpm {
                     v["heartRate"] = bpm
@@ -140,6 +150,17 @@ final class VitalPipeline {
                 if let ae {
                     v["activeEnergyKcal"] = ae
                 }
+                // 스트레스 입력 — 값이 실린 것만 붙인다(빈 필드를 0 으로 채우면 '측정했는데 0'이 된다).
+                // ⚠ 워치가 측정 순간에만 싣는다(복사 전송 금지) — 여기서도 carry-forward 를 넣지 않는다.
+                //   구 앱이 같은 HRV 를 5초마다 재전송해 DB 에 하루 수천 행의 가짜 밀도를 만들었다.
+                if let hrv { v["hrvSdnnMs"] = hrv }
+                if let rhr { v["restingHeartRate"] = rhr }
+                if let whr { v["walkingHeartRate"] = whr }
+                if let rr { v["respiratoryRate"] = rr }
+                // 걸음·오른층은 5초 구간 증분(누적 아님) — 서버 스키마 상한(steps 5000·flights 500)은
+                // 구간 값 기준이라, 하루 누적을 보내면 통째로 스트립된다.
+                if let stp { v["steps"] = stp }
+                if let flt { v["flightsClimbed"] = flt }
                 self.pending.append(v)
             }
             if self.pending.count > self.maxQueue {
