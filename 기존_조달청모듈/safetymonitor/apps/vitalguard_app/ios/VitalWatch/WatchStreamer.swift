@@ -2,6 +2,7 @@
 import Foundation
 import HealthKit
 import WatchConnectivity
+import os
 
 final class WatchStreamer: NSObject, ObservableObject {
     @Published var isRunning = false
@@ -16,6 +17,7 @@ final class WatchStreamer: NSObject, ObservableObject {
     @Published var batchesSent = 0
     @Published var statusText = "대기"
 
+    private let log = Logger(subsystem: "com.vitalguard.vitalguardApp.watchkitapp", category: "WatchStreamer")
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
     private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
@@ -433,6 +435,10 @@ extension WatchStreamer: WCSessionDelegate {
         activationDidCompleteWith activationState: WCSessionActivationState,
         error: Error?
     ) {
+        // 폰 PhoneReceiver 의 활성화 로그(paired·watchAppInstalled)와 대칭인 워치 쪽 한 줄.
+        // 폰이 watchAppInstalled=false 로 보고하는 장부 불일치가 워치에서도 같은지 확인한다 —
+        // 이 값에 걸리는 경로는 flush() 의 transferUserInfo 폴백뿐이다.
+        log.notice("WC 활성화 완료 state=\(activationState.rawValue, privacy: .public) companionAppInstalled=\(session.isCompanionAppInstalled, privacy: .public)")
         if let error {
             DispatchQueue.main.async { self.statusText = "WC 활성화 실패: \(error.localizedDescription)" }
         }
