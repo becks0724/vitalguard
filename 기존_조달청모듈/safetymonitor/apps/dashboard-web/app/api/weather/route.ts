@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { apparentTempKma } from "../../../lib/apparent-temp";
+import { fetchKmaObservation } from "../../lib/kma-observation";
 import {
   persistWeather,
   persistWeatherDaily,
@@ -33,6 +34,10 @@ type WeatherPayload = {
     weatherCode: number;
     temperatureC: number;
     apparentTempC: number;
+    /** 판정 입력 출처 — `kma-ncst`(기상청 초단기실황·관측 기반) 또는 `open-meteo`(폴백). */
+    obsSource?: "kma-ncst" | "open-meteo";
+    /** 관측 시각(정시 ISO) — 실황은 40분~1시간 40분 지연될 수 있어 값의 나이를 함께 보인다. */
+    obsAt?: string;
     humidityPct: number;
     windKmh: number;
     // 순간풍속(돌풍·km/h) — 크레인/고소 중지 임계(규칙 §37·§143)가 순간풍속 기준이라 판정에 필수.
@@ -328,9 +333,19 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   // 체감온도는 업스트림 값을 쓰지 않고 기상청 산출식으로 직접 계산한다 —
   // 법령이 폭염작업 기준으로 지정한 것이 '기상청 체감온도'이기 때문(docs/apparent-temp-kma/).
   // Open-Meteo 의 apparent_temperature(Steadman 식)는 정의가 달라 판정 단계가 어긋난다.
-  const curTempC: number = forecast?.current?.temperature_2m ?? 0;
-  const curHumidityPct: number = forecast?.current?.relative_humidity_2m ?? 0;
-  const curWindKmh: number = forecast?.current?.wind_speed_10m ?? 0;
+  //
+  // ★ 입력도 기상청 관측(초단기실황)을 우선한다 — 식만 바꾸고 입력을 Open-Meteo(수치예보 모델
+  // 격자 분석값)로 두면 법령이 말하는 '기상청이 측정한' 값이 아니다. 실측 대조에서 기온이
+  // 3.6℃ 벌어져 법정 임계 31℃ 판정이 갈렸다(2026-08-14). 실황 조회 실패 시에만 업스트림 폴백.
+  const omTempC: number = forecast?.current?.temperature_2m ?? 0;
+  const omHumidityPct: number = forecast?.current?.relative_humidity_2m ?? 0;
+  const omWindKmh: number = forecast?.current?.wind_speed_10m ?? 0;
+
+  const obs = await fetchKmaObservation(lat, lon).catch(() => null);
+  const curTempC = obs?.temperatureC ?? omTempC;
+  const curHumidityPct = obs?.humidityPct ?? omHumidityPct;
+  // 풍속은 체감온도(여름철)에 안 들어가지만 겨울철 식과 표시에 쓰인다 — 출처를 섞지 않는다.
+  const curWindKmh = obs ? obs.windMs * 3.6 : omWindKmh;
 
   return {
     source: "open-meteo",
@@ -340,6 +355,9 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
       weatherCode: forecast?.current?.weather_code ?? 0,
       temperatureC: curTempC,
       apparentTempC: apparentTempKma(curTempC, curHumidityPct, curWindKmh),
+      // 판정 입력의 출처와 나이를 숨기지 않는다 — 실황은 40분~1시간 40분 지연될 수 있다.
+      obsSource: obs ? "kma-ncst" : "open-meteo",
+      obsAt: obs?.observedAt,
       humidityPct: curHumidityPct,
       windKmh: curWindKmh,
       windGustKmh: forecast?.current?.wind_gusts_10m ?? undefined,
