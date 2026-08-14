@@ -23,7 +23,9 @@ overrides:
 # js-yaml CPU DoS(CVE-2026-59870)·nanoid 무한루프 2건(2026-08-10 유입 advisory) — 전부 같은 major 안의 패치.
 # eslint 경유(js-yaml)·postcss 경유(nanoid) 전이 의존이라 overrides 로 올린다(직접 의존인 pdfjs-dist 는 package.json 에서 상향).
   js-yaml@4: 4.3.1
-  nanoid@3: 3.3.17
+  # 2026-08-14 재유입 — GHSA-2v37-7h3g-55p8 이 취약 범위를 <3.3.18 로 넓혀 종전 핀(3.3.17)이 안에 들어갔다.
+  # 같은 nanoid 무한루프 계열의 두 번째 advisory다. 핀은 "그때 안전했던 값"이지 영구 안전이 아니다.
+  nanoid@3: 3.3.18
 # CI `pnpm audit --audit-level=high` 게이트의 명시 예외 — 감사(2026-07-29) 시점의 기존 high 8건.
 # 대부분 exceljs 하위 의존(4주차 overrides 정리 대상). 새 취약점 유입만 게이트가 잡는다.
 # 항목을 지우려면 해당 GHSA 가 실제 해소(의존 업데이트/overrides)됐는지 pnpm audit 로 확인할 것.
