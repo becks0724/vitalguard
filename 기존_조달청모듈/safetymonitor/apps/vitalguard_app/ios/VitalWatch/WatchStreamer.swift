@@ -80,6 +80,18 @@ final class WatchStreamer: NSObject, ObservableObject {
             // 0건일 가능성이 크지만, 권한 시트가 어차피 다시 뜨는 김에 함께 붙여 실측으로 확정한다.
             .init(type: HKQuantityType.quantityType(forIdentifier: .respiratoryRate)!,
                   unit: bpm, key: "rr", anchorKey: "rr.anchor", maxAge: fresh),
+            // 절대적 운동 강도(MET) — ACGIH/ISO 7243 은 **대사율 등급별로** WBGT 허용한계를 달리 준다.
+            // 활동 kcal 은 체중이 큰 사람이 무조건 높아 작업자 간 비교가 안 되는데, 이 값은 체중으로
+            // 나눈 것이라 비교가 성립한다. 워크아웃 세션과 무관하게 기록된다(HRV 같은 배타 아님 — 실측).
+            .init(type: HKQuantityType.quantityType(forIdentifier: .physicalEffort)!,
+                  unit: HKUnit.kilocalorie()
+                      .unitDivided(by: HKUnit.hour().unitMultiplied(by: .gramUnit(with: .kilo))),
+                  key: "pe", anchorKey: "pe.anchor", maxAge: fresh),
+            // 일광 시간(분) — WBGT 는 직사광 유무로 공식이 갈린다(실외 0.7Tnwb+0.2Tg+0.1Ta vs 그늘 0.7Tnwb+0.3Tg).
+            // 관측소 기온을 전원에게 똑같이 적용하던 환경 축을 **작업자별로** 쪼개는 유일한 워치 신호다.
+            // ⚠ 소매·장갑에 광센서가 가리면 과소 추정된다(Apple 명시) — 값이 0 이어도 실외가 아니라는 뜻은 아니다.
+            .init(type: HKQuantityType.quantityType(forIdentifier: .timeInDaylight)!,
+                  unit: .minute(), key: "dl", anchorKey: "dl.anchor", maxAge: fresh),
         ]
     }()
 

@@ -126,9 +126,12 @@ final class VitalPipeline {
                 let rr = s["rr"] as? Double
                 let stp = s["stp"] as? Int
                 let flt = s["flt"] as? Int
+                // 온열 환경·강도 입력 — pe = 절대적 운동 강도(MET), dl = 일광 시간(분).
+                let pe = s["pe"] as? Double
+                let dl = s["dl"] as? Double
                 guard bpm != nil || spo2 != nil || ae != nil
                     || hrv != nil || rhr != nil || whr != nil || rr != nil
-                    || stp != nil || flt != nil
+                    || stp != nil || flt != nil || pe != nil || dl != nil
                 else { continue }
                 var v: [String: Any] = ["ts": sentAt]
                 if let bpm {
@@ -161,6 +164,10 @@ final class VitalPipeline {
                 // 구간 값 기준이라, 하루 누적을 보내면 통째로 스트립된다.
                 if let stp { v["steps"] = stp }
                 if let flt { v["flightsClimbed"] = flt }
+                // 온열 B안 입력 — MET 은 ACGIH TLV 의 대사율, 일광 분은 WBGT 실외/실내 분기용.
+                // 일광은 '구간 합'이다(하루 누적을 보내면 걸음·오른층처럼 서버 상한에서 스트립된다).
+                if let pe { v["physicalEffortMet"] = pe }
+                if let dl { v["timeInDaylightMin"] = dl }
                 self.pending.append(v)
             }
             if self.pending.count > self.maxQueue {

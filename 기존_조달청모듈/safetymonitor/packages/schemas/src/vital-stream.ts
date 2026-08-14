@@ -117,6 +117,16 @@ export const VitalSampleSchema = z.object({
   flightsClimbed: z.number().min(0).max(500).optional(),
   respiratoryRate: z.number().min(4).max(60).optional(),
 
+  // 온열 환경·강도 입력 (2026-08-14) — ACGIH/ISO 7243 이 요구하는 표준 입력.
+  // physicalEffortMet = 절대적 운동 강도(MET = kcal/hr·kg). 체중 정규화라 작업자 간 비교가 성립한다
+  //   (활동 kcal 은 체중 큰 사람이 무조건 높다). ACGIH TLV 의 대사율 등급 M 에 그대로 들어간다.
+  //   상한 30 — 실측 최대 15.5, 인간 지속 강도가 20 안쪽이라 오측만 걸러진다.
+  // timeInDaylightMin = 일광 노출(분). WBGT 는 직사광 유무로 공식이 갈려서, 관측소 기온을 전원에게
+  //   똑같이 적용하던 환경 축을 작업자별로 쪼갠다. **구간 합이다** — 하루 누적을 보내면 걸음·오른층처럼
+  //   상한에서 통째로 스트립된다. 상한 1440 은 물리 상한(구간 기준으로 좁히면 정상값이 잘린다).
+  physicalEffortMet: z.number().min(0).max(30).optional(),
+  timeInDaylightMin: z.number().min(0).max(1440).optional(),
+
   // 상시 모션 스냅샷 (워치 VitalTransmitter 의 정기 전송 경로) — 낙상 후보의 충격 피크와는
   // 의미가 다르다. accelMagnitudeG/peakRotationRadS 는 "충격 순간의 피크"이고 아래 둘은
   // "지금 이 순간의 값"이다. 이름이 스키마에 없어 그동안 100% 무음 strip 됐다(감사 BND-CONTRACT-01).

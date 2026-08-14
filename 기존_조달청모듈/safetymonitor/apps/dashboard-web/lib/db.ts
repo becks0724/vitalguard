@@ -265,6 +265,12 @@ async function initSchema(): Promise<void> {
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heartbeat INTEGER;
     -- 착용 기기 — 혈중산소 센서 유무(Series 6+/Ultra)를 가려 SpO2 결측 원인을 확정한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS watch_device_model TEXT;
+    -- 온열 환경·강도 입력(2026-08-14) — ACGIH/ISO 7243 이 요구하는 표준 입력.
+    -- physical_effort_met = 절대적 운동 강도(MET). 체중 정규화라 작업자 간 비교가 성립한다.
+    -- time_in_daylight_min = 일광 노출(분·구간 합). WBGT 실외/실내 공식 분기를 작업자별로 가른다.
+    -- 판정 미주입 — 값 도착을 관찰한 뒤 WBGT·TLV 설계로 넘어간다(HRV 교훈: API 존재 ≠ 도착).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS physical_effort_met DOUBLE PRECISION;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS time_in_daylight_min DOUBLE PRECISION;
     CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
 
     -- ts 는 TEXT 라 ORDER BY·범위비교·MAX 가 전부 문자열 비교로 돈다. 고정폭 ISO-UTC 는
@@ -872,6 +878,9 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     walking_heart_rate: sample.walkingHeartRate ?? null,
     flights_climbed: sample.flightsClimbed ?? null,
     respiratory_rate: sample.respiratoryRate ?? null,
+    // 온열 환경·강도 입력 — 워치 앵커드 쿼리라 측정이 있을 때만 실린다(sparse).
+    physical_effort_met: sample.physicalEffortMet ?? null,
+    time_in_daylight_min: sample.timeInDaylightMin ?? null,
     // 낙상 ML 활성화 요소 — 후보 샘플에만 채워지는 sparse 필드(일반 폴은 전부 null).
     accel_magnitude_g: sample.accelMagnitudeG ?? null,
     motion_still_sec: sample.motionStillSec ?? null,
