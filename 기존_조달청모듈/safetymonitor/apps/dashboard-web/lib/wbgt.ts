@@ -26,9 +26,12 @@ const RATIO = (CP * M_AIR) / M_H2O;
 /** Prandtl 수 */
 const PR = CP / (CP + 1.25 * R_AIR);
 
-/** 지표면 상수 — 알베도는 초지·콘크리트 중간값(참조 구현 기본값). */
+/**
+ * 지표면 상수. 알베도 0.45 는 **OSHA 계산기 구현값**이다(참조 R 은 0.4 를 기본값으로 두지만
+ * 대조에서 그 차이가 흑구 복사항에 그대로 드러났다 — 2026-08-14 5케이스 실측).
+ */
 const EMIS_SFC = 0.999;
-const ALB_SFC = 0.4;
+const ALB_SFC = 0.45;
 /** 흑구 센서 — 표준 50mm 검은 구. */
 const EMIS_GLOBE = 0.95;
 const ALB_GLOBE = 0.05;
@@ -39,8 +42,19 @@ const ALB_WICK = 0.4;
 const DIAM_WICK = 0.007;
 const LEN_WICK = 0.0254;
 
-/** 풍속 하한 m/s — 0 이면 대류 계산의 로그·거듭제곱이 무너진다. */
-const MIN_WIND_MS = 0.1;
+/**
+ * 풍속 하한 m/s — OSHA 구현값 1 mph. 0 이면 대류 계산의 거듭제곱이 무너진다.
+ * 종전 0.1 m/s 는 저풍속 케이스에서 대류 방출을 과소평가해 흑구온도가 과대로 튀었다.
+ */
+const MIN_WIND_MS = 0.44704;
+/**
+ * 10m 관측 풍속 → 센서 높이(2m) 환산 계수.
+ *
+ * Liljegren 은 **센서 높이 풍속**을 전제하는데 우리 입력(Open-Meteo `wind_speed_10m`)은 10m 다.
+ * 보정 없이 넣으면 대류 방출이 과대평가돼 흑구온도가 낮게 나온다. 0.67959 는 OSHA 계산기가
+ * 쓰는 고정 계수로, 표준 멱법칙(0.7944)이 아니라 로그 프로파일 기반이다 — 대조로 확인했다.
+ */
+const WIND_10M_TO_2M = 0.67959;
 /** 고정점 반복 상한·허용 오차 */
 const MAX_ITER = 200;
 const TOLERANCE = 1e-4;
@@ -313,6 +327,9 @@ export function computeWbgt(input: WbgtInput): WbgtResult | null {
     propDirect,
     zenithRad: solarZenithRad(input.at, input.lat, input.lon),
   };
+  // 센서 높이 환산은 여기서 한 번만 — 헬퍼가 아니라 입력 조립부에서 처리해야 두 센서(구·원통)가
+  // 같은 값을 본다.
+  sensor.windMs = Math.max(sensor.windMs * WIND_10M_TO_2M, MIN_WIND_MS);
 
   const tg = globeTempC(sensor);
   const tnwb = naturalWetBulbC(sensor);

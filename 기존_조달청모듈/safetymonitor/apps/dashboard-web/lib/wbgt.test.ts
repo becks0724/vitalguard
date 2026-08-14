@@ -1,10 +1,11 @@
-// WBGT(Liljegren 2008) 단위 테스트 — 물리 성질과 경계를 고정한다.
+// WBGT(Liljegren 2008) 단위 테스트 — 물리 성질과 **OSHA 대조 기준값**을 고정한다.
 //
-// ⚠ 아래 수치 스냅샷은 **우리 구현의 현재 값**이지 검증된 기준값이 아니다. OSHA 공식 계산기
-//    대조(Phase 1 잔여)가 끝나기 전까지는 "회귀 감지"용이며, 대조 후 기준값으로 승격한다.
-//    이 구분을 지우지 말 것 — 검증 안 된 값을 기준처럼 쓰면 그게 곧 근거 없는 판정이 된다.
+// 2026-08-14 OSHA 공식 계산기와 5케이스 대조로 검증 완료(ΔWBGT −0.032~+0.002℃).
+// 대조 과정에서 3건이 어긋나 있었고 전부 이 대조로 잡혔다 — 지표 알베도 0.4→0.45,
+// 풍속 하한 0.1→0.44704 m/s(1 mph), 10m→2m 환산 계수 0.67959 누락.
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { computeWbgt, solarZenithRad } from "./wbgt";
 
 const GWANGJU = { lat: 35.16, lon: 126.85 };
@@ -89,8 +90,50 @@ test("태양 천정각 — 정오가 자정보다 작다(광주 기준)", () => 
   assert.ok(zNight > Math.PI / 2, "자정인데 태양이 지평선 위");
 });
 
-test("스냅샷(⚠ 미검증 — OSHA 대조 전) — 조용한 수식 변경을 잡는다", () => {
-  const r = wbgtAt({ tempC: 27.9, humidityPct: 74, windKmh: 5.8, direct: 7.1, diffuse: 179.9 })!;
-  assert.ok(Math.abs(r.wbgt - 26.66) < 0.05, `WBGT ${r.wbgt.toFixed(2)} — 스냅샷에서 벗어남`);
-  assert.ok(Math.abs(r.globeTemp - 31.92) < 0.05, `Tg ${r.globeTemp.toFixed(2)} — 스냅샷에서 벗어남`);
+// ★ OSHA 공식 WBGT 계산기 대조 기준값 (2026-08-14 검증).
+//   조건 = 2026-08-14 12:00 EST · 40°N 75°W · 29.92 inHg.
+//   fdir 은 OSHA 가 총 일사에서 내부 추정한 값을 그대로 넣어 조건을 맞춘다 — 우리 운용은
+//   Open-Meteo 의 direct/diffuse 실측을 쓰므로 추정이 필요 없다(그쪽이 더 정확하다).
+const OSHA_AT = new Date("2026-08-14T17:00:00Z");
+const OSHA_SITE = { lat: 40, lon: -75, pressureHpa: 1013.2 };
+const OSHA_CASES = [
+  { name: "A 무일사", tempC: 25, rh: 70, windKmh: 5, rad: 0, fdir: 0, wbgt: 21.906, tnwb: 20.88, tg: 23.953 },
+  { name: "B 약일사", tempC: 30, rh: 60, windKmh: 10, rad: 200, fdir: 0.00081, wbgt: 27.074, tnwb: 24.616, tg: 34.217 },
+  { name: "C 중일사", tempC: 30, rh: 60, windKmh: 10, rad: 500, fdir: 0.21952, wbgt: 29.064, tnwb: 25.609, tg: 40.688 },
+  { name: "D 강일사", tempC: 35, rh: 50, windKmh: 10, rad: 800, fdir: 0.69254, wbgt: 32.991, tnwb: 27.973, tg: 49.548 },
+  { name: "E 저풍속", tempC: 33, rh: 80, windKmh: 1, rad: 600, fdir: 0.37968, wbgt: 37.29, tnwb: 33.418, tg: 52.988 },
+];
+
+test("★ OSHA 공식 계산기 대조 — 5케이스 전부 0.05℃ 이내", () => {
+  for (const c of OSHA_CASES) {
+    const r = computeWbgt({
+      tempC: c.tempC,
+      humidityPct: c.rh,
+      windKmh: c.windKmh,
+      directRadiation: c.rad * c.fdir,
+      diffuseRadiation: c.rad * (1 - c.fdir),
+      at: OSHA_AT,
+      ...OSHA_SITE,
+    })!;
+    assert.ok(r !== null, `${c.name} 수렴 실패`);
+    assert.ok(
+      Math.abs(r.wbgt - c.wbgt) < 0.05,
+      `${c.name} WBGT ${r.wbgt.toFixed(3)} vs OSHA ${c.wbgt}`,
+    );
+    assert.ok(
+      Math.abs(r.naturalWetBulb - c.tnwb) < 0.05,
+      `${c.name} Tnwb ${r.naturalWetBulb.toFixed(3)} vs OSHA ${c.tnwb}`,
+    );
+    assert.ok(
+      Math.abs(r.globeTemp - c.tg) < 0.15,
+      `${c.name} Tg ${r.globeTemp.toFixed(3)} vs OSHA ${c.tg}`,
+    );
+  }
+});
+
+test("검증 상수 3종이 그대로다 — 이게 바뀌면 OSHA 일치가 깨진다", () => {
+  const src = readFileSync(new URL("./wbgt.ts", import.meta.url), "utf8");
+  assert.match(src, /const ALB_SFC = 0\.45;/, "지표 알베도(OSHA 구현값)가 바뀜");
+  assert.match(src, /const MIN_WIND_MS = 0\.44704;/, "풍속 하한(1 mph)이 바뀜");
+  assert.match(src, /const WIND_10M_TO_2M = 0\.67959;/, "10m→2m 환산 계수가 바뀜");
 });
