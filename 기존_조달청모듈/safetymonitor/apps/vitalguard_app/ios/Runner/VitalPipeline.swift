@@ -1,4 +1,4 @@
-// iOS 업로드 파이프라인 — 워치 HR 배치를 로컬 큐에 영속하고 관제 서버(/api/mock/vital)에 JWT 로 업로드한다
+// iOS 업로드 파이프라인 — 워치 HR 배치를 로컬 큐에 영속하고 관제 서버(/api/app/vital)에 JWT 로 업로드한다
 import Foundation
 import UIKit
 import BackgroundTasks
