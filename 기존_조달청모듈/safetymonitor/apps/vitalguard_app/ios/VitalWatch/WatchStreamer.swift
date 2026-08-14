@@ -22,6 +22,24 @@ final class WatchStreamer: NSObject, ObservableObject {
     @Published var batchesSent = 0
     @Published var statusText = "대기"
 
+    // MARK: - 전달 채널 계측 (2026-08-14 연결끊김 진단 · 08-18 거리 시험용)
+    //
+    // 왜 워치 화면인가 — 시험은 "폰을 두고 워치만 들고 멀어진다" 라서, 그 순간 볼 수 있는 화면이
+    // 손목뿐이다. 폰 로그(PhoneReceiver.swift:41)에 같은 정보가 있지만 읽으려면 `log collect`
+    // (root 필요)를 거쳐야 하고, 그건 시험이 끝난 뒤의 일이다.
+    //
+    // 무엇을 보는가 — `잔량`(outstandingUserInfoTransfers)이 결정적이다. 큐가 실시간으로 쌓이는
+    // 것이 눈에 보이면 "전달이 밀린다"가 추론이 아니라 관측이 된다.
+
+    /// 폰에 즉시 도달 가능한 상태인가(`WCSession.isReachable`). 시험 B 의 독립 변인 그 자체다.
+    @Published var reachable = false
+    /// 처음부터 큐 채널(`transferUserInfo`)로 보낸 배치 수.
+    @Published var sentQueued = 0
+    /// 즉시 채널(`sendMessage`)이 실패해 큐로 다시 보낸 배치 수.
+    @Published var immediateFailed = 0
+    /// 아직 폰에 도달하지 않은 큐 잔량. 멀어지면 늘고 돌아오면 0 으로 떨어진다.
+    @Published var pendingTransfers = 0
+
     private let log = Logger(subsystem: "com.vitalguard.vitalguardApp.watchkitapp", category: "WatchStreamer")
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
@@ -289,17 +307,34 @@ final class WatchStreamer: NSObject, ObservableObject {
             wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in
                 // 즉시 채널 실패 시 큐 전송으로 폴백 — 백그라운드에서도 유실 없이 도착한다.
                 wc.transferUserInfo(payload)
-                DispatchQueue.main.async { self?.noteSent() }
+                DispatchQueue.main.async { self?.noteFallback() }
             }
-            noteSent()
+            noteSent(queued: false)
         } else {
             wc.transferUserInfo(payload)
-            noteSent()
+            noteSent(queued: true)
         }
     }
 
-    private func noteSent() {
+    private func noteSent(queued: Bool) {
         batchesSent += 1
+        if queued { sentQueued += 1 }
+        refreshLinkState()
+    }
+
+    /// 즉시 채널이 실패해 큐로 다시 보낸 건. `batchesSent` 는 여기서 올리지 않는다 —
+    /// flush 1회 = 전송 1회이고, 종전에는 실패 경로에서 한 번 더 올려 **실패한 flush 만 2회로**
+    /// 세어졌다(진단 계기가 스스로 틀린 수를 보이던 자리).
+    private func noteFallback() {
+        immediateFailed += 1
+        refreshLinkState()
+    }
+
+    /// 링크 상태 갱신 — 전송 시점(5초)에만 읽는다. 별도 타이머를 두지 않는다.
+    private func refreshLinkState() {
+        let wc = WCSession.default
+        reachable = wc.isReachable
+        pendingTransfers = wc.outstandingUserInfoTransfers.count
     }
 
     /// 정수 계약(걸음·오른층)의 구간 증분을 배치에 싣는다. 누적이 뒤로 가면(세션 재시작) 기준만 재설정한다.
@@ -498,8 +533,16 @@ extension WatchStreamer: WCSessionDelegate {
         // 폰이 watchAppInstalled=false 로 보고하는 장부 불일치가 워치에서도 같은지 확인한다 —
         // 이 값에 걸리는 경로는 flush() 의 transferUserInfo 폴백뿐이다.
         log.notice("WC 활성화 완료 state=\(activationState.rawValue, privacy: .public) companionAppInstalled=\(session.isCompanionAppInstalled, privacy: .public)")
+        DispatchQueue.main.async { self.refreshLinkState() }
         if let error {
             DispatchQueue.main.async { self.statusText = "WC 활성화 실패: \(error.localizedDescription)" }
         }
+    }
+
+    /// 도달 가능 여부가 바뀌는 순간 — 5초 flush 를 기다리지 않고 화면에 즉시 반영한다.
+    /// 08-18 거리 시험에서 "몇 걸음에서 끊기는가"를 손목으로 보기 위한 것이다.
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        log.notice("WC 도달 변화 reachable=\(session.isReachable, privacy: .public)")
+        DispatchQueue.main.async { self.refreshLinkState() }
     }
 }

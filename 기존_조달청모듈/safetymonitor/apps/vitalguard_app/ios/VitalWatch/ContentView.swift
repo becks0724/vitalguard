@@ -22,6 +22,18 @@ struct ContentView: View {
         return parts.isEmpty ? "이산 0건" : parts.joined(separator: " ")
     }
 
+    /// 전송·전달 채널 한 줄 — 0 은 생략한다(이산 측정 줄과 같은 규칙).
+    ///
+    /// `잔량` = 아직 폰에 도달하지 않은 큐. 이것이 실시간으로 늘어나면 전달이 밀리는 중이라는
+    /// 뜻이고, 08-18 거리 시험의 판정 근거가 된다. `즉시` 는 `전송 − 큐` 라 따로 적지 않는다.
+    private var transmitLine: String {
+        var parts = ["전송\(streamer.batchesSent)", streamer.reachable ? "도달" : "단절"]
+        let queued = streamer.sentQueued + streamer.immediateFailed
+        if queued > 0 { parts.append("큐\(queued)") }
+        if streamer.pendingTransfers > 0 { parts.append("잔량\(streamer.pendingTransfers)") }
+        return parts.joined(separator: " ")
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             HStack(spacing: 4) {
@@ -60,9 +72,12 @@ struct ContentView: View {
                 .font(.footnote)
                 .foregroundStyle(streamer.isRunning ? .green : .secondary)
 
-            Text("전송 \(streamer.batchesSent)회")
+            // 전송 현황 + 전달 채널 계측(08-18 거리 시험 판정 근거) — 줄을 늘리지 않고
+            // 기존 "전송 N회" 자리에 얹는다. 워치 화면은 이미 꽉 차 있어 한 줄을 더하면
+            // 시작/중지 버튼이 밀린다. 정상일 때는 짧고(`전송405 도달`) 이상일 때만 길어진다.
+            Text(transmitLine)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(streamer.pendingTransfers > 0 ? Color.orange : Color.secondary)
 
             Button(streamer.isRunning ? "중지" : "시작") {
                 streamer.isRunning ? streamer.stop() : streamer.start()
