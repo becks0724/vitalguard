@@ -10,6 +10,7 @@ import {
   mergeEgenPlaces,
   normName,
   parseEgenItem,
+  parseEgenTotalCount,
   parseEgenXml,
   type EgenPlace,
 } from "./egen";
@@ -202,4 +203,16 @@ test("matchEgenPlace — 동명 후보가 여럿이면 좌표로 가른다(지�
   ];
   const m = matchEgenPlace({ name: "튼튼병원", lat: 35.1407, lon: 126.9224 }, places);
   assert.equal(m?.tel, "가까운지점");
+});
+
+// ── totalCount 파싱 (조용한 절단 감지의 유일한 단서) ─────────────────────────
+test("parseEgenTotalCount — 값 추출", () => {
+  assert.equal(parseEgenTotalCount("<body><totalCount>3058</totalCount></body>"), 3058);
+  assert.equal(parseEgenTotalCount("<totalCount> 234 </totalCount>"), 234);
+});
+
+test("parseEgenTotalCount — 없으면 -1(0 이 아니다)", () => {
+  // 0 을 돌려주면 "전체 0건" 과 "모름" 이 구별되지 않아 페이지 계산이 조용히 틀어진다.
+  assert.equal(parseEgenTotalCount("<body></body>"), -1);
+  assert.equal(parseEgenTotalCount(""), -1);
 });

@@ -106,6 +106,13 @@ export function parseEgenItem(block: string): EgenPlace {
   };
 }
 
+// E-Gen 응답의 totalCount(그 조건의 전체 건수). 없으면 -1 = 알 수 없음.
+// 받은 건수와 비교해 **응답이 잘렸는지** 판정하는 데 쓴다 — 조용한 절단을 막는 유일한 단서다.
+export function parseEgenTotalCount(xml: string): number {
+  const m = xml.match(/<totalCount>\s*(\d+)\s*<\/totalCount>/);
+  return m?.[1] === undefined ? -1 : Number(m[1]);
+}
+
 // E-Gen 응답 XML 전체 → EgenPlace[](<item> 블록 분해, 이름 없는 항목 제외).
 export function parseEgenXml(xml: string): EgenPlace[] {
   const blocks = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
