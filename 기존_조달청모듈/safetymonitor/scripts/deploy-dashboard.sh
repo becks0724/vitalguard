@@ -56,6 +56,44 @@ else
   echo "HEAD=$SHA (origin 동기 · 빌드 범위 clean)"
 fi
 
+# ── 배포 범위 = "내 커밋"이 아니라 <직전 라이브>..HEAD 전부다 (L-59) ─────────────
+# 아카이브 빌드는 HEAD 를 통째로 싣는다. 공유 main 에서는 병렬 세션의 커밋이 함께 나가는데,
+# 자기 diff 만 보면 그게 안 보여 **검증 범위와 배포 범위가 어긋난다**(2026-08-14 양쪽 세션이
+# 대칭으로 같은 착각 — 한쪽은 열 폭만, 다른 쪽은 체감온도만 검증할 뻔했다).
+# 직전 라이브 커밋은 추측하지 않고 **서빙 리비전의 commit-sha 라벨**에서 가져온다(4/5 가 매번 심는다).
+# 전 구간 실패 무해 — 정보 출력이라 조회가 안 되면 그 사실만 알리고 배포는 계속한다.
+LIVE_REV=$(gcloud run services describe "$SERVICE" --region "$REGION" \
+  --format="value(status.traffic.filter(\"percent:100\").extract(revisionName))" 2>/dev/null \
+  | tr -d "[]' " || true)
+# ⚠ `[ ] && cmd` 형태로 쓰지 않는다 — 조건이 거짓이면 AND-list 가 1 을 돌려 `set -e` 가 배포를 죽인다.
+LIVE_SHA=""
+if [ -n "$LIVE_REV" ]; then
+  LIVE_SHA=$(gcloud run revisions describe "$LIVE_REV" --region "$REGION" \
+    --format="value(metadata.labels.commit-sha)" 2>/dev/null || true)
+fi
+
+if [ -z "$LIVE_SHA" ]; then
+  echo "⚠ 배포 범위 미산출 — 라이브 리비전(${LIVE_REV:-조회실패})에 commit-sha 라벨이 없다. 범위를 눈으로 확인할 것"
+elif ! git cat-file -e "${LIVE_SHA}^{commit}" 2>/dev/null; then
+  echo "⚠ 배포 범위 미산출 — 라벨 커밋 ${LIVE_SHA:0:7} 이 이 클론에 없다(히스토리 재작성?). 범위를 눈으로 확인할 것"
+elif [ "$LIVE_SHA" = "$SHA" ]; then
+  echo "배포 범위 = 없음 — 라이브($LIVE_REV)와 같은 커밋을 재배포한다"
+else
+  RANGE="${LIVE_SHA}..${SHA}"
+  git merge-base --is-ancestor "$LIVE_SHA" "$SHA" 2>/dev/null \
+    || echo "⚠ 라이브 커밋이 HEAD 의 조상이 아니다 — 롤백 이후이거나 갈라진 히스토리다. 아래 목록을 그대로 믿지 말 것"
+  NCOMMIT=$(git rev-list --count "$RANGE")
+  # ⚠ 작성자는 **팀원**을 가리지 병렬 세션을 가리지 못한다 — 같은 맥의 세션들은 같은 git 신원을 쓴다.
+  # 세션 간 혼입은 작성자가 아니라 **커밋 제목**으로 판별한다(아래 목록).
+  AUTHORS=$(git log --format='%an' "$RANGE" | sort -u | paste -sd', ' -)
+  echo "배포 범위 = $LIVE_REV(${LIVE_SHA:0:7}) → HEAD(${SHA:0:7}) · ${NCOMMIT}커밋 · 작성자: $AUTHORS"
+  # `| head` 는 pipefail 과 함께 SIGPIPE 로 파이프라인을 실패시킨다 — `-n` 으로 git 쪽에서 자른다.
+  git log -n 20 --format='  %h %an — %s' "$RANGE"
+  if [ "$NCOMMIT" -gt 20 ]; then echo "  … 이하 $((NCOMMIT - 20))커밋 생략"; fi
+  git -c core.quotepath=false diff --stat "$RANGE" -- "$SUBTREE" | tail -1 | sed 's/^/  /'
+  echo "  ★ 라이브 검증 목록은 '내가 무엇을 고쳤나'가 아니라 위 범위 전체에서 만든다(L-59)."
+fi
+
 say "1/5 커밋 고정 아카이브 (이미지=HEAD 보증 · L-32)"
 TMP=$(mktemp -d /tmp/vg-deploy.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
