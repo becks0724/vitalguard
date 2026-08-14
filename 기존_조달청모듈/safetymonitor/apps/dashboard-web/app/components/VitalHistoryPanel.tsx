@@ -487,7 +487,7 @@ export function VitalHistoryPanel({
                   : undefined;
               const isBar = selection.metric === "fall" || selection.metric === "spo2" || chartType === "bar";
               return isBar ? (
-                <RechartsBarChart {...chartProps} />
+                <RechartsBarChart {...chartProps} domain={timeDomain} />
               ) : (
                 <RechartsLineChart {...chartProps} domain={timeDomain} />
               );

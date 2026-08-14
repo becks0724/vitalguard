@@ -30,9 +30,12 @@ test("real.ts — 심박·체온 점에 tsMs 를 싣는다(없으면 시간축�
 // ── 클라: 축 종류와 선 끊기 ─────────────────────────────────────────────
 
 test("선 차트 — 시간축(type=number)과 창 도메인을 쓴다", () => {
-  const fn = charts.slice(charts.indexOf("function timeAxisProps"));
-  assert.match(fn.slice(0, 900), /type: "number" as const/, "카테고리 축으로 되돌아감");
-  assert.match(fn.slice(0, 900), /domain,/, "조회 창을 X 도메인으로 쓰지 않음");
+  // 2026-08-14 — 막대와 공유하려고 축 계산을 `timeAxis` 로 분리했다. 검사 대상도 그리로 옮긴다
+  // (검사 위치를 안 옮기면 이 가드가 "축이 사라졌다"로 오탐한다 — 실제로 이 리팩터에서 걸렸다).
+  const fn = charts.slice(charts.indexOf("function timeAxis("), charts.indexOf("function timeAxisProps"));
+  assert.ok(fn.length > 0, "timeAxis 를 찾지 못했다 — 가드 재작성 필요");
+  assert.match(fn, /type: "number" as const/, "카테고리 축으로 되돌아감");
+  assert.match(fn, /\n\s*domain,/, "조회 창을 X 도메인으로 쓰지 않음");
 });
 
 test("선 차트 — 결측에서 선을 끊는다(withTimeGaps + connectNulls={false})", () => {
@@ -50,7 +53,7 @@ test("선 차트 — 결측에서 선을 끊는다(withTimeGaps + connectNulls={
 
 test("결측 삽입은 timeAxisProps 안에서 일어난다(선 차트가 실제로 그 데이터를 그린다)", () => {
   const fn = charts.slice(charts.indexOf("function timeAxisProps"), charts.indexOf("export function RechartsLineChart"));
-  assert.match(fn, /\n\s*data: withTimeGaps\(points\)/, "timeAxisProps 가 원본 points 를 그대로 넘긴다");
+  assert.match(fn, /\bdata: withTimeGaps\(points\)/, "timeAxisProps 가 원본 points 를 그대로 넘긴다");
   const line = charts.slice(
     charts.indexOf("export function RechartsLineChart"),
     charts.indexOf("export function RechartsBarChart"),
@@ -67,8 +70,9 @@ test("패널 — 선 차트에 창을 넘긴다", () => {
 });
 
 test("tsMs 없는 경로는 카테고리 축으로 안전하게 떨어진다(모의 낙상)", () => {
-  const fn = charts.slice(charts.indexOf("function timeAxisProps"));
-  assert.match(fn.slice(0, 400), /!hasFullTimestamps\(points\)\) return null/, "폴백이 사라짐");
+  // 2026-08-14 — 폴백 조건도 `timeAxis` 로 옮겼다(선·막대 공용).
+  const fn = charts.slice(charts.indexOf("function timeAxis("), charts.indexOf("function timeAxisProps"));
+  assert.match(fn, /!hasFullTimestamps\(points\)\) return null/, "폴백이 사라짐");
   assert.match(charts, /\{\.\.\.\(t \? t\.axis : \{ dataKey: xTickLabel \}\)\}/, "폴백 축 배선이 사라짐");
 });
 

@@ -38,19 +38,28 @@ type Props = {
 
 // 시간축을 쓸 수 있는 조건 — 창이 주어졌고 모든 점에 측정 시각이 있을 때.
 // 모의 경로(낙상)는 tsMs 가 없어 여기서 자동으로 카테고리 축으로 떨어진다.
-function timeAxisProps(points: ChartPoint[], domain: [number, number] | undefined) {
+// 선·막대가 공유한다 — 한쪽만 시간축이면 라인↔막대 토글에서 같은 데이터가 다른 간격으로 보인다.
+function timeAxis(points: ChartPoint[], domain: [number, number] | undefined) {
   if (!domain || !hasFullTimestamps(points)) return null;
   const spanMs = domain[1] - domain[0];
   return {
-    data: withTimeGaps(points),
-    axis: {
-      dataKey: "tsMs" as const,
-      type: "number" as const,
-      domain,
-      scale: "time" as const,
-      tickFormatter: (v: number) => formatTimeTick(v, spanMs),
-    },
+    dataKey: "tsMs" as const,
+    type: "number" as const,
+    domain,
+    scale: "time" as const,
+    tickFormatter: (v: number) => formatTimeTick(v, spanMs),
   };
+}
+
+// 선 차트용 — 축에 더해 **결측 끊기**(공백에 null 점 삽입)까지 얹는다.
+// ⚠ 막대는 이걸 쓰지 않는다. 없는 버킷은 빈 공간으로 이미 정직하고,
+//    null 점을 넣으면 그리지도 않을 막대가 데이터에 섞여 폭 자동계산만 흐트러진다.
+function timeAxisProps(points: ChartPoint[], domain: [number, number] | undefined) {
+  const axis = timeAxis(points, domain);
+  // ⚠ 중복처럼 보이지만 지우지 말 것 — `hasFullTimestamps` 는 타입 가드라 `timeAxis` 안에서
+  //    좁힌 타입이 여기로 전파되지 않는다(tsc 가 잡는다). `withTimeGaps` 는 TimedPoint[] 를 받는다.
+  if (!axis || !hasFullTimestamps(points)) return null;
+  return { data: withTimeGaps(points), axis };
 }
 
 // 이상치(주의/위험)만 강조색, 그 외는 메트릭 기본색.
@@ -236,19 +245,28 @@ export function RechartsBarChart({
   referenceLines,
   pointSeverity,
   hoverExtra,
+  domain: timeDomain,
 }: Props) {
   const refs = referenceLines ?? [];
   if (points.length === 0) {
     return <p className="text-xs text-zinc-400">데이터 없음</p>;
   }
   const domain = yDomain(points, decimals, refs.map((r) => r.value));
+  // ★ 막대도 시간축을 쓴다(2026-08-14). 종전엔 카테고리 축이라 SpO₂ 1주일·`막대` 토글에서
+  //   16시간 공백이 2시간 간격과 같은 폭으로 그려졌고, 같은 데이터가 라인↔막대 토글에서
+  //   다른 간격으로 보였다. 선 차트는 08-13 에 고쳤는데 막대만 남아 있었다.
+  // ★ `<Bar>` 는 시간축에서 정상 렌더된다 — SSR 실측(recharts 2.15.4) x=[60,73,85,199,211,590]
+  //   로 실제 시간 간격을 반영하고, 폭도 maxBarSize 안에서 점 수에 따라 자동(3점 28px → 400점 1px).
+  //   활동 복합 차트가 `Customized` 로 직접 rect 를 그리는 것은 **시리즈별 `data`**(<Bar data=…>)
+  //   조합에서만 좌표 계산이 깨지기 때문이고, 여기는 차트 레벨 data 라 그 함정에 해당하지 않는다.
+  const tAxis = timeAxis(points, timeDomain);
 
   return (
     <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
       <ResponsiveContainer width="100%" height="100%">
         <ReBarChart data={points} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
           <XAxis
-            dataKey={xTickLabel}
+            {...(tAxis ?? { dataKey: xTickLabel })}
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={{ stroke: "currentColor", strokeOpacity: 0.25 }}
