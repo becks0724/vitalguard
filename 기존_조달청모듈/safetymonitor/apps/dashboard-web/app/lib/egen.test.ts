@@ -94,7 +94,7 @@ test("parseEgenXml — 여러 item 분해, 이름 없는 항목 제외", () => {
   );
 });
 
-test("matchEgenPlace — 좌표 150m 이내 최근접 매칭", () => {
+test("matchEgenPlace — 이름이 맞는 후보를 고른다(먼 후보는 이름도 안 맞는다)", () => {
   const places: EgenPlace[] = [
     { name: "먼병원", tel: "1", hours: "", lat: 35.2, lon: 126.9 },
     { name: "전남대학교병원", tel: "062-220-5114", hours: "", lat: 35.1407, lon: 126.9224 },
@@ -166,4 +166,40 @@ test("mergeEgenPlaces — 한쪽이 비어도 다른 쪽을 그대로 돌려준�
   assert.equal(mergeEgenPlaces(only, []).length, 1);
   assert.equal(mergeEgenPlaces([], only).length, 1);
   assert.equal(mergeEgenPlaces([], []).length, 0);
+});
+
+// ── 좌표 최근접이 이름을 이기던 오매칭 (2026-08-14 라이브 실측) ─────────────────
+// 배포 후 실측: 전남대학교병원 응급의료센터에 「이상명내과의원」 번호가 붙었다.
+// 150m 임계 안에 무관한 의원이 더 가까이 있었기 때문. 아래 좌표·전화는 실제 값이다.
+test("matchEgenPlace — 더 가까운 무관 의원보다 이름이 맞는 병원을 고른다", () => {
+  const places: EgenPlace[] = [
+    { name: "이상명내과의원", tel: "062-232-7675", hours: "", lat: 35.14018, lon: 126.92154 }, // 84m
+    { name: "라벨르의원", tel: "062-714-1275", hours: "", lat: 35.14025, lon: 126.92162 }, // 92m
+    { name: "전남대학교병원", tel: "062-220-5893", hours: "", lat: 35.141852, lon: 126.921586 }, // 147m
+  ];
+  const m = matchEgenPlace(
+    { name: "전남대학교병원 응급의료센터", lat: 35.1407313, lon: 126.92245 },
+    places,
+  );
+  assert.equal(m?.tel, "062-220-5893", "좌표 최근접이 이름을 이기면 응급 패널에 남의 번호가 뜬다");
+});
+
+test("matchEgenPlace — 이름이 안 맞으면 아무리 가까워도 null", () => {
+  // 응급 연락처에서 남의 번호는 빈칸보다 나쁘다 — 못 찾으면 비워 둔다.
+  const places: EgenPlace[] = [
+    { name: "이상명내과의원", tel: "062-232-7675", hours: "", lat: 35.14018, lon: 126.92154 },
+  ];
+  assert.equal(
+    matchEgenPlace({ name: "전남대학교병원 응급의료센터", lat: 35.1407313, lon: 126.92245 }, places),
+    null,
+  );
+});
+
+test("matchEgenPlace — 동명 후보가 여럿이면 좌표로 가른다(지점 구분)", () => {
+  const places: EgenPlace[] = [
+    { name: "튼튼병원", tel: "먼지점", hours: "", lat: 35.20, lon: 126.90 },
+    { name: "튼튼병원", tel: "가까운지점", hours: "", lat: 35.1408, lon: 126.9225 },
+  ];
+  const m = matchEgenPlace({ name: "튼튼병원", lat: 35.1407, lon: 126.9224 }, places);
+  assert.equal(m?.tel, "가까운지점");
 });

@@ -141,34 +141,37 @@ export function normName(s: string): string {
     .toLowerCase();
 }
 
-const MATCH_KM = 0.15; // 150m — 같은 병원으로 볼 좌표 근접 임계
-
-// Naver 병원 1건에 대응하는 E-Gen 장소 찾기(좌표 근접 우선, 없으면 이름 포함 매칭).
+// Naver 병원 1건에 대응하는 E-Gen 장소 찾기.
+//
+// ★ 이름이 맞는 후보만 본다. 좌표는 신원을 정하지 못하고 **동명 후보를 가르는 데만** 쓴다.
+//   종전엔 "150m 내 최근접" 을 이름보다 우선했는데, 도심에서는 그 안에 무관한 의원이 여럿이다.
+//   2026-08-14 실측 — 전남대학교병원 응급의료센터 기준 이상명내과의원 84m · 전남대학교병원 147m.
+//   최근접 규칙이 **응급 패널에 내과의원 번호(062-232-7675)를 붙였다.**
+//   응급 연락처에서 남의 번호는 빈칸보다 나쁘므로, 못 찾으면 null 로 두는 쪽을 택한다.
 export function matchEgenPlace(
   h: Pick<Hospital, "name" | "lat" | "lon">,
   places: EgenPlace[],
 ): EgenPlace | null {
-  // 1) 좌표 근접(임계 내 최근접)
-  if (h.lat !== undefined && h.lon !== undefined) {
-    let best: EgenPlace | null = null;
-    let bestD = Infinity;
-    for (const p of places) {
-      if (p.lat === undefined || p.lon === undefined) continue;
-      const d = haversineKm(h.lat, h.lon, p.lat, p.lon);
-      if (d < bestD) {
-        bestD = d;
-        best = p;
-      }
-    }
-    if (best && bestD <= MATCH_KM) return best;
-  }
-  // 2) 이름 포함(정규화 후 서로 포함 — "전남대학교병원" ⊂ "전남대학교병원응급의료센터")
   const hn = normName(h.name);
-  if (hn) {
-    for (const p of places) {
-      const pn = normName(p.name);
-      if (pn && (pn.includes(hn) || hn.includes(pn))) return p;
+  if (!hn) return null;
+  // 이름 포함(정규화 후 서로 포함 — "전남대학교병원" ⊂ "전남대학교병원응급의료센터")
+  const named = places.filter((p) => {
+    const pn = normName(p.name);
+    return pn !== "" && (pn.includes(hn) || hn.includes(pn));
+  });
+  if (named.length === 0) return null;
+  if (named.length === 1) return named[0] ?? null;
+  // 동명 후보가 여럿이면(지점·분원) 좌표로 가른다. 좌표가 없으면 첫 후보.
+  if (h.lat === undefined || h.lon === undefined) return named[0] ?? null;
+  let best: EgenPlace | null = null;
+  let bestD = Infinity;
+  for (const p of named) {
+    if (p.lat === undefined || p.lon === undefined) continue;
+    const d = haversineKm(h.lat, h.lon, p.lat, p.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = p;
     }
   }
-  return null;
+  return best ?? named[0] ?? null;
 }
