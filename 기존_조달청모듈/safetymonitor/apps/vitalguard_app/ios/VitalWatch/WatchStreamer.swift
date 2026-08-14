@@ -46,6 +46,16 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 워치·폰·서버가 모두 "성공"으로 보고한 채 값만 사라진다.
     /// 측정 시각은 어차피 서버 계약에 필드가 없어(심박·SpO₂ 만 보유) 병합해도 잃는 정보가 없다.
     private var pendingDiscrete: [String: Double] = [:]
+    /// SpO₂ 대기분 (측정값 %, 측정 시각) — flush 에서 심박 항목에 병합한다.
+    ///
+    /// 이산 측정과 같은 ts 충돌 문제를 겪지만 처리가 다르다. SpO₂ 는 서버 계약에
+    /// `spo2MeasuredAt` 이 있어 **측정 시각을 살려야 하는데**, 병합하면 항목의 ts 는
+    /// 심박 측정 시각이 된다. 그래서 값과 시각을 함께 들고 있다가 `spo2Ts` 라는
+    /// 별도 키로 실어 보낸다(폰이 그것을 spo2MeasuredAt 으로 매핑).
+    ///
+    /// ⚠ 한 구간에 2건 이상 오면 마지막만 남는다. SpO₂ 는 30분 게이트라 5초 배치에 겹칠 일이
+    /// 거의 없고, 겹치는 경우는 앵커 재생(낡은 측정)뿐이라 실질 손실이 없다.
+    private var pendingSpo2: (pct: Double, at: TimeInterval)?
     private var seq = 0
 
     // 스트레스 입력 중 이산 측정 4종 — Apple 이 산발적으로 기록하는 값이라 SpO₂ 와 같은
@@ -248,6 +258,17 @@ final class WatchStreamer: NSObject, ObservableObject {
             }
             pendingDiscrete.removeAll()
         }
+        // SpO₂ — 같은 병합 계약이되 측정 시각을 `spo2Ts` 로 따로 싣는다(항목 ts 는 심박 측정 시각이라
+        // 그대로 쓰면 SpO₂ 나이가 틀어진다). 심박 항목이 없으면 종전대로 단독 항목(ts=측정 시각).
+        if let spo2 = pendingSpo2 {
+            if let idx = pendingSamples.lastIndex(where: { $0["bpm"] is Double }) {
+                pendingSamples[idx]["spo2"] = spo2.pct
+                pendingSamples[idx]["spo2Ts"] = spo2.at
+            } else {
+                pendingSamples.append(["ts": spo2.at, "spo2": spo2.pct])
+            }
+            pendingSpo2 = nil
+        }
         guard !pendingSamples.isEmpty else { return }
         seq += 1
         let payload: [String: Any] = [
@@ -371,8 +392,9 @@ final class WatchStreamer: NSObject, ObservableObject {
                 let pct = (s.quantity.doubleValue(for: .percent()) * 100).rounded()
                 self.latestSpO2 = pct
                 self.latestSpO2At = s.endDate
-                // ts = 측정 시각(endDate) — 폰이 spo2MeasuredAt 으로 매핑한다(전송 시각과 분리).
-                self.pendingSamples.append(["ts": s.endDate.timeIntervalSince1970, "spo2": pct])
+                // 측정 시각을 함께 들고 flush 로 넘긴다 — 단독 항목으로 보내면 배치 ts 중복으로
+                // 서버가 조용히 버린다(pendingSpo2 주석).
+                self.pendingSpo2 = (pct, s.endDate.timeIntervalSince1970)
             }
         }
     }
@@ -386,6 +408,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         discreteQueries.removeAll()
         pendingSamples.removeAll()
         pendingDiscrete.removeAll()
+        pendingSpo2 = nil
         energyReportedKcal = 0
         stepsReported = 0
         flightsReported = 0

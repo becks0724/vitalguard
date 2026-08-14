@@ -144,7 +144,9 @@ final class VitalPipeline {
                 // ts(측정 시각)를 spo2MeasuredAt 으로 실어 화면·판정이 값의 나이를 알게 한다.
                 if let spo2 {
                     v["spo2"] = spo2
-                    if let t = s["ts"] as? Double {
+                    // 심박 항목에 병합돼 온 경우 측정 시각은 spo2Ts 에 따로 실린다(항목 ts 는 심박
+                    // 측정 시각이라 그대로 쓰면 SpO₂ 나이가 틀어진다). 단독 항목이면 ts 가 곧 측정 시각.
+                    if let t = (s["spo2Ts"] as? Double) ?? (s["ts"] as? Double) {
                         v["spo2MeasuredAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: t))
                     }
                 }

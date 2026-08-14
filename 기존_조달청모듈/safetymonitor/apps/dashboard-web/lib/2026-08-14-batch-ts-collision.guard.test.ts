@@ -7,8 +7,9 @@
 //   · 이산 측정 6종   = 단독 항목      → 전량 유실(MET·일광·HRV·안정심박·보행심박·호흡수)
 // 수리 = 이산 측정도 심박 항목에 병합. 측정 시각은 서버 계약에 필드가 없어 잃는 정보가 없다.
 //
-// ⚠ 알려진 잔여 — SpO₂ 는 아직 단독 항목이다. `spo2MeasuredAt`(측정 시각)을 별도로 싣는 계약이라
-//   병합하면 심박 측정 시각과 섞인다. 계약 변경이 필요해 별도 트랙으로 남긴다.
+// SpO₂ 도 같은 수리를 했되 처리가 다르다 — 서버 계약에 `spo2MeasuredAt` 이 있어 측정 시각을
+// 살려야 하는데, 병합하면 항목 ts 는 심박 측정 시각이 된다. 그래서 `spo2Ts` 라는 별도 키로
+// 측정 시각을 함께 싣고 폰이 그것을 우선 읽는다(없으면 ts 폴백 = 단독 항목 하위 호환).
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
@@ -53,6 +54,22 @@ test("③ 전제 — 폰은 배치 전체에 같은 ts(전송 시각)를 붙인�
   const s = section(phone, "func ingest(payload:", 2000);
   assert.match(s, /let sentAt = self\.isoMs\.string\(from: Date\(\)\)/, "배치 공통 ts 가 사라짐");
   assert.match(s, /var v: \[String: Any\] = \["ts": sentAt\]/, "항목이 배치 ts 를 쓰지 않음");
+});
+
+test("⑤ SpO₂ — 병합하되 측정 시각을 spo2Ts 로 따로 싣는다", () => {
+  const w = section(watch, "if let spo2 = pendingSpo2", 500);
+  assert.match(w, /pendingSamples\[idx\]\["spo2Ts"\] = spo2\.at/, "측정 시각 별도 키가 사라짐");
+  assert.match(w, /pendingSamples\.append\(\["ts": spo2\.at/, "심박 없을 때 단독 항목 폴백이 사라짐");
+  // 워치가 단독 항목으로만 보내던 옛 경로가 되살아나면 다시 유실된다.
+  const ing = section(watch, "private func ingestSpO2", 900);
+  assert.doesNotMatch(ing, /pendingSamples\.append/, "SpO₂ 가 단독 항목으로 되돌아감");
+
+  const p = section(phone, "if let spo2 {", 500);
+  assert.match(
+    p,
+    /\(s\["spo2Ts"\] as\? Double\) \?\? \(s\["ts"\] as\? Double\)/,
+    "폰이 spo2Ts 를 우선 읽지 않으면 병합 항목의 SpO₂ 나이가 심박 시각으로 틀어진다",
+  );
 });
 
 test("④ 전제 — 서버는 (worker_id, ts) 중복을 조용히 버린다", () => {
