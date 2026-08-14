@@ -64,8 +64,10 @@ test("남는 폭은 생체 데이터 열들이 나눠 갖는다", () => {
 
 test("스트레스 열이 「· 심박 기반」 칩 폭을 담는다", () => {
   // 칩은 whitespace-nowrap·shrink-0 이라 열이 좁으면 줄지 않고 이웃 열 위로 넘친다.
+  // 기준은 헤드리스 실측 — 지수가 3자리(0~100 의 상한)면 칩이 123.6px 이다. 2자리(117.6px)로
+  // 잡으면 지수 100 에서만 넘쳐, 평소엔 멀쩡하다가 가장 위험한 순간에 표가 어긋난다.
   const stress = trackAt(7);
   const m = stress.match(/minmax\(([\d.]+)rem/);
   const min = m?.[1] === undefined ? NaN : Number(m[1]);
-  assert.ok(min >= 7.5, `스트레스 열 최소폭 ${stress} — 칩(≈7.25rem)이 이웃 열로 넘친다`);
+  assert.ok(min >= 8, `스트레스 열 최소폭 ${stress} — 「스트레스 100 · 심박 기반」(123.6px)이 넘친다`);
 });

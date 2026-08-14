@@ -141,10 +141,11 @@ const TABLE_ROW_PX = 48;
 // 작업자 표 13열 그리드 — 헤더·행 공용. [정렬핸들·작업자·직급·심박·SpO₂·체온·낙상·스트레스·신호·상태·수신·누적·해제]
 // ★ 남는 폭은 생체 데이터 열들이 나눠 갖는다(각 minmax(…,1fr)). 종전엔 작업자 열만 `1.2fr` 이라
 //   넓은 화면에서 그 열 혼자 여백을 전부 흡수해 작업자↔직급이 벌어지고 나머지가 몰려 있었다.
-//   작업자 열은 가장 긴 표기("EMP-admin7276" + 신호등 ≈ 143px)가 들어가는 10rem 고정.
-//   스트레스 7.5rem 은 「스트레스 38 · 심박 기반」 칩(≈116px) 폭 — 좁히면 칩이 이웃 열로 넘친다.
+//   작업자 열은 가장 긴 표기("EMP-admin7276" + 신호등 = 127px 실측)가 들어가는 10rem 고정.
+//   스트레스 8rem 은 헤드리스 실측 기준 — 「스트레스 100 · 심박 기반」 칩이 123.6px 이다(지수 0~100 이라
+//   3자리가 도달 가능한 값). 좁히면 칩이 whitespace-nowrap·shrink-0 이라 줄지 않고 이웃 열로 넘친다.
 const TABLE_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.75rem_10rem_4.5rem_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_minmax(6rem,1fr)_minmax(5rem,1fr)_minmax(7.5rem,1fr)_3.5rem_minmax(4.5rem,1fr)_minmax(5rem,1fr)_minmax(4.5rem,1fr)_3rem]";
+  "grid items-center gap-x-2 grid-cols-[1.75rem_10rem_4.5rem_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_minmax(6rem,1fr)_minmax(5rem,1fr)_minmax(8rem,1fr)_3.5rem_minmax(4.5rem,1fr)_minmax(5rem,1fr)_minmax(4.5rem,1fr)_3rem]";
 
 type SlotAssignments = (string | null)[];
 
