@@ -38,6 +38,14 @@ final class WatchStreamer: NSObject, ObservableObject {
     private var discreteQueries: [HKAnchoredObjectQuery] = []
     private var flushTimer: Timer?
     private var pendingSamples: [[String: Any]] = []
+    /// 이산 측정 대기분(키→값) — flush 에서 심박 항목에 병합한다.
+    ///
+    /// ★ 별도 항목으로 보내면 안 된다(2026-08-14 실측). 폰이 배치의 **모든 항목에 같은 ts**
+    /// (전송 시각)를 붙이는데 서버에 `UNIQUE (worker_id, ts)` + `ON CONFLICT DO NOTHING` 이
+    /// 걸려 있어, 한 배치의 두 번째 항목부터 **조용히 버려진다**. 에러도 로그도 남지 않고
+    /// 워치·폰·서버가 모두 "성공"으로 보고한 채 값만 사라진다.
+    /// 측정 시각은 어차피 서버 계약에 필드가 없어(심박·SpO₂ 만 보유) 병합해도 잃는 정보가 없다.
+    private var pendingDiscrete: [String: Double] = [:]
     private var seq = 0
 
     // 스트레스 입력 중 이산 측정 4종 — Apple 이 산발적으로 기록하는 값이라 SpO₂ 와 같은
@@ -228,6 +236,18 @@ final class WatchStreamer: NSObject, ObservableObject {
         // 소수 잔여는 다음 구간으로 이월한다(보낸 몫만 reported 에 더한다).
         appendCountDelta(session: sessionSteps, reported: &stepsReported, key: "stp")
         appendCountDelta(session: sessionFlights, reported: &flightsReported, key: "flt")
+        // 이산 측정(HRV·안정심박·보행심박·호흡수·MET·일광) — 에너지·걸음과 같은 계약으로 심박 항목에
+        // 얹는다. 단독 항목으로 보내면 배치 내 ts 중복으로 서버가 조용히 버린다(pendingDiscrete 주석).
+        if !pendingDiscrete.isEmpty {
+            if let idx = pendingSamples.lastIndex(where: { $0["bpm"] is Double }) {
+                for (key, value) in pendingDiscrete { pendingSamples[idx][key] = value }
+            } else {
+                var item: [String: Any] = ["ts": Date().timeIntervalSince1970]
+                for (key, value) in pendingDiscrete { item[key] = value }
+                pendingSamples.append(item)
+            }
+            pendingDiscrete.removeAll()
+        }
         guard !pendingSamples.isEmpty else { return }
         seq += 1
         let payload: [String: Any] = [
@@ -313,10 +333,8 @@ final class WatchStreamer: NSObject, ObservableObject {
                 // 앵커 재생으로 돌아온 낡은 순간 측정은 버린다(위 maxAge 주석 참조).
                 if let maxAge = input.maxAge, Date().timeIntervalSince(s.endDate) > maxAge { continue }
                 if input.key == "hrv" { self.latestHrvMs = value }
-                self.pendingSamples.append([
-                    "ts": s.endDate.timeIntervalSince1970,
-                    input.key: (value * 100).rounded() / 100,
-                ])
+                // 같은 구간에 같은 종류가 두 번 오면 마지막 값을 쓴다(순간 측정이라 최신이 맞다).
+                self.pendingDiscrete[input.key] = (value * 100).rounded() / 100
                 self.discreteSent += 1
             }
         }
@@ -367,6 +385,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         for query in discreteQueries { healthStore.stop(query) }
         discreteQueries.removeAll()
         pendingSamples.removeAll()
+        pendingDiscrete.removeAll()
         energyReportedKcal = 0
         stepsReported = 0
         flightsReported = 0
