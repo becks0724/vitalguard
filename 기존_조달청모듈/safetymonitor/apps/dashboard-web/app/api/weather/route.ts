@@ -1,6 +1,7 @@
 // 위치 기반 날씨 + 대기질 — Open-Meteo (API key 불필요, 무료, CORS 허용)
 import { NextResponse } from "next/server";
 
+import { apparentTempKma } from "../../../lib/apparent-temp";
 import {
   persistWeather,
   persistWeatherDaily,
@@ -284,7 +285,8 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   forecastUrl.searchParams.set("longitude", lon.toString());
   forecastUrl.searchParams.set(
     "current",
-    "weather_code,temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,uv_index",
+    // apparent_temperature 는 받지 않는다 — 체감온도는 기상청 식으로 자체 산출한다(아래 주석).
+    "weather_code,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,uv_index",
   );
   forecastUrl.searchParams.set(
     "daily",
@@ -323,16 +325,23 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   if (startIdx > 0 && (hTime[startIdx] ?? "") > currentTime) startIdx -= 1;
   const endIdx = startIdx + 24;
 
+  // 체감온도는 업스트림 값을 쓰지 않고 기상청 산출식으로 직접 계산한다 —
+  // 법령이 폭염작업 기준으로 지정한 것이 '기상청 체감온도'이기 때문(docs/apparent-temp-kma/).
+  // Open-Meteo 의 apparent_temperature(Steadman 식)는 정의가 달라 판정 단계가 어긋난다.
+  const curTempC: number = forecast?.current?.temperature_2m ?? 0;
+  const curHumidityPct: number = forecast?.current?.relative_humidity_2m ?? 0;
+  const curWindKmh: number = forecast?.current?.wind_speed_10m ?? 0;
+
   return {
     source: "open-meteo",
     lat,
     lon,
     current: {
       weatherCode: forecast?.current?.weather_code ?? 0,
-      temperatureC: forecast?.current?.temperature_2m ?? 0,
-      apparentTempC: forecast?.current?.apparent_temperature ?? 0,
-      humidityPct: forecast?.current?.relative_humidity_2m ?? 0,
-      windKmh: forecast?.current?.wind_speed_10m ?? 0,
+      temperatureC: curTempC,
+      apparentTempC: apparentTempKma(curTempC, curHumidityPct, curWindKmh),
+      humidityPct: curHumidityPct,
+      windKmh: curWindKmh,
       windGustKmh: forecast?.current?.wind_gusts_10m ?? undefined,
       precipitationMm: forecast?.current?.precipitation ?? 0,
       uvIndex: forecast?.current?.uv_index ?? 0,
