@@ -13,7 +13,12 @@ final class WatchStreamer: NSObject, ObservableObject {
     // 이산 측정 상태 — 실기기 게이트에서 "정말 들어오는가·몇 건인가"를 워치 화면에서 바로 본다.
     // HRV 는 표본 빈도 자체가 미지수라(작업시간 중 시간당 0~수 건 예상) 이 카운터가 판정 근거다.
     @Published var latestHrvMs: Double?
-    @Published var discreteSent = 0
+    /// 이산 측정 전송 건수 — **종류별**로 센다.
+    ///
+    /// 총합 하나만 보여주던 종전 표기(`HRV 대기 · 23건`)는 라벨이 HRV 인데 실제로는 6종 합계라
+    /// "HRV 가 23건 대기 중"으로 읽혔다. 2026-08-14 유실 진단에서 그 23건이 무엇인지 알 수 없어
+    /// 실제로 시간을 잃었다 — 화면이 답할 수 있어야 할 질문이었다.
+    @Published var discreteCounts: [String: Int] = [:]
     @Published var batchesSent = 0
     @Published var statusText = "대기"
 
@@ -356,7 +361,7 @@ final class WatchStreamer: NSObject, ObservableObject {
                 if input.key == "hrv" { self.latestHrvMs = value }
                 // 같은 구간에 같은 종류가 두 번 오면 마지막 값을 쓴다(순간 측정이라 최신이 맞다).
                 self.pendingDiscrete[input.key] = (value * 100).rounded() / 100
-                self.discreteSent += 1
+                self.discreteCounts[input.key, default: 0] += 1
             }
         }
     }
