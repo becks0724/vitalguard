@@ -25,7 +25,8 @@ export type CoreTempEstimate = {
 
 // 문헌 계수(Buller 2013) — CT₀ 37.1℃ · 과정 잡음 γ=0.022℃/분 · 관측 잡음 σ=18.88bpm
 // 관측 모델 HR = b₂·CT² + b₁·CT + b₀ (CT 37.1℃ ↔ HR ≈ 83bpm · 38.5℃ ↔ ≈ 137bpm).
-const CT0 = 37.1;
+/** 세션 시작 기준 심부체온(℃) — PSI 의 Tc0 도 이 값을 쓴다(숫자를 두 곳에 두지 않는다). */
+export const CT0 = 37.1;
 const GAMMA_SQ = 0.022 ** 2;
 const SIGMA_SQ = 18.88 ** 2;
 const B0 = -7887.1;

@@ -32,6 +32,7 @@ import {
 } from "@safetymonitor/analyzers";
 
 import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
+import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
 import {
@@ -6154,6 +6155,13 @@ function WorkerTableRow({
   // (잠금 중에는 폰이 계속 POST 해 stale 이 아니므로 잠금 연속성은 그대로 유지된다.)
   const shown = gateStaleVitals(sample, stale);
   const core = shown.skinTempC == null ? undefined : estimateCoreTempC(shown.skinTempC);
+  // 생리적 부담 지수(PSI · Moran 1998) — 추정 체온 + 심박. 표시 전용이라 판정·경보에 넣지 않는다.
+  // 안정심박은 sticky 병합값이라 stale 게이트 밖이지만, 표시 자체가 !stale 분기 안에서만 일어난다.
+  const psi = computePsi({
+    coreTempC: coreTempEstC,
+    heartRate: shown.heartRate,
+    restingHeartRate: sample?.restingHeartRate,
+  });
   const fallRecent =
     fallTs !== undefined && Date.now() - new Date(fallTs).getTime() < ALARM_FRESH_MS;
 
@@ -6297,6 +6305,9 @@ function WorkerTableRow({
                 "심박 기반 심부체온 추정(문헌 오차 ±0.3℃ 내외) — 의료 판정 아님·열 스트레스 참고. 심박 억제 약물 복용자는 과소추정될 수 있음" +
                 (heatPattern
                   ? `\n⚠ 저활동·고심박 ${heatPattern.coveredMinutes}분 지속(평균 ${heatPattern.hrAvg}bpm · ${heatPattern.aeKcalPerMin}kcal/분) — 열 축적·탈수 또는 긴장·카페인 가능. 추정치가 과대일 수 있어 휴식·수분 확인 권장`
+                  : "") +
+                (psi
+                  ? `\nPSI ${psi.value.toFixed(1)}/10 — 생리적 부담 지수(Moran 1998). 6 이상 높은 부담·7.5 이상 열손상 고위험. 기준 심박 ${psi.personalized ? "= 개인 안정심박" : "60(개인 안정심박 미수신)"}. 추정 체온이 입력이라 판정·경보에는 쓰지 않음`
                   : "")
               }
             >
@@ -6308,6 +6319,19 @@ function WorkerTableRow({
                 // 저활동·고심박 주석(온열 ②) — 표시 라벨만 바꾼다. 상태색·판정·경보는 불변(판정 미주입).
                 <span className="block text-[9px] leading-none text-amber-600 dark:text-amber-300">
                   ⚠ 저활동·고심박
+                </span>
+              ) : psi ? (
+                // PSI 표기 — 문헌 임계(6·7.5)로 색만 바꾼다. 신호등·경보 경로는 건드리지 않는다.
+                <span
+                  className={`block text-[9px] leading-none ${
+                    psiBand(psi.value) === "critical"
+                      ? "text-red-600 dark:text-red-300"
+                      : psiBand(psi.value) === "high"
+                        ? "text-amber-600 dark:text-amber-300"
+                        : "text-muted"
+                  }`}
+                >
+                  PSI {psi.value.toFixed(1)} · 추정
                 </span>
               ) : (
                 <span className="block text-[9px] leading-none text-muted">심박 추정</span>
