@@ -36,6 +36,8 @@ type WeatherCurrent = {
   weatherCode: number;
   temperatureC: number;
   apparentTempC: number;
+  /** WBGT(℃) — 참고 지표. 산출 실패·구 폴백 응답에는 없다. */
+  wbgt?: number;
   humidityPct: number;
   windKmh: number;
   // 순간풍속(돌풍·km/h) — 크레인/고소 중지 판정 기준. 구 DB 폴백 응답엔 없을 수 있음.
@@ -277,8 +279,21 @@ export function WeatherStrip({
         "humidity",
         "습도",
         `${Math.round(c.humidityPct)}%`,
-        "직접 임계 없음. WBGT (습구흑구온도) 추정에 사용.",
-        "고온 + 고습 = WBGT 상승 → 폭염 단계 가속. 체감온도가 이를 반영.",
+        "직접 임계 없음. 체감온도(기상청 식)와 WBGT 산출의 입력.",
+        "고온 + 고습 = 체감온도·WBGT 동시 상승. 습구온도를 통해 두 지표 모두에 들어간다.",
+      ),
+      // WBGT — 국제 표준(ACGIH/ISO 7243) 참고 지표. **임계를 붙이지 않는다**:
+      // ACGIH 허용한계는 작업 강도(대사율)별로 달라 체표면적이 필요하고, 한국 법정 폭염 기준은
+      // 체감온도다. 값과 근거만 보이고 판정은 체감온도 항목이 담당한다.
+      wbgt: infoEvaluation(
+        "wbgt",
+        "WBGT",
+        c.wbgt === undefined ? "--" : `${c.wbgt.toFixed(1)}℃`,
+        "습구흑구온도 — 기온·습도·풍속·일사를 함께 반영하는 국제 표준 열스트레스 지표(ACGIH/ISO 7243).",
+        "산출 = Liljegren(2008) 물리 모델 · OSHA 공식 계산기와 대조 검증(±0.03℃). " +
+          "입력은 기온·습도·풍속 = 기상청 관측, 일사량 = Open-Meteo(실황에 일사가 없음). " +
+          "실외·직사광 기준이라 실내·그늘 작업에는 과대. " +
+          "★ 법적 판정 기준은 체감온도(31/33/35℃)이며 WBGT 는 참고 지표다 — 작업 강도별 허용한계(ACGIH TLV) 적용은 별도.",
       ),
       discomfort: evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
       pm25: evaluatePM25(c.pm25),
@@ -522,6 +537,9 @@ export function WeatherStrip({
     { icon: "feels", label: "체감", value: `${c.apparentTempC.toFixed(1)}℃`, sub: undefined, evaluation: evaluations.apparentTemp },
     { icon: "humidity", label: "습도", value: `${Math.round(c.humidityPct)}%`, sub: undefined, evaluation: evaluations.humidity },
     { icon: "discomfort", label: "불쾌지수", value: discomfortDi.toFixed(1), sub: discomfortGrade(discomfortDi), evaluation: evaluations.discomfort },
+    // WBGT — 체감온도 옆이 아니라 불쾌지수 뒤에 둔다. 앞쪽은 법정 판정 항목(기온·체감) 자리라
+    // 참고 지표를 섞으면 무엇이 판정 근거인지 흐려진다.
+    { icon: "thermometer", label: "WBGT", value: c.wbgt === undefined ? "--" : c.wbgt.toFixed(1), sub: "습구흑구 (참고)", evaluation: evaluations.wbgt },
     { icon: "dust", label: "미세먼지", value: c.pm25 !== undefined ? `${c.pm25.toFixed(0)}` : "--", sub: "PM2.5 (μg/㎥)", evaluation: evaluations.pm25 },
     {
       icon: "wind",

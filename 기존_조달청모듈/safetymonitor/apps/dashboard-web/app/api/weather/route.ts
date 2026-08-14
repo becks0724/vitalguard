@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 import { apparentTempKma } from "../../../lib/apparent-temp";
+import { computeWbgt } from "../../../lib/wbgt";
 import { fetchKmaObservation } from "../../lib/kma-observation";
 import {
   persistWeather,
@@ -38,6 +39,8 @@ type WeatherPayload = {
     obsSource?: "kma-ncst" | "open-meteo";
     /** 관측 시각(정시 ISO) — 실황은 40분~1시간 40분 지연될 수 있어 값의 나이를 함께 보인다. */
     obsAt?: string;
+    /** WBGT(습구흑구온도 ℃) — 국제 표준 참고 지표. 법정 판정은 체감온도가 담당한다. 산출 실패 시 없음. */
+    wbgt?: number;
     humidityPct: number;
     windKmh: number;
     // 순간풍속(돌풍·km/h) — 크레인/고소 중지 임계(규칙 §37·§143)가 순간풍속 기준이라 판정에 필수.
@@ -291,7 +294,8 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
   forecastUrl.searchParams.set(
     "current",
     // apparent_temperature 는 받지 않는다 — 체감온도는 기상청 식으로 자체 산출한다(아래 주석).
-    "weather_code,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,uv_index",
+    // direct/diffuse 일사는 WBGT(Liljegren) 복사 항의 입력 — 기상청 초단기실황엔 일사량이 없다.
+    "weather_code,temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation,uv_index,direct_radiation,diffuse_radiation",
   );
   forecastUrl.searchParams.set(
     "daily",
@@ -358,6 +362,20 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
       // 판정 입력의 출처와 나이를 숨기지 않는다 — 실황은 40분~1시간 40분 지연될 수 있다.
       obsSource: obs ? "kma-ncst" : "open-meteo",
       obsAt: obs?.observedAt,
+      // WBGT(Liljegren 2008) — **참고 지표**다. 법정 폭염 판정은 체감온도가 담당하고 여기엔
+      // 임계를 붙이지 않는다(ACGIH TLV 는 대사율이 필요해 별도 트랙). 산출 실패면 undefined.
+      // ⚠ 입력 혼합 — 기온·습도·풍속은 기상청 관측, 일사량만 Open-Meteo(실황에 일사가 없다).
+      wbgt:
+        computeWbgt({
+          tempC: curTempC,
+          humidityPct: curHumidityPct,
+          windKmh: curWindKmh,
+          directRadiation: forecast?.current?.direct_radiation ?? 0,
+          diffuseRadiation: forecast?.current?.diffuse_radiation ?? 0,
+          at: new Date(),
+          lat,
+          lon,
+        })?.wbgt,
       humidityPct: curHumidityPct,
       windKmh: curWindKmh,
       windGustKmh: forecast?.current?.wind_gusts_10m ?? undefined,
