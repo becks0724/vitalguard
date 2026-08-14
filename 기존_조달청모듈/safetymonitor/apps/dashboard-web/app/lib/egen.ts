@@ -112,6 +112,26 @@ export function parseEgenXml(xml: string): EgenPlace[] {
   return blocks.map(parseEgenItem).filter((p) => p.name);
 }
 
+// 정식명·단축명 두 조회 결과 합치기(이름+전화 기준 중복 제거).
+//
+// ★ 왜 "한쪽이 0이면 다른 쪽" 이 아니라 합치는가 (2026-08-14 실측) —
+//   E-Gen 은 Q0 를 주소 부분일치로 매칭하는데 2026 행정구역 개편으로 표기가 갈렸다.
+//   그래서 **양쪽 다 비어 있지 않은데 한쪽만 사실상 쓸모없는** 상태가 생긴다.
+//     광주 동구 = 정식명 1건 / 단축명 234건   ← 옛 표기로 남은 잔여 1건이 "0이면 재시도" 를 막았다
+//     전남 목포시 = 정식명 0건 / 단축명 290건
+//     충북 청주시 = 정식명 1130건 / 단축명 0건   ← 반대 방향(약칭이 정식명의 부분문자열이 아님)
+//     충남 천안시 = 정식명 847건 / 단축명 1건   ← 같은 함정의 거울상
+//   즉 어느 쪽을 우선해도 대칭으로 같은 함정에 빠지고, 임계값("N건 미만이면 재시도")은
+//   지역마다 다른 잔여 건수에 기대는 추측이다. 둘 다 받아 합치면 순서·임계 판단이 아예 사라진다.
+export function mergeEgenPlaces(a: EgenPlace[], b: EgenPlace[]): EgenPlace[] {
+  const seen = new Map<string, EgenPlace>();
+  for (const p of [...a, ...b]) {
+    const key = `${normName(p.name)}|${p.tel}`;
+    if (!seen.has(key)) seen.set(key, p);
+  }
+  return [...seen.values()];
+}
+
 // 이름 정규화(태그·괄호·공백 제거) — 좌표 매칭 실패 시 포함 매칭용.
 export function normName(s: string): string {
   return (s ?? "")

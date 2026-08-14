@@ -7,6 +7,7 @@ import {
   formatDutyHours,
   hhmm,
   matchEgenPlace,
+  mergeEgenPlaces,
   normName,
   parseEgenItem,
   parseEgenXml,
@@ -129,4 +130,40 @@ test("matchEgenPlace — 무관하면 null", () => {
 
 test("normName — 태그·괄호·공백 제거", () => {
   assert.equal(normName("전남대학교병원 <b>응급</b>의료센터(3층)"), "전남대학교병원응급의료센터");
+});
+
+// ── 정식명·단축명 병합 (2026-08-14 광주 연락처 공백 회귀) ────────────────────
+// 종전 로직은 "정식명이 0건이면 단축명 재시도" 였는데, 광주는 옛 표기 잔여가 **1건** 이라
+// 0 이 아니어서 재시도가 안 열렸다 — 화면의 응급실 3곳 연락처가 전부 비었다.
+// 아래 건수는 2026-08-14 E-Gen 실측값이다.
+const place = (name: string, tel: string): EgenPlace => ({ name, tel, hours: "" });
+
+test("mergeEgenPlaces — 잔여 1건이 대량 결과를 가리지 않는다(광주 1 vs 234)", () => {
+  const full = [place("더스마트병원", "062-229-1000")]; // 정식명 조회 = 옛 표기 잔여 1건
+  const short = [
+    place("전남대학교병원", "062-220-5893"),
+    place("조선대학교병원", "1811-7474"),
+  ];
+  const merged = mergeEgenPlaces(full, short);
+  assert.equal(merged.length, 3, "한쪽만 채택하면 나머지 연락처가 통째로 사라진다");
+  assert.ok(merged.some((p) => p.tel === "062-220-5893"));
+  assert.ok(merged.some((p) => p.tel === "062-229-1000"), "작은 쪽도 버리지 않는다");
+});
+
+test("mergeEgenPlaces — 반대 방향도 같다(충남 847 vs 1)", () => {
+  // 약칭이 정식명의 부분문자열이 아닌 지역은 단축명이 1건만 나온다. 순서를 뒤집어도 같은 함정.
+  const merged = mergeEgenPlaces([place("천안병원", "041-1111-1111")], [place("잔여의원", "041-2222-2222")]);
+  assert.equal(merged.length, 2);
+});
+
+test("mergeEgenPlaces — 같은 병원이 양쪽에 있으면 한 번만", () => {
+  const dup = place("전남대학교병원", "062-220-5893");
+  assert.equal(mergeEgenPlaces([dup], [{ ...dup }]).length, 1);
+});
+
+test("mergeEgenPlaces — 한쪽이 비어도 다른 쪽을 그대로 돌려준다", () => {
+  const only = [place("청주병원", "043-1111-1111")];
+  assert.equal(mergeEgenPlaces(only, []).length, 1);
+  assert.equal(mergeEgenPlaces([], only).length, 1);
+  assert.equal(mergeEgenPlaces([], []).length, 0);
 });

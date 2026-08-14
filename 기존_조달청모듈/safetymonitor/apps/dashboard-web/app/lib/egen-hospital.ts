@@ -3,7 +3,13 @@
 //   미설정·미승인(403)·오류는 모두 no-op(패널은 네이버 결과 그대로 — 절대 무너뜨리지 않음).
 import "server-only";
 
-import { egenRegionParams, matchEgenPlace, parseEgenXml, type EgenPlace } from "./egen";
+import {
+  egenRegionParams,
+  matchEgenPlace,
+  mergeEgenPlaces,
+  parseEgenXml,
+  type EgenPlace,
+} from "./egen";
 import { isEmergencyRoom, type Hospital } from "./hospital";
 
 type CacheEntry = { ts: number; places: EgenPlace[] };
@@ -62,13 +68,16 @@ async function fetchRegionPlaces(region: string): Promise<EgenPlace[]> {
     }
   };
 
-  // E-Gen 은 Q0 를 주소 부분일치로 매칭하는데 표기가 지역마다 뒤섞임 —
-  // 대부분은 정식명(충청북도…)이 맞지만 광주·전남은 「전남광주통합특별시」로 저장돼
-  // 정식명이 0건 → 단축명(광주·전남)으로 1회 재시도해 뚫는다(반대 케이스는 정식명 유지).
-  let places = await fetchOne(sido);
-  if (places.length === 0 && sidoShort && sidoShort !== sido) {
-    places = await fetchOne(sidoShort);
-  }
+  // E-Gen 은 Q0 를 주소 부분일치로 매칭하는데 2026 개편으로 표기가 지역마다 갈렸다.
+  // ★ 종전엔 "정식명이 0건이면 단축명 재시도" 였는데, 광주는 옛 표기로 남은 잔여가 **1건** 이라
+  //   0 이 아니어서 재시도가 영영 안 열렸다(정식명 1 vs 단축명 234 — 연락처가 통째로 비었다).
+  //   반대 방향도 있어(충북 1130 vs 0 · 충남 847 vs 1) 순서를 뒤집어도 같은 함정이다.
+  //   그래서 **둘 다 조회해 합친다** — 병렬이라 지연은 그대로고, 순서·임계 판단이 사라진다.
+  const both = await Promise.all([
+    fetchOne(sido),
+    sidoShort && sidoShort !== sido ? fetchOne(sidoShort) : Promise.resolve([]),
+  ]);
+  const places = mergeEgenPlaces(both[0], both[1]);
 
   cache.set(region, { ts: Date.now(), places });
   return places;
