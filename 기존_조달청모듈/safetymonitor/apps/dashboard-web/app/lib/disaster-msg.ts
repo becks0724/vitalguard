@@ -164,16 +164,45 @@ export const PROMOTED_TYPE = "대피안내";
 export const EVACUATION_KEYWORDS = ["대피"] as const;
 
 // "[경기도청] 임진강 수위…" → "경기도청". 대괄호 표기가 없으면 null.
+// ★ 발신기관은 문장 **끝**에 붙는 쪽이 다수다 — "…안전수칙 준수 바랍니다.[행정안전부]"
+//   맨 앞만 보던 종전 판정은 실측 5,281건(07-16~08-15) 중 5,279건에서 null 을 돌려줬고,
+//   그 탓에 D-15 재승격이 **한 달 내내 0건**이었다. 되살아났어야 할 것이 통째로 버려지고 있었다 —
+//   낙뢰 대피("옥외 작업자는 즉시 안전한 실내로 대피")·임진강 수위 상승·댐 방류 지시 15건(D-35).
+//   앞을 먼저 보고, 없을 때만 끝을 본다.
 export function senderOrg(message: string): string | null {
-  if (!message.startsWith("[")) return null;
-  const close = message.indexOf("]");
-  return close > 1 ? message.slice(1, close) : null;
+  const s = message.trim();
+  if (s.startsWith("[")) {
+    const close = s.indexOf("]");
+    return close > 1 ? s.slice(1, close) : null;
+  }
+  const tail = /\[([^[\]]+)\]$/.exec(s);
+  return tail ? (tail[1] as string) : null;
 }
 
 export function isEvacuationNotice(msg: DisasterMsg): boolean {
   const org = senderOrg(msg.message);
   if (org === null || org.includes("경찰청")) return false;
   return EVACUATION_KEYWORDS.some((k) => msg.message.includes(k));
+}
+
+// ── 수상안전 재승격 (D-35) ───────────────────────────────────────────────────
+// 물놀이·수상안전 안내도 '기타' 로 와서 통째로 버려졌다(사용자 제보 — 폰은 받는데 관제웹에 없다).
+// D-33 ④ 는 '기타' 전체 채택을 기각하면서 "필요해지면 D-15 처럼 **조건부 재승격**으로 좁혀
+// 다시 검토할 것" 을 남겼다. 그 경로다 — 유형 전체가 아니라 키워드 + 발신기관으로 좁힌다.
+//
+// 실측(07-16~08-15 · 5,281건) — 이 조건으로 324건 통과(하루 10.5건), 광주 현장 기준 21건(하루 0.68건).
+//   ⚠️ 키워드에 `계곡`·`하천` 을 넣으면 "수난사고 실종자 수색… 흔적 발견 시 신고" 2건이 딸려온다.
+//      실명·인상착의는 없지만 관제와 무관하고 개인정보 차단선을 얇게 만든다(D-33 이 지적한 그 4건).
+//      `물놀이`·`수상안전` 두 개로 좁히면 실종·수색 문구는 **0건**이다.
+//
+// ★ 표시 전용이다. ALERT_TYPES 에 넣지 않고(알림 0), severity 도 바꾸지 않는다 —
+//   근거는 아래 ALERT_TYPES 주석과 disaster-msg-api.ts 의 severity 계산부.
+export const WATER_SAFETY_TYPE = "수상안전";
+export const WATER_SAFETY_KEYWORDS = ["물놀이", "수상안전"] as const;
+
+export function isWaterSafetyNotice(msg: DisasterMsg): boolean {
+  if (senderOrg(msg.message) === null) return false;
+  return WATER_SAFETY_KEYWORDS.some((k) => msg.message.includes(k));
 }
 
 // ── 경찰 발신 제외 ──────────────────────────────────────────────────────────
@@ -210,6 +239,8 @@ export function filterWatched(msgs: DisasterMsg[]): {
     if (isWatchedType(m.type)) watched.push(m);
     else if (m.step === "긴급재난") watched.push({ ...m, type: URGENT_FALLBACK_TYPE });
     else if (isEvacuationNotice(m)) watched.push({ ...m, type: PROMOTED_TYPE });
+    // 대피 지시가 먼저다 — 물놀이 문자에 대피 지시가 있으면 그쪽으로 올라가야 알림이 나간다.
+    else if (isWaterSafetyNotice(m)) watched.push({ ...m, type: WATER_SAFETY_TYPE });
     else unknown.add(m.type);
   }
   return { watched, unknownTypes: [...unknown] };
@@ -355,6 +386,13 @@ export function shortRegionLabel(token: string): string {
 // ── 알림 항목 ────────────────────────────────────────────────────────────────
 // 알림 상태를 관리할 전체 유형. PROMOTED_TYPE·URGENT_FALLBACK_TYPE 이 WATCHED_TYPES 에
 // 없으므로 반드시 함께 넣는다 — 빠뜨리면 그 유형은 영영 해제되지 않는다(D-15·D-07).
+//
+// ★ WATER_SAFETY_TYPE 은 **의도적으로 뺐다**(D-35). 빠뜨린 것이 아니다.
+//   실측상 같은 문자가 매일 같은 시각 반복 발송된다 — 행안부 19회(13:30)·울산 23회(10:00)·
+//   김천 19회(한 달 기준). 넣으면 신선도 3시간 창을 타고 **매일 텔레그램이 울린다**.
+//   소방청 화재 캠페인 때와 같은 상황인데, 그때는 유형이 화이트리스트(화재)라 알림을 막을
+//   판정 함수(isFireRiskCampaign)가 필요했다. 이쪽은 승격 유형이라 목록에 안 넣는 것으로 끝난다.
+//   화면에는 그대로 뜬다 — site 목록은 유형이 아니라 지역·기간으로 고른다.
 export const ALERT_TYPES: readonly string[] = [
   ...WATCHED_TYPES,
   PROMOTED_TYPE,

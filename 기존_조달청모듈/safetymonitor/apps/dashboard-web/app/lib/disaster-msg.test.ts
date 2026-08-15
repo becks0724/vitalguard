@@ -14,6 +14,7 @@ import {
   SPREADING_TYPES,
   URGENT_FALLBACK_TYPE,
   WATCHED_TYPES,
+  WATER_SAFETY_TYPE,
   buildAlertItems,
   dedupeBySn,
   filterWatched,
@@ -179,6 +180,59 @@ test("senderOrg — 대괄호 발신기관 추출", () => {
   assert.equal(senderOrg("[경기도청] 임진강 수위"), "경기도청");
   assert.equal(senderOrg("발신기관 없음"), null);
   assert.equal(senderOrg("[] 빈 기관"), null);
+});
+
+// ── 수상안전 재승격 (D-35) ───────────────────────────────────────────────────
+// 발단 = 폰은 받았는데 관제웹에 없던 그 문자. 실측 형태 그대로 픽스처로 고정한다.
+const WATER_SAFETY: DisasterMsg = {
+  sn: 266487,
+  createdAtMs: Date.UTC(2026, 7, 14, 4, 30, 7), // KST 08-14 13:30:07
+  message:
+    "전국적인 무더위로 물놀이 사고 급증. 물놀이 시 ▲준비운동 ▲구명조끼 착용 ▲위험지역 접근금지 ▲음주수영 금지 등 안전수칙 준수 바랍니다.[행정안전부]",
+  regions: ["전남광주통합특별시 ", "경기도 "],
+  step: "안전안내",
+  type: "기타",
+  revised: false,
+};
+
+test("★★ 수상안전 재승격 — 폰은 받는데 관제웹에 없던 그 문자가 통과한다", () => {
+  const { watched } = filterWatched([WATER_SAFETY]);
+  assert.equal(watched.length, 1, "유형 '기타' 라 화이트리스트에서 탈락하던 문자다");
+  assert.equal(watched[0]?.type, WATER_SAFETY_TYPE, "'기타' 대신 뜻이 통하는 유형으로 표기한다");
+});
+
+test("수상안전 재승격 — 발신기관을 못 읽으면 되살리지 않는다(판정 근거 없음)", () => {
+  const anon: DisasterMsg = { ...WATER_SAFETY, message: "물놀이 안전수칙을 지켜주세요" };
+  assert.equal(filterWatched([anon]).watched.length, 0);
+});
+
+test("수상안전 재승격 — 대피 지시가 함께 있으면 대피안내가 이긴다(위급도 우선)", () => {
+  const evac: DisasterMsg = { ...WATER_SAFETY, message: "물놀이 중 급류 발생, 즉시 대피 바랍니다.[함양군]" };
+  assert.equal(filterWatched([evac]).watched[0]?.type, PROMOTED_TYPE);
+});
+
+test("★★ 수상안전은 알림을 발사하지 않는다 — ALERT_TYPES 에 넣지 않은 것이 장치다(D-35)", () => {
+  // 매일 같은 시각 반복 발송되는 안내라 알림에 넣으면 매일 텔레그램이 울린다.
+  // 화면 표시와 알림 발사를 가르는 지점이 여기 하나뿐이므로 직접 못 박는다.
+  assert.equal(
+    ALERT_TYPES.includes(WATER_SAFETY_TYPE),
+    false,
+    "수상안전이 ALERT_TYPES 에 들어가면 매일 알림이 나간다",
+  );
+  const nowMs = WATER_SAFETY.createdAtMs + 60_000;
+  const matched = matchSite([{ ...WATER_SAFETY, type: WATER_SAFETY_TYPE }], 35.1595, 126.8526);
+  assert.equal(matched.length, 1, "화면에는 뜬다 — site 매칭은 유형이 아니라 지역으로 고른다");
+  const fired = buildAlertItems(matched, nowMs).filter((i) => i.severity !== "normal");
+  assert.deepEqual(fired, [], "수상안전 발령이 알림 항목을 만들었다");
+});
+
+test("★ senderOrg — 발신기관은 문장 끝에 붙는 쪽이 다수다(D-35)", () => {
+  // 이걸 못 읽던 탓에 D-15 재승격이 한 달 내내 0건이었다. 실측 형태 그대로 고정한다.
+  assert.equal(senderOrg("무더위로 물놀이 사고 급증. 안전수칙 준수 바랍니다.[행정안전부]"), "행정안전부");
+  assert.equal(senderOrg("군남댐 방류량 2배 증가 예정으로 대피 바람.[연천군]"), "연천군");
+  assert.equal(senderOrg("[기상청] 앞이 우선 — 끝에 또 있어도 [소방청]"), "기상청");
+  assert.equal(senderOrg("끝이 대괄호가 아니다 [행정안전부] 뒤에 글자"), null);
+  assert.equal(senderOrg("빈 대괄호로 끝난다[]"), null);
 });
 
 test("filterWatched — 모르는 유형은 버리되 목록으로 되돌려준다", () => {
@@ -538,10 +592,29 @@ const MISSING_PERSON: DisasterMsg = {
   revised: false,
 };
 
-test("★★ 경찰 표기 실종자 안내는 제외된다 — senderOrg 로는 못 잡는 형태", () => {
-  assert.equal(senderOrg(MISSING_PERSON.message), null, "맨 앞 대괄호가 없어 발신기관을 못 뽑는다");
+test("★★ 경찰 표기 실종자 안내는 제외된다 — 막는 것은 isPoliceNotice 하나뿐이다", () => {
+  // ⚠️ 종전에는 senderOrg 가 null 이라 재승격 경로가 자동으로 닫혀 있었다(방어선 2겹).
+  //    D-35 로 문장 끝 대괄호를 읽게 되면서 이 문자에서도 '함양군' 이 뽑힌다 —
+  //    발신기관이 경찰청이 아니므로 isEvacuationNotice 의 기관 조건으로는 못 막는다.
+  //    filterWatched 선두의 isPoliceNotice 가 **유일한 방어선**이라는 뜻이다. 옮기지 말 것.
+  assert.equal(senderOrg(MISSING_PERSON.message), "함양군", "발신 표기는 지자체다(경찰은 본문 중간)");
   assert.ok(isPoliceNotice(MISSING_PERSON));
   assert.equal(filterWatched([MISSING_PERSON]).watched.length, 0);
+});
+
+test("★★ 실종자 문자에 재승격 키워드가 섞여도 통과하지 않는다(D-35 우회 차단)", () => {
+  // 재승격 경로가 둘로 늘었다(대피·수상안전). 각 경로가 개인정보 차단을 뚫지 않는지 본다.
+  // ⚠️ 키워드는 발신기관 대괄호 **앞**에 넣는다 — 뒤에 붙이면 senderOrg 가 null 이 되어
+  //    재승격 경로에 진입조차 못 하고, 그러면 이 테스트는 아무것도 검증하지 않는다.
+  for (const lure of ["인근 주민은 대피 바랍니다", "물놀이 안전수칙 준수", "수상안전 사고예방"]) {
+    const m: DisasterMsg = {
+      ...MISSING_PERSON,
+      sn: 840010,
+      message: MISSING_PERSON.message.replace("[함양군]", `${lure} [함양군]`),
+    };
+    assert.equal(senderOrg(m.message), "함양군", "재승격 경로에 실제로 진입하는 형태여야 한다");
+    assert.equal(filterWatched([m]).watched.length, 0, `'${lure}' 가 섞이자 개인정보 문자가 통과했다`);
+  }
 });
 
 test("★★ 긴급재난 단계여도 경찰 표기면 제외된다(D-21 우회 경로 차단)", () => {

@@ -12,6 +12,7 @@ import {
   matchSite,
   normalize,
   queryDates,
+  WATER_SAFETY_TYPE,
   type DisasterAlertItem,
   type DisasterMsg,
   type EmergencyStep,
@@ -272,11 +273,15 @@ export async function disasterMsgsForLocation(
   const siteFresh = siteAll.filter((h) => isFresh(h.msg, nowMs));
   const nearbyFresh = matched.filter((h) => h.scope === "nearby" && isFresh(h.msg, nowMs));
 
-  const severity: LocationDisasterMsgs["severity"] = siteFresh.some(
+  // ★ 수상안전은 신호등을 바꾸지 않는다(D-35) — 물놀이 안전수칙이 매일 정기 발송되므로
+  //   판정에 넣으면 관제 화면이 매일 몇 시간씩 '주의' 로 앉아 있고, 그러면 정작 위험한
+  //   발령이 왔을 때의 색 변화가 신호로서 값을 잃는다. 목록·요약에는 그대로 남는다.
+  const siteFreshGrading = siteFresh.filter((h) => h.msg.type !== WATER_SAFETY_TYPE);
+  const severity: LocationDisasterMsgs["severity"] = siteFreshGrading.some(
     (h) => h.msg.step === "긴급재난",
   )
     ? "danger"
-    : siteFresh.length > 0
+    : siteFreshGrading.length > 0
       ? "caution"
       : "normal";
   const types = [...new Set(siteFresh.map((h) => h.msg.type))];
