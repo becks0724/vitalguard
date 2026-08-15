@@ -60,6 +60,21 @@ final class WatchStreamer: NSObject, ObservableObject {
     private var spo2Query: HKAnchoredObjectQuery?
     private var discreteQueries: [HKAnchoredObjectQuery] = []
     private var flushTimer: Timer?
+    /// 마지막 **실측** 심박을 받은 시각 — 하트비트(최신값 복사 전송)의 유효기간 판정 기준.
+    ///
+    /// `latestBPM` 만으로는 값이 언제 것인지 알 수 없다. 그 값은 한 번 채워지면 비지 않으므로
+    /// 시각을 따로 들고 있어야 "지금도 유효한 값인가"를 물을 수 있다.
+    private var latestBPMAt: Date?
+    /// 하트비트 유효기간(초). 마지막 실측이 이보다 오래되면 복사 전송을 멈춘다.
+    ///
+    /// ★ 30초인 이유는 실측이다(2026-08-15 · 최근 7일 프로덕션 8만여 건).
+    /// 정상 착용 중 실측 간격은 중앙 5초·p95 10초·**p99 24.6초**라 30초면 99% 이상을 덮어
+    /// 착용 중에는 하트비트가 사실상 끊기지 않는다. 반대로 벗으면 30초 뒤 전송이 멈추고,
+    /// 관제 신선도 게이트(60초 · DemoDashboard STALE_MS)와 합쳐 **90초 뒤 연결끊김**이 뜬다.
+    /// 후보 15~60초를 같은 데이터로 재보니 오탐 횟수가 24건 vs 17건으로 거의 갈리지 않았고
+    /// (그 공백들은 전부 수 시간짜리 = 진짜 미착용) 값은 p99 를 덮는지로만 정하면 됐다.
+    /// flush 주기 5초의 배수라 타이머 경계에서 어정쩡하게 잘리지도 않는다.
+    private let heartbeatMaxAge: TimeInterval = 30
     private var pendingSamples: [[String: Any]] = []
     /// 이산 측정 대기분(키→값) — flush 에서 심박 항목에 병합한다.
     ///
@@ -246,7 +261,16 @@ final class WatchStreamer: NSObject, ObservableObject {
 
     private func flush() {
         // 새 샘플이 없어도 5초마다 최신값 1건을 실어 보낸다 — 게이트(5초 간격 콘솔 로그)의 심장박동 역할.
-        if pendingSamples.isEmpty, let bpm = latestBPM {
+        //
+        // ★★ 단 마지막 실측이 heartbeatMaxAge 를 넘으면 멈춘다. 이 조건이 없으면 워치를 벗은 뒤에도
+        // 같은 값이 영원히 흐른다 — 2026-08-15 프로덕션 실측에서 **12시간 34분·8,531건이 전부
+        // 102bpm** 이었다(19:06:10 의 마지막 실측 101 다음부터). 관제웹에는 그것이 실측과 구분되지
+        // 않아 차트·평균·심부체온 추정·PSI 가 전부 오염됐고, 5초마다 ts 가 갱신되니 신선도 게이트도
+        // 통과해 **미착용 12시간 내내 "연결됨·정상"** 으로 보였다(미수신을 정상으로 세는 것보다 나쁘다).
+        //
+        // 값이 오래된 것은 유실이 아니라 **측정이 없었다는 사실** 이므로, 채우지 않고 비우는 것이 맞다.
+        if pendingSamples.isEmpty, let bpm = latestBPM, let at = latestBPMAt,
+           Date().timeIntervalSince(at) <= heartbeatMaxAge {
             pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
         }
         // 활동 에너지(온열 ①) — 세션 누적에서 이미 보낸 몫을 뺀 5초 구간 증분만 싣는다.
@@ -449,6 +473,9 @@ final class WatchStreamer: NSObject, ObservableObject {
         pendingSamples.removeAll()
         pendingDiscrete.removeAll()
         pendingSpo2 = nil
+        // 세션이 끝나면 하트비트 기준점도 버린다 — 남겨 두면 재시작 직후 실측이 오기도 전에
+        // 옛 값이 다시 흐른다(`latestBPM` 은 화면 표시용이라 그대로 둔다).
+        latestBPMAt = nil
         energyReportedKcal = 0
         stepsReported = 0
         flightsReported = 0
@@ -494,6 +521,8 @@ extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
             let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
             DispatchQueue.main.async {
                 self.latestBPM = bpm
+                // 실측이 들어온 시각 — 하트비트 유효기간의 기준점(여기서만 갱신된다).
+                self.latestBPMAt = Date()
                 self.pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
             }
         }
