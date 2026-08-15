@@ -69,6 +69,18 @@ const CHART_TYPES: { value: ChartType; label: string; icon: string }[] = [
   { value: "bar", label: "막대", icon: "📊" },
 ];
 
+// 차트 종류가 지표 자체로 고정돼 라인/막대 토글이 아무것도 바꾸지 않는 지표들.
+// 여기 있는 지표에서는 토글을 **감춘다** — 눌러도 안 변하는 버튼은 고장으로 읽힌다.
+//
+//   activity  복합 고정(막대 kcal + 심박 선 오버레이) — 두 시리즈를 한 축에 겹치는 표현
+//   spo2      희소 이벤트 측정. 곡선으로 이으면 "그 사이에도 값이 있었다"가 된다(08-12 결정)
+//   fall      아직 모의 데이터(B2 실데이터화 대기)
+//
+// ⚠ 이 집합은 아래 렌더 분기의 `isBar` 강제 목록과 **같은 근거를 공유한다**.
+//   한쪽만 바뀌면 버튼이 다시 거짓말을 하므로 가드로 함께 고정했다
+//   (`lib/2026-08-15-chart-type-toggle.guard.test.ts`).
+const METRIC_FIXED_CHART = new Set(["activity", "spo2", "fall"]);
+
 export function VitalHistoryPanel({
   selection,
   workerName,
@@ -286,8 +298,11 @@ export function VitalHistoryPanel({
           <span className="text-xs text-zinc-600 dark:text-zinc-400">누적 추세</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {/* 활동 탭은 복합(막대+심박 선) 고정 — 라인/막대 선택이 의미 없다. */}
-          {selection.metric !== "activity" && (
+          {/* 라인/막대가 실제로 갈리는 지표에서만 보인다 — 안 갈리는데 버튼을 두면
+              눌러도 아무 일이 없어 "고장"으로 읽힌다(2026-08-15 사용자 제보:
+              "라인/막대 동일한 차트. 구분이 의미 없음"). 이 레포가 반복해 고쳐 온
+              계열이다 — 화면이 사실과 다른 것을 말한다. 목록 근거는 상수 주석 참조. */}
+          {!METRIC_FIXED_CHART.has(selection.metric) && (
           <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
             {CHART_TYPES.map((t) => (
               <button
@@ -485,7 +500,10 @@ export function VitalHistoryPanel({
                 data.windowFromMs != null && data.windowToMs != null
                   ? [data.windowFromMs, data.windowToMs]
                   : undefined;
-              const isBar = selection.metric === "fall" || selection.metric === "spo2" || chartType === "bar";
+              // 지표로 고정된 것(spo2·fall)은 토글과 무관하게 막대다 — 그래서 위에서 토글을 감춘다.
+              // ⚠ activity 는 이 분기 앞에서 복합 차트로 빠지므로 여기 목록에 없다.
+              const isBar =
+                METRIC_FIXED_CHART.has(selection.metric) || chartType === "bar";
               return isBar ? (
                 <RechartsBarChart {...chartProps} domain={timeDomain} />
               ) : (
