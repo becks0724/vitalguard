@@ -683,6 +683,27 @@ async function initSchema(): Promise<void> {
     -- 해석해서(modeForServerRole), 새 role 값을 주면 앱 로그인이 실패한다. 기존 행은 'member' 가 되고
     -- VitAlGuard 소속은 별도 백필로 올린다.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS org_type TEXT NOT NULL DEFAULT 'member';
+    -- 임시 비밀번호 만료(ISO) — owner 가 재설정을 승인하면 채워지고, 본인이 비번을 바꾸면 NULL 로 돌아간다.
+    -- 이 컬럼 하나가 "임시 비번 상태인가"와 "언제까지인가"를 함께 표현한다(플래그 컬럼을 따로 두지 않는 이유).
+    -- 만료가 지나면 로그인 자체를 거부한다 — 클라이언트 '변경 강제' 화면은 우회되므로 만료가 실질 방어다.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_expires_at TEXT;
+
+    -- 비밀번호 재설정 요청(승인제) — 사용자가 신청하고 owner 가 사용자 관리 화면에서 처리한다.
+    -- 이메일 발송 경로가 막혀 있어(EMAIL_FROM 미설정 → Resend 계정 본인 메일로만 배달) 사람이 승인한다.
+    -- 도메인 확보 후 메일 링크로 전환하더라도 이 테이블은 그대로 쓴다(승인 주체만 사람→토큰으로 바뀜).
+    CREATE TABLE IF NOT EXISTS password_reset_request (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      username TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      resolved_at TEXT,
+      resolved_by TEXT
+    );
+    -- 한 계정당 미처리 요청은 하나 — 애플리케이션 검사만 두면 동시 요청 2건이 통과한다(다중 인스턴스).
+    -- 처리된 행은 제약 밖이라 이력이 쌓이고 재신청도 가능하다.
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_prr_pending
+      ON password_reset_request(user_id) WHERE status = 'pending';
 
     -- env 관리자(owner)의 내 정보 — 자격이 환경변수(ADMIN_ID/ADMIN_PASSWORD)라 users 행이 없다.
     -- users 에 행을 만들면 '사용자 관리' 목록에 승인/거절 대상으로 뜨는데, 거절해도 로그인은
@@ -2751,6 +2772,7 @@ export type UserRow = {
   guardian_name: string | null;
   guardian_phone: string | null;
   admin_access: boolean;
+  temp_password_expires_at: string | null; // 임시 비밀번호 상태가 아니면 null
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -2795,6 +2817,127 @@ export async function findUserByUsername(username: string): Promise<UserRow | nu
   const { rows } = await q<UserRow>("SELECT * FROM users WHERE username = $1", [
     username,
   ]);
+  return rows[0] ?? null;
+}
+
+// ── 계정 찾기(아이디 찾기·비밀번호 재설정) ──────────────────────────────────
+// 이메일 발송이 막혀 있어(EMAIL_FROM 미설정) 재설정은 owner 승인으로 처리한다.
+// 근거·대안은 docs/account-recovery/context-notes.md.
+
+/**
+ * 아이디 찾기 — 이름 + 이메일이 모두 일치하는 계정.
+ *
+ * `email` 에 UNIQUE 제약이 없어 복수 행이 정상이다(회사 대표메일 공유 등). 전부 돌려준다.
+ * 이메일은 대소문자를 구분하지 않고 비교한다 — 사용자는 자기 메일을 어느 쪽으로든 입력한다.
+ * 작업자(role=worker)는 관제 웹 대상이 아니라 제외한다 — 찾아줘도 로그인할 수 없다.
+ */
+export async function findUsernamesByNameEmail(
+  name: string,
+  email: string,
+): Promise<{ username: string; created_at: string; status: string }[]> {
+  const { rows } = await q<{ username: string; created_at: string; status: string }>(
+    `SELECT username, created_at, status FROM users
+      WHERE name = $1 AND lower(email) = lower($2) AND role <> 'worker'
+      ORDER BY created_at`,
+    [name, email],
+  );
+  return rows;
+}
+
+export type PasswordResetRow = {
+  id: number;
+  user_id: number;
+  username: string;
+  status: string; // pending | done | rejected
+  requested_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+};
+
+/**
+ * 재설정 요청 생성. 이미 미처리 요청이 있으면 null(부분 유니크 인덱스가 막는다 → 호출부 409).
+ * 중복을 조용히 성공으로 처리하지 않는다 — 사용자가 "신청이 두 번 갔나" 헷갈리게 하지 않기 위해서다.
+ */
+export async function createPasswordResetRequest(
+  userId: number,
+  username: string,
+): Promise<PasswordResetRow | null> {
+  const { rows } = await q<PasswordResetRow>(
+    `INSERT INTO password_reset_request (user_id, username) VALUES ($1, $2)
+     ON CONFLICT DO NOTHING RETURNING *`,
+    [userId, username],
+  );
+  return rows[0] ?? null;
+}
+
+/** 재설정 요청 목록 — 미처리를 위로, 그 안에서 오래된 순(먼저 신청한 사람이 먼저 처리되게). */
+export async function listPasswordResetRequests(
+  limit = 100,
+): Promise<PasswordResetRow[]> {
+  const { rows } = await q<PasswordResetRow>(
+    `SELECT * FROM password_reset_request
+      ORDER BY (status = 'pending') DESC, requested_at DESC
+      LIMIT $1`,
+    [limit],
+  );
+  return rows;
+}
+
+/**
+ * 요청 승인 — 임시 비밀번호 해시와 만료를 계정에 쓰고 요청을 done 으로 닫는다.
+ *
+ * 두 UPDATE 를 한 트랜잭션으로 묶는다. 나뉘면 "비번은 바뀌었는데 요청은 열린 채"(owner 가 다시 발급해
+ * 앞의 임시 비번이 죽는다) 또는 "요청은 닫혔는데 비번은 그대로"(사용자가 못 들어온다)가 된다.
+ * `status='pending'` 조건을 UPDATE 에 걸어 두 owner 가 동시에 승인해도 하나만 통과한다.
+ * 평문 비번은 인자로만 받고 저장하지 않는다 — 호출부가 응답에서 1회 노출한다.
+ */
+export async function approvePasswordReset(
+  requestId: number,
+  passwordHash: string,
+  expiresAt: string,
+  resolvedBy: string,
+): Promise<PasswordResetRow | null> {
+  // client.query 는 q() 를 우회하므로 스키마 보장을 여기서 직접 한다(기존 트랜잭션 함수와 동일).
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<PasswordResetRow>(
+      `UPDATE password_reset_request
+          SET status = 'done', resolved_at = ${NOW_ISO}, resolved_by = $2
+        WHERE id = $1 AND status = 'pending' RETURNING *`,
+      [requestId, resolvedBy],
+    );
+    const req = rows[0];
+    if (!req) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      "UPDATE users SET password_hash = $1, temp_password_expires_at = $2 WHERE id = $3",
+      [passwordHash, expiresAt, req.user_id],
+    );
+    await client.query("COMMIT");
+    return req;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** 요청 거절 — 계정은 건드리지 않는다(비번 그대로). 이미 처리된 요청이면 null. */
+export async function rejectPasswordReset(
+  requestId: number,
+  resolvedBy: string,
+): Promise<PasswordResetRow | null> {
+  const { rows } = await q<PasswordResetRow>(
+    `UPDATE password_reset_request
+        SET status = 'rejected', resolved_at = ${NOW_ISO}, resolved_by = $2
+      WHERE id = $1 AND status = 'pending' RETURNING *`,
+    [requestId, resolvedBy],
+  );
   return rows[0] ?? null;
 }
 
@@ -3050,10 +3193,14 @@ export async function updateUserProfile(
   },
 ): Promise<UserRow | null> {
   if (input.passwordHash !== undefined) {
+    // 비번을 실제로 바꾸면 임시 비번 만료를 해제한다 — 여기 한 곳에서 처리해야
+    // 변경 경로가 늘어도(관리자 대행 등) 빠뜨리지 않는다. 안 풀면 본인이 바꾼 비번인데도
+    // 24시간 뒤 로그인이 거부된다.
     const { rows } = await q<UserRow>(
       `UPDATE users SET name = $1, company = $2, phone = $3, carrier = $4,
          department = $5, job_title = $6, employee_id = $7,
-         guardian_name = $8, guardian_phone = $9, password_hash = $10
+         guardian_name = $8, guardian_phone = $9, password_hash = $10,
+         temp_password_expires_at = NULL
        WHERE username = $11 RETURNING *`,
       [input.name, input.company, input.phone, input.carrier, input.department, input.jobTitle, input.employeeId, input.guardianName, input.guardianPhone, input.passwordHash, username],
     );

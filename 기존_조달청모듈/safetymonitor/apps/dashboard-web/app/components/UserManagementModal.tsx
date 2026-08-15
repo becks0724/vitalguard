@@ -28,6 +28,26 @@ type User = {
   approved_by: string | null;
 };
 
+// 비밀번호 재설정 요청 — 사용자가 로그인 화면에서 신청하고 여기서 처리한다.
+// 이메일 발송이 막혀 있어(EMAIL_FROM 미설정) 사람이 승인하는 구조다 —
+// 근거는 docs/account-recovery/context-notes.md.
+type ResetRequest = {
+  id: number;
+  user_id: number;
+  username: string;
+  status: string; // pending | done | rejected
+  requested_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+};
+
+// 승인 직후 딱 한 번 받는 임시 비밀번호. 새로고침하면 사라진다(DB 에 평문이 없다).
+type IssuedTempPassword = {
+  username: string;
+  tempPassword: string;
+  expiresAt: string;
+};
+
 // ISO → "YYYY-MM-DD HH:MM" (UTC 문자열 앞부분만 — 데모 표시용).
 function fmt(iso: string | null): string {
   if (!iso) return "-";
@@ -73,6 +93,10 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const [companyDraft, setCompanyDraft] = useState("");
   const [deptDraft, setDeptDraft] = useState("");
   const [titleDraft, setTitleDraft] = useState("");
+  // 비밀번호 재설정 요청 목록 + 방금 발급한 임시 비밀번호(1회 표시).
+  const [resets, setResets] = useState<ResetRequest[]>([]);
+  const [resetBusyId, setResetBusyId] = useState<number | null>(null);
+  const [issued, setIssued] = useState<IssuedTempPassword | null>(null);
   const load = useCallback(async (manual = false) => {
     if (manual) setRefreshing(true);
     try {
@@ -93,7 +117,68 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
     } finally {
       if (manual) setRefreshing(false);
     }
+    // 재설정 요청은 실패해도 사용자 목록 표시를 막지 않는다 — 곁다리 패널이라 조용히 비워 둔다.
+    try {
+      const res = await fetch("/api/admin/password-reset/manage", {
+        headers: { authorization: `Bearer ${getSessionToken() ?? ""}` },
+        cache: "no-store",
+      });
+      const json = (await res.json()) as { ok?: boolean; requests?: ResetRequest[] };
+      if (res.ok && json.ok && json.requests) setResets(json.requests);
+    } catch {
+      // 무시 — 다음 폴링에서 다시 시도한다
+    }
   }, []);
+
+  // 재설정 요청 처리 — 승인하면 임시 비밀번호가 응답에 딱 한 번 실려 온다.
+  const actReset = useCallback(
+    async (id: number, action: "approve" | "reject") => {
+      const req = resets.find((r) => r.id === id);
+      if (action === "approve") {
+        const ok = window.confirm(
+          `${req?.username ?? id} 의 비밀번호를 임시 비밀번호로 재설정할까요?\n` +
+            "기존 비밀번호는 즉시 사용할 수 없게 됩니다.\n" +
+            "임시 비밀번호는 이 화면에 한 번만 표시되니 본인 확인 후 직접 전달하세요.",
+        );
+        if (!ok) return;
+      }
+      setResetBusyId(id);
+      setError(null);
+      try {
+        const res = await fetch("/api/admin/password-reset/manage", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${getSessionToken() ?? ""}`,
+          },
+          body: JSON.stringify({ id, action }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          error?: string;
+          tempPassword?: string;
+          expiresAt?: string;
+        };
+        if (!res.ok || !json.ok) {
+          setError(json.error || "처리에 실패했습니다.");
+          return;
+        }
+        if (json.tempPassword) {
+          setIssued({
+            username: req?.username ?? String(id),
+            tempPassword: json.tempPassword,
+            expiresAt: json.expiresAt ?? "",
+          });
+        }
+        await load();
+      } catch {
+        setError("네트워크 오류로 처리에 실패했습니다.");
+      } finally {
+        setResetBusyId(null);
+      }
+    },
+    [resets, load],
+  );
 
   // 최초 로드 + 60초 폴링(DB 변경 반영). 모달 닫히면 정리.
   const loadRef = useRef(load);
@@ -188,6 +273,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const pending = users?.filter((u) => u.status === "pending").length ?? 0;
   const approved = users?.filter((u) => u.status === "approved").length ?? 0;
   const rejected = users?.filter((u) => u.status === "rejected").length ?? 0;
+  const pendingResets = resets.filter((r) => r.status === "pending");
 
   return (
     <div
@@ -234,6 +320,12 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
           <span className="text-amber-600 dark:text-amber-300">대기 {pending}</span>
           <span className="text-emerald-600 dark:text-emerald-300">승인 {approved}</span>
           <span>거절 {rejected}</span>
+          {/* 재설정 요청은 사용자가 로그인을 못 하는 상태라 대기 카운트보다 급하다 — 0 이면 감춘다. */}
+          {pendingResets.length > 0 && (
+            <span className="font-semibold text-amber-600 dark:text-amber-300">
+              비밀번호 재설정 요청 {pendingResets.length}
+            </span>
+          )}
           <span className="ml-auto inline-flex items-center gap-1">
             <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
             자동 갱신 60초{syncedAt ? ` · 최근 ${syncedAt}` : ""}
@@ -246,6 +338,67 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
             <p className="mb-3 rounded-xl border border-red-300/50 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-400/30 dark:bg-red-500/15 dark:text-red-200">
               {error}
             </p>
+          )}
+
+          {/* ★ 발급된 임시 비밀번호 — 이 화면을 벗어나면 다시 볼 수 없다(DB 에 평문이 없다). */}
+          {issued && (
+            <div className="mb-3 rounded-xl border border-emerald-400/60 bg-emerald-50 px-3 py-2.5 dark:border-emerald-400/30 dark:bg-emerald-500/15">
+              <p className="text-xs font-bold text-emerald-800 dark:text-emerald-200">
+                {issued.username} 임시 비밀번호 발급됨
+              </p>
+              <p className="mt-1.5 select-all font-mono text-lg font-bold tracking-widest text-emerald-900 dark:text-emerald-100">
+                {issued.tempPassword}
+              </p>
+              <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">
+                본인 확인 후 직접 전달하세요. <b>이 창을 닫으면 다시 볼 수 없습니다.</b>
+                {issued.expiresAt ? ` · 유효기간 ${fmt(issued.expiresAt)} 까지` : ""}
+              </p>
+              <button
+                type="button"
+                onClick={() => setIssued(null)}
+                className="mt-2 rounded-pill bg-emerald-600 px-3 py-1 text-[11px] font-semibold text-white active:scale-95"
+              >
+                전달 완료 · 지우기
+              </button>
+            </div>
+          )}
+
+          {/* 비밀번호 재설정 요청 — 미처리 건만 보여준다(처리 이력은 DB 에 남는다). */}
+          {pendingResets.length > 0 && (
+            <div className="mb-3 rounded-xl border border-amber-300/60 bg-amber-50 px-3 py-2.5 dark:border-amber-400/30 dark:bg-amber-500/15">
+              <p className="text-xs font-bold text-amber-800 dark:text-amber-200">
+                비밀번호 재설정 요청 {pendingResets.length}건
+              </p>
+              <ul className="mt-1.5 space-y-1.5">
+                {pendingResets.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <b className="text-ink dark:text-on-dark">{r.username}</b>
+                    <span className="text-muted dark:text-on-dark-soft">
+                      신청 {fmt(r.requested_at)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => actReset(r.id, "approve")}
+                      disabled={resetBusyId === r.id}
+                      className="rounded-pill bg-emerald-600 px-2.5 py-1 font-semibold text-white active:scale-95 disabled:opacity-50"
+                    >
+                      임시 비밀번호 발급
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => actReset(r.id, "reject")}
+                      disabled={resetBusyId === r.id}
+                      className="rounded-pill bg-surface-strong px-2.5 py-1 font-semibold text-body active:scale-95 disabled:opacity-50 dark:bg-surface-dark-elevated dark:text-on-dark-soft"
+                    >
+                      거절
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+                신청자가 본인이 맞는지 확인한 뒤 발급하세요. 발급 즉시 기존 비밀번호는 무효가 됩니다.
+              </p>
+            </div>
           )}
           {users === null ? (
             !error ? (

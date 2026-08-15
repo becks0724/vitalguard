@@ -1,6 +1,7 @@
 // 관리자 로그인 — id/password 검증 후 비밀번호와 무관한 세션 토큰 반환 (sessionStorage 저장용)
 import { NextResponse } from "next/server";
 
+import { tempPasswordExpired } from "../../../../lib/account-recovery";
 import {
   clientIpFromXff,
   createSession,
@@ -116,10 +117,24 @@ export async function POST(request: Request) {
     );
   }
 
+  // 임시 비밀번호(관리자가 재설정 승인 시 발급)는 유효기간이 지나면 더 이상 통하지 않는다.
+  // 로그인 시점에 막는 것이 실질 방어다 — 클라이언트 '변경 강제' 화면은 토큰을 쥔 뒤 건너뛰면 그만이다.
+  if (tempPasswordExpired(user.temp_password_expires_at)) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "임시 비밀번호가 만료됐습니다. 비밀번호 찾기로 다시 신청해주세요.",
+      },
+      { status: 403 },
+    );
+  }
+
   // 승인된 관리자 — admin 역할 세션 발급(비밀번호 무관 랜덤 토큰, 서버측 TTL).
+  // 임시 비밀번호로 들어온 경우 화면이 "내 정보에서 바꾸라"고 안내하도록 표식을 함께 내린다.
   return NextResponse.json({
     ok: true,
     token: createSession("admin", user.username),
     role: "admin",
+    mustChangePassword: user.temp_password_expires_at !== null,
   });
 }

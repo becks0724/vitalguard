@@ -14,10 +14,12 @@ import {
 import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
 import { VITALGUARD_COMPANY, companiesForOrgType } from "../../lib/companies";
 import { DEFAULT_ORG_TYPE, type OrgType } from "../../lib/org-type";
+import { AccountRecovery } from "./AccountRecovery";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { LoginShaderBackground } from "./LoginShaderBackground";
 import { LoginSiteSelect } from "./LoginSiteSelect";
+import { FIELD_BASE, INPUT_CLASS } from "./login-styles";
 import { StoreBadges } from "./StoreBadges";
 import { ThemeToggle } from "./ThemeToggle";
 
@@ -64,6 +66,9 @@ type Strings = {
   toLogin: string;
   noAccount: string;
   haveAccount: string;
+  // 계정 찾기(아이디·비밀번호) 진입 + 임시 비밀번호 로그인 안내
+  findAccount: string;
+  tempPwNotice: string;
   pwMismatch: string;
   pwTooShort: string;
   pwTooLong: string;
@@ -149,6 +154,9 @@ const T: Record<Lang, Strings> = {
     toLogin: "로그인으로 돌아가기",
     noAccount: "계정이 없으신가요?",
     haveAccount: "이미 계정이 있으신가요?",
+    findAccount: "아이디·비밀번호 찾기",
+    tempPwNotice:
+      "임시 비밀번호로 로그인했습니다. 24시간 안에 '내 정보'에서 비밀번호를 변경해주세요.",
     pwMismatch: "비밀번호가 일치하지 않습니다.",
     pwTooShort: `비밀번호는 ${PASSWORD_MIN}자 이상이어야 합니다.`,
     pwTooLong: `비밀번호는 ${PASSWORD_MAX}자 이하여야 합니다.`,
@@ -225,6 +233,9 @@ const T: Record<Lang, Strings> = {
     toLogin: "Back to sign in",
     noAccount: "No account?",
     haveAccount: "Already have an account?",
+    findAccount: "Find ID or password",
+    tempPwNotice:
+      "You signed in with a temporary password. Change it under 'My profile' within 24 hours.",
     pwMismatch: "Passwords do not match.",
     pwTooShort: `Password must be at least ${PASSWORD_MIN} characters.`,
     pwTooLong: `Password must be at most ${PASSWORD_MAX} characters.`,
@@ -280,11 +291,6 @@ function googleMsgText(code: string, t: Strings): string | null {
       return null;
   }
 }
-
-// 셰이더 배경 위 글래스 입력 — 박스 없이 배경과 조화(반투명 흰색 + backdrop-blur).
-const FIELD_BASE =
-  "rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm text-white outline-none backdrop-blur-md transition placeholder:text-white/50 focus:border-white/70 focus:bg-white/15";
-const INPUT_CLASS = `mt-1 w-full ${FIELD_BASE}`;
 
 // 셀렉트(통신사·이메일 도메인) — INPUT_CLASS 톤 통일. 옵션은 네이티브 메뉴라 text-black 지정.
 // appearance-none 으로 네이티브 셀렉트 렌더(사각·기본 화살표)를 끄고 입력 박스와 동일한 둥근 글래스로 통일.
@@ -393,7 +399,9 @@ export function LoginScreen({
   onLogin: (token: string, role?: string) => void;
 }) {
   const [lang, setLang] = useState<Lang>("ko");
-  const [mode, setMode] = useState<"login" | "signup" | "gcomplete">("login");
+  const [mode, setMode] = useState<
+    "login" | "signup" | "gcomplete" | "recovery"
+  >("login");
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -429,6 +437,8 @@ export function LoginScreen({
   // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰/역할(null = 아직 로그인 폼 단계).
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<string | null>(null);
+  // 임시 비밀번호로 들어왔는가(서버 판정) — 현장 선택 단계에서 변경 안내를 띄운다.
+  const [mustChangePw, setMustChangePw] = useState(false);
 
   useEffect(() => {
     try {
@@ -504,6 +514,7 @@ export function LoginScreen({
           token?: string;
           role?: string;
           error?: string;
+          mustChangePassword?: boolean;
         };
         if (!res.ok || !json.ok || !json.token) {
           // 서버 안내(승인 대기·거절 등)가 있으면 그대로, 없으면 기본 메시지.
@@ -513,6 +524,7 @@ export function LoginScreen({
         // 로그인 성공 → 바로 입장하지 않고 현장 선택 단계로 전환(역할도 보류).
         setPendingToken(json.token);
         setPendingRole(json.role ?? null);
+        setMustChangePw(json.mustChangePassword === true);
       } catch {
         setError(t.networkError);
       } finally {
@@ -890,8 +902,23 @@ export function LoginScreen({
             {t.google}
           </button>
 
-          {/* 회원가입 전환 */}
+          {/* 계정 찾기 — 비밀번호를 잊으면 되돌릴 길이 아예 없었다(2026-08-15 사용자 지적). */}
           <p className="pt-1 text-center text-xs text-white/80 drop-shadow">
+            <button
+              type="button"
+              onClick={() => {
+                setMode("recovery");
+                setError(null);
+                setSignupMsg(null);
+              }}
+              className="font-semibold text-white underline underline-offset-2 hover:text-sky-200"
+            >
+              {t.findAccount}
+            </button>
+          </p>
+
+          {/* 회원가입 전환 */}
+          <p className="text-center text-xs text-white/80 drop-shadow">
             {t.noAccount}{" "}
             <button
               type="button"
@@ -917,6 +944,14 @@ export function LoginScreen({
           <StoreBadges />
         </div>
           </>
+          ) : mode === "recovery" ? (
+        <AccountRecovery
+          lang={lang}
+          onBack={() => {
+            setMode("login");
+            setError(null);
+          }}
+        />
           ) : mode === "signup" ? (
           <>
         {/* 회원가입 폼(승인제) — 가입 신청 후 owner 승인 시 로그인 가능.
@@ -1384,11 +1419,20 @@ export function LoginScreen({
           )
         ) : (
           /* 현장 선택 단계 — 로그인 성공 후 */
-          <LoginSiteSelect
-            lang={lang}
-            onConfirm={handleSiteConfirm}
-            onBack={() => setPendingToken(null)}
-          />
+          <>
+            {/* 임시 비밀번호 안내 — 만료(24h)가 지나면 로그인 자체가 막히므로 여기서 알린다.
+                입장을 막지는 않는다(서버가 만료로 강제하는 구조라 화면 차단은 실효가 없다). */}
+            {mustChangePw && (
+              <p className="mt-4 w-full max-w-sm rounded-xl border border-amber-300/50 bg-amber-500/25 px-3 py-2 text-xs text-amber-50 backdrop-blur-md">
+                {t.tempPwNotice}
+              </p>
+            )}
+            <LoginSiteSelect
+              lang={lang}
+              onConfirm={handleSiteConfirm}
+              onBack={() => setPendingToken(null)}
+            />
+          </>
         )}
           </div>
         </div>
