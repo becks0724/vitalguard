@@ -295,10 +295,14 @@ export function WeatherStrip({
         "WBGT",
         c.wbgt === undefined ? "--" : `${c.wbgt.toFixed(1)}℃`,
         "습구흑구온도 — 기온·습도·풍속·일사를 함께 반영하는 국제 표준 열스트레스 지표(ACGIH/ISO 7243).",
-        "산출 = Liljegren(2008) 물리 모델 · OSHA 공식 계산기와 대조 검증(±0.03℃). " +
+        "산출 = Liljegren(2008) 물리 모델. OSHA 공식 계산기와 ±0.03℃ 로 일치하나 이는 " +
+          "구현이 모델을 정확히 재현한다는 뜻이며, 모델 자체 오차는 약 1℃ 다. " +
           "입력은 기온·습도·풍속 = 기상청 관측, 일사량 = Open-Meteo(실황에 일사가 없음). " +
           "실외·직사광 기준이라 실내·그늘 작업에는 과대. " +
-          "★ 법적 판정 기준은 체감온도(31/33/35℃)이며 WBGT 는 참고 지표다.\n\n" +
+          "★ 법적 판정 기준은 체감온도(31/33/35℃)이며 WBGT 는 참고 지표다. " +
+          "⚠ 다만 직업보건 기준으로는 WBGT 가 표준이고 체감온도는 그늘·안정 상태 기준이라 " +
+          "일사·풍속·작업강도를 반영하지 못한다 — 옥외 중작업에서는 체감온도가 위험을 " +
+          "과소평가할 수 있으므로 이 값을 함께 본다.\n\n" +
           workRestAdviceText(c.wbgt),
       ),
       discomfort: evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),

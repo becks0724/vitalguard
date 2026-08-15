@@ -6336,7 +6336,7 @@ function WorkerTableRow({
                   ? `\n⚠ 저활동·고심박 ${heatPattern.coveredMinutes}분 지속(평균 ${heatPattern.hrAvg}bpm · ${heatPattern.aeKcalPerMin}kcal/분) — 열 축적·탈수 또는 긴장·카페인 가능. 추정치가 과대일 수 있어 휴식·수분 확인 권장`
                   : "") +
                 (psi
-                  ? `\nPSI ${psi.value.toFixed(1)}/10 — 생리적 부담 지수(Moran 1998). 6 이상 높은 부담·7.5 이상 열손상 고위험. 기준 심박 ${psi.personalized ? "= 개인 안정심박" : "60(개인 안정심박 미수신)"}. 추정 체온이 입력이라 판정·경보에는 쓰지 않음`
+                  ? `\nPSI ${psi.value.toFixed(1)}/10 — 생리적 부담 지수(Moran 1998). 6 이상 높은 부담·7.5 이상 열손상 고위험. 기준 심박 ${psi.personalized ? "= 개인 안정심박" : "60(개인 안정심박 미수신)"}. 추정 체온이 입력이라 판정·경보에는 쓰지 않음. ⚠ 집단 평균 반응에 기반한 지수라 개인의 열 내성 한계를 식별하는 용도로는 신뢰할 수 없다는 후속 연구가 있다(2021) — 개인 판정이 아니라 참고값으로 본다`
                   : "")
               }
             >
