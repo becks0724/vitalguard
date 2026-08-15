@@ -12,6 +12,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // 유출된 명단을 그대로 훑는 경우가 남는다.
 const IP_MAX = 10;
 const IP_WINDOW_MS = 10 * 60 * 1000;
+// 버킷이 비었을 때 다음 토큰까지 걸리는 최대 시간 — 회복은 경과에 비례하므로 window/limit 이다.
+// "잠시 후"가 얼마인지 알려주지 않으면 사용자는 될 때까지 눌러보고, 그게 다시 제한을 채운다.
+const RETRY_AFTER_SEC = Math.ceil(IP_WINDOW_MS / IP_MAX / 1000);
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -39,8 +42,8 @@ export async function POST(request: Request) {
 
   if (!consumeToken(`find-id:${clientIpFromRequest(request)}`, IP_MAX, IP_WINDOW_MS)) {
     return NextResponse.json(
-      { ok: false, error: "요청이 많습니다. 잠시 후 다시 시도해주세요." },
-      { status: 429 },
+      { ok: false, error: `요청이 많습니다. 약 ${RETRY_AFTER_SEC}초 후 다시 시도해주세요.` },
+      { status: 429, headers: { "retry-after": String(RETRY_AFTER_SEC) } },
     );
   }
 

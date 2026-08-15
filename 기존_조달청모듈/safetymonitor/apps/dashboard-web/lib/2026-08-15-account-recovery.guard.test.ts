@@ -127,6 +127,25 @@ test("미인증 라우트 — 아이디 찾기·재설정 신청에 요청 제�
   }
 });
 
+test("요청 제한 429 — 얼마나 기다릴지 알려준다", () => {
+  // "잠시 후"만 주면 사용자는 될 때까지 눌러보고, 그 재시도가 다시 제한을 채운다
+  // (2026-08-15 첫 실사용에서 실제로 발생 — 이메일 오타 재시도 4번에 막혔다).
+  for (const [name, source] of [
+    ["find-id", findIdSource],
+    ["password-reset", requestSource],
+  ] as const) {
+    assert.match(
+      source,
+      /RETRY_AFTER_SEC/,
+      `${name} 의 429 가 대기 시간을 알려주지 않는다`,
+    );
+    assert.ok(
+      !/잠시 후 다시 시도/.test(source),
+      `${name} 에 대기 시간 없는 '잠시 후' 문구가 남아 있다`,
+    );
+  }
+});
+
 test("재설정 신청 — 구글 전용 계정과 작업자 계정을 걸러낸다", () => {
   const body = handlerBody(requestSource, "POST");
   assert.match(

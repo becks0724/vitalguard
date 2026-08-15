@@ -9,8 +9,14 @@ import { consumeToken } from "../../../../lib/rate-limit";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const IP_MAX = 5;
+// 실패한 시도도 토큰을 먹는다 — 이메일을 잘못 기억해 두어 번 고쳐 넣으면 그것만으로 막힌다.
+// 처음 5회로 뒀다가 첫 실사용에서 바로 걸렸다(2026-08-15, 오타 재시도 4번). 아이디 찾기와
+// 같은 10회로 맞춘다. 세 값(아이디·이름·이메일)을 모두 맞춰야 하므로 열거 비용은 이미 높다.
+const IP_MAX = 10;
 const IP_WINDOW_MS = 10 * 60 * 1000;
+// 버킷이 비었을 때 다음 토큰까지 걸리는 최대 시간 — 회복은 경과에 비례하므로 window/limit 이다.
+// "잠시 후"가 얼마인지 알려주지 않으면 사용자는 될 때까지 눌러보고, 그게 다시 제한을 채운다.
+const RETRY_AFTER_SEC = Math.ceil(IP_WINDOW_MS / IP_MAX / 1000);
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -45,8 +51,8 @@ export async function POST(request: Request) {
     !consumeToken(`pw-reset:${clientIpFromRequest(request)}`, IP_MAX, IP_WINDOW_MS)
   ) {
     return NextResponse.json(
-      { ok: false, error: "요청이 많습니다. 잠시 후 다시 시도해주세요." },
-      { status: 429 },
+      { ok: false, error: `요청이 많습니다. 약 ${RETRY_AFTER_SEC}초 후 다시 시도해주세요.` },
+      { status: 429, headers: { "retry-after": String(RETRY_AFTER_SEC) } },
     );
   }
 
