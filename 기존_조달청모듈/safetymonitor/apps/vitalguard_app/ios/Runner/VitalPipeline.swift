@@ -129,9 +129,11 @@ final class VitalPipeline {
                 // 온열 환경·강도 입력 — pe = 절대적 운동 강도(MET), dl = 일광 시간(분).
                 let pe = s["pe"] as? Double
                 let dl = s["dl"] as? Double
+                // 무동작 지속(초) — 워치 CMMotionManager 기준. 값이 없으면 못 잰 것이지 0 이 아니다.
+                let still = s["still"] as? Double
                 guard bpm != nil || spo2 != nil || ae != nil
                     || hrv != nil || rhr != nil || whr != nil || rr != nil
-                    || stp != nil || flt != nil || pe != nil || dl != nil
+                    || stp != nil || flt != nil || pe != nil || dl != nil || still != nil
                 else { continue }
                 var v: [String: Any] = ["ts": sentAt]
                 if let bpm {
@@ -170,6 +172,9 @@ final class VitalPipeline {
                 // 일광은 '구간 합'이다(하루 누적을 보내면 걸음·오른층처럼 서버 상한에서 스트립된다).
                 if let pe { v["physicalEffortMet"] = pe }
                 if let dl { v["timeInDaylightMin"] = dl }
+                // 무동작 지속 — 서버 스키마 `motionStillSec`. 스키마·DB 컬럼·insert 매핑은
+                // 구 앱 시절부터 있었고 신규 앱이 안 보내 27,831행 중 0건이었다(2026-08-15 실측).
+                if let still { v["motionStillSec"] = still }
                 self.pending.append(v)
             }
             if self.pending.count > self.maxQueue {

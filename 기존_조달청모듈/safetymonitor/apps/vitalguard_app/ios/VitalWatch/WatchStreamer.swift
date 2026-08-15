@@ -1,4 +1,5 @@
 // 워치 HR 수집기 — HKWorkoutSession 으로 백그라운드 수집을 유지하고 5초 배치로 WCSession 송신한다
+import CoreMotion
 import Foundation
 import HealthKit
 import WatchConnectivity
@@ -41,6 +42,34 @@ final class WatchStreamer: NSObject, ObservableObject {
     @Published var pendingTransfers = 0
 
     private let log = Logger(subsystem: "com.vitalguard.vitalguardApp.watchkitapp", category: "WatchStreamer")
+
+    // MARK: - 무동작 지속(motionStillSec) — 2026-08-15 신설
+    //
+    // 왜 필요한가 — 이 앱에는 **연속적이면서 활동 축이 맞는 신호가 하나도 없었다**(실측).
+    //   활동에너지  촘촘하지만 상시 워크아웃 때문에 바닥이 분당 4.8kcal 로 고정 → 활동량을 못 말한다
+    //   걸음·MET    축은 맞지만 희소(4.3%·1.2%)하고, 앉아서 하는 작업을 아예 못 잡는다
+    // 이 값 하나가 두 트랙의 공통 최소 1보다 —
+    //   ① 온열 활동 축 : 앉아서 작업 vs 정말 쉬는 중 (걸음이 못 가르는 것)
+    //   ② 생체 미수신 판별 : 벗어둔 것인가 쓰러진 것인가 (심박 없음만으로는 같다)
+    // 서버는 이미 받을 준비가 돼 있다 — 스키마 `motionStillSec` · DB 컬럼 · insert 매핑(db.ts:907)
+    // 이 전부 존재하고 **워치 전송만 없었다**(08-13 이후 27,831행 중 0건).
+    private let motion = CMMotionManager()
+    /// 마지막으로 '움직임' 을 관측한 시각. 무동작 지속 = now − 이 값.
+    private var lastMovementAt: Date?
+    /// 움직임 판정 임계(g, 중력 제거된 userAcceleration 크기).
+    ///
+    /// ⚠ **이 프로젝트에서 우리가 정한 몇 안 되는 숫자다 — 잠정값으로 다룬다.**
+    /// 다른 임계(KOSHA 작업–휴식·PSI 6/7.5·체감온도 31/33/35)는 전부 법령·문헌에서 왔는데
+    /// 여기에는 근거로 삼을 표준이 없다. 0.03g 는 "정지한 기기의 센서 잡음(≈0.01g)보다는 크고,
+    /// 착용자의 미세 움직임보다는 작게" 라는 성질로 고른 시작값이다.
+    /// **보정 방법** = 아래 stillDebug 로그의 관측 분포를 하루치 모아 다시 고른다.
+    /// 임계가 너무 낮으면 무동작이 영영 안 쌓이고, 너무 높으면 앉아서 일해도 무동작으로 잡힌다.
+    private let motionMoveThresholdG = 0.03
+    /// 관측용 — 콜백이 실제로 도는지, 크기 분포가 어떤지. "값이 안 온다" 를 임계 탓으로
+    /// 오귀속하지 않으려면 콜백 수와 최대 크기를 따로 봐야 한다(L-67).
+    private var motionUpdates = 0
+    private var motionMaxG = 0.0
+
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
     private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
@@ -250,6 +279,7 @@ final class WatchStreamer: NSObject, ObservableObject {
                     self.startFlushTimer()
                     self.startSpO2Query()
                     self.startDiscreteQueries()
+                    self.startMotionUpdates()
                 }
             }
         } catch {
@@ -325,6 +355,19 @@ final class WatchStreamer: NSObject, ObservableObject {
             }
             pendingSpo2 = nil
         }
+        // 무동작 지속 — 다른 항목이 있으면 얹고(서버 행 수 불증가), 없으면 단독으로 싣는다.
+        //
+        // ★ 단독 전송이 이 값의 핵심 용도다. 워치를 벗어 두면 심박도 이산 측정도 안 오는데,
+        //   그때 "얼마나 오래 안 움직였나" 가 바로 **벗어둔 것인지 쓰러진 것인지**를 가르는 재료다.
+        //   다른 항목이 있을 때만 얹으면 정작 필요한 구간에 값이 없다.
+        // ⚠ 행 수는 늘지 않는다 — 그 구간은 활동에너지가 이미 5초마다 항목을 만들고 있다.
+        if let still = motionStillSec {
+            if let idx = pendingSamples.indices.last {
+                pendingSamples[idx]["still"] = still
+            } else {
+                pendingSamples.append(["ts": Date().timeIntervalSince1970, "still": still])
+            }
+        }
         guard !pendingSamples.isEmpty else { return }
         seq += 1
         let payload: [String: Any] = [
@@ -386,6 +429,47 @@ final class WatchStreamer: NSObject, ObservableObject {
             pendingSamples.append(["ts": Date().timeIntervalSince1970, key: Int(whole)])
         }
         reported += whole
+    }
+
+    // MARK: - 무동작 지속
+
+    /// `CMMotionManager` 의 deviceMotion 을 1Hz 로 받아 '마지막 움직임 시각' 만 갱신한다.
+    ///
+    /// **왜 deviceMotion 인가** — `userAcceleration` 은 중력이 제거된 값이라 기기 자세와 무관하다.
+    /// 원시 가속도를 쓰면 손목 각도만 바꿔도 1g 가 축 사이를 옮겨 다녀 움직임처럼 보인다.
+    ///
+    /// **왜 `CMMotionActivityManager`(Apple 의 stationary 분류)가 아닌가** — 그쪽이 "우리가 정한
+    /// 숫자 0개" 라는 이 레포의 규율에는 더 맞지만 ⓐ `NSMotionUsageDescription` 권한 시트가 새로
+    /// 뜨고 **미허용 시 값이 조용히 사라진다**(온열 ① 실증 함정) ⓑ 전이 기반이라 초 단위 지속을
+    /// 못 준다. 지속 시간이 이 값의 존재 이유라 deviceMotion 을 택했다.
+    /// 임계 보정이 실패하면 그때 재검토한다.
+    ///
+    /// **배터리** — 1Hz 는 워크아웃이 이미 돌리는 센서에 얹히는 수준이나 **실측 전에는 모른다.**
+    /// 현행 6.46%/h 대비 악화가 있는지 설치 후 1시간 관찰이 필요하다(SETUP.md 배터리 절).
+    private func startMotionUpdates() {
+        guard motion.isDeviceMotionAvailable else {
+            log.warning("deviceMotion 미지원 — 무동작 지속 수집 없음")
+            return
+        }
+        motionUpdates = 0
+        motionMaxG = 0
+        lastMovementAt = Date()
+        motion.deviceMotionUpdateInterval = 1.0
+        motion.startDeviceMotionUpdates(to: .main) { [weak self] dm, _ in
+            guard let self, let dm else { return }
+            let a = dm.userAcceleration
+            let mag = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()
+            self.motionUpdates += 1
+            if mag > self.motionMaxG { self.motionMaxG = mag }
+            if mag >= self.motionMoveThresholdG { self.lastMovementAt = Date() }
+        }
+    }
+
+    /// 무동작 지속(초). 콜백이 한 번도 안 돌았으면 **0 이 아니라 nil** 이다 —
+    /// "안 움직였다" 와 "못 쟀다" 를 같은 값으로 보내면 판정이 오염된다(온열 ② 가 겪은 그 함정).
+    private var motionStillSec: Double? {
+        guard motionUpdates > 0, let at = lastMovementAt else { return nil }
+        return (Date().timeIntervalSince(at) * 10).rounded() / 10
     }
 
     // MARK: - 이산 측정(HRV·안정심박·보행심박·호흡수)
@@ -475,6 +559,13 @@ final class WatchStreamer: NSObject, ObservableObject {
     private func teardown() {
         flushTimer?.invalidate()
         flushTimer = nil
+        // 무동작 지속 — 센서를 끄고 기준점도 버린다. 남겨 두면 재시작 직후 세션 밖의 정지 시간이
+        // 이어져 찍힌다(하트비트 기준점을 버리는 것과 같은 이유).
+        if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
+        log.notice("무동작 수집 종료 — 콜백 \(self.motionUpdates, privacy: .public)회 · 최대 \(String(format: "%.3f", self.motionMaxG), privacy: .public)g (임계 \(String(format: "%.2f", self.motionMoveThresholdG), privacy: .public)g · 임계 보정 근거)")
+        lastMovementAt = nil
+        motionUpdates = 0
+        motionMaxG = 0
         if let spo2Query { healthStore.stop(spo2Query) }
         spo2Query = nil
         for query in discreteQueries { healthStore.stop(query) }
