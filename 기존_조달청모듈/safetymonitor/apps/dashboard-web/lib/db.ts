@@ -247,7 +247,13 @@ async function initSchema(): Promise<void> {
       received_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
       raw_json TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_vs_worker_ts ON vital_samples(worker_id, ts);
+    -- ⚠ idx_vs_worker_ts(worker_id, ts) 를 여기서 제거했다(2026-08-15). 아래 uq_vs_worker_ts 가
+    --   **같은 컬럼 조합**의 UNIQUE 인덱스라 구조적으로 중복이고, UNIQUE 쪽이 같은 질의를 전부
+    --   커버한다. 순서상 이 줄이 먼저 있었고 나중에 멱등 적재용 UNIQUE 가 추가되며 쓸모가
+    --   사라졌는데 아무도 안 지웠다.
+    --   ★ 지운 이유가 용량만은 아니다 — 이 줄이 남아 있으면 **DROP 해도 배포마다 부활한다.**
+    --     실제로 08-15 19:30 에 DROP 해서 49MB 를 회수했는데 20:0x 배포의 ensureSchema 가
+    --     21MB 로 되살렸다(약 30분 만에 무효화). DB 객체 삭제는 코드에서 지워야 유지된다.
     CREATE INDEX IF NOT EXISTS idx_vs_ts ON vital_samples(ts);
     CREATE INDEX IF NOT EXISTS idx_vs_ts_id ON vital_samples(ts, id);
     -- 멱등 적재 키 — (worker_id, ts) UNIQUE 로 재전송·backlog flush 중복 방지(alerts 와 동일 패턴, 감사 BE-IDEM-01).
