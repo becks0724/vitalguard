@@ -36,6 +36,14 @@
 ## 3. 검증 — **통과 (2026-08-14)**
 
 - [x] **OSHA 공식 WBGT 계산기 대조 — 5케이스 ΔWBGT −0.032~+0.002℃**
+
+      > **⚠ 이 수치의 범위를 오인하지 말 것(2026-08-15 문헌 대조).**
+      > 이것은 **우리 구현이 Liljegren 모델을 정확히 재현한다**는 뜻이지
+      > **실측 WBGT 와 일치한다**는 뜻이 아니다. Liljegren 자체 정확도는 **약 1℃**이고,
+      > 기상 관측값으로 산출한 WBGT 는 실측 대비 평균 **+0.2℃** 라는 검증 결과가 있다
+      > (R² = 0.709~0.854). 즉 **구현 오차 0.03℃ + 모델 오차 ~1℃** 로 읽어야 한다.
+      > 모델 선택 자체는 옳다 — Liljegren 은 표준 기상 입력에서 가장 정확한 근사로
+      > **gold standard** 로 인정된다. 상세 = [docs/literature-review/heat-and-vitals.md](../../../../docs/literature-review/heat-and-vitals.md)
 - [x] 기준값을 테스트에 고정(`OSHA_CASES`) · 검증 상수 3종 가드
 - [x] `pnpm typecheck && lint && test`
 
