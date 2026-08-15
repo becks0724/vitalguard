@@ -11,6 +11,7 @@ import {
   countsByWorker,
   coreTempEstimates,
   heatPatterns,
+  workRates,
   heatStages,
   notifyHeatIfDue,
   latestByWorkerWithSpo2,
@@ -60,6 +61,8 @@ export async function GET(request: Request) {
     coreTempEst: await coreTempEstimates(aliasMap),
     // 저활동·고심박 패턴(온열 ②·표시 주석 전용·판정 미주입) — flagged 워커만 실린다.
     heatPattern: await heatPatterns(aliasMap),
+    // 작업대사율(kcal/hr) — KOSHA <표 1> 작업강도 분류 입력. 참고 권고용이라 판정·알림에 안 들어간다.
+    workRate: await workRates(aliasMap),
     // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등에 쓰인다(사용자 결정).
     heatStage: await heatStages(aliasMap),
     workerProfiles: await workerProfiles(),

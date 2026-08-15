@@ -125,6 +125,8 @@ type MockVitalResponse = {
   coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
   // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — flagged 워커만 실린다. 판정 미주입.
   heatPattern?: Record<string, { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }>;
+  /** 작업대사율(kcal/hr) — KOSHA 작업강도 분류 입력. 참고 권고 전용. */
+  workRate?: Record<string, number>;
   // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등(사용자 결정 08-13).
   // workerStatus/overallStatus(생체 판정)에는 여전히 미주입 — 통제된 예외는 신호등 톤 합성뿐.
   heatStage?: Record<string, "caution" | "warning">;

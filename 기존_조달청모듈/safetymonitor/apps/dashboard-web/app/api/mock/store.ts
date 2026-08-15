@@ -29,7 +29,11 @@ import {
 } from "../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
 import { overlayLatestSpo2 } from "../../../lib/spo2-overlay";
-import { detectLowActivityHighHr, type HrEnergyPoint } from "../../../lib/heat-pattern";
+import {
+  detectLowActivityHighHr,
+  HEAT_PATTERN_WINDOW_MIN,
+  type HrEnergyPoint,
+} from "../../../lib/heat-pattern";
 import {
   decideHeatNotify,
   evaluateHeatStage,
@@ -389,6 +393,53 @@ export type HeatPatternMap = Record<
   { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }
 >;
 let _heatPatternCache: { at: number; map: HeatPatternMap } | null = null;
+
+/**
+ * 작업대사율(kcal/hr) — KOSHA <표 1> 작업강도 분류의 입력.
+ *
+ * `heatPatterns` 와 같은 원천(활동에너지)을 쓰지만 **조건 없이 전원**을 돌려준다는 점이 다르다.
+ * heatPatterns 는 flagged(저활동·고심박)만 반환하므로 평상시엔 비어 있어 강도 분류에 못 쓴다.
+ *
+ * ★ 체중이 필요 없다 — 워치 활동에너지는 이미 개인 체중이 반영된 실측값이다.
+ * 창은 15분(HEAT_PATTERN_WINDOW_MIN 과 같은 기준)이고, 커버 분수로 나눠 시간당으로 환산한다.
+ */
+export type WorkRateMap = Record<string, number>;
+let _workRateCache: { at: number; map: WorkRateMap } | null = null;
+/** 이 분수 미만이면 산출하지 않는다 — 표본이 적으면 시간당 환산이 튄다. */
+const WORK_RATE_MIN_COVERED_MIN = 5;
+
+export async function workRates(aliasMap: Record<string, string>): Promise<WorkRateMap> {
+  const now = Date.now();
+  if (_workRateCache && now - _workRateCache.at < HEAT_PATTERN_CACHE_MS) {
+    return _workRateCache.map;
+  }
+  try {
+    const rows = await recentHrEnergy(HEAT_PATTERN_LOOKBACK_MINUTES);
+    const fromMs = now - HEAT_PATTERN_WINDOW_MIN * 60_000;
+    // 분 단위로 접어 커버 분수를 센다 — 5초 폴이라 행 수로 나누면 환산이 어긋난다.
+    const byPrimary = new Map<string, { kcal: number; minutes: Set<number> }>();
+    for (const r of rows) {
+      if (isReservedTestWorker(r.worker_id)) continue;
+      const tsMs = Date.parse(r.ts);
+      if (Number.isNaN(tsMs) || tsMs < fromMs) continue;
+      const key = aliasMap[r.worker_id] ?? r.worker_id;
+      const acc = byPrimary.get(key) ?? { kcal: 0, minutes: new Set<number>() };
+      if (typeof r.active_energy_kcal === "number") acc.kcal += r.active_energy_kcal;
+      acc.minutes.add(Math.floor(tsMs / 60_000));
+      byPrimary.set(key, acc);
+    }
+    const map: WorkRateMap = {};
+    for (const [workerId, acc] of byPrimary) {
+      if (acc.minutes.size < WORK_RATE_MIN_COVERED_MIN) continue;
+      map[workerId] = (acc.kcal / acc.minutes.size) * 60;
+    }
+    _workRateCache = { at: now, map };
+    return map;
+  } catch {
+    // 조회 실패는 화면을 막지 않는다 — 값이 없으면 호출부가 판정 불가로 처리한다.
+    return {};
+  }
+}
 
 export async function heatPatterns(aliasMap: Record<string, string>): Promise<HeatPatternMap> {
   const now = Date.now();
