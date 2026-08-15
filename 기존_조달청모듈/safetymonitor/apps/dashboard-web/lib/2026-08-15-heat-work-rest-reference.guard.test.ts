@@ -44,6 +44,10 @@ test("③ 표 범위 밖(500 초과)은 null — 없는 구간을 메우지 않�
 
 test("④ 법정 판정으로 승격되지 않았다 — 판정 함수·알림 경로 무유입", () => {
   // weather-rules 에 작업–휴식 판정이 생기면 체감온도와 두 개의 법정 판정이 공존하게 된다.
+  // 앵커 — 두 대상이 실제로 판정 모듈·알림 조립부인지 먼저 고정한다. 내용이 다른 파일로
+  // 옮겨가면 아래 금지 두 줄은 빈 파일을 검사하며 조용히 통과한다.
+  assert.match(rules, /export function evaluateApparentTemp/, "판정 모듈이 여기가 아니다 — 아래 금지가 공허하다");
+  assert.match(store, /recordAlert\(/, "알림 조립부가 여기가 아니다 — 아래 금지가 공허하다");
   assert.doesNotMatch(rules, /workRest|WorkRest|작업휴식|작업–휴식/, "판정 모듈에 유입됨");
   // 알림은 참고 지표로 보내지 않는다.
   assert.doesNotMatch(store, /heatWorkRestAdvice|workRestRegimen/, "알림 조립부에 유입됨");

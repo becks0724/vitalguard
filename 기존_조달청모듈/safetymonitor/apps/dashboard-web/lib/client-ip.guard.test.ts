@@ -53,8 +53,21 @@ function collectFiles(): string[] {
 }
 
 test("클라이언트 IP 헤더 파싱은 lib/client-ip.ts 에만 존재한다", () => {
+  const files = collectFiles();
+  // 앵커 — 이 검사는 '없음'을 단언하므로 스캔이 아무것도 못 읽어도 통과한다.
+  // walk() 는 디렉터리가 없으면 existsSync 폴백으로 **조용히 빈 배열**을 돌려주므로,
+  // lib/·app/ 이 옮겨가는 순간 이 가드는 0개 파일을 훑고 통과하게 된다.
+  // 스캔이 실제로 대상에 닿았는지를 먼저 고정한다(2026-08-15 가드 전수 감사).
+  assert.ok(
+    files.some((f) => f.endsWith("lib/client-ip.ts")),
+    "허용 파일조차 스캔 범위 밖이다 — 스캔 경로가 깨졌고 아래 금지 검사는 공허하다",
+  );
+  assert.ok(
+    files.some((f) => f.endsWith("app/api/mock/vital/route.ts")),
+    "알려진 소비처가 스캔 범위 밖이다 — 스캔 경로가 깨졌고 아래 금지 검사는 공허하다",
+  );
   const offenders: string[] = [];
-  for (const file of collectFiles()) {
+  for (const file of files) {
     const rel = file.slice(ROOT.length);
     if (ALLOWED.has(rel) || rel.includes(".test.")) continue;
     if (HEADER_RE.test(readFileSync(file, "utf8"))) offenders.push(rel);

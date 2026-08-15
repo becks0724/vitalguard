@@ -25,6 +25,8 @@ test("① WBGT 는 정보 항목이다 — 임계·판정 함수를 갖지 않�
   const s = section(strip, 'wbgt: infoEvaluation(', 1200);
   assert.match(s, /^\s*wbgt: infoEvaluation\(/m, "정보 항목이 아닌 판정 함수로 바뀜");
   // weather-rules 에 WBGT 판정 함수가 생기면 임계가 붙은 것이다.
+  // 앵커 — 판정 모듈이 여기가 맞는지 먼저 고정한다(옮겨가면 아래 금지가 공허하게 통과한다).
+  assert.match(rules, /export function evaluateApparentTemp/, "판정 모듈이 여기가 아니다 — 아래 금지가 공허하다");
   assert.doesNotMatch(rules, /evaluateWbgt|WBGT_STEPS/, "WBGT 판정 함수·임계 단계가 생김");
 });
 

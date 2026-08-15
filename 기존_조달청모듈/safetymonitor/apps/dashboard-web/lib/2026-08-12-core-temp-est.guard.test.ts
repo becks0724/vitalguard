@@ -19,6 +19,10 @@ test("vital GET — coreTempEst 를 응답에 싣는다(별칭 접기 경유)", 
 });
 
 test("추정치는 판정 함수에 들어가지 않는다 — coreTempStatus/overallStatus 미주입", () => {
+  // 앵커 — 금지 검사는 대상이 사라져도 통과한다. 판정 호출이 이 파일에 실재함을 먼저 고정한다.
+  // 없으면 판정이 다른 파일로 옮겨갔거나 이름이 바뀐 것이고, 아래 두 줄은 공허하게 통과한다.
+  assert.match(dash, /coreTempStatus\(/, "판정 호출이 여기에 없다 — 아래 금지 검사가 공허하다");
+  assert.match(dash, /overallStatus\(/, "판정 호출이 여기에 없다 — 아래 금지 검사가 공허하다");
   assert.doesNotMatch(dash, /coreTempStatus\([^)]*coreTempEst/, "추정치가 체온 판정에 주입됨");
   assert.doesNotMatch(dash, /overallStatus\([^)]*coreTempEst/, "추정치가 종합 판정에 주입됨");
 });

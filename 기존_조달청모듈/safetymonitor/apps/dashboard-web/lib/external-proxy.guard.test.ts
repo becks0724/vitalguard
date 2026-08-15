@@ -88,6 +88,10 @@ test("인가가 걸린 프록시의 호출부는 Authorization 을 동봉한다"
 // 공개 데모를 접기로 하면 이 테스트가 먼저 깨져 함께 재검토하게 된다(FE-PUBLIC-01).
 test("공개 데모가 여전히 로그인 없이 열린다면 그 프록시에는 인가가 없어야 한다", () => {
   const page = readFileSync(join(ROOT, "app/safety-audit/page.tsx"), "utf8");
+  // 앵커 — 이 판정은 '없음'을 근거로 삼으므로(부재 → 공개) 파일이 비거나 화면이 옮겨가면
+  // isPublic 이 참으로 굳는다. 그러면 이 고정이 **인가를 붙이려는 쪽을 잘못 막는다**
+  // (다른 금지형 가드와 반대 방향의 사고다). 화면이 여기 실재함을 먼저 확인한다.
+  assert.match(page, /SafetyCostAuditBoard/, "safety-audit 화면이 여기가 아니다 — 공개 여부 판정을 신뢰할 수 없다");
   const isPublic = !page.includes("LoginGate");
   if (!isPublic) return; // 로그인 뒤로 옮겨졌다면 이 고정은 더는 유효하지 않다.
   for (const route of ["nts", "tax-invoice-issuance"]) {

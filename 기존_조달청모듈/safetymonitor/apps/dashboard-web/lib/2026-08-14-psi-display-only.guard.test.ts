@@ -17,10 +17,16 @@ const vital = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts")
 test("① PSI 가 신호등·상태 판정에 들어가지 않는다", () => {
   // 판정 함수는 severity 모듈이 담당한다 — 거기에 psi 가 새어 들어가면 표시 전용이 깨진다.
   const severity = readFileSync(join(ROOT, "lib", "severity.ts"), "utf8");
+  // 앵커 — 판정이 이 모듈에 실재함을 먼저 고정한다. 판정이 다른 파일로 옮겨가면 아래 금지는
+  // 빈 파일을 검사하는 셈이 되어 PSI 가 새 판정 경로로 자유롭게 들어간다.
+  assert.match(severity, /export function coreTempStatus/, "판정 모듈이 여기가 아니다 — 아래 금지가 공허하다");
   assert.doesNotMatch(severity, /psi|Psi|PSI/, "판정 모듈에 PSI 가 유입됨");
 });
 
 test("② PSI 가 알림·텔레그램 경로에 들어가지 않는다", () => {
+  // 앵커 — 알림 조립·응답 조립이 이 두 파일에 실재하는가.
+  assert.match(notify, /recordAlert\(/, "알림 조립부가 여기가 아니다 — 아래 금지가 공허하다");
+  assert.match(vital, /export async function GET/, "응답 조립부가 여기가 아니다 — 아래 금지가 공허하다");
   assert.doesNotMatch(notify, /computePsi|psiBand/, "알림 조립부(store)에 PSI 가 유입됨");
   assert.doesNotMatch(vital, /computePsi|psiBand/, "vital 응답 조립부에 PSI 가 유입됨");
 });
