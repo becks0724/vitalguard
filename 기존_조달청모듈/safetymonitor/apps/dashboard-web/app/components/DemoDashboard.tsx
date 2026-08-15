@@ -95,6 +95,7 @@ import {
   workerSignalCopy,
   worseTone,
 } from "../../lib/worker-signal";
+import { vitalAgeMs } from "../../lib/vital-age";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { weatherLabel } from "./WeatherStrip";
@@ -632,7 +633,7 @@ function GaugePanel({
 // 폰 polling 주기 5초 기준. 8s 내 = full, 60s 이상 = no signal
 function signalLevel(sample: VitalSample | undefined, nowMs: number): 0 | 1 | 2 | 3 | 4 {
   if (!sample) return 0;
-  const ageMs = nowMs - new Date(sample.ts).getTime();
+  const ageMs = vitalAgeMs(sample, nowMs);
   if (ageMs < 8_000) return 4;
   if (ageMs < 15_000) return 3;
   if (ageMs < 30_000) return 2;
@@ -640,15 +641,19 @@ function signalLevel(sample: VitalSample | undefined, nowMs: number): 0 | 1 | 2 
   return 0;
 }
 
-// 마지막 수신 후 STALE_MS 초과 = "연결끊김". sticky merge 가 직전 실측값을 유지하므로,
+// 마지막 생체 수신 후 STALE_MS 초과 = "연결끊김". sticky merge 가 직전 실측값을 유지하므로,
 // 이 판정 없이는 폰/워치가 끊겨도 카드가 마지막 정상값을 계속 녹색으로 표시(false-OK).
 // 임계는 60초 — 워치는 30초 배칭 전송이라 정상 상태에서도 ts 가 최대 ~30초 묵을 수 있어,
 // 30초 임계면 매 flush 직전 "연결끊김"으로 깜빡(오탐). 60초면 정상 배칭은 통과·진짜 끊김만 잡는다.
 // signalLevel 과 동일 기준: 행은 sample 존재 + signal===0(≥60초), 보드는 isStale 로 판정.
+//
+// ★ 나이는 vitalAgeMs(심박 측정 시각)로 잰다 — 행 ts 는 활동에너지가 갱신해 못 쓴다(위 주석).
+// 워치가 마지막 실측 후 30초까지 하트비트로 값을 복사하므로(WatchStreamer heartbeatMaxAge),
+// 실제 미착용 감지는 30 + 60 = 약 90초다. 착용 중 심박 공백은 실측 p99 9.5초라 오탐은 드물다.
 const STALE_MS = 60_000;
 function isStale(sample: VitalSample | undefined, nowMs: number): boolean {
   if (!sample) return false; // 샘플 자체가 없으면 "대기"(idle), 끊김 아님
-  return nowMs - new Date(sample.ts).getTime() > STALE_MS;
+  return vitalAgeMs(sample, nowMs) > STALE_MS;
 }
 
 function workerHeading(sample: VitalSample | undefined, fallbackId: string) {

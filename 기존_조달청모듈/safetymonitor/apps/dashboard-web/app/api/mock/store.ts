@@ -684,6 +684,11 @@ export function mergeLatestByWorker(
       guardianName: newer.guardianName ?? older?.guardianName,
       guardianPhone: newer.guardianPhone ?? older?.guardianPhone,
       heartRate: newer.heartRate ?? older?.heartRate,
+      // ★ 심박 측정 시각도 sticky — 값과 짝이라 함께 유지해야 "이 심박이 언제 것인가"를 물을 수 있다.
+      // 스프레드만으로는 newer 에 키가 undefined 로 들어오면 older 를 덮어 나이를 잃는다.
+      // 표시 계층(DemoDashboard vitalAgeMs)이 이 값으로 연결끊김을 판정한다 — 활동에너지는
+      // 미착용에도 계속 오므로 행 ts 로는 생체 중단을 못 잡는다(2026-08-15 실측).
+      heartRateMeasuredAt: newer.heartRateMeasuredAt ?? older?.heartRateMeasuredAt,
       spo2: newer.spo2 ?? older?.spo2,
       skinTempC: newer.skinTempC ?? older?.skinTempC,
       ambientTempC: newer.ambientTempC ?? older?.ambientTempC,
