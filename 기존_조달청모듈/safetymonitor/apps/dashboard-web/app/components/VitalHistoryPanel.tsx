@@ -475,13 +475,20 @@ export function VitalHistoryPanel({
                   />
                 );
               }
-              // SpO₂ = 희소 이벤트 측정 — 24시간 뷰는 실제 측정 시각 위치의 점(dot)으로,
-              // 그 외 기간은 막대로(곡선으로 이으면 측정 없는 시간대가 연속 측정처럼 오독된다).
+              // SpO₂ = 희소 이벤트 측정 — **서버가 원본 점을 그대로 주는 구간(≤7일)** 은
+              // 실제 측정 시각 위치의 점(dot)으로 그린다. 30일+ 는 일평균 집계라 막대가 맞다.
+              //
+              // ★ 종전엔 24시간만 점이고 1주일은 막대였다. 그 근거로 적혀 있던
+              //   "곡선으로 이으면 오독된다"는 **선을 배제할 뿐 점을 배제하지 않는다**.
+              //   실제로 1주일 막대는 측정이 분 단위로 붙은 구간에서 recharts 가 겹침을 피하려
+              //   폭을 최소 간격에 맞춰 **1~2px 헤어라인**이 됐다(2026-08-15 라이브 실측).
+              //   폭을 넓히면 위치가 왜곡되므로 폭이 아니라 표현을 바꾼다.
+              //   경계는 서버 계약과 맞춘다 — real.ts: spanDays <= 7 원본 점 / 30일+ 일평균.
               const spo2Dots =
                 selection.metric === "spo2" &&
                 data.windowFromMs != null &&
                 data.windowToMs != null &&
-                data.windowToMs - data.windowFromMs <= 86_400_000 * 1.01 &&
+                data.windowToMs - data.windowFromMs <= 86_400_000 * 7.01 &&
                 displayPoints.every((p) => typeof p.tsMs === "number");
               if (spo2Dots) {
                 return (
