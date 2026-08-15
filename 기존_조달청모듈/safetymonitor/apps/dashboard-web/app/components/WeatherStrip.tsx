@@ -21,6 +21,11 @@ import {
   type RuleSeverity,
   type ThresholdStep,
 } from "../../lib/weather-rules";
+import {
+  INTENSITY_LABEL,
+  REGIMEN_LABEL,
+  workRestRegimen,
+} from "../../lib/heat-work-rest";
 import { getSessionToken } from "./LoginGate";
 import { IndoorEnvRows } from "./IndoorEnvRows";
 import { WeatherAlertToast } from "./WeatherAlertToast";
@@ -293,7 +298,8 @@ export function WeatherStrip({
         "산출 = Liljegren(2008) 물리 모델 · OSHA 공식 계산기와 대조 검증(±0.03℃). " +
           "입력은 기온·습도·풍속 = 기상청 관측, 일사량 = Open-Meteo(실황에 일사가 없음). " +
           "실외·직사광 기준이라 실내·그늘 작업에는 과대. " +
-          "★ 법적 판정 기준은 체감온도(31/33/35℃)이며 WBGT 는 참고 지표다 — 작업 강도별 허용한계(ACGIH TLV) 적용은 별도.",
+          "★ 법적 판정 기준은 체감온도(31/33/35℃)이며 WBGT 는 참고 지표다.\n\n" +
+          workRestAdviceText(c.wbgt),
       ),
       discomfort: evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
       pm25: evaluatePM25(c.pm25),
@@ -756,6 +762,27 @@ function weatherIcon(code: number): string {
 }
 
 // WMO weather code → 한국어 간단 라벨
+/**
+ * 현재 WBGT 에서 작업강도별 허용 작업–휴식 시간비를 한 줄로 만든다(KOSHA GUIDE W-12-2017 <표 1>).
+ *
+ * ★ 작업자별이 아니라 **강도별 전체**를 보여준다. 관리자는 "우리 현장 작업이 어느 강도인가"를
+ * 알고 있으므로, 세 줄이면 개인 작업대사율을 몰라도 판단이 선다 — 개인별 산출을 기다릴 필요가 없다.
+ *
+ * ⚠ 이 표의 대상은 **실내 열원 작업**이고 옥외 폭염의 법정 기준은 체감온도다. 참고 권고로만 쓴다.
+ * 복장 보정은 여름작업복(0℃) 기준 — 방수복 등은 최대 +6℃ 불리해진다.
+ */
+function workRestAdviceText(wbgt: number | undefined): string {
+  if (wbgt === undefined) return "작업–휴식 권고: WBGT 미산출로 판정 불가.";
+  const rows = (["light", "moderate", "heavy"] as const)
+    .map((i) => `${INTENSITY_LABEL[i]} ${REGIMEN_LABEL[workRestRegimen(wbgt, i)]}`)
+    .join(" · ");
+  return (
+    `작업–휴식 권고(KOSHA GUIDE W-12-2017 <표 1> · 여름작업복 기준) — ${rows}. ` +
+    "이 지침의 대상은 용광로 등 실내 열원 작업이라 옥외 건설현장에는 참고로만 적용한다. " +
+    "방수복·면작업복 착용 시 기준이 각각 +6℃·+2℃ 불리해진다."
+  );
+}
+
 export function weatherLabel(code: number): string {
   if (code === 0) return "맑음";
   if (code === 1) return "대체로 맑음";
