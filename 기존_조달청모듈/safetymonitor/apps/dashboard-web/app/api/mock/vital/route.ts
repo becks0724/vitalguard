@@ -41,6 +41,35 @@ function redactPii(sample: VitalSample, exposePii: boolean): VitalSample {
   return rest;
 }
 
+// DB 조회 하나가 관제 화면 전체를 죽이지 않게 한다(2026-08-15 DB 장애 3시간 39분 대응).
+//
+// 그날 `/api/mock/vital` GET 이 500 을 261건 냈고 관제가 **열화가 아니라 정지**했다. 실시간 감시에
+// 필요한 `latest` 는 in-memory ring 으로 만들어져 멀쩡했는데, 옆의 누적 집계 조회가 던지면서
+// 응답 전체가 사라진 것이다. 감시가 멈추는 것이 최악이므로 실패한 항목만 비우고 나머지를 보낸다.
+//
+// ★ 실패해도 되는 것과 아닌 것을 가른다 — 없는 값을 0 으로 채우지 않는다. 누적 21만 건이
+//   "0건"으로 뜨면 미수신보다 나쁘다(신호등 false-OK·"미수신인데 준수율 100%" 와 같은 계열).
+//   그래서 집계류는 **null** 로 보내고 화면이 `--` 를 찍는다. 클라이언트도 함께 고쳤다 —
+//   서버만 null 로 바꾸면 `(x ?? 0).toLocaleString()` 가 그대로 0 을 그려 의도가 뒤집힌다.
+//
+// ⚠ 이미 자체 catch 로 열화하는 것은 감싸지 않았다 — `workerAliases`(→{})·
+//   `latestByWorkerWithSpo2`(SpO₂ 겹침만 실패·메모리 병합 유지)·`coreTempEstimates`·
+//   `heatPatterns`·`workRates`·`heatStages`. 이중 방어는 실패 지점을 흐린다.
+async function softly<T>(
+  label: string,
+  run: () => Promise<T>,
+  fallback: T,
+  failed: string[],
+): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    failed.push(label);
+    console.error(`[vital] ${label} 조회 실패 — 그 항목만 비우고 응답한다`, e);
+    return fallback;
+  }
+}
+
 export async function GET(request: Request) {
   // 관제 생체 스트림은 URL을 아는 누구에게도 공개하지 않는다. PII opt-in은 추가 노출 범위만
   // 정하며, 원본 생체·목업 데이터 자체의 조회 권한을 대신하지 않는다.
@@ -48,15 +77,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
   const exposePii = EXPOSE_PII;
+  const degraded: string[] = [];
   const aliasMap = await workerAliases();
   return NextResponse.json({
     latest: (await latestByWorkerWithSpo2(aliasMap)).map((s) => redactPii(s, exposePii)),
     recent: recentSamples().map((s) => redactPii(s, exposePii)),
-    totalPersisted: await totalPersisted(),
+    // 누적 집계 3종은 DB 없이는 **값 자체가 없다** — 0 이 아니라 null(화면 `--`).
+    totalPersisted: await softly("누적 건수", totalPersisted, null, degraded),
     // 목업은 실측 스트림과 별도 data_mockup 섹션으로만 반환한다.
-    dataMockup: (await dataMockupSamples()).map((s) => redactPii(s, exposePii)),
-    dataMockupPersisted: await totalDataMockupPersisted(),
-    countsByWorker: await countsByWorker(aliasMap),
+    dataMockup: (
+      await softly("목업 샘플", dataMockupSamples, [], degraded)
+    ).map((s) => redactPii(s, exposePii)),
+    dataMockupPersisted: await softly("목업 누적", totalDataMockupPersisted, null, degraded),
+    countsByWorker: await softly("워커별 누적", () => countsByWorker(aliasMap), null, degraded),
     // 심박 기반 심부체온 추정(표시 전용·판정 미주입) — PII 아님(파생 지표).
     coreTempEst: await coreTempEstimates(aliasMap),
     // 저활동·고심박 패턴(온열 ②·표시 주석 전용·판정 미주입) — flagged 워커만 실린다.
@@ -65,11 +98,19 @@ export async function GET(request: Request) {
     workRate: await workRates(aliasMap),
     // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등에 쓰인다(사용자 결정).
     heatStage: await heatStages(aliasMap),
-    workerProfiles: await workerProfiles(),
+    // 직급은 없으면 그 표기만 빠진다(이름은 샘플이 실어 온다) — 빈 맵이 안전한 폴백.
+    workerProfiles: await softly("직급", workerProfiles, {}, degraded),
     workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
     zoneHazards: recentZoneHazards(),
     piiRedacted: !exposePii,
+    // ★ 열화 사실을 화면이 말하게 한다 — 불완전한 표시를 완전한 것처럼 보이게 하지 않는다.
+    //   빈 배열 = 정상. 값이 있으면 화면이 "DB 조회 실패 — 표시 불완전" 을 띄운다.
+    // ⚠ 별칭 실패는 이 목록에 안 잡힌다 — `workerAliases` 가 상류에서 삼키고 `{}` 를 준다.
+    //   그때 같은 사람이 두 카드로 갈려 "작업자가 늘었다"로 오독될 수 있다. 다만 별칭만 홀로
+    //   실패하는 경우는 사실상 없고(DB 가 죽으면 아래 항목들도 함께 실패) 이 배열이 비지 않으므로,
+    //   화면 문구를 "표시가 불완전할 수 있음"으로 두어 그 경우까지 덮는다.
+    degraded,
   });
 }
 

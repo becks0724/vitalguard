@@ -117,10 +117,14 @@ type Selection = { workerId: string; metric: HistoryMetric };
 type MockVitalResponse = {
   latest: VitalSample[];
   recent: VitalSample[];
-  totalPersisted?: number;
+  // ★ DB 조회 실패 시 서버가 **null** 을 준다(0 아님 — 2026-08-15 장애 대응).
+  //   누적 21만 건이 "0건"으로 뜨면 미수신보다 나쁘므로 화면은 `—` 를 찍는다.
+  totalPersisted?: number | null;
   dataMockup?: VitalSample[];
-  dataMockupPersisted?: number;
-  countsByWorker?: Record<string, number>;
+  dataMockupPersisted?: number | null;
+  countsByWorker?: Record<string, number> | null;
+  /** DB 조회에 실패한 항목 이름들. 비어 있으면 정상 — 값이 있으면 표시가 불완전하다. */
+  degraded?: string[];
   // 심박 기반 심부체온 추정(서버 칼만필터·표시 전용) — workerId(주 ID) → 추정.
   coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
   // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — flagged 워커만 실린다. 판정 미주입.
@@ -5176,9 +5180,19 @@ export function DemoDashboard() {
             <p className="mt-1 truncate text-xs text-body dark:text-on-dark-soft">
               관제 · 실시간 수집 · DB 영속{" "}
               <span className="font-semibold tabular-nums text-ink dark:text-on-dark">
-                <RollingChars text={(data.totalPersisted ?? 0).toLocaleString()} />
+                <RollingChars text={formatPersisted(data.totalPersisted)} />
               </span>
               건 누적
+              {/* DB 조회 실패를 화면이 말한다 — `—` 만 보면 "값이 원래 없다"로 읽힌다.
+                  실시간 감시(latest)는 메모리라 계속 도는 중이므로 그 점도 함께 밝힌다. */}
+              {data.degraded && data.degraded.length > 0 && (
+                <span
+                  title={`DB 조회 실패: ${data.degraded.join(" · ")}\n실시간 수신·판정은 계속 동작합니다. 누적 집계·직급 등 DB 기반 표시만 비어 있습니다.`}
+                  className="ml-2 whitespace-nowrap rounded-pill bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-400/15 dark:text-amber-300"
+                >
+                  ⚠ DB 조회 실패 — 표시 불완전
+                </span>
+              )}
             </p>
           </div>
         </div>
@@ -5611,7 +5625,7 @@ export function DemoDashboard() {
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
-                          count={data.countsByWorker?.[entry.workerId] ?? 0}
+                          count={data.countsByWorker?.[entry.workerId]}
                           isVirtual={false}
                           jobTitle={
                             data.workerProfiles?.[entry.workerId] ??
@@ -5651,7 +5665,7 @@ export function DemoDashboard() {
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
                           fallPending={fallPendingByWorker.has(entry.workerId)}
-                          count={data.countsByWorker?.[entry.workerId] ?? 0}
+                          count={data.countsByWorker?.[entry.workerId]}
                           isVirtual={false}
                           jobTitle={
                             data.workerProfiles?.[entry.workerId] ??
@@ -5937,7 +5951,7 @@ export function DemoDashboard() {
         >
           <span>
             실시간 수집 · DB 영속{" "}
-            <span className="font-mono">{(data.totalPersisted ?? 0).toLocaleString()}</span>건 누적
+            <span className="font-mono">{formatPersisted(data.totalPersisted)}</span>건 누적
             <span className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft">
               (화면 표시 최근 {data.recent.length}건)
             </span>
@@ -6007,7 +6021,7 @@ export function DemoDashboard() {
             </span>
           </div>
           <span className="shrink-0 font-mono text-xs">
-            {(data.dataMockupPersisted ?? 0).toLocaleString()}건
+            {formatPersisted(data.dataMockupPersisted)}건
           </span>
         </div>
         {logExpanded && (
@@ -6055,6 +6069,13 @@ const WSTATUS_TONE: Record<WorkerStatus["tone"], string> = {
   danger: "text-semantic-down vital-blink-danger",
 };
 
+// DB 누적 집계 표기 — 값이 없으면(`null`) 0 이 아니라 `—`.
+// 0 으로 채우면 "한 건도 안 쌓였다"로 읽히는데 실제로는 **조회를 못 한 것**이다.
+// 이 레포가 반복해 고쳐 온 계열(미수신인데 준수율 100% · 한 번도 안 받았는데 정상 4명).
+function formatPersisted(n: number | null | undefined): string {
+  return n == null ? "—" : n.toLocaleString();
+}
+
 // 작업자 표 헤더 — 13열 라벨. 수동 모드일 때만 첫 열에 "정렬" 라벨.
 function WorkerTableHeader({ manual }: { manual: boolean }) {
   const cols = ["", "작업자", "직급", "심박", "SpO₂", "체온", "낙상", "스트레스", "신호", "상태", "수신", "누적", ""];
@@ -6088,7 +6109,8 @@ type WorkerTableRowProps = {
   outside?: boolean;
   fallTs?: string;
   fallPending?: boolean; // 워치 낙상 확인 프롬프트 진행 중(에스컬레이션 전) — "확인 중" 표시.
-  count: number;
+  /** DB 조회 실패 시 undefined — 셀이 `—` 를 찍는다(0 으로 채우면 '수집 0건'으로 읽힌다). */
+  count?: number;
   isVirtual: boolean;
   // 효과 직급 = 관제 웹 오버라이드 ?? 폰 발신값 ?? (없으면 undefined → "—"). 클릭 시 편집.
   jobTitle?: string;
@@ -6415,7 +6437,7 @@ function WorkerTableRow({
         className="text-center font-mono text-[11px] font-semibold text-body dark:text-on-dark"
         title={isVirtual ? "가상(테스트) 작업자" : "실시간 수집 DB 누적 건수"}
       >
-        {isVirtual ? "가상" : count.toLocaleString()}
+        {isVirtual ? "가상" : formatPersisted(count)}
       </div>
 
       {/* 13 해제 */}
