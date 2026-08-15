@@ -449,11 +449,6 @@ export function RechartsActivityComboChart({
 // 남는 것이 정직한 표현이다(균등 간격은 세 측정이 하루에 고르게 있었던 것처럼 오독된다).
 type TimeChartPoint = ChartPoint & { tsMs: number };
 
-function kstHm(ms: number): string {
-  const k = new Date(ms + 9 * 60 * 60 * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(k.getUTCHours())}:${p(k.getUTCMinutes())}`;
-}
 
 export function RechartsTimeDotChart({
   points,
@@ -470,7 +465,12 @@ export function RechartsTimeDotChart({
     return <p className="text-xs text-zinc-400">데이터 없음</p>;
   }
   const yd = yDomain(points, decimals, refs.map((r) => r.value));
-  // 시간축 눈금 — 도메인을 6등분(24시간 뷰면 4시간 간격).
+  const spanMs = domain[1] - domain[0];
+  // 시간축 눈금 — 도메인을 6등분.
+  // ★ 라벨은 기간에 맞춰 날짜를 붙인다(formatTimeTick). 종전 `kstHm` 은 시:분 고정이라
+  //   하루 뷰 전용이었는데, 7일 뷰에서는 눈금 간격이 28시간이고 **24로 나눈 나머지가 4시간**이라
+  //   15:05·19:05·23:05·03:05… 로 찍혀 **7일치가 하루처럼 보였다**(2026-08-15 라이브 실측).
+  //   값도 점 위치도 정확한데 축만 거짓말하는 형태라 더 설득력 있게 틀린다.
   const ticks = Array.from({ length: 7 }, (_, i) =>
     Math.round(domain[0] + ((domain[1] - domain[0]) * i) / 6),
   );
@@ -484,7 +484,7 @@ export function RechartsTimeDotChart({
             type="number"
             domain={domain}
             ticks={ticks}
-            tickFormatter={(v: number) => kstHm(v)}
+            tickFormatter={(v: number) => formatTimeTick(v, spanMs)}
             tick={AXIS_TICK}
             tickLine={false}
             axisLine={{ stroke: "currentColor", strokeOpacity: 0.25 }}

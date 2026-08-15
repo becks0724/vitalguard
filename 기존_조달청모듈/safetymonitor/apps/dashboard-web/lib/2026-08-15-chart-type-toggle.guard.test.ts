@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
+const charts = readFileSync(join(ROOT, "app", "components", "VitalChartsRecharts.tsx"), "utf8");
 
 test("고정 지표 집합이 상수 하나로 존재한다", () => {
   assert.match(
@@ -103,4 +104,47 @@ test("주석이 코드와 같은 경계를 말한다", () => {
   assert.ok(m, "설명 주석이 사라졌다");
   assert.match(m[0], /≤7일/, "주석이 여전히 24시간 기준을 말한다");
   assert.doesNotMatch(m[0], /24시간 뷰는 실제 측정 시각 위치의 점/, "옛 주석이 남아 있다");
+});
+
+// ── 점 차트 눈금 라벨: 기간에 맞춰 날짜를 붙인다 (2026-08-15 라이브 회귀) ──────
+// 7일 뷰를 열었더니 x축이 `15:05 19:05 23:05 03:05 07:05 11:05 15:05` — **하루처럼 보였다**.
+// 데이터·도메인·점 위치는 전부 정확했고 **라벨만** 틀렸다. 원인은 `kstHm`(시:분 고정)이
+// 하루 뷰 전용인데 7일에도 쓰인 것 — 눈금 간격 28시간의 24 나머지가 4시간이라
+// 정확히 4시간 간격처럼 찍힌다. 값이 맞아서 **더 설득력 있게 틀리는** 형태다.
+function dotChartFn(): string {
+  const from = charts.indexOf("export function RechartsTimeDotChart");
+  assert.ok(from > 0, "RechartsTimeDotChart 를 찾지 못했다 — 가드 재작성 필요");
+  const to = charts.indexOf("\nexport function ", from + 10);
+  return charts.slice(from, to > from ? to : undefined);
+}
+
+test("점 차트 눈금이 기간별 포맷(formatTimeTick)을 쓴다", () => {
+  const fn = dotChartFn();
+  assert.match(fn, /const spanMs = domain\[1\] - domain\[0\];/, "spanMs 계산이 사라졌다");
+  assert.match(
+    fn,
+    /tickFormatter=\{\(v: number\) => formatTimeTick\(v, spanMs\)\}/,
+    "눈금 포맷이 기간을 안 본다",
+  );
+});
+
+test("★ 시:분 고정 포맷이 되살아나지 않았다", () => {
+  // 시:분만 찍는 포맷으로 되돌리면 7일이 하루처럼 보인다 — 값은 맞고 축만 거짓말한다.
+  // ⚠ 이름을 그냥 찾으면 **이 결함을 설명하는 주석**이 매칭돼 가드가 실패한다(작성 중 실제로 걸렸다.
+  //    08-13 시간축 가드에서 겪은 것과 같은 함정). 그래서 **호출 형태**만 본다.
+  assert.doesNotMatch(dotChartFn(), /kstHm\s*\(/, "시:분 고정 포맷 호출이 점 차트에 되살아났다");
+  // 포맷터 자리에 시:분만 만드는 인라인 표현이 들어오는 경우도 막는다.
+  assert.doesNotMatch(
+    dotChartFn(),
+    /tickFormatter=\{[^}]*getUTCHours/,
+    "포맷터가 시:분을 직접 조립한다 — 기간별 규칙을 우회했다",
+  );
+});
+
+test("28시간 눈금이 4시간처럼 보이는 조건을 기록해 둔다(재현 계산)", () => {
+  // 이 산수가 회귀의 정체다 — 주석이 사라지면 다음 사람이 같은 실수를 한다.
+  const tickHours = (7 * 24) / 6;
+  assert.equal(tickHours, 28, "7일/6등분 = 28시간");
+  assert.equal(tickHours % 24, 4, "24 나머지 4시간 — 시:분만 찍으면 4시간 간격으로 보인다");
+  assert.match(dotChartFn(), /28시간/, "이 함정을 설명하는 주석이 사라졌다");
 });
