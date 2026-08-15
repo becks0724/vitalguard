@@ -226,6 +226,43 @@ test("★★ 수상안전은 알림을 발사하지 않는다 — ALERT_TYPES �
   assert.deepEqual(fired, [], "수상안전 발령이 알림 항목을 만들었다");
 });
 
+// ── '대피' 를 안 쓰는 대피 지시 (D-35 ⑦) ────────────────────────────────────
+const DAM_RELEASE: DisasterMsg = {
+  sn: 265102,
+  createdAtMs: Date.UTC(2026, 6, 18, 9, 0, 0),
+  message: "청평댐이 초당 900톤 방류 중으로, 하천 주변에 계신 분은 안전한 곳으로 이동하세요. [한국수력원자력]",
+  regions: ["경기도 가평군 "],
+  step: "안전안내",
+  type: "붕괴",
+  revised: false,
+};
+
+test("★★ 댐 방류 — '대피' 라는 낱말이 없어도 대피 지시로 되살린다(D-35 ⑦)", () => {
+  assert.equal(DAM_RELEASE.message.includes("대피"), false, "이 문자에는 '대피' 가 없다");
+  assert.ok(isEvacuationNotice(DAM_RELEASE));
+  assert.equal(filterWatched([DAM_RELEASE]).watched[0]?.type, PROMOTED_TYPE);
+});
+
+test("★ 개행으로 끊긴 형태도 잡는다 — 같은 문장이 줄바꿈 하나로 갈리면 안 된다", () => {
+  const wrapped: DisasterMsg = {
+    ...DAM_RELEASE,
+    sn: 265103,
+    message: "방파제·갯바위 출입을 자제하고 안전한 곳으로 \n이동하시기 바랍니다[울릉군]",
+  };
+  assert.ok(isEvacuationNotice(wrapped));
+});
+
+test("★ 예방 안내는 되살리지 않는다 — '접근 금지' 는 대피 지시가 아니다", () => {
+  // 이 계열을 키워드에 넣으면 해안 너울 안내·벌 쏘임 주의까지 알림으로 나간다(전수 확인 후 제외).
+  for (const msg of [
+    "산책로·등산로·농작업 시 벌 쏘임 사고에 주의 바랍니다. ▲벌집 발견 시 접근 금지 [세종시청]",
+    "동해 전해상 너울성파도 및 이안류 발생, 해안가 및 갯바위 등 위험지역 접근 금지 바랍니다.[포항시]",
+    "연안 안전사고 예방을 위해 ▲갯벌출입 전 물때 확인 ▲위험구역 출입금지 등 안전수칙을 준수하시기 바랍니다.[홍성군]",
+  ]) {
+    assert.equal(isEvacuationNotice({ ...DAM_RELEASE, message: msg }), false, msg.slice(0, 30));
+  }
+});
+
 test("★ senderOrg — 발신기관은 문장 끝에 붙는 쪽이 다수다(D-35)", () => {
   // 이걸 못 읽던 탓에 D-15 재승격이 한 달 내내 0건이었다. 실측 형태 그대로 고정한다.
   assert.equal(senderOrg("무더위로 물놀이 사고 급증. 안전수칙 준수 바랍니다.[행정안전부]"), "행정안전부");

@@ -163,6 +163,20 @@ export const URGENT_FALLBACK_TYPE = "긴급재난";
 export const PROMOTED_TYPE = "대피안내";
 export const EVACUATION_KEYWORDS = ["대피"] as const;
 
+// ★ '대피' 라는 낱말을 쓰지 않는 대피 지시(D-35 ⑦). 발신자가 "안전한 곳으로 이동하세요" 라고만
+// 쓰면 위 키워드로는 못 잡는다 — 실측 한 달 37건이 이 형태로 버려지고 있었고, 대부분이 **댐 방류**다.
+//   "청평댐이 초당 900톤 방류 중으로, 하천 주변에 계신 분은 안전한 곳으로 이동하세요.[한국수력원자력]"
+// D-30 이 `홍수` 를 채택한 근거("대피 지시가 담긴 문자")와 같은 성격인데 유형이 '기타'·'붕괴' 로
+// 흩어져 있어 유형 화이트리스트로는 못 잡는다.
+//
+// ⚠️ `접근 금지`·`출입 자제` 는 **넣지 않았다**. 전수로 읽어보니 대피 지시가 아니라 예방 안내다 —
+//    해안 너울성 파도 안내가 대부분이고 "벌집 발견 시 접근 금지"(세종시) 같은 것까지 걸린다.
+//    대피안내는 ALERT_TYPES 에 있어 **알림이 나가므로**, 성격이 다른 것을 넣으면 예방 안내로 울린다.
+//
+// 공백 대신 `\s*` 를 쓴다 — 실측에 "안전한 곳으로 \n이동하시기" 처럼 줄바꿈으로 끊긴 발령이 있다.
+// 같은 문장이 개행 하나로 갈리면 그건 판정이 아니라 우연이다.
+export const EVACUATION_PATTERNS: readonly RegExp[] = [/안전한 (곳|장소)으?로\s*이동/];
+
 // "[경기도청] 임진강 수위…" → "경기도청". 대괄호 표기가 없으면 null.
 // ★ 발신기관은 문장 **끝**에 붙는 쪽이 다수다 — "…안전수칙 준수 바랍니다.[행정안전부]"
 //   맨 앞만 보던 종전 판정은 실측 5,281건(07-16~08-15) 중 5,279건에서 null 을 돌려줬고,
@@ -182,7 +196,10 @@ export function senderOrg(message: string): string | null {
 export function isEvacuationNotice(msg: DisasterMsg): boolean {
   const org = senderOrg(msg.message);
   if (org === null || org.includes("경찰청")) return false;
-  return EVACUATION_KEYWORDS.some((k) => msg.message.includes(k));
+  return (
+    EVACUATION_KEYWORDS.some((k) => msg.message.includes(k)) ||
+    EVACUATION_PATTERNS.some((re) => re.test(msg.message))
+  );
 }
 
 // ── 수상안전 재승격 (D-35) ───────────────────────────────────────────────────
