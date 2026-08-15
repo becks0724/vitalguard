@@ -105,7 +105,11 @@ test("④ ★ 유효기간 기준점은 실측 콜백에서만 갱신된다", ()
 });
 
 test("⑤ 세션 종료 시 기준점을 버린다", () => {
-  const s = section(watch, "private func teardown()", 900);
+  // ⚠ 창 폭 주의 — 900 자였는데 teardown 에 무동작 수집 정리(2026-08-15 motionStillSec)가
+  // 들어오면서 `latestBPMAt = nil` 이 창 밖으로 밀려 이 가드가 실패했다. 코드는 정상이었고
+  // 창이 좁았다. 같은 형태가 활동 차트 가드에서도 한 번 있었다(6c46332).
+  // teardown 은 세션 정리를 모으는 자리라 앞으로도 늘어난다 — 넉넉히 잡는다.
+  const s = section(watch, "private func teardown()", 2000);
   assert.match(
     s,
     /latestBPMAt = nil/,
