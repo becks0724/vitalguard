@@ -93,7 +93,21 @@ idx_vs_worker_ts   49 MB         btree (worker_id, ts)   scan 1     ← 완전 �
 
 ## 4. 남은 일
 
-- [ ] **① 중복 인덱스 삭제** — 승인 대기. 단독으로 안전하고 즉시 49 MB
+- [x] **① 중복 인덱스 삭제 — 실행 완료 (2026-08-15 19:30 KST · 사용자 지시)**
+      ```
+      DROP INDEX CONCURRENTLY idx_vs_worker_ts;        -- 38ms
+      되돌리기: CREATE INDEX idx_vs_worker_ts ON public.vital_samples USING btree (worker_id, ts);
+      ```
+      | | 전 | 후 |
+      |---|---|---|
+      | 인덱스 합 | 364 MB | **314 MB** |
+      | 테이블 총크기 | 1,253 MB | **1,203 MB** |
+
+      **검증** — `uq_vs_worker_ts`(UNIQUE · worker_id, ts) **잔존 확인**(`ON CONFLICT` 보호 유지) ·
+      나머지 인덱스 4개 무변경 · **수집 무중단**(행수 363,857 → 363,866 이 작업 중 증가,
+      이후 12건/분·도착 지연 0.1~0.2초 유지).
+      ⚠ 정직하게 = DROP 순간(10:30Z)에 **도착 지연 9초짜리 한 건**이 있었다. 그 분도 12건
+      온전해 유실은 0 이지만, `CONCURRENTLY` 라고 영향이 정확히 0 은 아니었다.
 - [ ] **② `VACUUM ANALYZE`** — 승인 대기. 부수 효과로 **플래너 통계도 복구된다**
       (지금 `reltuples 329,391` · `n_live_tup 4,438` 로 어긋나 있어 질의 계획이 나빠질 수 있다)
 - [ ] **③ `VACUUM FULL` 창 잡기** — ②의 효과를 먼저 관측한 뒤 판단. 필요하면 폰 큐 6.9시간
