@@ -215,14 +215,16 @@ export async function POST(request: Request) {
       // 폐기 사유 분리 — dropped 는 "검증 실패"와 "예약 ID·빈 샘플 미저장"이 섞여 있어 그대로는
       // 측정에 못 쓴다. 검증 실패만 따로 세어 실제 데이터 유실량을 관측한다(감사 BND-CONTRACT-05).
       let droppedInvalid = 0;
+      // DB 저장 실패 건수 — 하나라도 있으면 배치 전체를 503 으로 돌려 폰이 재전송하게 한다.
+      let persistFailures = 0;
       let last = null;
       for (const item of body) {
         // 항목별 격리 — 한 샘플이 검증 실패(ZodError)해도 전체 400 으로 묶지 않는다.
         // 묶으면 앞 정상 샘플은 이미 적재됐는데 클라가 배치 전체를 재전송(중복) + 뒤 샘플 유실.
         // 실패 항목만 dropped 로 세고 건너뛰며 나머지는 계속 처리.
-        let sample;
+        let result;
         try {
-          sample = await addSample(item);
+          result = await addSample(item);
         } catch (itemError: unknown) {
           if (itemError instanceof ZodError) {
             // 심층방어 — 응급 플래그(manualSos/fallDetected) 샘플이 파싱 불가(ts 형식 오류 등
@@ -249,10 +251,11 @@ export async function POST(request: Request) {
           }
           throw itemError;
         }
-        if (sample === null) dropped += 1;
+        if (result.persistFailed) persistFailures += 1;
+        if (result.sample === null) dropped += 1;
         else {
           accepted += 1;
-          last = sample;
+          last = result.sample;
         }
       }
       // 온열 예방 알림(온열 ③) — 수집이 곧 판정 틱. 60초 스로틀 내장·fire-and-forget
@@ -265,18 +268,47 @@ export async function POST(request: Request) {
           `[vital] 배치 검증 실패로 폐기 — ${droppedInvalid}/${body.length}건 (accepted=${accepted})`,
         );
       }
+      // ★ DB 저장 실패는 201 로 덮지 않는다 — 폰(VitalPipeline)은 2xx 를 받으면 큐에서 원본을
+      // 지우므로 그 구간이 영구 유실된다. 503 을 주면 디스크 큐(5,000건 ≈ 6.9시간)에 남기고
+      // 30초 뒤 재전송한다. 2026-08-15 DB 장애 3시간 50분치가 201 하나 때문에 사라졌다.
+      // ⚠ 경보는 이 응답과 무관하게 이미 나갔다(addSample 안에서 별도 try — DB-POOL-02).
+      // ⚠ 부분 저장 뒤 재전송은 중복 행을 만들 수 있다(ts 가 전송 시각이라 ON CONFLICT 가 못 잡는다).
+      //   전면 장애에서는 저장이 0 건이라 해당 없고, 부분 실패 빈도를 이 로그로 관측한다.
+      if (persistFailures > 0) {
+        console.error(
+          `[vital] DB 저장 실패 ${persistFailures}/${body.length}건 — 503 반환(폰 재전송 유도), accepted=${accepted}`,
+        );
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "일시적으로 저장할 수 없습니다. 잠시 후 다시 보내주세요.",
+            accepted,
+            persistFailures,
+          },
+          { status: 503 },
+        );
+      }
       return NextResponse.json(
         { ok: true, accepted, dropped, droppedInvalid, last },
         { status: 201 },
       );
     }
 
-    const sample = await addSample(body);
+    const { sample, persistFailed } = await addSample(body);
     if (sample === null) {
       // null = 예약 진단 ID 차단 또는 실측 신호 없는 빈 샘플 → 저장 안 함(수신은 정상 수용).
+      // 재전송해도 결과가 같으므로 202 로 수용한다(503 이면 폰이 영원히 재시도한다).
       return NextResponse.json(
         { ok: true, dropped: "not_stored" },
         { status: 202 },
+      );
+    }
+    // 배치 경로와 같은 이유로 503 — 경보는 이미 나갔고, 이 응답은 폰에게 "원본을 들고 있으라"는 뜻이다.
+    if (persistFailed) {
+      console.error(`[vital] DB 저장 실패(단건) — 503 반환, workerId=${sample.workerId}`);
+      return NextResponse.json(
+        { ok: false, error: "일시적으로 저장할 수 없습니다. 잠시 후 다시 보내주세요." },
+        { status: 503 },
       );
     }
 

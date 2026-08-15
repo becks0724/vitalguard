@@ -181,7 +181,19 @@ function warnUnknownFields(input: unknown): void {
   );
 }
 
-export async function addSample(input: unknown): Promise<VitalSample | null> {
+/**
+ * `addSample` 결과.
+ *
+ * `persistFailed` 는 **경보는 나갔지만 DB 저장은 실패했다**는 뜻이다. 호출부(POST 라우트)가
+ * 이 값을 보고 5xx 를 돌려주면 폰(`VitalPipeline`)이 원본을 큐에 남기고 30초 뒤 재전송한다.
+ * 201 을 주면 폰이 큐에서 지워 그 구간이 영구 유실된다(2026-08-15 DB 장애 3시간 50분 실사례).
+ */
+export type AddSampleResult = {
+  sample: VitalSample | null;
+  persistFailed: boolean;
+};
+
+export async function addSample(input: unknown): Promise<AddSampleResult> {
   warnUnknownFields(input);
   const normalized =
     typeof input === "object" && input !== null && "hr" in input
@@ -201,18 +213,20 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   });
   // 작업자 ID 병합 — 별칭(secondary)을 주 ID(primary)로 정규화해 같은 사람을 1카드로 합친다.
   const resolved = { ...parsed, workerId: await resolvePrimaryWorkerId(parsed.workerId) };
+  // 아래 세 거부는 '저장 실패'가 아니라 '저장 대상 아님'이다 — 재전송해도 결과가 같으므로
+  // persistFailed 를 세우지 않는다(세우면 폰이 영원히 재시도한다).
   if (isReservedTestWorker(resolved.workerId)) {
-    return null;
+    return { sample: null, persistFailed: false };
   }
   const dataOrigin = classifyVitalDataOrigin(resolved.source);
   if (!dataOrigin) {
     console.warn(`[vital] 미분류 source 차단 — workerId=${resolved.workerId}`);
-    return null;
+    return { sample: null, persistFailed: false };
   }
   const sample = { ...resolved, dataOrigin };
   // 빈 샘플 미영속 — 실측 신호가 하나도 없는 샘플(화면 "—")은 수신하지 않는다.
   if (!hasMonitorableSignal(sample)) {
-    return null;
+    return { sample: null, persistFailed: false };
   }
   // 목업은 낙상 후보 후속 갱신·알림 이력보다 먼저 분리한다. 그래야 목업이 vital_samples 행을 갱신할 수 없다.
   if (isDataMockupOrigin(dataOrigin)) {
@@ -221,7 +235,9 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
     } catch (error) {
       console.error("[store] data_mockup persist failed:", error);
     }
-    return sample;
+    // 목업은 재전송 대상이 아니다 — 시연용 발생기가 다시 만들면 되고, 실데이터 큐를
+    // 목업 저장 실패로 막으면 안 된다.
+    return { sample, persistFailed: false };
   }
   // 낙상 후보 후속 업데이트(HR 추적/확인 프롬프트 결과) — 기존 candidate 행만 보강하고, 실제 경보
   // 플래그가 없는 메타데이터 샘플은 실시간 ring/알림에 넣지 않는다. 경보(sample.fallDetected/manualSos)는
@@ -232,7 +248,7 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
       sample.fallUpdatePhase === "prompt_result")
   ) {
     await updateFallCandidateState(sample);
-    if (!sample.fallDetected && !sample.manualSos) return sample;
+    if (!sample.fallDetected && !sample.manualSos) return { sample, persistFailed: false };
   }
   // 생체 위험 전이 감지용 — 추가 전 이 워커의 병합(sticky) 상태.
   // 같은 워커 샘플은 ring 에서 한 번만 필터해 prev/cur 두 병합에 재사용(중복 filter 제거).
@@ -244,9 +260,14 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   mockStore.samples = [...mockStore.samples, sample].slice(-500);
   // 영속과 경보 기록을 분리 — 종전엔 한 try 라서 persistSample 실패(풀 고갈·비번 사고)가 SOS·낙상
   // 경보 기록·텔레그램까지 삼켰다(감사 DB-POOL-02, 2026-06-30 실발생). 샘플 저장은 잃어도 경보는 간다.
+  // ★ 삼키되 알린다 — catch 는 그대로 두고(경보가 이 아래에서 나가야 한다) 실패 사실만
+  //   호출부로 올린다. 종전엔 삼키고 끝이라 POST 가 201 을 줬고, 폰이 성공으로 알아
+  //   원본을 큐에서 지웠다. 2026-08-15 DB 장애 3시간 50분 구간이 그렇게 사라졌다.
+  let persistFailed = false;
   try {
     await persistSample(sample);
   } catch (error) {
+    persistFailed = true;
     console.error("[store] DB persist failed:", error);
   }
   try {
@@ -285,7 +306,7 @@ export async function addSample(input: unknown): Promise<VitalSample | null> {
   } catch (error) {
     console.error("[store] 경보 기록 실패:", error);
   }
-  return sample;
+  return { sample, persistFailed };
 }
 
 // DB 에 누적된 총 sample 건수 — UI 라벨 "DB 영속 N건 누적" 표시용

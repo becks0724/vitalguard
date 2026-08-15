@@ -327,16 +327,25 @@ test("hasMonitorableSignal — 실측 신호 유무 판별(빈 샘플=false)", (
 
 test("addSample — reserved 워커 입력은 null 반환(DB 미접근)", async () => {
   // 스키마는 통과하지만 예약 ID 이므로 persist 전에 차단되어 DB 를 건드리지 않는다(쿼리 0).
-  assert.equal(await addSample({ workerId: "smoke_x", ts: TS, heartRate: 80 }), null);
+  const r = await addSample({ workerId: "smoke_x", ts: TS, heartRate: 80 });
+  assert.equal(r.sample, null);
+  // ★ 저장 대상이 아닌 것과 저장 실패는 다르다 — 여기서 persistFailed 가 서면 폰이 영원히 재시도한다.
+  assert.equal(r.persistFailed, false);
 });
 
 test("addSample — 빈 샘플(실측 신호 없음)은 null 반환(persist 도달 전 드롭)", async () => {
   // EMP-admin 빈 하트비트 재현 — 실측 신호 없어 ring·DB 진입 전 드롭(persistSample 미도달).
-  assert.equal(
-    await addSample({ workerId: "EMP-admin", ts: TS, manualSos: false, fallDetected: false }),
-    null,
-  );
-  assert.equal(await addSample({ workerId: "EMP-1", ts: TS }), null); // 순수 메타데이터
+  const empty = await addSample({
+    workerId: "EMP-admin",
+    ts: TS,
+    manualSos: false,
+    fallDetected: false,
+  });
+  assert.equal(empty.sample, null);
+  assert.equal(empty.persistFailed, false);
+  const meta = await addSample({ workerId: "EMP-1", ts: TS }); // 순수 메타데이터
+  assert.equal(meta.sample, null);
+  assert.equal(meta.persistFailed, false);
 });
 
 test("addSample — 스키마 위반 입력은 reject(persist 도달 전 거부)", async () => {
