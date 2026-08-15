@@ -5,6 +5,13 @@
 
 결정·근거 = [context-notes.md](./context-notes.md)
 
+> **⚠ 2026-08-15 — 판정 트랙에서 이 문서의 전제 하나가 반증됐다.**
+> 성공 기준 ③ *"값 크기대가 건강 앱과 일치"* 는 **활동에너지에 대해서는 참이지만
+> 그 사실이 오히려 문제였다** — 건강 앱도 시간당 240~290 cal 로 찍고, 그 값이 상시
+> `HKWorkoutSession` 때문에 **앉아 있어도 나온다**. 즉 일치는 했는데 그 값이 활동량을
+> 뜻하지 않는다. MET 는 축이 맞으나 **하루 135건으로 희소**하다.
+> 활동 축 판정의 확정 사실·결정 = **[heat-activity-axis/](../heat-activity-axis/checklist.md)**
+
 ## 1. 워치 (VitalWatch)
 
 - [x] `WatchStreamer.swift` `discreteInputs` 에 2종 추가
