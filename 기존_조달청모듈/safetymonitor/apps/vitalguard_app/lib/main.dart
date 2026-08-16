@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'vital_display.dart';
 import 'vital_stream.dart';
 
 const MethodChannel _bridge = MethodChannel('vitalguard/bridge');
@@ -179,9 +180,8 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<VitalStreamEvent>? _sub;
 
   // 실시간 표시 상태(EventChannel) — 폴링(_status)과 별개로 즉시 갱신된다.
-  double? _bpm;
-  DateTime? _measuredAt;
-  int? _seq;
+  // 네이티브가 누적 스냅숏을 통째로 보내므로 마지막 이벤트 하나만 들고 있으면 된다.
+  VitalStreamEvent? _vitals;
   int? _livePending;
   bool _authRejected = false;
 
@@ -194,11 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _sub = VitalStream.events().listen((e) {
         if (!mounted) return;
         setState(() {
-          if (e.type == 'hr') {
-            _bpm = e.bpm;
-            _measuredAt = e.measuredAt;
-            _seq = e.seq;
-          }
+          if (e.type == 'hr') _vitals = e;
           if (e.pending != null) _livePending = e.pending;
           if (e.authRejected == true) _authRejected = true;
           if (e.uploadOk == true) _authRejected = false;
@@ -235,11 +231,37 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 심박에만 상대 시각을 쓴다 — 5초마다 오는 값이라 나이가 곧 수신 상태다.
+  /// 나머지(SpO₂·이산 측정)는 절대 시각으로 적는다. 매초 바뀌는 문구를 여러 줄에 두면
+  /// 화면이 계속 흔들려 정작 값이 안 읽힌다.
   String _measuredAgoText() {
-    final at = _measuredAt;
+    final at = _vitals?.measuredAt;
     if (at == null) return '';
     final sec = DateTime.now().difference(at).inSeconds;
-    return sec <= 1 ? '방금' : '$sec초 전';
+    if (sec <= 1) return '방금';
+    if (sec < 60) return '$sec초 전';
+    return '${sec ~/ 60}분 ${sec % 60}초 전';
+  }
+
+  /// 생체 한 줄 — 왼쪽 이름, 오른쪽 값. 보조 문구(측정 시각·건수)는 값 아래 작게 둔다.
+  Widget _vitalRowTile(VitalRow row) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(child: Text(row.label, style: const TextStyle(color: Colors.grey))),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(row.value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+              if (row.detail != null)
+                Text(row.detail!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -248,7 +270,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final workerId = _status['workerId'] as String? ?? '-';
     final pending = _livePending ?? _status['pending'] as int? ?? 0;
     final baseURL = _status['baseURL'] as String? ?? '';
-    final receiving = _bpm != null;
+    final vitals = _vitals;
+    final bpm = vitals?.bpm;
+    final receiving = bpm != null;
+    final rows = vitals == null ? const <VitalRow>[] : buildVitalRows(vitals);
 
     return Scaffold(
       appBar: AppBar(
@@ -257,68 +282,74 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(onPressed: _logout, tooltip: '로그아웃', icon: const Icon(Icons.logout)),
         ],
       ),
-      body: Padding(
+      // 카드가 늘 수 있어 ListView — 화면 밖으로 밀리면 그 값은 없는 것과 같다.
+      body: ListView(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_authRejected)
-              MaterialBanner(
-                backgroundColor: Colors.red.shade50,
-                content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
-                actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+        children: [
+          if (_authRejected)
+            MaterialBanner(
+              backgroundColor: Colors.red.shade50,
+              content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
+              actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+            ),
+          // 실시간 심박 — 워치 → 폰 수신 즉시 갱신(EventChannel).
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Icon(Icons.favorite, color: receiving ? const Color(0xFFD32F2F) : Colors.grey, size: 32),
+                      const SizedBox(width: 10),
+                      Text(
+                        receiving ? bpm.toStringAsFixed(0) : '--',
+                        style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('bpm', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    receiving
+                        ? '측정 ${_measuredAgoText()} · 배치 #${vitals?.seq ?? '-'}'
+                        : '워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+                ],
               ),
-            // 실시간 심박 — 워치 → 폰 수신 즉시 갱신(EventChannel).
+            ),
+          ),
+          // 나머지 생체 — 워치가 보낸 것만 그린다. 안 온 종류는 행 자체가 없다(0 으로 적으면 거짓말).
+          if (rows.isNotEmpty)
             Card(
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Icon(Icons.favorite, color: receiving ? const Color(0xFFD32F2F) : Colors.grey, size: 32),
-                        const SizedBox(width: 10),
-                        Text(
-                          receiving ? _bpm!.toStringAsFixed(0) : '--',
-                          style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text('bpm', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      receiving
-                          ? '측정 ${_measuredAgoText()} · 배치 #$_seq'
-                          : '워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ],
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(children: rows.map(_vitalRowTile).toList()),
               ),
             ),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.badge_outlined),
-                title: Text('$name ($workerId)'),
-                subtitle: const Text('업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다'),
-              ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.badge_outlined),
+              title: Text('$name ($workerId)'),
+              subtitle: const Text('업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다'),
             ),
-            Card(
-              child: ListTile(
-                leading: Icon(
-                  pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
-                  color: pending == 0 ? Colors.green : Colors.orange,
-                ),
-                title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건'),
-                subtitle: Text(baseURL, maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+          Card(
+            child: ListTile(
+              leading: Icon(
+                pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
+                color: pending == 0 ? Colors.green : Colors.orange,
               ),
+              title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건'),
+              subtitle: Text(baseURL, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
