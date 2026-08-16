@@ -70,11 +70,18 @@
 	<array>
 		<string>fetch</string>
 		<string>processing</string>
+		<!-- location = 근무 중 배경 위치 추적. ⚠ LocationProvider 가 근무 중에만
+		     allowsBackgroundLocationUpdates 를 켜는데, 이 항목이 없으면 그 대입에서 앱이 크래시한다. -->
+		<string>location</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.vitalguard.upload</string>
 	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>작업 위치를 관제 화면에 표시하고 현장 구획 이탈을 확인하기 위해 위치 권한이 필요합니다.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>화면이 꺼져 있어도 현장 구획 이탈을 감지하려면 위치 권한(항상 허용)이 필요합니다. 근무 중(워치 생체 수신 중)에만 위치를 수집합니다.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>워치에서 전달된 생체 데이터를 처리해 안전 모니터링에 사용하기 위해 건강 데이터 읽기 권한이 필요합니다.</string>
 	<key>NSHealthUpdateUsageDescription</key>

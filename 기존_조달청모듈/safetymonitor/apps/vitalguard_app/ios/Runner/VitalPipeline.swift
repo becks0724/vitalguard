@@ -115,6 +115,12 @@ final class VitalPipeline {
             let samples = payload["samples"] as? [[String: Any]] ?? []
             // 서버 계약 — ts 는 전송 시각, 측정 시각은 heartRateMeasuredAt 에 따로 싣는다.
             let sentAt = self.isoMs.string(from: Date())
+            // 위치 — 생체가 도착했다는 것이 곧 "근무 중"이라 여기서 추적을 살린다(별도 근무시간 개념 없음).
+            // 좌표는 새 행을 만들지 않고 기존 샘플의 빈 컬럼을 채운다(행 수·요청 수 불변).
+            // ⚠ 배치당 한 번만 읽는다 — 샘플마다 읽으면 같은 fix 를 반복 조회할 뿐이다.
+            // nil 이면 신선한 fix 가 없다는 뜻이므로 **아무것도 싣지 않는다**(묵은 좌표 금지).
+            if !samples.isEmpty { LocationProvider.shared.noteVitalsActive() }
+            let fix = LocationProvider.shared.currentFix()
             for s in samples {
                 let bpm = s["bpm"] as? Double
                 let spo2 = s["spo2"] as? Double
@@ -175,6 +181,9 @@ final class VitalPipeline {
                 // 무동작 지속 — 서버 스키마 `motionStillSec`. 스키마·DB 컬럼·insert 매핑은
                 // 구 앱 시절부터 있었고 신규 앱이 안 보내 27,831행 중 0건이었다(2026-08-15 실측).
                 if let still { v["motionStillSec"] = still }
+                // 좌표 4종(위·경도·정확도·측위시각)을 한 덩어리로 얹는다. 정확도와 측위시각이 없으면
+                // 관제가 값의 품질·나이를 못 재므로 좌표만 따로 싣지 않는다.
+                if let fix { v.merge(fix) { current, _ in current } }
                 self.pending.append(v)
             }
             if self.pending.count > self.maxQueue {

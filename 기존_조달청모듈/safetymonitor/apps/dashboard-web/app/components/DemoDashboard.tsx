@@ -59,11 +59,15 @@ import {
   type WorkerMapPoint,
 } from "./WorkerGpsMap";
 
-// 지도 모드 현장 구획 근사 원 반경(m) — 현장 규모에 맞게 조정.
+// 지도 모드 현장 구획 근사 원 반경(m).
 // 중심 = 서버 캐시 현장 좌표(site_coord_daily·일 단위 고정) 우선 — 작업자 이동에 중심이 끌려다니지 않게.
 // 주소 문자열 기반 정확 지오코딩은 무키 서비스가 건물번호를 못 잡음(도로 중심 ~800m 오차 실측) →
 // NCP Maps/VWorld 키 활성화 시 주소 중심으로 승격 예정.
-const SITE_CIRCLE_RADIUS_M = 100;
+//
+// ★ 값을 여기 리터럴로 두지 않는다 — iOS 앱의 위치 게이트와 **같은 정책**이어야 한다.
+//   구 앱은 단말 500m · 관제 100m 로 5배 어긋나 있어서 100m 를 벗어나도 좌표가 안 올라왔다
+//   (2026-08-16 실측 · docs/gps-phone-collection/context-notes.md G-04).
+const SITE_CIRCLE_RADIUS_M = SITE_RADIUS_MAX_M;
 import { RadarRealtime } from "./RadarRealtime";
 import { TyphoonTrack } from "./TyphoonTrack";
 import { WarningVideoPanel } from "./WarningVideoPanel";
@@ -96,6 +100,7 @@ import {
   worseTone,
 } from "../../lib/worker-signal";
 import { vitalAgeMs } from "../../lib/vital-age";
+import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
 import { weatherLabel } from "./WeatherStrip";
