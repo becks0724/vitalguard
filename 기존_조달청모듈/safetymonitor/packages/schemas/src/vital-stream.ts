@@ -106,6 +106,15 @@ export const VitalSampleSchema = z.object({
   guardianPhone: z.string().min(1).max(40).optional(),
   latitude: z.number().min(-90).max(90).optional(),
   longitude: z.number().min(-180).max(180).optional(),
+  // 좌표의 수평 정확도(m) — CLLocation.horizontalAccuracy.
+  // ★ 이것 역시 위 heartbeat·locationTimestamp 와 같은 계열이었다(감사 BND-CONTRACT-01).
+  //   구 앱 워치(VitalTransmitter.swift:121)와 폰(VitAlGuardPreviewApp.swift:3921)이 **이미 보내는데**
+  //   스키마에 없어 Zod 가 무음 strip 했고, raw_json 은 파싱 후 객체를 저장하므로(db.ts) 거기에도
+  //   안 남았다. 그래서 DB 21만 GPS 행 어디에도 품질 지표가 없다 — 좌표가 ±5m 인지 ±1,500m 인지
+  //   구분할 근거를 관제가 받은 적이 없다.
+  // 상한 10000 은 물리 상한이 아니라 저장 가치의 경계다(그보다 나쁜 fix 는 위치라 부를 수 없다).
+  // 음수는 CoreLocation 의 "측위 실패" 표식이므로 앱이 보내지 않는다(min 0 이 계약).
+  locationAccuracyMeters: z.number().min(0).max(10000).optional(),
   batteryPct: z.number().min(0).max(100).optional(),
   // 스트레스 알고리즘 입력 (P0 데이터 수집). 60초 sub-cadence 로만 채워지는 sparse 필드.
   // 활동에너지/걸음/계단은 직전 수집 이후 구간 합. 분석은 packages/analyzers 가 수행.

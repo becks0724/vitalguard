@@ -462,3 +462,30 @@ test("workerId — 개행·공백·한글·초장문은 거부한다", () => {
     );
   }
 });
+
+// 좌표 정확도 — 구 앱이 이미 보내던 값인데 스키마에 없어 전량 무음 strip 되던 것(BND-CONTRACT-01).
+test("locationAccuracyMeters — 정상 범위는 통과하고 값이 보존된다", () => {
+  const r = VitalSampleSchema.safeParse({
+    workerId: "EMP-6861",
+    ts: TS,
+    latitude: 35.1615,
+    longitude: 126.9276,
+    locationAccuracyMeters: 12.5,
+  });
+  assert.equal(r.success, true);
+  assert.equal(r.success && r.data.locationAccuracyMeters, 12.5);
+});
+
+test("locationAccuracyMeters — 음수는 거부한다(CoreLocation 의 측위 실패 표식)", () => {
+  assert.equal(
+    VitalSampleSchema.safeParse({ workerId: "EMP-1", ts: TS, locationAccuracyMeters: -1 }).success,
+    false,
+  );
+});
+
+test("locationAccuracyMeters — 저장 가치 상한(10000m)을 넘으면 거부한다", () => {
+  assert.equal(
+    VitalSampleSchema.safeParse({ workerId: "EMP-1", ts: TS, locationAccuracyMeters: 10001 }).success,
+    false,
+  );
+});

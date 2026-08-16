@@ -277,6 +277,10 @@ async function initSchema(): Promise<void> {
     -- 판정 미주입 — 값 도착을 관찰한 뒤 WBGT·TLV 설계로 넘어간다(HRV 교훈: API 존재 ≠ 도착).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS physical_effort_met DOUBLE PRECISION;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS time_in_daylight_min DOUBLE PRECISION;
+    -- location_accuracy_m = 좌표의 수평 정확도(m·CLLocation.horizontalAccuracy).
+    -- 이게 없으면 latitude/longitude 가 ±5m 인지 ±1,500m 인지 구분할 수 없다. 구 앱이 이미
+    -- 보내고 있었는데 스키마에 없어 전량 무음 폐기됐다(BND-CONTRACT-01 계열).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;
     CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
 
     -- ts 는 TEXT 라 ORDER BY·범위비교·MAX 가 전부 문자열 비교로 돈다. 고정폭 ISO-UTC 는
@@ -898,6 +902,8 @@ export async function persistSample(sample: VitalSample): Promise<void> {
           : null,
     latitude: sample.latitude ?? null,
     longitude: sample.longitude ?? null,
+    // 좌표 품질 — 없으면 위 두 값이 얼마나 믿을 만한지 판정할 근거가 사라진다.
+    location_accuracy_m: sample.locationAccuracyMeters ?? null,
     hrv_sdnn_ms: sample.hrvSdnnMs ?? null,
     resting_heart_rate: sample.restingHeartRate ?? null,
     active_energy_kcal: sample.activeEnergyKcal ?? null,
