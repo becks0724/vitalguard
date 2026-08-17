@@ -117,7 +117,7 @@ import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
 
-type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall";
+type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
 type Selection = { workerId: string; metric: HistoryMetric };
 
 type MockVitalResponse = {
@@ -250,6 +250,9 @@ function hasLiveMetric(
   if (metric === "spo2") return true;
   // 활동 = 구간 합 이력 — 지금 정지 중(증분 없음)이어도 기간 내 이력은 있다. 서버 데이터로 판정.
   if (metric === "activity") return true;
+  // 수집 커버리지 = 라이브 샘플이 아니라 과거 수집 이력이다. 지금 미수신이어도 지난 1년은 있다 —
+  // 오히려 "지금 안 오는 워커"일수록 이 탭을 봐야 한다. 서버 데이터로 판정한다.
+  if (metric === "coverage") return true;
   if (!sample) return false;
   const value = sample[metric];
   return typeof value === "number" && Number.isFinite(value);
@@ -5932,6 +5935,8 @@ export function DemoDashboard() {
             if (selection.metric === "fall") return null;
             // 활동 = 버킷 합이라 순간값으로 마지막 점을 덮지 않는다(단위 불일치).
             if (selection.metric === "activity") return null;
+            // 수집 커버리지 = 하루 집계(분)라 순간값으로 덮을 대상이 없다(히트맵이라 마지막 점 개념도 없다).
+            if (selection.metric === "coverage") return null;
             if (selection.metric === "coreTempEst") {
               return data.coreTempEst?.[selection.workerId]?.tempC ?? null;
             }

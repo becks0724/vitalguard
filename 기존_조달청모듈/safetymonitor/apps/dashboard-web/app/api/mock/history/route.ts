@@ -11,13 +11,26 @@ import {
   type HistoryMetric,
   type HistoryRange,
 } from "./data";
-import { buildRealHistory, CORE_TEMP_EST_MAX_DAYS, type RealMetric } from "./real";
+import {
+  buildRealHistory,
+  CORE_TEMP_EST_MAX_DAYS,
+  firstDataDateOf,
+  type RealMetric,
+} from "./real";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-const ALLOWED_METRICS: HistoryMetric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall"];
+const ALLOWED_METRICS: HistoryMetric[] = [
+  "heartRate",
+  "spo2",
+  "coreTempEst",
+  "activity",
+  "fall",
+  // 수집 커버리지 — 생체 값이 아니라 "그날 얼마나 수집됐는가"다. 히트맵 전용.
+  "coverage",
+];
 const ALLOWED_RANGES: HistoryRange[] = [1, 7, 30, 60, 365];
-const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2", "activity"];
+const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2", "activity", "coverage"];
 
 // KST 달력일 경계 → epoch ms. 프리셋(days)은 "지금부터 N일 전".
 const kstDayStartMs = (day: string) => Date.parse(`${day}T00:00:00+09:00`);
@@ -41,7 +54,7 @@ export async function GET(request: Request) {
 
   if (!workerId || !metric || !ALLOWED_METRICS.includes(metric)) {
     return NextResponse.json(
-      { ok: false, error: "workerId / metric (heartRate|spo2|coreTempEst|fall) 필수" },
+      { ok: false, error: "workerId / metric (heartRate|spo2|coreTempEst|activity|fall|coverage) 필수" },
       { status: 400 },
     );
   }
@@ -79,6 +92,7 @@ export async function GET(request: Request) {
       points,
       summary: metric === "fall" ? summarizeCount(points) : summarize(points),
       source: isReal ? (metric === "coreTempEst" ? "estimated" : "measured") : "mock",
+      firstDataDate: metric === "coverage" ? await firstDataDateOf(workerId) : undefined,
     });
   }
 
@@ -109,5 +123,7 @@ export async function GET(request: Request) {
     points,
     summary: metric === "fall" ? summarizeCount(points) : summarize(points),
     source: isReal ? (metric === "coreTempEst" ? "estimated" : "measured") : "mock",
+    // 히트맵이 "운영 이전"과 "미수신"을 가르는 유일한 기준. 커버리지 탭에서만 조회한다.
+    firstDataDate: metric === "coverage" ? await firstDataDateOf(workerId) : undefined,
   });
 }

@@ -1,7 +1,16 @@
 // 발표용 mock 누적 데이터 — workerId + metric + day 로 deterministic 일별 평균 생성
 // fall 은 시간/일 buckets 당 감지 건수 (count) 로 표현
 // coreTempEst 는 실데이터 경로(real.ts) 전용 — 모의 생성기(PROFILES)에는 넣지 않는다(가짜 추정 곡선 방지).
-export type HistoryMetric = "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "activity" | "fall";
+// coverage 도 실데이터 전용이다 — "그날 몇 분 수집됐나"는 생성할 수 있는 값이 아니다.
+// 모의 곡선을 만들면 그 화면은 "감시되고 있다"는 거짓을 그리게 된다(PROFILES 에 넣지 않는 이유).
+export type HistoryMetric =
+  | "heartRate"
+  | "spo2"
+  | "skinTempC"
+  | "coreTempEst"
+  | "activity"
+  | "fall"
+  | "coverage";
 
 export type HistoryPoint = {
   date: string;
@@ -173,9 +182,11 @@ function numericValueAt(
   span: number,
   i: number,
 ) {
-  // coreTempEst·activity 는 실데이터 경로 전용 — 모의 곡선을 만들지 않는다(라우트가 선분기·여기는 방어선).
+  // coreTempEst·activity·coverage 는 실데이터 경로 전용 — 모의 곡선을 만들지 않는다
+  // (라우트가 선분기하고 여기는 방어선). coverage 를 생성하면 화면이 "감시되고 있다"는 거짓을 그린다.
   if (metric === "coreTempEst") return 0;
   if (metric === "activity") return 0;
+  if (metric === "coverage") return 0;
   const profile = PROFILES[metric];
   const seasonal = Math.sin((i / span) * Math.PI * 2) * profile.amplitude * 0.6;
   const noise = (hashSeed(workerId, metric, seed) - 0.5) * 2 * profile.jitter;

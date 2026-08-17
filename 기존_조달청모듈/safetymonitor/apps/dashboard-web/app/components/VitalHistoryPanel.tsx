@@ -19,9 +19,10 @@ import {
   RechartsTimeDotChart,
   RechartsActivityComboChart,
 } from "./VitalChartsRecharts";
+import { CoverageHeatmap } from "./CoverageHeatmap";
 import { getSessionToken } from "./LoginGate";
 
-type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall";
+type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
 
@@ -42,6 +43,8 @@ type HistoryResponse = {
   summary: { min: number; max: number; avg: number };
   windowFromMs?: number;
   windowToMs?: number;
+  /** coverage 전용 — 히트맵이 "운영 이전"과 "미수신"을 가르는 기준. */
+  firstDataDate?: string | null;
 };
 
 const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; decimals: number }> = {
@@ -52,9 +55,18 @@ const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; 
   // 활동 = 작업 강도 축(kcal 구간 합·실측) — ≤1주 뷰는 심박 선 오버레이 복합 차트(사용자 승인 08-13).
   activity: { name: "활동", unit: "kcal", color: "#fb923c", decimals: 2 },
   fall: { name: "낙상", unit: "회", color: "#facc15", decimals: 0 },
+  // 수집 = 생체 값이 아니라 "그날 얼마나 수집됐나"(분). 히트맵 전용이라 선/막대 축을 쓰지 않는다.
+  coverage: { name: "수집", unit: "분", color: "#22d3ee", decimals: 0 },
 };
 
-const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall"];
+const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall", "coverage"];
+
+/** epoch ms → KST 달력일 `YYYY-MM-DD`. 서버 로컬이 UTC 라 getDate() 로 뽑으면 9시간 밀린다. */
+function kstDayKey(ms: number): string {
+  const k = new Date(ms + 9 * 60 * 60 * 1000);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${k.getUTCFullYear()}-${p(k.getUTCMonth() + 1)}-${p(k.getUTCDate())}`;
+}
 
 const RANGES: { value: Range; label: string }[] = [
   { value: 1, label: "24시간" },
@@ -112,6 +124,13 @@ export function VitalHistoryPanel({
     // 추정 탭 전환 시 서버 상한(7일)에 맞게 범위를 접는다 — 남아 있던 30일+·커스텀이 400 을 만들지 않게.
     if (selection.metric === "coreTempEst" && (range > 7 || customRange)) {
       setRange(range > 7 ? 7 : range);
+      setCustomRange(null);
+      setFromInput("");
+      setToInput("");
+    }
+    // 수집 히트맵은 1년 격자가 곧 화면 형태다 — 기간 선택이 의미가 없어 365 로 고정한다(사용자 결정).
+    if (selection.metric === "coverage" && (range !== 365 || customRange)) {
+      setRange(365);
       setCustomRange(null);
       setFromInput("");
       setToInput("");
@@ -442,6 +461,18 @@ export function VitalHistoryPanel({
               )}
             </div>
             {(() => {
+              // 수집 커버리지 = 시계열 차트가 아니라 달력 격자다. 선/막대 경로로 내려보내면
+              // 365개 점이 축에 균등 배치돼 "며칠이 비었는지"가 사라진다 — 이 탭의 존재 이유가 그것이다.
+              if (selection.metric === "coverage") {
+                return (
+                  <CoverageHeatmap
+                    points={displayPoints}
+                    firstDataDate={data.firstDataDate ?? null}
+                    endDay={kstDayKey(data.windowToMs ?? Date.now())}
+                    days={365}
+                  />
+                );
+              }
               const chartProps = {
                 points: displayPoints,
                 color: meta.color,
@@ -664,6 +695,10 @@ function metricReferenceLines(metric: Metric): ReferenceLine[] {
       // 활동량에는 안전 임계가 없다 — 부하 판독은 심박 오버레이와의 대비가 담당.
       return [];
     case "fall":
+      return [];
+    case "coverage":
+      // 수집량에는 안전 임계가 없다 — 이 값은 작업자 상태가 아니라 감시 여부다.
+      // (히트맵 경로라 참고선을 쓰지도 않지만, 열거를 비워 두면 다음 사람이 임계를 채워 넣는다.)
       return [];
   }
 }

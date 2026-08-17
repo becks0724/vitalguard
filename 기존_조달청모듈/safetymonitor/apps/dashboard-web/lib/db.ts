@@ -1049,6 +1049,52 @@ export async function heartRateBucketAverages(
   return rows;
 }
 
+/**
+ * KST 달력일별 **수집된 분** (0~1440) — 커버리지 히트맵의 칸 값.
+ *
+ * 왜 시간이 아니라 분인가. `COUNT(DISTINCT hour)` 로 재면 **한 시간에 샘플 하나만 와도 그 시간이
+ * 꽉 찬 것으로** 계산된다 — 정체·버스트가 잦은 우리 데이터에서 커버리지를 크게 과대평가한다.
+ * 워치는 분당 12건을 보내므로 "그 분에 샘플이 하나라도 있었다"는 실제로 수집된 분이라 볼 수 있다.
+ *
+ * ⚠ 값이 0 인 날은 **행이 나오지 않는다**(GROUP BY 라 없는 날은 없는 행이다). 호출부가 그 부재를
+ *   "미수신"과 "운영 이전"으로 갈라야 한다 — 둘을 같은 칸으로 그리면 없는 사고를 수백 건 그린다.
+ */
+export async function dailyCoverageMinutes(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+): Promise<{ day: string; minutes: number }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ day: string; minutes: number }>(
+    `SELECT to_char((ts::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS day,
+            COUNT(DISTINCT date_trunc('minute', ts::timestamptz AT TIME ZONE 'Asia/Seoul')) AS minutes
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000)],
+  );
+  return rows.map((r) => ({ day: r.day, minutes: Number(r.minutes) }));
+}
+
+/**
+ * 그 워커의 **최초 수집일**(KST, `YYYY-MM-DD`). 없으면 null.
+ *
+ * 히트맵에서 "운영 이전"과 "미수신"을 가르는 유일한 기준이다. 조회 창이 아니라 **전 기간**을 본다 —
+ * 창 안에 첫날이 없으면 창 전체가 운영 이전일 수도, 전부 미수신일 수도 있어 창만으로는 못 가른다.
+ */
+export async function firstDataDay(workerIds: string[]): Promise<string | null> {
+  if (workerIds.length === 0) return null;
+  const { rows } = await q<{ day: string | null }>(
+    `SELECT to_char(MIN((ts::timestamptz AT TIME ZONE 'Asia/Seoul')::date), 'YYYY-MM-DD') AS day
+       FROM vital_samples WHERE worker_id = ANY($1)`,
+    [workerIds],
+  );
+  return rows[0]?.day ?? null;
+}
+
 // 최근 심박 시계열 — 심부체온 추정(심박 기반 칼만필터)의 입력. 워커 구분 없이 창 전체를 받아
 // 호출부(store)가 별칭 접기 후 워커별로 나눈다. 표시 전용 경로라 실패해도 수집·판정과 무관.
 export async function recentHeartRates(

@@ -7,6 +7,8 @@ import { estimateCoreTempSeries, type HrPoint } from "@safetymonitor/analyzers";
 
 import {
   activeEnergyBucketSums,
+  dailyCoverageMinutes,
+  firstDataDay,
   getWorkerAliasMap,
   heartRateBucketAverages,
   spo2MeasurementsBetween,
@@ -14,7 +16,7 @@ import {
 
 import type { HistoryPoint } from "./data";
 
-export type RealMetric = "heartRate" | "coreTempEst" | "spo2" | "activity";
+export type RealMetric = "heartRate" | "coreTempEst" | "spo2" | "activity" | "coverage";
 
 /** 추정 궤적 제공 상한(일) — 열 스트레스는 시간 단위 현상이고 장기 추정 추세는 검증 근거가 없다. */
 export const CORE_TEMP_EST_MAX_DAYS = 7;
@@ -53,6 +55,11 @@ export async function aliasIdsOf(workerId: string): Promise<string[]> {
   }
 }
 
+/** 히트맵의 "운영 이전" 경계 — 별칭까지 합친 그 워커의 최초 수집일(KST). */
+export async function firstDataDateOf(workerId: string): Promise<string | null> {
+  return firstDataDay(await aliasIdsOf(workerId));
+}
+
 export async function buildRealHistory(
   workerId: string,
   metric: RealMetric,
@@ -61,6 +68,17 @@ export async function buildRealHistory(
 ): Promise<HistoryPoint[]> {
   const spanDays = Math.max((toMs - fromMs) / 86_400_000, 1 / 24);
   const ids = await aliasIdsOf(workerId);
+
+  if (metric === "coverage") {
+    // 칸 하나 = KST 하루, 값 = 그날 수집된 분(0~1440). 히트맵 전용이라 tsMs 를 싣지 않는다
+    // (시간축이 아니라 달력 격자에 놓인다 — date 문자열이 곧 좌표다).
+    //
+    // ★ 값이 0 인 날은 여기서 **행이 나오지 않는다.** 그 부재를 "미수신"으로 칠할지
+    //   "운영 이전"으로 칠할지는 화면이 `firstDataDate` 로 가른다. 여기서 0 을 채워 보내면
+    //   그 구분이 서버에서 이미 지워져 복구할 수 없다.
+    const rows = await dailyCoverageMinutes(ids, fromMs, toMs);
+    return rows.map((r) => ({ date: r.day, label: r.day.slice(5), value: r.minutes }));
+  }
 
   if (metric === "spo2") {
     // 기회 측정 — 측정 1건 = 점 1개(곡선으로 잇지 않도록 패널이 막대 강제). ≤7일 = 원본 점,
