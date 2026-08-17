@@ -120,7 +120,31 @@ idx_vs_worker_ts   49 MB         btree (worker_id, ts)   scan 1     ← 완전 �
 
 ## 4. 남은 일
 
-- [ ] **① 중복 인덱스 삭제 — ⚠ 실행했으나 배포로 되돌려졌다. 코드 수정 후 재실행 필요**
+- [x] **① 중복 인덱스 삭제 — 재실행 완료(2026-08-17 · 사용자 승인). 이번엔 유지된다** —
+      배포 `00283-mwz`(6ad20a8)에 `db.ts` 수정이 실렸음을 `git show` 로 선확인(주석만 잔존·
+      CREATE 없음) 후 `DROP INDEX CONCURRENTLY`. **플래너가 `uq_vs_worker_ts` 로 정확히
+      전환됨을 EXPLAIN 으로 확인**(Index Scan Backward using uq_vs_worker_ts).
+
+      **★★ 같은 창에서 인덱스 정비 전체 실행 — 245 MB 회수.** 08-16 조사에서 DROP 대상(21 MB)보다
+      **부풀림이 본론**임이 드러났다 — `uq_vs_worker_ts` 가 같은 정의·같은 행수인 `idx_vs_worker_ts`
+      의 **6.8배**(141 vs 21 MB)였다. `REINDEX INDEX CONCURRENTLY` 로 전 인덱스 재구축(무차단 ·
+      각 1.1~3.4초 · invalid 잔재 0 · PK 제약 무결).
+
+      | 인덱스 | 전 | 후 |
+      |---|---|---|
+      | `uq_vs_worker_ts` | 141 MB | **21 MB** |
+      | `vital_samples_pkey` | 83 MB | **8 MB** |
+      | `idx_vs_ts` | 36 MB | 18 MB |
+      | `idx_vs_data_origin_ts` | 35 MB | 27 MB |
+      | `idx_vs_worker_ts` | 21 MB | **삭제** |
+      | `idx_vs_ts_id` | 21 MB | 18 MB |
+      | **총계(본체 888 포함)** | **1,225 MB** | **980 MB** |
+
+      검증 = 라이브 `health/db` `{"ok":true,"ms":10}` · 루트 200 · invalid 0.
+      ⚠ `pkey` 가 83→8 MB(10배)인 것은 append-only + SERIAL 이라 fresh 가 최소인 정상 결과다.
+      되돌리기(불필요하지만): `CREATE INDEX idx_vs_worker_ts ON vital_samples(worker_id, ts);`
+
+- [x] ~~(구) ① 재실행 필요~~ **← 2026-08-17 위와 같이 종결. 아래는 08-15 경위 기록**
 
       **★★ DB 객체 삭제는 코드에서 지워야 유지된다.** 19:30 에 DROP 해서 49MB 를 회수했는데
       **20:0x 배포(`00282-5kv`)의 `ensureSchema` 가 21MB 로 되살렸다** — 약 30분 만에 무효화.
