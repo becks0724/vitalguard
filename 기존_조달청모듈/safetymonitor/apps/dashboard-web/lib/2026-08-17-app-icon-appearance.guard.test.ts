@@ -44,7 +44,7 @@ function manifest(dir: string): IconEntry[] {
 function png(path: string) {
   const b = readFileSync(path);
   assert.equal(b.readUInt32BE(0), 0x89504e47, `${path} 가 PNG 가 아니다`);
-  const colorType = b[25];
+  const colorType = b.readUInt8(25);
   return {
     width: b.readUInt32BE(16),
     height: b.readUInt32BE(20),
@@ -96,8 +96,10 @@ test("③ 레거시 다중 사이즈 아이콘이 되살아나지 않았다", ()
 test("④ 워치 아이콘이 존재한다(watchOS 는 변형 없이 하나)", () => {
   const imgs = manifest(WATCH_SET);
   assert.equal(imgs.length, 1, "워치는 아이콘 하나여야 한다 — watchOS 는 라이트/다크 변형이 없다");
-  assert.equal(imgs[0].platform, "watchos", "platform 이 watchos 가 아니다");
-  assert.equal(imgs[0].size, "1024x1024");
+  const only = imgs[0];
+  assert.ok(only, "워치 아이콘 항목이 없다");
+  assert.equal(only.platform, "watchos", "platform 이 watchos 가 아니다");
+  assert.equal(only.size, "1024x1024");
   // 카탈로그가 워치 타깃에 실제로 묶여 있어야 한다. 빠지면 빌드는 통과하고 아이콘만 사라진다
   // (이 트랙 이전 상태가 정확히 그것이었다 — 워치 앱에 자산 카탈로그 자체가 없었다).
   const pbx = readFileSync(join(IOS, "Runner.xcodeproj", "project.pbxproj"), "utf8");
