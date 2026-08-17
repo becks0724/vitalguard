@@ -79,7 +79,12 @@ export function CoverageHeatmap({
         <div className="inline-block min-w-max">
           <div className="flex gap-[3px] pl-6">
             {months.map((m, i) => (
-              <div key={i} className="w-[11px] text-[10px] leading-4 text-zinc-500">
+              // 칸 폭(11px)에 맞춘 자리표시자 위에 라벨을 흘린다. nowrap 이 없으면 `8월` 이
+              // 11px 안에서 두 줄로 접힌다(dev 실측). 옆 칸은 빈 문자열이라 넘쳐도 겹치지 않는다.
+              <div
+                key={i}
+                className="w-[11px] shrink-0 overflow-visible whitespace-nowrap text-[10px] leading-4 text-zinc-500"
+              >
                 {m}
               </div>
             ))}
