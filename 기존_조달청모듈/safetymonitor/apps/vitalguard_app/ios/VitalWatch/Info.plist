@@ -4,16 +4,20 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- 워치 홈 화면에 찍히는 이름. 폰과 같은 브랜드 표기로 통일한다(컴패니언 앱이라 같은 이름이 맞다).
+	     ⚠ 타깃명·PRODUCT_NAME(VitalWatch)은 바꾸지 않는다 — `.app` 파일명과 Embed Watch Content
+	     참조가 거기 묶여 있어 건드리면 임베드가 깨진다. 표시 문자열만 바꾼다. -->
 	<key>CFBundleDisplayName</key>
-	<string>VitalWatch</string>
+	<string>VitAlGuard</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- 표시명이 없는 자리의 폴백. `$(PRODUCT_NAME)` 이면 타깃명 VitalWatch 가 그대로 노출된다. -->
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>VitAlGuard</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>

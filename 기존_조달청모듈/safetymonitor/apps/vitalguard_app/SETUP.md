@@ -427,7 +427,7 @@ sudo 없이 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild
 |---|---|---|
 | 폰 GPS 수집(경계 감시 + 근무 중 추적) | `855373e` | 첫 실행 시 **위치 권한 시트** |
 | 앱 아이콘(라이트/다크 → 심볼 전용) | `879b162`→`639b765` | 홈 화면 아이콘 |
-| 앱 표시명 | `927876c` | `Vitalguard App` → **`VitAlGuard`** |
+| 앱 표시명 | `927876c` | `Vitalguard App` → **`VitAlGuard`** (워치도 `VitalWatch` → **`VitAlGuard`**) |
 
 ### 설치 절차
 
