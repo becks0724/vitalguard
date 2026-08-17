@@ -6,16 +6,19 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- 홈 화면에 찍히는 이름. 브랜드 표기는 A 가 대문자인 VitAlGuard 다(Vital + AI). -->
 	<key>CFBundleDisplayName</key>
-	<string>Vitalguard App</string>
+	<string>VitAlGuard</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- 표시명이 없는 자리(설정 일부·일부 시스템 목록)의 폴백. Flutter 가 넣어 둔 패키지명
+	     `vitalguard_app` 이 그대로 사용자 눈에 노출되던 자리라 브랜드 표기로 맞춘다(15자 이내). -->
 	<key>CFBundleName</key>
-	<string>vitalguard_app</string>
+	<string>VitAlGuard</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
