@@ -303,62 +303,36 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(children: lines);
   }
 
-  /// 아래 3열의 한 칸 — 라벨 + 밴드 막대(또는 판정 없음) + 값.
-  ///
-  /// ★ 막대는 **밴드 안 위치**다. 참고 디자인의 `35/180 g` 같은 진행률이 아니다 —
-  /// 이 앱엔 목표 개념이 없고(`목표`·`goal`·`target`·근무 시간 전부 0건),
-  /// 만들면 없는 기준을 우리가 정하는 것이 된다.
-  Widget _bandColumn({
-    required String label,
-    required VitalRange? range,
-    required double? value,
-    required String display,
-    String? noBarNote,
-  }) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: VgColors.body)),
-          const SizedBox(height: 6),
-          SizedBox(
-            height: 16,
-            child: range != null && value != null
-                ? HorizontalRangeBar(range: range, value: value)
-                // 판정에 안 올리기로 한 값은 **막대 자리를 비우고 그 사실을 적는다.**
-                // 그냥 비우면 "측정 안 됨" 으로 읽힌다 — 다른 사실이다.
-                : Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(noBarNote ?? '판정 없음',
-                        style: const TextStyle(fontSize: 10, color: VgColors.muted)),
-                  ),
-          ),
-          const SizedBox(height: 5),
-          Text(display, style: const TextStyle(fontSize: 11, color: VgColors.ink)),
-        ],
-      ),
-    );
+  /// 서버 파생행에서 라벨로 하나 꺼낸다. **서식은 buildServerRows 한 곳에만** 둔다 —
+  /// 카드·요약 행이 각자 소수점을 찍으면 같은 값이 화면에서 다르게 보인다.
+  VitalRow? _serverRow(String label) {
+    for (final r in buildServerRows(_own)) {
+      if (r.label == label) return r;
+    }
+    return null;
   }
 
   /// 5칸 요약 행 — 두 번째 참고 이미지의 `신체 지표` 배치.
   ///
   /// ★ 아래 격자와 **다른 규칙**을 쓴다. 격자는 "측정 안 된 종류는 타일 자체가 없다" 인데
   /// 이 행은 **칸을 고정하고 없으면 `--`** 로 둔다. 다섯 자리가 늘 같은 자리에 있어야
-  /// "무엇이 안 오고 있는지"가 한눈에 보이기 때문이다 — 참고 디자인도 안정심박을 `--` 로 둔다.
-  /// 0 을 적지 않는다는 원래 계약은 그대로다(`--` 는 0 이 아니라 모름이다).
+  /// "무엇이 안 오고 있는지" 가 한눈에 보인다. 0 을 적지 않는다는 계약은 그대로다.
   ///
-  /// 세로 표식은 **임계가 있는 것에만** 붙는다. 지금은 SpO₂ 하나뿐이고, 나머지 넷은
-  /// 근거 있는 기준이 없어 값만 적는다(HRV·호흡수에 참고범위를 새로 넣지 않기로 한 결정).
+  /// ★ 세로 표식이 없다. 여기 다섯은 **근거 있는 임계가 없는 것들**이고(SpO₂ 는 링 좌측으로
+  /// 옮겼다), 막대를 그리면 없던 기준이 생긴 것처럼 읽힌다.
   Widget _summaryStrip(VitalStreamEvent? vitals) {
     final d = vitals?.discreteValues ?? const <String, double>{};
     String f(double? v, int digits) => v == null ? '--' : v.toStringAsFixed(digits);
+    final psi = _serverRow('생리적 부담(PSI)');
+    final stress = _serverRow('스트레스');
 
-    final items = <(IconData, Color, String, String, double?, VitalRange?)>[
-      (Icons.monitor_heart_outlined, VgColors.heart, f(d['hrv'], 0), 'ms', d['hrv'], null),
-      (Icons.favorite_border, VgColors.heart, f(d['rhr'], 0), 'bpm', d['rhr'], null),
-      (Icons.air, VgColors.primary, f(d['rr'], 1), '회/분', d['rr'], null),
-      (Icons.water_drop_outlined, VgColors.primary, f(vitals?.spo2, 0), '%', vitals?.spo2, spo2Range),
-      (Icons.thermostat, VgColors.caution, f(_own?.coreTempC, 1), '℃', _own?.coreTempC, null),
+    final items = <(IconData, Color, String, String, bool)>[
+      (Icons.monitor_heart_outlined, VgColors.heart, f(d['hrv'], 0), 'ms', d['hrv'] != null),
+      (Icons.favorite_border, VgColors.heart, f(d['rhr'], 0), 'bpm', d['rhr'] != null),
+      (Icons.air, VgColors.primary, f(d['rr'], 1), '회/분', d['rr'] != null),
+      (Icons.local_fire_department_outlined, VgColors.caution, psi?.value ?? '--',
+          psi?.unit ?? '/10', psi != null),
+      (Icons.bolt, VgColors.primary, stress?.value ?? '--', '지수', stress != null),
     ];
 
     return Card(
@@ -369,30 +343,29 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             const Text('주요 생체',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             Row(
               children: [
-                for (final (icon, tint, value, unit, raw, range) in items)
+                for (final (icon, tint, value, unit, has) in items)
                   Expanded(
                     child: Column(
                       children: [
-                        Icon(icon, size: 17, color: raw == null ? VgColors.muted : tint),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          height: 34,
-                          // 임계가 있는 것만 위치 표식. 없으면 자리만 비운다(막대를 그리면 근거가 생긴 것처럼 읽힌다).
-                          child: range != null && raw != null
-                              ? Center(child: VerticalRangeBar(range: range, value: raw, height: 34))
-                              : const SizedBox(),
+                        Icon(icon, size: 18, color: has ? tint : VgColors.muted),
+                        const SizedBox(height: 8),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(value,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: has ? VgColors.primary : VgColors.muted,
+                              )),
                         ),
-                        const SizedBox(height: 6),
-                        Text(value,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: raw == null ? VgColors.muted : VgColors.primary,
-                            )),
-                        Text(unit, style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+                        const SizedBox(height: 1),
+                        Text(unit,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 9, color: VgColors.muted)),
                       ],
                     ),
                   ),
@@ -404,13 +377,98 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// 활동 3칸 — 걸음·오른 층·정지 지속. **칸을 고정한다**(요약 행과 같은 규칙).
+  ///
+  /// 값이 없으면 타일이 사라지는 격자 규칙을 여기엔 안 쓴다 — 0 보일 때 항목 자체가 없어져
+  /// "그런 걸 재고 있는지"조차 안 보였다(2026-08-18 실기기 확인).
+  ///
+  /// ★ 활동 에너지(kcal)는 **일부러 없다.** 상시 `HKWorkoutSession` 때문에 애플이 하루 종일을
+  /// 운동으로 계산해 정지 상태에서도 288kcal/시간이 찍힌다(2026-08-15 실측 · 약 4배 과대).
+  /// 네이티브가 Dart 로 아예 안 싣고 가드 2개가 되살아나는 것을 막는다
+  /// (`vital_display_test.dart` · `heat-activity-axis` 트랙이 축을 바로잡으면 그때 연다).
+  /// 조용히 빼면 다음 사람이 "빠뜨렸네" 하고 채워 넣으므로 화면에도 사유를 적는다.
+  Widget _activityStrip(VitalStreamEvent? vitals) {
+    final steps = vitals?.steps;
+    final flights = vitals?.flights;
+    final still = vitals?.stillSec;
+
+    final items = <(IconData, String, String, String, bool)>[
+      (Icons.directions_walk, '걸음', steps == null ? '--' : formatCount(steps), '보', steps != null),
+      (Icons.stairs_outlined, '오른 층', flights?.toString() ?? '--', '층', flights != null),
+      (Icons.pause_circle_outline, '정지 지속', still?.toStringAsFixed(1) ?? '--', '초', still != null),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                for (final (icon, label, value, unit, has) in items)
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Icon(icon, size: 18, color: has ? VgColors.primary : VgColors.muted),
+                        const SizedBox(height: 6),
+                        Text(label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11, color: VgColors.body)),
+                        const SizedBox(height: 4),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(value,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: has ? VgColors.primary : VgColors.muted,
+                              )),
+                        ),
+                        Text(unit, style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: VgColors.hairline),
+            const SizedBox(height: 8),
+            // 빼놓은 것을 화면에도 적는다 — 빈 자리는 "아직 안 만들었다" 로 읽힌다.
+            Row(
+              children: [
+                const Icon(Icons.local_fire_department_outlined, size: 13, color: VgColors.muted),
+                const SizedBox(width: 5),
+                const Text('활동 에너지', style: TextStyle(fontSize: 11, color: VgColors.body)),
+                const Spacer(),
+                Flexible(
+                  child: Text(
+                    '보류 — 측정축 정리 중',
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, color: VgColors.muted),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// 현재 상태 카드 — 참고 디자인(사용자 제공)의 **배치만** 옮긴 것.
-  /// 좌·우 보조값 · 가운데 링 · 아래 3열. 의미는 목표가 아니라 **임계 밴드 안 위치**다.
+  /// 좌 산소포화도 · 가운데 심박 링 · 우 추정 체온. 세 자리가 늘 같은 폭이라 링이 가운데 온다.
+  ///
+  /// ★ 아래 3열 밴드 행은 뺐다(2026-08-18 실기기 확인) — 심박은 링이, 산소·체온은 좌우가
+  /// 이미 말하고 있어 같은 값이 한 카드에 두 번 나왔다.
   Widget _statusCard(VitalStreamEvent? vitals) {
     final bpm = vitals?.bpm;
     final receiving = bpm != null;
     final spo2 = vitals?.spo2;
-    final coreC = _own?.coreTempC;
+    final core = _serverRow('체온(심박 추정)');
 
     return Card(
       color: VgColors.primarySubtle,
@@ -419,20 +477,20 @@ class _HomeScreenState extends State<HomeScreen> {
         side: const BorderSide(color: VgColors.primaryRing),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
         child: Column(
           children: [
             Row(
               children: [
+                // 좌 — 임계가 있어 상태 배지를 받는다.
                 Expanded(
-                  child: spo2 == null
-                      ? const SizedBox()
-                      : RingSideValue(
-                          label: '산소포화도',
-                          value: spo2.toStringAsFixed(0),
-                          unit: '%',
-                          status: spo2Status(spo2),
-                        ),
+                  child: RingSideValue(
+                    label: '산소포화도',
+                    value: spo2 == null ? '--' : spo2.toStringAsFixed(0),
+                    unit: spo2 == null ? '' : '%',
+                    status: spo2 == null ? null : spo2Status(spo2),
+                    note: spo2 == null ? '미수신' : null,
+                  ),
                 ),
                 if (receiving)
                   StatusRing(range: heartRateRange, value: bpm, unit: 'bpm')
@@ -444,54 +502,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: Text('수집 대기', style: TextStyle(fontSize: 13, color: VgColors.muted)),
                     ),
                   ),
+                // 우 — ★ 상태를 주지 않는다. 추정치가 입력이라 판정·경보에 올리지 않기로 한 값이다.
                 Expanded(
-                  // ★ 상태를 주지 않는다 — 추정치가 입력이라 판정·경보에 올리지 않기로 한 값이다.
-                  child: coreC == null
-                      ? const SizedBox()
-                      : RingSideValue(
-                          label: '체온(추정)',
-                          value: coreC.toStringAsFixed(1),
-                          unit: '℃',
-                          note: '의료 판정 아님',
-                        ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            const Divider(height: 1, color: VgColors.hairline),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _bandColumn(
-                  label: '심박',
-                  range: receiving ? heartRateRange : null,
-                  value: bpm,
-                  display: receiving ? '${bpm.toStringAsFixed(0)} bpm' : '--',
-                  noBarNote: '미수신',
-                ),
-                const SizedBox(width: 12),
-                _bandColumn(
-                  label: '산소포화도',
-                  range: spo2 == null ? null : spo2Range,
-                  value: spo2,
-                  display: spo2 == null ? '--' : '${spo2.toStringAsFixed(0)} %',
-                  noBarNote: '미수신',
-                ),
-                const SizedBox(width: 12),
-                _bandColumn(
-                  label: '체온(추정)',
-                  range: null, // 판정 미주입 계약 — 밴드를 그리지 않는다
-                  value: null,
-                  display: coreC == null ? '--' : '${coreC.toStringAsFixed(1)} ℃',
-                  noBarNote: coreC == null ? '미수신' : '판정 없음',
+                  child: RingSideValue(
+                    label: '체온(추정)',
+                    value: core?.value ?? '--',
+                    unit: core?.unit ?? '',
+                    note: core == null ? '미수신' : '의료 판정 아님',
+                  ),
                 ),
               ],
             ),
             if (receiving) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
               Row(
                 children: [
+                  // 폰엔 활동 게이트가 없다 — 이 표기가 빠지면 작업 중 상승이 "주의" 로 읽힌다.
                   const Text('안정 기준', style: TextStyle(fontSize: 10, color: VgColors.muted)),
                   const Spacer(),
                   Flexible(
@@ -525,7 +551,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // 요약 행에 올라간 것은 격자에서 뺀다 — 같은 값이 한 화면에 두 번 뜨면
     // 어느 쪽이 최신인지 읽는 사람이 판단해야 한다.
     final bodyRows = [...sections.body, ...buildServerRows(_own)]
-        .where((r) => !summaryStripLabels.contains(r.label))
+        .where((r) => !summaryLabels.contains(r.label))
         .toList();
 
     return Scaffold(
@@ -553,10 +579,8 @@ class _HomeScreenState extends State<HomeScreen> {
             _sectionTitle('그 밖의 지표'),
             _tileGrid(bodyRows),
           ],
-          if (sections.activity.isNotEmpty) ...[
-            _sectionTitle('활동'),
-            _tileGrid(sections.activity),
-          ],
+          _sectionTitle('활동'),
+          _activityStrip(vitals),
           _sectionTitle('전송'),
           Card(
             child: ListTile(

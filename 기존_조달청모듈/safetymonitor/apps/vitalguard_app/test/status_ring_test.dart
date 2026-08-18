@@ -49,9 +49,9 @@ void main() {
   test('★ 요약 행과 격자가 같은 지표를 두 번 그리지 않는다', () {
     // 같은 값이 한 화면에 두 번 뜨면 어느 쪽이 최신인지 읽는 사람이 판단해야 한다.
     // 제외 목록이 두 벌이 되면 하나만 고쳤을 때 중복이 되살아나므로 한 곳에만 둔다.
-    expect(summaryStripLabels, contains('산소포화도'));
-    expect(summaryStripLabels, contains('체온(심박 추정)'));
-    expect(summaryStripLabels, contains('심박변이(HRV)'));
+    expect(summaryLabels, contains('산소포화도'));
+    expect(summaryLabels, contains('체온(심박 추정)'));
+    expect(summaryLabels, contains('심박변이(HRV)'));
     // 서버 파생행의 라벨과 정확히 맞물려야 실제로 걸러진다 — 오타 한 글자면 조용히 통과한다.
     final server = buildServerRows(OwnVitals.fromMap({
       'ok': true, 'applicable': true,
@@ -60,7 +60,8 @@ void main() {
       'stress': {'calibrating': false, 'index': 49},
       'totalPersisted': 1,
     })).map((r) => r.label).toSet();
-    expect(server.intersection(summaryStripLabels), {'체온(심박 추정)'},
-        reason: '체온만 요약 행으로 올라가야 한다 — PSI·스트레스는 격자에 남는다');
+    // 서버 파생 3종은 **전부** 카드·요약 행이 가져간다 — 격자에는 워치 이산만 남는다.
+    expect(server.intersection(summaryLabels), server,
+        reason: '서버 파생행 중 격자로 새는 것이 있다 — 같은 값이 두 번 뜬다');
   });
 }

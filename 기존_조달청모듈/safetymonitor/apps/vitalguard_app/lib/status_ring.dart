@@ -155,6 +155,9 @@ class StatusRing extends StatelessWidget {
 
 /// 링 좌우에 놓이는 보조 값. **상태를 붙일지는 호출부가 정한다** —
 /// 추정 체온처럼 판정에 올리지 않기로 한 값에는 status 를 주지 않는다.
+///
+/// ★ 미수신이어도 **칸을 비우지 않는다.** 한쪽이 사라지면 링이 치우쳐 보이고(실기기 확인),
+/// 무엇이 안 오고 있는지도 화면에서 사라진다. 값 자리에 `--` 를 둔다(0 이 아니라 모름).
 class RingSideValue extends StatelessWidget {
   const RingSideValue({
     super.key,
