@@ -35,8 +35,13 @@ void main() {
   test('SpO₂ 는 값과 측정 시각을 함께 적는다 — 전송 시각이 아니다', () {
     final rows = buildVitalRows(_event(spo2: 97.4, spo2At: DateTime(2026, 8, 16, 9, 5)));
     expect(rows.single.label, '산소포화도');
-    expect(rows.single.value, '97%');
+    expect(rows.single.value, '97');
+    expect(rows.single.unit, '%');
+    expect(rows.single.display, '97%');
     expect(rows.single.detail, '측정 09:05');
+    // 근거 있는 임계가 있는 종류라 막대가 붙는다(vital_range.dart).
+    expect(rows.single.range, isNotNull);
+    expect(rows.single.numeric, 97.4);
   });
 
   test('이산 6종은 워치 순서로·풀어 쓴 라벨로 나오고 0 건은 빠진다', () {
@@ -45,10 +50,15 @@ void main() {
       values: {'hrv': 32.46, 'pe': 4.2, 'dl': 92},
     ));
     expect(rows.map((r) => r.label).toList(), ['운동 강도', '일광 시간', '심박변이(HRV)']);
-    expect(rows[0].value, '4.2 MET');
+    expect(rows[0].value, '4.2');
+    expect(rows[0].unit, 'MET');
     expect(rows[0].detail, '3건');
-    expect(rows[1].value, '92 분');
-    expect(rows[2].value, '32.5 ms');
+    expect(rows[1].display, '92분');
+    expect(rows[2].display, '32.5ms');
+    // 임계 근거가 없는 종류엔 막대를 붙이지 않는다 — 안전 앱이 의학 판정을 새로 만들지 않는다.
+    for (final r in rows) {
+      expect(r.range, isNull, reason: '\${r.label} 에 근거 없는 범위 막대가 붙었다');
+    }
     // 워치는 폭 때문에 `강도26` 으로 줄인다 — 폰은 그 제약이 없으므로 줄임말을 옮기지 않는다.
     expect(rows.map((r) => r.label), isNot(contains('강도')));
   });
@@ -56,19 +66,22 @@ void main() {
   test('건수만 있고 값이 없으면 -- 로 적는다(0 이 아니다)', () {
     final rows = buildVitalRows(_event(counts: {'rhr': 1}));
     expect(rows.single.value, '--');
+    // 값이 없으면 단위도 비운다 — `--bpm` 은 값처럼 읽힌다.
+    expect(rows.single.unit, '');
+    expect(rows.single.display, '--');
     expect(rows.single.detail, '1건');
   });
 
   test('걸음·오른층은 누계 기준을 함께 적는다 — 하루 총량이 아니다', () {
     final rows = buildVitalRows(_event(steps: 1204, flights: 3));
-    expect(rows[0].value, '1,204보');
+    expect(rows[0].display, '1,204보');
     expect(rows[0].detail, '폰 수신 누계');
-    expect(rows[1].value, '3층');
+    expect(rows[1].display, '3층');
   });
 
   test('정지 지속은 0 초도 표시한다 — 못 잰 것(null)과 다르다', () {
-    expect(buildVitalRows(_event(stillSec: 0)).single.value, '0.0초');
-    expect(buildVitalRows(_event(stillSec: 42.34)).single.value, '42.3초');
+    expect(buildVitalRows(_event(stillSec: 0)).single.display, '0.0초');
+    expect(buildVitalRows(_event(stillSec: 42.34)).single.display, '42.3초');
   });
 
   test('자릿수 구분', () {
@@ -91,7 +104,7 @@ void main() {
       expect(rows.length, 9);
       for (final r in rows) {
         expect(r.label, isNot(contains('활동')));
-        expect(r.value, isNot(contains('kcal')));
+        expect(r.display, isNot(contains('kcal')));
       }
     });
 
@@ -116,5 +129,27 @@ void main() {
       // 종전 조건(심박이 있을 때만 emit)이 되살아나면 그 구간이 통째로 안 보인다.
       expect(src.contains('if let bpm = latest {'), isFalse);
     });
+  });
+
+  _sectionTests();
+}
+
+// ── 2026-08-18 UI 개편 ──────────────────────────────────────────────────
+void _sectionTests() {
+  test('활동 지표는 생체 격자와 분리된다 — 성격이 다른 값을 나란히 두지 않는다', () {
+    final rows = buildVitalRows(VitalStreamEvent(
+      type: 'hr',
+      spo2: 97,
+      steps: 1204,
+      flights: 3,
+      stillSec: 5,
+      discreteCounts: const {'hrv': 1, 'rr': 1},
+      discreteValues: const {'hrv': 32.4, 'rr': 14},
+    ));
+    final s = splitVitalSections(rows);
+    expect(s.body.map((r) => r.label).toList(), ['산소포화도', '호흡수', '심박변이(HRV)']);
+    expect(s.activity.map((r) => r.label).toList(), ['걸음', '오른 층', '정지 지속']);
+    // 나뉘어도 하나도 사라지지 않는다.
+    expect(s.body.length + s.activity.length, rows.length);
   });
 }

@@ -4,7 +4,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'metric_tile.dart';
+import 'theme.dart';
 import 'vital_display.dart';
+import 'vital_range.dart';
 import 'vital_stream.dart';
 
 const MethodChannel _bridge = MethodChannel('vitalguard/bridge');
@@ -20,7 +23,7 @@ class VitalGuardApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'VitAlGuard',
-      theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFD32F2F))),
+      theme: vgLightTheme(),
       home: const RootGate(),
     );
   }
@@ -123,18 +126,19 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(Icons.favorite, size: 56, color: Color(0xFFD32F2F)),
+                const Icon(Icons.favorite, size: 56, color: VgColors.heart),
                 const SizedBox(height: 12),
                 const Text('VitAlGuard', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 4),
                 // 관제웹 로그인과 동일한 브랜드·문구 — 작업자가 같은 로그인임을 바로 알게 한다.
                 const Text('OPEN SAFETY · NEVER ALONE',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 12, letterSpacing: 1.2)),
+                    style: TextStyle(color: VgColors.muted, fontSize: 12, letterSpacing: 1.2)),
                 const SizedBox(height: 20),
                 const Text('로그인', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
-                const Text('관제웹과 같은 ID·비밀번호를 사용합니다', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey)),
+                const Text('관제웹과 같은 ID·비밀번호를 사용합니다',
+                    textAlign: TextAlign.center, style: TextStyle(color: VgColors.body)),
                 const SizedBox(height: 24),
                 TextField(
                   controller: _idController,
@@ -150,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: const TextStyle(color: Colors.red)),
+                  Text(_error!, style: const TextStyle(color: VgColors.danger)),
                 ],
                 const SizedBox(height: 20),
                 FilledButton(
@@ -243,23 +247,110 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${sec ~/ 60}분 ${sec % 60}초 전';
   }
 
-  /// 생체 한 줄 — 왼쪽 이름, 오른쪽 값. 보조 문구(측정 시각·건수)는 값 아래 작게 둔다.
-  Widget _vitalRowTile(VitalRow row) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(row.label, style: const TextStyle(color: Colors.grey))),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+  /// 섹션 제목 — 격자마다 무엇을 모아 둔 곳인지 밝힌다.
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.fromLTRB(2, 20, 0, 10),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w700, color: VgColors.ink)),
+      );
+
+  /// 2열 격자. **칸 높이를 고정**한다 — 막대 있는 타일과 없는 타일이 섞여도
+  /// 높이가 들쭉날쭉하면 값끼리 눈으로 비교가 안 된다.
+  Widget _tileGrid(List<VitalRow> rows) {
+    final lines = <Widget>[];
+    for (var i = 0; i < rows.length; i += 2) {
+      final right = i + 1 < rows.length ? rows[i + 1] : null;
+      lines.add(Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: SizedBox(
+          height: 108,
+          child: Row(
             children: [
-              Text(row.value, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-              if (row.detail != null)
-                Text(row.detail!, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+              Expanded(child: MetricTile(row: rows[i])),
+              const SizedBox(width: 10),
+              // 홀수 개면 마지막 칸은 빈 자리로 둔다(늘려서 채우면 그 타일만 커진다).
+              Expanded(child: right == null ? const SizedBox() : MetricTile(row: right)),
             ],
           ),
-        ],
+        ),
+      ));
+    }
+    return Column(children: lines);
+  }
+
+  /// 히어로 = 실시간 심박. 유일하게 상시 들어오는 값이라 제일 크게 둔다.
+  Widget _heartHero(VitalStreamEvent? vitals) {
+    final bpm = vitals?.bpm;
+    final receiving = bpm != null;
+    return Card(
+      // 이 화면의 주 지표라 브랜드 면으로 감싼다 — 관제웹 `--color-primary-subtle` 과 같은 용도.
+      color: VgColors.primarySubtle,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(vgCardRadius),
+        side: const BorderSide(color: VgColors.primaryRing),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.favorite,
+                    size: 18, color: receiving ? VgColors.heart : VgColors.muted),
+                const SizedBox(width: 6),
+                const Text('심박', style: TextStyle(fontSize: 13, color: VgColors.body)),
+                const Spacer(),
+                if (receiving) StatusBadge(status: heartRateStatus(bpm)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  receiving ? bpm.toStringAsFixed(0) : '--',
+                  style: TextStyle(
+                    fontSize: 52,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                    color: receiving ? vgValueColor(heartRateStatus(bpm)) : VgColors.muted,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Text('bpm', style: TextStyle(fontSize: 15, color: VgColors.muted)),
+              ],
+            ),
+            if (receiving) ...[
+              const SizedBox(height: 16),
+              HorizontalRangeBar(range: heartRateRange, value: bpm),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  // ★ 폰에는 활동 게이트가 없다. 이 표기를 지우면 작업 중 상승이 "주의" 로 읽힌다.
+                  Text(heartRateRange.basis,
+                      style: const TextStyle(fontSize: 11, color: VgColors.muted)),
+                  const Spacer(),
+                  Flexible(
+                    child: Text(
+                      '측정 ${_measuredAgoText()} · 배치 #${vitals?.seq ?? '-'}',
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 11, color: VgColors.muted),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 10),
+              const Text('워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
+                  style: TextStyle(fontSize: 12, color: VgColors.body)),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -271,82 +362,58 @@ class _HomeScreenState extends State<HomeScreen> {
     final pending = _livePending ?? _status['pending'] as int? ?? 0;
     final baseURL = _status['baseURL'] as String? ?? '';
     final vitals = _vitals;
-    final bpm = vitals?.bpm;
-    final receiving = bpm != null;
-    final rows = vitals == null ? const <VitalRow>[] : buildVitalRows(vitals);
+    final sections = splitVitalSections(vitals == null ? const [] : buildVitalRows(vitals));
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VitAlGuard'),
+        title: const Text('VitAlGuard', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
           IconButton(onPressed: _logout, tooltip: '로그아웃', icon: const Icon(Icons.logout)),
         ],
       ),
       // 카드가 늘 수 있어 ListView — 화면 밖으로 밀리면 그 값은 없는 것과 같다.
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
         children: [
           if (_authRejected)
             MaterialBanner(
-              backgroundColor: Colors.red.shade50,
+              backgroundColor: VgColors.danger.withValues(alpha: 0.08),
               content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
               actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
             ),
-          // 실시간 심박 — 워치 → 폰 수신 즉시 갱신(EventChannel).
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Icon(Icons.favorite, color: receiving ? const Color(0xFFD32F2F) : Colors.grey, size: 32),
-                      const SizedBox(width: 10),
-                      Text(
-                        receiving ? bpm.toStringAsFixed(0) : '--',
-                        style: const TextStyle(fontSize: 56, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 6),
-                      const Text('bpm', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    receiving
-                        ? '측정 ${_measuredAgoText()} · 배치 #${vitals?.seq ?? '-'}'
-                        : '워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
-                    style: const TextStyle(color: Colors.grey),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // 나머지 생체 — 워치가 보낸 것만 그린다. 안 온 종류는 행 자체가 없다(0 으로 적으면 거짓말).
-          if (rows.isNotEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Column(children: rows.map(_vitalRowTile).toList()),
-              ),
-            ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.badge_outlined),
-              title: Text('$name ($workerId)'),
-              subtitle: const Text('업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다'),
-            ),
-          ),
+          _heartHero(vitals),
+          // 측정 안 된 종류는 타일 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
+          if (sections.body.isNotEmpty) ...[
+            _sectionTitle('신체 지표'),
+            _tileGrid(sections.body),
+          ],
+          if (sections.activity.isNotEmpty) ...[
+            _sectionTitle('활동'),
+            _tileGrid(sections.activity),
+          ],
+          _sectionTitle('전송'),
           Card(
             child: ListTile(
               leading: Icon(
                 pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
-                color: pending == 0 ? Colors.green : Colors.orange,
+                color: pending == 0 ? VgColors.normal : VgColors.caution,
               ),
-              title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건'),
-              subtitle: Text(baseURL, maxLines: 1, overflow: TextOverflow.ellipsis),
+              title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건',
+                  style: const TextStyle(fontSize: 14, color: VgColors.ink)),
+              subtitle: Text(baseURL,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: VgColors.muted)),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.badge_outlined, color: VgColors.primary),
+              title: Text('$name ($workerId)',
+                  style: const TextStyle(fontSize: 14, color: VgColors.ink)),
+              subtitle: const Text('업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다',
+                  style: TextStyle(fontSize: 12, color: VgColors.muted)),
             ),
           ),
         ],
