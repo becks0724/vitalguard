@@ -56,6 +56,18 @@ export const VitalSampleSchema = z.object({
   // 앱이 HKSample.startDate / HKStatistics.mostRecentQuantityDateInterval() 로 채워 보낸다.
   heartRateMeasuredAt: z.string().datetime().optional(),
   spo2MeasuredAt: z.string().datetime().optional(),
+  // ── 폰 수신 시각 (2026-08-18 · watch-delivery-lag E-2) ─────────────────────
+  // 세 시각을 셋 다 남기기 위한 자리다 — 측정(heartRateMeasuredAt) · **폰 수신** · 서버 도착(received_at).
+  //
+  // 지금은 `ts` 가 폰 수신 시각이라 서버가 `ts` 로 폴백해 채운다. 그런데 ts 계약을 측정 시각으로
+  // 옮기기로 결정돼 있고(2026-08-15), 옮기는 순간 `ts − heart_rate_measured_at` 이 **항상 0** 이 되어
+  // 워치→폰 지연을 DB 에서 못 재게 된다. 08-14~18 진단이 전부 그 지표 위에 있었다
+  // (08-18 시험 B 가 거리 가설을 확정한 것도 이 지표다).
+  //
+  // ⚠ **ts 계약을 바꾸는 앱 변경은 반드시 이 필드 전송을 동반해야 한다.** 안 그러면 서버 폴백이
+  //   측정 시각을 폰 수신 시각 자리에 넣어 지연이 조용히 0 으로 굳는다 — 값이 틀리는 게 아니라
+  //   **지표가 사라지는** 형태라 화면·경보 어디에도 신호가 없다.
+  phoneReceivedAt: z.string().datetime().optional(),
   // 워치가 이미 보내는데 스키마에 없어 버려지던 것들 ↓
   // 백그라운드 하트비트 표식 — true 면 새 심박 이벤트 없이 **최신 스냅샷을 재전송**한 행이다
   // (VitalTransmitter.sendSnapshot). 즉 이 행의 심박은 실측이 아니라 직전 값 복사다.

@@ -267,6 +267,11 @@ async function initSchema(): Promise<void> {
     -- "직전 값을 5초마다 복사"를 서버가 구분할 방법이 없다(2026-07-30 조사).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heart_rate_measured_at TEXT;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS spo2_measured_at TEXT;
+    -- 폰 수신 시각(2026-08-18 · watch-delivery-lag E-2). 세 시각을 셋 다 남긴다 —
+    -- 측정 · **폰 수신** · 서버 도착(received_at). ts 계약이 측정 시각으로 바뀌면
+    -- ts − heart_rate_measured_at 이 항상 0 이 되어 워치→폰 지연을 못 재게 되는데,
+    -- 그 지표가 08-18 시험 B(거리 가설 확정)를 포함한 이 트랙 전체의 근거였다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS phone_received_at TEXT;
     -- 백그라운드 하트비트 = 새 심박 없이 최신 스냅샷을 재전송한 행(심박이 복사본).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heartbeat INTEGER;
     -- 착용 기기 — 혈중산소 센서 유무(Series 6+/Ultra)를 가려 SpO2 결측 원인을 확정한다.
@@ -935,6 +940,10 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     // 측정 시각·복사 표식 — ts 하나로는 실측인지 직전 값 복사인지 못 가린다.
     heart_rate_measured_at: sample.heartRateMeasuredAt ?? null,
     spo2_measured_at: sample.spo2MeasuredAt ?? null,
+    // 폰 수신 시각 — 앱이 아직 안 보내는 동안은 ts 가 곧 폰 수신 시각이라 그것으로 폴백한다.
+    // ⚠ ts 계약을 측정 시각으로 옮기는 앱 변경은 phoneReceivedAt 전송을 **반드시** 동반해야 한다.
+    //   안 그러면 이 폴백이 측정 시각을 여기 넣어 워치→폰 지연이 조용히 0 으로 굳는다.
+    phone_received_at: sample.phoneReceivedAt ?? sample.ts,
     heartbeat: sample.heartbeat === true ? 1 : sample.heartbeat === false ? 0 : null,
     watch_device_model: sample.watchDeviceModel ?? null,
     raw_json: JSON.stringify(sample),
