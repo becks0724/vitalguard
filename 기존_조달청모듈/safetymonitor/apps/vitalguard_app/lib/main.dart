@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'metric_tile.dart';
 import 'own_vitals.dart';
+import 'settings_screen.dart';
 import 'status_ring.dart';
 import 'theme.dart';
 import 'vital_display.dart';
@@ -245,6 +246,20 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {
       // 브리지 부재(테스트 등)면 표시만 유지한다.
     }
+  }
+
+  /// 설정 화면 — 전송 상태·계정. 열 때의 값을 넘기고, 그 뒤 갱신은 설정 화면이 스스로 한다.
+  void _openSettings() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
+          bridge: _bridge,
+          status: _status,
+          pending: _livePending ?? _status['pending'] as int? ?? 0,
+          totalPersisted: _own?.totalPersisted,
+        ),
+      ),
+    );
   }
 
   Future<void> _logout() async {
@@ -540,10 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = _status['name'] as String? ?? '작업자';
-    final workerId = _status['workerId'] as String? ?? '-';
     final pending = _livePending ?? _status['pending'] as int? ?? 0;
-    final baseURL = _status['baseURL'] as String? ?? '';
     final vitals = _vitals;
     // 워치가 보낸 것 + 서버가 계산한 것을 한 격자에 둔다. 둘 다 "지금 이 사람의 몸" 이라
     // 성격이 같고, 출처가 다르다고 나누면 같은 걸 두 번 찾게 된다(활동 누계와는 다르다).
@@ -558,6 +570,19 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('VitAlGuard', style: TextStyle(fontWeight: FontWeight.w700)),
         actions: [
+          // ★ 큐가 밀리면 톱니에 점을 찍는다 — 전송 상태를 설정 안으로 옮기면서
+          //   "밀리고 있다" 는 신호까지 함께 숨기지 않기 위한 것이다(평시엔 아무 표시 없음).
+          IconButton(
+            onPressed: _openSettings,
+            tooltip: '설정',
+            icon: pending > 0
+                ? const Badge(
+                    smallSize: 8,
+                    backgroundColor: VgColors.caution,
+                    child: Icon(Icons.settings_outlined),
+                  )
+                : const Icon(Icons.settings_outlined),
+          ),
           IconButton(onPressed: _logout, tooltip: '로그아웃', icon: const Icon(Icons.logout)),
         ],
       ),
@@ -581,44 +606,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
           _sectionTitle('활동'),
           _activityStrip(vitals),
-          _sectionTitle('전송'),
-          Card(
-            child: ListTile(
-              leading: Icon(
-                pending == 0 ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined,
-                color: pending == 0 ? VgColors.normal : VgColors.caution,
-              ),
-              title: Text(pending == 0 ? '전송 큐 비어 있음' : '전송 대기 $pending건',
-                  style: const TextStyle(fontSize: 14, color: VgColors.ink)),
-              subtitle: Text(baseURL,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: VgColors.muted)),
-            ),
-          ),
-          // DB 누적 — 조회 실패는 값을 지어내지 않고 줄 자체를 생략한다.
-          if (_own?.totalPersisted != null) ...[
-            const SizedBox(height: 10),
-            Card(
-              child: ListTile(
-                leading: const Icon(Icons.storage_outlined, color: VgColors.primary),
-                title: Text('누적 ${formatCount(_own!.totalPersisted!)}건',
-                    style: const TextStyle(fontSize: 14, color: VgColors.ink)),
-                subtitle: const Text('서버에 영속된 내 생체 샘플',
-                    style: TextStyle(fontSize: 12, color: VgColors.muted)),
-              ),
-            ),
-          ],
-          const SizedBox(height: 10),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.badge_outlined, color: VgColors.primary),
-              title: Text('$name ($workerId)',
-                  style: const TextStyle(fontSize: 14, color: VgColors.ink)),
-              subtitle: const Text('업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다',
-                  style: TextStyle(fontSize: 12, color: VgColors.muted)),
-            ),
-          ),
         ],
       ),
     );
