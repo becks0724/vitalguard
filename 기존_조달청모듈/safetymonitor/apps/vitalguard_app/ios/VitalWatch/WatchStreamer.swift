@@ -189,6 +189,14 @@ final class WatchStreamer: NSObject, ObservableObject {
         ]
     }()
 
+    // 오른층 앵커 영속 — 이미 합산한 표본을 재실행 때 다시 더하지 않는다.
+    private static let flightsAnchorKey = "flt.anchor"
+    private var flightsAnchor: HKQueryAnchor? {
+        get { Self.loadAnchor(Self.flightsAnchorKey) }
+        set { if let newValue { Self.saveAnchor(newValue, forKey: Self.flightsAnchorKey) } }
+    }
+    private var flightsQuery: HKAnchoredObjectQuery?
+
     // SpO₂ 앵커 영속 — 앱 재실행에도 이미 보낸 측정을 다시 받지 않는다(측정 1건 = 전송 1건).
     private static let spo2AnchorKey = "spo2.anchor"
     private var spo2Anchor: HKQueryAnchor? {
@@ -258,7 +266,8 @@ final class WatchStreamer: NSObject, ObservableObject {
             // 걸음수·오른층은 .other 워크아웃의 기본 수집 목록에 없다 — 명시로 켜야 statistics 에 잡힌다.
             // 이 둘이 활동 분류(rest/light/heavy)를 정하고, 활동 분류가 '기대 심박'을 정한다.
             dataSource.enableCollection(for: stepsType, predicate: nil)
-            dataSource.enableCollection(for: flightsType, predicate: nil)
+            // ⚠ 오른층은 여기서 켜지 않는다 — 2026-08-18 부터 앵커 쿼리(startFlightsQuery)가 소스다.
+            // 둘 다 켜면 같은 계단이 두 번 세어진다. 이유는 startFlightsQuery 주석 참조.
             builder.dataSource = dataSource
             session.delegate = self
             builder.delegate = self
@@ -279,6 +288,8 @@ final class WatchStreamer: NSObject, ObservableObject {
                     self.startFlushTimer()
                     self.startSpO2Query()
                     self.startDiscreteQueries()
+                    // 오른층 — 워크아웃 빌더가 .indoor 에서 안 주므로 저장소를 직접 읽는다(2026-08-18).
+                    self.startFlightsQuery()
                     self.startMotionUpdates()
                 }
             }
@@ -518,6 +529,72 @@ final class WatchStreamer: NSObject, ObservableObject {
         }
     }
 
+    // MARK: - 오른층(계단) — 워크아웃 빌더가 아니라 HealthKit 저장소를 직접 읽는다
+
+    /// 왜 빌더가 아닌가 (2026-08-18 실측).
+    ///
+    /// 신규 앱은 오른층을 `HKLiveWorkoutBuilder.statistics(for:)` 로 읽었는데 **DB 도착이 0건**이었다
+    /// (구 앱 시절엔 왔다 · 마지막 08-01). 같은 구간 걸음은 1,132건 정상이고 두 경로는 코드가 완전
+    /// 대칭인데 결과만 갈렸다. 유력한 원인은 워크아웃 구성이 `locationType = .indoor` 라 HealthKit 이
+    /// **고도 기반 지표를 수집 대상에서 빼는 것**이다(걸음은 실내에서도 수집되므로 온다).
+    ///
+    /// ⚠ `locationType` 을 바꾸는 쪽은 택하지 않았다 — 워크아웃 구성 위에 폰 강제종료·잠금 생존이
+    /// 얹혀 있어 건드리면 그 축이 흔들린다. **읽는 경로만 바꾸면 부작용이 없다.**
+    ///
+    /// 왜 구 앱 코드를 그대로 안 가져왔나 — 구 앱은 `sum(window: 86400)`, 즉 **하루 누계**를 보냈다.
+    /// 이 앱의 계약은 **5초 구간 증분**이고(`appendCountDelta`), 하루 누계를 실으면 서버 상한(500)에서
+    /// 스트립된다. 서버 스키마의 `NON_SAFETY_STRIPPABLE_KEYS` 주석이 그 사고를 기록해 두고 있다
+    /// ("수집 창 정의 불일치(하루 누적 vs 60초 합)"). 그래서 **앵커 쿼리로 새 표본만 합산**한다 —
+    /// 앵커가 "이미 본 것"을 기억하므로 창 중복 없이 증분이 된다.
+    ///
+    /// ★ 워치 표본만 더한다 — 워치 HealthKit 에는 **아이폰이 기록한 계단도 동기화**된다. 아이폰도
+    /// 기압계가 있어 같은 계단을 따로 세므로, 거르지 않으면 이중 계상되거나 폰만 들고 이동한 것이
+    /// 워치 활동으로 잡힌다. 이 필터는 구 앱 `StressInputsReader.isAppleWatchSample` 에서 가져왔다.
+    private func startFlightsQuery() {
+        // 첫 실행(앵커 없음)은 지금 이후 표본만 — 과거 며칠치가 한꺼번에 합산되는 것을 막는다(SpO₂와 같은 가드).
+        let predicate: NSPredicate? = flightsAnchor == nil
+            ? HKQuery.predicateForSamples(withStart: Date(), end: nil, options: [])
+            : nil
+        let query = HKAnchoredObjectQuery(
+            type: flightsType,
+            predicate: predicate,
+            anchor: flightsAnchor,
+            limit: HKObjectQueryNoLimit
+        ) { [weak self] _, samples, _, newAnchor, _ in
+            self?.ingestFlights(samples: samples, anchor: newAnchor)
+        }
+        query.updateHandler = { [weak self] _, samples, _, newAnchor, _ in
+            self?.ingestFlights(samples: samples, anchor: newAnchor)
+        }
+        healthStore.execute(query)
+        flightsQuery = query
+    }
+
+    private func ingestFlights(samples: [HKSample]?, anchor: HKQueryAnchor?) {
+        let quantities = (samples as? [HKQuantitySample]) ?? []
+        DispatchQueue.main.async {
+            if let anchor { self.flightsAnchor = anchor }
+            for s in quantities {
+                guard Self.isAppleWatchSample(s) else { continue }
+                let v = s.quantity.doubleValue(for: .count())
+                guard v.isFinite, v > 0 else { continue }
+                // 누적만 갱신한다 — 증분은 flush 의 appendCountDelta 가 뽑는다(걸음·에너지와 같은 계약).
+                self.sessionFlights += v
+            }
+        }
+    }
+
+    /// 이 표본을 애플워치가 기록했는가. 구 앱 `StressInputsReader.isAppleWatchSample` 이식.
+    private static func isAppleWatchSample(_ sample: HKSample) -> Bool {
+        if sample.device?.name?.localizedCaseInsensitiveContains("Apple Watch") == true { return true }
+        if sample.device?.manufacturer?.localizedCaseInsensitiveContains("Apple") == true,
+           sample.device?.model?.localizedCaseInsensitiveContains("Watch") == true { return true }
+        if sample.device?.model?.localizedCaseInsensitiveContains("Watch") == true { return true }
+        // device 가 비어 있는 표본도 있다 — 그때는 출처 이름으로 가른다.
+        let name = sample.sourceRevision.source.name.lowercased()
+        return name.contains("watch")
+    }
+
     // MARK: - SpO₂ (기회 측정 — 새 측정이 기록되는 순간에만 이벤트 수신 · 폴링·복사 전송 없음)
 
     private func startSpO2Query() {
@@ -568,6 +645,8 @@ final class WatchStreamer: NSObject, ObservableObject {
         motionMaxG = 0
         if let spo2Query { healthStore.stop(spo2Query) }
         spo2Query = nil
+        if let flightsQuery { healthStore.stop(flightsQuery) }
+        flightsQuery = nil
         for query in discreteQueries { healthStore.stop(query) }
         discreteQueries.removeAll()
         pendingSamples.removeAll()
@@ -640,11 +719,7 @@ extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
             let steps = sum.doubleValue(for: .count())
             DispatchQueue.main.async { self.sessionSteps = steps }
         }
-        if collectedTypes.contains(flightsType),
-           let sum = workoutBuilder.statistics(for: flightsType)?.sumQuantity() {
-            let flights = sum.doubleValue(for: .count())
-            DispatchQueue.main.async { self.sessionFlights = flights }
-        }
+        // ⚠ 오른층은 여기서 읽지 않는다 — startFlightsQuery 가 sessionFlights 를 채운다(2026-08-18).
     }
 
     func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
