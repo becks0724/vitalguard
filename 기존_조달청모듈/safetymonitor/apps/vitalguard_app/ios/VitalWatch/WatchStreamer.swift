@@ -3,6 +3,7 @@ import CoreMotion
 import Foundation
 import HealthKit
 import WatchConnectivity
+import WatchKit
 import os
 
 final class WatchStreamer: NSObject, ObservableObject {
@@ -250,6 +251,8 @@ final class WatchStreamer: NSObject, ObservableObject {
     }
 
     private func beginWorkout() {
+        // 배터리 모니터링 — 켜지 않으면 batteryLevel 이 -1 을 돌려준다(값이 아니라 "모름").
+        WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         sessionEnergyKcal = 0
         energyReportedKcal = 0
         sessionSteps = 0
@@ -343,6 +346,21 @@ final class WatchStreamer: NSObject, ObservableObject {
         // 소수 잔여는 다음 구간으로 이월한다(보낸 몫만 reported 에 더한다).
         appendCountDelta(session: sessionSteps, reported: &stepsReported, key: "stp")
         appendCountDelta(session: sessionFlights, reported: &flightsReported, key: "flt")
+        // 워치 배터리(2026-08-18) — 심박 항목에 얹는다(행 수 불증가). **단독 항목으로 만들지 않는다** —
+        // 배터리만 있는 행을 새로 만들면 배치 내 ts 중복으로 서버가 조용히 버리고(위 계약), 무엇보다
+        // "생체는 없는데 배터리만 있는 행"이 생겨 미수신 판별을 더 흐린다.
+        //
+        // 왜 필요한가 — 08-18 진단에서 긴 공백 3건(208·174·69분)이 전부 **수집 정지**로 확정됐는데
+        // (복귀 시 버스트 없음) **원인을 가를 신호가 없었다**. 방전인지 충전인지 앱 종료인지 모른다.
+        // 구 앱엔 있던 필드이고 서버 트리오(스키마 `batteryPct`·컬럼 `battery_pct`·insert)는 이미
+        // 완비돼 있어 **워치가 보내기만 하면 된다**. 레벨의 시간 변화가 방전(급락)과 충전(상승)을 가른다.
+        //
+        // ⚠ `-1` 은 값이 아니라 "모니터링 꺼짐"이다. 그대로 실으면 서버 스키마(0~100)가 통째로
+        // 스트립해 배터리뿐 아니라 **그 행의 다른 필드까지 잃을 수 있다**(활동량 허용목록 계열).
+        if let idx = pendingSamples.lastIndex(where: { $0["bpm"] is Double }) {
+            let level = WKInterfaceDevice.current().batteryLevel
+            if level >= 0 { pendingSamples[idx]["bat"] = Int((level * 100).rounded()) }
+        }
         // 이산 측정(HRV·안정심박·보행심박·호흡수·MET·일광) — 에너지·걸음과 같은 계약으로 심박 항목에
         // 얹는다. 단독 항목으로 보내면 배치 내 ts 중복으로 서버가 조용히 버린다(pendingDiscrete 주석).
         if !pendingDiscrete.isEmpty {

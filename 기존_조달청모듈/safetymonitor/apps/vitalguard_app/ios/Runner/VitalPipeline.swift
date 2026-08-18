@@ -137,6 +137,7 @@ final class VitalPipeline {
                 let dl = s["dl"] as? Double
                 // 무동작 지속(초) — 워치 CMMotionManager 기준. 값이 없으면 못 잰 것이지 0 이 아니다.
                 let still = s["still"] as? Double
+                let bat = s["bat"] as? Int
                 guard bpm != nil || spo2 != nil || ae != nil
                     || hrv != nil || rhr != nil || whr != nil || rr != nil
                     || stp != nil || flt != nil || pe != nil || dl != nil || still != nil
@@ -181,6 +182,11 @@ final class VitalPipeline {
                 // 무동작 지속 — 서버 스키마 `motionStillSec`. 스키마·DB 컬럼·insert 매핑은
                 // 구 앱 시절부터 있었고 신규 앱이 안 보내 27,831행 중 0건이었다(2026-08-15 실측).
                 if let still { v["motionStillSec"] = still }
+                // 워치 배터리(2026-08-18) — `motionStillSec` 과 같은 형태의 결손이었다. 스키마·컬럼·
+                // insert 가 구 앱 시절부터 있는데 신규 앱이 안 보내 10,189행 중 **0건**이었다.
+                // 08-18 진단에서 긴 공백 3건이 전부 수집 정지로 확정됐는데 **방전·충전·앱 종료를
+                // 가를 신호가 이것 하나뿐**이라 우선순위가 올라갔다(레벨의 시간 변화가 가른다).
+                if let bat { v["batteryPct"] = bat }
                 // 좌표 4종(위·경도·정확도·측위시각)을 한 덩어리로 얹는다. 정확도와 측위시각이 없으면
                 // 관제가 값의 품질·나이를 못 재므로 좌표만 따로 싣지 않는다.
                 if let fix { v.merge(fix) { current, _ in current } }
