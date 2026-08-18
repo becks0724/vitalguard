@@ -150,3 +150,25 @@ test("⑧ 표시 전용 — 판정·알림 경로에 넣지 않는다", () => {
     );
   }
 });
+
+// ── 2026-08-18 · 툴바·격자 폭 (사용자 지적) ──────────────────────────────
+// ① "히트맵 우측에 여백이 많이 남는다" ② "라인/막대·기간 메뉴는 해당사항이 없음".
+// 둘 다 **화면이 사실과 다른 것을 말하는** 같은 계열이다 — 여백은 격자가 1년치를 다 그렸는지
+// 의심하게 만들고, 죽은 기간 버튼은 "다른 기간도 볼 수 있다"는 거짓을 말한다(L-… 차트토글과 동종).
+
+test("⑩ 격자가 컨테이너 폭을 채운다(칸 고정폭으로 되돌아가지 않았다)", () => {
+  // 11px 고정이면 53주 = 766px 라 넓은 패널에서 우측이 400px 넘게 빈다(사용자 실측 화면).
+  const v = codeOnly(view);
+  assert.match(v, /minmax\(0, 1fr\)/, "열이 가변폭이 아니다 — 우측에 빈 공간이 남는다");
+  assert.match(v, /aspect-square/, "칸이 정사각 비율이 아니다 — 열이 늘면 칸이 찌그러진다");
+  assert.match(v, /minWidth: MIN_GRID_W/, "최소 폭이 없다 — 좁은 화면에서 칸이 11px 밑으로 뭉개진다");
+  assert.match(v, /whitespace-nowrap/, "월 라벨 줄바꿈 방지가 사라졌다(좁은 열에서 두 줄로 접힌다)");
+});
+
+test("⑪ 칸 값이 호버로 읽힌다(네이티브 title 과 겹치지 않는다)", () => {
+  // title 과 커스텀 툴팁을 함께 두면 같은 자리에 두 개가 뜬다.
+  assert.match(view, /onMouseEnter=\{\(e\) => showTip\(e, c, di\)\}/, "칸에 호버 핸들러가 없다");
+  assert.match(view, /onMouseLeave=\{\(\) => setHover\(null\)\}/, "격자를 벗어나도 툴팁이 남는다");
+  assert.doesNotMatch(codeOnly(view), /title=\{/, "네이티브 title 이 되살아났다 — 툴팁이 두 겹으로 뜬다");
+  assert.match(view, /aria-label=\{`\$\{c\.date\} · \$\{cellLabel\(c\)\}`\}/, "칸의 접근성 라벨이 사라졌다");
+});
