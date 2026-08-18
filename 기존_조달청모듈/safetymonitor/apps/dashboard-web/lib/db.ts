@@ -1036,6 +1036,33 @@ export async function recentDataMockupSamples(limit = 40): Promise<VitalSample[]
 // 관리자 내보내기 — 워커 목록 + 카운트 + 시계 범위
 // 구간 심박 버킷 평균 — 추세 차트 실데이터(심박·심부체온 추정 궤적)용. 별칭 확장은 호출부가
 // ID 배열로 넘긴다(과거 이력이 secondary ID 로 저장돼 있어 primary 하나로는 비어 보인다).
+/**
+ * ★ 시간 기준 = **측정 시각**(2026-08-18 · A-1). 버킷·집계는 `heart_rate_measured_at`,
+ * 조회 범위(WHERE)는 `ts` 다. 둘을 나눈 이유가 각각 있다.
+ *
+ * **왜 버킷을 옮겼나.** `ts` 는 폰이 워치에서 받은 시각이라, 전달이 끊겼다 복구되면 그 사이 측정이
+ * **전부 복구 순간의 한 분에 뭉친다**. 08-18 시험 B 실측 — 워치는 20분 내내 12건/분을 쟀는데
+ * `ts` 기준 커버는 **15분**이고 측정 기준은 **21분**이었다. 사라진 5분이 10:57 한 분에 73건으로
+ * 몰렸다. 화면은 그것을 "5분 미수집"으로 그렸지만 **수집은 끊긴 적이 없다** — 전달만 끊겼다.
+ *
+ * **왜 WHERE 는 `ts` 로 두나.** 인덱스가 전부 `ts` 에 있고(`uq_vs_worker_ts` 등) 측정 시각에는
+ * 없다. WHERE 를 옮기면 인덱스를 못 탄다. EXPLAIN 실측 — 두 방식 모두 같은
+ * `Bitmap Index Scan on uq_vs_worker_ts` 를 타고 실행 시간 117.9ms vs 119.8ms(+1.6%)로
+ * 사실상 동일하며, 버킷 수만 496 → 501 로 늘었다(= 되살아난 5분).
+ *
+ * ⚠ **경계 효과** — 창 안에서 측정됐지만 창이 끝난 뒤 도착한 표본은 빠진다. 지연이 창 경계를
+ * 넘을 때만 생기고 일 단위 창에서는 분 단위 효과라 감수한다. 없애려면 WHERE 를 지연 최댓값만큼
+ * 넓혀야 하는데 그만큼 스캔이 늘어 이득에 비해 비싸다.
+ *
+ * ⚠ **라이브 '연결끊김' 표시는 이 변경 대상이 아니다.** 그 순간 데이터가 실제로 없었으므로 그
+ * 표시는 정확하다. 여기서 고치는 것은 **지나고 나서 그리는 기록**이다.
+ *
+ * ⚠ **`firstDataDay` 는 `ts` 기준으로 남겨 뒀다(의도).** 기준이 갈리면 "측정 기준으로는 수집된 날인데
+ * 최초 수집일보다 이전" 인 하루가 생길 수 있는데, **클라이언트가 이미 그 경우를 흡수한다** —
+ * `buildCoverageCells` 가 `minutes > 0` 이면 무조건 covered 로 그린다("실제 데이터가 이긴다").
+ * 반면 옮기면 `MIN(ts)` 의 Index Only Scan 이 Bitmap Heap Scan 으로 바뀌어 버퍼가 2.8배가 된다
+ * (실측 4,054 → 11,494 · 21ms → 59ms). **화면에 보이는 차이 0 에 비용만 드는 변경이라 하지 않았다.**
+ */
 export async function heartRateBucketAverages(
   workerIds: string[],
   fromMs: number,
@@ -1044,7 +1071,7 @@ export async function heartRateBucketAverages(
 ): Promise<{ bucket_start_sec: number; bpm: number }[]> {
   if (workerIds.length === 0) return [];
   const { rows } = await q<{ bucket_start_sec: number; bpm: number }>(
-    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+    `SELECT (floor(extract(epoch from COALESCE(heart_rate_measured_at, ts)::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
             avg(heart_rate) AS bpm
        FROM vital_samples
       WHERE worker_id = ANY($1)
@@ -1075,8 +1102,8 @@ export async function dailyCoverageMinutes(
 ): Promise<{ day: string; minutes: number }[]> {
   if (workerIds.length === 0) return [];
   const { rows } = await q<{ day: string; minutes: number }>(
-    `SELECT to_char((ts::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS day,
-            COUNT(DISTINCT date_trunc('minute', ts::timestamptz AT TIME ZONE 'Asia/Seoul')) AS minutes
+    `SELECT to_char((COALESCE(heart_rate_measured_at, ts)::timestamptz AT TIME ZONE 'Asia/Seoul')::date, 'YYYY-MM-DD') AS day,
+            COUNT(DISTINCT date_trunc('minute', COALESCE(heart_rate_measured_at, ts)::timestamptz AT TIME ZONE 'Asia/Seoul')) AS minutes
        FROM vital_samples
       WHERE worker_id = ANY($1)
         AND ts::timestamptz >= to_timestamp($2)
@@ -1974,7 +2001,7 @@ export async function activeEnergyBucketSums(
 ): Promise<{ bucket_start_sec: number; kcal: number }[]> {
   if (workerIds.length === 0) return [];
   const { rows } = await q<{ bucket_start_sec: number; kcal: number }>(
-    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+    `SELECT (floor(extract(epoch from COALESCE(heart_rate_measured_at, ts)::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
             sum(active_energy_kcal) AS kcal
        FROM vital_samples
       WHERE worker_id = ANY($1)
