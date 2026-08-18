@@ -1,5 +1,5 @@
 // 영상(CCTV) 낙상 이벤트 수신 → fusion 결합 판정 → worker 경보(alerts) 또는 zone hazard(메모리).
-// 설계: docs/fusion/artifacts/fusion-design.md §5·§9·§11. 워치(/api/mock/vital)와 별개 경로.
+// 설계: docs/fusion/artifacts/fusion-design.md §5·§9·§11. 워치(/api/app/vital)와 별개 경로.
 import {
   decideFusion,
   type FusionDecision,
@@ -12,12 +12,12 @@ import {
 } from "@safetymonitor/schemas";
 
 import { persistCctvEvent, recordAlert } from "../../../lib/db";
-import { mockStore } from "../mock/store";
+import { vitalStore } from "../app/vital/store";
 
 const VISION_WINDOW = { preSec: 10, postSec: 15 } as const;
 const ZONE_HAZARD_MAX = 200;
 
-// 대상 미특정 zone 위험 + 워커→zone 매핑 — HMR 안전 위해 globalThis 캐시(store.ts mockStore 패턴).
+// 대상 미특정 zone 위험 + 워커→zone 매핑 — HMR 안전 위해 globalThis 캐시(store.ts vitalStore 패턴).
 // alerts 는 worker_id 필수라 zone hazard 를 직접 못 넣어 메모리에 보관(설계 §11).
 const g = globalThis as typeof globalThis & {
   __cctvZoneHazards?: ZoneHazardEvent[];
@@ -42,7 +42,7 @@ function matchWatch(event: CctvFallEvent): FusionInputs["watch"] {
     | { ts: string; workerId: string; confirmed: boolean; candidate: boolean; diffAbs: number }
     | null = null;
   if (!Number.isNaN(eventMs)) {
-    for (const s of mockStore.samples) {
+    for (const s of vitalStore.samples) {
       const confirmed = s.fallDetected === true;
       const candidate =
         s.fallCandidate === true &&

@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const route = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
 
 // GET 핸들러 구간만 — 파일 전체를 보면 POST 쪽 코드나 설명 주석이 가드를 만족시킨다.

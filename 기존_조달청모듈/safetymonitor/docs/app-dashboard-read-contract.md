@@ -11,14 +11,23 @@
 | 기능 | 엔드포인트 | 인증 |
 |---|---|---|
 | 실시간 레이더 | `GET /api/radar` | **없음(공개)** |
-| 기능 현황요약 | `GET /api/mock/vital` | **없음(공개)** — GPS·보호자 등 PII 는 마스킹되어 나옴(현황요약엔 불필요) |
+| 기능 현황요약 | `GET /api/monitor/vital` | **관제 세션 토큰**(앱 JWT 미수용 — 아래 ⚠️) — GPS·보호자 등 PII 는 마스킹되어 나옴(현황요약엔 불필요) |
 | 현장정보 | `GET /api/admin/site-info` | **`Authorization: Bearer <앱 JWT>`** |
 | 캘린더(조회) | `GET /api/calendar/media?from=&to=` | **`Authorization: Bearer <앱 JWT>`** |
 | 캘린더 일정(조회) | `GET /api/calendar/events?from=&to=` | **`Authorization: Bearer <앱 JWT>`** |
 | 캘린더 일정 라벨(조회) | `GET /api/calendar/labels` | **`Authorization: Bearer <앱 JWT>`** |
 
 - 앱 JWT = 로그인(`POST /api/app-auth/login`) 성공 시 받는 30일 토큰. 현장정보·캘린더 조회는 **로그인한 사용자(owner/admin/worker 모두)** 면 허용된다.
-- 레이더·현황요약은 토큰 없이 바로 호출 가능.
+- 레이더는 토큰 없이 바로 호출 가능하다.
+- ⚠️ **현황요약은 이 문서의 종전 기술과 다르다 — 공개가 아니다.** 2026-08-13 에 생체 조회 전반에 인증
+  게이트가 붙었고(사번만 알면 실측 시계열이 조회되던 구멍), 그 게이트는 **관제 세션 토큰만** 받는다
+  (`verifyBasicAuth`). **앱 JWT 로는 401** 이다 — 현장정보·캘린더와 같은 갭이 여기에도 있다.
+  앱에서 현황요약을 살리려면 이 라우트에 앱 JWT 분기를 추가하는 별도 작업이 필요하다.
+- ⚠️ **경로가 바뀌었다(2026-08-18).** `GET /api/mock/vital` → **`GET /api/monitor/vital`** ·
+  `GET /api/mock/history` → **`GET /api/monitor/vital/history`**. 옛 경로는 **404**(삭제).
+  이름의 `mock` 이 프로덕션 수집 경로를 목업으로 오해하게 만들어(이 문서의 종전 "공개" 기술이 그 결과다)
+  경로를 갈랐다 — **앱이 쓰는 것 `/api/app/*` · 관제가 쓰는 것 `/api/monitor/*`**.
+  생체 **전송**은 종전대로 `POST /api/app/vital` 이며 **바뀌지 않았다**.
 
 ## 역할별 권한 요약 (앱 UI 구성 기준)
 
@@ -58,9 +67,9 @@
 - 지도 타일 URL 조립(RainViewer 슬리피맵 규격) = `` `${host}${path}/{size}/{z}/{x}/{y}/{color}/{options}.png` `` (예: `256/6/54/25/2/1_1.png`). 관제웹 조립 로직은 `app/components/RadarRealtime.tsx` 참고.
 - 업스트림 장애 시 502 `{ ok:false, error:"radar upstream failed" }`.
 
-## 2. 기능 현황요약 — `GET /api/mock/vital`
+## 2. 기능 현황요약 — `GET /api/monitor/vital`
 
-작업자별 최신 생체 + DB 누적 수신 통계. 인증 없음(PII 마스킹됨).
+작업자별 최신 생체 + DB 누적 수신 통계. **관제 세션 토큰 필수**(앱 JWT 미수용) · PII 는 마스킹된다.
 
 **응답 (200) — 현황요약이 쓰는 필드**
 ```json

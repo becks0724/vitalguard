@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const heatAlert = readFileSync(join(ROOT, "lib", "heat-alert.ts"), "utf8");
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
-const route = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
 
 test("① 문구 함수는 수치를 받을 수 없다 — formatHeatMessage 시그니처·본문에 temp/bpm/kcal 부재", () => {

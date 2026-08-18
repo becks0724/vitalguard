@@ -40,7 +40,7 @@ test("overallStatus — nowMs 를 받아 SpO₂ 를 신선도로 거른다(행 �
 });
 
 test("vital GET — latest 는 DB SpO₂ 겹침 경유(latestByWorkerWithSpo2) — 인스턴스 메모리 단독 금지", () => {
-  const routeSrc = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+  const routeSrc = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
   assert.match(
     routeSrc,
     /latest: \(await latestByWorkerWithSpo2\(aliasMap\)\)/,

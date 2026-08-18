@@ -31,7 +31,7 @@ const withSecret = (fn: () => void) => {
 };
 
 const req = (auth?: string) =>
-  new Request("https://x.test/api/mock/vital", {
+  new Request("https://x.test/api/app/vital", {
     method: "POST",
     headers: { ...(auth ? { authorization: auth } : {}), "user-agent": "VitAlGuard/85" },
   });

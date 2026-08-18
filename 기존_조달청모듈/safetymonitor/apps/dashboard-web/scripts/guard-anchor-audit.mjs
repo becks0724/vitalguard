@@ -57,7 +57,7 @@ function runGuard(file, env) {
 
 const guards = [
   ...readdirSync(join(ROOT, "lib")).filter((f) => f.endsWith(".guard.test.ts")).map((f) => `lib/${f}`),
-  ...readdirSync(join(ROOT, "app/api/mock")).filter((f) => f.endsWith(".guard.test.ts")).map((f) => `app/api/mock/${f}`),
+  ...readdirSync(join(ROOT, "app/api/app/vital")).filter((f) => f.endsWith(".guard.test.ts")).map((f) => `app/api/app/vital/${f}`),
 ];
 
 let anchored = 0;

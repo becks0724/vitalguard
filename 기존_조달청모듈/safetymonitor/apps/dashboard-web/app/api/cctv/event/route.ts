@@ -12,7 +12,7 @@ import { recentCctvEvents } from "../../../../lib/db";
 // 무인증 수집 전송 경고(soft 모드) — 프로세스당 1회.
 let warnedUnauthedCctv = false;
 
-// 영상(CCTV) 낙상 이벤트 수신 — 폴링 어댑터/푸시가 POST. 워치(/api/mock/vital)와 별개 경로.
+// 영상(CCTV) 낙상 이벤트 수신 — 폴링 어댑터/푸시가 POST. 워치(/api/app/vital)와 별개 경로.
 // 기존 vital route 패턴 답습(배열/단일, Zod, 항목 격리). 단 CCTV 는 reserved worker 가 없어
 // 202 분기를 두지 않는다(설계 §9) — 201/400 만 사용.
 export async function POST(request: Request) {

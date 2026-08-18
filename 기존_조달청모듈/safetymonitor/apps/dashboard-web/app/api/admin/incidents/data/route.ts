@@ -17,7 +17,7 @@ import {
   isIncidentWindowHours,
   type IncidentWindowHours,
 } from "../../../../../lib/incident-report";
-import { aliasIdsOf } from "../../../mock/history/real";
+import { aliasIdsOf } from "../../../monitor/vital/history/real";
 
 const WORKER_ID_RE = /^[A-Za-z0-9._:-]{1,64}$/;
 // 칼만 워밍업(30분) + 세션 갭 한도(60분) 여유 — 창 시작 시점에 이미 데워진 궤적을 얻는다.

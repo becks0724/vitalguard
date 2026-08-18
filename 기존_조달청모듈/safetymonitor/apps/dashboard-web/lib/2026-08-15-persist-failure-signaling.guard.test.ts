@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
-const route = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
 
 test("① persistSample 실패가 호출부로 올라간다 — 삼키고 끝나지 않는다", () => {
   const i = store.indexOf("await persistSample(sample);");

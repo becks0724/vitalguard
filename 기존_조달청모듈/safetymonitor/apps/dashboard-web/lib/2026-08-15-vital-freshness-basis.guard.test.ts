@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dashboard = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
 const age = readFileSync(join(ROOT, "lib", "vital-age.ts"), "utf8");
 
 function fn(src: string, marker: string, len = 700): string {

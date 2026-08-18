@@ -23,7 +23,7 @@ const previewAppSource = readFileSync(
   "utf8",
 );
 const packageSource = readFileSync(resolve(dashboardRoot, "package.json"), "utf8");
-const vitalRouteSource = readFileSync(resolve(dashboardRoot, "app/api/mock/vital/route.ts"), "utf8");
+const vitalRouteSource = readFileSync(resolve(dashboardRoot, "app/api/app/vital/route.ts"), "utf8");
 const watchSettingsSource = readFileSync(
   resolve(dashboardRoot, "../../../../apps/VitAlGuard-iOS-WatchOS-App/Watch/Sources/ConnectionSettings.swift"),
   "utf8",

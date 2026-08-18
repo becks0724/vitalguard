@@ -7,7 +7,7 @@ iOS 앱(OCR/촬영)이 찍은 이미지/영상을 **네이버 클라우드 Objec
 - **인증** = 모든 요청에 `Authorization: Bearer <APP_UPLOAD_TOKEN>` 헤더(앱 빌드에 주입할 공유 토큰, 서버 `.env`/Secret 과 동일값).
 - **저장(기본 경로)** = 단일 `POST /api/app-media` 로 앱이 이미지+메타를 한 번에 보내면 **서버가 Object Storage 업로드 + 캘린더 DB 등록을 대신 처리**한다(바이트 = Cloud Run 서버 경유). 대용량 영상은 프리사인 직PUT(아래 2단계 대안) 가능.
 
-> ⚠️ `/api/mock/vital` 은 **생체 전송 전용**이다. 미디어는 아래 엔드포인트를 쓴다.
+> ⚠️ `POST /api/app/vital` 은 **생체 전송 전용**이다. 미디어는 아래 엔드포인트를 쓴다.
 
 ## 📌 앱 팀 To-Do (요약 — 이것만 반영하면 됨)
 

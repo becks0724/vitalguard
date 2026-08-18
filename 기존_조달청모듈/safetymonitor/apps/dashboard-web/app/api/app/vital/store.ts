@@ -26,34 +26,34 @@ import {
   recentHrEnergy,
   recordAlert,
   upsertEnvAlertState,
-} from "../../../lib/db";
-import { SPO2_FRESH_MS } from "../../../lib/spo2-freshness";
-import { overlayLatestSpo2 } from "../../../lib/spo2-overlay";
+} from "../../../../lib/db";
+import { SPO2_FRESH_MS } from "../../../../lib/spo2-freshness";
+import { overlayLatestSpo2 } from "../../../../lib/spo2-overlay";
 import {
   detectLowActivityHighHr,
   HEAT_PATTERN_WINDOW_MIN,
   type HrEnergyPoint,
-} from "../../../lib/heat-pattern";
+} from "../../../../lib/heat-pattern";
 import {
   decideHeatNotify,
   evaluateHeatStage,
   formatHeatMessage,
   type HeatStage,
-} from "../../../lib/heat-alert";
-import { sendTelegramMessage } from "../../../lib/telegram";
-import { heartRateStatus, spo2Status, coreTempStatus } from "../../../lib/severity";
+} from "../../../../lib/heat-alert";
+import { sendTelegramMessage } from "../../../../lib/telegram";
+import { heartRateStatus, spo2Status, coreTempStatus } from "../../../../lib/severity";
 
 type Store = {
   samples: VitalSample[];
 };
 
-const globalForMockStore = globalThis as typeof globalThis & {
-  __safetyMonitorMockStore?: Store;
+const globalForVitalStore = globalThis as typeof globalThis & {
+  __safetyMonitorVitalStore?: Store;
 };
 
-export const mockStore =
-  globalForMockStore.__safetyMonitorMockStore ??
-  (globalForMockStore.__safetyMonitorMockStore = { samples: [] });
+export const vitalStore =
+  globalForVitalStore.__safetyMonitorVitalStore ??
+  (globalForVitalStore.__safetyMonitorVitalStore = { samples: [] });
 
 // 진단 smoke test 용 ID 는 store/대시보드에 노출되지 않도록 차단.
 const RESERVED_TEST_IDS = new Set(["infra_check", "warmup", "netcheck"]);
@@ -252,12 +252,12 @@ export async function addSample(input: unknown): Promise<AddSampleResult> {
   }
   // 생체 위험 전이 감지용 — 추가 전 이 워커의 병합(sticky) 상태.
   // 같은 워커 샘플은 ring 에서 한 번만 필터해 prev/cur 두 병합에 재사용(중복 filter 제거).
-  const prevWorkerSamples = mockStore.samples.filter(
+  const prevWorkerSamples = vitalStore.samples.filter(
     (s) => s.workerId === sample.workerId,
   );
   const prevMerged = mergeLatestByWorker(prevWorkerSamples)[0];
   // 화면 갱신용 in-memory ring (최근 500). DB 는 무한 축적 (산업재해 자료 대비).
-  mockStore.samples = [...mockStore.samples, sample].slice(-500);
+  vitalStore.samples = [...vitalStore.samples, sample].slice(-500);
   // 영속과 경보 기록을 분리 — 종전엔 한 try 라서 persistSample 실패(풀 고갈·비번 사고)가 SOS·낙상
   // 경보 기록·텔레그램까지 삼켰다(감사 DB-POOL-02, 2026-06-30 실발생). 샘플 저장은 잃어도 경보는 간다.
   // ★ 삼키되 알린다 — catch 는 그대로 두고(경보가 이 아래에서 나가야 한다) 실패 사실만
@@ -352,14 +352,14 @@ export async function workerProfiles(): Promise<Record<string, string>> {
 }
 
 export function recentSamples(limit = 80) {
-  return mockStore.samples
+  return vitalStore.samples
     .filter((s) => !isReservedTestWorker(s.workerId))
     .slice(-limit)
     .reverse();
 }
 
 export function latestByWorker(aliasMap?: Record<string, string>) {
-  return mergeLatestByWorker(mockStore.samples, aliasMap);
+  return mergeLatestByWorker(vitalStore.samples, aliasMap);
 }
 
 // 심부체온 추정(심박 기반·표시 전용) — 워커별 최근 3시간 심박을 별칭 접기 후 칼만필터로

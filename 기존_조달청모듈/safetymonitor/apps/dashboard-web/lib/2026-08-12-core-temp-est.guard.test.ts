@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
-const route = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
 
 test("vital GET — coreTempEst 를 응답에 싣는다(별칭 접기 경유)", () => {
   assert.match(route, /coreTempEst: await coreTempEstimates\(aliasMap\)/);
@@ -34,13 +34,13 @@ test("서버 추정 — analyzers 순수 함수 사용 + 예약/테스트 워커
 });
 
 test("추세 차트 — 심박·추정은 실데이터 경로(real.ts), 추정은 7일 상한을 서버가 강제", () => {
-  const histRoute = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
+  const histRoute = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "route.ts"), "utf8");
   assert.match(histRoute, /buildRealHistory\(/, "실데이터 분기가 없다 — 모의 곡선이 추정 추세인 척 그려진다");
   assert.match(histRoute, /CORE_TEMP_EST_MAX_DAYS/, "추정 추세 기간 상한(7일)이 서버에서 빠졌다");
 });
 
 test("추세 차트 — 모의 생성기는 coreTempEst 를 만들지 않는다(가짜 추정 곡선 방어선)", () => {
-  const data = readFileSync(join(ROOT, "app", "api", "mock", "history", "data.ts"), "utf8");
+  const data = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "data.ts"), "utf8");
   assert.match(data, /if \(metric === "coreTempEst"\) return 0;/);
 });
 
@@ -52,7 +52,7 @@ test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(�
 });
 
 test("SpO₂ 추세 — 실데이터 경로 편입 + 24시간 뷰는 측정 시각 위치의 점(dot)", () => {
-  const histRoute = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
+  const histRoute = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "route.ts"), "utf8");
   // 정확 목록이 아니라 멤버십으로 본다 — 새 실데이터 지표(activity 등) 추가가 이 가드를 깨면 안 된다.
   // 지키려는 것은 "spo2 가 실데이터 경로에 있다"이지 "목록이 셋뿐이다"가 아니다(2026-08-13 완화).
   const realMetricsLine = histRoute.match(/REAL_METRICS: RealMetric\[\] = \[[^\]]*\]/)?.[0] ?? "";
@@ -61,6 +61,6 @@ test("SpO₂ 추세 — 실데이터 경로 편입 + 24시간 뷰는 측정 시�
   }
   const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
   assert.match(panel, /RechartsTimeDotChart/, "24시간 점 차트 미배선 — 균등 간격이 측정 분포를 오독시킨다");
-  const real = readFileSync(join(ROOT, "app", "api", "mock", "history", "real.ts"), "utf8");
+  const real = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "real.ts"), "utf8");
   assert.match(real, /spo2MeasurementsBetween/, "SpO₂ 추세가 실측 행을 읽지 않는다");
 });

@@ -2,7 +2,7 @@
 // 심박·심부체온 추정(coreTempEst)은 DB 실데이터 경로(real.ts), SpO₂·낙상은 아직 모의 경로(이월).
 import { NextResponse } from "next/server";
 
-import { verifyBasicAuth } from "../../../../lib/admin-auth";
+import { verifyBasicAuth } from "../../../../../lib/admin-auth";
 import {
   buildHistory,
   buildHistoryBetween,

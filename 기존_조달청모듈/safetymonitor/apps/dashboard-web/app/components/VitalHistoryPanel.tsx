@@ -173,7 +173,7 @@ export function VitalHistoryPanel({
       ? { Authorization: `Bearer ${token}` }
       : undefined;
 
-    fetch(`/api/mock/history?${params.toString()}`, { cache: "no-store", headers: authHeaders })
+    fetch(`/api/monitor/vital/history?${params.toString()}`, { cache: "no-store", headers: authHeaders })
       .then((res) => (res.ok ? res.json() : null))
       .then((json: HistoryResponse | null) => {
         if (active) {
@@ -200,7 +200,7 @@ export function VitalHistoryPanel({
     if (selection.metric === "activity") {
       const hrParams = new URLSearchParams(params);
       hrParams.set("metric", "heartRate");
-      fetch(`/api/mock/history?${hrParams.toString()}`, { cache: "no-store", headers: authHeaders })
+      fetch(`/api/monitor/vital/history?${hrParams.toString()}`, { cache: "no-store", headers: authHeaders })
         .then((res) => (res.ok ? res.json() : null))
         .then((json: HistoryResponse | null) => {
           if (active && json && json.workerId === requested.workerId && json.metric === "heartRate") {

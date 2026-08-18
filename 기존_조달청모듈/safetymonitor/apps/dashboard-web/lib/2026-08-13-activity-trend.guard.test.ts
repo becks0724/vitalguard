@@ -10,9 +10,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const route = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
-const dataTs = readFileSync(join(ROOT, "app", "api", "mock", "history", "data.ts"), "utf8");
-const real = readFileSync(join(ROOT, "app", "api", "mock", "history", "real.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "route.ts"), "utf8");
+const dataTs = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "data.ts"), "utf8");
+const real = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "real.ts"), "utf8");
 const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
 const charts = readFileSync(join(ROOT, "app", "components", "VitalChartsRecharts.tsx"), "utf8");
 

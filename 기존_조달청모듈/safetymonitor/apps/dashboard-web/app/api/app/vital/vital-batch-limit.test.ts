@@ -7,8 +7,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { signAppJwt } from "../../../lib/app-jwt";
-import { POST } from "./vital/route";
+import { signAppJwt } from "../../../../lib/app-jwt";
+import { POST } from "./route";
 
 // 서명·검증 모두 호출 시점에 env 를 읽으므로 import 순서와 무관하게 여기서 지정하면 된다.
 process.env.APP_JWT_SECRET ??= "vital-batch-limit-test-secret";
@@ -26,7 +26,7 @@ function batchRequest(count: number, ip: string): Request {
     workerId: WORKER_ID,
     ts,
   }));
-  return new Request("https://example.test/api/mock/vital", {
+  return new Request("https://example.test/api/app/vital", {
     method: "POST",
     headers: {
       "content-type": "application/json",

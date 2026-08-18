@@ -12,7 +12,7 @@ import {
   getWorkerAliasMap,
   heartRateBucketAverages,
   spo2MeasurementsBetween,
-} from "../../../../lib/db";
+} from "../../../../../lib/db";
 
 import type { HistoryPoint } from "./data";
 

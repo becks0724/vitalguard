@@ -25,7 +25,7 @@ const LOGIN_ROUTES = [
   "app/api/mobile/v1/session/login/route.ts",
 ];
 const dbSource = readFileSync(resolve(root, "lib/db.ts"), "utf8");
-const vitalRoute = readFileSync(resolve(root, "app/api/mock/vital/route.ts"), "utf8");
+const vitalRoute = readFileSync(resolve(root, "app/api/app/vital/route.ts"), "utf8");
 
 test("빈 문자열 사번은 falsy 라 수집 게이트를 통과하지 못한다(이 사실이 전제)", () => {
   // 수집 라우트가 쓰는 판정과 동일한 식. 이게 참이라 '' 가 위험하다.

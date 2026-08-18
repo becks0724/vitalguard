@@ -3911,7 +3911,7 @@ export function DemoDashboard() {
       // 로그인 세션 토큰을 동봉 → 서버가 인증된 대시보드에만 PII(GPS·보호자) 노출. 비로그인 익명 호출은 redaction.
       const token = getSessionToken();
       try {
-        const response = await fetch("/api/mock/vital", {
+        const response = await fetch("/api/monitor/vital", {
           cache: "no-store",
           signal: controller.signal,
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,

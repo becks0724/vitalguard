@@ -63,7 +63,7 @@ test("클라이언트 IP 헤더 파싱은 lib/client-ip.ts 에만 존재한다",
     "허용 파일조차 스캔 범위 밖이다 — 스캔 경로가 깨졌고 아래 금지 검사는 공허하다",
   );
   assert.ok(
-    files.some((f) => f.endsWith("app/api/mock/vital/route.ts")),
+    files.some((f) => f.endsWith("app/api/app/vital/route.ts")),
     "알려진 소비처가 스캔 범위 밖이다 — 스캔 경로가 깨졌고 아래 금지 검사는 공허하다",
   );
   const offenders: string[] = [];

@@ -9,9 +9,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
 const dbSource = readFileSync(join(ROOT, "lib", "db.ts"), "utf8");
-const storeSource = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
+const storeSource = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
 
 // export 함수 본문 슬라이스 — 다음 export 직전까지.
 function fnSlice(source: string, marker: string): string {

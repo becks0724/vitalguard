@@ -14,8 +14,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const storeSource = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
-const routeSource = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+const storeSource = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
+const routeSource = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
 
 // countsByWorker 함수 본문 — 다음 최상위 export 직전까지.
 function countsBody(): string {

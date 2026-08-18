@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const psi = readFileSync(join(ROOT, "lib", "psi.ts"), "utf8");
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
-const notify = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
-const vital = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
+const notify = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
+const vital = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
 
 test("① PSI 가 신호등·상태 판정에 들어가지 않는다", () => {
   // 판정 함수는 severity 모듈이 담당한다 — 거기에 psi 가 새어 들어가면 표시 전용이 깨진다.

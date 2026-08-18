@@ -18,7 +18,7 @@ import { formatTimeTick, hasFullTimestamps, medianStepMs, withTimeGaps } from ".
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const charts = readFileSync(join(ROOT, "app", "components", "VitalChartsRecharts.tsx"), "utf8");
 const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
-const real = readFileSync(join(ROOT, "app", "api", "mock", "history", "real.ts"), "utf8");
+const real = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "real.ts"), "utf8");
 
 // ── 서버: 시간축의 원재료 ───────────────────────────────────────────────
 

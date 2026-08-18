@@ -17,7 +17,7 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const lib = readFileSync(join(ROOT, "lib", "heat-work-rest.ts"), "utf8");
 const strip = readFileSync(join(ROOT, "app", "components", "WeatherStrip.tsx"), "utf8");
 const rules = readFileSync(join(ROOT, "lib", "weather-rules.ts"), "utf8");
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
 
 test("① KOSHA <표 1> 12칸이 그대로다 — 지침값이지 우리 숫자가 아니다", () => {
   assert.match(lib, /light: \{ continuous: 30\.0, rest25: 30\.6, rest50: 31\.4, rest75: 32\.2 \}/);

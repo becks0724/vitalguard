@@ -8,7 +8,7 @@ const CAM02_ID = "CAM-02"; // CctvQuadView CAMERAS[1] (aiSuffix "2" = /cctv/stat
 const POLL_MS = Number(process.env.CCTV_FALL_POLL_MS ?? "1500");
 const AI_URL = process.env.NEXT_PUBLIC_AI_CCTV_API ?? "";
 
-// HMR/다중 import 시 중복 기동 방지 — mockStore 와 동일한 globalThis 캐시 패턴.
+// HMR/다중 import 시 중복 기동 방지 — vitalStore 와 동일한 globalThis 캐시 패턴.
 const g = globalThis as typeof globalThis & { __cctvFallPollerStarted?: boolean };
 
 // 서버 fetch 는 절대 URL 만 받는다. 이 값은 브라우저와 공유되는 NEXT_PUBLIC_ 변수라

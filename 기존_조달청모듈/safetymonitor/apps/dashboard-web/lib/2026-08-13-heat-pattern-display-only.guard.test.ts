@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const dash = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
-const route = readFileSync(join(ROOT, "app", "api", "mock", "vital", "route.ts"), "utf8");
-const store = readFileSync(join(ROOT, "app", "api", "mock", "store.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "app", "vital", "route.ts"), "utf8");
+const store = readFileSync(join(ROOT, "app", "api", "app", "vital", "store.ts"), "utf8");
 const lib = readFileSync(join(ROOT, "lib", "heat-pattern.ts"), "utf8");
 
 test("vital GET — heatPattern 을 응답에 싣는다(별칭 접기 경유)", () => {

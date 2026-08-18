@@ -25,7 +25,7 @@ const withSecret = (fn: () => void) => {
 };
 
 const req = (auth?: string) =>
-  new Request("https://x.test/api/mock/vital", {
+  new Request("https://x.test/api/app/vital", {
     method: "POST",
     headers: {
       ...(auth ? { authorization: auth } : {}),
@@ -72,7 +72,7 @@ test("로그에는 판별에 필요한 것만 남고 토큰 문자열은 절대 
 });
 
 test("401 응답 본문에 사유를 싣지 않는다(서명 성공 여부 노출 금지)", () => {
-  const vital = readFileSync(resolve(root, "app/api/mock/vital/route.ts"), "utf8");
+  const vital = readFileSync(resolve(root, "app/api/app/vital/route.ts"), "utf8");
   const block = vital.slice(vital.indexOf("!claims?.workerId"), vital.indexOf("!claims?.workerId") + 600);
   assert.match(block, /action: d\.action/, "응답에 action 이 없으면 앱이 재로그인을 못 띄운다");
   assert.doesNotMatch(block, /reason: d\.reason|error: d\.reason/, "사유를 응답에 실으면 외부로 샌다");

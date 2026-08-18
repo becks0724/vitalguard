@@ -16,7 +16,7 @@ import { VitalSampleSchema } from "@safetymonitor/schemas";
 
 const root = resolve(__dirname, "..");
 const dbSource = readFileSync(resolve(root, "lib/db.ts"), "utf8");
-const storeSource = readFileSync(resolve(root, "app/api/mock/store.ts"), "utf8");
+const storeSource = readFileSync(resolve(root, "app/api/app/vital/store.ts"), "utf8");
 
 test("측정 시각 필드를 스키마가 받는다", () => {
   const shape = VitalSampleSchema.shape as Record<string, unknown>;

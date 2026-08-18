@@ -20,9 +20,9 @@ const read = (...p: string[]) => readFileSync(join(ROOT, ...p), "utf8");
 const logic = read("lib", "coverage-heatmap.ts");
 const view = read("app", "components", "CoverageHeatmap.tsx");
 const panel = read("app", "components", "VitalHistoryPanel.tsx");
-const real = read("app", "api", "mock", "history", "real.ts");
-const route = read("app", "api", "mock", "history", "route.ts");
-const mock = read("app", "api", "mock", "history", "data.ts");
+const real = read("app", "api", "monitor", "vital", "history", "real.ts");
+const route = read("app", "api", "monitor", "vital", "history", "route.ts");
+const mock = read("app", "api", "monitor", "vital", "history", "data.ts");
 const db = read("lib", "db.ts");
 
 /** 줄 주석을 걷어낸 본문 — 금지 검사가 자기 설명 주석에 걸리지 않게(L-83). */
@@ -139,7 +139,7 @@ test("⑧ 표시 전용 — 판정·알림 경로에 넣지 않는다", () => {
   );
   for (const [name, src] of [
     ["severity", read("lib", "severity.ts")],
-    ["store", read("app", "api", "mock", "store.ts")],
+    ["store", read("app", "api", "app", "vital", "store.ts")],
   ] as const) {
     // 앵커 — 파일이 비면 아래 금지가 빈 문자열에서 통과한다(L-79).
     assert.ok(src.length > 500, `${name} 소스를 못 읽었다`);

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
-const route = readFileSync(join(ROOT, "app", "api", "mock", "history", "route.ts"), "utf8");
+const route = readFileSync(join(ROOT, "app", "api", "monitor", "vital", "history", "route.ts"), "utf8");
 const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
 
 test("history GET — 차단 관용구가 핸들러 앞에 있다(호출 존재가 아니라 게이트 형태를 본다)", () => {
@@ -24,6 +24,6 @@ test("history GET — 차단 관용구가 핸들러 앞에 있다(호출 존재�
 
 test("패널 — 두 fetch(본 지표·심박 오버레이) 모두 세션 토큰을 동봉한다", () => {
   assert.match(panel, /import \{ getSessionToken \} from "\.\/LoginGate"/);
-  const fetches = panel.match(/fetch\(`\/api\/mock\/history\?[^`]*`, \{ cache: "no-store", headers: authHeaders \}\)/g) ?? [];
+  const fetches = panel.match(/fetch\(`\/api\/monitor\/vital\/history\?[^`]*`, \{ cache: "no-store", headers: authHeaders \}\)/g) ?? [];
   assert.equal(fetches.length, 2, `토큰 미동봉 history fetch 존재(동봉 ${fetches.length}/2)`);
 });
