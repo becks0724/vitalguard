@@ -1153,6 +1153,72 @@ export async function spo2MeasurementsBetween(
 // 워커별 DB 의 마지막 SpO₂ 행 — 표시 겹침(lib/spo2-overlay)용. spo2 는 기회 측정이라 단독 행
 // 1건으로 오고, 인스턴스 메모리 병합만으로는 다른 인스턴스 응답에서 값이 빈다(2026-08-12 실측).
 // 창(window)을 신선 한도보다 넉넉히 잡고, 신선 판정 자체는 겹침 쪽에서 측정 시각으로 한다.
+/**
+ * 워커 몇 명의 최근 원본 샘플 — **인스턴스 메모리를 거치지 않는다**(폰 본인 조회용).
+ *
+ * ★ `latestByWorker` 는 그 프로세스가 받은 POST 만 담은 메모리 링이라, `maxScale=4` 에서
+ * 폰이 자기 샘플을 받은 적 없는 인스턴스에 붙으면 **영영 빈 값**이 온다(2026-08-18 실측:
+ * 최근 1시간 인스턴스 2개). 관제 화면은 여러 워커를 한꺼번에 보므로 덜 드러나지만,
+ * 한 사람만 보는 폰에서는 그 사람 값이 통째로 사라진다.
+ *
+ * `raw_json` 을 스키마로 되살려 돌려주므로 호출부가 `mergeLatestByWorker` 를 그대로 쓸 수 있다
+ * — 관제 화면과 **같은 병합 규칙**(활동 필드 TTL 포함)을 공유해 값이 갈리지 않는다.
+ * 오래된 순서로 돌려준다(병합이 뒤 샘플로 덮는 계약).
+ */
+export async function recentSamplesForWorkers(
+  workerIds: string[],
+  windowMinutes = 30,
+  limit = 400,
+): Promise<VitalSample[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ raw_json: unknown }>(
+    `SELECT raw_json FROM vital_samples
+      WHERE worker_id = ANY($1::text[])
+        AND ts::timestamptz > (now() - $2::interval)
+      ORDER BY ts DESC, id DESC LIMIT $3`,
+    [workerIds, `${windowMinutes} minutes`, Math.min(Math.max(limit, 1), 1000)],
+  );
+  const samples: VitalSample[] = [];
+  for (const row of rows) {
+    try {
+      const raw = typeof row.raw_json === "string" ? JSON.parse(row.raw_json) : row.raw_json;
+      const parsed = VitalSampleSchema.safeParse(raw);
+      if (parsed.success) samples.push(parsed.data);
+    } catch {
+      // 원문 손상 행은 건너뛴다 — 한 행 때문에 조회 전체를 잃지 않는다.
+    }
+  }
+  return samples.reverse();
+}
+
+/**
+ * 최근 안정 심박 — **기준값(baseline)이라 창을 길게 잡는다.**
+ *
+ * 애플이 하루 단위로 산출하는 값이라 며칠 전 값도 그 사람의 기준으로 유효하다. 반면
+ * HRV·호흡수는 그 순간의 상태 지표라 같은 취급을 하면 안 된다(며칠 전 HRV 로 "지금 스트레스"
+ * 를 말하게 된다) — 그래서 이 함수는 안정 심박만 본다.
+ *
+ * 필요한 이유 = PSI 의 기준 심박(HR0). 없으면 문헌 기본값 60 으로 떨어져 개인화가 풀린다.
+ * 2026-08-18 실측에서 이 워커의 마지막 안정 심박은 하루 전이었고, 관제 화면은 인스턴스 메모리가
+ * 그 값을 계속 들고 있어 개인화된 값을 쓰고 있었다 — 창이 짧으면 폰만 값이 갈린다.
+ */
+export async function latestRestingHeartRate(
+  workerIds: string[],
+  days = 7,
+): Promise<{ bpm: number; ts: string } | null> {
+  if (workerIds.length === 0) return null;
+  const { rows } = await q<{ resting_heart_rate: number; ts: string }>(
+    `SELECT resting_heart_rate, ts FROM vital_samples
+      WHERE worker_id = ANY($1::text[])
+        AND resting_heart_rate IS NOT NULL
+        AND ts::timestamptz > (now() - $2::interval)
+      ORDER BY ts DESC LIMIT 1`,
+    [workerIds, `${days} days`],
+  );
+  const row = rows[0];
+  return row ? { bpm: row.resting_heart_rate, ts: row.ts } : null;
+}
+
 export async function latestSpo2ByWorker(
   windowMinutes = 40,
 ): Promise<{ worker_id: string; spo2: number; spo2_measured_at: string | null; ts: string }[]> {
