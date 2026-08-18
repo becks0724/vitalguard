@@ -87,6 +87,15 @@ final class WatchStreamer: NSObject, ObservableObject {
     private var flightsReported: Double = 0
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+    // [정지] 로 끝난 세션인지 표시한다 — 델리게이트가 사용자 정지와 시스템 종료를 가를 유일한 수단이다.
+    // 둘 다 결국 `session.end()` 라 `didChangeTo(.ended)` 가 보는 그림이 똑같다.
+    private var stopRequestedByUser = false
+    // 자동 재개 연속 실패 횟수 — 재개하자마자 또 끝나는 상황에서 무한 반복을 막는다.
+    private var autoResumeBurst = 0
+    private var lastAutoResumeAt: Date?
+    // 재개 후 이 시간을 못 버티면 실패로 세고, 연속 상한을 넘으면 포기한다(사람이 [시작] 을 눌러야).
+    private let autoResumeMinAliveSec: TimeInterval = 60
+    private let autoResumeMaxBurst = 3
     private var spo2Query: HKAnchoredObjectQuery?
     private var discreteQueries: [HKAnchoredObjectQuery] = []
     private var flushTimer: Timer?
@@ -227,6 +236,9 @@ final class WatchStreamer: NSObject, ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        // 사람이 직접 누른 시작이므로 자동 재개 포기 상태를 푼다.
+        autoResumeBurst = 0
+        lastAutoResumeAt = nil
         statusText = "권한 요청 중"
         let toShare: Set<HKSampleType> = [HKObjectType.workoutType()]
         // ⚠ 읽기 타입을 늘리면 워치 시작 때 권한 시트가 다시 뜬다 — 사용자가 새 항목을 허용해야 하고,
@@ -247,10 +259,38 @@ final class WatchStreamer: NSObject, ObservableObject {
 
     func stop() {
         guard isRunning else { return }
+        stopRequestedByUser = true
         session?.end()
     }
 
+    /// 시스템이 끝낸 세션을 사람 없이 되살린다.
+    ///
+    /// ⚠ 2026-08-18 (`docs/vital-absence-triage/checklist.md` §4-6) — 종전에는 세션이 끝나면
+    /// 사유를 묻지 않고 `teardown()` 만 하고 끝났다. 앱은 죽지 않는다(워치 jetsam 리포트로
+    /// pid 가 29시간 유지된 채 공백 넷을 통과한 것을 확인했다). 수집만 멎은 채 백그라운드로
+    /// 잠들어, **사람이 [시작] 을 누를 때까지 영영 돌아오지 않았다**(08-17 하루 6.4시간).
+    /// 앱이 아직 살아 있는 이 순간이 유일한 자동 복구 지점이다.
+    private func autoResume(cause: String) {
+        // 재개하자마자 또 끝나면 반복해도 소용없다 — 그때만 실패로 세고, 버텼으면 처음부터 다시 센다.
+        if let last = lastAutoResumeAt, Date().timeIntervalSince(last) < autoResumeMinAliveSec {
+            autoResumeBurst += 1
+        } else {
+            autoResumeBurst = 1
+        }
+        lastAutoResumeAt = Date()
+        guard autoResumeBurst <= autoResumeMaxBurst else {
+            statusText = "자동 재개 실패 — [시작]"
+            log.error("자동 재개 포기 — \(self.autoResumeBurst, privacy: .public)회 연속 실패 · 사유 \(cause, privacy: .public)")
+            return
+        }
+        log.notice("자동 재개 \(self.autoResumeBurst, privacy: .public)회차 — 사유 \(cause, privacy: .public)")
+        statusText = "자동 재개 중"
+        beginWorkout()
+    }
+
     private func beginWorkout() {
+        // 새 세션은 아직 아무도 정지를 요청하지 않은 상태에서 출발한다(수동·자동 재개 공통 깔때기).
+        stopRequestedByUser = false
         // 배터리 모니터링 — 켜지 않으면 batteryLevel 이 -1 을 돌려준다(값이 아니라 "모름").
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         sessionEnergyKcal = 0
@@ -693,17 +733,24 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
         date: Date
     ) {
         guard toState == .ended else { return }
+        // 사유는 지금 붙잡아 둔다 — teardown 뒤에 읽으면 다음 세션의 표식과 섞인다.
+        let byUser = stopRequestedByUser
         builder?.endCollection(withEnd: date) { [weak self] _, _ in
             self?.builder?.finishWorkout { _, _ in
-                DispatchQueue.main.async { self?.teardown() }
+                DispatchQueue.main.async {
+                    self?.teardown()
+                    if !byUser { self?.autoResume(cause: "세션 종료") }
+                }
             }
         }
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         DispatchQueue.main.async {
+            let byUser = self.stopRequestedByUser
             self.statusText = "세션 오류: \(error.localizedDescription)"
             self.teardown()
+            if !byUser { self.autoResume(cause: "세션 오류") }
         }
     }
 }
