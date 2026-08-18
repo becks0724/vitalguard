@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'metric_tile.dart';
 import 'own_vitals.dart';
+import 'status_ring.dart';
 import 'theme.dart';
 import 'vital_display.dart';
 import 'vital_range.dart';
@@ -302,59 +303,196 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(children: lines);
   }
 
-  /// 히어로 = 실시간 심박. 유일하게 상시 들어오는 값이라 제일 크게 둔다.
-  Widget _heartHero(VitalStreamEvent? vitals) {
+  /// 아래 3열의 한 칸 — 라벨 + 밴드 막대(또는 판정 없음) + 값.
+  ///
+  /// ★ 막대는 **밴드 안 위치**다. 참고 디자인의 `35/180 g` 같은 진행률이 아니다 —
+  /// 이 앱엔 목표 개념이 없고(`목표`·`goal`·`target`·근무 시간 전부 0건),
+  /// 만들면 없는 기준을 우리가 정하는 것이 된다.
+  Widget _bandColumn({
+    required String label,
+    required VitalRange? range,
+    required double? value,
+    required String display,
+    String? noBarNote,
+  }) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 11, color: VgColors.body)),
+          const SizedBox(height: 6),
+          SizedBox(
+            height: 16,
+            child: range != null && value != null
+                ? HorizontalRangeBar(range: range, value: value)
+                // 판정에 안 올리기로 한 값은 **막대 자리를 비우고 그 사실을 적는다.**
+                // 그냥 비우면 "측정 안 됨" 으로 읽힌다 — 다른 사실이다.
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(noBarNote ?? '판정 없음',
+                        style: const TextStyle(fontSize: 10, color: VgColors.muted)),
+                  ),
+          ),
+          const SizedBox(height: 5),
+          Text(display, style: const TextStyle(fontSize: 11, color: VgColors.ink)),
+        ],
+      ),
+    );
+  }
+
+  /// 5칸 요약 행 — 두 번째 참고 이미지의 `신체 지표` 배치.
+  ///
+  /// ★ 아래 격자와 **다른 규칙**을 쓴다. 격자는 "측정 안 된 종류는 타일 자체가 없다" 인데
+  /// 이 행은 **칸을 고정하고 없으면 `--`** 로 둔다. 다섯 자리가 늘 같은 자리에 있어야
+  /// "무엇이 안 오고 있는지"가 한눈에 보이기 때문이다 — 참고 디자인도 안정심박을 `--` 로 둔다.
+  /// 0 을 적지 않는다는 원래 계약은 그대로다(`--` 는 0 이 아니라 모름이다).
+  ///
+  /// 세로 표식은 **임계가 있는 것에만** 붙는다. 지금은 SpO₂ 하나뿐이고, 나머지 넷은
+  /// 근거 있는 기준이 없어 값만 적는다(HRV·호흡수에 참고범위를 새로 넣지 않기로 한 결정).
+  Widget _summaryStrip(VitalStreamEvent? vitals) {
+    final d = vitals?.discreteValues ?? const <String, double>{};
+    String f(double? v, int digits) => v == null ? '--' : v.toStringAsFixed(digits);
+
+    final items = <(IconData, Color, String, String, double?, VitalRange?)>[
+      (Icons.monitor_heart_outlined, VgColors.heart, f(d['hrv'], 0), 'ms', d['hrv'], null),
+      (Icons.favorite_border, VgColors.heart, f(d['rhr'], 0), 'bpm', d['rhr'], null),
+      (Icons.air, VgColors.primary, f(d['rr'], 1), '회/분', d['rr'], null),
+      (Icons.water_drop_outlined, VgColors.primary, f(vitals?.spo2, 0), '%', vitals?.spo2, spo2Range),
+      (Icons.thermostat, VgColors.caution, f(_own?.coreTempC, 1), '℃', _own?.coreTempC, null),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('주요 생체',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                for (final (icon, tint, value, unit, raw, range) in items)
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Icon(icon, size: 17, color: raw == null ? VgColors.muted : tint),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          height: 34,
+                          // 임계가 있는 것만 위치 표식. 없으면 자리만 비운다(막대를 그리면 근거가 생긴 것처럼 읽힌다).
+                          child: range != null && raw != null
+                              ? Center(child: VerticalRangeBar(range: range, value: raw, height: 34))
+                              : const SizedBox(),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(value,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: raw == null ? VgColors.muted : VgColors.primary,
+                            )),
+                        Text(unit, style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 현재 상태 카드 — 참고 디자인(사용자 제공)의 **배치만** 옮긴 것.
+  /// 좌·우 보조값 · 가운데 링 · 아래 3열. 의미는 목표가 아니라 **임계 밴드 안 위치**다.
+  Widget _statusCard(VitalStreamEvent? vitals) {
     final bpm = vitals?.bpm;
     final receiving = bpm != null;
+    final spo2 = vitals?.spo2;
+    final coreC = _own?.coreTempC;
+
     return Card(
-      // 이 화면의 주 지표라 브랜드 면으로 감싼다 — 관제웹 `--color-primary-subtle` 과 같은 용도.
       color: VgColors.primarySubtle,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(vgCardRadius),
         side: const BorderSide(color: VgColors.primaryRing),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+        padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.favorite,
-                    size: 18, color: receiving ? VgColors.heart : VgColors.muted),
-                const SizedBox(width: 6),
-                const Text('심박', style: TextStyle(fontSize: 13, color: VgColors.body)),
-                const Spacer(),
-                if (receiving) StatusBadge(status: heartRateStatus(bpm)),
+                Expanded(
+                  child: spo2 == null
+                      ? const SizedBox()
+                      : RingSideValue(
+                          label: '산소포화도',
+                          value: spo2.toStringAsFixed(0),
+                          unit: '%',
+                          status: spo2Status(spo2),
+                        ),
+                ),
+                if (receiving)
+                  StatusRing(range: heartRateRange, value: bpm, unit: 'bpm')
+                else
+                  const SizedBox(
+                    width: 124,
+                    height: 124,
+                    child: Center(
+                      child: Text('수집 대기', style: TextStyle(fontSize: 13, color: VgColors.muted)),
+                    ),
+                  ),
+                Expanded(
+                  // ★ 상태를 주지 않는다 — 추정치가 입력이라 판정·경보에 올리지 않기로 한 값이다.
+                  child: coreC == null
+                      ? const SizedBox()
+                      : RingSideValue(
+                          label: '체온(추정)',
+                          value: coreC.toStringAsFixed(1),
+                          unit: '℃',
+                          note: '의료 판정 아님',
+                        ),
+                ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: VgColors.hairline),
+            const SizedBox(height: 12),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  receiving ? bpm.toStringAsFixed(0) : '--',
-                  style: TextStyle(
-                    fontSize: 52,
-                    fontWeight: FontWeight.bold,
-                    height: 1.0,
-                    color: receiving ? vgValueColor(heartRateStatus(bpm)) : VgColors.muted,
-                  ),
+                _bandColumn(
+                  label: '심박',
+                  range: receiving ? heartRateRange : null,
+                  value: bpm,
+                  display: receiving ? '${bpm.toStringAsFixed(0)} bpm' : '--',
+                  noBarNote: '미수신',
                 ),
-                const SizedBox(width: 6),
-                const Text('bpm', style: TextStyle(fontSize: 15, color: VgColors.muted)),
+                const SizedBox(width: 12),
+                _bandColumn(
+                  label: '산소포화도',
+                  range: spo2 == null ? null : spo2Range,
+                  value: spo2,
+                  display: spo2 == null ? '--' : '${spo2.toStringAsFixed(0)} %',
+                  noBarNote: '미수신',
+                ),
+                const SizedBox(width: 12),
+                _bandColumn(
+                  label: '체온(추정)',
+                  range: null, // 판정 미주입 계약 — 밴드를 그리지 않는다
+                  value: null,
+                  display: coreC == null ? '--' : '${coreC.toStringAsFixed(1)} ℃',
+                  noBarNote: coreC == null ? '미수신' : '판정 없음',
+                ),
               ],
             ),
             if (receiving) ...[
-              const SizedBox(height: 16),
-              HorizontalRangeBar(range: heartRateRange, value: bpm),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Row(
                 children: [
-                  // ★ 폰에는 활동 게이트가 없다. 이 표기를 지우면 작업 중 상승이 "주의" 로 읽힌다.
-                  Text(heartRateRange.basis,
-                      style: const TextStyle(fontSize: 11, color: VgColors.muted)),
+                  const Text('안정 기준', style: TextStyle(fontSize: 10, color: VgColors.muted)),
                   const Spacer(),
                   Flexible(
                     child: Text(
@@ -362,15 +500,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       textAlign: TextAlign.right,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11, color: VgColors.muted),
+                      style: const TextStyle(fontSize: 10, color: VgColors.muted),
                     ),
                   ),
                 ],
               ),
-            ] else ...[
-              const SizedBox(height: 10),
-              const Text('워치 수집 대기 — VitalWatch 에서 [시작]을 누르세요',
-                  style: TextStyle(fontSize: 12, color: VgColors.body)),
             ],
           ],
         ),
@@ -388,7 +522,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // 워치가 보낸 것 + 서버가 계산한 것을 한 격자에 둔다. 둘 다 "지금 이 사람의 몸" 이라
     // 성격이 같고, 출처가 다르다고 나누면 같은 걸 두 번 찾게 된다(활동 누계와는 다르다).
     final sections = splitVitalSections(vitals == null ? const [] : buildVitalRows(vitals));
-    final bodyRows = [...sections.body, ...buildServerRows(_own)];
+    // 요약 행에 올라간 것은 격자에서 뺀다 — 같은 값이 한 화면에 두 번 뜨면
+    // 어느 쪽이 최신인지 읽는 사람이 판단해야 한다.
+    final bodyRows = [...sections.body, ...buildServerRows(_own)]
+        .where((r) => !summaryStripLabels.contains(r.label))
+        .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -407,10 +545,12 @@ class _HomeScreenState extends State<HomeScreen> {
               content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
               actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
             ),
-          _heartHero(vitals),
+          _statusCard(vitals),
+          const SizedBox(height: 10),
+          _summaryStrip(vitals),
           // 측정 안 된 종류는 타일 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
           if (bodyRows.isNotEmpty) ...[
-            _sectionTitle('신체 지표'),
+            _sectionTitle('그 밖의 지표'),
             _tileGrid(bodyRows),
           ],
           if (sections.activity.isNotEmpty) ...[
