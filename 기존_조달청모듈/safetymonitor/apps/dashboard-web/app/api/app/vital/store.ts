@@ -511,10 +511,11 @@ export async function heatStages(aliasMap: Record<string, string>): Promise<Heat
   const now = Date.now();
   if (_heatStageCache && now - _heatStageCache.at < HEAT_STAGE_CACHE_MS) return _heatStageCache.map;
   try {
-    const [rows, patterns] = await Promise.all([
-      recentHeartRates(CORE_TEMP_WINDOW_MINUTES),
-      heatPatterns(aliasMap),
-    ]);
+    // 패턴(저활동·고심박)은 더 이상 단계 판정에 쓰지 않는다 — 2026-08-18 B-1a 로 경고에서 제거했다
+    // (활동에너지 축이 상시 워크아웃 때문에 구조적으로 성립하지 않는다 · heat-alert.ts 헤더 참조).
+    // 그래서 여기서 heatPatterns 조회를 함께 걷어냈다 — 안 쓰는 값을 위해 DB 를 한 번 더 치지 않는다.
+    // ⚠ heatPatterns 자체는 살아 있다(관제 화면의 `⚠ 저활동·고심박` 주석용 · vital GET 이 따로 부른다).
+    const rows = await recentHeartRates(CORE_TEMP_WINDOW_MINUTES);
     const byPrimary = new Map<string, HrPoint[]>();
     for (const r of rows) {
       if (isReservedTestWorker(r.worker_id)) continue;
@@ -528,7 +529,7 @@ export async function heatStages(aliasMap: Record<string, string>): Promise<Heat
     const map: HeatStageMap = {};
     for (const [workerId, points] of byPrimary) {
       const series = estimateCoreTempSeries(points).map((p) => ({ tsMs: p.tsMs, tempC: p.tempC }));
-      const stage = evaluateHeatStage(series, patterns[workerId] != null, now);
+      const stage = evaluateHeatStage(series, now);
       if (stage) map[workerId] = stage;
     }
     _heatStageCache = { at: now, map };

@@ -21,26 +21,28 @@ function series(minutes: number, tempC: number): HeatTempPoint[] {
   }));
 }
 
-test("주의 — 37.8℃ 이상 10분 지속(패턴 무관)", () => {
-  assert.equal(evaluateHeatStage(series(12, 37.9), false, NOW), "caution");
+test("주의 — 37.8℃ 이상 10분 지속", () => {
+  assert.equal(evaluateHeatStage(series(12, 37.9), NOW), "caution");
 });
 
-test("경고 — 38.0℃ 이상 10분 지속 + 저활동·고심박 패턴 동시", () => {
-  assert.equal(evaluateHeatStage(series(12, 38.1), true, NOW), "warning");
+test("경고 — 38.0℃ 이상 10분 지속 단독(2026-08-18 B-1a · 패턴 동반 요건 제거)", () => {
+  // 종전에는 "저활동·고심박 패턴 동시"를 함께 요구했고, 그 조건이 실측상 절대 참이 될 수 없어
+  // 경고가 구조적으로 발동 불가였다(활동에너지 하한 2.40 > 임계 1.5 · heat-alert.ts 헤더).
+  assert.equal(evaluateHeatStage(series(12, 38.1), NOW), "warning");
 });
 
-test("경고 요건 미충족 — 38.0℃ 지속이어도 패턴 없으면 주의까지만(특이도 장치)", () => {
-  assert.equal(evaluateHeatStage(series(12, 38.1), false, NOW), "caution");
+test("경계 — 38.0℃ 정확히 걸치면 경고(임계 포함)", () => {
+  assert.equal(evaluateHeatStage(series(12, 38.0), NOW), "warning");
 });
 
 test("정상 — 창 안에 임계 미만 점이 하나라도 있으면 지속 아님", () => {
   const s = series(12, 38.0);
   s[3] = { tsMs: s[3]!.tsMs, tempC: 37.6 }; // 창 중간에 내려간 점
-  assert.equal(evaluateHeatStage(s, true, NOW), null);
+  assert.equal(evaluateHeatStage(s, NOW), null);
 });
 
 test("판단 불가 — 창 내 추정점이 하한 미만이면 null(수신 공백을 지속으로 오독 방지)", () => {
-  assert.equal(evaluateHeatStage(series(HEAT_MIN_POINTS - 1, 38.5), true, NOW), null);
+  assert.equal(evaluateHeatStage(series(HEAT_MIN_POINTS - 1, 38.5), NOW), null);
 });
 
 test("창 밖 점은 판정에 안 들어간다 — 옛 고온이 현재 단계를 만들면 안 된다", () => {
@@ -48,7 +50,7 @@ test("창 밖 점은 판정에 안 들어간다 — 옛 고온이 현재 단계�
     tsMs: NOW - (HEAT_SUSTAIN_MINUTES + 5 + i) * 60_000,
     tempC: 38.5,
   }));
-  assert.equal(evaluateHeatStage(old, true, NOW), null);
+  assert.equal(evaluateHeatStage(old, NOW), null);
 });
 
 test("전이 — 악화만 발송·호전은 조용히·해제는 발송 이력 있을 때만·동일 단계 무발송", () => {

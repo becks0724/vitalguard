@@ -7,9 +7,25 @@
 //
 // 단계 정의(보수적 시작값 — 현장 실측 정답 없이 정한 값·실운영 관찰 후 조정):
 //   주의(caution) = 추정 심부체온 37.8℃ 이상 10분 지속
-//   경고(warning) = 38.0℃ 이상 10분 지속 + 저활동·고심박 패턴 동시(쉬는데 심박이 안 내려옴)
-// 근거 — 38.0℃ = ACGIH 미순응자 작업 중지선. "지속"과 "패턴 동시"는 추정 오차(±0.3℃)發
-// 단발 오경보 필터. 상승 추세(+0.8℃/h) 조건은 v1 제외(오경보 방향 리스크 — 후속 검토).
+//   경고(warning) = 38.0℃ 이상 10분 지속
+// 근거 — 38.0℃ = ACGIH 미순응자 작업 중지선. "지속"(10분 + 창 내 최소 8점)이 추정 오차(±0.3℃)發
+// 단발 오경보를 거른다. 상승 추세(+0.8℃/h) 조건은 v1 제외(오경보 방향 리스크 — 후속 검토).
+//
+// ★★ 2026-08-18 — 경고에서 "저활동·고심박 패턴 동시" 요건을 **제거했다**(문헌 검토 조치 B-1a).
+// 그 요건이 경고를 **구조적으로 발동 불가**하게 만들고 있었다. 패턴의 저활동 임계는 분당 1.5 kcal
+// 인데 실측 하한이 **2.40**(08-13 이후 심박 커버 ≥10분인 온전한 분 2,067개 · 임계 이하 **0개**)이라
+// 어떤 15분 창 평균도 임계 이하가 될 수 없다. 원인은 우리 코드가 아니라 상시 `HKWorkoutSession`
+// 이다 — 애플이 하루 종일을 "운동 중"으로 간주해 앉아 있어도 활동에너지를 시간당 약 288 kcal 로
+// 산출한다(건강 앱 대조 검산 완료). 상시 워크아웃은 폰 강제종료·잠금 생존의 핵심 장치라 못 뺀다.
+// 실측·근거 = `lib/heat-pattern.ts` 상수 주석 · `docs/heat-activity-axis/checklist.md`.
+//
+// ⚠ **확증 조건이 없는 잠정형이다.** 남은 필터는 "10분 지속" 하나뿐인데, 추정 심부체온이 가장
+// 약한 구간이 하필 37.75~38.5℃ 시작점이다(문헌 검토 조치 B). 후속으로 **활동 축을 교체한 확증
+// 조건**(심박 주 · 걸음/정지 배제 = B-1b)을 다시 붙이기로 돼 있다 — `docs/heat-activity-axis/` §2.
+//
+// (참고 — 2026-08-18 서버 로그 전수에서 `[heat-alert]` 발사는 **0건**이다. 경고뿐 아니라 주의도
+//  한 번도 임계에 닿은 적이 없다. 즉 이 변경으로 당장 알림이 늘지 않는다. 바뀌는 것은
+//  "실제 온열 사건이 왔을 때 격상 경로가 존재하는가" 다.)
 
 import { maskWorkerName } from "./telegram";
 
@@ -26,13 +42,15 @@ export type HeatTempPoint = { tsMs: number; tempC: number };
 const STAGE_RANK: Record<string, number> = { normal: 0, caution: 1, warning: 2 };
 
 /**
- * 워커 1명의 추정 체온 궤적 + 저활동·고심박 패턴 여부 → 온열 단계.
+ * 워커 1명의 추정 체온 궤적 → 온열 단계.
  * null = 정상 또는 판단 불가(추정점 부족) — 둘 다 알림 없음이 안전한 방향이다
  * (점 부족 = 미착용·수신 공백이고, 그건 온열이 아니라 연결 문제로 이미 따로 표시된다).
+ *
+ * ⚠ 패턴 인자를 다시 넣지 말 것 — 위 헤더의 B-1a 근거 참조. 확증을 되살릴 때는 활동에너지가
+ * 아니라 교체된 축(B-1b)으로 붙인다.
  */
 export function evaluateHeatStage(
   series: HeatTempPoint[],
-  heatPatternFlagged: boolean,
   nowMs: number,
 ): HeatStage | null {
   const fromMs = nowMs - HEAT_SUSTAIN_MINUTES * 60_000;
@@ -45,7 +63,7 @@ export function evaluateHeatStage(
     if (p.tempC < minTemp) minTemp = p.tempC;
   }
   if (count < HEAT_MIN_POINTS) return null;
-  if (minTemp >= HEAT_WARNING_TEMP_C && heatPatternFlagged) return "warning";
+  if (minTemp >= HEAT_WARNING_TEMP_C) return "warning";
   if (minTemp >= HEAT_CAUTION_TEMP_C) return "caution";
   return null;
 }
