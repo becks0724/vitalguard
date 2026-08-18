@@ -446,3 +446,79 @@ sudo 없이 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild
 ### ⚠ 서버 배포가 짝이다
 
 `location_accuracy_m` 컬럼 추가가 포함돼 있다(`ensureSchema` 가 `ALTER TABLE`). **앱만 설치하면 좌표는 저장되고 정확도만 조용히 strip 된다** — 이 트랙이 고치려던 바로 그 형태다. 상세 = [docs/gps-phone-collection/checklist.md](../../docs/gps-phone-collection/checklist.md).
+
+---
+
+## ★ 재설치의 실측 비용 — 폰과 워치는 다르다 (2026-08-18)
+
+같은 날 폰만 갈고, 두 시간 뒤 워치를 갈아 **대조군이 생겼다.**
+
+| | 폰(Runner) 재설치 | 워치(VitalWatch) 재설치 |
+|---|---|---|
+| 수집 공백 | **0초** | **128초** |
+| 유실 | **0건** | 그 구간 측정분(따라잡기 없음) |
+| 사람 손 | 불필요 | **워치에서 [시작] 필수** |
+| 흔적 | 그 분 최장지연 5.0 → 9.9초 | 재개 첫 행이 심박만·무동작 없음 |
+
+```
+17:14  12건 최장지연 5.1초
+17:15  12건 최장지연 5.0초
+17:16  12건 최장지연 9.9초   ← Runner 설치 17:16:49 · 앱 기동 17:16:59
+17:17  12건 최장지연 5.1초
+17:22  11건                  ← 워치 설치 17:23:01
+17:23   0건
+17:24   0건                  ← 사용자 [시작]
+17:25  12건 · battery_pct 첫 도착
+```
+
+**왜 다른가** — 수집을 끊는 것은 폰이 아니라 **워치 `HKWorkoutSession`** 이다. 폰 프로세스는
+실제로 죽었지만(재설치) 워치 세션이 살아 있어 측정이 이어졌고, 폰이 없던 10초는 WCSession
+큐가 덮었다. 반대로 워치를 갈면 세션이 끝나고 **`HKWorkoutSession` 은 사용자 조작 없이 시작할
+수 없어** 사람이 [시작] 을 눌러야 한다.
+
+> **⚠ 종전 인식 정정.** "재설치당 10~13건 유실"(08-15)은 **워치를 건드린 재설치 한정**이었다.
+> 폰 UI·Dart 변경을 워치 작업과 묶어 온 근거였는데, 그 근거가 이번 실측으로 사라졌다.
+> **앞으로 폰만 바뀐 변경은 워치를 기다리지 않는다.**
+
+### 임베드 전달 실패가 이번엔 이득이었다
+
+`Embed Watch Content` 때문에 Runner 를 Run 하면 워치 앱도 함께 빌드되지만, **아이폰 Run 의
+워치 임베드 전달은 조용히 실패한다**(08-13 함정 · 위 절). 이번에도 재현됐고, 그 증거가
+데이터로 남았다 — **폰 설치 후에도 `battery_pct` 0건**이라 손목의 워치가 구 바이너리임이
+확정된다. 워치를 안 건드리고 싶을 때는 이 성질에 기대도 된다.
+
+### 공유 워킹트리에서 설치할 때
+
+옆 세션이 워치 파일을 편집 중이면 **미검증 코드가 내 빌드에 실린다**(임베드 때문). 대기하지
+않고 푸는 방법 —
+
+```bash
+# HEAD 사본을 스크래치패드에 떠서 거기서 빌드한다(공유 build/·DerivedData 무사용)
+rsync -a --exclude build --exclude .dart_tool "$SRC/" "$S/"
+git show HEAD:"<상대 미커밋 파일>" > "$S/<상대 경로>"
+# 추적 파일 전수 해시 대조로 사본이 HEAD 와 같은지 확인한 뒤 빌드
+```
+
+설치는 Xcode 없이도 된다.
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun devicectl list devices                      # flutter devices 가 못 봐도 여기선 보인다
+flutter build ios --release                       # 자동 서명(팀 F2P5ZFP65Q)
+xcrun devicectl device install app --device <UDID> build/ios/iphoneos/Runner.app
+xcrun devicectl device process launch --device <UDID> --terminate-existing com.vitalguard.vitalguardApp
+```
+
+⚠ 설치 후 **앱 1회 전면 실행**은 여전히 수칙이다(미기동 시 WCSession 전달 스로틀).
+⚠ `devicectl` 설치는 **서명 만료일을 늘리지 않는다.** 프로파일 갱신은 Xcode Run 이 한다.
+
+### ⚠ 설치본 검증에 `strings` 를 쓸 때
+
+신규 코드가 실렸는지 확인할 때 **통제군 없이는 판정할 수 없다.**
+
+- Dart AOT 는 **비 ASCII 리터럴을 `strings` 로 못 뽑는다**(한글 0건 → 통제군 `비밀번호` 도 0건).
+  ASCII 심볼(클래스명 등)로 우회한다.
+- Swift fat 바이너리는 한글 리터럴이 안 잡히는 데다, **15바이트 이하 문자열은 small-string
+  최적화로 코드에 인라인**돼 바이트 검색으로도 존재하지 않는다.
+
+→ **통제군은 "원래 있던 것" 중 충분히 긴 문자열로 고른다.** 통제군도 0이면 도구 문제다(L-67).
