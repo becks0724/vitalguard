@@ -40,6 +40,21 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
     /// WCSession 델리게이트 콜백은 세션당 하나의 백그라운드 큐로 직렬 전달되므로 이 상태는 별도 잠금 없이 다룬다.
     private var snapshot = DisplaySnapshot()
 
+    /// 표시 스냅숏을 비운다 — **계정이 바뀔 때만** 부른다.
+    ///
+    /// ★ 이 스냅숏은 계정을 모른다. `steps`·`discreteCounts` 가 앱 프로세스 수명 내내 누적되고
+    /// 배치마다 전량 emit 되므로, 비우지 않으면 계정을 바꾼 뒤 **직전 작업자의 걸음·이산 건수·
+    /// 마지막 심박이 새 계정의 값으로 보인다.** 업로드 큐는 이미 `purgeQueue` 로 폐기되므로
+    /// 서버 귀속은 안전하고 **화면만 거짓을 말하는** 형태다(2026-08-18 발견).
+    ///
+    /// 워치는 로그인 상태와 무관하게 계속 보내므로 로그아웃 중에도 스냅숏은 자란다 —
+    /// 그래서 로그아웃에서도 부른다. 비운 직후 빈 이벤트를 보내 화면이 옛 값을 들고 있지 않게 한다.
+    func resetSnapshot(reason: String) {
+        snapshot = DisplaySnapshot()
+        log.notice("[HR] 표시 스냅숏 초기화 — \(reason, privacy: .public)")
+        VitalBridge.shared.emit(displayEvent(seq: -1, channel: "reset"))
+    }
+
     func activate() {
         guard WCSession.isSupported() else {
             log.error("WCSession 미지원 기기")

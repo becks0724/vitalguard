@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'metric_tile.dart';
+import 'own_vitals.dart';
 import 'theme.dart';
 import 'vital_display.dart';
 import 'vital_range.dart';
@@ -180,6 +181,10 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Timer? _timer;
+  // 서버 파생 지표는 추정 체온 캐시(서버 60초)와 같은 주기로만 받는다 — 더 자주 물어도
+  // 같은 값이 온다. 3초 폴링(_timer)에 얹으면 왕복만 20배가 된다.
+  Timer? _ownTimer;
+  OwnVitals? _own;
   Map<String, dynamic> _status = const {};
   StreamSubscription<VitalStreamEvent>? _sub;
 
@@ -194,6 +199,8 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _refresh();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
+    _refreshOwn();
+    _ownTimer = Timer.periodic(const Duration(seconds: 60), (_) => _refreshOwn());
     try {
       _sub = VitalStream.events().listen((e) {
         if (!mounted) return;
@@ -212,8 +219,22 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _ownTimer?.cancel();
     _sub?.cancel();
     super.dispose();
+  }
+
+  /// 서버 파생 지표 조회. 실패하면 **직전 값을 지우고 null 로 둔다** — 옛 값을 계속 그리면
+  /// 언제 것인지 모르는 수치가 화면에 남는다(추정 체온은 분 단위로 움직인다).
+  Future<void> _refreshOwn() async {
+    Map<String, dynamic>? res;
+    try {
+      res = await _bridge.invokeMapMethod<String, dynamic>('ownVitals');
+    } catch (_) {
+      res = null; // 브리지 부재(테스트 등)
+    }
+    if (!mounted) return;
+    setState(() => _own = OwnVitals.fromMap(res));
   }
 
   Future<void> _refresh() async {
@@ -229,6 +250,8 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await _bridge.invokeMethod<void>('logout');
     } catch (_) {}
+    // 네이티브 스냅숏은 로그아웃에서 비워지지만 Dart 가 들고 있는 서버 파생분도 함께 버린다.
+    _own = null;
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
@@ -362,7 +385,10 @@ class _HomeScreenState extends State<HomeScreen> {
     final pending = _livePending ?? _status['pending'] as int? ?? 0;
     final baseURL = _status['baseURL'] as String? ?? '';
     final vitals = _vitals;
+    // 워치가 보낸 것 + 서버가 계산한 것을 한 격자에 둔다. 둘 다 "지금 이 사람의 몸" 이라
+    // 성격이 같고, 출처가 다르다고 나누면 같은 걸 두 번 찾게 된다(활동 누계와는 다르다).
     final sections = splitVitalSections(vitals == null ? const [] : buildVitalRows(vitals));
+    final bodyRows = [...sections.body, ...buildServerRows(_own)];
 
     return Scaffold(
       appBar: AppBar(
@@ -383,9 +409,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           _heartHero(vitals),
           // 측정 안 된 종류는 타일 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
-          if (sections.body.isNotEmpty) ...[
+          if (bodyRows.isNotEmpty) ...[
             _sectionTitle('신체 지표'),
-            _tileGrid(sections.body),
+            _tileGrid(bodyRows),
           ],
           if (sections.activity.isNotEmpty) ...[
             _sectionTitle('활동'),
@@ -406,6 +432,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: const TextStyle(fontSize: 12, color: VgColors.muted)),
             ),
           ),
+          // DB 누적 — 조회 실패는 값을 지어내지 않고 줄 자체를 생략한다.
+          if (_own?.totalPersisted != null) ...[
+            const SizedBox(height: 10),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.storage_outlined, color: VgColors.primary),
+                title: Text('누적 ${formatCount(_own!.totalPersisted!)}건',
+                    style: const TextStyle(fontSize: 14, color: VgColors.ink)),
+                subtitle: const Text('서버에 영속된 내 생체 샘플',
+                    style: TextStyle(fontSize: 12, color: VgColors.muted)),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           Card(
             child: ListTile(

@@ -101,7 +101,12 @@ final class VitalBridge: NSObject {
         case "logout":
             AuthStore.clearAll()
             VitalPipeline.shared.reloadAuth()
+            // 로그아웃 중에도 워치는 계속 보낸다 — 비우지 않으면 다음 로그인 화면이
+            // 직전 작업자의 누계를 이어받는다.
+            PhoneReceiver.shared.resetSnapshot(reason: "로그아웃")
             result(["ok": true])
+        case "ownVitals":
+            ownVitals(result: result)
         case "status":
             result([
                 "loggedIn": AuthStore.token != nil,
@@ -113,6 +118,44 @@ final class VitalBridge: NSObject {
         default:
             result(FlutterMethodNotImplemented)
         }
+    }
+
+    /// 본인 파생 지표 조회 — 서버만 낼 수 있는 값(추정 체온·PSI·스트레스·누적)을 받아 온다.
+    ///
+    /// ★ 토큰을 Dart 로 넘기지 않는다. 스코프가 **서명된 클레임**으로만 정해지므로 사번을
+    /// 실어 보낼 것도 없다 — 계정을 바꾸면 토큰이 바뀌고 그것만으로 대상이 바뀐다.
+    /// 실패는 값을 지어내지 않고 `ok:false` 로 돌려준다(화면이 타일을 안 그린다).
+    private func ownVitals(result: @escaping FlutterResult) {
+        guard let token = AuthStore.token, !token.isEmpty else {
+            result(["ok": false, "error": "로그인이 필요합니다."])
+            return
+        }
+        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app/me/vitals"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        var finished = false
+        let finish: (Any) -> Void = { value in
+            guard !finished else { return }
+            finished = true
+            DispatchQueue.main.async { result(value) }
+        }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error {
+                finish(["ok": false, "error": error.localizedDescription])
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200, let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                // 401 은 앱이 스스로 복구 가능한 상태다 — 화면이 재로그인을 띄우게 코드를 함께 준다.
+                finish(["ok": false, "status": code, "error": "조회 실패(\(code))"])
+                return
+            }
+            finish(json)
+        }.resume()
     }
 
     private func login(id: String, password: String, result: @escaping FlutterResult) {
@@ -155,8 +198,12 @@ final class VitalBridge: NSObject {
                 return
             }
             // 계정 교체 감지 — 직전 로그인 사번과 다르면 미전송 잔여 큐를 폐기한다(새 사번으로 오귀속 방지).
+            // ★ 큐 폐기와 화면 초기화를 **같은 조건 안에** 둔다. 조건이 갈리면
+            //   "큐는 비웠는데 화면엔 직전 작업자 값이 남는" 상태가 다시 만들어진다.
             if let previous = AuthStore.lastWorkerId, !previous.isEmpty, previous != workerId {
-                VitalPipeline.shared.purgeQueue(reason: "계정 교체 \(previous) → \(workerId)")
+                let reason = "계정 교체 \(previous) → \(workerId)"
+                VitalPipeline.shared.purgeQueue(reason: reason)
+                PhoneReceiver.shared.resetSnapshot(reason: reason)
             }
             AuthStore.lastWorkerId = workerId
             AuthStore.saveToken(token)
