@@ -220,6 +220,9 @@ export function VitalHistoryPanel({
   // 심부체온 추정 탭 — 값 자체가 추정이라 별도 보조표기는 없고, 기간은 24시간·1주일만 제공한다
   // (열 스트레스는 시간 단위 현상 — 장기 추정 추세는 검증 근거가 없다. 서버도 같은 제한을 강제).
   const isEst = selection.metric === "coreTempEst";
+  // 수집 히트맵 — 1년 격자가 곧 화면 형태다(365 고정은 위 효과가 강제). 차트 종류·기간 컨트롤은
+  // 이 탭에서 아무것도 바꾸지 않으므로 감춘다 — METRIC_FIXED_CHART 와 같은 근거다.
+  const isCoverage = selection.metric === "coverage";
   const coreSub = (_v: number) => undefined;
   const coreHover = undefined;
 
@@ -317,6 +320,14 @@ export function VitalHistoryPanel({
           <span className="text-xs text-zinc-600 dark:text-zinc-400">누적 추세</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* 컨트롤을 지우면 "1년"이라는 사실도 함께 사라진다 — 고정된 범위를 글자로 남긴다.
+              버튼이 아니라 글자다(누를 수 있게 두면 다시 죽은 컨트롤이 된다). */}
+          {isCoverage ? (
+            <span className="rounded border border-zinc-300 px-3 py-1 text-xs text-zinc-500 dark:border-white/10 dark:text-zinc-400">
+              최근 1년
+            </span>
+          ) : (
+            <>
           {/* 라인/막대가 실제로 갈리는 지표에서만 보인다 — 안 갈리는데 버튼을 두면
               눌러도 아무 일이 없어 "고장"으로 읽힌다(2026-08-15 사용자 제보:
               "라인/막대 동일한 차트. 구분이 의미 없음"). 이 레포가 반복해 고쳐 온
@@ -396,6 +407,8 @@ export function VitalHistoryPanel({
               </button>
             )}
           </div>
+          )}
+            </>
           )}
           <button
             type="button"

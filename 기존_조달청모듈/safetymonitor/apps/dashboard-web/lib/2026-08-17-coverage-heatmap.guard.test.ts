@@ -156,6 +156,42 @@ test("⑧ 표시 전용 — 판정·알림 경로에 넣지 않는다", () => {
 // 둘 다 **화면이 사실과 다른 것을 말하는** 같은 계열이다 — 여백은 격자가 1년치를 다 그렸는지
 // 의심하게 만들고, 죽은 기간 버튼은 "다른 기간도 볼 수 있다"는 거짓을 말한다(L-… 차트토글과 동종).
 
+test("⑨ ★ 커버리지 탭에서 기간·차트 컨트롤을 감추되 고정 범위는 글자로 남긴다", () => {
+  assert.match(
+    codeOnly(panel),
+    /const isCoverage = selection\.metric === "coverage";/,
+    "커버리지 판별이 사라졌다",
+  );
+  const i = panel.indexOf("{isCoverage ? (");
+  assert.ok(i > 0, "툴바 분기를 못 찾았다");
+  const mid = panel.indexOf(") : (", i);
+  const end = panel.indexOf("onClick={onClose}", mid);
+  assert.ok(mid > i && end > mid, "분기 구간이 깨졌다");
+
+  const shown = panel.slice(i, mid); // 커버리지일 때 보이는 것
+  const hidden = panel.slice(mid, end); // 나머지 지표에서만 보이는 것
+  assert.match(
+    shown,
+    /최근 1년/,
+    "고정 범위 표기가 사라졌다 — 컨트롤을 지우면 '1년'이라는 사실도 함께 사라진다",
+  );
+  assert.doesNotMatch(
+    shown,
+    /<button/,
+    "커버리지 쪽에 버튼이 생겼다 — 눌러도 안 변하는 컨트롤은 고장으로 읽힌다",
+  );
+  // 양방향으로 본다 — "나머지 지표에 있다"만 보면 **커버리지 쪽에도 있는** 경우를 놓친다
+  // (작성 중 음성 대조 D 가 실제로 이 구멍을 뚫고 통과했다).
+  for (const [what, re] of [
+    ["차트 종류", /CHART_TYPES\.map/],
+    ["기간 프리셋", /RANGES\.filter/],
+    ["기간 지정", /type="date"/],
+  ] as const) {
+    assert.match(hidden, re, `${what} 컨트롤이 커버리지 분기 밖에 있다 — 이 탭에서 다시 뜬다`);
+    assert.doesNotMatch(shown, re, `${what} 컨트롤이 커버리지 쪽에도 있다 — 감춘 게 아니다`);
+  }
+});
+
 test("⑩ 격자가 컨테이너 폭을 채운다(칸 고정폭으로 되돌아가지 않았다)", () => {
   // 11px 고정이면 53주 = 766px 라 넓은 패널에서 우측이 400px 넘게 빈다(사용자 실측 화면).
   const v = codeOnly(view);
