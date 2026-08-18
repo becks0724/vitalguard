@@ -20,7 +20,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { evaluateHeatStage, HEAT_WARNING_TEMP_C, HEAT_SUSTAIN_MINUTES } from "./heat-alert";
+import {
+  evaluateHeatStage,
+  formatHeatMessage,
+  HEAT_WARNING_TEMP_C,
+  HEAT_SUSTAIN_MINUTES,
+} from "./heat-alert";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const alertSrc = readFileSync(join(ROOT, "lib", "heat-alert.ts"), "utf8");
@@ -67,4 +72,14 @@ test("③ 근거가 소스에 남아 있다(지우면 같은 조건이 '빠진 �
   assert.match(alertSrc, /2\.40/, "실측 하한 근거가 사라졌다");
   assert.match(alertSrc, /B-1a/, "조치 식별자가 사라졌다");
   assert.match(alertSrc, /B-1b/, "후속(확증 축 교체) 예고가 사라졌다 — 잠정형이라는 사실이 지워진다");
+});
+
+test("④ 문구가 검증하지 않는 것을 단언하지 않는다 — '휴식 중 회복 안 됨' 주장 금지", () => {
+  // B-1a 로 저활동·고심박 확증을 제거했으므로 휴식 여부는 판정 대상이 아니다. 제거만 하고 문구를
+  // 남기면 알림이 사실보다 강한 주장을 하게 된다(이 레포가 반복해 고쳐 온 형태).
+  const msg = formatHeatMessage({ stage: "warning", workerId: "EMP-TEST", workerName: null });
+  assert.match(msg, /경고 기준 이상으로 10분 지속/, "무엇을 근거로 발사됐는지가 문구에서 사라졌다");
+  assert.doesNotMatch(msg, /휴식 중에도/, "검증하지 않는 '휴식 중 회복 안 됨'을 다시 단언한다");
+  assert.match(msg, /활동 여부는 미판정/, "확증이 없다는 사실 고지가 사라졌다");
+  assert.match(msg, /추정/, "추정 기반이라는 고지가 사라졌다");
 });
