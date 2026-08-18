@@ -19,6 +19,29 @@ Map<String, dynamic> _ok({
       'totalPersisted': total,
     };
 
+/// 보조줄 픽셀 폭 근사 — 한글·ASCII·공백의 폭이 크게 달라 **글자 수는 못 쓴다**
+/// (`6 이상 높은 부담` 10자 84px < `개인 안정심박 기준` 9자 95px).
+///
+/// 계수는 실측 대조로 잡았다(11px AppleGothic · TextPainter):
+/// ```
+///   최근 170분 기준   실측 84  근사 82      개인 안정심박 기준  실측 95  근사 98
+///   폰 수신 누계      실측 62  근사 64      심박 기반 · 참고값  실측 90  근사 96
+///   기준 심박 60(미수신) 실측 110 근사 110    참고값 · 6 이상…    실측 127 근사 128
+/// ```
+double _approxPx(String s) {
+  var w = 0.0;
+  for (final c in s.runes) {
+    if (c == 0x20) {
+      w += 3; // 공백
+    } else if (c >= 0x1100) {
+      w += 11.5; // 한글·전각
+    } else {
+      w += 6; // 숫자·괄호 등 반각
+    }
+  }
+  return w;
+}
+
 void main() {
   test('정상 응답을 그대로 읽는다', () {
     final v = OwnVitals.fromMap(_ok())!;
@@ -69,13 +92,43 @@ void main() {
     }
   });
 
-  test('PSI 기준 심박 출처를 감추지 않는다', () {
+  test('★ 보조줄이 잘리지 않는 폭이다', () {
+    // 보조줄은 한 줄 + ellipsis 라 길면 **조용히 잘린다** — tsc·test 어디에도 신호가 없고
+    // 실기기 화면에서만 드러난다. 실기기에서 잘 나온 최장 문구가 `개인 안정심박 기준`
+    // (실측 95px · 근사 98)이라 그것을 상한으로 삼는다.
+    const maxPx = 100.0;
+    final rows = [
+      ...buildServerRows(OwnVitals.fromMap(_ok())!),
+      ...buildServerRows(
+          OwnVitals.fromMap(_ok(psi: const {'value': 2.5, 'personalized': false}))!),
+    ];
+    expect(rows.length, greaterThan(3), reason: '검사 대상을 못 만들었다');
+    for (final r in rows) {
+      final px = _approxPx(r.detail ?? '');
+      expect(px, lessThanOrEqualTo(maxPx),
+          reason: '${r.label} 보조줄 "${r.detail}" 근사 ${px.toStringAsFixed(0)}px — 잘린다');
+    }
+  });
+
+  test('★ 추정 체온에 의료 판정 아님 자격이 붙는다', () {
+    // 관제웹은 같은 값에 툴팁으로 자격을 달지만 **폰에는 툴팁이 없다.** 심박에서 역산하는
+    // 값이라 걷기만 해도 오른다 — 실측에서 평균 111bpm 구간에 38.0℃ 가 나왔고 그 값은
+    // 하필 danger 임계와 같다. 자격이 빠지면 작업자가 열이 있다고 읽는다.
+    final core = buildServerRows(OwnVitals.fromMap(_ok())!)
+        .firstWhere((r) => r.label.contains('체온'));
+    expect(core.detail, contains('의료 판정 아님'));
+  });
+
+  test('PSI — 개인화면 임계 맥락, 아니면 기준 심박 caveat 을 앞세운다', () {
+    // 4.7 이 높은지 낮은지가 화면에 없으면 숫자만 남는다(문헌 임계 6·7.5).
     final personal = buildServerRows(OwnVitals.fromMap(_ok())!)
         .firstWhere((r) => r.label.contains('PSI'));
-    expect(personal.detail, '개인 안정심박 기준');
+    expect(personal.detail, contains('6 이상'));
+    // ★ 기준 심박이 문헌 기본값(60)이면 값의 성격이 다르다 — 감추면 두 값이 같아 보인다.
     final fallback = buildServerRows(
             OwnVitals.fromMap(_ok(psi: const {'value': 2.5, 'personalized': false}))!)
         .firstWhere((r) => r.label.contains('PSI'));
     expect(fallback.detail, contains('60'));
+    expect(fallback.detail, contains('미수신'), reason: '왜 개인화가 안 됐는지가 빠졌다');
   });
 }
