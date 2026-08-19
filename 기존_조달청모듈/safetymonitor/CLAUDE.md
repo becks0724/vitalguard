@@ -80,10 +80,17 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘만 이식
 - TypeScript 5.x strict
 - Node.js LTS
 - **작업자 폰 앱 — Flutter (Dart 3.x)** · iOS 빌드용 Xcode 26.4+ · Android 빌드용 Android Studio + JDK 17
-- **워치 — 앱 미작성**. Apple Watch / Galaxy Watch 모두 페어 폰의 HealthKit / Health Connect 로 데이터 query
+- **워치 — watchOS 앱 있음**(`apps/vitalguard_app/ios/VitalWatch`). `HKWorkoutSession` 상시 세션으로
+  백그라운드 수집 → `WCSession` 5초 배치로 폰에 전달. ⚠ 아래 "워치 앱 미작성" 관례는 **구 스택
+  (worker-phone) 한정**이고 신규 앱에는 해당하지 않는다(2026-08-11 정정).
 - 웹 — Next.js 15 + Tailwind + shadcn/ui
-- 인프라 — AWS CDK (TypeScript) · Region `ap-northeast-2` (서울)
-- 외부 의존성 — AWS SDK · Flutter 공식 패키지 (`health` · `mqtt_client` 등) 외 신규 추가 시 사전 합의
+- **인프라 — GCP**. Cloud Run(`vitalguard-dashboard` · region `asia-northeast3`) + Cloud Build +
+  Secret Manager + Cloud Scheduler, DB 는 외부 PostgreSQL(`DATABASE_URL`). 배포 = `/deploy`.
+  ⚠ `backend/infrastructure`(AWS CDK IoT 스택)는 **아무 코드도 참조하지 않는 잔재**다 —
+  pnpm 워크스페이스 멤버로만 남아 있고 마지막 커밋이 2026-06-17 이다. 배포·운영과 무관.
+- 외부 의존성 — Flutter 공식 패키지 외 신규 추가 시 사전 합의.
+  ⚠ `@aws-sdk/client-s3` 가 있으나 **AWS 가 아니라 네이버 클라우드 Object Storage(S3 호환)**
+  어댑터다(`lib/storage.ts`). 이름만 보고 AWS 를 쓴다고 읽지 말 것.
 
 ## 빌드 / 테스트 / 검증
 
@@ -98,10 +105,8 @@ pnpm lint
 pnpm --filter @safetymonitor/analyzers test
 pnpm --filter @safetymonitor/dashboard-web dev
 
-# 인프라
-cd backend/infrastructure
-pnpm cdk diff --profile dev
-pnpm cdk deploy --profile dev
+# 배포(관제웹) — 원자화 스크립트 한 호출. 상세는 .claude/commands/deploy.md
+scripts/deploy-dashboard.sh
 
 # 작업자 폰·워치 앱 (Flutter + iOS/watchOS 네이티브)
 cd apps/vitalguard_app
@@ -116,37 +121,38 @@ pnpm dev:web                        # http://localhost:3000
 pnpm mock:publish                   # 4 worker mock vital 5초 간격 publish
 ```
 
-## 코드 구조 — 큰 그림 (M1 진입 후 채움)
-
-> ⚠️ 아래 트리는 **목표(미래) 구조** — 발표 후 로드맵 항목을 포함한다. 현재 디스크에 **존재하지 않는 경로**: `apps/dashboard-mobile/`, `backend/lambdas/*`, `packages/thresholds/`, `docs/architecture.md`, `docs/HealthPattern-reference/`, `.github/workflows/`. 현존 = `apps/{dashboard-web,vitalguard_app}` · `backend/infrastructure` · `packages/{analyzers,schemas}`.
+## 코드 구조 — 현재 실체
 
 ```
-06.safetymonitor/
+기존_조달청모듈/safetymonitor/
 ├── apps/
-│   ├── vitalguard_app/             Flutter 폰 앱 + iOS/watchOS 네이티브 (현행 실체)
-│   ├── dashboard-web/              Next.js 관제 대시보드 (PC)
-│   └── dashboard-mobile/           관제자 모바일 보조 (M7 — Flutter / RN / 네이티브 결정)
-├── backend/
-│   ├── infrastructure/             AWS CDK (IoT · Auth · Data · Lambda 스택)
-│   └── lambdas/
-│       ├── vital-ingest/           IoT Rule → Timestream/DDB 적재
-│       ├── hazard-detect/          vital → analyzers → HazardEvent
-│       └── notify-fan-out/         HazardEvent → APNs·FCM·SES·Slack
+│   ├── vitalguard_app/             Flutter 폰 앱 + iOS(Runner)/watchOS(VitalWatch) 네이티브
+│   └── dashboard-web/              Next.js 15 관제 대시보드 (Cloud Run 배포 대상)
 ├── packages/
-│   ├── analyzers/                  공통 위험 감지 5종 (TS) — HealthPattern 이식
-│   ├── thresholds/                 임계값 상수 (KOSHA + 의료 reference)
+│   ├── analyzers/                  위험 감지·추정 순수 함수 (I/O 금지)
 │   └── schemas/                    공통 데이터 스키마 (Zod)
-├── docs/
-│   ├── plan.md                     비전 · MVP · 아키텍처 · 마일스톤
-│   ├── checklist.md                M0~M9 체크박스
-│   ├── context-notes.md            의사결정 기록
-│   ├── compliance.md               KOSHA · 개보법 · 근로계약
-│   ├── architecture.md             데이터 흐름 상세
-│   └── HealthPattern-reference/    HealthPattern docs 사본 (참고용)
-└── .github/workflows/              CI (lint · build · test)
+├── cctv-ai/                        CCTV AI 서버 + 젯슨 엣지 스크립트
+├── ml/ppe-detection/               PPE 탐지 학습 자산 (노트북·변환기)
+├── scripts/deploy-dashboard.sh     배포 원자화 스크립트
+└── docs/                           트랙별 checklist.md · context-notes.md
 ```
 
-데이터 흐름. **Apple Watch / Galaxy Watch (생체 센서)** → **페어 폰 (Flutter `vitalguard_app` — 네이티브가 HealthKit query)** → MQTT/TLS → AWS IoT Core → IoT Rule → Lambda (vital-ingest → hazard-detect → notify-fan-out) → DynamoDB/Timestream → WebSocket → 웹 대시보드 / APNs·FCM → 관제자 모바일.
+⚠ **`backend/infrastructure`(AWS CDK)는 위 그림에서 뺐다** — 어떤 코드도 참조하지 않는 잔재다.
+
+**데이터 흐름(실제).**
+
+```
+Apple Watch (HKWorkoutSession 상시 세션 · 5초 배치)
+  └─ WCSession ─▶ iPhone (Runner/VitalPipeline · 디스크 큐 · 실패 시 재시도)
+       └─ HTTPS POST /api/app/vital (앱 JWT) ─▶ Cloud Run (Next.js route handler)
+            ├─▶ PostgreSQL  vital_samples / alerts / incidents
+            ├─▶ 판정(analyzers) → recordAlert → 텔레그램
+            └─▶ 관제 웹 GET /api/monitor/*
+Cloud Scheduler ─▶ /api/cron/absence-check (5분) — 부재는 수신 경로로 감지되지 않는다
+```
+
+⚠ **세 시각을 구분한다** — `heart_rate_measured_at`(워치 측정) · `ts`(폰 수신) · `received_at`(서버 도착).
+하나로 뭉치면 "워치는 계속 쟀는데 전달만 끊긴" 구간이 유실로 오독된다.
 
 ## HealthPattern 과의 정책 차이 (혼동 방지)
 
@@ -154,9 +160,9 @@ pnpm mock:publish                   # 4 worker mock vital 5초 간격 publish
 |---|---|---|
 | 사용자 | 단일 (본인) | 다수 + 관제자 |
 | 외부 서버 | **0건 (정책)** | **필수 (AWS)** |
-| 클라우드 | M7 한정 Apple 인프라 예외 | AWS 전면 |
-| 인증 | 없음 | Cognito + 멀티 테넌트 |
-| ML | 금지 | 1차 금지 · 2차 검토 |
+| 클라우드 | M7 한정 Apple 인프라 예외 | GCP (Cloud Run + 외부 PostgreSQL) |
+| 인증 | 없음 | 자체 `users` 테이블 + 앱 JWT (멀티 테넌트는 미도입) |
+| ML | 금지 | 도입됨 (PPE·낙상) — 단 게이트 미통과 축은 판정에 안 올린다 |
 | 다국어 | 금지 | 금지 (동일) |
 | 외부 패키지 | 0건 | AWS SDK + 필요 시 |
 
@@ -165,37 +171,49 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 ## 핵심 관례 — 모르면 함정
 
 - **단말 코드는 최소 분석만 — 본 분석은 서버 사이드**
-  - 낙상처럼 즉시성 필수인 것만 폰 단말 (Flutter) 에서 detection. 나머지 (심박 이상·SpO₂·고립 등) 는 vital 만 publish 하고 분석은 Lambda 가 수행
-  - 사유. `packages/analyzers` (TS) 가 단일 source. Flutter 단말도 가능하면 raw 송신만 하고 분석은 Lambda 위임 → drift 위험 제거
+  - 낙상처럼 즉시성 필수인 것만 단말에서 detection. 나머지는 원시값만 올리고 판정은 서버가 한다
+  - 사유. `packages/analyzers` (TS) 가 단일 source — 단말에 복제하면 drift 가 생긴다
 
-- **워치 앱 미작성 — 폰이 HealthKit / Health Connect 로 query**
-  - 워치 (Apple Watch / Galaxy Watch) 는 *생체 센서* 로만 사용. 별도 watchOS App / Wear OS App 미작성
-  - Flutter 폰 앱이 `health` 패키지 + platform channel 로 페어 워치의 HR · SpO₂ · 가속도 query
-  - SOS 버튼·연결 상태 UI 는 *폰 화면* 에 (워치 화면 미사용)
-  - 사유. 1인 개발 + 발표 임팩트 측면에서 워치 OS 별 2개 네이티브 부담 회피 ([context-notes.md 2026-05-21 "단말 아키텍처 정정"](docs/context-notes.md))
+- **★ 워치 앱은 있다(구 관례 폐기)**
+  - `apps/vitalguard_app/ios/VitalWatch` = watchOS 타깃. `HKWorkoutSession` 상시 세션이 잠금·백그라운드에서
+    수집을 유지하고 `WCSession` 으로 폰에 5초 배치를 보낸다
+  - ⚠ **이 세션 구조가 폰 생존의 핵심이라 뺄 수 없다** — 다만 부작용이 둘 있다.
+    ① 벗어도 PPE 센서가 계속 돌아 **그럴듯한 심박이 이어진다**(미착용 판별 불가 · 2026-08-19 확정)
+    ② 활동에너지가 정지 상태에서도 계상돼 "저활동" 판정을 못 쓴다
+  - 워치 재설치는 세션을 끊고 **자동 재개되지 않는다** — 사람이 워치에서 [시작] 을 눌러야 한다
 
 - **`packages/analyzers` 는 순수 함수 — I/O 금지**
-  - 입력. 정규화된 vital 시계열. 출력. HazardEvent 후보
-  - Lambda·웹·모바일 어디서든 호출 가능해야 함
-  - AWS SDK · fetch · DB 호출 절대 금지
+  - 입력. 정규화된 vital 시계열. 출력. 판정 결과
+  - 서버 라우트·웹·단말 어디서든 호출 가능해야 함
+  - fetch · DB 호출 절대 금지
+  - ⚠ 빌드 산출물(`dist`)을 import 하므로 **소스를 고쳤으면 재빌드해야 반영된다** —
+    안 하면 `undefined` 가 조용히 흘러 값이 틀리는 게 아니라 **사라진다**
 
-- **AWS Cost — 매주 확인 + 알람 단계화**
-  - 월 알람 $50 / $100 / $200 단계
-  - Free Tier 만료 12개월 후 IoT Core (메시지당 $1/M) · Timestream (스토리지) 부터 증가
-  - 비용 폭증 1순위. Timestream 쿼리 (full scan 주의), CloudWatch Logs retention 무제한 방치
-
-- **인증서 keystore — 디바이스별 격리 + 회수 절차 필수**
-  - 작업자 퇴사 / 단말 분실 시 인증서 revoke 워크플로우 (Cognito 사용자 + IoT Thing 비활성화 동시)
-  - 베타 시작 전 revoke 1회 모의 훈련 필수
+- **비용 — 상시 과금 지점을 켜 둔 채 방치하지 않는다**
+  - `cctv-ai` 는 `--min-instances 1 --no-cpu-throttling` 이라 **켜 두면 상시 과금**이다. 시험 후 반드시
+    `--min-instances 0 --ingress internal` 로 되돌린다(삭제 아님 · 과금 0)
+  - Cloud NAT 게이트웨이 + 고정 IP + 데이터 처리(`$0.045/GiB`)도 상시 과금이다
+  - DB 는 외부 PostgreSQL 이라 GCP 청구서에 안 잡힌다 — **용량 한계는 따로 본다**(보존 정책 미수립)
 
 - **개인정보 — 명시적 동의 없이 수집 절대 금지**
-  - 작업자 onboarding 시 동의서 (디지털 서명 + 동의 철회 권리) → DynamoDB 별도 저장
-  - 동의 철회 시 데이터 익명화 cron 자동 실행
+  - ⚠ **동의서·철회·익명화는 아직 미구현**이다(코드 0건). 상용 전 필수 과제이고, 지금 상태를
+    "구현돼 있다"로 읽지 말 것
   - 사고 데이터는 익명화 불가 (KOSHA 3년 보존) — 동의서에 명시 필수
+  - **국외 이전 최소화** — 텔레그램은 국외 서비스라 **생체 수치를 싣지 않고** 이름은 마스킹한다
+  - `incidents` 는 append-only 원장이라 삭제 API 를 만들지 않는다(보존 정책 도입 시 선조회·선제외)
 
-- **알림 deduplication — 동일 워커·동일 type 5분 윈도우**
-  - Lambda `hazard-detect` 에서 DynamoDB conditional write 로 5분 dedup key 체크
-  - `danger` severity 는 dedup 미적용 (생명 우선)
+- **자격 회수 — 사람이 나가면 끊을 수단이 있어야 한다**
+  - 작업자 퇴사·단말 분실 시 `users.status` 를 `rejected` 로 내려 로그인을 막는다
+  - ⚠ **발급된 앱 JWT 는 그것만으로 안 죽는다** — 즉시 무효화하려면 `APP_JWT_SECRET` 을 회전해야
+    하고, 그러면 **전 작업자가 재로그인해야 한다**(2026-08-11 실측). 개별 폐기 수단은 없다
+  - ⚠ env 관리자(`admin`) 비밀번호는 배포 환경변수라 **앱에서 못 바꾼다** — Secret Manager
+    새 버전 + **새 리비전**까지 가야 반영된다(리비전을 안 갈면 옛 값이 그대로 산다)
+
+- **알림 deduplication — DB 자연키가 막는다**
+  - `alerts` 는 `ON CONFLICT (worker_id, type, ts) DO NOTHING` — 같은 사건은 한 번만 원장에 남는다
+  - 환경 경보는 `env_alert_state` 의 **단계 전이**로 판정한다(같은 단계가 이어지면 재발송 안 함)
+  - ⚠ **원장을 우회해 알림만 보내지 않는다** — 온열 알림이 `recordAlert` 를 안 거쳐 **발동 이력을
+    아무도 못 본** 전례가 있다. 문구를 직접 만들더라도 기록은 건너뛰지 않는다(가드로 고정)
 
 - **한국어 단독 — 영문 라벨 추가 금지**
   - 로그·UI·문서 모두 한국어. 영어는 코드 식별자·API field name 만
@@ -206,47 +224,55 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 손대지 말 것. 사용자가 명시적으로 결정함 ([docs/context-notes.md](docs/context-notes.md) 2026-05-21).
 
 ### 프로토타입 (현 시점) 비범위 — 발표 후로 이연
-- **워치 앱 (watchOS App / Wear OS App)** — 워치는 생체 센서로만 사용. 폰 앱이 HealthKit/Health Connect query
-- **멀티 테넌트** — 시연용 worker 2~4명 (실기기 2 + mock 1~2). 단 조직 1개·관제자 1명·멀티 테넌트 X 유지
-- **Cognito 인증** — dev 데모는 인증 stub 또는 로컬 토큰
-- **APNs / FCM / SES / Slack 알림** — 데모는 웹 alert 만
-- **위험 감지 5종 중 고립** — 낙상·심박이상·SOS·**SpO₂·고온** 5종 시연. 고립은 발표 후
+- ~~**워치 앱**~~ — **폐기(2026-08-11)**. `VitalWatch` watchOS 타깃을 만들었다(위 환경 절).
+- **멀티 테넌트** — 조직 1개·관제자 1명 유지. `org_type` 은 회사 표기용이지 테넌트 격리가 아니다.
+- **Cognito 인증** — 미도입 유지. 실제 = 자체 `users` 테이블 + 앱 JWT(`APP_JWT_SECRET`).
+- ~~**알림 미구현**~~ — **폐기(2026-07-24~)**. **텔레그램 봇**으로 구현돼 라이브다(`lib/telegram.ts`).
+  ⚠ **생체 수치는 싣지 않는다**(개보법 민감정보 국외이전 최소화) · 이름은 마스킹(`장○진`).
+- **위험 감지 5종 중 고립** — 여전히 미구현(코드 0건). 낙상·심박이상·SOS·SpO₂·고온만.
 - **KOSHA PDF 리포트 / AuditLog 인프라** — 슬라이드 언급만, 구현 X
 - **App Store / Play Store 배포** — Xcode 개발자 모드·실기기로 시연
 - **베타 협력사 운용 / 법률 자문 / 도메인 정식 확보 / GitHub Organization / 의료기기 인증 검토** — 발표 후
 
 ### 영구 비범위 (프로토타입·프로덕션 공통)
-- 머신러닝 / 자율 학습 — 2차 이후. 1차는 규칙·통계만
-- 영상 (CCTV) 통합 — 2차
+- ~~머신러닝 금지~~ — **폐기(2026-07-26~)**. PPE 탐지(`ml/ppe-detection` · YOLO26s 6차)와 낙상 ML 을
+  실제로 학습·배포했다. ⚠ 다만 **판정에 올리는 기준은 그대로 엄격하다** — 게이트를 통과하지 못한
+  축(안전조끼·안전화)은 화면·경보 어디에도 올리지 않는다(가드로 고정)
+- ~~영상(CCTV) 통합 — 2차~~ — **폐기(2026-06-27~)**. `cctv-ai` + 젯슨 엣지로 라이브 운용했다
+  (현재는 과금 때문에 OFF · 삭제 아님)
 - 자동 119 연계 — 2차. 1차는 관제자 수동 호출
 - 다국어 — 한국어 단독. 영문 fallback 추가 금지
 - 의료기기 인증 (MFDS) — 산업 안전 보조 정보 범주로 한정. 진단·치료 주장 절대 금지
 - iOS·Android 외 OS — 1차는 두 OS만
 - 자체 단말 OEM — 기존 Apple·Samsung 단말 활용
 
-## Flutter Project Guidelines
+## Flutter 앱 관례 (`apps/vitalguard_app`)
 
-> ⚠️ **현 시점 (2026-05-27) 적용 상태** — `apps/worker-phone/` 은 아직 이 가이드라인을 따르지 않음. Riverpod 미도입 (의존성 없음), `lib/` 는 `models/ + services/ + main.dart` 평면 구조. **발표 (2026-06-04, D-8) 전까지 리팩토링 금지** — 신규 작성 코드부터 점진 적용, 기존 코드 대규모 이동은 발표 후 로드맵으로 이연.
+⚠ **종전의 Riverpod + `core/data/domain/presentation` 4계층 규범은 폐기한다(2026-08-19).**
+도입된 적이 없고(`pubspec.yaml` riverpod 0건) 참조 대상이던 `apps/worker-phone/` 도 삭제됐다.
+지키지 않는 규범을 문서에 두면 다음 사람이 그것을 기준으로 판단한다.
 
-### State Management
-- Riverpod 2.x 사용
-- Provider 직접 사용 금지
+### 실제 구조
 
-### Folder Structure
 ```
-lib/
-├── core/         # 공통 유틸, 상수
-├── data/         # API, 로컬DB
-├── domain/       # 모델, 유스케이스
-├── presentation/ # 화면, 위젯
-└── main.dart
+apps/vitalguard_app/
+├── lib/                  평면 구조 — main.dart + 화면·위젯·표시 로직
+│   ├── theme.dart        관제웹 globals.css 와 1:1 (색 토큰 단일 소스)
+│   ├── vital_range.dart  임계 — 관제웹 severity.ts 에서 옮긴 것
+│   └── vital_stream.dart EventChannel 수신
+└── ios/
+    ├── Runner/           폰 네이티브 — 수집 파이프라인·디스크 큐·업로드·위치
+    └── VitalWatch/       watchOS — HKWorkoutSession·센서·WCSession 송신
 ```
 
-### Code Style
-- 한국어 주석 허용
-- async/await 우선, .then() 지양
-- const 위젯 적극 활용
+### 핵심 규칙
 
-### Testing
-- 새 기능 추가 시 widget test 함께 작성
-- 통합 테스트는 `integration_test/` 폴더
+- **생체 데이터는 Dart 를 거치지 않는다.** 수집·큐·업로드는 전부 Swift(`Runner`)가 전담한다 —
+  백그라운드에서 Flutter 엔진은 안 깨어나도 `WCSessionDelegate` 는 깨어나기 때문이다.
+  Dart 는 UI 와 로그인만 맡고 표시용 스냅숏만 `EventChannel` 로 받는다.
+- **임계·색은 관제웹에서 가져온다.** 폰에서 새로 정하면 두 화면이 다른 판정을 말한다.
+- ⚠ **폰에는 활동 게이트가 없다** — 관제웹은 `isWorking()` 으로 작업 중 심박을 완화하는데 폰의
+  걸음·층은 누계라 rate 를 못 낸다. 그래서 화면에 **`안정 기준`** 을 적는다.
+- 한국어 주석 허용 · `async/await` 우선 · `const` 위젯 적극 활용.
+- 새 기능에는 위젯 테스트를 함께 쓴다(`flutter test`). CI 가 push 마다 `dart analyze` + `flutter test` 를 돌린다.
+  ⚠ `flutter analyze` 는 한글 경로에서 크래시하므로 **`dart analyze`** 를 쓴다.
