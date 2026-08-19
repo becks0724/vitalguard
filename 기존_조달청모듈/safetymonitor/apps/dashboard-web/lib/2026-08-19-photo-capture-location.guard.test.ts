@@ -20,7 +20,12 @@ const loc = readFileSync(join(APP, "ios", "Runner", "LocationProvider.swift"), "
 test("★ 카메라 사용 설명 문구가 있고, 라벨이 아니라 문장이다", () => {
   const m = plist.match(/<key>NSCameraUsageDescription<\/key>\s*<string>([\s\S]*?)<\/string>/);
   assert.ok(m, "NSCameraUsageDescription 이 없다 — 카메라를 부르는 순간 앱이 종료된다");
-  const text = m[1].trim();
+  // ⚠ 이 레포는 `noUncheckedIndexedAccess: true` 라 캡처 그룹이 `string | undefined` 다.
+  //   그냥 `m[1].trim()` 하면 typecheck 가 막는다(공유 트리 push 게이트에서 실측).
+  //   "키만 있고 값이 빈 경우" 와 "문구가 짧은 경우" 를 다른 메시지로 가른다.
+  const captured = m[1];
+  assert.ok(captured, "문구가 비어 있다 — 키만 있고 값이 없다");
+  const text = captured.trim();
   // 짧은 라벨("카메라")로 넣으면 HealthKit 때처럼 런타임 예외가 난다.
   assert.ok(
     text.length >= 20,
