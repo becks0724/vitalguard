@@ -76,6 +76,24 @@ test("★ 알림 명부 = 관제 화면 명부(`monitor_slot_config`) · 별칭�
   );
 });
 
+test("★ 작업자 이름은 최근 라벨이 아니라 최빈 라벨로 고른다", () => {
+  const db = readFileSync(join(here, "db.ts"), "utf8");
+  const fn = db.slice(db.indexOf("export async function lastSeenByWorker"));
+  const body = fn.slice(0, fn.indexOf("\n}\n") + 3);
+
+  assert.match(
+    body,
+    /MODE\(\)\s+WITHIN GROUP/,
+    "최근 라벨을 쓰면 마지막 세션이 폴백이었던 워커를 엉뚱한 이름으로 부른다"
+      + "(실측 EMP-admin7276 = 최근 `워치PoC` vs 실제 `양지후`)",
+  );
+  assert.doesNotMatch(
+    body,
+    /ARRAY_AGG\(v\.worker_name ORDER BY v\.ts DESC\)/,
+    "최근 라벨 방식이 되살아났다 — 안전 알림이 사람을 잘못 부른다",
+  );
+});
+
 test("★ 명부가 비었는지 응답에서 보인다 — 0건이 '정상' 으로 읽히면 안 된다", () => {
   assert.match(src, /rosterSize\(\)/, "배정 수를 조회하지 않으면 명부가 빈 것과 전원 정상이 같은 응답이 된다");
   // ⚠ 소스 전체에서 `roster,` 를 찾으면 구조분해(`const [roster, workers]`)에 걸려 통과한다 —
