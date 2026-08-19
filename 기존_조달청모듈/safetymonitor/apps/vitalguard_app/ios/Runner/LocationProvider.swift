@@ -102,7 +102,54 @@ final class LocationProvider: NSObject {
         lock.unlock()
         guard let fix else { return nil }
         guard Date().timeIntervalSince(fix.timestamp) <= Self.maxFixAgeSec else { return nil }
-        return [
+        return payload(from: fix)
+    }
+
+    /// 촬영 각인용 **일회성** 좌표. 추적 상태와 무관하게 지금 한 건을 받아온다.
+    ///
+    /// ★ 왜 `currentFix()` 로 안 되는가 — 두 상수가 정지 상태에서 새 fix 를 원천 차단한다.
+    ///   `distanceFilter` 100m (실측 fix 간 124·147·105·100m) 라 책상에 둔 폰은 갱신이 없고,
+    ///   `maxFixAgeSec` 300초가 지나면 `currentFix()` 가 nil 을 돌려준다(실측 295·295·210초).
+    ///   ⟹ 사진에 좌표를 찍으려면 **그 순간 요청**하는 길밖에 없다(2026-08-19 실측·옆 세션 교차확인).
+    ///
+    /// ⚠ `didExitRegion` 의 `if !running { requestLocation() }` 를 복사하지 말 것 —
+    ///   그 가드는 추적 중이면 요청을 건너뛴다. 촬영은 근무 중에도 눌리므로 조건 없이 요청한다.
+    ///
+    /// ⚠ 추적용 `manager` 를 쓰지 않는다. 정확도·거리필터가 달라 근무 중 추적 설정이 흔들리고,
+    ///   `didUpdateLocations` 의 유휴 판정(`stopTracking`)이 촬영 때문에 오발동한다.
+    ///
+    /// 최근 fix 가 [freshEnoughSec] 이내면 GPS 를 돌리지 않고 그것을 쓴다(배터리·지연 절약).
+    func requestFreshFix(
+        freshEnoughSec: TimeInterval = 60,
+        timeout: TimeInterval = 8,
+        completion: @escaping ([String: Any]?) -> Void
+    ) {
+        lock.lock()
+        let fix = latestFix
+        lock.unlock()
+        if let fix, Date().timeIntervalSince(fix.timestamp) <= freshEnoughSec {
+            completion(payload(from: fix))
+            return
+        }
+        DispatchQueue.main.async {
+            self.oneShot.request(timeout: timeout) { [weak self] loc in
+                guard let self, let loc else { completion(nil); return }
+                // 받은 fix 는 추적 경로와 같은 품질 기준을 통과할 때만 캐시에 반영한다.
+                if loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= Self.siteRadiusMaxM {
+                    self.lock.lock()
+                    self.latestFix = loc
+                    self.lock.unlock()
+                }
+                completion(self.payload(from: loc))
+            }
+        }
+    }
+
+    private lazy var oneShot = OneShotLocator()
+
+    /// 업로드·각인이 함께 쓰는 좌표 표기. `currentFix()` 와 같은 형식이어야 두 경로가 안 갈린다.
+    private func payload(from fix: CLLocation) -> [String: Any] {
+        [
             "latitude": (fix.coordinate.latitude * 1_000_000).rounded() / 1_000_000,
             "longitude": (fix.coordinate.longitude * 1_000_000).rounded() / 1_000_000,
             "locationAccuracyMeters": (fix.horizontalAccuracy * 10).rounded() / 10,
@@ -250,5 +297,52 @@ extension LocationProvider: CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         log.error("위치 오류 — \(error.localizedDescription, privacy: .public)")
+    }
+}
+
+
+/// 일회성 측위기 — 촬영 각인처럼 "지금 한 건" 이 필요한 자리 전용.
+///
+/// 추적용 매니저와 **분리한다**. 같은 매니저를 쓰면 촬영이 근무 중 추적의 정확도·거리필터를
+/// 건드리고, 유휴 판정(`stopTracking`)이 촬영 때문에 오발동한다.
+///
+/// ⚠ `requestLocation()` 은 결과가 **한 번만** 온다. 실패·무응답이면 델리게이트가 아무것도
+///   안 부르는 경우가 있어 **타임아웃을 직접 건다** — 없으면 촬영 화면이 영원히 기다린다.
+private final class OneShotLocator: NSObject, CLLocationManagerDelegate {
+    private let manager = CLLocationManager()
+    private var handler: ((CLLocation?) -> Void)?
+    private var timer: DispatchWorkItem?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        // 각인은 "어느 현장인가" 가 아니라 "어디서 찍었나" 라 추적보다 정확도를 올린다.
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+    }
+
+    func request(timeout: TimeInterval, completion: @escaping (CLLocation?) -> Void) {
+        // 앞선 요청이 살아 있으면 그것을 취소하고 새 요청으로 대체한다(중복 호출 방어).
+        finish(nil, replacing: true)
+        handler = completion
+        let t = DispatchWorkItem { [weak self] in self?.finish(nil, replacing: false) }
+        timer = t
+        DispatchQueue.main.asyncAfter(deadline: .now() + timeout, execute: t)
+        manager.requestLocation()
+    }
+
+    private func finish(_ loc: CLLocation?, replacing: Bool) {
+        timer?.cancel()
+        timer = nil
+        guard let h = handler else { return }
+        handler = nil
+        if replacing { h(nil) } else { h(loc) }
+    }
+
+    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        finish(locations.last, replacing: false)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        finish(nil, replacing: false)
     }
 }
