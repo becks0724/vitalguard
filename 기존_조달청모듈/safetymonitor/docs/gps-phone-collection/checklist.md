@@ -71,7 +71,25 @@
 - [ ] **앱 재설치** — Xcode 로 **Runner 타깃만** Run. 워치 타깃을 건드리면 `HKWorkoutSession` 이 끊긴다
 - [ ] **권한 '항상 허용'** — 첫 실행 시트. 사용 중 허용만으로는 **배경에서 경계 감시 콜백이 오지 않는다**
 - [ ] **배포** — DB 컬럼 추가가 포함돼 `ensureSchema` 가 `ALTER TABLE` 을 실행한다(`/deploy` 명시 필요)
-- [ ] 설치 후 관제 지도에 마커가 뜨는지 · `vital_samples.latitude` 가 채워지는지 DB 확인
+- [x] **설치 후 좌표 도착 확인(2026-08-19 11:09)** — 재설치(11:08:47) 직후부터
+      `latitude`·`location_accuracy_m` 117건 도착. 좌표 = 35.150517, 126.916316 단일값
+      (100m 등급 = WiFi 측위 양자화 · 정지 상태라 정상).
+- [x] **★★ 좌표가 기동 +10분41초에 끊겼다 — 원인 = iOS 자동 일시정지 + 신선도 게이트
+      (2026-08-19 실측 · 원인 조사 완료)**.
+      타임라인 = 기동 11:08:47 → 마지막 fix ≈11:14:28(기동 +5분41초 · 폰이 책상에 정지) →
+      신선도 300초(`maxFixAgeSec`)가 그 fix 를 11:19:28 까지 실어줌 → 이후 0건.
+      ★ **끊은 것은 권한이 아니다** — 117건이 왔으므로 권한은 살아 있다. 범인은
+      `pausesLocationUpdatesAutomatically = true`(`LocationProvider.swift:81`) — iOS 가
+      정지 ~5분에 위치 업데이트를 자동 일시정지했다.
+      ⚠ **일시정지는 스스로 안 풀린다(애플 문서화된 함정)** — 재개하려면 앱이
+      `locationManagerDidPauseLocationUpdates` 에서 재시작해야 하는데 **이 델리게이트가
+      구현돼 있지 않다.** 게다가 `noteVitalsActive()` 는 `tracking` 플래그가 true 면 재시작을
+      건너뛰는데, 일시정지돼도 플래그는 true 로 남는다. ⟹ **작업자가 6분 정지했다가 다시
+      움직여도 좌표는 영영 안 돌아온다**(생체가 120초 끊겨 stopTracking 이 플래그를 내릴
+      때까지). 경계 감시(geofence)는 OS 몫이라 살아 있음 — 이탈은 잡힌다.
+      **처방 후보(미착수)** = `locationManagerDidPauseLocationUpdates` 에서
+      `startUpdatingLocation()` 재호출(3줄). 폰만 바뀌므로 워치 무관·재설치 1회.
+      08-25 재서명 때 얹으면 추가 설치 비용 0.
 - [ ] **배터리 실측** — iOS 설정 > 배터리의 앱별 소모. 폰 배터리는 **한 번도 잰 적이 없다**(폰 소스 71행 전부 `batteryPct` 없음)
 
 ---
