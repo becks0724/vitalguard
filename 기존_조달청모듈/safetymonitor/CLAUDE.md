@@ -75,7 +75,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘만 이식
 
 ## 환경
 
-- 모노레포 — pnpm workspaces (TypeScript 영역) + 별도 Flutter 프로젝트 (`apps/worker-phone/`)
+- 모노레포 — pnpm workspaces (TypeScript 영역) + 별도 Flutter 프로젝트 (`apps/vitalguard_app/`)
 - TypeScript 5.x strict
 - Node.js LTS
 - **작업자 폰 앱 — Flutter (Dart 3.x)** · iOS 빌드용 Xcode 26.4+ · Android 빌드용 Android Studio + JDK 17
@@ -102,18 +102,13 @@ cd backend/infrastructure
 pnpm cdk diff --profile dev
 pnpm cdk deploy --profile dev
 
-# 작업자 폰 앱 (Flutter — iOS + Android 단일 코드베이스)
-cd apps/worker-phone
+# 작업자 폰·워치 앱 (Flutter + iOS/watchOS 네이티브)
+cd apps/vitalguard_app
 flutter pub get
-flutter doctor                      # 환경 점검 (iOS · Android toolchain)
-flutter test                        # 단위 테스트
-flutter run -d "iPhone 16"          # iOS 시뮬레이터 실행
-flutter emulators --launch SafetyMonitor_API_35
-flutter run -d SafetyMonitor_API_35 \
-  --dart-define=MOCK_RECEIVER_URL=http://10.0.2.2:3000/api/mock/vital
-flutter build ios --simulator       # iOS 빌드 검증
-flutter build apk --debug \
-  --dart-define=MOCK_RECEIVER_URL=http://10.0.2.2:3000/api/mock/vital
+dart analyze                        # ⚠ flutter analyze 는 한글 경로에서 크래시한다
+flutter test                        # 위젯 테스트
+# 실기기 설치·서명·워치 타깃은 apps/vitalguard_app/SETUP.md 참조(Xcode 없이 devicectl 경로 포함).
+# 위 세 명령은 CI(.github/workflows/verify-app.yml)가 push 마다 그대로 돌린다.
 
 # AWS 보류 중 local/mock receiver
 pnpm dev:web                        # http://localhost:3000
@@ -122,12 +117,12 @@ pnpm mock:publish                   # 4 worker mock vital 5초 간격 publish
 
 ## 코드 구조 — 큰 그림 (M1 진입 후 채움)
 
-> ⚠️ 아래 트리는 **목표(미래) 구조** — 발표 후 로드맵 항목을 포함한다. 현재 디스크에 **존재하지 않는 경로**: `apps/dashboard-mobile/`, `backend/lambdas/*`, `packages/thresholds/`, `docs/architecture.md`, `docs/HealthPattern-reference/`, `.github/workflows/`. 현존 = `apps/{dashboard-web,worker-phone,worker-watch-poc}` · `backend/infrastructure` · `packages/{analyzers,schemas}`.
+> ⚠️ 아래 트리는 **목표(미래) 구조** — 발표 후 로드맵 항목을 포함한다. 현재 디스크에 **존재하지 않는 경로**: `apps/dashboard-mobile/`, `backend/lambdas/*`, `packages/thresholds/`, `docs/architecture.md`, `docs/HealthPattern-reference/`, `.github/workflows/`. 현존 = `apps/{dashboard-web,vitalguard_app}` · `backend/infrastructure` · `packages/{analyzers,schemas}`.
 
 ```
 06.safetymonitor/
 ├── apps/
-│   ├── worker-phone/               Flutter 작업자 폰 앱 (iOS + Android 단일 코드)
+│   ├── vitalguard_app/             Flutter 폰 앱 + iOS/watchOS 네이티브 (현행 실체)
 │   ├── dashboard-web/              Next.js 관제 대시보드 (PC)
 │   └── dashboard-mobile/           관제자 모바일 보조 (M7 — Flutter / RN / 네이티브 결정)
 ├── backend/
@@ -150,7 +145,7 @@ pnpm mock:publish                   # 4 worker mock vital 5초 간격 publish
 └── .github/workflows/              CI (lint · build · test)
 ```
 
-데이터 흐름. **Apple Watch / Galaxy Watch (생체 센서)** → **페어 폰 (Flutter `worker-phone` 앱 — HealthKit/Health Connect query)** → MQTT/TLS → AWS IoT Core → IoT Rule → Lambda (vital-ingest → hazard-detect → notify-fan-out) → DynamoDB/Timestream → WebSocket → 웹 대시보드 / APNs·FCM → 관제자 모바일.
+데이터 흐름. **Apple Watch / Galaxy Watch (생체 센서)** → **페어 폰 (Flutter `vitalguard_app` — 네이티브가 HealthKit query)** → MQTT/TLS → AWS IoT Core → IoT Rule → Lambda (vital-ingest → hazard-detect → notify-fan-out) → DynamoDB/Timestream → WebSocket → 웹 대시보드 / APNs·FCM → 관제자 모바일.
 
 ## HealthPattern 과의 정책 차이 (혼동 방지)
 
