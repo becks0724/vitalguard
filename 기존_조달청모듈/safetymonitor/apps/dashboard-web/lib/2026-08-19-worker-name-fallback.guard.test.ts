@@ -59,6 +59,27 @@ test("캐시가 있다 — 없으면 폴링마다 Seq Scan 1초를 문다", () =
   );
 });
 
+// ★★ 사슬 전체를 검사한다 — 선언·전달·사용 중 **하나만 빠져도 화면은 사번으로 돌아간다**.
+//    ⚠ 종전에는 파라미터 선언만 봤고, 옆 세션 음성 대조가 "실제로 쓰는 한 줄"을 지워도 초록인 것을
+//      잡아냈다(2026-08-19). tsc·eslint 도 안 잡는다 — 쓰지 않는 인자는 오류가 아니기 때문이다.
+test("이름 폴백 사슬 — 선언·전달·사용이 모두 살아 있다", () => {
+  const i = dash.indexOf("function workerHeading(");
+  assert.ok(i >= 0, "workerHeading 소실(앵커)");
+  const body = dash.slice(i, dash.indexOf("\n}\n", i));
+
+  // ① 실제 사용 — 이것이 없으면 나머지가 다 남아도 화면은 사번으로 돌아간다.
+  assert.match(
+    body,
+    /sample\?\.workerName\?\.trim\(\)\s*\|\|\s*nameFallback\?\.trim\(\)/,
+    "폴백이 선언만 남고 안 쓰인다 — 화면은 사번으로 돌아가는데 가드는 초록이다",
+  );
+  // ② 호출부가 폴백을 넘긴다.
+  assert.match(dash, /workerHeading\(sample, workerId, nameFallback\)/, "호출부가 폴백을 안 넘긴다");
+  // ③ 렌더가 서버 값을 prop 으로 준다 — 자동 슬라이딩 복제본까지 **2곳 모두**.
+  const passes = dash.match(/nameFallback=\{data\.workerNames\?\.\[entry\.workerId\]\}/g) ?? [];
+  assert.equal(passes.length, 2, `렌더 전달이 ${passes.length}곳 — 복제본 포함 2곳이어야 한다`);
+});
+
 test("DB 장애에 화면이 죽지 않는다 — softly 로 감싼다", () => {
   assert.match(
     route,
