@@ -110,3 +110,21 @@ test("크론 인증 게이트가 붙어 있다", () => {
   assert.match(src, /cronAuth\(/, "무인 엔드포인트가 인증 없이 열리면 안 된다");
   assert.match(src, /unauthorized/);
 });
+
+test("★ 알림 이름은 화면과 같은 소스를 쓴다 — 24시간 창 최빈은 폴백 라벨을 부른다", () => {
+  // 실측(2026-08-19) — `EMP-admin7276` 은 전수 최빈 `양지후` 인데 마지막 24시간 창에서는
+  // `워치PoC` 가 최빈이다. `lastSeenByWorker` 의 이름을 그대로 쓰면 화면은 `양지후`,
+  // 텔레그램은 `워치PoC` 라 **같은 사람을 다르게 부른다**(화면 쪽에서 고친 결함의 거울상).
+  assert.match(
+    src,
+    /rosterWorkerNames\(\)/,
+    "화면과 같은 이름 소스를 안 쓴다 — 알림이 폴백 라벨로 사람을 부를 수 있다",
+  );
+  // 두 통지 경로(복귀·부재) 모두에서 그 소스를 **먼저** 본다. 한쪽만 고치면 나머지가 갈린다.
+  const uses = src.match(/workerName:\s*names\[[^\]]+\]\s*\?\?/g) ?? [];
+  assert.equal(
+    uses.length,
+    2,
+    `이름 폴백이 두 경로(복귀·부재) 모두에 걸려 있지 않다 — 발견 ${uses.length}곳\n${uses.join("\n")}`,
+  );
+});

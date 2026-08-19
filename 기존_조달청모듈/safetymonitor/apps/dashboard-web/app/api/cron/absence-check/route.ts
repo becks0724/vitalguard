@@ -21,6 +21,7 @@ import {
   maxMeasuredLagSecAfter,
   recordAlert,
   rosterSize,
+  rosterWorkerNames,
 } from "../../../../lib/db";
 import { sendTelegramMessage } from "../../../../lib/telegram";
 
@@ -37,6 +38,17 @@ export async function GET(request: Request) {
 
   const now = Date.now();
   const pushWindow = isWithinPushWindow(now);
+
+  // ★ 이름은 **관제 화면과 같은 소스**에서 가져온다(`rosterWorkerNames` = 시간 창 없는 최빈 라벨).
+  //
+  //   `lastSeenByWorker` 의 이름은 **24시간 창** 안의 최빈이라, 그 창이 폴백 라벨로 채워진
+  //   작업자를 잘못 부른다 — 실측 `EMP-admin7276` 은 전수 최빈 `양지후` 인데 마지막 24시간
+  //   창에서는 `워치PoC` 가 최빈이다(2026-08-19). 그대로 두면 화면은 `양지후`, 텔레그램은
+  //   `워치PoC` 라 **같은 사람을 다르게 부른다** — 화면 쪽에서 방금 고친 그 결함의 거울상이다.
+  //
+  //   ⚠ 최근 라벨이 아니라 최빈이라는 규칙은 그대로다. 바뀐 것은 **창을 없앤 것**뿐이다.
+  //   조회 실패·미등록이면 종전 값으로 떨어진다(이름 때문에 알림을 잃지 않는다).
+  const names = await rosterWorkerNames().catch(() => ({}) as Record<string, string>);
 
   // ── ① 복귀 해제 먼저. 순서가 중요하다 — 방금 돌아온 작업자를 여기서 닫아야
   //     아래 ② 가 같은 사람을 다시 공백으로 세지 않는다.
@@ -62,7 +74,7 @@ export async function GET(request: Request) {
       await sendTelegramMessage(
         recoveryMessage({
           workerId: open.worker_id,
-          workerName: open.worker_name,
+          workerName: names[open.worker_id] ?? open.worker_name,
           gapStartIso: open.ts,
           gapMs,
           cause,
@@ -81,7 +93,7 @@ export async function GET(request: Request) {
   const decisions = decideAbsences(
     workers.map((w) => ({
       workerId: w.worker_id,
-      workerName: w.worker_name,
+      workerName: names[w.worker_id] ?? w.worker_name,
       lastSeenIso: w.last_ts,
     })),
     now,
