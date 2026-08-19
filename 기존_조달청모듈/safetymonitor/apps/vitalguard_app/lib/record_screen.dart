@@ -74,10 +74,14 @@ class _RecordScreenState extends State<RecordScreen> {
     if (res?['cancelled'] == true) return;
     final ok = res?['ok'] == true;
     final n = res?['uploaded'] as int? ?? 0;
+    final saved = res?['saved'] as int? ?? 0;
+    // 사진첩 저장은 업로드와 별개로 성패를 적는다 — "올라갔다" 로 뭉뚱그리면 권한을 거부해
+    // 사진첩에 안 남는 것을 아무도 모른다.
+    final photos = n > 0 && saved < n ? ' · 사진첩 저장 $saved/$n(권한 확인)' : '';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(ok
-            ? '$n장 업로드했습니다.'
+            ? '$n장 업로드 · 사진첩 $saved장 저장$photos'
             : '업로드 실패 — ${res?['error'] ?? '알 수 없는 오류'}'),
       ),
     );

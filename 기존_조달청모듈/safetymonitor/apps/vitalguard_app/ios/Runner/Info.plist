@@ -40,6 +40,8 @@
 	<string>화면이 꺼져 있어도 현장 구획 이탈을 감지하려면 위치 권한(항상 허용)이 필요합니다. 근무 중(워치 생체 수신 중)에만 위치를 수집합니다.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>작업 위치를 관제 화면에 표시하고 현장 구획 이탈을 확인하기 위해 위치 권한이 필요합니다.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>촬영한 현장 사진·서류를 기기 사진첩에도 함께 저장하기 위해 권한이 필요합니다. 기존 사진을 읽지는 않습니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

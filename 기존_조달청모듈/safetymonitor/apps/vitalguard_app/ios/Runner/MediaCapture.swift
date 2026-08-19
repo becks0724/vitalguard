@@ -10,6 +10,7 @@
 //   **로그인 JWT 를 그대로 받으므로 공유 토큰을 앱에 굽지 않는다** — 서버가 JWT 신원을
 //   폼 값보다 강제해 타인 귀속 위조까지 막는다.
 import CoreLocation
+import Photos
 import UIKit
 import Vision
 import VisionKit
@@ -117,8 +118,17 @@ final class MediaCapture: NSObject {
         geocoder.reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "ko_KR")) { marks, _ in
             guard let p = marks?.first else { done(nil); return }
             // 도로명 우선 — 없으면 지번 단위로 떨어진다. 나라별 필드 차이를 여기서 흡수한다.
+            //
+            // ⚠ **중복을 걷어낸다.** 광역시는 `administrativeArea` 와 `locality` 가 둘 다
+            //   `광주광역시` 이고, 동 이름이 도로명과 같으면 `subLocality` 와 `thoroughfare` 도
+            //   겹친다. 그대로 이으면 실측처럼
+            //   `광주광역시 광주광역시 금남로3가 금남로3가 15-2` 가 찍힌다(2026-08-19 실기기).
             let parts = [p.administrativeArea, p.locality, p.subLocality, p.thoroughfare, p.subThoroughfare]
-            let text = parts.compactMap { $0 }.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            var seen: [String] = []
+            for part in parts.compactMap({ $0?.trimmingCharacters(in: .whitespaces) }) where !part.isEmpty {
+                if !seen.contains(part) { seen.append(part) }
+            }
+            let text = seen.joined(separator: " ")
             done(text.isEmpty ? nil : text)
         }
     }
@@ -127,6 +137,7 @@ final class MediaCapture: NSObject {
         let capturedAt = Date()
         var uploaded = 0
         var failed = 0
+        var saved = 0
         var lastError: String?
 
         for (index, image) in images.enumerated() {
@@ -145,12 +156,18 @@ final class MediaCapture: NSObject {
             let ocrText = ([page] + lines).joined(separator: "\n")
             let result = Self.upload(jpeg: jpeg, capturedAt: capturedAt, fix: fix, address: address, ocrText: ocrText)
             if result == nil { uploaded += 1 } else { failed += 1; lastError = result }
+
+            // ★ 업로드 성패와 무관하게 사진첩에도 남긴다(사용자 요청). 업로드가 실패했을 때
+            //   기기에 사본이 없으면 **찍은 것이 통째로 사라진다** — 재촬영 말고는 복구가 없다.
+            //   업로드한 바이트를 그대로 넣으므로 각인이 찍힌 같은 사진이다.
+            if Self.saveToPhotos(jpeg: jpeg) { saved += 1 }
         }
 
         finish([
             "ok": failed == 0,
             "uploaded": uploaded,
             "failed": failed,
+            "saved": saved,
             "error": lastError as Any,
         ])
     }
@@ -249,6 +266,41 @@ final class MediaCapture: NSObject {
                 (line as NSString).draw(at: CGPoint(x: pad, y: y), withAttributes: attrs)
             }
         }
+    }
+
+    // MARK: - 사진첩 저장
+
+    /// 각인본을 기기 사진첩에 남긴다. 성공이면 true.
+    ///
+    /// ★ **추가 전용 권한**(`.addOnly`)만 쓴다 — 앨범을 만들거나 기존 사진을 읽으려면 전체
+    ///   접근이 필요한데, 이 기능에는 필요 없는 권한이다. 최소 권한으로 두면 사용자가
+    ///   "내 사진을 다 본다" 를 걱정할 이유가 없다.
+    ///
+    /// ★ 업로드본과 **같은 바이트**를 넣는다(`addResource(with: .photo, data:)`). UIImage 로
+    ///   다시 그리면 재인코딩돼 각인 글자가 뭉개지고 용량도 달라진다.
+    ///
+    /// ⚠ 실패해도 촬영 전체를 실패로 만들지 않는다 — 업로드는 이미 끝났고, 사진첩은 사본이다.
+    private static func saveToPhotos(jpeg: Data) -> Bool {
+        let sem = DispatchSemaphore(value: 0)
+        var granted = false
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            granted = (status == .authorized || status == .limited)
+            sem.signal()
+        }
+        sem.wait()
+        guard granted else { return false }
+
+        var ok = false
+        let done = DispatchSemaphore(value: 0)
+        PHPhotoLibrary.shared().performChanges({
+            let req = PHAssetCreationRequest.forAsset()
+            req.addResource(with: .photo, data: jpeg, options: nil)
+        }, completionHandler: { success, _ in
+            ok = success
+            done.signal()
+        })
+        done.wait()
+        return ok
     }
 
     // MARK: - 업로드
