@@ -31,7 +31,11 @@
 - [x] G. 관제 표시 — `연결끊김` 에 경과 병기 + 체온 툴팁 고정 문구(`60초 초과`)를 실제 경과로
 - [x] H. 가드 테스트 `lib/2026-08-19-absence-ledger.guard.test.ts` **5건**
 - [x] 검증 — tsc 0 · lint 0err · **test 982 pass / 0 fail** · 음성 대조 5종
-- [ ] I. 배포(사용자 `/deploy`) → **Cloud Scheduler 등록** → 라이브 실측
+- [x] I. 배포 `00292-df4`(커밋 `0666a5f`) → **Cloud Scheduler `absence-check` 등록**(`*/5` · KST) → 라이브 실측
+- [x] ★ 첫 발화 관측 — 예측과 일치(경과만 8분 차) · dedup 확인 · 원장 `id 2586` 열린 채
+- [x] J. **명부 결함 수정** — `monitor_slot_config.slots` + `worker_alias` 접힘 · `roster` 응답 노출
+      (검증 tsc 0 · lint 0err · **984 pass** · 음성 대조 F·G·H)
+- [ ] K. J 배포(사용자 `/deploy`) → 라이브에서 `roster: 4` 확인
 
 ## 검증 기록 (2026-08-19)
 

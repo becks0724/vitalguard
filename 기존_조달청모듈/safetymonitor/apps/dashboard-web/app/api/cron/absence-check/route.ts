@@ -20,6 +20,7 @@ import {
   listOpenAbsenceAlerts,
   maxMeasuredLagSecAfter,
   recordAlert,
+  rosterSize,
 } from "../../../../lib/db";
 import { sendTelegramMessage } from "../../../../lib/telegram";
 
@@ -73,7 +74,10 @@ export async function GET(request: Request) {
   // ── ② 공백 감지. 원장에는 야간에도 남기고, push 만 근무시간으로 막는다.
   //     ⚠ 야간에 시작해 아침까지 이어지는 공백은 push 되지 않는다(자연키가 같아 재삽입이 안 된다).
   //     화면에는 보인다 — 야간을 표시만으로 둔 2026-08-19 결정에 포함된 결과다.
-  const workers = await lastSeenByWorker();
+  //
+  //     ★ 명부가 비면 `workers` 도 비어 **아무 일도 안 일어난 것과 구별되지 않는다**(0건이
+  //     "정상" 으로 읽히는 자리). 그래서 배정 수를 함께 응답에 싣는다.
+  const [roster, workers] = await Promise.all([rosterSize(), lastSeenByWorker()]);
   const decisions = decideAbsences(
     workers.map((w) => ({
       workerId: w.worker_id,
@@ -103,6 +107,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     pushWindow,
+    roster,
     checked: workers.length,
     absent: decisions.length,
     fired,

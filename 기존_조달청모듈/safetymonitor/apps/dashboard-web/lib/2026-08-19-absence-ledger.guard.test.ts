@@ -57,6 +57,37 @@ test("★ 복귀 해제를 공백 감지보다 먼저 한다", () => {
   );
 });
 
+test("★ 알림 명부 = 관제 화면 명부(`monitor_slot_config`) · 별칭은 접는다", () => {
+  const db = readFileSync(join(here, "db.ts"), "utf8");
+  const fn = db.slice(db.indexOf("export async function lastSeenByWorker"));
+  const body = fn.slice(0, fn.indexOf("\n}\n") + 3);
+
+  assert.match(
+    body,
+    /monitor_slot_config/,
+    "명부를 vital_samples 에서 뽑으면 화면과 알림이 다른 명부를 본다 —"
+      + " 배정 안 된 시험 기기가 알림을 내고, 배정된 채 오래 꺼진 작업자는 대상에서 빠진다",
+  );
+  assert.match(
+    body,
+    /worker_alias/,
+    "별칭을 안 접으면 한 사람이 여럿으로 갈려, 본인은 정상 수신 중인데 옛 ID 로 부재 알림이 난다"
+      + "(EMP-admin7276 은 별칭 4개 = 최대 5명)",
+  );
+});
+
+test("★ 명부가 비었는지 응답에서 보인다 — 0건이 '정상' 으로 읽히면 안 된다", () => {
+  assert.match(src, /rosterSize\(\)/, "배정 수를 조회하지 않으면 명부가 빈 것과 전원 정상이 같은 응답이 된다");
+  // ⚠ 소스 전체에서 `roster,` 를 찾으면 구조분해(`const [roster, workers]`)에 걸려 통과한다 —
+  //   음성 대조에서 실제로 잡혔다. 응답 객체 안에 있는지만 본다.
+  const body = src.slice(src.lastIndexOf("return NextResponse.json({"));
+  assert.match(
+    body,
+    /\broster\b/,
+    `배정 수가 응답에 안 실린다 — 명부가 비어도 "checked 0" 으로만 보인다\n${body}`,
+  );
+});
+
 test("크론 인증 게이트가 붙어 있다", () => {
   assert.match(src, /cronAuth\(/, "무인 엔드포인트가 인증 없이 열리면 안 된다");
   assert.match(src, /unauthorized/);

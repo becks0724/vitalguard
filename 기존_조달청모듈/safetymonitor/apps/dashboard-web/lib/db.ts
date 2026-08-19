@@ -1964,23 +1964,59 @@ export async function ackAlertByKey(
 // 판정 규칙 자체는 `lib/absence-watch.ts`(순수·테스트됨)에 있고 여기는 재료만 낸다.
 
 /**
- * 작업자별 마지막 수신 시각.
+ * **배정된** 작업자별 마지막 수신 시각. 별칭은 주 ID 로 접는다.
  *
- * ⚠ **최근 활동자로 한정한다.** `listAllWorkers()` 는 전체 이력을 훑어서 몇 달 전 사람까지 나오는데,
- * 그들에게 "10분째 수신 없음" 은 참이지만 의미가 없다. 기본 24시간 — 그 안에 한 번이라도 보낸
- * 사람만 "지금 받고 있어야 할 사람" 으로 본다.
+ * ★ 명부는 `monitor_slot_config.slots`(관제 화면이 그리는 그 명부)다.
+ *   종전에는 `vital_samples` 를 명부처럼 써서 **화면과 알림이 서로 다른 명부**를 봤다 —
+ *   ① 배정 안 된 시험 기기가 붙었다 끊기면 알림이 나가고
+ *   ② 배정됐는데 오래 꺼진 작업자는 대상에서조차 빠진다(2026-08-19 실측 — 배정 4명 중 2명).
+ *
+ * ★ **별칭을 접지 않으면 한 사람이 여럿으로 갈린다.** `EMP-admin7276` 은 별칭이 4개라
+ *   최대 5명으로 세어지고, 그중 옛 ID 하나만 오래되면 **본인은 정상 수신 중인데 부재 알림이 난다**.
+ *   관제 누적 집계가 같은 자리에서 이미 한 번 당했다(`db.ts` 별칭 접힘 주석 참조).
+ *
+ * @param maxGapHours **공백 상한**이다 — "누가 대상인가" 가 아니다.
+ *   이보다 오래 끊긴 기기는 사건이 아니라 상태라서 알리지 않는다(41일 꺼진 기기를 매일 밀면
+ *   하루면 무시된다). 그런 작업자는 관제 신호등이 `대기` 로 집계해 화면에 남는다.
  */
 export async function lastSeenByWorker(
-  activeWithinHours = 24,
+  maxGapHours = 24,
 ): Promise<{ worker_id: string; worker_name: string | null; last_ts: string }[]> {
   const { rows } = await q<{ worker_id: string; worker_name: string | null; last_ts: string }>(
-    `SELECT DISTINCT ON (worker_id) worker_id, worker_name, ts AS last_ts
-       FROM vital_samples
-      WHERE ts::timestamptz > (now() - $1::interval)
-      ORDER BY worker_id, ts DESC`,
-    [`${activeWithinHours} hours`],
+    `WITH roster AS (
+       SELECT jsonb_array_elements_text(slots::jsonb) AS wid
+         FROM monitor_slot_config WHERE id = 1
+     ),
+     ids AS (
+       -- 배정 ID 자신 + 그 ID 를 주 ID 로 삼는 별칭 전부
+       SELECT wid AS canon, wid FROM roster WHERE wid IS NOT NULL
+       UNION
+       SELECT a.primary_worker_id, a.secondary_worker_id
+         FROM worker_alias a
+         JOIN roster r ON r.wid = a.primary_worker_id
+     )
+     SELECT i.canon AS worker_id,
+            MAX(v.ts) AS last_ts,
+            (ARRAY_AGG(v.worker_name ORDER BY v.ts DESC)
+               FILTER (WHERE v.worker_name IS NOT NULL))[1] AS worker_name
+       FROM ids i
+       JOIN vital_samples v ON v.worker_id = i.wid
+      WHERE v.ts::timestamptz > (now() - $1::interval)
+      GROUP BY i.canon`,
+    [`${maxGapHours} hours`],
   );
   return rows;
+}
+
+/** 배정된 슬롯 수. 0 이면 명부가 비었다는 뜻이라 부재 판정이 조용히 무의미해진다. */
+export async function rosterSize(): Promise<number> {
+  const { rows } = await q<{ n: string }>(
+    `SELECT count(*) AS n
+       FROM monitor_slot_config,
+            LATERAL jsonb_array_elements_text(slots::jsonb) AS s(wid)
+      WHERE id = 1 AND s.wid IS NOT NULL`,
+  );
+  return Number(rows[0]?.n ?? 0);
 }
 
 /** 아직 안 닫힌 감시 공백. 해제는 `ackAlert(id, ...)` 로 한다(대응 확인과 같은 자리). */
