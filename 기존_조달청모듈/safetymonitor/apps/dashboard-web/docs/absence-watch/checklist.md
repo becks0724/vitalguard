@@ -35,7 +35,37 @@
 - [x] ★ 첫 발화 관측 — 예측과 일치(경과만 8분 차) · dedup 확인 · 원장 `id 2586` 열린 채
 - [x] J. **명부 결함 수정** — `monitor_slot_config.slots` + `worker_alias` 접힘 · `roster` 응답 노출
       (검증 tsc 0 · lint 0err · **984 pass** · 음성 대조 F·G·H)
-- [ ] K. J 배포(사용자 `/deploy`) → 라이브에서 `roster: 4` 확인
+- [x] L. **이름 결함 수정** — 최근 라벨 → **최빈 라벨**(`MODE() WITHIN GROUP`).
+      최근값을 쓰면 마지막 세션이 폴백이었던 워커를 엉뚱하게 부른다
+      (`EMP-admin7276` 최근 `워치PoC` vs 실제 `양지후`). 배정 4명 전원 사람 이름 확인.
+- [x] K. **J·L 배포 완료** — `00293-j5j`(커밋 `3a38c20` · `48ba234`·`9c86fe8` 포함) ·
+      라이브 `{"roster":4,"checked":2,"absent":1,"fired":0,"resolved":0}` 확인
+
+## 라이브 상태 (2026-08-19 기준)
+
+```
+Cloud Scheduler   absence-check  ENABLED  */5 * * * *  Asia/Seoul
+라이브 리비전      vitalguard-dashboard-00293-j5j (커밋 3a38c20)
+크론 응답         roster:4 · checked:2 · absent:1 · fired:0 · resolved:0
+원장              alerts id=2586 · EMP-admin3470 김태곤 · ack_at NULL(열린 채)
+인증 게이트        무키 401 유지
+```
+
+**첫 발화 실물** — 예측과 경과 8분 차이 외 전부 일치.
+```
+📵 생체 수신 없음
+작업자 김○곤 (EMP-admin3470)
+21시간 4분째 수신 없음 (마지막 08-18 12:46)
+이 작업자는 지금 감시되지 않습니다.
+```
+
+**배정 4명 실측** — 사용자 확인으로 셋 다 실제 작업자다.
+```
+EMP-6861       장우진  정상
+EMP-admin3470  김태곤  21시간   ← 알림 나감(정탐)
+EMP-admin7276  양지후  17.8일   ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
+EMP-admin0740  김수영  41일     ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
+```
 
 ## 검증 기록 (2026-08-19)
 
