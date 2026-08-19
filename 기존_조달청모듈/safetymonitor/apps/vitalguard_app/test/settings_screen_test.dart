@@ -79,7 +79,9 @@ void main() {
     expect(find.textContaining('업로드 파이프라인'), findsNothing);
     // 생체 쪽은 그대로 남아 있어야 한다 — 같이 쓸려 나가면 홈이 빈다.
     expect(find.text('주요 생체'), findsOneWidget);
-    expect(find.text('활동'), findsOneWidget);
+    // 2026-08-19 에 세 박스를 하나로 합치며 `활동` 섹션 제목이 사라졌다 — 제목 대신
+    // 그 안의 칸으로 앵커를 옮긴다(앵커가 없으면 홈이 비어도 이 가드가 통과한다).
+    expect(find.text('걸음'), findsOneWidget);
   });
 
   testWidgets('톱니를 누르면 세 항목이 설정에 그대로 있다', (tester) async {

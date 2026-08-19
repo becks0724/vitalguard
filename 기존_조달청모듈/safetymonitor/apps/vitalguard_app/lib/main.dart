@@ -4,7 +4,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'metric_tile.dart';
 import 'own_vitals.dart';
 import 'settings_screen.dart';
 import 'status_ring.dart';
@@ -286,33 +285,68 @@ class _HomeScreenState extends State<HomeScreen> {
     return '${sec ~/ 60}분 ${sec % 60}초 전';
   }
 
-  /// 섹션 제목 — 격자마다 무엇을 모아 둔 곳인지 밝힌다.
-  Widget _sectionTitle(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(2, 20, 0, 10),
-        child: Text(text,
-            style: const TextStyle(
-                fontSize: 15, fontWeight: FontWeight.w700, color: VgColors.ink)),
-      );
-
   /// 2열 격자. **칸 높이를 고정**한다 — 막대 있는 타일과 없는 타일이 섞여도
   /// 높이가 들쭉날쭉하면 값끼리 눈으로 비교가 안 된다.
-  Widget _tileGrid(List<VitalRow> rows) {
-    final lines = <Widget>[];
-    for (var i = 0; i < rows.length; i += 2) {
-      final right = i + 1 < rows.length ? rows[i + 1] : null;
-      lines.add(Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: SizedBox(
-          height: 108,
-          child: Row(
-            children: [
-              Expanded(child: MetricTile(row: rows[i])),
-              const SizedBox(width: 10),
-              // 홀수 개면 마지막 칸은 빈 자리로 둔다(늘려서 채우면 그 타일만 커진다).
-              Expanded(child: right == null ? const SizedBox() : MetricTile(row: right)),
-            ],
+  /// 격자 한 칸 — 이름·값·단위(+건수). 윗줄·아랫줄이 같은 구조라 열이 맞는다.
+  ///
+  /// ⚠ 아이콘을 쓰지 않는다(2026-08-19 사용자 실기기 확인 — 아이콘만으로는 무슨 값인지
+  ///   알 수 없다). 이름이 길어 한 줄에 안 들어가면 **두 줄까지** 쓰고 자르지 않는다.
+  Widget _metricCell({
+    required String label,
+    required String value,
+    required String unit,
+    required bool has,
+    String? detail,
+  }) {
+    return Column(
+      children: [
+        Text(
+          label,
+          maxLines: 2,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 10,
+            height: 1.15,
+            fontWeight: FontWeight.w600,
+            color: has ? VgColors.body : VgColors.muted,
           ),
         ),
+        const SizedBox(height: 6),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(value,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: has ? VgColors.primary : VgColors.muted,
+              )),
+        ),
+        const SizedBox(height: 1),
+        Text(unit,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+        if (detail != null)
+          Text(detail,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+      ],
+    );
+  }
+
+  /// 다섯 칸 격자. **모자라는 칸은 빈 자리로 둔다** — 늘려 채우면 그 칸만 넓어져
+  /// 윗줄과 열이 어긋난다(옛 `_tileGrid` 가 홀수 개를 다루던 규칙과 같다).
+  Widget _cellGrid(List<Widget> cells) {
+    final lines = <Widget>[];
+    for (var i = 0; i < cells.length; i += 5) {
+      if (lines.isNotEmpty) lines.add(const SizedBox(height: 14));
+      lines.add(Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var c = 0; c < 5; c++)
+            Expanded(child: i + c < cells.length ? cells[i + c] : const SizedBox()),
+        ],
       ));
     }
     return Column(children: lines);
@@ -327,27 +361,69 @@ class _HomeScreenState extends State<HomeScreen> {
     return null;
   }
 
-  /// 5칸 요약 행 — 두 번째 참고 이미지의 `신체 지표` 배치.
+  /// 생체·지표·활동을 **한 카드**에 담는 5칸 격자(2026-08-19 사용자 지시로 세 박스를 합쳤다).
   ///
-  /// ★ 아래 격자와 **다른 규칙**을 쓴다. 격자는 "측정 안 된 종류는 타일 자체가 없다" 인데
-  /// 이 행은 **칸을 고정하고 없으면 `--`** 로 둔다. 다섯 자리가 늘 같은 자리에 있어야
-  /// "무엇이 안 오고 있는지" 가 한눈에 보인다. 0 을 적지 않는다는 계약은 그대로다.
+  ///   윗줄  HRV · 안정 심박 · 호흡수 · 생리적 부담 · 스트레스   (다섯 칸 고정)
+  ///   아랫줄 그 밖의 지표(측정된 것만) + 걸음 · 오른 층 · 정지 지속(고정)
   ///
-  /// ★ 세로 표식이 없다. 여기 다섯은 **근거 있는 임계가 없는 것들**이고(SpO₂ 는 링 좌측으로
-  /// 옮겼다), 막대를 그리면 없던 기준이 생긴 것처럼 읽힌다.
-  Widget _summaryStrip(VitalStreamEvent? vitals) {
+  /// ★ 두 줄이 **서로 다른 규칙**을 그대로 유지한다 — 윗줄과 활동 3칸은 값이 없어도 칸을
+  ///   지키고(`--`), 그 밖의 지표는 측정 안 된 종류가 아예 없다. 합친 것은 배치뿐이다.
+  ///
+  /// ⚠ 활동은 **생체 값이 아니라 움직임 누계**다(`activityLabels` 주석). 원래 격자를 나눈
+  ///   이유가 그 성격 차이였으므로, 합치면서 두 줄 사이에 선을 남겨 구분만은 지킨다.
+  ///
+  /// ★ 세로 표식(밴드)이 없다. 여기 값들은 **근거 있는 임계가 없는 것들**이고(SpO₂ 는 링
+  ///   좌측으로 옮겼다) 막대를 그리면 없던 기준이 생긴 것처럼 읽힌다.
+  ///
+  /// ★ 활동 에너지(kcal)는 **일부러 없다.** 상시 `HKWorkoutSession` 때문에 애플이 하루 종일을
+  /// 운동으로 계산해 정지 상태에서도 288kcal/시간이 찍힌다(2026-08-15 실측 · 약 4배 과대).
+  /// 네이티브가 Dart 로 아예 안 싣고 가드 2개가 되살아나는 것을 막는다
+  /// (`vital_display_test.dart` · `heat-activity-axis` 트랙이 축을 바로잡으면 그때 연다).
+  /// 조용히 빼면 다음 사람이 "빠뜨렸네" 하고 채워 넣으므로 화면에도 사유를 적는다.
+  Widget _vitalsCard(VitalStreamEvent? vitals, List<VitalRow> bodyRows) {
     final d = vitals?.discreteValues ?? const <String, double>{};
     String f(double? v, int digits) => v == null ? '--' : v.toStringAsFixed(digits);
     final psi = _serverRow('생리적 부담(PSI)');
     final stress = _serverRow('스트레스');
 
-    final items = <(IconData, Color, String, String, bool)>[
-      (Icons.monitor_heart_outlined, VgColors.heart, f(d['hrv'], 0), 'ms', d['hrv'] != null),
-      (Icons.favorite_border, VgColors.heart, f(d['rhr'], 0), 'bpm', d['rhr'] != null),
-      (Icons.air, VgColors.primary, f(d['rr'], 1), '회/분', d['rr'] != null),
-      (Icons.local_fire_department_outlined, VgColors.caution, psi?.value ?? '--',
-          psi?.unit ?? '/10', psi != null),
-      (Icons.bolt, VgColors.primary, stress?.value ?? '--', '지수', stress != null),
+    // ★ 이름을 여기서 새로 짓지 않는다 — 이산 3종은 `discreteSpecs`, 그 밖의 지표는
+    //   `bodyRows` 가 이미 이름을 갖고 있다. 줄여 적으면 같은 값이 화면마다 다르게 불린다.
+    String spec(String k) => discreteSpecs[k]!.label;
+
+    final primary = <Widget>[
+      _metricCell(label: spec('hrv'), value: f(d['hrv'], 0), unit: 'ms', has: d['hrv'] != null),
+      _metricCell(label: spec('rhr'), value: f(d['rhr'], 0), unit: 'bpm', has: d['rhr'] != null),
+      _metricCell(label: spec('rr'), value: f(d['rr'], 1), unit: '회/분', has: d['rr'] != null),
+      _metricCell(
+          label: '생리적 부담',
+          value: psi?.value ?? '--',
+          unit: psi?.unit ?? '/10',
+          has: psi != null),
+      _metricCell(
+          label: '스트레스',
+          value: stress?.value ?? '--',
+          unit: stress?.unit ?? '지수',
+          has: stress != null),
+    ];
+
+    final steps = vitals?.steps;
+    final flights = vitals?.flights;
+    final still = vitals?.stillSec;
+    final secondary = <Widget>[
+      for (final r in bodyRows)
+        _metricCell(label: r.label, value: r.value, unit: r.unit, detail: r.detail, has: true),
+      _metricCell(
+          label: '걸음',
+          value: steps == null ? '--' : formatCount(steps),
+          unit: '보',
+          has: steps != null),
+      _metricCell(
+          label: '오른 층', value: flights?.toString() ?? '--', unit: '층', has: flights != null),
+      _metricCell(
+          label: '정지 지속',
+          value: still?.toStringAsFixed(1) ?? '--',
+          unit: '초',
+          has: still != null),
     ];
 
     return Card(
@@ -359,94 +435,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const Text('주요 생체',
                 style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                for (final (icon, tint, value, unit, has) in items)
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Icon(icon, size: 18, color: has ? tint : VgColors.muted),
-                        const SizedBox(height: 8),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(value,
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: has ? VgColors.primary : VgColors.muted,
-                              )),
-                        ),
-                        const SizedBox(height: 1),
-                        Text(unit,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 9, color: VgColors.muted)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 활동 3칸 — 걸음·오른 층·정지 지속. **칸을 고정한다**(요약 행과 같은 규칙).
-  ///
-  /// 값이 없으면 타일이 사라지는 격자 규칙을 여기엔 안 쓴다 — 0 보일 때 항목 자체가 없어져
-  /// "그런 걸 재고 있는지"조차 안 보였다(2026-08-18 실기기 확인).
-  ///
-  /// ★ 활동 에너지(kcal)는 **일부러 없다.** 상시 `HKWorkoutSession` 때문에 애플이 하루 종일을
-  /// 운동으로 계산해 정지 상태에서도 288kcal/시간이 찍힌다(2026-08-15 실측 · 약 4배 과대).
-  /// 네이티브가 Dart 로 아예 안 싣고 가드 2개가 되살아나는 것을 막는다
-  /// (`vital_display_test.dart` · `heat-activity-axis` 트랙이 축을 바로잡으면 그때 연다).
-  /// 조용히 빼면 다음 사람이 "빠뜨렸네" 하고 채워 넣으므로 화면에도 사유를 적는다.
-  Widget _activityStrip(VitalStreamEvent? vitals) {
-    final steps = vitals?.steps;
-    final flights = vitals?.flights;
-    final still = vitals?.stillSec;
-
-    final items = <(IconData, String, String, String, bool)>[
-      (Icons.directions_walk, '걸음', steps == null ? '--' : formatCount(steps), '보', steps != null),
-      (Icons.stairs_outlined, '오른 층', flights?.toString() ?? '--', '층', flights != null),
-      (Icons.pause_circle_outline, '정지 지속', still?.toStringAsFixed(1) ?? '--', '초', still != null),
-    ];
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                for (final (icon, label, value, unit, has) in items)
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Icon(icon, size: 18, color: has ? VgColors.primary : VgColors.muted),
-                        const SizedBox(height: 6),
-                        Text(label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11, color: VgColors.body)),
-                        const SizedBox(height: 4),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(value,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: has ? VgColors.primary : VgColors.muted,
-                              )),
-                        ),
-                        Text(unit, style: const TextStyle(fontSize: 9, color: VgColors.muted)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+            _cellGrid(primary),
+            const SizedBox(height: 12),
+            const Divider(height: 1, color: VgColors.hairline),
+            const SizedBox(height: 12),
+            _cellGrid(secondary),
             const SizedBox(height: 10),
             const Divider(height: 1, color: VgColors.hairline),
             const SizedBox(height: 8),
@@ -598,14 +591,8 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           _statusCard(vitals),
           const SizedBox(height: 10),
-          _summaryStrip(vitals),
-          // 측정 안 된 종류는 타일 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
-          if (bodyRows.isNotEmpty) ...[
-            _sectionTitle('그 밖의 지표'),
-            _tileGrid(bodyRows),
-          ],
-          _sectionTitle('활동'),
-          _activityStrip(vitals),
+          // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
+          _vitalsCard(vitals, bodyRows),
         ],
       ),
     );
