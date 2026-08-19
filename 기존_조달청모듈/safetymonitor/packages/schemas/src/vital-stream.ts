@@ -128,6 +128,16 @@ export const VitalSampleSchema = z.object({
   // 음수는 CoreLocation 의 "측위 실패" 표식이므로 앱이 보내지 않는다(min 0 이 계약).
   locationAccuracyMeters: z.number().min(0).max(10000).optional(),
   batteryPct: z.number().min(0).max(100).optional(),
+  // 워치 세션 계측 (2026-08-19 · docs/vital-absence-triage §4-7).
+  // sessionStartedAt 이 바뀌는 지점이 곧 HKWorkoutSession 재시작이고, sessionAutoResumed 가
+  // 그 재시작의 주체(자동 복구 vs 사람이 [시작])를 가른다.
+  // ⚠ 왜 필요한가 — 08-18 에 자동 재개(f67442f)를 넣고 관측했더니 20.9분·12.9시간 공백이
+  //    그대로 났는데, **DB 로는 "안 돌았는지 · 돌았다 3연속 실패로 포기했는지 · suspend 중
+  //    콜백이 늦게 배달됐는지" 를 못 가른다.** 셋은 조치가 전부 다르다.
+  // ⚠ 카운터가 아니라 **시각**인 이유 — 카운터는 프로세스가 죽으면 0 부터 다시 세어 재설치와
+  //    구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
+  sessionStartedAt: z.string().datetime().optional(),
+  sessionAutoResumed: z.boolean().optional(),
   // 스트레스 알고리즘 입력 (P0 데이터 수집). 60초 sub-cadence 로만 채워지는 sparse 필드.
   // 활동에너지/걸음/계단은 직전 수집 이후 구간 합. 분석은 packages/analyzers 가 수행.
   hrvSdnnMs: z.number().min(0).max(500).optional(),

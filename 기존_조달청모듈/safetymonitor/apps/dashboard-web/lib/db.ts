@@ -272,6 +272,11 @@ async function initSchema(): Promise<void> {
     -- ts − heart_rate_measured_at 이 항상 0 이 되어 워치→폰 지연을 못 재게 되는데,
     -- 그 지표가 08-18 시험 B(거리 가설 확정)를 포함한 이 트랙 전체의 근거였다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS phone_received_at TEXT;
+    -- 워치 세션 계측(2026-08-19 · vital-absence-triage §4-7). session_started_at 이 바뀌는
+    -- 지점이 곧 HKWorkoutSession 재시작이고, session_auto_resumed 가 그 주체를 가른다.
+    -- ⚠ 자동 재개(f67442f) 설치 후에도 20.9분·12.9시간 공백이 났는데 원인 셋을 DB 로 못 갈랐다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_started_at TEXT;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_auto_resumed INTEGER;
     -- 백그라운드 하트비트 = 새 심박 없이 최신 스냅샷을 재전송한 행(심박이 복사본).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heartbeat INTEGER;
     -- 착용 기기 — 혈중산소 센서 유무(Series 6+/Ultra)를 가려 SpO2 결측 원인을 확정한다.
@@ -895,6 +900,9 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     skin_temp_c: sample.skinTempC ?? null,
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
+    session_started_at: sample.sessionStartedAt ?? null,
+    session_auto_resumed:
+      sample.sessionAutoResumed === true ? 1 : sample.sessionAutoResumed === false ? 0 : null,
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,
     // 확정 낙상은 워치가 fallDecision='fall' 후보행으로 보냄(fallDetected 미설정 — 폰 Health API 는
     // 낙상 미노출). 코드 전반이 'fall_decision=fall OR fall_detected=1'을 양성 표준으로 쓰므로
