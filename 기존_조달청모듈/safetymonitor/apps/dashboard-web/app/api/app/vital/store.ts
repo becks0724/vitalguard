@@ -26,6 +26,7 @@ import {
   recentHrEnergy,
   recordAlert,
   upsertEnvAlertState,
+  rosterWorkerNames,
 } from "../../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../../lib/spo2-freshness";
 import { overlayLatestSpo2 } from "../../../../lib/spo2-overlay";
@@ -335,6 +336,19 @@ export async function countsByWorker(
     if (isReservedTestWorker(w.worker_id)) continue;
     const key = aliases[w.worker_id] ?? w.worker_id;
     out[key] = (out[key] ?? 0) + w.sample_count;
+  }
+  return out;
+}
+
+// 명부 워커 이름 맵(workerId → 최빈 이름) — 링 버퍼 밖 작업자의 표시용 폴백.
+// ★ 표시 전용이다. 이름이 떴다고 수신 중인 것이 아니므로 신호등·stale·부재 판정은 이 값을 안 본다.
+// 규칙(명부·별칭 접힘·MODE 최빈)은 부재 알림의 lastSeenByWorker 와 같아야 한다 — db.ts 주석 참조.
+export async function rosterWorkerNamesMap(): Promise<Record<string, string>> {
+  const all = await rosterWorkerNames();
+  const out: Record<string, string> = {};
+  for (const [id, name] of Object.entries(all)) {
+    if (isReservedTestWorker(id)) continue;
+    out[id] = name;
   }
   return out;
 }

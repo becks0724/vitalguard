@@ -145,6 +145,8 @@ type MockVitalResponse = {
   workerAliases?: Record<string, string>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
   workerProfiles?: Record<string, string>;
+  /** workerId → 최빈 이름. 링 버퍼 밖 작업자의 **표시용 폴백**(판정 미주입 · 서버 db.ts 주석). */
+  workerNames?: Record<string, string>;
 };
 
 const SLOT_COUNT = 100;
@@ -667,8 +669,15 @@ function isStale(sample: VitalSample | undefined, nowMs: number): boolean {
   return vitalAgeMs(sample, nowMs) > STALE_MS;
 }
 
-function workerHeading(sample: VitalSample | undefined, fallbackId: string) {
-  const name = sample?.workerName?.trim();
+// ⚠ 이름은 **표시**만 바꾼다 — 상태(stale·signal·overall)는 이 함수를 안 거친다.
+//   폴백 이름이 떴다고 수신 중인 것이 아니므로, 상태 셀은 그대로 `대기`·`연결끊김` 이어야 한다.
+function workerHeading(
+  sample: VitalSample | undefined,
+  fallbackId: string,
+  /** 서버가 준 최빈 이름 — 링 버퍼 밖이라 sample 이 없을 때만 쓴다(2026-08-19). */
+  nameFallback?: string,
+) {
+  const name = sample?.workerName?.trim() || nameFallback?.trim();
   const empId = sample?.employeeId?.trim();
   if (name && empId) {
     return { title: name, subtitle: empId, isFallback: false };
@@ -5647,6 +5656,7 @@ export function DemoDashboard() {
                             data.workerProfiles?.[entry.workerId] ??
                             latestMap.get(entry.workerId)?.jobTitle
                           }
+                          nameFallback={data.workerNames?.[entry.workerId]}
                           onEditJobTitle={openJobTitleEditor}
                           selection={selection}
                           onSelect={toggleSelection}
@@ -5687,6 +5697,7 @@ export function DemoDashboard() {
                             data.workerProfiles?.[entry.workerId] ??
                             latestMap.get(entry.workerId)?.jobTitle
                           }
+                          nameFallback={data.workerNames?.[entry.workerId]}
                           onEditJobTitle={openJobTitleEditor}
                           selection={selection}
                           onSelect={toggleSelection}
@@ -6130,6 +6141,8 @@ type WorkerTableRowProps = {
   /** DB 조회 실패 시 undefined — 셀이 `—` 를 찍는다(0 으로 채우면 '수집 0건'으로 읽힌다). */
   count?: number;
   isVirtual: boolean;
+  /** 링 버퍼 밖 작업자의 이름 폴백 — 없으면 사번이 이름 자리에 뜬다(표시 전용). */
+  nameFallback?: string;
   // 효과 직급 = 관제 웹 오버라이드 ?? 폰 발신값 ?? (없으면 undefined → "—"). 클릭 시 편집.
   jobTitle?: string;
   onEditJobTitle: (workerId: string, current: string) => void;
@@ -6164,6 +6177,7 @@ function WorkerTableRow({
   count,
   isVirtual,
   jobTitle,
+  nameFallback,
   onEditJobTitle,
   selection,
   onSelect,
@@ -6184,7 +6198,7 @@ function WorkerTableRow({
   const stale = sample !== undefined && signal === 0;
   // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
   const overall = effectiveTone(overallVital, { stale, outside });
-  const heading = workerHeading(sample, workerId);
+  const heading = workerHeading(sample, workerId, nameFallback);
   const tabIndex = ariaHidden ? -1 : undefined;
   const accent = stale
     ? "border-l-slate-400 dark:border-l-slate-500"

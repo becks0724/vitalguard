@@ -2019,6 +2019,62 @@ export async function lastSeenByWorker(
   return rows;
 }
 
+/** 명부 워커 이름 캐시 — 이름은 거의 안 바뀌고 질의가 비싸다(아래 주석). */
+const ROSTER_NAME_TTL_MS = 600_000;
+let rosterNameCache: { at: number; map: Record<string, string> } | null = null;
+
+/**
+ * 관제 화면이 쓸 **명부 워커 이름 맵**. `worker_id → 최빈 이름`.
+ *
+ * ★ **왜 필요한가.** 화면은 이름을 최근 500샘플 링(12건/분 ≈ 41.7분)의 `sample` 에서만 읽어서,
+ *   그보다 오래 끊긴 작업자는 이름·사번이 통째로 사라지고 **사번이 이름 자리에 뜬다**
+ *   (2026-08-19 실측 — 배정 4명 중 3명). 그런데 같은 순간 부재 알림은 `김○곤` 이라 부른다.
+ *   **화면과 알림이 같은 사람을 다르게 부르는 것**이 이 함수가 막는 것이다.
+ *
+ * ★ **규칙은 `lastSeenByWorker` 와 같아야 한다** — 명부(`monitor_slot_config.slots`) 기준 ·
+ *   `worker_alias` 접힘 · **`MODE()` 최빈 라벨**(최근 라벨이 아니다). 둘이 갈리면 화면과 알림이
+ *   또 다른 이름을 부른다. 가드가 두 질의를 함께 검사한다.
+ *   ⚠ 다른 점은 **시간 창이 없다**는 것뿐이다 — 41일 꺼진 작업자도 화면에는 이름이 떠야 한다.
+ *
+ * ⚠ **캐시가 필수다** — 시간 창이 없어 `vital_samples` Seq Scan 이고 실측 **1,086ms / 381,326행**
+ *   이다. 관제 폴링마다 돌리면 안 된다. 이름은 거의 안 바뀌므로 10분이면 충분하다.
+ *   ⚠ 인스턴스별 캐시라 갈릴 수 있으나 **같은 값**이라 무해하다(SpO₂ 때 문제였던 "워커별 최신값"과
+ *   다르다 — 그건 인스턴스마다 다른 값이라 DB 를 봐야 했다).
+ *
+ * ⚠ **판정에 쓰지 않는다** — 표시 전용이다. 이름이 떴다고 수신 중인 것이 아니므로
+ *   신호등·`stale`·부재 판정은 이 값을 보지 않는다(가드 고정).
+ */
+export async function rosterWorkerNames(): Promise<Record<string, string>> {
+  const now = Date.now();
+  if (rosterNameCache && now - rosterNameCache.at < ROSTER_NAME_TTL_MS) return rosterNameCache.map;
+  const { rows } = await q<{ worker_id: string; worker_name: string | null }>(
+    `WITH roster AS (
+       SELECT jsonb_array_elements_text(slots::jsonb) AS wid
+         FROM monitor_slot_config WHERE id = 1
+     ),
+     ids AS (
+       SELECT wid AS canon, wid FROM roster WHERE wid IS NOT NULL
+       UNION
+       SELECT a.primary_worker_id, a.secondary_worker_id
+         FROM worker_alias a
+         JOIN roster r ON r.wid = a.primary_worker_id
+     )
+     SELECT i.canon AS worker_id,
+            MODE() WITHIN GROUP (ORDER BY v.worker_name) AS worker_name
+       FROM ids i
+       JOIN vital_samples v ON v.worker_id = i.wid
+      WHERE v.worker_name IS NOT NULL
+      GROUP BY i.canon`,
+  );
+  const map: Record<string, string> = {};
+  for (const r of rows) {
+    const n = r.worker_name?.trim();
+    if (n) map[r.worker_id] = n;
+  }
+  rosterNameCache = { at: now, map };
+  return map;
+}
+
 /** 배정된 슬롯 수. 0 이면 명부가 비었다는 뜻이라 부재 판정이 조용히 무의미해진다. */
 export async function rosterSize(): Promise<number> {
   const { rows } = await q<{ n: string }>(

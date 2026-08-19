@@ -21,6 +21,7 @@ import {
   dataMockupSamples,
   workerAliases,
   workerProfiles,
+  rosterWorkerNamesMap,
 } from "./store";
 import { recentZoneHazards } from "../../cctv/ingest";
 
@@ -98,8 +99,12 @@ export async function GET(request: Request) {
     workRate: await workRates(aliasMap),
     // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등에 쓰인다(사용자 결정).
     heatStage: await heatStages(aliasMap),
-    // 직급은 없으면 그 표기만 빠진다(이름은 샘플이 실어 온다) — 빈 맵이 안전한 폴백.
+    // 직급은 없으면 그 표기만 빠진다 — 빈 맵이 안전한 폴백.
     workerProfiles: await softly("직급", workerProfiles, {}, degraded),
+    // 이름 — 링 버퍼(41.7분) 밖 작업자는 sample 이 없어 이름·사번이 통째로 사라지고 사번이 이름
+    // 자리에 뜬다. 같은 순간 부재 알림은 사람 이름을 부르므로 화면과 알림이 갈린다(2026-08-19).
+    // ★ 표시 전용 — 판정·경보는 이 값을 안 본다(store.ts·db.ts 주석 + 가드).
+    workerNames: await softly("이름", rosterWorkerNamesMap, {}, degraded),
     workerAliases: aliasMap,
     // 영상 단독 대상 미특정 위험(설계 §9 동봉) — worker 없는 zone 이라 alerts 가 아닌 메모리 경로. PII 없음.
     zoneHazards: recentZoneHazards(),
