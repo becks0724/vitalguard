@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'glass_tab_bar.dart';
 import 'own_vitals.dart';
 import 'settings_screen.dart';
 import 'status_ring.dart';
@@ -194,6 +195,9 @@ class _HomeScreenState extends State<HomeScreen> {
   VitalStreamEvent? _vitals;
   int? _livePending;
   bool _authRejected = false;
+
+  /// 하단 탭. 0 = 요약(현 화면). 나머지 둘은 **아직 만들지 않았고 화면에 그렇게 적는다**.
+  int _tab = 0;
 
   @override
   void initState() {
@@ -579,22 +583,81 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(onPressed: _logout, tooltip: '로그아웃', icon: const Icon(Icons.logout)),
         ],
       ),
-      // 카드가 늘 수 있어 ListView — 화면 밖으로 밀리면 그 값은 없는 것과 같다.
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
-        children: [
-          if (_authRejected)
-            MaterialBanner(
-              backgroundColor: VgColors.danger.withValues(alpha: 0.08),
-              content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
-              actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
-            ),
-          _statusCard(vitals),
-          const SizedBox(height: 10),
-          // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
-          _vitalsCard(vitals, bodyRows),
-        ],
+      // ★ 본문이 유리 바 **아래로 지나가야** 블러가 보인다. 대신 마지막 카드가 가리므로
+      //   하단 여백에 `glassTabBarInset` 을 더한다(안 더하면 그 값은 없는 것과 같다).
+      extendBody: true,
+      body: switch (_tab) {
+        0 => _summaryBody(vitals, bodyRows),
+        1 => _notBuiltYet(
+            Icons.timeline,
+            '기록',
+            '지난 기록을 받아올 경로를 만드는 중입니다.',
+          ),
+        _ => _notBuiltYet(
+            Icons.grid_view,
+            '둘러보기',
+            '담을 내용을 정하는 중입니다.',
+          ),
+      },
+      bottomNavigationBar: GlassTabBar(
+        tabs: _tabs,
+        currentIndex: _tab,
+        onTap: (i) => setState(() => _tab = i),
+      ),
+    );
+  }
+
+  /// 요약 탭 — 이 앱이 지금 실제로 가진 화면 전부다.
+  Widget _summaryBody(VitalStreamEvent? vitals, List<VitalRow> bodyRows) {
+    // 카드가 늘 수 있어 ListView — 화면 밖으로 밀리면 그 값은 없는 것과 같다.
+    return ListView(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 28 + glassTabBarInset(context)),
+      children: [
+        if (_authRejected)
+          MaterialBanner(
+            backgroundColor: VgColors.danger.withValues(alpha: 0.08),
+            content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
+            actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+          ),
+        _statusCard(vitals),
+        const SizedBox(height: 10),
+        // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
+        _vitalsCard(vitals, bodyRows),
+      ],
+    );
+  }
+
+  /// 아직 안 만든 탭. **빈 화면으로 두지 않는다** — 빈 자리는 "고장" 이나 "빠뜨림" 으로
+  /// 읽히고, 이 앱은 같은 자리(활동 에너지)에서 이미 사유를 적는 쪽을 택했다.
+  Widget _notBuiltYet(IconData icon, String title, String why) {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(32, 0, 32, glassTabBarInset(context)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 34, color: VgColors.muted),
+            const SizedBox(height: 12),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700, color: VgColors.ink)),
+            const SizedBox(height: 6),
+            const Text('준비 중',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: VgColors.caution)),
+            const SizedBox(height: 8),
+            Text(why,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12, color: VgColors.body)),
+          ],
+        ),
       ),
     );
   }
 }
+
+/// 하단 탭 3종. **늘어날 수 있다** — 바는 개수를 세지 않고 이 목록을 그대로 그린다.
+const List<GlassTab> _tabs = [
+  (Icons.favorite, '요약'),
+  (Icons.timeline, '기록'),
+  (Icons.grid_view, '둘러보기'),
+];
