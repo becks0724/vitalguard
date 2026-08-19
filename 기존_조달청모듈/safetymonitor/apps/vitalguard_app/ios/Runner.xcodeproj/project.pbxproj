@@ -15,6 +15,7 @@
 		D1E2F30415263748596A7B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F405162738495A6B7C /* Assets.xcassets */; };
 		4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */; };
 		B1C2D3E4F5061728394A5B6C /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */; };
+		0CA9E1A0000000000000BB01 /* MediaCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA9E1A0000000000000AA01 /* MediaCapture.swift */; };
 		61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
@@ -83,6 +84,7 @@
 		C1D2E3F405162738495A6B7C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhoneReceiver.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
+		0CA9E1A0000000000000AA01 /* MediaCapture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaCapture.swift; sourceTree = "<group>"; };
 		734B76231052F47AAE6C8840 /* VitalWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitalWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -176,6 +178,7 @@
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 				6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */,
 				A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */,
+				0CA9E1A0000000000000AA01 /* MediaCapture.swift */,
 				5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */,
 				E5222D3F029C4480289E1731 /* PoCConfig.plist */,
 				3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */,
@@ -405,6 +408,7 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */,
 				B1C2D3E4F5061728394A5B6C /* LocationProvider.swift in Sources */,
+				0CA9E1A0000000000000BB01 /* MediaCapture.swift in Sources */,
 				61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */,
 				E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */,
 			);

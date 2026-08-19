@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'glass_tab_bar.dart';
 import 'own_vitals.dart';
+import 'record_screen.dart';
 import 'settings_screen.dart';
 import 'status_ring.dart';
 import 'theme.dart';
@@ -588,11 +589,7 @@ class _HomeScreenState extends State<HomeScreen> {
       extendBody: true,
       body: switch (_tab) {
         0 => _summaryBody(vitals, bodyRows),
-        1 => _notBuiltYet(
-            Icons.timeline,
-            '기록',
-            '지난 기록을 받아올 경로를 만드는 중입니다.',
-          ),
+        1 => const RecordScreen(),
         _ => _notBuiltYet(
             Icons.grid_view,
             '둘러보기',

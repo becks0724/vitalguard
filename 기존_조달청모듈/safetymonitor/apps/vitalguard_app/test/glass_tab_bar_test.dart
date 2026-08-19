@@ -117,22 +117,25 @@ void main() {
     );
   });
 
-  testWidgets('★ 안 만든 탭은 빈 화면이 아니라 사유를 보여준다', (tester) async {
+  testWidgets('★ 기록 탭은 촬영 버튼을 주고, 아직 안 만든 탭은 사유를 보여준다', (tester) async {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
 
     await _pumpHome(tester);
 
-    for (final tab in ['기록', '둘러보기']) {
-      await tester.tap(find.text(tab));
-      await tester.pumpAndSettle();
+    // 기록 = 구현됨. 촬영 두 경로(서류 스캔·사진 촬영)가 화면에 있어야 한다.
+    await tester.tap(find.text('기록'));
+    await tester.pumpAndSettle();
+    expect(find.text('서류 스캔'), findsOneWidget);
+    expect(find.text('사진 촬영'), findsOneWidget);
+    expect(find.text('주요 생체'), findsNothing, reason: '요약 카드가 따라오면 같은 값이 두 탭에 뜬다');
 
-      expect(find.text('준비 중'), findsOneWidget, reason: '$tab 이 빈 화면으로 나온다 — 고장으로 읽힌다');
-      // ★ 없는 값을 지어내지 않는다 — 요약 카드가 따라오면 같은 값이 두 탭에 뜬다.
-      expect(find.text('주요 생체'), findsNothing);
-      expect(find.text('bpm'), findsNothing);
-    }
+    // 둘러보기 = 아직 안 만듦. **빈 화면이 아니라 사유**를 보여준다.
+    await tester.tap(find.text('둘러보기'));
+    await tester.pumpAndSettle();
+    expect(find.text('준비 중'), findsOneWidget, reason: '빈 화면은 고장으로 읽힌다');
+    expect(find.text('주요 생체'), findsNothing);
 
     // 돌아오면 그대로 복구된다.
     await tester.tap(find.text('요약'));

@@ -107,6 +107,16 @@ final class VitalBridge: NSObject {
             result(["ok": true])
         case "ownVitals":
             ownVitals(result: result)
+        // 촬영 — 서류 스캔(scan) · 현장 사진(photo). 결과는 촬영·OCR·각인·업로드까지 끝난 뒤 온다.
+        case "captureMedia":
+            let raw = (call.arguments as? [String: Any])?["mode"] as? String ?? "photo"
+            let mode = MediaCapture.Mode(rawValue: raw) ?? .photo
+            MediaCapture.shared.start(mode: mode) { result($0) }
+        // 기록 탭 목록. ★ 별도 앱 API 를 만들지 않는다 — 관제 캘린더 조회가 **앱 JWT 를 그대로
+        //   수용**하고 표시용 만료 URL·삭제 권한(canDelete)까지 서버가 계산해 내려준다.
+        case "listMedia":
+            let days = (call.arguments as? [String: Any])?["days"] as? Int ?? 30
+            listMedia(days: days, result: result)
         case "status":
             result([
                 "loggedIn": AuthStore.token != nil,
@@ -151,6 +161,55 @@ final class VitalBridge: NSObject {
             guard code == 200, let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 // 401 은 앱이 스스로 복구 가능한 상태다 — 화면이 재로그인을 띄우게 코드를 함께 준다.
+                finish(["ok": false, "status": code, "error": "조회 실패(\(code))"])
+                return
+            }
+            finish(json)
+        }.resume()
+    }
+
+    /// 최근 [days] 일의 캘린더 미디어. 응답의 `media[].media_url` 은 서버가 발급한 만료형 URL 이라
+    /// 화면이 그대로 <img> 로 쓰면 된다(비공개 버킷이므로 영구 링크는 존재하지 않는다).
+    private func listMedia(days: Int, result: @escaping FlutterResult) {
+        guard let token = AuthStore.token, !token.isEmpty else {
+            result(["ok": false, "error": "로그인이 필요합니다."])
+            return
+        }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "Asia/Seoul")
+        f.dateFormat = "yyyy-MM-dd"
+        let to = Date()
+        let from = to.addingTimeInterval(-Double(max(1, days)) * 86_400)
+
+        var comps = URLComponents(
+            url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/calendar/media"),
+            resolvingAgainstBaseURL: false
+        )
+        comps?.queryItems = [
+            URLQueryItem(name: "from", value: f.string(from: from)),
+            URLQueryItem(name: "to", value: f.string(from: to)),
+        ]
+        guard let url = comps?.url else {
+            result(["ok": false, "error": "조회 주소를 만들지 못했습니다."])
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            let finish: ([String: Any]) -> Void = { payload in
+                DispatchQueue.main.async { result(payload) }
+            }
+            if let error {
+                finish(["ok": false, "error": error.localizedDescription])
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard code == 200, let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 finish(["ok": false, "status": code, "error": "조회 실패(\(code))"])
                 return
             }
