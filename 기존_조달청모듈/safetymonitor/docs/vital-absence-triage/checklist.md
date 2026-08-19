@@ -715,6 +715,32 @@ func workoutSession(_:didFailWithError:) { ... self.teardown() }                
       맡는다. **안 갈리면 그 자리에서 폐기한다 — 싸게 죽일 수 있는 가설**이라 넣을 만하다.
       검증 = 가드 10 + **음성 대조 9/9**(각 결함이 자기 가드만 실패) · `xcodebuild` Release
       BUILD SUCCEEDED. **남은 것 = 배포 + 워치 설치**(값은 그때부터).
+- [x] **★★ 워치·폰 재설치 완료 — 세 계측 전부 실값 도착(2026-08-19 11:09 KST)**.
+      설치 = 폰 `11:08:47` → 워치 `11:09:11` → 워치앱 기동 `11:09:22` → 사용자 [시작] `11:09:33`.
+      ★ **`devicectl` 로 watchOS 앱 직접 설치가 된다**(13초). `SETUP.md:240` 은 "아이폰 Run 의
+      워치 임베드 전달이 조용히 실패하니 Xcode 에서 `VitalWatch` 스킴 직접 Run" 만 적고 있었는데
+      **CLI 경로가 열려 있다** — `xcrun devicectl device install app --device <워치UUID>
+      <Runner.app>/Watch/VitalWatch.app`. Xcode GUI 없이 끝난다.
+      ⚠ 다만 `devicectl` 설치는 **서명 만료일을 안 늘린다**(프로파일 갱신은 여전히 Xcode Run).
+      ⚠ `xcode-select -p` 가 `/Library/Developer/CommandLineTools` 를 가리켜 `xcodebuild`·
+      `xcrun devicectl` 이 막힌다. **sudo 없이 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/
+      Developer` 로 우회**했다(sudo 는 이 세션에서 tty 문제로 못 쓴다).
+      ★ **설치 전 심볼 검증 — 통제군과 함께.** 빌드가 15.4초에 끝나고 `Info.plist` 타임스탬프가
+      어제라 증분 빌드가 의심돼 `nm` 으로 확인했다. 오늘 심볼 6종(`motionVariabilityMg`·
+      `motionMagWindow`·`sessionStartedAt`·`sessionAutoResumed`·`autoResumeBurst`·
+      `stopRequestedByUser`) 각 2건 · **통제군**(`motionStillSec`·`beginWorkout`·`WatchStreamer`)
+      도 잡힘 → 도구 유효. 바이너리 mtime 은 오늘. `Info.plist` 가 어제인 것은 내용 무변경으로
+      복사가 생략된 것뿐이었다. **오늘 아침 `strings` 0건 오독의 재발을 막은 것이 통제군이다.**
+      ★★ **실값** — `session_started_at` = `11:09:33`(전건 동일) · `session_auto_resumed` = 0
+      (수동 [시작] 이므로 정상) · `motion_var_mg` = **55~67 밀리g**(착용 + 경미한 손목 움직임).
+      ★★★ **`mv` 첫 값이 세션 시작 +60초에 정확히 나왔다** — 11:09:33 시작 · 11:10:28 없음 ·
+      11:10:33 첫 값(55). **"60개 = 60초" 를 코드 읽기가 아니라 실측으로 확증**했다.
+      ⚠ **공백을 설치 비용으로 귀속하지 않는다.** 설치 전 마지막 수신 `11:05:29`, 설치 후 첫
+      수신 `11:09:38` 로 raw 공백은 **4분 9초**지만, **정지 시점이 설치 착수(11:08:45)보다
+      3분 16초 앞선다.** 08-18 의 "워치 재설치 = 공백 128초" 와 나란히 놓을 수 없다.
+      **설치 전 정지의 원인은 미상**이고 이 트랙이 쫓는 그 현상일 가능성이 있다 — 다만
+      그 시각 사용자가 USB 케이블을 폰 사이에서 옮기고 있었으므로 교란 변수가 있다.
+      수집률 회복 = 11:10 **12건/분**(정상).
       `beginWorkout()` 에서 +1 하고 배터리와 **같은 패턴으로 심박 항목에 얹는다**. 값이 바뀌는
       지점이 곧 세션 재시작이라 **공백 폭과 무관하게 DB 만으로 발동을 센다**. `stopRequestedByUser`
       를 함께 실으면 자동 재개인지 사람이 누른 것인지도 갈린다.

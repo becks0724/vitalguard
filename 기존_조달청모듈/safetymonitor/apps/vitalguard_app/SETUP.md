@@ -507,7 +507,26 @@ xcrun devicectl list devices                      # flutter devices 가 못 봐�
 flutter build ios --release                       # 자동 서명(팀 F2P5ZFP65Q)
 xcrun devicectl device install app --device <UDID> build/ios/iphoneos/Runner.app
 xcrun devicectl device process launch --device <UDID> --terminate-existing com.vitalguard.vitalguardApp
+
+# ★ 워치도 CLI 로 직접 설치된다 (2026-08-19 실증 · 13초)
+xcrun devicectl device install app --device <워치UUID> \
+  build/ios/iphoneos/Runner.app/Watch/VitalWatch.app
+xcrun devicectl device process launch --device <워치UUID> --terminate-existing \
+  com.vitalguard.vitalguardApp.watchkitapp
 ```
+
+★ **워치 설치에 Xcode GUI 가 필요 없다(2026-08-19).** 위 240행은 "아이폰 Run 의 워치 임베드
+전달이 조용히 실패하니 스킴을 `VitalWatch` 로 바꿔 직접 Run" 이라고만 적고 있었는데, `devicectl`
+이 watchOS 를 그대로 받는다. 워치가 `devicectl list devices` 에서 `connected` 여야 하고, 그러려면
+**짝 폰이 USB 로 붙어 있어야 한다**(폰을 꽂으면 워치가 `unavailable` → `available (paired)` →
+`connected` 로 올라온다).
+
+⚠ **순서 = 폰 먼저, 워치 나중.** 폰이 워치의 신규 필드를 읽어 서버로 넘기는 쪽이라 워치를 먼저
+갈면 새 필드가 구 폰 코드에서 조용히 버려진다.
+
+⚠ **`xcode-select -p` 가 CommandLineTools 를 가리키면 `xcodebuild`·`xcrun devicectl` 이 막힌다.**
+`sudo xcode-select -s` 가 정공이지만 sudo 가 안 되는 상황에서는 `DEVELOPER_DIR` env 로 우회된다
+(위 블록 첫 줄). 우회는 그 명령에만 걸리므로 셸마다 다시 준다.
 
 ⚠ 설치 후 **앱 1회 전면 실행**은 여전히 수칙이다(미기동 시 WCSession 전달 스로틀).
 ⚠ `devicectl` 설치는 **서명 만료일을 늘리지 않는다.** 프로파일 갱신은 Xcode Run 이 한다.
