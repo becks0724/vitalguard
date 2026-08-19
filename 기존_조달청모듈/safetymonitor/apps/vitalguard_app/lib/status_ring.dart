@@ -114,29 +114,23 @@ class StatusRing extends StatelessWidget {
               children: [
                 FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        value.toStringAsFixed(0),
-                        style: TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.bold,
-                          height: 1.0,
-                          color: vgValueColor(status),
-                        ),
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        unit,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: VgColors.muted,
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    value.toStringAsFixed(0),
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.bold,
+                      height: 1.0,
+                      color: vgValueColor(status),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  unit,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.0,
+                    color: VgColors.muted,
                   ),
                 ),
                 const SizedBox(height: 4),

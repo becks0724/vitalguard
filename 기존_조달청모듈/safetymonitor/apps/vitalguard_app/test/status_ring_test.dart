@@ -34,6 +34,21 @@ void main() {
     expect(find.text('위험'), findsOneWidget);
   });
 
+  testWidgets('링 가운데는 값·단위·배지가 세로로 쌓이고 중심이 맞는다', (tester) async {
+    // 2026-08-19 사용자 요청 배치. 셋이 한 줄로 붙거나 중심이 어긋나면 링 안이 치우쳐 보인다 —
+    // 눈으로만 보던 것이라 되돌아가기 쉬워 좌표로 고정한다.
+    await _pump(tester, StatusRing(range: heartRateRange, value: 87, unit: 'bpm'));
+    final v = tester.getCenter(find.text('87'));
+    final u = tester.getCenter(find.text('bpm'));
+    final b = tester.getCenter(find.text('정상'));
+
+    expect(v.dy, lessThan(u.dy), reason: '단위가 값보다 위에 있다');
+    expect(u.dy, lessThan(b.dy), reason: '배지가 단위보다 위에 있다');
+    for (final c in [u, b]) {
+      expect((c.dx - v.dx).abs(), lessThan(0.5), reason: '가운데 정렬이 아니다');
+    }
+  });
+
   testWidgets('★ 판정에 안 올리는 값은 상태 배지를 못 받는다', (tester) async {
     // 추정 체온은 관제웹에서도 판정·경보 미주입이다. 여기서 배지를 주면 그 계약이 폰에서만 깨진다.
     await _pump(tester, const RingSideValue(
