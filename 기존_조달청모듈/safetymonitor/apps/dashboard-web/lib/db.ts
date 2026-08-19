@@ -277,6 +277,9 @@ async function initSchema(): Promise<void> {
     -- ⚠ 자동 재개(f67442f) 설치 후에도 20.9분·12.9시간 공백이 났는데 원인 셋을 DB 로 못 갈랐다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_started_at TEXT;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_auto_resumed INTEGER;
+    -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
+    -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
     -- 백그라운드 하트비트 = 새 심박 없이 최신 스냅샷을 재전송한 행(심박이 복사본).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS heartbeat INTEGER;
     -- 착용 기기 — 혈중산소 센서 유무(Series 6+/Ultra)를 가려 SpO2 결측 원인을 확정한다.
@@ -901,6 +904,7 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
     session_started_at: sample.sessionStartedAt ?? null,
+    motion_var_mg: sample.motionVariabilityMg ?? null,
     session_auto_resumed:
       sample.sessionAutoResumed === true ? 1 : sample.sessionAutoResumed === false ? 0 : null,
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,

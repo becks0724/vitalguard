@@ -138,6 +138,13 @@ export const VitalSampleSchema = z.object({
   //    구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
   sessionStartedAt: z.string().datetime().optional(),
   sessionAutoResumed: z.boolean().optional(),
+  // 모션 변동폭 (2026-08-19 · 옆 세션 착용 판별 트랙 요청). 1Hz deviceMotion 60초 창의
+  // |userAcceleration| 표준편차 × 1000(밀리g 정수).
+  // ⚠ **판정·경보·화면 어디에도 쓰지 않는다** — 분포 검증 전까지 순수 관측값이다.
+  //   지금 착용을 가를 신호가 0개라(§4-3 · 벗어도 그럴듯한 심박이 온다) 후보 축을 하나 재 보는 것이고,
+  //   갈리지 않으면 그 자리에서 폐기한다. 값이 있다고 판정에 올리면 그게 곧 근거 없는 판정이다.
+  // ⚠ 창이 60개 미만이면 앱이 **키 자체를 생략**한다 — "안 움직였다"(0)와 "못 쟀다"(없음)를 가른다.
+  motionVariabilityMg: z.number().int().min(0).max(10000).optional(),
   // 스트레스 알고리즘 입력 (P0 데이터 수집). 60초 sub-cadence 로만 채워지는 sparse 필드.
   // 활동에너지/걸음/계단은 직전 수집 이후 구간 합. 분석은 packages/analyzers 가 수행.
   hrvSdnnMs: z.number().min(0).max(500).optional(),
@@ -226,6 +233,9 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "flightsClimbed",
   "mlWorkVetoProb",
   "mlImpactProb",
+  // 순수 관측값(판정 미사용)이라 범위를 벗어나도 버려서 안전하다.
+  // 넣지 않으면 기본값이 "샘플 전체 거부" 라 진단 필드 하나가 생체를 통째로 날린다.
+  "motionVariabilityMg",
 ]);
 
 export function parseResilientVitalSample(

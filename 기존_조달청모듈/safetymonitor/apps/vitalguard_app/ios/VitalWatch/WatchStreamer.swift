@@ -70,6 +70,11 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 오귀속하지 않으려면 콜백 수와 최대 크기를 따로 봐야 한다(L-67).
     private var motionUpdates = 0
     private var motionMaxG = 0.0
+    // 모션 변동폭 재료 — 1Hz 콜백의 |userAcceleration| 최근 60개(= 60초). 표준편차만 쓴다.
+    // ⚠ 임계 통과 여부(motionMoveThresholdG)는 "움직였나" 만 답한다. 책상 위 워치와 가만히 있는
+    //   손목을 가르는 것은 통과 여부가 아니라 **변동폭**이라 그 값을 따로 남긴다(옆 세션 요청).
+    private var motionMagWindow: [Double] = []
+    private let motionWindowSize = 60
 
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
@@ -414,6 +419,8 @@ final class WatchStreamer: NSObject, ObservableObject {
                 pendingSamples[idx]["sst"] = started.timeIntervalSince1970
                 pendingSamples[idx]["sar"] = sessionAutoResumed ? 1 : 0
             }
+            // 모션 변동폭 — 같은 계약(심박 항목 동승 · 행 수 불증가). 창이 덜 찼으면 키를 생략한다.
+            if let mv = motionVariabilityMg { pendingSamples[idx]["mv"] = mv }
         }
         // 이산 측정(HRV·안정심박·보행심박·호흡수·MET·일광) — 에너지·걸음과 같은 계약으로 심박 항목에
         // 얹는다. 단독 항목으로 보내면 배치 내 ts 중복으로 서버가 조용히 버린다(pendingDiscrete 주석).
@@ -543,6 +550,8 @@ final class WatchStreamer: NSObject, ObservableObject {
             let a = dm.userAcceleration
             let mag = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()
             self.motionUpdates += 1
+            self.motionMagWindow.append(mag)
+            if self.motionMagWindow.count > self.motionWindowSize { self.motionMagWindow.removeFirst() }
             if mag > self.motionMaxG { self.motionMaxG = mag }
             if mag >= self.motionMoveThresholdG { self.lastMovementAt = Date() }
         }
@@ -550,6 +559,17 @@ final class WatchStreamer: NSObject, ObservableObject {
 
     /// 무동작 지속(초). 콜백이 한 번도 안 돌았으면 **0 이 아니라 nil** 이다 —
     /// "안 움직였다" 와 "못 쟀다" 를 같은 값으로 보내면 판정이 오염된다(온열 ② 가 겪은 그 함정).
+    /// 모션 변동폭(밀리g 정수). 창이 60개를 못 채웠으면 **0 이 아니라 nil** 이다 —
+    /// `motionStillSec` 과 같은 규칙으로 "변동이 없다" 와 "못 쟀다" 를 가른다.
+    /// 세션 재시작 직후 첫 1분은 값이 없는 것이 정상이다(부분 창을 보내느니 비운다).
+    private var motionVariabilityMg: Int? {
+        guard motionMagWindow.count >= motionWindowSize else { return nil }
+        let n = Double(motionMagWindow.count)
+        let mean = motionMagWindow.reduce(0, +) / n
+        let variance = motionMagWindow.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / n
+        return Int((variance.squareRoot() * 1000).rounded())
+    }
+
     private var motionStillSec: Double? {
         guard motionUpdates > 0, let at = lastMovementAt else { return nil }
         return (Date().timeIntervalSince(at) * 10).rounded() / 10
@@ -715,6 +735,7 @@ final class WatchStreamer: NSObject, ObservableObject {
         lastMovementAt = nil
         motionUpdates = 0
         motionMaxG = 0
+        motionMagWindow.removeAll()
         if let spo2Query { healthStore.stop(spo2Query) }
         spo2Query = nil
         if let flightsQuery { healthStore.stop(flightsQuery) }
