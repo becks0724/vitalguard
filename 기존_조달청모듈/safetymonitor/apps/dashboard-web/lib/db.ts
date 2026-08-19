@@ -1866,8 +1866,10 @@ export async function deleteDangerZone(id: number): Promise<boolean> {
   return rowCount > 0;
 }
 
-// ── 알림 이력(SOS/낙상/생체 위험/구획 이탈/위험구역 진입) ───────────────────
-export type AlertType = "sos" | "fall" | "vital" | "geofence" | "danger_zone";
+// ── 알림 이력(SOS/낙상/생체 위험/구획 이탈/위험구역 진입/감시 공백) ─────────
+// ★ `absence` 만 성격이 다르다 — 나머지는 **샘플이 들어올 때** 발화하는데 이것은 **안 들어와서**
+//   발화한다. 그래서 수신 경로가 아니라 크론(`/api/cron/absence-check`)이 넣는다.
+export type AlertType = "sos" | "fall" | "vital" | "geofence" | "danger_zone" | "absence";
 
 export type AlertRow = {
   id: number;
@@ -1882,12 +1884,23 @@ export type AlertRow = {
 
 // SOS/낙상 발생 기록 — 중복(worker/type/ts)은 무시. addSample 에서 호출.
 // 신규 삽입(중복 아님)일 때만 텔레그램 알림 발신 — dedup 통과분만 1회 통지.
-export async function recordAlert(input: {
-  workerId: string;
-  workerName?: string | null;
-  type: AlertType;
-  ts: string;
-}): Promise<void> {
+/**
+ * 알림을 원장에 남기고 통지한다. **새로 적혔을 때만 true** — 자연키 충돌(재전송분)이면 false.
+ *
+ * `notify: false` 는 통지 문구를 호출측이 직접 만들 때만 쓴다(감시 공백 — 경과 시간·사후 판정이
+ * 들어가야 해서 공용 포맷으로 표현되지 않는다). ⚠ 그 경우에도 **원장 기록은 건너뛰지 않는다** —
+ * 온열 알림이 이 관문을 우회해 발동 이력을 아무도 못 본 전례가 있다.
+ */
+export async function recordAlert(
+  input: {
+    workerId: string;
+    workerName?: string | null;
+    type: AlertType;
+    ts: string;
+  },
+  options?: { notify?: boolean },
+): Promise<boolean> {
+  const notify = options?.notify ?? true;
   let rowCount: number;
   try {
     ({ rowCount } = await q(
@@ -1900,13 +1913,14 @@ export async function recordAlert(input: {
     // DB 장애가 통지까지 삼키면 안 된다(감사 DB-POOL-02 — 2026-06-30 실발생: DB 비번 사고 구간의
     // SOS·낙상 텔레그램 무음 유실). 기록은 잃어도 통지는 보낸다. dedup(rowCount) 판정이 불가한
     // 상태라 재전송분 중복 통지 가능성은 감수한다. 원래 에러는 다시 던져 호출측 실패 표현을 보존.
-    await notifyAlertTelegram(input);
+    if (notify) await notifyAlertTelegram(input);
     throw error;
   }
-  if (rowCount > 0) {
+  if (rowCount > 0 && notify) {
     // notifyAlertTelegram 은 미설정 시 no-op·실패 삼킴이라 여기서 await 해도 기록·수집을 막지 않는다.
     await notifyAlertTelegram(input);
   }
+  return rowCount > 0;
 }
 
 export async function listAlerts(limit = 100): Promise<AlertRow[]> {
@@ -1944,6 +1958,77 @@ export async function ackAlertByKey(
     [ackBy, workerId, type],
   );
   return rowCount;
+}
+
+// ── 감시 공백(absence) 조회 — 크론이 쓰는 세 가지 ─────────────────────────
+// 판정 규칙 자체는 `lib/absence-watch.ts`(순수·테스트됨)에 있고 여기는 재료만 낸다.
+
+/**
+ * 작업자별 마지막 수신 시각.
+ *
+ * ⚠ **최근 활동자로 한정한다.** `listAllWorkers()` 는 전체 이력을 훑어서 몇 달 전 사람까지 나오는데,
+ * 그들에게 "10분째 수신 없음" 은 참이지만 의미가 없다. 기본 24시간 — 그 안에 한 번이라도 보낸
+ * 사람만 "지금 받고 있어야 할 사람" 으로 본다.
+ */
+export async function lastSeenByWorker(
+  activeWithinHours = 24,
+): Promise<{ worker_id: string; worker_name: string | null; last_ts: string }[]> {
+  const { rows } = await q<{ worker_id: string; worker_name: string | null; last_ts: string }>(
+    `SELECT DISTINCT ON (worker_id) worker_id, worker_name, ts AS last_ts
+       FROM vital_samples
+      WHERE ts::timestamptz > (now() - $1::interval)
+      ORDER BY worker_id, ts DESC`,
+    [`${activeWithinHours} hours`],
+  );
+  return rows;
+}
+
+/** 아직 안 닫힌 감시 공백. 해제는 `ackAlert(id, ...)` 로 한다(대응 확인과 같은 자리). */
+export async function listOpenAbsenceAlerts(): Promise<
+  { id: number; worker_id: string; worker_name: string | null; ts: string }[]
+> {
+  const { rows } = await q<{ id: number; worker_id: string; worker_name: string | null; ts: string }>(
+    `SELECT id, worker_id, worker_name, ts
+       FROM alerts
+      WHERE type = 'absence' AND ack_at IS NULL
+      ORDER BY ts ASC`,
+  );
+  return rows;
+}
+
+/**
+ * 공백 종료 직후 창의 **최대 측정 지연**(초). 복귀 원인을 사후에 가르는 유일한 재료다.
+ *
+ * 밀린 것이 몰려 오면 `ts` 는 지금인데 `heart_rate_measured_at` 은 한참 전이라 값이 크게 뜬다.
+ * ⚠ 도착 시각 기준(`received_at − ts`)으로는 안 갈린다 — 전 구간 0~4초다(2026-08-19 실측).
+ * 복귀 자체가 없으면(=아직 공백 중) null, 복귀했는데 그 창에 심박이 없어도 null 이다.
+ */
+export async function maxMeasuredLagSecAfter(
+  workerId: string,
+  gapStartIso: string,
+  windowSeconds = 60,
+): Promise<{ resumedAtIso: string; maxLagSec: number | null } | null> {
+  const { rows } = await q<{ resumed_at: string; max_lag: string | null }>(
+    `WITH resumed AS (
+       SELECT ts FROM vital_samples
+        WHERE worker_id = $1 AND ts::timestamptz > $2::timestamptz
+        ORDER BY ts ASC LIMIT 1
+     )
+     SELECT r.ts AS resumed_at,
+            (SELECT MAX(EXTRACT(EPOCH FROM (s.ts::timestamptz - s.heart_rate_measured_at::timestamptz)))
+               FROM vital_samples s
+              WHERE s.worker_id = $1
+                AND s.ts::timestamptz >= r.ts::timestamptz
+                AND s.ts::timestamptz < r.ts::timestamptz + $3::interval) AS max_lag
+       FROM resumed r`,
+    [workerId, gapStartIso, `${windowSeconds} seconds`],
+  );
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    resumedAtIso: row.resumed_at,
+    maxLagSec: row.max_lag === null ? null : Math.round(Number(row.max_lag)),
+  };
 }
 
 // ── 사고(산업재해) 등록 원장 — 조사 뷰 앵커 + 3년 보존 마킹 ────────────────

@@ -34,6 +34,7 @@ import {
 import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
 import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
+import { formatElapsed } from "../../lib/absence-watch";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
 import {
   evaluateHazardKmaWarnings,
@@ -234,7 +235,9 @@ function formatInt(value?: number | null) {
 // store sticky-carry 로 한번이라도 값이 오면 유지되므로, 남아있는 null/undefined ≈ "미수신".
 const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데이터가 들어오지 않습니다";
 // 연결끊김일 때는 "센서 없음" 이 아니라 "수신 중단" 이므로 사유를 구분해 표시한다.
-const TEMP_STALE_TITLE = "연결끊김 — 마지막 수신 이후 60초 초과. 직전 값은 현재 상태가 아닙니다";
+// ★ 종전 문구는 "60초 초과" 고정이라 12시간 끊김도 1분처럼 읽혔다 — 실제 경과를 적는다.
+const tempStaleTitle = (ageMs: number) =>
+  `연결끊김 — ${formatElapsed(ageMs)}째 수신 없음. 직전 값은 현재 상태가 아닙니다`;
 
 // 누적 추세 차트는 자체 웨어러블 디바이스가 실측한 메트릭에만 표시.
 // 폰 측 store 에 해당 metric 값이 실시간 들어와 있는 경우만 live 로 판정.
@@ -6377,7 +6380,10 @@ function WorkerTableRow({
               )}
             </span>
           ) : (
-            <span className="leading-tight" title={stale ? TEMP_STALE_TITLE : TEMP_UNAVAILABLE_TITLE}>
+            <span
+              className="leading-tight"
+              title={stale ? tempStaleTitle(vitalAgeMs(sample, nowMs)) : TEMP_UNAVAILABLE_TITLE}
+            >
               <span className="font-mono text-sm tabular-nums text-muted">
                 --<span className="ml-0.5 text-[10px]">℃</span>
               </span>
@@ -6432,8 +6438,13 @@ function WorkerTableRow({
       {/* 10 상태 — 연결끊김이면 생체 상태보다 우선 표시(false-OK 차단) */}
       <div className="flex items-center justify-center">
         {stale ? (
-          <span className="whitespace-nowrap text-xs font-semibold text-slate-500 dark:text-slate-300">
-            연결끊김
+          // ★ 경과를 함께 적는다 — 라벨만 있으면 1분 끊김과 12시간 끊김이 같은 화면이라
+          //   관제자가 둘 다 "곧 돌아오겠지" 로 읽는다(2026-08-18 12.9시간 무경보 사고).
+          <span className="flex flex-col items-center leading-tight text-slate-500 dark:text-slate-300">
+            <span className="whitespace-nowrap text-xs font-semibold">연결끊김</span>
+            <span className="whitespace-nowrap font-mono text-[10px]">
+              {formatElapsed(vitalAgeMs(sample, nowMs))}
+            </span>
           </span>
         ) : (
           <span className={`whitespace-nowrap text-xs font-semibold ${WSTATUS_TONE[wstatus.tone]}`}>

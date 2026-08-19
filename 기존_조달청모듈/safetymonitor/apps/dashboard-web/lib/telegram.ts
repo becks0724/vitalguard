@@ -18,6 +18,9 @@ const ALERT_LABEL: Record<AlertType, string> = {
   vital: "❤️ 생체 위험",
   geofence: "📍 현장 구획 이탈",
   danger_zone: "⛔ 위험구역 진입",
+  // 감시 공백은 경과 시간·사후 판정이 들어가야 해서 본문을 `lib/absence-watch.ts` 가 따로 만든다.
+  // 이 라벨은 공용 포맷으로 흘렀을 때의 안전망이다(그 경로로는 안 보내는 것이 정상).
+  absence: "📵 생체 수신 없음",
 };
 
 // ISO → KST "MM-DD HH:mm:ss". 파싱 실패 시 원본 반환.
