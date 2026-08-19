@@ -90,6 +90,11 @@ final class WatchStreamer: NSObject, ObservableObject {
     // [정지] 로 끝난 세션인지 표시한다 — 델리게이트가 사용자 정지와 시스템 종료를 가를 유일한 수단이다.
     // 둘 다 결국 `session.end()` 라 `didChangeTo(.ended)` 가 보는 그림이 똑같다.
     private var stopRequestedByUser = false
+    // 이 세션이 언제 시작했고 누가 시작했나 — 값이 바뀌는 지점이 곧 재시작이다(§4-7 계측).
+    // ⚠ 카운터가 아니라 시각인 이유 = 카운터는 프로세스가 죽으면 0 부터 다시 세어 재설치와
+    //   구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
+    private var sessionStartedAt: Date?
+    private var sessionAutoResumed = false
     // 자동 재개 연속 실패 횟수 — 재개하자마자 또 끝나는 상황에서 무한 반복을 막는다.
     private var autoResumeBurst = 0
     private var lastAutoResumeAt: Date?
@@ -252,7 +257,7 @@ final class WatchStreamer: NSObject, ObservableObject {
                     self.statusText = "권한 거부됨"
                     return
                 }
-                self.beginWorkout()
+                self.beginWorkout(auto: false)
             }
         }
     }
@@ -285,10 +290,10 @@ final class WatchStreamer: NSObject, ObservableObject {
         }
         log.notice("자동 재개 \(self.autoResumeBurst, privacy: .public)회차 — 사유 \(cause, privacy: .public)")
         statusText = "자동 재개 중"
-        beginWorkout()
+        beginWorkout(auto: true)
     }
 
-    private func beginWorkout() {
+    private func beginWorkout(auto: Bool) {
         // 새 세션은 아직 아무도 정지를 요청하지 않은 상태에서 출발한다(수동·자동 재개 공통 깔때기).
         stopRequestedByUser = false
         // 배터리 모니터링 — 켜지 않으면 batteryLevel 이 -1 을 돌려준다(값이 아니라 "모름").
@@ -318,6 +323,9 @@ final class WatchStreamer: NSObject, ObservableObject {
             self.builder = builder
 
             let startDate = Date()
+            // §4-7 계측 — 이 두 값이 매 심박 항목에 실려 재시작을 DB 로 셀 수 있게 한다.
+            sessionStartedAt = startDate
+            sessionAutoResumed = auto
             session.startActivity(with: startDate)
             builder.beginCollection(withStart: startDate) { [weak self] _, error in
                 DispatchQueue.main.async {
@@ -400,6 +408,12 @@ final class WatchStreamer: NSObject, ObservableObject {
         if let idx = pendingSamples.lastIndex(where: { $0["bpm"] is Double }) {
             let level = WKInterfaceDevice.current().batteryLevel
             if level >= 0 { pendingSamples[idx]["bat"] = Int((level * 100).rounded()) }
+            // 세션 계측(§4-7) — 배터리와 같은 계약으로 심박 항목에 얹는다(단독 항목 금지 ·
+            // 행 수 불증가). `sst` 가 바뀌는 지점이 재시작이고 `sar` 가 그 주체를 가른다.
+            if let started = sessionStartedAt {
+                pendingSamples[idx]["sst"] = started.timeIntervalSince1970
+                pendingSamples[idx]["sar"] = sessionAutoResumed ? 1 : 0
+            }
         }
         // 이산 측정(HRV·안정심박·보행심박·호흡수·MET·일광) — 에너지·걸음과 같은 계약으로 심박 항목에
         // 얹는다. 단독 항목으로 보내면 배치 내 ts 중복으로 서버가 조용히 버린다(pendingDiscrete 주석).
@@ -718,6 +732,8 @@ final class WatchStreamer: NSObject, ObservableObject {
         flightsReported = 0
         isRunning = false
         statusText = "대기"
+        // 끝난 세션의 정체성은 버린다 — 남기면 다음 세션 첫 배치에 옛 값이 실린다.
+        sessionStartedAt = nil
         session = nil
         builder = nil
     }

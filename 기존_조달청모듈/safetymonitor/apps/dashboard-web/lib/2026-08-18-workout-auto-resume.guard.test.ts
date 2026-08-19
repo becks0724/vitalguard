@@ -72,14 +72,14 @@ test("④ 세션 오류도 같은 처방을 받는다", () => {
 });
 
 test("⑤ 폭주 방지 — 무제한 재시작이 아니다", () => {
-  const fn = bare.slice(bare.indexOf("func autoResume("), bare.indexOf("func beginWorkout()"));
+  const fn = bare.slice(bare.indexOf("func autoResume("), bare.indexOf("func beginWorkout("));
   assert.match(fn, /autoResumeMaxBurst/, "연속 실패 상한이 없다");
   assert.match(fn, /guard autoResumeBurst <= autoResumeMaxBurst else/, "상한 검사가 없다");
   assert.match(fn, /autoResumeMinAliveSec/, "'재개 직후 또 끝남'을 가리는 시간 기준이 없다");
 });
 
 test("⑥ 새 세션은 표식을 되돌린 자리에서 출발한다", () => {
-  const begin = bare.slice(bare.indexOf("func beginWorkout()"));
+  const begin = bare.slice(bare.indexOf("func beginWorkout("));
   assert.match(
     begin.slice(0, 400),
     /stopRequestedByUser = false/,

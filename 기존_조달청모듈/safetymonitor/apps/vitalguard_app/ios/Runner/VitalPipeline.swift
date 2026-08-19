@@ -138,6 +138,9 @@ final class VitalPipeline {
                 // 무동작 지속(초) — 워치 CMMotionManager 기준. 값이 없으면 못 잰 것이지 0 이 아니다.
                 let still = s["still"] as? Double
                 let bat = s["bat"] as? Int
+                // 세션 계측(2026-08-19 · §4-7) — sst = 세션 시작 epoch 초, sar = 자동 재개 여부.
+                let sst = s["sst"] as? Double
+                let sar = s["sar"] as? Int
                 guard bpm != nil || spo2 != nil || ae != nil
                     || hrv != nil || rhr != nil || whr != nil || rr != nil
                     || stp != nil || flt != nil || pe != nil || dl != nil || still != nil
@@ -187,6 +190,13 @@ final class VitalPipeline {
                 // 08-18 진단에서 긴 공백 3건이 전부 수집 정지로 확정됐는데 **방전·충전·앱 종료를
                 // 가를 신호가 이것 하나뿐**이라 우선순위가 올라갔다(레벨의 시간 변화가 가른다).
                 if let bat { v["batteryPct"] = bat }
+                // 세션 계측 — `sessionStartedAt` 이 바뀌는 지점이 곧 HKWorkoutSession 재시작이고
+                // `sessionAutoResumed` 가 그 주체(자동 복구 vs 사람이 [시작])를 가른다.
+                // ⚠ 위 guard 에 넣지 않는다 — 이 값만으로 행을 만들면 안 된다(배터리와 같은 계약).
+                if let sst {
+                    v["sessionStartedAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: sst))
+                    if let sar { v["sessionAutoResumed"] = sar == 1 }
+                }
                 // 좌표 4종(위·경도·정확도·측위시각)을 한 덩어리로 얹는다. 정확도와 측위시각이 없으면
                 // 관제가 값의 품질·나이를 못 재므로 좌표만 따로 싣지 않는다.
                 if let fix { v.merge(fix) { current, _ in current } }

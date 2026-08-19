@@ -51,7 +51,9 @@ test("② flush 는 이산 측정을 심박 항목에 병합한다", () => {
 test("③ 전제 — 폰은 배치 전체에 같은 ts(전송 시각)를 붙인다", () => {
   // 이 전제가 깨지면(항목별 ts) 병합할 이유가 사라진다. 바뀌면 이 가드부터 다시 읽어야 한다.
   // 창은 넉넉히 — 키 파싱이 늘면 검사 대상이 고정 창 밖으로 밀린다(같은 날 두 번 겪음).
-  const s = section(phone, "func ingest(payload:", 2000);
+  // ⚠ 2026-08-19 세 번째로 밀렸다(세션 계측 키 2개 추가). 창을 넓히는 것은 임시 처방이고,
+  //    근본은 고정 길이 창이다 — 다음에 또 밀리면 함수 끝까지 자르는 방식으로 바꾼다.
+  const s = section(phone, "func ingest(payload:", 3200);
   assert.match(s, /let sentAt = self\.isoMs\.string\(from: Date\(\)\)/, "배치 공통 ts 가 사라짐");
   assert.match(s, /var v: \[String: Any\] = \["ts": sentAt\]/, "항목이 배치 ts 를 쓰지 않음");
 });

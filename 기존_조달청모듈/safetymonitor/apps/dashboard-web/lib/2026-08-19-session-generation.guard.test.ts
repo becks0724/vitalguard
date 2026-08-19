@@ -30,6 +30,9 @@ const schema = readFileSync(
   "utf8",
 );
 const db = readFileSync(join(ROOT, "lib", "db.ts"), "utf8");
+const IOS = join(ROOT, "..", "vitalguard_app", "ios");
+const watch = readFileSync(join(IOS, "VitalWatch", "WatchStreamer.swift"), "utf8");
+const phone = readFileSync(join(IOS, "Runner", "VitalPipeline.swift"), "utf8");
 // 주석을 걷어낸 본문에서만 검사한다 — 설명 주석의 낱말이 가드를 통과시키면 안 된다.
 const bare = (s: string) =>
   s.replace(/^\s*\/\/.*$/gm, "").replace(/^\s*--.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
@@ -77,4 +80,63 @@ test("④ 진단 필드는 내보내기 계약(ExportRow)에 넣지 않는다", 
   assert.doesNotMatch(body, /session_auto_resumed/, "★ 진단 필드가 CSV 내보내기로 샜다");
   // 앵커 — ExportRow 를 잘못 잘라 빈 문자열을 검사하고 통과하는 것을 막는다.
   assert.match(body, /battery_pct/, "ExportRow 본문을 못 잘랐다(검사가 무의미해진다)");
+});
+
+// ── 전송 사슬 — 서버가 받을 자리를 만들어도 워치가 안 보내면 값은 0건이다.
+//    `battery_pct` 가 정확히 그 형태였다(트리오는 구 앱 시절부터 있었는데 10,189행 0건).
+
+test("⑤ 워치 — 세션 시작 시각과 주체를 기록한다", () => {
+  const w = bare(watch);
+  assert.match(w, /private var sessionStartedAt: Date\?/, "세션 시작 시각 상태 소실");
+  assert.match(w, /sessionStartedAt = startDate/, "세션 시작 시각을 기록하지 않는다");
+  assert.match(w, /sessionAutoResumed = auto/, "재시작 주체를 기록하지 않는다");
+});
+
+test("⑥ 워치 — 두 진입점이 주체를 다르게 넘긴다", () => {
+  const w = bare(watch);
+  assert.match(w, /private func beginWorkout\(auto: Bool\)/, "주체 인자가 사라졌다");
+  assert.match(w, /beginWorkout\(auto: false\)/, "사람이 누른 시작이 auto:false 로 안 간다");
+  assert.match(w, /beginWorkout\(auto: true\)/, "★ 자동 재개가 auto:true 로 안 간다 — 두 경로가 구별되지 않는다");
+});
+
+test("⑦ 워치 — 심박 항목에 얹는다(단독 항목 금지)", () => {
+  const w = bare(watch);
+  // ⚠ `lastIndex(where:)` 는 파일에 여러 번 나온다(활동에너지·걸음·이산…). 배터리 블록을
+  //    정확히 집어야 한다 — 첫 등장을 잡으면 엉뚱한 창을 검사하고 조용히 통과·실패한다.
+  const bat = w.indexOf("WKInterfaceDevice.current().batteryLevel");
+  assert.ok(bat > 0, "배터리 앵커 소실");
+  const head = w.lastIndexOf('lastIndex(where: { $0["bpm"] is Double }', bat);
+  assert.ok(head > 0 && bat - head < 300, "세션 값이 심박 항목 블록 밖에 있다");
+  const block = w.slice(head, bat + 600);
+  assert.match(block, /\["sst"\] = started\.timeIntervalSince1970/, "세션 시작 시각을 심박 항목에 안 싣는다");
+  assert.match(block, /\["sar"\] = sessionAutoResumed/, "주체를 심박 항목에 안 싣는다");
+});
+
+test("⑧ 워치 — teardown 이 끝난 세션의 정체성을 버린다", () => {
+  const w = bare(watch);
+  const from = w.indexOf("private func teardown()");
+  assert.ok(from > 0, "teardown 앵커 소실");
+  assert.match(
+    w.slice(from, from + 1600),
+    /sessionStartedAt = nil/,
+    "안 버리면 다음 세션 첫 배치에 옛 세션 시각이 실린다",
+  );
+});
+
+test("⑨ 폰 — 서버 스키마 이름으로 옮긴다", () => {
+  const p = bare(phone);
+  assert.match(p, /let sst = s\["sst"\] as\? Double/, "워치 키를 안 읽는다");
+  assert.match(p, /v\["sessionStartedAt"\] = self\.isoMs\.string/, "ISO 변환·매핑 소실");
+  assert.match(p, /v\["sessionAutoResumed"\] = sar == 1/, "불리언 매핑 소실");
+});
+
+test("⑩ 폰 — 이 값만으로 행을 만들지 않는다", () => {
+  const p = bare(phone);
+  const from = p.indexOf("guard bpm != nil");
+  assert.ok(from > 0, "guard 앵커 소실");
+  const g = p.slice(from, p.indexOf("else { continue }", from));
+  assert.doesNotMatch(g, /sst/, "★ 세션 값이 guard 에 들어가면 생체 없는 행이 생긴다");
+  assert.doesNotMatch(g, /sar/, "★ 같은 이유");
+  // 앵커 — guard 를 잘못 잘라 빈 문자열을 검사하고 통과하는 것을 막는다.
+  assert.match(g, /still != nil/, "guard 본문을 못 잘랐다(검사가 무의미해진다)");
 });
