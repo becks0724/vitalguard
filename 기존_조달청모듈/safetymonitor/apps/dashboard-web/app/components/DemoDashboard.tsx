@@ -5511,6 +5511,14 @@ export function DemoDashboard() {
         // STALE_MS(60초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 — 지도도 마지막 상태색
         // (false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
         const stale = ageSec !== null && ageSec * 1000 >= STALE_MS;
+        // ★ 좌표 나이는 생체 나이와 **다른 축**이다(2026-08-20).
+        //   서버 sticky merge 가 좌표를 직전 값에서 이어 주므로(store.ts `{...older, ...newer}` —
+        //   좌표 없는 샘플엔 키 자체가 없어 older 가 살아남는다), 심박이 5초 전이어도 좌표는
+        //   40분 전 것일 수 있다. 그 사실을 화면이 말하지 않으면 **작업자가 지금 거기 있다고**
+        //   읽힌다. 폰이 정지 중이면 실제로 좌표가 5분마다 끊긴다(같은 날 실측 커버리지 25.1%).
+        //   그래서 이어 주는 것 자체는 유지하고, **나이를 함께 실어** 판단은 사람에게 남긴다.
+        const fixMs = s.locationTimestamp ? now - Date.parse(s.locationTimestamp) : NaN;
+        const fixAgeSec = Number.isFinite(fixMs) ? Math.max(0, Math.round(fixMs / 1000)) : null;
         pts.push({
           workerId,
           name: s.workerName ?? workerId,
@@ -5525,12 +5533,17 @@ export function DemoDashboard() {
           tone: stale ? "idle" : status.tone,
           ageSec,
           stale,
+          fixAgeSec,
         });
       } else {
+        // ⚠ 사유 문구를 실제 원인에 맞춘다(2026-08-20). 종전 문구는 "위치 권한·로그인 게이트"만
+        //   가리켰는데, 실측된 주 원인은 둘 다 아니었다 — 폰이 정지하면 좌표가 5분마다 끊기고
+        //   (`distanceFilter` 100m × `maxFixAgeSec` 300초), 서버 재기동은 이어 주던 좌표를
+        //   메모리 링과 함께 지운다. 권한만 보라고 안내하면 멀쩡한 권한을 계속 확인하게 된다.
         const reason = !s
           ? "미접속 — 수신 샘플 없음"
           : typeof lat !== "number" || typeof lon !== "number" || !Number.isFinite(lat) || !Number.isFinite(lon)
-              ? "GPS 미포함 — 위치 권한·로그인 게이트 확인"
+              ? "좌표 미수신 — 폰 정지 중이면 수 분 내 갱신 · 계속되면 위치 권한 확인"
               : "한국 범위 밖 좌표 — 표시 제외";
         excluded.push({ workerId, name: s?.workerName ?? workerId, reason });
       }

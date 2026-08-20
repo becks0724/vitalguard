@@ -40,6 +40,27 @@ final class LocationProvider: NSObject {
     ///   좌표가 실제로 올라왔다. 이 앱에는 사고 스냅샷 경로가 없으므로 **예외 없이** 적용한다.
     private static let maxFixAgeSec: TimeInterval = 300
 
+    /// 정지 중 좌표 유지 — fix 가 이만큼 묵으면 **직접 한 건 요청한다**(초).
+    ///
+    /// ★ 왜 필요한가(2026-08-20 프로덕션 실측 · docs/gps-phone-collection/checklist.md).
+    ///   `distanceFilter` 100m 라 정지 상태에서는 새 fix 가 오지 않고, 그 상태로 300초가 지나면
+    ///   `currentFix()` 가 nil 이 된다 ⟹ **앉아 있으면 좌표가 5분마다 끊긴다.**
+    ///   14시간 5,586건 중 좌표가 실린 행은 1,407건(25.1%)뿐이었고, 좌표가 1개뿐인(=정지) 구간
+    ///   길이가 `300·305·295·305·290·305·296·293초` 로 상한에 정확히 붙었다.
+    ///   설계는 의도대로 동작한 것이지만 그 결과가 관제 지도를 하루의 3/4 동안 비웠다.
+    ///
+    /// ⚠ `maxFixAgeSec` 을 늘려서 풀지 않는다 — 그러면 두 시간 전에 떠난 자리에 서 있는 것으로
+    ///   보인다(위 주석의 하트비트 사고와 같은 형태). **묵기 전에 새것을 받아오는** 쪽으로 푼다.
+    ///   그래서 이 값은 반드시 `maxFixAgeSec` 보다 작아야 하고, 가드가 그 관계를 고정한다.
+    private static let fixRefreshAfterSec: TimeInterval = 240
+
+    /// 갱신 요청 사이 최소 간격(초). 실내처럼 요청이 계속 실패하는 곳에서 생체가 올 때마다
+    /// (=5초마다) GPS 를 때리지 않게 막는다. 실패해도 이 간격만큼은 쉰다.
+    private static let fixRefreshMinGapSec: TimeInterval = 60
+
+    /// 갱신 요청 타임아웃(초). 촬영 경로와 같은 값 — 같은 `OneShotLocator` 를 쓴다.
+    private static let fixRefreshTimeoutSec: TimeInterval = 12
+
     /// 생체가 이만큼 끊기면 추적을 멈춘다(초). 워치는 분당 12건을 보내므로 120초면 넉넉하다.
     ///
     /// ★ "근무 중"의 정의다. 이 앱에도 관제웹에도 근무 시간(work hours) 개념이 없어서(grep 0건)
@@ -61,6 +82,8 @@ final class LocationProvider: NSObject {
     private var latestFix: CLLocation?
     private var lastVitalAt: Date?
     private var tracking = false
+    /// 마지막으로 정지 중 갱신을 **요청한** 시각(성공 여부와 무관). 요청 폭주를 막는 기준.
+    private var lastFixRefreshAt: Date?
 
     private lazy var isoMs: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -90,9 +113,12 @@ final class LocationProvider: NSObject {
         lock.lock()
         lastVitalAt = Date()
         let needStart = !tracking
+        // 정지 중 갱신은 추적이 이미 돌고 있어도 필요하다 — `distanceFilter` 가 새 fix 를 막는 것이지
+        // 추적이 꺼진 것이 아니다. 그래서 `needStart` 와 **독립으로** 판단한다.
+        let needRefresh = shouldRefreshFixLocked()
         lock.unlock()
-        guard needStart else { return }
-        DispatchQueue.main.async { self.startTracking() }
+        if needStart { DispatchQueue.main.async { self.startTracking() } }
+        if needRefresh { DispatchQueue.main.async { self.refreshFixWhileStationary() } }
     }
 
     /// 업로드 페이로드에 실을 좌표. **신선한 fix 가 없으면 nil** — 묵은 값을 채우지 않는다.
@@ -239,6 +265,19 @@ final class LocationProvider: NSObject {
         return Date().timeIntervalSince(at) <= Self.vitalIdleStopSec
     }
 
+    /// 정지 중 갱신을 지금 걸어야 하는가. 호출자가 lock 을 쥔 상태에서만 부른다.
+    ///
+    /// fix 가 아예 없을 때도 true 다 — 추적이 아직 첫 fix 를 못 준 상태(실내 기동 등)가 그렇고,
+    /// 그때야말로 직접 요청이 필요하다.
+    private func shouldRefreshFixLocked() -> Bool {
+        let now = Date()
+        if let at = lastFixRefreshAt, now.timeIntervalSince(at) < Self.fixRefreshMinGapSec {
+            return false
+        }
+        guard let fix = latestFix else { return true }
+        return now.timeIntervalSince(fix.timestamp) >= Self.fixRefreshAfterSec
+    }
+
     private func startTracking() {
         guard manager.authorizationStatus == .authorizedAlways
             || manager.authorizationStatus == .authorizedWhenInUse else { return }
@@ -264,6 +303,42 @@ final class LocationProvider: NSObject {
         manager.allowsBackgroundLocationUpdates = false
         // 경계 감시는 남긴다 — OS 가 대신 보는 것이라 앱이 잠들어 있어도 이탈을 놓치지 않는다.
         log.notice("생체 끊김 — 추적 중지(경계 감시는 유지)")
+    }
+
+    /// 정지 중 좌표 유지 — 한 건만 받아 `latestFix` 를 갱신한다. **메인에서만 부른다**(`oneShot`).
+    ///
+    /// ⚠ `requestFreshFix()` 를 재사용하지 않는다. 저것은 캐시가 맞으면 `latestFix` 를 **안 건드리고**
+    ///   각인용 페이로드만 돌려주므로, 업로드 경로(`currentFix()`)에는 아무 효과가 없다.
+    ///   여기서 필요한 것은 페이로드가 아니라 **캐시에 새 값을 넣는 것**이다.
+    ///
+    /// ⚠ 촬영 요청과 같은 `oneShot` 을 공유한다. `OneShotLocator.request` 는 앞선 요청을 취소하고
+    ///   자기로 대체하므로, 이 갱신이 **촬영 중이면 촬영의 좌표를 뺏는다**(각인이 다시 빈다 —
+    ///   2026-08-19 에 고친 바로 그 결함). 그래서 진행 중이면 건너뛴다. 사용자가 누른 촬영이 우선이고,
+    ///   갱신은 다음 생체(5초 뒤)에 다시 기회가 온다.
+    private func refreshFixWhileStationary() {
+        guard manager.authorizationStatus == .authorizedAlways
+            || manager.authorizationStatus == .authorizedWhenInUse else { return }
+        guard !oneShot.isRequesting else { return }
+        lock.lock()
+        lastFixRefreshAt = Date()
+        lock.unlock()
+        oneShot.request(timeout: Self.fixRefreshTimeoutSec) { [weak self] loc in
+            guard let self else { return }
+            // 실내·지하에서는 새 요청이 실패한다. iOS 가 앱과 무관하게 들고 있는 마지막 좌표라도
+            // 채택한다 — 시각이 **실제 측위 시각**이라 `currentFix()` 의 300초 규칙이 그대로 거른다.
+            // 즉 묵은 값을 여기서 넣어도 업로드에는 실리지 않는다.
+            guard let fix = loc ?? self.oneShot.lastKnown else { return }
+            // 추적 경로(`didUpdateLocations`)와 **같은 품질 기준**을 건다. 두 경로가 갈리면
+            // 좌표의 의미가 출처마다 달라진다.
+            guard fix.horizontalAccuracy > 0, fix.horizontalAccuracy <= Self.siteRadiusMaxM else { return }
+            self.lock.lock()
+            let newer = self.latestFix.map { fix.timestamp > $0.timestamp } ?? true
+            if newer { self.latestFix = fix }
+            self.lock.unlock()
+            // 그날 첫 fix 가 이 경로로 들어올 수 있다(정지 상태로 기동한 날). 추적 경로와 같이
+            // 앵커를 잡아 줘야 구획 감시가 선다.
+            if newer { self.anchorIfNeeded(fix) }
+        }
     }
 
     /// 현장 구획 원. 중심 = **그날 첫 유효 fix**(UserDefaults 영속·날짜가 바뀌면 재앵커).
@@ -378,6 +453,10 @@ private final class OneShotLocator: NSObject, CLLocationManagerDelegate {
 
     /// iOS 가 들고 있는 마지막 좌표(앱이 받은 적 없어도 값이 있을 수 있다).
     var lastKnown: CLLocation? { manager.location }
+
+    /// 요청이 진행 중인가. 정지 중 갱신이 **촬영 요청을 취소하지 않도록** 확인하는 데 쓴다
+    /// (`request` 는 앞선 요청을 취소하고 자기로 대체한다).
+    var isRequesting: Bool { handler != nil }
 
     func request(timeout: TimeInterval, completion: @escaping (CLLocation?) -> Void) {
         // 앞선 요청이 살아 있으면 그것을 취소하고 새 요청으로 대체한다(중복 호출 방어).

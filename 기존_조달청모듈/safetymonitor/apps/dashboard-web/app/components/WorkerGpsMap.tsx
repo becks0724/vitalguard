@@ -20,6 +20,9 @@ export type WorkerMapPoint = {
   ageSec: number | null;
   // 60초(STALE_MS) 초과 미수신 — 마커를 지우지 않고 고스트(마지막 확인 위치)로 유지한다.
   stale?: boolean;
+  // 좌표 자체의 나이(초). `ageSec`(생체 수신 나이)과 **다른 축**이다 — 서버가 좌표를 직전 값에서
+  // 이어 주므로 심박이 5초 전이어도 좌표는 40분 전 것일 수 있다. null = 측위 시각 미상.
+  fixAgeSec?: number | null;
 };
 
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
@@ -88,6 +91,11 @@ const TONE_TEXT: Record<WorkerMapPoint["tone"], string> = {
 function fmt(v: number | null | undefined, unit: string): string {
   return v === null || v === undefined ? "--" : `${v}${unit}`;
 }
+
+// 좌표를 "오래됐다"로 표기하는 경계(초). 앱의 `LocationProvider.maxFixAgeSec` 과 같은 값이다 —
+// 앱이 그 나이를 넘긴 좌표를 안 싣기 시작하는 지점이므로, 여기 뜬 값이 그보다 오래됐다면 그것은
+// **서버가 이어 준 값**이라는 뜻이다. 두 숫자가 갈리면 화면이 거짓말을 한다.
+const FIX_STALE_SEC = 300;
 
 function ageLabel(ageSec: number | null): string {
   if (ageSec === null) return "--";
@@ -323,9 +331,13 @@ export function WorkerGpsMap({
   if (points.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted dark:text-on-dark-soft">
+        {/* ⚠ 종전 문구는 권한·로그인만 가리켰다. 2026-08-20 실측에서 주 원인은 둘 다 아니었다 —
+            폰이 정지하면 좌표가 5분마다 끊기고(그날 커버리지 25.1%), 서버 재기동은 이어 주던
+            좌표를 메모리와 함께 지운다. 흔한 순서대로 적어 멀쩡한 권한을 반복 확인하지 않게 한다. */}
         <p>
-          GPS 수신 작업자가 없습니다 — 작업자 폰 위치 권한(항상 허용)과 로그인 세션(GPS 표시
-          게이트)을 확인하세요.
+          GPS 수신 작업자가 없습니다 — 폰이 정지 중이면 수 분 내 다시 잡힙니다. 방금 관제 서버가
+          재시작됐다면 좌표 기억이 비워진 것이니 다음 측위까지 기다리세요. 계속되면 작업자 폰
+          위치 권한(항상 허용)과 로그인 세션(GPS 표시 게이트)을 확인하세요.
         </p>
         {excluded.length > 0 && (
           <ul className="wx-cards-scroll max-h-44 w-72 overflow-y-auto rounded-xl border border-hairline p-2 text-left dark:border-white/10">
@@ -758,6 +770,17 @@ export function WorkerGpsMap({
                   <div className="flex justify-between">
                     <dt>수신</dt>
                     <dd className="tabular-nums">{ageLabel(p.ageSec)}</dd>
+                  </div>
+                  {/* 좌표 나이 — 수신과 갈릴 수 있으므로 별도 행. 같으면 중복이 아니라 확인이다. */}
+                  <div className="flex justify-between">
+                    <dt>좌표</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        p.fixAgeSec != null && p.fixAgeSec >= FIX_STALE_SEC ? "text-amber-300" : ""
+                      }`}
+                    >
+                      {p.fixAgeSec == null ? "측위 시각 미상" : ageLabel(p.fixAgeSec)}
+                    </dd>
                   </div>
                 </dl>
               </div>
