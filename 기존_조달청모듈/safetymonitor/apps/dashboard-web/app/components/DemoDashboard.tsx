@@ -2471,6 +2471,12 @@ function HeaderCalendarPopup({
   workerAliases?: Record<string, string>;
 }) {
   const inline = variant === "inline";
+  // ★ 조회·폴링의 게이트는 `open` 이 아니라 **이것**이다.
+  //   페이저가 모든 페이지를 마운트 유지하고 탭은 `open` 을 항상 참으로 넘기므로, `open` 만 보면
+  //   **다른 탭에 있어도 60초마다 캘린더 조회가 돈다.** 실제로 그 부하가 DB 풀 타임아웃을
+  //   되살렸다(2026-08-20 실측 — 00299 4시간 0건 vs 00300 45분 11건 ·
+  //   실패 라우트가 calendar/events·media·labels 였다).
+  const visible = inline ? active : open;
   // 포털은 클라이언트에서만 — SSR 에는 document 가 없다.
   const [portalReady, setPortalReady] = useState(false);
   useEffect(() => setPortalReady(true), []);
@@ -2645,9 +2651,9 @@ function HeaderCalendarPopup({
   }, []);
 
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     fetchMedia(viewDate);
-  }, [open, viewDate, fetchMedia]);
+  }, [visible, viewDate, fetchMedia]);
 
   // 수동 새로고침 — 팝업을 닫지 않고 현재 달의 앱 OCR 사진을 다시 조회(실시간 반영 대체).
   const refreshMedia = useCallback(async () => {
@@ -2662,14 +2668,14 @@ function HeaderCalendarPopup({
   // 자동 폴링 — 팝업 열려 있는 동안 60초마다 현재 달 미디어·일정·라벨을 조용히 재조회(스피너 없음).
   // 다중 관리자 간 일정 동기화 겸용. 탭 숨김 시엔 폴링하지 않아 백그라운드 DB 부하를 줄인다.
   useEffect(() => {
-    if (!open) return;
+    if (!visible) return;
     const id = setInterval(() => {
       if (typeof document !== "undefined" && document.hidden) return;
       fetchMedia(viewDate);
       fetchSchedule(viewDate);
     }, 60000);
     return () => clearInterval(id);
-  }, [open, viewDate, fetchMedia, fetchSchedule]);
+  }, [visible, viewDate, fetchMedia, fetchSchedule]);
 
   const authHeaders = (json: boolean) => {
     const token = getSessionToken();
@@ -2851,7 +2857,9 @@ function HeaderCalendarPopup({
   // 서버 우선 로드(팝업 열림·월 이동 시 재조회). 실패 시 옛 localStorage 로 읽기 폴백(저장은 서버 전용).
   // 성공 시 1회 마이그레이션 — 옛 localStorage 일정을 서버로 승격(id 보존 업서트 = 멱등, 브라우저별 플래그).
   useEffect(() => {
-    if (!open) return;
+    // 조회이므로 `visible` 게이트 — 안 보이는 탭에서 도는 것을 막는다(위 주석 참조).
+    // ⚠ 아래 `let active` 는 이 이펙트의 취소 플래그이고 컴포넌트 프롭 `active` 와 다른 것이다.
+    if (!visible) return;
     let active = true;
     (async () => {
       const result = await fetchSchedule(viewDate);
@@ -2905,7 +2913,7 @@ function HeaderCalendarPopup({
     return () => {
       active = false;
     };
-  }, [open, viewDate, fetchSchedule]);
+  }, [visible, viewDate, fetchSchedule]);
 
   // 라벨 편집 서버 반영 — 인라인 이름 편집이 keystroke 마다 오므로 600ms 디바운스 전체교체 PUT.
   // 서버 조회 echo 로는 PUT 하지 않도록 사용자 변경(dirty)일 때만 전송.
