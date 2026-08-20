@@ -40,13 +40,16 @@ test("사진은 촬영 시각 위치에 놓는다 — 종일 띠로 밀지 않�
   assert.match(dash, /hhmmToMinutes\(m\.capturedAt\?\.slice\(11, 16\)\)/, "촬영 시각 파싱 관례가 바뀌었다");
 });
 
-test("같은 시간대에 여럿이면 한 블록으로 묶는다", () => {
+test("사진 블록은 건수로 표기한다 — 1건이어도 `이미지 1건`", () => {
   const i = dash.indexOf("function WeekGrid(");
   const body = dash.slice(i, i + 14_000);
   assert.match(body, /const many = group\.length > 1;/, "묶음 판정이 사라졌다");
-  assert.match(body, /many \? `이미지 \$\{group\.length\}건`/, "묶음 표기가 사라졌다");
-  // 1건이면 시각을 그대로 — 묶으면 정보를 잃는다(실측상 시간대의 56%가 1건).
-  assert.match(body, /: \(head\.m\.capturedAt\?\.slice\(11, 16\) \?\? ""\)/, "1건일 때 시각 표기가 사라졌다");
+  // ⚠ 표기는 **건수로 통일**한다 — 1건이어도 `이미지 1건`(사용자 지시 2026-08-20).
+  //   종전엔 1건일 때 시각을 보여줬는데, 같은 칸이 상황에 따라 다른 것을 말해 규칙이 둘이 됐다.
+  assert.match(body, /이미지 \{group\.length\}건/, "건수 표기가 사라졌다");
+  assert.doesNotMatch(body, /many \? `이미지/, "1건일 때 다른 것을 말하는 분기가 되살아났다");
+  // 구별 정보(시각·도로명)는 툴팁과 우측 사이드바가 담는다 — 라벨에서 뺐다고 잃으면 안 된다.
+  assert.match(body, /head\.m\.roadAddress \?\? head\.m\.title/, "툴팁의 구별 정보가 사라졌다");
 });
 
 test("시각을 못 읽은 사진도 버리지 않는다 — 종일 띠에 남는다", () => {

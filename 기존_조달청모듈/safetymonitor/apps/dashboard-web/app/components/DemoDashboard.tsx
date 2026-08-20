@@ -2154,9 +2154,10 @@ function WeekGrid({
                   );
                 })}
                 {/* 현장 이미지/스캔 — **촬영 시각 위치**에 놓는다(2026-08-20 사용자 지시).
-                    ⚠ 같은 시간대에 여럿이면 **한 블록으로 묶는다**(사용자 지시) — 나눠 그리면
-                      칸이 좁아 시각도 못 읽고 누르기도 어렵다(실측 최대 4건·같은 분 중복 있음).
-                      실측상 시간대의 56%가 1건이라, 그 대부분은 묶이지 않고 시각이 그대로 보인다. */}
+                    ⚠ 표기는 **건수로 통일한다** — 1건이어도 `이미지 1건`(사용자 지시 2026-08-20).
+                      종전엔 1건일 때 시각을 보여줬는데, 같은 칸이 상황에 따라 다른 것을 말해
+                      읽는 규칙이 둘이 됐다. 시각·도로명은 우측 사이드바가 담는다.
+                      (실측 = 시간대 최대 4건·같은 분 중복 있음 · 56%가 1건) */}
                 {(() => {
                   const timed = (mediaByDate[key] ?? [])
                     .map((m) => ({ m, min: mediaMinutes(m) }))
@@ -2181,6 +2182,7 @@ function WeekGrid({
                         key={`m${hour}`}
                         type="button"
                         onClick={() => onOpenMedia(head.m)}
+                        // 툴팁에는 시각·도로명을 남긴다 — 라벨이 건수로 통일돼 구별 정보가 여기로 온다.
                         title={
                           many
                             ? `${String(hour).padStart(2, "0")}시 현장 이미지/스캔 ${group.length}건 — 우측에서 확인`
@@ -2193,7 +2195,7 @@ function WeekGrid({
                         <span className="relative flex min-w-0 items-center gap-0.5">
                           <span aria-hidden="true" className="shrink-0 text-[9px]">{isDoc ? "📄" : "📷"}</span>
                           <span className="min-w-0 truncate text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
-                            {many ? `이미지 ${group.length}건` : (head.m.capturedAt?.slice(11, 16) ?? "")}
+                            이미지 {group.length}건
                           </span>
                         </span>
                       </button>
