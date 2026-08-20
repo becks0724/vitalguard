@@ -123,3 +123,54 @@ test("★ 판정·경보·화면에 유입되지 않는다", () => {
     }
   }
 });
+
+// ── 워치·폰 쪽 계약 (2026-08-20 2단계) ────────────────────────────────────────
+const APP = join(ROOT, "..", "vitalguard_app", "ios");
+const watch = readFileSync(join(APP, "VitalWatch", "WatchStreamer.swift"), "utf8");
+const phone = readFileSync(join(APP, "Runner", "VitalPipeline.swift"), "utf8");
+const swiftBare = (s: string) => s.replace(/^\s*\/\/.*$/gm, "");
+
+test("★ 종료 기록이 중첩 콜백 **밖**에 있다 — 안에 두면 H1 을 관측할 수 없다", () => {
+  const fn = watch.slice(watch.indexOf("didChangeTo toState: HKWorkoutSessionState"));
+  const body = fn.slice(0, fn.indexOf("\n    }"));
+  const noteAt = body.indexOf("SessionEndCrumb.noteEnd");
+  const nestAt = body.indexOf("builder?.endCollection");
+  assert.ok(noteAt !== -1, "종료 기록이 없다");
+  assert.ok(nestAt !== -1, "중첩 콜백을 못 찾았다 — 가드를 다시 맞춰야 한다");
+  // 의심 대상이 바로 그 중첩이다. 그 안에서 적으면 콜백이 안 올 때 기록도 함께 사라진다.
+  assert.ok(noteAt < nestAt, "기록이 중첩 콜백 안에 있다 — 그 경로가 죽으면 관측 자체가 불가능하다");
+});
+
+test("★ 오류 경로에도 같은 기록이 있다 — 경로별로 갈리는지 봐야 한다", () => {
+  const fn = watch.slice(watch.indexOf("didFailWithError error: Error"));
+  assert.match(
+    fn.slice(0, fn.indexOf("\n    }")),
+    /SessionEndCrumb\.noteEnd/,
+    "오류 종료는 기록이 없다 — 두 경로 중 어느 쪽으로 끝났는지 못 가른다",
+  );
+});
+
+test("★ 실어 보낸 뒤 지운다 — 안 지우면 다음 종료의 지문과 섞인다", () => {
+  const fn = watch.slice(watch.indexOf("static func take()"));
+  const body = fn.slice(0, fn.indexOf("\n    }"));
+  assert.match(body, /removeObject\(forKey:/, "꺼내고 안 지운다");
+  // 세션마다 한 번만 실린다 — 매 배치에 실으면 같은 지문이 수천 행에 복사된다.
+  assert.match(swiftBare(watch), /if !endCrumbSent \{/, "첫 배치 한정 조건이 없다");
+  assert.match(swiftBare(watch), /endCrumbSent = false/, "세션 시작에서 리셋하지 않는다");
+});
+
+test("★ 폰이 네 키를 서버 필드로 옮긴다 — 없으면 억지로 만들지 않는다", () => {
+  const bare = swiftBare(phone);
+  for (const [w, srv] of [
+    ["seAt", "sessionEndSeenAt"],
+    ["seBy", "sessionEndByUser"],
+    ["srAt", "sessionResumeTriedAt"],
+    ["srN", "sessionResumeTries"],
+  ] as const) {
+    assert.match(bare, new RegExp(`"${w}"`), `워치 키 ${w} 를 안 읽는다`);
+    assert.match(bare, new RegExp(`"${srv}"`), `서버 필드 ${srv} 로 안 옮긴다`);
+  }
+  // 값이 없을 때 기본값을 채우면 H2("델리게이트가 안 왔다")가 사라진다 — 없음도 지문이다.
+  assert.doesNotMatch(bare, /sessionEndSeenAt"\] = self\.isoMs\.string\(from: Date\(\)\)/,
+    "값이 없을 때 현재 시각으로 채운다 — 없음이라는 지문이 사라진다");
+});

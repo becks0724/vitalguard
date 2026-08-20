@@ -141,6 +141,12 @@ final class VitalPipeline {
                 // 세션 계측(2026-08-19 · §4-7) — sst = 세션 시작 epoch 초, sar = 자동 재개 여부.
                 let sst = s["sst"] as? Double
                 let sar = s["sar"] as? Int
+                // 세션 **종료** 지문(2026-08-20 · docs/watch-auto-resume) — 직전 세션이 어떻게
+                // 끝났는지. 새 세션 첫 배치에만 실린다.
+                let seAt = s["seAt"] as? Double
+                let seBy = s["seBy"] as? Int
+                let srAt = s["srAt"] as? Double
+                let srN = s["srN"] as? Int
                 // 모션 변동폭(밀리g) — 착용 판별 후보 축의 재료. 판정에는 안 쓴다.
                 let mv = s["mv"] as? Int
                 guard bpm != nil || spo2 != nil || ae != nil
@@ -198,6 +204,16 @@ final class VitalPipeline {
                 if let sst {
                     v["sessionStartedAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: sst))
                     if let sar { v["sessionAutoResumed"] = sar == 1 }
+                }
+                // 종료 지문 — **없는 것도 지문이다**(H2 = 델리게이트가 안 왔다). 그래서 키가
+                // 없으면 억지로 만들지 않고 그대로 비운다. 서버는 NULL 로 받는다.
+                if let seAt {
+                    v["sessionEndSeenAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: seAt))
+                    if let seBy { v["sessionEndByUser"] = seBy == 1 }
+                }
+                if let srAt {
+                    v["sessionResumeTriedAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: srAt))
+                    if let srN { v["sessionResumeTries"] = srN }
                 }
                 // ⚠ 위 guard 에 넣지 않는다 — 이 값만으로 행을 만들면 안 된다.
                 if let mv { v["motionVariabilityMg"] = mv }

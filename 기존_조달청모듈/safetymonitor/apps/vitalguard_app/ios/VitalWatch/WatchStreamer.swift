@@ -100,6 +100,8 @@ final class WatchStreamer: NSObject, ObservableObject {
     //   구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
     private var sessionStartedAt: Date?
     private var sessionAutoResumed = false
+    /// 직전 종료 지문을 이번 세션에서 이미 실어 보냈는지. 세션마다 리셋된다.
+    private var endCrumbSent = false
     // 자동 재개 연속 실패 횟수 — 재개하자마자 또 끝나는 상황에서 무한 반복을 막는다.
     private var autoResumeBurst = 0
     private var lastAutoResumeAt: Date?
@@ -288,6 +290,8 @@ final class WatchStreamer: NSObject, ObservableObject {
             autoResumeBurst = 1
         }
         lastAutoResumeAt = Date()
+        // 진입 자체를 남긴다 — 이 값이 없으면 "재개에 도달조차 못 했다"(H1·H2)가 확정된다.
+        SessionEndCrumb.noteResume(tries: autoResumeBurst)
         guard autoResumeBurst <= autoResumeMaxBurst else {
             statusText = "자동 재개 실패 — [시작]"
             log.error("자동 재개 포기 — \(self.autoResumeBurst, privacy: .public)회 연속 실패 · 사유 \(cause, privacy: .public)")
@@ -331,6 +335,7 @@ final class WatchStreamer: NSObject, ObservableObject {
             // §4-7 계측 — 이 두 값이 매 심박 항목에 실려 재시작을 DB 로 셀 수 있게 한다.
             sessionStartedAt = startDate
             sessionAutoResumed = auto
+            endCrumbSent = false
             session.startActivity(with: startDate)
             builder.beginCollection(withStart: startDate) { [weak self] _, error in
                 DispatchQueue.main.async {
@@ -418,6 +423,11 @@ final class WatchStreamer: NSObject, ObservableObject {
             if let started = sessionStartedAt {
                 pendingSamples[idx]["sst"] = started.timeIntervalSince1970
                 pendingSamples[idx]["sar"] = sessionAutoResumed ? 1 : 0
+                // 직전 세션이 어떻게 끝났는지 — 첫 배치에 한 번만 실린다(take 가 지운다).
+                if !endCrumbSent {
+                    for (k, v) in SessionEndCrumb.take() { pendingSamples[idx][k] = v }
+                    endCrumbSent = true
+                }
             }
             // 모션 변동폭 — 같은 계약(심박 항목 동승 · 행 수 불증가). 창이 덜 찼으면 키를 생략한다.
             if let mv = motionVariabilityMg { pendingSamples[idx]["mv"] = mv }
@@ -760,6 +770,50 @@ final class WatchStreamer: NSObject, ObservableObject {
     }
 }
 
+/// 세션 **종료** 빵부스러기 — 다음 세션 첫 배치에 실어 보낸다.
+///
+/// ★ 왜 디스크인가. 세션이 끝나면 보낼 배치가 없고, 프로세스가 잠들거나 죽으면 메모리가
+///   사라진다. 판정에 필요한 사실은 전부 워치 os_log 안인데 **그건 회수 경로가 없다**
+///   (08-18 확정 — `log collect` 는 USB 전제, watchOS `sysdiagnose` 도 실패).
+///   ⟹ UserDefaults 에 적어 두는 것이 유일하게 DB 까지 닿는 길이다.
+///
+/// ★ 왜 종료를 **본 즉시** 적는가. `.ended` 처리는 `endCollection { finishWorkout { … } }`
+///   이중 중첩 안에서 재개를 부른다. **그 자리가 바로 의심 대상**이라(H1) 거기서 적으면
+///   H1 을 관측할 수 없다. 중첩 **바깥**에서 적어야 "델리게이트는 왔는데 재개엔 못 갔다"가 보인다.
+enum SessionEndCrumb {
+    private static let d = UserDefaults.standard
+    private static let kEndAt = "sess.endSeenAt"
+    private static let kByUser = "sess.endByUser"
+    private static let kTriedAt = "sess.resumeTriedAt"
+    private static let kTries = "sess.resumeTries"
+
+    static func noteEnd(byUser: Bool) {
+        d.set(Date().timeIntervalSince1970, forKey: kEndAt)
+        d.set(byUser, forKey: kByUser)
+    }
+
+    static func noteResume(tries: Int) {
+        d.set(Date().timeIntervalSince1970, forKey: kTriedAt)
+        d.set(tries, forKey: kTries)
+    }
+
+    /// 실을 값을 꺼내고 **지운다**. 안 지우면 다음 종료의 지문과 섞여 판정이 무의미해진다.
+    /// 아무것도 없으면 빈 딕셔너리 — 키를 억지로 만들지 않는다("없음"도 지문이다 · H2).
+    static func take() -> [String: Any] {
+        var out: [String: Any] = [:]
+        if let at = d.object(forKey: kEndAt) as? Double {
+            out["seAt"] = at
+            out["seBy"] = (d.object(forKey: kByUser) as? Bool ?? false) ? 1 : 0
+        }
+        if let at = d.object(forKey: kTriedAt) as? Double {
+            out["srAt"] = at
+            out["srN"] = d.object(forKey: kTries) as? Int ?? 0
+        }
+        for k in [kEndAt, kByUser, kTriedAt, kTries] { d.removeObject(forKey: k) }
+        return out
+    }
+}
+
 // MARK: - HKWorkoutSessionDelegate
 
 extension WatchStreamer: HKWorkoutSessionDelegate {
@@ -772,6 +826,9 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
         guard toState == .ended else { return }
         // 사유는 지금 붙잡아 둔다 — teardown 뒤에 읽으면 다음 세션의 표식과 섞인다.
         let byUser = stopRequestedByUser
+        // ★ 중첩 클로저 **밖에서** 적는다. 아래 `endCollection { finishWorkout { … } }` 안에서
+        //   적으면 그 콜백이 안 올 때(H1) 기록도 함께 사라져 관측 자체가 불가능해진다.
+        SessionEndCrumb.noteEnd(byUser: byUser)
         builder?.endCollection(withEnd: date) { [weak self] _, _ in
             self?.builder?.finishWorkout { _, _ in
                 DispatchQueue.main.async {
@@ -785,6 +842,7 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         DispatchQueue.main.async {
             let byUser = self.stopRequestedByUser
+            SessionEndCrumb.noteEnd(byUser: byUser)
             self.statusText = "세션 오류: \(error.localizedDescription)"
             self.teardown()
             if !byUser { self.autoResume(cause: "세션 오류") }
