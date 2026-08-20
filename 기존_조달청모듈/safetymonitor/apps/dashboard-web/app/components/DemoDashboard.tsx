@@ -2793,7 +2793,7 @@ function HeaderCalendarPopup({
           <div className="grid auto-rows-fr grid-cols-7 gap-0.5 overflow-visible">
             {cells.map((day, idx) => {
               if (day === null) {
-                return <div key={`empty-${idx}`} className={inline ? "min-h-[5.5rem]" : "min-h-[4.5rem]"} />;
+                return <div key={`empty-${idx}`} className={inline ? "min-h-[7rem]" : "min-h-[4.5rem]"} />;
               }
               const cellDate = new Date(year, month, day);
               const dateKey = toDateKey(cellDate);
@@ -2834,7 +2834,7 @@ function HeaderCalendarPopup({
                     // 종전엔 셀 전체가 파랗게 차서 그 안의 일정 칩·배지가 전부 흰 글자 분기를
                     // 따로 가져야 했고(10곳), 하루치 정보가 색으로 뭉개졌다.
                     "relative flex flex-col rounded-lg p-1 text-left transition",
-                    inline ? "min-h-[5.5rem]" : "min-h-[4.5rem]",
+                    inline ? "min-h-[7rem]" : "min-h-[4.5rem]",
                     isSelected
                       ? "bg-primary-subtle ring-1 ring-primary-ring"
                       : "hover:bg-surface-strong dark:hover:bg-white/10",
