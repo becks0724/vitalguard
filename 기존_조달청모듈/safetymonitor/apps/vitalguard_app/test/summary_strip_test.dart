@@ -51,9 +51,9 @@ void main() {
     discreteSpecs['rr']!.label,
     '생리적 부담',
     '스트레스',
-    // 아랫줄 고정 3칸 — 같은 5칸 격자라 폭 제약이 같다.
+    // 아랫줄 — 같은 5칸 격자라 폭 제약이 같다.
+    // ⚠ `오른 층` 은 2026-08-20 에 격자에서 뺐다(사용자 결정 · 기기가 층을 거의 안 센다).
     '걸음',
-    '오른 층',
     '정지 지속',
   ];
 
@@ -122,7 +122,7 @@ void main() {
     // 옛 섹션 제목은 사라졌다 — 남아 있으면 박스가 다시 갈린 것이다.
     expect(find.text('그 밖의 지표'), findsNothing);
 
-    for (final label in ['운동 강도', '일광 시간', '걸음', '오른 층', '정지 지속']) {
+    for (final label in ['운동 강도', '일광 시간', '걸음', '정지 지속']) {
       expect(find.descendant(of: card, matching: find.text(label)), findsOneWidget,
           reason: '$label 이 주요 생체 카드 밖으로 나갔다');
     }

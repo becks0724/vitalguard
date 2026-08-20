@@ -51,7 +51,10 @@ void main() {
     _mockBridge(null);
     await _pumpHome(tester);
 
-    for (final label in ['걸음', '오른 층', '정지 지속']) {
+    // ⚠ 2026-08-20 — `오른 층` 은 격자에서 뺐다(사용자 결정). 기기가 층을 거의 안 세서
+    //   화면에 올릴 값이 없다(건강 앱 08-19 하루 1층). **수집은 계속한다.**
+    //   빠진 자리는 카드 하단 보류 줄이 사유를 적는다 — 아래 테스트가 그것을 고정한다.
+    for (final label in ['걸음', '정지 지속']) {
       expect(find.text(label), findsOneWidget,
           reason: '$label 칸이 사라졌다 — 미수신이 "측정하지 않음" 으로 읽힌다');
     }
@@ -59,7 +62,21 @@ void main() {
     expect(find.text('--'), findsWidgets);
   });
 
-  testWidgets('수신된 값이 그대로 3칸에 들어간다', (tester) async {
+  testWidgets('★ 화면에서 뺀 항목은 빈 자리가 아니라 사유를 남긴다', (tester) async {
+    tester.view.physicalSize = const Size(1170, 3400);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    _mockBridge(null);
+    await _pumpHome(tester);
+
+    // 격자에서는 사라졌지만 카드에서 통째로 사라지지는 않는다 — 빈 자리는 "빠뜨림" 으로 읽힌다.
+    expect(find.text('오른 층'), findsOneWidget, reason: '사유 줄까지 사라졌다');
+    expect(find.textContaining('수집만'), findsOneWidget,
+        reason: '수집은 계속한다는 사실이 화면에서 사라졌다 — 다음 사람이 수집 코드를 지운다');
+  });
+
+  testWidgets('수신된 값이 그대로 칸에 들어간다', (tester) async {
     tester.view.physicalSize = const Size(1170, 3400);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -75,8 +92,10 @@ void main() {
     await _pumpHome(tester);
 
     expect(find.text('2,872'), findsOneWidget);
-    expect(find.text('3'), findsOneWidget);
     expect(find.text('0.4'), findsOneWidget);
+    // ★ 층수 값은 와도 화면에 안 그린다 — 수집과 표시를 분리한 것이 이 결정의 핵심이다.
+    expect(find.text('3'), findsNothing,
+        reason: '오른 층 값이 다시 화면에 나온다 — 뺀 결정이 되돌아갔다');
   });
 
   testWidgets('★ 활동에너지는 값이 아니라 사유가 뜬다', (tester) async {

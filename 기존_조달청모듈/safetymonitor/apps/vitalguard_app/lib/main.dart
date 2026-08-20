@@ -419,6 +419,26 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 네이티브가 Dart 로 아예 안 싣고 가드 2개가 되살아나는 것을 막는다
   /// (`vital_display_test.dart` · `heat-activity-axis` 트랙이 축을 바로잡으면 그때 연다).
   /// 조용히 빼면 다음 사람이 "빠뜨렸네" 하고 채워 넣으므로 화면에도 사유를 적는다.
+  /// 값을 안 그리는 항목의 사유 한 줄. **빈 자리로 두지 않는다** — 빈 칸은 "아직 안 만들었다"
+  /// 나 "고장" 으로 읽히고, 이 앱은 같은 자리(활동 에너지)에서 이미 사유를 적는 쪽을 택했다.
+  Widget _heldRow(IconData icon, String label, String why) => Row(
+        children: [
+          Icon(icon, size: 13, color: VgColors.muted),
+          const SizedBox(width: 5),
+          Text(label, style: const TextStyle(fontSize: 11, color: VgColors.body)),
+          const Spacer(),
+          Flexible(
+            child: Text(
+              why,
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: VgColors.muted),
+            ),
+          ),
+        ],
+      );
+
   Widget _vitalsCard(VitalStreamEvent? vitals, List<VitalRow> bodyRows) {
     final d = vitals?.discreteValues ?? const <String, double>{};
     String f(double? v, int digits) => v == null ? '--' : v.toStringAsFixed(digits);
@@ -446,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     final steps = vitals?.steps;
-    final flights = vitals?.flights;
+    // ⚠ `flights` 는 일부러 안 읽는다 — 화면에서 뺐다(아래 주석). **수집 경로는 그대로다.**
     final still = vitals?.stillSec;
     final secondary = <Widget>[
       for (final r in bodyRows)
@@ -456,8 +476,11 @@ class _HomeScreenState extends State<HomeScreen> {
           value: steps == null ? '--' : formatCount(steps),
           unit: '보',
           has: steps != null),
-      _metricCell(
-          label: '오른 층', value: flights?.toString() ?? '--', unit: '층', has: flights != null),
+      // ⚠ 오른 층은 격자에서 뺐다(2026-08-20 사용자 결정) — **수집은 계속한다.**
+      //   애플 자신의 기록이 비어 있어(건강 앱 08-19 하루 1층) 화면에 올릴 값이 없다.
+      //   유력한 원인은 상시 `HKWorkoutSession`(`locationType = .indoor`)이 고도 기반 지표를
+      //   막는 것이고, 그 구성은 폰 강제종료·잠금 생존의 근거라 바꾸지 않는다.
+      //   ⟹ 화면에서 빼되 **아래 보류 줄에 사유를 적는다**(빈 자리는 '빠뜨림'으로 읽힌다).
       _metricCell(
           label: '정지 지속',
           value: still?.toStringAsFixed(1) ?? '--',
@@ -483,23 +506,9 @@ class _HomeScreenState extends State<HomeScreen> {
             const Divider(height: 1, color: VgColors.hairline),
             const SizedBox(height: 8),
             // 빼놓은 것을 화면에도 적는다 — 빈 자리는 "아직 안 만들었다" 로 읽힌다.
-            Row(
-              children: [
-                const Icon(Icons.local_fire_department_outlined, size: 13, color: VgColors.muted),
-                const SizedBox(width: 5),
-                const Text('활동 에너지', style: TextStyle(fontSize: 11, color: VgColors.body)),
-                const Spacer(),
-                Flexible(
-                  child: Text(
-                    '보류 — 측정축 정리 중',
-                    textAlign: TextAlign.right,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10, color: VgColors.muted),
-                  ),
-                ),
-              ],
-            ),
+            _heldRow(Icons.local_fire_department_outlined, '활동 에너지', '보류 — 측정축 정리 중'),
+            const SizedBox(height: 4),
+            _heldRow(Icons.stairs_outlined, '오른 층', '수집만 — 기기가 층을 거의 안 센다'),
           ],
         ),
       ),
