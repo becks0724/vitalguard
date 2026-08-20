@@ -3047,7 +3047,20 @@ function HeaderCalendarPopup({
         : null,
     );
 
-  const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
+  // 선택 날짜의 일정 = 그날 시작하는 것 + **그날에 걸친 기간 일정**.
+  // ⚠ 기간 일정은 `date_key`(시작일) 한 곳에만 저장되므로, 그대로 쓰면 **시작일에만 보이고
+  //   나머지 날에는 "등록된 일정이 없습니다" 가 뜬다**(사용자 실측 2026-08-20 — 8/10 은 보이는데
+  //   8/11~31 은 안 보였다). 미니 월간 밑줄은 걸침을 따로 계산해서 맞았고, 여기만 안 썼다.
+  const selectedEvents = (() => {
+    const key = toDateKey(selected);
+    const own = eventsByDate[key] ?? [];
+    const seen = new Set(own.map((e) => e.id));
+    const covering = Object.values(eventsByDate)
+      .flat()
+      .filter((e) => isSpanEvent(e) && !seen.has(e.id) && e.dateKey <= key && (e.endDateKey ?? e.dateKey) >= key)
+      .filter((e, i, arr) => arr.findIndex((y) => y.id === e.id) === i);
+    return [...own, ...covering];
+  })();
   const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
   const selectedKey = toDateKey(selected);
   // 기간 일정이 걸친 날짜 → 라벨 색. 미니 월간이 이걸 밑줄로 그린다.
@@ -3486,7 +3499,10 @@ function HeaderCalendarPopup({
               }
               const cellDate = new Date(year, month, day);
               const dateKey = toDateKey(cellDate);
-              const dayEvents = eventsByDate[dateKey] ?? [];
+              // ⚠ 기간 일정은 **위 띠가 이미 말한다** — 시작일 셀에 칩으로 또 그리면 같은 일정을
+              //   두 번 말한다(사용자 실측 2026-08-20 — 8/10 칸에 띠와 칩이 함께 떴다).
+              //   셀에는 하루짜리만 남긴다. 기간은 띠를 눌러 연다.
+              const dayEvents = (eventsByDate[dateKey] ?? []).filter((e) => !isSpanEvent(e));
               const isToday = calendarSameDay(cellDate, today);
               const isSelected = calendarSameDay(cellDate, selected);
               const weekday = cellDate.getDay();
