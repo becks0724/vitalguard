@@ -1432,6 +1432,8 @@ function ScheduleEventFormModal({
   // 종료 날짜(여러 날 일정). 빈 값·시작과 같으면 하루짜리다.
   const [endDateDraft, setEndDateDraft] = useState("");
   const [note, setNote] = useState("");
+  // 종일 일정 — 시각을 안 싣는다. 스키마상 `start_time` NULL 이 곧 종일이라 새 컬럼이 필요 없다.
+  const [allDay, setAllDay] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
 
@@ -1442,6 +1444,7 @@ function ScheduleEventFormModal({
     setEndTime("");
     setEndDateDraft("");
     setNote("");
+    setAllDay(false);
     setHazardType("");
     setDateDraft(dateKey);
     setEditingId(null);
@@ -1460,6 +1463,7 @@ function ScheduleEventFormModal({
       //   여기도 함께 채워야 한다(폼 상태 → 저장 payload → 이 복원, 셋이 한 벌이다).
       setEndDateDraft(event.endDateKey ?? "");
       setNote(event.note ?? "");
+      setAllDay(!event.startTime);
     },
     [labels],
   );
@@ -1500,8 +1504,9 @@ function ScheduleEventFormModal({
     const draft = {
       title: trimmed,
       labelId,
-      startTime: startTime.trim() || undefined,
-      endTime: endTime.trim() || undefined,
+      // 종일이면 시각을 싣지 않는다 — `start_time` 이 없으면 화면이 종일 일정으로 그린다.
+      startTime: allDay ? undefined : startTime.trim() || undefined,
+      endTime: allDay ? undefined : endTime.trim() || undefined,
       // 종료일이 시작보다 빠르면 안 싣는다 — 서버도 400 으로 막지만, 여기서 먼저 거른다.
       endDateKey:
         endDateDraft && DATE_KEY_RE.test(endDateDraft) && endDateDraft > dateDraft
@@ -1516,6 +1521,9 @@ function ScheduleEventFormModal({
       onAdd(draft, dateDraft);
     }
     resetForm();
+    // 등록·수정을 마치면 닫는다(사용자 요청 2026-08-20). 종전엔 폼만 비우고 열려 있어
+    // "저장이 됐나" 를 화면으로 확인할 수 없었다.
+    onClose();
   };
 
   const addLabel = () => {
@@ -1555,7 +1563,12 @@ function ScheduleEventFormModal({
       aria-label="일정 등록"
     >
       <div
-        className="wx-cards-scroll max-h-[85%] w-full overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+        // ⚠ 폭 제한이 필요하다 — 팝업에서는 580px 패널이 폭을 잡아 줬지만, 탭에서는 전체화면
+        //   포털이라 제한이 없어 **화면을 통째로 덮었다**(사용자 실측 2026-08-20).
+        //   세로형 직사각형으로 — 입력이 한 열이라 폭이 넓어도 얻는 게 없다.
+        className={`wx-cards-scroll w-full overflow-y-auto rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark ${
+          floating ? "max-h-[85vh] max-w-[26rem]" : "max-h-[85%]"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-hairline px-4 py-3 dark:border-white/10">
@@ -1828,14 +1841,28 @@ function ScheduleEventFormModal({
           <p className="px-1 text-[11px] font-semibold text-muted dark:text-on-dark-soft">시간</p>
           <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft space-y-3 p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
 
-          <div>
+          {/* 종일 — 켜면 시각을 안 싣는다(스키마상 start_time NULL 이 곧 종일이라 새 컬럼이 없다).
+              ⚠ 입력을 감추지 않고 **비활성화**한다 — 감추면 켜고 끌 때 카드 높이가 튀고,
+                이미 넣어 둔 시각이 사라진 것처럼 보인다. */}
+          <label className="flex cursor-pointer items-center justify-between gap-2 rounded-lg bg-canvas px-3 py-2 dark:bg-surface-dark">
+            <span className="text-sm font-semibold text-ink dark:text-on-dark">종일</span>
+            <input
+              type="checkbox"
+              checked={allDay}
+              onChange={(e) => setAllDay(e.target.checked)}
+              className="h-4 w-4 accent-[color:var(--color-primary,#0d74ce)]"
+              aria-label="종일 일정"
+            />
+          </label>
+
+          <div className={allDay ? "pointer-events-none opacity-40" : undefined} aria-disabled={allDay}>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               시작 시간 (선택)
             </label>
             <ScheduleTimePicker value={startTime} onChange={setStartTime} />
           </div>
 
-          <div>
+          <div className={allDay ? "pointer-events-none opacity-40" : undefined} aria-disabled={allDay}>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               종료 시간 (선택)
             </label>
@@ -2235,16 +2262,34 @@ function WeekGrid({
           );
         })()}
 
-        {/* 종일 띠 — 촬영 시각을 못 읽은 사진. 시각이 없어 시간 칸에 못 놓는다. */}
+        {/* 종일 띠 — ① **종일 일정**(시각 없음) ② 촬영 시각을 못 읽은 사진.
+            ⚠ 둘 다 시각이 없어 시간 칸에 못 놓는다. 여기가 없으면 저장은 되는데 **화면에서 사라진다**
+              (종일 토글을 넣으며 실제로 그 상태였다 — 2026-08-20). */}
         <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-hairline dark:border-white/10">
           <span className="py-1 pr-1 text-right text-[9px] leading-5 text-muted dark:text-on-dark-soft">종일</span>
           {days.map((d) => {
             const key = toDateKey(d);
+            // 종일 일정 = 시각이 없고 기간도 아닌 것(기간은 위 `기간` 줄이 담는다).
+            const allDayEvents = (eventsByDate[key] ?? []).filter(
+              (e) => !hhmmToMinutes(e.startTime) && !isSpanEvent(e),
+            );
             // ⚠ 계획 변경(2026-08-20 사용자 지시) — 사진은 **촬영 시각 위치**에 놓는다.
             //   종일 띠에는 시각을 못 읽은 것만 남는다(그것도 안 버린다 — 버리면 조용히 사라진다).
             const n = (mediaByDate[key] ?? []).filter((m) => mediaMinutes(m) === null).length;
             return (
-              <div key={key} className="min-h-[1.75rem] border-l border-hairline px-1 py-1 dark:border-white/10">
+              <div key={key} className="min-h-[1.75rem] space-y-0.5 border-l border-hairline px-1 py-1 dark:border-white/10">
+                {allDayEvents.map((e) => (
+                  <button
+                    key={e.id}
+                    type="button"
+                    onClick={() => onOpenEvent(e)}
+                    title={`${e.title} · 종일`}
+                    className={`flex w-full min-w-0 items-center gap-1 truncate rounded border px-1 py-0.5 text-[10px] font-semibold ${LABEL_COLOR_META[findLabelDef(labels, e.labelId).color].band}`}
+                  >
+                    <ScheduleLabelDot color={findLabelDef(labels, e.labelId).color} className="h-1.5 w-1.5 shrink-0" />
+                    <span className="min-w-0 truncate">{e.title.trim()}</span>
+                  </button>
+                ))}
                 {n > 0 && (
                   <button
                     type="button"

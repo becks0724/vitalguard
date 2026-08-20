@@ -109,3 +109,32 @@ test("폼 새 필드는 상태·저장·복원 셋이 다 있다", () => {
   // 리셋도 함께 — 없으면 다음 등록에 이전 값이 남는다.
   assert.match(dash, /setNote\(""\);/, "폼 리셋에서 메모가 빠졌다");
 });
+
+// ── 종일 일정 (2026-08-20 사용자 요청)
+// ⚠⚠ 이 가드가 지키는 것은 **"저장은 되는데 화면에서 사라지는"** 형태다.
+//   종일 토글을 넣었을 때 실제로 그 상태였다 — 시간 격자는 시각이 없으면 건너뛰고
+//   종일 띠는 사진만 담고 있어, 저장은 되는데 어디에도 안 그려졌다.
+test("종일 일정이 화면에 그려진다 — 저장만 되고 사라지지 않게", () => {
+  assert.match(dash, /const \[allDay, setAllDay\] = useState\(false\)/, "종일 상태 소실");
+  // 저장 — 종일이면 시각을 안 싣는다(start_time NULL 이 곧 종일).
+  assert.match(dash, /startTime: allDay \? undefined : startTime\.trim\(\) \|\| undefined/, "종일 저장 규칙이 사라졌다");
+  // 복원 — 시각이 없으면 종일이다.
+  assert.match(dash, /setAllDay\(!event\.startTime\)/, "수정 시 종일 복원이 사라졌다");
+  // ★ 렌더 — 종일 띠가 일정을 담아야 한다.
+  assert.match(
+    dash,
+    /const allDayEvents = \(eventsByDate\[key\] \?\? \[\]\)\.filter\(/,
+    "종일 띠가 일정을 안 담는다 — 저장은 되는데 화면에서 사라진다",
+  );
+  assert.match(dash, /allDayEvents\.map\(\(e\) => \(/, "종일 일정 렌더가 사라졌다");
+});
+
+test("등록·수정을 마치면 폼이 닫힌다", () => {
+  const i = dash.indexOf("const handleSubmit = () => {");
+  const body = dash.slice(i, i + 1400);
+  assert.match(body, /resetForm\(\);\n[\s\S]{0,180}onClose\(\);/, "저장 후 닫기가 사라졌다 — 저장됐는지 화면으로 알 수 없다");
+});
+
+test("모달 폭이 제한돼 있다 — 탭에서 화면을 통째로 덮지 않게", () => {
+  assert.match(dash, /floating \? "max-h-\[85vh\] max-w-\[26rem\]" : "max-h-\[85%\]"/, "모달 폭 제한이 사라졌다");
+});

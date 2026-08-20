@@ -11,6 +11,17 @@ import { test } from "node:test";
 const ROOT = join(import.meta.dirname, "..");
 const dash = readFileSync(join(ROOT, "app/components/DemoDashboard.tsx"), "utf8");
 
+// ⚠ 고정 크기 창(`slice(i, i + N)`)은 본문이 늘 때마다 대상이 밖으로 밀려 **가드가 거짓 실패**한다
+//   (실제로 종일·기간 줄을 추가하자 사진 블록이 14,000자 밖으로 나갔다 — 2026-08-20).
+//   함수 끝까지 잘라 창 자체를 없앤다.
+function weekGridBody(): string {
+  const i = dash.indexOf("function WeekGrid(");
+  assert.ok(i >= 0, "WeekGrid 소실(앵커)");
+  const j = dash.indexOf("\nfunction ", i + 10);
+  return dash.slice(i, j < 0 ? undefined : j);
+}
+
+
 test("앵커 — 주간 격자·미니 월간이 실재한다", () => {
   assert.ok(dash.includes("function WeekGrid("), "WeekGrid 소실");
   assert.ok(dash.includes("function MiniMonth("), "MiniMonth 소실");
@@ -26,8 +37,7 @@ test("시간 범위는 24시간이다 — 창 밖 시각이 조용히 사라지�
 });
 
 test("24시간이라 격자만 스크롤한다 — 페이지가 통째로 길어지지 않게", () => {
-  const i = dash.indexOf("function WeekGrid(");
-  const body = dash.slice(i, i + 20_000);
+  const body = weekGridBody();
   assert.match(body, /max-h-\[28rem\] overflow-y-auto overscroll-contain/, "격자 자체 스크롤이 사라졌다");
   // 눈은 주간 근무대에서 시작한다 — 0시에서 시작하면 대부분 빈칸을 보게 된다.
   assert.match(body, /el\.scrollTop = 7 \* WEEK_HOUR_PX;/, "초기 07시 위치가 사라졌다");
@@ -37,8 +47,7 @@ test("24시간이라 격자만 스크롤한다 — 페이지가 통째로 길어
 
 // ★ 실측 = `end_time` 이 절반은 없다. 없다고 안 그리면 그 일정이 화면에서 사라진다.
 test("종료 시각이 없는 일정도 그린다 — 기본 1시간", () => {
-  const i = dash.indexOf("function WeekGrid(");
-  const body = dash.slice(i, i + 14_000);
+  const body = weekGridBody();
   assert.match(
     body,
     /const dur = endMin !== null && endMin > startMin \? endMin - startMin : 60;/,
@@ -54,8 +63,7 @@ test("사진은 촬영 시각 위치에 놓는다 — 종일 띠로 밀지 않�
 });
 
 test("사진 블록은 건수로 표기한다 — 1건이어도 `이미지 1건`", () => {
-  const i = dash.indexOf("function WeekGrid(");
-  const body = dash.slice(i, i + 14_000);
+  const body = weekGridBody();
   assert.match(body, /const many = group\.length > 1;/, "묶음 판정이 사라졌다");
   // ⚠ 표기는 **건수로 통일**한다 — 1건이어도 `이미지 1건`(사용자 지시 2026-08-20).
   //   종전엔 1건일 때 시각을 보여줬는데, 같은 칸이 상황에 따라 다른 것을 말해 규칙이 둘이 됐다.
@@ -66,8 +74,7 @@ test("사진 블록은 건수로 표기한다 — 1건이어도 `이미지 1건`
 });
 
 test("시각을 못 읽은 사진도 버리지 않는다 — 종일 띠에 남는다", () => {
-  const i = dash.indexOf("function WeekGrid(");
-  const body = dash.slice(i, i + 14_000);
+  const body = weekGridBody();
   assert.match(
     body,
     /\.filter\(\(m\) => mediaMinutes\(m\) === null\)\.length/,
