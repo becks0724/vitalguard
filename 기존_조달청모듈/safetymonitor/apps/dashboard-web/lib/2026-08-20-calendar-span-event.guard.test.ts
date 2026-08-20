@@ -138,3 +138,30 @@ test("등록·수정을 마치면 폼이 닫힌다", () => {
 test("모달 폭이 제한돼 있다 — 탭에서 화면을 통째로 덮지 않게", () => {
   assert.match(dash, /floating \? "max-h-\[85vh\] max-w-\[26rem\]" : "max-h-\[85%\]"/, "모달 폭 제한이 사라졌다");
 });
+
+// ⚠ 사용자 실측 결함 2건(2026-08-20) — 기간 띠가 **엉뚱한 자리**에 있었다.
+//   ① 월간: 격자 하나에 셀을 쭉 깔고 띠를 별도 블록으로 얹어, 띠가 해당 주가 아니라
+//      **격자 맨 위에 몰려** 있었다. 주 단위 격자로 나눠 각 주 위에 그 주의 띠를 놓는다.
+//   ② 미니 월간: 기간이 아예 안 보였다. 숫자 아래 얇은 색 막대를 둔다
+//      (숫자 자체는 안 건드린다 — 오늘·선택 표시와 겹친다).
+test("월간 기간 띠가 해당 주 행 위에 놓인다", () => {
+  assert.match(dash, /const renderCell = \(day: number \| null, idx: number\) =>/, "셀 렌더 분리가 사라졌다");
+  assert.match(dash, /weeks\.map\(\(wkIdx, wi\) =>/, "주 단위 렌더가 사라졌다 — 띠가 격자 맨 위로 몰린다");
+  assert.match(dash, /\{wkIdx\.map\(\(k\) => renderCell\(cells\[k\] \?\? null, k\)\)\}/, "주별 셀 렌더가 사라졌다");
+  // 띠는 그 주 격자 **앞**에 온다 — 뒤로 가면 다음 주 위에 붙는다.
+  const i = dash.indexOf("weeks.map((wkIdx, wi) =>");
+  const body = dash.slice(i, i + 3000);
+  assert.ok(
+    body.indexOf("bars.map(") < body.indexOf('className="grid grid-cols-7 gap-0.5 overflow-visible"'),
+    "띠가 셀 격자 뒤에 온다 — 다음 주 위에 붙는다",
+  );
+});
+
+test("미니 월간에도 기간이 보인다", () => {
+  assert.match(dash, /spanDays\?: Map<string, LabelColor>;/, "미니 월간 기간 프롭 소실");
+  assert.match(dash, /const spanColor = spanDays\?\.get\(toDateKey\(date\)\);/, "미니 월간이 기간을 안 읽는다");
+  assert.match(dash, /spanDays=\{spanDayColors\}/, "호출부가 기간 맵을 안 넘긴다");
+  assert.match(dash, /const spanDayColors = useMemo\(/, "기간 날짜 맵 계산이 사라졌다");
+  // ⚠ 숫자에 색을 칠하면 오늘·선택 표시와 겹친다 — 밑줄로 둔다.
+  assert.match(dash, /h-\[2px\] w-3\.5 rounded-full/, "기간 밑줄 표시가 사라졌다");
+});

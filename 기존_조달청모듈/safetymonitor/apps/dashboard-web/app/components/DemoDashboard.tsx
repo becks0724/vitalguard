@@ -2078,6 +2078,7 @@ function MiniMonth({
   viewDate,
   selected,
   today,
+  spanDays,
   onSelect,
   onPrev,
   onNext,
@@ -2085,6 +2086,8 @@ function MiniMonth({
   viewDate: Date;
   selected: Date;
   today: Date;
+  /** 기간 일정이 걸친 날짜키 → 라벨 색. 미니 월간에도 기간이 보이게 한다(사용자 요청 2026-08-20). */
+  spanDays?: Map<string, LabelColor>;
   onSelect: (d: Date) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -2114,12 +2117,14 @@ function MiniMonth({
           const date = new Date(year, month, d);
           const isToday = calendarSameDay(date, today);
           const isSel = calendarSameDay(date, selected);
+          // 기간 일정이 걸친 날 — 숫자 아래 얇은 색 막대. 숫자 자체는 안 건드린다(오늘/선택 표시와 겹치지 않게).
+          const spanColor = spanDays?.get(toDateKey(date));
           return (
             <button
               key={d}
               type="button"
               onClick={() => onSelect(date)}
-              aria-label={`${year}년 ${month + 1}월 ${d}일`}
+              aria-label={`${year}년 ${month + 1}월 ${d}일${spanColor ? " · 기간 일정" : ""}`}
               aria-pressed={isSel}
               className="grid place-items-center py-0.5"
             >
@@ -2135,6 +2140,10 @@ function MiniMonth({
               >
                 {d}
               </span>
+              <span
+                aria-hidden="true"
+                className={`mt-[1px] block h-[2px] w-3.5 rounded-full ${spanColor ? LABEL_COLOR_META[spanColor].dot : "bg-transparent"}`}
+              />
             </button>
           );
         })}
@@ -3041,6 +3050,24 @@ function HeaderCalendarPopup({
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
   const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
   const selectedKey = toDateKey(selected);
+  // 기간 일정이 걸친 날짜 → 라벨 색. 미니 월간이 이걸 밑줄로 그린다.
+  // ⚠ 겹치면 먼저 만난 것을 쓴다 — 미니에서 색을 겹쳐 봐야 읽히지 않는다.
+  const spanDayColors = useMemo(() => {
+    const out = new Map<string, LabelColor>();
+    const seen = new Set<string>();
+    for (const e of Object.values(eventsByDate).flat()) {
+      if (!isSpanEvent(e) || seen.has(e.id)) continue;
+      seen.add(e.id);
+      const color = findLabelDef(labels, e.labelId).color;
+      const from = dateFromKey(e.dateKey);
+      const to = dateFromKey(e.endDateKey ?? e.dateKey);
+      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+        const k = toDateKey(d);
+        if (!out.has(k)) out.set(k, color);
+      }
+    }
+    return out;
+  }, [eventsByDate, labels]);
   // 날짜가 바뀌면 초점을 푼다 — 안 풀면 다른 날의 카드가 강조된 채로 남는다.
   // ⚠ 무조건 풀면 안 된다 — 주간 격자에서 **다른 날** 사진을 누르면 날짜가 함께 바뀌므로,
   //   그 자리에서 초점이 즉시 사라져 클릭이 아무 일도 안 한 것처럼 보인다.
@@ -3378,6 +3405,7 @@ function HeaderCalendarPopup({
                 viewDate={viewDate}
                 selected={selected}
                 today={today}
+                spanDays={spanDayColors}
                 onSelect={setSelected}
                 onPrev={goPrevMonth}
                 onNext={goNextMonth}
@@ -3445,65 +3473,14 @@ function HeaderCalendarPopup({
 
           {/* `auto-rows-fr` — 주(週) 행이 같은 높이로 균등 분배된다. 없으면 일정이 많은 주만
               길어져 격자가 들쭉날쭉해진다(구글 캘린더는 항상 균등하다). */}
-          {/* 여러 날 일정 — 월간에서도 **가로 색상줄**로 이어 그린다. 주 단위로 잘라
-              각 주 위에 한 줄씩 얹는다(구글 캘린더와 같은 방식).
-              ★ 격자 셀을 건드리지 않는다 — 셀 안에 넣으면 날마다 따로 뜬다. */}
+          {/* ★ 주 단위로 나눠 그린다 — 각 주 **위에** 그 주의 기간 띠를 놓기 위해서다.
+              종전엔 격자 하나에 셀을 쭉 깔고 띠를 별도 블록으로 얹어, 띠가 해당 주가 아니라
+              **격자 맨 위에 몰려** 있었다(사용자 실측 2026-08-20).
+              ⚠ 셀 본문은 한 줄도 안 옮긴다 — 반복 구조만 바꾼다. */}
           {(() => {
             const spanEvents = Object.values(eventsByDate).flat().filter(isSpanEvent)
               .filter((e, i, arr) => arr.findIndex((y) => y.id === e.id) === i);
-            if (spanEvents.length === 0) return null;
-            const weeks: string[][] = [];
-            for (let i = 0; i < cells.length; i += 7) {
-              weeks.push(
-                cells.slice(i, i + 7).map((d) => (d === null ? "" : toDateKey(new Date(year, month, d)))),
-              );
-            }
-            return (
-              <div className="mb-1 space-y-0.5">
-                {weeks.map((wk, wi) => {
-                  const bars = spanEvents
-                    .map((e) => ({ e, at: spanInWeek(e, wk.filter(Boolean)) }))
-                    .filter((x): x is { e: CalendarEvent; at: NonNullable<ReturnType<typeof spanInWeek>> } => x.at !== null);
-                  if (bars.length === 0) return null;
-                  // 빈 앞칸(전월) 보정 — spanInWeek 은 빈 칸을 뺀 배열로 셌다.
-                  const lead = wk.findIndex(Boolean);
-                  return (
-                    <div key={wi} className="space-y-0.5">
-                      <p className="px-1 text-[9px] font-semibold text-muted dark:text-on-dark-soft">
-                        {wi + 1}주차 기간 일정
-                      </p>
-                      {bars.map(({ e, at }) => (
-                        <div key={e.id} className="grid grid-cols-7 gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFormEditId(e.id);
-                              setFormDate(dateFromKey(e.dateKey));
-                            }}
-                            title={`${e.title} · ${e.dateKey} ~ ${e.endDateKey ?? e.dateKey}`}
-                            className={`flex min-w-0 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-[10px] font-semibold ${LABEL_COLOR_META[findLabelDef(labels, e.labelId).color].band}`}
-                            style={{
-                              gridColumnStart: lead + at.startIdx + 1,
-                              gridColumnEnd: lead + at.endIdx + 2,
-                            }}
-                          >
-                            <ScheduleLabelDot color={findLabelDef(labels, e.labelId).color} className="h-1.5 w-1.5 shrink-0" />
-                            <span className="min-w-0 truncate">
-                              {at.openStart ? "◀ " : ""}
-                              {e.title.trim()}
-                              {at.openEnd ? " ▶" : ""}
-                            </span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          <div className="grid auto-rows-fr grid-cols-7 gap-0.5 overflow-visible">
-            {cells.map((day, idx) => {
+            const renderCell = (day: number | null, idx: number) => {
               if (day === null) {
                 return <div key={`empty-${idx}`} className={inline ? "min-h-[7rem]" : "min-h-[4.5rem]"} />;
               }
@@ -3690,8 +3667,57 @@ function HeaderCalendarPopup({
                   </div>
                 </button>
               );
-            })}
-          </div>
+            };
+            const weeks: number[][] = [];
+            const allIdx = cells.map((_, k) => k);
+            for (let i = 0; i < allIdx.length; i += 7) weeks.push(allIdx.slice(i, i + 7));
+            return weeks.map((wkIdx, wi) => {
+              const wkKeys = wkIdx.map((k) => {
+                const d = cells[k];
+                return d === null || d === undefined ? "" : toDateKey(new Date(year, month, d));
+              });
+              const present = wkKeys.filter(Boolean);
+              const lead = Math.max(0, wkKeys.findIndex(Boolean));
+              const bars = spanEvents
+                .map((e) => ({ e, at: spanInWeek(e, present) }))
+                .filter((x): x is { e: CalendarEvent; at: NonNullable<ReturnType<typeof spanInWeek>> } => x.at !== null);
+              return (
+                <div key={`wk-${wi}`} className="mb-0.5">
+                  {bars.length > 0 && (
+                    <div className="mb-0.5 space-y-0.5">
+                      {bars.map(({ e, at }) => (
+                        <div key={e.id} className="grid grid-cols-7 gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormEditId(e.id);
+                              setFormDate(dateFromKey(e.dateKey));
+                            }}
+                            title={`${e.title} · ${e.dateKey} ~ ${e.endDateKey ?? e.dateKey}`}
+                            className={`flex min-w-0 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-[10px] font-semibold ${LABEL_COLOR_META[findLabelDef(labels, e.labelId).color].band}`}
+                            style={{
+                              gridColumnStart: lead + at.startIdx + 1,
+                              gridColumnEnd: lead + at.endIdx + 2,
+                            }}
+                          >
+                            <ScheduleLabelDot color={findLabelDef(labels, e.labelId).color} className="h-1.5 w-1.5 shrink-0" />
+                            <span className="min-w-0 truncate">
+                              {at.openStart ? "◀ " : ""}
+                              {e.title.trim()}
+                              {at.openEnd ? " ▶" : ""}
+                            </span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="grid grid-cols-7 gap-0.5 overflow-visible">
+                    {wkIdx.map((k) => renderCell(cells[k] ?? null, k))}
+                  </div>
+                </div>
+              );
+            });
+          })()}
           </>
           )}
 

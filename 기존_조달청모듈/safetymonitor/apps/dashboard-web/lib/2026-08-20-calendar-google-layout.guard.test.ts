@@ -54,8 +54,14 @@ test("오늘만 채운 원 — 원형이 유일해야 눈에 띈다", () => {
 });
 
 // ── ② 주 행 균등
-test("주 행이 균등하다 — auto-rows-fr", () => {
-  assert.match(cal, /grid auto-rows-fr grid-cols-7/, "auto-rows-fr 소실 — 일정 많은 주만 길어진다");
+// ⚠ 전제가 바뀌었다(2026-08-20) — 기간 띠를 각 주 **위에** 놓기 위해 월간을 **주 단위 격자**로
+//   나눴다. 그러면 `auto-rows-fr`(한 격자 안의 행 균등)이 성립하지 않는다.
+//   대신 **셀의 min-h 가 높이를 잡는다** — 주마다 같은 값이라 결과는 같다.
+test("주 행 높이가 균등하다 — 셀 min-h 가 잡는다", () => {
+  assert.match(cal, /inline \? "min-h-\[7rem\]" : "min-h-\[4\.5rem\]"/, "셀 최소 높이가 사라졌다");
+  // 빈 칸도 같은 높이여야 한다 — 아니면 그 주만 짧아진다.
+  const empties = cal.match(/inline \? "min-h-\[7rem\]" : "min-h-\[4\.5rem\]"/g) ?? [];
+  assert.ok(empties.length >= 2, `셀·빈칸 둘 다 있어야 한다(현재 ${empties.length}곳)`);
 });
 
 // ── ③ inline 은 자체 스크롤·높이 상한을 안 쓴다
