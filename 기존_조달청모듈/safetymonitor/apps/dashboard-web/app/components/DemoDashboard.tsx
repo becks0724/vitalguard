@@ -306,9 +306,17 @@ type WorkerStatus =
   | { label: "SOS 요청"; tone: "danger" }
   | { label: "위험"; tone: "danger" }
   | { label: "주의"; tone: "caution" }
-  | { label: "정상"; tone: "normal" }
+  | { label: "수신 중"; tone: "normal" }
   | { label: "대기"; tone: "idle" };
 
+// ★ `normal` 의 라벨은 `정상` 이 아니라 **`수신 중`** 이다(2026-08-20 · 사용자 결정).
+//   상시 HKWorkoutSession 이 watchOS 손목 감지를 우회해 **벗어도 그럴듯한 심박이 계속 온다**
+//   (책상 5분 반 평균 108.4bpm vs 착용 108.1 — 구별 불가). 대리 신호로 가르는 길도 닫혔다
+//   (모션 변동폭 `mv` 기각 — 착용+정지 바닥 1~5 vs 책상 1~3 완전 겹침, 2026-08-19 통제군 실측).
+//   ⟹ 미착용 구간에도 `정상` 을 단언하면 **본인이 보는 화면이 거짓말을 한다.** 남은 길은
+//     문구가 착용을 암시하지 않게 하는 것뿐이고, 이 라벨이 그 지점이다.
+// ⚠ `tone` 은 `normal` 그대로다 — 신호등 색·집계("이상 N명")는 tone 으로 계산하므로 안 바뀐다.
+//   라벨만 정직해지고 판정은 그대로다.
 function workerStatus(sample?: VitalSample, nowMs?: number): WorkerStatus {
   if (!sample) return { label: "대기", tone: "idle" };
   if (sample.fallDetected) return { label: "낙상 감지", tone: "danger" };
@@ -316,7 +324,7 @@ function workerStatus(sample?: VitalSample, nowMs?: number): WorkerStatus {
   const overall = overallStatus(sample, nowMs);
   if (overall === "danger") return { label: "위험", tone: "danger" };
   if (overall === "caution") return { label: "주의", tone: "caution" };
-  if (overall === "normal") return { label: "정상", tone: "normal" };
+  if (overall === "normal") return { label: "수신 중", tone: "normal" };
   return { label: "대기", tone: "idle" };
 }
 
