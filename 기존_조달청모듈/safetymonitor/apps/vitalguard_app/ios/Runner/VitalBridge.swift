@@ -173,6 +173,9 @@ final class VitalBridge: NSObject {
             let text = args?["description"] as? String ?? ""
             apiWrite(path: "api/calendar/media", method: "PATCH", query: [:],
                      body: ["id": id, "description": text], result: result)
+        // 화면이 스트림 없이 현재 값을 당겨 가는 경로(주기 폴백 · 당겨서 새로고침).
+        case "vitalsSnapshot":
+            result(PhoneReceiver.shared.currentDisplaySnapshot())
         case "status":
             var payload: [String: Any] = [
                 "loggedIn": AuthStore.token != nil,

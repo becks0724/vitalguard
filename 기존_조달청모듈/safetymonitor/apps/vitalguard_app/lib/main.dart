@@ -207,19 +207,42 @@ class _HomeScreenState extends State<HomeScreen> {
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
     _refreshOwn();
     _ownTimer = Timer.periodic(const Duration(seconds: 60), (_) => _refreshOwn());
+    _subscribe();
+  }
+
+  /// EventChannel 구독. **끊기면 다시 붙는다.**
+  ///
+  /// ★ 2026-08-20 실측 — 종전에는 `onError`·`onDone` 이 없어 스트림이 한 번 끊기면
+  ///   화면이 마지막 값에 영영 얼어붙었다. 네이티브는 계속 수집·업로드하므로
+  ///   **서버에서는 아무 이상이 안 보인다**(서버 12건/분 · 화면 19분 전). 하루에 두 번 났다.
+  void _subscribe() {
     try {
-      _sub = VitalStream.events().listen((e) {
-        if (!mounted) return;
-        setState(() {
-          if (e.type == 'hr') _vitals = e;
-          if (e.pending != null) _livePending = e.pending;
-          if (e.authRejected == true) _authRejected = true;
-          if (e.uploadOk == true) _authRejected = false;
-        });
-      });
+      _sub?.cancel();
+      _sub = VitalStream.events().listen(
+        (e) {
+          if (!mounted) return;
+          setState(() {
+            if (e.type == 'hr') _vitals = e;
+            if (e.pending != null) _livePending = e.pending;
+            if (e.authRejected == true) _authRejected = true;
+            if (e.uploadOk == true) _authRejected = false;
+          });
+        },
+        // 재구독은 한 박자 쉬고 한다 — 즉시 다시 붙으면 실패가 반복될 때 폭주한다.
+        onError: (_) => _scheduleResubscribe(),
+        onDone: _scheduleResubscribe,
+        cancelOnError: true,
+      );
     } catch (_) {
       // 브리지 부재(테스트 등)면 폴링 표시만 유지한다.
     }
+  }
+
+  void _scheduleResubscribe() {
+    if (!mounted) return;
+    Future<void>.delayed(const Duration(seconds: 3), () {
+      if (mounted) _subscribe();
+    });
   }
 
   @override
@@ -244,6 +267,17 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refresh() async {
+    // ★ 스트림과 **같은 값을 다른 경로로** 한 번 더 가져온다. 스트림이 살아 있으면 같은 값이라
+    //   화면이 안 흔들리고, 죽어 있으면 이 경로가 3초 안에 화면을 되살린다.
+    //   즉시성은 스트림이, 정확성은 이 폴링이 맡는다.
+    try {
+      final snap = await _bridge.invokeMapMethod<String, dynamic>('vitalsSnapshot');
+      if (mounted && snap != null && snap['type'] == 'hr') {
+        setState(() => _vitals = VitalStreamEvent.fromMap(snap));
+      }
+    } catch (_) {
+      // 브리지 부재(테스트 등) — 스트림 값만 유지한다.
+    }
     try {
       final status = await _bridge.invokeMapMethod<String, dynamic>('status');
       if (mounted && status != null) setState(() => _status = status);
@@ -605,22 +639,36 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   /// 요약 탭 — 이 앱이 지금 실제로 가진 화면 전부다.
+  /// 당겨서 새로고침 — 세 경로를 **한 번에** 다시 묻는다.
+  ///
+  /// ★ 자동 갱신이 멈춘 것 같을 때 사람이 확인할 수단이 없었다(2026-08-20 요청).
+  ///   스트림이 죽어 있으면 여기서 재구독까지 걸어 **다음부터는 자동으로도 온다**.
+  Future<void> _pullToRefresh() async {
+    _subscribe();
+    await Future.wait([_refresh(), _refreshOwn()]);
+  }
+
   Widget _summaryBody(VitalStreamEvent? vitals, List<VitalRow> bodyRows) {
     // 카드가 늘 수 있어 ListView — 화면 밖으로 밀리면 그 값은 없는 것과 같다.
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 28 + glassTabBarInset(context)),
-      children: [
-        if (_authRejected)
-          MaterialBanner(
-            backgroundColor: VgColors.danger.withValues(alpha: 0.08),
-            content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
-            actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
-          ),
-        _statusCard(vitals),
-        const SizedBox(height: 10),
-        // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
-        _vitalsCard(vitals, bodyRows),
-      ],
+    return RefreshIndicator(
+      onRefresh: _pullToRefresh,
+      child: ListView(
+        // 짧은 화면에서도 당길 수 있어야 한다 — 내용이 안 넘치면 ListView 는 스크롤을 막는다.
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 28 + glassTabBarInset(context)),
+        children: [
+          if (_authRejected)
+            MaterialBanner(
+              backgroundColor: VgColors.danger.withValues(alpha: 0.08),
+              content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
+              actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+            ),
+          _statusCard(vitals),
+          const SizedBox(height: 10),
+          // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
+          _vitalsCard(vitals, bodyRows),
+        ],
+        ),
     );
   }
 

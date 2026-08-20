@@ -42,6 +42,16 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
     ///   스트림이 끊겼을 때 화면도 함께 얼어 "언제부터 안 오는지" 를 못 보여준다
     ///   (2026-08-20 실측 — 서버는 12건/분 받는데 폰 화면만 7분 41초 전에 멈춰 있었다).
     ///   설정 화면은 3초마다 `status` 를 직접 물으므로 이 경로는 스트림과 독립이다.
+    /// 화면이 **스트림 없이도** 현재 값을 가져갈 수 있는 경로.
+    ///
+    /// ★ 2026-08-20 실측 — EventChannel 이 끊기면 Dart 화면이 마지막 값에 얼어붙는데
+    ///   네이티브는 계속 수집·업로드한다(서버 12건/분 · 화면 19분 전). 하루에 두 번 났다.
+    ///   스트림은 **즉시성**을 위한 것이고, 이 경로가 **정확성**을 보장한다 —
+    ///   화면이 주기적으로·당겨서 여기를 물으면 스트림이 죽어도 3초 안에 되살아난다.
+    func currentDisplaySnapshot() -> [String: Any] {
+        displayEvent(seq: lastSeq, channel: lastChannel)
+    }
+
     var lastVitalAt: Date? { snapshot.bpmAt }
     var watchBatteryPct: Int? { snapshot.batteryPct }
 
@@ -50,6 +60,9 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
 
     /// WCSession 델리게이트 콜백은 세션당 하나의 백그라운드 큐로 직렬 전달되므로 이 상태는 별도 잠금 없이 다룬다.
     private var snapshot = DisplaySnapshot()
+    /// 마지막으로 emit 한 배치 번호·채널 — 스냅숏 조회가 같은 값을 낼 수 있어야 한다.
+    private var lastSeq = -1
+    private var lastChannel = "none"
 
     /// 표시 스냅숏을 비운다 — **계정이 바뀔 때만** 부른다.
     ///
@@ -102,6 +115,8 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         //   정작 봐야 할 구간이 화면에서 통째로 빠진다.
         if !samples.isEmpty {
             updateSnapshot(with: samples)
+            lastSeq = seq
+            lastChannel = channel
             VitalBridge.shared.emit(displayEvent(seq: seq, channel: channel))
         }
     }
