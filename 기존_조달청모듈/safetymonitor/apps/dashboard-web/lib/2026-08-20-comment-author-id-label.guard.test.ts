@@ -24,12 +24,16 @@ test("앵커 — 댓글 작성자 표기와 권한 판정이 실재한다", () =
   assert.ok(route.includes("function commentScope"), "commentScope 소실");
 });
 
+// ⚠ 표현이 한 번 옮겨갔다(2026-08-20 같은 날) — 식별자 통일 작업에서 JSX 리터럴이
+//   템플릿 문자열로 바뀌었다. **의도는 그대로다**: 접히지 않는 계정의 로그인 ID 를
+//   `사번` 이라 부르지 않는다. 접힌 계정의 사번 표기는 별칭 가드가 따로 지킨다
+//   (2026-08-20-calendar-tab-and-author-id.guard.test.ts).
 test("로그인 ID 를 `사번` 이라 부르지 않는다", () => {
   // 렌더 블록만 잘라 본다 — 파일 다른 곳의 `사번`(작업자 메타데이터 등)은 정당하다.
   const i = dash.indexOf("{c.authorId && (");
-  const block = dash.slice(i, i + 200);
-  assert.doesNotMatch(block, /· 사번 \{c\.authorId\}/, "로그인 ID 에 `사번` 라벨이 되살아났다");
-  assert.match(block, /· ID \{c\.authorId\}/, "작성자 ID 표기가 사라졌다");
+  const block = dash.slice(i, i + 700);
+  assert.doesNotMatch(block, /· 사번 [{$]\{?c\.authorId\}/, "로그인 ID 에 `사번` 라벨이 되살아났다");
+  assert.match(block, /· ID \$\{c\.authorId\}/, "작성자 ID 표기가 사라졌다");
 });
 
 // ★ 값은 지킨다 — 라벨을 고치다 값을 사번으로 바꾸면 권한이 깨진다.

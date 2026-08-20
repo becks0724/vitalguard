@@ -153,7 +153,15 @@ function getPool(): Pool {
     //   어느 쪽이든 env 는 시작 시 1회 resolve 라 새 리비전 배포가 동반돼야 한다(L-41 계열).
     const pool = new Pool({
       connectionString,
-      max: 8,
+      // 2026-08-20 실측으로 8 → 16. 관제 화면이 매분 같은 초에 7건을 동시에 쏘는데(aed 3종·
+      // gaspod·monitor/vital·calendar/media) 그중 하나가 5초 안에 커넥션을 못 얻어 500 이 났다.
+      // 실패 라우트의 최대 지연이 정확히 5.01초 = 아래 connectionTimeoutMillis 였다.
+      //   근거 = `Connection terminated due to connection timeout` 스택이 라우트 핸들러 안이고,
+      //          같은 초 요청 로그에 7건이 함께 있다(요청 없는 백그라운드 타이머가 아니다).
+      // ★ 서버 상한은 제약이 아니다 — max_connections 200 에 전 DB 합계 25 사용(여유 175).
+      //   최악 상정 maxScale 4 × 16 = 64 로도 여유가 크다.
+      // ⚠ 이건 증상 완화다. 근본은 요청당 DB 왕복 수이고 그쪽은 store.ts 폴링 캐시가 줄인다.
+      max: 16,
       connectionTimeoutMillis: 5000, // 커넥션 획득 대기 상한(기본 0=무한 대기 방지)
       idleTimeoutMillis: 30000, // 유휴 커넥션 30초 후 정리(끊긴 커넥션 오래 안 붙잡게)
       statement_timeout: 30000, // 세션 statement_timeout(ms) — 느린 쿼리의 풀 점유 방지
@@ -277,6 +285,14 @@ async function initSchema(): Promise<void> {
     -- ⚠ 자동 재개(f67442f) 설치 후에도 20.9분·12.9시간 공백이 났는데 원인 셋을 DB 로 못 갈랐다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_started_at TEXT;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_auto_resumed INTEGER;
+    -- 세션 종료 계측(2026-08-20 · docs/watch-auto-resume). 위 둘로는 session_auto_resumed = 0
+    -- 이 "자동 재개가 시도조차 안 됐다" 인지 "사람이 [시작] 을 눌렀다" 인지 못 가른다(실측 9세션 전부 0).
+    -- ⚠ 이 블록은 템플릿 리터럴 안이다 — 주석에 백틱을 쓰면 문자열이 그 자리에서 끊긴다.
+    -- 워치 os_log 는 회수 경로가 없어 디스크에 적어 다음 세션 첫 배치에 실어 보낸다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_seen_at TEXT;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_by_user INTEGER;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_resume_tried_at TEXT;
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_resume_tries SMALLINT;
     -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
     -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
@@ -907,6 +923,13 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     motion_var_mg: sample.motionVariabilityMg ?? null,
     session_auto_resumed:
       sample.sessionAutoResumed === true ? 1 : sample.sessionAutoResumed === false ? 0 : null,
+    session_end_seen_at: sample.sessionEndSeenAt ?? null,
+    // ⚠ `?? null` 로 접으면 false 가 null 이 된다 — "사람이 안 눌렀다"(false)와 "모른다"(null)는
+    //   정반대 판정이라 섞이면 안 된다. session_auto_resumed 와 같은 3분기를 쓴다.
+    session_end_by_user:
+      sample.sessionEndByUser === true ? 1 : sample.sessionEndByUser === false ? 0 : null,
+    session_resume_tried_at: sample.sessionResumeTriedAt ?? null,
+    session_resume_tries: sample.sessionResumeTries ?? null,
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,
     // 확정 낙상은 워치가 fallDecision='fall' 후보행으로 보냄(fallDetected 미설정 — 폰 Health API 는
     // 낙상 미노출). 코드 전반이 'fall_decision=fall OR fall_detected=1'을 양성 표준으로 쓰므로

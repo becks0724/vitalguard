@@ -310,13 +310,42 @@ export async function addSample(input: unknown): Promise<AddSampleResult> {
   return { sample, persistFailed };
 }
 
+// ── 폴링 경로 전용 TTL 메모 (2026-08-20 · 풀 고갈 대응) ──────────────────────
+// 관제 화면은 GET 을 짧은 주기로 반복하는데, 이 응답의 누적 집계는 그 주기로 새로 잴 값이
+// 아니다. 요청당 DB 왕복이 줄면 커넥션 **점유 시간**이 줄고, 그게 풀 고갈의 원인 쪽이다
+// (풀 상향은 증상 완화 — db.ts 주석 참조).
+//
+// ★ 공유 db.ts 함수가 아니라 이 폴링 래퍼에만 건다. `listAllWorkers`·`getWorkerProfiles` 는
+//   관리자 화면도 쓰는데, 거기까지 캐시하면 작업자를 추가하고 30초를 기다리게 된다.
+// ⚠ 값이 늦게 반영되는 대가가 있다 — 그래서 **표시용 누적치에만** 쓴다. 판정·경보·신선도는
+//   이 경로를 안 지난다(신호등은 `latest` 로 판정하고 그건 캐시하지 않는다).
+const POLL_AGG_TTL_MS = 30_000;
+
+function ttlMemo<T>(ttlMs: number, load: () => Promise<T>): () => Promise<T> {
+  let cache: { at: number; value: T } | null = null;
+  return async () => {
+    const now = Date.now();
+    if (cache && now - cache.at < ttlMs) return cache.value;
+    const value = await load();
+    cache = { at: now, value };
+    return value;
+  };
+}
+
+const memoTotalPersisted = ttlMemo(POLL_AGG_TTL_MS, dbTotalPersisted);
+const memoTotalDataMockup = ttlMemo(POLL_AGG_TTL_MS, dbTotalDataMockupPersisted);
+// 별칭 접힘은 캐시하지 않는다 — 원시 집계(DB 왕복)만 캐시하고 fold 는 매번 새로 돈다.
+// aliasMap 이 바뀌면 즉시 반영돼야 하는데, 접힌 결과를 캐시하면 그게 30초 늦는다.
+const memoAllWorkers = ttlMemo(POLL_AGG_TTL_MS, listAllWorkers);
+const memoWorkerProfiles = ttlMemo(POLL_AGG_TTL_MS, getWorkerProfiles);
+
 // DB 에 누적된 총 sample 건수 — UI 라벨 "DB 영속 N건 누적" 표시용
 export async function totalPersisted(): Promise<number> {
-  return dbTotalPersisted();
+  return memoTotalPersisted();
 }
 
 export async function totalDataMockupPersisted(): Promise<number> {
-  return dbTotalDataMockupPersisted();
+  return memoTotalDataMockup();
 }
 
 export async function dataMockupSamples(): Promise<VitalSample[]> {
@@ -332,7 +361,7 @@ export async function countsByWorker(
 ): Promise<Record<string, number>> {
   const aliases = aliasMap ?? (await workerAliases());
   const out: Record<string, number> = {};
-  for (const w of await listAllWorkers()) {
+  for (const w of await memoAllWorkers()) {
     if (isReservedTestWorker(w.worker_id)) continue;
     const key = aliases[w.worker_id] ?? w.worker_id;
     out[key] = (out[key] ?? 0) + w.sample_count;
@@ -356,7 +385,7 @@ export async function rosterWorkerNamesMap(): Promise<Record<string, string>> {
 // 직급/직책 관제 웹 오버라이드 맵(workerId → 직급) — 대시보드가 폰 발신값보다 우선 적용.
 // 예약 워커는 대시보드에 안 뜨므로 함께 제외.
 export async function workerProfiles(): Promise<Record<string, string>> {
-  const all = await getWorkerProfiles();
+  const all = await memoWorkerProfiles();
   const out: Record<string, string> = {};
   for (const [id, title] of Object.entries(all)) {
     if (isReservedTestWorker(id)) continue;

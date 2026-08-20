@@ -1884,19 +1884,30 @@ function getKoreanHolidays(year: number): Record<string, string> {
   return { ...(variable[y] ?? {}), ...fixed };
 }
 
+// 일정 캘린더. 두 자리에서 같은 화면을 쓴다 —
+//   variant="popup"(기본)  헤더 아이콘으로 여는 떠 있는 패널. 드래그·닫기 있음.
+//   variant="inline"       탭 본문. 페이지가 곧 캘린더라 오버레이·드래그·닫기가 없다.
+// ★ 본문을 복제하지 않고 감싸는 껍데기만 가른다 — 두 벌이면 한쪽만 고쳐 화면이 갈린다.
 function HeaderCalendarPopup({
   open,
   onClose,
   lat,
   lon,
   workerCount,
+  variant = "popup",
+  workerAliases,
 }: {
   open: boolean;
   onClose: () => void;
   lat?: number;
   lon?: number;
   workerCount: number;
+  variant?: "popup" | "inline";
+  // 로그인 ID → 사번(secondary→primary). 댓글 작성자 표기를 위쪽 `작업자 EMP-6861` 과
+  // 같은 식별자로 맞추는 데만 쓴다. ★ 권한 판정에는 안 쓴다(그건 서버가 author_id 로 한다).
+  workerAliases?: Record<string, string>;
 }) {
+  const inline = variant === "inline";
   const [viewDate, setViewDate] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -2411,7 +2422,8 @@ function HeaderCalendarPopup({
     }
   };
 
-  if (!open) return null;
+  // 탭 본문은 페이저가 이미 표시 여부를 정하므로 open 게이트를 타지 않는다.
+  if (!inline && !open) return null;
 
   const today = new Date();
   const year = viewDate.getFullYear();
@@ -2553,20 +2565,28 @@ function HeaderCalendarPopup({
   };
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50">
+    <div className={inline ? "" : "pointer-events-none fixed inset-0 z-50"}>
       <div
         ref={panelRef}
-        className="pointer-events-auto absolute right-4 top-[4.5rem] flex max-h-[calc(100dvh-6rem)] w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark sm:top-20"
-        style={dragPos ? { transform: `translate(${dragPos.x}px, ${dragPos.y}px)` } : undefined}
-        role="dialog"
+        className={
+          inline
+            ? "flex max-h-[calc(100dvh-14rem)] w-full flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+            : "pointer-events-auto absolute right-4 top-[4.5rem] flex max-h-[calc(100dvh-6rem)] w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark sm:top-20"
+        }
+        style={!inline && dragPos ? { transform: `translate(${dragPos.x}px, ${dragPos.y}px)` } : undefined}
+        role={inline ? undefined : "dialog"}
         aria-label="일정 캘린더"
       >
         <div
-          className="flex shrink-0 cursor-grab touch-none select-none items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 active:cursor-grabbing dark:border-white/10 dark:bg-surface-dark-elevated"
-          onPointerDown={onDragPointerDown}
-          onPointerMove={onDragPointerMove}
-          onPointerUp={onDragPointerUp}
-          onPointerCancel={onDragPointerUp}
+          className={
+            inline
+              ? "flex shrink-0 items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated"
+              : "flex shrink-0 cursor-grab touch-none select-none items-center justify-between rounded-t-2xl border-b border-hairline bg-surface-soft px-4 py-3 active:cursor-grabbing dark:border-white/10 dark:bg-surface-dark-elevated"
+          }
+          onPointerDown={inline ? undefined : onDragPointerDown}
+          onPointerMove={inline ? undefined : onDragPointerMove}
+          onPointerUp={inline ? undefined : onDragPointerUp}
+          onPointerCancel={inline ? undefined : onDragPointerUp}
         >
           <div className="flex items-center gap-2.5">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-surface-card text-ink dark:bg-white/10 dark:text-on-dark">
@@ -2632,17 +2652,20 @@ function HeaderCalendarPopup({
           >
             Plan
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
-            aria-label="캘린더 닫기"
-          >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
+          {/* 탭 본문에는 닫기가 없다 — 페이지 자체가 캘린더라 닫을 대상이 아니다. */}
+          {!inline && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+              aria-label="캘린더 닫기"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
           </div>
         </div>
 
@@ -3254,16 +3277,20 @@ function HeaderCalendarPopup({
                                     {" "}· {c.authorTitle}
                                   </span>
                                 )}
-                                {/* ⚠ 라벨은 `사번` 이 아니라 `ID` 다 — 여기 값은 로그인 ID(`sub`)이지
-                                    사번이 아니다. 같은 카드 위쪽 메타데이터는 진짜 사번(`EMP-6861`)을
-                                    보여주므로, `사번` 이라 적으면 한 화면에서 같은 사람이 두 사번을
-                                    가진 것처럼 읽힌다(2026-08-20 실측 — `admin6861` vs `EMP-6861`).
-                                    ★ 값을 사번으로 바꾸지 말 것. 댓글 수정·삭제 권한이 이 값과
-                                      작성자 대조로 판정되므로 사번을 넣으면 자기 댓글을 자기가
-                                      못 고친다(`api/calendar/media/comment/route.ts` commentScope). */}
+                                {/* 작성자 식별자 — 같은 카드 위쪽 메타데이터가 `작업자 … · EMP-6861`
+                                    을 쓰므로 여기도 **사번으로 맞춘다**. 저장값은 로그인 ID(`sub`)라
+                                    `worker_alias`(secondary→primary)로 접어 사번을 얻는다.
+                                    ★ 표시만 접는다. 값 자체를 사번으로 바꾸면 안 된다 — 댓글 수정·삭제
+                                      권한이 저장된 `author_id` 대조로 판정되므로 사번을 넣으면 자기 댓글을
+                                      자기가 못 고친다(`api/calendar/media/comment/route.ts` commentScope).
+                                    ⚠ 접히지 않는 계정(별칭 미등록)은 `ID` 로 정직하게 쓴다 — 로그인 ID 를
+                                      `사번` 이라 부르면 한 화면에서 같은 사람이 두 사번을 가진 것처럼
+                                      읽힌다(2026-08-20 실측 — `사번 admin6861` vs `EMP-6861`). */}
                                 {c.authorId && (
                                   <span className="font-normal text-muted dark:text-on-dark-soft">
-                                    {" "}· ID {c.authorId}
+                                    {workerAliases?.[c.authorId]
+                                      ? ` · 사번 ${workerAliases[c.authorId]}`
+                                      : ` · ID ${c.authorId}`}
                                   </span>
                                 )}
                                 <span className="font-normal text-muted dark:text-on-dark-soft">
@@ -5738,6 +5765,22 @@ export function DemoDashboard() {
             content: <SafetyNewsPage lat={effLat} lon={effLon} />,
           },
           {
+            // 일정 캘린더 — 헤더 아이콘(떠 있는 패널)과 **같은 컴포넌트**를 탭 본문으로 연다.
+            // 아이콘은 그대로 두었다(빠른 확인용). 본문을 복제하지 않으므로 두 자리가 갈리지 않는다.
+            title: "일정 캘린더",
+            content: (
+              <HeaderCalendarPopup
+                open
+                onClose={() => {}}
+                lat={effLat}
+                lon={effLon}
+                workerCount={fieldCoords.count}
+                variant="inline"
+                workerAliases={data.workerAliases}
+              />
+            ),
+          },
+          {
             title: "안전관리비 검증",
             content: <SafetyVerificationTabs />,
           },
@@ -5775,7 +5818,11 @@ export function DemoDashboard() {
         refreshNonce={weatherRefreshNonce}
         worker={workerSignal}
         region={siteRegion}
-        pinned={pagerIdx === 0 ? "env" : undefined}
+        pinned={
+          // 생 리터럴 0 을 쓰던 유일한 자리였다 — 탭을 추가·재배열하면 조용히 밀린다(파일 상단 경고).
+          // '일정 캘린더' 탭 삽입(2026-08-20)을 계기로 나머지와 같은 상수로 통일했다.
+          pagerIdx === MONITOR_PAGE_IDX ? "env" : undefined
+        }
         onRefresh={refreshFieldWeather}
         refreshing={locRefreshing}
       />
@@ -5915,6 +5962,7 @@ export function DemoDashboard() {
         lat={effLat}
         lon={effLon}
         workerCount={fieldCoords.count}
+        workerAliases={data.workerAliases}
       />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
