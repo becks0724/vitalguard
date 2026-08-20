@@ -2578,7 +2578,9 @@ function HeaderCalendarPopup({
         ref={panelRef}
         className={
           inline
-            ? "flex max-h-[calc(100dvh-14rem)] w-full flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
+            // ★ 탭 본문에는 높이 상한을 두지 않는다 — 페이지가 이미 스크롤한다.
+            //   상한을 두면 패널 안에 두 번째 스크롤바가 생겨 하단(`선택 날짜 일정`)이 잘린다.
+            ? "flex w-full flex-col rounded-2xl border border-hairline-strong bg-canvas dark:border-white/10 dark:bg-surface-dark"
             : "pointer-events-auto absolute right-4 top-[4.5rem] flex max-h-[calc(100dvh-6rem)] w-full max-w-[580px] flex-col overflow-hidden rounded-2xl border border-hairline-strong bg-canvas shadow-2xl dark:border-white/10 dark:bg-surface-dark sm:top-20"
         }
         style={!inline && dragPos ? { transform: `translate(${dragPos.x}px, ${dragPos.y}px)` } : undefined}
@@ -2677,7 +2679,16 @@ function HeaderCalendarPopup({
           </div>
         </div>
 
-        <div className="wx-cards-scroll flex-1 overflow-y-auto overscroll-y-contain" onWheel={(e) => e.stopPropagation()}>
+        {/* 팝업은 떠 있는 패널이라 자체 스크롤이 필요하지만, 탭 본문은 페이지 스크롤을 쓴다.
+            inline 에서 자체 스크롤을 두면 스크롤바가 둘이 되고 하단이 잘린다. */}
+        <div
+          className={
+            inline
+              ? "flex-1 overflow-visible"
+              : "wx-cards-scroll flex-1 overflow-y-auto overscroll-y-contain"
+          }
+          onWheel={inline ? undefined : (e) => e.stopPropagation()}
+        >
         {planOpen && (
           <div className="border-b border-hairline bg-surface-soft px-4 py-3 dark:border-white/10 dark:bg-surface-dark-elevated">
             <p className="mb-1.5 text-[11px] font-semibold text-ink dark:text-on-dark">주간 일정</p>
@@ -2777,10 +2788,12 @@ function HeaderCalendarPopup({
             ))}
           </div>
 
-          <div className="grid grid-cols-7 gap-0.5 overflow-visible">
+          {/* `auto-rows-fr` — 주(週) 행이 같은 높이로 균등 분배된다. 없으면 일정이 많은 주만
+              길어져 격자가 들쭉날쭉해진다(구글 캘린더는 항상 균등하다). */}
+          <div className="grid auto-rows-fr grid-cols-7 gap-0.5 overflow-visible">
             {cells.map((day, idx) => {
               if (day === null) {
-                return <div key={`empty-${idx}`} className="min-h-[4.5rem]" />;
+                return <div key={`empty-${idx}`} className={inline ? "min-h-[5.5rem]" : "min-h-[4.5rem]"} />;
               }
               const cellDate = new Date(year, month, day);
               const dateKey = toDateKey(cellDate);
@@ -2817,12 +2830,14 @@ function HeaderCalendarPopup({
                   }}
                   onMouseLeave={() => setHoverDateKey(null)}
                   className={[
-                    "relative flex min-h-[4.5rem] flex-col rounded-lg p-0.5 text-left transition",
+                    // 구글 캘린더식 — 선택은 **셀을 통째로 칠하지 않고 날짜 숫자에 원형**으로 준다.
+                    // 종전엔 셀 전체가 파랗게 차서 그 안의 일정 칩·배지가 전부 흰 글자 분기를
+                    // 따로 가져야 했고(10곳), 하루치 정보가 색으로 뭉개졌다.
+                    "relative flex flex-col rounded-lg p-1 text-left transition",
+                    inline ? "min-h-[5.5rem]" : "min-h-[4.5rem]",
                     isSelected
-                      ? "bg-primary text-on-primary"
-                      : isToday
-                        ? "bg-surface-card ring-1 ring-hairline"
-                        : "hover:bg-surface-strong dark:hover:bg-white/10",
+                      ? "bg-primary-subtle ring-1 ring-primary-ring"
+                      : "hover:bg-surface-strong dark:hover:bg-white/10",
                   ].join(" ")}
                   aria-label={`${year}년 ${month + 1}월 ${day}일`}
                   aria-pressed={isSelected}
@@ -2830,8 +2845,7 @@ function HeaderCalendarPopup({
                   {dayWeatherCode !== undefined && (
                     <span
                       className={[
-                        "pointer-events-none absolute right-0.5 top-0.5 z-10",
-                        isSelected ? "text-white/90" : "text-muted dark:text-on-dark-soft",
+                        "pointer-events-none absolute right-0.5 top-0.5 z-10 text-muted dark:text-on-dark-soft",
                       ].join(" ")}
                       title={weatherLabel(dayWeatherCode)}
                       aria-label={`날씨: ${weatherLabel(dayWeatherCode)}`}
@@ -2843,9 +2857,7 @@ function HeaderCalendarPopup({
                     <span
                       className={[
                         "pointer-events-none absolute bottom-0.5 right-0.5 z-10 inline-flex items-center gap-0.5 rounded px-1 text-[8px] font-bold leading-none",
-                        isSelected
-                          ? "bg-white/20 text-white"
-                          : "bg-primary-subtle text-primary dark:text-on-dark",
+                        "bg-primary-subtle text-primary dark:text-on-dark",
                       ].join(" ")}
                       title={`현장 이미지/미디어 ${dayMedia.length}건`}
                     >
@@ -2860,9 +2872,7 @@ function HeaderCalendarPopup({
                     <span
                       className={[
                         "pointer-events-none absolute bottom-0.5 left-0.5 z-10 inline-flex items-center rounded px-0.5 py-0.5",
-                        isSelected
-                          ? "bg-white/20 text-white"
-                          : dayHazardSev === "danger"
+                        dayHazardSev === "danger"
                             ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
                             : "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
                       ].join(" ")}
@@ -2897,23 +2907,23 @@ function HeaderCalendarPopup({
                       </ul>
                     </div>
                   )}
-                  {holiday && !isSelected ? (
+                  {holiday ? (
                     <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-100 px-0.5 text-[11px] font-semibold tabular-nums text-red-600 dark:bg-red-500/20 dark:text-red-400">
                       {day}
                     </span>
                   ) : (
+                    // 구글 캘린더식 — **오늘은 채운 원, 나머지는 맨 숫자.** 원형을 오늘에만 쓰는 이유는
+                    // 그것이 화면에서 유일해야 눈에 띄기 때문이다(선택은 셀 배경이 이미 말한다).
                     <span
                       className={[
-                        "px-0.5 text-[11px] font-semibold tabular-nums",
-                        isSelected
-                          ? "text-white"
-                          : isToday
-                            ? "font-bold text-ink dark:text-on-dark"
-                            : weekday === 0
-                              ? "text-red-500 dark:text-red-400"
-                              : weekday === 6
-                                ? "text-blue-600 dark:text-blue-400"
-                                : "text-ink dark:text-on-dark",
+                        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
+                        isToday
+                          ? "bg-primary font-bold text-on-primary"
+                          : weekday === 0
+                            ? "text-red-500 dark:text-red-400"
+                            : weekday === 6
+                              ? "text-blue-600 dark:text-blue-400"
+                              : "text-ink dark:text-on-dark",
                       ].join(" ")}
                     >
                       {day}
@@ -2922,8 +2932,7 @@ function HeaderCalendarPopup({
                   {holiday && (
                     <span
                       className={[
-                        "truncate px-0.5 text-[7px] font-medium leading-tight",
-                        isSelected ? "text-white/80" : "text-red-500 dark:text-red-400",
+                        "truncate px-0.5 text-[7px] font-medium leading-tight text-red-500 dark:text-red-400",
                       ].join(" ")}
                     >
                       {holiday}
@@ -2934,9 +2943,7 @@ function HeaderCalendarPopup({
                       <span
                         className={[
                           "flex min-w-0 items-center gap-0.5 truncate rounded px-1 text-[8px] font-semibold leading-tight",
-                          isSelected
-                            ? "bg-white/20 text-white"
-                            : dayInspSev === "danger"
+                          dayInspSev === "danger"
                               ? "bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400"
                               : dayInspSev === "caution"
                                 ? "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400"
@@ -2956,14 +2963,13 @@ function HeaderCalendarPopup({
                         event={event}
                         color={findLabelDef(labels, event.labelId).color}
                         compact
-                        inverted={isSelected}
+                        inverted={false}
                       />
                     ))}
                     {dayEvents.length > 2 && (
                       <span
                         className={[
-                          "px-0.5 text-[8px] font-medium",
-                          isSelected ? "text-white/80" : "text-muted dark:text-on-dark-soft",
+                          "px-0.5 text-[8px] font-medium text-muted dark:text-on-dark-soft",
                         ].join(" ")}
                       >
                         +{dayEvents.length - 2}
