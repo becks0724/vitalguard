@@ -531,6 +531,38 @@ xcrun devicectl device process launch --device <워치UUID> --terminate-existing
 ⚠ 설치 후 **앱 1회 전면 실행**은 여전히 수칙이다(미기동 시 WCSession 전달 스로틀).
 ⚠ `devicectl` 설치는 **서명 만료일을 늘리지 않는다.** 프로파일 갱신은 Xcode Run 이 한다.
 
+### ★★ 재서명 — "Xcode Run 1회" 만으로는 만료가 안 늘어난다 (2026-08-20 실측)
+
+**Xcode 는 아직 유효한 프로파일이 캐시에 있으면 그것을 재사용한다.** 다시 서명은 하지만
+새 7일을 받지 않는다. 그래서 만료 며칠 전에 Run 을 해도 **만료일이 그대로**다.
+
+```
+08-20 10:05  Xcode Run   → 서명됨. ExpirationDate 08-25 02:29Z (08-18 발급분 재사용)
+08-20 10:09  캐시 삭제 후 Run → ExpirationDate 08-27 01:09Z (신규 발급)
+```
+캐시 = `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`
+(`~/Library/MobileDevice/Provisioning Profiles/` 는 이 맥에서 비어 있다 — 옛 경로).
+
+**절차.**
+```
+① 캐시의 .mobileprovision 삭제(백업 권장 — 재발급이 막히면 되돌린다)
+② Xcode Run 1회
+③ 앱 1회 전면 실행
+④ 검증 — 빌드 산출물의 만료일을 읽어 실제로 밀렸는지 확인한다
+   security cms -D -i <App>/embedded.mobileprovision \
+     | plutil -extract ExpirationDate raw -o - -
+```
+**④ 를 생략하지 않는다.** 이 함정은 "재서명했다" 는 착각을 남기고 만료일에 앱이 죽는다.
+
+⚠ 캐시 삭제는 **맥의 캐시만** 지운다 — 기기에 설치된 앱은 안 건드리므로, 재발급이 실패해도
+기존 만료일까지는 그대로 돌아간다. 최악의 결과가 "지금과 같음" 이라 안전하게 시도할 수 있다.
+
+⚠ **재설치는 워치 연결을 일시 저하시킨다**(정상 · 자가복구). 폰 앱을 다시 깔면 워치 앱이
+폰을 거쳐 재설치되는 수 분 동안 `watchAppInstalled=false` 로 보이고 채널이
+`sendMessage` → `transferUserInfo` 로 떨어진다. 서버 도착으로 판정한다 —
+**5초 간격·값이 매번 다름·좌표 붙음 = 복귀** / **같은 `ts` 에 뭉침·값 동일·좌표 없음 = 저하**.
+2026-08-20 실측 = 공백 3분 21초 후 자가 복귀(워치 앱 재설치 완료 시점).
+
 ### ⚠ 설치본 검증에 `strings` 를 쓸 때
 
 신규 코드가 실렸는지 확인할 때 **통제군 없이는 판정할 수 없다.**
