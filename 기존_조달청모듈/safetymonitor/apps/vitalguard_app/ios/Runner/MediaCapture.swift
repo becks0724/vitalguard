@@ -199,7 +199,12 @@ final class MediaCapture: NSObject {
         var lines = ["[\(kstStamp(date))]"]
         if let address { lines.append(address) }
         if let lat = fix?["latitude"] as? Double, let lon = fix?["longitude"] as? Double {
-            lines.append(String(format: "%.6f, %.6f", lat, lon))
+            // ★ 실내·지하에서는 새 fix 가 안 잡혀 최대 5분 전 좌표를 재사용한다(`requestFreshFix`).
+            //   그러면 "찍은 자리" 가 아닐 수 있으니 **오래된 좌표는 나이를 함께 적는다** —
+            //   각인은 증빙이라 옛 값을 지금 값처럼 보이게 두면 안 된다.
+            let age = fixAgeSec(fix, at: date)
+            let suffix = age >= 60 ? String(format: " (%.0f분 전 좌표)", (age / 60).rounded()) : ""
+            lines.append(String(format: "%.6f, %.6f", lat, lon) + suffix)
         }
         // ★ 위치가 없으면 **없다고 적는다**. 두 줄을 그냥 비우면 "위치가 안 찍히는 사진" 과
         //   "위치를 못 받은 사진" 이 같은 모양이 된다.
@@ -208,6 +213,16 @@ final class MediaCapture: NSObject {
         let id = AuthStore.workerId ?? "-"
         lines.append("작업자/ID: \(name), \(id)")
         return lines
+    }
+
+    /// 각인 시각 대비 좌표의 나이(초). 판별 불가면 0 — 표기를 생략해 **추측을 적지 않는다**.
+    private static func fixAgeSec(_ fix: [String: Any]?, at date: Date) -> TimeInterval {
+        guard let iso = fix?["locationTimestamp"] as? String else { return 0 }
+        // `LocationProvider.payload` 가 쓰는 포맷과 같아야 한다(소수점 초 포함 ISO8601).
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let t = f.date(from: iso) else { return 0 }
+        return max(0, date.timeIntervalSince(t))
     }
 
     /// `2026-08-19 14:07:17` — 서버 파서가 이 형식을 읽는다. KST 고정.

@@ -185,15 +185,22 @@ class _RecordScreenState extends State<RecordScreen> {
           if (url != null)
             AspectRatio(
               aspectRatio: 4 / 3,
-              child: Image.network(
-                url,
-                fit: BoxFit.cover,
-                // ⚠ 링크는 만료형이다 — 못 불러오면 빈 칸이 아니라 사유를 적는다.
-                errorBuilder: (_, _, _) => Container(
-                  color: VgColors.surfaceStrong,
-                  alignment: Alignment.center,
-                  child: const Text('이미지를 불러오지 못했습니다',
-                      style: TextStyle(fontSize: 12, color: VgColors.muted)),
+              // ★ `BoxFit.cover` 를 쓰면 안 된다 — 각인은 **이미지 맨 아래**에 있는데, 세로 사진
+              //   (3:4)을 4:3 칸에 cover 로 채우면 위아래 21.9%씩이 잘려 각인이 통째로 사라진다
+              //   (2026-08-19 실측 — 1800×2400 사진은 각인 없어 보이고 2400×1800 은 보였다).
+              //   `contain` 은 방향과 무관하게 전체를 보여 준다. 남는 여백은 배경으로 채운다.
+              child: ColoredBox(
+                color: VgColors.surfaceStrong,
+                child: Image.network(
+                  url,
+                  fit: BoxFit.contain,
+                  // ⚠ 링크는 만료형이다 — 못 불러오면 빈 칸이 아니라 사유를 적는다.
+                  errorBuilder: (_, _, _) => Container(
+                    color: VgColors.surfaceStrong,
+                    alignment: Alignment.center,
+                    child: const Text('이미지를 불러오지 못했습니다',
+                        style: TextStyle(fontSize: 12, color: VgColors.muted)),
+                  ),
                 ),
               ),
             ),
@@ -223,8 +230,12 @@ class _RecordScreenState extends State<RecordScreen> {
   }
 
   /// `2026-08-19T14:07:17+09:00` → `08-19 14:07`. 파싱 실패면 원문을 그대로 둔다.
+  ///
+  /// ⚠ `.toLocal()` 을 빼면 **UTC 가 그대로 찍힌다**. Dart 의 `DateTime.parse` 는 오프셋이
+  ///   붙어 있어도 UTC 로 정규화해 돌려주고(`isUtc == true`), `hour` 는 UTC 시를 낸다.
+  ///   실측 — 각인은 `18:40:13` 인데 목록은 `09:40` 으로 9시간 어긋났다(2026-08-19).
   String _when(String iso) {
-    final at = DateTime.tryParse(iso);
+    final at = DateTime.tryParse(iso)?.toLocal();
     if (at == null) return iso;
     return '${at.month.toString().padLeft(2, '0')}-${at.day.toString().padLeft(2, '0')}'
         ' ${formatClock(at)}';

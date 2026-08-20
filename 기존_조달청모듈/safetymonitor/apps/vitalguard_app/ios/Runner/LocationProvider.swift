@@ -119,21 +119,29 @@ final class LocationProvider: NSObject {
     ///   `didUpdateLocations` 의 유휴 판정(`stopTracking`)이 촬영 때문에 오발동한다.
     ///
     /// 최근 fix 가 [freshEnoughSec] 이내면 GPS 를 돌리지 않고 그것을 쓴다(배터리·지연 절약).
+    ///
+    /// ⚠ 기본값 60초·8초로 시작했다가 **실내·지하에서 좌표가 통째로 비었다**(2026-08-19 실측 —
+    ///   지하주차장 18:40·실내 18:41 두 장 모두 각인이 `위치 미확보`, 같은 날 실외 17:16·23:38 은 성공).
+    ///   창을 300초로 넓힌 이유는 [cachedFix] 주석 참조. 오래된 좌표를 쓰면 **각인이 나이를 밝힌다**.
     func requestFreshFix(
-        freshEnoughSec: TimeInterval = 60,
-        timeout: TimeInterval = 8,
+        freshEnoughSec: TimeInterval = 300,
+        timeout: TimeInterval = 12,
         completion: @escaping ([String: Any]?) -> Void
     ) {
-        lock.lock()
-        let fix = latestFix
-        lock.unlock()
-        if let fix, Date().timeIntervalSince(fix.timestamp) <= freshEnoughSec {
-            completion(payload(from: fix))
-            return
-        }
+        // `oneShot` 접근을 전부 메인으로 모은다 — CLLocationManager 는 런루프가 있는 스레드에서 다룬다.
         DispatchQueue.main.async {
+            if let cached = self.cachedFix(within: freshEnoughSec) {
+                completion(self.payload(from: cached))
+                return
+            }
             self.oneShot.request(timeout: timeout) { [weak self] loc in
-                guard let self, let loc else { completion(nil); return }
+                guard let self else { completion(nil); return }
+                guard let loc else {
+                    // 실내·지하에서는 새 fix 가 아예 안 온다. 여기서 포기하면 각인이 빈다 —
+                    // 마지막으로 알던 좌표를 같은 신선도 기준으로 한 번 더 본다.
+                    completion(self.cachedFix(within: freshEnoughSec).map { self.payload(from: $0) })
+                    return
+                }
                 // 받은 fix 는 추적 경로와 같은 품질 기준을 통과할 때만 캐시에 반영한다.
                 if loc.horizontalAccuracy > 0, loc.horizontalAccuracy <= Self.siteRadiusMaxM {
                     self.lock.lock()
@@ -143,6 +151,24 @@ final class LocationProvider: NSObject {
                 completion(self.payload(from: loc))
             }
         }
+    }
+
+    /// [maxAgeSec] 이내의 마지막 좌표. 추적이 채운 `latestFix` 와 **iOS 가 앱과 무관하게 들고 있는
+    /// 마지막 좌표**(`CLLocationManager.location`) 중 더 최근 것을 고른다.
+    ///
+    /// ★ 후자가 실내 대책의 핵심이다 — 건물에 들어서기 직전의 실외 fix 가 시스템에 남아 있어,
+    ///   지하에서 새 요청이 실패해도 "그 건물" 은 가리킬 수 있다. 우리 `latestFix` 는 추적이 꺼져
+    ///   있으면 아예 비어 있으므로 그것만으로는 못 채운다.
+    /// ⚠ 메인 스레드에서만 부른다(`oneShot` 을 만진다).
+    private func cachedFix(within maxAgeSec: TimeInterval) -> CLLocation? {
+        lock.lock()
+        let mine = latestFix
+        lock.unlock()
+        let now = Date()
+        return [mine, oneShot.lastKnown]
+            .compactMap { $0 }
+            .filter { now.timeIntervalSince($0.timestamp) <= maxAgeSec }
+            .max { $0.timestamp < $1.timestamp }
     }
 
     private lazy var oneShot = OneShotLocator()
@@ -316,9 +342,15 @@ private final class OneShotLocator: NSObject, CLLocationManagerDelegate {
     override init() {
         super.init()
         manager.delegate = self
-        // 각인은 "어느 현장인가" 가 아니라 "어디서 찍었나" 라 추적보다 정확도를 올린다.
-        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        // ⚠ 10m 등급을 요구했다가 실내·지하에서 좌표가 통째로 비었다(2026-08-19 실측).
+        //   `requestLocation()` 은 **요구 등급을 만족하는 fix 만** 준다. 실내에서 나오는 Wi-Fi 측위는
+        //   보통 30~65m 라 10m 를 영영 못 채우고 타임아웃으로 nil 이 된다.
+        //   각인의 목적은 "어느 현장인가" 라 100m 로 충분하다 — 정밀도보다 **확보율**을 택한다.
+        manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
+
+    /// iOS 가 들고 있는 마지막 좌표(앱이 받은 적 없어도 값이 있을 수 있다).
+    var lastKnown: CLLocation? { manager.location }
 
     func request(timeout: TimeInterval, completion: @escaping (CLLocation?) -> Void) {
         // 앞선 요청이 살아 있으면 그것을 취소하고 새 요청으로 대체한다(중복 호출 방어).

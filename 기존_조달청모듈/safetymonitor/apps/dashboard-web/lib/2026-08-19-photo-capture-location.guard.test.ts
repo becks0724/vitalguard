@@ -70,3 +70,71 @@ test("★ 일회성 측위기는 추적용 매니저와 분리돼 있고 타임�
     "타임아웃이 없다 — requestLocation 이 무응답이면 촬영 화면이 영원히 기다린다",
   );
 });
+
+// ── 2026-08-20 추가 · 실내·지하 좌표 미확보 대응 ────────────────────────────────
+// 실측 — 지하주차장 18:40·실내 18:41 두 장 모두 각인이 `위치 미확보` 였고, 같은 날 실외
+// 17:16·17:17·23:38 은 좌표가 들어왔다. 원인은 신호가 아니라 **요구 등급**이다.
+// `requestLocation()` 은 요구 정확도를 만족하는 fix 만 주는데 실내 Wi-Fi 측위는 30~65m 라
+// 10m 요구를 영영 못 채운다. 아래 셋이 풀리면 같은 자리에서 다시 빈 좌표가 된다.
+
+test("★ 일회성 요청은 10m 등급을 요구하지 않는다 — 실내에서 콜백이 영영 안 온다", () => {
+  const cls = loc.slice(loc.indexOf("final class OneShotLocator"));
+  assert.ok(cls.length > 200, "OneShotLocator 를 못 찾았다 — 가드를 다시 맞춰야 한다");
+  assert.doesNotMatch(
+    cls,
+    /desiredAccuracy\s*=\s*kCLLocationAccuracyNearestTenMeters/,
+    "10m 등급으로 되돌아갔다 — 지하·실내에서 각인 좌표가 통째로 빈다",
+  );
+  assert.match(
+    cls,
+    /desiredAccuracy\s*=\s*kCLLocationAccuracyHundredMeters/,
+    "100m 등급이 아니다 — 각인은 '어느 현장인가' 라 확보율이 정밀도보다 중요하다",
+  );
+});
+
+test("★ 신선도 창과 타임아웃이 실내에서 버틸 만큼 넓다", () => {
+  const sig = loc.slice(loc.indexOf("func requestFreshFix("));
+  const head = sig.slice(0, sig.indexOf(") {"));
+  const fresh = head.match(/freshEnoughSec:\s*TimeInterval\s*=\s*(\d+)/);
+  const timeout = head.match(/timeout:\s*TimeInterval\s*=\s*(\d+)/);
+  // ⚠ `noUncheckedIndexedAccess: true` — 캡처 그룹은 `string | undefined` 다.
+  const freshVal = fresh?.[1];
+  const timeoutVal = timeout?.[1];
+  assert.ok(freshVal && timeoutVal, "기본값을 못 읽었다 — 시그니처가 바뀌었다");
+  assert.ok(
+    Number(freshVal) >= 300,
+    `신선도 창이 ${freshVal}초다 — 60초로 되돌리면 직전 좌표를 못 쓴다`,
+  );
+  assert.ok(
+    Number(timeoutVal) >= 12,
+    `타임아웃이 ${timeoutVal}초다 — 실내 측위는 8초 안에 안 온다`,
+  );
+});
+
+test("★ 새 fix 가 실패하면 마지막으로 알던 좌표로 되돌아간다", () => {
+  const fn = loc.slice(loc.indexOf("func requestFreshFix("));
+  const body = fn.slice(0, fn.indexOf("\n    /// [maxAgeSec]"));
+  assert.ok(body.length > 200, "requestFreshFix 본문을 못 잘랐다");
+  assert.doesNotMatch(
+    body,
+    /guard let self, let loc else \{ completion\(nil\); return \}/,
+    "실패 즉시 nil 로 끝낸다 — 실내에서 각인이 항상 빈다",
+  );
+  // ⚠ 전체 검색으로는 못 가른다 — 함수 **머리의 선조회**가 같은 문자열이라, 실패 분기에서
+  //   폴백을 지워도 통과한다(작성 중 음성 대조로 실제 확인). **실패 분기 안**을 본다.
+  const elseAt = body.indexOf("guard let loc else {");
+  assert.notEqual(elseAt, -1, "새 fix 실패 분기가 사라졌다");
+  const failBranch = body.slice(elseAt, body.indexOf("\n                }", elseAt));
+  assert.match(
+    failBranch,
+    /cachedFix\(within: freshEnoughSec\)/,
+    "실패 분기에 캐시 폴백이 없다 — 실내에서 각인이 항상 빈다",
+  );
+  // 시스템이 들고 있는 마지막 좌표까지 봐야 추적이 꺼진 상태에서도 값이 나온다.
+  const cached = loc.slice(loc.indexOf("private func cachedFix("));
+  assert.match(
+    cached.slice(0, cached.indexOf("\n    }")),
+    /oneShot\.lastKnown/,
+    "우리 latestFix 만 본다 — 추적이 꺼져 있으면 비어 있어 아무 도움이 안 된다",
+  );
+});

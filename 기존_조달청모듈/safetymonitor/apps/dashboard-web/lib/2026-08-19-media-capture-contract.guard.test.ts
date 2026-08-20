@@ -107,3 +107,40 @@ test("★ 역지오코딩 결과에서 중복 지명을 걷어낸다", () => {
     "단순 join 으로 되돌아갔다 — 광역시에서 시·도가 두 번 들어간다",
   );
 });
+
+// ── 2026-08-20 추가 · 각인이 "찍히지 않은 것처럼" 보이던 문제 ──────────────────
+// 실측 — 목록에서 세로 사진은 각인이 없어 보이고 가로 사진은 보였다. 원본을 내려받아 보니
+// **둘 다 각인이 있었다**. 범인은 카드의 `AspectRatio(4/3) + BoxFit.cover` 로, 3:4 사진의
+// 위아래 21.9%씩을 잘라내 하단 각인 밴드(높이 ≈9.7%)를 통째로 먹었다.
+
+test("★ 목록 카드는 이미지를 잘라내지 않는다 — 각인은 맨 아래에 있다", () => {
+  const dart = readFileSync(join(APP, "lib", "record_screen.dart"), "utf8");
+  const code = dart.replace(/^\s*\/\/.*$/gm, "");
+  assert.match(code, /fit: BoxFit\.contain/, "contain 이 아니다");
+  assert.doesNotMatch(
+    code,
+    /fit: BoxFit\.cover/,
+    "cover 로 되돌아갔다 — 세로 사진의 각인이 잘려 '각인이 안 됐다' 로 보인다",
+  );
+});
+
+test("★ 목록 시각은 로컬로 바꿔 찍는다 — 안 그러면 9시간 어긋난다", () => {
+  const dart = readFileSync(join(APP, "lib", "record_screen.dart"), "utf8");
+  const fn = dart.slice(dart.indexOf("String _when(String iso)"));
+  const body = fn.slice(0, fn.indexOf("\n  }"));
+  // Dart 의 DateTime.parse 는 `+09:00` 이 붙어 있어도 UTC 로 정규화해 돌려준다.
+  // 실측 — 각인 18:40:13 / 목록 09:40.
+  assert.match(body, /\.toLocal\(\)/, "toLocal() 이 없다 — 목록이 UTC 를 그대로 표시한다");
+});
+
+test("★ 좌표가 오래됐으면 각인이 나이를 밝힌다", () => {
+  const fn = code.slice(code.indexOf("static func stampLines("));
+  const body = fn.slice(0, fn.indexOf("\n    }"));
+  assert.match(body, /분 전 좌표/, "나이 표기가 없다 — 5분 전 좌표를 지금 값처럼 각인한다");
+  assert.match(body, /fixAgeSec\(fix, at: date\)/, "나이 계산을 안 부른다");
+  // ⚠ 문자열만 보면 조건을 죽여도(`let suffix = false ? … : ""`) 통과한다 — 음성 대조로 확인.
+  //   나이와 비교하는 줄이 살아 있는지까지 본다.
+  assert.match(body, /age >= 60/, "나이 비교가 사라졌다 — 표기가 붙어 있어도 실제로는 안 붙는다");
+  // ⚠ 계산해 놓고 **안 붙이면** Swift 는 경고만 낸다(미사용 변수). 붙는 것까지 본다.
+  assert.match(body, /lat, lon\) \+ suffix/, "접미사를 좌표 줄에 안 붙인다 — 계산만 하고 버린다");
+});

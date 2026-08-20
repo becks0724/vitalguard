@@ -138,7 +138,12 @@ test("⑤ ★ 묵은 좌표를 싣지 않는다(신선도 게이트)", () => {
 });
 
 test("⑥ ★ 좌표 4종을 한 덩어리로 싣는다(정확도·측위시각 분리 금지)", () => {
-  const fn = provider.slice(provider.indexOf("func currentFix()"), provider.indexOf("func currentFix()") + 900);
+  // ⚠ 전에는 `currentFix()` 부터 **고정 900자**를 잘라 봤다. 그 사이에 함수가 하나 들어가자
+  //   창이 밀려 초록이던 가드가 빨개졌다(2026-08-20 — 이 레포에서 같은 형태가 세 번째다).
+  //   좌표 4종은 `payload(from:)` 한 곳에서만 만들어지므로 **그 함수를 직접** 앵커로 쓴다.
+  const start = provider.indexOf("private func payload(from fix: CLLocation)");
+  assert.notEqual(start, -1, "payload(from:) 를 못 찾았다 — 좌표 조립 지점이 옮겨졌다");
+  const fn = provider.slice(start, provider.indexOf("\n    }", start));
   for (const key of ["latitude", "longitude", "locationAccuracyMeters", "locationTimestamp"]) {
     assert.match(fn, new RegExp(`"${key}":`), `${key} 가 빠졌다 — 품질·나이를 못 재는 좌표가 된다`);
   }
