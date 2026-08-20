@@ -61,7 +61,7 @@ void main() {
 
     await _pumpHome(tester);
 
-    for (final label in ['요약', '기록', '둘러보기']) {
+    for (final label in ['요약', 'OCR', '둘러보기']) {
       expect(find.text(label), findsOneWidget);
     }
     // 기본 탭 = 요약이므로 생체 카드가 그대로 보인다.
@@ -125,7 +125,7 @@ void main() {
     await _pumpHome(tester);
 
     // 기록 = 구현됨. 촬영 두 경로(서류 스캔·사진 촬영)가 화면에 있어야 한다.
-    await tester.tap(find.text('기록'));
+    await tester.tap(find.text('OCR'));
     await tester.pumpAndSettle();
     expect(find.text('서류 스캔'), findsOneWidget);
     expect(find.text('사진 촬영'), findsOneWidget);

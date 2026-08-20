@@ -655,6 +655,6 @@ class _HomeScreenState extends State<HomeScreen> {
 /// 하단 탭 3종. **늘어날 수 있다** — 바는 개수를 세지 않고 이 목록을 그대로 그린다.
 const List<GlassTab> _tabs = [
   (Icons.favorite, '요약'),
-  (Icons.timeline, '기록'),
+  (Icons.photo_camera_outlined, 'OCR'),
   (Icons.grid_view, '둘러보기'),
 ];

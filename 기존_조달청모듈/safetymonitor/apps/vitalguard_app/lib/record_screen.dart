@@ -49,11 +49,20 @@ class _RecordScreenState extends State<RecordScreen> {
   bool _loading = true;
   bool _busy = false;
   String? _error;
+  /// 내 로그인 ID — 댓글 `author_id` 와 같은 공간이다(사번 아님).
+  String? _me;
 
   @override
   void initState() {
     super.initState();
+    _loadMe();
     _load();
+  }
+
+  Future<void> _loadMe() async {
+    final res = await _call('status', const {});
+    if (!mounted) return;
+    setState(() => _me = res?['loginId'] as String?);
   }
 
   Future<void> _load() async {
@@ -137,19 +146,68 @@ class _RecordScreenState extends State<RecordScreen> {
     if (res?['ok'] == true) await _load();
   }
 
-  Future<void> _editDescription(Map<String, dynamic> m) async {
-    final controller = TextEditingController(text: (m['description'] as String?) ?? '');
+  /// 설명을 남긴다 — **관제웹의 같은 사진 '설명·댓글' 스레드에 그대로 뜬다**.
+  ///
+  /// ★ 사진 속성(`description`)이 아니라 댓글로 쓴다. 관제웹은 description 을 화면에
+  ///   그리지 않으므로 거기 적으면 관리자가 영영 못 본다(2026-08-20 실측).
+  ///   댓글이면 작성자·시각이 남고 관리자가 그 자리에서 답글을 단다.
+  Future<void> _writeComment(Map<String, dynamic> m) async {
+    final text = await _textDialog(
+      title: '설명 남기기',
+      hint: '무엇을 찍었는지 적어 주세요. 관제 화면에 그대로 보입니다.',
+    );
+    if (text == null || !mounted) return;
+    final res = await _call('addComment', {'mediaId': m['id'], 'body': text});
+    if (!mounted) return;
+    _say(res?['ok'] == true ? '관제에 전달했습니다.' : '실패 — ${res?['error'] ?? '알 수 없는 오류'}');
+    if (res?['ok'] == true) await _load();
+  }
+
+  /// 내 댓글 고치기·지우기. 남의 댓글에는 이 경로가 열리지 않는다.
+  Future<void> _editComment(Map<String, dynamic> c) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('내 설명'),
+        children: [
+          SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'edit'), child: const Text('수정')),
+          SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, 'delete'),
+              child: const Text('삭제', style: TextStyle(color: VgColors.danger))),
+        ],
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'delete') {
+      final res = await _call('deleteComment', {'id': c['id']});
+      if (!mounted) return;
+      _say(res?['ok'] == true ? '지웠습니다.' : '실패 — ${res?['error'] ?? '알 수 없는 오류'}');
+      if (res?['ok'] == true) await _load();
+      return;
+    }
+    final text = await _textDialog(
+        title: '설명 수정', hint: '내용을 고칩니다.', initial: (c['body'] as String?) ?? '');
+    if (text == null || !mounted) return;
+    final res = await _call('updateComment', {'id': c['id'], 'body': text});
+    if (!mounted) return;
+    _say(res?['ok'] == true ? '고쳤습니다.' : '실패 — ${res?['error'] ?? '알 수 없는 오류'}');
+    if (res?['ok'] == true) await _load();
+  }
+
+  /// 빈 내용은 저장하지 않는다 — 서버도 거부하지만 왕복하기 전에 막는다.
+  Future<String?> _textDialog(
+      {required String title, required String hint, String initial = ''}) async {
+    final controller = TextEditingController(text: initial);
     final text = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('설명 메모'),
+        title: Text(title),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLines: 3,
-          decoration: const InputDecoration(
-            hintText: '무엇을 찍었는지 적어 두면 관제에서 같이 보입니다.',
-          ),
+          decoration: InputDecoration(hintText: hint),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
@@ -160,11 +218,7 @@ class _RecordScreenState extends State<RecordScreen> {
         ],
       ),
     );
-    if (text == null || !mounted) return;
-    final res = await _call('updateMediaDescription', {'id': m['id'], 'description': text});
-    if (!mounted) return;
-    _say(res?['ok'] == true ? '설명을 저장했습니다.' : '저장 실패 — ${res?['error'] ?? '알 수 없는 오류'}');
-    if (res?['ok'] == true) await _load();
+    return (text == null || text.isEmpty) ? null : text;
   }
 
   /// 브리지 호출 — 네이티브가 던지는 예외도 같은 모양의 실패로 접는다.
@@ -266,7 +320,7 @@ class _RecordScreenState extends State<RecordScreen> {
     final captured = m['captured_at'] as String? ?? m['date_key'] as String? ?? '';
     final address = (m['road_address'] as String?)?.trim();
     final uploader = (m['uploader'] as String?)?.trim();
-    final description = (m['description'] as String?)?.trim();
+    final comments = (m['comments'] as List?)?.whereType<Map>().toList() ?? const [];
     // ★ 권한은 서버가 항목마다 계산해 내려준다(`canDelete`). 화면이 사번을 비교해 다시 재면
     //   두 곳의 규칙이 언젠가 갈리고, 그때 사용자는 "버튼은 있는데 눌러도 안 된다" 를 겪는다.
     final mine = m['canDelete'] == true;
@@ -321,9 +375,9 @@ class _RecordScreenState extends State<RecordScreen> {
                           iconSize: 18,
                           tooltip: '기록 관리',
                           onSelected: (v) =>
-                              v == 'edit' ? _editDescription(m) : _delete(m),
+                              v == 'edit' ? _writeComment(m) : _delete(m),
                           itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'edit', child: Text('설명 수정')),
+                            PopupMenuItem(value: 'edit', child: Text('설명 남기기')),
                             PopupMenuItem(value: 'delete', child: Text('삭제')),
                           ],
                         ),
@@ -339,16 +393,45 @@ class _RecordScreenState extends State<RecordScreen> {
                   const SizedBox(height: 2),
                   Text(uploader, style: const TextStyle(fontSize: 11, color: VgColors.muted)),
                 ],
-                if (description != null && description.isNotEmpty) ...[
+                // 관제웹과 같은 스레드다 — 관리자가 단 답글도 여기 보인다.
+                for (final c in comments) ...[
                   const SizedBox(height: 6),
-                  Text(description,
-                      style: const TextStyle(fontSize: 12, color: VgColors.ink)),
+                  _comment(c.cast<String, dynamic>()),
                 ],
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _comment(Map<String, dynamic> c) {
+    final mine = _me != null && c['author_id'] == _me;
+    final who = (c['author_name'] as String?)?.trim();
+    final title = (c['author_title'] as String?)?.trim();
+    final label = [who ?? '작성자 미상', if (title != null && title.isNotEmpty) title].join(' · ');
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label${mine ? ' · 나' : ''}',
+            style: const TextStyle(fontSize: 11, color: VgColors.muted)),
+        const SizedBox(height: 2),
+        Text((c['body'] as String?) ?? '',
+            style: const TextStyle(fontSize: 12, color: VgColors.ink)),
+      ],
+    );
+    // 내 것만 누를 수 있다 — 남의 댓글은 서버가 404 로 막으므로 애초에 열지 않는다.
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      decoration: BoxDecoration(
+        color: VgColors.surfaceCard,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: mine
+          ? InkWell(onTap: () => _editComment(c), child: body)
+          : body,
     );
   }
 

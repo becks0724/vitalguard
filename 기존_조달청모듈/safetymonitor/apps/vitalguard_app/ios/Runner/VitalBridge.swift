@@ -1,6 +1,7 @@
 // Flutter UI ↔ 네이티브 브리지 — 관제웹 계정 로그인(JWT 발급·Keychain 저장)과 파이프라인 상태 조회를 담당한다
 import Flutter
 import Foundation
+import Photos
 import Security
 
 // JWT 는 Keychain, 사번·이름 등 비밀 아닌 값은 UserDefaults 에 둔다.
@@ -53,6 +54,16 @@ enum AuthStore {
         set { UserDefaults.standard.set(newValue, forKey: "auth.userName") }
     }
 
+    /// 로그인 ID(관제웹과 같은 계정 아이디 · JWT `sub`).
+    ///
+    /// ★ 사번(`workerId`)과 **다른 값**이다 — 관제는 `admin6861`, 사번은 `EMP-6861`.
+    ///   댓글 작성자(`author_id`)는 서버가 로그인 ID 로 적으므로, "내 댓글인가" 판정에는
+    ///   사번이 아니라 이것을 써야 한다. 사번으로 비교하면 내 댓글도 남의 것으로 보인다.
+    static var loginId: String? {
+        get { UserDefaults.standard.string(forKey: "auth.loginId") }
+        set { UserDefaults.standard.set(newValue, forKey: "auth.loginId") }
+    }
+
     /// 마지막으로 로그인에 성공한 사번 — 계정 교체 감지용이라 로그아웃(clearAll)에도 지우지 않는다.
     static var lastWorkerId: String? {
         get { UserDefaults.standard.string(forKey: "auth.lastWorkerId") }
@@ -63,6 +74,7 @@ enum AuthStore {
         clearToken()
         UserDefaults.standard.removeObject(forKey: "auth.workerId")
         UserDefaults.standard.removeObject(forKey: "auth.userName")
+        UserDefaults.standard.removeObject(forKey: "auth.loginId")
     }
 }
 
@@ -123,7 +135,35 @@ final class VitalBridge: NSObject {
                 result(["ok": false, "error": "id 가 없습니다."])
                 return
             }
-            mediaWrite(method: "DELETE", query: ["id": id], body: nil, result: result)
+            apiWrite(path: "api/calendar/media", method: "DELETE", query: ["id": id], body: nil, result: result)
+        // 댓글 — 관제웹의 같은 사진 '설명·댓글' 스레드와 **같은 저장소**다.
+        case "addComment":
+            let args = call.arguments as? [String: Any]
+            guard let mediaId = args?["mediaId"] as? String, !mediaId.isEmpty,
+                  let text = (args?["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else {
+                result(["ok": false, "error": "내용을 입력해 주세요."])
+                return
+            }
+            apiWrite(path: "api/calendar/media/comment", method: "POST", query: [:],
+                     body: ["mediaId": mediaId, "body": text], result: result)
+        case "updateComment":
+            let args = call.arguments as? [String: Any]
+            guard let id = args?["id"] as? String, !id.isEmpty,
+                  let text = (args?["body"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else {
+                result(["ok": false, "error": "내용을 입력해 주세요."])
+                return
+            }
+            apiWrite(path: "api/calendar/media/comment", method: "PATCH", query: [:],
+                     body: ["id": id, "body": text], result: result)
+        case "deleteComment":
+            guard let id = (call.arguments as? [String: Any])?["id"] as? String, !id.isEmpty else {
+                result(["ok": false, "error": "id 가 없습니다."])
+                return
+            }
+            apiWrite(path: "api/calendar/media/comment", method: "DELETE", query: ["id": id],
+                     body: nil, result: result)
         case "updateMediaDescription":
             let args = call.arguments as? [String: Any]
             guard let id = args?["id"] as? String, !id.isEmpty else {
@@ -131,15 +171,35 @@ final class VitalBridge: NSObject {
                 return
             }
             let text = args?["description"] as? String ?? ""
-            mediaWrite(method: "PATCH", query: [:], body: ["id": id, "description": text], result: result)
+            apiWrite(path: "api/calendar/media", method: "PATCH", query: [:],
+                     body: ["id": id, "description": text], result: result)
         case "status":
-            result([
+            var payload: [String: Any] = [
                 "loggedIn": AuthStore.token != nil,
                 "workerId": AuthStore.workerId as Any,
+                "loginId": AuthStore.loginId as Any,
                 "name": AuthStore.userName as Any,
                 "pending": VitalPipeline.shared.pendingCount,
                 "baseURL": VitalPipeline.resolvedBaseURL().absoluteString,
-            ])
+            ]
+            // ★ 진단 항목 — 설정 화면이 3초마다 이 경로로 다시 묻는다. EventChannel 과 독립이라
+            //   스트림이 끊겨도 값이 얼지 않는다(2026-08-20 실측 결함 대응).
+            if let at = PhoneReceiver.shared.lastVitalAt {
+                payload["lastVitalAtMs"] = Int(at.timeIntervalSince1970 * 1000)
+                payload["lastVitalAgeSec"] = Int(Date().timeIntervalSince(at))
+            }
+            if let bat = PhoneReceiver.shared.watchBatteryPct { payload["watchBatteryPct"] = bat }
+            payload.merge(LocationProvider.shared.diagnostics()) { a, _ in a }
+            payload["photoAddAuth"] = Self.photoAddAuthText()
+            let info = Bundle.main.infoDictionary
+            payload["appVersion"] = info?["CFBundleShortVersionString"] as? String ?? "-"
+            payload["appBuild"] = info?["CFBundleVersion"] as? String ?? "-"
+            // 빌드 시각은 별도 필드가 없다 — 실행 파일의 수정 시각이 곧 빌드·설치 시점이다.
+            if let exe = Bundle.main.executableURL,
+               let m = (try? FileManager.default.attributesOfItem(atPath: exe.path))?[.modificationDate] as? Date {
+                payload["builtAtMs"] = Int(m.timeIntervalSince1970 * 1000)
+            }
+            result(payload)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -232,11 +292,24 @@ final class VitalBridge: NSObject {
         }.resume()
     }
 
-    /// 미디어 삭제·수정 공통 경로. 둘 다 같은 라우트(`api/calendar/media`)의 다른 메서드다.
+    /// 사진첩 **추가 전용** 권한 상태 문구. 거부돼 있으면 촬영본이 조용히 안 남는다.
+    private static func photoAddAuthText() -> String {
+        switch PHPhotoLibrary.authorizationStatus(for: .addOnly) {
+        case .notDetermined: return "미결정"
+        case .restricted: return "제한됨"
+        case .denied: return "거부됨"
+        case .authorized: return "허용"
+        case .limited: return "일부 허용"
+        @unknown default: return "알 수 없음"
+        }
+    }
+
+    /// 인증이 필요한 쓰기 요청 공통 경로(미디어 삭제·설명, 댓글 추가·수정·삭제).
     ///
-    /// ★ 서버가 소유권을 판정한다 — 남의 사진이면 **404**(있는지조차 알려주지 않는다).
+    /// ★ 서버가 소유권을 판정한다 — 남의 것이면 **404**(있는지조차 알려주지 않는다).
     ///   그 404 를 "없어졌다" 로 옮기면 사용자가 오해하므로 화면에 쓸 사유를 여기서 붙인다.
-    private func mediaWrite(
+    private func apiWrite(
+        path: String,
         method: String,
         query: [String: String],
         body: [String: Any]?,
@@ -247,7 +320,7 @@ final class VitalBridge: NSObject {
             return
         }
         var comps = URLComponents(
-            url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/calendar/media"),
+            url: VitalPipeline.resolvedBaseURL().appendingPathComponent(path),
             resolvingAgainstBaseURL: false
         )
         if !query.isEmpty {
@@ -343,6 +416,7 @@ final class VitalBridge: NSObject {
             AuthStore.saveToken(token)
             AuthStore.workerId = workerId
             AuthStore.userName = user["name"] as? String
+            AuthStore.loginId = user["id"] as? String
             VitalPipeline.shared.reloadAuth()
             finish(["ok": true, "workerId": workerId, "name": user["name"] as? String as Any])
         }.resume()

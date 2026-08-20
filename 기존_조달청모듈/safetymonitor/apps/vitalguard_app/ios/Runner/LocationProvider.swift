@@ -183,6 +183,33 @@ final class LocationProvider: NSObject {
         ]
     }
 
+    /// 설정 화면 진단용 — 권한 등급과 마지막으로 아는 좌표(나이 포함).
+    ///
+    /// ★ `currentFix()` 와 다르다 — 저것은 300초를 넘으면 nil 을 준다(오래된 좌표를 실어
+    ///   보내지 않으려는 규칙). 진단 화면은 **오래됐다는 사실 자체가 정보**라 나이와 함께 그대로 준다.
+    func diagnostics() -> [String: Any] {
+        let auth: String
+        switch manager.authorizationStatus {
+        case .notDetermined: auth = "미결정"
+        case .restricted: auth = "제한됨"
+        case .denied: auth = "거부됨"
+        case .authorizedWhenInUse: auth = "앱 사용 중 허용"
+        case .authorizedAlways: auth = "항상 허용"
+        @unknown default: auth = "알 수 없음"
+        }
+        var out: [String: Any] = ["locationAuth": auth, "tracking": tracking]
+        lock.lock()
+        let fix = latestFix
+        lock.unlock()
+        if let fix {
+            out["fixLat"] = (fix.coordinate.latitude * 1_000_000).rounded() / 1_000_000
+            out["fixLon"] = (fix.coordinate.longitude * 1_000_000).rounded() / 1_000_000
+            out["fixAccM"] = (fix.horizontalAccuracy * 10).rounded() / 10
+            out["fixAgeSec"] = Int(Date().timeIntervalSince(fix.timestamp))
+        }
+        return out
+    }
+
     // MARK: - 내부
 
     private func requestAuthorizationIfNeeded() {

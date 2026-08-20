@@ -32,7 +32,18 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
         /// 이산 6종 — 종류별 누계 건수와 최신 값. 0 건은 화면에서 생략된다(워치와 같은 규칙).
         var discreteCounts: [String: Int] = [:]
         var discreteValues: [String: Double] = [:]
+        /// 워치 배터리(%). 워치가 모니터링을 못 켜면 아예 안 실린다 — 0 이 아니라 nil 이다.
+        var batteryPct: Int?
     }
+
+    /// 설정 화면 진단용 — **마지막으로 워치 배치가 도착한 시각**.
+    ///
+    /// ★ EventChannel 이 아니라 여기서 읽는 이유 — 화면이 스트림으로만 이 값을 알면,
+    ///   스트림이 끊겼을 때 화면도 함께 얼어 "언제부터 안 오는지" 를 못 보여준다
+    ///   (2026-08-20 실측 — 서버는 12건/분 받는데 폰 화면만 7분 41초 전에 멈춰 있었다).
+    ///   설정 화면은 3초마다 `status` 를 직접 물으므로 이 경로는 스트림과 독립이다.
+    var lastVitalAt: Date? { snapshot.bpmAt }
+    var watchBatteryPct: Int? { snapshot.batteryPct }
 
     /// 워치 화면(`ContentView.discreteLine`)과 같은 순서.
     private static let discreteKeys = ["pe", "dl", "rhr", "whr", "rr", "hrv"]
@@ -114,6 +125,7 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
                 snapshot.spo2At = at.map { Date(timeIntervalSince1970: $0) }
             }
             if let still = s["still"] as? Double { snapshot.stillSec = still }
+            if let bat = s["bat"] as? Int { snapshot.batteryPct = bat }
             // 걸음·오른층은 구간 증분 계약이라 더해야 누계가 된다.
             if let stp = s["stp"] as? Int { snapshot.steps += stp }
             if let flt = s["flt"] as? Int { snapshot.flights += flt }

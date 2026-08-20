@@ -97,6 +97,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
+  /// 초 → `3분 12초 전`. 값이 없으면 null 을 돌려 줄을 생략하지 않고 호출부가 사유를 적게 한다.
+  static String _ago(int sec) {
+    if (sec < 60) return '$sec초 전';
+    final m = sec ~/ 60;
+    if (m < 60) return '$m분 ${sec % 60}초 전';
+    final h = m ~/ 60;
+    return h < 24 ? '$h시간 ${m % 60}분 전' : '${h ~/ 24}일 전';
+  }
+
+  /// 워치 수신 상태 — **끊긴 지 얼마나 됐는지**가 핵심이다.
+  ///
+  /// ★ 이 값은 EventChannel 이 아니라 3초 폴링(`status`)에서 온다. 스트림이 죽으면
+  ///   홈 화면은 마지막 값에 얼어붙는데 여기는 계속 갱신되므로, 사용자가 "워치가 멈춘 건지
+  ///   화면이 멈춘 건지" 를 스스로 가를 수 있다(2026-08-20 실측 결함).
+  Widget _watchRow() {
+    final age = _status['lastVitalAgeSec'] as int?;
+    final bat = _status['watchBatteryPct'] as int?;
+    if (age == null) {
+      return _row(
+        icon: Icons.watch_off_outlined,
+        iconColor: VgColors.muted,
+        title: '워치 수신 없음',
+        subtitle: '앱을 켠 뒤 아직 한 건도 못 받았습니다',
+      );
+    }
+    // 배치 간격 5초 기준 — 30초를 넘으면 정상 수신이 아니다.
+    final ok = age <= 30;
+    return _row(
+      icon: ok ? Icons.watch_outlined : Icons.watch_off_outlined,
+      iconColor: ok ? VgColors.normal : VgColors.danger,
+      title: ok ? '워치 수신 중' : '워치 수신 끊김 — ${_ago(age)}',
+      subtitle: [
+        '마지막 수신 ${_ago(age)}',
+        if (bat != null) '워치 배터리 $bat%',
+      ].join(' · '),
+    );
+  }
+
+  /// 위치 상태 — 각인에 좌표가 왜 비는지를 화면이 스스로 설명하게 한다.
+  Widget _locationRow() {
+    final auth = _status['locationAuth'] as String? ?? '알 수 없음';
+    final lat = _status['fixLat'] as num?;
+    final lon = _status['fixLon'] as num?;
+    final acc = _status['fixAccM'] as num?;
+    final age = _status['fixAgeSec'] as int?;
+    final granted = auth == '항상 허용' || auth == '앱 사용 중 허용';
+    final detail = lat == null || lon == null
+        // 좌표가 없는 것과 못 받는 것은 다르다 — 권한이 있는데 좌표가 없으면 실내일 뿐이다.
+        ? (granted ? '아직 좌표 없음 — 실내·지하에서는 안 잡힙니다' : '권한이 없어 좌표를 못 받습니다')
+        : [
+            '${lat.toStringAsFixed(6)}, ${lon.toStringAsFixed(6)}',
+            if (acc != null) '±${acc.toStringAsFixed(0)}m',
+            if (age != null) _ago(age),
+          ].join(' · ');
+    return _row(
+      icon: granted ? Icons.location_on_outlined : Icons.location_off_outlined,
+      iconColor: granted ? VgColors.primary : VgColors.danger,
+      title: '위치 권한 — $auth',
+      subtitle: detail,
+    );
+  }
+
+  /// 사진첩 추가 권한 — 거부돼 있으면 촬영본이 **조용히** 기기에 안 남는다.
+  Widget _photoRow() {
+    final auth = _status['photoAddAuth'] as String? ?? '알 수 없음';
+    final ok = auth == '허용' || auth == '일부 허용';
+    return _row(
+      icon: ok ? Icons.photo_library_outlined : Icons.no_photography_outlined,
+      iconColor: ok ? VgColors.normal : VgColors.caution,
+      title: '사진첩 저장 — $auth',
+      subtitle: ok
+          ? '촬영본이 업로드와 함께 기기에도 남습니다'
+          : '거부 상태입니다 — 촬영본이 기기에 안 남습니다(iOS 설정에서 변경)',
+    );
+  }
+
+  /// 설치된 것이 최신인지 사람이 확인할 유일한 수단 — 빌드 시각까지 적는다.
+  Widget _versionRow() {
+    final v = _status['appVersion'] as String? ?? '-';
+    final b = _status['appBuild'] as String? ?? '-';
+    final builtMs = _status['builtAtMs'] as int?;
+    final built = builtMs == null
+        ? '빌드 시각 확인 불가'
+        : () {
+            final t = DateTime.fromMillisecondsSinceEpoch(builtMs).toLocal();
+            return '빌드 ${t.month}/${t.day} ${formatClock(t)}';
+          }();
+    return _row(
+      icon: Icons.info_outline,
+      iconColor: VgColors.muted,
+      title: '버전 $v ($b)',
+      subtitle: built,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = _status['name'] as String? ?? '작업자';
@@ -128,6 +223,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: '서버에 영속된 내 생체 샘플',
             ),
           ],
+          _title('수집'),
+          _watchRow(),
+          const SizedBox(height: 10),
+          _locationRow(),
+          const SizedBox(height: 10),
+          _photoRow(),
           _title('계정'),
           _row(
             icon: Icons.badge_outlined,
@@ -135,6 +236,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: '$name ($workerId)',
             subtitle: '업로드 파이프라인 가동 중 — 워치 수집분을 서버로 전송합니다',
           ),
+          _title('앱'),
+          _versionRow(),
         ],
       ),
     );
