@@ -95,6 +95,24 @@ final class WatchStreamer: NSObject, ObservableObject {
     // [정지] 로 끝난 세션인지 표시한다 — 델리게이트가 사용자 정지와 시스템 종료를 가를 유일한 수단이다.
     // 둘 다 결국 `session.end()` 라 `didChangeTo(.ended)` 가 보는 그림이 똑같다.
     private var stopRequestedByUser = false
+    /// [중지] 를 누른 **시각**. 플래그만으로는 "눌린 적 없는데 true" 인 상태를 걸러낼 수 없다.
+    private var stopRequestedAt: Date?
+    /// 사용자 중지로 인정할 최대 지연. 누르고 이 안에 끝난 세션만 "사람이 끝냈다" 로 본다.
+    private let userStopGraceSec: TimeInterval = 30
+
+    /// 이 종료를 사람이 끝낸 것으로 볼 것인가.
+    ///
+    /// ★ 2026-08-20 실측 — 세션이 `stopRequestedByUser = true` 로 끝났는데 **사용자는 누른 적이
+    ///   없었다**(계측 첫 관측 · 14:36:09). `stop()` 이 그 플래그의 유일한 작성자이고 호출부는
+    ///   화면 버튼 하나뿐인데도 그랬다. 원인이 오탭인지 플래그 오작동인지는 아직 모른다.
+    /// ⚠ 원인을 몰라도 피해는 막을 수 있다 — 이 플래그가 서 있으면 **자동 재개를 통째로
+    ///   건너뛴다**. 30시간 9세션이 전부 `자동재개=0` 이던 것이 이것으로 설명된다.
+    ///   ⟹ 시각을 함께 보고 **눌린 직후에 끝난 것만** 사용자 중지로 인정한다.
+    ///   오탭이면 정상 동작이 유지되고, 플래그가 잘못 선 것이면 자동 재개가 되살아난다.
+    private var endedByUser: Bool {
+        guard stopRequestedByUser, let at = stopRequestedAt else { return false }
+        return Date().timeIntervalSince(at) <= userStopGraceSec
+    }
     // 이 세션이 언제 시작했고 누가 시작했나 — 값이 바뀌는 지점이 곧 재시작이다(§4-7 계측).
     // ⚠ 카운터가 아니라 시각인 이유 = 카운터는 프로세스가 죽으면 0 부터 다시 세어 재설치와
     //   구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
@@ -272,6 +290,7 @@ final class WatchStreamer: NSObject, ObservableObject {
     func stop() {
         guard isRunning else { return }
         stopRequestedByUser = true
+        stopRequestedAt = Date()
         session?.end()
     }
 
@@ -305,6 +324,7 @@ final class WatchStreamer: NSObject, ObservableObject {
     private func beginWorkout(auto: Bool) {
         // 새 세션은 아직 아무도 정지를 요청하지 않은 상태에서 출발한다(수동·자동 재개 공통 깔때기).
         stopRequestedByUser = false
+        stopRequestedAt = nil
         // 배터리 모니터링 — 켜지 않으면 batteryLevel 이 -1 을 돌려준다(값이 아니라 "모름").
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         sessionEnergyKcal = 0
@@ -825,7 +845,7 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
     ) {
         guard toState == .ended else { return }
         // 사유는 지금 붙잡아 둔다 — teardown 뒤에 읽으면 다음 세션의 표식과 섞인다.
-        let byUser = stopRequestedByUser
+        let byUser = endedByUser
         // ★ 중첩 클로저 **밖에서** 적는다. 아래 `endCollection { finishWorkout { … } }` 안에서
         //   적으면 그 콜백이 안 올 때(H1) 기록도 함께 사라져 관측 자체가 불가능해진다.
         SessionEndCrumb.noteEnd(byUser: byUser)
@@ -841,7 +861,7 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
         DispatchQueue.main.async {
-            let byUser = self.stopRequestedByUser
+            let byUser = self.endedByUser
             SessionEndCrumb.noteEnd(byUser: byUser)
             self.statusText = "세션 오류: \(error.localizedDescription)"
             self.teardown()

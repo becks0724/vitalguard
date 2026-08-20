@@ -59,9 +59,15 @@ test("② 세션이 끝나면 사유를 묻고, 내가 끝낸 게 아니면 다�
 });
 
 test("③ 사유는 teardown 보다 먼저 붙잡는다 — 뒤에 읽으면 다음 세션 것과 섞인다", () => {
-  const capture = endedBody.indexOf("let byUser = stopRequestedByUser");
+  // ⚠ 2026-08-20 갱신 — 사유 출처가 `stopRequestedByUser`(플래그) 에서 `endedByUser`
+  //   (플래그 + 누른 시각) 로 바뀌었다. 세션이 그 플래그가 선 채로 끝났는데 **사용자는 누른
+  //   적이 없었고**, 그러면 자동 재개를 통째로 건너뛴다(30시간 9세션 전부 자동재개=0).
+  //   ⟹ 이 가드가 지키려는 것은 **출처 이름이 아니라 "teardown 전에 붙잡는가"** 다.
+  //   출처를 고정하는 일은 2026-08-20-session-end-telemetry 가드가 맡는다.
+  const capture = endedBody.indexOf("let byUser = ");
   const clear = endedBody.indexOf("teardown()");
   assert.ok(capture >= 0, "사유를 지역 변수로 붙잡지 않는다");
+  assert.ok(clear >= 0, "teardown 호출을 못 찾았다 — 가드를 다시 맞춰야 한다");
   assert.ok(capture < clear, "teardown 뒤에 읽으면 표식이 이미 다음 세션 것이다");
 });
 

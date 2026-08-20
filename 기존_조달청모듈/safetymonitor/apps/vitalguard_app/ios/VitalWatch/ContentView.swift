@@ -3,6 +3,14 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var streamer = WatchStreamer()
+    /// [중지] 확인 시트 표시 여부.
+    ///
+    /// ★ 2026-08-20 — 세션이 "사용자가 끝냈다" 로 표시된 채 끝났는데 **사용자는 누른 적이
+    ///   없었다**. `stop()` 의 유일한 호출부가 이 버튼이라 오탭이 유력한 후보다.
+    ///   수집 중단은 되돌리기 어려운 동작인데(자동 재개가 안 걸리면 사람이 알아챌 때까지 멎는다)
+    ///   지금은 탭 한 번이면 끝난다. **[시작] 에는 확인을 걸지 않는다** — 켜는 쪽은 오탭이어도
+    ///   손해가 없고, 급할 때 한 번에 켜지는 편이 낫다.
+    @State private var confirmingStop = false
 
     /// 이산 측정 한 줄 — 도착한 종류만 짧은 한국어 라벨로 적는다(0 건은 생략).
     /// HRV 는 값이 있으면 ms 까지 보여준다(상시 워크아웃 중엔 구조상 안 나오는 것이 정상).
@@ -80,10 +88,16 @@ struct ContentView: View {
                 .foregroundStyle(streamer.pendingTransfers > 0 ? Color.orange : Color.secondary)
 
             Button(streamer.isRunning ? "중지" : "시작") {
-                streamer.isRunning ? streamer.stop() : streamer.start()
+                if streamer.isRunning { confirmingStop = true } else { streamer.start() }
             }
             .tint(streamer.isRunning ? .red : .green)
         }
         .padding(.horizontal, 4)
+        .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
+            Button("중지", role: .destructive) { streamer.stop() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("중지하면 자동으로 다시 켜지지 않습니다.")
+        }
     }
 }

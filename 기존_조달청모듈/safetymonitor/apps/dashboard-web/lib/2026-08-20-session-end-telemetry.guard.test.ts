@@ -174,3 +174,35 @@ test("★ 폰이 네 키를 서버 필드로 옮긴다 — 없으면 억지로 �
   assert.doesNotMatch(bare, /sessionEndSeenAt"\] = self\.isoMs\.string\(from: Date\(\)\)/,
     "값이 없을 때 현재 시각으로 채운다 — 없음이라는 지문이 사라진다");
 });
+
+test("★ 사용자 중지는 **시각까지** 봐야 인정된다 — 플래그만 보면 자동 재개가 영영 안 걸린다", () => {
+  // 2026-08-20 실측 — 세션이 `stopRequestedByUser = true` 로 끝났는데 사용자는 누른 적이 없었다.
+  // 그 플래그가 서 있으면 자동 재개를 통째로 건너뛴다. 30시간 9세션 전부 0 이던 이유다.
+  const fn = watch.slice(watch.indexOf("private var endedByUser: Bool"));
+  const body = fn.slice(0, fn.indexOf("\n    }"));
+  assert.ok(body.length > 50, "endedByUser 를 못 찾았다");
+  assert.match(body, /stopRequestedAt/, "누른 시각을 안 본다");
+  assert.match(body, /userStopGraceSec/, "시간 제한이 없다");
+
+  // 델리게이트 두 경로가 **둘 다** 시각을 본 판정을 써야 한다 — 하나만 고치면 그 경로만 산다.
+  const bare = swiftBare(watch);
+  assert.match(bare, /let byUser = endedByUser/, "상태 변화 경로가 옛 판정을 쓴다");
+  assert.match(bare, /let byUser = self\.endedByUser/, "오류 경로가 옛 판정을 쓴다");
+  assert.doesNotMatch(
+    bare,
+    /let byUser = (self\.)?stopRequestedByUser/,
+    "플래그만 읽는 경로가 남아 있다",
+  );
+  // 새 세션에서 시각도 함께 지워야 한다 — 안 지우면 옛 누름이 다음 종료를 오염시킨다.
+  assert.match(bare, /stopRequestedAt = nil/, "새 세션에서 시각을 안 지운다");
+});
+
+test("★ [중지] 는 확인을 거치고 [시작] 은 안 거친다", () => {
+  const view = readFileSync(join(APP, "VitalWatch", "ContentView.swift"), "utf8");
+  assert.match(view, /confirmationDialog\(/, "중지 확인이 없다 — 오탭 한 번에 수집이 멎는다");
+  assert.match(
+    swiftBare(view),
+    /if streamer\.isRunning \{ confirmingStop = true \} else \{ streamer\.start\(\) \}/,
+    "시작에도 확인이 걸렸거나 중지가 바로 실행된다",
+  );
+});
