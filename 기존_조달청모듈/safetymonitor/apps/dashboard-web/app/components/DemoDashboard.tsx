@@ -3254,9 +3254,16 @@ function HeaderCalendarPopup({
                                     {" "}· {c.authorTitle}
                                   </span>
                                 )}
+                                {/* ⚠ 라벨은 `사번` 이 아니라 `ID` 다 — 여기 값은 로그인 ID(`sub`)이지
+                                    사번이 아니다. 같은 카드 위쪽 메타데이터는 진짜 사번(`EMP-6861`)을
+                                    보여주므로, `사번` 이라 적으면 한 화면에서 같은 사람이 두 사번을
+                                    가진 것처럼 읽힌다(2026-08-20 실측 — `admin6861` vs `EMP-6861`).
+                                    ★ 값을 사번으로 바꾸지 말 것. 댓글 수정·삭제 권한이 이 값과
+                                      작성자 대조로 판정되므로 사번을 넣으면 자기 댓글을 자기가
+                                      못 고친다(`api/calendar/media/comment/route.ts` commentScope). */}
                                 {c.authorId && (
                                   <span className="font-normal text-muted dark:text-on-dark-soft">
-                                    {" "}· 사번 {c.authorId}
+                                    {" "}· ID {c.authorId}
                                   </span>
                                 )}
                                 <span className="font-normal text-muted dark:text-on-dark-soft">
