@@ -1333,6 +1333,42 @@ function ScheduleLabelDot({ color, className }: { color: LabelColor; className?:
   );
 }
 
+/** 사이드바에서 초점을 받은 일정의 상세. 미디어 카드의 `dl` 표와 같은 관례를 쓴다.
+ *  칩은 제목·시각만 보여주므로, 클릭으로 얻는 것이 있어야 클릭에 의미가 생긴다. */
+function ScheduleDetail({ event, labels }: { event: CalendarEvent; labels: ScheduleLabelDef[] }) {
+  const rows: Array<[string, string]> = [];
+  // 날짜 — 기간이면 시작~종료. 하루짜리는 이미 선택 날짜라 굳이 반복하지 않는다.
+  if (isSpanEvent(event)) rows.push(["기간", `${event.dateKey} ~ ${event.endDateKey ?? event.dateKey}`]);
+  // 시각 — `start_time` 이 NULL 인 것이 곧 종일이다(스키마상 별도 컬럼이 없다).
+  rows.push(["시각", formatScheduleTime(event) || "종일"]);
+  rows.push(["라벨", findLabelDef(labels, event.labelId).name]);
+  // ⚠ `hazardTypeName` 은 모르는 id 에 null 을 낸다. 그때 행을 빼면 값이 조용히 사라지므로
+  //   원본 id 를 그대로 보인다(`findLabelDef` 가 "삭제된 라벨" 을 보이는 것과 같은 관례).
+  if (event.hazardType) rows.push(["위험작업", hazardTypeName(event.hazardType) ?? event.hazardType]);
+  const edited = formatScheduleEdited(event.updatedAt);
+  if (event.createdBy || edited) {
+    rows.push(["등록", [event.createdBy, edited].filter(Boolean).join(" · ")]);
+  }
+  return (
+    <div className="mt-1 rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated">
+      <dl className="space-y-0.5 text-[11px] leading-relaxed">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex gap-1.5">
+            <dt className="w-14 shrink-0 text-muted dark:text-on-dark-soft">{label}</dt>
+            <dd className="min-w-0 flex-1 break-words text-ink dark:text-on-dark">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {/* 메모는 자유 텍스트라 표 밖에 둔다 — 줄바꿈을 살려야 읽힌다. */}
+      {event.note?.trim() && (
+        <p className="mt-1 whitespace-pre-wrap border-t border-hairline pt-1 text-[11px] leading-relaxed text-ink dark:border-white/10 dark:text-on-dark">
+          {event.note.trim()}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function CalendarEventChip({
   event,
   color,
@@ -2497,6 +2533,12 @@ function HeaderCalendarPopup({
   const [focusMediaId, setFocusMediaId] = useState<string | null>(null);
   // 초점당 한 번만 스크롤하기 위한 기록 — 위 ref 콜백 주석 참조.
   const scrolledForRef = useRef<string | null>(null);
+  // 주간 격자에서 고른 **일정** — 사진과 같은 규칙으로 사이드바에서 그 행을 강조·스크롤한다.
+  // ⚠ 종전엔 일정만 수정 팝업을 열었다. 같은 격자에서 사진은 사이드바, 일정은 팝업이라
+  //   **클릭 규칙이 둘**이었고(사용자 실측 2026-08-20), 수정은 사이드바 ✏️ 로 이미 갈 수 있어
+  //   중복 경로이기도 했다. 읽으려던 클릭이 편집 모드를 여는 것은 되돌릴 것을 만든다.
+  const [focusEventId, setFocusEventId] = useState<string | null>(null);
+  const eventScrolledForRef = useRef<string | null>(null);
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [labels, setLabels] = useState<ScheduleLabelDef[]>(DEFAULT_LABELS);
@@ -3100,6 +3142,20 @@ function HeaderCalendarPopup({
       return keep;
     });
   }, [selectedKey, mediaByDate]);
+  // 일정 초점도 같은 규칙 — 고른 일정이 새 날짜에 없을 때만 푼다.
+  // ⚠⚠ 판정 기준이 `eventsByDate[selectedKey]` 가 아니라 **`selectedEvents`** 다.
+  //    기간 일정은 시작일 키에만 들어 있어서, 사진 쪽 이펙트를 그대로 복사하면
+  //    **걸친 날에서 초점이 즉시 풀린다**(8/16~8/22 일정을 8/20 에서 누르면 아무 일도 안 한 것처럼 보인다).
+  // ⚠ deps 는 배열이 아니라 **id 서명 문자열**이다 — `selectedEvents` 는 매 렌더 새 배열이라
+  //   그대로 넣으면 이펙트가 매 렌더 돈다.
+  const selectedEventIds = selectedEvents.map((e) => e.id).join("|");
+  useEffect(() => {
+    setFocusEventId((prev) => {
+      const keep = prev && selectedEventIds.split("|").includes(prev) ? prev : null;
+      if (!keep) eventScrolledForRef.current = null;
+      return keep;
+    });
+  }, [selectedEventIds]);
   const selectedInspections = inspectionByDate[toDateKey(selected)] ?? [];
   const weekKeys = weekDateKeys(selected);
   const weeklyPlanEvents = weekKeys.flatMap((key) =>
@@ -3453,9 +3509,16 @@ function HeaderCalendarPopup({
                   setFormDate(d);
                 }}
                 onOpenEvent={(e) => {
-                  setSelected(dateFromKey(e.dateKey));
-                  setFormEditId(e.id);
-                  setFormDate(dateFromKey(e.dateKey));
+                  // 우측 사이드바에서 그 일정을 보여준다 — 사진과 같은 규칙. 수정은 사이드바 ✏️ 로.
+                  // ⚠ 기간 띠를 눌렀을 때 **선택 날짜를 시작일로 옮기지 않는다** — 8/16~8/22 일정을
+                  //   8/20 에서 누르면 화면이 8/16 으로 튄다. 이미 걸친 날이면 그대로 둔다.
+                  setSelected((prev) => {
+                    const k = toDateKey(prev);
+                    const covers = e.dateKey <= k && (e.endDateKey ?? e.dateKey) >= k;
+                    return covers ? prev : dateFromKey(e.dateKey);
+                  });
+                  eventScrolledForRef.current = null; // 같은 일정을 다시 눌러도 다시 스크롤한다
+                  setFocusEventId(e.id);
                 }}
                 onOpenMedia={(m) => {
                   // 우측 사이드바에서 그 항목을 보여준다 — 날짜를 맞추고 초점을 준다.
@@ -3798,8 +3861,25 @@ function HeaderCalendarPopup({
                 <div className="space-y-1">
                   {sortCalendarEventsByTime(selectedEvents).map((event) => {
                     const warning = hazardWarningForEvent(event);
+                    const focused = focusEventId === event.id;
                     return (
-                      <div key={event.id} className="space-y-0.5">
+                      <div
+                        key={event.id}
+                        // 주간 격자에서 고른 일정으로 스크롤·강조한다 — 클릭의 목적이 그것이다.
+                        // ⚠⚠ **초점당 한 번만** 스크롤한다. 이 화면은 2초 주기로 폴링하므로 조건만
+                        //    보고 스크롤하면 사용자가 아래로 내려도 계속 위로 끌려 올라간다
+                        //    (사진 쪽에서 실제로 겪은 버그 — 같은 함정을 두 번 파지 않는다).
+                        ref={(el) => {
+                          if (el && focused && eventScrolledForRef.current !== event.id) {
+                            eventScrolledForRef.current = event.id;
+                            el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                          }
+                        }}
+                        className={[
+                          "space-y-0.5 rounded-lg border p-1 transition",
+                          focused ? "border-primary ring-2 ring-primary-ring" : "border-transparent",
+                        ].join(" ")}
+                      >
                         {/* 수정·삭제는 서버가 내려준 canEdit 로만 노출한다(작성자 본인·총괄 관리자). */}
                         <div className="flex items-center gap-1">
                           <div className="min-w-0 flex-1">
@@ -3841,6 +3921,7 @@ function HeaderCalendarPopup({
                             </div>
                           )}
                         </div>
+                        {focused && <ScheduleDetail event={event} labels={labels} />}
                         {warning && (
                           <div
                             className={[
