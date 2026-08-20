@@ -172,10 +172,18 @@ test("미니 월간에도 기간이 보인다", () => {
 //      ★ 미니 월간 밑줄은 걸침을 따로 계산해 맞았고 **여기만 그 계산을 안 썼다** — 같은 사실을
 //        두 곳에서 다르게 구하면 한쪽만 맞는다.
 //   ② 월간 셀이 기간 일정을 칩으로 또 그려 **띠와 중복**이었다.
+// ⚠ 전제가 바뀌었다(2026-08-20 후반) — 이 계산이 인라인에서 **`eventsOnDate()` 헬퍼로** 옮겨졌다.
+//   빈 칸 판정(등록 폼 게이트)이 같은 규칙을 필요로 해서, 두 벌이 되지 않게 한 곳에 모았다.
+//   가드는 약화되지 않는다 — 사이드바가 그 헬퍼를 쓰는지 + 헬퍼가 걸침·중복제거를 갖는지 둘 다 본다.
 test("사이드바가 걸친 기간 일정을 포함한다 — 시작일에만 보이지 않게", () => {
-  const i = dash.indexOf("const selectedEvents = (() => {");
-  assert.ok(i >= 0, "선택 일정 계산 소실");
-  const body = dash.slice(i, i + 900);
+  assert.match(
+    dash,
+    /const selectedEvents = eventsOnDate\(eventsByDate, toDateKey\(selected\)\);/,
+    "사이드바가 걸침 계산을 안 쓴다 — 기간 일정이 시작일에만 보인다",
+  );
+  const i = dash.indexOf("function eventsOnDate(");
+  assert.ok(i >= 0, "걸침 계산 헬퍼 소실");
+  const body = dash.slice(i, dash.indexOf("\nfunction ", i + 10));
   assert.match(
     body,
     /isSpanEvent\(e\) && !seen\.has\(e\.id\) && e\.dateKey <= key && \(e\.endDateKey \?\? e\.dateKey\) >= key/,

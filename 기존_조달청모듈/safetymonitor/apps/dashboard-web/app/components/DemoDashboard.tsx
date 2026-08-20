@@ -2103,6 +2103,38 @@ function mediaMinutes(m: CalendarMedia): number | null {
   return hhmmToMinutes(m.capturedAt?.slice(11, 16));
 }
 
+/** 그 날짜에 걸치는 일정 전부 — 그 날 시작한 것 **+ 기간 일정이 덮는 것**.
+ *  ⚠⚠ `eventsByDate[key]` 만 보면 기간 일정이 **시작일 키에만** 있어 걸친 날에서 빠진다.
+ *     이 레포가 같은 자리를 세 번 밟았다(사이드바 목록 · 미니 월간 밑줄 · 초점 유지 · 2026-08-20).
+ *     그래서 규칙을 여기 한 곳에 두고 부르는 쪽이 공유한다. */
+function eventsOnDate(eventsByDate: Record<string, CalendarEvent[]>, key: string): CalendarEvent[] {
+  const own = eventsByDate[key] ?? [];
+  const seen = new Set(own.map((e) => e.id));
+  const covering = Object.values(eventsByDate)
+    .flat()
+    .filter((e) => isSpanEvent(e) && !seen.has(e.id) && e.dateKey <= key && (e.endDateKey ?? e.dateKey) >= key)
+    .filter((e, i, arr) => arr.findIndex((y) => y.id === e.id) === i);
+  return [...own, ...covering];
+}
+
+/** 그 시간 칸을 이미 차지한 일정. 없으면 null(= 등록 폼을 열어도 되는 칸).
+ *  규칙(사용자 지시 2026-08-20) — **시각이 없는 일정(종일·기간)은 그 날 전체를 차지한다.**
+ *  시각이 있으면 `[시작, 끝)` 만. 끝이 없으면 격자 렌더와 같은 관례로 1시간.
+ *  ⚠ 시각 있는 쪽을 먼저 고른다 — 그 칸을 더 구체적으로 가리키는 일정이 사이드바에 떠야 한다. */
+function eventOccupyingSlot(dayEvents: CalendarEvent[], hour: number): CalendarEvent | null {
+  const slotStart = hour * 60;
+  const slotEnd = slotStart + 60;
+  const timed = dayEvents.find((e) => {
+    const s = hhmmToMinutes(e.startTime);
+    if (s === null) return false;
+    const en = hhmmToMinutes(e.endTime);
+    const end = en !== null && en > s ? en : s + 60;
+    return s < slotEnd && end > slotStart;
+  });
+  if (timed) return timed;
+  return dayEvents.find((e) => hhmmToMinutes(e.startTime) === null) ?? null;
+}
+
 function startOfWeek(d: Date) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   x.setDate(x.getDate() - x.getDay()); // 일요일 시작 — 월간 격자와 같은 규칙
@@ -2381,19 +2413,35 @@ function WeekGrid({
           {days.map((d) => {
             const key = toDateKey(d);
             const dayEvents = eventsByDate[key] ?? [];
+            // 빈 칸 판정에는 **걸치는 일정까지** 본다 — `eventsByDate[key]` 만 보면 기간 일정이 빠진다.
+            const dayAll = eventsOnDate(eventsByDate, key);
             return (
               <div key={key} className="relative border-l border-hairline dark:border-white/10" style={{ height: bodyH }}>
-                {/* 시간 칸 — 클릭하면 그 시각으로 등록 */}
-                {hours.map((h, i) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => onCreateAt(d, `${String(h).padStart(2, "0")}:00`)}
-                    aria-label={`${d.getMonth() + 1}월 ${d.getDate()}일 ${h}시 일정 추가`}
-                    className="absolute left-0 right-0 border-t border-hairline/60 transition hover:bg-primary-subtle/40 dark:border-white/5"
-                    style={{ top: i * WEEK_HOUR_PX, height: WEEK_HOUR_PX }}
-                  />
-                ))}
+                {/* 시간 칸 — **비어 있을 때만** 등록 폼을 연다(사용자 지시 2026-08-20).
+                    이미 일정이 있는 칸을 누르면 그 일정을 우측 사이드바에 띄운다.
+                    ⚠ 종전엔 무조건 등록 폼이라, 기간·종일 일정이 있는 날을 눌러도 폼이 떠서
+                      **사이드바에 뜬 상세를 폼이 덮었다**(사용자 실측 — 8/18 행안부 공모전 기간).
+                    ★ 등록 경로는 안 없어진다 — 사이드바 `+ 일정 추가` 가 그대로 있다.
+                      잃는 것은 "그 칸을 눌러 시각이 자동 입력되는" 편의뿐이다. */}
+                {hours.map((h, i) => {
+                  const occupied = eventOccupyingSlot(dayAll, h);
+                  return (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() =>
+                        occupied ? onOpenEvent(occupied) : onCreateAt(d, `${String(h).padStart(2, "0")}:00`)
+                      }
+                      aria-label={
+                        occupied
+                          ? `${d.getMonth() + 1}월 ${d.getDate()}일 ${h}시 — ${occupied.title.trim()} 보기`
+                          : `${d.getMonth() + 1}월 ${d.getDate()}일 ${h}시 일정 추가`
+                      }
+                      className="absolute left-0 right-0 border-t border-hairline/60 transition hover:bg-primary-subtle/40 dark:border-white/5"
+                      style={{ top: i * WEEK_HOUR_PX, height: WEEK_HOUR_PX }}
+                    />
+                  );
+                })}
                 {/* 일정 블록 */}
                 {dayEvents.map((e) => {
                   const startMin = hhmmToMinutes(e.startTime);
@@ -3101,16 +3149,7 @@ function HeaderCalendarPopup({
   // ⚠ 기간 일정은 `date_key`(시작일) 한 곳에만 저장되므로, 그대로 쓰면 **시작일에만 보이고
   //   나머지 날에는 "등록된 일정이 없습니다" 가 뜬다**(사용자 실측 2026-08-20 — 8/10 은 보이는데
   //   8/11~31 은 안 보였다). 미니 월간 밑줄은 걸침을 따로 계산해서 맞았고, 여기만 안 썼다.
-  const selectedEvents = (() => {
-    const key = toDateKey(selected);
-    const own = eventsByDate[key] ?? [];
-    const seen = new Set(own.map((e) => e.id));
-    const covering = Object.values(eventsByDate)
-      .flat()
-      .filter((e) => isSpanEvent(e) && !seen.has(e.id) && e.dateKey <= key && (e.endDateKey ?? e.dateKey) >= key)
-      .filter((e, i, arr) => arr.findIndex((y) => y.id === e.id) === i);
-    return [...own, ...covering];
-  })();
+  const selectedEvents = eventsOnDate(eventsByDate, toDateKey(selected));
   const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
   const selectedKey = toDateKey(selected);
   // 기간 일정이 걸친 날짜 → 라벨 색. 미니 월간이 이걸 밑줄로 그린다.
