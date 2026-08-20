@@ -22,12 +22,27 @@ test("앵커 — 캘린더 컴포넌트와 권한 판정이 실재한다", () =>
   assert.ok(route.includes("function commentScope"), "commentScope 소실");
 });
 
-// ── ① 한 컴포넌트, 두 자리
-test("캘린더는 팝업·탭 두 자리에서 같은 컴포넌트를 쓴다", () => {
+// ── ① 캘린더 진입점은 탭 하나다
+// ⚠ 전제가 바뀌었다(2026-08-20 사용자 결정) — 헤더 아이콘·팝업을 걷어냈다.
+//   종전 이 가드는 "팝업·탭 2곳"을 못 박았는데, 탭으로 기능이 이전돼 **1곳**이 맞다.
+test("캘린더 진입점은 탭 하나뿐이다 — 헤더 아이콘·팝업은 걷어냈다", () => {
   const uses = dash.match(/<HeaderCalendarPopup/g) ?? [];
-  assert.equal(uses.length, 2, `HeaderCalendarPopup 사용이 ${uses.length}곳 — 팝업·탭 2곳이어야 한다`);
-  assert.match(dash, /variant\?: "popup" \| "inline"/, "variant 프롭 소실 — 본문이 복제됐을 수 있다");
+  assert.equal(uses.length, 1, `HeaderCalendarPopup 사용이 ${uses.length}곳 — 탭 1곳이어야 한다`);
   assert.match(dash, /variant="inline"/, "탭이 inline 변형을 안 쓴다");
+  // 팝업을 여는 경로가 남아 있으면 걷어낸 의미가 없다.
+  assert.doesNotMatch(dash, /setCalendarOpen\(true\)/, "팝업을 여는 호출이 되살아났다");
+  assert.doesNotMatch(dash, /tooltip: "일정 캘린더 — 새 현장 사진 알림"/, "헤더 캘린더 아이콘이 되살아났다");
+});
+
+// ★ 아이콘을 지우면서 알림을 잃지 않았는지 — 토스트·칩이 탭으로 보내야 한다.
+test("새 현장 사진 토스트와 위험작업 칩이 캘린더 탭으로 보낸다", () => {
+  assert.match(dash, /const CALENDAR_PAGE_IDX = \d/, "캘린더 탭 인덱스 상수 소실");
+  const jumps = dash.match(/goCalendarTab\(\);/g) ?? [];
+  assert.equal(jumps.length, 2, `탭 이동 호출이 ${jumps.length}곳 — 토스트·칩 2곳이어야 한다`);
+  assert.match(dash, /gotoSignal=\{calendarJump\}/, "페이저에 이동 신호가 연결되지 않았다");
+  // 미확인 배지 해소가 함께 남아 있어야 한다 — 안 그러면 배지가 영영 안 꺼진다.
+  const seen = dash.match(/markCalendarSeen\(\);/g) ?? [];
+  assert.ok(seen.length >= 2, `markCalendarSeen 이 ${seen.length}곳 — 이동 지점마다 있어야 한다`);
 });
 
 test("inline 은 오버레이·드래그·닫기를 걸치지 않는다", () => {

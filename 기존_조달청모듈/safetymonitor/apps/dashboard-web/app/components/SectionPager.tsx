@@ -12,10 +12,14 @@ export type PagerPage = { title: string; content: ReactNode };
 export function SectionPager({
   pages,
   homeSignal,
+  gotoSignal,
   onPageChange,
 }: {
   pages: PagerPage[];
   homeSignal?: number;
+  // 외부에서 특정 탭으로 보내는 신호. `seq` 가 바뀔 때만 1회 동작한다(값이 같으면 재실행 안 함).
+  // 홈 복귀(homeSignal)와 달리 목적지를 지정한다 — 예: 새 현장 사진 토스트 → 일정 캘린더 탭.
+  gotoSignal?: { idx: number; seq: number };
   onPageChange?: (idx: number) => void; // 활성 페이지 변경 통지(부모가 페이지별 부속 UI를 제어할 때).
 }) {
   const [idx, setIdx] = useState(0);
@@ -30,6 +34,15 @@ export function SectionPager({
       onPageChange?.(0);
     }
   }, [homeSignal, onPageChange]);
+
+  // 지정 탭으로 이동 — `seq` 를 키로 삼아 같은 목적지를 여러 번 눌러도 매번 동작한다.
+  const gotoIdx = gotoSignal?.idx;
+  const gotoSeq = gotoSignal?.seq;
+  useEffect(() => {
+    if (gotoSeq === undefined || gotoIdx === undefined) return;
+    setIdx(gotoIdx);
+    onPageChange?.(gotoIdx);
+  }, [gotoSeq, gotoIdx, onPageChange]);
 
   // 활성 페이지 높이에 뷰포트 높이를 맞춤 — 짧은 페이지의 빈 공간 방지 + 페이지 간 높이 전환 애니메이션.
   // 콘텐츠가 늘어나면(작업자 등록·날씨 로드 등) ResizeObserver 로 추적.

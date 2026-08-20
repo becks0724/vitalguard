@@ -3570,6 +3570,15 @@ export function DemoDashboard() {
   //    한 칸 밀려서 상수로 뽑았다(pages 배열 순서와 반드시 함께 본다).
   const [pagerIdx, setPagerIdx] = useState(0);
   const MONITOR_PAGE_IDX = 0; // pages 배열의 '실시간 현장 관제' 위치
+  const CALENDAR_PAGE_IDX = 2; // pages 배열의 '일정 캘린더' 위치(안전뉴스 다음)
+  // 캘린더 탭으로 보내는 신호 — 헤더 아이콘·팝업을 걷어낸 뒤(2026-08-20 사용자 결정)
+  // 새 현장 사진 토스트와 오늘 위험작업 칩이 여기로 보낸다. seq 로 매번 재발동.
+  const [calendarJump, setCalendarJump] = useState<{ idx: number; seq: number } | undefined>();
+  const jumpSeqRef = useRef(0);
+  const goCalendarTab = useCallback(() => {
+    jumpSeqRef.current += 1;
+    setCalendarJump({ idx: CALENDAR_PAGE_IDX, seq: jumpSeqRef.current });
+  }, [CALENDAR_PAGE_IDX]);
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -3613,7 +3622,9 @@ export function DemoDashboard() {
   const [queueModalSlot, setQueueModalSlot] = useState<number | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [calendarOpen, setCalendarOpen] = useState(false);
+  // 팝업을 걷어낸 뒤(2026-08-20) "캘린더가 열려 있다" = "캘린더 탭이 활성이다".
+  // 아래 두 곳이 이 값을 본다 — 미확인 배지 즉시 해소 · 위험작업 재집계.
+  const calendarOpen = pagerIdx === CALENDAR_PAGE_IDX;
   // 캘린더 배지·토스트 — 새 현장 사진(앱 업로드 미디어) 미확인 개수 배지 + 도착 알림 토스트.
   const [calendarNewCount, setCalendarNewCount] = useState(0);
   const [calendarToast, setCalendarToast] = useState<{ count: number; key: number } | null>(null);
@@ -4434,7 +4445,7 @@ export function DemoDashboard() {
     }
   }, [effLat, effLon, fieldCoords.count]);
 
-  // calendarOpen 을 deps 에 포함 — 캘린더에서 일정을 편집하고 닫으면 즉시 재집계.
+  // calendarOpen(=캘린더 탭 활성) 을 deps 에 포함 — 탭에서 일정을 편집하고 나오면 즉시 재집계.
   useEffect(() => {
     runTodayHazardPoll();
     const id = setInterval(() => {
@@ -5320,22 +5331,6 @@ export function DemoDashboard() {
                   </svg>
                 ),
               },
-              {
-                title: "캘린더",
-                tooltip: "일정 캘린더 — 새 현장 사진 알림",
-                badge: calendarNewCount,
-                onSelect: () => {
-                  setCalendarOpen(true);
-                  markCalendarSeen();
-                },
-                icon: (
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <rect x="3" y="9" width="18" height="12" rx="2" />
-                    <line x1="3" y1="13" x2="21" y2="13" />
-                    <path d="M6.5 9a2 2 0 0 1 0-4 3 3 0 0 1 5.8-1.2 2.2 2.2 0 0 1 4.2 1.2 2 2 0 0 1-.5 4Z" />
-                  </svg>
-                ),
-              },
               // 관리자 메뉴 — owner 거나 admin_access 부여받은 사용자만 노출(서버에서도 강제).
               ...(canAdminMenu
                 ? [
@@ -5439,6 +5434,7 @@ export function DemoDashboard() {
       {/* 상단 페이저 — 3페이지(1.실시간 현장 관제 / 2.안전관리비 검증 / 3.ERP 스마트경리) */}
       <SectionPager
         homeSignal={homeSignal}
+        gotoSignal={calendarJump}
         onPageChange={setPagerIdx}
         pages={[
           {
@@ -5469,7 +5465,7 @@ export function DemoDashboard() {
                 <button
                   type="button"
                   onClick={() => {
-                    setCalendarOpen(true);
+                    goCalendarTab();
                     markCalendarSeen();
                   }}
                   aria-label="오늘 위험작업 일정 — 일정 캘린더 열기"
@@ -5943,7 +5939,7 @@ export function DemoDashboard() {
           type="button"
           aria-live="polite"
           onClick={() => {
-            setCalendarOpen(true);
+            goCalendarTab();
             markCalendarSeen();
           }}
           className="fixed right-4 top-20 z-[70] flex max-w-[20rem] items-center gap-3 rounded-2xl border border-hairline bg-surface-strong px-4 py-3 text-left shadow-xl transition hover:brightness-105 dark:border-white/10 dark:bg-surface-dark-elevated"
@@ -5969,15 +5965,6 @@ export function DemoDashboard() {
           </span>
         </button>
       )}
-
-      <HeaderCalendarPopup
-        open={calendarOpen}
-        onClose={() => setCalendarOpen(false)}
-        lat={effLat}
-        lon={effLon}
-        workerCount={fieldCoords.count}
-        workerAliases={data.workerAliases}
-      />
 
       {usersOpen && <UserManagementModal onClose={() => setUsersOpen(false)} />}
       {profileGateOpen && (
