@@ -1,5 +1,10 @@
 // 네이버 클라우드 Object Storage(S3 호환) 어댑터 — 비공개 버킷 전제. 프리사인 업로드(PUT)/조회(GET) URL 발급.
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 type ObjectStorageEnv = {
@@ -91,6 +96,13 @@ export async function presignDownloadAttachment(key: string, filename: string): 
     new GetObjectCommand({ Bucket: env.bucket, Key: key, ResponseContentDisposition: disposition }),
     { expiresIn: DOWNLOAD_TTL },
   );
+}
+
+// 객체 삭제 — DB 행을 지운 **뒤에** 부른다. 순서를 뒤집으면 권한이 없어 행이 안 지워졌을 때
+// 파일만 사라진다(남의 증빙을 파괴한다). 없는 키를 지워도 S3 는 성공을 돌려준다.
+export async function deleteObject(key: string): Promise<void> {
+  const env = readEnv();
+  await getClient(env).send(new DeleteObjectCommand({ Bucket: env.bucket, Key: key }));
 }
 
 // 서버측 직접 업로드(PUT) — 앱이 바이트를 서버로 보내는 단일 엔드포인트(/api/app-media)에서 사용.

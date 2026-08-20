@@ -15,6 +15,28 @@ import 'vital_display.dart';
 
 const MethodChannel _bridge = MethodChannel('vitalguard/bridge');
 
+/// 최신 촬영이 위로. 서버는 `date_key ASC, captured_at ASC` 로 준다 — 관제 캘린더가
+/// 하루를 시간순으로 읽는 화면이라 **그 계약은 그대로 두고 여기서만** 뒤집는다.
+///
+/// ⚠ `.reversed` 로 하지 않는다 — 서버 정렬 순서에 기대게 되고, 그 계약이 바뀌면
+///   목록이 조용히 어긋난다(틀린 순서는 에러를 안 낸다).
+List<Map<String, dynamic>> newestFirst(List<Map<String, dynamic>> rows) {
+  final sorted = [...rows];
+  sorted.sort((a, b) => _sortKey(b).compareTo(_sortKey(a)));
+  return sorted;
+}
+
+/// 정렬 키 — 비교 가능한 정수(epoch µs)로 환산한다.
+///
+/// ⚠ ISO 문자열을 사전순으로 비교하지 않는다. 지금은 서버가 전부 `+09:00` 으로 주지만
+///   `Z` 가 섞이는 순간 사전순은 시간순이 아니게 되고, **틀린 순서는 에러를 안 낸다**.
+/// 촬영 시각이 없으면 날짜(`date_key`)로, 그것도 못 읽으면 맨 아래로 보낸다.
+int _sortKey(Map<String, dynamic> m) {
+  final raw = (m['captured_at'] as String?) ?? (m['date_key'] as String?);
+  final at = raw == null ? null : DateTime.tryParse(raw);
+  return at?.microsecondsSinceEpoch ?? -1 << 62;
+}
+
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key});
 
@@ -46,7 +68,8 @@ class _RecordScreenState extends State<RecordScreen> {
         // ⚠ 실패를 빈 목록으로 바꾸지 않는다 — "아직 없음" 과 "못 불러옴" 은 다른 상태다.
         _error = ok ? null : (res?['error'] as String? ?? '목록을 불러오지 못했습니다.');
         _items = ok && raw is List
-            ? raw.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList()
+            ? newestFirst(
+                raw.whereType<Map>().map((m) => m.cast<String, dynamic>()).toList())
             : const [];
       });
     } on PlatformException catch (e) {
@@ -87,6 +110,74 @@ class _RecordScreenState extends State<RecordScreen> {
     );
     if (n > 0) await _load();
   }
+
+  Future<void> _delete(Map<String, dynamic> m) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('이 기록을 지울까요?'),
+            // ⚠ 되돌릴 수 없다는 것을 먼저 말한다 — 관제 캘린더의 증빙이 함께 사라진다.
+            content: const Text('관제 캘린더에서도 사라지고 되돌릴 수 없습니다.\n'
+                '사진첩에 저장된 사본은 그대로 남습니다.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: FilledButton.styleFrom(backgroundColor: VgColors.danger),
+                child: const Text('삭제'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok || !mounted) return;
+    final res = await _call('deleteMedia', {'id': m['id']});
+    if (!mounted) return;
+    _say(res?['ok'] == true ? '삭제했습니다.' : '삭제 실패 — ${res?['error'] ?? '알 수 없는 오류'}');
+    if (res?['ok'] == true) await _load();
+  }
+
+  Future<void> _editDescription(Map<String, dynamic> m) async {
+    final controller = TextEditingController(text: (m['description'] as String?) ?? '');
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('설명 메모'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '무엇을 찍었는지 적어 두면 관제에서 같이 보입니다.',
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('취소')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+    if (text == null || !mounted) return;
+    final res = await _call('updateMediaDescription', {'id': m['id'], 'description': text});
+    if (!mounted) return;
+    _say(res?['ok'] == true ? '설명을 저장했습니다.' : '저장 실패 — ${res?['error'] ?? '알 수 없는 오류'}');
+    if (res?['ok'] == true) await _load();
+  }
+
+  /// 브리지 호출 — 네이티브가 던지는 예외도 같은 모양의 실패로 접는다.
+  Future<Map<String, dynamic>?> _call(String method, Map<String, dynamic> args) async {
+    try {
+      return await _bridge.invokeMapMethod<String, dynamic>(method, args);
+    } on PlatformException catch (e) {
+      return {'ok': false, 'error': e.message};
+    }
+  }
+
+  void _say(String message) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +266,10 @@ class _RecordScreenState extends State<RecordScreen> {
     final captured = m['captured_at'] as String? ?? m['date_key'] as String? ?? '';
     final address = (m['road_address'] as String?)?.trim();
     final uploader = (m['uploader'] as String?)?.trim();
+    final description = (m['description'] as String?)?.trim();
+    // ★ 권한은 서버가 항목마다 계산해 내려준다(`canDelete`). 화면이 사번을 비교해 다시 재면
+    //   두 곳의 규칙이 언젠가 갈리고, 그때 사용자는 "버튼은 있는데 눌러도 안 된다" 를 겪는다.
+    final mine = m['canDelete'] == true;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -209,9 +304,32 @@ class _RecordScreenState extends State<RecordScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_when(captured),
-                    style: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(_when(captured),
+                          style: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
+                    ),
+                    // 내 것이 아니면 메뉴 자체를 안 보여 준다 — 눌러야 거절당하는 버튼은 두지 않는다.
+                    if (mine)
+                      SizedBox(
+                        height: 24,
+                        width: 28,
+                        child: PopupMenuButton<String>(
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: '기록 관리',
+                          onSelected: (v) =>
+                              v == 'edit' ? _editDescription(m) : _delete(m),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('설명 수정')),
+                            PopupMenuItem(value: 'delete', child: Text('삭제')),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 4),
                 // 없는 값은 비워 두지 않고 없다고 적는다(빈칸은 '측정 안 함' 으로 읽힌다).
                 Text(address ?? '위치 미확보',
@@ -220,6 +338,11 @@ class _RecordScreenState extends State<RecordScreen> {
                 if (uploader != null && uploader.isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(uploader, style: const TextStyle(fontSize: 11, color: VgColors.muted)),
+                ],
+                if (description != null && description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(description,
+                      style: const TextStyle(fontSize: 12, color: VgColors.ink)),
                 ],
               ],
             ),

@@ -117,6 +117,21 @@ final class VitalBridge: NSObject {
         case "listMedia":
             let days = (call.arguments as? [String: Any])?["days"] as? Int ?? 30
             listMedia(days: days, result: result)
+        // 삭제·설명 수정. 권한 판정은 서버가 한다(올린 본인 또는 owner) — 여기서 다시 재지 않는다.
+        case "deleteMedia":
+            guard let id = (call.arguments as? [String: Any])?["id"] as? String, !id.isEmpty else {
+                result(["ok": false, "error": "id 가 없습니다."])
+                return
+            }
+            mediaWrite(method: "DELETE", query: ["id": id], body: nil, result: result)
+        case "updateMediaDescription":
+            let args = call.arguments as? [String: Any]
+            guard let id = args?["id"] as? String, !id.isEmpty else {
+                result(["ok": false, "error": "id 가 없습니다."])
+                return
+            }
+            let text = args?["description"] as? String ?? ""
+            mediaWrite(method: "PATCH", query: [:], body: ["id": id, "description": text], result: result)
         case "status":
             result([
                 "loggedIn": AuthStore.token != nil,
@@ -214,6 +229,66 @@ final class VitalBridge: NSObject {
                 return
             }
             finish(json)
+        }.resume()
+    }
+
+    /// 미디어 삭제·수정 공통 경로. 둘 다 같은 라우트(`api/calendar/media`)의 다른 메서드다.
+    ///
+    /// ★ 서버가 소유권을 판정한다 — 남의 사진이면 **404**(있는지조차 알려주지 않는다).
+    ///   그 404 를 "없어졌다" 로 옮기면 사용자가 오해하므로 화면에 쓸 사유를 여기서 붙인다.
+    private func mediaWrite(
+        method: String,
+        query: [String: String],
+        body: [String: Any]?,
+        result: @escaping FlutterResult
+    ) {
+        guard let token = AuthStore.token, !token.isEmpty else {
+            result(["ok": false, "error": "로그인이 필요합니다."])
+            return
+        }
+        var comps = URLComponents(
+            url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/calendar/media"),
+            resolvingAgainstBaseURL: false
+        )
+        if !query.isEmpty {
+            comps?.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        guard let url = comps?.url else {
+            result(["ok": false, "error": "요청 주소를 만들지 못했습니다."])
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = 20
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        }
+
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            let finish: ([String: Any]) -> Void = { payload in
+                DispatchQueue.main.async { result(payload) }
+            }
+            if let error {
+                finish(["ok": false, "error": error.localizedDescription])
+                return
+            }
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if code == 200 {
+                finish(["ok": true])
+                return
+            }
+            // 서버 문구가 있으면 그것을 쓴다(권한 사유가 담겨 있다). 없으면 코드별 기본 문구.
+            let serverError = data
+                .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["error"] as? String
+            let fallback: String
+            switch code {
+            case 401: fallback = "다시 로그인해 주세요."
+            case 403, 404: fallback = "본인이 올린 것만 지우거나 고칠 수 있습니다."
+            default: fallback = "요청 실패(\(code))"
+            }
+            finish(["ok": false, "status": code, "error": serverError ?? fallback])
         }.resume()
     }
 

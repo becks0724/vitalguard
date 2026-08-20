@@ -3826,17 +3826,24 @@ export async function updateCalendarMediaDescription(
   return rowCount > 0;
 }
 
+// 삭제된 행의 저장 키를 함께 돌려준다 — 호출부가 버킷 객체까지 지우기 위한 것이다.
+// ★ `RETURNING` 이라 **권한을 통과해 실제로 지워진 경우에만** 키가 나온다. 별도 조회로 키를
+//   먼저 얻으면 남의 사진 키를 읽어 지우는 경로가 열린다.
+// 못 지웠으면(없음·남의 것) `null` — 호출부는 그때 아무 파일도 건드리지 않는다.
 export async function deleteCalendarMedia(
   id: string,
   scope: MediaScope,
-): Promise<boolean> {
+): Promise<{ storageProvider: string | null; storageKey: string | null } | null> {
   const params: unknown[] = [id];
   const clause = mediaScopeClause(scope, params);
-  const { rowCount } = await q(
-    `DELETE FROM calendar_media WHERE id = $1${clause}`,
+  const { rows } = await q<{ storage_provider: string | null; storage_key: string | null }>(
+    `DELETE FROM calendar_media WHERE id = $1${clause}
+       RETURNING storage_provider, storage_key`,
     params,
   );
-  return rowCount > 0;
+  const row = rows[0];
+  if (!row) return null;
+  return { storageProvider: row.storage_provider, storageKey: row.storage_key };
 }
 
 // ── 일정 캘린더 일정/라벨(서버 영속 — localStorage 승격) ──────────────────────

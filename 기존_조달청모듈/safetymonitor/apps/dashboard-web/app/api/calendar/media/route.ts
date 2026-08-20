@@ -18,7 +18,7 @@ import {
   workerIdGroup,
   type MediaScope,
 } from "../../../../lib/media-scope";
-import { isStorageConfigured, presignDownload } from "../../../../lib/storage";
+import { deleteObject, isStorageConfigured, presignDownload } from "../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +202,22 @@ export async function DELETE(request: Request) {
   }
   // 남의 사진이면 rowCount 0 → 404. "없음"과 "권한 없음"을 같은 응답으로 묶어
   // 사진 id 존재 여부가 새어나가지 않게 한다.
-  const ok = await deleteCalendarMedia(id, scope);
-  return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
+  const deleted = await deleteCalendarMedia(id, scope);
+  if (!deleted) return NextResponse.json({ ok: false }, { status: 404 });
+
+  // ★ 행을 지운 **뒤에** 파일을 지운다. 순서를 뒤집으면 권한이 없어 행이 안 지워진 경우에도
+  //   파일만 사라진다 — 남의 증빙을 파괴한다.
+  // ⚠ 파일 삭제 실패는 삭제 자체의 실패가 아니다. 여기서 500 을 내면 사용자는 "안 지워졌다" 로
+  //   읽고 다시 누르는데 행은 이미 없어 404 를 받는다. 남는 파일은 고아이므로 로그로 남긴다.
+  //   (실측 2026-08-20 — 이 삭제가 파일을 안 지워 고아 4개·21.2MB 가 이미 쌓여 있었다.)
+  if (deleted.storageProvider === "naver" && deleted.storageKey && isStorageConfigured()) {
+    try {
+      await deleteObject(deleted.storageKey);
+    } catch (e) {
+      console.warn(
+        `[calendar/media] 버킷 객체 삭제 실패 — 고아로 남는다 key=${deleted.storageKey} ${String(e)}`,
+      );
+    }
+  }
+  return NextResponse.json({ ok: true });
 }
