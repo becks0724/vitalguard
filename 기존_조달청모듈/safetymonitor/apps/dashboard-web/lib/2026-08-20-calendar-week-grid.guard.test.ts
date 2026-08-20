@@ -17,9 +17,22 @@ test("앵커 — 주간 격자·미니 월간이 실재한다", () => {
   assert.ok(dash.includes("const WEEK_START_HOUR"), "시간 범위 상수 소실");
 });
 
-test("시간 범위는 07~19시다 — 24시간이면 대부분 빈칸이고 스크롤만 길어진다", () => {
-  assert.match(dash, /const WEEK_START_HOUR = 7;/, "시작 시각이 바뀌었다");
-  assert.match(dash, /const WEEK_END_HOUR = 19;/, "종료 시각이 바뀌었다");
+// ⚠ 전제가 바뀌었다(2026-08-20 사용자 결정) — 07~19시 → **00~24시**.
+//   사유 = 야간·새벽 업무 가능성. 범위를 좁히는 것은 "그 시간엔 일이 없다"는 주장이고
+//   우리는 그걸 증명 못 한다. 실제로 08-19 23:38 촬영분이 창 밖이라 격자에서 사라져 있었다.
+test("시간 범위는 24시간이다 — 창 밖 시각이 조용히 사라지지 않게", () => {
+  assert.match(dash, /const WEEK_START_HOUR = 0;/, "시작 시각이 0시가 아니다 — 새벽 기록이 사라진다");
+  assert.match(dash, /const WEEK_END_HOUR = 24;/, "종료 시각이 24시가 아니다 — 야간 기록이 사라진다");
+});
+
+test("24시간이라 격자만 스크롤한다 — 페이지가 통째로 길어지지 않게", () => {
+  const i = dash.indexOf("function WeekGrid(");
+  const body = dash.slice(i, i + 20_000);
+  assert.match(body, /max-h-\[28rem\] overflow-y-auto overscroll-contain/, "격자 자체 스크롤이 사라졌다");
+  // 눈은 주간 근무대에서 시작한다 — 0시에서 시작하면 대부분 빈칸을 보게 된다.
+  assert.match(body, /el\.scrollTop = 7 \* WEEK_HOUR_PX;/, "초기 07시 위치가 사라졌다");
+  // ⚠ 초기 스크롤도 한 번만 — 폴링마다 옮기면 사용자가 스크롤해도 계속 끌려온다(같은 형태를 이미 밟았다).
+  assert.match(body, /!gridScrolledRef\.current/, "초기 스크롤 1회 제한이 사라졌다");
 });
 
 // ★ 실측 = `end_time` 이 절반은 없다. 없다고 안 그리면 그 일정이 화면에서 사라진다.

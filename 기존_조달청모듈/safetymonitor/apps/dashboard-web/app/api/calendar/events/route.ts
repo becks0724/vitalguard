@@ -97,6 +97,17 @@ export async function POST(request: Request) {
   }
   const timeOf = (v: unknown): string | null =>
     typeof v === "string" && TIME_RE.test(v) ? v : null;
+  // 종료 날짜(여러 날 일정). 없거나 시작과 같으면 하루짜리로 본다 — null 로 저장해
+  // 기존 행과 같은 모양을 유지한다(화면이 "종료가 있으면 여러 날" 하나로만 판단하게).
+  const endRaw = typeof body.endDateKey === "string" ? body.endDateKey.trim() : "";
+  if (endRaw && !DATE_RE.test(endRaw)) {
+    return NextResponse.json({ ok: false, error: "endDateKey(YYYY-MM-DD) 형식 오류" }, { status: 400 });
+  }
+  // ⚠ 거꾸로 된 기간은 거부한다 — 받아 두면 화면이 음수 길이 띠를 그리려다 사라진다.
+  if (endRaw && endRaw < dateKey) {
+    return NextResponse.json({ ok: false, error: "종료일이 시작일보다 빠릅니다" }, { status: 400 });
+  }
+  const endDateKey = endRaw && endRaw !== dateKey ? endRaw : null;
   // 위험작업 유형 — 5종 목록 외 값은 거부(빈 문자열·미전송 = 없음).
   const hazardRaw =
     typeof body.hazardType === "string" && body.hazardType.trim()
@@ -117,6 +128,7 @@ export async function POST(request: Request) {
       labelId,
       startTime: timeOf(body.startTime),
       endTime: timeOf(body.endTime),
+      endDateKey,
       hazardType: hazardRaw,
       createdBy: getSession(request)?.username ?? null,
     },

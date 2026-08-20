@@ -809,6 +809,8 @@ type CalendarEvent = {
   labelId: string;
   startTime?: string;
   endTime?: string;
+  /** 종료 날짜(YYYY-MM-DD). 없으면 하루짜리. */
+  endDateKey?: string;
   // 위험작업 유형(calendar-hazard 5종) — 기상 예보와 충돌 시 경고 표시.
   hazardType?: string;
   // 등록자(서버 세션 username) — 서버가 최초 등록 시 저장, 클라는 표시만.
@@ -929,6 +931,7 @@ function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
       labelId: r.label_id as string,
       startTime: typeof r.start_time === "string" ? r.start_time : undefined,
       endTime: typeof r.end_time === "string" ? r.end_time : undefined,
+      endDateKey: typeof r.end_date_key === "string" ? r.end_date_key : undefined,
       hazardType: typeof r.hazard_type === "string" ? r.hazard_type : undefined,
       createdBy: typeof r.created_by === "string" ? r.created_by : undefined,
       updatedAt: typeof r.updated_at === "string" ? r.updated_at : undefined,
@@ -988,6 +991,7 @@ function loadCalendarEvents(): CalendarEvent[] {
         labelId: e.labelId,
         startTime: typeof e.startTime === "string" ? e.startTime : undefined,
         endTime: typeof e.endTime === "string" ? e.endTime : undefined,
+        endDateKey: typeof e.endDateKey === "string" ? e.endDateKey : undefined,
       }));
   } catch {
     return [];
@@ -1418,6 +1422,8 @@ function ScheduleEventFormModal({
   const [hazardType, setHazardType] = useState("");
   // 저장될 날짜 — 수정 시 다른 날로 옮길 수 있다. 신규는 모달을 연 날짜에서 시작.
   const [dateDraft, setDateDraft] = useState(dateKey);
+  // 종료 날짜(여러 날 일정). 빈 값·시작과 같으면 하루짜리다.
+  const [endDateDraft, setEndDateDraft] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
 
@@ -1426,6 +1432,7 @@ function ScheduleEventFormModal({
     setLabelId(labels[0]?.id ?? "");
     setStartTime("");
     setEndTime("");
+    setEndDateDraft("");
     setHazardType("");
     setDateDraft(dateKey);
     setEditingId(null);
@@ -1482,6 +1489,11 @@ function ScheduleEventFormModal({
       labelId,
       startTime: startTime.trim() || undefined,
       endTime: endTime.trim() || undefined,
+      // 종료일이 시작보다 빠르면 안 싣는다 — 서버도 400 으로 막지만, 여기서 먼저 거른다.
+      endDateKey:
+        endDateDraft && DATE_KEY_RE.test(endDateDraft) && endDateDraft > dateDraft
+          ? endDateDraft
+          : undefined,
       hazardType: hazardType || undefined,
     };
     if (editingId) {
@@ -1611,6 +1623,25 @@ function ScheduleEventFormModal({
               onChange={(e) => setDateDraft(e.target.value)}
               className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
             />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              종료 날짜 <span className="font-normal">— 여러 날 일정일 때만</span>
+            </label>
+            <input
+              type="date"
+              value={endDateDraft}
+              min={dateDraft}
+              onChange={(e) => setEndDateDraft(e.target.value)}
+              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+            />
+            {/* ⚠ 거꾸로 된 기간은 저장하지 않는다 — 받아 두면 화면이 음수 길이 띠를 그리려다 사라진다. */}
+            {endDateDraft && endDateDraft < dateDraft && (
+              <p className="mt-1 text-[11px] font-semibold text-semantic-down">
+                종료일이 시작일보다 빠릅니다 — 이대로 저장하면 하루 일정이 됩니다.
+              </p>
+            )}
           </div>
 
           <div>
@@ -1898,13 +1929,16 @@ function getKoreanHolidays(year: number): Record<string, string> {
 // ★ 본문을 복제하지 않고 감싸는 껍데기만 가른다 — 두 벌이면 한쪽만 고쳐 화면이 갈린다.
 // ── 주간 일정표 · 미니 월간 (2026-08-20 · 구글 캘린더 참고) ──────────────────────
 // 근거·결정 = docs/calendar-week-view/context-notes.md
-//   · 시간 범위 07~19시 — 현장 일정 표본(09:00 · 15:00~17:00)이 그 안에 든다. 24시간이면
-//     대부분 빈칸이고 스크롤만 길어진다.
+//   · 시간 범위 **00~24시**(2026-08-20 사용자 결정 — 야간·새벽 업무 가능성을 열어둔다).
+//     ⚠ 종전 07~19시는 현장 일정 표본만 보고 정한 값이라, 그 밖의 시각은 **조용히 안 보였다.**
+//       실제로 08-19 23:38 촬영분이 창 밖이라 격자에서 사라져 있었다. 범위를 좁히는 것은
+//       "그 시간엔 일이 없다"는 주장이고, 그건 우리가 증명 못 한다.
+//     대신 첫 렌더에서 07시로 스크롤한다 — 24시간을 다 보여주되 눈은 주간 근무대에 둔다.
 //   · `end_time` 이 없을 수 있다(실측 50%) → 기본 1시간 블록으로 그린다.
 //   · 사진은 **하루 단위로 묶어 종일 띠**에 둔다. 시간 단위로 묶으면 56%가 "1건" 이라
 //     묶는 의미가 없고, 하루 묶음은 시각이 없어 어느 시간 칸에도 못 놓는다.
-const WEEK_START_HOUR = 7;
-const WEEK_END_HOUR = 19;
+const WEEK_START_HOUR = 0;
+const WEEK_END_HOUR = 24;
 const WEEK_HOUR_PX = 44;
 
 /** `HH:MM` → 분. 형식이 아니면 null(문자열 컬럼이라 방어한다). */
@@ -1916,6 +1950,35 @@ function hhmmToMinutes(v: string | undefined | null): number | null {
   const min = Number(m[2]);
   if (h > 23 || min > 59) return null;
   return h * 60 + min;
+}
+
+/** 여러 날 일정인가. `endDateKey` 가 있고 시작보다 뒤면 참. */
+function isSpanEvent(e: CalendarEvent): boolean {
+  return !!e.endDateKey && e.endDateKey > e.dateKey;
+}
+
+/**
+ * 주(7일) 안에서 이 일정이 차지하는 구간. 걸치지 않으면 null.
+ * ★ 주 경계에서 자른다 — 구글 캘린더처럼 주가 바뀌면 띠가 두 줄로 쪼개진다.
+ * `startIdx`/`endIdx` 는 0~6, `openStart`/`openEnd` 는 이 주 밖으로 이어지는지(화살표 표시용).
+ */
+function spanInWeek(
+  e: CalendarEvent,
+  weekKeys: string[],
+): { startIdx: number; endIdx: number; openStart: boolean; openEnd: boolean } | null {
+  const first = weekKeys[0];
+  const last = weekKeys[weekKeys.length - 1];
+  if (!first || !last) return null;
+  const s0 = e.dateKey;
+  const s1 = e.endDateKey && e.endDateKey > e.dateKey ? e.endDateKey : e.dateKey;
+  if (s1 < first || s0 > last) return null; // 이 주와 안 겹친다
+  let startIdx = weekKeys.indexOf(s0);
+  let endIdx = weekKeys.indexOf(s1);
+  const openStart = startIdx < 0;
+  const openEnd = endIdx < 0;
+  if (openStart) startIdx = 0;
+  if (openEnd) endIdx = weekKeys.length - 1;
+  return { startIdx, endIdx, openStart, openEnd };
 }
 
 /** 촬영 시각(ISO) → 분. 표시 코드와 같은 관례(`slice(11,16)`)를 쓴다. 못 읽으면 null. */
@@ -2029,6 +2092,9 @@ function WeekGrid({
     return d;
   });
   const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
+  // 07시 초기 스크롤은 **한 번만** — ref 콜백은 렌더마다 다시 붙고 이 화면은 2초 주기로
+  // 폴링하므로, 조건만 보고 옮기면 사용자가 스크롤해도 계속 끌려온다(같은 형태를 이미 한 번 밟았다).
+  const gridScrolledRef = useRef(false);
   const bodyH = hours.length * WEEK_HOUR_PX;
 
   return (
@@ -2064,7 +2130,58 @@ function WeekGrid({
           })}
         </div>
 
-        {/* 종일 띠 — 사진 하루 묶음. 시각이 없는 정보라 시간 칸에 못 놓는다(context-notes C-03). */}
+        {/* 여러 날 일정 — **가로 색상줄**. 주 경계에서 잘라 이 주에 걸치는 부분만 그린다.
+            겹치면 세로로 쌓는다(구글 캘린더와 같은 방식). 색은 라벨 태그 그대로. */}
+        {(() => {
+          const weekKeys = days.map((d) => toDateKey(d));
+          const spans = Object.values(eventsByDate)
+            .flat()
+            .filter(isSpanEvent)
+            .map((e) => ({ e, at: spanInWeek(e, weekKeys) }))
+            .filter((x): x is { e: CalendarEvent; at: NonNullable<ReturnType<typeof spanInWeek>> } => x.at !== null)
+            // 같은 일정이 여러 날짜 키에 들어 있을 수 있어 id 로 접는다.
+            .filter((x, i, arr) => arr.findIndex((y) => y.e.id === x.e.id) === i)
+            .sort((a, b) => a.at.startIdx - b.at.startIdx || b.at.endIdx - a.at.endIdx);
+          if (spans.length === 0) return null;
+          return (
+            <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-hairline dark:border-white/10">
+              <span className="py-1 pr-1 text-right text-[9px] leading-5 text-muted dark:text-on-dark-soft">기간</span>
+              <div className="col-span-7 space-y-0.5 py-1">
+                {spans.map(({ e, at }) => {
+                  const color = findLabelDef(labels, e.labelId).color;
+                  return (
+                    <div key={e.id} className="grid grid-cols-7 gap-0">
+                      <button
+                        type="button"
+                        onClick={() => onOpenEvent(e)}
+                        title={`${e.title} · ${e.dateKey} ~ ${e.endDateKey ?? e.dateKey}`}
+                        // 라벨 색 그대로 — `band` 는 이 용도로 이미 있는 토큰이다(새 색을 만들지 않는다).
+                        className={`flex min-w-0 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-[10px] font-semibold ${LABEL_COLOR_META[color].band}`}
+                        style={{
+                          gridColumnStart: at.startIdx + 1,
+                          gridColumnEnd: at.endIdx + 2,
+                          borderTopLeftRadius: at.openStart ? 0 : undefined,
+                          borderBottomLeftRadius: at.openStart ? 0 : undefined,
+                          borderTopRightRadius: at.openEnd ? 0 : undefined,
+                          borderBottomRightRadius: at.openEnd ? 0 : undefined,
+                        }}
+                      >
+                        <ScheduleLabelDot color={color} className="h-1.5 w-1.5 shrink-0" />
+                        <span className="min-w-0 truncate">
+                          {at.openStart ? "◀ " : ""}
+                          {e.title.trim()}
+                          {at.openEnd ? " ▶" : ""}
+                        </span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 종일 띠 — 촬영 시각을 못 읽은 사진. 시각이 없어 시간 칸에 못 놓는다. */}
         <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-hairline dark:border-white/10">
           <span className="py-1 pr-1 text-right text-[9px] leading-5 text-muted dark:text-on-dark-soft">종일</span>
           {days.map((d) => {
@@ -2093,7 +2210,17 @@ function WeekGrid({
           })}
         </div>
 
-        {/* 시간 격자 */}
+        {/* 시간 격자 — 24시간이라 **이 영역만** 스크롤한다(그대로 두면 페이지가 통째로 길어진다).
+            첫 렌더에서 07시로 내려 둔다 — 전부 보여주되 눈은 주간 근무대에서 시작한다. */}
+        <div
+          ref={(el) => {
+            if (el && !gridScrolledRef.current) {
+              gridScrolledRef.current = true;
+              el.scrollTop = 7 * WEEK_HOUR_PX;
+            }
+          }}
+          className="max-h-[28rem] overflow-y-auto overscroll-contain"
+        >
         <div className="relative grid grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
           {/* 시간축 */}
           <div className="relative" style={{ height: bodyH }}>
@@ -2205,6 +2332,7 @@ function WeekGrid({
               </div>
             );
           })}
+        </div>
         </div>
       </div>
     </div>
@@ -3191,6 +3319,63 @@ function HeaderCalendarPopup({
 
           {/* `auto-rows-fr` — 주(週) 행이 같은 높이로 균등 분배된다. 없으면 일정이 많은 주만
               길어져 격자가 들쭉날쭉해진다(구글 캘린더는 항상 균등하다). */}
+          {/* 여러 날 일정 — 월간에서도 **가로 색상줄**로 이어 그린다. 주 단위로 잘라
+              각 주 위에 한 줄씩 얹는다(구글 캘린더와 같은 방식).
+              ★ 격자 셀을 건드리지 않는다 — 셀 안에 넣으면 날마다 따로 뜬다. */}
+          {(() => {
+            const spanEvents = Object.values(eventsByDate).flat().filter(isSpanEvent)
+              .filter((e, i, arr) => arr.findIndex((y) => y.id === e.id) === i);
+            if (spanEvents.length === 0) return null;
+            const weeks: string[][] = [];
+            for (let i = 0; i < cells.length; i += 7) {
+              weeks.push(
+                cells.slice(i, i + 7).map((d) => (d === null ? "" : toDateKey(new Date(year, month, d)))),
+              );
+            }
+            return (
+              <div className="mb-1 space-y-0.5">
+                {weeks.map((wk, wi) => {
+                  const bars = spanEvents
+                    .map((e) => ({ e, at: spanInWeek(e, wk.filter(Boolean)) }))
+                    .filter((x): x is { e: CalendarEvent; at: NonNullable<ReturnType<typeof spanInWeek>> } => x.at !== null);
+                  if (bars.length === 0) return null;
+                  // 빈 앞칸(전월) 보정 — spanInWeek 은 빈 칸을 뺀 배열로 셌다.
+                  const lead = wk.findIndex(Boolean);
+                  return (
+                    <div key={wi} className="space-y-0.5">
+                      <p className="px-1 text-[9px] font-semibold text-muted dark:text-on-dark-soft">
+                        {wi + 1}주차 기간 일정
+                      </p>
+                      {bars.map(({ e, at }) => (
+                        <div key={e.id} className="grid grid-cols-7 gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormEditId(e.id);
+                              setFormDate(dateFromKey(e.dateKey));
+                            }}
+                            title={`${e.title} · ${e.dateKey} ~ ${e.endDateKey ?? e.dateKey}`}
+                            className={`flex min-w-0 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left text-[10px] font-semibold ${LABEL_COLOR_META[findLabelDef(labels, e.labelId).color].band}`}
+                            style={{
+                              gridColumnStart: lead + at.startIdx + 1,
+                              gridColumnEnd: lead + at.endIdx + 2,
+                            }}
+                          >
+                            <ScheduleLabelDot color={findLabelDef(labels, e.labelId).color} className="h-1.5 w-1.5 shrink-0" />
+                            <span className="min-w-0 truncate">
+                              {at.openStart ? "◀ " : ""}
+                              {e.title.trim()}
+                              {at.openEnd ? " ▶" : ""}
+                            </span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div className="grid auto-rows-fr grid-cols-7 gap-0.5 overflow-visible">
             {cells.map((day, idx) => {
               if (day === null) {
