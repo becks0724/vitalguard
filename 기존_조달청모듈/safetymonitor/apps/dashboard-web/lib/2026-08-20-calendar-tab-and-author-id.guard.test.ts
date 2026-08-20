@@ -45,6 +45,20 @@ test("새 현장 사진 토스트와 위험작업 칩이 캘린더 탭으로 보
   assert.ok(seen.length >= 2, `markCalendarSeen 이 ${seen.length}곳 — 이동 지점마다 있어야 한다`);
 });
 
+// ⚠ 이 가드가 처음엔 없어서 구멍이 있었다 — 클릭 대상(토스트·칩)만 옮기고 **배지 숫자 자체**는
+//   표시할 자리가 사라진 것을 못 잡았다. lint 의 `calendarNewCount 미사용`이 대신 드러냈다.
+//   "알림을 옮겼다"는 진입점을 옮긴 것이지 표시를 옮긴 것이 아니다 — 둘을 따로 검사한다.
+test("미확인 배지가 표시될 자리가 있다 — 숫자가 화면에서 사라지지 않았다", () => {
+  assert.match(dash, /badge: calendarNewCount/, "탭 배지가 사라졌다 — 미확인 개수가 화면 어디에도 안 남는다");
+  const pager = readFileSync(join(ROOT, "app/components/SectionPager.tsx"), "utf8");
+  assert.match(pager, /badge\?: number/, "PagerPage 배지 타입 소실");
+  assert.match(pager, /badges=\{pages\.map\(\(p\) => p\.badge\)\}/, "페이저가 배지를 탭바에 안 넘긴다");
+  const bar = readFileSync(join(ROOT, "app/components/GlassTabBar.tsx"), "utf8");
+  assert.match(bar, /\{!!badges\?\.\[i\] && \(/, "탭바가 배지를 안 그린다");
+  // 0 을 그리면 "0건이 있다"로 읽힌다 — falsy 를 걸러야 한다.
+  assert.doesNotMatch(bar, /\{badges\?\.\[i\] !== undefined && \(/, "0 도 그리게 바뀌었다");
+});
+
 test("inline 은 오버레이·드래그·닫기를 걸치지 않는다", () => {
   const i = dash.indexOf("function HeaderCalendarPopup(");
   const body = dash.slice(i, i + 60_000);

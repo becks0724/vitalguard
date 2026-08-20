@@ -3579,6 +3579,20 @@ export function DemoDashboard() {
     jumpSeqRef.current += 1;
     setCalendarJump({ idx: CALENDAR_PAGE_IDX, seq: jumpSeqRef.current });
   }, [CALENDAR_PAGE_IDX]);
+
+  // 캘린더 탭에서는 우하단 배치 어시스턴트(LLM) 위젯을 띄우지 않는다(2026-08-20 사용자 결정).
+  // ⚠ 위젯은 body 로 포털돼 이 컴포넌트 밖에 있고, 그것을 렌더하는 page.tsx 는 서버 컴포넌트라
+  //   프롭으로 상태를 못 내린다. body 표식 + globals.css 로 잇는다.
+  // 정리(cleanup)에서 표식을 지운다 — 안 지우면 로그아웃·언마운트 후에도 위젯이 숨은 채 남는다.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const hide = pagerIdx === CALENDAR_PAGE_IDX;
+    if (hide) document.body.dataset.hideAssistant = "1";
+    else delete document.body.dataset.hideAssistant;
+    return () => {
+      delete document.body.dataset.hideAssistant;
+    };
+  }, [pagerIdx, CALENDAR_PAGE_IDX]);
   // 설비 메트릭(가스 측정값/제세동기 배터리) 선택 → 하단 추세 그래프
   const [siteChart, setSiteChart] = useState<SiteMetric | null>(null);
   // 직급/직책 편집 모달 — 작업자 표의 직급 칸 클릭 시 열림(관제 웹 입력).
@@ -5778,6 +5792,10 @@ export function DemoDashboard() {
             // 일정 캘린더 — 헤더 아이콘(떠 있는 패널)과 **같은 컴포넌트**를 탭 본문으로 연다.
             // 아이콘은 그대로 두었다(빠른 확인용). 본문을 복제하지 않으므로 두 자리가 갈리지 않는다.
             title: "일정 캘린더",
+            // 새 현장 사진 미확인 배지 — 헤더 아이콘을 걷어내며 여기로 옮겼다(2026-08-20).
+            // ⚠ 아이콘만 지우고 이걸 안 옮기면 **미확인 개수가 화면 어디에도 안 남는다**
+            //   (실제로 lint 가 `calendarNewCount` 미사용으로 잡아 드러났다).
+            badge: calendarNewCount,
             content: (
               <HeaderCalendarPopup
                 open

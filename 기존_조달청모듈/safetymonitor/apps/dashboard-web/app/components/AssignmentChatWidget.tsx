@@ -18,7 +18,11 @@ export default function AssignmentChatWidget() {
   if (!mounted) return null;
 
   return createPortal(
-    <>
+    // `assignment-chat-dock` — 탭별로 이 위젯을 숨기는 표식(globals.css).
+    //   위젯은 body 로 포털돼 DemoDashboard 밖에 있고 page.tsx 는 서버 컴포넌트라
+    //   탭 상태를 프롭으로 못 내린다. body 데이터 속성 + CSS 로 잇는다.
+    //   자식이 전부 position:fixed 라 감싸는 div 가 레이아웃에 영향을 주지 않는다.
+    <div className="assignment-chat-dock">
       {open ? (
         <>
           {/* 과업지시서 서랍 — 챗 카드 '뒤'(낮은 z)에 깔려 있다가 왼쪽으로 천천히 슬라이드되어 나온다 */}
@@ -105,7 +109,7 @@ export default function AssignmentChatWidget() {
           </svg>
         )}
       </button>
-    </>,
+    </div>,
     document.body,
   );
 }

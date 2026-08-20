@@ -7,10 +7,14 @@ export function GlassTabBar({
   active,
   onSelect,
   className,
+  badges,
 }: {
   tabs: string[];
   active: number;
   onSelect: (i: number) => void;
+  // 탭별 미확인 개수(선택). 0·undefined 면 안 그린다 — 0 을 그리면 "0건이 있다"로 읽힌다.
+  // 길이가 tabs 와 달라도 안전하다(없는 인덱스는 undefined).
+  badges?: (number | undefined)[];
   // 컨테이너 추가 클래스(예: 캐러셀 헤더의 flex-1).
   className?: string;
 }) {
@@ -27,7 +31,7 @@ export function GlassTabBar({
             type="button"
             role="tab"
             aria-selected={isActive}
-            aria-label={t}
+            aria-label={badges?.[i] ? `${t} — 미확인 ${badges[i]}건` : t}
             onClick={() => onSelect(i)}
             className={`relative shrink-0 rounded-pill px-2.5 py-1 text-xs font-semibold transition-colors ${
               isActive
@@ -46,6 +50,13 @@ export function GlassTabBar({
               </span>
             )}
             <span className="relative">{t}</span>
+            {/* 미확인 배지 — 헤더 아이콘을 걷어내며 여기로 옮겼다(2026-08-20).
+                아이콘만 지우고 배지를 안 옮기면 미확인 개수가 화면 어디에도 안 남는다. */}
+            {!!badges?.[i] && (
+              <span className="relative ml-1 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-semantic-down px-1 text-[9px] font-bold leading-[1.05rem] text-white">
+                {badges[i]}
+              </span>
+            )}
           </button>
         );
       })}

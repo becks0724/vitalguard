@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { GlassTabBar } from "./GlassTabBar";
 
-export type PagerPage = { title: string; content: ReactNode };
+export type PagerPage = { title: string; content: ReactNode; badge?: number };
 
 export function SectionPager({
   pages,
@@ -65,6 +65,7 @@ export function SectionPager({
       <div className="flex items-center gap-1.5 rounded-xl border border-hairline-strong bg-canvas px-1.5 py-1 dark:border-white/10 dark:bg-surface-dark">
         <GlassTabBar
           tabs={pages.map((p) => p.title)}
+          badges={pages.map((p) => p.badge)}
           active={idx}
           onSelect={(i) => {
             setIdx(i);

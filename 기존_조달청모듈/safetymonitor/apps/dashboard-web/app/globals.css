@@ -198,3 +198,11 @@ html.dark body {
     transform: rotate(360deg);
   }
 }
+
+/* 탭별 어시스턴트 위젯 숨김 — 일정 캘린더 탭에서는 우하단 LLM 버튼을 띄우지 않는다
+   (2026-08-20 사용자 결정). 위젯은 body 로 포털돼 DemoDashboard 밖에 있고 page.tsx 는
+   서버 컴포넌트라 프롭으로 못 내린다. DemoDashboard 가 body 에 표식을 쓰고 여기서 받는다.
+   ⚠ display:none 이라 클릭도 안 된다 — 감추는 것과 못 쓰게 하는 것이 함께 된다. */
+body[data-hide-assistant="1"] .assignment-chat-dock {
+  display: none;
+}
