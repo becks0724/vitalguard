@@ -108,6 +108,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "종료일이 시작일보다 빠릅니다" }, { status: 400 });
   }
   const endDateKey = endRaw && endRaw !== dateKey ? endRaw : null;
+  // 메모 — 빈 문자열은 null 로. 상한을 둔다(무제한이면 한 행이 응답을 통째로 키운다).
+  const noteRaw = typeof body.note === "string" ? body.note.trim() : "";
+  if (noteRaw.length > 2000) {
+    return NextResponse.json({ ok: false, error: "메모는 2000자 이하" }, { status: 400 });
+  }
+  const note = noteRaw || null;
   // 위험작업 유형 — 5종 목록 외 값은 거부(빈 문자열·미전송 = 없음).
   const hazardRaw =
     typeof body.hazardType === "string" && body.hazardType.trim()
@@ -129,6 +135,7 @@ export async function POST(request: Request) {
       startTime: timeOf(body.startTime),
       endTime: timeOf(body.endTime),
       endDateKey,
+      note,
       hazardType: hazardRaw,
       createdBy: getSession(request)?.username ?? null,
     },

@@ -811,6 +811,8 @@ type CalendarEvent = {
   endTime?: string;
   /** 종료 날짜(YYYY-MM-DD). 없으면 하루짜리. */
   endDateKey?: string;
+  /** 일정 메모(자유 텍스트). */
+  note?: string;
   // 위험작업 유형(calendar-hazard 5종) — 기상 예보와 충돌 시 경고 표시.
   hazardType?: string;
   // 등록자(서버 세션 username) — 서버가 최초 등록 시 저장, 클라는 표시만.
@@ -932,6 +934,7 @@ function calendarEventsFromServer(rows: unknown[]): CalendarEvent[] {
       startTime: typeof r.start_time === "string" ? r.start_time : undefined,
       endTime: typeof r.end_time === "string" ? r.end_time : undefined,
       endDateKey: typeof r.end_date_key === "string" ? r.end_date_key : undefined,
+      note: typeof r.note === "string" ? r.note : undefined,
       hazardType: typeof r.hazard_type === "string" ? r.hazard_type : undefined,
       createdBy: typeof r.created_by === "string" ? r.created_by : undefined,
       updatedAt: typeof r.updated_at === "string" ? r.updated_at : undefined,
@@ -992,6 +995,7 @@ function loadCalendarEvents(): CalendarEvent[] {
         startTime: typeof e.startTime === "string" ? e.startTime : undefined,
         endTime: typeof e.endTime === "string" ? e.endTime : undefined,
         endDateKey: typeof e.endDateKey === "string" ? e.endDateKey : undefined,
+        note: typeof e.note === "string" ? e.note : undefined,
       }));
   } catch {
     return [];
@@ -1389,6 +1393,7 @@ function CalendarEventChip({
 }
 
 function ScheduleEventFormModal({
+  floating = false,
   dateKey,
   events,
   labels,
@@ -1413,6 +1418,8 @@ function ScheduleEventFormModal({
   onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => void;
   onDelete: (event: CalendarEvent) => void;
   onClose: () => void;
+  /** 탭(inline)에서 body 로 포털돼 뜨는가. 그때는 fixed + 높은 z 를 쓴다. */
+  floating?: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [labelId, setLabelId] = useState<string>(labels[0]?.id ?? "");
@@ -1424,6 +1431,7 @@ function ScheduleEventFormModal({
   const [dateDraft, setDateDraft] = useState(dateKey);
   // 종료 날짜(여러 날 일정). 빈 값·시작과 같으면 하루짜리다.
   const [endDateDraft, setEndDateDraft] = useState("");
+  const [note, setNote] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
 
@@ -1433,6 +1441,7 @@ function ScheduleEventFormModal({
     setStartTime("");
     setEndTime("");
     setEndDateDraft("");
+    setNote("");
     setHazardType("");
     setDateDraft(dateKey);
     setEditingId(null);
@@ -1447,6 +1456,10 @@ function ScheduleEventFormModal({
       setEndTime(event.endTime ?? "");
       setHazardType(event.hazardType ?? "");
       setDateDraft(event.dateKey);
+      // ⚠ 수정 시 기존 값을 안 채우면 **저장할 때마다 지워진다** — 새 필드를 넣을 때마다
+      //   여기도 함께 채워야 한다(폼 상태 → 저장 payload → 이 복원, 셋이 한 벌이다).
+      setEndDateDraft(event.endDateKey ?? "");
+      setNote(event.note ?? "");
     },
     [labels],
   );
@@ -1494,6 +1507,7 @@ function ScheduleEventFormModal({
         endDateDraft && DATE_KEY_RE.test(endDateDraft) && endDateDraft > dateDraft
           ? endDateDraft
           : undefined,
+      note: note.trim() || undefined,
       hazardType: hazardType || undefined,
     };
     if (editingId) {
@@ -1527,7 +1541,14 @@ function ScheduleEventFormModal({
 
   return (
     <div
-      className="absolute inset-0 z-10 flex items-end justify-center bg-black/30 p-3 sm:items-center"
+      // ⚠ 탭(inline)에서는 **fixed + 포털**이어야 한다. `absolute` 는 기준 조상이 팝업 패널일 때만
+      //   맞는데, 탭에서는 그 패널이 없어 엉뚱한 곳에 낮은 z 로 그려져 **눌러도 안 보인다**
+      //   (사용자 실측 2026-08-20 — `+ 일정 추가` 무반응).
+      className={
+        floating
+          ? "fixed inset-0 z-[75] flex items-end justify-center bg-black/40 p-3 sm:items-center"
+          : "absolute inset-0 z-10 flex items-end justify-center bg-black/30 p-3 sm:items-center"
+      }
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -1612,7 +1633,31 @@ function ScheduleEventFormModal({
           </div>
         )}
 
-        <div className="space-y-3 px-4 py-3">
+        <div className="space-y-4 px-4 py-3">
+          {/* 애플 캘린더식 그룹 카드(2026-08-20 사용자 요청) — 제목 → 일시 → 옵션 → 세부사항.
+              ⚠ 항목은 우리가 가진 것만 쓴다. 위치·초대·알림·이동시간·첨부·URL 은 컬럼 자체가
+                없어서 넣지 않았다(넣으려면 각각 DB·API·화면 네 층이 필요하다). */}
+          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              일정 제목
+            </label>
+            <input
+              type="text"
+              value={title}
+              maxLength={60}
+              onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSubmit();
+              }}
+              placeholder=""
+              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
+            />
+          </div>
+          </div>
+
+          <p className="px-1 text-[11px] font-semibold text-muted dark:text-on-dark-soft">일시</p>
+          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft space-y-3 p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
               일정 날짜
@@ -1643,23 +1688,10 @@ function ScheduleEventFormModal({
               </p>
             )}
           </div>
-
-          <div>
-            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
-              일정 제목
-            </label>
-            <input
-              type="text"
-              value={title}
-              maxLength={60}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
-              }}
-              placeholder=""
-              className="w-full rounded-lg border border-hairline bg-surface-soft px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
-            />
           </div>
+
+          <p className="px-1 text-[11px] font-semibold text-muted dark:text-on-dark-soft">옵션</p>
+          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft space-y-3 p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
@@ -1791,6 +1823,10 @@ function ScheduleEventFormModal({
               ))}
             </div>
           </div>
+          </div>
+
+          <p className="px-1 text-[11px] font-semibold text-muted dark:text-on-dark-soft">시간</p>
+          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft space-y-3 p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
 
           <div>
             <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
@@ -1804,6 +1840,24 @@ function ScheduleEventFormModal({
               종료 시간 (선택)
             </label>
             <ScheduleTimePicker value={endTime} onChange={setEndTime} />
+          </div>
+          </div>
+
+          <p className="px-1 text-[11px] font-semibold text-muted dark:text-on-dark-soft">세부사항</p>
+          <div className="overflow-hidden rounded-2xl border border-hairline bg-surface-soft space-y-3 p-3 dark:border-white/10 dark:bg-surface-dark-elevated">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-semibold text-muted dark:text-on-dark-soft">
+              메모 <span className="font-normal">— 최대 2000자</span>
+            </label>
+            <textarea
+              value={note}
+              maxLength={2000}
+              rows={3}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="작업 내용·유의사항 등"
+              className="w-full resize-y rounded-lg border border-hairline bg-canvas px-3 py-2 text-sm text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark dark:text-on-dark"
+            />
+          </div>
           </div>
         </div>
 
@@ -2370,6 +2424,15 @@ function HeaderCalendarPopup({
   // 주/월 전환(2026-08-20 사용자 결정 — 월간을 버리지 않는다). 팝업(580px)은 주간이 안 들어가
   // 항상 월간이다. `inline` 일 때만 전환이 뜬다.
   const [weekMode, setWeekMode] = useState(true);
+  // 주 이동 — 종전엔 미니 월간에서 날짜를 골라야만 주가 바뀌어 불편했다(사용자 지적 2026-08-20).
+  // ★ viewDate 도 함께 옮긴다 — 안 옮기면 주는 넘어갔는데 미니 월간이 다른 달을 비춘다.
+  const shiftWeek = useCallback((delta: number) => {
+    setSelected((prev) => {
+      const next = new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + delta * 7);
+      setViewDate(new Date(next.getFullYear(), next.getMonth(), 1));
+      return next;
+    });
+  }, []);
   // 주간 격자에서 고른 사진 — 우측 사이드바에서 그 카드로 스크롤·강조한다.
   const [focusMediaId, setFocusMediaId] = useState<string | null>(null);
   // 초점당 한 번만 스크롤하기 위한 기록 — 위 ref 콜백 주석 참조.
@@ -3274,6 +3337,15 @@ function HeaderCalendarPopup({
                 onPrev={goPrevMonth}
                 onNext={goNextMonth}
               />
+              <button
+                type="button"
+                onClick={() => shiftWeek(-1)}
+                aria-label="이전 주"
+                title="이전 주"
+                className="mt-7 grid h-8 w-7 shrink-0 place-items-center rounded-lg border border-hairline text-muted transition hover:bg-surface-strong hover:text-ink dark:border-white/10 dark:hover:bg-white/10 dark:hover:text-on-dark"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+              </button>
               <WeekGrid
                 weekStart={startOfWeek(selected)}
                 today={today}
@@ -3298,6 +3370,15 @@ function HeaderCalendarPopup({
                   setFocusMediaId(m.id);
                 }}
               />
+              <button
+                type="button"
+                onClick={() => shiftWeek(1)}
+                aria-label="다음 주"
+                title="다음 주"
+                className="mt-7 grid h-8 w-7 shrink-0 place-items-center rounded-lg border border-hairline text-muted transition hover:bg-surface-strong hover:text-ink dark:border-white/10 dark:hover:bg-white/10 dark:hover:text-on-dark"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+              </button>
             </div>
           ) : (
           <>
@@ -4026,8 +4107,13 @@ function HeaderCalendarPopup({
         </div>
         </div>
 
+        {/* ★ 탭에서는 두 모달을 body 로 포털한다 — 페이저 트랙의 `translateX` 안에서는
+            좌표 기준이 트랙이 되어 화면 밖·낮은 z 로 그려진다(사이드바와 같은 이유). */}
+        {((node) => (inline && portalReady ? createPortal(node, document.body) : node))(
+          <>
         {formDate && (
           <ScheduleEventFormModal
+            floating={inline}
             dateKey={toDateKey(formDate)}
             events={eventsByDate[toDateKey(formDate)] ?? []}
             labels={labels}
@@ -4046,6 +4132,7 @@ function HeaderCalendarPopup({
 
         {pendingDelete && (
           <ScheduleDeleteConfirm
+            floating={inline}
             event={pendingDelete}
             label={findLabelDef(labels, pendingDelete.labelId)}
             onCancel={() => setPendingDelete(null)}
@@ -4054,6 +4141,8 @@ function HeaderCalendarPopup({
               setPendingDelete(null);
             }}
           />
+        )}
+          </>,
         )}
 
         {writeError && (
@@ -4079,11 +4168,14 @@ function HeaderCalendarPopup({
 
 // 일정 삭제 확인 — 삭제는 낙관적 반영 후 서버 요청이라 되돌릴 수 없다. 한 단계를 둔다.
 function ScheduleDeleteConfirm({
+  floating = false,
   event,
   label,
   onCancel,
   onConfirm,
 }: {
+  /** 탭(inline)에서 body 로 포털돼 뜨는가. 위 폼 모달과 같은 이유. */
+  floating?: boolean;
   event: CalendarEvent;
   label: ScheduleLabelDef;
   onCancel: () => void;
@@ -4091,7 +4183,12 @@ function ScheduleDeleteConfirm({
 }) {
   return (
     <div
-      className="absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+      // 위 폼 모달과 같은 이유로 탭에서는 fixed + 포털. 삭제 확인은 폼보다 위여야 한다.
+      className={
+        floating
+          ? "fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          : "absolute inset-0 z-20 flex items-center justify-center bg-black/40 p-4"
+      }
       onClick={onCancel}
       role="dialog"
       aria-modal="true"

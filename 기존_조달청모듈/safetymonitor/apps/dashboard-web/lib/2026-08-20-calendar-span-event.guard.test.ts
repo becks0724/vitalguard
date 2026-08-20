@@ -38,10 +38,13 @@ test("② insert 가 종료 날짜를 싣는다", () => {
   const i = db.indexOf("export async function upsertCalendarEvent");
   const body = db.slice(i, i + 2000);
   assert.match(body, /input\.endDateKey \?\? null,/, "params 에서 빠졌다");
-  assert.match(body, /end_time, end_date_key, hazard_type/, "INSERT 컬럼 목록에서 빠졌다");
+  assert.match(body, /INSERT INTO calendar_event \([^)]*\bend_date_key\b/, "INSERT 컬럼 목록에서 빠졌다");
   assert.match(body, /end_date_key = EXCLUDED\.end_date_key,/, "UPDATE 에서 빠졌다 — 수정이 반영 안 된다");
   // ★ 자리 수가 어긋나면 값이 엉뚱한 컬럼에 들어간다.
-  assert.match(body, /VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9\)/, "플레이스홀더 수가 안 맞는다");
+  // ★ 컬럼 수와 플레이스홀더 수가 **같은지**를 본다 — 숫자를 박으면 컬럼이 늘 때마다 깨진다.
+  const cols = body.match(/INSERT INTO calendar_event \(([^)]*)\)/)?.[1]?.split(",").length ?? 0;
+  const vals = body.match(/VALUES \(([^)]*)\)/)?.[1]?.split(",").length ?? -1;
+  assert.equal(vals, cols, `컬럼 ${cols}개 vs 플레이스홀더 ${vals}개 — 값이 엉뚱한 컬럼에 들어간다`);
 });
 
 // ── ③ API
@@ -79,4 +82,30 @@ test("폼에 종료일 입력이 있고 거꾸로면 경고한다", () => {
   assert.match(dash, /종료일이 시작일보다 빠릅니다/, "거꾸로 된 기간 경고가 사라졌다");
   // 리셋에서 빠지면 다음 등록에 이전 종료일이 남는다.
   assert.match(dash, /setEndDateDraft\(""\);/, "폼 리셋에서 빠졌다");
+});
+
+// ── 메모(note) — 같은 네 층 + 폼 3고리 (2026-08-20 사용자 요청 A+B)
+test("메모가 네 층에 이어져 있다", () => {
+  assert.match(db, /ADD COLUMN IF NOT EXISTS note TEXT;/, "note 컬럼 소실");
+  assert.match(db, /input\.note \?\? null,/, "insert params 에서 빠졌다");
+  assert.match(db, /INSERT INTO calendar_event \([^)]*\bnote\b/, "INSERT 컬럼 목록에서 빠졌다");
+  assert.match(db, /note = EXCLUDED\.note,/, "UPDATE 에서 빠졌다 — 수정이 반영 안 된다");
+  assert.match(api, /noteRaw\.length > 2000/, "메모 길이 상한이 사라졌다");
+  assert.match(dash, /note\?: string;/, "화면 타입에서 빠졌다");
+  assert.match(dash, /r\.note === "string"/, "서버 행 매핑에서 빠졌다");
+});
+
+// ★ 폼 필드는 **상태·저장·복원 셋이 한 벌**이다. 복원이 빠지면 수정할 때마다 값이 지워진다.
+//   실제로 기간(endDateKey)을 넣을 때 이 고리를 빠뜨렸다가 메모를 넣으며 함께 잡았다.
+test("폼 새 필드는 상태·저장·복원 셋이 다 있다", () => {
+  for (const [state, save, restore] of [
+    ["const \\[note, setNote\\]", "note: note\\.trim\\(\\)", "setNote\\(event\\.note \\?\\? \"\"\\)"],
+    ["const \\[endDateDraft, setEndDateDraft\\]", "endDateKey:", "setEndDateDraft\\(event\\.endDateKey \\?\\? \"\"\\)"],
+  ] as const) {
+    assert.match(dash, new RegExp(state), `상태 소실: ${state}`);
+    assert.match(dash, new RegExp(save), `저장 payload 소실: ${save}`);
+    assert.match(dash, new RegExp(restore), `수정 시 복원 소실: ${restore} — 저장할 때마다 값이 지워진다`);
+  }
+  // 리셋도 함께 — 없으면 다음 등록에 이전 값이 남는다.
+  assert.match(dash, /setNote\(""\);/, "폼 리셋에서 메모가 빠졌다");
 });

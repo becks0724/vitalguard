@@ -845,6 +845,9 @@ async function initSchema(): Promise<void> {
     -- 여러 날에 걸친 일정(2026-08-20). NULL 이면 하루짜리 — 기존 행이 전부 그렇다.
     -- ★ 시작은 date_key 를 그대로 쓴다. 컬럼을 둘로 늘리면 기존 조회·인덱스가 전부 바뀐다.
     ALTER TABLE calendar_event ADD COLUMN IF NOT EXISTS end_date_key TEXT;
+    -- 일정 메모(2026-08-20). 지금까지 일정에 상세를 적을 자리가 없었다.
+    -- ⚠ calendar_media.description 과 이름을 겹치지 않게 note 로 둔다 — 그쪽은 댓글로 이관됐다.
+    ALTER TABLE calendar_event ADD COLUMN IF NOT EXISTS note TEXT;
     CREATE INDEX IF NOT EXISTS idx_calevent_date ON calendar_event(date_key);
 
     CREATE TABLE IF NOT EXISTS calendar_label (
@@ -3924,6 +3927,8 @@ export async function upsertCalendarEvent(
     endTime?: string | null;
     // 종료 날짜(YYYY-MM-DD). 없으면 하루짜리다.
     endDateKey?: string | null;
+    /** 일정 메모(자유 텍스트). */
+    note?: string | null;
     hazardType?: string | null;
     createdBy?: string | null;
   },
@@ -3937,13 +3942,14 @@ export async function upsertCalendarEvent(
     input.startTime ?? null,
     input.endTime ?? null,
     input.endDateKey ?? null,
+    input.note ?? null,
     input.hazardType ?? null,
     input.createdBy ?? null,
   ];
   const clause = calendarEventScopeClause(scope, params);
   const { rows } = await q<CalendarEventRow>(
-    `INSERT INTO calendar_event (id, date_key, title, label_id, start_time, end_time, end_date_key, hazard_type, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO calendar_event (id, date_key, title, label_id, start_time, end_time, end_date_key, note, hazard_type, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (id) DO UPDATE SET
          date_key = EXCLUDED.date_key,
          title = EXCLUDED.title,
@@ -3951,6 +3957,7 @@ export async function upsertCalendarEvent(
          start_time = EXCLUDED.start_time,
          end_time = EXCLUDED.end_time,
          end_date_key = EXCLUDED.end_date_key,
+         note = EXCLUDED.note,
          hazard_type = EXCLUDED.hazard_type,
          updated_at = ${NOW_ISO}
        WHERE TRUE${clause}
