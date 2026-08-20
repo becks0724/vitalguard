@@ -138,6 +138,27 @@ export const VitalSampleSchema = z.object({
   //    구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
   sessionStartedAt: z.string().datetime().optional(),
   sessionAutoResumed: z.boolean().optional(),
+  // 세션 **종료** 계측 (2026-08-20 · docs/watch-auto-resume). 위 둘로는 못 가르는 것이 있다.
+  //
+  // ★ 실측 — 30시간 9세션 전부 `sessionAutoResumed = 0` 이다. 자동 재개(f67442f·08-18)가
+  //   한 번도 발동한 적이 없다. 그런데 **`0` 은 두 가지를 뜻한다** — "자동 재개가 시도조차
+  //   안 됐다" 와 "사람이 [시작] 을 눌렀다". 지금 데이터로는 못 가른다.
+  //
+  // ⚠ 판정에 필요한 사실은 전부 워치 메모리와 os_log 안에 있는데 **워치 os_log 는 회수 경로가
+  //   없다**(08-18 확정 — `log collect` 는 USB 전제이고 watchOS `sysdiagnose` 도 실패).
+  //   그래서 디스크(UserDefaults)에 적어 **다음 세션 첫 배치에 실어 보내는** 수밖에 없다.
+  //
+  // 네 값이 서로 배타적인 지문을 만든다.
+  //   endSeenAt 있음 · endByUser=true            → 사람이 중지(정상 · 고칠 것 없음)
+  //   endSeenAt 있음 · endByUser=false · tried 없음 → 델리게이트는 왔는데 재개에 도달 못 함
+  //   endSeenAt 없음                              → 델리게이트 자체가 안 옴(동결)
+  //   tries > 3                                   → 3연속 실패로 포기
+  sessionEndSeenAt: z.string().datetime().optional(),
+  sessionEndByUser: z.boolean().optional(),
+  sessionResumeTriedAt: z.string().datetime().optional(),
+  // 횟수로 두는 이유 — 불리언 `gaveUp` 은 "안 했다"와 "한 번 했다"를 못 가른다.
+  // 0=시도 없음 · 1~3=시도 · >3=포기. 숫자라 아래 스트립 허용목록의 보호도 받는다.
+  sessionResumeTries: z.number().int().min(0).max(99).optional(),
   // 모션 변동폭 (2026-08-19 · 옆 세션 착용 판별 트랙 요청). 1Hz deviceMotion 60초 창의
   // |userAcceleration| 표준편차 × 1000(밀리g 정수).
   // ⚠ **판정·경보·화면 어디에도 쓰지 않는다** — 분포 검증 전까지 순수 관측값이다.
@@ -236,6 +257,8 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   // 순수 관측값(판정 미사용)이라 범위를 벗어나도 버려서 안전하다.
   // 넣지 않으면 기본값이 "샘플 전체 거부" 라 진단 필드 하나가 생체를 통째로 날린다.
   "motionVariabilityMg",
+  // 자동 재개 시도 횟수 — 진단용이라 범위를 벗어나도 버려서 안전하다(위와 같은 이유).
+  "sessionResumeTries",
 ]);
 
 export function parseResilientVitalSample(
