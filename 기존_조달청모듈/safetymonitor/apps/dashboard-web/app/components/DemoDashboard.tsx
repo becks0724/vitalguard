@@ -1896,6 +1896,319 @@ function getKoreanHolidays(year: number): Record<string, string> {
 //   variant="popup"(기본)  헤더 아이콘으로 여는 떠 있는 패널. 드래그·닫기 있음.
 //   variant="inline"       탭 본문. 페이지가 곧 캘린더라 오버레이·드래그·닫기가 없다.
 // ★ 본문을 복제하지 않고 감싸는 껍데기만 가른다 — 두 벌이면 한쪽만 고쳐 화면이 갈린다.
+// ── 주간 일정표 · 미니 월간 (2026-08-20 · 구글 캘린더 참고) ──────────────────────
+// 근거·결정 = docs/calendar-week-view/context-notes.md
+//   · 시간 범위 07~19시 — 현장 일정 표본(09:00 · 15:00~17:00)이 그 안에 든다. 24시간이면
+//     대부분 빈칸이고 스크롤만 길어진다.
+//   · `end_time` 이 없을 수 있다(실측 50%) → 기본 1시간 블록으로 그린다.
+//   · 사진은 **하루 단위로 묶어 종일 띠**에 둔다. 시간 단위로 묶으면 56%가 "1건" 이라
+//     묶는 의미가 없고, 하루 묶음은 시각이 없어 어느 시간 칸에도 못 놓는다.
+const WEEK_START_HOUR = 7;
+const WEEK_END_HOUR = 19;
+const WEEK_HOUR_PX = 44;
+
+/** `HH:MM` → 분. 형식이 아니면 null(문자열 컬럼이라 방어한다). */
+function hhmmToMinutes(v: string | undefined | null): number | null {
+  if (!v) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(v.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** 촬영 시각(ISO) → 분. 표시 코드와 같은 관례(`slice(11,16)`)를 쓴다. 못 읽으면 null. */
+function mediaMinutes(m: CalendarMedia): number | null {
+  return hhmmToMinutes(m.capturedAt?.slice(11, 16));
+}
+
+function startOfWeek(d: Date) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - x.getDay()); // 일요일 시작 — 월간 격자와 같은 규칙
+  return x;
+}
+
+/** 미니 월간 — 날짜 이동 전용. 일정 칩·날씨·배지는 일부러 안 그린다(주간 격자가 그 역할). */
+function MiniMonth({
+  viewDate,
+  selected,
+  today,
+  onSelect,
+  onPrev,
+  onNext,
+}: {
+  viewDate: Date;
+  selected: Date;
+  today: Date;
+  onSelect: (d: Date) => void;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const days = new Date(year, month + 1, 0).getDate();
+  const lead = new Date(year, month, 1).getDay();
+  const cells: (number | null)[] = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
+  return (
+    <div className="w-[13.5rem] shrink-0 rounded-xl border border-hairline bg-surface-soft p-2 dark:border-white/10 dark:bg-surface-dark-elevated">
+      <div className="mb-1 flex items-center justify-between">
+        <button type="button" onClick={onPrev} aria-label="이전 달" className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-surface-strong dark:hover:bg-white/10">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>
+        </button>
+        <span className="text-[11px] font-bold text-ink dark:text-on-dark">{year}년 {month + 1}월</span>
+        <button type="button" onClick={onNext} aria-label="다음 달" className="grid h-6 w-6 place-items-center rounded text-muted hover:bg-surface-strong dark:hover:bg-white/10">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-y-0.5">
+        {CALENDAR_WEEKDAYS.map((w, i) => (
+          <span key={w} className={`text-center text-[9px] font-semibold ${i === 0 ? "text-red-500" : i === 6 ? "text-blue-600" : "text-muted dark:text-on-dark-soft"}`}>{w}</span>
+        ))}
+        {cells.map((d, i) => {
+          if (d === null) return <span key={`e${i}`} />;
+          const date = new Date(year, month, d);
+          const isToday = calendarSameDay(date, today);
+          const isSel = calendarSameDay(date, selected);
+          return (
+            <button
+              key={d}
+              type="button"
+              onClick={() => onSelect(date)}
+              aria-label={`${year}년 ${month + 1}월 ${d}일`}
+              aria-pressed={isSel}
+              className="grid place-items-center py-0.5"
+            >
+              <span
+                className={[
+                  "grid h-[1.35rem] w-[1.35rem] place-items-center rounded-full text-[10px] tabular-nums transition",
+                  isToday
+                    ? "bg-primary font-bold text-on-primary"
+                    : isSel
+                      ? "bg-primary-subtle font-semibold text-primary"
+                      : "text-ink hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10",
+                ].join(" ")}
+              >
+                {d}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** 주간 일정표 — 시간축(07~19시) × 7열. 일정은 시작 시각 위치에, 사진은 종일 띠에 하루 묶음으로. */
+function WeekGrid({
+  weekStart,
+  today,
+  selected,
+  eventsByDate,
+  mediaByDate,
+  labels,
+  onSelectDate,
+  onCreateAt,
+  onOpenEvent,
+  onOpenMedia,
+}: {
+  weekStart: Date;
+  today: Date;
+  selected: Date;
+  eventsByDate: Record<string, CalendarEvent[]>;
+  mediaByDate: Record<string, CalendarMedia[]>;
+  labels: ScheduleLabelDef[];
+  onSelectDate: (d: Date) => void;
+  onCreateAt: (d: Date, hhmm: string) => void;
+  onOpenEvent: (e: CalendarEvent) => void;
+  onOpenMedia: (m: CalendarMedia) => void;
+}) {
+  const days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+  const hours = Array.from({ length: WEEK_END_HOUR - WEEK_START_HOUR }, (_, i) => WEEK_START_HOUR + i);
+  const bodyH = hours.length * WEEK_HOUR_PX;
+
+  return (
+    <div className="min-w-0 flex-1 overflow-x-auto">
+      <div className="min-w-[38rem]">
+        {/* 요일 머리 */}
+        <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-hairline dark:border-white/10">
+          <span />
+          {days.map((d) => {
+            const isToday = calendarSameDay(d, today);
+            const wd = d.getDay();
+            return (
+              <button
+                key={toDateKey(d)}
+                type="button"
+                onClick={() => onSelectDate(d)}
+                aria-pressed={calendarSameDay(d, selected)}
+                className="flex flex-col items-center gap-0.5 py-1.5 transition hover:bg-surface-strong dark:hover:bg-white/10"
+              >
+                <span className={`text-[10px] font-semibold ${wd === 0 ? "text-red-500" : wd === 6 ? "text-blue-600" : "text-muted dark:text-on-dark-soft"}`}>
+                  {CALENDAR_WEEKDAYS[wd]}
+                </span>
+                <span
+                  className={[
+                    "grid h-6 w-6 place-items-center rounded-full text-xs tabular-nums",
+                    isToday ? "bg-primary font-bold text-on-primary" : "font-semibold text-ink dark:text-on-dark",
+                  ].join(" ")}
+                >
+                  {d.getDate()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 종일 띠 — 사진 하루 묶음. 시각이 없는 정보라 시간 칸에 못 놓는다(context-notes C-03). */}
+        <div className="grid grid-cols-[3rem_repeat(7,minmax(0,1fr))] border-b border-hairline dark:border-white/10">
+          <span className="py-1 pr-1 text-right text-[9px] leading-5 text-muted dark:text-on-dark-soft">종일</span>
+          {days.map((d) => {
+            const key = toDateKey(d);
+            // ⚠ 계획 변경(2026-08-20 사용자 지시) — 사진은 **촬영 시각 위치**에 놓는다.
+            //   종일 띠에는 시각을 못 읽은 것만 남는다(그것도 안 버린다 — 버리면 조용히 사라진다).
+            const n = (mediaByDate[key] ?? []).filter((m) => mediaMinutes(m) === null).length;
+            return (
+              <div key={key} className="min-h-[1.75rem] border-l border-hairline px-1 py-1 dark:border-white/10">
+                {n > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectDate(d)}
+                    title={`촬영 시각을 못 읽은 현장 이미지/스캔 ${n}건 — 우측에서 확인`}
+                    className="flex w-full min-w-0 items-center gap-1 truncate rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-semibold text-primary transition hover:brightness-95 dark:text-on-dark"
+                  >
+                    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
+                    </svg>
+                    시각미상 {n}건
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 시간 격자 */}
+        <div className="relative grid grid-cols-[3rem_repeat(7,minmax(0,1fr))]">
+          {/* 시간축 */}
+          <div className="relative" style={{ height: bodyH }}>
+            {hours.map((h, i) => (
+              <span
+                key={h}
+                className="absolute right-1 -translate-y-1/2 text-[9px] tabular-nums text-muted dark:text-on-dark-soft"
+                style={{ top: i * WEEK_HOUR_PX }}
+              >
+                {String(h).padStart(2, "0")}:00
+              </span>
+            ))}
+          </div>
+          {days.map((d) => {
+            const key = toDateKey(d);
+            const dayEvents = eventsByDate[key] ?? [];
+            return (
+              <div key={key} className="relative border-l border-hairline dark:border-white/10" style={{ height: bodyH }}>
+                {/* 시간 칸 — 클릭하면 그 시각으로 등록 */}
+                {hours.map((h, i) => (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => onCreateAt(d, `${String(h).padStart(2, "0")}:00`)}
+                    aria-label={`${d.getMonth() + 1}월 ${d.getDate()}일 ${h}시 일정 추가`}
+                    className="absolute left-0 right-0 border-t border-hairline/60 transition hover:bg-primary-subtle/40 dark:border-white/5"
+                    style={{ top: i * WEEK_HOUR_PX, height: WEEK_HOUR_PX }}
+                  />
+                ))}
+                {/* 일정 블록 */}
+                {dayEvents.map((e) => {
+                  const startMin = hhmmToMinutes(e.startTime);
+                  if (startMin === null) return null; // 종일 일정은 위 띠 소관
+                  const endMin = hhmmToMinutes(e.endTime);
+                  // ⚠ 종료가 없으면 기본 1시간 — 실측 50%가 그렇다.
+                  const dur = endMin !== null && endMin > startMin ? endMin - startMin : 60;
+                  const top = ((startMin - WEEK_START_HOUR * 60) / 60) * WEEK_HOUR_PX;
+                  if (top + 2 < 0 || top > bodyH) return null; // 창 밖 시각은 안 그린다
+                  const color = findLabelDef(labels, e.labelId).color;
+                  return (
+                    <button
+                      key={e.id}
+                      type="button"
+                      onClick={() => onOpenEvent(e)}
+                      title={`${e.title}${formatScheduleTime(e) ? ` · ${formatScheduleTime(e)}` : ""}`}
+                      className="absolute left-0.5 right-0.5 overflow-hidden rounded-md px-1 py-0.5 text-left"
+                      style={{ top: Math.max(0, top), height: Math.max(18, (dur / 60) * WEEK_HOUR_PX - 2) }}
+                    >
+                      <span className="pointer-events-none absolute inset-0 rounded-md bg-primary-subtle ring-1 ring-primary-ring" />
+                      <span className="relative flex min-w-0 items-center gap-1">
+                        <ScheduleLabelDot color={color} className="h-1.5 w-1.5 shrink-0" />
+                        <span className="min-w-0 truncate text-[10px] font-semibold text-ink dark:text-on-dark">{e.title.trim()}</span>
+                      </span>
+                      {formatScheduleTime(e) && (
+                        <span className="relative block truncate text-[9px] text-muted dark:text-on-dark-soft">{formatScheduleTime(e)}</span>
+                      )}
+                    </button>
+                  );
+                })}
+                {/* 현장 이미지/스캔 — **촬영 시각 위치**에 놓는다(2026-08-20 사용자 지시).
+                    ⚠ 같은 시간대에 여럿이면 **한 블록으로 묶는다**(사용자 지시) — 나눠 그리면
+                      칸이 좁아 시각도 못 읽고 누르기도 어렵다(실측 최대 4건·같은 분 중복 있음).
+                      실측상 시간대의 56%가 1건이라, 그 대부분은 묶이지 않고 시각이 그대로 보인다. */}
+                {(() => {
+                  const timed = (mediaByDate[key] ?? [])
+                    .map((m) => ({ m, min: mediaMinutes(m) }))
+                    .filter((x): x is { m: CalendarMedia; min: number } => x.min !== null)
+                    .sort((a, b) => a.min - b.min);
+                  const byHour = new Map<number, { m: CalendarMedia; min: number }[]>();
+                  for (const x of timed) {
+                    const h = Math.floor(x.min / 60);
+                    const arr = byHour.get(h);
+                    if (arr) arr.push(x);
+                    else byHour.set(h, [x]);
+                  }
+                  return [...byHour.entries()].map(([hour, group]) => {
+                    const head = group[0];
+                    if (!head) return null;
+                    const top = ((hour * 60 - WEEK_START_HOUR * 60) / 60) * WEEK_HOUR_PX;
+                    if (top < -WEEK_HOUR_PX || top > bodyH) return null;
+                    const many = group.length > 1;
+                    const isDoc = !many && head.m.mediaType !== "image";
+                    return (
+                      <button
+                        key={`m${hour}`}
+                        type="button"
+                        onClick={() => onOpenMedia(head.m)}
+                        title={
+                          many
+                            ? `${String(hour).padStart(2, "0")}시 현장 이미지/스캔 ${group.length}건 — 우측에서 확인`
+                            : `${head.m.capturedAt?.slice(11, 16) ?? ""} ${head.m.roadAddress ?? head.m.title ?? "현장 이미지"} — 우측에서 확인`
+                        }
+                        className="absolute left-0.5 right-0.5 overflow-hidden rounded px-1 text-left"
+                        style={{ top: Math.max(0, top) + 2, height: WEEK_HOUR_PX - 6 }}
+                      >
+                        <span className="pointer-events-none absolute inset-0 rounded bg-emerald-50 ring-1 ring-emerald-200 dark:bg-emerald-500/15 dark:ring-emerald-500/30" />
+                        <span className="relative flex min-w-0 items-center gap-0.5">
+                          <span aria-hidden="true" className="shrink-0 text-[9px]">{isDoc ? "📄" : "📷"}</span>
+                          <span className="min-w-0 truncate text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
+                            {many ? `이미지 ${group.length}건` : (head.m.capturedAt?.slice(11, 16) ?? "")}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  });
+                })()}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HeaderCalendarPopup({
   open,
   onClose,
@@ -1903,6 +2216,7 @@ function HeaderCalendarPopup({
   lon,
   workerCount,
   variant = "popup",
+  active = false,
   workerAliases,
 }: {
   open: boolean;
@@ -1911,12 +2225,25 @@ function HeaderCalendarPopup({
   lon?: number;
   workerCount: number;
   variant?: "popup" | "inline";
+  // 탭 활성 여부. 페이저가 **모든 페이지를 마운트 유지**하므로, 이게 없으면 다른 탭에서도
+  // 우측 고정 사이드바가 화면에 남는다.
+  active?: boolean;
   // 로그인 ID → 사번(secondary→primary). 댓글 작성자 표기를 위쪽 `작업자 EMP-6861` 과
   // 같은 식별자로 맞추는 데만 쓴다. ★ 권한 판정에는 안 쓴다(그건 서버가 author_id 로 한다).
   workerAliases?: Record<string, string>;
 }) {
   const inline = variant === "inline";
+  // 포털은 클라이언트에서만 — SSR 에는 document 가 없다.
+  const [portalReady, setPortalReady] = useState(false);
+  useEffect(() => setPortalReady(true), []);
   const [viewDate, setViewDate] = useState(() => new Date());
+  // 주/월 전환(2026-08-20 사용자 결정 — 월간을 버리지 않는다). 팝업(580px)은 주간이 안 들어가
+  // 항상 월간이다. `inline` 일 때만 전환이 뜬다.
+  const [weekMode, setWeekMode] = useState(true);
+  // 주간 격자에서 고른 사진 — 우측 사이드바에서 그 카드로 스크롤·강조한다.
+  const [focusMediaId, setFocusMediaId] = useState<string | null>(null);
+  // 초점당 한 번만 스크롤하기 위한 기록 — 위 ref 콜백 주석 참조.
+  const scrolledForRef = useRef<string | null>(null);
   const [selected, setSelected] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [labels, setLabels] = useState<ScheduleLabelDef[]>(DEFAULT_LABELS);
@@ -2475,6 +2802,18 @@ function HeaderCalendarPopup({
 
   const selectedEvents = eventsByDate[toDateKey(selected)] ?? [];
   const selectedMedia = mediaByDate[toDateKey(selected)] ?? [];
+  const selectedKey = toDateKey(selected);
+  // 날짜가 바뀌면 초점을 푼다 — 안 풀면 다른 날의 카드가 강조된 채로 남는다.
+  // ⚠ 무조건 풀면 안 된다 — 주간 격자에서 **다른 날** 사진을 누르면 날짜가 함께 바뀌므로,
+  //   그 자리에서 초점이 즉시 사라져 클릭이 아무 일도 안 한 것처럼 보인다.
+  //   그래서 "고른 항목이 새 날짜에 없을 때만" 푼다.
+  useEffect(() => {
+    setFocusMediaId((prev) => {
+      const keep = prev && (mediaByDate[selectedKey] ?? []).some((m) => m.id === prev) ? prev : null;
+      if (!keep) scrolledForRef.current = null;
+      return keep;
+    });
+  }, [selectedKey, mediaByDate]);
   const selectedInspections = inspectionByDate[toDateKey(selected)] ?? [];
   const weekKeys = weekDateKeys(selected);
   const weeklyPlanEvents = weekKeys.flatMap((key) =>
@@ -2748,6 +3087,28 @@ function HeaderCalendarPopup({
         )}
 
         <div className="px-3 pb-4 pt-3">
+          {/* 주/월 전환 — 탭에서만. 팝업(580px)은 주간 격자가 안 들어간다. */}
+          {inline && (
+            <div className="mb-2 flex justify-end px-1">
+              <div className="inline-flex overflow-hidden rounded-lg border border-hairline text-[11px] font-semibold dark:border-white/10">
+                {([["주", true], ["월", false]] as const).map(([label, w]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setWeekMode(w)}
+                    aria-pressed={weekMode === w}
+                    className={
+                      weekMode === w
+                        ? "bg-primary px-3 py-1 text-on-primary"
+                        : "px-3 py-1 text-muted transition hover:bg-surface-strong dark:text-on-dark-soft dark:hover:bg-white/10"
+                    }
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="mb-3 flex items-center justify-between px-1">
             <button
               type="button"
@@ -2772,6 +3133,44 @@ function HeaderCalendarPopup({
             </button>
           </div>
 
+          {inline && weekMode ? (
+            // 구글 캘린더식 — 좌상단 미니 월간(날짜 이동) + 메인 주간 일정표.
+            <div className="flex items-start gap-3">
+              <MiniMonth
+                viewDate={viewDate}
+                selected={selected}
+                today={today}
+                onSelect={setSelected}
+                onPrev={goPrevMonth}
+                onNext={goNextMonth}
+              />
+              <WeekGrid
+                weekStart={startOfWeek(selected)}
+                today={today}
+                selected={selected}
+                eventsByDate={eventsByDate}
+                mediaByDate={mediaByDate}
+                labels={labels}
+                onSelectDate={setSelected}
+                onCreateAt={(d) => {
+                  setSelected(d);
+                  setFormDate(d);
+                }}
+                onOpenEvent={(e) => {
+                  setSelected(dateFromKey(e.dateKey));
+                  setFormEditId(e.id);
+                  setFormDate(dateFromKey(e.dateKey));
+                }}
+                onOpenMedia={(m) => {
+                  // 우측 사이드바에서 그 항목을 보여준다 — 날짜를 맞추고 초점을 준다.
+                  setSelected(dateFromKey(m.dateKey));
+                  scrolledForRef.current = null; // 같은 항목을 다시 눌러도 다시 스크롤한다
+                  setFocusMediaId(m.id);
+                }}
+              />
+            </div>
+          ) : (
+          <>
           <div className="mb-1 grid grid-cols-7 gap-0.5 px-0.5">
             {CALENDAR_WEEKDAYS.map((label, i) => (
               <div
@@ -2980,7 +3379,28 @@ function HeaderCalendarPopup({
               );
             })}
           </div>
+          </>
+          )}
 
+          {/* 선택 날짜 상세(일정·현장 이미지) — 탭에서는 **화면 우측 끝 고정 사이드바**다.
+              ① 카드 안 컬럼으로 두면 메인(주간 일정표) 공간을 먹는다(사용자 지시 2026-08-20).
+              ② 자체 스크롤이라 **이 패널만 스크롤**한다 — 이미지가 쌓여도 페이지가 길어지지 않는다.
+              ★ createPortal(body) 필수 — 페이저 트랙이 `translateX` 로 슬라이드해 그 안의 `fixed` 는
+                뷰포트가 아니라 트랙 기준이 된다(AssignmentChatWidget 이 같은 이유로 포털을 쓴다).
+              ★ 본문은 한 벌이다 — 감싸기만 바꾼다. 두 벌이면 한쪽만 고쳐 화면이 갈린다.
+              ⚠ lg 미만에서는 안 띄운다 — 좁은 화면에서 본문을 덮는다(좌측 패널과 같은 규칙). */}
+          {((node) =>
+            inline && active && portalReady
+              ? createPortal(
+                  <aside
+                    aria-label="선택 날짜 상세"
+                    className="fixed right-0 top-44 z-40 hidden max-h-[calc(100vh-13rem)] w-[21rem] overflow-y-auto overscroll-contain rounded-l-2xl border border-r-0 border-hairline-strong bg-canvas p-3 shadow-xl lg:block dark:border-white/10 dark:bg-surface-dark"
+                  >
+                    {node}
+                  </aside>,
+                  document.body,
+                )
+              : node)(
           <div className="mt-3 space-y-2">
             <div className="flex items-center justify-between gap-2 rounded-xl border border-hairline bg-surface-soft px-3 py-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
               <p className="min-w-0 truncate text-xs text-muted dark:text-on-dark-soft">{selectedLabel}</p>
@@ -3215,7 +3635,22 @@ function HeaderCalendarPopup({
                   {selectedMedia.map((m) => (
                     <div
                       key={m.id}
-                      className="rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
+                      // 주간 격자에서 고른 항목으로 스크롤·강조한다 — 클릭의 목적이 그것이다.
+                      // ⚠⚠ **초점당 한 번만** 스크롤한다. ref 콜백은 렌더마다 다시 붙는데 이 화면은
+                      //    2초 주기로 폴링하므로, 조건만 보고 스크롤하면 사용자가 아래로 내려도
+                      //    계속 위로 끌려 올라간다(사용자 실측 2026-08-20 — 14:07 선택 후 스크롤 불가).
+                      ref={(el) => {
+                        if (el && focusMediaId === m.id && scrolledForRef.current !== m.id) {
+                          scrolledForRef.current = m.id;
+                          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                        }
+                      }}
+                      className={[
+                        "rounded-lg border bg-canvas p-2 transition dark:bg-surface-dark",
+                        focusMediaId === m.id
+                          ? "border-primary ring-2 ring-primary-ring"
+                          : "border-hairline dark:border-white/10",
+                      ].join(" ")}
                     >
                       {/* 제목 영역 — 썸네일 + 제목/메타 + 삭제 */}
                       <div className="flex gap-2">
@@ -3400,6 +3835,7 @@ function HeaderCalendarPopup({
               </div>
             )}
           </div>
+          )}
         </div>
         </div>
 
@@ -5804,6 +6240,9 @@ export function DemoDashboard() {
                 lon={effLon}
                 workerCount={fieldCoords.count}
                 variant="inline"
+                // 페이저가 모든 페이지를 마운트 유지하므로, 우측 고정 사이드바가 다른 탭에
+                // 남지 않도록 활성 여부를 넘긴다.
+                active={pagerIdx === CALENDAR_PAGE_IDX}
                 workerAliases={data.workerAliases}
               />
             ),
