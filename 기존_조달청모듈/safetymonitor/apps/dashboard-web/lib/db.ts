@@ -3713,6 +3713,20 @@ export type CalendarMediaRow = {
   longitude: number | null;
   road_address: string | null;
   created_at: string;
+  /**
+   * 각인 좌표와 **같은 시각 생체 좌표**의 거리(m). null = 대조할 생체 좌표가 없다.
+   *
+   * ★ 왜 필요한가(2026-08-21). 각인 좌표가 실제와 크게 어긋나는 일이 실측됐다 —
+   *   08-19 **5,239m** · 08-20 336m. 원인은 앱 각인 경로에 정확도 게이트가 없어
+   *   `latestFix` 에 들어가지도 못한 저품질 fix 를 각인이 그대로 쓴 것이다.
+   *   각인은 이미지에 구워져 못 고치지만, **서버는 그 시각 더 정확한 좌표를 알고 있다** —
+   *   같은 작업자의 생체 샘플이 정확도 10m 짜리를 들고 있었다.
+   * ⚠ 각인 값을 덮어쓰지 않는다. 사진과 DB 가 갈리면 그것대로 혼란이다 —
+   *   **격차를 보여 사람이 판단하게** 한다. 조회 시점 계산이라 과거분에도 소급 적용된다.
+   */
+  coord_gap_m: number | null;
+  /** 대조에 쓴 생체 좌표의 수평 정확도(m). null = 미보고(컬럼 도입 이전 행). */
+  coord_ref_accuracy_m: number | null;
 };
 
 export type CalendarMediaCommentRow = {
@@ -3732,10 +3746,33 @@ export async function listCalendarMedia(
   fromKey: string,
   toKey: string,
 ): Promise<CalendarMediaRow[]> {
+  // 각인 좌표 ↔ 같은 시각 생체 좌표 대조를 **조회 시점에** 붙인다(§ CalendarMediaRow.coord_gap_m).
+  // ⚠ `ts` 는 ISO-UTC TEXT 라 문자열 비교 = 시간 비교다. 그래서 경계를 **ts 와 같은 형식**
+  //   (밀리초 포함)으로 만들어 문자열 범위로 훑는다 — `::timestamptz` 로 캐스팅하면
+  //   `uq_vs_worker_ts` 인덱스를 못 쓰고 39만 행을 미디어마다 훑게 된다.
+  //   `captured_at` 은 밀리초가 없어 두 형식이 다르다는 점도 여기서 흡수된다.
+  //   실측 = Index Scan · 미디어 7건 × 34행 · 총 1.9ms.
   const { rows } = await q<CalendarMediaRow>(
-    `SELECT * FROM calendar_media
-       WHERE date_key >= $1 AND date_key <= $2
-       ORDER BY date_key ASC, captured_at ASC NULLS LAST, created_at ASC`,
+    `SELECT m.*, r.gap_m AS coord_gap_m, r.ref_acc AS coord_ref_accuracy_m
+       FROM calendar_media m
+       LEFT JOIN LATERAL (
+         SELECT v.location_accuracy_m AS ref_acc,
+                round(6371000 * 2 * asin(sqrt(
+                  power(sin(radians(v.latitude - m.latitude) / 2), 2)
+                  + cos(radians(m.latitude)) * cos(radians(v.latitude))
+                    * power(sin(radians(v.longitude - m.longitude) / 2), 2))))::int AS gap_m
+           FROM vital_samples v
+          WHERE v.worker_id = m.worker_id
+            AND v.latitude IS NOT NULL
+            AND v.ts >= to_char((m.captured_at::timestamptz - interval '3 minutes')
+                                at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+            AND v.ts <= to_char((m.captured_at::timestamptz + interval '3 minutes')
+                                at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+          ORDER BY abs(extract(epoch from (v.ts::timestamptz - m.captured_at::timestamptz)))
+          LIMIT 1
+       ) r ON TRUE
+      WHERE m.date_key >= $1 AND m.date_key <= $2
+      ORDER BY m.date_key ASC, m.captured_at ASC NULLS LAST, m.created_at ASC`,
     [fromKey, toKey],
   );
   return rows;

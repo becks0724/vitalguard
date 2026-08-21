@@ -98,10 +98,18 @@ test("★ 목록은 최신순으로 뒤집는다 — 서버는 시간 오름차�
   const load = record.slice(loadAt, record.indexOf("\n  }", loadAt));
   assert.match(load, /newestFirst\(/, "정렬을 안 한다 — 방금 찍은 것이 맨 아래로 간다");
   // 서버 계약(관제 캘린더가 하루를 시간순으로 읽는다)은 건드리지 않는다.
-  const list = db.slice(db.indexOf("export async function listCalendarMedia("));
+  // ⚠ 종전엔 `slice(0, 500)` 고정 창을 봤는데, 2026-08-21 에 그 함수에 주석과 조인이
+  //   붙자 ORDER BY 가 창 밖으로 밀려 **정렬은 그대로인데 가드가 빨개졌다.**
+  //   이 레포에서 고정 창이 밀린 것이 네 번째다 → 함수 본문 전체를 앵커로 쓴다.
+  // ⚠ 테이블 별칭(`m.`)을 허용한다 — 조인이 붙으면 한정자가 필요하고, 그것은 정렬을
+  //   바꾸는 것이 아니다. 순서와 방향만 고정한다.
+  const listStart = db.indexOf("export async function listCalendarMedia(");
+  assert.notEqual(listStart, -1, "listCalendarMedia 를 못 찾았다 — 가드를 다시 맞춰야 한다");
+  const listEnd = db.indexOf("\nexport ", listStart + 10);
+  const list = db.slice(listStart, listEnd > 0 ? listEnd : undefined);
   assert.match(
-    list.slice(0, 500),
-    /ORDER BY date_key ASC, captured_at ASC/,
+    list,
+    /ORDER BY (?:m\.)?date_key ASC, (?:m\.)?captured_at ASC/,
     "서버 정렬을 바꿨다 — 관제 캘린더가 함께 뒤집힌다",
   );
 });

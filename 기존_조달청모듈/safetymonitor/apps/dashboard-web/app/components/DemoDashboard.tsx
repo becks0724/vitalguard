@@ -866,6 +866,14 @@ type CalendarMedia = {
   latitude: number | null;
   longitude: number | null;
   roadAddress: string | null;
+  /**
+   * 각인 좌표와 같은 시각 생체 좌표의 거리(m) — 서버가 조회 시점에 계산한다. null = 대조 불가.
+   * 실측된 어긋남 = 08-19 **5,239m** · 08-20 336m(지하 촬영). 각인은 이미지에 구워져 못 고치지만
+   * 그 시각 생체 좌표는 정확도 10m 짜리였다 — 화면이 그 사실을 밝힌다.
+   */
+  coordGapM: number | null;
+  /** 대조에 쓴 생체 좌표의 정확도(m). null = 미보고. */
+  coordRefAccuracyM: number | null;
   // 서버가 계산한 삭제 가능 여부 — 화면이 권한 규칙을 다시 구현하지 않는다(단일 소스).
   canDelete: boolean;
   comments: CalendarMediaComment[];
@@ -1137,20 +1145,41 @@ function MediaMetaBlock({ media, dark }: { media: CalendarMedia; dark?: boolean 
     : "mt-1.5 rounded-md bg-surface-soft px-2 py-1.5 dark:bg-surface-dark-elevated";
   const labelCls = dark ? "text-white/60" : "text-muted dark:text-on-dark-soft";
   const valueCls = dark ? "text-white/90" : "text-ink dark:text-on-dark";
-  const rows: Array<[string, string, boolean?]> = [];
+  const rows: Array<[string, string, boolean?, boolean?]> = [];   // [라벨, 값, 등폭, 경고]
   if (capturedLabel) rows.push(["촬영 시각", capturedLabel]);
   if (roadAddress) rows.push(["도로명 주소", roadAddress]);
   if (gpsLabel) rows.push(["GPS 좌표", gpsLabel, true]);
+  // 각인 좌표 신뢰도 — 같은 시각 생체 좌표와의 거리. 각인 값을 덮어쓰지 않고 **밝힌다**.
+  // ★ 임계는 새로 만들지 않고 관제 반경(SITE_RADIUS_MAX_M)을 쓴다. 그 거리를 넘으면 두
+  //   좌표가 "같은 현장인가" 에서 갈린다 — 임계의 뜻이 이미 정의된 유일한 숫자다.
+  if (media.coordGapM != null) {
+    const acc = media.coordRefAccuracyM;
+    const wide = media.coordGapM > SITE_RADIUS_MAX_M;
+    rows.push([
+      "좌표 대조",
+      `생체 좌표와 ${media.coordGapM.toLocaleString()}m 차이` +
+        (acc != null ? ` (생체 정확도 ±${Math.round(acc)}m)` : "") +
+        (wide ? " — 각인 좌표 신뢰도 낮음" : ""),
+      true,
+      wide,
+    ]);
+  }
   if (workerLabel) rows.push(["작업자", workerLabel]);
 
   return (
     <div className={wrapCls}>
       {rows.length > 0 && (
         <dl className="space-y-0.5 text-[11px] leading-relaxed">
-          {rows.map(([label, value, mono]) => (
+          {rows.map(([label, value, mono, warn]) => (
             <div key={label} className="flex gap-1.5">
               <dt className={`w-16 shrink-0 font-semibold ${labelCls}`}>{label}</dt>
-              <dd className={`${mono ? "tabular-nums " : ""}${valueCls}`}>{value}</dd>
+              <dd
+                className={`${mono ? "tabular-nums " : ""}${
+                  warn ? (dark ? "text-amber-300" : "text-amber-600 dark:text-amber-300") : valueCls
+                }`}
+              >
+                {value}
+              </dd>
             </div>
           ))}
         </dl>
@@ -2672,6 +2701,9 @@ function HeaderCalendarPopup({
           latitude: r.latitude != null ? Number(r.latitude) : null,
           longitude: r.longitude != null ? Number(r.longitude) : null,
           roadAddress: r.road_address ?? null,
+          coordGapM: r.coord_gap_m != null ? Number(r.coord_gap_m) : null,
+          coordRefAccuracyM:
+            r.coord_ref_accuracy_m != null ? Number(r.coord_ref_accuracy_m) : null,
           // 서버 판정을 그대로 쓴다. 없으면 false — 판정을 못 받았는데 버튼을 보이면
           // 눌렀을 때 실패한다(모르면 감춘다).
           canDelete: r.canDelete === true,
