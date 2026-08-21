@@ -16,12 +16,19 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BEGIN, END, buildBlock, readSeamTable, sitesFor, readCallsites } from "../../../docs/seam-canvas/build.mjs";
+import { BEGIN, END, TIERS, buildBlock, readSeamTable, sitesFor, readCallsites } from "../../../docs/seam-canvas/build.mjs";
 
 const CANVAS = join(fileURLToPath(new URL("..", import.meta.url)), "..", "..", "docs", "seam-canvas", "index.html");
 const html = readFileSync(CANVAS, "utf8");
 
 /** 파일 안의 생성 구역만 잘라낸다. 못 찾으면 마커가 사라진 것이라 즉시 실패시킨다. */
+const seamsMd = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "..", "..", "docs", "seams.md"), "utf8");
+
+/** 주석을 걷어낸 본문 — 이름만 찾는 단언은 주석에 이름이 남아도 통과한다([[L-104]]). */
+function codeOnly(src: string): string {
+  return src.replace(/<!--[\s\S]*?-->/g, "").replace(/^\s*(\/\/|\*|\/\*).*$/gm, "");
+}
+
 function generatedBlock(): string {
   const a = html.indexOf(BEGIN);
   const b = html.indexOf(END);
@@ -51,20 +58,50 @@ test("★ 12행을 다 읽었다 — 표 형식이 바뀌면 조용히 줄어들
   }
 });
 
-test("★ 코드가 강제하는 셋(C·D·J)만 초록으로 그린다", () => {
-  // 선 색이 이 자료의 요지를 나른다. 배선의 `hard` 가 seams.md 의 결론과 갈리면
-  // 그림이 사실과 다른 말을 하게 된다 — 그리고 그 어긋남은 화면으로는 안 보인다.
-  const wiring = /const WIRING = \[([\s\S]*?)\n {2}\];/.exec(html);
-  const body = wiring?.[1];
-  assert.ok(body, "WIRING 배열을 못 찾았다 — 배선이 옮겨졌거나 형식이 바뀌었다");
-  const hard = [...body.matchAll(/id: "([A-L])", map: "."[^}]*hard: (true|false)/g)]
-    .filter((m) => m[2] === "true")
-    .map((m) => m[1])
-    .sort();
-  assert.deepEqual(hard, ["C", "D", "J"], `강제 이음새가 ${hard.join("·")} 로 바뀌었다`);
+test("★ 강도는 seams.md 가 유일한 원본이다 — 손 사본이 남아 있으면 실패한다", () => {
+  // ⚠ 종전 가드는 `WIRING` 의 hard 를 리터럴 ["C","D","J"] 와 비교했다. **리터럴끼리의 비교라
+  //   원본이 무엇으로 바뀌든 통과했다** — 08-21 에 A·B·H·K 에 가드가 붙었는데 그림은 넷 다
+  //   "합의뿐" 으로 남았고 스위트는 4/4 초록이었다. 그래서 사본 자체를 없앴다.
+  const code = codeOnly(html);
+  assert.doesNotMatch(code, /\bhard\b/, "index.html 에 hard 가 남았다 — 강도 사본을 지우다 말았다");
+  assert.doesNotMatch(code, /--hard|--soft|--mid/, "CSS 에 강도 색이 남았다 — 색 원본은 TIER_STYLE 뿐이어야 한다");
+  // 색 리터럴은 생성 구역 안에만 있어야 한다(밖에 있으면 그것이 사본이다).
+  // ⚠ 원본에서 블록을 먼저 들어내고 그 다음 주석을 걷는다. 순서를 바꾸면 주석이 지워진 본문에서
+  //   주석이 든 블록을 찾게 돼 아무것도 안 지워지고, 가드가 자기 자신을 잡는다(실제로 그랬다).
+  const outside = codeOnly(html.replace(generatedBlock(), ""));
+  for (const hex of Object.values(TIERS).map((t) => t.color)) {
+    assert.ok(!outside.includes(hex), `${hex} 가 생성 구역 밖에 있다 — 손 사본이다`);
+  }
+});
 
-  const md = readFileSync(join(fileURLToPath(new URL("..", import.meta.url)), "..", "..", "docs", "seams.md"), "utf8");
-  assert.match(md, /C·D·J 만/, "seams.md 의 결론 문장이 바뀌었다 — 어느 쪽이 맞는지 사람이 정할 것");
+test("★ 12행 전부 아는 토큰이고, 런타임 단은 seams.md 결론문과 일치한다", () => {
+  const rows = readSeamTable(); // 모르는 토큰이면 여기서 이미 throw 다
+  const names = Object.keys(TIERS);
+  for (const [id, r] of rows) {
+    assert.ok(names.includes(r.tier), `${id} 의 강도 "${r.tier}" 가 3단 밖이다`);
+  }
+  const runtime = [...rows].filter(([, r]) => r.tier === "런타임").map(([id]) => id).sort();
+  assert.deepEqual(runtime, ["C", "D", "J"], `런타임 단이 ${runtime.join("·")} 로 바뀌었다`);
+  // 표와 결론문이 갈리면 어느 쪽이 맞는지 사람이 정한다 — 조용히 넘기지 않는다.
+  assert.match(seamsMd, /C·D·J 만/, "seams.md 결론문이 표의 런타임 단과 갈렸다");
+});
+
+test("★ 3단이 화면 어디에도 빠짐없이 실린다", () => {
+  const block = generatedBlock();
+  for (const [tier, v] of Object.entries(TIERS)) {
+    assert.ok(block.includes(`"${tier}": { short: ${JSON.stringify(v.short)}`), `${tier} 가 TIER_STYLE 에 없다`);
+  }
+  // 모르는 강도를 조용히 기본값으로 흘리면 그림이 거짓말을 한다.
+  // ⚠ `throw new Error` 가 **어딘가 있다** 로는 부족하다 — 변이 시험에서
+  //   `if (!t) return TIER_STYLE["없음"]; if (false) throw new Error` 가 그대로 통과했다([[L-104]]).
+  //   그래서 본문을 잘라내 ① 던지는 줄의 모양 ② 탈출구가 `return t` 하나뿐임을 따로 못 박는다.
+  const code2 = codeOnly(html);
+  const at = code2.indexOf("function tierOf(L)");
+  assert.ok(at >= 0, "tierOf 가 없다 — 강도 조회가 다른 곳으로 옮겨졌다");
+  const fn = code2.slice(at, code2.indexOf("\n  }", at));
+  assert.match(fn, /if \(!t\) throw new Error\(/, "모르는 강도에서 던지지 않는다");
+  const returns = fn.match(/\breturn\b/g) ?? [];
+  assert.deepEqual(returns.length, 1, `tierOf 에 탈출구가 ${returns.length}개다 — 기본값 폴백이 끼었다`);
 });
 
 test("호출 지점 색인 — 있는 것은 싣고 없는 것은 0으로 남긴다", () => {

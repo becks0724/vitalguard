@@ -36,7 +36,23 @@ function q(s) {
   return JSON.stringify(s);
 }
 
-/** seams.md 의 A~L 표 — 6열이 계약의 전부다. */
+/**
+ * 강도 3단 — `seams.md` 표의 `강도` 열이 유일한 원본이다.
+ *
+ * ★ 왜 열로 두는가. 종전에는 `index.html` 의 `WIRING` 이 `hard: true/false` 를 손으로 들고
+ *   있었고, 가드는 그것을 리터럴 `["C","D","J"]` 와 비교했다. **리터럴끼리의 비교라 원본이
+ *   무엇으로 바뀌든 통과했다** — 실제로 08-21 에 A·B·H·K 에 가드가 붙었는데 그림은 넷 다
+ *   "합의뿐 — 어긋나도 조용하다" 로 남았고 스위트는 초록이었다. 사본을 없애는 것이 답이다.
+ * ★ 왜 산문에서 파생하지 않는가. `계약이 사는 곳` 문안을 정규식으로 가르면 문구가 조금만
+ *   바뀌어도 조용히 오분류된다([[L-104]]). 토큰이면 오타가 곧바로 throw 다.
+ */
+export const TIERS = {
+  런타임: { short: "값을 검사", label: "코드가 값을 검사한다", color: "#3fb950" },
+  커밋: { short: "게이트만", label: "커밋 게이트는 있다 — 현장 버전 어긋남은 못 본다", color: "#d9a441" },
+  없음: { short: "합의뿐", label: "합의뿐 — 어긋나도 조용하다", color: "#d2a022" },
+};
+
+/** seams.md 의 A~L 표 — 7열. `강도` 와 6열 문안이 계약의 전부다. */
 export function readSeamTable() {
   const md = readFileSync(join(DOCS, "seams.md"), "utf8");
   const rows = new Map();
@@ -44,13 +60,19 @@ export function readSeamTable() {
     const m = /^\|\s*([A-L])\s*\|(.+)$/.exec(line);
     if (!m) continue;
     const cells = m[2].split("|").map((c) => c.trim());
-    if (cells.length < 5) continue;
+    if (cells.length < 6) continue;
+    const tier = cells[3];
+    // 모르는 토큰을 기본값으로 흘려보내지 않는다 — 그러면 오타가 조용히 "없음" 으로 그려진다.
+    if (!Object.hasOwn(TIERS, tier)) {
+      throw new Error(`${m[1]} 행의 강도 "${tier}" 를 모른다 — 쓸 수 있는 값 = ${Object.keys(TIERS).join(" · ")}`);
+    }
     rows.set(m[1], {
       name: cells[0],
       rt: cells[1],
       how: cells[2],
-      where: cells[3],
-      broken: cells[4],
+      tier,
+      where: cells[4],
+      broken: cells[5],
     });
   }
   if (rows.size !== 12) {
@@ -127,13 +149,20 @@ export function buildBlock() {
       ? "[" + sites.map((s) => `{ sec: ${q(s.sec)}, lines: [${s.lines.map(q).join(", ")}] }`).join(", ") + "]"
       : "[]";
     parts.push(
-      `    ${id}: { name: ${q(r.name)}, rt: ${q(r.rt)}, how: ${q(md2html(r.how))}, ` +
+      `    ${id}: { name: ${q(r.name)}, rt: ${q(r.rt)}, tier: ${q(r.tier)}, how: ${q(md2html(r.how))}, ` +
         `where: ${q(md2html(r.where))}, broken: ${q(md2html(r.broken))}, sites: ${siteJs} },`,
     );
   }
+  const tierParts = Object.entries(TIERS).map(
+    ([k, v]) => `    ${q(k)}: { short: ${q(v.short)}, label: ${q(v.label)}, color: ${q(v.color)} },`,
+  );
   return [
     BEGIN,
-    "  // 원본 = docs/seams.md 표 6열 + docs/seams-callsites.md 코드블록",
+    "  // 원본 = docs/seams.md 표(강도 포함) + docs/seams-callsites.md 코드블록",
+    "  // ⚠ 색·문안도 여기서 나온다 — 손 사본을 두면 반드시 갈린다(그래서 WIRING 의 hard 를 없앴다).",
+    "  const TIER_STYLE = {",
+    ...tierParts,
+    "  };",
     "  const SEAM_TEXT = {",
     ...parts,
     "  };",

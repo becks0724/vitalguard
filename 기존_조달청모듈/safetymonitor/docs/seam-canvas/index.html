@@ -25,10 +25,6 @@
     --rt-pod:  #e05c6e;
     --rt-ext:  #7d8b9c;
 
-    /* 계약 강도 — 이 자료의 요지가 여기 실린다. 장식이 아니라 정보다. */
-    --hard: #3fb950;
-    --soft: #d2a022;
-
     --f-ui:   "Archivo", "IBM Plex Sans KR", system-ui, sans-serif;
     --f-kr:   "IBM Plex Sans KR", "Archivo", system-ui, sans-serif;
     --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
@@ -362,9 +358,8 @@
         <span class="chip"><i style="background:var(--rt-ext)"></i>외부</span>
       </div>
       <div class="lg">
-        <span class="lg-title">계약</span>
-        <span class="chip line"><i style="background:var(--hard)"></i>코드가 검사</span>
-        <span class="chip line"><i style="background:var(--soft)"></i>합의뿐</span>
+        <span class="lg-title">계약</span><span id="lg-tier"></span>
+        <!-- 칩은 TIER_STYLE 에서 만든다 — 색·문안 사본을 여기 두면 반드시 갈린다 -->
       </div>
     </div>
   </header>
@@ -438,40 +433,60 @@
   //   그래서 **문안은 생성**하고 **배선만 손으로** 유지한다. 좌표·포트·방향은 21개뿐이라
   //   자동 배치가 오히려 읽기 나쁘고, 그 판단은 사람이 하는 것이 맞다.
   // <<< 생성 구역 시작 — build.mjs 가 씁니다. 손으로 고치지 마십시오 >>>
-  // 원본 = docs/seams.md 표 6열 + docs/seams-callsites.md 코드블록
+  // 원본 = docs/seams.md 표(강도 포함) + docs/seams-callsites.md 코드블록
+  // ⚠ 색·문안도 여기서 나온다 — 손 사본을 두면 반드시 갈린다(그래서 WIRING 의 hard 를 없앴다).
+  const TIER_STYLE = {
+    "런타임": { short: "값을 검사", label: "코드가 값을 검사한다", color: "#3fb950" },
+    "커밋": { short: "게이트만", label: "커밋 게이트는 있다 — 현장 버전 어긋남은 못 본다", color: "#d9a441" },
+    "없음": { short: "합의뿐", label: "합의뿐 — 어긋나도 조용하다", color: "#d2a022" },
+  };
   const SEAM_TEXT = {
-    A: { name: "워치 → 폰", rt: "Swift → Swift", how: "WCSession sendMessage, 실패 시 transferUserInfo · 5초", where: "가드 계약(2026-08-21) — 키 26개 양끝 집합 대조 · 런타임 검증은 없음", broken: "측정은 이어지는데 도착만 끊긴다. 복귀 시 수 분치가 한꺼번에 온다", sites: [{ sec: "2. WCSession (워치 ↔ 폰) › 현행 앱 — apps/vitalguard_app", lines: ["Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {", "Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {", "VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()", "VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in", "VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)", "VitalWatch/WatchStreamer.swift:510:            wc.transferUserInfo(payload)"] }] },
-    B: { name: "Swift → Dart", rt: "Swift → Dart", how: "FlutterEventChannel <code>vitalguard/stream</code>", where: "가드 계약(2026-08-21) — 채널명·이벤트 키 15 양끝 집합 대조 · 런타임 검증은 없음", broken: "서버는 정상 수신 중인데 폰 화면만 언다. 서버 쪽엔 아무 이상이 안 보인다", sites: [{ sec: "3. Swift ↔ Dart 채널", lines: ["ios/Runner/VitalBridge.swift:88:        let channel = FlutterMethodChannel(name: \"vitalguard/bridge\", binaryMessenger: messenger)", "ios/Runner/VitalBridge.swift:92:        let events = FlutterEventChannel(name: \"vitalguard/stream\", binaryMessenger: messenger)", "lib/vital_stream.dart:1:// 네이티브 EventChannel(vitalguard/stream) 구독 래퍼 — 표시용 상태만 다룬다(원본 생체 경로는 네이티브 전담)", "lib/vital_stream.dart:86:  static const EventChannel _channel = EventChannel('vitalguard/stream');", "lib/main.dart:17:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');", "lib/record_screen.dart:16:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');"] }] },
-    C: { name: "폰 → 서버", rt: "Swift → TS", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> — <em>Swift 쪽은 손으로 맞춘 것</em>", broken: "스키마에 없는 필드는 파싱에서 조용히 탈락한다. 앱은 201 을 받고 큐를 지운다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent(\"api/app/vital\"))"] }] },
-    D: { name: "가스포드 → 서버", rt: "C++ → TS", how: "POST <code>/api/gaspod/telemetry</code> · 5초 · soft 토큰", where: "zod + DB 컬럼", broken: "기기는 보내는데 행이 안 쌓인다. 링버퍼 폴백이 있어 화면은 잠시 정상으로 보인다", sites: [{ sec: "1. HTTP › 1-4. Arduino(ESP32) → 관제 서버", lines: ["Final_GasPod/firmware/gaspod_v4.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v4.ino:52:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v4.ino:55:  if(!http.begin(client, SERVER_URL)) { Serial.println(\"[net] begin 실패\"); return; }", "Final_GasPod/firmware/gaspod_v4.ino:63:  int code=http.POST(body);", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:57:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:59:  if(!http.begin(client, SERVER_URL)) return;", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:67:  int code=http.POST(body);"] }] },
-    E: { name: "엣지 → cctv-ai", rt: "Python → Python", how: "HTTP POST <code>/cctv/ingest3</code> · 푸시 6fps · 추론 12fps", where: "없음 (multipart 필드명)", broken: "타일이 마지막 프레임에서 정지한다. 젯슨 로그를 봐야 푸시가 끊긴 건지 안다", sites: [{ sec: "1. HTTP › 1-3. Python(젯슨 엣지) → cctv-ai · 카메라 기기", lines: ["cctv-ai/edge/gopro_ppe_edge.py:96:            urllib.request.urlopen(path, timeout=5).read()", "cctv-ai/edge/gopro_ppe_edge.py:232:                req = urllib.request.Request(f\"{url}?{q}\", data=jpg,", "cctv-ai/edge/gopro_ppe_edge.py:234:                with urllib.request.urlopen(req, timeout=4):", "cctv-ai/edge/phone_ppe_relay.py:165:            req = urllib.request.Request(f\"{url_base}?{q}\", data=jpg,", "cctv-ai/edge/phone_ppe_relay.py:168:                with urllib.request.urlopen(req, timeout=4):"] }] },
-    F: { name: "cctv-ai → 관제웹", rt: "Python → TS", how: "관제웹이 <em>당겨간다</em> (<code>lib/cctv-poller.ts</code>) · MJPEG <code>/cctv/stream3</code>", where: "빌드 인자 <code>_AI_URL</code> + zod <code>cctv-event</code>", broken: "치환을 빠뜨리면 localhost 로 폴백해 타일만 깨진다. 서버는 200 을 낸다", sites: [{ sec: "1. HTTP › 1-6. 브라우저 → cctv-ai (서버를 안 거친다)", lines: ["app/components/CctvQuadView.tsx:13:const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || \"http://localhost:8000\";", "app/components/CctvQuadView.tsx:30:  { id: \"CAM-01\", location: \"정문 출입구\", aiApi: AI_CCTV_API, aiKind: \"object\", aiSuffix: \"\" },", "app/components/CctvQuadView.tsx:31:  { id: \"CAM-02\", location: \"지하 기계실\", aiApi: AI_CCTV_API, aiKind: \"fall\", aiSuffix: \"2\" },", "app/components/CctvQuadView.tsx:32:  { id: \"CAM-03\", location: \"현장 작업구역(GoPro)\", aiApi: AI_CCTV_API, aiKind: \"ppe\", aiSuffix: \"3\" },", "app/components/CctvQuadView.tsx:125:  aiApi: string;", "app/components/CctvQuadView.tsx:384:function useAiStats<T>(aiApi: string, suffix: string) {", "app/components/CctvQuadView.tsx:424:function DetectionStrip({ aiApi, suffix = \"\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:485:function FallDetectionStrip({ aiApi, suffix = \"2\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:551:function PpeDetectionStrip({ aiApi, suffix = \"3\" }: { aiApi: string; suffix?: string }) {"] }] },
-    G: { name: "앱 → 스토리지", rt: "Swift → 외부", how: "서버 경유 <code>/api/app-media</code>", where: "서버가 업로드·등록을 함께", broken: "경로가 둘로 갈려 있다 — H 와 실패 모드가 다르다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent(\"api/app-media\"))"] }] },
-    H: { name: "관제웹 → 스토리지", rt: "브라우저 → 외부", how: "만료형 프리사인 GET(표시·다운로드) · 삭제는 행→실물 순서. 업로드 다리(PUT+등록)는 2026-08-21 철거 — 30일 실사용 0 실측", where: "만료형 URL + 봉인 가드(재생성 금지)", broken: "DELETE 의 실물 삭제 실패가 warn 로그만 남기고 <em>고아</em>가 된다 — 대사 스크립트가 없어 수작업 전수 대조가 유일한 회수 수단이다", sites: [{ sec: "1. HTTP › 1-5. TS(관제 서버) → 외부 서비스 — 호스트 상수 정의 지점", lines: ["lib/storage.ts:19:\"https://kr.object.ncloudstorage.com"] }] },
-    I: { name: "스케줄러 → 서버", rt: "GCP → TS", how: "Cloud Scheduler · <code>x-cron-key</code>", where: "<code>CRON_SECRET</code> 시크릿", broken: "401 이 조용히 반복된다. 부재 감시가 죽어도 화면엔 표시가 없다", sites: [{ sec: "1. HTTP › 1-7. Cloud Scheduler → 서버 (받는 쪽만 코드에 있다)", lines: ["app/api/cron/env-check/route.ts:11:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);", "app/api/cron/env-check/route.ts:44:  const cronHeaders = { \"x-cron-key\": process.env.CRON_SECRET ?? \"\" };", "app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);"] }] },
-    J: { name: "서버 → DB", rt: "TS → PostgreSQL", how: "첫 쿼리에 <code>ensureSchema()</code> · CREATE/ALTER 89건", where: "런타임 DDL <em>과</em> <code>db/*.sql</code> 12개", broken: "스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — <em>있어도 읽는 경로가 없으면 같은 결과다</em>(§1-1)", sites: [{ sec: "4. DB 클라이언트", lines: ["apps/dashboard-web/lib/db.ts:4:import pg, { Pool } from \"pg\";", "apps/dashboard-web/lib/db.ts:154:    const pool = new Pool({", "scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })", "ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });"] }] },
-    K: { name: "서버 → 텔레그램", rt: "TS → 외부", how: "<code>recordAlert</code> 관문 · 수치 미포함 · 이름 마스킹", where: "관문 타입(수치 필드 자체가 없음) + 발신 지점 허용목록 가드(2026-08-21)", broken: "관문을 우회해 보내면 <em>발동 이력이 원장에 안 남는다</em>. 전례가 있다", sites: [] },
-    L: { name: "Colab → 엣지", rt: "Python → Python", how: "사람이 파일을 옮긴다 (<code>.pt</code> → <code>.engine</code>)", where: "파일 이름의 <code>_v5_</code> 문자열", broken: "엔진과 노트북 버전이 어긋나도 아무 데서도 안 걸린다. 태그만 맞아 보인다", sites: [] },
+    A: { name: "워치 → 폰", rt: "Swift → Swift", tier: "커밋", how: "WCSession sendMessage, 실패 시 transferUserInfo · 5초", where: "가드 계약(2026-08-21) — 키 26개 양끝 집합 대조 · 런타임 검증은 없음", broken: "측정은 이어지는데 도착만 끊긴다. 복귀 시 수 분치가 한꺼번에 온다", sites: [{ sec: "2. WCSession (워치 ↔ 폰) › 현행 앱 — apps/vitalguard_app", lines: ["Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {", "Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {", "VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()", "VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in", "VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)", "VitalWatch/WatchStreamer.swift:510:            wc.transferUserInfo(payload)"] }] },
+    B: { name: "Swift → Dart", rt: "Swift → Dart", tier: "커밋", how: "FlutterEventChannel <code>vitalguard/stream</code>", where: "가드 계약(2026-08-21) — 채널명·이벤트 키 15 양끝 집합 대조 · 런타임 검증은 없음", broken: "서버는 정상 수신 중인데 폰 화면만 언다. 서버 쪽엔 아무 이상이 안 보인다", sites: [{ sec: "3. Swift ↔ Dart 채널", lines: ["ios/Runner/VitalBridge.swift:88:        let channel = FlutterMethodChannel(name: \"vitalguard/bridge\", binaryMessenger: messenger)", "ios/Runner/VitalBridge.swift:92:        let events = FlutterEventChannel(name: \"vitalguard/stream\", binaryMessenger: messenger)", "lib/vital_stream.dart:1:// 네이티브 EventChannel(vitalguard/stream) 구독 래퍼 — 표시용 상태만 다룬다(원본 생체 경로는 네이티브 전담)", "lib/vital_stream.dart:86:  static const EventChannel _channel = EventChannel('vitalguard/stream');", "lib/main.dart:17:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');", "lib/record_screen.dart:16:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');"] }] },
+    C: { name: "폰 → 서버", rt: "Swift → TS", tier: "런타임", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> — <em>Swift 쪽은 손으로 맞춘 것</em>", broken: "스키마에 없는 필드는 파싱에서 조용히 탈락한다. 앱은 201 을 받고 큐를 지운다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent(\"api/app/vital\"))"] }] },
+    D: { name: "가스포드 → 서버", rt: "C++ → TS", tier: "런타임", how: "POST <code>/api/gaspod/telemetry</code> · 5초 · soft 토큰", where: "zod + DB 컬럼", broken: "기기는 보내는데 행이 안 쌓인다. 링버퍼 폴백이 있어 화면은 잠시 정상으로 보인다", sites: [{ sec: "1. HTTP › 1-4. Arduino(ESP32) → 관제 서버", lines: ["Final_GasPod/firmware/gaspod_v4.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v4.ino:52:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v4.ino:55:  if(!http.begin(client, SERVER_URL)) { Serial.println(\"[net] begin 실패\"); return; }", "Final_GasPod/firmware/gaspod_v4.ino:63:  int code=http.POST(body);", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:57:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:59:  if(!http.begin(client, SERVER_URL)) return;", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:67:  int code=http.POST(body);"] }] },
+    E: { name: "엣지 → cctv-ai", rt: "Python → Python", tier: "없음", how: "HTTP POST <code>/cctv/ingest3</code> · 푸시 6fps · 추론 12fps", where: "없음 (multipart 필드명)", broken: "타일이 마지막 프레임에서 정지한다. 젯슨 로그를 봐야 푸시가 끊긴 건지 안다", sites: [{ sec: "1. HTTP › 1-3. Python(젯슨 엣지) → cctv-ai · 카메라 기기", lines: ["cctv-ai/edge/gopro_ppe_edge.py:96:            urllib.request.urlopen(path, timeout=5).read()", "cctv-ai/edge/gopro_ppe_edge.py:232:                req = urllib.request.Request(f\"{url}?{q}\", data=jpg,", "cctv-ai/edge/gopro_ppe_edge.py:234:                with urllib.request.urlopen(req, timeout=4):", "cctv-ai/edge/phone_ppe_relay.py:165:            req = urllib.request.Request(f\"{url_base}?{q}\", data=jpg,", "cctv-ai/edge/phone_ppe_relay.py:168:                with urllib.request.urlopen(req, timeout=4):"] }] },
+    F: { name: "cctv-ai → 관제웹", rt: "Python → TS", tier: "없음", how: "관제웹이 <em>당겨간다</em> (<code>lib/cctv-poller.ts</code>) · MJPEG <code>/cctv/stream3</code>", where: "빌드 인자 <code>_AI_URL</code> + zod <code>cctv-event</code>", broken: "치환을 빠뜨리면 localhost 로 폴백해 타일만 깨진다. 서버는 200 을 낸다", sites: [{ sec: "1. HTTP › 1-6. 브라우저 → cctv-ai (서버를 안 거친다)", lines: ["app/components/CctvQuadView.tsx:13:const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || \"http://localhost:8000\";", "app/components/CctvQuadView.tsx:30:  { id: \"CAM-01\", location: \"정문 출입구\", aiApi: AI_CCTV_API, aiKind: \"object\", aiSuffix: \"\" },", "app/components/CctvQuadView.tsx:31:  { id: \"CAM-02\", location: \"지하 기계실\", aiApi: AI_CCTV_API, aiKind: \"fall\", aiSuffix: \"2\" },", "app/components/CctvQuadView.tsx:32:  { id: \"CAM-03\", location: \"현장 작업구역(GoPro)\", aiApi: AI_CCTV_API, aiKind: \"ppe\", aiSuffix: \"3\" },", "app/components/CctvQuadView.tsx:125:  aiApi: string;", "app/components/CctvQuadView.tsx:384:function useAiStats<T>(aiApi: string, suffix: string) {", "app/components/CctvQuadView.tsx:424:function DetectionStrip({ aiApi, suffix = \"\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:485:function FallDetectionStrip({ aiApi, suffix = \"2\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:551:function PpeDetectionStrip({ aiApi, suffix = \"3\" }: { aiApi: string; suffix?: string }) {"] }] },
+    G: { name: "앱 → 스토리지", rt: "Swift → 외부", tier: "커밋", how: "서버 경유 <code>/api/app-media</code>", where: "서버가 업로드·등록을 함께", broken: "경로가 둘로 갈려 있다 — H 와 실패 모드가 다르다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent(\"api/app-media\"))"] }] },
+    H: { name: "관제웹 → 스토리지", rt: "브라우저 → 외부", tier: "커밋", how: "만료형 프리사인 GET(표시·다운로드) · 삭제는 행→실물 순서. 업로드 다리(PUT+등록)는 2026-08-21 철거 — 30일 실사용 0 실측", where: "만료형 URL + 봉인 가드(재생성 금지)", broken: "DELETE 의 실물 삭제 실패가 warn 로그만 남기고 <em>고아</em>가 된다 — 대사 스크립트가 없어 수작업 전수 대조가 유일한 회수 수단이다", sites: [{ sec: "1. HTTP › 1-5. TS(관제 서버) → 외부 서비스 — 호스트 상수 정의 지점", lines: ["lib/storage.ts:19:\"https://kr.object.ncloudstorage.com"] }] },
+    I: { name: "스케줄러 → 서버", rt: "GCP → TS", tier: "없음", how: "Cloud Scheduler · <code>x-cron-key</code>", where: "<code>CRON_SECRET</code> 시크릿", broken: "401 이 조용히 반복된다. 부재 감시가 죽어도 화면엔 표시가 없다", sites: [{ sec: "1. HTTP › 1-7. Cloud Scheduler → 서버 (받는 쪽만 코드에 있다)", lines: ["app/api/cron/env-check/route.ts:11:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);", "app/api/cron/env-check/route.ts:44:  const cronHeaders = { \"x-cron-key\": process.env.CRON_SECRET ?? \"\" };", "app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);"] }] },
+    J: { name: "서버 → DB", rt: "TS → PostgreSQL", tier: "런타임", how: "첫 쿼리에 <code>ensureSchema()</code> · CREATE/ALTER 89건", where: "런타임 DDL <em>과</em> <code>db/*.sql</code> 12개", broken: "스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — <em>있어도 읽는 경로가 없으면 같은 결과다</em>(§1-1)", sites: [{ sec: "4. DB 클라이언트", lines: ["apps/dashboard-web/lib/db.ts:4:import pg, { Pool } from \"pg\";", "apps/dashboard-web/lib/db.ts:154:    const pool = new Pool({", "scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })", "ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });"] }] },
+    K: { name: "서버 → 텔레그램", rt: "TS → 외부", tier: "커밋", how: "<code>recordAlert</code> 관문 · 수치 미포함 · 이름 마스킹", where: "관문 타입(수치 필드 자체가 없음) + 발신 지점 허용목록 가드(2026-08-21)", broken: "관문을 우회해 보내면 <em>발동 이력이 원장에 안 남는다</em>. 전례가 있다", sites: [] },
+    L: { name: "Colab → 엣지", rt: "Python → Python", tier: "없음", how: "사람이 파일을 옮긴다 (<code>.pt</code> → <code>.engine</code>)", where: "파일 이름의 <code>_v5_</code> 문자열", broken: "엔진과 노트북 버전이 어긋나도 아무 데서도 안 걸린다. 태그만 맞아 보인다", sites: [] },
   };
   // <<< 생성 구역 끝 >>>
 
-  /** 배선 — 어느 포트에서 어느 포트로. `hard` = 코드가 값을 검사한다(C·D·J). */
+  /** 배선 — 어느 포트에서 어느 포트로. **기하만** 손으로 둔다.
+   *  계약 강도(`tier`)는 여기 없다 — `docs/seams.md` 의 `강도` 열에서 생성돼 SEAM_TEXT 로 들어온다.
+   *  ⚠ 되돌리지 말 것. 손 사본이던 시절 08-21 에 A·B·H·K 가 조용히 낡았고 스위트는 초록이었다. */
   const WIRING = [
-    { id: "A", map: "Ⓐ", from: ["watch", 0], to: ["recv", 0], hard: false, dashed: false },
-    { id: "B", map: "Ⓑ", from: ["bridge", 0], to: ["dart", 0], hard: false, dashed: false },
-    { id: "C", map: "Ⓒ", from: ["pipe", 0], to: ["rVital", 0], hard: true, dashed: false },
-    { id: "D", map: "④", from: ["pod", 0], to: ["rPod", 0], hard: true, dashed: false },
-    { id: "E", map: "②", from: ["jetson", 0], to: ["cctvai", 0], hard: false, dashed: false },
-    { id: "F", map: "③", from: ["cctvai", 0], to: ["rCctv", 0], hard: false, dashed: false },
-    { id: "G", map: "⑤", from: ["media", 0], to: ["rMedia", 0], hard: false, dashed: false },
-    { id: "H", map: "⑥", from: ["ui", 0], to: ["obj", 1], hard: false, dashed: false },
-    { id: "I", map: "⑦", from: ["sched", 0], to: ["rCron", 0], hard: false, dashed: false },
-    { id: "J", map: "⑧", from: ["store", 0], to: ["pg", 0], hard: true, dashed: false },
-    { id: "K", map: "⑨", from: ["store", 1], to: ["tg", 0], hard: false, dashed: false },
-    { id: "L", map: "⑩", from: ["colab", 0], to: ["jetson", 0], hard: false, dashed: true },
+    { id: "A", map: "Ⓐ", from: ["watch", 0], to: ["recv", 0], dashed: false },
+    { id: "B", map: "Ⓑ", from: ["bridge", 0], to: ["dart", 0], dashed: false },
+    { id: "C", map: "Ⓒ", from: ["pipe", 0], to: ["rVital", 0], dashed: false },
+    { id: "D", map: "④", from: ["pod", 0], to: ["rPod", 0], dashed: false },
+    { id: "E", map: "②", from: ["jetson", 0], to: ["cctvai", 0], dashed: false },
+    { id: "F", map: "③", from: ["cctvai", 0], to: ["rCctv", 0], dashed: false },
+    { id: "G", map: "⑤", from: ["media", 0], to: ["rMedia", 0], dashed: false },
+    { id: "H", map: "⑥", from: ["ui", 0], to: ["obj", 1], dashed: false },
+    { id: "I", map: "⑦", from: ["sched", 0], to: ["rCron", 0], dashed: false },
+    { id: "J", map: "⑧", from: ["store", 0], to: ["pg", 0], dashed: false },
+    { id: "K", map: "⑨", from: ["store", 1], to: ["tg", 0], dashed: false },
+    { id: "L", map: "⑩", from: ["colab", 0], to: ["jetson", 0], dashed: true },
   ];
 
   const LINKS = WIRING.map((w) => ({ ...w, ...SEAM_TEXT[w.id] }));
+
+  /** 강도 → 색·문안. 모르는 값은 조용히 넘기지 않는다 — 그러면 그림이 거짓말을 한다. */
+  function tierOf(L) {
+    const t = TIER_STYLE[L.tier];
+    if (!t) throw new Error(`이음새 ${L.id} 의 강도 "${L.tier}" 를 모른다 — seams.md 강도 열을 확인할 것`);
+    return t;
+  }
+
+  // 범례도 같은 표에서 낸다. 강도가 3단이 아니게 되면 칩 수가 저절로 따라간다.
+  document.getElementById("lg-tier").innerHTML = Object.entries(TIER_STYLE)
+    .map(([k, v]) => `<span class="chip line"><i style="background:${v.color}"></i>${k} — ${v.short}</span>`)
+    .join("");
 
   // 추가 배선 — 이음새가 아닌 같은 런타임 안의 흐름(회색·가늘게). 문맥을 위해 그린다.
   const INNER = [
@@ -580,7 +595,7 @@
   for (const L of LINKS) {
     const a = portPos(L.from[0], "out", L.from[1]);
     const b = portPos(L.to[0], "in", L.to[1]);
-    const color = L.hard ? "#3fb950" : "#d2a022";
+    const color = tierOf(L).color;
     const d = curve(a, b);
 
     const hit = document.createElementNS(SVGNS, "path");
@@ -665,12 +680,12 @@
 
   function showLink(id) {
     const L = LINKS.find((x) => x.id === id);
-    const color = L.hard ? "var(--hard)" : "var(--soft)";
+    const { color, label } = tierOf(L);
     inspector.innerHTML = `
       <div class="ins-kicker">이음새 ${L.id}</div>
       <h2 class="ins-title">${L.name}</h2>
       <div class="ins-rt">${L.rt} · 지도 표기 ${L.map}</div>
-      <span class="badge" style="color:${color}">${L.hard ? "코드가 값을 검사한다" : "합의뿐 — 어긋나도 조용하다"}</span>
+      <span class="badge" style="color:${color}">${label}</span>
       <dl class="fld"><dt>수단 · 주기</dt><dd>${L.how}</dd></dl>
       <dl class="fld"><dt>계약이 사는 곳</dt><dd>${L.where}</dd></dl>
       <dl class="fld"><dt>깨지면 보이는 모습</dt><dd class="break">${L.broken}</dd></dl>
@@ -684,7 +699,7 @@
       ? touching.map((L) => {
           const dir = L.from[0] === id ? "→" : "←";
           const other = byId.get(L.from[0] === id ? L.to[0] : L.from[0]);
-          const color = L.hard ? "var(--hard)" : "var(--soft)";
+          const color = tierOf(L).color;
           return `<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0">
             <span style="color:${color};font-family:var(--f-mono);font-size:12px">${L.id}</span>
             <span style="color:var(--ink-3)">${dir}</span>

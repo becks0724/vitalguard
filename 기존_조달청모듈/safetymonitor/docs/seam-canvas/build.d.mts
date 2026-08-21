@@ -2,10 +2,16 @@
 export declare const BEGIN: string;
 export declare const END: string;
 
+/** 계약 강도 3단 — `docs/seams.md` 표의 `강도` 열이 유일한 원본이다. */
+export type Tier = "런타임" | "커밋" | "없음";
+export type TierStyle = { short: string; label: string; color: string };
+export declare const TIERS: Record<Tier, TierStyle>;
+
 export type SeamRow = {
   name: string;
   rt: string;
   how: string;
+  tier: Tier;
   where: string;
   broken: string;
 };
