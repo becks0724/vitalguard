@@ -331,6 +331,44 @@ select session_end_seen_at, session_end_by_user, session_resume_tried_at, sessio
 from vital_samples where session_end_seen_at is not null order by session_end_seen_at asc;
 ```
 
+#### ★ 08-21 저녁 사건 — ① 표본이 실제로 발생했을 수 있다 (회수는 08-22 오전)
+
+```
+08-21 세션        1개 · 시작 07:59:06 · session_auto_resumed = 0 · 7,332건
+마지막 샘플       18:21:21   (5초 간격이 그 직전까지 유지되다 끊김)
+그 뒤 새 세션     0건 — 22:00 조회 시점까지
+공백 경보        alerts#2832 absence · 기준 18:21:21 · 기록 18:35:03  (푸시 창 안, 정상 발동)
+워치 화면 18:35  "대기 / 전송0 도달"
+```
+
+**`전송0` 이 프로세스 교체를 못 박는다.** `batchesSent` 는 `:24` 선언 · `:516` 증가뿐이고
+**0 으로 되돌리는 코드가 없다**(teardown 에도). `@StateObject` 라 인스턴스당 카운터다.
+⟹ 오늘 7,332건을 보낸 그 인스턴스가 아니다.
+
+**새로 뜬 앱은 스스로 시작하지 않는다** — `VitalWatchApp` 은 `WindowGroup { ContentView() }` 뿐이고
+`onAppear`·delegate·`scenePhase` 전부 0건, `start()` 호출부는 [시작] 버튼 하나(`ContentView:91`)다.
+autoResume 은 세션 델리게이트 안에서만 도니 **프로세스가 사라지면 배선 자체가 없다**(`:297` 주석).
+
+**외부 종료 경로도 없다** — `session.end()` 는 `stop()`(`:294`) 한 곳, `stop()` 은 버튼 한 곳.
+워치 `WCSessionDelegate` 는 활성화·도달변화 둘뿐이고 `didReceive*` 는 **0건**(대소문자 무시 전수).
+⟹ 폰·서버가 워치 수집을 끌 수 없다. **근무시간 자동 해지도 아니다** — 워치 앱에 `근무`·`shift`·
+`schedule` 0건이고, 레포의 유일한 07~19 창(`absence-watch.ts`)은 **push 만** 막는다(오늘 18:35 에
+경보를 내보내는 쪽으로 작동했다). 멎은 시각 18:21:21 은 그 경계 19:00 과도 다르다.
+
+**회수 시점 = 사용자가 [시작] 을 누르는 08-22 오전.** 지문은 UserDefaults(디스크)라 밤새 보존되고,
+`SessionEndCrumb.take()`(`:447`)가 **다음 세션 첫 배치에 한 번만** 싣고 지운다.
+
+```
+seAt 있고 seBy=0  → ① 표본 발생. 곧바로 srAt·srN 으로 ② 를 본다 (C-1 종결 조건)
+seAt 있고 seBy=1  → 30초 안에 [중지] 가 눌렸다. 유예 이후 빌드라 이 값은 신뢰할 수 있다
+seAt 자체가 없음  → 델리게이트 전에 프로세스가 사라졌다 = 지문 결손. `전송0` 과 정합
+```
+⚠ **결손(셋째)은 ① 이 아니다.** 부재는 표본이 아니므로 그때는 C-1 창을 그대로 두고 계속 기다린다.
+
+**독립 2차 판정 — 서버 복귀 분류.** 크론이 복귀를 보면 `classifyRecovery()`(`absence-watch.ts:103`)가
+복귀 직후 측정 지연으로 `collection`(≤60초) / `delivery`(≥60초) 를 가른다. 워치 지문과 **다른 입력**을
+쓰므로 교차 검증이 된다 — 수집이 멎은 것이라면 `collection` 이 나와야 한다.
+
 ### 남은 것
 
 ### D-1 좌표 메타를 DB 에 남기고 이력에서 읽는다 (08-21 착수 · 범위 정정)
