@@ -1,12 +1,16 @@
-// 클라우드 브릿지 — 캘린더 미디어(앱 OCR 이미지/영상) 조회·등록·설명수정·삭제 API (관리자 인증)
+// 클라우드 브릿지 — 캘린더 미디어(앱 OCR 이미지/영상) 조회·설명수정·삭제 API (관리자 인증)
+//
+// ★ 등록(POST)·프리사인 업로드 다리는 2026-08-21 철거됐다(docs/seam-contracts/findings.md H).
+//   레포 안 호출자 0 + 프로덕션 30일 성공 호출 0 실측 — 게다가 등록이 임의 storageKey 를
+//   무검증 수용해 깨진 참조·남의 key 재등록 통로였다. 업로드는 앱 경로(/api/app-media)가
+//   서버 안에서 putObject+insert 를 한 호출로 처리한다 — 그쪽이 유일한 등록 경로다.
 import { NextResponse } from "next/server";
 
-import { getSession, verifyAppUploadToken, verifyBasicAuth } from "../../../../lib/admin-auth";
+import { getSession, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../lib/app-jwt";
 import {
   listCalendarMedia,
   listCommentsForMedia,
-  insertCalendarMedia,
   updateCalendarMediaDescription,
   deleteCalendarMedia,
   findUserByUsername,
@@ -23,16 +27,10 @@ import { deleteObject, isStorageConfigured, presignDownload } from "../../../../
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const str = (v: unknown): string | null =>
-  typeof v === "string" && v.trim() ? v : null;
-const num = (v: unknown): number | null => {
-  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
-  return Number.isFinite(n) ? n : null;
-};
 
 export async function GET(request: Request) {
   // 조회 = 대시보드 세션 또는 앱 로그인 JWT(owner/admin/worker) 수용 — 현장 앱이 캘린더 미디어를 표시.
-  // 등록(POST)/수정(PATCH)/삭제(DELETE)는 기존 인증 유지(POST 는 앱 업로드 토큰 병행).
+  // 수정(PATCH)/삭제(DELETE)는 소유권 규칙(mediaWriteScope). 등록은 이 라우트에 없다(헤더 주석).
   if (!verifyBasicAuth(request) && verifyAppJwt(bearerToken(request)) === null) {
     // 401 은 네 가지 실패를 한 응답으로 뭉갠다. 사유는 서버 로그로만 남기고,
     // 응답에는 앱이 스스로 복구 가능한지(action)만 실어 재로그인을 유도한다.
@@ -82,46 +80,6 @@ export async function GET(request: Request) {
     }),
   );
   return NextResponse.json({ ok: true, media: withComments });
-}
-
-export async function POST(request: Request) {
-  // 관리자 세션(대시보드) 또는 앱 업로드 토큰(현장 단말 등록) 중 하나면 허용.
-  if (!verifyBasicAuth(request) && !verifyAppUploadToken(request)) {
-    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
-  }
-  let body: Record<string, unknown>;
-  try {
-    body = (await request.json()) as Record<string, unknown>;
-  } catch {
-    return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
-  }
-  const dateKey = typeof body.dateKey === "string" ? body.dateKey : "";
-  if (!DATE_RE.test(dateKey)) {
-    return NextResponse.json(
-      { ok: false, error: "dateKey (YYYY-MM-DD) 필요" },
-      { status: 400 },
-    );
-  }
-  const row = await insertCalendarMedia({
-    id: crypto.randomUUID(),
-    dateKey,
-    capturedAt: str(body.capturedAt),
-    mediaType: str(body.mediaType) ?? "image",
-    title: str(body.title),
-    storageProvider: str(body.storageProvider),
-    storageKey: str(body.storageKey),
-    mediaUrl: str(body.mediaUrl),
-    thumbnailUrl: str(body.thumbnailUrl),
-    ocrText: str(body.ocrText),
-    description: str(body.description),
-    siteId: str(body.siteId),
-    uploader: str(body.uploader),
-    workerId: str(body.workerId),
-    latitude: num(body.latitude),
-    longitude: num(body.longitude),
-    roadAddress: str(body.roadAddress),
-  });
-  return NextResponse.json({ ok: true, media: row });
 }
 
 export async function PATCH(request: Request) {

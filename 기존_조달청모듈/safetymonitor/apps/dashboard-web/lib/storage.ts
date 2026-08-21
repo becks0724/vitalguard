@@ -22,7 +22,6 @@ const DEFAULT_REGION = "kr-standard";
 // 런타임에만 필요 — 빌드/임포트 시 env 없어도 통과하도록 클라이언트는 첫 호출 시 지연 생성(메모이즈).
 let client: S3Client | null = null;
 
-const UPLOAD_TTL = 600; // 10분 — 발급 직후 PUT 전제.
 const DOWNLOAD_TTL = 3600; // 1시간 — 캘린더 조회 표시용 만료형 URL.
 
 // 액세스키/시크릿/버킷이 모두 있어야 사용 가능 — 미설정 시 라우트가 503 으로 명확히 응답.
@@ -65,15 +64,8 @@ function getClient(env: ObjectStorageEnv): S3Client {
   return client;
 }
 
-// 업로드용 프리사인 PUT URL — 앱/클라가 이 URL로 직접 PUT(서버 경유·바이트 미통과).
-export async function presignUpload(key: string, contentType: string): Promise<string> {
-  const env = readEnv();
-  return getSignedUrl(
-    getClient(env),
-    new PutObjectCommand({ Bucket: env.bucket, Key: key, ContentType: contentType }),
-    { expiresIn: UPLOAD_TTL },
-  );
-}
+// (프리사인 PUT 발급은 2026-08-21 업로드 다리 철거와 함께 제거 — 유일 호출자가 upload-url
+//  라우트였다. 업로드는 putObject(서버 직접)만 남는다. docs/seam-contracts/findings.md H.)
 
 // 조회용 프리사인 GET URL — 비공개 버킷이라 표시 시점마다 만료형 URL 발급(저장 키 기준).
 export async function presignDownload(key: string): Promise<string> {
