@@ -7,7 +7,7 @@ grep 으로 실제 코드에서 찾은 것만 적는다. 추정·설계 의도�
 없는 것은 0으로 적되 **그 조회가 눈멀지 않았음을 보이는 통제군**을 옆에 둔다.
 
 - 생성 = `scripts/scan-seams.sh` (에이전트는 `/graph-scan`)
-- 기준 커밋 = `b675e82`
+- 기준 커밋 = `9c16b8d`
 - 제외 = node_modules · .next · Pods · build · dist · __pycache__ · .dart_tool · DerivedData
 
 > 이음새의 **성격·계약·실패 양상**은 `docs/seams.md` 에 있다. 이 파일은 **줄 번호 색인**이다.
@@ -23,14 +23,14 @@ Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL
 Runner/VitalPipeline.swift:287:        let task = URLSession.shared.dataTask(with: request) { _, response, error in
 Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app-media"))
 Runner/MediaCapture.swift:367:        URLSession.shared.dataTask(with: request) { data, response, error in
-Runner/VitalBridge.swift:221:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app/me/vitals"))
-Runner/VitalBridge.swift:233:        URLSession.shared.dataTask(with: request) { data, response, error in
-Runner/VitalBridge.swift:275:        var request = URLRequest(url: url)
-Runner/VitalBridge.swift:280:        URLSession.shared.dataTask(with: request) { data, response, error in
-Runner/VitalBridge.swift:336:        var request = URLRequest(url: url)
-Runner/VitalBridge.swift:345:        URLSession.shared.dataTask(with: request) { data, response, error in
-Runner/VitalBridge.swift:372:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app-auth/login"))
-Runner/VitalBridge.swift:378:        URLSession.shared.dataTask(with: request) { data, response, error in
+Runner/VitalBridge.swift:225:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app/me/vitals"))
+Runner/VitalBridge.swift:237:        URLSession.shared.dataTask(with: request) { data, response, error in
+Runner/VitalBridge.swift:279:        var request = URLRequest(url: url)
+Runner/VitalBridge.swift:284:        URLSession.shared.dataTask(with: request) { data, response, error in
+Runner/VitalBridge.swift:340:        var request = URLRequest(url: url)
+Runner/VitalBridge.swift:349:        URLSession.shared.dataTask(with: request) { data, response, error in
+Runner/VitalBridge.swift:376:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app-auth/login"))
+Runner/VitalBridge.swift:382:        URLSession.shared.dataTask(with: request) { data, response, error in
 ```
 
 ### 1-2. Dart(폰 UI) → 서버
@@ -116,8 +116,8 @@ app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.g
 ### 현행 앱 — apps/vitalguard_app
 
 ```
-Runner/PhoneReceiver.swift:197:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-Runner/PhoneReceiver.swift:201:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
 VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()
 VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in
 VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)
