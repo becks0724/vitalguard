@@ -62,5 +62,11 @@ jobs:
       - name: 린트
         run: pnpm lint
 
+      # 의존 그래프 회귀 게이트 — 순환 개수가 기준선을 넘거나 경계 규칙을 어기면 실패한다.
+      # 판정은 scripts/graph-check.mjs 가 한다(그래프가 바뀌었다는 사실 자체는 신호가 아니다).
+      # graphviz 불필요 — JSON 만 읽는다. 실측 1.5초.
+      - name: 의존성 그래프
+        run: pnpm -C apps/dashboard-web run graph:check
+
       - name: 단위 테스트
         run: pnpm test
