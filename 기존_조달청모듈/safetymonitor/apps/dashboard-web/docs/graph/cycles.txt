@@ -1,0 +1,14 @@
+
+  error no-circular: lib/db.ts → 
+      lib/telegram.ts →
+      lib/db.ts
+    순환 의존은 초기화 순서를 정의 불가로 만들고 트리셰이킹을 막는다.
+
+  error no-circular: app/components/LoginGate.tsx → 
+      app/components/SessionKeeper.tsx →
+      app/components/LoginGate.tsx
+    순환 의존은 초기화 순서를 정의 불가로 만들고 트리셰이킹을 막는다.
+
+
+x 2 dependency violations (2 errors, 0 warnings). 286 modules, 607 dependencies cruised.
+

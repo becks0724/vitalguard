@@ -111,3 +111,13 @@ safetymonitor.db-wal
 # ─── 외형 스냅샷 HTML (SingleFile 팀 공유용 정지 산출물) ──
 # 세션마다 재생성되는 일회성 공유물 — 소스 아님, 히스토리 누적 방지 (로컬 보존)
 demo/
+
+# ─── 의존성 그래프 — 그림은 재생성물이라 커밋하지 않는다 (2026-08-21) ──
+# 이유는 용량이 아니라 **diff 가 무의미**하다는 것이다. 리뷰에서 SVG 변경분을 읽을 사람은 없고,
+# 의존이 하나만 늘어도 graphviz 가 전역 재배치를 해서 628KB 파일 전체가 바뀐 것으로 잡힌다.
+# git 은 지운 객체도 이력에 남기므로 재생성마다 그 무게가 영구 누적된다.
+# ⚠ 같은 이유로 `cycles.json`(384KB · 286 모듈 전체를 담는다)도 뺀다 —
+#   사람이 읽을 리포트는 `cycles.txt`(501B)이고, CI 판정은 `pnpm graph:check` 가 그때그때 만든다.
+# 재생성 = pnpm graph · graph:archi · graph:cycles
+apps/dashboard-web/docs/graph/*.svg
+apps/dashboard-web/docs/graph/cycles.json

@@ -9,7 +9,11 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"lib/**/*.test.ts\" \"app/**/*.test.ts\""
+    "test": "tsx --test \"lib/**/*.test.ts\" \"app/**/*.test.ts\"",
+    "graph": "depcruise app lib --output-type dot | node scripts/render-dot-svg.mjs - docs/graph/dependency-graph.svg",
+    "graph:archi": "depcruise app lib --output-type archi | node scripts/render-dot-svg.mjs - docs/graph/architecture.svg",
+    "graph:cycles": "depcruise app lib --output-type err-long > docs/graph/cycles.txt; depcruise app lib --output-type json > docs/graph/cycles.json",
+    "graph:check": "node scripts/graph-check.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1075.0",
@@ -36,6 +40,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "dependency-cruiser": "^18.2.0",
     "eslint": "^9.16.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",

@@ -51,4 +51,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // `scripts/` 는 사람이 터미널에서 돌리는 도구다 — **출력이 곧 용도**라 `no-console` 이 노이즈다.
+    // 앱 런타임(`app/`·`lib/`)에는 규칙을 그대로 둔다(거기선 console 이 진짜 흔적이다).
+    // ⚠ 경고 개수를 기준선으로 쓰려면 노이즈가 섞이면 안 된다 — 이 override 로 5건이 사라지고
+    //   남는 1건(`lib/env-alert-notify.ts:90`)은 앱 코드라 실제로 볼 값이다.
+    files: ["scripts/**/*.{js,mjs,cjs,ts}"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 );
