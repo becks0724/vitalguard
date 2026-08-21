@@ -26,7 +26,7 @@ import {
   REGIMEN_LABEL,
   workRestRegimen,
 } from "../../lib/heat-work-rest";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 import { IndoorEnvRows } from "./IndoorEnvRows";
 import { WeatherAlertToast } from "./WeatherAlertToast";
 import { WeatherIcon, weatherIconKey } from "./WeatherIcons";

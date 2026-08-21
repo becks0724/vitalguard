@@ -5,7 +5,7 @@
 // hwp/hwpx 는 파싱이 불안정하므로 감독관이 PDF 로 변환 후 업로드한다.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 type TaskTag = { tag: string; severity: number; evidence: string; source: string };
 

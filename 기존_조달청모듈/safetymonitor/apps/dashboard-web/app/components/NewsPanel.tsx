@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 
 import { formatRelativeTime, type NewsResult } from "../lib/news";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 // 매체 도메인 → 안정적인 색상(해시). 섬네일이 없어도 카드가 비어 보이지 않게 한다.
 const FALLBACK_TONES = [

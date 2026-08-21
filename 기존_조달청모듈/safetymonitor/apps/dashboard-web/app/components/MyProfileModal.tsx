@@ -9,7 +9,7 @@ import { CARRIERS, MVNO_NETS, composeCarrier, parseCarrier } from "../../lib/car
 import { companiesForOrgType } from "../../lib/companies";
 import { GUARDIAN_RELATIONS, composeGuardian, parseGuardian } from "../../lib/guardian";
 import { DEFAULT_ORG_TYPE, isOrgType, type OrgType } from "../../lib/org-type";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 

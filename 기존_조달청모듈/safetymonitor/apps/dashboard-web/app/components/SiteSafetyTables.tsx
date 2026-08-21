@@ -16,7 +16,7 @@ import {
   padDaysSince,
   padDueDays,
 } from "../../lib/aed-status";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 export type Sev = "normal" | "caution" | "danger";
 

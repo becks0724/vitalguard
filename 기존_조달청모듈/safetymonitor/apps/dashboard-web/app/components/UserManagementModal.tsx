@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { orgTypeLabel } from "../../lib/org-type";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 type User = {
   id: number;

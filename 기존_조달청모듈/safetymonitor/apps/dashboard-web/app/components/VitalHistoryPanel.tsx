@@ -20,7 +20,7 @@ import {
   RechartsActivityComboChart,
 } from "./VitalChartsRecharts";
 import { CoverageHeatmap } from "./CoverageHeatmap";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
 type Range = 1 | 7 | 30 | 60 | 365;

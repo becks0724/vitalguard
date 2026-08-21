@@ -3,7 +3,7 @@
 //   제출 시 /api/weekly-report/submit 으로 제출 이력을 DB에 영속. (검증자는 청구 수치 수정 불가 — 시공사 제출분)
 import { useEffect, useState } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 type Check = { label: string; detail: string; ok: boolean; note: string };
 type Report = {

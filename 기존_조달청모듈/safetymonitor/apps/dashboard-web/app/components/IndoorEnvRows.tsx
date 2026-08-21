@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 import { WeatherIcon } from "./WeatherIcons";
 
 // 기기 POST 주기가 5초 → 60초(12회 연속 누락)면 끊긴 것으로 본다.

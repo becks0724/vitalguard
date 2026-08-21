@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 export function ProfileGateModal({
   onClose,

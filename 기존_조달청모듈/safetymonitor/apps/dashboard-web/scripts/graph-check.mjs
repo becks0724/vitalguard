@@ -15,8 +15,10 @@
 // 사용.  pnpm graph:check
 import { execFileSync } from "node:child_process";
 
-/** 현재 존재를 인정한 순환 개수. 줄이는 방향으로만 고친다. */
-const CIRCULAR_BASELINE = 2;
+/** 현재 존재를 인정한 순환 개수. 줄이는 방향으로만 고친다.
+ *  2 → 1 (2026-08-22) — LoginGate ↔ SessionKeeper 를 ./session-token 분리로 끊었다.
+ *  남은 1건 = lib/db.ts ↔ lib/telegram.ts (한쪽이 type-only 라 런타임 순환은 아니다). */
+const CIRCULAR_BASELINE = 1;
 
 /** 위반이 하나라도 있으면 실패하는 경계 규칙. 규칙이 정해질 때마다 여기 추가한다. */
 const BOUNDARY_RULES = ["api-not-to-components"];

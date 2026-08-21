@@ -5,7 +5,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 type ActiveWarning = { type: string; level: "경보" | "주의보"; regions: string[] };
 type Preliminary = { type: string; when: string; regions: string[] };

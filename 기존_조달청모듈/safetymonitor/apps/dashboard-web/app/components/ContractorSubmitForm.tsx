@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 // 로그인 세션 토큰을 Authorization 으로 동봉 — 서버 게이트(verifyBasicAuth) 통과용. 없으면 빈 헤더(→401).
 function authHeaders(): Record<string, string> {

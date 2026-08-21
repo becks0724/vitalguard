@@ -23,7 +23,7 @@ test("history GET — 차단 관용구가 핸들러 앞에 있다(호출 존재�
 });
 
 test("패널 — 두 fetch(본 지표·심박 오버레이) 모두 세션 토큰을 동봉한다", () => {
-  assert.match(panel, /import \{ getSessionToken \} from "\.\/LoginGate"/);
+  assert.match(panel, /import \{ getSessionToken \} from "\.\/session-token"/);
   const fetches = panel.match(/fetch\(`\/api\/monitor\/vital\/history\?[^`]*`, \{ cache: "no-store", headers: authHeaders \}\)/g) ?? [];
   assert.equal(fetches.length, 2, `토큰 미동봉 history fetch 존재(동봉 ${fetches.length}/2)`);
 });

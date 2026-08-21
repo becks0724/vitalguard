@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 const WARN_BEFORE_MS = 3 * 60 * 1000; // 만료 3분 전부터 팝업
 const TICK_MS = 1000;

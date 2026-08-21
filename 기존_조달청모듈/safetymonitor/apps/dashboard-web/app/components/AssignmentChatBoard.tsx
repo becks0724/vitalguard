@@ -3,7 +3,7 @@
 // 판정은 서버 규칙 엔진(결정적), LLM(HyperCLOVA X)은 언어화만. 세션 토큰(관제 로그인) 필요.
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { clearSessionToken, getSessionToken } from "./LoginGate";
+import { clearSessionToken, getSessionToken } from "./session-token";
 import { ASSIGNMENT_CHAT_CONTRACT, type AssignmentChatContract } from "../../lib/assignment-chat-contract";
 
 // 규칙 엔진의 확정 판정 요약 — 신호등 배지는 LLM 문장이 아니라 이 값으로 그린다.

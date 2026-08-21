@@ -49,7 +49,8 @@ import {
 import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-schedule";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
-import { getSessionRole, getSessionToken, useSession } from "./LoginGate";
+import { useSession } from "./LoginGate";
+import { getSessionRole, getSessionToken } from "./session-token";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
 import {
   WorkerGpsMap,

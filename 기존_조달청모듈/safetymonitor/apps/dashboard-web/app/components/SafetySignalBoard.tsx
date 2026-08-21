@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { aedDetail, gasDetail, type LampDetail } from "./SiteSafetyTables";
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 function formatTodayBoardDate() {
   const now = new Date();
