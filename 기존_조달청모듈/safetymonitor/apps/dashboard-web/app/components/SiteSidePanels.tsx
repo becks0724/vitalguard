@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from "react";
 
+import FitToViewport from "./FitToViewport";
 import { HospitalPanel } from "./HospitalPanel";
 import { RadarRealtime } from "./RadarRealtime";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
@@ -160,6 +161,13 @@ function Handle({
 // 레이더·태풍·영상·병원은 원래 420px 폭 캐러셀 콘텐츠다. 폭만 296px 로 줄이면 지도·영상이 뭉개지므로
 // 네이티브 크기(420×360)로 렌더한 뒤 transform: scale 로 비율 그대로 축소해 좌측 여백 안에 넣는다
 // (현장 환경·안전 신호등과 같은 296px 경계를 넘지 않게 — 사용자 요청).
+// 고정 패널은 top-44(176px)에서 시작하고 아래 32px 를 비운다 — 쓸 수 있는 높이 = 100vh − 208px.
+// ⚠ 이 값을 두 곳이 함께 쓴다(넘침 한계 · 오토리사이징 기준). 손으로 두 번 적으면 반드시 갈리고,
+//   갈리면 축소가 덜 되거나(스크롤 잔존) 과해진다(공백 낭비). 그래서 한 곳에서 낸다.
+const PANEL_TOP_PX = 176; // = top-44
+const PANEL_BOTTOM_GAP_PX = 32;
+const PANEL_GUTTER_PX = PANEL_TOP_PX + PANEL_BOTTOM_GAP_PX;
+
 const PANEL_W = 296;
 // 네이티브 폭을 420 → 340 으로 줄였다. 두 가지를 동시에 해결한다 —
 //  ① 레이더는 정사각(min(가로,세로))으로 맞춰지므로 폭이 넓을수록 좌우 여백만 커진다.
@@ -284,10 +292,16 @@ export function SiteSidePanels({
             </button>
           )}
           {/* 화면이 낮으면 패널 아래쪽이 잘려 손댈 수 없다(실내 현장 환경이 붙으며 실제로 발생).
-              top-44(176px) + 아래 여백 32px 를 뺀 높이로 제한하고 넘치면 스크롤한다.
+              top-44(176px) + 아래 여백 32px 를 뺀 높이로 제한한다.
+              ★ 현장 환경은 여기서 한 겹 더 — 넘치면 스크롤 대신 zoom 으로 축소해 한 화면에 담는다
+                (FitToViewport). 축소가 끝까지 못 가는 극단(아주 낮은 창)에서만 이 스크롤이 남으므로
+                최악이어도 종전 동작이고, 위 주석이 적은 '잘림'으로는 되돌아가지 않는다.
               닫기 버튼은 이 박스 밖에 둔다 — 안에 넣으면 overflow 가 모서리 밖 위치를 잘라낸다. */}
-          <div className="max-h-[calc(100vh-13rem)] overflow-y-auto">
+          <div style={{ maxHeight: `calc(100vh - ${PANEL_GUTTER_PX}px)` }} className="overflow-y-auto">
+          {/* 오토리사이징은 현장 환경에만 건다. 레이더·태풍·영상·병원은 Framed 가 높이를 313px 로
+              못박아 넘칠 수 없고, 안전 신호등은 별도 판단 대상이다(지금 동작 그대로 = 스크롤). */}
           {open === "env" && (
+            <FitToViewport gutterPx={PANEL_GUTTER_PX}>
             <WeatherStrip
               lat={lat}
               lon={lon}
@@ -301,6 +315,7 @@ export function SiteSidePanels({
               showAlertToast={pinned === "env"}
               layout="list"
             />
+            </FitToViewport>
           )}
           {open === "signal" && <SafetySignalBoard lat={lat} lon={lon} worker={worker} />}
           {/* 아래 넷은 캐러셀 헤더가 제목을 주던 컴포넌트라 여기서 박스·제목을 씌운다. */}

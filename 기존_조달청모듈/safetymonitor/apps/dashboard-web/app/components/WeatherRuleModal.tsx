@@ -1,6 +1,8 @@
 // 기상 항목 클릭 시 노출 — 정책 임계 단계 + 현재 적용 단계 + 권고 조치 + 법적 근거
 "use client";
 
+import { createPortal } from "react-dom";
+
 import {
   BINDING_LABEL,
   SEVERITY_BADGE_CLASS,
@@ -42,7 +44,12 @@ export function WeatherRuleModal({ evaluation, forecast, onClose }: Props) {
   const { itemKey, itemLabel, currentValue, currentSeverity, currentStep, steps, baseline, notes } =
     evaluation;
 
-  return (
+  // ⚠ body 로 포털한다 — 이 모달을 띄우는 현장 환경 패널이 `zoom`(FitToViewport)으로 축소되고,
+  //   zoom 안의 position:fixed 는 기준이 뷰포트가 아니라 **축소된 좌표계**로 바뀐다. 패널 안에
+  //   그대로 두면 전체 화면 오버레이가 패널 폭(296px)으로 쪼그라든다. 포털을 되돌리지 말 것.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -136,7 +143,8 @@ export function WeatherRuleModal({ evaluation, forecast, onClose }: Props) {
           </footer>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

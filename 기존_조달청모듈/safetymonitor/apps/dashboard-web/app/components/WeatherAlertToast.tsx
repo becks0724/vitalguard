@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import {
   SEVERITY_BADGE_CLASS,
@@ -45,7 +46,12 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
     : "border-amber-500/70 dark:border-amber-500/50";
 
   // SOS 팝업처럼 화면 중앙 모달 — 배경 클릭/ESC/닫기 버튼으로 해제, 60초 자동 닫힘.
-  return (
+  // ⚠ body 로 포털한다 — 이 모달을 띄우는 현장 환경 패널이 `zoom`(FitToViewport)으로 축소되고,
+  //   zoom 안의 position:fixed 는 기준이 뷰포트가 아니라 **축소된 좌표계**로 바뀐다. 패널 안에
+  //   그대로 두면 전체 화면 오버레이가 패널 폭(296px)으로 쪼그라든다. 포털을 되돌리지 말 것.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -148,6 +154,7 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
         </p>
       </div>
       </FitToViewport>
-    </div>
+    </div>,
+    document.body,
   );
 }
