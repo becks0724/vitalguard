@@ -1,7 +1,7 @@
 // PostgreSQL 영속 저장소 — vital sample 무한 축적 + CCTV·안전관리비 데이터 (산업재해 자료 제출 대비).
 // 캠퍼스 Postgres(DATABASE_URL). better-sqlite3(동기) → pg(비동기) 전환 — GCP Cloud Run 대비.
 // 모든 공개 함수는 async. 스키마는 첫 쿼리 시 멱등 생성(ensureSchema, CREATE TABLE IF NOT EXISTS).
-import pg, { Pool } from "pg";
+import pg, { Pool, type PoolClient } from "pg";
 import { VitalSampleSchema, type VitalDataOrigin, type VitalSample, type CctvFallEvent } from "@safetymonitor/schemas";
 
 import {
@@ -121,7 +121,57 @@ export type MobileAppSessionRow = {
 const globalForDb = globalThis as typeof globalThis & {
   __safetyMonitorPgPool?: Pool;
   __safetyMonitorSchemaReady?: Promise<void>;
+  __safetyMonitorPoolWarmer?: ReturnType<typeof setInterval>;
 };
+
+// ── 웜 바닥 유지 (2026-08-22) ─────────────────────────────────────────────
+// ★ 실패는 **새 물리 접속에만** 붙는다. 실측 —
+//   · 웜 재사용 22ms · 실패 0/104
+//   · 새 접속은 간헐적으로 5초(connectionTimeoutMillis)를 넘겨 500
+//   · ★ 지연 분포가 **0.5~4.9초 구간에서 0건**(웜 <50ms 80 · 50~500ms 24 · ≥4.9s 10)
+//     ⟹ 그 경로는 느린 게 아니라 **멎는다**. 그래서 타임아웃 상향은 답이 아니다.
+// 반증된 가설 = 버스트 동시성(17건 버스트 실패 0 · 6건 버스트 실패 1) · DNS 라운드로빈(A 1개) ·
+//               Cloud NAT 포트 소진(오류 로그 활성인데 24h 0건) · 인스턴스 교체(전부 동일 인스턴스).
+// 남은 원인 구간(캠퍼스 방화벽/MTU 계열)은 우리 통제면 밖이라, 여기서 할 수 있는 유일한 레버는
+// **새 접속을 만드는 횟수를 줄이는 것**이다(idleTimeout 30→90s 가 그 절반을 했다 · 0.90→0.45/분).
+//
+// ⚠ 이건 원인 제거가 아니라 **노출 감소**다. 그리고 핵심은 횟수만이 아니라 **위치**다 —
+//   접속 생성을 배경으로 옮기면 거기서 멎어도 **사용자 요청은 죽지 않는다**.
+const WARM_FLOOR = 8; // 매분 버스트 동시 6~8 실측(aed 3종·gaspod·monitor/vital·calendar/media)
+const WARM_INTERVAL_MS = 30_000; // 폴링 60초보다 짧게 — 버스트가 오기 전에 바닥이 차 있어야 한다
+
+// 유휴가 있으면 그것을 잡고, 없으면 새로 만든다. 전부 붙잡고 있어야 실제로 생성이 일어난다
+// (하나씩 잡았다 놓으면 같은 커넥션만 재사용되어 바닥이 안 찬다).
+// ⚠ 순차로 만든다 — 동시에 여러 개를 열면 우리가 문제의 버스트를 재현하는 꼴이 된다.
+async function warmPool(pool: Pool): Promise<void> {
+  const held: PoolClient[] = [];
+  const before = pool.totalCount;
+  try {
+    while (pool.totalCount < WARM_FLOOR && held.length < WARM_FLOOR) {
+      held.push(await pool.connect());
+    }
+  } catch {
+    // 멎거나 실패해도 삼킨다 — 요청 경로가 아니므로 사용자에게 전파되지 않는다.
+    // (여기서 throw 하면 unhandled rejection 으로 프로세스가 죽는다.)
+  } finally {
+    for (const c of held) c.release();
+  }
+  const created = pool.totalCount - before;
+  if (created > 0) {
+    console.log(`[db] 웜 바닥 +${created} → total=${pool.totalCount} idle=${pool.idleCount}`);
+  }
+}
+
+// ⚠ Cloud Run 은 요청 처리 중에만 CPU 를 준다(cpu-throttling 기본). 트래픽이 없으면 이 타이머는
+//   거의 안 돈다 — 그래도 맞다. 트래픽이 없으면 버스트도 없기 때문이다.
+function startPoolWarmer(pool: Pool): void {
+  if (globalForDb.__safetyMonitorPoolWarmer) return;
+  const timer = setInterval(() => {
+    void warmPool(pool);
+  }, WARM_INTERVAL_MS);
+  timer.unref?.(); // 프로세스 종료를 붙잡지 않는다
+  globalForDb.__safetyMonitorPoolWarmer = timer;
+}
 
 // 단일 Pool(HMR/serverless 안전) — SSL 여부는 DATABASE_URL 파라미터가 정한다(코드는 그대로 전달).
 // ★ 현행(2026-08-13 전수 조사): 프로덕션 시크릿 v4 = `uselibpqcompat=true&sslmode=require`(아래 ②안)
@@ -180,6 +230,7 @@ function getPool(): Pool {
       console.error("[db] PG 풀 유휴 커넥션 오류", err);
     });
     globalForDb.__safetyMonitorPgPool = pool;
+    startPoolWarmer(pool);
   }
   return globalForDb.__safetyMonitorPgPool;
 }
