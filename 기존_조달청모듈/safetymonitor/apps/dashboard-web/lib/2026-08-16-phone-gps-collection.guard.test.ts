@@ -44,6 +44,10 @@ const radius = readFileSync(join(ROOT, "lib", "site-radius.ts"), "utf8");
 const dashboard = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
 const db = readFileSync(join(ROOT, "lib", "db.ts"), "utf8");
 const schema = readFileSync(join(ROOT, "..", "..", "packages", "schemas", "src", "vital-stream.ts"), "utf8");
+// 읽는 경로(4중주의 넷째) — 컬럼이 SELECT 에 있고, 순수 유틸을 지나, 화면에 닿는가.
+const trackLib = readFileSync(join(ROOT, "app", "lib", "track.ts"), "utf8");
+const trackRoute = readFileSync(join(ROOT, "app", "api", "monitor", "track", "route.ts"), "utf8");
+const gpsMap = readFileSync(join(ROOT, "app", "components", "WorkerGpsMap.tsx"), "utf8");
 
 /**
  * 줄 주석을 걷어낸 코드 본문.
@@ -149,22 +153,64 @@ test("⑥ ★ 좌표 4종을 한 덩어리로 싣는다(정확도·측위시각 
   }
 });
 
-test("⑦ ★ 정확도가 스키마·DB·앱 3자에 함께 산다(무음 strip 재발 방지)", () => {
-  assert.match(
-    schema,
-    /locationAccuracyMeters: z\.number\(\)/,
-    "스키마에서 사라졌다 — Zod 가 무음 strip 해 raw_json 에도 안 남는다(BND-CONTRACT-01)",
-  );
-  assert.match(
-    db,
-    /ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;/,
-    "DB 컬럼 마이그레이션이 사라졌다",
-  );
-  assert.match(
-    db,
-    /location_accuracy_m: sample\.locationAccuracyMeters \?\? null,/,
-    "insert 매핑이 사라졌다 — 컬럼만 있고 값이 안 들어간다",
-  );
+test("⑦ ★ 좌표 메타 2종이 스키마·컬럼·insert·**읽는 경로** 4중주로 산다", () => {
+  // ★ 왜 3중주가 아니라 4중주인가 (2026-08-21).
+  //   이 테스트는 원래 스키마·ALTER·insert 셋만 봤다. 그런데 그 셋이 다 초록인 채로
+  //   `location_accuracy_m` 은 **읽는 SELECT 0건 · 화면 0건** 이었다 — 값은 6주간 DB 에
+  //   쌓이기만 하고 아무도 안 봤다. 가드가 초록이라 아무도 의심하지 않았다.
+  //   ⟹ 결함을 가드로 고정하면 결함이 규범이 된다. 넷째 다리를 여기서 세운다.
+  //   넷째의 정의 = **SELECT 에 있고 · 순수 유틸을 지나 · 사람 눈에 닿는 지점에 쓰인다.**
+  const legs = [
+    {
+      what: "정확도",
+      schemaRe: /locationAccuracyMeters: z\.number\(\)/,
+      alterRe: /ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;/,
+      insertRe: /location_accuracy_m: sample\.locationAccuracyMeters \?\? null,/,
+      selectKey: "location_accuracy_m",
+      // ⚠ 약한 단언 금지 — `/accM/` 만 보면 **주석에 이름만 남아도 통과**한다(작성 중 변이시험에서
+      //   실제로 살아남았다). 타입 선언 + 요약에서의 소비 + 화면에서의 소비를 각각 못 박는다.
+      libRes: [/accM: number \| null/, /p\.accM/],
+      screenRes: [/trail\.quality\.accuracyMedianM/],
+    },
+    {
+      what: "측위 시각",
+      schemaRe: /locationTimestamp: z\.string\(\)\.datetime\(\)/,
+      alterRe: /ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_timestamp TEXT;/,
+      insertRe: /location_timestamp: sample\.locationTimestamp \?\? null,/,
+      selectKey: "location_timestamp",
+      libRes: [/fixTs: string \| null/, /p\.fixTs/],
+      screenRes: [/trail\.quality\.fixAgeMaxSec/],
+    },
+  ] as const;
+
+  for (const leg of legs) {
+    assert.match(schema, leg.schemaRe, `${leg.what}: 스키마에서 사라졌다 — Zod 가 무음 strip 한다`);
+    assert.match(db, leg.alterRe, `${leg.what}: DB 컬럼 마이그레이션이 사라졌다`);
+    assert.match(db, leg.insertRe, `${leg.what}: insert 매핑이 사라졌다 — 컬럼만 있고 값이 안 들어간다`);
+    // ★ 넷째 — 읽는 경로. 이 셋 중 하나만 빠져도 컬럼은 쓰기 전용으로 되돌아간다.
+    assert.match(
+      db,
+      new RegExp(`SELECT[^\`]*${leg.selectKey}[^\`]*FROM vital_samples`),
+      `${leg.what}: 어떤 SELECT 에도 없다 — 쓰기 전용 컬럼이다`,
+    );
+    // 주석에 이름만 남는 것을 막으려고 코드 본문에서만 찾는다.
+    const libCode = codeOnly(trackLib);
+    const screenCode = codeOnly(gpsMap);
+    for (const re of leg.libRes) {
+      assert.match(libCode, re, `${leg.what}: 트랙 유틸이 안 실어 나른다 (${re})`);
+    }
+    for (const re of leg.screenRes) {
+      assert.match(screenCode, re, `${leg.what}: 화면에 닿지 않는다 — 사람이 못 본다 (${re})`);
+    }
+  }
+
+  // 요약은 **솎기 전** 점으로 내야 한다. 뒤로 밀리면 240점 표본의 분포를 전체로 보고하게 된다.
+  const routeCode = codeOnly(trackRoute);
+  const sumAt = routeCode.indexOf("summarizeTrackQuality(");
+  const downAt = routeCode.indexOf("downsampleTrack(");
+  assert.ok(sumAt >= 0, "라우트가 품질 요약을 안 낸다");
+  assert.ok(downAt >= 0, "라우트가 다운샘플을 안 한다 — 이 검사의 전제가 깨졌다");
+  assert.ok(sumAt < downAt, "요약이 다운샘플 뒤에 있다 — 표본의 분포를 전체로 보고하게 된다");
 });
 
 test("⑧ ★ 근무 중에만 추적한다(상시 추적 금지)", () => {

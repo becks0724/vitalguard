@@ -83,7 +83,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, type TrackPoint } from "../lib/track";
+import { TRACK_WINDOW_MIN, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -4556,6 +4556,8 @@ export function DemoDashboard() {
   // 이동 경로 트레일 — 지도 마커 클릭으로 토글된 작업자 + 서버 조회 좌표 시계열.
   const [trailWorkerId, setTrailWorkerId] = useState<string | null>(null);
   const [trailPoints, setTrailPoints] = useState<TrackPoint[] | null>(null);
+  // 좌표 품질 요약 — 서버가 **솎기 전** 점으로 계산해 준다(점별이 아니라 구간 하나에 한 벌).
+  const [trailQuality, setTrailQuality] = useState<TrackQuality | null>(null);
   // 위험구역(진입 금지 존) — 서버 등록 존 + 진입 확정 워커×존 키(`workerId|zoneId`) + 팝업/ack.
   const [dangerZones, setDangerZones] = useState<MapZone[]>([]);
   const [activeZoneAlert, setActiveZoneAlert] = useState<{
@@ -4975,6 +4977,7 @@ export function DemoDashboard() {
   useEffect(() => {
     if (!trailWorkerId || workerView !== "map") {
       setTrailPoints(null);
+      setTrailQuality(null);
       return;
     }
     let alive = true;
@@ -4985,8 +4988,16 @@ export function DemoDashboard() {
           headers: token ? { authorization: `Bearer ${token}` } : {},
           cache: "no-store",
         });
-        const j = (await res.json()) as { ok?: boolean; points?: TrackPoint[] };
-        if (alive && res.ok && j.ok && Array.isArray(j.points)) setTrailPoints(j.points);
+        const j = (await res.json()) as {
+          ok?: boolean;
+          points?: TrackPoint[];
+          quality?: TrackQuality;
+        };
+        if (alive && res.ok && j.ok && Array.isArray(j.points)) {
+          setTrailPoints(j.points);
+          // 요약이 없으면 옛 서버다 — 비워서 화면이 "모름" 으로 그리게 한다(0 으로 위장 금지).
+          setTrailQuality(j.quality ?? null);
+        }
       } catch {
         // 트레일은 보조 표시 — 일시 실패 시 직전 경로 유지
       }
@@ -6604,6 +6615,7 @@ export function DemoDashboard() {
                                 latestMap.get(trailWorkerId)?.workerName ?? trailWorkerId,
                               windowMin: TRACK_WINDOW_MIN,
                               points: trailPoints ?? [],
+                              quality: trailQuality,
                             }
                           : undefined
                       }

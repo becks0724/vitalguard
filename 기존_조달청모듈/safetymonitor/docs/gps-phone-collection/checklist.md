@@ -315,8 +315,67 @@ from vital_samples where session_end_seen_at is not null order by session_end_se
 
 ### 남은 것
 
-- [ ] **D-1 `locationTimestamp` DB 저장** — 스키마·컬럼·매핑 트리오. 지금은 인메모리 링에만 살아서
-      **이력 재생·트레일에는 좌표 나이가 없다.** D-2 의 전제이기도 하다.
+### D-1 좌표 메타를 DB 에 남기고 이력에서 읽는다 (08-21 착수 · 범위 정정)
+
+⚠ **체크리스트에 적혀 있던 "스키마·컬럼·매핑 트리오" 는 범위를 과소평가한 것이었다.**
+그대로 하면 네 번째 **쓰기 전용 컬럼**이 된다 — `location_accuracy_m` 이 이미 그 상태다
+(`db.ts:312` ALTER · `:952` insert · 읽는 SELECT **0건** · 화면 **0건**).
+가드 ⑦ 이 쓰는 쪽 3곳만 정규식으로 고정해 **그 상태를 초록으로 지켜 주고 있다.**
+
+```
+필드                      앱  zod  컬럼  insert  읽음  화면
+latitude / longitude      ✓   ✓    ✓     ✓      ✓     ✓
+locationAccuracyMeters    ✓   ✓    ✓     ✓      ✗     ✗   ← 쓰기 전용
+locationTimestamp         ✓   ✓    ✗     ✗      ✗     라이브만
+```
+
+**결정**(사용자 08-21) — 표시는 **이력 상세 패널 한 곳**에만. 트레일 점별 표기는 하지 않는다.
+정확도도 함께 살린다(같은 SELECT 라 따로 하면 또 잊힌다).
+
+**읽는 경로의 종점** = `WorkerGpsMap.tsx` 경로 칩(`경로: 이름 · 최근 N분`). 트레일을 켰을 때만 뜬다.
+
+```
+db.ts listWorkerTrack   SELECT … location_timestamp, location_accuracy_m
+  ↓ TrackRow            + 두 필드
+app/lib/track.ts        sanitizeTrack 이 실어 나름 + summarizeTrackQuality(순수 함수)
+  ↓ /api/monitor/track  quality 를 응답에 (요약은 **다운샘플 이전** 점으로 낸다)
+  ↓ DemoDashboard       trail prop 으로 전달
+  ↓ WorkerGpsMap:838    경로 칩에 한 줄
+```
+
+⚠ 요약을 다운샘플 **이전**에 내는 이유 — `downsampleTrack` 이 240점으로 솎으므로 이후에 세면
+실제 분포가 아니라 표본의 분포를 재게 된다(오늘 이 트랙에서 다섯 번 난 형태와 같다).
+
+⚠ `FIX_STALE_SEC`(300)은 **옮기지 않는다.** 서버 요약은 임계 없이 `fixAgeMaxSec`(최대 지연)만 내고,
+색칠은 컴포넌트가 기존 상수로 한다. 옮기면 `2026-08-20-gps-stationary-refresh.guard.test.ts` 의
+앱-관제 상수 일치 가드가 깨진다.
+
+- [x] ① `db.ts` ALTER `location_timestamp TEXT` (`:312` 옆)
+- [x] ② `db.ts` insert 매핑 (`:952` 옆)
+- [x] ③ `db.ts` `TrackRow` 타입 + `listWorkerTrack` SELECT 에 두 컬럼
+- [x] ④ `app/lib/track.ts` — `TrackPoint` 확장 · `summarizeTrackQuality` 순수 함수 + 단위 테스트
+- [x] ⑤ `/api/monitor/track` 응답에 `quality`
+- [x] ⑥ `DemoDashboard` → `WorkerGpsMap` 전달 · 경로 칩 렌더
+- [x] ⑦ ★ 가드 ⑦ 을 **3중주 → 4중주**(스키마·컬럼·insert·**읽는 경로**)로 확장.
+      정확도·측위시각 둘 다. 이 확장이 이 결함 계열의 구조적 해법이다.
+- [x] ⑧ `/verify` — typecheck 통과 · lint 0 errors(경고 1건은 기존 `env-alert-notify.ts:90`)
+      · 테스트 **1149/1149**
+- [x] ⑨ **변이 시험 10/10** — 가드가 실제로 잡는지 확인. 통과만 보고 넘기지 않는다.
+      ⚠ 1차 하네스가 zsh 단어분할 때문에 백업·복원이 조용히 실패해 변이 10개가 누적됐다.
+      HEAD 에서 4파일을 되돌리고 편집을 재적용해 복구. **다음부터 변이 전에 백업 존재·내용
+      일치를 검증하고 시작한다**(`cmp -s` 통과 전에는 변이 금지).
+      ⚠ 1차에서 살아남은 변이 2건이 하필 새로 세운 "읽는 경로" 다리였다 — `/accM/` 같은
+      맨이름 단언은 **주석에 이름만 남아도 통과**한다. 타입 선언 + 소비 지점을 각각 못 박도록
+      고쳤다(`codeOnly()` 로 주석 제거 후 검사).
+- [ ] ⑩ 사용자 `/deploy` — 배포가 곧 마이그레이션(`ensureSchema` 가 첫 쿼리에 ALTER 실행)
+- [ ] ⑪ 배포 후 라이브 확인 — 지도에서 작업자 마커 클릭 → 경로 칩 아래 좌표 품질 줄.
+      ⚠ 배포 직후에는 `미상 N점` 만 뜨는 것이 정상이다(기존 행은 전부 NULL). 새 샘플이
+      쌓여야 `최대 지연`·`정확도 중앙` 이 나온다.
+
+**과거 데이터** — 기존 행은 `location_timestamp` 가 NULL 이다. 배포 이전 구간의 좌표 나이는
+영영 "알 수 없음" 이고, 요약의 `unknownFix` 가 그 수를 그대로 보여준다(0 으로 위장하지 않는다).
+
+**앱 무변경** ⟹ 재설치 없음 ⟹ C-1 표본 보존.
 - [ ] **D-2 인메모리 링 소실** — 재기동마다 좌표 기억이 사라진다(`store.ts:57` 초기화 · DB 재구성 경로 0건).
       ② 로 복구가 최대 80분 → 약 4분이 됐지만 구조는 그대로.
 - [ ] **D-3 계단 감지 0단계** — ⚠ 워치 `Info.plist` 에 `NSMotionUsageDescription` 이 없어

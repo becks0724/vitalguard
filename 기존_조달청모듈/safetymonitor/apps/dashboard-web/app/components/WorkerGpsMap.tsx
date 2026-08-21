@@ -5,6 +5,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { TrackQuality } from "../lib/track";
+
 export type WorkerMapPoint = {
   workerId: string;
   name: string;
@@ -40,6 +42,11 @@ export type WorkerTrail = {
   name: string;
   windowMin: number;
   points: { lat: number; lon: number }[];
+  /**
+   * 이 구간 좌표의 품질 요약 — 서버가 **솎기 전** 점으로 계산해 보내준다.
+   * null = 옛 서버이거나 아직 안 왔다. 없는 것을 0 으로 그리지 않는다.
+   */
+  quality?: TrackQuality | null;
 };
 
 // 위험구역(진입 금지 존) — 서버 등록분 표시 + 권한있음 계정의 배치/삭제 편집.
@@ -101,6 +108,12 @@ function ageLabel(ageSec: number | null): string {
   if (ageSec === null) return "--";
   if (ageSec < 60) return `${ageSec}초 전`;
   return `${Math.floor(ageSec / 60)}분 전`;
+}
+
+// 길이(지연·지속)를 말한다 — `ageLabel` 과 달리 "전" 을 안 붙인다. 시점이 아니라 구간이다.
+function durLabel(sec: number): string {
+  if (sec < 60) return `${sec}초`;
+  return `${Math.floor(sec / 60)}분`;
 }
 
 type View = { center: { lat: number; lon: number }; zoom: number };
@@ -845,6 +858,40 @@ export function WorkerGpsMap({
               >
                 ✕
               </button>
+            </div>
+          )}
+
+          {/* 좌표 품질 — 이 경로를 얼마나 믿을 수 있는가. 점별이 아니라 구간에 한 줄이다.
+              ★ 트레일은 좌표가 같으면 "가만히 서 있었다" 로 그려진다. 그런데 서버가 좌표를
+                직전 값에서 이어 주므로(store sticky merge), 실제로는 **측위가 오래된 것**일 수
+                있다. 최대 지연이 앱 신선도 상한을 넘으면 그 구간에 이어 붙인 좌표가 있다는 뜻이다. */}
+          {trail && trail.quality && trail.quality.points > 0 && (
+            <div className="rounded-pill bg-black/45 px-2.5 py-0.5 text-[10px] font-normal text-zinc-300 backdrop-blur">
+              좌표 {trail.quality.points}점
+              {trail.quality.accuracyMedianM !== null &&
+                ` · 정확도 중앙 ±${Math.round(trail.quality.accuracyMedianM)}m`}
+              {" · "}
+              <span
+                title={
+                  trail.quality.fixAgeMaxSec !== null && trail.quality.fixAgeMaxSec >= FIX_STALE_SEC
+                    ? `앱 신선도 상한 ${FIX_STALE_SEC}초를 넘는 좌표가 있다 — 서버가 이어 붙인 값이다`
+                    : "전송 시각과 측위 시각의 최대 차이"
+                }
+                className={
+                  trail.quality.fixAgeMaxSec !== null && trail.quality.fixAgeMaxSec >= FIX_STALE_SEC
+                    ? "text-amber-300"
+                    : ""
+                }
+              >
+                {trail.quality.fixAgeMaxSec === null
+                  ? "측위 시각 미상"
+                  : `최대 지연 ${durLabel(trail.quality.fixAgeMaxSec)}`}
+              </span>
+              {trail.quality.unknownFix > 0 && (
+                <span className="text-zinc-400" title="측위 시각을 저장하기 전에 쌓인 구간이다">
+                  {` · 미상 ${trail.quality.unknownFix}점`}
+                </span>
+              )}
             </div>
           )}
         </div>

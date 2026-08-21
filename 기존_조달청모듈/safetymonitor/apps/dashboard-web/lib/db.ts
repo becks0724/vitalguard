@@ -310,6 +310,11 @@ async function initSchema(): Promise<void> {
     -- 이게 없으면 latitude/longitude 가 ±5m 인지 ±1,500m 인지 구분할 수 없다. 구 앱이 이미
     -- 보내고 있었는데 스키마에 없어 전량 무음 폐기됐다(BND-CONTRACT-01 계열).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;
+    -- location_timestamp = 좌표를 **측위한** 시각(ts 는 전송 시각이라 다르다).
+    -- 서버가 좌표 없는 샘플에 직전 좌표를 이어 붙이므로(store.ts sticky merge), 이 값이 없으면
+    -- 심박이 5초 전이어도 좌표는 40분 전 것일 수 있다는 사실을 **이력에서는 알 수 없다**.
+    -- ts 와 같은 ISO-UTC TEXT — 두 값의 차가 곧 그 좌표의 나이다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS location_timestamp TEXT;
     CREATE INDEX IF NOT EXISTS idx_vs_data_origin_ts ON vital_samples(data_origin, ts DESC);
 
     -- ts 는 TEXT 라 ORDER BY·범위비교·MAX 가 전부 문자열 비교로 돈다. 고정폭 ISO-UTC 는
@@ -950,6 +955,8 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     longitude: sample.longitude ?? null,
     // 좌표 품질 — 없으면 위 두 값이 얼마나 믿을 만한지 판정할 근거가 사라진다.
     location_accuracy_m: sample.locationAccuracyMeters ?? null,
+    // 좌표 나이 — ts 와의 차가 "이 좌표가 언제 것인가". 이어 붙인 좌표를 이력에서 가른다.
+    location_timestamp: sample.locationTimestamp ?? null,
     hrv_sdnn_ms: sample.hrvSdnnMs ?? null,
     resting_heart_rate: sample.restingHeartRate ?? null,
     active_energy_kcal: sample.activeEnergyKcal ?? null,
@@ -1841,7 +1848,15 @@ export async function listWorkerAliases(): Promise<WorkerAliasRow[]> {
 }
 
 // ── 작업자 이동 경로(트랙) ──────────────────────────────────────────────────
-export type TrackRow = { ts: string; latitude: number | null; longitude: number | null };
+export type TrackRow = {
+  ts: string;
+  latitude: number | null;
+  longitude: number | null;
+  /** 측위 시각(ISO-UTC). `ts` 와의 차가 그 좌표의 나이다. null = 이 컬럼 도입 이전 행. */
+  location_timestamp: string | null;
+  /** 수평 정확도(m). null = 미보고. */
+  location_accuracy_m: number | null;
+};
 
 // 지도 트레일용 좌표 시계열 — 좌표 보유 행만 ts 오름차순(ts 는 ISO-UTC TEXT 라 문자열 비교 = 시간 비교).
 export async function listWorkerTrack(
@@ -1851,7 +1866,7 @@ export async function listWorkerTrack(
 ): Promise<TrackRow[]> {
   if (workerIds.length === 0) return [];
   const { rows } = await q<TrackRow>(
-    `SELECT ts, latitude, longitude FROM vital_samples
+    `SELECT ts, latitude, longitude, location_timestamp, location_accuracy_m FROM vital_samples
       WHERE worker_id = ANY($1) AND ts >= $2
         AND latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY ts ASC LIMIT $3`,

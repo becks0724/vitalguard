@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { getWorkerAliasMap, listWorkerTrack } from "../../../../lib/db";
-import { downsampleTrack, sanitizeTrack, TRACK_WINDOW_MIN } from "../../../lib/track";
+import {
+  downsampleTrack,
+  sanitizeTrack,
+  summarizeTrackQuality,
+  TRACK_WINDOW_MIN,
+} from "../../../lib/track";
 
 export async function GET(request: Request) {
   if (!verifyBasicAuth(request)) {
@@ -29,10 +34,14 @@ export async function GET(request: Request) {
 
   const since = new Date(Date.now() - mins * 60_000).toISOString();
   const rows = await listWorkerTrack(ids, since);
-  const points = downsampleTrack(sanitizeTrack(rows));
+  const all = sanitizeTrack(rows);
+  // ★ 요약은 **솎기 전** 점으로 낸다. `downsampleTrack` 이 240점으로 줄이므로 뒤에서 세면
+  //   실제 분포가 아니라 표본의 분포를 재게 된다 — 한 점뿐인 큰 지연이 통째로 사라진다.
+  const quality = summarizeTrackQuality(all);
+  const points = downsampleTrack(all);
 
   return NextResponse.json(
-    { ok: true, workerId, mins, points },
+    { ok: true, workerId, mins, points, quality },
     { headers: { "cache-control": "no-store" } },
   );
 }
