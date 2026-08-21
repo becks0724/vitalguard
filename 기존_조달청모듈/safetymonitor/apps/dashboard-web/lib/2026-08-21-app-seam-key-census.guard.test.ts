@@ -101,21 +101,21 @@ test("★ A 계약 — 워치가 싣는 샘플 키 집합 == 계약 목록 == �
   );
 });
 
-test("A 봉투 — type·seq·samples 가 양끝에 있고, sentAt 은 기록된 쓰기 전용이다", () => {
+test("A 봉투 — type·seq·sentAt·samples 네 개가 양끝에 있다", () => {
   const w = bare(watch);
   assert.match(w, /"type": "hrBatch"/, "워치 봉투 type 소실");
   assert.match(w, /"seq": seq/, "워치 봉투 seq 소실");
   assert.match(w, /"samples": pendingSamples/, "워치 봉투 samples 소실");
   assert.match(bare(receiver), /payload\["type"\] as\? String == "hrBatch"/, "폰 type 분기 소실");
   assert.match(bare(pipeline), /payload\["samples"\] as\?/, "폰 samples 읽기 소실");
-  // sentAt(워치 전송 시각)은 현재 **아무도 안 읽는다** — 결함 기록이지 규범이 아니다.
-  // 읽는 경로를 만들거나 워치에서 빼는 결정이 대기 중(findings A-1 · 워치 변경은 08-26 창).
-  // 어느 쪽으로 바뀌든 여기가 빨개져서 그 결정을 같은 커밋에 싣게 한다.
-  assert.match(w, /"sentAt": Date\(\)/, "워치 봉투 sentAt 소실 — 뺐다면 findings A-1 결정과 함께");
-  assert.doesNotMatch(
-    bare(pipeline) + bare(receiver),
-    /payload\["sentAt"\]/,
-    "폰이 sentAt 을 읽기 시작했다 — findings A-1 의 ⓐ를 택했다면 이 가드도 계약으로 갱신할 것",
+  // sentAt — 2026-08-21 사용자 결정 ⓐ(findings A-1)로 폰이 읽는다. 도착 시각과의 차가
+  // 워치→폰 전달 지연이고 설정 진단 "전달 지연" 줄이 소비자다. 쓰기 전용이던 시절의
+  // doesNotMatch 를 이 존재 단언으로 뒤집었다 — 읽기가 사라지면 그 줄이 조용히 죽는다.
+  assert.match(w, /"sentAt": Date\(\)/, "워치 봉투 sentAt 소실 — 전달 지연 진단의 원천");
+  assert.match(
+    bare(receiver),
+    /payload\["sentAt"\] as\? Double/,
+    "폰 sentAt 읽기 소실 — 설정의 전달 지연 표시가 값 없이 조용히 사라진다",
   );
 });
 

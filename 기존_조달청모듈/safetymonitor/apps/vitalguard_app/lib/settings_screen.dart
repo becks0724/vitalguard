@@ -106,6 +106,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return h < 24 ? '$h시간 ${m % 60}분 전' : '${h ~/ 24}일 전';
   }
 
+  /// 워치→폰 전달 지연 표기 — 정상 0~5초, 단절 복귀 직후엔 분 단위가 나온다.
+  /// 음수는 워치·폰 시계 오차이지 미래 배달이 아니므로 0 으로 접는다(네이티브 주석 참조).
+  static String _lagText(num s) {
+    final v = s < 0 ? 0.0 : s.toDouble();
+    if (v < 60) return '${v.toStringAsFixed(1)}초';
+    return '${v ~/ 60}분 ${(v % 60).round()}초';
+  }
+
   /// 워치 수신 상태 — **끊긴 지 얼마나 됐는지**가 핵심이다.
   ///
   /// ★ 이 값은 EventChannel 이 아니라 3초 폴링(`status`)에서 온다. 스트림이 죽으면
@@ -114,6 +122,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _watchRow() {
     final age = _status['lastVitalAgeSec'] as int?;
     final bat = _status['watchBatteryPct'] as int?;
+    // 전달 지연 — 워치 봉투 sentAt 직접 측정(2026-08-21 ⓐ · seam-contracts A-1). 폰 앱이
+    // 구 바이너리면 키가 없어 null = 줄 생략(0 이 아니라 "못 잼" 이다).
+    final lag = _status['lastBatchLagSec'] as num?;
     if (age == null) {
       return _row(
         icon: Icons.watch_off_outlined,
@@ -130,6 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: ok ? '워치 수신 중' : '워치 수신 끊김 — ${_ago(age)}',
       subtitle: [
         '마지막 수신 ${_ago(age)}',
+        if (lag != null) '전달 지연 ${_lagText(lag)}',
         if (bat != null) '워치 배터리 $bat%',
       ].join(' · '),
     );

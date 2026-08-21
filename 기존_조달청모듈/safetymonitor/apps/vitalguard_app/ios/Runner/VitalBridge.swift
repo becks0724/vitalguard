@@ -192,6 +192,10 @@ final class VitalBridge: NSObject {
                 payload["lastVitalAgeSec"] = Int(Date().timeIntervalSince(at))
             }
             if let bat = PhoneReceiver.shared.watchBatteryPct { payload["watchBatteryPct"] = bat }
+            if let lag = PhoneReceiver.shared.lastBatchLagSec {
+                // 소수 1자리면 충분하다 — 정상 0~5초, 단절 복귀 직후엔 분 단위가 나온다.
+                payload["lastBatchLagSec"] = (lag * 10).rounded() / 10
+            }
             payload.merge(LocationProvider.shared.diagnostics()) { a, _ in a }
             payload["photoAddAuth"] = Self.photoAddAuthText()
             let info = Bundle.main.infoDictionary

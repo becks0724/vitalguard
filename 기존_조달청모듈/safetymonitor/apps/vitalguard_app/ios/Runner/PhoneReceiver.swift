@@ -64,6 +64,15 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
     private var lastSeq = -1
     private var lastChannel = "none"
 
+    /// 마지막 배치의 워치→폰 전달 지연(초) — 봉투 `sentAt`(워치 전송 시각)과 도착 시각의 차.
+    ///
+    /// 2026-08-21 사용자 결정 ⓐ(docs/seam-contracts/findings.md A-1)로 처음 읽는다 — 그 전까지
+    /// `sentAt` 은 워치가 보내지만 아무도 안 읽는 쓰기 전용 봉투 필드였다. 08-14 전달 지연
+    /// 진단이 `ts − 측정시각`(워치 내부 배칭 5초 포함)으로 우회 추정하던 값의 직접 측정판이다.
+    /// ⚠ 워치·폰 두 시계의 차라 음수가 나올 수 있다 — 시계 오차이지 미래 배달이 아니므로
+    /// 여기서는 그대로 두고, 표시(설정 화면)가 0 으로 접는다.
+    private(set) var lastBatchLagSec: Double?
+
     /// 표시 스냅숏을 비운다 — **계정이 바뀔 때만** 부른다.
     ///
     /// ★ 이 스냅숏은 계정을 모른다. `steps`·`discreteCounts` 가 앱 프로세스 수명 내내 누적되고
@@ -95,6 +104,10 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
             return
         }
         let seq = payload["seq"] as? Int ?? -1
+        // 전달 지연 — sendMessage(즉시)·transferUserInfo(큐 배달) 어느 채널이든 봉투는 같다.
+        if let sentAt = payload["sentAt"] as? Double {
+            lastBatchLagSec = Date().timeIntervalSince1970 - sentAt
+        }
         let samples = payload["samples"] as? [[String: Any]] ?? []
         // 배치에 spo2 단독 항목이 섞일 수 있어 "마지막 항목"이 아니라 "bpm 있는 마지막 항목"을 찾는다.
         let latestHr = samples.last(where: { $0["bpm"] is Double })

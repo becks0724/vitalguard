@@ -58,6 +58,33 @@ void main() {
     expect(find.textContaining('끊김'), findsNothing);
   });
 
+  // 전달 지연(2026-08-21 ⓐ — 봉투 sentAt 을 처음 읽는다 · seam-contracts A-1).
+  // 한 테스트에 _pump 를 두 번 부르면 State 가 유지돼 status 가 안 바뀐다 — 케이스당 한 테스트.
+  testWidgets('전달 지연 — 정상 값은 소수 1자리 초로 적는다', (tester) async {
+    _mockStatus({});
+    await _pump(tester, {'lastVitalAgeSec': 4, 'lastBatchLagSec': 1.2});
+    expect(find.textContaining('전달 지연 1.2초'), findsOneWidget);
+  });
+
+  testWidgets('전달 지연 — 단절 복귀 직후엔 분 단위로 읽히게 적는다', (tester) async {
+    _mockStatus({});
+    // 08-14 실측 최장 629초 자릿수 — 초로만 적으면 크기가 안 읽힌다.
+    await _pump(tester, {'lastVitalAgeSec': 4, 'lastBatchLagSec': 125});
+    expect(find.textContaining('전달 지연 2분 5초'), findsOneWidget);
+  });
+
+  testWidgets('전달 지연 — 음수(시계 오차)는 0 으로 접는다, 미래 배달로 읽히면 안 된다', (tester) async {
+    _mockStatus({});
+    await _pump(tester, {'lastVitalAgeSec': 4, 'lastBatchLagSec': -0.4});
+    expect(find.textContaining('전달 지연 0.0초'), findsOneWidget);
+  });
+
+  testWidgets('전달 지연 — 값이 없으면 줄을 생략한다(구 폰 바이너리 = 0 이 아니라 못 잼)', (tester) async {
+    _mockStatus({});
+    await _pump(tester, {'lastVitalAgeSec': 4});
+    expect(find.textContaining('전달 지연'), findsNothing);
+  });
+
   testWidgets('한 건도 못 받았으면 "없음" 이지 "정상" 이 아니다', (tester) async {
     _mockStatus({});
     await _pump(tester, {});
