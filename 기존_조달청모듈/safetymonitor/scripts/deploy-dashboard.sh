@@ -86,7 +86,12 @@ else
   # ⚠ 작성자는 **팀원**을 가리지 병렬 세션을 가리지 못한다 — 같은 맥의 세션들은 같은 git 신원을 쓴다.
   # 세션 간 혼입은 작성자가 아니라 **커밋 제목**으로 판별한다(아래 목록).
   AUTHORS=$(git log --format='%an' "$RANGE" | sort -u | paste -sd', ' -)
-  echo "배포 범위 = $LIVE_REV(${LIVE_SHA:0:7}) → HEAD(${SHA:0:7}) · ${NCOMMIT}커밋 · 작성자: $AUTHORS"
+  NAUTHOR=$(git log --format='%an' "$RANGE" | sort -u | grep -c .)
+  # ★ 경고는 그 값이 찍히는 자리에 함께 찍는다(L-59 2026-08-22) — 주석에만 있으면 사람은 못 본다.
+  #   저자가 1명이면 이 필드는 판별력이 0이다(병렬 세션은 같은 git 신원). 여럿이면 실제로 팀원을 가리므로 조용히 둔다.
+  AUTHOR_NOTE=""
+  [ "$NAUTHOR" = "1" ] && AUTHOR_NOTE="  ⚠ 1명 — 이 필드로는 병렬 세션이 안 갈린다. 제목·diff 로 판별할 것"
+  echo "배포 범위 = $LIVE_REV(${LIVE_SHA:0:7}) → HEAD(${SHA:0:7}) · ${NCOMMIT}커밋 · 작성자: ${AUTHORS}${AUTHOR_NOTE}"
   # `| head` 는 pipefail 과 함께 SIGPIPE 로 파이프라인을 실패시킨다 — `-n` 으로 git 쪽에서 자른다.
   git log -n 20 --format='  %h %an — %s' "$RANGE"
   if [ "$NCOMMIT" -gt 20 ]; then echo "  … 이하 $((NCOMMIT - 20))커밋 생략"; fi
