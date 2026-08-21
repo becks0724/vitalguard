@@ -1,7 +1,7 @@
 // 관제 알림(SOS/낙상/생체/구획이탈/위험구역진입)을 텔레그램 봇으로 전송하는 클라이언트(의존성 0 — fetch만).
 // TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 미설정 시: no-op(로컬·미배선 환경에서 안전). 전송 실패는 삼켜 alert 기록을 막지 않는다.
 
-import type { AlertType } from "./db";
+import type { AlertType } from "./alert-type";
 
 export type AlertNotifyInput = {
   workerId: string;

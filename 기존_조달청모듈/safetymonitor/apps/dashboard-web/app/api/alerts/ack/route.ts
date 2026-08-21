@@ -2,7 +2,8 @@
 import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../../lib/admin-auth";
-import { ackAlert, ackAlertByKey, type AlertType } from "../../../../lib/db";
+import type { AlertType } from "../../../../lib/alert-type";
+import { ackAlert, ackAlertByKey } from "../../../../lib/db";
 
 const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital", "geofence", "danger_zone"];
 

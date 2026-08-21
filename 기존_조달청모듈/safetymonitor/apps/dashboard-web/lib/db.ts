@@ -8,6 +8,7 @@ import {
   calendarEventScopeClause,
   type CalendarEventScope,
 } from "./calendar-event-scope";
+import type { AlertType } from "./alert-type";
 import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
@@ -1923,9 +1924,7 @@ export async function deleteDangerZone(id: number): Promise<boolean> {
 }
 
 // ── 알림 이력(SOS/낙상/생체 위험/구획 이탈/위험구역 진입/감시 공백) ─────────
-// ★ `absence` 만 성격이 다르다 — 나머지는 **샘플이 들어올 때** 발화하는데 이것은 **안 들어와서**
-//   발화한다. 그래서 수신 경로가 아니라 크론(`/api/cron/absence-check`)이 넣는다.
-export type AlertType = "sos" | "fall" | "vital" | "geofence" | "danger_zone" | "absence";
+// AlertType 은 ./alert-type 에 있다 — telegram 과의 순환을 끊으려고 뗀 것이다(2026-08-22).
 
 export type AlertRow = {
   id: number;
