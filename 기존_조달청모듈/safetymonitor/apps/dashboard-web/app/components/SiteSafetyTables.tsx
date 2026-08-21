@@ -512,7 +512,11 @@ export function GasDetectorTable({
   useEffect(() => {
     let alive = true;
     const load = () => {
-      fetch("/api/gaspod/telemetry?n=1")
+      // 세션 토큰 동봉 — GET 이 2026-08-21 봉인(P1-3)으로 세션 인증 뒤로 갔다.
+      const t = getSessionToken();
+      fetch("/api/gaspod/telemetry?n=1", {
+        headers: t ? { Authorization: `Bearer ${t}` } : undefined,
+      })
         .then((r) => r.json())
         .then((j: { ok?: boolean; latest?: GaspodLatest | null; count?: number }) => {
           if (!alive) return;

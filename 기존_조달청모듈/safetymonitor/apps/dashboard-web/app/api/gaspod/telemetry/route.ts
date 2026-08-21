@@ -2,6 +2,7 @@
 // 저장 = PostgreSQL 영속(gaspod_telemetry)에 실시간 누적 + 메모리 링버퍼 폴백(DB 장애 시). GET은 DB에서 최신·누적수 반환(인스턴스 무관).
 import { NextResponse } from "next/server";
 
+import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
@@ -62,6 +63,14 @@ export async function POST(request: Request) {
 
 // 최근 텔레메트리 조회 (?n=20) + 누적 수집 건수 — 대시보드 실시간 수집 표시/검증용.
 export async function GET(request: Request) {
+  // 2026-08-21 봉인(안정화 P1-3) — 이 GET 이 무인증 200 이었다(센서 원시값·기기 ID ·
+  // 32,228행 · 최대 720행/회 · 통제군 aed/devices 는 401). mock/history(08-13)와 같은 형태 —
+  // 경로의 민감도는 데이터가 정한다. 처방도 같다: 관제 세션만.
+  // ⚠ POST(기기 수집)는 손대지 않는다 — ESP32 는 soft 토큰 계약이고 세션이 없다(L-11).
+  //   GET 소비자는 브라우저뿐임을 실측(7일 요청 로그 표본 500/500 전부 Mozilla).
+  if (!verifyBasicAuth(request)) {
+    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+  }
   const n = Math.min(720, Math.max(1, Number(new URL(request.url).searchParams.get("n") ?? 20)));
   try {
     const [desc, count] = await Promise.all([listGaspodTelemetry(n), countGaspodTelemetry()]);

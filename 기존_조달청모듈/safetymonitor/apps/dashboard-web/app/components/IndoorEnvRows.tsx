@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 
+import { getSessionToken } from "./LoginGate";
 import { WeatherIcon } from "./WeatherIcons";
 
 // 기기 POST 주기가 5초 → 60초(12회 연속 누락)면 끊긴 것으로 본다.
@@ -40,8 +41,16 @@ export function IndoorEnvRows() {
 
   useEffect(() => {
     let alive = true;
+    // 세션 토큰 동봉 — GET 이 2026-08-21 봉인(P1-3)으로 세션 인증 뒤로 갔다.
+    // 401(비로그인·만료)이면 아래 !r.ok 경로로 latest=null → 미수신 표시로 열화한다.
     const load = () =>
-      fetch("/api/gaspod/telemetry?n=1", { cache: "no-store" })
+      fetch("/api/gaspod/telemetry?n=1", {
+        cache: "no-store",
+        headers: (() => {
+          const t = getSessionToken();
+          return t ? { Authorization: `Bearer ${t}` } : undefined;
+        })(),
+      })
         .then((r) => {
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           // Date 헤더는 초 단위지만 60초 게이트에는 충분하다. 없으면 신선도 판정을 포기한다
