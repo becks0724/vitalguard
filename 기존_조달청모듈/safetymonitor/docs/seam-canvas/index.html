@@ -1,0 +1,834 @@
+<title>이음새 배선도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+  /* ── 단일 다크 세계 ─────────────────────────────────────────────────────
+     노드 에디터는 링크와 포트가 바탕에서 떠 보여야 성립한다. 그래서 테마를
+     따라가지 않고 한 세계로 고정하되, 모든 색을 명시해 호스트 바탕이 비쳐
+     들어오지 않게 한다. */
+  :root {
+    --void:      #0b0f14;
+    --grid:      #16202b;
+    --panel:     #131a22;
+    --panel-2:   #0f151c;
+    --rail:      #22303e;
+    --rail-soft: #1a242f;
+    --ink:       #dde5ee;
+    --ink-2:     #9fb0c2;
+    --ink-3:     #6b7c8e;
+
+    --rt-app:  #f0883e;
+    --rt-edge: #4fc3d9;
+    --rt-web:  #9d7cf4;
+    --rt-pod:  #e05c6e;
+    --rt-ext:  #7d8b9c;
+
+    /* 계약 강도 — 이 자료의 요지가 여기 실린다. 장식이 아니라 정보다. */
+    --hard: #3fb950;
+    --soft: #d2a022;
+
+    --f-ui:   "Archivo", "IBM Plex Sans KR", system-ui, sans-serif;
+    --f-kr:   "IBM Plex Sans KR", "Archivo", system-ui, sans-serif;
+    --f-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--void);
+    color: var(--ink);
+    font-family: var(--f-kr);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  #app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    grid-template-columns: 1fr 330px;
+    grid-template-areas: "bar bar" "canvas side";
+    height: 100vh;
+  }
+
+  /* ── 상단 바 ─────────────────────────────────────────────────────────── */
+  header {
+    grid-area: bar;
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--rail);
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; }
+  h1 {
+    font-family: var(--f-ui);
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    margin: 0;
+    color: var(--ink);
+  }
+  .sub {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    letter-spacing: 0.04em;
+  }
+
+  .tally { display: flex; gap: 0; border: 1px solid var(--rail); border-radius: 4px; overflow: hidden; }
+  .tally div { padding: 3px 11px; border-right: 1px solid var(--rail); }
+  .tally div:last-child { border-right: 0; }
+  .tally dt {
+    font-family: var(--f-mono);
+    font-size: 9px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0;
+  }
+  .tally dd {
+    margin: 0;
+    font-family: var(--f-ui);
+    font-weight: 700;
+    font-size: 15px;
+    line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+  }
+  .tally dd span { font-size: 10px; font-weight: 400; color: var(--ink-3); margin-left: 3px; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; margin-left: auto; }
+  .lg { display: flex; align-items: center; gap: 12px; }
+  .lg-title {
+    font-family: var(--f-mono);
+    font-size: 9px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--ink-2); }
+  .chip i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .chip.line i { width: 16px; height: 2px; border-radius: 1px; }
+
+  /* ── 캔버스 ─────────────────────────────────────────────────────────── */
+  #canvas {
+    grid-area: canvas;
+    position: relative;
+    overflow: hidden;
+    cursor: grab;
+    background-color: var(--void);
+    background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+    background-size: 22px 22px;
+    touch-action: none;
+  }
+  #canvas.dragging { cursor: grabbing; }
+  #world { position: absolute; inset: 0; transform-origin: 0 0; }
+  #links { position: absolute; left: 0; top: 0; z-index: 2; overflow: visible; pointer-events: none; }
+  #links path { pointer-events: stroke; }
+
+  /* 그룹 테두리는 장식이다 — 포인터를 먹으면 그 아래 링크를 못 고른다.
+     (실제로 여기에 걸려 링크 클릭이 통째로 죽어 있었다. 보이기는 멀쩡했다.) */
+  .grp {
+    position: absolute;
+    z-index: 1;
+    pointer-events: none;
+    border: 1px dashed var(--rail);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.012);
+  }
+  .grp b {
+    position: absolute;
+    top: -9px;
+    left: 14px;
+    padding: 0 7px;
+    background: var(--void);
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+  }
+
+  .node {
+    position: absolute;
+    z-index: 3;
+    width: 208px;
+    background: var(--panel);
+    border: 1px solid var(--rail);
+    border-radius: 7px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    font-size: 11px;
+    user-select: none;
+  }
+  .node:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .node.sel { border-color: var(--ink-2); box-shadow: 0 0 0 1px var(--ink-2), 0 8px 24px rgba(0,0,0,.55); }
+  .node.dim { opacity: 0.34; }
+  .node .hd {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 6px 6px 0 0;
+    font-family: var(--f-ui);
+    font-weight: 600;
+    font-size: 11.5px;
+    letter-spacing: -0.005em;
+    color: #0b0f14;
+  }
+  .node .hd em { font-style: normal; font-family: var(--f-mono); font-size: 9px; opacity: .62; margin-left: auto; }
+  .node .bd { padding: 6px 0 7px; }
+  .node .meta {
+    padding: 0 9px 5px;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    color: var(--ink-3);
+    line-height: 1.5;
+  }
+  .port {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 19px;
+    padding: 0 9px;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    color: var(--ink-2);
+    position: relative;
+  }
+  .port.out { justify-content: flex-end; text-align: right; }
+  .port .dot {
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--void);
+  }
+  .port.in .dot  { left: -5px; }
+  .port.out .dot { right: -5px; }
+
+  /* ── 인스펙터 ───────────────────────────────────────────────────────── */
+  aside {
+    grid-area: side;
+    background: var(--panel-2);
+    border-left: 1px solid var(--rail);
+    overflow-y: auto;
+    padding: 16px 16px 40px;
+  }
+  .ins-kicker {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 7px;
+  }
+  .ins-title {
+    font-family: var(--f-ui);
+    font-weight: 700;
+    font-size: 17px;
+    line-height: 1.3;
+    margin: 0 0 3px;
+    text-wrap: balance;
+    word-break: keep-all;   /* 한국어는 낱말 중간에서 끊으면 안 된다 */
+  }
+  .ins-rt { font-family: var(--f-mono); font-size: 10.5px; color: var(--ink-3); }
+  .badge {
+    display: inline-block;
+    margin-top: 11px;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    font-weight: 500;
+    border: 1px solid currentColor;
+  }
+  .fld { margin-top: 16px; }
+  .fld dt {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .fld dd { margin: 0; font-size: 12.5px; line-height: 1.62; color: var(--ink-2); word-break: keep-all; }
+  .fld dd.break { color: #e8b04b; }
+  .fld dd.none { color: var(--ink-3); }
+  /* 호출 지점 — grep 원문 그대로다. 줄바꿈을 살리되 가로는 스스로 스크롤한다. */
+  .site-sec {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    color: var(--ink-3);
+    margin: 9px 0 3px;
+  }
+  pre.sites {
+    margin: 0;
+    padding: 7px 8px;
+    background: var(--panel);
+    border: 1px solid var(--rail-soft);
+    border-radius: 4px;
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    line-height: 1.62;
+    color: var(--ink-2);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  .fld dd em { font-style: normal; color: var(--ink); font-weight: 500; }
+  code, .mono {
+    font-family: var(--f-mono);
+    font-size: 0.9em;
+    background: var(--panel);
+    border: 1px solid var(--rail-soft);
+    padding: 0 4px;
+    border-radius: 3px;
+    word-break: break-word;
+  }
+  .thesis { font-size: 12.5px; line-height: 1.68; color: var(--ink-2); word-break: keep-all; }
+  .thesis strong { color: var(--ink); font-weight: 600; }
+  .hint {
+    margin-top: 20px;
+    padding-top: 13px;
+    border-top: 1px solid var(--rail-soft);
+    font-family: var(--f-mono);
+    font-size: 10px;
+    line-height: 1.8;
+    color: var(--ink-3);
+  }
+  .hint kbd {
+    font-family: var(--f-mono);
+    font-size: 9.5px;
+    border: 1px solid var(--rail);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    padding: 0 4px;
+    color: var(--ink-2);
+  }
+
+  .zoom {
+    position: absolute;
+    right: 12px; bottom: 12px;
+    display: flex;
+    gap: 1px;
+    border: 1px solid var(--rail);
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--rail);
+  }
+  .zoom button {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    color: var(--ink-2);
+    background: var(--panel);
+    border: 0;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+  .zoom button:hover { background: var(--rail-soft); color: var(--ink); }
+  .zoom button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .node, #links path { transition: opacity .16s ease; }
+  }
+  @media (max-width: 860px) {
+    #app { grid-template-columns: 1fr; grid-template-areas: "bar" "canvas" ; }
+    aside { display: none; }
+  }
+</style>
+
+<div id="app">
+  <header>
+    <div class="brand">
+      <h1>이음새 배선도</h1>
+      <span class="sub">VitAlGuard · 2026-08-21</span>
+    </div>
+
+    <dl class="tally">
+      <div><dt>런타임</dt><dd>4</dd></div>
+      <div><dt>이음새</dt><dd>12</dd></div>
+      <div><dt>코드로 강제</dt><dd>3<span>/12</span></dd></div>
+    </dl>
+
+    <div class="legend">
+      <div class="lg">
+        <span class="lg-title">런타임</span>
+        <span class="chip"><i style="background:var(--rt-app)"></i>앱 Swift·Dart</span>
+        <span class="chip"><i style="background:var(--rt-edge)"></i>엣지 Python</span>
+        <span class="chip"><i style="background:var(--rt-web)"></i>관제웹 TS</span>
+        <span class="chip"><i style="background:var(--rt-pod)"></i>가스포드 C++</span>
+        <span class="chip"><i style="background:var(--rt-ext)"></i>외부</span>
+      </div>
+      <div class="lg">
+        <span class="lg-title">계약</span>
+        <span class="chip line"><i style="background:var(--hard)"></i>코드가 검사</span>
+        <span class="chip line"><i style="background:var(--soft)"></i>합의뿐</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="canvas">
+    <div id="world">
+      <svg id="links"></svg>
+    </div>
+    <div class="zoom">
+      <button type="button" data-z="out" aria-label="축소">−</button>
+      <button type="button" data-z="fit">맞춤</button>
+      <button type="button" data-z="in" aria-label="확대">＋</button>
+    </div>
+  </div>
+
+  <aside id="inspector" aria-live="polite"></aside>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const RT = {
+    app:  { label: "앱 · Swift / Dart",   hue: "#f0883e" },
+    edge: { label: "엣지 · Python",        hue: "#4fc3d9" },
+    web:  { label: "관제웹 · TypeScript",  hue: "#9d7cf4" },
+    pod:  { label: "가스포드 · C++",       hue: "#e05c6e" },
+    ext:  { label: "외부 시스템",           hue: "#7d8b9c" },
+  };
+
+  // 노드 — x/y 는 손 배치다. 21개뿐이라 자동 배치가 오히려 읽기 나쁘다.
+  const NODES = [
+    // 발원 ─────────────────────────────────────────────
+    { id: "colab",  rt: "ext",  t: "Colab 노트북",   m: "ppe_yolo26_v2–v6",       x: 40, y: 430, out: [".engine"] },
+    { id: "sched",  rt: "ext",  t: "Cloud Scheduler", m: "x-cron-key",            x: 40, y: 650, out: ["cron"] },
+
+    // 앱 ───────────────────────────────────────────────
+    { id: "watch",  rt: "app",  t: "WatchStreamer",  m: "watchOS · 932줄 · 5초 배치", x: 300, y: 60, out: ["batch"] },
+    { id: "recv",   rt: "app",  t: "PhoneReceiver",  m: "iOS · 204줄",            x: 560, y: 60, in: ["batch"], out: ["payload", "표시용"] },
+    { id: "pipe",   rt: "app",  t: "VitalPipeline",  m: "370줄 · 디스크 큐 5,000", x: 820, y: 30, in: ["payload"], out: ["POST"] },
+    { id: "bridge", rt: "app",  t: "VitalBridge",    m: "441줄",                  x: 820, y: 150, in: ["표시용"], out: ["stream"] },
+    { id: "media",  rt: "app",  t: "MediaCapture",   m: "431줄 · 촬영·각인",       x: 820, y: 272, out: ["POST"] },
+    { id: "dart",   rt: "app",  t: "lib/ Flutter",   m: "11 파일 · 2,594줄 · 표시 전용", x: 1090, y: 150, in: ["stream"] },
+
+    // 엣지 ─────────────────────────────────────────────
+    { id: "jetson", rt: "edge", t: "젯슨 Orin",       m: "TensorRT · 추론 12fps",  x: 300, y: 410, in: [".engine"], out: ["ingest3"] },
+    { id: "cctvai", rt: "edge", t: "cctv-ai",        m: "FastAPI · main.py 896줄", x: 560, y: 410, in: ["ingest3"], out: ["MJPEG"] },
+
+    // 가스포드 ─────────────────────────────────────────
+    { id: "pod",    rt: "pod",  t: "gaspod v5",      m: "ESP32 · Arduino C++ · 5초", x: 300, y: 630, out: ["telemetry"] },
+
+    // 관제웹 ───────────────────────────────────────────
+    { id: "rVital", rt: "web",  t: "api/app/vital",  m: "앱 JWT · zod",           x: 1360, y: 30, in: ["POST"], out: ["sample"] },
+    { id: "rMedia", rt: "web",  t: "api/app-media",  m: "업로드 + 등록",           x: 1360, y: 250, in: ["POST"], out: ["object"] },
+    { id: "rCctv",  rt: "web",  t: "api/cctv/*",     m: "_AI_URL 빌드 치환",       x: 1360, y: 400, in: ["MJPEG"] },
+    { id: "rPod",   rt: "web",  t: "api/gaspod/*",   m: "zod + DB 컬럼",           x: 1360, y: 560, in: ["telemetry"], out: ["sample"] },
+    { id: "rCron",  rt: "web",  t: "api/cron/*",     m: "부재 감시 · 집계",         x: 1360, y: 690, in: ["cron"] },
+    { id: "store",  rt: "web",  t: "store · analyzers", m: "링 500 · 순수 함수",   x: 1630, y: 30, in: ["sample", "sample"], out: ["persist", "alert"] },
+    { id: "ui",     rt: "web",  t: "관제 UI",         m: "브라우저 · Next.js",      x: 1630, y: 300, out: ["presign PUT"] },
+
+    // 외부 ─────────────────────────────────────────────
+    { id: "pg",     rt: "ext",  t: "PostgreSQL",     m: "외부 · 학원 서버",         x: 1900, y: 30, in: ["persist"] },
+    { id: "tg",     rt: "ext",  t: "텔레그램",         m: "수치 미포함 · 이름 마스킹", x: 1900, y: 140, in: ["alert"] },
+    { id: "obj",    rt: "ext",  t: "Object Storage", m: "NCloud · S3 호환",        x: 1900, y: 270, in: ["object", "presign PUT"] },
+  ];
+
+  // 이음새 12곳 — 문안과 색인은 생성물이다. 원본 = docs/seams.md · docs/seams-callsites.md
+  // 갱신 = `node docs/seam-canvas/build.mjs` · 갈림 검사 = `--check`(가드가 돈다)
+  //
+  // ★ 손으로 옮긴 사본은 반드시 낡는다 — 처음 만든 날 하루 만에 J 행이 갈렸다.
+  //   그래서 **문안은 생성**하고 **배선만 손으로** 유지한다. 좌표·포트·방향은 21개뿐이라
+  //   자동 배치가 오히려 읽기 나쁘고, 그 판단은 사람이 하는 것이 맞다.
+  // <<< 생성 구역 시작 — build.mjs 가 씁니다. 손으로 고치지 마십시오 >>>
+  // 원본 = docs/seams.md 표 6열 + docs/seams-callsites.md 코드블록
+  const SEAM_TEXT = {
+    A: { name: "워치 → 폰", rt: "Swift → Swift", how: "WCSession sendMessage, 실패 시 transferUserInfo · 5초", where: "없음 (딕셔너리 키 문자열)", broken: "측정은 이어지는데 도착만 끊긴다. 복귀 시 수 분치가 한꺼번에 온다", sites: [{ sec: "2. WCSession (워치 ↔ 폰) › 현행 앱 — apps/vitalguard_app", lines: ["Runner/PhoneReceiver.swift:197:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {", "Runner/PhoneReceiver.swift:201:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {", "VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()", "VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in", "VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)", "VitalWatch/WatchStreamer.swift:510:            wc.transferUserInfo(payload)"] }] },
+    B: { name: "Swift → Dart", rt: "Swift → Dart", how: "FlutterEventChannel <code>vitalguard/stream</code>", where: "없음 (채널명·키 문자열)", broken: "서버는 정상 수신 중인데 폰 화면만 언다. 서버 쪽엔 아무 이상이 안 보인다", sites: [{ sec: "3. Swift ↔ Dart 채널", lines: ["ios/Runner/VitalBridge.swift:88:        let channel = FlutterMethodChannel(name: \"vitalguard/bridge\", binaryMessenger: messenger)", "ios/Runner/VitalBridge.swift:92:        let events = FlutterEventChannel(name: \"vitalguard/stream\", binaryMessenger: messenger)", "lib/vital_stream.dart:1:// 네이티브 EventChannel(vitalguard/stream) 구독 래퍼 — 표시용 상태만 다룬다(원본 생체 경로는 네이티브 전담)", "lib/vital_stream.dart:86:  static const EventChannel _channel = EventChannel('vitalguard/stream');", "lib/main.dart:17:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');", "lib/record_screen.dart:16:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');"] }] },
+    C: { name: "폰 → 서버", rt: "Swift → TS", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> — <em>Swift 쪽은 손으로 맞춘 것</em>", broken: "스키마에 없는 필드는 파싱에서 조용히 탈락한다. 앱은 201 을 받고 큐를 지운다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent(\"api/app/vital\"))"] }] },
+    D: { name: "가스포드 → 서버", rt: "C++ → TS", how: "POST <code>/api/gaspod/telemetry</code> · 5초 · soft 토큰", where: "zod + DB 컬럼", broken: "기기는 보내는데 행이 안 쌓인다. 링버퍼 폴백이 있어 화면은 잠시 정상으로 보인다", sites: [{ sec: "1. HTTP › 1-4. Arduino(ESP32) → 관제 서버", lines: ["Final_GasPod/firmware/gaspod_v4.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v4.ino:52:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v4.ino:55:  if(!http.begin(client, SERVER_URL)) { Serial.println(\"[net] begin 실패\"); return; }", "Final_GasPod/firmware/gaspod_v4.ino:63:  int code=http.POST(body);", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:57:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:59:  if(!http.begin(client, SERVER_URL)) return;", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:67:  int code=http.POST(body);"] }] },
+    E: { name: "엣지 → cctv-ai", rt: "Python → Python", how: "HTTP POST <code>/cctv/ingest3</code> · 푸시 6fps · 추론 12fps", where: "없음 (multipart 필드명)", broken: "타일이 마지막 프레임에서 정지한다. 젯슨 로그를 봐야 푸시가 끊긴 건지 안다", sites: [{ sec: "1. HTTP › 1-3. Python(젯슨 엣지) → cctv-ai · 카메라 기기", lines: ["cctv-ai/edge/gopro_ppe_edge.py:96:            urllib.request.urlopen(path, timeout=5).read()", "cctv-ai/edge/gopro_ppe_edge.py:232:                req = urllib.request.Request(f\"{url}?{q}\", data=jpg,", "cctv-ai/edge/gopro_ppe_edge.py:234:                with urllib.request.urlopen(req, timeout=4):", "cctv-ai/edge/phone_ppe_relay.py:165:            req = urllib.request.Request(f\"{url_base}?{q}\", data=jpg,", "cctv-ai/edge/phone_ppe_relay.py:168:                with urllib.request.urlopen(req, timeout=4):"] }] },
+    F: { name: "cctv-ai → 관제웹", rt: "Python → TS", how: "관제웹이 <em>당겨간다</em> (<code>lib/cctv-poller.ts</code>) · MJPEG <code>/cctv/stream3</code>", where: "빌드 인자 <code>_AI_URL</code> + zod <code>cctv-event</code>", broken: "치환을 빠뜨리면 localhost 로 폴백해 타일만 깨진다. 서버는 200 을 낸다", sites: [{ sec: "1. HTTP › 1-6. 브라우저 → cctv-ai (서버를 안 거친다)", lines: ["app/components/CctvQuadView.tsx:13:const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || \"http://localhost:8000\";", "app/components/CctvQuadView.tsx:30:  { id: \"CAM-01\", location: \"정문 출입구\", aiApi: AI_CCTV_API, aiKind: \"object\", aiSuffix: \"\" },", "app/components/CctvQuadView.tsx:31:  { id: \"CAM-02\", location: \"지하 기계실\", aiApi: AI_CCTV_API, aiKind: \"fall\", aiSuffix: \"2\" },", "app/components/CctvQuadView.tsx:32:  { id: \"CAM-03\", location: \"현장 작업구역(GoPro)\", aiApi: AI_CCTV_API, aiKind: \"ppe\", aiSuffix: \"3\" },", "app/components/CctvQuadView.tsx:125:  aiApi: string;", "app/components/CctvQuadView.tsx:384:function useAiStats<T>(aiApi: string, suffix: string) {", "app/components/CctvQuadView.tsx:424:function DetectionStrip({ aiApi, suffix = \"\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:485:function FallDetectionStrip({ aiApi, suffix = \"2\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:551:function PpeDetectionStrip({ aiApi, suffix = \"3\" }: { aiApi: string; suffix?: string }) {"] }] },
+    G: { name: "앱 → 스토리지", rt: "Swift → 외부", how: "서버 경유 <code>/api/app-media</code>", where: "서버가 업로드·등록을 함께", broken: "경로가 둘로 갈려 있다 — H 와 실패 모드가 다르다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent(\"api/app-media\"))"] }] },
+    H: { name: "관제웹 → 스토리지", rt: "브라우저 → 외부", how: "프리사인 PUT 후 등록 API 별도 호출", where: "프리사인 URL + 등록 계약", broken: "PUT 은 됐는데 등록이 실패하면 <em>참조 없는 파일</em>이 남는다. 6주치가 쌓인 적이 있다", sites: [{ sec: "1. HTTP › 1-5. TS(관제 서버) → 외부 서비스 — 호스트 상수 정의 지점", lines: ["lib/storage.ts:19:\"https://kr.object.ncloudstorage.com"] }] },
+    I: { name: "스케줄러 → 서버", rt: "GCP → TS", how: "Cloud Scheduler · <code>x-cron-key</code>", where: "<code>CRON_SECRET</code> 시크릿", broken: "401 이 조용히 반복된다. 부재 감시가 죽어도 화면엔 표시가 없다", sites: [{ sec: "1. HTTP › 1-7. Cloud Scheduler → 서버 (받는 쪽만 코드에 있다)", lines: ["app/api/cron/env-check/route.ts:11:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);", "app/api/cron/env-check/route.ts:44:  const cronHeaders = { \"x-cron-key\": process.env.CRON_SECRET ?? \"\" };", "app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);"] }] },
+    J: { name: "서버 → DB", rt: "TS → PostgreSQL", how: "첫 쿼리에 <code>ensureSchema()</code> · CREATE/ALTER 89건", where: "런타임 DDL <em>과</em> <code>db/*.sql</code> 12개", broken: "스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — <em>있어도 읽는 경로가 없으면 같은 결과다</em>(§1-1)", sites: [{ sec: "4. DB 클라이언트", lines: ["apps/dashboard-web/lib/db.ts:4:import pg, { Pool } from \"pg\";", "apps/dashboard-web/lib/db.ts:154:    const pool = new Pool({", "scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })", "ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });"] }] },
+    K: { name: "서버 → 텔레그램", rt: "TS → 외부", how: "<code>recordAlert</code> 관문 · 수치 미포함 · 이름 마스킹", where: "가드 테스트가 우회를 금지", broken: "관문을 우회해 보내면 <em>발동 이력이 원장에 안 남는다</em>. 전례가 있다", sites: [] },
+    L: { name: "Colab → 엣지", rt: "Python → Python", how: "사람이 파일을 옮긴다 (<code>.pt</code> → <code>.engine</code>)", where: "파일 이름의 <code>_v5_</code> 문자열", broken: "엔진과 노트북 버전이 어긋나도 아무 데서도 안 걸린다. 태그만 맞아 보인다", sites: [] },
+  };
+  // <<< 생성 구역 끝 >>>
+
+  /** 배선 — 어느 포트에서 어느 포트로. `hard` = 코드가 값을 검사한다(C·D·J). */
+  const WIRING = [
+    { id: "A", map: "Ⓐ", from: ["watch", 0], to: ["recv", 0], hard: false, dashed: false },
+    { id: "B", map: "Ⓑ", from: ["bridge", 0], to: ["dart", 0], hard: false, dashed: false },
+    { id: "C", map: "Ⓒ", from: ["pipe", 0], to: ["rVital", 0], hard: true, dashed: false },
+    { id: "D", map: "④", from: ["pod", 0], to: ["rPod", 0], hard: true, dashed: false },
+    { id: "E", map: "②", from: ["jetson", 0], to: ["cctvai", 0], hard: false, dashed: false },
+    { id: "F", map: "③", from: ["cctvai", 0], to: ["rCctv", 0], hard: false, dashed: false },
+    { id: "G", map: "⑤", from: ["media", 0], to: ["rMedia", 0], hard: false, dashed: false },
+    { id: "H", map: "⑥", from: ["ui", 0], to: ["obj", 1], hard: false, dashed: false },
+    { id: "I", map: "⑦", from: ["sched", 0], to: ["rCron", 0], hard: false, dashed: false },
+    { id: "J", map: "⑧", from: ["store", 0], to: ["pg", 0], hard: true, dashed: false },
+    { id: "K", map: "⑨", from: ["store", 1], to: ["tg", 0], hard: false, dashed: false },
+    { id: "L", map: "⑩", from: ["colab", 0], to: ["jetson", 0], hard: false, dashed: true },
+  ];
+
+  const LINKS = WIRING.map((w) => ({ ...w, ...SEAM_TEXT[w.id] }));
+
+  // 추가 배선 — 이음새가 아닌 같은 런타임 안의 흐름(회색·가늘게). 문맥을 위해 그린다.
+  const INNER = [
+    ["recv", 0, "pipe", 0], ["recv", 1, "bridge", 0],
+    ["rVital", 0, "store", 0], ["rPod", 0, "store", 1],
+    ["rMedia", 0, "obj", 0],
+  ];
+
+  const GROUPS = [
+    { rt: "app",  label: "폰 · 워치 앱", ids: ["watch", "recv", "pipe", "bridge", "media", "dart"] },
+    { rt: "edge", label: "현장 엣지",     ids: ["jetson", "cctvai"] },
+    { rt: "pod",  label: "가스포드",       ids: ["pod"] },
+    { rt: "web",  label: "관제웹 (Cloud Run · 서울)", ids: ["rVital", "rMedia", "rCctv", "rPod", "rCron", "store", "ui"] },
+    { rt: "ext",  label: "외부 · 발원",     ids: ["colab", "sched"] },
+    { rt: "ext",  label: "외부 시스템",     ids: ["pg", "tg", "obj"] },
+  ];
+
+  const NW = 208, HD = 27, PORT_H = 19, PAD_TOP = 6;
+  const byId = new Map(NODES.map((n) => [n.id, n]));
+
+  /** 포트 중심의 월드 좌표. 입력은 왼쪽 변, 출력은 오른쪽 변. */
+  function portPos(nodeId, kind, idx) {
+    const n = byId.get(nodeId);
+    const rows = kind === "in" ? 0 : (n.in ? n.in.length : 0);
+    const y = n.y + HD + PAD_TOP + (rows + idx) * PORT_H + PORT_H / 2;
+    return { x: kind === "in" ? n.x : n.x + NW, y };
+  }
+
+  function nodeHeight(n) {
+    const rows = (n.in ? n.in.length : 0) + (n.out ? n.out.length : 0);
+    return HD + PAD_TOP + rows * PORT_H + (n.m ? 17 : 0) + 7;
+  }
+
+  const world = document.getElementById("links").parentNode;
+  const svg = document.getElementById("links");
+  // ★ SVG 에 크기를 주지 않으면 기본 300×150 박스가 된다. `overflow:visible` 이라 바깥 선도
+  //   **보이기는 하는데 히트테스트가 그 박스에서 잘린다** — 눈으로는 멀쩡하고 클릭만 죽는다.
+  //   그래서 월드 전체를 덮도록 명시한다.
+  {
+    const w = Math.max(...NODES.map((n) => n.x + NW)) + 240;
+    const h = Math.max(...NODES.map((n) => n.y)) + 400;
+    svg.setAttribute("width", w);
+    svg.setAttribute("height", h);
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+  }
+  const canvas = document.getElementById("canvas");
+  const inspector = document.getElementById("inspector");
+  const SVGNS = "http://www.w3.org/2000/svg";
+
+  // ── 그리기 ──────────────────────────────────────────────────────────
+  for (const g of GROUPS) {
+    const ns = g.ids.map((i) => byId.get(i));
+    const x1 = Math.min(...ns.map((n) => n.x)) - 20;
+    const y1 = Math.min(...ns.map((n) => n.y)) - 26;
+    const x2 = Math.max(...ns.map((n) => n.x + NW)) + 20;
+    const y2 = Math.max(...ns.map((n) => n.y + nodeHeight(n))) + 20;
+    const el = document.createElement("div");
+    el.className = "grp";
+    el.style.cssText = `left:${x1}px;top:${y1}px;width:${x2 - x1}px;height:${y2 - y1}px`;
+    const b = document.createElement("b");
+    b.textContent = g.label;
+    b.style.color = RT[g.rt].hue;
+    el.appendChild(b);
+    world.appendChild(el);
+  }
+
+  const nodeEls = new Map();
+  for (const n of NODES) {
+    const el = document.createElement("div");
+    el.className = "node";
+    el.tabIndex = 0;
+    el.style.cssText = `left:${n.x}px;top:${n.y}px`;
+    el.dataset.node = n.id;
+
+    const hue = RT[n.rt].hue;
+    let html = `<div class="hd" style="background:${hue}">${n.t}</div><div class="bd">`;
+    (n.in || []).forEach((p) => {
+      html += `<div class="port in"><span class="dot" style="background:${hue}"></span>${p}</div>`;
+    });
+    (n.out || []).forEach((p) => {
+      html += `<div class="port out">${p}<span class="dot" style="background:${hue}"></span></div>`;
+    });
+    if (n.m) html += `<div class="meta">${n.m}</div>`;
+    html += "</div>";
+    el.innerHTML = html;
+    world.appendChild(el);
+    nodeEls.set(n.id, el);
+  }
+
+  /** 베지어 — 노드 에디터의 관용 곡선. 수평 거리에 비례해 손잡이를 늘린다. */
+  function curve(a, b) {
+    const dx = Math.max(60, Math.abs(b.x - a.x) * 0.5);
+    return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
+  }
+
+  for (const [fa, fi, ta, ti] of INNER) {
+    const p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("d", curve(portPos(fa, "out", fi), portPos(ta, "in", ti)));
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", "#2c3b4b");
+    p.setAttribute("stroke-width", "1.6");
+    svg.appendChild(p);
+  }
+
+  const linkEls = new Map();
+  for (const L of LINKS) {
+    const a = portPos(L.from[0], "out", L.from[1]);
+    const b = portPos(L.to[0], "in", L.to[1]);
+    const color = L.hard ? "#3fb950" : "#d2a022";
+    const d = curve(a, b);
+
+    const hit = document.createElementNS(SVGNS, "path");
+    hit.setAttribute("d", d);
+    hit.setAttribute("fill", "none");
+    hit.setAttribute("stroke", "transparent");
+    hit.setAttribute("stroke-width", "16");
+    hit.style.cursor = "pointer";
+    hit.dataset.link = L.id;
+    svg.appendChild(hit);
+
+    const p = document.createElementNS(SVGNS, "path");
+    p.setAttribute("d", d);
+    p.setAttribute("fill", "none");
+    p.setAttribute("stroke", color);
+    p.setAttribute("stroke-width", "2.2");
+    if (L.dashed) p.setAttribute("stroke-dasharray", "6 5");
+    p.style.pointerEvents = "none";
+    svg.appendChild(p);
+
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - 12 };
+    const g = document.createElementNS(SVGNS, "g");
+    g.style.pointerEvents = "none";
+    const bg = document.createElementNS(SVGNS, "circle");
+    bg.setAttribute("cx", mid.x); bg.setAttribute("cy", mid.y); bg.setAttribute("r", "10");
+    bg.setAttribute("fill", "#0b0f14"); bg.setAttribute("stroke", color); bg.setAttribute("stroke-width", "1.4");
+    const tx = document.createElementNS(SVGNS, "text");
+    tx.setAttribute("x", mid.x); tx.setAttribute("y", mid.y + 4);
+    tx.setAttribute("text-anchor", "middle");
+    tx.setAttribute("fill", color);
+    tx.setAttribute("font-size", "11");
+    tx.setAttribute("font-family", "JetBrains Mono, monospace");
+    tx.textContent = L.id;
+    g.appendChild(bg); g.appendChild(tx);
+    svg.appendChild(g);
+
+    linkEls.set(L.id, { hit, p, g });
+  }
+
+  // ── 인스펙터 ────────────────────────────────────────────────────────
+  const THESIS = `
+    <div class="ins-kicker">읽는 법</div>
+    <p class="ins-title">계약이 코드로 강제되는 이음새는 12곳 중 셋뿐이다</p>
+    <p class="thesis" style="margin-top:12px">
+      <strong>C · D · J</strong> 만 zod 스키마나 DB 컬럼이 값을 실제로 검사한다(초록 선).
+      나머지 아홉은 문자열 키, 필드 이름, 빌드 인자, 파일 이름 같은 <strong>합의</strong>로
+      유지되고, 어긋나도 예외가 나지 않는다.
+    </p>
+    <p class="thesis" style="margin-top:12px">
+      런타임 안쪽은 각자 멀쩡하다. 문제가 사는 곳은 런타임이 만나는 지점이고,
+      그곳은 대체로 타입 검사도 CI 도 닿지 않는다.
+    </p>
+    <div class="hint">
+      선을 클릭 → 그 이음새의 계약<br>
+      노드를 클릭 → 그 노드가 물린 이음새<br>
+      <kbd>드래그</kbd> 팬 · <kbd>휠</kbd> 줌 · <kbd>Esc</kbd> 해제<br>
+      <span style="color:var(--ink-3)">문안 원본 · <code style="font-size:9px">docs/seams.md</code> 표 (2026-08-21)</span>
+    </div>`;
+
+  function esc(s) { return String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])); }
+
+  function showThesis() { inspector.innerHTML = THESIS; }
+
+  /**
+   * 호출 지점 색인 — `docs/seams-callsites.md` 가 grep 으로 뽑아 둔 실제 파일:줄.
+   *
+   * ⚠ 색인은 수단별(HTTP·WCSession·채널·DB)로 묶여 있어 이음새와 1:1 이 아니다.
+   *   그래서 절 이름을 함께 보인다 — 이 이음새 그 자체인지 인접한 조각인지 독자가 가른다.
+   * ⚠ 없으면 "없음" 이라고 적는다. 0 건도 사실이다(K·L 은 코드 경로가 실제로 없다).
+   */
+  function sitesHtml(L) {
+    if (!L.sites || !L.sites.length) {
+      return `<dl class="fld"><dt>호출 지점</dt><dd class="none">색인에 없음 —
+        <code>docs/seams-callsites.md</code> 는 grep 으로 찾은 것만 적는다</dd></dl>`;
+    }
+    const groups = L.sites.map((g) => `
+      <div class="site-sec">${esc(g.sec)}</div>
+      <pre class="sites">${g.lines.map(esc).join("\n")}</pre>`).join("");
+    const n = L.sites.reduce((a, g) => a + g.lines.length, 0);
+    return `<dl class="fld"><dt>호출 지점 ${n}</dt><dd>${groups}</dd></dl>`;
+  }
+
+  function showLink(id) {
+    const L = LINKS.find((x) => x.id === id);
+    const color = L.hard ? "var(--hard)" : "var(--soft)";
+    inspector.innerHTML = `
+      <div class="ins-kicker">이음새 ${L.id}</div>
+      <h2 class="ins-title">${L.name}</h2>
+      <div class="ins-rt">${L.rt} · 지도 표기 ${L.map}</div>
+      <span class="badge" style="color:${color}">${L.hard ? "코드가 값을 검사한다" : "합의뿐 — 어긋나도 조용하다"}</span>
+      <dl class="fld"><dt>수단 · 주기</dt><dd>${L.how}</dd></dl>
+      <dl class="fld"><dt>계약이 사는 곳</dt><dd>${L.where}</dd></dl>
+      <dl class="fld"><dt>깨지면 보이는 모습</dt><dd class="break">${L.broken}</dd></dl>
+      ${sitesHtml(L)}`;
+  }
+
+  function showNode(id) {
+    const n = byId.get(id);
+    const touching = LINKS.filter((L) => L.from[0] === id || L.to[0] === id);
+    const rows = touching.length
+      ? touching.map((L) => {
+          const dir = L.from[0] === id ? "→" : "←";
+          const other = byId.get(L.from[0] === id ? L.to[0] : L.from[0]);
+          const color = L.hard ? "var(--hard)" : "var(--soft)";
+          return `<div style="display:flex;gap:8px;align-items:baseline;padding:3px 0">
+            <span style="color:${color};font-family:var(--f-mono);font-size:12px">${L.id}</span>
+            <span style="color:var(--ink-3)">${dir}</span>
+            <span>${esc(other.t)}</span></div>`;
+        }).join("")
+      : `<span style="color:var(--ink-3)">이 노드는 런타임 경계를 건너지 않는다.</span>`;
+    inspector.innerHTML = `
+      <div class="ins-kicker">노드</div>
+      <h2 class="ins-title">${esc(n.t)}</h2>
+      <div class="ins-rt">${RT[n.rt].label}</div>
+      ${n.m ? `<dl class="fld"><dt>구성</dt><dd><code>${esc(n.m)}</code></dd></dl>` : ""}
+      <dl class="fld"><dt>물린 이음새 ${touching.length}</dt><dd>${rows}</dd></dl>`;
+  }
+
+  let selected = null;
+
+  function applyDim(keepNodes, keepLinks) {
+    for (const [id, el] of nodeEls) el.classList.toggle("dim", keepNodes !== null && !keepNodes.has(id));
+    for (const [id, o] of linkEls) {
+      const on = keepLinks === null || keepLinks.has(id);
+      o.p.style.opacity = on ? "1" : "0.16";
+      o.g.style.opacity = on ? "1" : "0.16";
+    }
+    for (const [id, el] of nodeEls) el.classList.toggle("sel", selected === "node:" + id);
+  }
+
+  function selectLink(id) {
+    selected = "link:" + id;
+    const L = LINKS.find((x) => x.id === id);
+    applyDim(new Set([L.from[0], L.to[0]]), new Set([id]));
+    showLink(id);
+  }
+
+  function selectNode(id) {
+    selected = "node:" + id;
+    const touching = LINKS.filter((L) => L.from[0] === id || L.to[0] === id);
+    const keepN = new Set([id]);
+    const keepL = new Set();
+    for (const L of touching) { keepN.add(L.from[0]); keepN.add(L.to[0]); keepL.add(L.id); }
+    applyDim(keepN, keepL);
+    showNode(id);
+  }
+
+  function clearSel() {
+    selected = null;
+    applyDim(null, null);
+    showThesis();
+  }
+
+  canvas.addEventListener("click", (e) => {
+    if (panned) { panned = false; return; }   // 팬의 끝은 클릭이 아니다
+    const link = e.target.closest("[data-link]");
+    if (link) { selectLink(link.dataset.link); return; }
+    const node = e.target.closest("[data-node]");
+    if (node) { selectNode(node.dataset.node); return; }
+    clearSel();
+  });
+  canvas.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      const node = e.target.closest("[data-node]");
+      if (node) { e.preventDefault(); selectNode(node.dataset.node); }
+    }
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") clearSel(); });
+
+  // ── 팬·줌 ───────────────────────────────────────────────────────────
+  let tx = 0, ty = 0, scale = 1;
+  function apply() { world.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; }
+
+  /**
+   * 전체를 화면에 맞춘다. `floor` 를 주면 그 아래로는 줄이지 않는다.
+   *
+   * ★ 여덟 열이라 전체 맞춤은 0.55배가 되어 라벨이 안 읽힌다. 그래서 첫 화면은
+   *   바닥값을 걸고 **왼쪽 위에 붙여** 연다 — 흐름이 시작되는 곳(워치)부터 보이고,
+   *   나머지는 팬으로 따라간다. 노드 에디터의 관용이기도 하다.
+   *   전체 조망이 필요하면 [맞춤] 이 바닥값 없이 다시 잡는다.
+   */
+  function fit(floor = 0) {
+    const x1 = Math.min(...NODES.map((n) => n.x)) - 56;
+    const y1 = Math.min(...NODES.map((n) => n.y)) - 46;
+    const x2 = Math.max(...NODES.map((n) => n.x + NW)) + 56;
+    const y2 = Math.max(...NODES.map((n) => n.y + nodeHeight(n))) + 46;
+    const r = canvas.getBoundingClientRect();
+    const raw = Math.min(r.width / (x2 - x1), r.height / (y2 - y1), 1.4);
+    scale = Math.max(raw, floor);
+    if (scale > raw) {
+      // 바닥값에 걸렸다 = 다 안 들어간다. 가운데 정렬 대신 시작점에 붙인다.
+      tx = -x1 * scale + 16;
+      ty = -y1 * scale + Math.max(0, (r.height - (y2 - y1) * scale) / 2);
+    } else {
+      tx = -x1 * scale + (r.width - (x2 - x1) * scale) / 2;
+      ty = -y1 * scale + (r.height - (y2 - y1) * scale) / 2;
+    }
+    apply();
+  }
+
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const next = Math.min(2.6, Math.max(0.18, scale * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    tx = cx - (cx - tx) * (next / scale);
+    ty = cy - (cy - ty) * (next / scale);
+    scale = next;
+    apply();
+  }, { passive: false });
+
+  let drag = null;
+  let panned = false;   // 방금 팬을 했는가 — 팬 끝의 click 이 선택을 지우면 안 된다.
+  canvas.addEventListener("pointerdown", (e) => {
+    // ★ 링크를 제외하지 않으면 선 위에서 눌러도 팬이 시작되고, `setPointerCapture` 가
+    //   걸린 뒤의 click 은 대상이 캔버스로 바뀐다 — 선택이 통째로 죽는다.
+    //   (보이는 것은 멀쩡하고 클릭만 안 먹는 종류라 화면으로는 안 잡힌다.)
+    if (e.target.closest("[data-node]") || e.target.closest("[data-link]") || e.target.closest(".zoom")) return;
+    drag = { x: e.clientX, y: e.clientY, tx, ty };
+    canvas.classList.add("dragging");
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    tx = drag.tx + (e.clientX - drag.x);
+    ty = drag.ty + (e.clientY - drag.y);
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 3) panned = true;
+    apply();
+  });
+  canvas.addEventListener("pointerup", () => { drag = null; canvas.classList.remove("dragging"); });
+  canvas.addEventListener("pointercancel", () => { drag = null; canvas.classList.remove("dragging"); });
+
+  document.querySelector(".zoom").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.z === "fit") return fit(0);
+    const r = canvas.getBoundingClientRect();
+    const cx = r.width / 2, cy = r.height / 2;
+    const next = Math.min(2.6, Math.max(0.18, scale * (b.dataset.z === "in" ? 1.25 : 1 / 1.25)));
+    tx = cx - (cx - tx) * (next / scale);
+    ty = cy - (cy - ty) * (next / scale);
+    scale = next;
+    apply();
+  });
+
+  showThesis();
+  fit(0.82);
+  // 리사이즈에도 같은 규칙 — 좁아졌다고 글자가 안 읽히게 만들지 않는다.
+  window.addEventListener("resize", () => fit(0.82));
+})();
+</script>
