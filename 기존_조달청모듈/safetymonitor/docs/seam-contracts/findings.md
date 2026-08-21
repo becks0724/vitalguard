@@ -217,8 +217,11 @@ lib/env-alert-notify.ts:88          환경 경보   → env_alert_state 단계 �
 4  A-1 sentAt 처분 결정(빼기 권장 · L-101②) — ⚠ 워치 변경이므로 08-26 재서명 창에만
 ```
 
-미실행·미검증 = K·H 의 가드·확인은 아직 제안이다. H 의 휴면 여부는 프로덕션 로그를
+미실행·미검증 = H 의 확인·가드는 아직 제안이다. H 의 휴면 여부는 프로덕션 로그를
 아직 안 봤다(이 문서는 레포 안 호출자 0 까지만 확정한다).
 
 **진행 기록.** 권고 1(A+B 키 전수 가드)은 2026-08-21 구현됨 — `047b084` ·
 `apps/dashboard-web/lib/2026-08-21-app-seam-key-census.guard.test.ts` (7건 · 전체 1166/1166).
+권고 2(K 발신 지점 허용목록)도 2026-08-21 구현됨 — `27dfbd9` ·
+`apps/dashboard-web/lib/2026-08-21-telegram-callsite-allowlist.guard.test.ts`
+(3건 · 4파일·6지점 고정 · 전체 1169/1169).
