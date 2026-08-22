@@ -183,7 +183,7 @@ OFF 구간(분)  83 · 53 · 53 · 43 · 35 · 31 · 31 · 28 · 11 · 10 · 3 �
 설치      17:24:21~22  xcrun devicectl · 폰만(워치 미변경)
           ⚠ devicectl install 이 앱을 스스로 재실행한다 — 별도 launch 불필요(17:24:29 첫 좌표 < 17:24:32 launch)
 빌드      DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer flutter build ios --release
-          ⚠ 이것 없이는 "Application not configured for iOS" 를 내고도 **exit 0**(CLAUDE.md:23 에 기록돼 있던 함정)
+          ⚠ 이것 없이는 "Application not configured for iOS" 를 내고도 **exit 0**(`docs/claude-md-archive-20260822.md` 의 `B-07` 에 기록된 함정 — 2026-08-22 에 CLAUDE.md 에서 이관)
 ```
 
 ### ② 판정 — 두 축이 독립으로 확정
