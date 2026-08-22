@@ -147,6 +147,8 @@ final class VitalPipeline {
                 let seBy = s["seBy"] as? Int
                 let srAt = s["srAt"] as? Double
                 let srN = s["srN"] as? Int
+                // 오류 종료의 도메인#코드(2026-08-22) — 시스템 종료의 "왜" 가 DB 에 닿는 유일한 길.
+                let seErr = s["seErr"] as? String
                 // 모션 변동폭(밀리g) — 착용 판별 후보 축의 재료. 판정에는 안 쓴다.
                 let mv = s["mv"] as? Int
                 guard bpm != nil || spo2 != nil || ae != nil
@@ -210,6 +212,7 @@ final class VitalPipeline {
                 if let seAt {
                     v["sessionEndSeenAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: seAt))
                     if let seBy { v["sessionEndByUser"] = seBy == 1 }
+                    if let seErr { v["sessionEndError"] = seErr }
                 }
                 if let srAt {
                     v["sessionResumeTriedAt"] = self.isoMs.string(from: Date(timeIntervalSince1970: srAt))

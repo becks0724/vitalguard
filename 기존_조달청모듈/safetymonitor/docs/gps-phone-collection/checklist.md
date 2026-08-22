@@ -394,7 +394,7 @@ func stop() {
 
 조회 (읽기 전용)
 ```sql
-select session_end_seen_at, session_end_by_user, session_resume_tried_at, session_resume_tries
+select session_end_seen_at, session_end_by_user, session_end_error, session_resume_tried_at, session_resume_tries
 from vital_samples where session_end_seen_at is not null order by session_end_seen_at asc;
 ```
 

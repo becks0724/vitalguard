@@ -34,6 +34,7 @@ const FIELDS = [
   ["sessionEndByUser", "session_end_by_user"],
   ["sessionResumeTriedAt", "session_resume_tried_at"],
   ["sessionResumeTries", "session_resume_tries"],
+  ["sessionEndError", "session_end_error"],
 ] as const;
 
 const base = {
@@ -61,11 +62,13 @@ test("★ 네 값이 실제로 파서를 통과한다 — 소스에 있는 것�
     sessionEndByUser: false,
     sessionResumeTriedAt: "2026-08-20T01:43:19.500Z",
     sessionResumeTries: 2,
+    sessionEndError: "com.apple.healthkit#12",
   });
   assert.equal(out.sessionEndSeenAt, "2026-08-20T01:43:19.000Z");
   assert.equal(out.sessionEndByUser, false, "false 가 사라졌다 — 지문의 절반이 무너진다");
   assert.equal(out.sessionResumeTriedAt, "2026-08-20T01:43:19.500Z");
   assert.equal(out.sessionResumeTries, 2);
+  assert.equal(out.sessionEndError, "com.apple.healthkit#12", "오류 코드가 파서에서 사라졌다");
 });
 
 test("★ endByUser=false 가 null 로 접히지 않는다 — false 와 '모름'은 정반대 판정이다", () => {
@@ -167,6 +170,7 @@ test("★ 폰이 네 키를 서버 필드로 옮긴다 — 없으면 억지로 �
     ["seBy", "sessionEndByUser"],
     ["srAt", "sessionResumeTriedAt"],
     ["srN", "sessionResumeTries"],
+    ["seErr", "sessionEndError"],
   ] as const) {
     assert.match(bare, new RegExp(`"${w}"`), `워치 키 ${w} 를 안 읽는다`);
     assert.match(bare, new RegExp(`"${srv}"`), `서버 필드 ${srv} 로 안 옮긴다`);

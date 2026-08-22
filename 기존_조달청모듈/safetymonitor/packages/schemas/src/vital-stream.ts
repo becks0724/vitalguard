@@ -155,6 +155,10 @@ export const VitalSampleSchema = z.object({
   //   tries > 3                                   → 3연속 실패로 포기
   sessionEndSeenAt: z.string().datetime().optional(),
   sessionEndByUser: z.boolean().optional(),
+  // 오류 종료의 도메인#코드 (2026-08-22 · 예 "com.apple.healthkit#12"). 워치 os_log 는 회수
+  // 경로가 없어 시스템 종료의 "왜"(다른 세션 시작·권한 상실 등)가 DB 에 닿는 길이 이것뿐이다.
+  // 정상 종료(.ended)는 값이 없다 — 없음도 지문이다.
+  sessionEndError: z.string().max(120).optional(),
   sessionResumeTriedAt: z.string().datetime().optional(),
   // 횟수로 두는 이유 — 불리언 `gaveUp` 은 "안 했다"와 "한 번 했다"를 못 가른다.
   // 0=시도 없음 · 1~3=시도 · >3=포기. 숫자라 아래 스트립 허용목록의 보호도 받는다.
@@ -259,6 +263,8 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "motionVariabilityMg",
   // 자동 재개 시도 횟수 — 진단용이라 범위를 벗어나도 버려서 안전하다(위와 같은 이유).
   "sessionResumeTries",
+  // 오류 종료 도메인#코드 — 진단용 문자열. 길이 초과가 생체 샘플을 통째로 죽이면 안 된다.
+  "sessionEndError",
 ]);
 
 export function parseResilientVitalSample(

@@ -806,10 +806,15 @@ enum SessionEndCrumb {
     private static let kByUser = "sess.endByUser"
     private static let kTriedAt = "sess.resumeTriedAt"
     private static let kTries = "sess.resumeTries"
+    private static let kErr = "sess.endErr"
 
-    static func noteEnd(byUser: Bool) {
+    static func noteEnd(byUser: Bool, errCode: String? = nil) {
         d.set(Date().timeIntervalSince1970, forKey: kEndAt)
         d.set(byUser, forKey: kByUser)
+        // 오류 종료만 값이 있다(2026-08-22) — 워치 os_log 는 회수 경로가 없어, 시스템 종료의
+        // "왜"(예: 다른 워크아웃 세션 시작)가 DB 에 닿는 길이 이것뿐이다. 정상 .ended 는 키를
+        // 만들지 않는다 — "없음"도 지문이다.
+        if let errCode { d.set(errCode, forKey: kErr) }
     }
 
     static func noteResume(tries: Int) {
@@ -824,12 +829,13 @@ enum SessionEndCrumb {
         if let at = d.object(forKey: kEndAt) as? Double {
             out["seAt"] = at
             out["seBy"] = (d.object(forKey: kByUser) as? Bool ?? false) ? 1 : 0
+            if let err = d.string(forKey: kErr) { out["seErr"] = err }
         }
         if let at = d.object(forKey: kTriedAt) as? Double {
             out["srAt"] = at
             out["srN"] = d.object(forKey: kTries) as? Int ?? 0
         }
-        for k in [kEndAt, kByUser, kTriedAt, kTries] { d.removeObject(forKey: k) }
+        for k in [kEndAt, kByUser, kTriedAt, kTries, kErr] { d.removeObject(forKey: k) }
         return out
     }
 }
@@ -893,7 +899,9 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
                 return
             }
             let byUser = endedByUser
-            SessionEndCrumb.noteEnd(byUser: byUser)
+            // 도메인#코드 로 싣는다 — HKError 코드만으로는 다른 도메인과 겹칠 수 있다.
+            let ns = error as NSError
+            SessionEndCrumb.noteEnd(byUser: byUser, errCode: "\(ns.domain)#\(ns.code)")
             statusText = "세션 오류: \(error.localizedDescription)"
             // ⚠ 오류 종료는 빌더를 명시적으로 버린다(2026-08-22 리뷰) — 종전엔 endCollection 도
             //   discard 도 없이 teardown 만 해서 **미완료 워크아웃이 HealthKit 에 남았다.**

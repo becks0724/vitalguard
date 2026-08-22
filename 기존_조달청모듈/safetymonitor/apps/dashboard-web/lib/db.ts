@@ -362,6 +362,9 @@ async function initSchema(): Promise<void> {
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_by_user INTEGER;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_resume_tried_at TEXT;
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_resume_tries SMALLINT;
+    -- 오류 종료의 도메인#코드(2026-08-22 · 예 com.apple.healthkit#12). 읽는 곳 = 수사 절차의
+    -- 지문 조회(docs/watch-auto-resume/checklist.md SQL). 판정·경보·화면 유입 금지(가드 고정).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_error TEXT;
     -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
     -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
@@ -1010,6 +1013,7 @@ export async function persistSample(sample: VitalSample): Promise<void> {
       sample.sessionEndByUser === true ? 1 : sample.sessionEndByUser === false ? 0 : null,
     session_resume_tried_at: sample.sessionResumeTriedAt ?? null,
     session_resume_tries: sample.sessionResumeTries ?? null,
+    session_end_error: sample.sessionEndError ?? null,
     manual_sos: sample.manualSos === true ? 1 : sample.manualSos === false ? 0 : null,
     // 확정 낙상은 워치가 fallDecision='fall' 후보행으로 보냄(fallDetected 미설정 — 폰 Health API 는
     // 낙상 미노출). 코드 전반이 'fall_decision=fall OR fall_detected=1'을 양성 표준으로 쓰므로

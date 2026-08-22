@@ -37,10 +37,10 @@ const bare = (s: string) =>
   s.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 // ── 계약 목록 (이 파일이 세 번째 자리다) ─────────────────────────────────────
-// A 이음새 — 워치 hrBatch 샘플 항목의 키 22개.
+// A 이음새 — 워치 hrBatch 샘플 항목의 키 23개.
 const SAMPLE_KEYS = [
   "ts", "bpm", "ae", "stp", "flt", "bat", "sst", "sar",
-  "seAt", "seBy", "srAt", "srN", "mv",
+  "seAt", "seBy", "seErr", "srAt", "srN", "mv",
   "hrv", "rhr", "whr", "rr", "pe", "dl",
   "spo2", "spo2Ts", "still",
 ].sort();
