@@ -143,11 +143,20 @@ const WARM_INTERVAL_MS = 30_000; // 폴링 60초보다 짧게 — 버스트가 �
 // 유휴가 있으면 그것을 잡고, 없으면 새로 만든다. 전부 붙잡고 있어야 실제로 생성이 일어난다
 // (하나씩 잡았다 놓으면 같은 커넥션만 재사용되어 바닥이 안 찬다).
 // ⚠ 순차로 만든다 — 동시에 여러 개를 열면 우리가 문제의 버스트를 재현하는 꼴이 된다.
+//
+// ★ 종료 조건은 **만진 수**(held.length)이지 **가진 수**(pool.totalCount)가 아니다 (2026-08-22 2차).
+//   가진 수로 끊으면 바닥이 차 있는 동안 **기존 커넥션을 아무도 안 만져** 유휴 타이머가 리셋되지
+//   않고, 그것들이 pg 자신의 idleTimeoutMillis(90초)에 걸려 죽는다. 그러면 다음 틱이 다시 만든다.
+//   1차 배포(00311-nfk) 실측 — 열림 창 15분에 +3+2+2+2+2+2+1 = 14개 생성(0.93/분),
+//   닫힘 창 15분에 9회 × 약 +7 = 4.2/분. 버스트가 만지면 +2, 아무도 안 만지면 +7 이었다.
+//   전부 잡았다 놓으면 유휴 타이머가 전부 리셋되어 초기 채움 이후 생성이 0 에 수렴한다.
 async function warmPool(pool: Pool): Promise<void> {
+  // 실제 요청이 커넥션을 기다리는 중이면 물러난다 — 워머가 풀을 놓고 요청과 경쟁하면 안 된다.
+  if (pool.waitingCount > 0) return;
   const held: PoolClient[] = [];
   const before = pool.totalCount;
   try {
-    while (pool.totalCount < WARM_FLOOR && held.length < WARM_FLOOR) {
+    while (held.length < WARM_FLOOR) {
       held.push(await pool.connect());
     }
   } catch {

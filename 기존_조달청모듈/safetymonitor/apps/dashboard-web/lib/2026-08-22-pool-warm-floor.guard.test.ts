@@ -41,6 +41,25 @@ test("★ 순차로 만든다 — 동시에 열면 문제의 버스트를 우리
   assert.match(fn, /await pool\.connect\(\)/, "순차 await 가 사라졌다");
 });
 
+test("★ 종료 조건은 만진 수(held.length)다 — 가진 수로 끊으면 기존 커넥션이 늙어 죽는다", () => {
+  const fn = db.slice(db.indexOf("async function warmPool"), db.indexOf("function startPoolWarmer"));
+  assert.match(
+    fn,
+    /while \(held\.length < WARM_FLOOR\)/,
+    "루프가 held.length 기준이 아니다 — 바닥이 차 있으면 아무것도 안 만져 유휴 타이머가 리셋되지 않는다",
+  );
+  assert.doesNotMatch(
+    fn,
+    /while \([^)]*pool\.totalCount/,
+    "가진 수 기준 루프로 되돌아갔다 — 1차 배포(00311-nfk)에서 2분마다 재생성을 만든 그 조건이다",
+  );
+});
+
+test("★ 대기 중인 요청이 있으면 워머가 물러난다 — 풀을 두고 요청과 경쟁하면 안 된다", () => {
+  const fn = db.slice(db.indexOf("async function warmPool"), db.indexOf("function startPoolWarmer"));
+  assert.match(fn, /pool\.waitingCount > 0/, "경쟁 회피 가드가 사라졌다");
+});
+
 test("웜 바닥은 실측 버스트 이상이고, 주기는 폴링(60초)보다 짧다", () => {
   const floor = Number(/const WARM_FLOOR = (\d+)/.exec(db)?.[1]);
   const interval = Number(/const WARM_INTERVAL_MS = ([\d_]+)/.exec(db)?.[1]?.replace(/_/g, ""));
