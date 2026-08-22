@@ -174,7 +174,15 @@ final class LocationProvider: NSObject {
                     self.latestFix = loc
                     self.lock.unlock()
                 }
-                completion(self.payload(from: loc))
+                // ★ 새로 받았다고 그냥 쓰지 않는다 — 이 경로에만 품질 판단이 없어서
+                //   2026-08-20 에 336m 짜리가 149m 짜리를 밀어냈다. 갖고 있는 것과 **재서 고른다**.
+                // ⚠ 거르지 않는다. 나쁘면 나쁜 대로 각인하고 ±로 밝힌다 —
+                //   여기서 nil 을 내면 2026-08-19 의 "위치 미확보" 로 되돌아간다.
+                let now = Date()
+                let best = [loc, self.cachedFix(within: freshEnoughSec)]
+                    .compactMap { $0 }
+                    .min { Self.effectiveRadiusM($0, at: now) < Self.effectiveRadiusM($1, at: now) }
+                completion(self.payload(from: best ?? loc))
             }
         }
     }
@@ -194,7 +202,27 @@ final class LocationProvider: NSObject {
         return [mine, oneShot.lastKnown]
             .compactMap { $0 }
             .filter { now.timeIntervalSince($0.timestamp) <= maxAgeSec }
-            .max { $0.timestamp < $1.timestamp }
+            .min { Self.effectiveRadiusM($0, at: now) < Self.effectiveRadiusM($1, at: now) }
+    }
+
+    /// 이 좌표를 **지금** 쓸 때의 불확실성(m) = 측정 정확도 + 그동안 걸어갔을 수 있는 거리.
+    ///
+    /// ★ 왜 "가장 최근" 도 "가장 정확" 도 아닌가 — 둘 다 실측으로 반증됐다.
+    ///   · 최근 우선(종전) → 2026-08-20 18:33, 게이트 미통과 신규가 10m 짜리를 이겨
+    ///     각인이 실제에서 336m 어긋났다(그때 폰은 149m 짜리를 들고 있었다).
+    ///   · 정확도만 우선 → 2026-08-22 10:17, 그 규칙이면 **5분 전 17.9m** 짜리를 골랐을 텐데
+    ///     그것은 촬영 지점에서 95m 떨어져 있었다. 같은 순간의 44.1m 짜리가 6m 였다.
+    ///   ⟹ 오래된 좌표는 그 사이 이동한 만큼 더 틀린다. 두 축을 한 자로 합쳐야 한다.
+    ///
+    /// 보행 1.4m/s 는 상한이다 — 뛰거나 차를 타면 더 틀리지만, 그 경우 GPS 도 갱신되므로
+    /// 오래된 fix 가 후보로 남지 않는다. 추측을 키우지 않는 쪽으로 고른다.
+    private static let walkSpeedMps: Double = 1.4
+
+    static func effectiveRadiusM(_ fix: CLLocation, at now: Date) -> Double {
+        // 음수 정확도 = iOS 가 "모른다" 고 말하는 것이다. 값으로 쓰지 않고 최하위로 민다.
+        guard fix.horizontalAccuracy > 0 else { return .greatestFiniteMagnitude }
+        let age = max(0, now.timeIntervalSince(fix.timestamp))
+        return fix.horizontalAccuracy + age * walkSpeedMps
     }
 
     private lazy var oneShot = OneShotLocator()

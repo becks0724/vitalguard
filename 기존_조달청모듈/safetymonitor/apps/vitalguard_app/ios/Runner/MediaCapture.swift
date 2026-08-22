@@ -204,7 +204,18 @@ final class MediaCapture: NSObject {
             //   각인은 증빙이라 옛 값을 지금 값처럼 보이게 두면 안 된다.
             let age = fixAgeSec(fix, at: date)
             let suffix = age >= 60 ? String(format: " (%.0f분 전 좌표)", (age / 60).rounded()) : ""
-            lines.append(String(format: "%.6f, %.6f", lat, lon) + suffix)
+            // ★ 정확도를 함께 적는다(2026-08-22). 고르는 것으로는 오차가 안 줄어든다 —
+            //   지하에서는 후보가 둘 다 나쁘다. 기록을 지키는 것은 **밝히는 것**이다.
+            //   실측: 08-22 10:17 촬영이 44m 짜리 좌표로 지번을 틀리게 찍었는데,
+            //   각인에는 불확실성이 한 글자도 없어 읽는 사람이 확정으로 받았다.
+            let acc = fix?["locationAccuracyMeters"] as? Double
+            let accText = (acc.map { $0 > 0 } ?? false) ? String(format: " (±%.0fm)", acc!) : ""
+            // ⚠ 소수 자릿수 바닥은 **5자리**다. 서버 파서(`lib/ocr-stamp.ts`)의 GPS 정규식이
+            //   `\d{4,}` 를 요구하므로 4자리 밑으로 내려가면 좌표를 통째로 못 읽는다.
+            //   6자리(≈0.11m)는 44m 오차에 붙일 정밀도가 아니라 5자리(≈1.1m)로 낮추되,
+            //   여유 한 자리를 남겨 파서 계약을 깨지 않는다.
+            let digits = (acc ?? 0) > 10 ? 5 : 6
+            lines.append(String(format: "%.\(digits)f, %.\(digits)f", lat, lon) + accText + suffix)
         }
         // ★ 위치가 없으면 **없다고 적는다**. 두 줄을 그냥 비우면 "위치가 안 찍히는 사진" 과
         //   "위치를 못 받은 사진" 이 같은 모양이 된다.
