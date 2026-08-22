@@ -837,6 +837,19 @@ enum SessionEndCrumb {
 // MARK: - HKWorkoutSessionDelegate
 
 extension WatchStreamer: HKWorkoutSessionDelegate {
+    /// 델리게이트 본문을 **메인에서 동기로** 돌린다 — 이유 둘(2026-08-22 리뷰).
+    ///
+    /// ① `stopRequestedByUser`·`session`·`builder` 는 전부 메인에서 쓰는 상태인데 HK 델리게이트는
+    ///    익명 직렬 큐에서 온다. 배리어 없이 읽으면 레이스다 — 종전엔 didFail 쪽만 메인으로 넘기고
+    ///    .ended 쪽은 그냥 읽는 **비대칭**이었다.
+    /// ② async 가 아니라 sync 인 이유 — 크럼(noteEnd)은 "델리게이트가 리턴하기 전에 디스크에 있다"
+    ///    를 보장해야 한다(H1 관측 설계). async 로 넘기면 그 사이 프로세스가 죽는 창이 생긴다.
+    ///    HK 델리게이트 큐는 메인이 아니라고 문서화돼 있지만 만일을 위해 메인이면 그대로 실행한다
+    ///    (메인에서 main.sync 는 데드락이다).
+    private func onMainSync(_ body: @escaping () -> Void) {
+        if Thread.isMainThread { body() } else { DispatchQueue.main.sync(execute: body) }
+    }
+
     func workoutSession(
         _ workoutSession: HKWorkoutSession,
         didChangeTo toState: HKWorkoutSessionState,
@@ -844,28 +857,50 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
         date: Date
     ) {
         guard toState == .ended else { return }
-        // 사유는 지금 붙잡아 둔다 — teardown 뒤에 읽으면 다음 세션의 표식과 섞인다.
-        let byUser = endedByUser
-        // ★ 중첩 클로저 **밖에서** 적는다. 아래 `endCollection { finishWorkout { … } }` 안에서
-        //   적으면 그 콜백이 안 올 때(H1) 기록도 함께 사라져 관측 자체가 불가능해진다.
-        SessionEndCrumb.noteEnd(byUser: byUser)
-        builder?.endCollection(withEnd: date) { [weak self] _, _ in
-            self?.builder?.finishWorkout { _, _ in
-                DispatchQueue.main.async {
-                    self?.teardown()
-                    if !byUser { self?.autoResume(cause: "세션 종료") }
+        onMainSync { [self] in
+            // ⚠ 어느 세션이 끝났는지 대조한다(2026-08-22 리뷰) — 낡은 세션의 .ended 가 늦게 오면
+            //   멀쩡한 현재 세션을 teardown 하고 크럼을 현재 플래그로 오염시킨다. 자동 재개가
+            //   들어오면 세션 교체가 잦아져 이 창이 실제로 열린다.
+            guard workoutSession === session else {
+                log.notice("낡은 세션의 종료 통지 무시 — 현재 세션이 아니다")
+                return
+            }
+            // 사유는 지금 붙잡아 둔다 — teardown 뒤에 읽으면 다음 세션의 표식과 섞인다.
+            let byUser = endedByUser
+            // ★ 중첩 클로저 **밖에서** 적는다. 아래 `endCollection { finishWorkout { … } }` 안에서
+            //   적으면 그 콜백이 안 올 때(H1) 기록도 함께 사라져 관측 자체가 불가능해진다.
+            SessionEndCrumb.noteEnd(byUser: byUser)
+            // ⚠ 현재 참조(self.builder)가 아니라 **끝난 세션의 빌더를 캡처로 고정**한다(2026-08-22
+            //   리뷰). 완료 시점에 self.builder 를 다시 읽으면, 그사이 didFailWithError 가 teardown
+            //   을 돌린 경우 nil 이 되어 finishWorkout 과 그 안의 teardown·autoResume 까지 통째로
+            //   증발한다 — "수집이 조용히 멎는" 또 하나의 형태다.
+            let endedBuilder = builder
+            endedBuilder?.endCollection(withEnd: date) { [weak self] _, _ in
+                endedBuilder?.finishWorkout { _, _ in
+                    DispatchQueue.main.async {
+                        self?.teardown()
+                        if !byUser { self?.autoResume(cause: "세션 종료") }
+                    }
                 }
             }
         }
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        DispatchQueue.main.async {
-            let byUser = self.endedByUser
+        onMainSync { [self] in
+            guard workoutSession === session else {
+                log.notice("낡은 세션의 오류 통지 무시 — 현재 세션이 아니다")
+                return
+            }
+            let byUser = endedByUser
             SessionEndCrumb.noteEnd(byUser: byUser)
-            self.statusText = "세션 오류: \(error.localizedDescription)"
-            self.teardown()
-            if !byUser { self.autoResume(cause: "세션 오류") }
+            statusText = "세션 오류: \(error.localizedDescription)"
+            // ⚠ 오류 종료는 빌더를 명시적으로 버린다(2026-08-22 리뷰) — 종전엔 endCollection 도
+            //   discard 도 없이 teardown 만 해서 **미완료 워크아웃이 HealthKit 에 남았다.**
+            //   오류로 끝난 세션은 저장 가치가 없다 — 남기면 healthd 쪽 잔재만 쌓인다.
+            builder?.discardWorkout()
+            teardown()
+            if !byUser { autoResume(cause: "세션 오류") }
         }
     }
 }
