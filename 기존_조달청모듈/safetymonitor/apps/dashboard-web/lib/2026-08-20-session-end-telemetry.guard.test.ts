@@ -134,7 +134,8 @@ test("★ 종료 기록이 중첩 콜백 **밖**에 있다 — 안에 두면 H1 
   const fn = watch.slice(watch.indexOf("didChangeTo toState: HKWorkoutSessionState"));
   const body = fn.slice(0, fn.indexOf("\n    }"));
   const noteAt = body.indexOf("SessionEndCrumb.noteEnd");
-  const nestAt = body.indexOf("builder?.endCollection");
+  // 2026-08-22 리팩터가 빌더를 캡처로 고정하며 이름이 endedBuilder 가 됐다 — 앵커는 둘 다 잡는다.
+  const nestAt = body.search(/(endedBuilder|builder)\?\.endCollection/);
   assert.ok(noteAt !== -1, "종료 기록이 없다");
   assert.ok(nestAt !== -1, "중첩 콜백을 못 찾았다 — 가드를 다시 맞춰야 한다");
   // 의심 대상이 바로 그 중첩이다. 그 안에서 적으면 콜백이 안 올 때 기록도 함께 사라진다.
@@ -186,8 +187,10 @@ test("★ 사용자 중지는 **시각까지** 봐야 인정된다 — 플래그
 
   // 델리게이트 두 경로가 **둘 다** 시각을 본 판정을 써야 한다 — 하나만 고치면 그 경로만 산다.
   const bare = swiftBare(watch);
-  assert.match(bare, /let byUser = endedByUser/, "상태 변화 경로가 옛 판정을 쓴다");
-  assert.match(bare, /let byUser = self\.endedByUser/, "오류 경로가 옛 판정을 쓴다");
+  // 2026-08-22 onMainSync 통일로 두 경로의 self. 접두 구분이 사라졌다 — 개수로 못 박는다.
+  // 계약은 그대로다: 델리게이트 **두 경로 모두** 시각을 본 판정(endedByUser)을 써야 한다.
+  const uses = bare.match(/let byUser = (self\.)?endedByUser/g) ?? [];
+  assert.ok(uses.length >= 2, `시각 판정 사용이 ${uses.length}곳 — 두 델리게이트 경로가 다 써야 한다`);
   assert.doesNotMatch(
     bare,
     /let byUser = (self\.)?stopRequestedByUser/,
