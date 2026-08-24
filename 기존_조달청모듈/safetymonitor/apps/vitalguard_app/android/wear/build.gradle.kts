@@ -36,4 +36,9 @@ dependencies {
     implementation("androidx.health:health-services-client:1.0.0")
     // health-services 의 ListenableFuture 는 빈 스텁(9999.0-empty)으로 풀린다 — 실물 guava 를 명시
     implementation("com.google.guava:guava:33.3.1-android")
+
+    testImplementation("junit:junit:4.13.2")
+    // JVM 단위테스트에는 android.jar 의 org.json 이 없다 — 시험 전용으로 실물을 넣는다
+    testImplementation("org.json:json:20240303")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
