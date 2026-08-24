@@ -1,0 +1,109 @@
+# 갤럭시워치 단독 수집기 — 결정과 근거
+
+작업 중 내린 결정을 근거와 함께 쌓는다. 나중에 "왜 이렇게 했나" 를 다시 묻지 않기 위해서다.
+
+## R-01 · SpO₂ "상시 불가" 는 과한 결론이었다 — 비교 기준이 틀렸다
+
+08-24 1차 판단에서 *"SpO₂ 상시 불가 → 안드로이드 트랙 재고"* 까지 적었다. **철회한다.**
+
+틀린 이유는 **iOS 쪽을 다시 안 잰 것**이다([[L-107]] ①). 현재 iOS 도 SpO₂ 를 상시로 재지 않는다.
+
+```swift
+// WatchStreamer.swift:735 — 앱은 측정을 시키지 않는다. 애플워치가 알아서 잰 것을 줍는다
+query.updateHandler = { _, samples, _, newAnchor, _ in self?.ingestSpO2(...) }
+```
+
+`HKAnchoredObjectQuery` = **수동 구독**. 측정 시점·주기는 애플이 정하고 앱은 개입 못 한다.
+
+| | iOS 현재 | 갤럭시워치8 |
+|---|---|---|
+| 측정을 누가 시키나 | 애플워치가 알아서 | **앱이 직접** (`SPO2_ON_DEMAND`) |
+| 주기 | 애플 비공개 · 산발 | **앱이 정함** |
+
+⟹ 이 항목은 **갤럭시워치가 우위**다. "연속 스트림이 없다" 와 "상시 값을 못 얻는다" 는 다른 말이다.
+
+## R-02 · 판정 근거는 웹 문서가 아니라 AAR 바이트코드다
+
+사용자가 로컬 SDK 2종을 제공해 `javap` 로 열거형을 직접 읽었다([[L-112]] ① — 채널을 코드로 확인).
+
+```
+SPO2              ← deprecated · on-demand
+SPO2_ON_DEMAND    ← 현행 · "1 data point for each measurement"
+```
+
+**웹 요약만 봤으면 `SPO2` 라는 상수가 따로 있는 것을 근거로 "상시가 있다" 고 오독할 뻔했다.**
+공식 API 레퍼런스가 둘 다 on-demand 라고 명시해 확정했다.
+
+## R-03 · 이전 표를 뒤집은 발견 3건 — 워치8이 애플워치를 이긴다
+
+AAR `ValueKey` 하위 클래스를 전수로 읽어 나왔다.
+
+| 발견 | 근거 클래스 | 의미 |
+|---|---|---|
+| 주변 온도 | `SkinTemperatureSet` = `OBJECT_TEMPERATURE` + **`AMBIENT_TEMPERATURE`** | 스키마의 `skinTempC` **와** `ambientTempC` 를 둘 다 채운다. 애플은 주변온을 안 준다 ⟹ WBGT 환경축이 작업자별로 쪼개진다 |
+| HRV 원본 | `HeartRateSet` = `HEART_RATE` + **`IBI_LIST`** + `IBI_STATUS_LIST` | IBI 가 상시로 온다 ⟹ SDNN 을 직접 계산. 애플의 산발 SDNN 보다 촘촘 |
+| SpO₂ 원재료 | `PpgSet` = `PPG_GREEN`+`PPG_IR`+`PPG_RED` **25Hz 상시** | SpO₂ 는 red/IR 흡광비로 계산한다. 애플은 raw PPG 를 아예 안 준다 |
+
+⟹ 1차 답변의 *"신호 3종 영구 결손"* 은 **호흡수·MET·일광시간** 셋으로 줄었고, 셋 다 가중치가 낮다.
+
+## R-04 · `:wear` 를 Flutter 안드로이드 프로젝트 안에 둔다
+
+워치가 **단독**이라 Flutter 앱에 기술적으로 의존하지 않는다. 그런데도 같은 Gradle 프로젝트에 둔다.
+
+**이유 셋.**
+1. **JWT 전달이 Data Layer 를 요구한다.** 워치 자판으로 로그인하는 건 현실성이 없어 폰에서
+   1회 페어링해 넘겨야 하는데, Data Layer 는 **같은 패키지명·같은 서명**을 요구한다.
+   팀원 앱 README 가 같은 제약을 적어 뒀다.
+2. **툴체인이 이미 증명됐다.** 08-24 `flutter build apk --debug` 가 통과했다(에러 0 · APK 146MB).
+   새 프로젝트를 파면 Gradle 9.1 / AGP 9.0.1 / JDK 25 조합을 다시 증명해야 한다.
+3. 팀원 앱(`apps/VitAlGuard-Flutter-Android-App/android/wearos_companion`)이 같은 형태다 — 선례.
+
+**부작용 하나.** 루트 `build.gradle.kts` 의 `subprojects { evaluationDependsOn(":app") }` 때문에
+`:wear` 평가가 `:app`(Flutter) 평가를 먼저 부른다. 빌드는 되지만 `:wear` 단독 빌드에도
+Flutter 플러그인 해석이 붙는다. 지금은 감수한다 — 분리는 되돌릴 수 있고, 서명 공유는 못 되돌린다.
+
+## R-05 · 진단 UI 는 Compose 가 아니라 순정 View 로 쓴다
+
+Wear Compose 를 붙이면 Kotlin 2.3.20 · AGP 9.0.1 과 Compose 컴파일러 버전을 맞춰야 하고,
+그 실패는 **SDK 링크 성공 여부와 무관한 잡음**이다. 1단계 성공 기준은 "AAR 이 링크되고 빌드된다"
+하나뿐이라 UI 는 최소로 간다. 팀원 wear 동반앱도 `LinearLayout`+`TextView` 다 — 선례.
+
+**제품 UI 는 3단계에서 Compose 로 간다.** 지금 쓰는 것은 버리는 코드다.
+
+## R-06 · `SDK_POLICY_ERROR` 가 파트너 승인 판별자다
+
+`HealthTracker.TrackerError` 열거형에 둘뿐이다.
+
+```
+PERMISSION_ERROR    권한 미부여
+SDK_POLICY_ERROR    ★ 패키지명·서명이 삼성에 등록 안 됨 = 파트너 미승인
+```
+
+삼성이 파트너 프로그램 **접수를 중단**한 상태라 승인은 못 받는다. 대신 **개발자 모드**
+(설정 > 앱 > Health Sensor Service > 제목 10회 탭)로 미승인 상태에서도 완전히 동작한다.
+공모전 시연·실증에는 문제가 없고 **상용 배포만** 막힌다.
+
+⟹ 프로브가 이 오류를 **화면에 그대로 적게** 한다. 안 적으면 다음 사람이 "센서가 없다" 로 오독한다.
+
+## R-07 · 권한은 Wear OS 6 에서 이름이 바뀐다 — 신·구 병기
+
+갤럭시워치8 = Wear OS 6 = **Android 16 (API 36)**.
+
+| targetSdk | 권한 |
+|---|---|
+| 33~35 | `BODY_SENSORS` + `BODY_SENSORS_BACKGROUND` |
+| **36** | `android.permission.health.READ_HEART_RATE` + `READ_HEALTH_DATA_IN_BACKGROUND` |
+
+구권한에 `maxSdkVersion="35"` 를 달고 신권한을 함께 선언한다(공식 권장 형태).
+
+**⚠ 배포 시 반드시 걸리는 것.** 백그라운드 권한은 restricted 라 **런타임 팝업에 "항상 허용" 이 없다.**
+사용자가 설정에 직접 들어가 켜야 한다. 안 켜면 앱이 백그라운드로 가는 순간 `onPermissionLost()`
+가 뜨고 전경 권한까지 잃는다. 실측 ⑥ 이 이 단계 수를 세는 이유다 — 온보딩 문구를 그 수에 맞춘다.
+
+## R-08 · 5초 배치를 그대로 옮기지 않는다 (2단계 결정 예고)
+
+Wear OS 공식 전력 가이드가 *"비필수 네트워크 접근은 충전 중까지 미루라"* 고 명시한다.
+LTE 상시 업로드는 정확히 그 반대다. 워치8 배터리는 325mAh(40mm)/425mAh(44mm) · AOD 30h 기준.
+
+⟹ 배치 주기 후보 **30~60초**. 다만 **지금 정하지 않는다** — 실측 ⑤⑦⑧ 의 배터리 곡선을 보고
+3단계에서 정한다. 근거 없이 숫자를 박으면 [[L-107]] 의 "전제 없는 착수" 가 된다.
