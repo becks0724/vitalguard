@@ -88,9 +88,14 @@
 ## 2단계 — 워치 도착 후 실측 6개
 
 - [x] ②-0 **워치 실연결·프로브 설치 완료(08-24 저녁)** — SM-L355N · **Android 17 / API 37**(예상 36보다 최신 · SDK_INT>=36 분기 유효). 무선 ADB 런북은 context-notes R-11
-- [ ] ② SDK 연결 — `SDK_POLICY_ERROR` 면 개발자 모드(설정>앱>Health Sensor Service>제목 10탭)
-- [ ] ③ `getSupportHealthTrackerTypes()` 덤프
-- [ ] ④ Health Services `getCapabilitiesAsync()` 덤프 — **SpO₂ 가 여기 있으면 파트너 제약 없이 해결**
+- [x] ② SDK 연결 — **성공(08-24 저녁 · 실기 화면 실측)** — "SDK 연결 성공 · 지원 트래커 21종"
+  = 열거형 전량 지원(SPO2_ON_DEMAND·HEART_RATE_CONTINUOUS·SKIN_TEMPERATURE_CONTINUOUS·
+  EDA_CONTINUOUS·SWEAT_LOSS 포함). ⚠ capability 조회는 정책 검사 전일 수 있다 — 진짜 관문은
+  트래킹 시작(3-2 실소스)에서 재확인
+- [x] ③ `getSupportHealthTrackerTypes()` 덤프 — ② 와 동시 완료(21종 전량)
+- [x] ④ Health Services 덤프 — **SpO₂ 없음 확정**(passive = Steps·Distance·Calories·Floors·
+  ElevationGain·HeartRate 계열 11종 / measure = HeartRate / exercise 82종). ⟹ SpO₂ 는 삼성
+  SDK 단독 경로로 확정 — 최상 시나리오는 무산, 예상 시나리오대로
 - [ ] ⑤ wake-up 심박 화면꺼짐 10분 생존 — 60초 규칙 검증
 - [ ] ⑥ `READ_HEALTH_DATA_IN_BACKGROUND` 부여 경로 단계 수 세기 (온보딩 문구 확정용)
 - [ ] ⑦ `SPO2_ON_DEMAND` 가 화면 꺼진 백그라운드에서 성공하는지 — **문서에 답이 없어 실측만이 답**
