@@ -129,3 +129,21 @@ iOS 는 배치에 심박 항목 여러 건을 담고 서버가 ts 충돌로 뒤 
 사번 결속)은 DB 앞단에서 끝나므로, DATABASE_URL 을 `127.0.0.1:1`(unroutable)로 덮어
 **한 행도 쓰지 않고** 계약 통과만 실측한다. 판정 = `accepted` 건수(12/12). workerId 도
 실제 사번이 아니라 `WEAR-LOCALTEST` 를 쓴다 — 만에 하나 DB 에 닿아도 실계정 오염이 없다.
+
+## R-11 · 워치 무선 ADB 런북 — IPv6 전용 핫스팟의 4중 함정 (08-24 실전에서 전부 밟음)
+
+공유기(무선 격리) → 폰 핫스팟 이동 후에도 3겹이 더 있었다. 다음에 그대로 재사용한다.
+
+① **공유기 무선 격리** — 같은 SSID 인데 ARP `incomplete`. 공유기 우회 = 폰 핫스팟.
+② **통신사 폰 핫스팟은 IPv6 전용(464XLAT)** — 클라이언트 IPv4 는 192.0.0.x/32 **더미**라
+   기기 간 IPv4 유니캐스트가 원래 안 된다(페어링 화면의 192.0.0.4 는 미끼다). 판별 지문 =
+   Mac ifconfig 에 `clat46` · 넷마스크 0xffffffff.
+③ **경로** — `dns-sd -L`(SRV→호스트명) → `dns-sd -G v6`(AAAA) → **pair 는 글로벌 v6**
+   `adb pair "[2001:...]:포트" 코드` → **connect 는 링크로컬+스코프** `adb connect
+   "[fe80::...%en0]:포트"` (글로벌 connect 는 Network unreachable 로 실패했다).
+④ **워치 Wi-Fi 절전이 유휴 TCP 를 수 초 만에 끊는다** — ping 은 9.5ms 인데 세션만 죽는 지문.
+   해법 = 연결 직후 keep-alive 쉘(`shell "while true; do echo ka; sleep 1; done"` 백그라운드)로
+   링크를 붙잡고 그 사이에 작업. 스트리밍 설치(abb_exec)는 이 링크에서 깨지므로
+   **push + `pm install -r`** 로 우회한다(9.7MB 가 0.7초에 들어갔다 — 링크 자체는 빠르다).
+
+기기 실측 = SM-L355N · Android 17 · API 37. 매니페스트의 SDK_INT>=36 분기·신권한 그대로 유효.

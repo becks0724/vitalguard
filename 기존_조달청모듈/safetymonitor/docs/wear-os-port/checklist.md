@@ -78,8 +78,16 @@
   - 판정: 리플레이 종단 테스트 초록. 워치 도착일 잔여 코드 = 실소스 1파일
 - [ ] E(에뮬레이터)는 **보류** — 재개 조건: 워치 구매가 오늘(08-24) 성사되지 않을 때만
 
+## 보류 — 삼성계정 제거 (사용자 결정 08-24 · 실측과 무관해 뒤로 뺌)
+
+- [ ] 워치의 빌린 계정 제거 — 워치 단독 제거 불가 확인됨(페어링 폰 계정 미러).
+  **권장 경로 = 원격**: 폰 주인이 account.samsung.com > 기기 > 이 워치 로그아웃 → 워치 재부팅.
+  ⛔ 초기화는 재활성화 잠금 해제 확인 전 금지 · 초기화하면 요건 폰으로 재페어링 필요.
+  제거 후 Galaxy Store 용 본인 계정 등록(Health Sensor Service 갱신 경로).
+
 ## 2단계 — 워치 도착 후 실측 6개
 
+- [x] ②-0 **워치 실연결·프로브 설치 완료(08-24 저녁)** — SM-L355N · **Android 17 / API 37**(예상 36보다 최신 · SDK_INT>=36 분기 유효). 무선 ADB 런북은 context-notes R-11
 - [ ] ② SDK 연결 — `SDK_POLICY_ERROR` 면 개발자 모드(설정>앱>Health Sensor Service>제목 10탭)
 - [ ] ③ `getSupportHealthTrackerTypes()` 덤프
 - [ ] ④ Health Services `getCapabilitiesAsync()` 덤프 — **SpO₂ 가 여기 있으면 파트너 제약 없이 해결**
