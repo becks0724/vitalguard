@@ -13,6 +13,18 @@
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
 
+    <!-- 업로드(LTE 직결) — INTERNET 없이는 첫 POST 부터 SecurityException 이고, runCatching 이
+         그것을 -1(네트워크 오류)로 삼켜 30초 재시도 무한루프가 된다(08-24 외부 리뷰가 잡음).
+         ACCESS_NETWORK_STATE 는 실측 ⑧ 의 TRANSPORT_CELLULAR 바인딩에 필요하다 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <!-- GPS — 생체 + 위치 송출이 목표. 백그라운드 위치는 FGS location 타입으로 충족한다 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
     <!-- 화면 꺼짐 생존(60초 규칙) — 포그라운드 서비스 health 타입 필수 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
@@ -41,5 +53,11 @@
             android:name=".HrForegroundService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <!-- 수집 본체 — 생체(health) + GPS(location) 를 한 서비스가 든다 -->
+        <service
+            android:name=".CollectorService"
+            android:exported="false"
+            android:foregroundServiceType="health|location" />
     </application>
 </manifest>

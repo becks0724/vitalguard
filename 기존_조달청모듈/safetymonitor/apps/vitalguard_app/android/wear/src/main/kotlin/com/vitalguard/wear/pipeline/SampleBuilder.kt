@@ -1,6 +1,8 @@
 // flush 1회 → 병합 항목 1건 — 서버 UNIQUE(worker_id, ts) 계약상 한 flush 의 모든 값은 한 항목에 실린다
 package com.vitalguard.wear.pipeline
 
+import com.vitalguard.wear.source.LocationFix
+
 /**
  * iOS 배치 병합 규칙의 이식. 다른 점 하나 — iOS 는 여러 심박 항목을 배치에 담고 서버가
  * ts 충돌로 뒤 항목을 조용히 버렸다(2026-08-14 가드 주석). 여기서는 처음부터 **한 항목**만
@@ -43,6 +45,7 @@ class SampleBuilder {
         stillSec: Double? = null,
         variabilityMg: Int? = null,
         batteryPct: Int? = null,
+        fix: LocationFix? = null,
     ): Map<String, Any>? {
         val v = LinkedHashMap<String, Any>()
         bpm?.let {
@@ -71,6 +74,13 @@ class SampleBuilder {
         } else {
             reset()
             return null
+        }
+        // 좌표 4종은 한 덩어리 — 항목이 있을 때만 얹고(행 수 불증가), 일부만 싣지 않는다(iOS 규칙).
+        fix?.let {
+            v["latitude"] = it.latitude
+            v["longitude"] = it.longitude
+            v["locationAccuracyMeters"] = it.accuracyMeters
+            v["locationTimestamp"] = IsoMs.format(it.atMs)
         }
         v["ts"] = IsoMs.format(sentAtMs)
         reset()

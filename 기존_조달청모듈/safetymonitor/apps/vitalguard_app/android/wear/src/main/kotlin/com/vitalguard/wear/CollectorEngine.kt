@@ -5,6 +5,7 @@ import com.vitalguard.wear.core.MotionTracker
 import com.vitalguard.wear.core.Sdnn
 import com.vitalguard.wear.pipeline.SampleBuilder
 import com.vitalguard.wear.pipeline.VitalQueue
+import com.vitalguard.wear.source.LocationFix
 import com.vitalguard.wear.source.TrackerListener
 import com.vitalguard.wear.source.TrackerSource
 
@@ -16,6 +17,7 @@ class CollectorEngine(
     private val source: TrackerSource,
     private val queue: VitalQueue,
     private val batteryPct: () -> Int?,
+    private val latestFix: (nowMs: Long) -> LocationFix? = { null },   // 배치당 1회 조회(iOS 규칙)
 ) : TrackerListener {
 
     private val builder = SampleBuilder()
@@ -82,6 +84,7 @@ class CollectorEngine(
             stillSec = motion.stillSec(nowMs),
             variabilityMg = motion.variabilityMg(),
             batteryPct = batteryPct(),
+            fix = latestFix(nowMs),
         ) ?: return false
         queue.add(sample)
         return true

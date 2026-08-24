@@ -67,6 +67,14 @@
 - [x] **C** TrackerSource 심 — 실소스/페이크 교체 구조 + 수집→파생→큐→업로드 종단 페이크 테스트
   - 완료(08-24) — 60초 근무 리플레이: 병합 12건·ts 전건 유일·SpO₂ 1회 소비·HRV 창당 1회·still 45.0s 실측.
     시험이 Long.MIN_VALUE 오버플로 버그를 착수 당일 잡음(테스트 23건 전부 초록)
+- [x] **격차 3건 수리(08-24 저녁 · 외부 리뷰 제보 → 실물 검증 후 수정)**
+  - ① INTERNET·ACCESS_NETWORK_STATE 누락 — APK aapt 실물 대조로 확인·수리. 매니페스트 가드 신설
+    (**L-113 변이 통과** — INTERNET 삭제 변이 → fail 1 · 복원 cmp 무결 · 기준선 PASS)
+  - ② GPS 0건 — LocationSource 심 + GpsLocationSource(60초 듀티·순정 LocationManager) + 좌표 4종
+    한 덩어리·신선도 계약 시험. ⚠ 실기 미검증 — 실측 항목에 ⑨ "GPS fix 획득" 추가
+  - ③ 자격 주입 경로 — ConfigStore + adb 인텐트 엑스트라 주입 + CollectorService(FGS health|location ·
+    60초 flush = 배터리 기준 프로파일) + 화면 ⑦수집시작/⑧중지. SensorTrackerSource(순정 wake-up)가
+    삼성 SDK 실패 시의 대조군 실소스. 시험 29건 초록
   - 판정: 리플레이 종단 테스트 초록. 워치 도착일 잔여 코드 = 실소스 1파일
 - [ ] E(에뮬레이터)는 **보류** — 재개 조건: 워치 구매가 오늘(08-24) 성사되지 않을 때만
 

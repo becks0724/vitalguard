@@ -12,10 +12,12 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.vitalguard.wear.pipeline.ConfigStore
 
 class MainActivity : Activity() {
 
     private lateinit var output: TextView
+    private var allowNoAuth = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,9 +54,35 @@ class MainActivity : Activity() {
             stopService(Intent(this, HrForegroundService::class.java))
             show("FGS 중지됨")
         }
+        button("⑦ 수집 시작") {
+            val cfg = ConfigStore(this)
+            if (cfg.uploadConfig() == null) {
+                show("자격 없음 — adb 로 주입하십시오.\nam start ... --es token T --es workerId W [--es baseUrl U]\n(큐 적재는 자격 없이도 됩니다 — 계속하려면 다시 누르십시오)")
+                if (!allowNoAuth) { allowNoAuth = true; return@button }
+            }
+            startForegroundService(Intent(this, CollectorService::class.java))
+            show("수집 시작 — logcat -s ${CollectorService.TAG}\n서버 ${cfg.baseUrl}")
+        }
+        button("⑧ 수집 중지") {
+            stopService(Intent(this, CollectorService::class.java))
+            show("수집 중지됨 — 큐는 보존됩니다")
+        }
 
         column.addView(output)
         setContentView(ScrollView(this).apply { addView(column) })
+        absorbConfigExtras()
+    }
+
+    /** 실측용 자격 주입 — adb 인텐트 엑스트라를 ConfigStore 로 옮긴다(3단계 D 전까지의 경로). */
+    private fun absorbConfigExtras() {
+        val e = intent?.extras ?: return
+        val cfg = ConfigStore(this)
+        var absorbed = 0
+        e.getString("token")?.let { cfg.token = it; absorbed++ }
+        e.getString("workerId")?.let { cfg.workerId = it; absorbed++ }
+        e.getString("workerName")?.let { cfg.workerName = it; absorbed++ }
+        e.getString("baseUrl")?.let { cfg.baseUrl = it; absorbed++ }
+        if (absorbed > 0) show("자격 주입 ${absorbed}개 항목 저장됨 (worker=${cfg.workerId})")
     }
 
     /** API 36+ 는 health 권한, 35 이하는 BODY_SENSORS 계열 — 매니페스트의 신·구 병기와 짝. */
