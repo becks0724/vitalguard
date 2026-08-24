@@ -9,8 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.BatteryManager
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import android.util.Log
 import com.vitalguard.wear.pipeline.ConfigStore
 import com.vitalguard.wear.pipeline.FlushOutcome
@@ -24,7 +24,11 @@ import java.io.File
 
 class CollectorService : Service() {
 
-    private val handler = Handler(Looper.getMainLooper())
+    // ★ 업로드는 **메인 스레드에서 돌리면 안 된다** — Android 가 NetworkOnMainThreadException 으로
+    //   막는데, HttpTransport 의 runCatching 이 그것을 -1(네트워크 오류)로 삼켜 "30초 재시도"만
+    //   무한 반복된다(2026-08-24 실기에서 큐만 쌓이고 한 건도 안 올라간 원인).
+    private lateinit var worker: HandlerThread
+    private lateinit var handler: Handler
     private lateinit var config: ConfigStore
     private lateinit var queue: VitalQueue
     private lateinit var engine: CollectorEngine
@@ -34,6 +38,8 @@ class CollectorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        worker = HandlerThread("vg-collector").apply { start() }
+        handler = Handler(worker.looper)
         val ch = NotificationChannel(CH, "생체 수집", NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
 
@@ -101,6 +107,7 @@ class CollectorService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        worker.quitSafely()
         engine.stop()
         gps.stop()
         Log.i(TAG, "수집 종료 — 큐 ${queue.size}건 보존")

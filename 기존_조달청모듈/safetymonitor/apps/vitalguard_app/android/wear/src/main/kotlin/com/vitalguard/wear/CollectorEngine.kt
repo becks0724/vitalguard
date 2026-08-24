@@ -27,6 +27,7 @@ class CollectorEngine(
     private var hrvWindowMs = 300_000L                          // SDNN 표준 5분 창 — 실측 후 확정
     private var lastHrvEmitMs: Long? = null   // MIN_VALUE 초기값은 뺄셈 오버플로로 영영 안 실린다(시험이 잡음)
 
+    @Synchronized
     fun start(nowMs: Long) {
         motion.start(nowMs)
         source.start(this)
@@ -38,6 +39,7 @@ class CollectorEngine(
 
     // ── TrackerListener ──────────────────────────────────────────────
 
+    @Synchronized
     override fun onHeartRate(bpm: Int, ibiMs: List<Int>, ibiStatus: List<Int>, atMs: Long) {
         if (bpm > 0) builder.heartRate(bpm, atMs)
         ibiMs.forEachIndexed { i, ibi ->
@@ -52,14 +54,17 @@ class CollectorEngine(
         }
     }
 
+    @Synchronized
     override fun onSpo2(pct: Int, atMs: Long) {
         builder.spo2(pct, atMs)
     }
 
+    @Synchronized
     override fun onSkinTemp(objectC: Double, ambientC: Double?, atMs: Long) {
         builder.skinTemp(objectC, ambientC)
     }
 
+    @Synchronized
     override fun onAccelMagG(magG: Double, atMs: Long) {
         motion.onSample(magG, atMs)
     }
@@ -71,6 +76,7 @@ class CollectorEngine(
      * 구 앱이 만든 "같은 HRV 하루 수천 행" 의 가짜 밀도를 재현한다(VitalPipeline 주석의 그 사고).
      * 부족하면 키 생략 — 0 금지. 반환 = 적재 여부.
      */
+    @Synchronized
     fun flush(nowMs: Long): Boolean {
         val lastEmit = lastHrvEmitMs
         if (lastEmit == null || nowMs - lastEmit >= hrvWindowMs) {
