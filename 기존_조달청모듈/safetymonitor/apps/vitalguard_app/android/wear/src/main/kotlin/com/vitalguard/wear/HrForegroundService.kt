@@ -45,6 +45,7 @@ class HrForegroundService : Service(), SensorEventListener {
             log("wake-up 심박 센서 없음 — 생존 시험 불가")
         } else {
             sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            running = true
             log("수집 시작 (wakeUp=${sensor.isWakeUpSensor})")
         }
         return START_STICKY
@@ -52,6 +53,7 @@ class HrForegroundService : Service(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent) {
         samples++
+        lastBpm = event.values[0].toInt().takeIf { it > 0 }
         // 판독은 타임스탬프 연속성으로 한다 — 화면 꺼짐 구간에 공백이 있으면 생존 실패다.
         log("${event.values[0].toInt()} bpm")
     }
@@ -61,6 +63,7 @@ class HrForegroundService : Service(), SensorEventListener {
     }
 
     override fun onDestroy() {
+        running = false
         sensorManager.unregisterListener(this)
         log("수집 종료 (표본 $samples)")
         super.onDestroy()
@@ -82,6 +85,12 @@ class HrForegroundService : Service(), SensorEventListener {
         const val TAG = "VgHrProbe"
         private const val RING_MAX = 40
         private var samples = 0
+
+        /** 화면 헤더용 — 마지막 심박과 표본 수. iOS 화면의 3초 폴링과 같은 소비 방식이다. */
+        @Volatile var lastBpm: Int? = null
+            private set
+        @Volatile var running = false
+        fun sampleCount(): Int = samples
 
         /** 화면 표시용 최근 로그 — 프로브라 정적 링으로 충분하다. */
         val ring = mutableListOf<String>()
