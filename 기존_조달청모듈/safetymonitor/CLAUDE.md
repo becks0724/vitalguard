@@ -16,11 +16,11 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00313-s5c` (커밋 `75382e7` · 08-25 · 서빙 digest 대조 일치
-  `sha256:44862ca6…`). 서빙 코드 변경은 `3153cf6` 한 건 — **갤럭시워치(Wear OS)를 애플과 가르는
-  `wearos_data_vitalguard` 출처 신설**(schemas 열거형 · `classifyVitalDataOrigin` case · 가드 3건).
-  ⚠ 워치 `sourceTag` 는 **아직 애플과 같은 값**이다 — 교체는 이 배포 이후 별도 단계(순서를 뒤집으면
-  화이트리스트 밖 source 가 `store.ts:223` 에서 조용히 폐기되고 `persistFailed:false` 라 큐가 비워진다).
+- **라이브** = `vitalguard-dashboard-00314-bj4` (커밋 `ab9a78e` · 08-25 · 서빙 digest 대조 일치
+  `sha256:5f579ba7…`). 갤럭시워치(Wear OS) 출처 분리가 **서버 쪽은 완결**됐다 —
+  `wearos_data_vitalguard` 열거형·`classifyVitalDataOrigin` case·**`persistSample` 적재 관문**·가드 4건.
+  ⚠ 관문은 넷이다(스키마·분류·**적재**·컬럼). `00313` 은 적재 관문을 빠뜨려 실기에서
+  `{"accepted":1,"persistFailures":1}` 가 났고 `00314` 가 그것을 수리했다([[L-115]]).
 - 08-21 저녁~08-22 배포 4회 = `00309`(좌측 패널 오토리사이징 `d2cbb21`·`8771eef`) → `00310`(순환 0
   리팩터 + 그래프 게이트) → `00311`/`00312`(D-3 웜 바닥 1·2차 — DB 접속 생성 ~99% 감소).
 
