@@ -53,6 +53,9 @@ dependencies {
     // @WearPreviewDevices 등 워치 전용 미리보기 애너테이션
     implementation("androidx.wear.compose:compose-ui-tooling:1.5.0")
     // WearDevices 상수(LARGE_ROUND·SMALL_ROUND) — 전이 의존으로는 컴파일 경로에 안 들어온다
+    // 앰비언트(항상 켜짐) — 화면이 꺼질 때 시계로 돌아가지 않고 앱이 어두운 채 남는다.
+    // ⚠ FLAG_KEEP_SCREEN_ON 만으로는 안 된다(08-25 실측: 플래그가 걸려 있는데도 시계 복귀).
+    implementation("androidx.wear:wear:1.3.0")
     implementation("androidx.wear:wear-tooling-preview:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 

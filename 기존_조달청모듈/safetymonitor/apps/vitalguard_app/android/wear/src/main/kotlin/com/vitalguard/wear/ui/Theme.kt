@@ -22,6 +22,12 @@ object VgColors {
     val Track = Color(0xFF2C2C2E)
 }
 
+/**
+ * 앰비언트에서 화면 전체에 거는 투명도.
+ * Wear 지침 = 켜진 픽셀을 줄인다. 0.55 면 값은 읽히면서 밝은 면적이 절반 아래로 떨어진다.
+ */
+const val AMBIENT_ALPHA = 0.55f
+
 /** 위험도 → 색. 화면 어디서든 같은 매핑을 쓴다. */
 fun Severity.color(): Color = when (this) {
     Severity.IDLE -> VgColors.Idle

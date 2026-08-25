@@ -272,6 +272,63 @@ class KeepScreenOnTest {
 }
 
 /** 발열 완화 — 08-25 실측(10분에 피부온 +2.3℃ · 주변 +2.5℃ · 배터리 15%) 후 조치. */
+class AmbientTest {
+
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+
+    /**
+     * ★ 08-25 사용자 요청(3회) — 앱이 시계 화면으로 돌아가면 안 된다.
+     * ⚠ `FLAG_KEEP_SCREEN_ON` 만으로는 안 된다. 실측에서 `dumpsys window` 에
+     *   `fl=KEEP_SCREEN_ON` 이 걸려 있는데도 깨우면 시계가 떴다 —
+     *   Wear 는 "앱에서 시계로 복귀" 규칙을 화면 유지와 **따로** 갖고 있다.
+     */
+    @Test
+    fun `앰비언트를 등록한다 - 화면 유지 플래그만으로는 시계로 돌아간다`() {
+        assertTrue("앰비언트 옵저버가 없다", activity.contains("AmbientLifecycleObserver"))
+        assertTrue("생명주기에 안 붙였다", activity.contains("lifecycle.addObserver(ambientObserver)"))
+        // ⚠ KEEP_SCREEN_ON 을 **함께 걸면 안 된다.** 화면이 아예 안 꺼져 앰비언트 진입이
+        //   일어나지 않는다(08-25 실측: 100초 대기에도 mWakefulness=Awake · 콜백 0건).
+        assertFalse(
+            "화면 유지 플래그가 앰비언트 진입을 막는다",
+            activity.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
+        )
+    }
+
+    /**
+     * ⚠ 앰비언트에서 3초마다 다시 그리면 앰비언트로 아낀 전력을 그대로 반납한다.
+     * 시스템이 1분에 한 번 깨우는 리듬에 맞춘다.
+     */
+    @Test
+    fun `앰비언트에서는 갱신을 늦춘다`() {
+        assertTrue(
+            "앰비언트에서도 같은 주기로 돈다",
+            com.vitalguard.wear.MainActivity.AMBIENT_POLL_MS >
+                com.vitalguard.wear.MainActivity.ACTIVE_POLL_MS,
+        )
+        assertTrue(
+            "앰비언트 주기가 너무 짧다 — 전력 절감이 사라진다",
+            com.vitalguard.wear.MainActivity.AMBIENT_POLL_MS >= 30_000L,
+        )
+        assertTrue("폴링이 상태를 안 본다", activity.contains("if (ambient) AMBIENT_POLL_MS else ACTIVE_POLL_MS"))
+    }
+
+    /** 앰비언트에서는 밝은 면적을 줄인다(Wear 지침). */
+    @Test
+    fun `앰비언트에서 화면을 어둡게 한다`() {
+        assertTrue("어둡게 하는 경로가 없다", activity.contains("AMBIENT_ALPHA"))
+        assertTrue(
+            "투명도가 1 이면 어두워지지 않는다",
+            com.vitalguard.wear.ui.AMBIENT_ALPHA < 1f,
+        )
+        assertTrue(
+            "너무 어두우면 값을 못 읽는다",
+            com.vitalguard.wear.ui.AMBIENT_ALPHA >= 0.35f,
+        )
+    }
+}
+
 class Spo2RetryTest {
 
     private val src = java.io.File(
@@ -337,12 +394,10 @@ class ThermalMitigationTest {
      * 사용자가 두 번 요청해 상시로 되돌렸다. 근거를 지우지 않고 **대가로 남긴다.**
      */
     @Test
-    fun `화면은 앱이 앞에 있는 동안 켜져 있다 - 시계로 안 돌아간다`() {
+    fun `시계로 안 돌아가게 하는 수단이 있다`() {
         val onCreate = activity.substringAfter("override fun onCreate").substringBefore("setContent")
-        assertTrue(
-            "onCreate 에서 화면을 붙잡지 않는다 — 시계 화면으로 돌아간다",
-            onCreate.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
-        )
+        // 수단은 앰비언트다 — KEEP_SCREEN_ON 은 앰비언트 진입을 막으므로 함께 쓰지 않는다.
+        assertTrue("앰비언트 등록이 없다", onCreate.contains("lifecycle.addObserver(ambientObserver)"))
     }
 
     /**

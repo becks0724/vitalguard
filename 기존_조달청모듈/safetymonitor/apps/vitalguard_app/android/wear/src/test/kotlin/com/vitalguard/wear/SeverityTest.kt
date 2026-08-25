@@ -198,6 +198,50 @@ class BezelTest {
     }
 }
 
+class AreaChartTest {
+
+    private val chart = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/TrendChart.kt",
+    ).readText()
+
+    /** ★ 08-25 사용자 결정 — 참고 워치앱 방식(면적 채움). 선 하나보다 크기가 빨리 읽힌다. */
+    @Test
+    fun `주 계열은 선 아래를 채운다`() {
+        org.junit.Assert.assertTrue("면적 채움이 없다", chart.contains("Brush.verticalGradient"))
+        org.junit.Assert.assertTrue(
+            "주 계열이 안 채워진다",
+            chart.contains("series(visible, tint, h * 0.055f, filled = true)"),
+        )
+    }
+
+    /**
+     * ⚠ 보조 계열은 **채우지 않는다.** 두 면이 겹치면 체온 판별(피부온 대 주변온)이 뭉개진다 —
+     * 겹쳐 그리는 이유가 두 선의 기울기 비교이기 때문이다(R-25).
+     */
+    @Test
+    fun `보조 계열은 채우지 않는다 - 겹치면 체온 판별이 뭉개진다`() {
+        org.junit.Assert.assertTrue(
+            "보조 계열이 채워진다 — 겹친 두 면이 서로를 가린다",
+            chart.contains("series(visibleOverlay, overlayTint.copy(alpha = 0.75f), h * 0.035f, filled = false)"),
+        )
+    }
+
+    /** 세로 격자 — 시간 폭을 눈으로 나눈다(참고 워치앱의 그 눈금). */
+    @Test
+    fun `세로 격자가 있다`() {
+        org.junit.Assert.assertTrue("격자가 없다", chart.contains("GRID_DIVISIONS"))
+    }
+
+    /** 채움이 격자·임계선을 가리면 안 된다 — 아래로 갈수록 투명해야 한다. */
+    @Test
+    fun `채움은 아래로 갈수록 투명하다`() {
+        org.junit.Assert.assertTrue(
+            "그라데이션이 불투명하게 끝난다",
+            chart.contains("c.copy(alpha = 0f)"),
+        )
+    }
+}
+
 class CurrentZoneTest {
 
     private val z = com.vitalguard.wear.ui.hrZones()

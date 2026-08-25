@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -51,7 +52,7 @@ fun TrendChart(
     thresholds: List<Threshold> = emptyList(),
     /** 이 간격보다 벌어진 두 점은 잇지 않는다(측정 공백을 선으로 메우지 않는다). */
     maxGapMs: Long = windowMs / 6,
-    heightDp: Int = 46,
+    heightDp: Int = 58,
     /** 같은 축에 겹쳐 그릴 보조 계열(예 주변온). 비어 있으면 안 그린다. */
     overlay: List<Sample> = emptyList(),
     overlayTint: Color = VgColors.Accent,
@@ -99,6 +100,17 @@ fun TrendChart(
             fun y(v: Double) = (h - pad - ((v - lo) / span * (h - pad * 2))).toFloat()
             fun x(t: Long) = w - ((nowMs - t).toFloat() / windowMs) * w
 
+            // 세로 격자 — 시간 눈금. 참고 워치앱처럼 값 뒤에 옅게 깔아 "폭" 을 준다.
+            for (i in 1 until GRID_DIVISIONS) {
+                val gx = w * i / GRID_DIVISIONS
+                drawLine(
+                    color = VgColors.Track.copy(alpha = 0.55f),
+                    start = Offset(gx, 0f),
+                    end = Offset(gx, h),
+                    strokeWidth = 1f,
+                )
+            }
+
             // 임계선 — 값보다 먼저 그려 배경처럼 깔린다.
             thresholds.forEach { t ->
                 if (t.value in lo..hi) {
@@ -112,10 +124,29 @@ fun TrendChart(
             }
 
             // 값 — 공백을 건너뛰며 구간별로 잇는다.
-            fun series(pts: List<Sample>, c: Color, stroke: Float) {
+            fun series(pts: List<Sample>, c: Color, stroke: Float, filled: Boolean) {
                 var seg = mutableListOf<Sample>()
                 fun flush() {
                     if (seg.size >= 2) {
+                        // ★ 선 아래를 그라데이션으로 채운다(참고 워치앱 방식) — 값의 크기가
+                        //   선 하나보다 면으로 훨씬 빨리 읽힌다. 아래로 갈수록 투명해져
+                        //   격자·임계선을 가리지 않는다.
+                        if (filled) {
+                            val area = Path().apply {
+                                moveTo(x(seg.first().atMs), h)
+                                seg.forEach { lineTo(x(it.atMs), y(it.value)) }
+                                lineTo(x(seg.last().atMs), h)
+                                close()
+                            }
+                            drawPath(
+                                area,
+                                brush = Brush.verticalGradient(
+                                    listOf(c.copy(alpha = 0.38f), c.copy(alpha = 0f)),
+                                    startY = 0f,
+                                    endY = h,
+                                ),
+                            )
+                        }
                         val path = Path().apply {
                             moveTo(x(seg.first().atMs), y(seg.first().value))
                             seg.drop(1).forEach { lineTo(x(it.atMs), y(it.value)) }
@@ -134,12 +165,16 @@ fun TrendChart(
                 flush()
             }
             // 보조를 먼저(가늘게) — 주 계열이 위에 온다.
-            series(visibleOverlay, overlayTint.copy(alpha = 0.75f), h * 0.035f)
-            series(visible, tint, h * 0.055f)
+            // ⚠ 보조는 **채우지 않는다.** 두 면이 겹치면 체온 판별(피부온 대 주변온)이
+            //   뭉개진다 — 겹쳐 그리는 이유가 두 선의 기울기 비교이기 때문이다(R-25).
+            series(visibleOverlay, overlayTint.copy(alpha = 0.75f), h * 0.035f, filled = false)
+            series(visible, tint, h * 0.055f, filled = true)
 
-            // 최신 점 — 눈이 '지금' 을 먼저 찾게 한다.
+            // 최신 점 — 눈이 '지금' 을 먼저 찾게 한다. 색 고리 위에 흰 알(참고 워치앱 방식).
             visible.last().let {
-                drawCircle(tint, radius = h * 0.08f, center = Offset(x(it.atMs), y(it.value)))
+                val c = Offset(x(it.atMs), y(it.value))
+                drawCircle(tint, radius = h * 0.11f, center = c)
+                drawCircle(VgColors.Primary, radius = h * 0.06f, center = c)
             }
         }
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -173,6 +208,9 @@ private fun LegendDot(c: Color) {
             .background(c),
     )
 }
+
+/** 세로 격자 칸 수. 시간 폭을 눈으로 나눠 주되 촘촘하면 값이 안 보인다. */
+private const val GRID_DIVISIONS = 4
 
 internal fun windowLabel(ms: Long): String = when {
     ms < 60 * 60_000L -> "${ms / 60_000}분 전"
