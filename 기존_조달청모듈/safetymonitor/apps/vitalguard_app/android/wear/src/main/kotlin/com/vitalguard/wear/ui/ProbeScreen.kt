@@ -60,7 +60,7 @@ fun ProbeScreen(state: ProbeUiState, actions: List<ProbeAction>) {
             item {
                 Text(
                     state.output,
-                    color = VgColors.Cyan,
+                    color = VgColors.Accent,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(top = 8.dp),
@@ -77,7 +77,7 @@ private fun HeartHeader(state: ProbeUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Text("♥", color = VgColors.Red, fontSize = 22.sp)
+        Text("♥", color = VgColors.Danger, fontSize = 22.sp)
         Text(
             state.bpm?.toString() ?: "--",
             color = VgColors.Primary,
@@ -102,8 +102,8 @@ private fun StatusLine(state: ProbeUiState) {
         Text(
             text,
             color = when {
-                state.queued > 0 -> VgColors.Orange
-                state.running -> VgColors.Green
+                state.queued > 0 -> VgColors.Caution
+                state.running -> VgColors.Normal
                 else -> VgColors.Secondary
             },
             fontSize = 12.sp,

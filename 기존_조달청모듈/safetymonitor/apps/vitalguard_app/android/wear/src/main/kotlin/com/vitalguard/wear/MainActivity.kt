@@ -79,16 +79,16 @@ class MainActivity : ComponentActivity() {
             output = "Health Services 조회 중…"
             HealthServicesProbe.run(this) { runOnUiThread { show(it) } }
         },
-        ProbeAction("④ 심박 시작", VgColors.Green) {
+        ProbeAction("④ 심박 시작", VgColors.Normal) {
             startForegroundService(Intent(this, HrForegroundService::class.java))
             show("수집을 시작했습니다.\n화면을 끄고 10분 뒤 ⑤로 확인하세요.")
         },
         ProbeAction("⑤ 생존 로그") { show(HrForegroundService.tail().ifEmpty { "로그 없음" }) },
-        ProbeAction("⑥ 심박 중지", VgColors.Red) {
+        ProbeAction("⑥ 심박 중지", VgColors.Danger) {
             stopService(Intent(this, HrForegroundService::class.java))
             show("심박 수집을 중지했습니다.")
         },
-        ProbeAction("⑦ 본수집 시작", VgColors.Green) {
+        ProbeAction("⑦ 본수집 시작", VgColors.Normal) {
             val cfg = ConfigStore(this)
             if (cfg.uploadConfig() == null && !allowNoAuth) {
                 allowNoAuth = true
@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
             startForegroundService(Intent(this, CollectorService::class.java))
             show("본수집 시작 — 큐·업로드는 logcat 으로 관찰합니다.")
         },
-        ProbeAction("⑧ 본수집 중지", VgColors.Red) {
+        ProbeAction("⑧ 본수집 중지", VgColors.Danger) {
             stopService(Intent(this, CollectorService::class.java))
             show("본수집을 중지했습니다. 큐는 보존됩니다.")
         },

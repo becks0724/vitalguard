@@ -10,21 +10,21 @@ private val demoActions = listOf(
     ProbeAction("① 권한 요청") {},
     ProbeAction("② 삼성 SDK 트래커") {},
     ProbeAction("③ Health Services") {},
-    ProbeAction("④ 심박 시작", VgColors.Green) {},
+    ProbeAction("④ 심박 시작", VgColors.Normal) {},
     ProbeAction("⑤ 생존 로그") {},
-    ProbeAction("⑥ 심박 중지", VgColors.Red) {},
-    ProbeAction("⑦ 본수집 시작", VgColors.Green) {},
-    ProbeAction("⑧ 본수집 중지", VgColors.Red) {},
+    ProbeAction("⑥ 심박 중지", VgColors.Danger) {},
+    ProbeAction("⑦ 본수집 시작", VgColors.Normal) {},
+    ProbeAction("⑧ 본수집 중지", VgColors.Danger) {},
 )
 
 @Preview(device = WearDevices.LARGE_ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Preview(device = WearDevices.SMALL_ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable
-fun PreviewIdle() = ProbeScreen(ProbeUiState(), demoActions)
+fun PreviewProbeIdle() = ProbeScreen(ProbeUiState(), demoActions)
 
 @Preview(device = WearDevices.LARGE_ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable
-fun PreviewRunning() = ProbeScreen(
+fun PreviewProbeRunning() = ProbeScreen(
     ProbeUiState(bpm = 72, running = true, samples = 128),
     demoActions,
 )
@@ -32,14 +32,14 @@ fun PreviewRunning() = ProbeScreen(
 /** 큐 적체 — 서버 장애 때 화면이 이렇게 보여야 한다(08-25 실제 상황 재현). */
 @Preview(device = WearDevices.LARGE_ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable
-fun PreviewQueueBacklog() = ProbeScreen(
+fun PreviewProbeQueueBacklog() = ProbeScreen(
     ProbeUiState(bpm = 88, running = true, samples = 640, queued = 283),
     demoActions,
 )
 
 @Preview(device = WearDevices.LARGE_ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable
-fun PreviewWithOutput() = ProbeScreen(
+fun PreviewProbeOutput() = ProbeScreen(
     ProbeUiState(
         bpm = 90,
         running = true,
