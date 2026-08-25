@@ -104,6 +104,7 @@ class CollectorService : Service() {
         if (sensing) return
         sensing = true
         worn = true
+        collecting = true
         gps.start()
         engine.start(System.currentTimeMillis())
         Log.i(TAG, "착용 — 수집 개시")
@@ -114,6 +115,7 @@ class CollectorService : Service() {
         if (!sensing) return
         sensing = false
         worn = false
+        collecting = false
         engine.stop()
         gps.stop()
         Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")
@@ -174,6 +176,14 @@ class CollectorService : Service() {
 
         /** 착용 여부 — 화면이 "차면 시작됩니다" 안내를 띄울지 판단한다. */
         @Volatile var worn = true
+            private set
+
+        /**
+         * **실제로 센서를 읽고 있는가.** `running`(서비스 생존)과 다르다 —
+         * 벗으면 서비스는 살아 있지만 수집은 멎는다. 화면은 이쪽을 봐야 한다
+         * (08-25 실기: 벗었는데 "수집 중" 으로 남아 있었다).
+         */
+        @Volatile var collecting = false
             private set
 
         /** 화면이 최신 생체값을 읽는 통로 — 엔진 스냅숏을 그대로 넘긴다(업로드 경로와 별개). */

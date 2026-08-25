@@ -45,16 +45,33 @@ class CollectorEngine(
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
     private var hrvWindowMs = 300_000L                          // SDNN 표준 5분 창 — 실측 후 확정
-    private var lastHrvEmitMs: Long? = null   // MIN_VALUE 초기값은 뺄셈 오버플로로 영영 안 실린다(시험이 잡음)
+    private var lastHrvEmitMs: Long? = null
+    /** 벗은 상태 — 무동작이 계속 늘어나면 "쓰러져 있음" 으로 오독된다. */
+    @Volatile private var motionStopped = false   // MIN_VALUE 초기값은 뺄셈 오버플로로 영영 안 실린다(시험이 잡음)
 
     @Synchronized
     fun start(nowMs: Long) {
+        motionStopped = false
         motion.start(nowMs)
         source.start(this)
     }
 
+    /**
+     * 수집 중지 — **표시용 스냅숏을 비운다.**
+     * 08-25 실기: 워치를 벗은 뒤에도 체온 37.8℃ 가 화면에 남아 있었다. 측정이 끝난 값이
+     * 현재값처럼 보이면 관제·작업자 모두 오독한다(iOS `gateStaleVitals` 가 막는 그 사고).
+     * ⚠ 큐와 IBI 창은 건드리지 않는다 — 미전송분은 다시 찼을 때 함께 올라간다.
+     */
+    @Synchronized
     fun stop() {
         source.stop()
+        lastBpm = null
+        lastSpo2 = null
+        lastSpo2AtMs = null
+        lastSkinTempC = null
+        lastAmbientTempC = null
+        lastHrvMs = null
+        motionStopped = true
     }
 
     // ── TrackerListener ──────────────────────────────────────────────
@@ -102,7 +119,8 @@ class CollectorEngine(
     // ── flush ────────────────────────────────────────────────────────
 
     /** 화면 표시용 무동작 지속 — flush 와 같은 계산을 쓴다(화면과 전송이 같은 값을 본다). */
-    fun stillSecNow(nowMs: Long): Double? = motion.stillSec(nowMs)
+    fun stillSecNow(nowMs: Long): Double? =
+        if (motionStopped) null else motion.stillSec(nowMs)
 
     /**
      * 주기 flush — HRV 는 **창 주기당 1회만** 싣는다. 매 flush 마다 겹친 창을 재계산해 실으면

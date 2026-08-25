@@ -125,3 +125,48 @@ class WearDetectTest {
         assertFalse("벗음에서 서비스를 죽이면 재개가 안 된다", end.contains("stopSelf"))
     }
 }
+
+/** 벗은 뒤 잔존값 차단 — 08-25 실기에서 체온 37.8℃ 가 화면에 남아 있었다. */
+class StaleOnUnwearTest {
+
+    private val engine = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt",
+    ).readText()
+    private val service = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
+    ).readText()
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+
+    @Test
+    fun `엔진 stop 이 표시용 스냅숏을 비운다`() {
+        val stop = engine.substringAfter("fun stop()").substringBefore("\n    }")
+        listOf("lastBpm = null", "lastSpo2 = null", "lastSkinTempC = null", "lastHrvMs = null")
+            .forEach { assertTrue("stop() 에 $it 없음 — 옛 값이 현재값처럼 남는다", stop.contains(it)) }
+    }
+
+    @Test
+    fun `벗으면 무동작이 멈춘다 - 계속 늘면 쓰러진 것으로 오독된다`() {
+        assertTrue(
+            "motionStopped 게이트 없음",
+            engine.contains("if (motionStopped) null else motion.stillSec"),
+        )
+    }
+
+    @Test
+    fun `화면은 서비스 생존이 아니라 실제 수집 여부를 본다`() {
+        assertTrue("collecting 상태 노출 없음", service.contains("var collecting = false"))
+        assertTrue(
+            "화면이 running 을 수집으로 읽고 있다",
+            activity.contains("CollectorService.collecting"),
+        )
+    }
+
+    @Test
+    fun `벗어도 큐와 IBI 창은 남긴다 - 재착용 시 이어져야 한다`() {
+        val stop = engine.substringAfter("fun stop()").substringBefore("\n    }")
+        assertFalse("stop 에서 IBI 창을 비우면 재착용 후 HRV 가 처음부터 다시 쌓인다",
+            stop.contains("ibiWindow.clear"))
+    }
+}

@@ -95,7 +95,8 @@ class MainActivity : ComponentActivity() {
                         stillSec = engine?.stillSecNow(now),
                         hrvSdnnMs = engine?.lastHrvMs,
                         batteryPct = batteryPct(),
-                        collecting = running,
+                        // 서비스 생존(running)이 아니라 **실제 수집 여부**를 본다.
+                        collecting = CollectorService.collecting || HrForegroundService.running,
                         worn = CollectorService.worn,
                         queued = CollectorService.queuedCount,
                         lastUploadAgeSec = CollectorService.lastUploadAtMs?.let { (now - it) / 1000 },
