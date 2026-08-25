@@ -8023,8 +8023,9 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
                         <button
                           type="button"
                           onClick={() => ack(a.id)}
-                          className="rounded-lg bg-semantic-down px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
+                          className="inline-flex items-center gap-1 rounded-lg bg-semantic-down px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:opacity-90"
                         >
+                          <AlertCheckIcon />
                           대응 확인
                         </button>
                       )}
