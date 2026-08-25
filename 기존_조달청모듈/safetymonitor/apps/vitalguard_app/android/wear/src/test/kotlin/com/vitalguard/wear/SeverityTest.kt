@@ -131,16 +131,121 @@ class BezelTest {
     fun `심박 띠 - 위가 높은 값이다`() {
         val hi = band(com.vitalguard.wear.ui.VitalUiState(bpm = 130, collecting = true))
         val lo = band(com.vitalguard.wear.ui.VitalUiState(bpm = 40, collecting = true))
-        assertEquals(1f, hi.fraction!!, 0.001f)
-        assertEquals(0f, lo.fraction!!, 0.001f)
+        org.junit.Assert.assertTrue("높은 심박이 더 많이 차야 한다", hi.fraction!! > lo.fraction!!)
+        // 축 끝(30·150)은 임계 바깥이므로 임계값 자체는 0 도 1 도 아니다 — 그래야 위험 구간이 보인다.
+        org.junit.Assert.assertTrue("위험선이 축 끝에 붙었다", hi.fraction!! < 1f)
+        org.junit.Assert.assertTrue("저심박 위험선이 축 끝에 붙었다", lo.fraction!! > 0f)
+    }
+
+    /**
+     * ★ 08-25 사용자 요청 — 구간을 신호등으로 나눠 표현.
+     * 종전 축(40~130)은 **임계와 축 끝이 같아** 위험 구간의 폭이 0 이었다. 색으로 나누는
+     * 순간 빨강이 사라지는 상태였고, 이 시험이 그것을 막는다.
+     */
+    @Test
+    fun `심박 구간 - 다섯 칸이 모두 폭을 갖는다`() {
+        val z = com.vitalguard.wear.ui.hrZones()
+        assertEquals("구간 수", 5, z.size)
+        z.forEachIndexed { i, s ->
+            org.junit.Assert.assertTrue("구간 $i 의 폭이 0 이다", s.to - s.from > 0.02f)
+        }
+        // 구간은 빈틈없이 이어지고 축 전체를 덮는다.
+        assertEquals(0f, z.first().from, 0.001f)
+        assertEquals(1f, z.last().to, 0.001f)
+        z.zipWithNext().forEach { (a, b2) -> assertEquals("구간이 끊겼다", a.to, b2.from, 0.001f) }
+    }
+
+    /** 색은 신호등 셋 — 판정색을 그대로 쓴다(화면 안에서 기준이 갈리면 안 된다). */
+    @Test
+    fun `심박 구간 색 - 신호등 셋뿐이다`() {
+        val z = com.vitalguard.wear.ui.hrZones()
+        assertEquals(
+            setOf(
+                com.vitalguard.wear.ui.VgColors.Normal,
+                com.vitalguard.wear.ui.VgColors.Caution,
+                com.vitalguard.wear.ui.VgColors.Danger,
+            ),
+            z.map { it.color }.toSet(),
+        )
+        assertEquals("맨 아래는 서맥 위험", com.vitalguard.wear.ui.VgColors.Danger, z.first().color)
+        assertEquals("맨 위는 빈맥 위험", com.vitalguard.wear.ui.VgColors.Danger, z.last().color)
+    }
+
+    /** 구간 경계가 임계와 같은 자리인가 — 화면이 서버와 다른 말을 하면 안 된다. */
+    @Test
+    fun `심박 구간 경계 - 임계 상수와 일치한다`() {
+        val z = com.vitalguard.wear.ui.hrZones()
+        fun p(v: Int) = ((v - com.vitalguard.wear.core.Thresholds.HR_GAUGE_MIN_BPM) /
+            (com.vitalguard.wear.core.Thresholds.HR_GAUGE_MAX_BPM -
+                com.vitalguard.wear.core.Thresholds.HR_GAUGE_MIN_BPM)).toFloat()
+        assertEquals(p(com.vitalguard.wear.core.Thresholds.HR_DANGER_LOW), z[0].to, 0.001f)
+        assertEquals(p(com.vitalguard.wear.core.Thresholds.HR_CAUTION_LOW), z[1].to, 0.001f)
+        assertEquals(p(com.vitalguard.wear.core.Thresholds.HR_CAUTION_HIGH), z[2].to, 0.001f)
+        assertEquals(p(com.vitalguard.wear.core.Thresholds.HR_DANGER_HIGH), z[3].to, 0.001f)
+    }
+
+    /**
+     * ★ 08-25 사용자 보고 — "걸음 신호가 잡히는데 인디케이터에 적용이 안 된다".
+     * 원인 = 축 8000 · 눈금 16칸이라 500보/칸이고, 근무 초반 수백 보는 한 칸도 못 켰다.
+     */
+    /**
+     * ★ 08-25 사용자 보고 — "걸음 신호가 잡히는데 인디케이터에 적용이 안 된다".
+     * 원인은 축이 아니라 **출처**였다. 베젤이 세션 누계를 보고 있었고 그것은 앱을 다시
+     * 켤 때마다 0 이다(실기 로그 `act=0보(누계0)`). 계기는 **오늘 누계**를 봐야 한다.
+     */
+    @Test
+    fun `걸음 눈금은 오늘 누계를 본다 - 세션 누계는 앱 재시작에 0 이 된다`() {
+        val restarted = com.vitalguard.wear.ui.VitalUiState(sessionSteps = 0, dailySteps = 3200)
+        org.junit.Assert.assertTrue(
+            "앱을 다시 켰다고 계기가 비면 안 된다",
+            (ticks(restarted).fraction ?: 0f) > 0f,
+        )
+        // 세션만 있고 오늘 누계가 없으면(아직 배치 전) 채우지 않는다 — 0 으로 지어내지 않는다.
+        val noDaily = com.vitalguard.wear.ui.VitalUiState(sessionSteps = 500, dailySteps = null)
+        assertEquals(null, ticks(noDaily).fraction)
     }
 
     @Test
-    fun `걸음 눈금 - 축 8000보를 편다`() {
-        val full = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 8000))
-        val half = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 4000))
+    fun `걸음 눈금 - 하루 축을 편다`() {
+        val full = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 8000))
+        val half = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 4000))
         assertEquals(1f, full.fraction!!, 0.001f)
         assertEquals(0.5f, half.fraction!!, 0.001f)
+    }
+
+    /**
+     * ★ 눈금은 **아래에서 위로** 켜진다 — 좌측 띠와 같은 방향이라야 한 화면에서
+     * 두 계기가 같은 말을 한다. 종전엔 위에서 아래로 켜져 켜진 눈금이 페이지 점과
+     * 같은 자리(우상단)에 몰렸고, 그래서 "걸음이 적용 안 된다" 로 읽혔다.
+     */
+    @Test
+    fun `걸음 눈금은 아래에서 위로 켜진다`() {
+        val n = 16
+        org.junit.Assert.assertTrue("아래 끝이 안 켜졌다", com.vitalguard.wear.ui.tickLit(n - 1, n, 0.02f))
+        org.junit.Assert.assertFalse("조금 걸었는데 위까지 켜졌다", com.vitalguard.wear.ui.tickLit(0, n, 0.02f))
+        org.junit.Assert.assertTrue("가득 찼는데 위가 안 켜졌다", com.vitalguard.wear.ui.tickLit(0, n, 1f))
+    }
+
+    /**
+     * ★ 올림이다 — 반올림이면 눈금 반 칸 미만(372보/4000축이면 1.49칸)이 조용히 줄고,
+     * 아주 조금 걸은 구간은 0 칸이 된다. 0 과 "조금" 이 구별돼야 계기다.
+     */
+    @Test
+    fun `아주 조금 걸어도 한 칸은 켜진다`() {
+        val n = 16
+        val tiny = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 10))
+        org.junit.Assert.assertTrue(
+            "10보가 눈금을 못 켠다",
+            com.vitalguard.wear.ui.tickLit(n - 1, n, tiny.fraction),
+        )
+        // 반올림이면 0 이 되는 구간(0.5칸 미만)에서도 켜져야 한다.
+        org.junit.Assert.assertTrue(com.vitalguard.wear.ui.tickLit(n - 1, n, 0.01f))
+    }
+
+    @Test
+    fun `미측정이면 눈금을 켜지 않는다`() {
+        org.junit.Assert.assertFalse(com.vitalguard.wear.ui.tickLit(15, 16, null))
+        org.junit.Assert.assertFalse(com.vitalguard.wear.ui.tickLit(15, 16, 0f))
     }
 
     @Test
@@ -255,13 +360,15 @@ class ChartTest {
         ).readText()
         org.junit.Assert.assertFalse("요약에 차트가 되살아났다", summary.contains("TrendChart("))
         org.junit.Assert.assertTrue("상세에 차트가 없다", detail.contains("TrendChart("))
-        // 상세 4면(심박·SpO₂·체온·스트레스)이 전부 차트를 든다 — 하나라도 숫자만 남으면
-        // "추이를 본다" 는 이 페이지들의 목적이 조용히 깨진다.
+        // 상세 5면(심박·SpO₂·체온·스트레스·걸음)이 전부 차트를 든다 — 하나라도 숫자만
+        // 남으면 "추이를 본다" 는 이 페이지들의 목적이 조용히 깨진다.
         org.junit.Assert.assertEquals(
             "상세 차트 수가 지표 면 수와 다르다",
-            4,
+            5,
             Regex("TrendChart\\(").findAll(detail).count(),
         )
+        // 페이지 수 = 요약 1 + 상세 5. 늘려 놓고 배선을 빠뜨리면 빈 화면이 생긴다.
+        org.junit.Assert.assertEquals("페이지 수가 상세 면 수와 안 맞는다", 6, com.vitalguard.wear.ui.DETAIL_PAGE_COUNT)
         // 체온은 주변온을 **같은 축에 겹쳐야** 기기 발열과 진짜 체온이 갈린다(R-25).
         org.junit.Assert.assertTrue(
             "체온 차트에 주변온 겹치기가 없다",

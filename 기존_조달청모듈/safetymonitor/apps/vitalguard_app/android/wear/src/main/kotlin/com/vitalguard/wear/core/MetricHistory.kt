@@ -125,4 +125,6 @@ object HistoryWindow {
     const val TEMP_MS = 30 * 60_000L
     /** 스트레스 — 활동 배치가 성기므로 길게 본다. */
     const val STRESS_MS = 30 * 60_000L
+    /** 걸음 — 근무 흐름을 보려면 길게. 누계라 값이 뒤로 가지 않는다. */
+    const val STEPS_MS = 60 * 60_000L
 }

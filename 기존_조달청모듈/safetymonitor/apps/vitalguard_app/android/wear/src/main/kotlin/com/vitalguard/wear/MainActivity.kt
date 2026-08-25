@@ -27,6 +27,7 @@ import com.vitalguard.wear.ui.ActivityDetailPage
 import com.vitalguard.wear.ui.DETAIL_PAGE_COUNT
 import com.vitalguard.wear.ui.HeartDetailPage
 import com.vitalguard.wear.ui.Spo2DetailPage
+import com.vitalguard.wear.ui.StepsDetailPage
 import com.vitalguard.wear.ui.TempDetailPage
 import com.vitalguard.wear.ui.TimelinePoint
 import com.vitalguard.wear.ui.VitalScreen
@@ -124,6 +125,7 @@ class MainActivity : ComponentActivity() {
                         hrvSdnnMs = engine?.lastHrvMs,
                         windowSteps = engine?.windowSteps ?: 0,
                         sessionSteps = engine?.lastSteps ?: 0,
+                        dailySteps = engine?.dailySteps,
                         windowFloors = engine?.windowFloors ?: 0,
                         windowKcal = engine?.windowKcal ?: 0.0,
                         batteryPct = batteryPct(),
@@ -139,6 +141,7 @@ class MainActivity : ComponentActivity() {
                         skinTempTrend = engine?.skinTempHistory?.snapshot() ?: emptyList(),
                         ambientTrend = engine?.ambientHistory?.snapshot() ?: emptyList(),
                         stressTrend = engine?.stressHistory?.snapshot() ?: emptyList(),
+                        stepsTrend = engine?.stepsHistory?.snapshot() ?: emptyList(),
                     )
                     // ★ 화면 상태를 그대로 찍는다 — "화면에 안 보인다" 를 추론이 아니라
                     //   값으로 판정하기 위한 계기다(15초마다 1줄).
@@ -149,7 +152,7 @@ class MainActivity : ComponentActivity() {
                             "bpm=${vitals.bpm} spo2=${vitals.spo2} skin=${vitals.skinTempC} " +
                                 "core=${vitals.coreTempC} amb=${vitals.ambientTempC} " +
                                 "still=${vitals.stillSec} hrv=${vitals.hrvSdnnMs} " +
-                                "act=${vitals.windowSteps}보/${vitals.windowFloors}층/" +
+                                "act=${vitals.windowSteps}보(세션${vitals.sessionSteps}·오늘${vitals.dailySteps})/${vitals.windowFloors}층/" +
                                 "${"%.2f".format(vitals.windowKcal)}kcal stress=${vitals.stress.index} " +
                                 "[${com.vitalguard.wear.core.Sdnn.lastTrace}] " +
                                 "collecting=${vitals.collecting} " +
@@ -178,7 +181,16 @@ class MainActivity : ComponentActivity() {
                 val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState {
                     DETAIL_PAGE_COUNT
                 }
-                androidx.wear.compose.material3.VerticalPagerScaffold(pagerState = pagerState) {
+                androidx.wear.compose.material3.VerticalPagerScaffold(
+                    pagerState = pagerState,
+                    // ★ 요약면에서는 페이지 점을 안 그린다 — 우측 걸음 눈금과 같은 자리라
+                    //   겹쳐서 둘 다 못 읽는다(08-25 사용자 보고). 상세면에서는 그대로 둔다.
+                    pageIndicator = {
+                        if (pagerState.currentPage != 0) {
+                            androidx.wear.compose.material3.VerticalPageIndicator(pagerState)
+                        }
+                    },
+                ) {
                     androidx.wear.compose.foundation.pager.VerticalPager(state = pagerState) { page ->
                         when (page) {
                             0 -> VitalScreen(
@@ -189,7 +201,8 @@ class MainActivity : ComponentActivity() {
                             1 -> HeartDetailPage(vitals)
                             2 -> Spo2DetailPage(vitals)
                             3 -> TempDetailPage(vitals)
-                            else -> ActivityDetailPage(vitals)
+                            4 -> ActivityDetailPage(vitals)
+                            else -> StepsDetailPage(vitals)
                         }
                     }
                 }

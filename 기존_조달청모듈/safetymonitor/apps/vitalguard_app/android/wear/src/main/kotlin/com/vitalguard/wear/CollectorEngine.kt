@@ -63,6 +63,8 @@ class CollectorEngine(
     val skinTempHistory = MetricHistory(HistoryWindow.TEMP_MS)
     val ambientHistory = MetricHistory(HistoryWindow.TEMP_MS)
     val stressHistory = MetricHistory(HistoryWindow.STRESS_MS)
+    /** 걸음 — 누계라 우상향한다. 기울기가 "지금 얼마나 움직이는가" 다. */
+    val stepsHistory = MetricHistory(HistoryWindow.STEPS_MS)
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -146,6 +148,17 @@ class CollectorEngine(
     @Synchronized
     override fun onAccelMagG(magG: Double, atMs: Long) {
         motion.onSample(magG, atMs)
+    }
+
+    /** 오늘 누계(자정 이후) — 화면 계기 전용. 서버로는 증분만 보낸다(상한 때문). */
+    @Volatile var dailySteps: Int? = null
+
+    @Synchronized
+    override fun onDailyTotals(steps: Int?, floors: Int?) {
+        steps?.let {
+            dailySteps = it
+            stepsHistory.add(System.currentTimeMillis(), it.toDouble())
+        }
     }
 
     /**

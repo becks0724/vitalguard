@@ -351,9 +351,34 @@ private fun BoxScope.BezelLabel(
 internal fun hrBand(state: VitalUiState): BezelBand = BezelBand(
     startDeg = Bezel.LEFT_START,
     sweepDeg = Bezel.SWEEP,
-    fraction = gaugeFraction(state.bpm?.toDouble(), 40.0, 130.0),
-    color = state.severity.color(),
+    fraction = gaugeFraction(
+        state.bpm?.toDouble(),
+        Thresholds.HR_GAUGE_MIN_BPM,
+        Thresholds.HR_GAUGE_MAX_BPM,
+    ),
+    color = com.vitalguard.wear.core.heartRateSeverity(state.bpm).color(),
+    zones = hrZones(),
 )
+
+/**
+ * 심박 구간 — 신호등. **임계 상수에서 만든다**(숫자를 여기 다시 적지 않는다).
+ * 다시 적으면 서버 임계가 바뀌었을 때 화면만 옛 자를 들고 남는다([[L-106]]).
+ *
+ * 낮은 쪽에도 주의·위험이 있다 — 서맥은 실신의 전조다. 그래서 구간이 셋이 아니라 다섯이고,
+ * 색은 셋(초록·노랑·빨강)이다.
+ */
+internal fun hrZones(): List<BezelZone> {
+    val lo = Thresholds.HR_GAUGE_MIN_BPM
+    val hi = Thresholds.HR_GAUGE_MAX_BPM
+    fun p(v: Int) = (((v - lo) / (hi - lo)).toFloat()).coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Thresholds.HR_DANGER_LOW), VgColors.Danger),
+        BezelZone(p(Thresholds.HR_DANGER_LOW), p(Thresholds.HR_CAUTION_LOW), VgColors.Caution),
+        BezelZone(p(Thresholds.HR_CAUTION_LOW), p(Thresholds.HR_CAUTION_HIGH), VgColors.Normal),
+        BezelZone(p(Thresholds.HR_CAUTION_HIGH), p(Thresholds.HR_DANGER_HIGH), VgColors.Caution),
+        BezelZone(p(Thresholds.HR_DANGER_HIGH), 1f, VgColors.Danger),
+    )
+}
 
 /**
  * 우측 눈금 = **걸음 수**(사용자 결정 08-25).
@@ -369,11 +394,18 @@ internal fun hrBand(state: VitalUiState): BezelBand = BezelBand(
 internal fun stepTicks(state: VitalUiState): BezelTicks = BezelTicks(
     startDeg = Bezel.RIGHT_START,
     sweepDeg = Bezel.SWEEP,
-    fraction = gaugeFraction(state.sessionSteps.toDouble().takeIf { it > 0 }, 0.0, STEP_GAUGE_MAX),
+    fraction = gaugeFraction(state.dailySteps?.toDouble()?.takeIf { it > 0 }, 0.0, STEP_GAUGE_MAX),
     color = VgColors.Accent,
 )
 
-/** 걸음 눈금 축 — 8시간 교대의 대략치. 채우는 재미가 아니라 진행 감각용이다. */
+/**
+ * 걸음 눈금 축 = 하루 8000보.
+ *
+ * ⚠ "걸음 신호는 잡히는데 인디케이터가 안 움직인다"(08-25 사용자 보고)의 원인은 축이 아니라
+ *   **출처**였다. 베젤이 세션 누계를 보고 있었는데 그것은 앱을 다시 켤 때마다 0 이다
+ *   (실기 로그 `act=0보(누계0)`). 오늘 누계로 바꾸니 축은 하루 기준이 맞다.
+ *   더해서 눈금을 올림으로 켜 **1보라도 걸으면 한 칸은 켜진다**.
+ */
 internal const val STEP_GAUGE_MAX = 8000.0
 
 /**

@@ -29,14 +29,20 @@ data class VitalUiState(
     val windowSteps: Int = 0,
     val windowFloors: Int = 0,
     val windowKcal: Double = 0.0,
-    /** 착용 세션 누계 걸음 — 우측 베젤이 쓴다(구간 증분과 별개). */
+    /** 착용 세션 누계 걸음 — 상세가 쓴다(구간 증분과 별개). */
     val sessionSteps: Int = 0,
+    /**
+     * 오늘 누계 걸음(자정 이후). **우측 베젤이 쓴다.**
+     * 세션 누계는 앱을 다시 켜면 0 이라 계기로 못 쓴다(08-25 실기에서 `누계0` 으로 확인).
+     */
+    val dailySteps: Int? = null,
     /** 지표 이력 — 상세 페이지의 추이 차트가 읽는다(엔진 스냅숏). */
     val heartTrend: List<com.vitalguard.wear.core.Sample> = emptyList(),
     val spo2Trend: List<com.vitalguard.wear.core.Sample> = emptyList(),
     val skinTempTrend: List<com.vitalguard.wear.core.Sample> = emptyList(),
     val ambientTrend: List<com.vitalguard.wear.core.Sample> = emptyList(),
     val stressTrend: List<com.vitalguard.wear.core.Sample> = emptyList(),
+    val stepsTrend: List<com.vitalguard.wear.core.Sample> = emptyList(),
     val batteryPct: Int? = null,
     val collecting: Boolean = false,
     /** 착용 여부 — 벗으면 화면이 "착용하면 시작됩니다" 를 띄운다. */

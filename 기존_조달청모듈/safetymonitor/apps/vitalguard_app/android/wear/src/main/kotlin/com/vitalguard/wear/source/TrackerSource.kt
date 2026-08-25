@@ -14,6 +14,14 @@ interface TrackerListener {
      * 스트레스 지수의 '활동 맥락'·심박 위험판정의 '작업 게이트' 재료가 된다.
      */
     fun onActivityDelta(steps: Int, floors: Int, kcal: Double, atMs: Long) = Unit
+
+    /**
+     * 오늘 누계(자정 이후) — **증분과 별개 통로다.**
+     * 서버로는 증분만 보낸다(상한 때문). 하지만 화면의 걸음 계기는 누계라야 한다 —
+     * 증분 합은 앱을 다시 켜면 0 부터 시작해서 "걸었는데 계기가 안 움직인다" 가 된다
+     * (08-25 사용자 보고 · 실기 로그 `act=0보(누계0)`).
+     */
+    fun onDailyTotals(steps: Int?, floors: Int?) = Unit
 }
 
 interface TrackerSource {

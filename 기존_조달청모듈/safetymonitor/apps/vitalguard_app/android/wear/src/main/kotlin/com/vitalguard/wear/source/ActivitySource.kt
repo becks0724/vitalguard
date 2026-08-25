@@ -55,6 +55,8 @@ class ActivitySource(private val context: Context) : TrackerSource {
                         "칼로리${kcalPts.size}건=${"%.2f".format(kcal)}",
                 )
             }
+            // 누계는 증분과 **따로** 흘린다 — 증분이 0 인 배치에도 누계는 갱신돼야 한다.
+            listener?.onDailyTotals(stepDaily?.toInt(), floorDaily?.toInt())
             if (steps == 0 && floors == 0 && kcal <= 0.0) return
             listener?.onActivityDelta(steps, floors, kcal, System.currentTimeMillis())
         }
