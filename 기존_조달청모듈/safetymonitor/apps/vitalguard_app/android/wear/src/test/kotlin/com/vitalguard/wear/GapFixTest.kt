@@ -366,6 +366,19 @@ class VerticalPagerTest {
         )
     }
 
+    /**
+     * ★ 08-25 사용자 보고 — 요약면에서 페이지 점이 **우측 걸음 눈금과 겹쳐** 둘 다 못 읽었다.
+     * 요약에서는 감추고 상세면에서만 그린다.
+     */
+    @Test
+    fun `요약면에서는 페이지 점을 감춘다 - 걸음 눈금과 자리가 겹친다`() {
+        assertTrue(
+            "페이지 인디케이터 조건이 없다",
+            activity.contains("pagerState.currentPage != 0") &&
+                activity.contains("VerticalPageIndicator"),
+        )
+    }
+
     @Test
     fun `요약이 0번이다 - 앱을 열면 한눈 화면이 먼저다`() {
         val body = activity.substringAfter("when (page)").substringBefore("}")

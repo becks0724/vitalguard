@@ -155,5 +155,43 @@ fun ActivityDetailPage(state: VitalUiState) {
     )
 }
 
-/** 페이지 목록 — 요약이 0번. 순서를 바꾸면 사용자가 익힌 위치가 흐트러진다. */
-val DETAIL_PAGE_COUNT = 5
+/**
+ * 걸음 상세 — 누계 추이. 기울기가 곧 "지금 얼마나 움직이는가" 다(계단처럼 오르면 간헐 이동).
+ *
+ * ★ 우측 베젤은 진행 감각만 준다. **정확한 수치는 여기 있다**(08-25 사용자 요청).
+ */
+@Composable
+fun StepsDetailPage(state: VitalUiState) {
+    val pts = state.stepsTrend
+    DetailPage(
+        title = "오늘 걸음",
+        value = state.dailySteps?.let { "%,d".format(it) } ?: "--",
+        unit = "보",
+        tint = VgColors.Accent,
+        chart = {
+            TrendChart(
+                samples = pts,
+                nowMs = state.nowMs,
+                windowMs = HistoryWindow.STEPS_MS,
+                tint = VgColors.Accent,
+                // 2분 배치라 공백 허용을 넉넉히 — 그래도 수집이 멎은 구간은 끊어 보인다.
+                maxGapMs = 6 * 60_000L,
+            )
+        },
+        rows = buildList {
+            if (pts.size >= 2) {
+                val span = (pts.last().atMs - pts.first().atMs) / 60_000.0
+                val gained = pts.last().value - pts.first().value
+                if (span >= 1.0 && gained > 0) {
+                    add(DetailRow("분당", "%.0f 보".format(gained / span)))
+                }
+            }
+            if (state.sessionSteps > 0) add(DetailRow("이번 착용", "%,d 보".format(state.sessionSteps)))
+            add(DetailRow("하루 축", "%,d 보".format(STEP_GAUGE_MAX.toInt()), VgColors.Secondary))
+            if (state.windowFloors > 0) add(DetailRow("층", "${state.windowFloors} 층"))
+        },
+    )
+}
+
+/** 페이지 목록 — 요약이 0번. **뒤에만 더한다** — 순서를 바꾸면 익힌 위치가 흐트러진다. */
+val DETAIL_PAGE_COUNT = 6
