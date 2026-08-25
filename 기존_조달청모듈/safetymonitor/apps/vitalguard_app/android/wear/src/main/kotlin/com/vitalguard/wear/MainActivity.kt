@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
                                 "still=${vitals.stillSec} hrv=${vitals.hrvSdnnMs} " +
                                 "collecting=${vitals.collecting} " +
                                 "queued=${vitals.queued} tempFrac=" +
-                                com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, 36.0, 38.5),
+                                com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MIN_C, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MAX_C),
                         )
                     }
                     delay(3_000)

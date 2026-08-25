@@ -198,3 +198,39 @@ class ChartTest {
         assertEquals(5 * 60_000L, com.vitalguard.wear.ui.CHART_WINDOW_MS)
     }
 }
+
+class TempGaugeTest {
+
+    private fun f(c: Double) = com.vitalguard.wear.ui.gaugeFraction(
+        c,
+        com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MIN_C,
+        com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MAX_C,
+    )!!
+
+    @Test
+    fun `정상 체온이 눈에 보이게 찬다 - 종전 8퍼센트 문제`() {
+        // 36.2℃ 는 정상인데 종전 축(36.0~38.5)에서 8% 라 안 찬 것처럼 보였다.
+        org.junit.Assert.assertTrue("정상 체온이 20% 미만이면 안 보인다", f(36.2) >= 0.20f)
+    }
+
+    @Test
+    fun `고열이 최대에 눌리지 않는다 - 40도가 얼마나 심각한지 보여야 한다`() {
+        // 종전엔 38.5 이상이 전부 100% 로 뭉개져 39·40·41 이 구분되지 않았다.
+        org.junit.Assert.assertTrue("38.5 와 39.5 가 구분돼야 한다", f(39.5) > f(38.5))
+        org.junit.Assert.assertEquals("40℃ 가 축의 끝", 1.0f, f(40.0), 0.001f)
+    }
+
+    @Test
+    fun `임계가 축의 중간대에 온다 - 넘어도 남은 여유가 보인다`() {
+        assertEquals("주의선 37.5 = 50%", 0.50f, f(37.5), 0.001f)
+        assertEquals("위험선 38.0 = 60%", 0.60f, f(38.0), 0.001f)
+    }
+
+    @Test
+    fun `축은 임계와 별개다 - 판정은 그대로`() {
+        // 축을 넓혀도 위험 판정 경계는 안 움직인다(표시와 판정의 분리).
+        assertEquals(Severity.DANGER, com.vitalguard.wear.core.coreTempSeverity(38.0))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.core.coreTempSeverity(37.5))
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.core.coreTempSeverity(37.4))
+    }
+}

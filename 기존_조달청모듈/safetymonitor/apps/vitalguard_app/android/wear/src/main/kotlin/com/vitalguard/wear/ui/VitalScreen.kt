@@ -169,7 +169,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
         LabeledBubble(
             value = state.coreTempC?.let { "%.1f".format(it) } ?: "--",
             label = "체온",
-            fraction = gaugeFraction(state.coreTempC, 36.0, 38.5),
+            fraction = gaugeFraction(state.coreTempC, Thresholds.TEMP_GAUGE_MIN_C, Thresholds.TEMP_GAUGE_MAX_C),
             severity = coreTempSeverity(state.coreTempC),
             diameter = diameter,
         )
