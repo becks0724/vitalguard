@@ -18,10 +18,45 @@ object Sdnn {
     const val IBI_MAX_MS = 2000  // 30bpm
 
     /**
+     * 연속성 허용 폭 — **직전 유효 박동 대비 이 비율을 넘게 튀면 버린다.**
+     *
+     * ★ 왜 필요한가(08-25 실기). 생리 범위 필터만으로는 부족했다 —
+     *   ```
+     *   심박 95bpm(=IBI 632ms) 인데 IBI=[1442, 920, 869] · status 전부 0(정상)
+     *   → 1442ms 는 42bpm · 869ms 는 69bpm. 심박과 전혀 정합하지 않는다.
+     *   → 광학 센서가 박동을 놓쳐(missed beat) 두세 박동을 하나로 합친 값이다.
+     *   → 이 셋의 SDNN = 258.9ms (화면 관측 264와 일치 = 계산은 맞고 재료가 오염)
+     *   ```
+     *   합쳐진 박동은 **생리 범위 안에 들어와서** 값 범위로는 못 거른다.
+     *   직전 박동과의 차이를 보는 것이 HRV 전처리의 표준 기법이다(artifact correction).
+     *
+     * 0.20 = 20%. 임상 문헌에서 널리 쓰는 값이고, 정상 호흡성 부정맥(RSA)은 통과한다.
+     * ⚠ 진짜 부정맥도 함께 걸러진다 — 이 값은 **HRV 표시 전용**이고 부정맥 판정에 쓰지 않는다.
+     */
+    const val CONTINUITY_TOLERANCE = 0.20
+
+    /** SDNN 을 낼 최소 표본 수 — 미만이면 null(표시 안 함). */
+    const val MIN_SAMPLES = 5
+
+    /**
      * SDNN = NN 간격의 모집단 표준편차(ms). 표본이 2개 미만이면 **0 이 아니라 null** —
      * "변동이 없다" 와 "못 쟀다" 를 가르는 iOS motionVariability 와 같은 규칙이다.
      * status 가 오면 길이가 같은 것만 신뢰하고, 유효(0) 표본만 쓴다.
      */
+    /**
+     * 연속성 필터 — 첫 표본을 기준으로 삼고, 직전 **유효** 값 대비 허용 폭 안인 것만 남긴다.
+     * 기준을 "직전 유효값" 으로 두는 이유 — 버린 값을 기준으로 쓰면 오염이 뒤로 번진다.
+     */
+    internal fun continuous(ibi: List<Int>): List<Int> {
+        if (ibi.size < 2) return ibi
+        val out = mutableListOf(ibi.first())
+        for (v in ibi.drop(1)) {
+            val prev = out.last()
+            if (kotlin.math.abs(v - prev).toDouble() / prev <= CONTINUITY_TOLERANCE) out.add(v)
+        }
+        return out
+    }
+
     fun sdnnMs(ibiMs: List<Int>, status: List<Int>? = null): Double? {
         val byStatus = if (status != null && status.size == ibiMs.size) {
             ibiMs.filterIndexed { i, _ -> status[i] == STATUS_VALID }
@@ -29,8 +64,13 @@ object Sdnn {
             ibiMs
         }
         // 생리 범위 밖은 버린다 — status 가 정상이라고 해도 값 자체가 불가능하면 표본이 아니다.
-        val valid = byStatus.filter { it in IBI_MIN_MS..IBI_MAX_MS }
-        if (valid.size < 2) return null
+        val inRange = byStatus.filter { it in IBI_MIN_MS..IBI_MAX_MS }
+        // 연속성 — 직전 **유효** 박동 대비 20% 넘게 튀면 버린다(놓친 박동이 합쳐진 값 차단).
+        val valid = continuous(inRange)
+        // ⚠ 연속성 필터는 표본을 크게 줄인다 — 2개로 낸 SDNN 은 노이즈다.
+        //   부족하면 **null 로 둔다**(0 으로 채우지 않는 전 화면 공통 규칙).
+        //   5는 임의값이 아니라 "두 박동 차이 하나" 가 결과를 지배하지 않는 최소선이다.
+        if (valid.size < MIN_SAMPLES) return null
         val mean = valid.sumOf { it.toDouble() } / valid.size
         val variance = valid.sumOf { (it - mean) * (it - mean) } / valid.size
         return kotlin.math.sqrt(variance)

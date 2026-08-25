@@ -10,30 +10,31 @@ import org.junit.Test
 class SdnnTest {
 
     @Test
-    fun `손계산 대조 - IBI 4개의 모집단 표준편차`() {
-        // [800,810,790,805] mean=801.25, var=(1.5625+76.5625+126.5625+14.0625)/4=54.6875
-        val got = Sdnn.sdnnMs(listOf(800, 810, 790, 805))!!
-        assertEquals(7.3951, got, 0.0001)
+    fun `손계산 대조 - IBI 5개의 모집단 표준편차`() {
+        // 연속성 필터(20%)를 전부 통과하는 5개. mean=800.6 → SDNN 6.7409
+        val got = Sdnn.sdnnMs(listOf(800, 810, 790, 805, 798))!!
+        assertEquals(6.7409, got, 0.0001)
     }
 
     @Test
     fun `status 필터 - 무효 표본은 계산에서 빠진다`() {
-        // 9999 는 status=1(무효) — [800,810] 만 남아 sd = 5.0
-        val got = Sdnn.sdnnMs(listOf(800, 9999, 810), listOf(0, 1, 0))!!
-        assertEquals(5.0, got, 0.0001)
+        // 9999 는 status=1(무효). 남은 5개로 계산되어 깨끗한 입력과 같아야 한다.
+        val withBad = Sdnn.sdnnMs(listOf(800, 9999, 810, 790, 805, 798), listOf(0, 1, 0, 0, 0, 0))!!
+        val clean = Sdnn.sdnnMs(listOf(800, 810, 790, 805, 798))!!
+        assertEquals(clean, withBad, 0.0001)
     }
 
     @Test
-    fun `표본 2개 미만이면 0 이 아니라 null`() {
+    fun `표본이 최소선 미만이면 0 이 아니라 null`() {
         assertNull(Sdnn.sdnnMs(emptyList()))
         assertNull(Sdnn.sdnnMs(listOf(800)))
-        assertNull(Sdnn.sdnnMs(listOf(800, 810), listOf(0, 1)))  // 유효 1개
+        assertNull("연속성 필터 뒤 4개는 부족", Sdnn.sdnnMs(listOf(800, 810, 790, 805)))
     }
 
     @Test
     fun `status 길이가 안 맞으면 필터를 신뢰하지 않는다`() {
-        val got = Sdnn.sdnnMs(listOf(800, 810), listOf(0))!!
-        assertEquals(5.0, got, 0.0001)
+        val got = Sdnn.sdnnMs(listOf(800, 810, 790, 805, 798), listOf(0))!!
+        assertEquals(6.7409, got, 0.0001)
     }
 }
 

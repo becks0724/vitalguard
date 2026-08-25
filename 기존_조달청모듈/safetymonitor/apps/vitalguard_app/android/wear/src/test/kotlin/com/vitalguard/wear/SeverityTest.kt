@@ -240,8 +240,8 @@ class IbiFilterTest {
     @Test
     fun `생리 범위 밖 IBI 는 버린다 - status 만으로는 안 걸러진다`() {
         // 08-25 실기: HRV 402ms 관측. 0 같은 무효값이 SDNN 을 통째로 망가뜨린다.
-        val withZero = listOf(600, 610, 0, 605, 0, 612)
-        val clean = listOf(600, 610, 605, 612)
+        val withZero = listOf(600, 610, 0, 605, 0, 612, 608)
+        val clean = listOf(600, 610, 605, 612, 608)
         assertEquals(
             "무효값이 결과를 바꾸면 안 된다",
             com.vitalguard.wear.core.Sdnn.sdnnMs(clean)!!,
@@ -252,13 +252,51 @@ class IbiFilterTest {
 
     @Test
     fun `극단값도 버린다 - 30~220bpm 밖은 표본이 아니다`() {
-        val got = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 5000, 605))!!
-        val expect = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 605))!!
+        val got = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 5000, 605, 612, 608))!!
+        val expect = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 605, 612, 608))!!
         assertEquals(expect, got, 0.001)
     }
 
     @Test
     fun `걸러낸 뒤 2개 미만이면 null - 0 으로 채우지 않는다`() {
         assertEquals(null, com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(0, 0, 5000)))
+    }
+}
+
+/** B안 — 연속성 필터. 08-25 실기 HRV 264ms 오염을 막는다. */
+class ContinuityFilterTest {
+
+    @Test
+    fun `실기 관측 재현 - 놓친 박동이 합쳐진 값을 버린다`() {
+        // 08-25 실측: 심박 95bpm(=632ms) 인데 IBI=[1442, 920, 869] · status 전부 정상.
+        // 1442 는 두세 박동이 합쳐진 값 — 생리 범위(270~2000)는 통과하므로 값 범위로는 못 거른다.
+        val raw = listOf(1442, 920, 869)
+        val kept = com.vitalguard.wear.core.Sdnn.continuous(raw)
+        org.junit.Assert.assertEquals("첫 값만 남아야 한다", listOf(1442), kept)
+        // 결과적으로 표본 부족 → null. 오염된 264ms 를 내보내지 않는다.
+        org.junit.Assert.assertNull(com.vitalguard.wear.core.Sdnn.sdnnMs(raw))
+    }
+
+    @Test
+    fun `정상 변동은 통과한다 - 호흡성 부정맥을 죽이지 않는다`() {
+        // 안정 시 RSA 는 대개 5~10% 변동 — 20% 허용 폭 안이다.
+        val rsa = listOf(600, 630, 610, 645, 620, 655)
+        assertEquals(rsa, com.vitalguard.wear.core.Sdnn.continuous(rsa))
+        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(rsa))
+    }
+
+    @Test
+    fun `기준은 직전 유효값이다 - 버린 값이 뒤를 오염시키지 않는다`() {
+        // 1200 을 버린 뒤 기준은 여전히 600 이라 610 이 살아남는다.
+        assertEquals(
+            listOf(600, 610),
+            com.vitalguard.wear.core.Sdnn.continuous(listOf(600, 1200, 610)),
+        )
+    }
+
+    @Test
+    fun `표본이 줄면 표시하지 않는다 - 노이즈를 HRV 로 내보내지 않는다`() {
+        // 절반이 튀어 유효 4개만 남는 경우 → null
+        org.junit.Assert.assertNull(com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 1400, 610, 1500, 605, 1600, 612)))
     }
 }
