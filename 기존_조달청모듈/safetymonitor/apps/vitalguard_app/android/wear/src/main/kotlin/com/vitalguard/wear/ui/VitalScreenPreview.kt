@@ -5,9 +5,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.wear.tooling.preview.devices.WearDevices
 
-/** 미리보기용 타임라인 — 06시 출근 후 상승하는 근무 곡선. */
-private val demoTimeline = (0..40).map {
-    TimelinePoint(hourOfDay = 6f + it * 0.11f, bpm = 78 + (it * 7 % 26))
+/** 미리보기용 차트 표본 — 5분 창 안에서 오르내리는 근무 심박. */
+private const val DEMO_NOW = 1_787_000_000_000L
+private val demoTimeline = (0..60).map {
+    TimelinePoint(
+        atMs = DEMO_NOW - (60 - it) * 5_000L,
+        bpm = 88 + ((it * 13) % 17) - 8,
+    )
 }
 
 private const val ROUND = WearDevices.LARGE_ROUND
@@ -22,7 +26,7 @@ fun PreviewIdle() = VitalScreen(VitalUiState(workerName = "장우진"), {})
 fun PreviewNormal() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 88, spo2 = 97, spo2AgeSec = 240,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 88, spo2 = 97, spo2AgeSec = 240,
         skinTempC = 36.1, ambientTempC = 28.4, stillSec = 8.0,
         collecting = true, batteryPct = 78, lastUploadAgeSec = 35,
     ),
@@ -34,7 +38,7 @@ fun PreviewNormal() = VitalScreen(
 fun PreviewCaution() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 118, spo2 = 95, spo2AgeSec = 90,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 118, spo2 = 95, spo2AgeSec = 90,
         skinTempC = 36.9, ambientTempC = 31.2, stillSec = 25.0,
         collecting = true, batteryPct = 54, lastUploadAgeSec = 12,
     ),
@@ -46,7 +50,7 @@ fun PreviewCaution() = VitalScreen(
 fun PreviewDangerHeat() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 141, spo2 = 94, spo2AgeSec = 30,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 141, spo2 = 94, spo2AgeSec = 30,
         skinTempC = 37.8, ambientTempC = 35.6, stillSec = 40.0,
         collecting = true, batteryPct = 41, lastUploadAgeSec = 8,
     ),
@@ -59,7 +63,7 @@ fun PreviewDangerHeat() = VitalScreen(
 fun PreviewDangerSpo2() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 104, spo2 = 86, spo2AgeSec = 15,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 104, spo2 = 86, spo2AgeSec = 15,
         skinTempC = 36.0, collecting = true, batteryPct = 60, lastUploadAgeSec = 20,
     ),
     {},
@@ -71,7 +75,7 @@ fun PreviewDangerSpo2() = VitalScreen(
 fun PreviewStill() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 62, stillSec = 320.0, skinTempC = 35.8,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 62, stillSec = 320.0, skinTempC = 35.8,
         collecting = true, batteryPct = 33, lastUploadAgeSec = 45,
     ),
     {},
@@ -83,7 +87,7 @@ fun PreviewStill() = VitalScreen(
 fun PreviewQueued() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 90, spo2 = 96, spo2AgeSec = 600,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 90, spo2 = 96, spo2AgeSec = 600,
         skinTempC = 36.3, collecting = true, queued = 283, batteryPct = 12,
     ),
     {},
@@ -95,7 +99,7 @@ fun PreviewQueued() = VitalScreen(
 fun PreviewSmallRound() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 141, spo2 = 86, spo2AgeSec = 30,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 141, spo2 = 86, spo2AgeSec = 30,
         skinTempC = 37.8, ambientTempC = 35.6, stillSec = 200.0,
         collecting = true, queued = 12, batteryPct = 41, lastUploadAgeSec = 8,
     ),
@@ -108,7 +112,7 @@ fun PreviewSmallRound() = VitalScreen(
 fun PreviewLargeFont() = VitalScreen(
     VitalUiState(
         workerName = "장우진",
-        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 118, spo2 = 91, spo2AgeSec = 45,
+        timeline = demoTimeline, nowMs = DEMO_NOW, bpmRange = 95 to 102, hrvSdnnMs = 42.0, bpm = 118, spo2 = 91, spo2AgeSec = 45,
         skinTempC = 37.1, stillSec = 95.0,
         collecting = true, batteryPct = 62, lastUploadAgeSec = 22,
     ),

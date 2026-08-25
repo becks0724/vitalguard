@@ -173,3 +173,28 @@ class BezelLabelTest {
         assertEquals("좌우 라벨 높이가 다르다", ly, ry, 0.001)
     }
 }
+
+class HrvTest {
+
+    @Test
+    fun `HRV 는 낮을수록 나쁘다 - 심박과 반대 방향`() {
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.ui.hrvSeverity(19.9))
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.ui.hrvSeverity(20.0))
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.ui.hrvSeverity(60.0))
+        assertEquals(Severity.IDLE, com.vitalguard.wear.ui.hrvSeverity(null))
+    }
+
+    @Test
+    fun `HRV 게이지 - 0~100ms 를 편다`() {
+        assertEquals(0.42f, com.vitalguard.wear.ui.gaugeFraction(42.0, 0.0, 100.0)!!, 0.001f)
+        assertEquals(null, com.vitalguard.wear.ui.gaugeFraction(null, 0.0, 100.0))
+    }
+}
+
+class ChartTest {
+
+    @Test
+    fun `차트 창은 5분이다 - 근무 중 변화를 보려면 시간이 아니라 분 단위`() {
+        assertEquals(5 * 60_000L, com.vitalguard.wear.ui.CHART_WINDOW_MS)
+    }
+}

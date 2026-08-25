@@ -67,21 +67,20 @@ class MainActivity : ComponentActivity() {
                     bpm = engine?.lastBpm ?: HrForegroundService.lastBpm
                     running = CollectorService.running || HrForegroundService.running
                     samples = engine?.samples ?: HrForegroundService.sampleCount()
-                    val cal = java.util.Calendar.getInstance()
-                    val nowHour = cal.get(java.util.Calendar.HOUR_OF_DAY) +
-                        cal.get(java.util.Calendar.MINUTE) / 60f
                     bpm?.let { b ->
-                        // 1분에 한 점이면 하루 1440점 — 화면 폭보다 많다. 3분 간격으로 솎는다.
-                        val last = timeline.lastOrNull()
-                        if (last == null || nowHour - last.hourOfDay >= 0.05f) {
-                            timeline.add(TimelinePoint(nowHour, b))
-                            if (timeline.size > 480) timeline.removeAt(0)
+                        // 3초 폴링마다 한 점 — 5분 창이면 최대 100점이라 화면 폭에 맞는다.
+                        timeline.add(TimelinePoint(now, b))
+                        // 창 밖 표본은 버린다(메모리 상한 겸용).
+                        while (timeline.isNotEmpty() &&
+                            now - timeline.first().atMs > com.vitalguard.wear.ui.CHART_WINDOW_MS
+                        ) {
+                            timeline.removeAt(0)
                         }
                     }
                     val bpms = timeline.map { it.bpm }
                     vitals = VitalUiState(
                         timeline = timeline.toList(),
-                        nowHour = nowHour,
+                        nowMs = now,
                         bpmRange = if (bpms.size >= 2) bpms.min() to bpms.max() else null,
                         workerName = ConfigStore(this@MainActivity).workerName,
                         bpm = bpm,
@@ -90,6 +89,7 @@ class MainActivity : ComponentActivity() {
                         skinTempC = engine?.lastSkinTempC,
                         ambientTempC = engine?.lastAmbientTempC,
                         stillSec = engine?.stillSecNow(now),
+                        hrvSdnnMs = engine?.lastHrvMs,
                         batteryPct = batteryPct(),
                         collecting = running,
                         queued = CollectorService.queuedCount,
@@ -103,7 +103,8 @@ class MainActivity : ComponentActivity() {
                             "VgUi",
                             "bpm=${vitals.bpm} spo2=${vitals.spo2} skin=${vitals.skinTempC} " +
                                 "core=${vitals.coreTempC} amb=${vitals.ambientTempC} " +
-                                "still=${vitals.stillSec} collecting=${vitals.collecting} " +
+                                "still=${vitals.stillSec} hrv=${vitals.hrvSdnnMs} " +
+                                "collecting=${vitals.collecting} " +
                                 "queued=${vitals.queued} tempFrac=" +
                                 com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, 36.0, 38.5),
                         )

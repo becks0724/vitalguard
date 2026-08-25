@@ -38,6 +38,9 @@ class CollectorEngine(
         private set
     @Volatile var samples = 0
         private set
+    /** 화면 표시용 HRV — 전송용(창 주기당 1회)과 달리 창이 차면 늘 최신값을 보여준다. */
+    @Volatile var lastHrvMs: Double? = null
+        private set
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -73,6 +76,8 @@ class CollectorEngine(
             ibiWindow.removeAt(0)
             ibiStatusWindow.removeAt(0)
         }
+        // 화면용은 매번 갱신한다 — 전송용 게이트(창 주기당 1회)와 목적이 다르다.
+        lastHrvMs = Sdnn.sdnnMs(ibiWindow.map { it.second }, ibiStatusWindow)
     }
 
     @Synchronized

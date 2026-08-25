@@ -68,7 +68,7 @@ fun VitalScreen(
             TopIcons(state)
             HeroValue(state, large)
             LabelAndRange(state)
-            HeartTimeline(points = state.timeline, nowHour = state.nowHour)
+            HeartChart(points = state.timeline, nowMs = state.nowMs, tint = state.severity.color())
             BubbleRow(state, bubble)
             FooterLine(state)
             ActionRow(state, onToggleCollect, onOpenDiagnostics)
@@ -173,11 +173,13 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             severity = coreTempSeverity(state.coreTempC),
             diameter = diameter,
         )
+        // HRV(SDNN) — 삼성 IBI 로 직접 계산한다. 스트레스 축에서 심박과 독립인 유일한 신호라
+        // 심박만으로는 못 보는 피로·긴장을 드러낸다. 무동작은 우측 베젤이 맡는다(중복 제거).
         LabeledBubble(
-            value = state.stillSec?.let { stillShort(it) } ?: "--",
-            label = "무동작",
-            fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
-            severity = stillSeverity(state.stillSec),
+            value = state.hrvSdnnMs?.let { it.toInt().toString() } ?: "--",
+            label = "HRV",
+            fraction = gaugeFraction(state.hrvSdnnMs, 0.0, 100.0),
+            severity = hrvSeverity(state.hrvSdnnMs),
             diameter = diameter,
         )
     }
@@ -340,6 +342,17 @@ internal fun stillTicks(state: VitalUiState): BezelTicks = BezelTicks(
     fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
     color = stillSeverity(state.stillSec).color(),
 )
+
+/**
+ * HRV(SDNN) 판정 — **낮을수록 나쁘다**(심박과 반대 방향).
+ * 20ms 미만은 강한 스트레스·피로의 지표로 널리 쓰인다. 다만 개인차가 커서
+ * ⚠ **경보로 쓰지 않는다** — 화면 표시 전용이고, 관제 스트레스 지수는 서버가 계산한다.
+ */
+internal fun hrvSeverity(ms: Double?): Severity = when {
+    ms == null -> Severity.IDLE
+    ms < 20 -> Severity.CAUTION
+    else -> Severity.NORMAL
+}
 
 /** 무동작은 붕괴 후보선을 넘으면 주의 — 낙상 규칙과 같은 경계(90초). */
 internal fun stillSeverity(sec: Double?): Severity = when {

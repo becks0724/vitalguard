@@ -23,6 +23,8 @@ data class VitalUiState(
     val ambientTempC: Double? = null,
     val steps: Int = 0,
     val stillSec: Double? = null,
+    /** HRV(SDNN, ms) — 삼성 IBI 로 계산. 표본이 모자라면 null(0 으로 채우지 않는다). */
+    val hrvSdnnMs: Double? = null,
     val batteryPct: Int? = null,
     val collecting: Boolean = false,
     val queued: Int = 0,
@@ -30,8 +32,8 @@ data class VitalUiState(
     val lastUploadAgeSec: Long? = null,
     /** 24시간 타임라인 표본 — 화면이 들고 있는 최근 값만. 비어 있으면 축만 그린다. */
     val timeline: List<TimelinePoint> = emptyList(),
-    /** 현재 시각(0~24 소수). 타임라인의 현재 마커 위치. */
-    val nowHour: Float = 0f,
+    /** 현재 시각(epoch ms) — 차트가 창을 자르는 기준. */
+    val nowMs: Long = 0L,
     /** 오늘 관측된 심박 범위 — 사진의 "95-102" 자리. 표본이 없으면 null. */
     val bpmRange: Pair<Int, Int>? = null,
 ) {

@@ -1,4 +1,4 @@
-// 24시간 심박 타임라인 — 근무 중 추이를 한 줄로. 사진의 12AM~12PM 띠와 같은 자리다
+// 실시간 심박 추이 차트 — 최근 몇 분의 변화를 선으로. 24시간 축은 근무 중 변화를 못 보여준다
 package com.vitalguard.wear.ui
 
 import androidx.compose.foundation.Canvas
@@ -9,68 +9,72 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Text
 
-/** 한 점 = 한 시각의 심박. 화면은 최근 값만 들고 있으므로 표본이 적어도 그려져야 한다. */
-data class TimelinePoint(val hourOfDay: Float, val bpm: Int)
+/** 한 점 = 한 표본. 화면이 들고 있는 최근 값만 그린다(서버 조회 없음). */
+data class TimelinePoint(val atMs: Long, val bpm: Int)
+
+/** 차트가 덮는 시간 폭 — 근무 중 "지금 오르고 있나" 를 보려면 시간 단위가 아니라 분 단위다. */
+const val CHART_WINDOW_MS = 5 * 60_000L
 
 /**
- * 24시간 축 위에 심박 표본과 **현재 위치 마커**를 그린다.
- * 값이 없으면 축만 남는다 — 빈 그래프를 0 으로 채우지 않는다(화면 전체 공통 규칙).
+ * 실시간 심박 선 차트.
+ *
+ * ★ 세로 축은 **표본의 최소~최대에 맞춰 늘린다**(고정 40~130 이 아니라).
+ *   근무 중 심박은 90~100 안에서 움직이는데 고정 축이면 선이 납작해져 변화가 안 보인다.
+ *   대신 축 폭이 좁아지지 않게 최소 20bpm 은 확보한다.
  */
 @Composable
-fun HeartTimeline(
+fun HeartChart(
     points: List<TimelinePoint>,
-    nowHour: Float,
+    nowMs: Long,
+    tint: androidx.compose.ui.graphics.Color,
     modifier: Modifier = Modifier,
 ) {
+    val window = points.filter { nowMs - it.atMs <= CHART_WINDOW_MS }
     Column(modifier = modifier.fillMaxWidth()) {
-        Canvas(modifier = Modifier.fillMaxWidth().height(22.dp)) {
+        Canvas(modifier = Modifier.fillMaxWidth().height(30.dp)) {
             val w = size.width
             val h = size.height
-            val track = h * 0.34f
-
-            // 축 — 하루 전체. 값이 없어도 "여기가 범위" 는 보인다.
+            // 기준선 — 표본이 없어도 "여기가 차트" 는 보인다.
             drawLine(
                 color = VgColors.Track,
-                start = Offset(0f, h / 2f),
-                end = Offset(w, h / 2f),
-                strokeWidth = track,
-                cap = StrokeCap.Round,
+                start = Offset(0f, h - 1f),
+                end = Offset(w, h - 1f),
+                strokeWidth = 1.5f,
             )
-            // 표본 — 심박 40~130 을 세로로 편다. 위가 높은 값.
-            points.forEach { p ->
-                val x = (p.hourOfDay / 24f).coerceIn(0f, 1f) * w
-                val f = ((p.bpm - 40f) / 90f).coerceIn(0f, 1f)
-                val y = h - f * h
-                drawCircle(
-                    color = VgColors.Accent,
-                    radius = h * 0.09f,
-                    center = Offset(x, y),
-                )
+            if (window.size < 2) return@Canvas
+
+            val bpms = window.map { it.bpm }
+            val mid = (bpms.min() + bpms.max()) / 2f
+            val span = maxOf((bpms.max() - bpms.min()).toFloat(), 20f)
+            val lo = mid - span / 2f
+            val hi = mid + span / 2f
+
+            fun x(p: TimelinePoint) = w - ((nowMs - p.atMs) / CHART_WINDOW_MS.toFloat()) * w
+            fun y(p: TimelinePoint) = h - ((p.bpm - lo) / (hi - lo)).coerceIn(0f, 1f) * (h * 0.88f) - h * 0.06f
+
+            val path = Path().apply {
+                moveTo(x(window.first()), y(window.first()))
+                window.drop(1).forEach { lineTo(x(it), y(it)) }
             }
-            // 현재 시각 마커 — 사진의 분홍 세로 막대 자리.
-            val nx = (nowHour / 24f).coerceIn(0f, 1f) * w
-            drawLine(
-                color = VgColors.Primary,
-                start = Offset(nx, h * 0.18f),
-                end = Offset(nx, h * 0.82f),
-                strokeWidth = w * 0.012f,
-                cap = StrokeCap.Round,
+            drawPath(
+                path = path,
+                color = tint,
+                style = Stroke(width = h * 0.09f, cap = StrokeCap.Round),
             )
+            // 최신 점 — 지금 값이 어디인지 눈이 먼저 찾는다.
+            val last = window.last()
+            drawCircle(color = tint, radius = h * 0.11f, center = Offset(x(last), y(last)))
         }
         Row(modifier = Modifier.fillMaxWidth()) {
-            listOf("12AM", "6", "12PM", "6", "(h)").forEachIndexed { i, label ->
-                Text(
-                    label,
-                    color = VgColors.Secondary,
-                    fontSize = 8.sp,
-                    modifier = if (i == 4) Modifier else Modifier.weight(1f),
-                )
-            }
+            Text("5분 전", color = VgColors.Secondary, fontSize = 8.sp, modifier = Modifier.weight(1f))
+            Text("지금", color = VgColors.Secondary, fontSize = 8.sp)
         }
     }
 }
