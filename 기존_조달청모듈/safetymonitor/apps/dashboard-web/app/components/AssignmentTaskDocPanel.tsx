@@ -235,9 +235,20 @@ export default function AssignmentTaskDocPanel() {
               type="button"
               onClick={() => void loadNoticeDocs(noticeIdInput.trim())}
               disabled={noticeLoading || noticeIdInput.trim().length === 0}
-              className="rounded-lg border border-zinc-200 px-2.5 py-1 text-[11px] text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/10"
+              aria-label="공고번호로 문서 조회"
+              title={noticeLoading ? "조회 중…" : "조회"}
+              className="grid w-[28px] shrink-0 self-stretch place-items-center rounded-lg border border-zinc-200 text-zinc-600 hover:bg-zinc-100 disabled:opacity-40 dark:border-white/10 dark:text-zinc-300 dark:hover:bg-white/10"
             >
-              {noticeLoading ? "조회 중…" : "조회"}
+              {noticeLoading ? (
+                <svg className="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.6-3.6" />
+                </svg>
+              )}
             </button>
           </div>
         </div>

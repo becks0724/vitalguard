@@ -237,9 +237,20 @@ export default function BusinessVerifyCard() {
               <button
                 onClick={() => checkIssuance()}
                 disabled={invLoading}
-                className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
+                aria-label="발급사실 조회"
+                title={invLoading ? "조회 중…" : "조회"}
+                className="grid w-[26px] shrink-0 self-stretch place-items-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
               >
-                {invLoading ? "…" : "조회"}
+                {invLoading ? (
+                  <svg className="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.6-3.6" />
+                </svg>
+                )}
               </button>
             </div>
             <button
