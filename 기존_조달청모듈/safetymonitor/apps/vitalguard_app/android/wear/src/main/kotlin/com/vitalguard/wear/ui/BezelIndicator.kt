@@ -62,7 +62,7 @@ fun BezelIndicator(
     }
 }
 
-/** 굵은 띠 — 트랙을 깔고 그 위 비율 위치에 점을 찍는다(사진 좌측 형태). */
+/** 굵은 띠 — 트랙을 깔고 **아래에서 위로 채운다**(08-25 사용자 요청 · 종전은 점). */
 private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
     b: BezelBand,
     cx: Float,
@@ -83,14 +83,20 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
         style = Stroke(width = width, cap = StrokeCap.Round),
     )
     val f = b.fraction ?: return
-    // ★ 화면에서 위쪽이 '높은 값' 이라야 직관과 맞는다. 좌측 아크는 각도가 커질수록
-    //   아래로 가므로 비율을 뒤집는다(f=1 → 시작각 쪽 = 위).
-    val deg = b.startDeg + b.sweepDeg * (1f - f)
-    val rad = Math.toRadians(deg.toDouble())
-    drawCircle(
+    // ★ 채움 방향 — **시작각에서 끝각으로** 자란다. 좌측 띠는 145°(아래)에서 215°(위)로
+    //   가므로 값이 클수록 위로 찬다. 이것이 "게이지" 의 직관이다.
+    //   ⚠ 종전 점 표시는 `1f - f` 로 위치를 뒤집어 **높은 심박이 오히려 아래**에 찍혔다
+    //     (주석은 반대로 적혀 있었다). 채움으로 바꾸면서 방향도 바로잡는다.
+    //     각도 규약 확인 = sin(145°)>0 → 화면 아래 · sin(215°)<0 → 화면 위(y 는 아래로 증가).
+    if (f <= 0f) return
+    drawArc(
         color = b.color,
-        radius = width * 0.62f,
-        center = Offset(cx + cos(rad).toFloat() * arcR, cy + sin(rad).toFloat() * arcR),
+        startAngle = b.startDeg,
+        sweepAngle = b.sweepDeg * f,
+        useCenter = false,
+        topLeft = Offset(cx - arcR, cy - arcR),
+        size = Size(arcR * 2, arcR * 2),
+        style = Stroke(width = width, cap = StrokeCap.Round),
     )
 }
 

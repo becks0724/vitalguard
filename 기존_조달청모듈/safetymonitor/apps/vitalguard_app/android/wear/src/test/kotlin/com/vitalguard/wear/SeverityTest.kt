@@ -163,6 +163,38 @@ class BezelTest {
     }
 }
 
+class BezelFillTest {
+
+    private val src = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/BezelIndicator.kt",
+    ).readText()
+
+    /** 08-25 사용자 요청 — 좌측 심박은 점이 아니라 **채워지는 게이지**다. */
+    @Test
+    fun `좌측 띠는 점이 아니라 채움이다`() {
+        org.junit.Assert.assertTrue(
+            "채움 아크가 없다",
+            src.contains("sweepAngle = b.sweepDeg * f"),
+        )
+        org.junit.Assert.assertFalse(
+            "점 표시가 되살아났다",
+            src.contains("drawCircle"),
+        )
+    }
+
+    /**
+     * ⚠ 방향 — 채움은 **시작각에서** 자란다. 종전 점은 `1f - f` 로 뒤집혀 있어
+     * 높은 심박이 화면 아래에 찍혔다. 뒤집기가 되살아나면 같은 오독이 돌아온다.
+     */
+    @Test
+    fun `채움 방향이 뒤집히지 않았다`() {
+        org.junit.Assert.assertFalse(
+            "비율 뒤집기가 되살아났다",
+            src.contains("(1f - f)"),
+        )
+    }
+}
+
 class BezelLabelTest {
 
     @Test
@@ -240,6 +272,35 @@ class ChartTest {
             "겹친 두 선에 범례가 없다",
             detail.contains("label = \"피부온\"") && detail.contains("overlayLabel = \"주변온\""),
         )
+    }
+}
+
+class SkinGaugeTest {
+
+    private fun f(c: Double) = com.vitalguard.wear.ui.gaugeFraction(
+        c,
+        com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MIN_C,
+        com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MAX_C,
+    )!!
+
+    /**
+     * ★ 08-25 사용자 보고 — "피부온은 측정되는데 인디케이터가 작동하지 않는다".
+     * 원인 = 축 바닥(36.0)이 실제 손목 피부온(35.2)보다 높아 0 으로 잘렸다.
+     * 실측 표본은 서버 적재분(착용 확정 행)에서 왔다.
+     */
+    @Test
+    fun `실제 손목 피부온이 게이지에 보인다 - 0 으로 잘리지 않는다`() {
+        // 발열이 빠진 뒤 실측된 값들. 셋 다 눈에 보여야 한다.
+        org.junit.Assert.assertTrue("정상 구간 최저(34.12)가 잘렸다", f(34.12) > 0.02f)
+        org.junit.Assert.assertTrue("현재 실측(35.2)이 20% 미만이면 안 보인다", f(35.2) >= 0.20f)
+        org.junit.Assert.assertTrue("정상 평균(36.66)이 중간에 안 온다", f(36.66) in 0.35f..0.65f)
+    }
+
+    @Test
+    fun `위험선을 넘어도 남은 여유가 보인다`() {
+        val danger = f(com.vitalguard.wear.core.Thresholds.SKIN_TEMP_DANGER_C)
+        org.junit.Assert.assertTrue("위험선이 이미 꽉 차면 그 위가 안 보인다", danger < 0.90f)
+        org.junit.Assert.assertTrue("39.5 가 위험선보다 높게 그려져야 한다", f(39.5) > danger)
     }
 }
 
@@ -479,17 +540,9 @@ class SkinTempTrackTest {
         )
     }
 
-    @Test
-    fun `게이지 축 36~40 - 실측대가 중간에 오고 위험선 뒤에 여유가 남는다`() {
-        fun f(c: Double) = com.vitalguard.wear.ui.gaugeFraction(
-            c,
-            com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MIN_C,
-            com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MAX_C,
-        )!!
-        org.junit.Assert.assertTrue("실측대(37.5)가 안 보인다", f(37.5) in 0.3f..0.5f)
-        assertEquals("주의선 38.0 = 50%", 0.50f, f(38.0), 0.001f)
-        org.junit.Assert.assertTrue("위험선 뒤 여유가 없다", f(38.5) < 0.8f)
-    }
+    // ⚠ 종전의 `게이지 축 36~40` 시험은 **오염된 실측대(37.5)** 를 못 박고 있어서 폐기했다.
+    //    그 37.5 는 기기 발열 구간의 값이었고, 발열이 빠진 실제 손목은 35.2 였다.
+    //    새 축의 계약은 SkinGaugeTest 가 든다 — 실측 표본으로 다시 세운 것이다.
 
     @Test
     fun `전체 판정도 피부온을 본다 - 화면 안에서 기준이 갈리면 안 된다`() {
