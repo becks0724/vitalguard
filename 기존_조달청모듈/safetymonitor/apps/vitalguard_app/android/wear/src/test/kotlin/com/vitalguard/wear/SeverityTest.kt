@@ -300,3 +300,34 @@ class ContinuityFilterTest {
         org.junit.Assert.assertNull(com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 1400, 610, 1500, 605, 1600, 612)))
     }
 }
+
+/** 심박 정합 필터 — 연속성이 못 잡는 '배치 통째 어긋남' 을 막는다(08-25 실측). */
+class HrConsistencyTest {
+
+    @Test
+    fun `실기 관측 재현 - 서로는 가깝지만 심박과 안 맞는 배치를 버린다`() {
+        // 심박 94bpm(=638ms) 인데 IBI 는 787~920ms(65~76bpm). 서로는 20% 안이라
+        // 연속성을 전부 통과하지만 심박과 정합하지 않는다.
+        val raw = listOf(855, 915, 920, 889, 787)
+        assertEquals("연속성만으로는 전부 통과한다", raw, com.vitalguard.wear.core.Sdnn.continuous(raw))
+        val kept = com.vitalguard.wear.core.Sdnn.hrConsistent(raw, bpm = 94)
+        org.junit.Assert.assertTrue("심박 정합이 걸러내야 한다", kept.size < raw.size)
+        // 결과적으로 표본 부족 → null. 오염된 SDNN 을 안 내보낸다.
+        org.junit.Assert.assertNull(com.vitalguard.wear.core.Sdnn.sdnnMs(raw, bpm = 94))
+    }
+
+    @Test
+    fun `심박과 맞는 표본은 통과한다`() {
+        // 94bpm = 638ms. ±30% = 447~830ms.
+        val ok = listOf(620, 640, 655, 630, 645)
+        assertEquals(ok, com.vitalguard.wear.core.Sdnn.hrConsistent(ok, bpm = 94))
+        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(ok, bpm = 94))
+    }
+
+    @Test
+    fun `bpm 이 없으면 거르지 않는다 - 대조 기준이 없으면 근거도 없다`() {
+        val any = listOf(855, 915, 920)
+        assertEquals(any, com.vitalguard.wear.core.Sdnn.hrConsistent(any, bpm = null))
+        assertEquals(any, com.vitalguard.wear.core.Sdnn.hrConsistent(any, bpm = 0))
+    }
+}

@@ -99,7 +99,8 @@ class CollectorEngine(
             ibiStatusWindow.removeAt(0)
         }
         // 화면용은 매번 갱신한다 — 전송용 게이트(창 주기당 1회)와 목적이 다르다.
-        lastHrvMs = Sdnn.sdnnMs(ibiWindow.map { it.second }, ibiStatusWindow)
+        // 심박을 함께 넘긴다 — 배치가 통째로 어긋난 IBI 를 걸러낼 유일한 대조 기준이다.
+        lastHrvMs = Sdnn.sdnnMs(ibiWindow.map { it.second }, ibiStatusWindow, lastBpm)
     }
 
     @Synchronized
@@ -136,7 +137,7 @@ class CollectorEngine(
     fun flush(nowMs: Long): Boolean {
         val lastEmit = lastHrvEmitMs
         if (lastEmit == null || nowMs - lastEmit >= hrvWindowMs) {
-            Sdnn.sdnnMs(ibiWindow.map { it.second }, ibiStatusWindow)?.let {
+            Sdnn.sdnnMs(ibiWindow.map { it.second }, ibiStatusWindow, lastBpm)?.let {
                 builder.hrvSdnn(it)
                 lastHrvEmitMs = nowMs
             }
