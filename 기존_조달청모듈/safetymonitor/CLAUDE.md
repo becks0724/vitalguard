@@ -38,7 +38,9 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 - **재서명 08-26.** `TimeToLive` 7일이 발급일 기준이라 만료(08-27 10:09 KST) 직전에 한다.
   ⚠ 워치 코드 변경은 반드시 이 창에 묶는다 — 워치 재설치는 세션을 끊고 **자동 재개되지 않는다**.
 - **08-26 앱 묶음** = B-2 정확도 선택 + `±NNm` · `NSMotionUsageDescription`(없으면 `CMAltimeter`
-  크래시) · 응답 본문 읽기 6곳 중 `VitalPipeline:287`.
+  크래시) · 응답 본문 읽기 6곳 중 `VitalPipeline:287` · **워치 하드웨어 모델 `wdm`**(`413942c` —
+  소스·가드·빌드 완료, 설치만 남음. 설치 후 확인 = `SELECT DISTINCT watch_device_model` 에
+  `Watch…,…` 꼴이 뜨는가. 종전 값 `Apple Watch` 는 판별력 0 이라 되살린 것이 아니다).
 - **지하주차장 재촬영** — 좌표 수정을 검증할 유일한 자리다(실외는 고치기 전에도 통과한다).
 - **C-1 `seBy=0` 대기**(창 5일) · **B-1 배터리 판정**(6.5%↓ 유지 / 8%↑ 연장 / 사이 = 안 갈림).
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
