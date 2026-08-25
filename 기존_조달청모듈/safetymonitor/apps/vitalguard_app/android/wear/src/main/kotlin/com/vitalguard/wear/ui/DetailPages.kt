@@ -100,10 +100,12 @@ fun TempDetailPage(state: VitalUiState) {
                 ),
                 // 같은 축에 주변온을 겹친다 — 두 선이 나란히 오르면 기기 발열이다.
                 overlay = state.ambientTrend,
+                label = "피부온",
+                overlayLabel = "주변온",
             )
         },
         rows = buildList {
-            state.ambientTempC?.let { add(DetailRow("주변(하단)", "%.1f ℃".format(it), VgColors.Accent)) }
+            state.ambientTempC?.let { add(DetailRow("주변", "%.1f ℃".format(it), VgColors.Accent)) }
             if (state.skinTempC != null && state.ambientTempC != null) {
                 add(DetailRow("차이", "%.1f ℃".format(state.skinTempC - state.ambientTempC)))
             }

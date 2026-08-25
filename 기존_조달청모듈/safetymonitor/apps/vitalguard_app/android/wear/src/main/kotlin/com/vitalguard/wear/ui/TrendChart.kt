@@ -2,12 +2,19 @@
 package com.vitalguard.wear.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -48,6 +55,12 @@ fun TrendChart(
     /** 같은 축에 겹쳐 그릴 보조 계열(예 주변온). 비어 있으면 안 그린다. */
     overlay: List<Sample> = emptyList(),
     overlayTint: Color = VgColors.Accent,
+    /**
+     * 두 계열의 이름. ⚠ 겹쳐 그리면서 이름을 안 주면 **어느 선이 무엇인지 알 방법이 없다** —
+     * 08-25 실기 캡처에서 체온 페이지가 정확히 그 상태였다(선 둘, 설명 0).
+     */
+    label: String? = null,
+    overlayLabel: String? = null,
 ) {
     // 창 밖 표본은 축 계산에서도 뺀다 — 수집이 멈춘 뒤 남은 옛 점이 세로축을 잡아당기면
     // 지금 구간이 납작해진다(그려지지 않는 점이 축을 정하는 상황).
@@ -129,11 +142,36 @@ fun TrendChart(
                 drawCircle(tint, radius = h * 0.08f, center = Offset(x(it.atMs), y(it.value)))
             }
         }
-        Row(Modifier.fillMaxWidth()) {
-            Text(windowLabel(windowMs), color = VgColors.Secondary, fontSize = 8.sp, modifier = Modifier.weight(1f))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(windowLabel(windowMs), color = VgColors.Secondary, fontSize = 8.sp)
+            if (label != null && overlayLabel != null) {
+                Row(
+                    Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LegendDot(tint); Text(label, color = VgColors.Secondary, fontSize = 8.sp)
+                    Box(Modifier.size(width = 7.dp, height = 1.dp))
+                    LegendDot(overlayTint); Text(overlayLabel, color = VgColors.Secondary, fontSize = 8.sp)
+                }
+            } else {
+                Box(Modifier.weight(1f))
+            }
             Text("지금", color = VgColors.Secondary, fontSize = 8.sp)
         }
     }
+}
+
+/** 범례 점 — 선 색과 같은 색의 작은 원. 글자 앞에 붙어 "이 색이 이것" 을 말한다. */
+@Composable
+private fun LegendDot(c: Color) {
+    Box(
+        Modifier
+            .padding(end = 2.dp)
+            .size(5.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(c),
+    )
 }
 
 internal fun windowLabel(ms: Long): String = when {

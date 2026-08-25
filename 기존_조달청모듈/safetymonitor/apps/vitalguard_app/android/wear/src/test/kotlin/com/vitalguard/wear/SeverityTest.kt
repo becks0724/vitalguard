@@ -235,6 +235,11 @@ class ChartTest {
             "체온 차트에 주변온 겹치기가 없다",
             detail.contains("overlay = state.ambientTrend"),
         )
+        // ★ 겹쳤으면 이름을 붙여야 한다 — 선이 둘인데 범례가 없으면 판별법을 쓸 수가 없다.
+        org.junit.Assert.assertTrue(
+            "겹친 두 선에 범례가 없다",
+            detail.contains("label = \"피부온\"") && detail.contains("overlayLabel = \"주변온\""),
+        )
     }
 }
 
