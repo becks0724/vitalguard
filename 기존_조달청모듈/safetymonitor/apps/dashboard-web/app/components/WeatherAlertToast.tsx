@@ -78,9 +78,12 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
             type="button"
             onClick={onClose}
             aria-label="경보 닫기"
-            className="rounded px-1.5 py-0.5 text-xs font-semibold text-white/90 hover:bg-white/15"
+            title="닫기"
+            className="shrink-0 rounded-md p-1 text-white/90 transition hover:bg-white/15 hover:text-white"
           >
-            닫기 ✕
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
 

@@ -830,9 +830,27 @@ function EnvAlertAckPanel({
           type="button"
           onClick={() => void load()}
           disabled={busy}
-          className="min-w-[5rem] rounded border border-hairline px-2 py-1 text-center text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
+          aria-label="환경·기상특보 이력 새로고침"
+          title={busy ? "불러오는 중…" : "새로고침"}
+          className="rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-on-dark"
         >
-          {busy ? "불러오는 중…" : "새로고침"}
+          <svg
+            className={busy ? "animate-spin" : ""}
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
         </button>
       </div>
       <p className="mb-3 text-[11px] text-muted">
@@ -952,9 +970,27 @@ function AlertAckPanel({
           type="button"
           onClick={() => void load()}
           disabled={busy}
-          className="min-w-[5rem] rounded border border-hairline px-2 py-1 text-center text-[11px] font-semibold text-ink hover:bg-surface-soft disabled:opacity-50 dark:border-white/15 dark:text-zinc-100 dark:hover:bg-white/5"
+          aria-label="긴급 알림 이력 새로고침"
+          title={busy ? "불러오는 중…" : "새로고침"}
+          className="rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-on-dark"
         >
-          {busy ? "불러오는 중…" : "새로고침"}
+          <svg
+            className={busy ? "animate-spin" : ""}
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+            <path d="M8 16H3v5" />
+          </svg>
         </button>
       </div>
       <p className="mb-3 text-[11px] text-muted">

@@ -317,8 +317,16 @@ function SilenceDetailModal({ item, kind, onClose }: { item: string; kind: Detai
               {item} · {spread ? "거래 1건 = 점 1개" : "월별 거래 중앙값과 품목 한도"}
             </p>
           </div>
-          <button onClick={onClose} className="rounded-md border border-hairline px-2 py-1 text-[11px] font-semibold text-body hover:bg-surface-soft dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/5">
-            닫기 ✕
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="분포 상세 닫기"
+            title="닫기"
+            className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
 
@@ -613,8 +621,16 @@ function SilenceModal({ item, silent, onClose }: { item: string; silent: boolean
             <h4 className="text-sm font-semibold text-ink dark:text-on-dark">침묵 신호 — 5개 지표 (품목 단위)</h4>
             <p className="mt-0.5 text-[11px] text-body dark:text-on-dark-soft">{item} · 가격의 위치를 못 믿을 때 가격의 모양·움직임을 본다</p>
           </div>
-          <button onClick={onClose} className="rounded-md border border-hairline px-2 py-1 text-[11px] font-semibold text-body hover:bg-surface-soft dark:border-white/10 dark:text-on-dark-soft dark:hover:bg-white/5">
-            닫기 ✕
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="침묵 신호 상세 닫기"
+            title="닫기"
+            className="shrink-0 rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
           </button>
         </div>
         <div className="mt-3 overflow-x-auto rounded-lg border border-hairline dark:border-white/10">
