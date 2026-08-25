@@ -2,6 +2,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
@@ -15,6 +16,10 @@ android {
         targetSdk = 36         // 갤럭시워치8 = Wear OS 6 = Android 16
         versionCode = 1
         versionName = "0.1-probe"
+    }
+
+    buildFeatures {
+        compose = true
     }
 
     compileOptions {
@@ -36,6 +41,19 @@ dependencies {
     implementation("androidx.health:health-services-client:1.0.0")
     // health-services 의 ListenableFuture 는 빈 스텁(9999.0-empty)으로 풀린다 — 실물 guava 를 명시
     implementation("com.google.guava:guava:33.3.1-android")
+
+    // Wear Compose — 화면과 미리보기(@WearPreviewDevices)의 토대
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.wear.compose:compose-material:1.4.0")
+    implementation("androidx.wear.compose:compose-foundation:1.4.0")
+    // @WearPreviewDevices 등 워치 전용 미리보기 애너테이션
+    implementation("androidx.wear.compose:compose-ui-tooling:1.4.0")
+    // WearDevices 상수(LARGE_ROUND·SMALL_ROUND) — 전이 의존으로는 컴파일 경로에 안 들어온다
+    implementation("androidx.wear:wear-tooling-preview:1.0.0")
+    debugImplementation("androidx.compose.ui:ui-tooling")
 
     testImplementation("junit:junit:4.13.2")
     // JVM 단위테스트에는 android.jar 의 org.json 이 없다 — 시험 전용으로 실물을 넣는다

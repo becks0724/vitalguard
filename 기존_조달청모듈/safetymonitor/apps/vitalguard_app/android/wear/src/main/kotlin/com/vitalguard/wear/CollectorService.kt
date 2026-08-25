@@ -91,9 +91,13 @@ class CollectorService : Service() {
             engine.flush(now)
             if (now >= uploadBlockedUntilMs) {
                 when (val r = pipeline.flushOnce(config.uploadConfig())) {
-                    is FlushOutcome.Sent -> Log.i(TAG, "업로드 ${r.count}건 · 잔여 ${r.remaining}")
+                    is FlushOutcome.Sent -> {
+                        queuedCount = r.remaining
+                        Log.i(TAG, "업로드 ${r.count}건 · 잔여 ${r.remaining}")
+                    }
                     is FlushOutcome.RetryAfterSec -> {
                         uploadBlockedUntilMs = now + r.sec * 1000L
+                        queuedCount = queue.size
                         Log.w(TAG, "업로드 대기 ${r.sec}s (auth=${r.authRejected}) · 큐 ${queue.size}")
                     }
                     FlushOutcome.Idle -> if (config.uploadConfig() == null) {
@@ -121,5 +125,9 @@ class CollectorService : Service() {
         const val TAG = "VgCollector"
         // 배터리 기준 프로파일(08-24 시뮬)의 60초 배치 — 실측 ⑥이 모델을 보정하면 재확정한다.
         const val FLUSH_INTERVAL_MS = 60_000L
+
+        /** 화면 표시용 — 큐 적체는 서버 장애의 유일한 가시 신호다(08-25 실황이 필요를 증명). */
+        @Volatile var queuedCount = 0
+            internal set
     }
 }

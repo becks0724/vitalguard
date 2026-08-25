@@ -202,3 +202,27 @@ iOS 는 5초 배치라 이 문제가 없었다 — **워치 단독 60초 설계�
 ⟹ **지금 숫자를 바꾸지 않는다.** 실측 ⑥(밤샘 배터리)과 ⑦(도착 간격 분포)이 나온 뒤
 3단계에서 정한다. 후보 = ⓐ flush 를 30초로 ⓑ 관제 STALE_MS 를 단말별로 분기
 ⓒ heartbeat 만 짧은 주기로 따로 보냄(iOS 하트비트와 같은 수법). 근거 없이 고르지 않는다.
+
+## R-15 · Compose 전환 — R-05 의 보류 근거가 사라졌다 (08-25)
+
+R-05 는 *"Compose 컴파일러 버전 맞춤 실패가 SDK 링크 검증과 무관한 잡음"* 이라 순정 View 를 썼다.
+**그 전제가 두 가지로 무너졌다.**
+
+① **Kotlin 2.0+ 부터 Compose 컴파일러는 Kotlin 과 같은 버전의 플러그인**이다
+   (`org.jetbrains.kotlin.plugin.compose` version = Kotlin 2.3.20). 맞출 버전이 애초에 없다.
+② **UI 반복이 실제 병목이 됐다.** 08-24 저녁 워치 무선 연결이 절전으로 계속 끊겨 화면 한 번
+   확인에 10~15분이 들었다. 미리보기는 그 왕복을 0으로 만든다.
+
+**구조 — 화면을 순수 함수로 짠다.** `ProbeScreen(state, actions)` 가 서비스·센서를 모르고
+`ProbeUiState` 만 받는다. 그래서 `@Preview` 가 실기 없이 그대로 렌더한다.
+미리보기 4종(대기 · 수집중 · **큐 적체** · 결과출력)을 두었다 — 상태마다 색과 줄바꿈이 달라
+한 장으로는 못 본다. 큐 적체 미리보기는 08-25 서버 DB 장애 상황을 그대로 재현한 것이다.
+
+**함정 둘.**
+- `WearDevices`(LARGE_ROUND 등)는 `androidx.wear:wear-tooling-preview` 에 있고 **전이 의존으로는
+  컴파일 경로에 안 들어온다.** 명시 선언해야 한다.
+- `ComponentActivity` 는 `onRequestPermissionsResult` 를 그 시그니처로 안 받는다 —
+  `registerForActivityResult(RequestMultiplePermissions())` 가 정석 경로다.
+
+⚠ **APK 가 9.8MB → 27MB 로 커졌다**(Compose 런타임). 디버그 빌드 기준이고 R8 이 붙는 릴리스에서
+다시 재는 것이 맞다. 워치 저장공간·설치 시간에 영향이 있으니 3단계에서 확인한다.
