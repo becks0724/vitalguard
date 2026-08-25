@@ -124,6 +124,9 @@ export function GeofenceAlertModal({
                   title="이 알림을 확인 처리합니다(대응 확인 이력에 기록)"
                   className="inline-flex items-center gap-1 rounded-full border border-emerald-500/60 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 dark:border-emerald-400/40 dark:bg-white/5 dark:text-emerald-200 dark:hover:bg-emerald-500/15"
                 >
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M5 12.5l4 4 10-10" />
+                  </svg>
                   확인
                 </button>
               ))}

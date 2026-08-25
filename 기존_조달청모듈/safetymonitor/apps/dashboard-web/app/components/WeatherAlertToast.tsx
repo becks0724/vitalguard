@@ -125,8 +125,11 @@ export function WeatherAlertToast({ alerts, onClose, onSelect, onAck, durationMs
                   <button
                     type="button"
                     onClick={() => onAck(a, "확인")}
-                    className="rounded border border-hairline px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft dark:border-white/15 dark:text-on-dark dark:hover:bg-white/5"
+                    className="inline-flex items-center gap-1 rounded border border-hairline px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft dark:border-white/15 dark:text-on-dark dark:hover:bg-white/5"
                   >
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <path d="M5 12.5l4 4 10-10" />
+                  </svg>
                     확인
                   </button>
                   <button
