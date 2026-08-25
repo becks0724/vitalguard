@@ -28,7 +28,7 @@ const watch = readFileSync(
   join(ROOT, "..", "vitalguard_app", "ios", "VitalWatch", "WatchStreamer.swift"),
   "utf8",
 );
-const dashboard = readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8");
+const age = readFileSync(join(ROOT, "lib", "vital-age.ts"), "utf8");
 
 function section(src: string, marker: string, len = 2000): string {
   const i = src.indexOf(marker);
@@ -64,8 +64,13 @@ test("② 유효기간이 flush 주기보다 크고 신선도 게이트보다 �
 
   // ★ 상한 — 신선도 게이트(60초)보다 작아야 "연결끊김"이 실제로 뜬다.
   // 같거나 크면 하트비트가 게이트를 계속 밀어내 미착용이 영영 정상으로 보인다(원래 결함의 형태).
-  const g = dashboard.match(/const STALE_MS = (\d+)_?(\d*);/);
-  assert.ok(g, "DemoDashboard 의 STALE_MS 를 못 찾았다 — 가드 재작성 필요");
+  //
+  // ⚠ 대조 상대는 **애플 문턱**(`STALE_MS_DEFAULT`)이다 — `heartbeatMaxAge` 는 watchOS
+  // `WatchStreamer` 만의 장치라 갤럭시(Wear OS · 150초)와는 무관하다. 2026-08-25 에 문턱이
+  // 출처별로 갈리면서 상수가 lib/vital-age.ts 로 옮겨졌고, 이 대조가 갤럭시 쪽을 보면
+  // 상한이 150초로 헐거워져 원래 결함을 다시 통과시킨다.
+  const g = age.match(/STALE_MS_DEFAULT = (\d+)_?(\d*);/);
+  assert.ok(g, "STALE_MS_DEFAULT 를 못 찾았다 — 가드 재작성 필요");
   const staleMs = Number(`${g[1]}${g[2] ?? ""}`);
   assert.equal(staleMs, 60000, "신선도 게이트가 바뀌었다 — 유효기간 상한을 다시 판단할 것");
   assert.ok(

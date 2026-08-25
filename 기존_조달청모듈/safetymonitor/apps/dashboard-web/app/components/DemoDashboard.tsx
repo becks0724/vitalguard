@@ -101,7 +101,7 @@ import {
   workerSignalCopy,
   worseTone,
 } from "../../lib/worker-signal";
-import { vitalAgeMs } from "../../lib/vital-age";
+import { vitalAgeMs, staleThresholdMs, STALE_MS_DEFAULT } from "../../lib/vital-age";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -654,29 +654,35 @@ function GaugePanel({
 
 // 마지막 vital 수신 시점으로부터 경과시간 → 신호 강도 0~4
 // 폰 polling 주기 5초 기준. 8s 내 = full, 60s 이상 = no signal
+//
+// ★ 사다리 전체를 문턱에 비례해 늘린다 — 칸의 의미는 절대 초가 아니라 "문턱까지의 몫"이다.
+//   바닥칸(0 = 무신호)만 문턱에 맞추고 위 칸을 60초 기준으로 두면, 갤럭시(150초 문턱)가
+//   정상 주기 안에서도 1칸에 눌러앉아 신호 막대가 늘 "약함"으로 보인다.
+//   애플·구 데이터는 배율 1 이라 **종전과 완전히 같은 값**이다.
 function signalLevel(sample: VitalSample | undefined, nowMs: number): 0 | 1 | 2 | 3 | 4 {
   if (!sample) return 0;
   const ageMs = vitalAgeMs(sample, nowMs);
-  if (ageMs < 8_000) return 4;
-  if (ageMs < 15_000) return 3;
-  if (ageMs < 30_000) return 2;
-  if (ageMs < 60_000) return 1;
+  const scale = staleThresholdMs(sample.dataOrigin) / STALE_MS_DEFAULT;
+  if (ageMs < 8_000 * scale) return 4;
+  if (ageMs < 15_000 * scale) return 3;
+  if (ageMs < 30_000 * scale) return 2;
+  if (ageMs < 60_000 * scale) return 1;
   return 0;
 }
 
-// 마지막 생체 수신 후 STALE_MS 초과 = "연결끊김". sticky merge 가 직전 실측값을 유지하므로,
+// 마지막 생체 수신 후 문턱 초과 = "연결끊김". sticky merge 가 직전 실측값을 유지하므로,
 // 이 판정 없이는 폰/워치가 끊겨도 카드가 마지막 정상값을 계속 녹색으로 표시(false-OK).
-// 임계는 60초 — 워치는 30초 배칭 전송이라 정상 상태에서도 ts 가 최대 ~30초 묵을 수 있어,
+// 임계는 애플 60초 — 워치는 30초 배칭 전송이라 정상 상태에서도 ts 가 최대 ~30초 묵을 수 있어,
 // 30초 임계면 매 flush 직전 "연결끊김"으로 깜빡(오탐). 60초면 정상 배칭은 통과·진짜 끊김만 잡는다.
-// signalLevel 과 동일 기준: 행은 sample 존재 + signal===0(≥60초), 보드는 isStale 로 판정.
+// ★ 갤럭시는 120초 배칭이라 같은 논리로 150초다 — 문턱 정의와 근거는 lib/vital-age.ts.
+// signalLevel 과 동일 기준: 행은 sample 존재 + signal===0(≥문턱), 보드는 isStale 로 판정.
 //
 // ★ 나이는 vitalAgeMs(심박 측정 시각)로 잰다 — 행 ts 는 활동에너지가 갱신해 못 쓴다(위 주석).
 // 워치가 마지막 실측 후 30초까지 하트비트로 값을 복사하므로(WatchStreamer heartbeatMaxAge),
 // 실제 미착용 감지는 30 + 60 = 약 90초다. 착용 중 심박 공백은 실측 p99 9.5초라 오탐은 드물다.
-const STALE_MS = 60_000;
 function isStale(sample: VitalSample | undefined, nowMs: number): boolean {
   if (!sample) return false; // 샘플 자체가 없으면 "대기"(idle), 끊김 아님
-  return vitalAgeMs(sample, nowMs) > STALE_MS;
+  return vitalAgeMs(sample, nowMs) > staleThresholdMs(sample.dataOrigin);
 }
 
 // ⚠ 이름은 **표시**만 바꾼다 — 상태(stale·signal·overall)는 이 함수를 안 거친다.
@@ -5701,9 +5707,9 @@ export function DemoDashboard() {
         const status = workerStatus(s, now);
         const ageMs = now - Date.parse(s.ts);
         const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
-        // STALE_MS(60초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 — 지도도 마지막 상태색
-        // (false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
-        const stale = ageSec !== null && ageSec * 1000 >= STALE_MS;
+        // 문턱(애플 60초·갤럭시 150초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 —
+        // 지도도 마지막 상태색(false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
+        const stale = ageSec !== null && ageSec * 1000 >= staleThresholdMs(s.dataOrigin);
         // ★ 좌표 나이는 생체 나이와 **다른 축**이다(2026-08-20).
         //   서버 sticky merge 가 좌표를 직전 값에서 이어 주므로(store.ts `{...older, ...newer}` —
         //   좌표 없는 샘플엔 키 자체가 없어 older 가 살아남는다), 심박이 5초 전이어도 좌표는
@@ -7309,8 +7315,8 @@ function WorkerTableRow({
   const workerId = entry.workerId;
   const overallVital = overallStatus(sample, nowMs);
   const wstatus = workerStatus(sample, nowMs);
-  // 연결끊김 — sample 존재 + 신호 60초 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
-  // 60초 기준은 워치 30초 배칭 오탐 회피용(STALE_MS 주석 참조).
+  // 연결끊김 — sample 존재 + 신호 문턱 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
+  // 문턱은 배칭 주기의 함수라 출처마다 다르다(애플 60초·갤럭시 150초 — lib/vital-age.ts 참조).
   const stale = sample !== undefined && signal === 0;
   // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
   const overall = effectiveTone(overallVital, { stale, outside });

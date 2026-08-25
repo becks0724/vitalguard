@@ -123,17 +123,28 @@ test("⑨ ★ 신선도 게이트가 관제와 같은 기준이다", () => {
   // sticky 병합은 마지막 실측값을 유지한다 — 게이트가 없으면 워치를 벗어도 3시간 전 심박으로
   // PSI·스트레스를 계산해 "지금 내 상태" 로 보여준다.
   const code = codeOnly(route);
-  assert.match(code, /vitalAgeMs\(merged, Date\.now\(\)\) >= STALE_MS/, "신선도 판정이 사라졌다");
+  assert.match(
+    code,
+    /vitalAgeMs\(merged, Date\.now\(\)\) >=\s*staleThresholdMs\(merged\.dataOrigin\)/,
+    "신선도 판정이 사라졌다",
+  );
   assert.match(code, /gateStaleVitals\(merged, stale\)/, "끊긴 값을 비우지 않는다");
-  const mine = code.match(/const STALE_MS = (\d+)_?(\d*);/);
+
+  // ★ 2026-08-25 부터 문턱은 출처별이다(애플 60초 · 갤럭시 150초). 종전에는 양쪽이 각자
+  //   `const STALE_MS = 60_000` 을 들고 **값이 같은지**를 대조했는데, 그 형태는 값이 하나일
+  //   때만 성립한다. 이제는 **같은 함수를 쓰는지**로 묶는다 — 값이 갈릴 여지 자체를 없앤다.
+  assert.doesNotMatch(
+    code,
+    /const STALE_MS\s*=/,
+    "폰이 문턱을 자기 상수로 다시 들었다 — 관제와 갈릴 여지가 생긴다(lib/vital-age.ts 를 쓸 것)",
+  );
   const dash = codeOnly(
     readFileSync(join(ROOT, "app", "components", "DemoDashboard.tsx"), "utf8"),
-  ).match(/const STALE_MS = (\d+)_?(\d*);/);
-  assert.ok(mine && dash, "양쪽 STALE_MS 를 못 읽었다");
-  assert.equal(
-    `${mine[1]}${mine[2]}`,
-    `${dash[1]}${dash[2]}`,
-    "폰과 관제의 끊김 기준이 갈렸다 — 같은 순간에 한쪽만 값을 보여준다",
+  );
+  assert.match(
+    dash,
+    /staleThresholdMs\(sample\.dataOrigin\)/,
+    "관제가 공용 문턱 함수를 안 쓴다 — 폰과 같은 순간에 다른 말을 한다",
   );
 });
 

@@ -20,7 +20,7 @@ import {
 } from "../../../../../lib/app-jwt";
 import { latestRestingHeartRate, recentSamplesForWorkers } from "../../../../../lib/db";
 import { computePsi } from "../../../../../lib/psi";
-import { vitalAgeMs } from "../../../../../lib/vital-age";
+import { vitalAgeMs, staleThresholdMs } from "../../../../../lib/vital-age";
 import { gateStaleVitals } from "../../../../../lib/worker-signal";
 import {
   coreTempEstimates,
@@ -30,9 +30,6 @@ import {
 } from "../../vital/store";
 
 export const dynamic = "force-dynamic";
-
-/** 마지막 심박 측정 후 이 시간을 넘기면 "끊김" — 관제 화면(`DemoDashboard` STALE_MS)과 같은 값. */
-const STALE_MS = 60_000;
 
 /** 실패한 조회는 `null` 로 비운다. **0 을 쓰지 않는다** — 누적 0 은 "한 건도 없다"로 읽힌다. */
 async function softly<T>(label: string, fn: () => Promise<T>): Promise<T | null> {
@@ -110,12 +107,16 @@ export async function GET(request: Request) {
     (s) => (aliases[s.workerId] ?? s.workerId) === me,
   );
 
-  // ★ 신선도 게이트 — 관제 화면과 같은 기준(심박 측정 시각 · 60초).
+  // ★ 신선도 게이트 — 관제 화면과 **같은 함수**(심박 측정 시각 · 출처별 문턱).
+  //   문턱을 여기 따로 적지 않는다 — 두 곳에 적으면 갈리고, 갈리면 같은 순간에 폰과 관제가
+  //   서로 다른 말을 한다. 값과 근거는 lib/vital-age.ts (애플 60초 · 갤럭시 150초).
   //   sticky 병합은 마지막 실측값을 유지하므로, 게이트 없이는 워치를 벗어도 3시간 전 심박으로
   //   PSI·스트레스를 계산해 "지금 내 상태" 로 보여준다. 이 화면은 한 사람만 보므로 특히 나쁘다.
   //   ⚠ 관제 화면은 스트레스 칩에 이 게이트를 안 건다 — 끊긴 뒤 값이 갈릴 수 있고, 그때
   //   폰은 **아무것도 안 그린다**. 틀린 숫자보다 빈 자리가 낫다는 쪽을 택했다.
-  const stale = merged === undefined || vitalAgeMs(merged, Date.now()) >= STALE_MS;
+  const stale =
+    merged === undefined ||
+    vitalAgeMs(merged, Date.now()) >= staleThresholdMs(merged.dataOrigin);
   const shown = gateStaleVitals(merged, stale);
   const sample = stale ? undefined : merged;
 
