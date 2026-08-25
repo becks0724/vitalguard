@@ -114,7 +114,7 @@ class GaugeTest {
 class BezelTest {
 
     private fun band(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.hrBand(st)
-    private fun ticks(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.stillTicks(st)
+    private fun ticks(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.stepTicks(st)
 
     @Test
     fun `좌우 구획이 겹치지 않는다 - 포개지면 둘 다 못 읽는다`() {
@@ -136,11 +136,18 @@ class BezelTest {
     }
 
     @Test
-    fun `무동작 눈금 - 붕괴선에서 가득 찬다`() {
-        val full = ticks(com.vitalguard.wear.ui.VitalUiState(stillSec = 90.0))
-        val half = ticks(com.vitalguard.wear.ui.VitalUiState(stillSec = 45.0))
+    fun `걸음 눈금 - 축 8000보를 편다`() {
+        val full = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 8000))
+        val half = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 4000))
         assertEquals(1f, full.fraction!!, 0.001f)
         assertEquals(0.5f, half.fraction!!, 0.001f)
+    }
+
+    @Test
+    fun `걸음은 판정색을 쓰지 않는다 - 활동량이지 위험 신호가 아니다`() {
+        val many = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 7900))
+        val few = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 100))
+        assertEquals("걸음 수로 색이 바뀌면 안 된다", many.color, few.color)
     }
 
     @Test

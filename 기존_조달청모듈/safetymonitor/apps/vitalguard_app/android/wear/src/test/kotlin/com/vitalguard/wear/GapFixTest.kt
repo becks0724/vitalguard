@@ -304,3 +304,35 @@ class ThermalMitigationTest {
         assertTrue(service.contains("OffBodySource"))
     }
 }
+
+/** 무동작 — 화면에서 내렸지만 수집·전송은 계속한다(08-25 사용자 결정). */
+class StillSecStillCollectedTest {
+
+    @Test
+    fun `무동작이 여전히 전송된다 - 붕괴 판정은 서버가 한다`() {
+        val builder = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/pipeline/SampleBuilder.kt",
+        ).readText()
+        assertTrue(
+            "motionStillSec 전송이 끊기면 서버가 붕괴(실신)를 못 본다",
+            builder.contains("motionStillSec"),
+        )
+    }
+
+    @Test
+    fun `무동작 계산도 살아 있다`() {
+        val engine = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt",
+        ).readText()
+        assertTrue("stillSec 계산이 사라졌다", engine.contains("stillSecNow"))
+    }
+
+    @Test
+    fun `화면에서는 내려갔다`() {
+        val screen = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+        ).readText()
+        assertFalse("무동작 베젤이 되살아났다", screen.contains("stillTicks(state)"))
+        assertTrue("걸음 베젤이 없다", screen.contains("stepTicks(state)"))
+    }
+}

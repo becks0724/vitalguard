@@ -29,6 +29,8 @@ data class VitalUiState(
     val windowSteps: Int = 0,
     val windowFloors: Int = 0,
     val windowKcal: Double = 0.0,
+    /** 착용 세션 누계 걸음 — 우측 베젤이 쓴다(구간 증분과 별개). */
+    val sessionSteps: Int = 0,
     val batteryPct: Int? = null,
     val collecting: Boolean = false,
     /** 착용 여부 — 벗으면 화면이 "착용하면 시작됩니다" 를 띄운다. */

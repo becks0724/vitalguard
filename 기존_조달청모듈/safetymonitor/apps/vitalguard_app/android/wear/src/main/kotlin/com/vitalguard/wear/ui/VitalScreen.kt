@@ -67,7 +67,7 @@ fun VitalScreen(
             },
     ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
-        BezelIndicator(band = hrBand(state), ticks = stillTicks(state))
+        BezelIndicator(band = hrBand(state), ticks = stepTicks(state))
         // 사이드 인디케이터 명칭 — 무엇을 재는 눈금인지 없으면 못 읽는다.
         BezelLabels(state)
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
@@ -267,10 +267,10 @@ private fun BoxScope.BezelLabels(state: VitalUiState) {
     val labelR = r * 0.74f
     BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, state.severity.color())
     BezelLabel(
-        "무동작",
+        "걸음",
         topEndDeg(Bezel.RIGHT_START, Bezel.SWEEP),
         labelR,
-        stillSeverity(state.stillSec).color(),
+        VgColors.Secondary,
     )
 }
 
@@ -341,16 +341,25 @@ internal fun hrBand(state: VitalUiState): BezelBand = BezelBand(
 )
 
 /**
- * 우측 눈금 = **무동작 경과**(사용자 결정 08-25). 붕괴 후보선(90초)까지 눈금이 차오른다 —
- * 차오르는 것 자체가 경고라 숫자보다 형태가 먼저 읽힌다.
- * ⚠ 본문 버블과 같은 값이다. 버블은 초 단위 수치, 베젤은 임계까지의 거리를 맡는다.
+ * 우측 눈금 = **걸음 수**(사용자 결정 08-25).
+ *
+ * ★ 여기 원래 무동작이 있었다. 무동작은 **수집·전송은 계속하되 화면에서 내린다** —
+ *   붕괴(실신) 판정은 서버가 하는 일이고, 작업자가 자기 무동작 초를 볼 이유가 없다.
+ *   반대로 걸음은 작업자에게 의미 있는 활동량이고, 스트레스 지수의 활동 맥락과도 이어진다.
+ *
+ * 축 = 0~8000보. 근무 중 목표 대비 진행이 눈금으로 차오른다.
+ * ⚠ 색을 판정색으로 쓰지 않는다 — 걸음은 위험 신호가 아니라 활동량이다.
+ *   많이 걸었다고 경고할 일이 아니고, 적게 걸었다고 안전한 것도 아니다.
  */
-internal fun stillTicks(state: VitalUiState): BezelTicks = BezelTicks(
+internal fun stepTicks(state: VitalUiState): BezelTicks = BezelTicks(
     startDeg = Bezel.RIGHT_START,
     sweepDeg = Bezel.SWEEP,
-    fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
-    color = stillSeverity(state.stillSec).color(),
+    fraction = gaugeFraction(state.sessionSteps.toDouble().takeIf { it > 0 }, 0.0, STEP_GAUGE_MAX),
+    color = VgColors.Accent,
 )
+
+/** 걸음 눈금 축 — 8시간 교대의 대략치. 채우는 재미가 아니라 진행 감각용이다. */
+internal const val STEP_GAUGE_MAX = 8000.0
 
 /**
  * 주변 온도 판정 — WBGT 참고. **경보가 아니라 표시**다(정식 온열 판정은 서버가 습도·복사열까지 본다).

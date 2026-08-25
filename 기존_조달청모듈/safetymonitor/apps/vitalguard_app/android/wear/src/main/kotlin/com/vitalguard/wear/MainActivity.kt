@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
                         stillSec = engine?.stillSecNow(now),
                         hrvSdnnMs = engine?.lastHrvMs,
                         windowSteps = engine?.windowSteps ?: 0,
+                        sessionSteps = engine?.lastSteps ?: 0,
                         windowFloors = engine?.windowFloors ?: 0,
                         windowKcal = engine?.windowKcal ?: 0.0,
                         batteryPct = batteryPct(),
