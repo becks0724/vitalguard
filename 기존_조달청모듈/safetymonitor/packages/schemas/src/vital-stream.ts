@@ -3,9 +3,13 @@ import { z } from "zod";
 
 // 수신 단말 출처는 서버가 source 를 기준으로 확정한다. dataOrigin 은 클라이언트 입력을
 // 신뢰하지 않고, 수집 경계에서 이 목록 중 하나로 덮어써 DB·관제 표시를 일관되게 유지한다.
+// wearos = 갤럭시워치(Wear OS) 단독 송출. watchos(애플)와 갈라 두는 이유는 이름이 아니라
+// **체온의 성격이 다르기 때문**이다 — 갤럭시는 손목 온도를 실측해 보내고, 애플은 실시간
+// 송출이 없어 손목값에 고정 오프셋을 더한 추정치다. 같은 칸에 섞이면 되짚을 수 없다.
 export const VITAL_DATA_ORIGINS = [
   "ios_data_vitalguard",
   "watchos_data_vitalguard",
+  "wearos_data_vitalguard",
   "mockup_ios_data_vitalguard",
   "mockup_watchos_data_vitalguard",
 ] as const;

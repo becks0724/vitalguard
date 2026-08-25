@@ -73,6 +73,11 @@ export function classifyVitalDataOrigin(source: string | undefined): VitalDataOr
     case "VitAlGuard-WatchVitals":
     case "VitAlGuard-Watch-background":
       return "watchos_data_vitalguard";
+    // 갤럭시워치(Wear OS) 단독 송출 — 애플과 갈라 둔다. 이 case 가 **워치보다 먼저** 배포돼야
+    // 한다. 순서가 뒤집히면 갤럭시 source 가 아래 default 로 떨어져 저장되지 않는데,
+    // 그 거부는 persistFailed 를 세우지 않으므로 워치는 성공으로 알고 큐를 비운다 = 유실.
+    case "VitAlGuard-GalaxyWatch":
+      return "wearos_data_vitalguard";
     case "VitAlGuard-Mock-iPhone":
     case "VitAlGuard-Mock-iOS":
     case "mockup_ios_data_vitalguard":

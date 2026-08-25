@@ -35,6 +35,8 @@ test("isReservedTestWorker — 진단/예약 ID 는 차단, 실 작업자는 통
 test("classifyVitalDataOrigin — 실 iPhone·Watch와 기기별 목업을 분리한다", () => {
   assert.equal(classifyVitalDataOrigin("VitAlGuard-iPhone"), "ios_data_vitalguard");
   assert.equal(classifyVitalDataOrigin("VitAlGuard-WatchVitals"), "watchos_data_vitalguard");
+  // 갤럭시(Wear OS)는 애플(watchOS)과 다른 출처로 떨어져야 한다 — 체온이 실측 대 추정으로 갈린다.
+  assert.equal(classifyVitalDataOrigin("VitAlGuard-GalaxyWatch"), "wearos_data_vitalguard");
   assert.equal(classifyVitalDataOrigin("VitAlGuard-Mock-iPhone"), "mockup_ios_data_vitalguard");
   assert.equal(classifyVitalDataOrigin("VitAlGuard-Mock-Watch"), "mockup_watchos_data_vitalguard");
   assert.equal(classifyVitalDataOrigin("demo"), null);
