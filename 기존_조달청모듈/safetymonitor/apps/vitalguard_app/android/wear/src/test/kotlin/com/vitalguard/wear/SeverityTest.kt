@@ -148,3 +148,28 @@ class BezelTest {
         assertEquals(com.vitalguard.wear.ui.VgColors.Danger, danger.color)
     }
 }
+
+class BezelLabelTest {
+
+    @Test
+    fun `위쪽 끝 - 좌우가 서로 다른 각을 고른다`() {
+        val left = com.vitalguard.wear.ui.topEndDeg(
+            com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP,
+        )
+        val right = com.vitalguard.wear.ui.topEndDeg(
+            com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.SWEEP,
+        )
+        assertEquals("좌측은 끝각(215°)이 위", 215f, left, 0.01f)
+        assertEquals("우측은 시작각(-35°)이 위", -35f, right, 0.01f)
+    }
+
+    @Test
+    fun `고른 각은 실제로 화면 위쪽이다 - 두 라벨의 높이가 같아야 한다`() {
+        fun y(deg: Float) = kotlin.math.sin(Math.toRadians(deg.toDouble()))
+        val ly = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
+        val ry = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
+        org.junit.Assert.assertTrue("좌측 라벨이 화면 위가 아니다", ly < 0)
+        org.junit.Assert.assertTrue("우측 라벨이 화면 위가 아니다", ry < 0)
+        assertEquals("좌우 라벨 높이가 다르다", ly, ry, 0.001)
+    }
+}

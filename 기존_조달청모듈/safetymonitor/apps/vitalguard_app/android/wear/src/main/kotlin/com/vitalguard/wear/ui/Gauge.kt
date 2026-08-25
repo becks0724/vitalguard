@@ -1,18 +1,19 @@
-// 호(arc) 게이지 — 숫자 대신 "안전 범위 어디에 있나"를 보여준다. 장갑 낀 손이 1초에 읽는 단위
+// 호 게이지 — Canvas 로 직접 그린다. 값이 곧 호 길이라 그리기와 값이 어긋날 여지를 없앤다
 package com.vitalguard.wear.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material3.CircularProgressIndicator
-import androidx.wear.compose.material3.ProgressIndicatorDefaults
 import androidx.wear.compose.material3.Text
 import com.vitalguard.wear.core.Severity
 
@@ -26,9 +27,16 @@ internal fun gaugeFraction(value: Double?, min: Double, max: Double): Float? {
     return ((value - min) / (max - min)).coerceIn(0.0, 1.0).toFloat()
 }
 
+/** 호의 기하 — 7시 방향에서 시작해 시계방향으로 300° (아래쪽 60°를 비워 값이 읽힌다). */
+private const val ARC_START = 120f
+private const val ARC_SWEEP = 300f
+
 /**
- * 원형 버블 하나 — 호 + 값 + 라벨. 이미지의 그 단위다.
- * ⚠ 지름은 화면 대비 비율로 준다(퍼센트 기반 마진 규칙) — 40mm/44mm 에서 같은 비례로 보인다.
+ * 원형 버블 — 트랙(전체 범위) 위에 값만큼 호를 덮어 그린다.
+ *
+ * ★ M3 `CircularProgressIndicator` 를 쓰지 않는다 — startAngle > endAngle 조합에서
+ *   호가 안 그려지는 문제를 08-25 실기에서 만났다(값은 정상이었다: tempFrac 0.79).
+ *   여기서는 sweep 을 직접 계산하므로 **비율이 곧 호 길이**이고 어긋날 여지가 없다.
  */
 @Composable
 fun VitalBubble(
@@ -40,29 +48,39 @@ fun VitalBubble(
 ) {
     val tint = severity.color()
     Box(modifier = modifier.size(diameter), contentAlignment = Alignment.Center) {
-        // ⚠ colors 를 안 주면 M3 기본 테마색(보라)이 이긴다 — 08-25 실기에서 세 버블이 전부
-        //   같은 보라로 떠 판정색이 죽어 있었다. indicator·track 을 모두 명시한다.
-        CircularProgressIndicator(
-            progress = { fraction ?: 0f },
-            modifier = Modifier.size(diameter),
-            // 12시에서 시작해 한 바퀴가 아니라, 아래쪽을 비워 값이 읽히게 한다(이미지와 같은 형태).
-            startAngle = 135f,
-            endAngle = 45f,
-            colors = ProgressIndicatorDefaults.colors(
-                indicatorColor = tint,
-                trackColor = VgColors.Track,
-                // 미측정(IDLE)이면 호가 아예 없어야 하는데, 일부 테마가 트랙을 강조색으로 칠한다.
-                disabledIndicatorColor = VgColors.Idle,
-                disabledTrackColor = VgColors.Track,
-            ),
-            strokeWidth = 5.dp,
-        )
-        // 값만 원 안에. 라벨은 호출부가 원 **밖**에 둔다 — 3단 세로에서는 원이 작아
-        // 두 줄을 넣으면 숫자가 읽히지 않는다(참조 워치페이스도 값만 넣는다).
+        Canvas(Modifier.size(diameter)) {
+            val stroke = size.minDimension * 0.11f
+            val inset = stroke / 2f
+            val d = size.minDimension - stroke
+            // 트랙 — 값이 없어도 "여기까지가 범위" 는 보인다.
+            drawArc(
+                color = VgColors.Track,
+                startAngle = ARC_START,
+                sweepAngle = ARC_SWEEP,
+                useCenter = false,
+                topLeft = Offset(inset, inset),
+                size = Size(d, d),
+                style = Stroke(width = stroke, cap = StrokeCap.Round),
+            )
+            // 값 — 비율만큼만 덮는다. 0 이면 아무것도 안 그린다(미측정과 최저값이 같아 보이지 않게).
+            val f = fraction ?: 0f
+            if (f > 0f) {
+                drawArc(
+                    color = tint,
+                    startAngle = ARC_START,
+                    sweepAngle = ARC_SWEEP * f,
+                    useCenter = false,
+                    topLeft = Offset(inset, inset),
+                    size = Size(d, d),
+                    style = Stroke(width = stroke, cap = StrokeCap.Round),
+                )
+            }
+        }
+        // 값만 원 안에. 라벨은 호출부가 원 밖에 둔다.
         Text(
             value,
             color = VgColors.Primary,
-            fontSize = (diameter.value * 0.34f).sp,
+            fontSize = (diameter.value * 0.30f).sp,
             fontWeight = FontWeight.Bold,
         )
     }

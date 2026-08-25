@@ -275,9 +275,23 @@ private fun BoxScope.BezelLabels(state: VitalUiState) {
     // 라벨은 눈금보다 살짝 안쪽 — 바깥에 두면 원형 마스크에 잘린다.
     val labelR = r * 0.74f
 
-    // 좌측 띠의 위쪽 끝 = 시작각(145°). 우측 눈금의 위쪽 끝 = 시작각(-35°).
-    BezelLabel("심박", Bezel.LEFT_START, labelR, r, state.severity.color())
-    BezelLabel("무동작", Bezel.RIGHT_START, labelR, r, stillSeverity(state.stillSec).color())
+    // ★ 위쪽 끝은 **계산으로 고른다** — 좌우가 서로 다르다(각도를 손으로 적으면 반드시 틀린다).
+    //   0°=3시·시계방향이므로 sin 이 작을수록 위다. 좌측은 끝각(215°), 우측은 시작각(-35°)이 위.
+    BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, r, state.severity.color())
+    BezelLabel(
+        "무동작",
+        topEndDeg(Bezel.RIGHT_START, Bezel.SWEEP),
+        labelR, r,
+        stillSeverity(state.stillSec).color(),
+    )
+}
+
+/** 두 끝 중 화면에서 **위쪽**인 각도. sin 이 작은(=y 가 작은) 쪽이 위다. */
+internal fun topEndDeg(startDeg: Float, sweepDeg: Float): Float {
+    val endDeg = startDeg + sweepDeg
+    val ys = kotlin.math.sin(Math.toRadians(startDeg.toDouble()))
+    val ye = kotlin.math.sin(Math.toRadians(endDeg.toDouble()))
+    return if (ys <= ye) startDeg else endDeg
 }
 
 /** 각도 → 화면 오프셋. 0°=3시·시계방향(BezelIndicator 와 같은 규약). */
