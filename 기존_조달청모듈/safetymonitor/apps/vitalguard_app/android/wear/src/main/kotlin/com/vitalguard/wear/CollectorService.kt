@@ -19,6 +19,8 @@ import com.vitalguard.wear.pipeline.QueueStorage
 import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.wear.source.GpsLocationSource
+import com.vitalguard.wear.source.CompositeTrackerSource
+import com.vitalguard.wear.source.SamsungTrackerSource
 import com.vitalguard.wear.source.SensorTrackerSource
 import java.io.File
 
@@ -55,7 +57,11 @@ class CollectorService : Service() {
         gps = GpsLocationSource(this)
         val battery = getSystemService(BatteryManager::class.java)
         engine = CollectorEngine(
-            source = SensorTrackerSource(this),
+            // 삼성이 주(SpO₂·체온·IBI), 순정이 바닥(심박·가속도) — 삼성이 막혀도 수집은 산다.
+            source = CompositeTrackerSource(
+                primary = SamsungTrackerSource(this),
+                fallback = SensorTrackerSource(this),
+            ),
             queue = queue,
             batteryPct = {
                 battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 1..100 }

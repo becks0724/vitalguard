@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,19 +45,26 @@ fun VitalScreen(
     val large = widthDp >= LARGE_DISPLAY_BREAKPOINT
     // ⚠ 절대 dp 가 아니라 화면 비율로 준다 — 원형에서 가장자리 잘림을 막는 공식 규칙.
     val sideMargin = (widthDp * 0.12f).dp
-    val bubble = (widthDp * (if (large) 0.235f else 0.25f)).dp
+    val bubble = (widthDp * (if (large) 0.215f else 0.225f)).dp
 
     Box(Modifier.fillMaxSize().background(VgColors.Background)) {
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = sideMargin, vertical = (widthDp * 0.16f).dp),
+                .padding(horizontal = sideMargin, vertical = (widthDp * 0.10f).dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            HeartPill(state, large)
-            BubbleRow(state, bubble)
+            // 좌 = 주값(심박) · 우 = 버블 3단. 원형에서 가로 폭이 가장 넓은 가운데 띠를 쓴다.
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                HeartPill(state, large, modifier = Modifier.weight(1f))
+                BubbleColumn(state, bubble)
+            }
             StatusLine(state)
             ActionRow(state, onToggleCollect, onOpenDiagnostics)
         }
@@ -65,9 +73,9 @@ fun VitalScreen(
 
 /** 중앙 필 — 심박이 주값이다. 색이 곧 판정이고, 위험·주의일 때만 낱말이 붙는다. */
 @Composable
-private fun HeartPill(state: VitalUiState, large: Boolean) {
+private fun HeartPill(state: VitalUiState, large: Boolean, modifier: Modifier = Modifier) {
     val tint = state.severity.color()
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         state.workerName?.let { Text(it, color = VgColors.Secondary, fontSize = 11.sp) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             // 이모지 ♥ 대신 VitAlGuard 심볼 — 다른 앱 아이콘과 혼동되지 않고, 판정색으로 물든다.
@@ -98,14 +106,13 @@ private fun HeartPill(state: VitalUiState, large: Boolean) {
  * 걸음·주변온은 화면에서 뺐다 — 위험도와 직접 관련이 낮아 자리를 차지할 값이 아니다.
  */
 @Composable
-private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
+private fun BubbleColumn(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalAlignment = Alignment.End,
     ) {
         // SpO₂ — 호는 위험선(88)~정상(100) 구간. 호가 비면 그대로 위험이다.
-        VitalBubble(
+        LabeledBubble(
             value = state.spo2?.toString() ?: "--",
             label = "SpO₂",
             fraction = gaugeFraction(state.spo2?.toDouble(), 85.0, 100.0),
@@ -113,7 +120,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             diameter = diameter,
         )
         // 심부 체온 — 정상 36 부터 위험선 38.0 을 넘는 38.5 까지.
-        VitalBubble(
+        LabeledBubble(
             value = state.coreTempC?.let { "%.1f".format(it) } ?: "--",
             label = "체온",
             fraction = gaugeFraction(state.coreTempC, 36.0, 38.5),
@@ -121,7 +128,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             diameter = diameter,
         )
         // 무동작 — 붕괴 후보선(90초)에서 호가 가득 찬다. 차오르는 것 자체가 경고다.
-        VitalBubble(
+        LabeledBubble(
             value = state.stillSec?.let { stillShort(it) } ?: "--",
             label = "무동작",
             fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
@@ -131,25 +138,49 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
     }
 }
 
+/** 라벨을 원 **왼쪽**에 세로로 붙인다 — 원 안은 숫자만 남겨 3단에서도 값이 읽힌다. */
+@Composable
+private fun LabeledBubble(
+    value: String,
+    label: String,
+    fraction: Float?,
+    severity: Severity,
+    diameter: androidx.compose.ui.unit.Dp,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Text(label, color = VgColors.Secondary, fontSize = 9.sp)
+        VitalBubble(
+            value = value,
+            fraction = fraction,
+            severity = severity,
+            diameter = diameter,
+        )
+    }
+}
+
 /** 전송 상태 — 큐가 쌓이면 주황. 서버 장애의 유일한 가시 신호다(08-25 실황). */
 @Composable
 private fun StatusLine(state: VitalUiState) {
+    // 한 줄에 다 담는다 — 원형 하단은 폭이 급격히 좁아져 두 항목이 서로를 밀어낸다.
+    // 정상일 때는 짧게(`전송 49s`), 이상일 때만 길어진다(iOS transmitLine 과 같은 규칙).
     val (text, tint) = when {
-        !state.collecting -> "수집 중지됨" to VgColors.Idle
-        state.queued > 0 -> "전송 대기 ${state.queued}건" to VgColors.Caution
-        state.lastUploadAgeSec != null -> "전송됨 · ${ageLabel(state.lastUploadAgeSec)}" to VgColors.Normal
+        !state.collecting -> "중지됨" to VgColors.Idle
+        state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
+        state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
         else -> "수집 중" to VgColors.Normal
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, color = tint, fontSize = 12.sp)
+        Text(text, color = tint, fontSize = 11.sp)
         state.batteryPct?.let {
-            // 이모지는 기기·폰트별로 렌더가 갈린다 — 낱말로 적어 뜻이 흔들리지 않게 한다.
             Text(
-                "  배터리 $it%",
+                " · $it%",
                 color = if (it <= 15) VgColors.Danger else VgColors.Secondary,
                 fontSize = 11.sp,
             )
@@ -167,7 +198,12 @@ private fun ActionRow(
     onToggle: () -> Unit,
     onDiagnostics: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+    // 한 줄에 나란히 — 세로로 쌓으면 원형 하단 두 칸을 먹는데, 진단은 그만한 무게가 아니다.
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Button(
             onClick = onToggle,
             label = {
@@ -181,13 +217,13 @@ private fun ActionRow(
             colors = ButtonDefaults.buttonColors(
                 containerColor = if (state.collecting) VgColors.Danger else VgColors.Normal,
             ),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.weight(1f),
         )
         Button(
             onClick = onDiagnostics,
-            label = { Text("진단", color = VgColors.Secondary, fontSize = 12.sp) },
+            label = { Text("⋯", color = VgColors.Secondary, fontSize = 16.sp) },
             colors = ButtonDefaults.buttonColors(containerColor = VgColors.Pill),
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+            modifier = Modifier.width(52.dp),   // 터치 타겟 하한(48dp) 은 지킨다
         )
     }
 }
@@ -202,6 +238,13 @@ internal fun stillSeverity(sec: Double?): Severity = when {
 /** 버블은 폭이 좁다 — 초는 그대로, 분 이상은 줄여 적는다. */
 internal fun stillShort(sec: Double): String =
     if (sec < 60) "${sec.toInt()}s" else "${(sec / 60).toInt()}m"
+
+/** 상태줄용 초단축 표기 — 원형 하단은 글자 하나가 아깝다. */
+internal fun shortAge(sec: Long): String = when {
+    sec < 60 -> "${sec}s"
+    sec < 3600 -> "${sec / 60}m"
+    else -> "${sec / 3600}h"
+}
 
 /** 값의 나이 — 초·분·시로 줄여 적는다. */
 internal fun ageLabel(sec: Long): String = when {

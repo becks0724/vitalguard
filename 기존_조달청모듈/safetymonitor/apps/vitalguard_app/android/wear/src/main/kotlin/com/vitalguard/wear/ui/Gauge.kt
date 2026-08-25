@@ -33,7 +33,6 @@ internal fun gaugeFraction(value: Double?, min: Double, max: Double): Float? {
 @Composable
 fun VitalBubble(
     value: String,
-    label: String,
     fraction: Float?,
     severity: Severity,
     diameter: androidx.compose.ui.unit.Dp,
@@ -41,6 +40,8 @@ fun VitalBubble(
 ) {
     val tint = severity.color()
     Box(modifier = modifier.size(diameter), contentAlignment = Alignment.Center) {
+        // ⚠ colors 를 안 주면 M3 기본 테마색(보라)이 이긴다 — 08-25 실기에서 세 버블이 전부
+        //   같은 보라로 떠 판정색이 죽어 있었다. indicator·track 을 모두 명시한다.
         CircularProgressIndicator(
             progress = { fraction ?: 0f },
             modifier = Modifier.size(diameter),
@@ -50,21 +51,19 @@ fun VitalBubble(
             colors = ProgressIndicatorDefaults.colors(
                 indicatorColor = tint,
                 trackColor = VgColors.Track,
+                // 미측정(IDLE)이면 호가 아예 없어야 하는데, 일부 테마가 트랙을 강조색으로 칠한다.
+                disabledIndicatorColor = VgColors.Idle,
+                disabledTrackColor = VgColors.Track,
             ),
             strokeWidth = 5.dp,
         )
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                value,
-                color = VgColors.Primary,
-                fontSize = (diameter.value * 0.26f).sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                label,
-                color = VgColors.Secondary,
-                fontSize = (diameter.value * 0.14f).sp,
-            )
-        }
+        // 값만 원 안에. 라벨은 호출부가 원 **밖**에 둔다 — 3단 세로에서는 원이 작아
+        // 두 줄을 넣으면 숫자가 읽히지 않는다(참조 워치페이스도 값만 넣는다).
+        Text(
+            value,
+            color = VgColors.Primary,
+            fontSize = (diameter.value * 0.34f).sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
