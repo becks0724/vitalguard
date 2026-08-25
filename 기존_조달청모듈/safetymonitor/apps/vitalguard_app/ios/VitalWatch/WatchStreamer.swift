@@ -451,6 +451,12 @@ final class WatchStreamer: NSObject, ObservableObject {
             }
             // 모션 변동폭 — 같은 계약(심박 항목 동승 · 행 수 불증가). 창이 덜 찼으면 키를 생략한다.
             if let mv = motionVariabilityMg { pendingSamples[idx]["mv"] = mv }
+            // 기기 모델(2026-08-25) — 같은 계약. 07-30~08-01 에만 값이 있고 이후 416,959행이 NULL 이라
+            // **어느 워치가 보냈는지 되짚을 수 없었다**. 출처(watchos/wearos)는 벤더만 가르므로
+            // 모델 세부는 이 필드가 유일한 근거다.
+            // ⚠ `WKInterfaceDevice.model` 은 항상 "Apple Watch" 라 모델 구분에 쓸모가 없다 —
+            //   과거 값이 전부 그 문자열이었던 이유다. 하드웨어 식별자(`Watch6,18` 꼴)를 보낸다.
+            pendingSamples[idx]["wdm"] = Self.hardwareModel
         }
         // 이산 측정(HRV·안정심박·보행심박·호흡수·MET·일광) — 에너지·걸음과 같은 계약으로 심박 항목에
         // 얹는다. 단독 항목으로 보내면 배치 내 ts 중복으로 서버가 조용히 버린다(pendingDiscrete 주석).
@@ -592,6 +598,18 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 모션 변동폭(밀리g 정수). 창이 60개를 못 채웠으면 **0 이 아니라 nil** 이다 —
     /// `motionStillSec` 과 같은 규칙으로 "변동이 없다" 와 "못 쟀다" 를 가른다.
     /// 세션 재시작 직후 첫 1분은 값이 없는 것이 정상이다(부분 창을 보내느니 비운다).
+    /// 하드웨어 모델 식별자(`Watch6,18` 꼴). 기기 수명 내내 불변이라 한 번만 읽어 둔다.
+    /// 읽기 실패 시 빈 문자열이 아니라 `"unknown"` — 빈 값은 스키마(min 1)가 통째로 스트립한다.
+    private static let hardwareModel: String = {
+        var size = 0
+        sysctlbyname("hw.machine", nil, &size, nil, 0)
+        guard size > 0 else { return "unknown" }
+        var buf = [CChar](repeating: 0, count: size)
+        sysctlbyname("hw.machine", &buf, &size, nil, 0)
+        let s = String(cString: buf)
+        return s.isEmpty ? "unknown" : s
+    }()
+
     private var motionVariabilityMg: Int? {
         guard motionMagWindow.count >= motionWindowSize else { return nil }
         let n = Double(motionMagWindow.count)

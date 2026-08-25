@@ -40,7 +40,7 @@ const bare = (s: string) =>
 // A 이음새 — 워치 hrBatch 샘플 항목의 키 23개.
 const SAMPLE_KEYS = [
   "ts", "bpm", "ae", "stp", "flt", "bat", "sst", "sar",
-  "seAt", "seBy", "seErr", "srAt", "srN", "mv",
+  "seAt", "seBy", "seErr", "srAt", "srN", "mv", "wdm",
   "hrv", "rhr", "whr", "rr", "pe", "dl",
   "spo2", "spo2Ts", "still",
 ].sort();

@@ -269,6 +269,8 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "sessionResumeTries",
   // 오류 종료 도메인#코드 — 진단용 문자열. 길이 초과가 생체 샘플을 통째로 죽이면 안 된다.
   "sessionEndError",
+  // 워치 하드웨어 모델 — 귀속용 메타데이터. 길이 초과가 생체를 죽이면 안 된다(위와 같은 이유).
+  "watchDeviceModel",
 ]);
 
 export function parseResilientVitalSample(
