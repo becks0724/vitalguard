@@ -4130,9 +4130,13 @@ function HeaderCalendarPopup({
                             <button
                               type="button"
                               onClick={() => setLightbox(null)}
-                              className="rounded-lg bg-white/15 px-3 py-1.5 text-xs font-semibold text-white hover:bg-white/25"
+                              aria-label="사진 크게 보기 닫기"
+                              title="닫기"
+                              className="grid h-[30px] w-[30px] place-items-center rounded-lg bg-white/15 text-white transition hover:bg-white/25"
                             >
-                              닫기 ✕
+                              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                                <path d="M18 6 6 18M6 6l12 12" />
+                              </svg>
                             </button>
                           </div>
                         </div>

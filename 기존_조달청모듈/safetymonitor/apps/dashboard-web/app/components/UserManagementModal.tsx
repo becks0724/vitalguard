@@ -292,21 +292,45 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
               · DB 실시간 동기화
             </span>
           </h2>
-          <div className="flex items-center gap-2">
+          {/* 헤더 우측 액션 — 알림 이력 모달과 같은 아이콘 버튼 규격(고스트 배경 · 16px 라인 아이콘).
+              "갱신 중…" 문구는 회전(animate-spin)으로 대신한다 — 글자 길이가 바뀌며 헤더가 흔들리지 않는다. */}
+          <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => load(true)}
               disabled={refreshing}
-              className="rounded-pill bg-surface-strong px-3 py-1 text-xs font-semibold text-body active:scale-95 disabled:opacity-50 dark:bg-surface-dark-elevated dark:text-on-dark-soft"
+              aria-label="사용자 목록 새로고침"
+              title={refreshing ? "갱신 중…" : "새로고침"}
+              className="rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-on-dark"
             >
-              {refreshing ? "갱신 중…" : "새로고침"}
+              <svg
+                className={refreshing ? "animate-spin" : ""}
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M8 16H3v5" />
+              </svg>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-pill bg-surface-strong px-3 py-1 text-xs font-semibold text-body active:scale-95 dark:bg-surface-dark-elevated dark:text-on-dark-soft"
+              aria-label="사용자 관리 닫기"
+              title="닫기"
+              className="rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
             >
-              닫기
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>
