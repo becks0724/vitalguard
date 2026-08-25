@@ -121,3 +121,14 @@ demo/
 # 재생성 = pnpm graph · graph:archi · graph:cycles
 apps/dashboard-web/docs/graph/*.svg
 apps/dashboard-web/docs/graph/cycles.json
+
+# ─── CDK 인플레이스 컴파일 산출물 (2026-08-25) ──
+# backend/infrastructure 의 tsconfig 에는 outDir 이 없어 tsc 가 **소스 옆에** .js/.d.ts 를 낳는다.
+# 위 `dist/`·`build/` 규칙이 이것을 못 걸러 4개가 커밋돼 있었다(레포 전체에서 유일한 사례).
+# 실행 경로는 `.ts` 다 — cdk.json 이 `npx ts-node --prefer-ts-exts bin/app.ts` 로 부르고,
+# cdk.json 의 watch 도 `**/*.js`·`**/*.d.ts` 를 제외 대상으로 명시한다. 재생성 = pnpm build.
+# ⚠ package.json 의 `bin: bin/app.js` 는 이 산출물을 가리키지만 private 패키지라 실사용 경로가 아니다.
+backend/infrastructure/bin/*.js
+backend/infrastructure/bin/*.d.ts
+backend/infrastructure/lib/*.js
+backend/infrastructure/lib/*.d.ts
