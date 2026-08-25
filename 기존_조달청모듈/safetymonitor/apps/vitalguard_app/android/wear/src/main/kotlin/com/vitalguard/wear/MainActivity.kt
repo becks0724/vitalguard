@@ -7,7 +7,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.view.WindowManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,6 +22,8 @@ import com.vitalguard.wear.ui.ProbeAction
 import com.vitalguard.wear.ui.ProbeScreen
 import com.vitalguard.wear.ui.ProbeUiState
 import com.vitalguard.wear.ui.VgColors
+import androidx.wear.ambient.AmbientLifecycleObserver
+import androidx.compose.ui.draw.alpha
 import com.vitalguard.wear.ui.ActivityDetailPage
 import com.vitalguard.wear.ui.DETAIL_PAGE_COUNT
 import com.vitalguard.wear.ui.HeartDetailPage
@@ -41,6 +42,36 @@ class MainActivity : ComponentActivity() {
     /** 기본은 작업자 화면. 진단은 화면 안 '진단' 버튼으로만 들어간다(실측 버튼이 앞에 서면 안 된다). */
     private var showDiagnostics by mutableStateOf(false)
     private var uiTick = 0
+
+    /** 앰비언트(항상 켜짐) 진입 여부 — 화면을 어둡게 하고 폴링을 늦춘다. */
+    private var ambient by mutableStateOf(false)
+
+    /**
+     * 앰비언트 옵저버 — **이것이 "시계로 안 돌아가게" 하는 정식 수단이다.**
+     *
+     * ⚠ `FLAG_KEEP_SCREEN_ON` 만으로는 안 된다. 08-25 실측에서 `dumpsys window` 에
+     *   `fl=KEEP_SCREEN_ON` 이 분명히 걸려 있는데도 깨우면 시계 화면이 떴다 —
+     *   Wear 는 화면 유지와 별개로 "앱에서 시계로 복귀" 규칙을 따로 갖고 있다.
+     *   앰비언트를 선언하면 화면이 꺼질 자리에서 **앱이 어두운 채 남는다.**
+     */
+    private val ambientObserver by lazy {
+        AmbientLifecycleObserver(
+            this,
+            object : AmbientLifecycleObserver.AmbientLifecycleCallback {
+                override fun onEnterAmbient(details: AmbientLifecycleObserver.AmbientDetails) {
+                    ambient = true
+                    Log.i("VgUi", "앰비언트 진입 — 화면 유지, 폴링 ${AMBIENT_POLL_MS / 1000}s")
+                }
+
+                override fun onExitAmbient() {
+                    ambient = false
+                    Log.i("VgUi", "앰비언트 해제 — 폴링 ${ACTIVE_POLL_MS / 1000}s")
+                }
+
+                override fun onUpdateAmbient() = Unit
+            },
+        )
+    }
 
     /**
      * 화면을 **앱이 앞에 있는 동안 계속** 켜 둔다(08-25 사용자 재요청 · 2회).
@@ -73,10 +104,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
 
-        // ★ 앱이 앞에 있는 동안 화면을 붙잡는다 — 시계 화면으로 돌아가지 않는다.
-        //   (08-25 사용자 재요청. 발열 대가는 holdScreen 주석 참조.)
-        //   백그라운드 수집은 이 플래그와 무관하게 FGS 가 유지한다.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // ★ 시계 화면으로 돌아가지 않게 하는 수단 = **앰비언트**.
+        //   화면이 꺼질 자리에서 앱이 어두운 채 남는다.
+        //
+        // ⚠⚠ **KEEP_SCREEN_ON 을 함께 걸면 안 된다.** 둘은 보완재가 아니라 배타적이다 —
+        //   플래그가 화면을 아예 안 꺼지게 하므로 앰비언트 진입 자체가 일어나지 않는다.
+        //   08-25 실측: 둘을 같이 걸었더니 100초를 기다려도 `mWakefulness=Awake` 였고
+        //   앰비언트 콜백이 한 번도 안 왔다. 플래그를 빼야 앰비언트가 산다.
+        //
+        // 백그라운드 수집은 이것과 무관하게 FGS 가 유지한다.
+        lifecycle.addObserver(ambientObserver)
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
@@ -161,7 +198,7 @@ class MainActivity : ComponentActivity() {
                                 com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MIN_C, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MAX_C),
                         )
                     }
-                    delay(3_000)
+                    delay(if (ambient) AMBIENT_POLL_MS else ACTIVE_POLL_MS)
                 }
             }
 
@@ -182,6 +219,10 @@ class MainActivity : ComponentActivity() {
                 val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState {
                     DETAIL_PAGE_COUNT
                 }
+                // 앰비언트에서는 전체를 어둡게 — 밝은 면적을 줄이라는 Wear 지침.
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.alpha(if (ambient) com.vitalguard.wear.ui.AMBIENT_ALPHA else 1f),
+                ) {
                 androidx.wear.compose.material3.VerticalPagerScaffold(
                     pagerState = pagerState,
                     // ★ 요약면에서는 페이지 점을 안 그린다 — 우측 걸음 눈금과 같은 자리라
@@ -207,8 +248,20 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+                }
             }
         }
+    }
+
+    companion object {
+        /** 평상시 화면 갱신 주기 — iOS 화면과 같은 3초. */
+        const val ACTIVE_POLL_MS = 3_000L
+
+        /**
+         * 앰비언트 갱신 주기. 시스템이 1분에 한 번 깨우는 리듬에 맞춘다 —
+         * 어두운 화면을 3초마다 다시 그리면 앰비언트로 아낀 전력을 그대로 반납한다.
+         */
+        const val AMBIENT_POLL_MS = 60_000L
     }
 
     /** 시작은 즉시, 중지는 한 번 더 눌러 확인 — 오탭으로 수집이 멎지 않게 한다. */
