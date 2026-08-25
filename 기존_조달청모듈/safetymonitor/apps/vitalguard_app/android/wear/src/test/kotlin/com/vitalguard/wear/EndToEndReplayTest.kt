@@ -73,15 +73,15 @@ class EndToEndReplayTest {
             val body = JSONArray(req.body.readUtf8())
             assertEquals(12, body.length())
             assertEquals("EMP-6861", body.getJSONObject(0).getString("workerId"))
-            // 갤럭시 전용 출처 — 서버가 이 값으로 wearos 를 확정한다(애플과 분리 · 2026-08-25)
-            // ⚠ 값을 손으로 적지 않는다 — sourceTag 는 서버 배포 상태에 따라 오가는 중이다
-        //   (08-25: Galaxy 전환 → persistFailures 로 롤백 → 서버 수리 후 재전환 예정).
-        //   여기서 검증할 것은 "전송 시점에 스탬프된다" 이지 특정 문자열이 아니다.
-        //   문자열 자체는 dashboard-web 의 교차언어 가드가 서버 화이트리스트와 대조한다.
-        org.junit.Assert.assertTrue(
-            "source 가 안 실렸다",
-            body.getJSONObject(0).getString("source").startsWith("VitAlGuard-"),
-        )
+            // 갤럭시 전용 출처 — 서버가 이 값으로 wearos 를 확정한다(애플과 분리 · 2026-08-25).
+            // ⚠ 문자열을 여기 손으로 적지 않는다 — 이 시험이 검증할 것은 **전송 시점에 스탬프되는가**
+            //   이지 특정 값이 아니다. 값의 정합(서버 화이트리스트·스키마 열거형·적재 관문)은
+            //   dashboard-web 의 교차언어 가드가 UploadPipeline.kt 를 직접 읽어 대조한다
+            //   (2026-08-25-watch-source-origin.guard.test.ts · 4건). 두 곳에 적으면 갈린다.
+            org.junit.Assert.assertTrue(
+                "source 가 안 실렸다",
+                body.getJSONObject(0).getString("source").startsWith("VitAlGuard-"),
+            )
         }
     }
 
