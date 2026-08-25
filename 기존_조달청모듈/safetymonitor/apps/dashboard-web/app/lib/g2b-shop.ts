@@ -20,6 +20,10 @@ export type ShopPrice = {
   corp: string | null; // 계약업체명
   count: number; // 표본 수
   src: "거래" | "카탈로그"; // 납품요구(실거래) vs MAS 등록
+  // 보조금 정합 검증용(2026-08-24 추가) — vatAplDivNm 원문과 공급가액 환산 단가.
+  // "부가가치세포함"이면 price÷1.1, 그 외("부가가치세 별도"·미상)는 price 그대로.
+  vat: string | null;
+  supplyPrice: number;
 };
 
 export type ShopPricesPayload = {
@@ -96,7 +100,7 @@ async function fetchRows(op: string, params: Record<string, string>): Promise<Re
   return extractRows(json);
 }
 
-type Parsed = { name: string; spec: string | null; price: number; corp: string | null };
+type Parsed = { name: string; spec: string | null; price: number; corp: string | null; vat: string | null };
 
 // 키워드 1개 → 대표 품목·단가. 1순위 납품요구상세(실거래), 2순위 MAS 카탈로그(당일 등록·변경분).
 async function lookupKeyword(keyword: string): Promise<ShopPrice | null> {
@@ -110,6 +114,7 @@ async function lookupKeyword(keyword: string): Promise<ShopPrice | null> {
       spec: null as string | null,
       price: pickNum(r, ["prdctUprc"]),
       corp: pickStr(r, ["cntrctCorpNm", "corpNm"]),
+      vat: pickStr(r, ["vatAplDivNm"]),
     }))
     .filter((r): r is Parsed => Boolean(r.name && r.price));
   if (parsed.length === 0) {
@@ -120,6 +125,7 @@ async function lookupKeyword(keyword: string): Promise<ShopPrice | null> {
         spec: pickStr(r, ["prdctSpecNm"]),
         price: pickNum(r, ["cntrctPrceAmt"]),
         corp: pickStr(r, ["cntrctCorpNm"]),
+        vat: pickStr(r, ["vatAplDivNm"]),
       }))
       .filter((r): r is Parsed => Boolean(r.name && r.price));
   }
@@ -130,7 +136,9 @@ async function lookupKeyword(keyword: string): Promise<ShopPrice | null> {
   // 대표값 = 단가 중위 행(저가 미끼·고급 규격 왜곡 회피).
   parsed.sort((a, b) => a.price - b.price);
   const mid = parsed[Math.floor(parsed.length / 2)]!;
-  const data: ShopPrice = { keyword, name: mid.name, spec: mid.spec, price: mid.price, corp: mid.corp, count: parsed.length, src };
+  // 공급가액 환산 — vatAplDivNm 이 "부가가치세포함"일 때만 ÷1.1 (보조금 정합은 공급가액 기준 대조).
+  const supplyPrice = mid.vat && mid.vat.includes("포함") ? Math.round(mid.price / 1.1) : mid.price;
+  const data: ShopPrice = { keyword, name: mid.name, spec: mid.spec, price: mid.price, corp: mid.corp, count: parsed.length, src, vat: mid.vat, supplyPrice };
   cache.set(keyword, { ts: Date.now(), data });
   return data;
 }

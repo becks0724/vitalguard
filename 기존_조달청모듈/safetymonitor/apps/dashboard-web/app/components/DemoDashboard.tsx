@@ -113,6 +113,7 @@ import { WorkerQueueModal } from "./WorkerQueueModal";
 import { SafetyNewsPage } from "./SafetyNewsPage";
 import { SiteSidePanels } from "./SiteSidePanels";
 import SafetyVerificationTabs from "./SafetyVerificationTabs";
+import SubsidyAuditBoard from "./SubsidyAuditBoard";
 import { SectionPager } from "./SectionPager";
 import ErpDemoPage from "../erp/page";
 import { MyProfileModal } from "./MyProfileModal";
@@ -6848,6 +6849,11 @@ export function DemoDashboard() {
           pagerIdx === MONITOR_PAGE_IDX ? "env" : undefined
         }
         onRefresh={refreshFieldWeather}
+          {
+            // 공단 보조금 정합 검증 — /subsidy-audit 단독 라우트와 동일 컴포넌트를 탭으로 열람.
+            title: "공단 보조금 검증",
+            content: <SubsidyAuditBoard />,
+          },
         refreshing={locRefreshing}
       />
 
