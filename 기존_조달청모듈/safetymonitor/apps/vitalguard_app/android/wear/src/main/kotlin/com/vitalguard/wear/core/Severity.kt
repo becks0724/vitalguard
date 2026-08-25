@@ -23,9 +23,32 @@ object Thresholds {
     const val SPO2_CAUTION = 92
     const val SPO2_DANGER = 88
 
+    /**
+     * ⚠ **심부 체온 임계다. 갤럭시 화면은 이걸 쓰지 않는다**(08-25 C안).
+     *
+     * 서버 `coreTempEstimates` 는 **심박 시계열 + 칼만 필터**로 심부를 추정하고 이 임계를 쓴다.
+     * 워치는 **실측 피부온**을 그대로 보여주므로 축도 임계도 다르다 — 아래 SKIN_* 를 쓴다.
+     * 상수는 서버 대조용으로 남긴다(관제와 값이 갈리는지 볼 때 필요하다).
+     */
     const val CORE_TEMP_CAUTION_C = 37.5
     const val CORE_TEMP_DANGER_C = 38.0
-    /** 손목 → 심부 보정. 서버와 같은 상수를 써야 화면과 관제가 같은 체온을 말한다. */
+
+    /**
+     * 피부온 임계 — **변환 없이 실측을 그대로 판정한다**(C안).
+     *
+     * ★ 왜 변환을 안 하나. 종전 `피부온 + 0.5` 는 **애플 수면 손목온(35~36℃) 기준**으로 잡힌
+     *   상수인데, 삼성 실측은 **37.4~37.7℃** 라 전제가 다르다. 상수만 바꾸면 근거 없는 숫자를
+     *   박는 것이고, 오늘 HRV 에서 겪은 함정과 같다.
+     *   ⟹ 지금은 실측을 정직하게 보여주고, 하루치 데이터(실내/실외·정지/작업)가 쌓이면
+     *      주변온 상관을 실측해 변환식을 정한다(3단계).
+     *
+     * 값의 근거 — 손목 피부온은 심부보다 낮고 환경에 끌린다. 실내 정지 실측이 37.4~37.7 이므로
+     * 38.0 을 주의, 38.5 를 위험으로 둔다. **잠정값이고 실측이 쌓이면 재조정한다.**
+     */
+    const val SKIN_TEMP_CAUTION_C = 38.0
+    const val SKIN_TEMP_DANGER_C = 38.5
+
+    /** 손목 → 심부 보정(서버 상수 사본). C안에서 화면은 안 쓴다 — 3단계 변환식 논의용으로 보존. */
     const val WRIST_TO_CORE_OFFSET_C = 0.5
 
     /** 무동작 지속 — 붕괴(실신) 후보 경계. 낙상(30s)보다 길게 잡은 값. */
@@ -42,6 +65,14 @@ object Thresholds {
      */
     const val TEMP_GAUGE_MIN_C = 35.0
     const val TEMP_GAUGE_MAX_C = 40.0
+
+    /**
+     * 피부온 게이지 축 — 실측대(37.4~37.7)가 중간에 오도록 잡는다.
+     * 36~40 이면 실측 37.5 가 37.5%, 주의선 38.0 이 50%, 위험선 38.5 가 62.5% 로
+     * **위험선을 넘어도 남은 여유가 보인다**(R-21 과 같은 규율).
+     */
+    const val SKIN_GAUGE_MIN_C = 36.0
+    const val SKIN_GAUGE_MAX_C = 40.0
 }
 
 /** 심박 — 안정 임계 기준(작업부하 밴드 완화는 서버가 활동 분류로 한다. 워치는 보수적으로). */
@@ -59,9 +90,21 @@ fun spo2Severity(pct: Int?): Severity = when {
     else -> Severity.NORMAL
 }
 
-/** 심부 체온 추정 — 피부온 + 보정. 서버 `estimateCoreTempC` 와 같은 형태. */
+/**
+ * ⚠ **화면은 이 함수를 쓰지 않는다**(08-25 C안). 서버는 심박+칼만으로 심부를 추정하므로
+ * 이 단순 덧셈과 값이 갈린다 — 실측에서 워치 38.16℃ vs 서버 37.4℃ 로 벌어졌다.
+ * 3단계에서 주변온 보정식이 정해지면 그때 이 자리를 채운다. 지금은 보존만.
+ */
 fun estimateCoreTempC(skinC: Double?): Double? =
     skinC?.let { it + Thresholds.WRIST_TO_CORE_OFFSET_C }
+
+/** 피부온 판정 — 실측을 그대로 본다(변환 없음). 잠정 임계이고 실측이 쌓이면 재조정한다. */
+fun skinTempSeverity(skinC: Double?): Severity = when {
+    skinC == null -> Severity.IDLE
+    skinC >= Thresholds.SKIN_TEMP_DANGER_C -> Severity.DANGER
+    skinC >= Thresholds.SKIN_TEMP_CAUTION_C -> Severity.CAUTION
+    else -> Severity.NORMAL
+}
 
 fun coreTempSeverity(coreC: Double?): Severity = when {
     coreC == null -> Severity.IDLE

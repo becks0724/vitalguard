@@ -49,7 +49,8 @@ data class VitalUiState(
             overallSeverity(
                 heartRateSeverity(bpm),
                 spo2Severity(spo2),
-                coreTempSeverity(coreTempC),
+                // ★ 피부온을 그대로 판정한다(C안) — 심부 변환은 3단계에서 정한다.
+                com.vitalguard.wear.core.skinTempSeverity(skinTempC),
             )
         }
 }

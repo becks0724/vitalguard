@@ -37,17 +37,24 @@ class SeverityTest {
     }
 
     @Test
-    fun `심부 체온 - 손목온에 0_5 보정 후 판정`() {
-        assertEquals(36.6, estimateCoreTempC(36.1)!!, 0.0001)
-        assertEquals(Severity.NORMAL, coreTempSeverity(estimateCoreTempC(36.9)))   // 37.4
-        assertEquals(Severity.CAUTION, coreTempSeverity(estimateCoreTempC(37.0)))  // 37.5
-        assertEquals(Severity.DANGER, coreTempSeverity(estimateCoreTempC(37.5)))   // 38.0
-        assertEquals(Severity.IDLE, coreTempSeverity(null))
+    fun `피부온 판정 - 실측을 변환 없이 그대로 본다(C안)`() {
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.core.skinTempSeverity(37.9))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.core.skinTempSeverity(38.0))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.core.skinTempSeverity(38.4))
+        assertEquals(Severity.DANGER, com.vitalguard.wear.core.skinTempSeverity(38.5))
+        assertEquals(Severity.IDLE, com.vitalguard.wear.core.skinTempSeverity(null))
+    }
+
+    @Test
+    fun `심부 임계는 서버 대조용으로 남는다 - 화면은 안 쓴다`() {
+        // 서버(심박+칼만)와 값이 갈리는지 볼 때 필요해 보존한다.
+        assertEquals(37.5, com.vitalguard.wear.core.Thresholds.CORE_TEMP_CAUTION_C, 0.0001)
+        assertEquals(38.0, com.vitalguard.wear.core.Thresholds.CORE_TEMP_DANGER_C, 0.0001)
     }
 
     @Test
     fun `화면 전체 상태는 가장 나쁜 지표를 따른다`() {
-        val s = VitalUiState(bpm = 80, spo2 = 86, skinTempC = 36.0, collecting = true)
+        val s = VitalUiState(bpm = 80, spo2 = 86, skinTempC = 37.0, collecting = true)
         assertEquals("SpO₂ 하나가 위험이면 화면은 위험", Severity.DANGER, s.severity)
     }
 
@@ -402,5 +409,40 @@ class AmbientBubbleTest {
         // 서버가 표본을 모아 쓸 수 있으므로 파이프라인에서 빼지 않는다.
         val engine = java.io.File("src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt").readText()
         org.junit.Assert.assertTrue("전송용 HRV 가 사라졌다", engine.contains("builder.hrvSdnn"))
+    }
+}
+
+/** C안 — 피부온 실측 표시. 변환식은 3단계로 미룬다(08-25 사용자 결정). */
+class SkinTempTrackTest {
+
+    private val screen = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+    ).readText()
+
+    @Test
+    fun `화면이 변환하지 않는다 - 실측을 그대로 보여준다`() {
+        org.junit.Assert.assertTrue("피부온 라벨이 없다", screen.contains("label = \"피부온\""))
+        org.junit.Assert.assertFalse(
+            "coreTempC 를 다시 쓰면 서버와 값이 갈린다",
+            screen.contains("state.coreTempC"),
+        )
+    }
+
+    @Test
+    fun `게이지 축 36~40 - 실측대가 중간에 오고 위험선 뒤에 여유가 남는다`() {
+        fun f(c: Double) = com.vitalguard.wear.ui.gaugeFraction(
+            c,
+            com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MIN_C,
+            com.vitalguard.wear.core.Thresholds.SKIN_GAUGE_MAX_C,
+        )!!
+        org.junit.Assert.assertTrue("실측대(37.5)가 안 보인다", f(37.5) in 0.3f..0.5f)
+        assertEquals("주의선 38.0 = 50%", 0.50f, f(38.0), 0.001f)
+        org.junit.Assert.assertTrue("위험선 뒤 여유가 없다", f(38.5) < 0.8f)
+    }
+
+    @Test
+    fun `전체 판정도 피부온을 본다 - 화면 안에서 기준이 갈리면 안 된다`() {
+        val hot = VitalUiState(bpm = 80, skinTempC = 38.6, collecting = true)
+        assertEquals(Severity.DANGER, hot.severity)
     }
 }

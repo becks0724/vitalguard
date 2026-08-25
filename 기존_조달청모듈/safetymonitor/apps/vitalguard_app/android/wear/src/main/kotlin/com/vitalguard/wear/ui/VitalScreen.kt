@@ -35,7 +35,7 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.vitalguard.wear.core.Severity
 import com.vitalguard.wear.core.Thresholds
-import com.vitalguard.wear.core.coreTempSeverity
+import com.vitalguard.wear.core.skinTempSeverity
 import com.vitalguard.wear.core.spo2Severity
 
 /** 큰 화면 분기 — Wear OS 공식 브레이크포인트. 40mm 와 44mm 가 여기서 갈린다. */
@@ -172,11 +172,19 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             severity = spo2Severity(state.spo2),
             diameter = diameter,
         )
+        // ★ **실측 피부온을 그대로 보여준다**(08-25 C안). 종전엔 +0.5 해서 "체온" 이라 적었는데,
+        //   그 상수는 애플 수면 손목온 기준이라 삼성 실측(37.4~37.7)과 전제가 다르고,
+        //   서버는 아예 다른 방법(심박+칼만)을 쓴다 — 두 값이 38.16 vs 37.4 로 갈렸다.
+        //   변환식은 하루치 실측이 쌓인 뒤 3단계에서 정한다. 그때까지 라벨도 "피부온" 으로 정직하게.
         LabeledBubble(
-            value = state.coreTempC?.let { "%.1f".format(it) } ?: "--",
-            label = "체온",
-            fraction = gaugeFraction(state.coreTempC, Thresholds.TEMP_GAUGE_MIN_C, Thresholds.TEMP_GAUGE_MAX_C),
-            severity = coreTempSeverity(state.coreTempC),
+            value = state.skinTempC?.let { "%.1f".format(it) } ?: "--",
+            label = "피부온",
+            fraction = gaugeFraction(
+                state.skinTempC,
+                Thresholds.SKIN_GAUGE_MIN_C,
+                Thresholds.SKIN_GAUGE_MAX_C,
+            ),
+            severity = skinTempSeverity(state.skinTempC),
             diameter = diameter,
         )
         // 주변 온도 — **애플워치에 없는 워치8 우위 신호**이고 WBGT 온열 판정의 실제 재료다.
