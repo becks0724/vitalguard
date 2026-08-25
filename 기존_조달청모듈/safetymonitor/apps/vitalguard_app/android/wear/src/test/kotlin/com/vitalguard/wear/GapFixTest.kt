@@ -152,6 +152,16 @@ class StaleOnUnwearTest {
             "motionStopped 게이트 없음",
             engine.contains("if (motionStopped) null else motion.stillSec"),
         )
+        // ★ 양 끝을 함께 단언한다([[L-115]]③). 게이트가 **만들어지는가**만 보면
+        //   전송 경로가 그것을 우회해도 초록불이다 — 실제로 그랬다(08-25).
+        org.junit.Assert.assertTrue(
+            "전송 경로가 게이트를 우회한다 — 벗어 둔 워치가 무동작 행을 올린다",
+            engine.contains("stillSec = stillSecNow(nowMs)"),
+        )
+        org.junit.Assert.assertFalse(
+            "flush 가 게이트 없는 motion.stillSec 을 직접 쓴다",
+            engine.contains("stillSec = motion.stillSec("),
+        )
     }
 
     @Test

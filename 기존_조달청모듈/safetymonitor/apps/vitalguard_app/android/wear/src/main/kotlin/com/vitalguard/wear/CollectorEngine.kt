@@ -186,7 +186,11 @@ class CollectorEngine(
         }
         val sample = builder.buildAndReset(
             sentAtMs = nowMs,
-            stillSec = motion.stillSec(nowMs),
+            // ★ 화면과 **같은 게이트**를 쓴다(stillSecNow). 종전엔 여기만 게이트를 안 거쳐
+            //   벗어 둔 워치가 "N초째 무동작" 행을 계속 올렸다 — R-22 가 화면에서 막은 바로 그
+            //   그림을 전송 경로가 그대로 재현한 것이다(08-25 서버 세션이 심박 없는 행 22건으로
+            //   관측). 미착용이면 실을 것이 없으니 buildAndReset 이 null 을 내고 행이 안 생긴다.
+            stillSec = stillSecNow(nowMs),
             variabilityMg = motion.variabilityMg(),
             batteryPct = batteryPct(),
             fix = latestFix(nowMs),
