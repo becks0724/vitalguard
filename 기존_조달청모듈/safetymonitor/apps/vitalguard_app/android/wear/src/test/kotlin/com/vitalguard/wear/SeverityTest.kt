@@ -103,3 +103,42 @@ class GaugeTest {
         assertEquals("2시간 전", com.vitalguard.wear.ui.ageLabel(7200))
     }
 }
+
+class BezelTest {
+
+    private fun arcs(state: com.vitalguard.wear.ui.VitalUiState) =
+        com.vitalguard.wear.ui.bezelArcsForTest(state)
+
+    @Test
+    fun `베젤 3구획 - 심박·배터리·전송`() {
+        val a = arcs(com.vitalguard.wear.ui.VitalUiState(bpm = 85, batteryPct = 60, collecting = true))
+        assertEquals(3, a.size)
+    }
+
+    @Test
+    fun `구획이 서로 겹치지 않는다 - 눈금이 포개지면 읽을 수 없다`() {
+        val a = arcs(com.vitalguard.wear.ui.VitalUiState(bpm = 85, batteryPct = 60, collecting = true))
+        val ranges = a.map { it.startDeg..(it.startDeg + it.sweepDeg) }
+        for (i in ranges.indices) for (j in i + 1 until ranges.size) {
+            val x = ranges[i]; val y = ranges[j]
+            val overlap = x.start < y.endInclusive && y.start < x.endInclusive
+            org.junit.Assert.assertFalse("구획 $i·$j 가 겹친다", overlap)
+        }
+    }
+
+    @Test
+    fun `값이 없으면 채우지 않는다 - 0 으로 그리지 않는다`() {
+        val a = arcs(com.vitalguard.wear.ui.VitalUiState())
+        assertEquals(null, a[0].fraction)   // 심박 미측정
+        assertEquals(null, a[1].fraction)   // 배터리 모름
+        assertEquals(null, a[2].fraction)   // 수집 전
+    }
+
+    @Test
+    fun `전송 구획 - 큐가 쌓이면 줄어든다`() {
+        val ok = arcs(com.vitalguard.wear.ui.VitalUiState(collecting = true, queued = 0))
+        val backlog = arcs(com.vitalguard.wear.ui.VitalUiState(collecting = true, queued = 50))
+        assertEquals(1f, ok[2].fraction!!, 0.001f)
+        assertEquals(0.5f, backlog[2].fraction!!, 0.001f)
+    }
+}
