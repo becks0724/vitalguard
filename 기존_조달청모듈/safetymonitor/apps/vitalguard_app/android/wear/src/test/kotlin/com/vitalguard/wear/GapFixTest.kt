@@ -336,3 +336,40 @@ class StillSecStillCollectedTest {
         assertTrue("걸음 베젤이 없다", screen.contains("stepTicks(state)"))
     }
 }
+
+/** 세로 페이저 — 가로는 워치 뒤로가기와 충돌한다(08-25 사용자 결정 A안). */
+class VerticalPagerTest {
+
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+    private val summary = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+    ).readText()
+
+    @Test
+    fun `세로 페이저를 쓴다 - 가로는 앱이 닫힌다`() {
+        assertTrue("VerticalPager 미사용", activity.contains("VerticalPager"))
+        assertFalse(
+            "가로 페이저는 워치 표준 뒤로가기 제스처와 충돌한다",
+            activity.contains("HorizontalPager"),
+        )
+    }
+
+    @Test
+    fun `요약이 0번이다 - 앱을 열면 한눈 화면이 먼저다`() {
+        val body = activity.substringAfter("when (page)").substringBefore("}")
+        assertTrue("0번이 요약이 아니다", body.contains("0 -> VitalScreen"))
+    }
+
+    @Test
+    fun `스와이프 힌트가 있다 - 없으면 상세를 발견 못 한다`() {
+        assertTrue("힌트 없음", summary.contains("SwipeHint"))
+    }
+
+    @Test
+    fun `요약 화면에 앱 로고를 두지 않는다`() {
+        // Wear 지침: 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은 공간만 먹는다.
+        assertFalse("로고가 되살아났다", summary.contains("R.drawable.ic_vitalguard"))
+    }
+}

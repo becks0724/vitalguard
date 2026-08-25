@@ -23,6 +23,11 @@ import com.vitalguard.wear.ui.ProbeAction
 import com.vitalguard.wear.ui.ProbeScreen
 import com.vitalguard.wear.ui.ProbeUiState
 import com.vitalguard.wear.ui.VgColors
+import com.vitalguard.wear.ui.ActivityDetailPage
+import com.vitalguard.wear.ui.DETAIL_PAGE_COUNT
+import com.vitalguard.wear.ui.HeartDetailPage
+import com.vitalguard.wear.ui.Spo2DetailPage
+import com.vitalguard.wear.ui.TempDetailPage
 import com.vitalguard.wear.ui.TimelinePoint
 import com.vitalguard.wear.ui.VitalScreen
 import com.vitalguard.wear.ui.VitalUiState
@@ -161,11 +166,26 @@ class MainActivity : ComponentActivity() {
                     actions = listOf(ProbeAction("← 돌아가기") { showDiagnostics = false }) + actions(),
                 )
             } else {
-                VitalScreen(
-                    state = vitals,
-                    onOpenDiagnostics = { showDiagnostics = true },
-                    onTap = { holdScreen() },
-                )
+                // ★ 세로 페이저 — 가로는 워치 표준 '뒤로가기' 와 충돌해 앱이 닫힌다.
+                //   0=요약(한눈) · 1~4=상세(차트·통계). 순서를 바꾸면 익힌 위치가 흐트러진다.
+                val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState {
+                    DETAIL_PAGE_COUNT
+                }
+                androidx.wear.compose.material3.VerticalPagerScaffold(pagerState = pagerState) {
+                    androidx.wear.compose.foundation.pager.VerticalPager(state = pagerState) { page ->
+                        when (page) {
+                            0 -> VitalScreen(
+                                state = vitals,
+                                onOpenDiagnostics = { showDiagnostics = true },
+                                onTap = { holdScreen() },
+                            )
+                            1 -> HeartDetailPage(vitals)
+                            2 -> Spo2DetailPage(vitals)
+                            3 -> TempDetailPage(vitals)
+                            else -> ActivityDetailPage(vitals)
+                        }
+                    }
+                }
             }
         }
     }

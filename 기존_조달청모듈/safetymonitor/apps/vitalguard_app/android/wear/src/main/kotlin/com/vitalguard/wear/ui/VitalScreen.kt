@@ -78,13 +78,16 @@ fun VitalScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            // 사진 구조 그대로 — ① 상단 아이콘 ② 큰 주값 ③ 라벨·범위 ④ 타임라인 ⑤ 버블 3개 가로 ⑥ 하단
+            // ★ Wear 디자인 지침 반영(08-25) — 요약 화면은 **한눈(약 7초)** 이 기준이다.
+            //   차트는 "복잡한 통계는 글랜서빌리티를 떨어뜨린다" 는 지침에 따라 **상세 페이지로 내렸다**.
+            //   여기 남는 것은 ① 상태 배지 ② 큰 주값 ③ 라벨·범위 ④ 버블 3개 ⑤ 하단 상태.
             TopIcons(state)
             HeroValue(state, large)
             LabelAndRange(state)
-            HeartChart(points = state.timeline, nowMs = state.nowMs, tint = state.severity.color())
             BubbleRow(state, bubble)
             FooterLine(state)
+            // 아래로 스와이프하면 상세 — 발견성을 위해 힌트를 남긴다(지침: 작업의 명확성).
+            SwipeHint()
         }
     }
 }
@@ -127,12 +130,13 @@ private fun StatusDot(active: Boolean, activeColor: Color, label: String) {
 @Composable
 private fun HeroValue(state: VitalUiState, large: Boolean) {
     Row(verticalAlignment = Alignment.Bottom) {
-        Image(
-            painter = painterResource(com.vitalguard.wear.R.drawable.ic_vitalguard),
-            contentDescription = null,
-            colorFilter = ColorFilter.tint(state.severity.color()),
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.size(if (large) 22.dp else 18.dp).padding(bottom = 6.dp),
+        // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은
+        //   공간만 먹는다. 대신 **판정색 점**으로 상태를 알린다(색이 곧 정보).
+        Box(
+            Modifier
+                .size(if (large) 10.dp else 8.dp)
+                .background(state.severity.color(), CircleShape)
+                .padding(bottom = 6.dp),
         )
         Text(
             state.bpm?.toString() ?: "--",
@@ -228,6 +232,17 @@ private fun LabeledBubble(
         VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter)
         Text(label, color = VgColors.Secondary, fontSize = 9.sp)
     }
+}
+
+/** 스와이프 힌트 — 세로 페이저가 있다는 것을 알려야 발견된다(지침 §6 작업의 명확성). */
+@Composable
+private fun SwipeHint() {
+    Text(
+        "▾",
+        color = VgColors.Idle,
+        fontSize = 11.sp,
+        modifier = Modifier.padding(top = 2.dp),
+    )
 }
 
 /** ⑥ 하단 — 사진의 일출·일몰 자리에 전송 상태와 배터리를 넣는다. */

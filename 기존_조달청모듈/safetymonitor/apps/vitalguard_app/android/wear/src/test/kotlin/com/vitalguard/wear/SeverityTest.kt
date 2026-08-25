@@ -211,6 +211,19 @@ class ChartTest {
     fun `차트 창은 5분이다 - 근무 중 변화를 보려면 시간이 아니라 분 단위`() {
         assertEquals(5 * 60_000L, com.vitalguard.wear.ui.CHART_WINDOW_MS)
     }
+
+    @Test
+    fun `차트는 요약이 아니라 상세에 있다 - 한눈 화면에 통계를 두지 않는다`() {
+        // Wear 디자인 지침: 복잡한 차트·통계는 글랜서빌리티를 떨어뜨린다.
+        val summary = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+        ).readText()
+        val detail = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/ui/DetailPages.kt",
+        ).readText()
+        org.junit.Assert.assertFalse("요약에 차트가 되살아났다", summary.contains("HeartChart("))
+        org.junit.Assert.assertTrue("상세에 차트가 없다", detail.contains("HeartChart("))
+    }
 }
 
 class TempGaugeTest {
