@@ -16,11 +16,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
-import androidx.wear.compose.material.Chip
-import androidx.wear.compose.material.ChipDefaults
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material3.Button
+import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.material3.Text
 
 /** 화면이 그리는 데 필요한 전부 — 서비스·센서를 모르므로 미리보기가 그대로 렌더한다. */
 data class ProbeUiState(
@@ -36,14 +36,14 @@ data class ProbeAction(val label: String, val tint: Color = VgColors.Pill, val o
 
 @Composable
 fun ProbeScreen(state: ProbeUiState, actions: List<ProbeAction>) {
-    ScalingLazyColumn(
+    TransformingLazyColumn(
         modifier = Modifier.fillMaxSize().background(VgColors.Background),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         item { HeartHeader(state) }
         item { StatusLine(state) }
         items(actions) { action ->
-            Chip(
+            Button(
                 onClick = action.onClick,
                 label = {
                     Text(
@@ -52,7 +52,7 @@ fun ProbeScreen(state: ProbeUiState, actions: List<ProbeAction>) {
                         color = if (action.tint == VgColors.Pill) VgColors.Primary else Color.Black,
                     )
                 },
-                colors = ChipDefaults.primaryChipColors(backgroundColor = action.tint),
+                colors = ButtonDefaults.buttonColors(containerColor = action.tint),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
             )
         }

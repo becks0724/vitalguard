@@ -80,6 +80,7 @@ class CollectorService : Service() {
         engine.start(System.currentTimeMillis())
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, FLUSH_INTERVAL_MS)
+        running = true
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
         return START_STICKY
     }
@@ -110,6 +111,7 @@ class CollectorService : Service() {
     }
 
     override fun onDestroy() {
+        running = false
         handler.removeCallbacks(tick)
         worker.quitSafely()
         engine.stop()
@@ -129,5 +131,9 @@ class CollectorService : Service() {
         /** 화면 표시용 — 큐 적체는 서버 장애의 유일한 가시 신호다(08-25 실황이 필요를 증명). */
         @Volatile var queuedCount = 0
             internal set
+
+        /** 화면이 시작/중지 상태를 읽는다 — 서비스 바인딩 없이 상태만 노출. */
+        @Volatile var running = false
+            private set
     }
 }

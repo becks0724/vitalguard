@@ -47,10 +47,11 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.wear.compose:compose-material:1.4.0")
-    implementation("androidx.wear.compose:compose-foundation:1.4.0")
+    // Material 3 Expressive — 원형 게이지(CircularProgressIndicator 세그먼트/호)가 여기 있다
+    implementation("androidx.wear.compose:compose-material3:1.5.0")
+    implementation("androidx.wear.compose:compose-foundation:1.5.0")
     // @WearPreviewDevices 등 워치 전용 미리보기 애너테이션
-    implementation("androidx.wear.compose:compose-ui-tooling:1.4.0")
+    implementation("androidx.wear.compose:compose-ui-tooling:1.5.0")
     // WearDevices 상수(LARGE_ROUND·SMALL_ROUND) — 전이 의존으로는 컴파일 경로에 안 들어온다
     implementation("androidx.wear:wear-tooling-preview:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")

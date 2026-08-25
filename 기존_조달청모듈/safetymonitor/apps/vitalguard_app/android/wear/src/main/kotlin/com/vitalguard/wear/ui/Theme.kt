@@ -18,6 +18,8 @@ object VgColors {
     val Idle = Color(0xFF6E6E73)     // 대기(미측정)
 
     val Accent = Color(0xFF64D2FF)   // 보조 정보
+    /** 호의 빈 부분 — 배경보다 밝아 "여기까지가 범위" 를 보여준다(이미지의 회색 트랙). */
+    val Track = Color(0xFF2C2C2E)
 }
 
 /** 위험도 → 색. 화면 어디서든 같은 매핑을 쓴다. */

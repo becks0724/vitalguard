@@ -17,7 +17,7 @@ fun PreviewIdle() = VitalScreen(VitalUiState(workerName = "장우진"), {})
 fun PreviewNormal() = VitalScreen(
     VitalUiState(
         workerName = "장우진", bpm = 88, spo2 = 97, spo2AgeSec = 240,
-        skinTempC = 36.1, ambientTempC = 28.4, steps = 1240,
+        skinTempC = 36.1, ambientTempC = 28.4, stillSec = 8.0,
         collecting = true, batteryPct = 78, lastUploadAgeSec = 35,
     ),
     {},
@@ -28,7 +28,7 @@ fun PreviewNormal() = VitalScreen(
 fun PreviewCaution() = VitalScreen(
     VitalUiState(
         workerName = "장우진", bpm = 118, spo2 = 95, spo2AgeSec = 90,
-        skinTempC = 36.9, ambientTempC = 31.2, steps = 3820,
+        skinTempC = 36.9, ambientTempC = 31.2, stillSec = 25.0,
         collecting = true, batteryPct = 54, lastUploadAgeSec = 12,
     ),
     {},
@@ -39,7 +39,7 @@ fun PreviewCaution() = VitalScreen(
 fun PreviewDangerHeat() = VitalScreen(
     VitalUiState(
         workerName = "장우진", bpm = 141, spo2 = 94, spo2AgeSec = 30,
-        skinTempC = 37.8, ambientTempC = 35.6, steps = 5210,
+        skinTempC = 37.8, ambientTempC = 35.6, stillSec = 40.0,
         collecting = true, batteryPct = 41, lastUploadAgeSec = 8,
     ),
     {},
@@ -73,7 +73,7 @@ fun PreviewStill() = VitalScreen(
 fun PreviewQueued() = VitalScreen(
     VitalUiState(
         workerName = "장우진", bpm = 90, spo2 = 96, spo2AgeSec = 600,
-        skinTempC = 36.3, steps = 880, collecting = true, queued = 283, batteryPct = 12,
+        skinTempC = 36.3, collecting = true, queued = 283, batteryPct = 12,
     ),
     {},
 )
@@ -84,8 +84,20 @@ fun PreviewQueued() = VitalScreen(
 fun PreviewSmallRound() = VitalScreen(
     VitalUiState(
         workerName = "장우진", bpm = 141, spo2 = 86, spo2AgeSec = 30,
-        skinTempC = 37.8, ambientTempC = 35.6, steps = 5210, stillSec = 200.0,
+        skinTempC = 37.8, ambientTempC = 35.6, stillSec = 200.0,
         collecting = true, queued = 12, batteryPct = 41, lastUploadAgeSec = 8,
+    ),
+    {},
+)
+
+/** 글꼴 확대 — 접근성 설정을 최대로 올린 사용자에게 레이아웃이 버티는지. */
+@Preview(name = "9 큰글꼴", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true, fontScale = 1.24f)
+@Composable
+fun PreviewLargeFont() = VitalScreen(
+    VitalUiState(
+        workerName = "장우진", bpm = 118, spo2 = 91, spo2AgeSec = 45,
+        skinTempC = 37.1, stillSec = 95.0,
+        collecting = true, batteryPct = 62, lastUploadAgeSec = 22,
     ),
     {},
 )

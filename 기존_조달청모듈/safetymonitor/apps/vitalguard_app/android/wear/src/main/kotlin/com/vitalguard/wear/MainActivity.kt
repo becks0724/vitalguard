@@ -19,12 +19,16 @@ import com.vitalguard.wear.ui.ProbeAction
 import com.vitalguard.wear.ui.ProbeScreen
 import com.vitalguard.wear.ui.ProbeUiState
 import com.vitalguard.wear.ui.VgColors
+import com.vitalguard.wear.ui.VitalScreen
+import com.vitalguard.wear.ui.VitalUiState
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
     private var output by mutableStateOf("")
     private var allowNoAuth = false
+    /** 기본은 작업자 화면. 진단은 화면 안 '진단' 버튼으로만 들어간다(실측 버튼이 앞에 서면 안 된다). */
+    private var showDiagnostics by mutableStateOf(false)
 
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
     private val permissionLauncher = registerForActivityResult(
@@ -56,16 +60,49 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            ProbeScreen(
-                state = ProbeUiState(
-                    bpm = bpm,
-                    running = running,
-                    samples = samples,
-                    queued = CollectorService.queuedCount,
-                    output = output,
-                ),
-                actions = actions(),
-            )
+            if (showDiagnostics) {
+                ProbeScreen(
+                    state = ProbeUiState(
+                        bpm = bpm,
+                        running = running,
+                        samples = samples,
+                        queued = CollectorService.queuedCount,
+                        output = output,
+                    ),
+                    actions = listOf(ProbeAction("← 돌아가기") { showDiagnostics = false }) + actions(),
+                )
+            } else {
+                VitalScreen(
+                    state = VitalUiState(
+                        workerName = ConfigStore(this).workerName,
+                        bpm = bpm,
+                        collecting = running || CollectorService.running,
+                        queued = CollectorService.queuedCount,
+                    ),
+                    onToggleCollect = { toggleCollect() },
+                    onOpenDiagnostics = { showDiagnostics = true },
+                )
+            }
+        }
+    }
+
+    /** 시작은 즉시, 중지는 한 번 더 눌러 확인 — 오탭으로 수집이 멎지 않게 한다. */
+    private var confirmingStop = false
+
+    private fun toggleCollect() {
+        if (CollectorService.running) {
+            if (!confirmingStop) {
+                confirmingStop = true
+                output = "한 번 더 누르면 수집을 중지합니다."
+                return
+            }
+            confirmingStop = false
+            stopService(Intent(this, CollectorService::class.java))
+            output = "수집을 중지했습니다. 큐는 보존됩니다."
+        } else {
+            confirmingStop = false
+            startForegroundService(Intent(this, CollectorService::class.java))
+            output = ""
         }
     }
 

@@ -64,3 +64,42 @@ class SeverityTest {
         assertEquals(Severity.NORMAL, s.severity)
     }
 }
+
+class GaugeTest {
+
+    @Test
+    fun `호 비율 - 범위 안에서 선형, 밖은 잘린다`() {
+        assertEquals(0.0f, com.vitalguard.wear.ui.gaugeFraction(85.0, 85.0, 100.0)!!, 0.001f)
+        assertEquals(0.8f, com.vitalguard.wear.ui.gaugeFraction(97.0, 85.0, 100.0)!!, 0.001f)
+        assertEquals(1.0f, com.vitalguard.wear.ui.gaugeFraction(100.0, 85.0, 100.0)!!, 0.001f)
+        // 범위 밖 — 호가 넘치거나 음수가 되지 않는다
+        assertEquals(1.0f, com.vitalguard.wear.ui.gaugeFraction(120.0, 85.0, 100.0)!!, 0.001f)
+        assertEquals(0.0f, com.vitalguard.wear.ui.gaugeFraction(50.0, 85.0, 100.0)!!, 0.001f)
+    }
+
+    @Test
+    fun `값이 없으면 호도 없다 - 0 으로 채우지 않는다`() {
+        assertEquals(null, com.vitalguard.wear.ui.gaugeFraction(null, 85.0, 100.0))
+    }
+
+    @Test
+    fun `무동작 - 붕괴 후보선 90초에서 주의로 넘어간다`() {
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.ui.stillSeverity(89.9))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.ui.stillSeverity(90.0))
+        assertEquals(Severity.IDLE, com.vitalguard.wear.ui.stillSeverity(null))
+    }
+
+    @Test
+    fun `무동작 표기 - 60초 미만은 초, 이상은 분`() {
+        assertEquals("42s", com.vitalguard.wear.ui.stillShort(42.0))
+        assertEquals("1m", com.vitalguard.wear.ui.stillShort(60.0))
+        assertEquals("5m", com.vitalguard.wear.ui.stillShort(320.0))
+    }
+
+    @Test
+    fun `값의 나이 표기`() {
+        assertEquals("35초 전", com.vitalguard.wear.ui.ageLabel(35))
+        assertEquals("4분 전", com.vitalguard.wear.ui.ageLabel(240))
+        assertEquals("2시간 전", com.vitalguard.wear.ui.ageLabel(7200))
+    }
+}
