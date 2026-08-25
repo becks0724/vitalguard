@@ -35,8 +35,23 @@ object Sdnn {
      */
     const val CONTINUITY_TOLERANCE = 0.20
 
-    /** SDNN 을 낼 최소 표본 수 — 미만이면 null(표시 안 함). */
-    const val MIN_SAMPLES = 5
+    /**
+     * SDNN 을 낼 최소 표본 수 — 미만이면 null(표시 안 함).
+     *
+     * ★ 5 → 30 (08-25 사용자 결정 A안). 근거는 100초 실측이다 —
+     * ```
+     * IBI 도착: 26회 중 25회가 빈 배열, 1회만 68개 몰아서
+     * 필터 통과: 입력68 → 상태59 → 범위59 → 심박9 → 연속7   (84% 폐기)
+     * 그 결과: 21.9 / 37.3 / 63.5ms 로 요동 (같은 사람 · 1분 안)
+     * ```
+     * 표본이 6~23개로 들쭉날쭉해 SDNN 이 안정되지 않았다. 임상 SDNN 은 **연속 5분 기록**을
+     * 전제하는데 우리는 산발적 조각을 모으는 처지라, 표본이 적으면 값이 아니라 잡음이다.
+     *
+     * ⟹ **30 미만이면 안 보여준다.** 틀린 숫자보다 "못 쟀다" 가 낫다(0 으로 안 채우는 규칙과 같은 뜻).
+     * 정지 상태로 오래 착용하면 광학 센서가 박동을 덜 놓쳐 표본이 모이고, 그때 값이 뜬다.
+     * ⚠ 이 값은 **표시 문턱**이지 임상 기준이 아니다. 실사용에서 너무 자주 비면 낮춘다.
+     */
+    const val MIN_SAMPLES = 30
 
     /**
      * 심박 정합 허용 폭 — **보고된 bpm 에서 환산한 IBI 와 이 비율 넘게 벌어지면 버린다.**
@@ -84,6 +99,11 @@ object Sdnn {
         return ibi.filter { kotlin.math.abs(it - expected) / expected <= HR_MATCH_TOLERANCE }
     }
 
+    /** 마지막 계산의 단계별 잔존 수 — "왜 이 값인가" 를 추론이 아니라 수로 답하기 위한 계기. */
+    @Volatile
+    var lastTrace: String = "-"
+        private set
+
     fun sdnnMs(ibiMs: List<Int>, status: List<Int>? = null, bpm: Int? = null): Double? {
         val byStatus = if (status != null && status.size == ibiMs.size) {
             ibiMs.filterIndexed { i, _ -> status[i] == STATUS_VALID }
@@ -99,6 +119,7 @@ object Sdnn {
         // ⚠ 연속성 필터는 표본을 크게 줄인다 — 2개로 낸 SDNN 은 노이즈다.
         //   부족하면 **null 로 둔다**(0 으로 채우지 않는 전 화면 공통 규칙).
         //   5는 임의값이 아니라 "두 박동 차이 하나" 가 결과를 지배하지 않는 최소선이다.
+        lastTrace = "입력${ibiMs.size}→상태${byStatus.size}→범위${inRange.size}→심박${matched.size}→연속${valid.size}"
         if (valid.size < MIN_SAMPLES) return null
         val mean = valid.sumOf { it.toDouble() } / valid.size
         val variance = valid.sumOf { (it - mean) * (it - mean) } / valid.size

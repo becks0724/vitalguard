@@ -72,7 +72,7 @@ class SamsungTrackerSource(
             //   다만 **왜 안 실렸는지는 남긴다**(무음 실패 금지 · R-13).
             if (bpm > 0 && (hrStatus == null || hrStatus >= 0)) {
                 hrSeen++
-                if (hrSeen % 30 == 1) {
+                if (hrSeen % 3 == 1) {
                     Log.i(TAG, "삼성 심박 $bpm bpm (status=$hrStatus · IBI=$ibi · IBIstatus=$ibiStatus)")
                 }
                 // 시각은 **벽시계로 통일** — DataPoint.timestamp 의 기준이 기기마다 다를 수 있다.

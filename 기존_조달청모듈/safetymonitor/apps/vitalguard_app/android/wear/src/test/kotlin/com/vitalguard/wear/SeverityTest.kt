@@ -240,11 +240,13 @@ class IbiFilterTest {
     @Test
     fun `생리 범위 밖 IBI 는 버린다 - status 만으로는 안 걸러진다`() {
         // 08-25 실기: HRV 402ms 관측. 0 같은 무효값이 SDNN 을 통째로 망가뜨린다.
-        val withZero = listOf(600, 610, 0, 605, 0, 612, 608)
-        val clean = listOf(600, 610, 605, 612, 608)
+        // 문턱(30)과 무관하게 **필터 자체**를 검증한다 — 표본 수를 늘려 우회하면
+        // 정작 무엇을 거르는지가 시험에서 사라진다.
+        val base = (0 until 30).map { 600 + (it % 3 - 1) * 5 }
+        val withZero = base + listOf(0, 0)
         assertEquals(
             "무효값이 결과를 바꾸면 안 된다",
-            com.vitalguard.wear.core.Sdnn.sdnnMs(clean)!!,
+            com.vitalguard.wear.core.Sdnn.sdnnMs(base)!!,
             com.vitalguard.wear.core.Sdnn.sdnnMs(withZero)!!,
             0.001,
         )
@@ -252,9 +254,12 @@ class IbiFilterTest {
 
     @Test
     fun `극단값도 버린다 - 30~220bpm 밖은 표본이 아니다`() {
-        val got = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 5000, 605, 612, 608))!!
-        val expect = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 605, 612, 608))!!
-        assertEquals(expect, got, 0.001)
+        val base = (0 until 30).map { 600 + (it % 3 - 1) * 5 }
+        assertEquals(
+            com.vitalguard.wear.core.Sdnn.sdnnMs(base)!!,
+            com.vitalguard.wear.core.Sdnn.sdnnMs(base + listOf(5000))!!,
+            0.001,
+        )
     }
 
     @Test
@@ -281,8 +286,10 @@ class ContinuityFilterTest {
     fun `정상 변동은 통과한다 - 호흡성 부정맥을 죽이지 않는다`() {
         // 안정 시 RSA 는 대개 5~10% 변동 — 20% 허용 폭 안이다.
         val rsa = listOf(600, 630, 610, 645, 620, 655)
-        assertEquals(rsa, com.vitalguard.wear.core.Sdnn.continuous(rsa))
-        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(rsa))
+        assertEquals("RSA 는 연속성 필터를 통과해야 한다", rsa, com.vitalguard.wear.core.Sdnn.continuous(rsa))
+        // 문턱을 넘는 길이면 실제로 값이 나온다.
+        val long = (0 until 6).flatMap { rsa }
+        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(long))
     }
 
     @Test
@@ -321,7 +328,8 @@ class HrConsistencyTest {
         // 94bpm = 638ms. ±30% = 447~830ms.
         val ok = listOf(620, 640, 655, 630, 645)
         assertEquals(ok, com.vitalguard.wear.core.Sdnn.hrConsistent(ok, bpm = 94))
-        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(ok, bpm = 94))
+        val long = (0 until 6).flatMap { ok }
+        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(long, bpm = 94))
     }
 
     @Test
@@ -329,5 +337,33 @@ class HrConsistencyTest {
         val any = listOf(855, 915, 920)
         assertEquals(any, com.vitalguard.wear.core.Sdnn.hrConsistent(any, bpm = null))
         assertEquals(any, com.vitalguard.wear.core.Sdnn.hrConsistent(any, bpm = 0))
+    }
+}
+
+/** A안 표시 문턱 — 08-25 실측(표본 6~23개에서 21.9~63.5ms 요동)이 근거. */
+class MinSamplesTest {
+
+    private fun ibi(n: Int) = (0 until n).map { 600 + (it % 3 - 1) * 5 }
+
+    @Test
+    fun `문턱은 30이다 - 실측 요동 구간(6~23개)을 덮는다`() {
+        assertEquals(30, com.vitalguard.wear.core.Sdnn.MIN_SAMPLES)
+        // 실측에서 요동을 만든 표본 수들이 전부 문턱 아래여야 한다.
+        listOf(6, 7, 9, 23).forEach {
+            org.junit.Assert.assertNull("표본 ${it}개는 안 보여줘야 한다", com.vitalguard.wear.core.Sdnn.sdnnMs(ibi(it)))
+        }
+    }
+
+    @Test
+    fun `문턱 경계 - 29는 null, 30은 값`() {
+        org.junit.Assert.assertNull(com.vitalguard.wear.core.Sdnn.sdnnMs(ibi(29)))
+        org.junit.Assert.assertNotNull(com.vitalguard.wear.core.Sdnn.sdnnMs(ibi(30)))
+    }
+
+    @Test
+    fun `문턱을 넘어도 값 자체는 정상 범위여야 한다`() {
+        // 600±5 짜리 30개 → SDNN 은 한 자릿수. 264ms 같은 값이 다시 나오면 안 된다.
+        val got = com.vitalguard.wear.core.Sdnn.sdnnMs(ibi(30))!!
+        org.junit.Assert.assertTrue("SDNN 이 비정상적으로 크다: $got", got < 100.0)
     }
 }

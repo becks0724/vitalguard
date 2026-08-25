@@ -110,6 +110,7 @@ class MainActivity : ComponentActivity() {
                             "bpm=${vitals.bpm} spo2=${vitals.spo2} skin=${vitals.skinTempC} " +
                                 "core=${vitals.coreTempC} amb=${vitals.ambientTempC} " +
                                 "still=${vitals.stillSec} hrv=${vitals.hrvSdnnMs} " +
+                                "[${com.vitalguard.wear.core.Sdnn.lastTrace}] " +
                                 "collecting=${vitals.collecting} " +
                                 "queued=${vitals.queued} tempFrac=" +
                                 com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MIN_C, com.vitalguard.wear.core.Thresholds.TEMP_GAUGE_MAX_C),
