@@ -4607,6 +4607,34 @@ export function DemoDashboard() {
   const [queueModalSlot, setQueueModalSlot] = useState<number | null>(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  // 종 아이콘 미확인 배지 — 대응 확인(ack)이 안 된 알림이 하나라도 있으면 빨간 점을 띄운다.
+  // 이력 모달이 열릴 때가 아니라 헤더에서 따로 세어야 모달을 안 열어도 알 수 있다.
+  const [unackedAlerts, setUnackedAlerts] = useState(0);
+  // 미확인 알림 집계 — 60초마다, 그리고 이력 모달을 닫을 때(대응 확인 반영) 다시 센다.
+  useEffect(() => {
+    let alive = true;
+    const count = async () => {
+      const token = getSessionToken();
+      try {
+        const res = await fetch("/api/alerts", {
+          cache: "no-store",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { alerts?: { ack_at?: string | null }[] };
+        if (alive) setUnackedAlerts((data.alerts ?? []).filter((a) => !a.ack_at).length);
+      } catch {
+        // 집계 실패는 화면을 막지 않는다 — 배지만 안 뜬다.
+      }
+    };
+    count();
+    const id = setInterval(count, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [alertsOpen]);
+
   // 팝업을 걷어낸 뒤(2026-08-20) "캘린더가 열려 있다" = "캘린더 탭이 활성이다".
   // 아래 두 곳이 이 값을 본다 — 미확인 배지 즉시 해소 · 위험작업 재집계.
   const calendarOpen = pagerIdx === CALENDAR_PAGE_IDX;
@@ -6329,13 +6357,25 @@ export function DemoDashboard() {
             tabs={[
               {
                 title: "알림 이력",
-                tooltip: "SOS·낙상 알림 이력 (발생/대응 시각)",
+                tooltip:
+                  unackedAlerts > 0
+                    ? `SOS·낙상 알림 이력 — 미확인 ${unackedAlerts}건`
+                    : "SOS·낙상 알림 이력 (발생/대응 시각)",
                 onSelect: () => setAlertsOpen(true),
                 icon: (
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                    <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                  </svg>
+                  // 미대응 알림이 있으면 종 우상단에 빨간 점 — 개수는 툴팁과 이력 모달이 말한다.
+                  <span className="relative inline-flex">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                    {unackedAlerts > 0 && (
+                      <span
+                        className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#ef4444] ring-2 ring-canvas dark:ring-surface-dark"
+                        aria-label={`미확인 알림 ${unackedAlerts}건`}
+                      />
+                    )}
+                  </span>
                 ),
               },
               // 관리자 메뉴 — owner 거나 admin_access 부여받은 사용자만 노출(서버에서도 강제).
@@ -6810,6 +6850,11 @@ export function DemoDashboard() {
             content: <SafetyVerificationTabs />,
           },
           {
+            // 공단 보조금 정합 검증 — /subsidy-audit 단독 라우트와 동일 컴포넌트를 탭으로 열람.
+            title: "공단 보조금 검증",
+            content: <SubsidyAuditBoard />,
+          },
+          {
             // 시공사 경리 시스템(스마트경리 데모) — /erp 단독 라우트와 동일 컴포넌트를 탭으로 열람.
             // 자체 인디고 헤더·라이트 룩 유지 = "별개 시스템을 관제에서 열람" 역할극.
             title: "ERP: 스마트경리",
@@ -6849,11 +6894,6 @@ export function DemoDashboard() {
           pagerIdx === MONITOR_PAGE_IDX ? "env" : undefined
         }
         onRefresh={refreshFieldWeather}
-          {
-            // 공단 보조금 정합 검증 — /subsidy-audit 단독 라우트와 동일 컴포넌트를 탭으로 열람.
-            title: "공단 보조금 검증",
-            content: <SubsidyAuditBoard />,
-          },
         refreshing={locRefreshing}
       />
 
@@ -7731,9 +7771,58 @@ function fmtAlertTime(iso: string): string {
   });
 }
 
+// 일괄 확인 진행 아이콘 — 원형 스피너(회전하는 호). 붙여주신 SuccessIcon 의 로딩 단계를
+// framer-motion 없이 SVG + CSS 회전으로 옮긴 것이다(신규 패키지 미추가 원칙).
+function AckProgressIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+      <circle
+        cx="12"
+        cy="12"
+        r="9"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeDasharray="14 43"
+        className="origin-center animate-spin"
+      />
+    </svg>
+  );
+}
+
+// 일괄 확인 완료 아이콘 — 초록 원 + 그려지는 체크(스피너가 체크로 바뀌는 SuccessIcon 의 완료 단계).
+function AckDoneIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.35" />
+      <path
+        d="m7.5 12.4 3.1 3.1L16.6 8.6"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="ack-check-path"
+      />
+    </svg>
+  );
+}
+
 function AlertHistoryModal({ onClose }: { onClose: () => void }) {
   const [alerts, setAlerts] = useState<ClientAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmAll, setConfirmAll] = useState(false); // 일괄 확인 2단계 — 첫 클릭은 되묻기
+  const [ackingAll, setAckingAll] = useState(false);
+  const [ackDone, setAckDone] = useState(0); // 진행 표시 — 스피너 옆에 n/전체 로 보여준다
+  const [ackTotal, setAckTotal] = useState(0);
+  const [ackSuccess, setAckSuccess] = useState(0); // 완료 표시(처리 건수) — 2.4초 뒤 사라진다
+
+  // 되묻기 상태는 4초 뒤 스스로 풀린다 — 그냥 두면 다음에 눌렀을 때 되묻기 없이 바로 실행돼 위험하다.
+  useEffect(() => {
+    if (!confirmAll) return;
+    const id = setTimeout(() => setConfirmAll(false), 4000);
+    return () => clearTimeout(id);
+  }, [confirmAll]);
 
   const load = useCallback(async () => {
     const token = getSessionToken();
@@ -7779,6 +7868,40 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
     load();
   }
 
+  // 미대응 건 일괄 확인 — 되돌릴 수 없으므로 버튼을 두 번 눌러야 실행된다(첫 클릭은 확인 문구로 바뀜).
+  // 개별 ack 를 순차 호출한다. 전용 벌크 API 가 없고, 원장(alerts)은 ON CONFLICT DO NOTHING 이라
+  // 같은 건을 여러 번 눌러도 이력이 중복되지 않는다.
+  async function ackAll() {
+    const targets = alerts.filter((a) => !a.ack_at);
+    if (targets.length === 0) return;
+    setAckTotal(targets.length);
+    setAckDone(0);
+    setAckingAll(true);
+    const token = getSessionToken();
+    for (const a of targets) {
+      try {
+        await fetch("/api/alerts/ack", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ id: a.id, ackBy: "관제자" }),
+        });
+      } catch (e) {
+        console.error("[알림 일괄 대응 확인 오류]", e);
+      }
+      setAckDone((n) => n + 1);
+    }
+    setAckingAll(false);
+    setConfirmAll(false);
+    // 완료 체크를 잠깐 띄운다 — load() 로 미대응이 0 이 되면 버튼이 사라지므로,
+    // 이 값이 있는 동안은 버튼을 남겨 둔다(아래 렌더 조건).
+    setAckSuccess(targets.length);
+    setTimeout(() => setAckSuccess(0), 2400);
+    load();
+  }
+
   const unacked = alerts.filter((a) => !a.ack_at).length;
 
   return (
@@ -7799,13 +7922,51 @@ function AlertHistoryModal({ onClose }: { onClose: () => void }) {
               <span className="ml-2 text-semantic-down">미대응 {unacked}건</span>
             )}
           </span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-muted hover:bg-surface-strong dark:hover:bg-white/10"
-          >
-            닫기
-          </button>
+          <div className="flex items-center gap-2">
+            {(unacked > 0 || ackSuccess > 0) && (
+              <button
+                type="button"
+                onClick={() => (confirmAll ? ackAll() : setConfirmAll(true))}
+                disabled={ackingAll || ackSuccess > 0}
+                className={`rounded-md border px-2.5 py-1 text-xs font-semibold transition disabled:opacity-100 ${
+                  ackSuccess > 0
+                    ? "border-[#10b981]/40 bg-[#10b981]/10 text-semantic-up"
+                    : confirmAll
+                      ? "border-semantic-down bg-semantic-down text-on-primary"
+                      : "border-hairline-strong text-body hover:bg-surface-strong dark:border-white/20 dark:text-on-dark-soft dark:hover:bg-white/10"
+                }`}
+              >
+                {ackSuccess > 0 ? (
+                  // 완료는 초록 체크만 — 건수는 방금 누른 버튼에 이미 적혀 있었다.
+                  <span className="flex items-center justify-center" aria-label={`${ackSuccess}건 확인 완료`}>
+                    <AckDoneIcon />
+                  </span>
+                ) : ackingAll ? (
+                  // 스피너가 체크로 바뀌는 상태 아이콘(붙여주신 SuccessIcon 형태) — framer-motion 없이
+                  // SVG stroke-dasharray 회전 + 체크 그리기로 같은 동작을 낸다.
+                  <span className="flex items-center gap-1.5">
+                    <AckProgressIcon />
+                    <span>{ackDone}/{ackTotal}</span>
+                  </span>
+                ) : confirmAll ? (
+                  `${unacked}건 모두 확인할까요?`
+                ) : (
+                  "미대응 모두 확인"
+                )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="알림 이력 닫기"
+              title="닫기"
+              className="rounded-md p-1.5 text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div className="wx-cards-scroll overflow-y-auto px-5 py-3">
           {loading ? (

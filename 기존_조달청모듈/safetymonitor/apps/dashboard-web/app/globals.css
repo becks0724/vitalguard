@@ -335,3 +335,19 @@ body[data-hide-assistant="1"] .assignment-chat-dock {
     left: -100%;
   }
 }
+
+/* 일괄 대응 확인 성공 체크 — 선이 그려지는 효과. 신규 패키지 없이 CSS 키프레임으로 낸다
+   (framer-motion 미설치 · 프로젝트 규칙). 경로 길이 24 는 아래 d 속성 기준 근사치다. */
+@keyframes ack-check-draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.ack-check-path {
+  stroke-dasharray: 24;
+  animation: ack-check-draw 0.35s ease-out forwards;
+}
