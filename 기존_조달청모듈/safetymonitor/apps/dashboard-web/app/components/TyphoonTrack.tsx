@@ -779,8 +779,8 @@ function fmtLead(h: number | null): string {
   return `D-${Math.floor(hours / 24)} · 약 ${hours}시간 뒤`;
 }
 
-// 태풍(사이클론) 모노톤 라인 아이콘 — 다른 대시보드 아이콘과 동일 테마(currentColor 라인 SVG).
-// 눈(중심 원) + 회전하는 두 나선 팔로 태풍을 표현. 이모지(🌀) 대체.
+// 회오리(토네이도) 모노톤 라인 아이콘 — 다른 대시보드 아이콘과 동일 테마(currentColor 라인 SVG).
+// 위가 넓고 아래로 좁아지는 소용돌이 3단 + 바닥 꼬리. 사이드 패널 탭의 TyphoonIcon 과 같은 모양.
 function TyphoonIcon({ size = 16, className }: { size?: number; className?: string }) {
   return (
     <svg
@@ -795,9 +795,10 @@ function TyphoonIcon({ size = 16, className }: { size?: number; className?: stri
       aria-hidden="true"
       className={className}
     >
-      <circle cx="12" cy="12" r="1.7" />
-      <path d="M12 5c3.6 0 6 2 6 4.6 0 1.9-1.6 3.1-3.4 3.1" />
-      <path d="M12 19c-3.6 0-6-2-6-4.6 0-1.9 1.6-3.1 3.4-3.1" />
+      <path d="M17.09 6.34A7.2 1.9 0 1 1 17.09 3.66" />
+      <path d="M15.96 11.14A5.6 1.75 0 1 1 15.96 8.66" />
+      <path d="M14.83 15.53A4 1.6 0 1 1 14.83 13.27" />
+      <path d="M11.4 16.1c.8 1.3.3 2.4-.9 2.9-1 .4-2 0-2.4-.7" />
     </svg>
   );
 }
