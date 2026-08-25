@@ -65,14 +65,26 @@ class SamsungTrackerSource(
     private fun startContinuous(svc: HealthTrackingService) {
         hrTracker = track(svc, HealthTrackerType.HEART_RATE_CONTINUOUS) { dp ->
             val bpm = dp.getValue(ValueKey.HeartRateSet.HEART_RATE) ?: return@track
+            val hrStatus = dp.getValue(ValueKey.HeartRateSet.HEART_RATE_STATUS)
             val ibi = dp.getValue(ValueKey.HeartRateSet.IBI_LIST) ?: emptyList()
-            val status = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST) ?: emptyList()
-            if (bpm > 0) listener?.onHeartRate(bpm, ibi, status, dp.timestamp)
+            val ibiStatus = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST) ?: emptyList()
+            // ⚠ 상태가 정상이 아니면 bpm 이 0 이거나 신뢰 못 할 값이다 — 싣지 않는다.
+            //   다만 **왜 안 실렸는지는 남긴다**(무음 실패 금지 · R-13).
+            if (bpm > 0 && (hrStatus == null || hrStatus >= 0)) {
+                hrSeen++
+                if (hrSeen % 30 == 1) Log.i(TAG, "삼성 심박 $bpm bpm (status=$hrStatus · IBI ${ibi.size}개)")
+                // 시각은 **벽시계로 통일** — DataPoint.timestamp 의 기준이 기기마다 다를 수 있다.
+                listener?.onHeartRate(bpm, ibi, ibiStatus, System.currentTimeMillis())
+            } else {
+                hrRejected++
+                if (hrRejected % 30 == 1) Log.w(TAG, "삼성 심박 미채택 bpm=$bpm status=$hrStatus (착용 확인)")
+            }
         }
         tempTracker = track(svc, HealthTrackerType.SKIN_TEMPERATURE_CONTINUOUS) { dp ->
             val obj = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE) ?: return@track
             val ambient = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
-            listener?.onSkinTemp(obj.toDouble(), ambient?.toDouble(), dp.timestamp)
+            Log.i(TAG, "삼성 피부온 ${obj}℃ · 주변 ${ambient}℃")
+            listener?.onSkinTemp(obj.toDouble(), ambient?.toDouble(), System.currentTimeMillis())
         }
     }
 
@@ -128,6 +140,9 @@ class SamsungTrackerSource(
         service = null
         listener = null
     }
+
+    private var hrSeen = 0
+    private var hrRejected = 0
 
     companion object {
         const val TAG = "VgSamsung"

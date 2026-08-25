@@ -5,10 +5,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
@@ -52,6 +54,8 @@ fun VitalScreen(
     Box(Modifier.fillMaxSize().background(VgColors.Background)) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
         BezelIndicator(band = hrBand(state), ticks = stillTicks(state))
+        // 사이드 인디케이터 명칭 — 무엇을 재는 눈금인지 없으면 못 읽는다.
+        BezelLabels(state)
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
         Column(
             modifier = Modifier
@@ -257,6 +261,46 @@ private fun ActionRow(
             modifier = Modifier.width(52.dp),   // 터치 타겟 하한(48dp) 은 지킨다
         )
     }
+}
+
+/**
+ * 좌우 눈금의 이름 — **인디케이터 상단 끝**에 프레임 반지름을 따라 앉힌다.
+ * 각 아크의 시작각(위쪽 끝)을 그대로 극좌표로 풀어 배치하므로, 아크 각도를 바꾸면
+ * 이름도 따라간다(수치를 두 곳에 손으로 적지 않는다 — [[L-106]] ①).
+ */
+@Composable
+private fun BoxScope.BezelLabels(state: VitalUiState) {
+    val w = LocalConfiguration.current.screenWidthDp
+    val r = w / 2f
+    // 라벨은 눈금보다 살짝 안쪽 — 바깥에 두면 원형 마스크에 잘린다.
+    val labelR = r * 0.74f
+
+    // 좌측 띠의 위쪽 끝 = 시작각(145°). 우측 눈금의 위쪽 끝 = 시작각(-35°).
+    BezelLabel("심박", Bezel.LEFT_START, labelR, r, state.severity.color())
+    BezelLabel("무동작", Bezel.RIGHT_START, labelR, r, stillSeverity(state.stillSec).color())
+}
+
+/** 각도 → 화면 오프셋. 0°=3시·시계방향(BezelIndicator 와 같은 규약). */
+@Composable
+private fun BoxScope.BezelLabel(
+    text: String,
+    deg: Float,
+    labelR: Float,
+    screenR: Float,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    val rad = Math.toRadians(deg.toDouble())
+    val dx = (kotlin.math.cos(rad) * labelR).toFloat()
+    val dy = (kotlin.math.sin(rad) * labelR).toFloat()
+    Text(
+        text,
+        color = color,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .align(Alignment.Center)
+            .offset(x = dx.dp, y = dy.dp),
+    )
 }
 
 /**

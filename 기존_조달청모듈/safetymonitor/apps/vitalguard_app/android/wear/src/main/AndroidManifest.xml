@@ -5,10 +5,13 @@
     <uses-feature android:name="android.hardware.type.watch" />
 
     <!-- 구권한: targetSdk 33~35 기기용. 36부터는 아래 health 권한이 대체한다 -->
-    <uses-permission android:name="android.permission.BODY_SENSORS"
-        android:maxSdkVersion="35" />
-    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND"
-        android:maxSdkVersion="35" />
+    <!-- ⚠ maxSdkVersion 을 걸면 API 36+ 기기(이 워치는 **37**)에서 선언 자체가 사라지고,
+         순정 SensorManager 의 TYPE_HEART_RATE 가 조용히 죽는다 — 08-25 실기에서 심박이
+         값이 비어 있던 원인이 정확히 이것이다(dumpsys 에 BODY_SENSORS 항목 자체가 없었다).
+         health 권한은 Health Services·삼성 SDK 용이고, **순정 센서는 여전히 BODY_SENSORS 를 본다.**
+         둘 다 선언한다. -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.BODY_SENSORS_BACKGROUND" />
     <!-- 신권한: Wear OS 6(API 36)+ -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />

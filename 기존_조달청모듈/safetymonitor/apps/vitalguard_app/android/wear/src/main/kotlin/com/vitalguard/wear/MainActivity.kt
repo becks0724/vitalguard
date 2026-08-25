@@ -31,6 +31,7 @@ class MainActivity : ComponentActivity() {
     private var allowNoAuth = false
     /** 기본은 작업자 화면. 진단은 화면 안 '진단' 버튼으로만 들어간다(실측 버튼이 앞에 서면 안 된다). */
     private var showDiagnostics by mutableStateOf(false)
+    private var uiTick = 0
 
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
     private val permissionLauncher = registerForActivityResult(
@@ -94,6 +95,19 @@ class MainActivity : ComponentActivity() {
                         queued = CollectorService.queuedCount,
                         lastUploadAgeSec = CollectorService.lastUploadAtMs?.let { (now - it) / 1000 },
                     )
+                    // ★ 화면 상태를 그대로 찍는다 — "화면에 안 보인다" 를 추론이 아니라
+                    //   값으로 판정하기 위한 계기다(15초마다 1줄).
+                    uiTick++
+                    if (uiTick % 5 == 1) {
+                        Log.i(
+                            "VgUi",
+                            "bpm=${vitals.bpm} spo2=${vitals.spo2} skin=${vitals.skinTempC} " +
+                                "core=${vitals.coreTempC} amb=${vitals.ambientTempC} " +
+                                "still=${vitals.stillSec} collecting=${vitals.collecting} " +
+                                "queued=${vitals.queued} tempFrac=" +
+                                com.vitalguard.wear.ui.gaugeFraction(vitals.coreTempC, 36.0, 38.5),
+                        )
+                    }
                     delay(3_000)
                 }
             }
@@ -182,6 +196,8 @@ class MainActivity : ComponentActivity() {
                 "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
                 "android.permission.health.READ_OXYGEN_SATURATION",
                 "android.permission.health.READ_SKIN_TEMPERATURE",
+                // ★ API 36+ 에서도 순정 SensorManager 는 이 권한을 본다 — 빼면 심박이 죽는다.
+                android.Manifest.permission.BODY_SENSORS,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.POST_NOTIFICATIONS,
             )

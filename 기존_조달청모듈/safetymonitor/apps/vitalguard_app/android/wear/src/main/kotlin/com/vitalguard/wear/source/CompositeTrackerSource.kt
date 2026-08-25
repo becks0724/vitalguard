@@ -26,14 +26,17 @@ class CompositeTrackerSource(
 
         primary.start(object : TrackerListener by listener {
             override fun onHeartRate(bpm: Int, ibiMs: List<Int>, ibiStatus: List<Int>, atMs: Long) {
-                lastPrimaryHrAtMs.set(atMs)
+                // ★ 비교 기준은 **벽시계 하나로 통일**한다. 삼성 DataPoint.timestamp 와
+                //   순정 SensorEvent 의 시간 기준이 다르면 뺄셈이 음수로 감겨 순정 심박이
+                //   영구 억제된다(08-25 실기에서 체온만 오고 HR 이 안 뜬 원인 후보 1순위).
+                lastPrimaryHrAtMs.set(System.currentTimeMillis())
                 listener.onHeartRate(bpm, ibiMs, ibiStatus, atMs)
             }
         })
         fallback.start(object : TrackerListener by listener {
             override fun onHeartRate(bpm: Int, ibiMs: List<Int>, ibiStatus: List<Int>, atMs: Long) {
-                // 삼성이 최근에 줬으면 중복이므로 버린다.
-                if (atMs - lastPrimaryHrAtMs.get() > primaryFreshMs) {
+                // 삼성이 최근에 줬으면 중복이므로 버린다(같은 벽시계로 비교).
+                if (System.currentTimeMillis() - lastPrimaryHrAtMs.get() > primaryFreshMs) {
                     listener.onHeartRate(bpm, ibiMs, ibiStatus, atMs)
                 }
             }

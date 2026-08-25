@@ -24,6 +24,13 @@ class ManifestGuardTest {
     }
 
     @Test
+    fun `BODY_SENSORS 에 maxSdkVersion 을 걸지 않는다 - 걸면 API36+ 에서 순정 심박이 죽는다`() {
+        // 08-25 실기(API 37) — maxSdkVersion=35 탓에 선언이 사라져 TYPE_HEART_RATE 가 무음 사망.
+        val body = manifest.substringAfter("android.permission.BODY_SENSORS\"").substringBefore("/>")
+        assertFalse("BODY_SENSORS 에 maxSdkVersion 이 붙었다", body.contains("maxSdkVersion"))
+    }
+
+    @Test
     fun `SpO2·피부온 권한 선언 - 없으면 pm grant 가 조용히 무시된다`() {
         // 08-25 실기 — READ_HEART_RATE 만 선언돼 있어 나머지 부여가 전부 무음 실패했고,
         // 삼성 트래커가 PERMISSION_ERROR 로 죽었다. 선언 자체를 가드로 고정한다.
