@@ -234,3 +234,31 @@ class TempGaugeTest {
         assertEquals(Severity.NORMAL, com.vitalguard.wear.core.coreTempSeverity(37.4))
     }
 }
+
+class IbiFilterTest {
+
+    @Test
+    fun `생리 범위 밖 IBI 는 버린다 - status 만으로는 안 걸러진다`() {
+        // 08-25 실기: HRV 402ms 관측. 0 같은 무효값이 SDNN 을 통째로 망가뜨린다.
+        val withZero = listOf(600, 610, 0, 605, 0, 612)
+        val clean = listOf(600, 610, 605, 612)
+        assertEquals(
+            "무효값이 결과를 바꾸면 안 된다",
+            com.vitalguard.wear.core.Sdnn.sdnnMs(clean)!!,
+            com.vitalguard.wear.core.Sdnn.sdnnMs(withZero)!!,
+            0.001,
+        )
+    }
+
+    @Test
+    fun `극단값도 버린다 - 30~220bpm 밖은 표본이 아니다`() {
+        val got = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 5000, 605))!!
+        val expect = com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(600, 610, 605))!!
+        assertEquals(expect, got, 0.001)
+    }
+
+    @Test
+    fun `걸러낸 뒤 2개 미만이면 null - 0 으로 채우지 않는다`() {
+        assertEquals(null, com.vitalguard.wear.core.Sdnn.sdnnMs(listOf(0, 0, 5000)))
+    }
+}

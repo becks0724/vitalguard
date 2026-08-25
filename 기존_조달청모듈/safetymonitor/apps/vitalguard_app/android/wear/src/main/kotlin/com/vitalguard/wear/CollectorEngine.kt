@@ -52,6 +52,11 @@ class CollectorEngine(
     @Synchronized
     fun start(nowMs: Long) {
         motionStopped = false
+        // ★ 착용이 끊긴 구간을 사이에 두고 IBI 를 이어 붙이면 SDNN 이 왜곡된다 —
+        //   SDNN 은 "연속된 박동" 의 변동이지 시간이 벌어진 두 토막의 차이가 아니다.
+        ibiWindow.clear()
+        ibiStatusWindow.clear()
+        lastHrvMs = null
         motion.start(nowMs)
         source.start(this)
     }

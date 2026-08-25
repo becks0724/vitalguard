@@ -164,9 +164,9 @@ class StaleOnUnwearTest {
     }
 
     @Test
-    fun `벗어도 큐와 IBI 창은 남긴다 - 재착용 시 이어져야 한다`() {
-        val stop = engine.substringAfter("fun stop()").substringBefore("\n    }")
-        assertFalse("stop 에서 IBI 창을 비우면 재착용 후 HRV 가 처음부터 다시 쌓인다",
-            stop.contains("ibiWindow.clear"))
+    fun `재착용 시 IBI 창을 비운다 - 끊긴 구간을 이어 붙이면 SDNN 이 왜곡된다`() {
+        // 08-25 실기: 재착용 직후 HRV 402ms(정상 20~100). 구간이 벌어진 표본이 섞였다.
+        val start = engine.substringAfter("fun start(nowMs: Long)").substringBefore("\n    }")
+        assertTrue("start 에서 IBI 창을 안 비운다", start.contains("ibiWindow.clear"))
     }
 }
