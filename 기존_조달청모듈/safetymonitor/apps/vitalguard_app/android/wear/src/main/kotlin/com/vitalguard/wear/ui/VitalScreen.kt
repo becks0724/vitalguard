@@ -10,8 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,7 +47,7 @@ fun VitalScreen(
     val large = widthDp >= LARGE_DISPLAY_BREAKPOINT
     // ⚠ 절대 dp 가 아니라 화면 비율로 준다 — 원형에서 가장자리 잘림을 막는 공식 규칙.
     val sideMargin = (widthDp * 0.155f).dp   // 베젤 눈금과 본문이 겹치지 않는 하한
-    val bubble = (widthDp * (if (large) 0.215f else 0.225f)).dp
+    val bubble = (widthDp * (if (large) 0.20f else 0.21f)).dp
 
     Box(Modifier.fillMaxSize().background(VgColors.Background)) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
@@ -58,62 +60,101 @@ fun VitalScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            // 좌 = 주값(심박) · 우 = 버블 3단. 원형에서 가로 폭이 가장 넓은 가운데 띠를 쓴다.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                HeartPill(state, large, modifier = Modifier.weight(1f))
-                BubbleColumn(state, bubble)
-            }
-            StatusLine(state)
+            // 사진 구조 그대로 — ① 상단 아이콘 ② 큰 주값 ③ 라벨·범위 ④ 타임라인 ⑤ 버블 3개 가로 ⑥ 하단
+            TopIcons(state)
+            HeroValue(state, large)
+            LabelAndRange(state)
+            HeartTimeline(points = state.timeline, nowHour = state.nowHour)
+            BubbleRow(state, bubble)
+            FooterLine(state)
             ActionRow(state, onToggleCollect, onOpenDiagnostics)
         }
     }
 }
 
-/** 중앙 필 — 심박이 주값이다. 색이 곧 판정이고, 위험·주의일 때만 낱말이 붙는다. */
+/** ① 상단 아이콘 — 수집·전송 상태를 낱말 없이 알린다(사진의 두 원형 배지 자리). */
 @Composable
-private fun HeartPill(state: VitalUiState, large: Boolean, modifier: Modifier = Modifier) {
-    val tint = state.severity.color()
-    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        state.workerName?.let { Text(it, color = VgColors.Secondary, fontSize = 11.sp) }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // 이모지 ♥ 대신 VitAlGuard 심볼 — 다른 앱 아이콘과 혼동되지 않고, 판정색으로 물든다.
-            Image(
-                painter = painterResource(com.vitalguard.wear.R.drawable.ic_vitalguard),
-                contentDescription = null,
-                colorFilter = ColorFilter.tint(tint),
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.size(if (large) 26.dp else 22.dp),
-            )
-            Text(
-                state.bpm?.toString() ?: "--",
-                color = VgColors.Primary,
-                fontSize = if (large) 46.sp else 38.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 5.dp),
-            )
-            Text("bpm", color = VgColors.Secondary, fontSize = 11.sp)
-        }
-        if (state.severity == Severity.CAUTION || state.severity == Severity.DANGER) {
-            Text(state.severity.label, color = tint, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+private fun TopIcons(state: VitalUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StatusDot(
+            active = state.collecting,
+            activeColor = VgColors.Normal,
+            label = "수집",
+        )
+        Spacer(Modifier.width(8.dp))
+        StatusDot(
+            active = state.collecting && state.queued == 0,
+            activeColor = if (state.queued > 0) VgColors.Caution else VgColors.Normal,
+            label = "전송",
+        )
+    }
+}
+
+@Composable
+private fun StatusDot(active: Boolean, activeColor: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(7.dp)
+                .background(if (active) activeColor else VgColors.Idle, CircleShape),
+        )
+        Text(" $label", color = VgColors.Secondary, fontSize = 9.sp)
+    }
+}
+
+/** ② 큰 주값 — 사진의 시각 자리에 심박이 온다. 색이 곧 판정. */
+@Composable
+private fun HeroValue(state: VitalUiState, large: Boolean) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Image(
+            painter = painterResource(com.vitalguard.wear.R.drawable.ic_vitalguard),
+            contentDescription = null,
+            colorFilter = ColorFilter.tint(state.severity.color()),
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.size(if (large) 22.dp else 18.dp).padding(bottom = 6.dp),
+        )
+        Text(
+            state.bpm?.toString() ?: "--",
+            color = VgColors.Primary,
+            fontSize = if (large) 44.sp else 36.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 3.dp),
+        )
+        Text("bpm", color = VgColors.Secondary, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+    }
+}
+
+/** ③ 라벨 + 범위 — 사진의 "심박수 … 95-102" 줄. 오늘 관측 범위를 오른쪽에 적는다. */
+@Composable
+private fun LabelAndRange(state: VitalUiState) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            state.workerName ?: "심박수",
+            color = state.severity.color(),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
+        state.bpmRange?.let { (lo, hi) ->
+            Text("$lo-$hi", color = VgColors.Secondary, fontSize = 10.sp)
         }
     }
 }
 
-/**
- * 버블 3종 — SpO₂ · 체온 · 무동작. **위험 판정에 직접 쓰이는 값만** 올린다(사용자 결정 08-25).
- * 걸음·주변온은 화면에서 뺐다 — 위험도와 직접 관련이 낮아 자리를 차지할 값이 아니다.
- */
+/** ⑤ 버블 3개 가로 — SpO₂ · 체온 · 무동작(사용자 결정 08-25). 위험 판정에 직접 쓰이는 값만. */
 @Composable
-private fun BubbleColumn(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(3.dp),
-        horizontalAlignment = Alignment.End,
+private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // SpO₂ — 호는 위험선(88)~정상(100) 구간. 호가 비면 그대로 위험이다.
         LabeledBubble(
             value = state.spo2?.toString() ?: "--",
             label = "SpO₂",
@@ -121,7 +162,6 @@ private fun BubbleColumn(state: VitalUiState, diameter: androidx.compose.ui.unit
             severity = spo2Severity(state.spo2),
             diameter = diameter,
         )
-        // 심부 체온 — 정상 36 부터 위험선 38.0 을 넘는 38.5 까지.
         LabeledBubble(
             value = state.coreTempC?.let { "%.1f".format(it) } ?: "--",
             label = "체온",
@@ -129,7 +169,6 @@ private fun BubbleColumn(state: VitalUiState, diameter: androidx.compose.ui.unit
             severity = coreTempSeverity(state.coreTempC),
             diameter = diameter,
         )
-        // 무동작 — 붕괴 후보선(90초)에서 호가 가득 찬다. 차오르는 것 자체가 경고다.
         LabeledBubble(
             value = state.stillSec?.let { stillShort(it) } ?: "--",
             label = "무동작",
@@ -140,7 +179,7 @@ private fun BubbleColumn(state: VitalUiState, diameter: androidx.compose.ui.unit
     }
 }
 
-/** 라벨을 원 **왼쪽**에 세로로 붙인다 — 원 안은 숫자만 남겨 3단에서도 값이 읽힌다. */
+/** 라벨을 원 **아래**에 둔다 — 가로 3개 배치에서는 옆에 붙이면 폭이 모자란다. */
 @Composable
 private fun LabeledBubble(
     value: String,
@@ -149,25 +188,15 @@ private fun LabeledBubble(
     severity: Severity,
     diameter: androidx.compose.ui.unit.Dp,
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter)
         Text(label, color = VgColors.Secondary, fontSize = 9.sp)
-        VitalBubble(
-            value = value,
-            fraction = fraction,
-            severity = severity,
-            diameter = diameter,
-        )
     }
 }
 
-/** 전송 상태 — 큐가 쌓이면 주황. 서버 장애의 유일한 가시 신호다(08-25 실황). */
+/** ⑥ 하단 — 사진의 일출·일몰 자리에 전송 상태와 배터리를 넣는다. */
 @Composable
-private fun StatusLine(state: VitalUiState) {
-    // 한 줄에 다 담는다 — 원형 하단은 폭이 급격히 좁아져 두 항목이 서로를 밀어낸다.
-    // 정상일 때는 짧게(`전송 49s`), 이상일 때만 길어진다(iOS transmitLine 과 같은 규칙).
+private fun FooterLine(state: VitalUiState) {
     val (text, tint) = when {
         !state.collecting -> "중지됨" to VgColors.Idle
         state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
@@ -175,16 +204,16 @@ private fun StatusLine(state: VitalUiState) {
         else -> "수집 중" to VgColors.Normal
     }
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, color = tint, fontSize = 11.sp)
+        Text(text, color = tint, fontSize = 10.sp)
         state.batteryPct?.let {
             Text(
                 " · $it%",
                 color = if (it <= 15) VgColors.Danger else VgColors.Secondary,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
             )
         }
     }

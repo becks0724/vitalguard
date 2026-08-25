@@ -28,6 +28,12 @@ data class VitalUiState(
     val queued: Int = 0,
     /** 마지막 업로드 성공 후 경과(초). null = 아직 한 번도 못 올림. */
     val lastUploadAgeSec: Long? = null,
+    /** 24시간 타임라인 표본 — 화면이 들고 있는 최근 값만. 비어 있으면 축만 그린다. */
+    val timeline: List<TimelinePoint> = emptyList(),
+    /** 현재 시각(0~24 소수). 타임라인의 현재 마커 위치. */
+    val nowHour: Float = 0f,
+    /** 오늘 관측된 심박 범위 — 사진의 "95-102" 자리. 표본이 없으면 null. */
+    val bpmRange: Pair<Int, Int>? = null,
 ) {
     val coreTempC: Double? get() = estimateCoreTempC(skinTempC)
 

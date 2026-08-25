@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -19,6 +20,7 @@ import com.vitalguard.wear.ui.ProbeAction
 import com.vitalguard.wear.ui.ProbeScreen
 import com.vitalguard.wear.ui.ProbeUiState
 import com.vitalguard.wear.ui.VgColors
+import com.vitalguard.wear.ui.TimelinePoint
 import com.vitalguard.wear.ui.VitalScreen
 import com.vitalguard.wear.ui.VitalUiState
 import kotlinx.coroutines.delay
@@ -50,6 +52,8 @@ class MainActivity : ComponentActivity() {
             var running by remember { mutableStateOf(false) }
             var samples by remember { mutableStateOf(0) }
             var vitals by remember { mutableStateOf(VitalUiState()) }
+            // 타임라인 표본 — 화면이 들고 있는 최근 값만(서버 조회 없이 그린다).
+            val timeline = remember { mutableStateListOf<TimelinePoint>() }
 
             // iOS 화면과 같은 3초 폴링 — 스트림이 죽어도 화면이 3초 안에 되살아난다.
             LaunchedEffect(Unit) {
@@ -62,7 +66,22 @@ class MainActivity : ComponentActivity() {
                     bpm = engine?.lastBpm ?: HrForegroundService.lastBpm
                     running = CollectorService.running || HrForegroundService.running
                     samples = engine?.samples ?: HrForegroundService.sampleCount()
+                    val cal = java.util.Calendar.getInstance()
+                    val nowHour = cal.get(java.util.Calendar.HOUR_OF_DAY) +
+                        cal.get(java.util.Calendar.MINUTE) / 60f
+                    bpm?.let { b ->
+                        // 1분에 한 점이면 하루 1440점 — 화면 폭보다 많다. 3분 간격으로 솎는다.
+                        val last = timeline.lastOrNull()
+                        if (last == null || nowHour - last.hourOfDay >= 0.05f) {
+                            timeline.add(TimelinePoint(nowHour, b))
+                            if (timeline.size > 480) timeline.removeAt(0)
+                        }
+                    }
+                    val bpms = timeline.map { it.bpm }
                     vitals = VitalUiState(
+                        timeline = timeline.toList(),
+                        nowHour = nowHour,
+                        bpmRange = if (bpms.size >= 2) bpms.min() to bpms.max() else null,
                         workerName = ConfigStore(this@MainActivity).workerName,
                         bpm = bpm,
                         spo2 = engine?.lastSpo2,

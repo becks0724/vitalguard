@@ -5,6 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.wear.tooling.preview.devices.WearDevices
 
+/** 미리보기용 타임라인 — 06시 출근 후 상승하는 근무 곡선. */
+private val demoTimeline = (0..40).map {
+    TimelinePoint(hourOfDay = 6f + it * 0.11f, bpm = 78 + (it * 7 % 26))
+}
+
 private const val ROUND = WearDevices.LARGE_ROUND
 private const val SMALL = WearDevices.SMALL_ROUND
 
@@ -16,7 +21,8 @@ fun PreviewIdle() = VitalScreen(VitalUiState(workerName = "장우진"), {})
 @Composable
 fun PreviewNormal() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 88, spo2 = 97, spo2AgeSec = 240,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 88, spo2 = 97, spo2AgeSec = 240,
         skinTempC = 36.1, ambientTempC = 28.4, stillSec = 8.0,
         collecting = true, batteryPct = 78, lastUploadAgeSec = 35,
     ),
@@ -27,7 +33,8 @@ fun PreviewNormal() = VitalScreen(
 @Composable
 fun PreviewCaution() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 118, spo2 = 95, spo2AgeSec = 90,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 118, spo2 = 95, spo2AgeSec = 90,
         skinTempC = 36.9, ambientTempC = 31.2, stillSec = 25.0,
         collecting = true, batteryPct = 54, lastUploadAgeSec = 12,
     ),
@@ -38,7 +45,8 @@ fun PreviewCaution() = VitalScreen(
 @Composable
 fun PreviewDangerHeat() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 141, spo2 = 94, spo2AgeSec = 30,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 141, spo2 = 94, spo2AgeSec = 30,
         skinTempC = 37.8, ambientTempC = 35.6, stillSec = 40.0,
         collecting = true, batteryPct = 41, lastUploadAgeSec = 8,
     ),
@@ -50,7 +58,8 @@ fun PreviewDangerHeat() = VitalScreen(
 @Composable
 fun PreviewDangerSpo2() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 104, spo2 = 86, spo2AgeSec = 15,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 104, spo2 = 86, spo2AgeSec = 15,
         skinTempC = 36.0, collecting = true, batteryPct = 60, lastUploadAgeSec = 20,
     ),
     {},
@@ -61,7 +70,8 @@ fun PreviewDangerSpo2() = VitalScreen(
 @Composable
 fun PreviewStill() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 62, stillSec = 320.0, skinTempC = 35.8,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 62, stillSec = 320.0, skinTempC = 35.8,
         collecting = true, batteryPct = 33, lastUploadAgeSec = 45,
     ),
     {},
@@ -72,7 +82,8 @@ fun PreviewStill() = VitalScreen(
 @Composable
 fun PreviewQueued() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 90, spo2 = 96, spo2AgeSec = 600,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 90, spo2 = 96, spo2AgeSec = 600,
         skinTempC = 36.3, collecting = true, queued = 283, batteryPct = 12,
     ),
     {},
@@ -83,7 +94,8 @@ fun PreviewQueued() = VitalScreen(
 @Composable
 fun PreviewSmallRound() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 141, spo2 = 86, spo2AgeSec = 30,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 141, spo2 = 86, spo2AgeSec = 30,
         skinTempC = 37.8, ambientTempC = 35.6, stillSec = 200.0,
         collecting = true, queued = 12, batteryPct = 41, lastUploadAgeSec = 8,
     ),
@@ -95,7 +107,8 @@ fun PreviewSmallRound() = VitalScreen(
 @Composable
 fun PreviewLargeFont() = VitalScreen(
     VitalUiState(
-        workerName = "장우진", bpm = 118, spo2 = 91, spo2AgeSec = 45,
+        workerName = "장우진",
+        timeline = demoTimeline, nowHour = 10.4f, bpmRange = 95 to 102, bpm = 118, spo2 = 91, spo2AgeSec = 45,
         skinTempC = 37.1, stillSec = 95.0,
         collecting = true, batteryPct = 62, lastUploadAgeSec = 22,
     ),
