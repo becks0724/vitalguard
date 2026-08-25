@@ -81,6 +81,7 @@ class CollectorService : Service() {
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, FLUSH_INTERVAL_MS)
         running = true
+        liveEngine = engine
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
         return START_STICKY
     }
@@ -94,6 +95,7 @@ class CollectorService : Service() {
                 when (val r = pipeline.flushOnce(config.uploadConfig())) {
                     is FlushOutcome.Sent -> {
                         queuedCount = r.remaining
+                        lastUploadAtMs = now
                         Log.i(TAG, "업로드 ${r.count}건 · 잔여 ${r.remaining}")
                     }
                     is FlushOutcome.RetryAfterSec -> {
@@ -112,6 +114,7 @@ class CollectorService : Service() {
 
     override fun onDestroy() {
         running = false
+        liveEngine = null
         handler.removeCallbacks(tick)
         worker.quitSafely()
         engine.stop()
@@ -134,6 +137,14 @@ class CollectorService : Service() {
 
         /** 화면이 시작/중지 상태를 읽는다 — 서비스 바인딩 없이 상태만 노출. */
         @Volatile var running = false
+            private set
+
+        /** 화면이 최신 생체값을 읽는 통로 — 엔진 스냅숏을 그대로 넘긴다(업로드 경로와 별개). */
+        @Volatile var liveEngine: CollectorEngine? = null
+            private set
+
+        /** 마지막 업로드 성공 시각(epoch ms). null = 아직 한 번도 못 올림. */
+        @Volatile var lastUploadAtMs: Long? = null
             private set
     }
 }

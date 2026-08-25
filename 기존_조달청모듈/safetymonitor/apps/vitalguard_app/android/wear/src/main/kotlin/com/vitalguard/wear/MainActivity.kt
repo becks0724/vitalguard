@@ -49,13 +49,32 @@ class MainActivity : ComponentActivity() {
             var bpm by remember { mutableStateOf<Int?>(null) }
             var running by remember { mutableStateOf(false) }
             var samples by remember { mutableStateOf(0) }
+            var vitals by remember { mutableStateOf(VitalUiState()) }
 
-            // iOS 화면과 같은 3초 폴링 — 스트림이 죽어도 헤더가 3초 안에 되살아난다.
+            // iOS 화면과 같은 3초 폴링 — 스트림이 죽어도 화면이 3초 안에 되살아난다.
             LaunchedEffect(Unit) {
                 while (true) {
-                    bpm = HrForegroundService.lastBpm
-                    running = HrForegroundService.running
-                    samples = HrForegroundService.sampleCount()
+                    // 진단 화면용(HrForegroundService) 과 본수집용(CollectorService) 을 모두 본다.
+                    // ★ 둘 중 실제로 도는 쪽의 값을 쓴다 — 08-25 실기에서 화면이 진단 서비스만
+                    //   보고 있어 본수집 중인데도 심박이 `--` 로 남았다.
+                    val engine = CollectorService.liveEngine
+                    val now = System.currentTimeMillis()
+                    bpm = engine?.lastBpm ?: HrForegroundService.lastBpm
+                    running = CollectorService.running || HrForegroundService.running
+                    samples = engine?.samples ?: HrForegroundService.sampleCount()
+                    vitals = VitalUiState(
+                        workerName = ConfigStore(this@MainActivity).workerName,
+                        bpm = bpm,
+                        spo2 = engine?.lastSpo2,
+                        spo2AgeSec = engine?.lastSpo2AtMs?.let { (now - it) / 1000 },
+                        skinTempC = engine?.lastSkinTempC,
+                        ambientTempC = engine?.lastAmbientTempC,
+                        stillSec = engine?.stillSecNow(now),
+                        batteryPct = batteryPct(),
+                        collecting = running,
+                        queued = CollectorService.queuedCount,
+                        lastUploadAgeSec = CollectorService.lastUploadAtMs?.let { (now - it) / 1000 },
+                    )
                     delay(3_000)
                 }
             }
@@ -73,12 +92,7 @@ class MainActivity : ComponentActivity() {
                 )
             } else {
                 VitalScreen(
-                    state = VitalUiState(
-                        workerName = ConfigStore(this).workerName,
-                        bpm = bpm,
-                        collecting = running || CollectorService.running,
-                        queued = CollectorService.queuedCount,
-                    ),
+                    state = vitals,
                     onToggleCollect = { toggleCollect() },
                     onOpenDiagnostics = { showDiagnostics = true },
                 )
@@ -160,6 +174,11 @@ class MainActivity : ComponentActivity() {
         val missing = wanted.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isEmpty()) show("권한 전부 있음") else permissionLauncher.launch(missing.toTypedArray())
     }
+
+    private fun batteryPct(): Int? =
+        getSystemService(android.os.BatteryManager::class.java)
+            ?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 1..100 }
 
     private fun show(text: String) {
         output = text

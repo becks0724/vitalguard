@@ -21,6 +21,23 @@ class CollectorEngine(
 ) : TrackerListener {
 
     private val builder = SampleBuilder()
+
+    /**
+     * 화면 표시용 최신 스냅숏 — **업로드 경로와 별개다**(iOS PhoneReceiver 의 그 규칙).
+     * 여기서 무엇을 하든 서버로 가는 값은 안 변한다. 화면만 본다.
+     */
+    @Volatile var lastBpm: Int? = null
+        private set
+    @Volatile var lastSpo2: Int? = null
+        private set
+    @Volatile var lastSpo2AtMs: Long? = null
+        private set
+    @Volatile var lastSkinTempC: Double? = null
+        private set
+    @Volatile var lastAmbientTempC: Double? = null
+        private set
+    @Volatile var samples = 0
+        private set
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -41,7 +58,11 @@ class CollectorEngine(
 
     @Synchronized
     override fun onHeartRate(bpm: Int, ibiMs: List<Int>, ibiStatus: List<Int>, atMs: Long) {
-        if (bpm > 0) builder.heartRate(bpm, atMs)
+        if (bpm > 0) {
+            builder.heartRate(bpm, atMs)
+            lastBpm = bpm
+            samples++
+        }
         ibiMs.forEachIndexed { i, ibi ->
             ibiWindow.add(atMs to ibi)
             ibiStatusWindow.add(ibiStatus.getOrElse(i) { Sdnn.STATUS_VALID })
@@ -57,11 +78,15 @@ class CollectorEngine(
     @Synchronized
     override fun onSpo2(pct: Int, atMs: Long) {
         builder.spo2(pct, atMs)
+        lastSpo2 = pct
+        lastSpo2AtMs = atMs
     }
 
     @Synchronized
     override fun onSkinTemp(objectC: Double, ambientC: Double?, atMs: Long) {
         builder.skinTemp(objectC, ambientC)
+        lastSkinTempC = objectC
+        lastAmbientTempC = ambientC
     }
 
     @Synchronized
@@ -70,6 +95,9 @@ class CollectorEngine(
     }
 
     // ── flush ────────────────────────────────────────────────────────
+
+    /** 화면 표시용 무동작 지속 — flush 와 같은 계산을 쓴다(화면과 전송이 같은 값을 본다). */
+    fun stillSecNow(nowMs: Long): Double? = motion.stillSec(nowMs)
 
     /**
      * 주기 flush — HRV 는 **창 주기당 1회만** 싣는다. 매 flush 마다 겹친 창을 재계산해 실으면
