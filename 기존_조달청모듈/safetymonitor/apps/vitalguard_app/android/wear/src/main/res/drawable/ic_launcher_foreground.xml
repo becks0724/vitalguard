@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 런처 아이콘 전경 — 적응형 아이콘 규격상 안전영역(가운데 66%)에 맞춰 심볼을 축소 배치한다 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:translateX="256"
+        android:translateY="230"
+        android:scaleX="0.50"
+        android:scaleY="0.50">
+        <path
+            android:pathData="M512,766 C317,668 238,530 238,385 L238,230 C313,215 375,213 512,130 C649,213 711,215 786,230 L786,385 C786,530 707,668 512,766 Z"
+            android:strokeColor="#FFEFFAFF"
+            android:strokeWidth="46"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M210,470 L420,470 L470,336 L520,620 L579,388 L632,470 L810,470"
+            android:strokeWidth="38"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+                <gradient
+                    android:startX="210" android:startY="336"
+                    android:endX="810" android:endY="620"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#FF20FFD0" />
+                    <item android:offset="1" android:color="#FF2A8DFF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

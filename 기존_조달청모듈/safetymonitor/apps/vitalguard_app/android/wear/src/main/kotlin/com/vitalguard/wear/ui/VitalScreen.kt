@@ -1,6 +1,7 @@
 // 작업자 화면 — Material 3 Expressive 원형 게이지. 숫자가 아니라 "호가 어디까지 찼나"로 읽힌다
 package com.vitalguard.wear.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,11 +10,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,7 +70,14 @@ private fun HeartPill(state: VitalUiState, large: Boolean) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         state.workerName?.let { Text(it, color = VgColors.Secondary, fontSize = 11.sp) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("♥", color = tint, fontSize = if (large) 22.sp else 18.sp)
+            // 이모지 ♥ 대신 VitAlGuard 심볼 — 다른 앱 아이콘과 혼동되지 않고, 판정색으로 물든다.
+            Image(
+                painter = painterResource(com.vitalguard.wear.R.drawable.ic_vitalguard),
+                contentDescription = null,
+                colorFilter = ColorFilter.tint(tint),
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.size(if (large) 26.dp else 22.dp),
+            )
             Text(
                 state.bpm?.toString() ?: "--",
                 color = VgColors.Primary,
@@ -135,8 +147,9 @@ private fun StatusLine(state: VitalUiState) {
     ) {
         Text(text, color = tint, fontSize = 12.sp)
         state.batteryPct?.let {
+            // 이모지는 기기·폰트별로 렌더가 갈린다 — 낱말로 적어 뜻이 흔들리지 않게 한다.
             Text(
-                "  🔋$it%",
+                "  배터리 $it%",
                 color = if (it <= 15) VgColors.Danger else VgColors.Secondary,
                 fontSize = 11.sp,
             )

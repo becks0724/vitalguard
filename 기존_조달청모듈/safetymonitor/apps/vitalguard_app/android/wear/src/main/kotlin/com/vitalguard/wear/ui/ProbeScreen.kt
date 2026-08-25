@@ -77,7 +77,7 @@ private fun HeartHeader(state: ProbeUiState) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        Text("♥", color = VgColors.Danger, fontSize = 22.sp)
+        Text("HR", color = VgColors.Danger, fontSize = 14.sp)
         Text(
             state.bpm?.toString() ?: "--",
             color = VgColors.Primary,

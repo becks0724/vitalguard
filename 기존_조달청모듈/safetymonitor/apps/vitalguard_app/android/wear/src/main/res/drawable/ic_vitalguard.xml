@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- VitAlGuard 심볼 — 방패(보호) + 심전도 파형(생체). 원본 VitAlGuard_logo/*.svg 의 path 를 그대로 옮겼다 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="1024"
+    android:viewportHeight="1024">
+    <group
+        android:translateX="187"
+        android:translateY="100"
+        android:scaleX="0.635"
+        android:scaleY="0.635">
+        <path
+            android:pathData="M512,766 C317,668 238,530 238,385 L238,230 C313,215 375,213 512,130 C649,213 711,215 786,230 L786,385 C786,530 707,668 512,766 Z"
+            android:strokeWidth="39"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+                <gradient
+                    android:startX="153" android:startY="51"
+                    android:endX="921" android:endY="972"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#FFFFFFFF" />
+                    <item android:offset="0.52" android:color="#FFEFFAFF" />
+                    <item android:offset="1" android:color="#FFA9DCFF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path
+            android:pathData="M210,470 L420,470 L470,336 L520,620 L579,388 L632,470 L810,470"
+            android:strokeWidth="31"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round">
+            <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:strokeColor">
+                <gradient
+                    android:startX="153" android:startY="51"
+                    android:endX="921" android:endY="972"
+                    android:type="linear">
+                    <item android:offset="0" android:color="#FF20FFD0" />
+                    <item android:offset="1" android:color="#FF2A8DFF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>
