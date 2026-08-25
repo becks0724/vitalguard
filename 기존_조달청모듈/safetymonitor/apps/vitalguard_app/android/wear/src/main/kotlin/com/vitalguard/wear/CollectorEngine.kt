@@ -41,6 +41,11 @@ class CollectorEngine(
     /** 화면 표시용 HRV — 전송용(창 주기당 1회)과 달리 창이 차면 늘 최신값을 보여준다. */
     @Volatile var lastHrvMs: Double? = null
         private set
+    /** 화면 표시용 활동 누계 — 착용 세션 동안의 합(전송용 구간 증분과 별개). */
+    @Volatile var lastSteps = 0
+        private set
+    @Volatile var lastFloors = 0
+        private set
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -120,6 +125,19 @@ class CollectorEngine(
     @Synchronized
     override fun onAccelMagG(magG: Double, atMs: Long) {
         motion.onSample(magG, atMs)
+    }
+
+    /**
+     * 활동 증분 — 구간 합을 그대로 누산한다. flush 가 소비하면 0 으로 돌아간다.
+     * 스트레스 지수가 '활동 맥락' 으로 쓰고, 서버 심박 위험판정이 '작업 게이트' 로 쓴다.
+     */
+    @Synchronized
+    override fun onActivityDelta(steps: Int, floors: Int, kcal: Double, atMs: Long) {
+        if (steps > 0) builder.addSteps(steps)
+        if (floors > 0) builder.addFlights(floors)
+        if (kcal > 0) builder.addEnergyKcal(kcal)
+        lastSteps += steps
+        lastFloors += floors
     }
 
     // ── flush ────────────────────────────────────────────────────────

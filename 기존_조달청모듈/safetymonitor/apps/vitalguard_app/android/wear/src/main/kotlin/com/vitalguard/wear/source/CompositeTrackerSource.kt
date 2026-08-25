@@ -15,6 +15,8 @@ package com.vitalguard.wear.source
 class CompositeTrackerSource(
     private val primary: TrackerSource,
     private val fallback: TrackerSource,
+    /** 심박과 무관한 부가 소스(활동·위치 등) — 그대로 통과시킨다. */
+    private val extras: List<TrackerSource> = emptyList(),
     /** 삼성 심박이 이 시간 안에 왔으면 순정 심박은 버린다. */
     private val primaryFreshMs: Long = 15_000,
 ) : TrackerSource {
@@ -33,6 +35,7 @@ class CompositeTrackerSource(
                 listener.onHeartRate(bpm, ibiMs, ibiStatus, atMs)
             }
         })
+        extras.forEach { it.start(listener) }
         fallback.start(object : TrackerListener by listener {
             override fun onHeartRate(bpm: Int, ibiMs: List<Int>, ibiStatus: List<Int>, atMs: Long) {
                 // 삼성이 최근에 줬으면 중복이므로 버린다(같은 벽시계로 비교).
@@ -46,5 +49,6 @@ class CompositeTrackerSource(
     override fun stop() {
         runCatching { primary.stop() }
         runCatching { fallback.stop() }
+        extras.forEach { runCatching { it.stop() } }
     }
 }

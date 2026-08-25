@@ -20,6 +20,7 @@ import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.wear.source.GpsLocationSource
 import com.vitalguard.wear.source.OffBodySource
+import com.vitalguard.wear.source.ActivitySource
 import com.vitalguard.wear.source.CompositeTrackerSource
 import com.vitalguard.wear.source.SamsungTrackerSource
 import com.vitalguard.wear.source.SensorTrackerSource
@@ -66,6 +67,8 @@ class CollectorService : Service() {
             source = CompositeTrackerSource(
                 primary = SamsungTrackerSource(this),
                 fallback = SensorTrackerSource(this),
+                // 활동 3종 — 승인 불필요 경로(Health Services). 스트레스·작업게이트의 재료다.
+                extras = listOf(ActivitySource(this)),
             ),
             queue = queue,
             batteryPct = {

@@ -170,3 +170,51 @@ class StaleOnUnwearTest {
         assertTrue("start 에서 IBI 창을 안 비운다", start.contains("ibiWindow.clear"))
     }
 }
+
+/** 활동 3종 수집 — 스트레스 지수·작업게이트의 재료(08-25 선행 작업). */
+class ActivityCollectionTest {
+
+    private val service = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
+    ).readText()
+    private val engine = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt",
+    ).readText()
+    private val source = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/source/ActivitySource.kt",
+    ).readText()
+
+    @Test
+    fun `활동 소스가 배선돼 있다 - API 만 있고 호출부가 없던 상태를 막는다`() {
+        // 08-25 실측: SampleBuilder 에 addSteps/addFlights/addEnergyKcal 이 있는데 호출 0건이었다.
+        assertTrue("ActivitySource 미배선", service.contains("ActivitySource(this)"))
+        assertTrue("addSteps 호출 없음", engine.contains("builder.addSteps"))
+        assertTrue("addFlights 호출 없음", engine.contains("builder.addFlights"))
+        assertTrue("addEnergyKcal 호출 없음", engine.contains("builder.addEnergyKcal"))
+    }
+
+    @Test
+    fun `구간 증분 타입을 쓴다 - 누적을 보내면 서버 상한에서 스트립된다`() {
+        // STEPS(Delta) 이지 STEPS_TOTAL(누적) 이 아니다.
+        // ⚠ 주석에도 상수 이름이 나오므로 **코드 줄만** 본다 — 안 그러면 설명문이 시험을 깨뜨린다.
+        val code = source.lines()
+            .filterNot { it.trimStart().startsWith("//") || it.trimStart().startsWith("*") }
+            .joinToString("\n")
+        assertTrue("STEPS 미사용", code.contains("DataType.STEPS"))
+        listOf("STEPS_TOTAL", "FLOORS_TOTAL", "CALORIES_TOTAL").forEach {
+            assertFalse("누적 타입 $it 을 쓰고 있다", code.contains("DataType.$it"))
+        }
+    }
+
+    @Test
+    fun `권한 상실을 삼키지 않는다`() {
+        assertTrue("onPermissionLost 미구현", source.contains("onPermissionLost"))
+    }
+
+    @Test
+    fun `승인 불필요 경로다 - 삼성 SDK 에 의존하지 않는다`() {
+        // Health Services 는 파트너 승인이 필요 없다(실측 ④). 삼성이 막혀도 활동은 온다.
+        assertTrue("Health Services 미사용", source.contains("HealthServices.getClient"))
+        assertFalse("삼성 SDK 에 의존한다", source.contains("com.samsung"))
+    }
+}

@@ -7,6 +7,13 @@ interface TrackerListener {
     fun onSpo2(pct: Int, atMs: Long)
     fun onSkinTemp(objectC: Double, ambientC: Double?, atMs: Long)
     fun onAccelMagG(magG: Double, atMs: Long)
+
+    /**
+     * 활동 증분 — **구간 합이지 누적이 아니다.** 서버 스키마 상한(steps 5000·flights 500)이
+     * 구간 값 기준이라 하루 누적을 보내면 통째로 스트립된다(iOS 주석의 그 함정).
+     * 스트레스 지수의 '활동 맥락'·심박 위험판정의 '작업 게이트' 재료가 된다.
+     */
+    fun onActivityDelta(steps: Int, floors: Int, kcal: Double, atMs: Long) = Unit
 }
 
 interface TrackerSource {
