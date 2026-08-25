@@ -12,6 +12,11 @@
     <!-- 신권한: Wear OS 6(API 36)+ -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <!-- 삼성 SDK 의 SpO₂·피부온 트래커가 요구하는 권한. **선언이 없으면 `pm grant` 가 조용히
+         무시된다** — 08-25 실기에서 PERMISSION_ERROR 의 원인이 정확히 이것이었다.
+         READ_HEART_RATE 만 선언돼 있어 그 하나만 부여됐다. -->
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" />
 
     <!-- 업로드(LTE 직결) — INTERNET 없이는 첫 POST 부터 SecurityException 이고, runCatching 이
          그것을 -1(네트워크 오류)로 삼켜 30초 재시도 무한루프가 된다(08-24 외부 리뷰가 잡음).

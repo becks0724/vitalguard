@@ -180,6 +180,8 @@ class MainActivity : ComponentActivity() {
             arrayOf(
                 "android.permission.health.READ_HEART_RATE",
                 "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
+                "android.permission.health.READ_OXYGEN_SATURATION",
+                "android.permission.health.READ_SKIN_TEMPERATURE",
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.POST_NOTIFICATIONS,
             )

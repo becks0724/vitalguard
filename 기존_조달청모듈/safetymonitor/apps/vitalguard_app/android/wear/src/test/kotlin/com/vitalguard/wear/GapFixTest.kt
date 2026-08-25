@@ -24,6 +24,16 @@ class ManifestGuardTest {
     }
 
     @Test
+    fun `SpO2·피부온 권한 선언 - 없으면 pm grant 가 조용히 무시된다`() {
+        // 08-25 실기 — READ_HEART_RATE 만 선언돼 있어 나머지 부여가 전부 무음 실패했고,
+        // 삼성 트래커가 PERMISSION_ERROR 로 죽었다. 선언 자체를 가드로 고정한다.
+        listOf(
+            "android.permission.health.READ_OXYGEN_SATURATION",
+            "android.permission.health.READ_SKIN_TEMPERATURE",
+        ).forEach { assertTrue("$it 누락", manifest.contains(it)) }
+    }
+
+    @Test
     fun `위치 권한과 FGS location 타입 - GPS 송출의 전제`() {
         listOf(
             "android.permission.ACCESS_FINE_LOCATION",
