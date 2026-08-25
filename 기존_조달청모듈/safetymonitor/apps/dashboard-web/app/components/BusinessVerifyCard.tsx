@@ -152,12 +152,25 @@ export default function BusinessVerifyCard() {
               placeholder="사업자번호 10자리"
               className={`${INPUT_CLS} flex-1`}
             />
+            {/* 조회 = 돋보기 아이콘. 입력칸 높이에 맞춘 정사각 버튼이라 "…"·"조회" 로 폭이 널뛰지 않는다.
+                로딩은 같은 자리에서 회전 스피너로 바꿔 보인다(레이아웃 이동 0). */}
             <button
               onClick={check}
               disabled={loading}
-              className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
+              aria-label="사업자번호 조회"
+              title={loading ? "조회 중…" : "조회"}
+              className="grid w-[26px] shrink-0 self-stretch place-items-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
             >
-              {loading ? "…" : "조회"}
+              {loading ? (
+                <svg className="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+              ) : (
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.6-3.6" />
+                </svg>
+              )}
             </button>
           </div>
 
@@ -224,9 +237,20 @@ export default function BusinessVerifyCard() {
               <button
                 onClick={() => checkIssuance()}
                 disabled={invLoading}
-                className="shrink-0 rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-on-primary hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
+                aria-label="발급사실 조회"
+                title={invLoading ? "조회 중…" : "조회"}
+                className="grid w-[26px] shrink-0 self-stretch place-items-center rounded-md bg-primary text-on-primary transition hover:bg-primary-active disabled:bg-primary-disabled disabled:text-muted"
               >
-                {invLoading ? "…" : "조회"}
+                {invLoading ? (
+                  <svg className="animate-spin" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+                  <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="m20 20-3.6-3.6" />
+                </svg>
+                )}
               </button>
             </div>
             <button
