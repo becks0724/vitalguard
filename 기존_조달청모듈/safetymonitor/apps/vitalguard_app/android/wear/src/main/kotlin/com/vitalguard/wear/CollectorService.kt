@@ -166,8 +166,15 @@ class CollectorService : Service() {
     companion object {
         private const val CH = "vg-collector"
         const val TAG = "VgCollector"
-        // 배터리 기준 프로파일(08-24 시뮬)의 60초 배치 — 실측 ⑥이 모델을 보정하면 재확정한다.
-        const val FLUSH_INTERVAL_MS = 60_000L
+        /**
+         * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).
+         *
+         * 근거 — 10분 착용에 피부온 +2.3℃ · 배터리 15%. LTE 기상은 발열·배터리의 큰 축이고,
+         * 기상 횟수를 절반으로 줄인다. ⚠ 관제 신선도(STALE_MS 60초)와의 간극은 더 벌어지지만,
+         * **지금은 발열이 체온 판정을 오염시키는 쪽이 더 급하다**(R-14 는 heartbeat 별도 송신으로
+         * 따로 푼다). 큐가 그 사이를 흡수하므로 유실은 없다.
+         */
+        const val FLUSH_INTERVAL_MS = 120_000L
 
         /** 화면 표시용 — 큐 적체는 서버 장애의 유일한 가시 신호다(08-25 실황이 필요를 증명). */
         @Volatile var queuedCount = 0

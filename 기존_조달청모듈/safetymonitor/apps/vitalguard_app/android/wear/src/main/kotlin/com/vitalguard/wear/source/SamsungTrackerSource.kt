@@ -39,6 +39,8 @@ class SamsungTrackerSource(
 
     override fun start(listener: TrackerListener) {
         this.listener = listener
+        wornAtMs = System.currentTimeMillis()
+        tempSeen = 0
         val connection = object : ConnectionListener {
             override fun onConnectionSuccess() {
                 val svc = service ?: return
@@ -82,10 +84,20 @@ class SamsungTrackerSource(
                 if (hrRejected % 30 == 1) Log.w(TAG, "삼성 심박 미채택 bpm=$bpm status=$hrStatus (착용 확인)")
             }
         }
+        // ★ 상시 트래커는 그대로 두되 **화면·전송에 쓰는 표본만 솎는다**(08-25 발열 완화).
+        //   센서를 껐다 켜면 재안정에 시간이 걸려 값이 더 나빠진다 — 대신 처리 빈도를 줄인다.
         tempTracker = track(svc, HealthTrackerType.SKIN_TEMPERATURE_CONTINUOUS) { dp ->
             val obj = dp.getValue(ValueKey.SkinTemperatureSet.OBJECT_TEMPERATURE) ?: return@track
             val ambient = dp.getValue(ValueKey.SkinTemperatureSet.AMBIENT_TEMPERATURE)
-            Log.i(TAG, "삼성 피부온 ${obj}℃ · 주변 ${ambient}℃")
+            // ★ 착용 직후 상승 곡선을 잡으려면 매 표본을 찍어야 한다(08-25 발열 판별 실험).
+            //   피부온과 주변온이 **함께** 오르면 기기 발열, 피부온만 오르면 실제 체온이다.
+            tempSeen++
+            // 로그는 발열 실험 때 매 표본이 필요했다. 평시엔 5개당 1개면 충분하다.
+            if (tempSeen % 5 == 1) Log.i(
+                TAG,
+                "피부온 ${"%.2f".format(obj)}℃ · 주변 ${"%.2f".format(ambient ?: 0f)}℃ " +
+                    "· 착용후 ${(System.currentTimeMillis() - wornAtMs) / 1000}초 · #$tempSeen",
+            )
             listener?.onSkinTemp(obj.toDouble(), ambient?.toDouble(), System.currentTimeMillis())
         }
     }
@@ -145,6 +157,9 @@ class SamsungTrackerSource(
 
     private var hrSeen = 0
     private var hrRejected = 0
+    private var tempSeen = 0
+    /** 착용(수집 시작) 시각 — 온도 상승 곡선의 기준점. */
+    private var wornAtMs = System.currentTimeMillis()
 
     companion object {
         const val TAG = "VgSamsung"

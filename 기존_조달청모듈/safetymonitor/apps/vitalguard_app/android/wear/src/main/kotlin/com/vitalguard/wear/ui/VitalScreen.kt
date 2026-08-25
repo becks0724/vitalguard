@@ -46,6 +46,8 @@ fun VitalScreen(
     state: VitalUiState,
     /** 진단 화면 진입 — 화면 아무 곳이나 길게 누른다(작업자 화면에 버튼을 두지 않는다). */
     onOpenDiagnostics: () -> Unit = {},
+    /** 탭 — 화면을 잠시 붙잡는다(상시 유지는 발열을 만든다 · 08-25 실측). */
+    onTap: () -> Unit = {},
 ) {
     val widthDp = LocalConfiguration.current.screenWidthDp
     val large = widthDp >= LARGE_DISPLAY_BREAKPOINT
@@ -57,7 +59,12 @@ fun VitalScreen(
         Modifier
             .fillMaxSize()
             .background(VgColors.Background)
-            .pointerInput(Unit) { detectTapGestures(onLongPress = { onOpenDiagnostics() }) },
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onLongPress = { onOpenDiagnostics() },
+                )
+            },
     ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
         BezelIndicator(band = hrBand(state), ticks = stillTicks(state))

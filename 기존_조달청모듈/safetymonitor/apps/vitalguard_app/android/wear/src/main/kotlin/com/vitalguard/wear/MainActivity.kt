@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -33,6 +35,20 @@ class MainActivity : ComponentActivity() {
     /** 기본은 작업자 화면. 진단은 화면 안 '진단' 버튼으로만 들어간다(실측 버튼이 앞에 서면 안 된다). */
     private var showDiagnostics by mutableStateOf(false)
     private var uiTick = 0
+    private val screenHandler = Handler(Looper.getMainLooper())
+
+    /** 탭 후 화면을 켜 둘 시간(초). 상시 유지는 발열·배터리를 감당 못 한다(08-25 실측). */
+    private val keepScreenOnSec = 30L
+
+    /** 탭하면 일정 시간 화면을 붙잡는다. 시간이 지나면 워치 표준대로 꺼진다. */
+    private fun holdScreen() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        screenHandler.removeCallbacksAndMessages(null)
+        screenHandler.postDelayed(
+            { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) },
+            keepScreenOnSec * 1000,
+        )
+    }
 
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
     private val permissionLauncher = registerForActivityResult(
@@ -49,12 +65,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
 
-        // ★ 화면을 켜 둔다 — 워치 기본값은 몇 초 뒤 시계 화면으로 돌아가는 것이라,
-        //   작업자가 지표를 보려면 매번 앱을 다시 열어야 한다.
-        //   ⚠ 배터리를 크게 먹는다(AOD 30h 기준 · 실측 ⑥에서 영향을 잰다).
-        //     그래서 **화면이 앞에 있을 때만** 건다(onPause 에서 해제) — 백그라운드 수집은
-        //     이 플래그와 무관하게 FGS 가 유지한다.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // ★ 화면 유지는 **조건부**다(08-25 발열 실측 후 변경).
+        //   상시로 걸었더니 10분에 피부온 +2.3℃ · 주변온 +2.5℃ · 배터리 15% 였다.
+        //   센서가 기기 발열을 피부온으로 읽어 체온 판정이 통째로 오염됐다.
+        //   ⟹ 기본은 워치 표준(수 초 뒤 시계 복귀). 화면을 탭하면 KEEP_SCREEN_ON_SEC 만큼만 유지한다.
+        //   백그라운드 수집은 이 플래그와 무관하게 FGS 가 유지한다.
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
@@ -148,6 +163,7 @@ class MainActivity : ComponentActivity() {
                 VitalScreen(
                     state = vitals,
                     onOpenDiagnostics = { showDiagnostics = true },
+                    onTap = { holdScreen() },
                 )
             }
         }

@@ -260,3 +260,47 @@ class KeepScreenOnTest {
         assertFalse("서비스가 화면 플래그에 의존하면 안 된다", service.contains("FLAG_KEEP_SCREEN_ON"))
     }
 }
+
+/** 발열 완화 — 08-25 실측(10분에 피부온 +2.3℃ · 주변 +2.5℃ · 배터리 15%) 후 조치. */
+class ThermalMitigationTest {
+
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+    private val service = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
+    ).readText()
+
+    @Test
+    fun `화면 유지는 조건부다 - 상시로 되돌리면 발열이 체온을 오염시킨다`() {
+        // onCreate 에서 무조건 거는 형태로 되돌아가면 안 된다.
+        val onCreate = activity.substringAfter("override fun onCreate").substringBefore("setContent")
+        assertFalse(
+            "onCreate 에서 화면을 상시로 붙잡는다",
+            onCreate.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
+        )
+        assertTrue("탭으로 붙잡는 경로가 없다", activity.contains("fun holdScreen()"))
+    }
+
+    @Test
+    fun `화면을 떠나면 붙잡기를 푼다 - 남겨두면 발열이 이어진다`() {
+        val onPause = activity.substringAfter("override fun onPause").substringBefore("\n    }")
+        assertTrue("clearFlags 없음", onPause.contains("clearFlags"))
+    }
+
+    @Test
+    fun `전송 주기가 늘어났다 - LTE 기상 횟수를 줄인다`() {
+        assertEquals(
+            "flush 가 60초로 되돌아가면 발열·배터리가 원상 복구된다",
+            120_000L,
+            com.vitalguard.wear.CollectorService.FLUSH_INTERVAL_MS,
+        )
+    }
+
+    @Test
+    fun `수집 자체는 안 줄인다 - 발열 완화가 데이터 결손이 되면 안 된다`() {
+        // 센서를 끄는 게 아니라 처리·전송 빈도만 줄였다. FGS 와 착용 감지는 그대로다.
+        assertTrue(service.contains("startForeground("))
+        assertTrue(service.contains("OffBodySource"))
+    }
+}
