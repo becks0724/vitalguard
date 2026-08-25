@@ -48,6 +48,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
 
+        // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
+        //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
+        startForegroundService(Intent(this, CollectorService::class.java))
+
         setContent {
             var bpm by remember { mutableStateOf<Int?>(null) }
             var running by remember { mutableStateOf(false) }
@@ -92,6 +96,7 @@ class MainActivity : ComponentActivity() {
                         hrvSdnnMs = engine?.lastHrvMs,
                         batteryPct = batteryPct(),
                         collecting = running,
+                        worn = CollectorService.worn,
                         queued = CollectorService.queuedCount,
                         lastUploadAgeSec = CollectorService.lastUploadAtMs?.let { (now - it) / 1000 },
                     )
@@ -127,7 +132,6 @@ class MainActivity : ComponentActivity() {
             } else {
                 VitalScreen(
                     state = vitals,
-                    onToggleCollect = { toggleCollect() },
                     onOpenDiagnostics = { showDiagnostics = true },
                 )
             }

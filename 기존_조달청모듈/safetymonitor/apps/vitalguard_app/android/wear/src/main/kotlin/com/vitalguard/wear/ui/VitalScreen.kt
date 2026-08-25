@@ -3,6 +3,7 @@ package com.vitalguard.wear.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,7 +44,7 @@ private const val LARGE_DISPLAY_BREAKPOINT = 225
 @Composable
 fun VitalScreen(
     state: VitalUiState,
-    onToggleCollect: () -> Unit,
+    /** 진단 화면 진입 — 화면 아무 곳이나 길게 누른다(작업자 화면에 버튼을 두지 않는다). */
     onOpenDiagnostics: () -> Unit = {},
 ) {
     val widthDp = LocalConfiguration.current.screenWidthDp
@@ -51,7 +53,12 @@ fun VitalScreen(
     val sideMargin = (widthDp * 0.155f).dp   // 베젤 눈금과 본문이 겹치지 않는 하한
     val bubble = (widthDp * (if (large) 0.20f else 0.21f)).dp
 
-    Box(Modifier.fillMaxSize().background(VgColors.Background)) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(VgColors.Background)
+            .pointerInput(Unit) { detectTapGestures(onLongPress = { onOpenDiagnostics() }) },
+    ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
         BezelIndicator(band = hrBand(state), ticks = stillTicks(state))
         // 사이드 인디케이터 명칭 — 무엇을 재는 눈금인지 없으면 못 읽는다.
@@ -71,7 +78,6 @@ fun VitalScreen(
             HeartChart(points = state.timeline, nowMs = state.nowMs, tint = state.severity.color())
             BubbleRow(state, bubble)
             FooterLine(state)
-            ActionRow(state, onToggleCollect, onOpenDiagnostics)
         }
     }
 }
@@ -204,7 +210,8 @@ private fun LabeledBubble(
 @Composable
 private fun FooterLine(state: VitalUiState) {
     val (text, tint) = when {
-        !state.collecting -> "중지됨" to VgColors.Idle
+        !state.worn -> "착용하면 시작됩니다" to VgColors.Idle
+        !state.collecting -> "준비 중" to VgColors.Idle
         state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
         state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
         else -> "수집 중" to VgColors.Normal
@@ -226,65 +233,43 @@ private fun FooterLine(state: VitalUiState) {
 }
 
 /**
- * 시작/중지 + 진단. **[시작]에는 확인이 없고 [중지]에만 있다**(호출부가 확인을 건다) —
- * 켜는 쪽 오탭은 손해가 없고, 끄는 쪽은 사람이 알아챌 때까지 수집이 멎는다(iOS 08-20 사고).
- */
-@Composable
-private fun ActionRow(
-    state: VitalUiState,
-    onToggle: () -> Unit,
-    onDiagnostics: () -> Unit,
-) {
-    // 한 줄에 나란히 — 세로로 쌓으면 원형 하단 두 칸을 먹는데, 진단은 그만한 무게가 아니다.
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Button(
-            onClick = onToggle,
-            label = {
-                Text(
-                    if (state.collecting) "중지" else "시작",
-                    color = Color.Black,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (state.collecting) VgColors.Danger else VgColors.Normal,
-            ),
-            modifier = Modifier.weight(1f),
-        )
-        Button(
-            onClick = onDiagnostics,
-            label = { Text("⋯", color = VgColors.Secondary, fontSize = 16.sp) },
-            colors = ButtonDefaults.buttonColors(containerColor = VgColors.Pill),
-            modifier = Modifier.width(52.dp),   // 터치 타겟 하한(48dp) 은 지킨다
-        )
-    }
-}
-
-/**
  * 좌우 눈금의 이름 — **인디케이터 상단 끝**에 프레임 반지름을 따라 앉힌다.
- * 각 아크의 시작각(위쪽 끝)을 그대로 극좌표로 풀어 배치하므로, 아크 각도를 바꾸면
- * 이름도 따라간다(수치를 두 곳에 손으로 적지 않는다 — [[L-106]] ①).
+ * 각 아크의 위쪽 끝을 계산으로 골라 배치하므로 각도를 바꾸면 이름도 따라간다([[L-106]] ①).
  */
 @Composable
 private fun BoxScope.BezelLabels(state: VitalUiState) {
     val w = LocalConfiguration.current.screenWidthDp
     val r = w / 2f
-    // 라벨은 눈금보다 살짝 안쪽 — 바깥에 두면 원형 마스크에 잘린다.
     val labelR = r * 0.74f
-
-    // ★ 위쪽 끝은 **계산으로 고른다** — 좌우가 서로 다르다(각도를 손으로 적으면 반드시 틀린다).
-    //   0°=3시·시계방향이므로 sin 이 작을수록 위다. 좌측은 끝각(215°), 우측은 시작각(-35°)이 위.
-    BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, r, state.severity.color())
+    BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, state.severity.color())
     BezelLabel(
         "무동작",
         topEndDeg(Bezel.RIGHT_START, Bezel.SWEEP),
-        labelR, r,
+        labelR,
         stillSeverity(state.stillSec).color(),
+    )
+}
+
+/** 각도 → 화면 오프셋. 0°=3시·시계방향(BezelIndicator 와 같은 규약). */
+@Composable
+private fun BoxScope.BezelLabel(
+    text: String,
+    deg: Float,
+    labelR: Float,
+    color: androidx.compose.ui.graphics.Color,
+) {
+    val rad = Math.toRadians(deg.toDouble())
+    Text(
+        text,
+        color = color,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .align(Alignment.Center)
+            .offset(
+                x = (kotlin.math.cos(rad) * labelR).toFloat().dp,
+                y = (kotlin.math.sin(rad) * labelR).toFloat().dp,
+            ),
     )
 }
 

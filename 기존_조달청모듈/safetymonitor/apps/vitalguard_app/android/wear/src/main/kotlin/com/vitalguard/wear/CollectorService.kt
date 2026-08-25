@@ -19,6 +19,7 @@ import com.vitalguard.wear.pipeline.QueueStorage
 import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.wear.source.GpsLocationSource
+import com.vitalguard.wear.source.OffBodySource
 import com.vitalguard.wear.source.CompositeTrackerSource
 import com.vitalguard.wear.source.SamsungTrackerSource
 import com.vitalguard.wear.source.SensorTrackerSource
@@ -36,6 +37,9 @@ class CollectorService : Service() {
     private lateinit var engine: CollectorEngine
     private lateinit var pipeline: UploadPipeline
     private lateinit var gps: GpsLocationSource
+    private lateinit var offBody: OffBodySource
+    /** 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다). */
+    private var sensing = false
     private var uploadBlockedUntilMs = 0L
 
     override fun onCreate() {
@@ -55,6 +59,7 @@ class CollectorService : Service() {
         if (restored > 0) Log.i(TAG, "큐 복원 ${restored}건")
 
         gps = GpsLocationSource(this)
+        offBody = OffBodySource(this)
         val battery = getSystemService(BatteryManager::class.java)
         engine = CollectorEngine(
             // 삼성이 주(SpO₂·체온·IBI), 순정이 바닥(심박·가속도) — 삼성이 막혀도 수집은 산다.
@@ -82,14 +87,36 @@ class CollectorService : Service() {
             notification,
             ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
         )
-        gps.start()
-        engine.start(System.currentTimeMillis())
+        // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
+        //   서비스 자체는 계속 산다(벗었다 다시 차면 사람 개입 없이 재개된다).
+        offBody.start { wornNow -> if (wornNow) beginSensing() else endSensing() }
+        if (offBody.worn) beginSensing()
         handler.removeCallbacks(tick)
         handler.postDelayed(tick, FLUSH_INTERVAL_MS)
         running = true
         liveEngine = engine
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
         return START_STICKY
+    }
+
+    /** 착용 시작 — 센서를 붙인다. 이미 붙어 있으면 아무것도 안 한다(중복 등록 방지). */
+    private fun beginSensing() {
+        if (sensing) return
+        sensing = true
+        worn = true
+        gps.start()
+        engine.start(System.currentTimeMillis())
+        Log.i(TAG, "착용 — 수집 개시")
+    }
+
+    /** 벗음 — 센서를 뗀다. **큐는 지우지 않는다**(미전송분은 다시 찼을 때 함께 올라간다). */
+    private fun endSensing() {
+        if (!sensing) return
+        sensing = false
+        worn = false
+        engine.stop()
+        gps.stop()
+        Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")
     }
 
     /** flush → 업로드 1회 — 재시도 대기는 FlushOutcome 이 정한 시각까지 업로드만 쉰다(수집은 계속). */
@@ -123,8 +150,8 @@ class CollectorService : Service() {
         liveEngine = null
         handler.removeCallbacks(tick)
         worker.quitSafely()
-        engine.stop()
-        gps.stop()
+        offBody.stop()
+        endSensing()
         Log.i(TAG, "수집 종료 — 큐 ${queue.size}건 보존")
         super.onDestroy()
     }
@@ -143,6 +170,10 @@ class CollectorService : Service() {
 
         /** 화면이 시작/중지 상태를 읽는다 — 서비스 바인딩 없이 상태만 노출. */
         @Volatile var running = false
+            private set
+
+        /** 착용 여부 — 화면이 "차면 시작됩니다" 안내를 띄울지 판단한다. */
+        @Volatile var worn = true
             private set
 
         /** 화면이 최신 생체값을 읽는 통로 — 엔진 스냅숏을 그대로 넘긴다(업로드 경로와 별개). */

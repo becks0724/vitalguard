@@ -27,6 +27,8 @@ data class VitalUiState(
     val hrvSdnnMs: Double? = null,
     val batteryPct: Int? = null,
     val collecting: Boolean = false,
+    /** 착용 여부 — 벗으면 화면이 "착용하면 시작됩니다" 를 띄운다. */
+    val worn: Boolean = true,
     val queued: Int = 0,
     /** 마지막 업로드 성공 후 경과(초). null = 아직 한 번도 못 올림. */
     val lastUploadAgeSec: Long? = null,

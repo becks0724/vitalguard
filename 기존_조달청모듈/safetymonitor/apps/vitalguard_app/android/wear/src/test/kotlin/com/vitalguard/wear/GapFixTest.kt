@@ -82,3 +82,46 @@ class LocationContractTest {
         assertNull(src.currentFix(nowMs = 120_001))
     }
 }
+
+/** 착용 자동 수집 — 시작 버튼 없는 운용의 계약(08-25 사용자 결정). */
+class WearDetectTest {
+
+    private val screen = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+    ).readText()
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+    private val service = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
+    ).readText()
+
+    @Test
+    fun `작업자 화면에 시작·중지 버튼이 없다`() {
+        // 버튼을 되살리면 7번째 요소가 되어 다시 화면 밖으로 밀린다(08-25 실기 증상).
+        assertFalse("시작 버튼이 되살아났다", screen.contains("\"시작\""))
+        assertFalse("중지 버튼이 되살아났다", screen.contains("\"중지\""))
+    }
+
+    @Test
+    fun `앱이 뜨면 수집 서비스가 스스로 붙는다`() {
+        assertTrue(
+            "자동 기동이 사라졌다 — 사람이 켤 수단이 없어 수집이 영영 안 된다",
+            activity.contains("startForegroundService(Intent(this, CollectorService::class.java))"),
+        )
+    }
+
+    @Test
+    fun `착용 센서가 수집을 켜고 끈다`() {
+        assertTrue("착용 소스 배선 없음", service.contains("OffBodySource"))
+        assertTrue("착용 콜백 없음", service.contains("beginSensing"))
+        assertTrue("벗음 콜백 없음", service.contains("endSensing"))
+    }
+
+    @Test
+    fun `벗어도 큐는 지우지 않는다 - 다시 차면 함께 올라간다`() {
+        val end = service.substringAfter("private fun endSensing()").substringBefore("\n    }")
+        assertFalse("벗음에서 큐를 비우면 미전송분이 사라진다", end.contains("queue.removeFirst"))
+        assertFalse("벗음에서 서비스를 죽이면 재개가 안 된다", end.contains("stopSelf"))
+    }
+}
