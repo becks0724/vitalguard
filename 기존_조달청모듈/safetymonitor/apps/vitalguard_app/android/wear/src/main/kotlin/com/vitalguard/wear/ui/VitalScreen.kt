@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
+import androidx.wear.compose.foundation.AnchorType
+import androidx.wear.compose.foundation.CurvedDirection
+import androidx.wear.compose.foundation.CurvedLayout
+import androidx.wear.compose.material3.curvedText
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
 import com.vitalguard.wear.core.Psi
@@ -69,7 +73,7 @@ fun VitalScreen(
             },
     ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
-        BezelIndicator(left = hrBand(state), right = stressBand(state))
+        BezelIndicator(left = hrBand(state), right = stressBand(state), radiusRatio = BAND_RADIUS_RATIO)
         // 사이드 인디케이터 명칭 — 무엇을 재는 눈금인지 없으면 못 읽는다.
         BezelLabels(state)
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
@@ -271,77 +275,79 @@ private fun FooterLine(state: VitalUiState) {
 @Composable
 private fun BoxScope.BezelLabels(state: VitalUiState) {
     val w = LocalConfiguration.current.screenWidthDp
-    val r = w / 2f
-    // ★ 이름을 **인디케이터 안쪽 가장자리**에 붙인다(08-25 사용자 요청 · 종전 0.74 는
-    //   본문 쪽으로 들어와 숫자와 붙어 보였다). 띠는 0.8625~0.9375 를 차지하므로 0.84 면
-    //   띠에 닿는 자리다.
-    // ⚠ 더 밖으로 못 나간다 — 둥근 화면에서 글자가 잘린다.
-    //   우측 "스트레스"(4자 · 9sp ≈ 36dp)의 반폭 18dp 기준, 각 -35°·반지름 0.84r 일 때
-    //   중심 x = 0.688r · 그 높이의 화면 반폭 = √(r²−(0.482r)²) = 0.876r → 0.688r+18dp 가
-    //   겨우 들어간다. 0.90r 로 밀면 우측 글자가 화면 밖으로 나간다(계산으로 확인).
-    val labelR = r * 0.84f
-    BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, state.severity.color())
-    BezelLabel(
-        "스트레스",
-        topEndDeg(Bezel.RIGHT_START, Bezel.RIGHT_SWEEP),
-        labelR,
-        state.stress.level.color(),
+    // ★ 이름을 **아크 곡률을 따라** 굽혀 띠 안에 앉힌다(08-25 사용자 지적 3회).
+    //   반듯한 글자를 아크 옆에 두면 아무리 안쪽으로 밀어도 "밖에 붙은 이름" 으로 읽힌다.
+    //   자리는 띠가 끝난 다음 빈 구간 — 색 구간을 가리지 않는다(사용자 제시 워치페이스 방식).
+    CurvedBezelLabel(
+        text = "심박",
+        anchorDeg = bandLabelDeg(Bezel.LEFT_START, Bezel.SWEEP),
+        color = VgColors.Primary,
+        // ⚠ **위쪽 반원에서는 좌우 모두 시계방향**이라야 글자가 선다.
+        //   반시계로 두면 글자 머리가 안쪽을 향해 뒤집혀 보인다(08-25 실기 캡처로 확인).
+        //   좌우로 방향을 갈라야 하는 것은 아래쪽 반원에 둘 때다.
+        direction = CurvedDirection.Angular.Clockwise,
+    )
+    CurvedBezelLabel(
+        text = "스트레스",
+        anchorDeg = bandLabelDeg(Bezel.RIGHT_START, Bezel.RIGHT_SWEEP),
+        color = VgColors.Primary,
+        direction = CurvedDirection.Angular.Clockwise,
     )
 }
 
-/** 각도 → 화면 오프셋. 0°=3시·시계방향(BezelIndicator 와 같은 규약). */
+/**
+ * 띠를 따라 굽은 이름.
+ *
+ * 반지름은 바깥 여백으로 정한다 — `CurvedLayout` 은 컨테이너 **바깥 테두리**에 글자를 앉히므로
+ * 여백만큼 안쪽으로 들어간다. 띠 중심이 0.90r 이니 화면 가장자리에서 그만큼 띄운다.
+ */
 @Composable
-private fun BoxScope.BezelLabel(
+private fun BoxScope.CurvedBezelLabel(
     text: String,
-    deg: Float,
-    labelR: Float,
+    anchorDeg: Float,
     color: androidx.compose.ui.graphics.Color,
+    direction: CurvedDirection.Angular,
 ) {
-    val rad = Math.toRadians(deg.toDouble())
-    Text(
-        text,
-        color = color,
-        fontSize = 9.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier
-            .align(Alignment.Center)
-            .offset(
-                x = (kotlin.math.cos(rad) * labelR).toFloat().dp,
-                y = (kotlin.math.sin(rad) * labelR).toFloat().dp,
-            ),
-    )
+    val w = LocalConfiguration.current.screenWidthDp
+    // 글자 중심이 LABEL_RADIUS_RATIO 에 오도록 — CurvedLayout 은 컨테이너 바깥 테두리에
+    // 글자를 앉히므로, 가장자리에서 그만큼 들이고 글자 높이의 절반을 더 뺀다.
+    val inset = (w / 2f) * (1f - LABEL_RADIUS_RATIO) - LABEL_SP / 2f
+    CurvedLayout(
+        modifier = Modifier.fillMaxSize().padding(inset.coerceAtLeast(0f).dp),
+        anchor = anchorDeg,
+        anchorType = AnchorType.Center,
+        angularDirection = direction,
+    ) {
+        curvedText(
+            text = text,
+            color = color,
+            fontSize = LABEL_SP.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
 }
 
-/** 두 끝 중 화면에서 **위쪽**인 각도. sin 이 작은(=y 가 작은) 쪽이 위다. */
-internal fun topEndDeg(startDeg: Float, sweepDeg: Float): Float {
-    val endDeg = startDeg + sweepDeg
-    val ys = kotlin.math.sin(Math.toRadians(startDeg.toDouble()))
-    val ye = kotlin.math.sin(Math.toRadians(endDeg.toDouble()))
-    return if (ys <= ye) startDeg else endDeg
-}
+/** 이름 글자 크기(sp). 반지름 계산에도 쓰이므로 상수로 둔다. */
+private const val LABEL_SP = 11f
 
-/** 각도 → 화면 오프셋. 0°=3시·시계방향(BezelIndicator 와 같은 규약). */
-@Composable
-private fun BoxScope.BezelLabel(
-    text: String,
-    deg: Float,
-    labelR: Float,
-    screenR: Float,
-    color: androidx.compose.ui.graphics.Color,
-) {
-    val rad = Math.toRadians(deg.toDouble())
-    val dx = (kotlin.math.cos(rad) * labelR).toFloat()
-    val dy = (kotlin.math.sin(rad) * labelR).toFloat()
-    Text(
-        text,
-        color = color,
-        fontSize = 9.sp,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier
-            .align(Alignment.Center)
-            .offset(x = dx.dp, y = dy.dp),
-    )
-}
+/**
+ * 이름을 앉힐 각 = 띠의 **한가운데** — 이름이 아크를 따라 흐른다.
+ * (08-25 사용자 제시 워치페이스 방식 · WIND SPEED · HUMIDITY 처럼 아크 바깥을 따라 적힌다.)
+ */
+internal fun bandLabelDeg(startDeg: Float, sweepDeg: Float): Float = startDeg + sweepDeg / 2f
+
+/**
+ * 띠 반지름 = 0.82r · 이름 반지름 = 0.94r.
+ *
+ * ★ 이름은 **띠 바깥**에 온다(참고 이미지 방식). 그래서 띠를 안쪽으로 들여야 자리가 난다 —
+ *   종전 0.90r 이면 바깥에 글자를 둘 공간이 화면 가장자리까지 3dp 뿐이라 잘린다.
+ * ⚠ 두 값의 순서가 이 배치의 전부다. 이름 반지름이 띠 반지름보다 작아지면
+ *   이름이 다시 띠를 가린다(그것이 종전 상태였다).
+ */
+internal const val BAND_RADIUS_RATIO = 0.82f
+internal const val LABEL_RADIUS_RATIO = 0.94f
+
+
 
 /**
  * 좌측 띠 = **심박이 안전대 어디인가.** 본문은 숫자를, 베젤은 위치를 말한다 —
