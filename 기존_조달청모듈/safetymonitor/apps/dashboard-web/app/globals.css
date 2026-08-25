@@ -3,55 +3,94 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ★ 색 토큰은 채널값(`R G B`)이 단일 소스이고 `--color-*` 는 거기서 파생한다.
+   Tailwind 의 투명도 수식(`bg-ink/20`)이 채널 변수를 참조해야 동작하기 때문이다(tailwind.config.ts).
+   hex 를 그대로 담으면 `/투명도` 클래스가 조용히 생성되지 않고 기본값으로 폴백한다 — 2026-08-25 전역 정정.
+   색을 바꿀 때는 `-rgb` 쪽만 고친다. `--color-*` 는 알파가 배어 있는 것(hairline·primary-subtle 등)만 따로 둔다. */
 :root {
   /* Brand & actions — sky-blue editorial accent */
-  --color-primary: #0d74ce;
-  --color-primary-active: #0a5fad;
-  --color-primary-disabled: #e8ecf0;
-  --color-primary-subtle: rgba(13, 116, 206, 0.08);
-  --color-primary-ring: rgba(13, 116, 206, 0.28);
-  --color-brand-accent: #476cff;
-  --color-text-link: #0d74ce;
+  --color-primary-rgb: 13 116 206;
+  --color-primary: rgb(var(--color-primary-rgb));
+  --color-primary-active-rgb: 10 95 173;
+  --color-primary-active: rgb(var(--color-primary-active-rgb));
+  --color-primary-disabled-rgb: 232 236 240;
+  --color-primary-disabled: rgb(var(--color-primary-disabled-rgb));
+  --color-primary-subtle-rgb: 13 116 206;
+  --color-primary-subtle: rgb(var(--color-primary-subtle-rgb) / 0.08);
+  --color-primary-ring-rgb: 13 116 206;
+  --color-primary-ring: rgb(var(--color-primary-ring-rgb) / 0.28);
+  --color-brand-accent-rgb: 71 108 255;
+  --color-brand-accent: rgb(var(--color-brand-accent-rgb));
+  --color-text-link-rgb: 13 116 206;
+  --color-text-link: rgb(var(--color-text-link-rgb));
 
   /* Surfaces */
-  --color-canvas: #ffffff;
-  --color-canvas-soft: #fafafa;
-  --color-surface-soft: #fafafa;
-  --color-surface-card: #ffffff;
-  --color-surface-strong: #f0f0f3;
-  --color-surface-dark: #171717;
-  --color-surface-dark-elevated: #1a1a1a;
+  --color-canvas-rgb: 255 255 255;
+  --color-canvas: rgb(var(--color-canvas-rgb));
+  --color-canvas-soft-rgb: 250 250 250;
+  --color-canvas-soft: rgb(var(--color-canvas-soft-rgb));
+  --color-surface-soft-rgb: 250 250 250;
+  --color-surface-soft: rgb(var(--color-surface-soft-rgb));
+  --color-surface-card-rgb: 255 255 255;
+  --color-surface-card: rgb(var(--color-surface-card-rgb));
+  --color-surface-strong-rgb: 240 240 243;
+  --color-surface-strong: rgb(var(--color-surface-strong-rgb));
+  --color-surface-dark-rgb: 23 23 23;
+  --color-surface-dark: rgb(var(--color-surface-dark-rgb));
+  --color-surface-dark-elevated-rgb: 26 26 26;
+  --color-surface-dark-elevated: rgb(var(--color-surface-dark-elevated-rgb));
 
   /* Borders */
-  --color-hairline: #f0f0f3;
-  --color-hairline-soft: #f5f5f7;
-  --color-hairline-strong: #dcdee0;
+  --color-hairline-rgb: 240 240 243;
+  --color-hairline: rgb(var(--color-hairline-rgb));
+  --color-hairline-soft-rgb: 245 245 247;
+  --color-hairline-soft: rgb(var(--color-hairline-soft-rgb));
+  --color-hairline-strong-rgb: 220 222 224;
+  --color-hairline-strong: rgb(var(--color-hairline-strong-rgb));
 
   /* Text */
-  --color-ink: #171717;
-  --color-body: #60646c;
-  --color-body-strong: #171717;
-  --color-muted: #999999;
-  --color-muted-soft: #cccccc;
-  --color-on-primary: #ffffff;
-  --color-on-dark: #ffffff;
-  --color-on-dark-soft: #b0b4ba;
+  --color-ink-rgb: 23 23 23;
+  --color-ink: rgb(var(--color-ink-rgb));
+  --color-body-rgb: 96 100 108;
+  --color-body: rgb(var(--color-body-rgb));
+  --color-body-strong-rgb: 23 23 23;
+  --color-body-strong: rgb(var(--color-body-strong-rgb));
+  --color-muted-rgb: 153 153 153;
+  --color-muted: rgb(var(--color-muted-rgb));
+  --color-muted-soft-rgb: 204 204 204;
+  --color-muted-soft: rgb(var(--color-muted-soft-rgb));
+  --color-on-primary-rgb: 255 255 255;
+  --color-on-primary: rgb(var(--color-on-primary-rgb));
+  --color-on-dark-rgb: 255 255 255;
+  --color-on-dark: rgb(var(--color-on-dark-rgb));
+  --color-on-dark-soft-rgb: 176 180 186;
+  --color-on-dark-soft: rgb(var(--color-on-dark-soft-rgb));
 
   /* Semantic — status colors (do not change) */
-  --color-semantic-up: #10b981;
-  --color-semantic-down: #ef4444;
-  --color-warning: #f59e0b;
-  --color-accent-yellow: #f59e0b;
+  --color-semantic-up-rgb: 16 185 129;
+  --color-semantic-up: rgb(var(--color-semantic-up-rgb));
+  --color-semantic-down-rgb: 239 68 68;
+  --color-semantic-down: rgb(var(--color-semantic-down-rgb));
+  --color-warning-rgb: 245 158 11;
+  --color-warning: rgb(var(--color-warning-rgb));
+  --color-accent-yellow-rgb: 245 158 11;
+  --color-accent-yellow: rgb(var(--color-accent-yellow-rgb));
 
   /* Badge pastels */
-  --color-badge-orange: #fb923c;
-  --color-badge-pink: #ec4899;
-  --color-badge-violet: #8b5cf6;
-  --color-badge-emerald: #34d399;
+  --color-badge-orange-rgb: 251 146 60;
+  --color-badge-orange: rgb(var(--color-badge-orange-rgb));
+  --color-badge-pink-rgb: 236 72 153;
+  --color-badge-pink: rgb(var(--color-badge-pink-rgb));
+  --color-badge-violet-rgb: 139 92 246;
+  --color-badge-violet: rgb(var(--color-badge-violet-rgb));
+  --color-badge-emerald-rgb: 52 211 153;
+  --color-badge-emerald: rgb(var(--color-badge-emerald-rgb));
 
   /* Atmospheric */
-  --color-gradient-sky-light: #cfe7ff;
-  --color-gradient-sky-mid: #a8c8e8;
+  --color-gradient-sky-light-rgb: 207 231 255;
+  --color-gradient-sky-light: rgb(var(--color-gradient-sky-light-rgb));
+  --color-gradient-sky-mid-rgb: 168 200 232;
+  --color-gradient-sky-mid: rgb(var(--color-gradient-sky-mid-rgb));
 
   /* Typography */
   --font-display: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -61,35 +100,43 @@
   --rounded-pill: 9999px;
 }
 
+/* 다크는 채널(`-rgb`)만 덮어쓰면 `--color-*` 파생값이 따라온다(커스텀 속성은 사용 시점에 해석된다).
+   알파가 배어 있는 토큰만 `--color-*` 를 함께 덮는다. */
 html.dark {
-  --color-primary: #47c2ff;
-  --color-primary-active: #3aaee6;
-  --color-primary-disabled: #2a2a2e;
-  --color-primary-subtle: rgba(71, 194, 255, 0.12);
-  --color-primary-ring: rgba(71, 194, 255, 0.38);
-  --color-brand-accent: #6b8cff;
-  --color-text-link: #47c2ff;
+  --color-primary-rgb: 71 194 255;
+  --color-primary-active-rgb: 58 174 230;
+  --color-primary-disabled-rgb: 42 42 46;
+  --color-primary-subtle-rgb: 71 194 255;
+  --color-primary-subtle: rgb(var(--color-primary-subtle-rgb) / 0.12);
+  --color-primary-ring-rgb: 71 194 255;
+  --color-primary-ring: rgb(var(--color-primary-ring-rgb) / 0.38);
+  --color-brand-accent-rgb: 107 140 255;
+  --color-text-link-rgb: 71 194 255;
 
-  --color-canvas: #171717;
-  --color-canvas-soft: #1a1a1a;
-  --color-surface-soft: #1a1a1a;
-  --color-surface-card: #1a1a1a;
-  --color-surface-strong: #242424;
-  --color-surface-dark: #101010;
-  --color-surface-dark-elevated: #1a1a1a;
+  --color-canvas-rgb: 23 23 23;
+  --color-canvas-soft-rgb: 26 26 26;
+  --color-surface-soft-rgb: 26 26 26;
+  --color-surface-card-rgb: 26 26 26;
+  --color-surface-strong-rgb: 36 36 36;
+  --color-surface-dark-rgb: 16 16 16;
+  --color-surface-dark-elevated-rgb: 26 26 26;
 
-  --color-hairline: rgba(255, 255, 255, 0.08);
-  --color-hairline-soft: rgba(255, 255, 255, 0.05);
-  --color-hairline-strong: rgba(255, 255, 255, 0.14);
+  /* 다크 테두리는 반투명 흰 선 — 채널은 흰색, 알파는 유지 */
+  --color-hairline-rgb: 255 255 255;
+  --color-hairline: rgb(var(--color-hairline-rgb) / 0.08);
+  --color-hairline-soft-rgb: 255 255 255;
+  --color-hairline-soft: rgb(var(--color-hairline-soft-rgb) / 0.05);
+  --color-hairline-strong-rgb: 255 255 255;
+  --color-hairline-strong: rgb(var(--color-hairline-strong-rgb) / 0.14);
 
-  --color-ink: #ffffff;
-  --color-body: #b0b4ba;
-  --color-body-strong: #ffffff;
-  --color-muted: #8b9199;
-  --color-muted-soft: #666c75;
-  --color-on-primary: #ffffff;
-  --color-on-dark: #ffffff;
-  --color-on-dark-soft: #b0b4ba;
+  --color-ink-rgb: 255 255 255;
+  --color-body-rgb: 176 180 186;
+  --color-body-strong-rgb: 255 255 255;
+  --color-muted-rgb: 139 145 153;
+  --color-muted-soft-rgb: 102 108 117;
+  --color-on-primary-rgb: 255 255 255;
+  --color-on-dark-rgb: 255 255 255;
+  --color-on-dark-soft-rgb: 176 180 186;
 }
 
 html,
