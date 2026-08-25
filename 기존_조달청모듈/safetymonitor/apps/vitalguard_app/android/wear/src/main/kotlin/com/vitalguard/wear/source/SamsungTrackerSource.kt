@@ -134,7 +134,9 @@ class SamsungTrackerSource(
                         Log.i(TAG, "SpO₂ 상태=$status 값=$pct (시도 $spo2Attempts)")
                     }
                     // 측정 완료 상태에서만 싣는다 — 계산 중(진행값)을 실으면 가짜 값이 올라간다.
-                    if (pct != null && pct > 0 && status == SPO2_STATUS_COMPLETE) {
+                    // ⚠ 완료 표본이 연달아 올 수 있다(실기 17:27 에 2건 연속) — 트래커를 이미
+                    //   닫았으면 세지 않는다. 안 그러면 성공률(실측 ⑦)이 부풀려진다.
+                    if (pct != null && pct > 0 && status == SPO2_STATUS_COMPLETE && spo2Tracker != null) {
                         spo2Success++
                         Log.i(TAG, "SpO₂ 성공 $pct% (시도 $spo2Attempts · 성공 $spo2Success)")
                         listener?.onSpo2(pct, dp.timestamp)

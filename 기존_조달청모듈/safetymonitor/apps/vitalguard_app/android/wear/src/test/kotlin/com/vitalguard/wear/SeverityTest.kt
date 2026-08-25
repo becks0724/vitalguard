@@ -365,26 +365,52 @@ class BezelFillTest {
 
 class BezelLabelTest {
 
+    /**
+     * ★ 08-25 사용자 제시 워치페이스 방식 — 이름은 **띠 바깥**에 아크를 따라 붙는다.
+     * ⚠ 이 순서가 배치의 전부다. 이름 반지름이 띠보다 안쪽으로 들어오면 이름이 띠를 가린다
+     *   (그것이 종전 상태였고, 사용자가 세 번 지적한 그림이다).
+     */
     @Test
-    fun `위쪽 끝 - 좌우가 서로 다른 각을 고른다`() {
-        val left = com.vitalguard.wear.ui.topEndDeg(
-            com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP,
+    fun `이름은 띠 바깥에 있다`() {
+        org.junit.Assert.assertTrue(
+            "이름이 띠 안쪽으로 들어왔다",
+            com.vitalguard.wear.ui.LABEL_RADIUS_RATIO > com.vitalguard.wear.ui.BAND_RADIUS_RATIO,
         )
-        val right = com.vitalguard.wear.ui.topEndDeg(
-            com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP,
-        )
-        assertEquals("좌측은 끝각(215°)이 위", 215f, left, 0.01f)
-        assertEquals("우측은 끝각(-35°)이 위", -35f, right, 0.01f)
     }
 
+    /** 이름이 화면 밖으로 나가면 잘린다 — 가장자리(1.0)보다는 안이어야 한다. */
     @Test
-    fun `고른 각은 실제로 화면 위쪽이다 - 두 라벨의 높이가 같아야 한다`() {
+    fun `이름이 화면 안에 있다`() {
+        org.junit.Assert.assertTrue(
+            "이름이 화면 가장자리를 넘는다",
+            com.vitalguard.wear.ui.LABEL_RADIUS_RATIO < 1.0f,
+        )
+    }
+
+    /** 이름은 아크를 따라 흐른다 = 띠의 각 범위 한가운데에 앉는다. */
+    @Test
+    fun `이름이 띠의 각 범위 안에 있다`() {
+        fun inside(start: Float, sweep: Float): Boolean {
+            val m = com.vitalguard.wear.ui.bandLabelDeg(start, sweep)
+            return m > minOf(start, start + sweep) && m < maxOf(start, start + sweep)
+        }
+        org.junit.Assert.assertTrue(
+            "좌측 이름이 띠 밖이다",
+            inside(com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP),
+        )
+        org.junit.Assert.assertTrue(
+            "우측 이름이 띠 밖이다",
+            inside(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP),
+        )
+    }
+
+    /** 좌우 이름의 높이가 같아야 한 쌍으로 읽힌다. */
+    @Test
+    fun `좌우 이름의 높이가 같다`() {
         fun y(deg: Float) = kotlin.math.sin(Math.toRadians(deg.toDouble()))
-        val ly = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
-        val ry = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP))
-        org.junit.Assert.assertTrue("좌측 라벨이 화면 위가 아니다", ly < 0)
-        org.junit.Assert.assertTrue("우측 라벨이 화면 위가 아니다", ry < 0)
-        assertEquals("좌우 라벨 높이가 다르다", ly, ry, 0.001)
+        val ly = y(com.vitalguard.wear.ui.bandLabelDeg(com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
+        val ry = y(com.vitalguard.wear.ui.bandLabelDeg(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP))
+        assertEquals(ly, ry, 0.001)
     }
 }
 
