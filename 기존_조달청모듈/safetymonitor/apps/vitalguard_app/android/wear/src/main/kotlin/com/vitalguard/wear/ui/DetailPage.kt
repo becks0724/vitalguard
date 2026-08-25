@@ -42,7 +42,7 @@ fun DetailPage(
         modifier = Modifier
             .fillMaxSize()
             .background(VgColors.Background)
-            .padding(horizontal = (w * 0.14f).dp, vertical = (w * 0.13f).dp),
+            .padding(horizontal = (w * 0.14f).dp, vertical = (w * 0.10f).dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -51,7 +51,8 @@ fun DetailPage(
             Text(
                 value,
                 color = VgColors.Primary,
-                fontSize = 40.sp,
+                // 차트가 주인공이라 숫자를 낮춘다 — 40sp 면 차트+보조줄이 둥근 화면에서 잘린다.
+                fontSize = 34.sp,
                 fontWeight = FontWeight.Bold,
             )
             if (unit.isNotEmpty()) {

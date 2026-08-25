@@ -221,8 +221,20 @@ class ChartTest {
         val detail = java.io.File(
             "src/main/kotlin/com/vitalguard/wear/ui/DetailPages.kt",
         ).readText()
-        org.junit.Assert.assertFalse("요약에 차트가 되살아났다", summary.contains("HeartChart("))
-        org.junit.Assert.assertTrue("상세에 차트가 없다", detail.contains("HeartChart("))
+        org.junit.Assert.assertFalse("요약에 차트가 되살아났다", summary.contains("TrendChart("))
+        org.junit.Assert.assertTrue("상세에 차트가 없다", detail.contains("TrendChart("))
+        // 상세 4면(심박·SpO₂·체온·스트레스)이 전부 차트를 든다 — 하나라도 숫자만 남으면
+        // "추이를 본다" 는 이 페이지들의 목적이 조용히 깨진다.
+        org.junit.Assert.assertEquals(
+            "상세 차트 수가 지표 면 수와 다르다",
+            4,
+            Regex("TrendChart\\(").findAll(detail).count(),
+        )
+        // 체온은 주변온을 **같은 축에 겹쳐야** 기기 발열과 진짜 체온이 갈린다(R-25).
+        org.junit.Assert.assertTrue(
+            "체온 차트에 주변온 겹치기가 없다",
+            detail.contains("overlay = state.ambientTrend"),
+        )
     }
 }
 

@@ -132,6 +132,13 @@ class MainActivity : ComponentActivity() {
                         worn = CollectorService.worn,
                         queued = CollectorService.queuedCount,
                         lastUploadAgeSec = CollectorService.lastUploadAtMs?.let { (now - it) / 1000 },
+                        // 이력 — 상세 페이지의 추이 차트가 읽는다. 엔진이 들고 있는 것을 복사해
+                        // 넘긴다(화면이 직접 쌓지 않는다 — 화면은 3초마다 갈아엎히는 상태다).
+                        heartTrend = engine?.heartHistory?.snapshot() ?: emptyList(),
+                        spo2Trend = engine?.spo2History?.snapshot() ?: emptyList(),
+                        skinTempTrend = engine?.skinTempHistory?.snapshot() ?: emptyList(),
+                        ambientTrend = engine?.ambientHistory?.snapshot() ?: emptyList(),
+                        stressTrend = engine?.stressHistory?.snapshot() ?: emptyList(),
                     )
                     // ★ 화면 상태를 그대로 찍는다 — "화면에 안 보인다" 를 추론이 아니라
                     //   값으로 판정하기 위한 계기다(15초마다 1줄).

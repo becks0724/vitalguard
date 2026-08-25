@@ -1,8 +1,11 @@
 // 수집 엔진 — 소스 → 파생(core) → 병합(SampleBuilder) → 큐 적재. 시계는 주입받는다(시험 가능성)
 package com.vitalguard.wear
 
+import com.vitalguard.wear.core.HistoryWindow
+import com.vitalguard.wear.core.MetricHistory
 import com.vitalguard.wear.core.MotionTracker
 import com.vitalguard.wear.core.Sdnn
+import com.vitalguard.wear.core.Stress
 import com.vitalguard.wear.pipeline.SampleBuilder
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.wear.source.LocationFix
@@ -53,6 +56,13 @@ class CollectorEngine(
         private set
     @Volatile var windowKcal = 0.0
         private set
+
+    /** 지표 이력 — 상세 페이지의 추이 차트가 읽는다. 창 길이는 수집 주기에 맞춘다. */
+    val heartHistory = MetricHistory(HistoryWindow.HEART_MS)
+    val spo2History = MetricHistory(HistoryWindow.SPO2_MS)
+    val skinTempHistory = MetricHistory(HistoryWindow.TEMP_MS)
+    val ambientHistory = MetricHistory(HistoryWindow.TEMP_MS)
+    val stressHistory = MetricHistory(HistoryWindow.STRESS_MS)
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -99,6 +109,7 @@ class CollectorEngine(
             builder.heartRate(bpm, atMs)
             lastBpm = bpm
             samples++
+            heartHistory.add(atMs, bpm.toDouble())
         }
         ibiMs.forEachIndexed { i, ibi ->
             ibiWindow.add(atMs to ibi)
@@ -120,6 +131,7 @@ class CollectorEngine(
         builder.spo2(pct, atMs)
         lastSpo2 = pct
         lastSpo2AtMs = atMs
+        spo2History.add(atMs, pct.toDouble())
     }
 
     @Synchronized
@@ -127,6 +139,8 @@ class CollectorEngine(
         builder.skinTemp(objectC, ambientC)
         lastSkinTempC = objectC
         lastAmbientTempC = ambientC
+        skinTempHistory.add(atMs, objectC)
+        ambientC?.let { ambientHistory.add(atMs, it) }
     }
 
     @Synchronized
@@ -177,6 +191,15 @@ class CollectorEngine(
             batteryPct = batteryPct(),
             fix = latestFix(nowMs),
         ) ?: return false
+        // 스트레스 이력 — 활동 재료가 모이는 flush 시점에 계산해 담는다.
+        Stress.compute(
+            heartRate = lastBpm,
+            hrvSdnnMs = lastHrvMs,
+            activeEnergyKcal = windowKcal.takeIf { it > 0 },
+            steps = windowSteps.takeIf { it > 0 },
+            floors = windowFloors.takeIf { it > 0 },
+        ).index?.let { stressHistory.add(nowMs, it.toDouble()) }
+
         queue.add(sample)
         // 구간 누계를 비운다 — 전송된 값을 다음 구간에 다시 세면 활동이 부풀려진다.
         windowSteps = 0
