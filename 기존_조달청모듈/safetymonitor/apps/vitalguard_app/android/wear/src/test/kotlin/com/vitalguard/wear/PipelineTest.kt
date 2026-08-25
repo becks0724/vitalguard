@@ -113,7 +113,8 @@ class UploadPipelineTest {
         p.flushOnce(cfg)
         val item = JSONArray(seen!!).getJSONObject(0)
         assertEquals("EMP-1", item.getString("workerId"))
-        assertEquals("VitAlGuard-WatchVitals", item.getString("source"))
+        // 갤럭시 전용 출처 — 서버가 이 값으로 wearos 를 확정한다(애플과 분리 · 2026-08-25)
+        assertEquals("VitAlGuard-GalaxyWatch", item.getString("source"))
         assertEquals("홍길동", item.getString("workerName"))
     }
 

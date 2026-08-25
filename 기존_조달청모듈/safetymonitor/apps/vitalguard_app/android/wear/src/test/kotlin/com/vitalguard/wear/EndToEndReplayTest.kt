@@ -73,7 +73,8 @@ class EndToEndReplayTest {
             val body = JSONArray(req.body.readUtf8())
             assertEquals(12, body.length())
             assertEquals("EMP-6861", body.getJSONObject(0).getString("workerId"))
-            assertEquals("VitAlGuard-WatchVitals", body.getJSONObject(0).getString("source"))
+            // 갤럭시 전용 출처 — 서버가 이 값으로 wearos 를 확정한다(애플과 분리 · 2026-08-25)
+            assertEquals("VitAlGuard-GalaxyWatch", body.getJSONObject(0).getString("source"))
         }
     }
 
