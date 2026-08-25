@@ -106,39 +106,45 @@ class GaugeTest {
 
 class BezelTest {
 
-    private fun arcs(state: com.vitalguard.wear.ui.VitalUiState) =
-        com.vitalguard.wear.ui.bezelArcsForTest(state)
+    private fun band(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.hrBand(st)
+    private fun ticks(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.stillTicks(st)
 
     @Test
-    fun `베젤 3구획 - 심박·배터리·전송`() {
-        val a = arcs(com.vitalguard.wear.ui.VitalUiState(bpm = 85, batteryPct = 60, collecting = true))
-        assertEquals(3, a.size)
+    fun `좌우 구획이 겹치지 않는다 - 포개지면 둘 다 못 읽는다`() {
+        val l = com.vitalguard.wear.ui.Bezel.LEFT_START
+        val rgt = com.vitalguard.wear.ui.Bezel.RIGHT_START
+        val sw = com.vitalguard.wear.ui.Bezel.SWEEP
+        // 우측은 음수각(-35~35), 좌측은 145~215 — 12시(270/-90)와 6시(90)를 비운다
+        org.junit.Assert.assertTrue("우측이 6시를 침범", rgt + sw < 90f)
+        org.junit.Assert.assertTrue("좌측이 6시를 침범", l > 90f)
+        org.junit.Assert.assertTrue("좌측이 12시를 침범", l + sw < 270f)
     }
 
     @Test
-    fun `구획이 서로 겹치지 않는다 - 눈금이 포개지면 읽을 수 없다`() {
-        val a = arcs(com.vitalguard.wear.ui.VitalUiState(bpm = 85, batteryPct = 60, collecting = true))
-        val ranges = a.map { it.startDeg..(it.startDeg + it.sweepDeg) }
-        for (i in ranges.indices) for (j in i + 1 until ranges.size) {
-            val x = ranges[i]; val y = ranges[j]
-            val overlap = x.start < y.endInclusive && y.start < x.endInclusive
-            org.junit.Assert.assertFalse("구획 $i·$j 가 겹친다", overlap)
-        }
+    fun `심박 띠 - 위가 높은 값이다`() {
+        val hi = band(com.vitalguard.wear.ui.VitalUiState(bpm = 130, collecting = true))
+        val lo = band(com.vitalguard.wear.ui.VitalUiState(bpm = 40, collecting = true))
+        assertEquals(1f, hi.fraction!!, 0.001f)
+        assertEquals(0f, lo.fraction!!, 0.001f)
+    }
+
+    @Test
+    fun `무동작 눈금 - 붕괴선에서 가득 찬다`() {
+        val full = ticks(com.vitalguard.wear.ui.VitalUiState(stillSec = 90.0))
+        val half = ticks(com.vitalguard.wear.ui.VitalUiState(stillSec = 45.0))
+        assertEquals(1f, full.fraction!!, 0.001f)
+        assertEquals(0.5f, half.fraction!!, 0.001f)
     }
 
     @Test
     fun `값이 없으면 채우지 않는다 - 0 으로 그리지 않는다`() {
-        val a = arcs(com.vitalguard.wear.ui.VitalUiState())
-        assertEquals(null, a[0].fraction)   // 심박 미측정
-        assertEquals(null, a[1].fraction)   // 배터리 모름
-        assertEquals(null, a[2].fraction)   // 수집 전
+        assertEquals(null, band(com.vitalguard.wear.ui.VitalUiState()).fraction)
+        assertEquals(null, ticks(com.vitalguard.wear.ui.VitalUiState()).fraction)
     }
 
     @Test
-    fun `전송 구획 - 큐가 쌓이면 줄어든다`() {
-        val ok = arcs(com.vitalguard.wear.ui.VitalUiState(collecting = true, queued = 0))
-        val backlog = arcs(com.vitalguard.wear.ui.VitalUiState(collecting = true, queued = 50))
-        assertEquals(1f, ok[2].fraction!!, 0.001f)
-        assertEquals(0.5f, backlog[2].fraction!!, 0.001f)
+    fun `심박 띠 색은 판정색을 따른다`() {
+        val danger = band(com.vitalguard.wear.ui.VitalUiState(bpm = 140, collecting = true))
+        assertEquals(com.vitalguard.wear.ui.VgColors.Danger, danger.color)
     }
 }

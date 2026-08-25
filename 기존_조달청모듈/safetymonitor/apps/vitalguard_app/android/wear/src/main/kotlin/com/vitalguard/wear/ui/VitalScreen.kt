@@ -49,7 +49,7 @@ fun VitalScreen(
 
     Box(Modifier.fillMaxSize().background(VgColors.Background)) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
-        BezelIndicator(bezelArcs(state))
+        BezelIndicator(band = hrBand(state), ticks = stillTicks(state))
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
         Column(
             modifier = Modifier
@@ -231,49 +231,28 @@ private fun ActionRow(
 }
 
 /**
- * 베젤에 무엇을 올리나 — **본문 버블과 겹치지 않는 값**만 올린다. 같은 값을 두 곳에 그리면
- * 화면이 넓어 보일 뿐 정보량은 그대로다.
- *
- * ```
- *   우상 (-70°~ -10°)  심박이 안전대(50~130) 어디인가 — 본문은 숫자, 베젤은 위치
- *   우하 ( 20°~  80°)  배터리 잔량
- *   좌하 (100°~ 160°)  전송 상태 — 큐가 쌓이면 주황이 차오른다(서버 장애의 가시 신호)
- * ```
- * 좌상(-170°~-110°)은 비운다 — TimeText 가 12시에 앉아 눈금과 부딪힌다.
+ * 좌측 띠 = **심박이 안전대 어디인가.** 본문은 숫자를, 베젤은 위치를 말한다 —
+ * "100" 만으로는 위험선까지 얼마나 남았는지 모른다. 위험 하한 40 ~ 상한 130 을 편다.
+ * 위가 높은 값이다(과부하가 위로 올라간다).
  */
-internal fun bezelArcs(state: VitalUiState): List<BezelArc> = buildList {
-    // 심박 위치 — 위험 하한 40 에서 상한 130 까지를 눈금으로 편다.
-    add(
-        BezelArc(
-            startDeg = -70f, sweepDeg = 60f,
-            fraction = gaugeFraction(state.bpm?.toDouble(), 40.0, 130.0),
-            color = state.severity.color(),
-        ),
-    )
-    // 배터리 — 15% 이하면 빨강으로 바뀐다(상태줄 규칙과 같은 경계).
-    add(
-        BezelArc(
-            startDeg = 20f, sweepDeg = 60f,
-            fraction = state.batteryPct?.let { it / 100f },
-            color = if ((state.batteryPct ?: 100) <= 15) VgColors.Danger else VgColors.Secondary,
-            ticks = 10,
-        ),
-    )
-    // 전송 — 큐가 없으면 가득(정상), 쌓일수록 줄고 색이 주황으로 간다.
-    val queueMax = 100f
-    add(
-        BezelArc(
-            startDeg = 100f, sweepDeg = 60f,
-            fraction = when {
-                !state.collecting -> null
-                state.queued <= 0 -> 1f
-                else -> (1f - state.queued / queueMax).coerceIn(0f, 1f)
-            },
-            color = if (state.queued > 0) VgColors.Caution else VgColors.Normal,
-            ticks = 10,
-        ),
-    )
-}
+internal fun hrBand(state: VitalUiState): BezelBand = BezelBand(
+    startDeg = Bezel.LEFT_START,
+    sweepDeg = Bezel.SWEEP,
+    fraction = gaugeFraction(state.bpm?.toDouble(), 40.0, 130.0),
+    color = state.severity.color(),
+)
+
+/**
+ * 우측 눈금 = **무동작 경과**(사용자 결정 08-25). 붕괴 후보선(90초)까지 눈금이 차오른다 —
+ * 차오르는 것 자체가 경고라 숫자보다 형태가 먼저 읽힌다.
+ * ⚠ 본문 버블과 같은 값이다. 버블은 초 단위 수치, 베젤은 임계까지의 거리를 맡는다.
+ */
+internal fun stillTicks(state: VitalUiState): BezelTicks = BezelTicks(
+    startDeg = Bezel.RIGHT_START,
+    sweepDeg = Bezel.SWEEP,
+    fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
+    color = stillSeverity(state.stillSec).color(),
+)
 
 /** 무동작은 붕괴 후보선을 넘으면 주의 — 낙상 규칙과 같은 경계(90초). */
 internal fun stillSeverity(sec: Double?): Severity = when {
@@ -300,5 +279,3 @@ internal fun ageLabel(sec: Long): String = when {
     else -> "${sec / 3600}시간 전"
 }
 
-/** 시험 진입점 — 화면을 띄우지 않고 베젤 구성을 검사한다. */
-internal fun bezelArcsForTest(state: VitalUiState): List<BezelArc> = bezelArcs(state)
