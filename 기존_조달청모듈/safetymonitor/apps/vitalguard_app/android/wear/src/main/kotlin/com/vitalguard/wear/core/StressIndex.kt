@@ -54,8 +54,11 @@ object Stress {
     }
 
     /** 지수 → 레벨. 서버는 <40 정상 / 40~69 주의 / ≥70 위험. */
-    private const val LEVEL_CAUTION = 40
-    private const val LEVEL_DANGER = 70
+    const val LEVEL_CAUTION = 40
+    const val LEVEL_DANGER = 70
+
+    /** 계기 축 — 지수 스케일 그대로 0~100. */
+    const val GAUGE_MAX = 100.0
 
     private fun clip(x: Double, lo: Double, hi: Double) = x.coerceIn(lo, hi)
 

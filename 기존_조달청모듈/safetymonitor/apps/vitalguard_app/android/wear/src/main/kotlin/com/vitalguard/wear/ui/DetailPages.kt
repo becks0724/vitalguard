@@ -158,7 +158,8 @@ fun ActivityDetailPage(state: VitalUiState) {
 /**
  * 걸음 상세 — 누계 추이. 기울기가 곧 "지금 얼마나 움직이는가" 다(계단처럼 오르면 간헐 이동).
  *
- * ★ 우측 베젤은 진행 감각만 준다. **정확한 수치는 여기 있다**(08-25 사용자 요청).
+ * ★ 걸음은 베젤에서 내려갔다(우측은 스트레스가 쓴다) — **수치는 여기가 유일한 자리**다.
+ *   수집·전송은 그대로다. 화면에서만 내린 것이다.
  */
 @Composable
 fun StepsDetailPage(state: VitalUiState) {
@@ -187,7 +188,6 @@ fun StepsDetailPage(state: VitalUiState) {
                 }
             }
             if (state.sessionSteps > 0) add(DetailRow("이번 착용", "%,d 보".format(state.sessionSteps)))
-            add(DetailRow("하루 축", "%,d 보".format(STEP_GAUGE_MAX.toInt()), VgColors.Secondary))
             if (state.windowFloors > 0) add(DetailRow("층", "${state.windowFloors} 층"))
         },
     )

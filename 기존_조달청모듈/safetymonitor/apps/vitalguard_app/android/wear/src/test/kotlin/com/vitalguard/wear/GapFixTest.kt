@@ -272,6 +272,55 @@ class KeepScreenOnTest {
 }
 
 /** 발열 완화 — 08-25 실측(10분에 피부온 +2.3℃ · 주변 +2.5℃ · 배터리 15%) 후 조치. */
+class Spo2RetryTest {
+
+    private val src = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/source/SamsungTrackerSource.kt",
+    ).readText()
+
+    /**
+     * ★ 08-25 실기 결함 — 연속 착용 35분에 SpO₂ 0건(서버 16행 전부 null).
+     * 원인 = 주기 조건이 `spo2Tracker == null` 이라, 측정이 완료되지 않으면 트래커가
+     * 계속 남아 **다음 주기가 통째로 건너뛰어졌다**. 시도가 앱 수명에 한 번뿐이었다.
+     */
+    @Test
+    fun `실패한 시도가 다음 시도를 막지 않는다`() {
+        assertFalse(
+            "주기가 트래커 null 여부로 갈린다 — 실패하면 영영 다시 안 시도한다",
+            src.contains("svc != null && spo2Tracker == null"),
+        )
+        assertTrue(
+            "지난 시도를 걷어내는 경로가 없다",
+            src.contains("if (spo2Tracker != null)") && src.contains("stopSpo2()"),
+        )
+    }
+
+    /** 아직 한 번도 성공 못 했으면 짧게 다시 — 5분으로는 '가만히 있는 순간' 을 놓친다. */
+    @Test
+    fun `성공 전에는 짧게 재시도한다`() {
+        val interval = 5 * 60_000L
+        val retry = 2 * 60_000L
+        assertEquals(
+            retry,
+            com.vitalguard.wear.source.SamsungTrackerSource.spo2NextDelayMs(0, interval, retry),
+        )
+        assertEquals(
+            interval,
+            com.vitalguard.wear.source.SamsungTrackerSource.spo2NextDelayMs(1, interval, retry),
+        )
+    }
+
+    /**
+     * ⚠ 실패에 채널이 있어야 한다([[L-112]]). 종전엔 상태가 **어디에도 안 남아**
+     * "왜 안 오는가" 를 코드를 읽어야만 알 수 있었다.
+     */
+    @Test
+    fun `측정 상태가 로그에 남는다`() {
+        assertTrue("상태 로그가 없다", src.contains("SpO₂ 상태="))
+        assertTrue("시도·성공 계수가 없다", src.contains("spo2Attempts") && src.contains("spo2Success"))
+    }
+}
+
 class ThermalMitigationTest {
 
     private val activity = java.io.File(
@@ -281,21 +330,35 @@ class ThermalMitigationTest {
         "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
     ).readText()
 
+    /**
+     * ⚠ **08-25 저녁 사용자 재요청으로 뒤집힌 결정이다.**
+     * 종전 계약은 "탭 후 30초만 유지" 였고, 근거는 실측이었다 —
+     * 상시 유지 시 10분에 피부온 +2.33℃ · 주변온 +2.51℃ · 배터리 15%.
+     * 사용자가 두 번 요청해 상시로 되돌렸다. 근거를 지우지 않고 **대가로 남긴다.**
+     */
     @Test
-    fun `화면 유지는 조건부다 - 상시로 되돌리면 발열이 체온을 오염시킨다`() {
-        // onCreate 에서 무조건 거는 형태로 되돌아가면 안 된다.
+    fun `화면은 앱이 앞에 있는 동안 켜져 있다 - 시계로 안 돌아간다`() {
         val onCreate = activity.substringAfter("override fun onCreate").substringBefore("setContent")
-        assertFalse(
-            "onCreate 에서 화면을 상시로 붙잡는다",
+        assertTrue(
+            "onCreate 에서 화면을 붙잡지 않는다 — 시계 화면으로 돌아간다",
             onCreate.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
         )
-        assertTrue("탭으로 붙잡는 경로가 없다", activity.contains("fun holdScreen()"))
     }
 
+    /**
+     * ★ 상시 유지를 **받아들일 수 있게 만든 조건** — 발열이 조용히 오염시키지 않는다.
+     * 체온 상세가 피부온·주변온을 같은 축에 겹쳐 그리므로 두 선이 나란히 오르면
+     * 기기 발열임을 눈으로 가른다(R-27). 이 판별 수단이 사라지면 상시 유지의 전제가 무너진다.
+     */
     @Test
-    fun `화면을 떠나면 붙잡기를 푼다 - 남겨두면 발열이 이어진다`() {
-        val onPause = activity.substringAfter("override fun onPause").substringBefore("\n    }")
-        assertTrue("clearFlags 없음", onPause.contains("clearFlags"))
+    fun `발열 판별 수단이 함께 있다 - 없으면 상시 유지의 전제가 무너진다`() {
+        val detail = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/ui/DetailPages.kt",
+        ).readText()
+        assertTrue(
+            "주변온 겹치기가 없다 — 발열과 진짜 체온을 가를 수 없다",
+            detail.contains("overlay = state.ambientTrend"),
+        )
     }
 
     @Test
@@ -343,7 +406,8 @@ class StillSecStillCollectedTest {
             "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
         ).readText()
         assertFalse("무동작 베젤이 되살아났다", screen.contains("stillTicks(state)"))
-        assertTrue("걸음 베젤이 없다", screen.contains("stepTicks(state)"))
+        // 우측은 08-25 에 걸음 → 스트레스로 바뀌었다. 무동작이 화면에 없다는 계약은 그대로다.
+        assertTrue("우측 띠가 없다", screen.contains("stressBand(state)"))
     }
 }
 

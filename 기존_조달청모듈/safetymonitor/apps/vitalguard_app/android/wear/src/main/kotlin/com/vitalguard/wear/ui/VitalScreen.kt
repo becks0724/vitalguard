@@ -33,6 +33,8 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.TimeText
+import com.vitalguard.wear.core.Psi
+import com.vitalguard.wear.core.Stress
 import com.vitalguard.wear.core.Severity
 import com.vitalguard.wear.core.Thresholds
 import com.vitalguard.wear.core.skinTempSeverity
@@ -67,7 +69,7 @@ fun VitalScreen(
             },
     ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
-        BezelIndicator(band = hrBand(state), ticks = stepTicks(state))
+        BezelIndicator(left = hrBand(state), right = stressBand(state))
         // 사이드 인디케이터 명칭 — 무엇을 재는 눈금인지 없으면 못 읽는다.
         BezelLabels(state)
         TimeText()   // 워치 표준 — 시계를 보려고 앱을 나가지 않게 한다
@@ -198,22 +200,13 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             severity = skinTempSeverity(state.skinTempC),
             diameter = diameter,
         )
-        // 스트레스 지수 — 심박 + 활동맥락(또는 HRV)으로 계산한다(사용자 결정 08-25).
-        // ★ 주변온이 여기 있었다. 주변온은 서버로 계속 전송되고 WBGT 재료로 쓰인다 — 화면에서만 내렸다.
-        // ⚠ 재료가 없으면 보정 중이라 `--` 다(0 으로 채우지 않는다).
-        //
-        // ★ 여기 원래 HRV 가 있었다(08-25 A안으로 교체). 실측이 결정했다 —
-        //   필터를 두 번 강화하고 문턱을 6배(5→30) 올려도 유효 표본이 **3개**였다.
-        //   병목은 심박 정합 단계로, 범위 통과분의 83~92% 를 버린다. 삼성 IBI 가
-        //   놓친 박동이 합쳐진 값(실제 심박의 1.5~2.5배)이라 ±30% 로는 원리적으로 못 통과한다.
-        //   ⟹ 코드로 못 넘는 센서 한계다. 신뢰 못 할 값을 자리에 두느니 뺀다.
-        //   HRV 계산·전송은 유지한다(서버가 표본을 모아 쓸 수 있다) — 화면에서만 내린다.
-        val stress = state.stress
+        // 생리적 부담 지수(PSI) — 문헌 지수(Moran 1998). **표시 전용**이고 전체 판정엔 안 넣는다.
+        //   스트레스는 우측 띠로 옮겨 갔다(08-25 사용자 결정) — 같은 값을 두 곳에 두지 않는다.
         LabeledBubble(
-            value = stress.index?.toString() ?: "--",
-            label = "스트레스",
-            fraction = stress.index?.let { it / 100f },
-            severity = stress.level,
+            value = state.psi?.let { "%.1f".format(it) } ?: "--",
+            label = "생리적부담",
+            fraction = gaugeFraction(state.psi, 0.0, Psi.GAUGE_MAX),
+            severity = Psi.severity(state.psi),
             diameter = diameter,
         )
     }
@@ -279,13 +272,20 @@ private fun FooterLine(state: VitalUiState) {
 private fun BoxScope.BezelLabels(state: VitalUiState) {
     val w = LocalConfiguration.current.screenWidthDp
     val r = w / 2f
-    val labelR = r * 0.74f
+    // ★ 이름을 **인디케이터 안쪽 가장자리**에 붙인다(08-25 사용자 요청 · 종전 0.74 는
+    //   본문 쪽으로 들어와 숫자와 붙어 보였다). 띠는 0.8625~0.9375 를 차지하므로 0.84 면
+    //   띠에 닿는 자리다.
+    // ⚠ 더 밖으로 못 나간다 — 둥근 화면에서 글자가 잘린다.
+    //   우측 "스트레스"(4자 · 9sp ≈ 36dp)의 반폭 18dp 기준, 각 -35°·반지름 0.84r 일 때
+    //   중심 x = 0.688r · 그 높이의 화면 반폭 = √(r²−(0.482r)²) = 0.876r → 0.688r+18dp 가
+    //   겨우 들어간다. 0.90r 로 밀면 우측 글자가 화면 밖으로 나간다(계산으로 확인).
+    val labelR = r * 0.84f
     BezelLabel("심박", topEndDeg(Bezel.LEFT_START, Bezel.SWEEP), labelR, state.severity.color())
     BezelLabel(
-        "걸음",
-        topEndDeg(Bezel.RIGHT_START, Bezel.SWEEP),
+        "스트레스",
+        topEndDeg(Bezel.RIGHT_START, Bezel.RIGHT_SWEEP),
         labelR,
-        VgColors.Secondary,
+        state.stress.level.color(),
     )
 }
 
@@ -381,32 +381,33 @@ internal fun hrZones(): List<BezelZone> {
 }
 
 /**
- * 우측 눈금 = **걸음 수**(사용자 결정 08-25).
+ * 우측 띠 = **스트레스 지수**(08-25 사용자 결정 · 종전은 걸음).
  *
- * ★ 여기 원래 무동작이 있었다. 무동작은 **수집·전송은 계속하되 화면에서 내린다** —
- *   붕괴(실신) 판정은 서버가 하는 일이고, 작업자가 자기 무동작 초를 볼 이유가 없다.
- *   반대로 걸음은 작업자에게 의미 있는 활동량이고, 스트레스 지수의 활동 맥락과도 이어진다.
+ * 좌측 심박과 **같은 구조**다 — 정상·주의·위험을 신호등으로 나누고 현재 구간만 밝힌다.
+ * 걸음은 계기에서 내렸다. 수치는 상세 6면에 그대로 있다(수집·전송도 그대로다).
  *
- * 축 = 0~8000보. 근무 중 목표 대비 진행이 눈금으로 차오른다.
- * ⚠ 색을 판정색으로 쓰지 않는다 — 걸음은 위험 신호가 아니라 활동량이다.
- *   많이 걸었다고 경고할 일이 아니고, 적게 걸었다고 안전한 것도 아니다.
+ * 축 = 0~100(지수 스케일 그대로). 임계는 StressIndex 가 든다 — 여기 다시 적지 않는다.
  */
-internal fun stepTicks(state: VitalUiState): BezelTicks = BezelTicks(
-    startDeg = Bezel.RIGHT_START,
-    sweepDeg = Bezel.SWEEP,
-    fraction = gaugeFraction(state.dailySteps?.toDouble()?.takeIf { it > 0 }, 0.0, STEP_GAUGE_MAX),
-    color = VgColors.Accent,
-)
+internal fun stressBand(state: VitalUiState): BezelBand {
+    val idx = state.stress.index
+    return BezelBand(
+        startDeg = Bezel.RIGHT_START,
+        sweepDeg = Bezel.RIGHT_SWEEP,
+        fraction = gaugeFraction(idx?.toDouble(), 0.0, Stress.GAUGE_MAX),
+        color = state.stress.level.color(),
+        zones = stressZones(),
+    )
+}
 
-/**
- * 걸음 눈금 축 = 하루 8000보.
- *
- * ⚠ "걸음 신호는 잡히는데 인디케이터가 안 움직인다"(08-25 사용자 보고)의 원인은 축이 아니라
- *   **출처**였다. 베젤이 세션 누계를 보고 있었는데 그것은 앱을 다시 켤 때마다 0 이다
- *   (실기 로그 `act=0보(누계0)`). 오늘 누계로 바꾸니 축은 하루 기준이 맞다.
- *   더해서 눈금을 올림으로 켜 **1보라도 걸으면 한 칸은 켜진다**.
- */
-internal const val STEP_GAUGE_MAX = 8000.0
+/** 스트레스 구간 — 임계 상수에서 만든다(숫자를 화면에 다시 적지 않는다 · [[L-106]]). */
+internal fun stressZones(): List<BezelZone> {
+    fun p(v: Int) = (v / Stress.GAUGE_MAX).toFloat()
+    return listOf(
+        BezelZone(0f, p(Stress.LEVEL_CAUTION), VgColors.Normal),
+        BezelZone(p(Stress.LEVEL_CAUTION), p(Stress.LEVEL_DANGER), VgColors.Caution),
+        BezelZone(p(Stress.LEVEL_DANGER), 1f, VgColors.Danger),
+    )
+}
 
 /**
  * 주변 온도 판정 — WBGT 참고. **경보가 아니라 표시**다(정식 온열 판정은 서버가 습도·복사열까지 본다).

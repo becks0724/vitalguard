@@ -114,15 +114,16 @@ class GaugeTest {
 class BezelTest {
 
     private fun band(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.hrBand(st)
-    private fun ticks(st: com.vitalguard.wear.ui.VitalUiState) = com.vitalguard.wear.ui.stepTicks(st)
 
     @Test
     fun `좌우 구획이 겹치지 않는다 - 포개지면 둘 다 못 읽는다`() {
         val l = com.vitalguard.wear.ui.Bezel.LEFT_START
-        val rgt = com.vitalguard.wear.ui.Bezel.RIGHT_START
         val sw = com.vitalguard.wear.ui.Bezel.SWEEP
-        // 우측은 음수각(-35~35), 좌측은 145~215 — 12시(270/-90)와 6시(90)를 비운다
-        org.junit.Assert.assertTrue("우측이 6시를 침범", rgt + sw < 90f)
+        val r0 = com.vitalguard.wear.ui.Bezel.RIGHT_START
+        val r1 = r0 + com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP
+        // 좌측 145~215 · 우측 35~-35 — 12시(270/-90)와 6시(90)를 비운다.
+        org.junit.Assert.assertTrue("우측이 6시를 침범", maxOf(r0, r1) < 90f)
+        org.junit.Assert.assertTrue("우측이 12시를 침범", minOf(r0, r1) > -90f)
         org.junit.Assert.assertTrue("좌측이 6시를 침범", l > 90f)
         org.junit.Assert.assertTrue("좌측이 12시를 침범", l + sw < 270f)
     }
@@ -184,87 +185,149 @@ class BezelTest {
         assertEquals(p(com.vitalguard.wear.core.Thresholds.HR_DANGER_HIGH), z[3].to, 0.001f)
     }
 
-    /**
-     * ★ 08-25 사용자 보고 — "걸음 신호가 잡히는데 인디케이터에 적용이 안 된다".
-     * 원인 = 축 8000 · 눈금 16칸이라 500보/칸이고, 근무 초반 수백 보는 한 칸도 못 켰다.
-     */
-    /**
-     * ★ 08-25 사용자 보고 — "걸음 신호가 잡히는데 인디케이터에 적용이 안 된다".
-     * 원인은 축이 아니라 **출처**였다. 베젤이 세션 누계를 보고 있었고 그것은 앱을 다시
-     * 켤 때마다 0 이다(실기 로그 `act=0보(누계0)`). 계기는 **오늘 누계**를 봐야 한다.
-     */
-    @Test
-    fun `걸음 눈금은 오늘 누계를 본다 - 세션 누계는 앱 재시작에 0 이 된다`() {
-        val restarted = com.vitalguard.wear.ui.VitalUiState(sessionSteps = 0, dailySteps = 3200)
-        org.junit.Assert.assertTrue(
-            "앱을 다시 켰다고 계기가 비면 안 된다",
-            (ticks(restarted).fraction ?: 0f) > 0f,
-        )
-        // 세션만 있고 오늘 누계가 없으면(아직 배치 전) 채우지 않는다 — 0 으로 지어내지 않는다.
-        val noDaily = com.vitalguard.wear.ui.VitalUiState(sessionSteps = 500, dailySteps = null)
-        assertEquals(null, ticks(noDaily).fraction)
-    }
-
-    @Test
-    fun `걸음 눈금 - 하루 축을 편다`() {
-        val full = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 8000))
-        val half = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 4000))
-        assertEquals(1f, full.fraction!!, 0.001f)
-        assertEquals(0.5f, half.fraction!!, 0.001f)
-    }
-
-    /**
-     * ★ 눈금은 **아래에서 위로** 켜진다 — 좌측 띠와 같은 방향이라야 한 화면에서
-     * 두 계기가 같은 말을 한다. 종전엔 위에서 아래로 켜져 켜진 눈금이 페이지 점과
-     * 같은 자리(우상단)에 몰렸고, 그래서 "걸음이 적용 안 된다" 로 읽혔다.
-     */
-    @Test
-    fun `걸음 눈금은 아래에서 위로 켜진다`() {
-        val n = 16
-        org.junit.Assert.assertTrue("아래 끝이 안 켜졌다", com.vitalguard.wear.ui.tickLit(n - 1, n, 0.02f))
-        org.junit.Assert.assertFalse("조금 걸었는데 위까지 켜졌다", com.vitalguard.wear.ui.tickLit(0, n, 0.02f))
-        org.junit.Assert.assertTrue("가득 찼는데 위가 안 켜졌다", com.vitalguard.wear.ui.tickLit(0, n, 1f))
-    }
-
-    /**
-     * ★ 올림이다 — 반올림이면 눈금 반 칸 미만(372보/4000축이면 1.49칸)이 조용히 줄고,
-     * 아주 조금 걸은 구간은 0 칸이 된다. 0 과 "조금" 이 구별돼야 계기다.
-     */
-    @Test
-    fun `아주 조금 걸어도 한 칸은 켜진다`() {
-        val n = 16
-        val tiny = ticks(com.vitalguard.wear.ui.VitalUiState(dailySteps = 10))
-        org.junit.Assert.assertTrue(
-            "10보가 눈금을 못 켠다",
-            com.vitalguard.wear.ui.tickLit(n - 1, n, tiny.fraction),
-        )
-        // 반올림이면 0 이 되는 구간(0.5칸 미만)에서도 켜져야 한다.
-        org.junit.Assert.assertTrue(com.vitalguard.wear.ui.tickLit(n - 1, n, 0.01f))
-    }
-
-    @Test
-    fun `미측정이면 눈금을 켜지 않는다`() {
-        org.junit.Assert.assertFalse(com.vitalguard.wear.ui.tickLit(15, 16, null))
-        org.junit.Assert.assertFalse(com.vitalguard.wear.ui.tickLit(15, 16, 0f))
-    }
-
-    @Test
-    fun `걸음은 판정색을 쓰지 않는다 - 활동량이지 위험 신호가 아니다`() {
-        val many = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 7900))
-        val few = ticks(com.vitalguard.wear.ui.VitalUiState(sessionSteps = 100))
-        assertEquals("걸음 수로 색이 바뀌면 안 된다", many.color, few.color)
-    }
-
     @Test
     fun `값이 없으면 채우지 않는다 - 0 으로 그리지 않는다`() {
         assertEquals(null, band(com.vitalguard.wear.ui.VitalUiState()).fraction)
-        assertEquals(null, ticks(com.vitalguard.wear.ui.VitalUiState()).fraction)
+        assertEquals(null, com.vitalguard.wear.ui.stressBand(com.vitalguard.wear.ui.VitalUiState()).fraction)
     }
 
     @Test
     fun `심박 띠 색은 판정색을 따른다`() {
         val danger = band(com.vitalguard.wear.ui.VitalUiState(bpm = 140, collecting = true))
         assertEquals(com.vitalguard.wear.ui.VgColors.Danger, danger.color)
+    }
+}
+
+class CurrentZoneTest {
+
+    private val z = com.vitalguard.wear.ui.hrZones()
+
+    /**
+     * ★ 08-25 사용자 결정 — **현재 구간만 밝게.**
+     * 누적 채움이면 정상 심박에서도 맨 아래 서맥 위험 칸이 늘 켜져 "위험" 으로 오독된다.
+     */
+    @Test
+    fun `현재 구간 하나만 고른다 - 아래 구간을 함께 켜지 않는다`() {
+        // 88bpm(정상) → 축 30~150 에서 0.483
+        val cur = com.vitalguard.wear.ui.currentZone(z, 0.483f)!!
+        assertEquals("정상인데 정상 칸이 아니다", com.vitalguard.wear.ui.VgColors.Normal, cur.color)
+        // 고른 구간이 값을 실제로 담고 있어야 한다 = 아래 구간이 아니다.
+        org.junit.Assert.assertTrue(0.483f >= cur.from && 0.483f < cur.to)
+        // 맨 아래 위험 칸(서맥)은 선택되지 않는다.
+        org.junit.Assert.assertNotEquals(z.first(), cur)
+    }
+
+    @Test
+    fun `높은 값은 위험 칸을 고른다`() {
+        // 140bpm → (140-30)/120 = 0.9167
+        assertEquals(com.vitalguard.wear.ui.VgColors.Danger, com.vitalguard.wear.ui.currentZone(z, 0.9167f)!!.color)
+        // 축 끝(1.0)도 마지막 구간이 받는다 — 어디에도 안 걸려 사라지면 안 된다.
+        assertEquals(z.last(), com.vitalguard.wear.ui.currentZone(z, 1f))
+    }
+
+    @Test
+    fun `낮은 값은 서맥 위험 칸을 고른다`() {
+        // 35bpm → 0.0417
+        assertEquals(z.first(), com.vitalguard.wear.ui.currentZone(z, 0.0417f))
+    }
+
+    @Test
+    fun `미측정이면 아무 칸도 안 켠다`() {
+        assertEquals(null, com.vitalguard.wear.ui.currentZone(z, null))
+    }
+}
+
+class StressBandTest {
+
+    /** ★ 08-25 사용자 결정 — 우측은 걸음이 아니라 **스트레스**이고, 좌측과 같은 구간 구조다. */
+    @Test
+    fun `우측 띠는 스트레스다 - 구간이 셋이고 신호등이다`() {
+        val z = com.vitalguard.wear.ui.stressZones()
+        assertEquals(3, z.size)
+        assertEquals(com.vitalguard.wear.ui.VgColors.Normal, z[0].color)
+        assertEquals(com.vitalguard.wear.ui.VgColors.Caution, z[1].color)
+        assertEquals(com.vitalguard.wear.ui.VgColors.Danger, z[2].color)
+        assertEquals(0f, z.first().from, 0.001f)
+        assertEquals(1f, z.last().to, 0.001f)
+    }
+
+    /** 경계는 StressIndex 임계에서 온다 — 화면이 자기 숫자를 갖지 않는다. */
+    @Test
+    fun `스트레스 구간 경계 - 임계 상수와 일치한다`() {
+        val z = com.vitalguard.wear.ui.stressZones()
+        assertEquals(
+            com.vitalguard.wear.core.Stress.LEVEL_CAUTION / 100f, z[0].to, 0.001f,
+        )
+        assertEquals(
+            com.vitalguard.wear.core.Stress.LEVEL_DANGER / 100f, z[1].to, 0.001f,
+        )
+    }
+
+    /**
+     * ⚠ 좌우는 각의 부호가 반대다 — 둘 다 "비율 0 = 아래" 라야 한 화면에서 같은 말을 한다.
+     * 우측 sweep 이 음수인 이유가 이것이고, 부호가 뒤집히면 스트레스가 거꾸로 찬다.
+     */
+    @Test
+    fun `좌우 띠가 같은 방향으로 찬다 - 비율 0 은 둘 다 아래다`() {
+        fun y(deg: Float) = kotlin.math.sin(Math.toRadians(deg.toDouble()))
+        val leftLow = y(com.vitalguard.wear.ui.Bezel.LEFT_START)
+        val rightLow = y(com.vitalguard.wear.ui.Bezel.RIGHT_START)
+        org.junit.Assert.assertTrue("좌측 비율 0 이 아래가 아니다", leftLow > 0)
+        org.junit.Assert.assertTrue("우측 비율 0 이 아래가 아니다", rightLow > 0)
+        val leftHigh = y(com.vitalguard.wear.ui.Bezel.LEFT_START + com.vitalguard.wear.ui.Bezel.SWEEP)
+        val rightHigh = y(com.vitalguard.wear.ui.Bezel.RIGHT_START + com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP)
+        org.junit.Assert.assertTrue("좌측 비율 1 이 위가 아니다", leftHigh < 0)
+        org.junit.Assert.assertTrue("우측 비율 1 이 위가 아니다", rightHigh < 0)
+    }
+}
+
+class PsiTest {
+
+    /**
+     * ★ 08-25 사용자 요청 — 하단은 생리적 부담(PSI)이다.
+     * 문헌식 그대로인지 못 박는다(Moran 1998). 우리가 정한 숫자가 하나도 없어야 한다.
+     */
+    @Test
+    fun `PSI 문헌식 - 관제웹 psi_ts 와 같은 답을 낸다`() {
+        // Tc0=37.1 · TcMax=39.5 · HR0=60 · HRMax=180
+        // Tc=38.0, HR=120 → 5*(0.9/2.4) + 5*(60/120) = 1.875 + 2.5 = 4.375
+        assertEquals(4.375, com.vitalguard.wear.core.Psi.compute(38.0, 120)!!, 0.001)
+        // 기준점에서는 0
+        assertEquals(0.0, com.vitalguard.wear.core.Psi.compute(37.1, 60)!!, 0.001)
+        // 논문 상한에서 10
+        assertEquals(10.0, com.vitalguard.wear.core.Psi.compute(39.5, 180)!!, 0.001)
+    }
+
+    @Test
+    fun `입력이 없으면 판정 불가다 - 0 과 구분한다`() {
+        assertEquals(null, com.vitalguard.wear.core.Psi.compute(null, 90))
+        assertEquals(null, com.vitalguard.wear.core.Psi.compute(37.5, null))
+    }
+
+    @Test
+    fun `구간은 문헌 임계다 - 6 이상 주의 · 7_5 이상 위험`() {
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.core.Psi.severity(5.9))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.core.Psi.severity(6.0))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.core.Psi.severity(7.4))
+        assertEquals(Severity.DANGER, com.vitalguard.wear.core.Psi.severity(7.5))
+        assertEquals(Severity.IDLE, com.vitalguard.wear.core.Psi.severity(null))
+    }
+
+    /**
+     * ⚠ **표시 전용** — 추정 심부체온이 입력이라 오차가 지수로 전파된다.
+     * 전체 판정에 끼어들면 검증 못 한 값으로 경보가 뜬다(관제웹 psi.ts 와 같은 규율).
+     */
+    @Test
+    fun `PSI 는 전체 판정에 끼어들지 않는다`() {
+        // ⚠ 행동만으로는 못 세운다 — 정상 입력의 PSI 상한이 4.75 라 "정상인데 PSI 위험" 표본을
+        //   만들 수 없다. 그래서 판정식이 psi 를 읽지 않는다는 것을 소스로 못 박는다.
+        val src = java.io.File("src/main/kotlin/com/vitalguard/wear/ui/VitalUiState.kt").readText()
+        val sev = src.substringAfter("val severity: Severity").substringBefore("\n\n")
+        org.junit.Assert.assertFalse("판정식이 PSI 를 읽는다 — 표시 전용 규율이 깨졌다", sev.contains("psi"))
+        // 그리고 실제로도 정상 판정이 유지된다.
+        val s = VitalUiState(bpm = 109, skinTempC = 37.9, collecting = true)
+        org.junit.Assert.assertTrue("표본의 PSI 가 0 이면 시험이 헛돈다", s.psi!! > 3.0)
+        assertEquals(Severity.NORMAL, s.severity)
     }
 }
 
@@ -308,17 +371,17 @@ class BezelLabelTest {
             com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP,
         )
         val right = com.vitalguard.wear.ui.topEndDeg(
-            com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.SWEEP,
+            com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP,
         )
         assertEquals("좌측은 끝각(215°)이 위", 215f, left, 0.01f)
-        assertEquals("우측은 시작각(-35°)이 위", -35f, right, 0.01f)
+        assertEquals("우측은 끝각(-35°)이 위", -35f, right, 0.01f)
     }
 
     @Test
     fun `고른 각은 실제로 화면 위쪽이다 - 두 라벨의 높이가 같아야 한다`() {
         fun y(deg: Float) = kotlin.math.sin(Math.toRadians(deg.toDouble()))
         val ly = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.LEFT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
-        val ry = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.SWEEP))
+        val ry = y(com.vitalguard.wear.ui.topEndDeg(com.vitalguard.wear.ui.Bezel.RIGHT_START, com.vitalguard.wear.ui.Bezel.RIGHT_SWEEP))
         org.junit.Assert.assertTrue("좌측 라벨이 화면 위가 아니다", ly < 0)
         org.junit.Assert.assertTrue("우측 라벨이 화면 위가 아니다", ry < 0)
         assertEquals("좌우 라벨 높이가 다르다", ly, ry, 0.001)
@@ -603,11 +666,15 @@ class AmbientBubbleTest {
     }
 
     @Test
-    fun `버블 3종은 SpO2·피부온·스트레스다`() {
-        // 변천: 무동작 → HRV(센서 한계로 폐기) → 주변온 → 스트레스(08-25 사용자 결정).
-        // 무동작은 우측 베젤, 주변온은 서버 전송으로 각각 살아 있다 — 화면 자리만 바뀌었다.
+    fun `버블 3종은 SpO2·피부온·생리적부담이다`() {
+        // 변천: 무동작 → HRV(센서 한계로 폐기) → 주변온 → 스트레스 → **생리적부담**(08-25).
+        // 스트레스는 우측 띠로, 주변온은 서버 전송으로 각각 살아 있다 — 화면 자리만 바뀌었다.
         org.junit.Assert.assertFalse("HRV 버블이 되살아났다", screen.contains("label = \"HRV\""))
-        org.junit.Assert.assertTrue("스트레스 버블이 없다", screen.contains("label = \"스트레스\""))
+        org.junit.Assert.assertTrue("생리적부담 버블이 없다", screen.contains("label = \"생리적부담\""))
+        org.junit.Assert.assertFalse(
+            "같은 값을 두 곳에 뒀다 — 스트레스는 우측 띠가 든다",
+            screen.contains("label = \"스트레스\""),
+        )
         org.junit.Assert.assertTrue("SpO₂ 버블이 없다", screen.contains("label = \"SpO₂\""))
         org.junit.Assert.assertTrue("피부온 버블이 없다", screen.contains("label = \"피부온\""))
     }

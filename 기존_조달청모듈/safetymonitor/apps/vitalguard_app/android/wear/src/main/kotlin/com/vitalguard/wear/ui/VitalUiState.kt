@@ -5,6 +5,7 @@ import com.vitalguard.wear.core.Severity
 import com.vitalguard.wear.core.coreTempSeverity
 import com.vitalguard.wear.core.estimateCoreTempC
 import com.vitalguard.wear.core.heartRateSeverity
+import com.vitalguard.wear.core.Psi
 import com.vitalguard.wear.core.overallSeverity
 import com.vitalguard.wear.core.spo2Severity
 
@@ -58,6 +59,13 @@ data class VitalUiState(
     val bpmRange: Pair<Int, Int>? = null,
 ) {
     val coreTempC: Double? get() = estimateCoreTempC(skinTempC)
+
+    /**
+     * 생리적 부담 지수(PSI) — 문헌 지수. **표시 전용이라 `severity` 에 넣지 않는다.**
+     * 추정 심부체온이 입력이라 오차가 지수로 전파되고, 그 전파량을 검증할 정답이 없다
+     * (관제웹 psi.ts 와 같은 규율). 판정·알림은 심박·SpO₂·피부온이 한다.
+     */
+    val psi: Double? get() = Psi.compute(coreTempC, bpm)
 
     /**
      * 스트레스 지수 — **워치가 직접 계산한다**(서버와 같은 공식).

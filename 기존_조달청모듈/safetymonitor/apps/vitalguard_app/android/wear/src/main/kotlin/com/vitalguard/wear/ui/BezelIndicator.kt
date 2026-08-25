@@ -10,8 +10,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * 각도 규약 — 0° = 3시(우), +시계방향. 좌우 대칭으로 잡는다.
@@ -20,9 +18,16 @@ import kotlin.math.sin
  * 12시·6시를 비우는 이유 — 위는 TimeText, 아래는 버튼이 앉는다.
  */
 object Bezel {
-    const val RIGHT_START = -35f
+    /** 좌측 — 아래(145°)에서 위(215°)로. */
     const val LEFT_START = 145f
     const val SWEEP = 70f
+
+    /**
+     * 우측 — **아래(35°)에서 위(-35°)로.** 화면 좌우라 각의 부호가 반대여서 sweep 이 음수다.
+     * 이렇게 두면 좌우가 같은 규약을 쓴다 = "비율 0 은 아래, 1 은 위".
+     */
+    const val RIGHT_START = 35f
+    const val RIGHT_SWEEP = -70f
 }
 
 /**
@@ -42,19 +47,10 @@ data class BezelBand(
     val zones: List<BezelZone> = emptyList(),
 )
 
-/** 우측 = 눈금 부채꼴. **차오르는 값**에 쓴다(누적·잔량). 눈금 길이가 끝으로 갈수록 길어진다. */
-data class BezelTicks(
-    val startDeg: Float,
-    val sweepDeg: Float,
-    val fraction: Float?,
-    val color: Color,
-    val count: Int = 16,
-)
-
 @Composable
 fun BezelIndicator(
-    band: BezelBand?,
-    ticks: BezelTicks?,
+    left: BezelBand?,
+    right: BezelBand?,
     modifier: Modifier = Modifier,
     /** 반지름 대비 아크 중심 — 1.0 이 화면 가장자리. 원형 마스크에 안 잘리는 하한이 0.90 근처다. */
     radiusRatio: Float = 0.90f,
@@ -64,8 +60,8 @@ fun BezelIndicator(
         val cy = size.height / 2f
         val r = minOf(cx, cy)
 
-        band?.let { drawBand(it, cx, cy, r, radiusRatio) }
-        ticks?.let { drawTicks(it, cx, cy, r, radiusRatio) }
+        left?.let { drawBand(it, cx, cy, r, radiusRatio) }
+        right?.let { drawBand(it, cx, cy, r, radiusRatio) }
     }
 }
 
@@ -82,11 +78,17 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
     val topLeft = Offset(cx - arcR, cy - arcR)
     val boxSize = Size(arcR * 2, arcR * 2)
 
-    /** 비율 구간 하나를 호로. **칸 사이를 띄우려면 Butt 캡이어야 한다**(Round 는 틈을 메운다). */
+    /**
+     * 비율 구간 하나를 호로. **칸 사이를 띄우려면 Butt 캡이어야 한다**(Round 는 틈을 메운다).
+     * ⚠ sweep 이 음수일 수 있다 — 좌측은 아래(145°)에서 위로, 우측은 아래(35°)에서 위로
+     *   가는데 화면 좌우라 각의 부호가 반대다. 그래서 각을 정렬한 뒤 그린다.
+     */
     fun arc(fromF: Float, toF: Float, color: Color) {
         val gap = GAP_DEG / 2f
-        val s = b.startDeg + b.sweepDeg * fromF + gap
-        val e = b.startDeg + b.sweepDeg * toF - gap
+        val a0 = b.startDeg + b.sweepDeg * fromF
+        val a1 = b.startDeg + b.sweepDeg * toF
+        val s = minOf(a0, a1) + gap
+        val e = maxOf(a0, a1) - gap
         if (e <= s) return
         drawArc(
             color = color,
@@ -127,14 +129,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
     // 트랙 — 구간마다 제 색을 흐리게 깔아 "어디부터 위험인가" 가 값 없이도 보인다.
     b.zones.forEach { arc(it.from, it.to, it.color.copy(alpha = TRACK_ALPHA)) }
 
-    // ★ 채움 — **아래에서 위로**, 지나온 구간은 그 구간의 색 그대로 진하게.
-    //   값이 오르면 초록 → 노랑 → 빨강으로 색이 넘어간다(신호등의 뜻 그대로).
-    val f = b.fraction ?: return
-    if (f <= 0f) return
-    b.zones.forEach { z ->
-        val hi = minOf(z.to, f)
-        if (hi > z.from) arc(z.from, hi, z.color)
-    }
+    // ★ **현재 구간만 밝게**(08-25 사용자 결정).
+    val cur = currentZone(b.zones, b.fraction) ?: return
+    arc(cur.from, cur.to, cur.color)
+}
+
+/**
+ * 지금 값이 속한 구간 하나 — **이것만 밝힌다.**
+ *
+ * ⚠ 누적으로 채우면 정상 심박에서도 맨 아래 서맥 위험 칸이 늘 켜져 "위험" 으로 오독된다.
+ *   신호등은 "여기까지 왔다" 가 아니라 **"지금 어느 등이 켜졌나"** 다.
+ *
+ * 경계는 위쪽 구간에 준다(`from` 포함 · `to` 미포함) — 판정 함수의 `>=` 규약과 같은 방향이다.
+ * 값이 1.0 이면 어느 구간에도 `to` 미포함으로 안 걸리므로 마지막 구간이 받는다.
+ */
+internal fun currentZone(zones: List<BezelZone>, fraction: Float?): BezelZone? {
+    if (fraction == null || zones.isEmpty()) return null
+    return zones.firstOrNull { fraction >= it.from && fraction < it.to } ?: zones.last()
 }
 
 /** 구간 사이 틈(도). 칸이 나뉘어 보일 만큼만 — 넓히면 띠가 끊겨 보인다. */
@@ -142,50 +153,3 @@ private const val GAP_DEG = 2.4f
 
 /** 트랙(미도달 구간) 투명도. 값이 찬 구간과 구별되면서 색은 읽혀야 한다. */
 private const val TRACK_ALPHA = 0.22f
-
-/** 눈금 부채꼴 — 끝으로 갈수록 길어져 "차오름" 이 형태로도 읽힌다(사진 우측). */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTicks(
-    t: BezelTicks,
-    cx: Float,
-    cy: Float,
-    r: Float,
-    ratio: Float,
-) {
-    if (t.count <= 1) return
-    val outer = r * ratio + r * 0.035f
-    val stroke = (r * 0.022f).coerceAtLeast(2f)
-    for (i in 0 until t.count) {
-        val p = i / (t.count - 1f)
-        val deg = t.startDeg + t.sweepDeg * p
-        val rad = Math.toRadians(deg.toDouble())
-        val dx = cos(rad).toFloat()
-        val dy = sin(rad).toFloat()
-        // 길이는 **위로 갈수록** 자란다(i=0 이 위). 채움도 아래에서 위로 가므로 방향이 같다.
-        val len = r * 0.085f * (0.35f + 0.65f * (1f - p))
-        val inner = outer - len
-        drawLine(
-            color = if (tickLit(i, t.count, t.fraction)) t.color else VgColors.Track,
-            start = Offset(cx + dx * inner, cy + dy * inner),
-            end = Offset(cx + dx * outer, cy + dy * outer),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round,
-        )
-    }
-}
-
-/**
- * 눈금 하나가 켜지는가 — **아래에서 위로** 켜진다.
- *
- * ⚠ 종전엔 `i < filled` 라 **위에서 아래로** 켜졌다. 좌측 띠는 아래에서 위로 차는데
- *   우측만 반대라 같은 화면에서 두 계기가 서로 다른 말을 했고, 켜진 눈금이 하필
- *   페이지 점과 같은 자리(우상단)에 몰려 "걸음이 적용 안 된다" 로 읽혔다(08-25 사용자 보고).
- *
- * ⚠ 올림이다 — 반올림이면 눈금 반 칸 미만이 조용히 0 이 된다. 0 과 "조금" 은 구별돼야 계기다.
- *
- * @param index 0 = 위 끝, count-1 = 아래 끝.
- */
-internal fun tickLit(index: Int, count: Int, fraction: Float?): Boolean {
-    if (fraction == null || fraction <= 0f) return false
-    val filled = kotlin.math.ceil(fraction * count).toInt().coerceAtMost(count)
-    return index >= count - filled
-}
