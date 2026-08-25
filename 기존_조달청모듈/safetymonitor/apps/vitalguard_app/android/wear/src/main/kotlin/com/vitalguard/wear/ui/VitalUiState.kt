@@ -25,6 +25,10 @@ data class VitalUiState(
     val stillSec: Double? = null,
     /** HRV(SDNN, ms) — 삼성 IBI 로 계산. 표본이 모자라면 null(0 으로 채우지 않는다). */
     val hrvSdnnMs: Double? = null,
+    /** 직전 구간 활동 — 스트레스 지수의 '활동 맥락'. */
+    val windowSteps: Int = 0,
+    val windowFloors: Int = 0,
+    val windowKcal: Double = 0.0,
     val batteryPct: Int? = null,
     val collecting: Boolean = false,
     /** 착용 여부 — 벗으면 화면이 "착용하면 시작됩니다" 를 띄운다. */
@@ -40,6 +44,20 @@ data class VitalUiState(
     val bpmRange: Pair<Int, Int>? = null,
 ) {
     val coreTempC: Double? get() = estimateCoreTempC(skinTempC)
+
+    /**
+     * 스트레스 지수 — **워치가 직접 계산한다**(서버와 같은 공식).
+     * 서버 조회는 60초 신선도 게이트에 걸려 조회 시각에 따라 꺼지는데(R-14),
+     * 화면은 방금 잰 값을 들고 있으므로 여기서 계산하는 편이 정확하고 즉시적이다.
+     */
+    val stress: com.vitalguard.wear.core.StressResult
+        get() = com.vitalguard.wear.core.Stress.compute(
+            heartRate = bpm,
+            hrvSdnnMs = hrvSdnnMs,
+            activeEnergyKcal = windowKcal.takeIf { it > 0 },
+            steps = windowSteps.takeIf { it > 0 },
+            floors = windowFloors.takeIf { it > 0 },
+        )
 
     /** 화면 전체 상태 = 지표 중 가장 나쁜 것. 수집 전이면 대기. */
     val severity: Severity

@@ -398,10 +398,24 @@ class AmbientBubbleTest {
     }
 
     @Test
-    fun `HRV 버블은 화면에서 내려갔다`() {
-        // 필터 2단·문턱 6배로도 유효 표본이 3개였다 — 센서 한계라 표시하지 않는다.
+    fun `버블 3종은 SpO2·피부온·스트레스다`() {
+        // 변천: 무동작 → HRV(센서 한계로 폐기) → 주변온 → 스트레스(08-25 사용자 결정).
+        // 무동작은 우측 베젤, 주변온은 서버 전송으로 각각 살아 있다 — 화면 자리만 바뀌었다.
         org.junit.Assert.assertFalse("HRV 버블이 되살아났다", screen.contains("label = \"HRV\""))
-        org.junit.Assert.assertTrue("주변온 버블이 없다", screen.contains("label = \"주변\""))
+        org.junit.Assert.assertTrue("스트레스 버블이 없다", screen.contains("label = \"스트레스\""))
+        org.junit.Assert.assertTrue("SpO₂ 버블이 없다", screen.contains("label = \"SpO₂\""))
+        org.junit.Assert.assertTrue("피부온 버블이 없다", screen.contains("label = \"피부온\""))
+    }
+
+    @Test
+    fun `주변온은 계속 전송된다 - 화면에서만 내렸다`() {
+        val builder = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/pipeline/SampleBuilder.kt",
+        ).readText()
+        org.junit.Assert.assertTrue(
+            "ambientTempC 전송이 사라지면 WBGT 재료가 끊긴다",
+            builder.contains("ambientTempC"),
+        )
     }
 
     @Test
@@ -444,5 +458,70 @@ class SkinTempTrackTest {
     fun `전체 판정도 피부온을 본다 - 화면 안에서 기준이 갈리면 안 된다`() {
         val hot = VitalUiState(bpm = 80, skinTempC = 38.6, collecting = true)
         assertEquals(Severity.DANGER, hot.severity)
+    }
+}
+
+/** 스트레스 지수 — 서버 stress-index.ts 와 같은 공식·같은 상수여야 한다. */
+class StressIndexTest {
+
+    @Test
+    fun `보정 중 - HRV 도 없고 활동맥락도 없으면 계산하지 않는다`() {
+        val r = com.vitalguard.wear.core.Stress.compute(
+            heartRate = 90, hrvSdnnMs = null,
+            activeEnergyKcal = null, steps = null, floors = null,
+        )
+        org.junit.Assert.assertTrue("심박만으로는 보정 중이어야 한다", r.calibrating)
+        org.junit.Assert.assertNull(r.index)
+    }
+
+    @Test
+    fun `심박 + 활동맥락이면 계산된다`() {
+        val r = com.vitalguard.wear.core.Stress.compute(
+            heartRate = 90, hrvSdnnMs = null,
+            activeEnergyKcal = 1.0, steps = 50, floors = 0,
+        )
+        org.junit.Assert.assertFalse(r.calibrating)
+        org.junit.Assert.assertNotNull(r.index)
+        org.junit.Assert.assertTrue("지수는 0~100", r.index!! in 0..100)
+    }
+
+    @Test
+    fun `HRV 만으로도 계산된다`() {
+        val r = com.vitalguard.wear.core.Stress.compute(
+            heartRate = null, hrvSdnnMs = 30.0,
+            activeEnergyKcal = null, steps = null, floors = null,
+        )
+        org.junit.Assert.assertFalse(r.calibrating)
+        org.junit.Assert.assertNotNull(r.index)
+    }
+
+    @Test
+    fun `활동 분류 - 서버 임계(2_5 · 6_0)와 같다`() {
+        // a = 1.0*kcal + 0.5*(steps/100) + 2.0*floors
+        assertEquals(ActivityStateRef.REST, ref(com.vitalguard.wear.core.Stress.classifyActivity(2.0, 0, 0)))
+        assertEquals(ActivityStateRef.LIGHT, ref(com.vitalguard.wear.core.Stress.classifyActivity(2.5, 0, 0)))
+        assertEquals(ActivityStateRef.HEAVY, ref(com.vitalguard.wear.core.Stress.classifyActivity(6.0, 0, 0)))
+        org.junit.Assert.assertNull("셋 다 없으면 null", com.vitalguard.wear.core.Stress.classifyActivity(null, null, null))
+    }
+
+    @Test
+    fun `레벨 경계 - 40 주의 · 70 위험`() {
+        // 낮은 HRV 는 스트레스를 올린다(baseline 50 대비).
+        val calm = com.vitalguard.wear.core.Stress.compute(
+            heartRate = 70, hrvSdnnMs = 60.0, activeEnergyKcal = 0.5, steps = 10, floors = 0,
+        )
+        val tense = com.vitalguard.wear.core.Stress.compute(
+            heartRate = 120, hrvSdnnMs = 10.0, activeEnergyKcal = 0.5, steps = 10, floors = 0,
+        )
+        org.junit.Assert.assertTrue("긴장 상태가 더 높아야 한다", tense.index!! > calm.index!!)
+        assertEquals(Severity.NORMAL, calm.level)
+    }
+
+    private enum class ActivityStateRef { REST, LIGHT, HEAVY }
+    private fun ref(a: com.vitalguard.wear.core.ActivityState?) = when (a) {
+        com.vitalguard.wear.core.ActivityState.REST -> ActivityStateRef.REST
+        com.vitalguard.wear.core.ActivityState.LIGHT -> ActivityStateRef.LIGHT
+        com.vitalguard.wear.core.ActivityState.HEAVY -> ActivityStateRef.HEAVY
+        null -> null
     }
 }

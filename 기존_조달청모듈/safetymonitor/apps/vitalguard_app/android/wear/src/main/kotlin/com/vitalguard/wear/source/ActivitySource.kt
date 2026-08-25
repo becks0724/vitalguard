@@ -35,8 +35,17 @@ class ActivitySource(private val context: Context) : TrackerSource {
             val stepPts = dataPoints.getData(DataType.STEPS)
             val floorPts = dataPoints.getData(DataType.FLOORS)
             val kcalPts = dataPoints.getData(DataType.CALORIES)
+            // ★ DAILY 병행 구독(08-25) — 이 기기는 `STEPS` 를 안 보내고 `Calories` 만 왔다
+            //   (실측: `도착[Calories] 걸음0건`). DAILY 계열은 **오늘 자정 이후 누계**를
+            //   값으로 주므로 그대로 더하면 누적이 된다 — 직전 누계와의 **차이**만 쓴다.
+            //   ⚠ 자정을 넘으면 누계가 0 으로 리셋된다. 그때 음수 증분이 나오므로 버린다.
+            val stepDaily = dataPoints.getData(DataType.STEPS_DAILY).maxOfOrNull { it.value }
+            val floorDaily = dataPoints.getData(DataType.FLOORS_DAILY).maxOfOrNull { it.value }
+
             val steps = stepPts.sumOf { it.value }.toInt()
+                .takeIf { it > 0 } ?: dailyDelta(stepDaily?.toDouble(), lastStepDaily) { lastStepDaily = it }
             val floors = floorPts.sumOf { it.value }.toInt()
+                .takeIf { it > 0 } ?: dailyDelta(floorDaily, lastFloorDaily) { lastFloorDaily = it }
             val kcal = kcalPts.sumOf { it.value }
             seen++
             if (seen % 3 == 1) {
@@ -59,7 +68,14 @@ class ActivitySource(private val context: Context) : TrackerSource {
     override fun start(listener: TrackerListener) {
         this.listener = listener
         val config = PassiveListenerConfig.Builder()
-            .setDataTypes(setOf(DataType.STEPS, DataType.FLOORS, DataType.CALORIES))
+            // 구간형(STEPS)과 누계형(STEPS_DAILY)을 **둘 다** 구독한다 — 기기마다 무엇을
+            // 보내는지 다르고, 실측에서 이 워치는 구간형 걸음을 안 보냈다.
+            .setDataTypes(
+                setOf(
+                    DataType.STEPS, DataType.FLOORS, DataType.CALORIES,
+                    DataType.STEPS_DAILY, DataType.FLOORS_DAILY,
+                ),
+            )
             .build()
         runCatching {
             client.setPassiveListenerCallback(config, callback)
@@ -77,6 +93,21 @@ class ActivitySource(private val context: Context) : TrackerSource {
     }
 
     private var seen = 0
+    /** DAILY 누계의 직전 값 — 증분을 뽑는 기준점. null = 아직 기준이 없다(첫 표본은 버린다). */
+    private var lastStepDaily: Double? = null
+    private var lastFloorDaily: Double? = null
+
+    /**
+     * 누계 → 증분. **첫 표본은 0 을 낸다** — 기준점이 없으면 "오늘 걸은 전부" 가 한 번에
+     * 실려 서버 상한(steps 5000)에 걸린다. 자정 리셋(음수)도 버리고 기준만 갱신한다.
+     */
+    private inline fun dailyDelta(now: Double?, prev: Double?, save: (Double) -> Unit): Int {
+        if (now == null) return 0
+        save(now)
+        if (prev == null) return 0
+        val d = now - prev
+        return if (d > 0) d.toInt() else 0
+    }
 
     companion object {
         const val TAG = "VgActivity"

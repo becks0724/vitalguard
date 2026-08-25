@@ -187,7 +187,9 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             severity = skinTempSeverity(state.skinTempC),
             diameter = diameter,
         )
-        // 주변 온도 — **애플워치에 없는 워치8 우위 신호**이고 WBGT 온열 판정의 실제 재료다.
+        // 스트레스 지수 — 심박 + 활동맥락(또는 HRV)으로 계산한다(사용자 결정 08-25).
+        // ★ 주변온이 여기 있었다. 주변온은 서버로 계속 전송되고 WBGT 재료로 쓰인다 — 화면에서만 내렸다.
+        // ⚠ 재료가 없으면 보정 중이라 `--` 다(0 으로 채우지 않는다).
         //
         // ★ 여기 원래 HRV 가 있었다(08-25 A안으로 교체). 실측이 결정했다 —
         //   필터를 두 번 강화하고 문턱을 6배(5→30) 올려도 유효 표본이 **3개**였다.
@@ -195,11 +197,12 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
         //   놓친 박동이 합쳐진 값(실제 심박의 1.5~2.5배)이라 ±30% 로는 원리적으로 못 통과한다.
         //   ⟹ 코드로 못 넘는 센서 한계다. 신뢰 못 할 값을 자리에 두느니 뺀다.
         //   HRV 계산·전송은 유지한다(서버가 표본을 모아 쓸 수 있다) — 화면에서만 내린다.
+        val stress = state.stress
         LabeledBubble(
-            value = state.ambientTempC?.let { "%.0f".format(it) } ?: "--",
-            label = "주변",
-            fraction = gaugeFraction(state.ambientTempC, 15.0, 40.0),
-            severity = ambientSeverity(state.ambientTempC),
+            value = stress.index?.toString() ?: "--",
+            label = "스트레스",
+            fraction = stress.index?.let { it / 100f },
+            severity = stress.level,
             diameter = diameter,
         )
     }

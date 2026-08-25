@@ -102,6 +102,9 @@ class MainActivity : ComponentActivity() {
                         ambientTempC = engine?.lastAmbientTempC,
                         stillSec = engine?.stillSecNow(now),
                         hrvSdnnMs = engine?.lastHrvMs,
+                        windowSteps = engine?.windowSteps ?: 0,
+                        windowFloors = engine?.windowFloors ?: 0,
+                        windowKcal = engine?.windowKcal ?: 0.0,
                         batteryPct = batteryPct(),
                         // 서비스 생존(running)이 아니라 **실제 수집 여부**를 본다.
                         collecting = CollectorService.collecting || HrForegroundService.running,
@@ -118,6 +121,8 @@ class MainActivity : ComponentActivity() {
                             "bpm=${vitals.bpm} spo2=${vitals.spo2} skin=${vitals.skinTempC} " +
                                 "core=${vitals.coreTempC} amb=${vitals.ambientTempC} " +
                                 "still=${vitals.stillSec} hrv=${vitals.hrvSdnnMs} " +
+                                "act=${vitals.windowSteps}보/${vitals.windowFloors}층/" +
+                                "${"%.2f".format(vitals.windowKcal)}kcal stress=${vitals.stress.index} " +
                                 "[${com.vitalguard.wear.core.Sdnn.lastTrace}] " +
                                 "collecting=${vitals.collecting} " +
                                 "queued=${vitals.queued} tempFrac=" +

@@ -46,6 +46,13 @@ class CollectorEngine(
         private set
     @Volatile var lastFloors = 0
         private set
+    /** 직전 flush 구간의 활동 — 스트레스 지수의 '활동 맥락' 재료(구간 합이지 누계 아님). */
+    @Volatile var windowSteps = 0
+        private set
+    @Volatile var windowFloors = 0
+        private set
+    @Volatile var windowKcal = 0.0
+        private set
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -138,6 +145,9 @@ class CollectorEngine(
         if (kcal > 0) builder.addEnergyKcal(kcal)
         lastSteps += steps
         lastFloors += floors
+        windowSteps += steps
+        windowFloors += floors
+        windowKcal += kcal
     }
 
     // ── flush ────────────────────────────────────────────────────────
@@ -168,6 +178,10 @@ class CollectorEngine(
             fix = latestFix(nowMs),
         ) ?: return false
         queue.add(sample)
+        // 구간 누계를 비운다 — 전송된 값을 다음 구간에 다시 세면 활동이 부풀려진다.
+        windowSteps = 0
+        windowFloors = 0
+        windowKcal = 0.0
         return true
     }
 }
