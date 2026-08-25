@@ -29,12 +29,24 @@ class ActivitySource(private val context: Context) : TrackerSource {
 
     private val callback = object : PassiveListenerCallback {
         override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
-            val steps = dataPoints.getData(DataType.STEPS).sumOf { it.value }.toInt()
-            val floors = dataPoints.getData(DataType.FLOORS).sumOf { it.value }.toInt()
-            val kcal = dataPoints.getData(DataType.CALORIES).sumOf { it.value }
-            if (steps == 0 && floors == 0 && kcal <= 0.0) return
+            // ⚠ 어떤 DataType 이 실제로 오는지 먼저 본다 — 걸음이 0 일 때 "안 온 것" 인지
+            //   "0 으로 온 것" 인지 구별해야 한다(무음 실패를 값으로 가른다).
+            val arrived = dataPoints.dataTypes.joinToString { it.name }
+            val stepPts = dataPoints.getData(DataType.STEPS)
+            val floorPts = dataPoints.getData(DataType.FLOORS)
+            val kcalPts = dataPoints.getData(DataType.CALORIES)
+            val steps = stepPts.sumOf { it.value }.toInt()
+            val floors = floorPts.sumOf { it.value }.toInt()
+            val kcal = kcalPts.sumOf { it.value }
             seen++
-            if (seen % 5 == 1) Log.i(TAG, "활동 +${steps}보 ${floors}층 ${"%.1f".format(kcal)}kcal")
+            if (seen % 3 == 1) {
+                Log.i(
+                    TAG,
+                    "도착[$arrived] 걸음${stepPts.size}건=$steps · 층${floorPts.size}건=$floors · " +
+                        "칼로리${kcalPts.size}건=${"%.2f".format(kcal)}",
+                )
+            }
+            if (steps == 0 && floors == 0 && kcal <= 0.0) return
             listener?.onActivityDelta(steps, floors, kcal, System.currentTimeMillis())
         }
 

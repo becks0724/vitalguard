@@ -207,6 +207,16 @@ class ActivityCollectionTest {
     }
 
     @Test
+    fun `활동 권한이 선언돼 있다 - 없으면 콜백이 조용히 안 온다`() {
+        // 08-25 실기: 걸었는데 활동 로그 0건. 예외도 로그도 없이 콜백만 안 왔다.
+        val manifest = java.io.File("src/main/AndroidManifest.xml").readText()
+        listOf(
+            "android.permission.ACTIVITY_RECOGNITION",
+            "android.permission.health.READ_STEPS",
+        ).forEach { assertTrue("$it 누락", manifest.contains(it)) }
+    }
+
+    @Test
     fun `권한 상실을 삼키지 않는다`() {
         assertTrue("onPermissionLost 미구현", source.contains("onPermissionLost"))
     }
@@ -216,5 +226,37 @@ class ActivityCollectionTest {
         // Health Services 는 파트너 승인이 필요 없다(실측 ④). 삼성이 막혀도 활동은 온다.
         assertTrue("Health Services 미사용", source.contains("HealthServices.getClient"))
         assertFalse("삼성 SDK 에 의존한다", source.contains("com.samsung"))
+    }
+}
+
+/** 화면 유지 — 워치 기본값(수 초 뒤 시계 복귀)을 막는다(08-25 사용자 요청). */
+class KeepScreenOnTest {
+
+    private val activity = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/MainActivity.kt",
+    ).readText()
+    private val manifest = java.io.File("src/main/AndroidManifest.xml").readText()
+
+    @Test
+    fun `화면 유지 플래그가 걸려 있다`() {
+        assertTrue(
+            "FLAG_KEEP_SCREEN_ON 없음 — 몇 초 뒤 시계 화면으로 돌아간다",
+            activity.contains("FLAG_KEEP_SCREEN_ON"),
+        )
+    }
+
+    @Test
+    fun `WAKE_LOCK 권한이 선언돼 있다`() {
+        assertTrue("WAKE_LOCK 누락", manifest.contains("android.permission.WAKE_LOCK"))
+    }
+
+    @Test
+    fun `수집은 화면 플래그와 무관하다 - FGS 가 유지한다`() {
+        // 화면이 꺼져도 수집은 계속돼야 한다(실측 ⑤에서 12.2분 무손실 확인).
+        val service = java.io.File(
+            "src/main/kotlin/com/vitalguard/wear/CollectorService.kt",
+        ).readText()
+        assertTrue("FGS 승격이 사라지면 화면 꺼짐에서 수집이 죽는다", service.contains("startForeground("))
+        assertFalse("서비스가 화면 플래그에 의존하면 안 된다", service.contains("FLAG_KEEP_SCREEN_ON"))
     }
 }

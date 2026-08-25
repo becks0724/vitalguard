@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -47,6 +48,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
+
+        // ★ 화면을 켜 둔다 — 워치 기본값은 몇 초 뒤 시계 화면으로 돌아가는 것이라,
+        //   작업자가 지표를 보려면 매번 앱을 다시 열어야 한다.
+        //   ⚠ 배터리를 크게 먹는다(AOD 30h 기준 · 실측 ⑥에서 영향을 잰다).
+        //     그래서 **화면이 앞에 있을 때만** 건다(onPause 에서 해제) — 백그라운드 수집은
+        //     이 플래그와 무관하게 FGS 가 유지한다.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
@@ -205,12 +213,16 @@ class MainActivity : ComponentActivity() {
                 "android.permission.health.READ_SKIN_TEMPERATURE",
                 // ★ API 36+ 에서도 순정 SensorManager 는 이 권한을 본다 — 빼면 심박이 죽는다.
                 android.Manifest.permission.BODY_SENSORS,
+                android.Manifest.permission.ACTIVITY_RECOGNITION,
+                "android.permission.health.READ_STEPS",
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.POST_NOTIFICATIONS,
             )
         } else {
             arrayOf(
                 android.Manifest.permission.BODY_SENSORS,
+                android.Manifest.permission.ACTIVITY_RECOGNITION,
+                "android.permission.health.READ_STEPS",
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.POST_NOTIFICATIONS,
             )
