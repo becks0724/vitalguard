@@ -16,8 +16,11 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00312-qsw` (커밋 `66177db` · 08-22 · gcloud 실측). 이후 커밋은
-  서빙 코드 0줄(문서뿐)이라 재배포 불요.
+- **라이브** = `vitalguard-dashboard-00313-s5c` (커밋 `75382e7` · 08-25 · 서빙 digest 대조 일치
+  `sha256:44862ca6…`). 서빙 코드 변경은 `3153cf6` 한 건 — **갤럭시워치(Wear OS)를 애플과 가르는
+  `wearos_data_vitalguard` 출처 신설**(schemas 열거형 · `classifyVitalDataOrigin` case · 가드 3건).
+  ⚠ 워치 `sourceTag` 는 **아직 애플과 같은 값**이다 — 교체는 이 배포 이후 별도 단계(순서를 뒤집으면
+  화이트리스트 밖 source 가 `store.ts:223` 에서 조용히 폐기되고 `persistFailed:false` 라 큐가 비워진다).
 - 08-21 저녁~08-22 배포 4회 = `00309`(좌측 패널 오토리사이징 `d2cbb21`·`8771eef`) → `00310`(순환 0
   리팩터 + 그래프 게이트) → `00311`/`00312`(D-3 웜 바닥 1·2차 — DB 접속 생성 ~99% 감소).
 
