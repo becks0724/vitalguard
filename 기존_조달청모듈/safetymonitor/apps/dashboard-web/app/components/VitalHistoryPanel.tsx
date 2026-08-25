@@ -22,6 +22,7 @@ import {
 import { CoverageHeatmap } from "./CoverageHeatmap";
 import { getSessionToken } from "./session-token";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
@@ -333,41 +334,39 @@ export function VitalHistoryPanel({
               "라인/막대 동일한 차트. 구분이 의미 없음"). 이 레포가 반복해 고쳐 온
               계열이다 — 화면이 사실과 다른 것을 말한다. 목록 근거는 상수 주석 참조. */}
           {!METRIC_FIXED_CHART.has(selection.metric) && (
-          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
-            {CHART_TYPES.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                onClick={() => setChartType(t.value)}
-                aria-pressed={chartType === t.value}
-                title={`${t.label} 차트`}
-                className={`px-3 py-1 text-xs ${
-                  chartType === t.value
-                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
-                }`}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
+          <SlidingSegmented
+            className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10"
+            indicatorClassName="bg-cyan-200 dark:bg-cyan-400/20"
+            items={CHART_TYPES.map((t) => ({
+              value: t.value,
+              label: (
+                <>
+                  {t.icon} {t.label}
+                </>
+              ),
+              title: `${t.label} 차트`,
+            }))}
+            value={chartType}
+            onChange={setChartType}
+            itemClassName={(active) =>
+              `px-3 py-1 text-xs transition-colors ${
+                active ? "text-cyan-800 dark:text-cyan-100" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              }`}
+          />
           )}
-          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
-            {RANGES.filter((r) => !isEst || r.value <= 7).map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => clearCustom(r.value)}
-                className={`px-3 py-1 text-xs ${
-                  range === r.value && !customRange
-                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+          {/* 사용자 지정 기간이면 프리셋 중 활성이 없다 — value 를 null 로 넘겨 표시자를 숨긴다.
+              (0 번 칸으로 접으면 고르지도 않은 프리셋이 선택된 것처럼 보인다.) */}
+          <SlidingSegmented
+            className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10"
+            indicatorClassName="bg-cyan-200 dark:bg-cyan-400/20"
+            items={RANGES.filter((r) => !isEst || r.value <= 7).map((r) => ({ value: String(r.value), label: r.label }))}
+            value={customRange ? null : String(range)}
+            onChange={(v) => clearCustom(Number(v) as Range)}
+            itemClassName={(active) =>
+              `px-3 py-1 text-xs transition-colors ${
+                active ? "text-cyan-800 dark:text-cyan-100" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              }`}
+          />
           {/* 기간 설정 — 시작일/종료일 캘린더(연·월·일) 선택. 추정 탭은 7일 상한이라 프리셋만. */}
           {!isEst && (
           <div

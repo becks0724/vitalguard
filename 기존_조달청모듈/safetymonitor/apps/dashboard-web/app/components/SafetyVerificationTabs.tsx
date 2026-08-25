@@ -7,6 +7,7 @@ import ContractorSubmitForm from "./ContractorSubmitForm";
 import SafetyCostAuditBoard from "./SafetyCostAuditBoard";
 import WeeklyReportBoard from "./WeeklyReportBoard";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Tab = "audit" | "contractor" | "weekly";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -71,20 +72,24 @@ export default function SafetyVerificationTabs() {
     <div className="flex flex-col gap-4">
       <nav className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline bg-canvas px-4 py-3 dark:border-white/10 dark:bg-surface-dark">
         <span className="mr-1 text-xs font-bold text-ink dark:text-on-dark">VitAlGuard 안전관리비 검증</span>
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={
-              tab === t.id
-                ? "rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-on-primary transition hover:bg-primary-active"
-                : "rounded-md border border-hairline px-3 py-1.5 text-xs font-semibold text-body transition hover:border-primary dark:border-white/10 dark:text-on-dark-soft"
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+        {/* 표시자 하나가 옮겨 다닌다 — 종전엔 활성 칸의 파란 배경을 켜고 꺼서 전환이 점멸이었다.
+            ⚠ 이 줄은 flex-wrap 이라 좁은 폭에서 2행이 된다. SlidingSegmented 는 top/height 도
+              함께 옮기므로 줄이 바뀌어도 표시자가 따라간다(가로만 옮기면 엉뚱한 줄에 남는다). */}
+        <SlidingSegmented
+          className="flex flex-wrap items-center gap-2"
+          indicatorClassName="rounded-md bg-primary"
+          items={TABS.map((t) => ({ value: t.id, label: t.label }))}
+          value={tab}
+          onChange={setTab}
+          followHover
+          itemClassName={(active) =>
+            `rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+              active
+                ? "text-on-primary"
+                : "border border-hairline text-body hover:text-ink dark:border-white/10 dark:text-on-dark-soft dark:hover:text-on-dark"
+            }`
+          }
+        />
       </nav>
 
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">

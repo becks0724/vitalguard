@@ -7,6 +7,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { INPUT_CLASS } from "./login-styles";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Lang = "ko" | "en";
 type Tab = "findId" | "resetPw";
 
@@ -191,28 +192,22 @@ export function AccountRecovery({
       </p>
 
       {/* 탭 — 가입 유형 선택과 같은 알약 버튼(같은 카드 안에서 톤을 맞춘다) */}
-      <div className="mt-3 grid grid-cols-2 gap-1.5">
-        {(
-          [
-            ["findId", t.tabFindId],
-            ["resetPw", t.tabResetPw],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => switchTab(value)}
-            aria-pressed={tab === value}
-            className={`rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition ${
-              tab === value
-                ? "border-white/70 bg-white/25 text-white"
-                : "border-white/25 bg-white/10 text-white/70 hover:bg-white/15"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* 간격(gap)이 있는 2열이라 이동거리가 칸 폭과 다르다 — 실측 방식이라 그대로 정확히 앉는다. */}
+      <SlidingSegmented
+        className="mt-3 grid grid-cols-2 gap-1.5"
+        indicatorClassName="rounded-xl border border-white/70 bg-white/25 backdrop-blur-md"
+        items={[
+          { value: "findId" as const, label: t.tabFindId },
+          { value: "resetPw" as const, label: t.tabResetPw },
+        ]}
+        value={tab}
+        onChange={switchTab}
+        itemClassName={(active) =>
+          `rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition-colors ${
+            active ? "border-transparent text-white" : "border-white/25 bg-white/10 text-white/70 hover:text-white"
+          }`
+        }
+      />
 
       <p className="mt-3 text-center text-[11px] leading-relaxed text-white/70 drop-shadow">
         {tab === "findId" ? t.findIdDesc : t.resetPwDesc}

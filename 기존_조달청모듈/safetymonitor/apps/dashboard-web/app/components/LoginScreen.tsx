@@ -23,6 +23,7 @@ import { FIELD_BASE, INPUT_CLASS } from "./login-styles";
 import { StoreBadges } from "./StoreBadges";
 import { ThemeToggle } from "./ThemeToggle";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Lang = "ko" | "en";
 
 // 명시적 키 타입 — noUncheckedIndexedAccess 하에서 인덱스 접근이 undefined 로 넓어지지 않도록.
@@ -967,33 +968,26 @@ export function LoginScreen({
           {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
           <div className="col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.orgTypeLabel}</span>
-            <div className="mt-1 grid grid-cols-2 gap-1.5">
-              {(
-                [
-                  ["vitalguard", t.orgTypeVitalguard],
-                  ["member", t.orgTypeMember],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    setSOrgType(value);
-                    // 유형이 바뀌면 고를 수 있는 상호가 달라진다 — 자사 유형은 단일이라 바로 채우고,
-                    // 회원사는 비워 다시 고르게 한다(안 비우면 이전 유형의 상호가 남아 제출된다).
-                    setSCompany(value === "vitalguard" ? VITALGUARD_COMPANY : "");
-                  }}
-                  aria-pressed={sOrgType === value}
-                  className={`rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition md:py-3 ${
-                    sOrgType === value
-                      ? "border-white/70 bg-white/25 text-white"
-                      : "border-white/25 bg-white/10 text-white/70 hover:bg-white/15"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SlidingSegmented
+              className="mt-1 grid grid-cols-2 gap-1.5"
+              indicatorClassName="rounded-xl border border-white/70 bg-white/25 backdrop-blur-md"
+              items={[
+                { value: "vitalguard" as const, label: t.orgTypeVitalguard },
+                { value: "member" as const, label: t.orgTypeMember },
+              ]}
+              value={sOrgType}
+              onChange={(value) => {
+                setSOrgType(value);
+                // 유형이 바뀌면 고를 수 있는 상호가 달라진다 — 자사 유형은 단일이라 바로 채우고,
+                // 회원사는 비워 다시 고르게 한다(안 비우면 이전 유형의 상호가 남아 제출된다).
+                setSCompany(value === "vitalguard" ? VITALGUARD_COMPANY : "");
+              }}
+              itemClassName={(active) =>
+                `rounded-xl border px-3 py-2 text-xs font-semibold backdrop-blur-md transition-colors md:py-3 ${
+                  active ? "border-transparent text-white" : "border-white/25 bg-white/10 text-white/70 hover:text-white"
+                }`
+              }
+            />
           </div>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">

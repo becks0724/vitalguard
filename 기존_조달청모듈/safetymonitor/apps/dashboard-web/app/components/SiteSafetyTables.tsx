@@ -18,6 +18,7 @@ import {
 } from "../../lib/aed-status";
 import { getSessionToken } from "./session-token";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 export type Sev = "normal" | "caution" | "danger";
 
 // 선택된 설비 메트릭(가스 측정값/제세동기 배터리) — 하단 추세 그래프용. 작업자 그래프와 동일 차트 재사용.
@@ -1924,39 +1925,31 @@ export function SiteMetricChartPanel({
           <span className="text-xs text-zinc-600 dark:text-zinc-400">누적 추세 · 샘플</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
-            {(["line", "bar"] as ChartType[]).map((ct) => (
-              <button
-                key={ct}
-                type="button"
-                onClick={() => setChartType(ct)}
-                aria-pressed={chartType === ct}
-                className={`px-3 py-1 text-xs ${
-                  chartType === ct
-                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
-                }`}
-              >
-                {ct === "line" ? "📈 라인" : "📊 막대"}
-              </button>
-            ))}
-          </div>
-          <div className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10">
-            {SITE_RANGES.map((r) => (
-              <button
-                key={r.value}
-                type="button"
-                onClick={() => setRange(r.value)}
-                className={`px-3 py-1 text-xs ${
-                  range === r.value
-                    ? "bg-cyan-200 text-cyan-800 dark:bg-cyan-400/20 dark:text-cyan-100"
-                    : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-white/5"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
+          <SlidingSegmented
+            className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10"
+            indicatorClassName="bg-cyan-200 dark:bg-cyan-400/20"
+            items={[
+              { value: "line" as ChartType, label: "📈 라인" },
+              { value: "bar" as ChartType, label: "📊 막대" },
+            ]}
+            value={chartType}
+            onChange={setChartType}
+            itemClassName={(active) =>
+              `px-3 py-1 text-xs transition-colors ${
+                active ? "text-cyan-800 dark:text-cyan-100" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              }`}
+          />
+          <SlidingSegmented
+            className="flex overflow-hidden rounded border border-zinc-300 dark:border-white/10"
+            indicatorClassName="bg-cyan-200 dark:bg-cyan-400/20"
+            items={SITE_RANGES.map((r) => ({ value: String(r.value), label: r.label }))}
+            value={String(range)}
+            onChange={(v) => setRange(Number(v))}
+            itemClassName={(active) =>
+              `px-3 py-1 text-xs transition-colors ${
+                active ? "text-cyan-800 dark:text-cyan-100" : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              }`}
+          />
           <button
             type="button"
             onClick={onClose}

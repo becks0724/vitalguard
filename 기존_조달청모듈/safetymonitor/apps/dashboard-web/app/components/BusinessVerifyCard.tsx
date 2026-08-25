@@ -4,6 +4,7 @@
 // 발급사실 조회 이력(시각)을 남겨 '지급 직전 재조회'(제출 후 취소 감시 L1)를 기록한다.
 import { useState } from "react";
 
+import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Status = { bno: string; status: string; statusCode: string; taxType: string; closedDate?: string; ok: boolean };
 type Resp = { source: "live" | "mock"; items: Status[]; note?: string };
 
@@ -116,28 +117,24 @@ export default function BusinessVerifyCard() {
   return (
     <div className="rounded-lg border border-hairline bg-canvas p-3 dark:border-white/10 dark:bg-surface-dark">
       <div className="text-[10px] font-semibold text-muted">② 사용(지출)</div>
-      <div className="mt-1.5 flex whitespace-nowrap rounded-md bg-surface-strong p-0.5 dark:bg-white/10">
-        <button
-          onClick={() => setTab("issuer")}
-          className={`flex-1 rounded px-2 py-1 text-[11px] transition ${
-            tab === "issuer"
-              ? "bg-canvas font-semibold text-ink shadow-sm dark:bg-surface-dark-elevated dark:text-on-dark"
+      {/* 세그먼트 컨트롤 — 융기된 흰 필을 칸마다 켜고 끄지 않고 하나만 두고 옮긴다(점멸 제거). */}
+      <SlidingSegmented
+        className="mt-1.5 flex whitespace-nowrap rounded-md bg-surface-strong p-0.5 dark:bg-white/10"
+        indicatorClassName="rounded bg-canvas shadow-sm dark:bg-surface-dark-elevated"
+        items={[
+          { value: "issuer", label: "발급처 검증" },
+          { value: "issuance", label: "발급사실 확인" },
+        ] as const}
+        value={tab}
+        onChange={setTab}
+        itemClassName={(active) =>
+          `flex-1 rounded px-2 py-1 text-[11px] transition-colors ${
+            active
+              ? "font-semibold text-ink dark:text-on-dark"
               : "font-medium text-muted hover:text-body dark:hover:text-on-dark-soft"
-          }`}
-        >
-          발급처 검증
-        </button>
-        <button
-          onClick={() => setTab("issuance")}
-          className={`flex-1 rounded px-2 py-1 text-[11px] transition ${
-            tab === "issuance"
-              ? "bg-canvas font-semibold text-ink shadow-sm dark:bg-surface-dark-elevated dark:text-on-dark"
-              : "font-medium text-muted hover:text-body dark:hover:text-on-dark-soft"
-          }`}
-        >
-          발급사실 확인
-        </button>
-      </div>
+          }`
+        }
+      />
 
       {tab === "issuer" && (
         <>
