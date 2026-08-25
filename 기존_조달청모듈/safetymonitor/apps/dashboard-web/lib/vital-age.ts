@@ -52,3 +52,27 @@ export function vitalAgeMs(sample: VitalAgeSample, nowMs: number): number {
   }
   return nowMs - rowMs;
 }
+
+// ── 연결끊김 문턱 — 기기마다 전송 주기가 다르므로 문턱도 갈라야 한다 ─────────────
+//
+// ★ 문턱은 취향이 아니라 **전송 주기의 함수**다. 워치가 T초마다 올리면 심박 나이는 0→T 를
+// 왕복하므로, 문턱이 T 이하면 매 주기 끝자락마다 "연결끊김"이 뜬다(정상인데 오탐).
+//
+// 애플(watchOS) = 30초 배칭 → 60초 문턱. 종전 값 그대로다.
+// 갤럭시(Wear OS) = **120초** 배칭 → 150초 문턱.
+//   120초는 발열 조치의 산물이다(2026-08-25 `7ef6ca9`). 기기 발열이 피부온을 오염시키는 것이
+//   실측으로 확정돼(4분 미착용 후 재착용 10분에 피부온 +2.33℃ · **주변온 +2.51℃** — 주변온이
+//   더 오른 것이 결정적) LTE 기상을 절반으로 줄였다. 갤럭시를 도입한 이유가 실측 피부온이므로
+//   **주기를 다시 줄여 문턱을 맞추는 것은 목적을 훼손한다.** 문턱 쪽이 따라간다.
+//
+// ⚠ 이 값을 줄이려면 워치 주기부터 확인한다 — 가드가 `CollectorService.FLUSH_INTERVAL_MS` 와
+//   이 상수를 직접 대조한다(2026-08-25-stale-threshold-by-origin.guard.test.ts).
+export const STALE_MS_DEFAULT = 60_000;
+export const STALE_MS_WEAROS = 150_000;
+
+/**
+ * 출처별 연결끊김 문턱(ms). 모르는 출처·구 데이터는 종전 60초 그대로 — 하위 호환.
+ */
+export function staleThresholdMs(dataOrigin: string | undefined): number {
+  return dataOrigin === "wearos_data_vitalguard" ? STALE_MS_WEAROS : STALE_MS_DEFAULT;
+}

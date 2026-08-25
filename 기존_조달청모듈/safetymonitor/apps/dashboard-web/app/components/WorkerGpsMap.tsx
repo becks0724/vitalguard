@@ -20,7 +20,7 @@ export type WorkerMapPoint = {
   statusLabel: string; // 낙상 감지 / SOS 요청 / 위험 / 주의 / 정상 / 대기 / 연결끊김
   tone: "danger" | "caution" | "normal" | "idle";
   ageSec: number | null;
-  // 60초(STALE_MS) 초과 미수신 — 마커를 지우지 않고 고스트(마지막 확인 위치)로 유지한다.
+  // 출처별 문턱(애플 60초·갤럭시 150초) 초과 미수신 — 마커를 지우지 않고 고스트(마지막 확인 위치)로 유지한다.
   stale?: boolean;
   // 좌표 자체의 나이(초). `ageSec`(생체 수신 나이)과 **다른 축**이다 — 서버가 좌표를 직전 값에서
   // 이어 주므로 심박이 5초 전이어도 좌표는 40분 전 것일 수 있다. null = 측위 시각 미상.

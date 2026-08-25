@@ -47,7 +47,7 @@ test("① 나이 산출이 심박 측정 시각을 본다", () => {
 test("② ★ isStale 과 signalLevel 이 같은 함수를 쓴다(갈리지 않는다)", () => {
   assert.match(
     fn(dashboard, "function isStale("),
-    /return vitalAgeMs\(sample, nowMs\) > STALE_MS;/,
+    /return vitalAgeMs\(sample, nowMs\) > staleThresholdMs\(sample\.dataOrigin\);/,
     "isStale 이 나이 산출을 우회한다",
   );
   assert.match(
@@ -87,9 +87,13 @@ test("⑤ 하위 호환 — 측정 시각이 없으면 행 ts 로 폴백한다",
   assert.match(age, /Number\.isFinite\(hrMs\)/, "파싱 불가 값 방어가 사라졌다(NaN → 영원히 신선)");
 });
 
-test("⑥ 임계는 그대로 60초다", () => {
-  const m = dashboard.match(/const STALE_MS = (\d+)_?(\d*);/);
-  assert.ok(m, "STALE_MS 를 못 찾았다");
+test("⑥ 애플 임계는 그대로 60초다", () => {
+  // 2026-08-25 에 문턱이 **출처별로** 갈렸다(갤럭시 = 120초 배칭이라 150초). 상수는
+  // DemoDashboard 에서 lib/vital-age.ts 로 옮겼고, 여기서는 종전 계약 — **애플 60초** — 만
+  // 계속 못 박는다. 갤럭시 쪽 문턱과 워치 주기의 대조는 별도 가드가 본다
+  // (2026-08-25-stale-threshold-by-origin.guard.test.ts).
+  const m = age.match(/STALE_MS_DEFAULT = (\d+)_?(\d*);/);
+  assert.ok(m, "STALE_MS_DEFAULT 를 못 찾았다");
   assert.equal(Number(`${m[1]}${m[2] ?? ""}`), 60_000, "임계가 바뀌었다 — 실측 근거를 다시 볼 것");
 });
 
