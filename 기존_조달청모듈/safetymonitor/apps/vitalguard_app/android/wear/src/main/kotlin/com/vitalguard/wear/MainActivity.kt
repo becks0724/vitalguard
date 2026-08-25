@@ -41,19 +41,21 @@ class MainActivity : ComponentActivity() {
     /** 기본은 작업자 화면. 진단은 화면 안 '진단' 버튼으로만 들어간다(실측 버튼이 앞에 서면 안 된다). */
     private var showDiagnostics by mutableStateOf(false)
     private var uiTick = 0
-    private val screenHandler = Handler(Looper.getMainLooper())
 
-    /** 탭 후 화면을 켜 둘 시간(초). 상시 유지는 발열·배터리를 감당 못 한다(08-25 실측). */
-    private val keepScreenOnSec = 30L
-
-    /** 탭하면 일정 시간 화면을 붙잡는다. 시간이 지나면 워치 표준대로 꺼진다. */
+    /**
+     * 화면을 **앱이 앞에 있는 동안 계속** 켜 둔다(08-25 사용자 재요청 · 2회).
+     *
+     * ⚠⚠ **대가를 알고 켠다.** 08-25 실측 — 상시 유지로 10분에 피부온 +2.33℃ ·
+     *   주변온 +2.51℃ · 배터리 15%. 센서가 기기 발열을 피부온으로 읽어 온열 판정이 오염된다.
+     *   그래서 한 번 30초 조건부로 내렸었다.
+     * ★ 다만 그 사이에 **판별 수단이 생겼다** — 체온 상세가 피부온·주변온을 같은 축에
+     *   겹쳐 그리므로(R-27), 두 선이 나란히 오르면 발열임을 작업자가 눈으로 가른다.
+     *   오염이 '조용히' 일어나지는 않는다.
+     * ⟹ 더 나은 길은 Wear 앰비언트(항상 켜짐) 모드다 — 화면이 어두워진 채 앱이 남는다.
+     *   그쪽이 열·배터리가 훨씬 싸다. 다음 묶음 후보로 둔다.
+     */
     private fun holdScreen() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        screenHandler.removeCallbacksAndMessages(null)
-        screenHandler.postDelayed(
-            { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) },
-            keepScreenOnSec * 1000,
-        )
+        // 탭은 이제 아무 것도 안 붙잡는다 — 플래그가 이미 상시다. 호출부 호환으로 남긴다.
     }
 
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
@@ -71,11 +73,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
 
-        // ★ 화면 유지는 **조건부**다(08-25 발열 실측 후 변경).
-        //   상시로 걸었더니 10분에 피부온 +2.3℃ · 주변온 +2.5℃ · 배터리 15% 였다.
-        //   센서가 기기 발열을 피부온으로 읽어 체온 판정이 통째로 오염됐다.
-        //   ⟹ 기본은 워치 표준(수 초 뒤 시계 복귀). 화면을 탭하면 KEEP_SCREEN_ON_SEC 만큼만 유지한다.
+        // ★ 앱이 앞에 있는 동안 화면을 붙잡는다 — 시계 화면으로 돌아가지 않는다.
+        //   (08-25 사용자 재요청. 발열 대가는 holdScreen 주석 참조.)
         //   백그라운드 수집은 이 플래그와 무관하게 FGS 가 유지한다.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).

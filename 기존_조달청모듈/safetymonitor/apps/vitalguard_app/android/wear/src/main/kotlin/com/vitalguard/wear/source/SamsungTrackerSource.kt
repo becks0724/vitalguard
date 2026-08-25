@@ -28,6 +28,8 @@ class SamsungTrackerSource(
     private val context: Context,
     /** SpO₂ 주기. 확정값이 아니다 — 실측 ⑦(백그라운드 성공률) 뒤 3단계에서 정한다(R-08). */
     private val spo2IntervalMs: Long = 5 * 60_000,
+    /** 실패 뒤 재시도 간격 — 정지 순간을 잡으려면 5분은 너무 성기다(08-25 실기 0건). */
+    private val spo2RetryMs: Long = 2 * 60_000,
 ) : TrackerSource {
 
     private var service: HealthTrackingService? = null
@@ -102,22 +104,50 @@ class SamsungTrackerSource(
         }
     }
 
-    /** SpO₂ 는 단발이라 주기로 켰다 끈다 — 상시 트래커가 없기 때문이다(AAR 열거형 실측 확인). */
+    /**
+     * SpO₂ 는 단발이라 주기로 켰다 끈다 — 상시 트래커가 없기 때문이다(AAR 열거형 실측 확인).
+     *
+     * ⚠⚠ **08-25 실기 결함 — 시도가 앱 수명에 한 번뿐이었다.**
+     *   종전 조건이 `spo2Tracker == null` 이라, 측정이 완료되지 않으면(움직임·접촉 불량)
+     *   트래커가 null 로 안 돌아오고 **다음 주기가 통째로 건너뛰어졌다.** 완료됐을 때만
+     *   `stopSpo2()` 를 불렀기 때문이다. 결과 = 연속 착용 35분에 SpO₂ 0건(서버 16행 전부 null).
+     *   ⟹ 주기마다 **지난 시도를 먼저 걷어내고** 새로 시작한다. 시도에는 마감 시한을 둔다.
+     */
     private val spo2Tick = object : Runnable {
         override fun run() {
             val svc = service
-            if (svc != null && spo2Tracker == null) {
+            if (svc != null) {
+                // 지난 시도가 살아 있으면 실패로 닫는다 — 붙잡고 있으면 다음이 영영 안 온다.
+                if (spo2Tracker != null) {
+                    Log.i(TAG, "SpO₂ 시도 만료 — 미완료로 닫는다(시도 $spo2Attempts · 성공 $spo2Success)")
+                    stopSpo2()
+                }
+                spo2Attempts++
+                spo2LastStatus = null
                 spo2Tracker = track(svc, HealthTrackerType.SPO2_ON_DEMAND) { dp ->
                     val pct = dp.getValue(ValueKey.SpO2Set.SPO2)
                     val status = dp.getValue(ValueKey.SpO2Set.STATUS)
+                    // ★ 상태가 바뀔 때마다 남긴다 — 종전엔 실패가 **어디에도 안 남아**
+                    //   "왜 안 오는가" 를 코드를 읽어야만 알 수 있었다([[L-112]]).
+                    if (status != spo2LastStatus) {
+                        spo2LastStatus = status
+                        Log.i(TAG, "SpO₂ 상태=$status 값=$pct (시도 $spo2Attempts)")
+                    }
                     // 측정 완료 상태에서만 싣는다 — 계산 중(진행값)을 실으면 가짜 값이 올라간다.
                     if (pct != null && pct > 0 && status == SPO2_STATUS_COMPLETE) {
+                        spo2Success++
+                        Log.i(TAG, "SpO₂ 성공 $pct% (시도 $spo2Attempts · 성공 $spo2Success)")
                         listener?.onSpo2(pct, dp.timestamp)
                         stopSpo2()
+                        // 성공했으면 다음은 정상 주기로.
+                        handler.removeCallbacks(this)
+                        handler.postDelayed(this, spo2IntervalMs)
                     }
                 }
             }
-            handler.postDelayed(this, spo2IntervalMs)
+            // ⚠ 실패 뒤에는 **짧게** 다시 시도한다. 삼성 SpO₂ 는 정지·밀착을 요구해서
+            //   작업 중에는 대부분 실패한다 — 5분 주기로는 '가만히 있는 순간' 을 놓친다.
+            handler.postDelayed(this, spo2NextDelayMs(spo2Success, spo2IntervalMs, spo2RetryMs))
         }
     }
 
@@ -125,6 +155,11 @@ class SamsungTrackerSource(
         runCatching { spo2Tracker?.unsetEventListener() }
         spo2Tracker = null
     }
+
+    /** 시도·성공 횟수 — 성공률을 로그 한 줄로 판정하기 위한 계기(실측 ⑦). */
+    private var spo2Attempts = 0
+    private var spo2Success = 0
+    private var spo2LastStatus: Int? = null
 
     private fun track(
         svc: HealthTrackingService,
@@ -165,5 +200,15 @@ class SamsungTrackerSource(
         const val TAG = "VgSamsung"
         /** SpO₂ STATUS — 측정 완료. 그 외(계산 중·실패)는 싣지 않는다. */
         private const val SPO2_STATUS_COMPLETE = 2
+
+        /**
+         * 다음 시도까지의 간격.
+         *
+         * ⚠ 아직 한 번도 성공한 적이 없으면 **짧게** 다시 시도한다. 삼성 SpO₂ 는 정지·밀착을
+         *   요구해 작업 중에는 대부분 실패하는데, 5분 주기로는 '가만히 있는 순간' 을 놓친다
+         *   (08-25 실기 = 연속 착용 35분에 0건).
+         */
+        internal fun spo2NextDelayMs(success: Int, intervalMs: Long, retryMs: Long): Long =
+            if (success > 0) intervalMs else retryMs
     }
 }
