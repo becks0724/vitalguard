@@ -63,7 +63,12 @@ export function ThemeToggle() {
       //   연한 회색 배경 위에 흰 선이 얹히므로 안 보인다. 그래서 hex 로 못박는다.
       // 값은 #d1d5db — 이전 #f0f0f3 은 밝기가 94% 라 다크 배경 위에서 흰색으로 읽혔다(사용자 지적).
       // 트랙은 좌→우 그라데이션 — 해 쪽(좌)은 흰색, 달 쪽(우)은 회색. 낮에서 밤으로 가는 결을 준다.
-      className="flex h-8 w-16 shrink-0 cursor-pointer rounded-full border border-[#b9bec7] bg-gradient-to-r from-white to-[#d1d5db] p-1 transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      // ★ 패딩은 p-1(4px) 이 아니라 3px 다 — 치수가 딱 떨어져야 중앙에 앉는다.
+      //   세로: 32(h-8) − 2(테두리) − 6(패딩) = 24 = 썸/아이콘 높이(h-6). p-1 이면 속이 22px 라
+      //         24px 내용이 2px 넘쳐 위아래 여백이 어긋난다(사용자 지적).
+      //   가로: 64(w-16) − 2 − 6 = 56, 썸 24 → 이동거리 32 = translate-x-8 과 정확히 일치.
+      //         p-1 이면 속이 54px 라 이동거리가 30px 이어야 하는데 32px 를 밀어 오른쪽으로 삐져나갔다.
+      className="flex h-8 w-16 shrink-0 cursor-pointer items-center rounded-full border border-[#b9bec7] bg-gradient-to-r from-white to-[#d1d5db] p-[3px] transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
       <div className="relative w-full">
         {/* 바닥 — 좌측 해 · 우측 달. 썸이 없는 쪽만 흐리게 보인다 */}
