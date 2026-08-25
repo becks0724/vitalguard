@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import BusinessVerifyCard from "./BusinessVerifyCard";
 import SafetyIncreaseAuditCard from "./SafetyIncreaseAuditCard";
 
+import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 // 실집행 검증은 "현재 선택된 현장" 1곳만 노출 — 현장 선택 드롭다운(LoginSiteSelect)이
 // site-info.noticeId 를 저장하면 그 현장 검증을 보여준다(없으면 메인 현장 기본).
 const MAIN_SITE_ID = "SITE-SMARTHRD-2026";
@@ -170,7 +171,7 @@ export default function SafetyCostAuditBoard() {
         </span>
       </div>
 
-      {loadingList && <p className="py-8 text-center text-xs text-muted">현장 불러오는 중…</p>}
+      {loadingList && <QuantumPulseLoader text="현장 불러오는 중" />}
       {error && <p className="py-8 text-center text-xs text-semantic-down">{error}</p>}
 
       {!loadingList && !error && (
@@ -204,7 +205,7 @@ export default function SafetyCostAuditBoard() {
 
           {/* 우: 3중 교차검증 카드 */}
           <div className="rounded-xl border border-hairline bg-surface-soft p-4 dark:border-white/10 dark:bg-surface-dark-elevated">
-            {loadingAudit && <p className="py-8 text-center text-xs text-muted">감사 중…</p>}
+            {loadingAudit && <QuantumPulseLoader text="감사 중" />}
             {!loadingAudit && a && data && (
               <div className="space-y-4">
                 <div>

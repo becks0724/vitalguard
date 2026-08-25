@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { getSessionToken } from "./session-token";
 
+import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 type Check = { label: string; detail: string; ok: boolean; note: string };
 type Report = {
   notice: { id: string; title: string; agency: string; region?: string };
@@ -92,7 +93,7 @@ export default function WeeklyReportBoard() {
     }
   }
 
-  if (loading) return <p className="py-12 text-center text-sm text-muted">보고서 생성 중…</p>;
+  if (loading) return <QuantumPulseLoader text="보고서 생성 중" />;
   if (error || !report) return <p className="py-12 text-center text-sm text-[#cf202f]">{error ?? "데이터 없음"}</p>;
 
   const r = report;
