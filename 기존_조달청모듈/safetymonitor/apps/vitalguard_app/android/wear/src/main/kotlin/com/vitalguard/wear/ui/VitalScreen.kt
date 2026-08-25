@@ -179,13 +179,19 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             severity = coreTempSeverity(state.coreTempC),
             diameter = diameter,
         )
-        // HRV(SDNN) — 삼성 IBI 로 직접 계산한다. 스트레스 축에서 심박과 독립인 유일한 신호라
-        // 심박만으로는 못 보는 피로·긴장을 드러낸다. 무동작은 우측 베젤이 맡는다(중복 제거).
+        // 주변 온도 — **애플워치에 없는 워치8 우위 신호**이고 WBGT 온열 판정의 실제 재료다.
+        //
+        // ★ 여기 원래 HRV 가 있었다(08-25 A안으로 교체). 실측이 결정했다 —
+        //   필터를 두 번 강화하고 문턱을 6배(5→30) 올려도 유효 표본이 **3개**였다.
+        //   병목은 심박 정합 단계로, 범위 통과분의 83~92% 를 버린다. 삼성 IBI 가
+        //   놓친 박동이 합쳐진 값(실제 심박의 1.5~2.5배)이라 ±30% 로는 원리적으로 못 통과한다.
+        //   ⟹ 코드로 못 넘는 센서 한계다. 신뢰 못 할 값을 자리에 두느니 뺀다.
+        //   HRV 계산·전송은 유지한다(서버가 표본을 모아 쓸 수 있다) — 화면에서만 내린다.
         LabeledBubble(
-            value = state.hrvSdnnMs?.let { it.toInt().toString() } ?: "--",
-            label = "HRV",
-            fraction = gaugeFraction(state.hrvSdnnMs, 0.0, 100.0),
-            severity = hrvSeverity(state.hrvSdnnMs),
+            value = state.ambientTempC?.let { "%.0f".format(it) } ?: "--",
+            label = "주변",
+            fraction = gaugeFraction(state.ambientTempC, 15.0, 40.0),
+            severity = ambientSeverity(state.ambientTempC),
             diameter = diameter,
         )
     }
@@ -327,6 +333,17 @@ internal fun stillTicks(state: VitalUiState): BezelTicks = BezelTicks(
     fraction = gaugeFraction(state.stillSec, 0.0, Thresholds.COLLAPSE_STILL_SEC),
     color = stillSeverity(state.stillSec).color(),
 )
+
+/**
+ * 주변 온도 판정 — WBGT 참고. **경보가 아니라 표시**다(정식 온열 판정은 서버가 습도·복사열까지 본다).
+ * 31℃ 이상 주의 · 35℃ 이상 위험 — 고용노동부 온열질환 예방 가이드의 체감온도 단계에 맞춘 표시용 값.
+ */
+internal fun ambientSeverity(c: Double?): Severity = when {
+    c == null -> Severity.IDLE
+    c >= 35.0 -> Severity.DANGER
+    c >= 31.0 -> Severity.CAUTION
+    else -> Severity.NORMAL
+}
 
 /**
  * HRV(SDNN) 판정 — **낮을수록 나쁘다**(심박과 반대 방향).

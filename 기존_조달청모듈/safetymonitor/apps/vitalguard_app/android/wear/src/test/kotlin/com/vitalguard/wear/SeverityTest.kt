@@ -367,3 +367,40 @@ class MinSamplesTest {
         org.junit.Assert.assertTrue("SDNN 이 비정상적으로 크다: $got", got < 100.0)
     }
 }
+
+/** A안 — HRV 를 화면에서 내리고 주변 온도를 올린다(08-25 사용자 결정). */
+class AmbientBubbleTest {
+
+    private val screen = java.io.File(
+        "src/main/kotlin/com/vitalguard/wear/ui/VitalScreen.kt",
+    ).readText()
+
+    @Test
+    fun `주변 온도 판정 - 31 주의 · 35 위험`() {
+        assertEquals(Severity.NORMAL, com.vitalguard.wear.ui.ambientSeverity(30.9))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.ui.ambientSeverity(31.0))
+        assertEquals(Severity.CAUTION, com.vitalguard.wear.ui.ambientSeverity(34.9))
+        assertEquals(Severity.DANGER, com.vitalguard.wear.ui.ambientSeverity(35.0))
+        assertEquals(Severity.IDLE, com.vitalguard.wear.ui.ambientSeverity(null))
+    }
+
+    @Test
+    fun `게이지 축 15~40 - 현장 실측대(30~32)가 중간에 온다`() {
+        val f = com.vitalguard.wear.ui.gaugeFraction(31.0, 15.0, 40.0)!!
+        org.junit.Assert.assertTrue("현장 온도가 눈에 보이게 차야 한다", f in 0.5f..0.8f)
+    }
+
+    @Test
+    fun `HRV 버블은 화면에서 내려갔다`() {
+        // 필터 2단·문턱 6배로도 유효 표본이 3개였다 — 센서 한계라 표시하지 않는다.
+        org.junit.Assert.assertFalse("HRV 버블이 되살아났다", screen.contains("label = \"HRV\""))
+        org.junit.Assert.assertTrue("주변온 버블이 없다", screen.contains("label = \"주변\""))
+    }
+
+    @Test
+    fun `HRV 계산·전송은 유지한다 - 화면에서만 내렸다`() {
+        // 서버가 표본을 모아 쓸 수 있으므로 파이프라인에서 빼지 않는다.
+        val engine = java.io.File("src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt").readText()
+        org.junit.Assert.assertTrue("전송용 HRV 가 사라졌다", engine.contains("builder.hrvSdnn"))
+    }
+}

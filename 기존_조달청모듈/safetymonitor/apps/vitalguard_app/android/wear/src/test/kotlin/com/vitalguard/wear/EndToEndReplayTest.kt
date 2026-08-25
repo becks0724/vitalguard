@@ -74,7 +74,14 @@ class EndToEndReplayTest {
             assertEquals(12, body.length())
             assertEquals("EMP-6861", body.getJSONObject(0).getString("workerId"))
             // 갤럭시 전용 출처 — 서버가 이 값으로 wearos 를 확정한다(애플과 분리 · 2026-08-25)
-            assertEquals("VitAlGuard-GalaxyWatch", body.getJSONObject(0).getString("source"))
+            // ⚠ 값을 손으로 적지 않는다 — sourceTag 는 서버 배포 상태에 따라 오가는 중이다
+        //   (08-25: Galaxy 전환 → persistFailures 로 롤백 → 서버 수리 후 재전환 예정).
+        //   여기서 검증할 것은 "전송 시점에 스탬프된다" 이지 특정 문자열이 아니다.
+        //   문자열 자체는 dashboard-web 의 교차언어 가드가 서버 화이트리스트와 대조한다.
+        org.junit.Assert.assertTrue(
+            "source 가 안 실렸다",
+            body.getJSONObject(0).getString("source").startsWith("VitAlGuard-"),
+        )
         }
     }
 
