@@ -28,12 +28,14 @@ const store = readFileSync(join(here, "..", "app", "api", "app", "vital", "store
 const schema = readFileSync(
   join(here, "..", "..", "..", "packages", "schemas", "src", "vital-stream.ts"), "utf8",
 );
+const db = readFileSync(join(here, "db.ts"), "utf8");
 
 /** 주석을 걷어낸 본문에서만 검사한다 — 이름이 주석에 남아도 통과하면 가드가 아니다([[L-104]]). */
 const codeOnly = (src: string) => src.replace(/^\s*\/\/.*$/gm, "").replace(/^\s*\/\/\/.*$/gm, "");
 const uploadCode = codeOnly(upload);
 const storeCode = codeOnly(store);
 const schemaCode = codeOnly(schema);
+const dbCode = codeOnly(db);
 
 /** `classifyVitalDataOrigin` 본문만 잘라낸다 — 파일 전체에서 case 를 세면 남의 switch 가 섞인다. */
 function classifyBody(): string {
@@ -88,6 +90,29 @@ test("★ 갤럭시와 애플이 서로 다른 출처로 떨어진다 — 같으
     galaxy, apple,
     "갤럭시와 애플이 같은 dataOrigin 으로 접혔다 — 실측 체온과 추정 체온을 DB 에서 가를 수 없게 된다",
   );
+});
+
+test("★ 분류가 내놓는 실기기 출처를 적재 관문이 전부 받는다 — 안 받으면 accepted 인데 저장이 없다", () => {
+  // 2026-08-25 실사고. schemas·classify·컬럼 셋만 맞추고 배포했더니 실기에서
+  // `{"accepted":1,"persistFailures":1}` 가 났다 — `persistSample` 이 출처 화이트리스트를
+  // **따로** 들고 있었고 거기에 wearos 가 없었다. 관문은 넷인데 셋만 봤다.
+  // 이 시험이 없으면 매핑이 맞는 한 CI 는 초록이고, 적재 거부는 실기에서만 드러난다.
+  const at = dbCode.indexOf("REAL_DEVICE_ORIGINS");
+  assert.notEqual(at, -1, "db.ts 의 REAL_DEVICE_ORIGINS 가 사라졌다 — 적재 관문이 옮겨졌다");
+  const accepted = new Set(
+    (dbCode.slice(at, dbCode.indexOf("]", at)).match(/"([a-z_]+)"/g) ?? [])
+      .map((s) => s.replace(/"/g, "")),
+  );
+  assert.ok(accepted.size >= 3, `적재 허용목록 파싱이 깨졌다(추출 ${accepted.size}건)`);
+
+  for (const origin of new Set(sourceToOrigin().values())) {
+    if (origin.startsWith("mockup_")) continue; // 목업은 data_mockup 으로 따로 간다
+    assert.ok(
+      accepted.has(origin),
+      `분류는 "${origin}" 을 내놓는데 persistSample 이 안 받는다 — 실기에서 accepted 뒤 ` +
+        `persistFailures 가 난다. db.ts REAL_DEVICE_ORIGINS 에 더할 것. 현재: ${[...accepted].join(", ")}`,
+    );
+  }
 });
 
 test("★ 서버가 돌려주는 출처가 스키마 열거형에 실재한다 — 없으면 파서가 거부한다", () => {

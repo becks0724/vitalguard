@@ -979,13 +979,30 @@ function buildInsert(
   return { text, values: keys.map((k) => cols[k]) };
 }
 
+/**
+ * `vital_samples`(실데이터 테이블)에 들어갈 수 있는 출처.
+ *
+ * 목업(`mockup_*`)은 `data_mockup` 으로 따로 가므로 여기 넣지 않는다 — 이 집합의 존재
+ * 이유가 그 격리다. **실기기 종류가 늘면 여기에 더한다.**
+ */
+const REAL_DEVICE_ORIGINS: ReadonlySet<string> = new Set([
+  "ios_data_vitalguard",
+  "watchos_data_vitalguard",
+  "wearos_data_vitalguard",
+]);
+
 // 단건 insert — sample 은 zod 검증 통과한 정상 값
 export async function persistSample(sample: VitalSample): Promise<void> {
-  if (
-    sample.dataOrigin !== "ios_data_vitalguard" &&
-    sample.dataOrigin !== "watchos_data_vitalguard"
-  ) {
-    throw new Error("실데이터 테이블에는 iPhone 또는 Watch 실측 출처만 저장할 수 있습니다");
+  // ★ 이 관문의 목적은 **목업 격리**다 — 실데이터 테이블에 mockup_* 이 섞이는 것을 막는다.
+  //   실기기 출처가 늘어나면 여기도 함께 늘려야 한다. 08-25 에 갤럭시(`wearos_…`)를 추가하며
+  //   store.ts·스키마·컬럼만 보고 여기를 빠뜨려, 실기에서 store 는 accepted 인데 persist 가
+  //   throw 하는 상태가 됐다(워치 롤백으로 복구). 관문은 넷이다 — 스키마·분류·**여기**·컬럼.
+  // dataOrigin 은 스키마상 optional 이라 undefined 가 올 수 있다 — 그때도 거부다(종전 동작 유지).
+  if (sample.dataOrigin === undefined || !REAL_DEVICE_ORIGINS.has(sample.dataOrigin)) {
+    throw new Error(
+      `실데이터 테이블에는 실기기 출처만 저장할 수 있습니다(받은 값 ${sample.dataOrigin}). ` +
+        `허용: ${[...REAL_DEVICE_ORIGINS].join(", ")}`,
+    );
   }
   const cols: Record<string, unknown> = {
     data_origin: sample.dataOrigin,
