@@ -34,6 +34,17 @@ class CollectorEngine(
      * 여기서 무엇을 하든 서버로 가는 값은 안 변한다. 화면만 본다.
      */
     @Volatile var lastBpm: Int? = null
+
+    /**
+     * 마지막 심박이 **들어온** 시각. 두 곳이 쓴다.
+     *  ① 화면 — "이 숫자는 언제 잰 것인가". 없으면 낡은 값이 현재값처럼 보인다
+     *     (08-26 실기: 심박 스트림이 죽은 뒤 28분간 화면에 `101` 이 그대로 남았다).
+     *  ② 서비스 — 스트림 사망 판정. SpO₂ 에는 `lastSpo2AtMs` 로 이미 있던 장치가 심박엔 없었다.
+     */
+    @Volatile var lastBpmAtMs: Long? = null
+
+    /** 마지막 `start()` 시각 — 한 건도 못 받은 경우의 침묵 길이를 여기서 잰다. */
+    @Volatile private var sensingSinceMs: Long? = null
         private set
     @Volatile var lastSpo2: Int? = null
         private set
@@ -92,6 +103,8 @@ class CollectorEngine(
     @Synchronized
     fun start(nowMs: Long) {
         motionStopped = false
+        sensingSinceMs = nowMs
+        lastBpmAtMs = null
         // ★ 착용이 끊긴 구간을 사이에 두고 IBI 를 이어 붙이면 SDNN 이 왜곡된다 —
         //   SDNN 은 "연속된 박동" 의 변동이지 시간이 벌어진 두 토막의 차이가 아니다.
         ibiWindow.clear()
@@ -110,6 +123,8 @@ class CollectorEngine(
     @Synchronized
     fun stop() {
         source.stop()
+        sensingSinceMs = null
+        lastBpmAtMs = null
         lastBpm = null
         lastSpo2 = null
         lastSpo2AtMs = null
@@ -119,6 +134,15 @@ class CollectorEngine(
         motionStopped = true
     }
 
+    /**
+     * 심박이 끊긴 지 얼마인가(ms). 한 건도 못 받았으면 `start()` 이후 경과.
+     * 수집 중이 아니면 null — 벗은 상태의 침묵은 고장이 아니다.
+     */
+    fun hrSilenceMs(nowMs: Long): Long? {
+        val since = lastBpmAtMs ?: sensingSinceMs ?: return null
+        return (nowMs - since).coerceAtLeast(0L)
+    }
+
     // ── TrackerListener ──────────────────────────────────────────────
 
     @Synchronized
@@ -126,6 +150,7 @@ class CollectorEngine(
         if (bpm > 0) {
             builder.heartRate(bpm, atMs)
             lastBpm = bpm
+            lastBpmAtMs = atMs
             samples++
             heartHistory.add(atMs, bpm.toDouble())
             // 칼만용 원본 — 솎지 않는다. 창 밖만 버린다.

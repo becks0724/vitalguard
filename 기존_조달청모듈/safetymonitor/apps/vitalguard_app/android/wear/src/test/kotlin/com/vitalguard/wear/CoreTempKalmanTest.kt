@@ -117,7 +117,9 @@ class CoreTempWiringTest {
     @Test
     fun `화면이 칼만으로 심부체온을 채운다`() {
         val a = uncommented(activity)
-        assertTrue("칼만 추정 호출이 없다", a.contains("CoreTempKalman.estimate("))
+        // 08-26 강화 — 게이트 **없는** estimate 로는 안 된다. 심박이 끊겨도 창(180분)에 옛 표본이
+        // 남아 값이 계속 나오기 때문이다. 화면은 신선도를 통과한 것만 써야 한다.
+        assertTrue("칼만 추정 호출이 없다", a.contains("CoreTempKalman.estimateFresh("))
         assertTrue("워밍업 표시용 잔여 버킷을 안 넘긴다", a.contains("CoreTempKalman.bucketsRemaining("))
     }
 

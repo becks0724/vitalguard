@@ -96,8 +96,25 @@ object CoreTempKalman {
         return out
     }
 
-    /** 현재 추정(궤적의 마지막 점). 마지막 세션이 워밍업 미달이면 null — 안 보이는 것이 정직하다. */
+    /** 궤적의 마지막 점. 워밍업 미달이면 null. **나이 판정은 호출자 몫** — 순수 함수를 유지한다. */
     fun estimate(points: List<HrSample>): Double? = estimateSeries(points).lastOrNull()?.tempC
+
+    /**
+     * ★ **지금 쓸 수 있는** 추정치. 마지막 추정점이 [maxAgeMs] 보다 늙었으면 null.
+     *
+     * ⚠ 왜 필요한가 — 심박이 끊겨도 창(180분)에 옛 표본이 남아 있어 [estimate] 는 **최대 3시간**
+     * 더 값을 낸다. 그러면 30분 전 심박에서 나온 체온으로 지금을 판정하게 된다.
+     * 08-26 실기에서 심박이 28분간 끊긴 채 화면·서버가 계속 값을 보여준 것이 정확히 이 형태다.
+     *
+     * ★ 이건 **칼만으로 옮기면서 새로 생긴 성질**이다. 종전 피부온 파생은 값이 표본과 함께 와서
+     * 자동으로 신선했다 — 판정 근거가 표본보다 임의로 늙을 수 있다는 문제가 없었다.
+     *
+     * 버킷 시각은 분의 **시작**이라 나이가 최대 59초 과대평가된다 — 그만큼 여유를 준다.
+     */
+    fun estimateFresh(points: List<HrSample>, nowMs: Long, maxAgeMs: Long): Double? {
+        val last = estimateSeries(points).lastOrNull() ?: return null
+        return if (nowMs - last.tsMs - 60_000L <= maxAgeMs) last.tempC else null
+    }
 
     /** 워밍업까지 남은 버킷 수 — 화면이 "몇 분 더" 를 말할 수 있게 한다. 다 찼으면 0. */
     fun bucketsRemaining(points: List<HrSample>): Int {

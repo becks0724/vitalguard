@@ -42,6 +42,8 @@ class CollectorService : Service() {
     /** 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다). */
     private var sensing = false
     private var uploadBlockedUntilMs = 0L
+    /** 심박 재구독 횟수 — 로그에 남겨 "몇 번째 되살림인가" 를 볼 수 있게 한다. */
+    private var hrRevives = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -175,8 +177,32 @@ class CollectorService : Service() {
                     }
                 }
             }
+            reviveHrIfStalled(now)
             handler.postDelayed(this, FLUSH_INTERVAL_MS)
         }
+    }
+
+    /**
+     * ★ 죽은 심박 스트림을 되살린다.
+     *
+     * 08-26 실기 — 심박이 `12:22:30` 을 끝으로 28분간 한 건도 안 왔는데 앱은 `collecting=true`
+     * 였고 화면엔 마지막 값 `101` 이 그대로 남아 있었다. 서버는 옳게 "연결끊김" 을 냈는데
+     * **워치만 정상인 척했다.** 앱이 스트림 사망을 감지하는 장치가 아예 없었던 것이 원인이다.
+     *
+     * ⚠ 이건 표시 문제가 아니라 안전 문제다 — 심박이 끊긴 것을 앱이 모르면
+     * **쓰러진 작업자와 센서 고장을 구별할 수 없다.**
+     *
+     * 재구독은 `stop()`+`start()` 다. 큐·칼만 심박원본(hrLog)은 보존되고(그쪽을 안 건드린다),
+     * 화면 스냅숏과 IBI 창만 비워진다 — 낡은 값이 사라지는 것은 의도한 효과다.
+     */
+    private fun reviveHrIfStalled(now: Long) {
+        if (!sensing) return
+        val silence = engine.hrSilenceMs(now) ?: return
+        if (silence < HR_STALL_MS) return
+        hrRevives++
+        Log.w(TAG, "심박 침묵 ${silence / 1000}초 — 트래커 재구독 (${hrRevives}회째)")
+        engine.stop()
+        engine.start(now)
     }
 
     override fun onDestroy() {
@@ -201,6 +227,23 @@ class CollectorService : Service() {
          * 숫자를 두 곳에 적지 않으려고 상수로 둔다([[L-106]]).
          */
         private const val FGS_NOTIFICATION_ID = 2
+
+        /**
+         * 심박 침묵 한계 — 이 시간을 넘기면 트래커가 죽은 것으로 보고 재구독한다.
+         *
+         * 근거(08-26 실측 · wearos 심박 도착 간격 149구간) — 중앙값 **120.7초** · p75 129.4 ·
+         * p90 **209.2초**. 정상 간격에도 200초대가 나오므로 문턱이 그 위로 넉넉해야 재구독이
+         * 정상 동작에 튀지 않는다. 5분은 p90 의 1.4배이고, 안전 장비에서 5분간 심박이 없는 것은
+         * 어느 쪽이든(사람이든 센서든) 확인이 필요한 상태다.
+         */
+        const val HR_STALL_MS = 300_000L
+
+        /**
+         * 화면이 "낡았다" 고 말하기 시작하는 나이. **서버 `STALE_MS_WEAROS`(150초)와 같은 값** —
+         * 관제웹이 연결끊김으로 보는 시점과 워치가 낡았다고 말하는 시점이 어긋나면
+         * "워치는 멀쩡한데 관제만 끊김" 이라는 오해가 다시 생긴다. 두 화면이 같은 시점을 봐야 한다.
+         */
+        const val HR_STALE_MS = 150_000L
         const val TAG = "VgCollector"
         /**
          * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).

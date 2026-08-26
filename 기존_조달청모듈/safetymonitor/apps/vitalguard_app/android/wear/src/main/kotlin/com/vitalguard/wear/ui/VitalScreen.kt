@@ -168,8 +168,19 @@ private fun LabelAndRange(state: VitalUiState) {
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
         )
-        state.bpmRange?.let { (lo, hi) ->
-            Text("$lo-$hi", color = VgColors.Secondary, fontSize = 10.sp)
+        // ★ 낡은 심박은 범위 대신 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간
+        //   화면에 마지막 값이 그대로 남아 현재값처럼 읽혔다). 범위는 "지금 이 정도" 라는
+        //   뜻이라 낡은 값 옆에 두면 거짓말이 한 겹 더 붙는다.
+        if (state.bpmStale) {
+            Text(
+                state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음",
+                color = VgColors.Caution,
+                fontSize = 10.sp,
+            )
+        } else {
+            state.bpmRange?.let { (lo, hi) ->
+                Text("$lo-$hi", color = VgColors.Secondary, fontSize = 10.sp)
+            }
         }
     }
 }

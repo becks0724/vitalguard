@@ -32,6 +32,10 @@ fun HeartDetailPage(state: VitalUiState) {
             )
         },
         rows = buildList {
+            // 언제 잰 값인가 — 없으면 죽은 스트림의 옛 값이 현재값처럼 읽힌다(08-26 실기).
+            state.bpmAgeSec?.let {
+                add(DetailRow("마지막 측정", ageLabel(it), if (state.bpmStale) VgColors.Caution else VgColors.Primary))
+            }
             if (vals.size >= 2) {
                 add(DetailRow("최저 / 최고", "${vals.min().toInt()} / ${vals.max().toInt()}"))
                 add(DetailRow("평균", "${vals.average().toInt()}"))

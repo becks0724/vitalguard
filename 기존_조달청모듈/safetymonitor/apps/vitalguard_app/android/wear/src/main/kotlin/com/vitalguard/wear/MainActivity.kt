@@ -234,7 +234,13 @@ class MainActivity : ComponentActivity() {
                         bpmRange = if (bpms.size >= 2) bpms.min() to bpms.max() else null,
                         // 심부체온 추정 — 심박만 쓰는 칼만이라 기기 발열에 오염되지 않는다(R-25·R-30).
                         // 서버 coreTempEstimates 와 같은 알고리즘이라 두 화면이 같은 값을 말한다.
-                        coreTempC = hrSamples?.let { com.vitalguard.wear.core.CoreTempKalman.estimate(it) },
+                        // ★ 신선한 것만 — 심박이 끊기면 옛 표본으로 계속 나오는 값을 끊는다.
+                        //   문턱은 재구독과 같은 수다(HR_STALL_MS): 추정의 근거가 끊긴 시점 = 되살리는 시점.
+                        coreTempC = hrSamples?.let {
+                            com.vitalguard.wear.core.CoreTempKalman.estimateFresh(
+                                it, now, CollectorService.HR_STALL_MS,
+                            )
+                        },
                         coreWarmupBuckets = hrSamples
                             ?.let { com.vitalguard.wear.core.CoreTempKalman.bucketsRemaining(it) }
                             ?: com.vitalguard.wear.core.CoreTempKalman.MIN_BUCKETS,
@@ -242,6 +248,7 @@ class MainActivity : ComponentActivity() {
                         bpm = bpm,
                         spo2 = engine?.lastSpo2,
                         spo2AgeSec = engine?.lastSpo2AtMs?.let { (now - it) / 1000 },
+                        bpmAgeSec = engine?.lastBpmAtMs?.let { (now - it) / 1000 },
                         skinTempC = engine?.lastSkinTempC,
                         ambientTempC = engine?.lastAmbientTempC,
                         stillSec = engine?.stillSecNow(now),
