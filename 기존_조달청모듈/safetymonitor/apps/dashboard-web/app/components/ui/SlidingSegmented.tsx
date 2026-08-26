@@ -36,8 +36,11 @@ export function SlidingSegmented<T extends string>({
   className?: string;
   /** 움직이는 표시자 클래스(배경·테두리·그림자). */
   indicatorClassName?: string;
-  /** 칸 클래스 — 활성 여부를 받아 글자색만 바꾸는 용도. 배경은 표시자가 그린다. */
-  itemClassName: (active: boolean) => string;
+  /** 칸 클래스 — 배경은 표시자가 그린다. 글자색은 두 번째 인자(targeted)로 바꿀 것:
+   *  followHover 에서 표시자는 호버 칸으로 미리 가므로, 글자색을 active 에 묶으면
+   *  표시자가 떠난 활성 칸이 "흰 글자 + 맨바탕"으로 남는다(안 보임). targeted 는
+   *  표시자가 지금 실제로 그 칸 위에 그려져 있는지다. */
+  itemClassName: (active: boolean, targeted: boolean) => string;
   /** 마우스를 올린 칸으로 표시자를 미리 보낼지(탭 성격이면 true, 폼 선택이면 false). */
   followHover?: boolean;
 }) {
@@ -95,6 +98,8 @@ export function SlidingSegmented<T extends string>({
       />
       {items.map((it, i) => {
         const active = it.value === value;
+        // 표시자가 이 칸 위에 실제로 보이는가 — box 가 없으면(첫 측정 전) 표시자도 안 그려져 있다.
+        const targeted = i === target && visible && box !== null;
         return (
           <button
             key={it.value}
@@ -108,7 +113,7 @@ export function SlidingSegmented<T extends string>({
             onBlur={followHover ? () => setHover(null) : undefined}
             aria-pressed={active}
             title={it.title}
-            className={`relative z-10 ${itemClassName(active)}`}
+            className={`relative z-10 ${itemClassName(active, targeted)}`}
           >
             {it.label}
           </button>

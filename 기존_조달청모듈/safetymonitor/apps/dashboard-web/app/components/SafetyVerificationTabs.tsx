@@ -72,21 +72,24 @@ export default function SafetyVerificationTabs() {
     <div className="flex flex-col gap-4">
       <nav className="flex flex-wrap items-center gap-2 rounded-xl border border-hairline bg-canvas px-4 py-3 dark:border-white/10 dark:bg-surface-dark">
         <span className="mr-1 text-xs font-bold text-ink dark:text-on-dark">VitAlGuard 안전관리비 검증</span>
-        {/* 표시자 하나가 옮겨 다닌다 — 종전엔 활성 칸의 파란 배경을 켜고 꺼서 전환이 점멸이었다.
+        {/* 감싸는 필 트랙 안에서 파란 필 하나가 옮겨 다닌다(GlassTabBar 와 같은 결의 트랙).
+            ⚠ 글자색은 active 가 아니라 targeted(표시자가 지금 그 칸 위에 있는가)를 따른다 —
+              followHover 로 표시자가 호버 칸에 미리 가는데 활성 칸 글자를 흰색으로 두면
+              흰 바탕에 흰 글자만 남는다(2026-08-26 실집행 검증 탭에서 실측).
             ⚠ 이 줄은 flex-wrap 이라 좁은 폭에서 2행이 된다. SlidingSegmented 는 top/height 도
               함께 옮기므로 줄이 바뀌어도 표시자가 따라간다(가로만 옮기면 엉뚱한 줄에 남는다). */}
         <SlidingSegmented
-          className="flex flex-wrap items-center gap-2"
-          indicatorClassName="rounded-md bg-primary"
+          className="flex flex-wrap items-center gap-0.5 rounded-pill border border-black/5 bg-white/50 px-1 py-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-md dark:border-white/10 dark:bg-white/[0.06] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+          indicatorClassName="rounded-pill bg-primary"
           items={TABS.map((t) => ({ value: t.id, label: t.label }))}
           value={tab}
           onChange={setTab}
           followHover
-          itemClassName={(active) =>
-            `rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
-              active
+          itemClassName={(_active, targeted) =>
+            `rounded-pill px-3 py-1.5 text-xs font-semibold transition-colors ${
+              targeted
                 ? "text-on-primary"
-                : "border border-hairline text-body hover:text-ink dark:border-white/10 dark:text-on-dark-soft dark:hover:text-on-dark"
+                : "text-body hover:text-ink dark:text-on-dark-soft dark:hover:text-on-dark"
             }`
           }
         />
