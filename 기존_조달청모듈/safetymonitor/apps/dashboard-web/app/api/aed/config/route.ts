@@ -1,5 +1,6 @@
 // AED(제세동기 알림) 장비 설정 오버라이드 — 조회(GET)=로그인 세션, 수정(PUT=설치위치·관리책임자·비고)=관리자 권한(권한있음)만.
 import { NextResponse } from "next/server";
+import { readOr503 } from "../../../../lib/route-read";
 
 import { getSession, hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { findAedDevice } from "../../../../lib/aed-devices";
@@ -11,8 +12,9 @@ export async function GET(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
-  const configs = await getAedConfigs();
-  return NextResponse.json({ ok: true, configs });
+  return readOr503("aed/config", getAedConfigs, (configs) =>
+    NextResponse.json({ ok: true, configs }),
+  );
 }
 
 export async function PUT(request: Request) {
