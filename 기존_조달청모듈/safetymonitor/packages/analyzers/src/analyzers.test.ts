@@ -8,6 +8,7 @@ import { detectHeartRateAbnormal } from "./heart-rate.js";
 import { buildSosEvent } from "./sos.js";
 import { detectSpo2Low } from "./spo2.js";
 import { detectHyperthermia } from "./hyperthermia.js";
+import { THRESHOLDS } from "./thresholds.js";
 
 const NOW = "2026-05-21T10:00:00.000Z";
 
@@ -212,18 +213,23 @@ test("SpO₂ 미감지 — spo2 미측정(undefined) 샘플은 null", () => {
   assert.equal(event, null);
 });
 
-test("고온 — 손목 37.6℃ (추정 38.1℃) 는 danger", () => {
+// ⚠ 손목 값을 리터럴로 박지 않는다 — 2026-08-26 임계 상향(37.5/38.0 → 38.0/38.5)에서 이 두
+//   시험이 옛 숫자에 묶여 빨개졌다. 시험이 지키려는 것은 "37.6℃ 가 danger" 가 아니라
+//   **"임계를 넘으면 danger, 그 아래 주의대면 caution"** 이다. 상수에서 역산해 계약만 고정한다.
+const skinFor = (coreC: number) => coreC - THRESHOLDS.coreTemp.wristToCoreOffsetC;
+
+test("고온 — 위험 임계를 넘긴 손목 온도는 danger", () => {
   const event = detectHyperthermia({
-    sample: { workerId: "demo01", ts: NOW, skinTempC: 37.6 },
+    sample: { workerId: "demo01", ts: NOW, skinTempC: skinFor(THRESHOLDS.coreTemp.dangerC + 0.1) },
   });
   assert.ok(event);
   assert.equal(event.type, "hyperthermia");
   assert.equal(event.severity, "danger");
 });
 
-test("고온 — 손목 37.1℃ (추정 37.6℃) 는 caution", () => {
+test("고온 — 주의 임계와 위험 임계 사이는 caution", () => {
   const event = detectHyperthermia({
-    sample: { workerId: "demo01", ts: NOW, skinTempC: 37.1 },
+    sample: { workerId: "demo01", ts: NOW, skinTempC: skinFor(THRESHOLDS.coreTemp.cautionC + 0.1) },
   });
   assert.ok(event);
   assert.equal(event.severity, "caution");

@@ -24,14 +24,15 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { VitalSample } from "@safetymonitor/schemas";
 import {
-  estimateCoreTempC,
   computeStressIndex,
   stressInputsFromSample,
   type StressLevel,
   type StressResult,
 } from "@safetymonitor/analyzers";
 
-import { heartRateStatus, spo2Status, coreTempStatus, workActivity } from "../../lib/severity";
+// coreTempStatusC = 심부체온 직접 판정(칼만 입력 · 라이브 판정의 정본).
+// coreTempStatus(손목 입력)는 이 파일에서 더 쓰지 않는다 — 기기 발열 오염 때문에 판정에서 뺐다.
+import { heartRateStatus, spo2Status, coreTempStatusC, workActivity } from "../../lib/severity";
 import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { formatElapsed } from "../../lib/absence-watch";
@@ -300,12 +301,16 @@ const STATUS_LABEL: Record<VitalStatus, string> = {
 // 카드 전체에 worst-of 상태 — 신호등 인디케이터 + 상태 배지 라벨용.
 // nowMs 를 주면 SpO₂ 는 신선한 측정(30분 이내)만 판정에 넣는다 — 기회 측정이라 낡은 저산소 값이
 // 위험을 계속 점등하면 오탐이다. 미전달(레거시 호출)은 종전 동작 유지.
-function overallStatus(sample?: VitalSample, nowMs?: number): VitalStatus {
+// ★ `coreTempEstC` = 심박 기반 칼만 심부체온(서버 산출 · `data.coreTempEst[워커].tempC`).
+//   2026-08-26 부터 **체온 판정은 이 값으로만** 한다 — 손목 실측에는 기기 발열이 섞이고
+//   (주변온≥33 구간 +0.841℃) 칼만은 같은 구간에서 +0.019℃ 로 안 움직인다.
+//   미전달·워밍업 전이면 `coreTempStatusC` 가 idle 을 내 **판정을 보류**한다(손목으로 폴백하지 않는다).
+function overallStatus(sample?: VitalSample, nowMs?: number, coreTempEstC?: number): VitalStatus {
   if (!sample) return "idle";
   const statuses: VitalStatus[] = [
     heartRateStatus(sample.heartRate, workActivity(sample)), // 작업 중이면 작업부하 밴드
     spo2Status(nowMs === undefined ? sample.spo2 : freshSpo2(sample, nowMs)),
-    coreTempStatus(sample.skinTempC),
+    coreTempStatusC(coreTempEstC),
   ];
   if (statuses.includes("danger")) return "danger";
   if (statuses.includes("caution")) return "caution";
@@ -331,11 +336,11 @@ type WorkerStatus =
 //     문구가 착용을 암시하지 않게 하는 것뿐이고, 이 라벨이 그 지점이다.
 // ⚠ `tone` 은 `normal` 그대로다 — 신호등 색·집계("이상 N명")는 tone 으로 계산하므로 안 바뀐다.
 //   라벨만 정직해지고 판정은 그대로다.
-function workerStatus(sample?: VitalSample, nowMs?: number): WorkerStatus {
+function workerStatus(sample?: VitalSample, nowMs?: number, coreTempEstC?: number): WorkerStatus {
   if (!sample) return { label: "대기", tone: "idle" };
   if (sample.fallDetected) return { label: "낙상 감지", tone: "danger" };
   if (sample.manualSos) return { label: "SOS 요청", tone: "danger" };
-  const overall = overallStatus(sample, nowMs);
+  const overall = overallStatus(sample, nowMs, coreTempEstC);
   if (overall === "danger") return { label: "위험", tone: "danger" };
   if (overall === "caution") return { label: "주의", tone: "caution" };
   if (overall === "normal") return { label: "수신 중", tone: "normal" };
@@ -5315,7 +5320,7 @@ export function DemoDashboard() {
         heartRateStatus(s.heartRate, workActivity(s)) === "danger" ||
         // SpO₂ 는 신선한 측정(30분 이내)만 — 낡은 저산소 값이 경보를 계속 발화시키는 오탐 방지.
         spo2Status(freshSpo2(s, now)) === "danger" ||
-        coreTempStatus(s.skinTempC) === "danger";
+        coreTempStatusC(data.coreTempEst?.[s.workerId]?.tempC) === "danger";
       if (danger) out.push(s);
     }
     return out;
@@ -5720,7 +5725,7 @@ export function DemoDashboard() {
         lon >= 123.5 &&
         lon <= 132.5
       ) {
-        const status = workerStatus(s, now);
+        const status = workerStatus(s, now, data.coreTempEst?.[s.workerId]?.tempC);
         const ageMs = now - Date.parse(s.ts);
         const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
         // 문턱(애플 60초·갤럭시 150초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 —
@@ -6061,7 +6066,7 @@ export function DemoDashboard() {
     for (let pos = 0; pos < filledSlots.length; pos++) {
       const slot = filledSlots[pos];
       if (!slot) continue;
-      const status = overallStatus(latestMap.get(slot.workerId), now);
+      const status = overallStatus(latestMap.get(slot.workerId), now, data.coreTempEst?.[slot.workerId]?.tempC);
       if (status === "caution" || status === "danger") return pos;
     }
     return -1;
@@ -6095,7 +6100,7 @@ export function DemoDashboard() {
       // caution 단계는 텔레그램·표시 전용(신호등 불변). 생체 판정(workerStatus)은 건드리지 않고
       // 톤 합성에만 얹는다 — stale 이면 온열 판정도 낡은 데이터라 얹지 않는다.
       const heatWarning = !stale && data.heatStage?.[slot.workerId] === "warning";
-      const baseTone = effectiveTone(workerStatus(sample, now).tone, {
+      const baseTone = effectiveTone(workerStatus(sample, now, data.coreTempEst?.[slot.workerId]?.tempC).tone, {
         stale,
         outside,
       });
@@ -6113,7 +6118,7 @@ export function DemoDashboard() {
         if (hr === "caution" || hr === "danger") ms.push("심박");
         const sp = spo2Status(freshSpo2(sample, now));
         if (sp === "caution" || sp === "danger") ms.push("SpO₂");
-        const tp = coreTempStatus(sample?.skinTempC);
+        const tp = coreTempStatusC(data.coreTempEst?.[slot.workerId]?.tempC);
         if (tp === "caution" || tp === "danger") ms.push("체온");
         if (heatWarning) ms.push("온열 경고");
         const withLoc = withOutsideMetric(ms, outside);
@@ -7154,11 +7159,17 @@ export function DemoDashboard() {
                       미개방이라 상시 --" 였는데, 갤럭시(Wear OS) 온도 센서가 행마다 실측을 보내면서
                       그 전제가 깨졌다. 이제 이 열은 **행 자신의 측정값**을 먼저 보여준다 —
                       추정은 워커 단위 1분 해상도라 같은 워커의 여러 행에 같은 값이 반복됐다. */}
+                  {/* ★ `체온` → `손목온도` (2026-08-26 · 같은 날 오전 내가 `체온 추정`→`체온` 으로
+                      바꿨던 것을 되돌린다). 이 열의 값은 손목 피부온이고 체온이 아니다 —
+                      실측 240점 중 3%가 35.0℃ 미만, 최저 34.12℃ 다. "체온 34.1" 은 저체온증으로
+                      읽히고, 같은 시각 칼만 심부체온은 37.3℃ 로 정상이었다.
+                      ⚠ 행 단위라 칼만을 못 만든다(30분 심박 이력이 필요) — 그래서 이 표에는
+                        체온 열을 만들지 않고 손목온도만 둔다. 체온은 작업자 표·카드에서 본다. */}
                   <th
                     className="px-4 py-3"
-                    title="워치 온도 센서 실측(행별 값). 실측이 없는 행은 심박 기반 추정치를 ≈ 로 표시 — 의료 판정 아님"
+                    title="워치 온도 센서가 잰 손목 피부온(행별 실측) — 체온이 아니다. 기기 발열이 섞이고 30℃대 중반까지 내려간다. 실측이 없는 행은 워커 단위 심박 기반 추정치를 ≈ 로 표시"
                   >
-                    체온 (℃)
+                    손목온도 (℃)
                   </th>
                 </tr>
               </thead>
@@ -7259,7 +7270,12 @@ function formatPersisted(n: number | null | undefined): string {
 
 // 작업자 표 헤더 — 13열 라벨. 수동 모드일 때만 첫 열에 "정렬" 라벨.
 function WorkerTableHeader({ manual }: { manual: boolean }) {
-  const cols = ["", "작업자", "직급", "심박", "SpO₂", "체온", "낙상", "스트레스", "신호", "상태", "수신", "누적", ""];
+  // ★ "체온" → "손목온도" (2026-08-26 · 사용자 지시). 이 열의 주값은 **손목 피부온**이고
+  //   그것은 체온이 아니다 — 실측 240점 중 8점(3%)이 35.0℃ 미만으로 내려가고 최저가 34.12℃ 다.
+  //   "체온 34.1" 로 읽히면 **저체온증 오인**이고, 멀쩡한 작업자를 후송시킬 수 있다.
+  //   같은 시각 칼만 심부체온은 37.34~37.36℃ 로 전부 정상이었다(심박 70~101bpm).
+  //   ⚠ 고열 오독(38.9)보다 이쪽이 나쁘다 — 고열은 "덥나 보다" 로 끝나지만 저체온은 조치를 부른다.
+  const cols = ["", "작업자", "직급", "심박", "SpO₂", "손목온도", "낙상", "스트레스", "신호", "상태", "수신", "누적", ""];
   return (
     <div
       className={`${TABLE_GRID} border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}
@@ -7343,8 +7359,8 @@ function WorkerTableRow({
   dragListeners,
 }: WorkerTableRowProps) {
   const workerId = entry.workerId;
-  const overallVital = overallStatus(sample, nowMs);
-  const wstatus = workerStatus(sample, nowMs);
+  const overallVital = overallStatus(sample, nowMs, coreTempEstC);
+  const wstatus = workerStatus(sample, nowMs, coreTempEstC);
   // 연결끊김 — sample 존재 + 신호 문턱 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 문턱은 배칭 주기의 함수라 출처마다 다르다(애플 60초·갤럭시 150초 — lib/vital-age.ts 참조).
   const stale = sample !== undefined && signal === 0;
@@ -7362,7 +7378,8 @@ function WorkerTableRow({
   // 연결끊김이면 생체 3종을 비운다 — sticky 직전값을 현재값처럼 초록으로 보여주던 false-OK 차단.
   // (잠금 중에는 폰이 계속 POST 해 stale 이 아니므로 잠금 연속성은 그대로 유지된다.)
   const shown = gateStaleVitals(sample, stale);
-  const core = shown.skinTempC == null ? undefined : estimateCoreTempC(shown.skinTempC);
+  // (종전 여기서 `손목+0.5` 를 '추정' 으로 만들어 카드에 적었다. 2026-08-26 에 그 표기를
+  //  칼만(coreTempEstC)으로 바꾸면서 이 파생값은 쓰이는 곳이 없어졌다 — 지운다.)
   // 생리적 부담 지수(PSI · Moran 1998) — 추정 체온 + 심박. 표시 전용이라 판정·경보에 넣지 않는다.
   // 안정심박은 sticky 병합값이라 stale 게이트 밖이지만, 표시 자체가 !stale 분기 안에서만 일어난다.
   const psi = computePsi({
@@ -7560,18 +7577,33 @@ function WorkerTableRow({
           )
         ) : (
           <span className="leading-tight">
-            <span className="font-mono text-sm tabular-nums">
-              <span className={STATUS_CLASS[coreTempStatus(shown.skinTempC)]}>
-                {formatTemp(shown.skinTempC)}
-              </span>
+            {/* ★ 주값 = 손목 실측. **중립색이다**(2026-08-26 · 사용자 지시).
+                판정색을 이 숫자에 걸면 34.8℃ 가 빨갛게 떠서 라벨을 고쳐도 저체온 오독이 난다.
+                손목 피부온은 실측 240점 중 3%가 35.0℃ 미만이고 최저 34.12℃ 인데, 같은 시각
+                칼만은 37.34~37.36℃ 로 정상이었다. 손목값은 참고값이지 체온이 아니다. */}
+            <span className="font-mono text-sm tabular-nums text-body dark:text-on-dark-soft">
+              {formatTemp(shown.skinTempC)}
               <span className="ml-0.5 text-[10px] text-muted">℃</span>
             </span>
-            <span className="block text-[9px] leading-none text-muted">
-              추정 {core == null ? "--" : formatTemp(core)}℃
+            {/* ★ 부값 = **체온**(심박 기반 칼만). 판정색은 여기에만 건다 — 표시와 판정이
+                같은 줄에 있어야 색이 무엇을 말하는지 어긋나지 않는다.
+                종전엔 이 자리에 `손목+0.5` 를 "추정" 으로 적었는데, 그건 차트의
+                '체온(심박 추정)' 탭과 **다른 값**이라 같은 이름이 두 값을 가리켰다.
+                ⚠ 워밍업 전(칼만 없음)에는 빈칸 대신 사유를 적는다 — 빈칸은 "센서 고장" 으로 읽힌다. */}
+            <span className="block text-[9px] leading-none">
+              <span className="text-muted">체온 </span>
+              {coreTempEstC == null ? (
+                <span className="text-muted">심박 누적 중</span>
+              ) : (
+                <span className={STATUS_CLASS[coreTempStatusC(coreTempEstC)]}>
+                  {formatTemp(coreTempEstC)}℃
+                </span>
+              )}
             </span>
           </span>
         ),
-        "손목온도 / 추정체온 — 클릭 시 누적 추세",
+        "위 = 손목 피부온 실측(참고값 · 체온 아님 — 기기 발열이 섞이고 30℃대 중반까지 내려간다). " +
+          "아래 = 심박 기반 심부체온 추정(칼만) — 판정은 이 값으로만 한다. 클릭 시 누적 추세",
       )}
 
       {/* 7 낙상 — 발생(에스컬레이션) / 확인 중(워치 프롬프트 진행) / 감지안됨 */}

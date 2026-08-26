@@ -123,7 +123,12 @@ const EXPECTED =
   "id,received_at,worker_id,worker_name,employee_id,job_title,guardian_name,guardian_phone,ts,heart_rate,spo2,skin_temp_c,ambient_temp_c,battery_pct,manual_sos,fall_detected,latitude,longitude,hr_status,spo2_status,temp_status,overall_status,hrv_sdnn_ms,resting_heart_rate,active_energy_kcal,steps,walking_heart_rate,flights_climbed,respiratory_rate,stress_index\n" +
   "1,2026-07-01T00:00:01.000Z,EMP-1,장우진,EMP-1,현장소장,,,2026-07-01T00:00:00.000Z,75,98,36,,80,0,0,35.1,126.9,정상,정상,정상,정상,,,,,,,,\n" +
   '2,2026-07-01T00:01:01.000Z,EMP-2,"김""수,영",EMP-2,"철근, 반장",이보호,010-1234-5678,2026-07-01T00:01:00.000Z,140,,,,,1,0,,,위험,대기,대기,위험,,,,,,,,\n' +
-  "3,2026-07-01T00:02:01.000Z,EMP-3,양지후,EMP-3,,,,2026-07-01T00:02:00.000Z,115,91,37.1,,,,,,,주의,주의,주의,주의,,,,,,,,\n" +
+  // ⚠ temp_status 가 `주의` → `정상` 으로 바뀐 것은 **의도한 변화**다(2026-08-26 임계 상향).
+  //    손목 37.1℃ → 심부 37.6℃ 인데 새 주의선이 38.0 이라 정상 대역에 든다. 종전 37.5 는
+  //    임상 발열 기준이라 작업 중 정상 심박 대역을 그대로 주의로 칠했다(실측 경보 58%).
+  //    overall_status 가 여전히 `주의` 인 것은 심박 115·SpO₂ 91 때문이고, 체온과 무관하다 —
+  //    체온만 바뀌고 나머지가 그대로라는 것이 이 줄로 확인된다.
+  "3,2026-07-01T00:02:01.000Z,EMP-3,양지후,EMP-3,,,,2026-07-01T00:02:00.000Z,115,91,37.1,,,,,,,주의,주의,정상,주의,,,,,,,,\n" +
   "4,2026-07-01T00:03:01.000Z,EMP-4,박현장,EMP-4,,,,2026-07-01T00:03:00.000Z,95,,,,,,,,,정상,대기,대기,정상,30,68,1,50,,,16,53\n";
 
 test("골든마스터 — 현장정보 블록 + 생체데이터 + 상태 라벨 바이트 동일", () => {

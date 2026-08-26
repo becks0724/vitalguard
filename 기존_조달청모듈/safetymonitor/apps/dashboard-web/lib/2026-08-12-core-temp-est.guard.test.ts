@@ -18,13 +18,90 @@ test("vital GET — coreTempEst 를 응답에 싣는다(별칭 접기 경유)", 
   assert.match(route, /coreTempEst: await coreTempEstimates\(aliasMap\)/);
 });
 
-test("추정치는 판정 함수에 들어가지 않는다 — coreTempStatus/overallStatus 미주입", () => {
-  // 앵커 — 금지 검사는 대상이 사라져도 통과한다. 판정 호출이 이 파일에 실재함을 먼저 고정한다.
-  // 없으면 판정이 다른 파일로 옮겨갔거나 이름이 바뀐 것이고, 아래 두 줄은 공허하게 통과한다.
-  assert.match(dash, /coreTempStatus\(/, "판정 호출이 여기에 없다 — 아래 금지 검사가 공허하다");
-  assert.match(dash, /overallStatus\(/, "판정 호출이 여기에 없다 — 아래 금지 검사가 공허하다");
-  assert.doesNotMatch(dash, /coreTempStatus\([^)]*coreTempEst/, "추정치가 체온 판정에 주입됨");
-  assert.doesNotMatch(dash, /overallStatus\([^)]*coreTempEst/, "추정치가 종합 판정에 주입됨");
+test("★ 라이브 체온 판정은 칼만 추정으로 한다 — 오염된 손목 실측으로 하지 않는다", () => {
+  // ★★ 2026-08-26 — **이 가드의 계약이 뒤집혔다.** 종전 보장은 "추정치를 판정에 넣지 않는다"
+  //    였다. 그 근거(문헌 오차 ±0.3℃·약물 시 과소추정·"의료 판정 아님")는 지금도 유효하지만,
+  //    같은 주석이 **"판정 연동은 실사용 관찰 후 별도 결정 사항(2026-08-12)"** 이라고 적어 뒀다.
+  //    그 관찰이 나왔고 사용자가 결정했다.
+  //
+  //    관찰 — 종전 판정 입력(손목 실측 + 오프셋 0.5)이 **추정보다 나쁘다**.
+  //      · 손목에는 기기 발열이 섞인다. 주변온≥33 구간 평균 37.58 vs 깨끗 36.69(0.89℃ 차),
+  //        주변온 최댓값 38.45℃(8월 실내 공기일 수 없다 = 센서가 기기 표면을 읽는다).
+  //      · 같은 발열 구간에서 칼만은 +0.019℃ 움직인다(손목은 +0.841℃ · 약 40배 차).
+  //      · corr(칼만, 주변온) 0.055 vs corr(손목, 주변온) 0.565.
+  //      · 칼만이 둔한 것이 아니다 — 합성 심박 계단에서 83→37.098 · 120→37.997 · 160→39.267 로
+  //        생리 범위 전체를 따라간다(관측모델 명세 37.1↔83bpm · 38.5↔137bpm 과 일치).
+  //      · 오탐 실측(7일): 손목 판정 58% vs 칼만 판정(임계 상향 동반) 0%.
+  //    ⟹ "추정을 판정에 안 넣는다" 를 지키는 대가가 **더 나쁜 입력으로 판정하는 것**이었다.
+  //
+  // ⚠ 살아 있는 원칙 — 표시 문구의 "의료 판정 아님"·"추정" 표기는 그대로다. 바뀐 것은
+  //    **어느 값으로 위험/주의를 가르는가**이지 "이것이 진단이다" 라는 주장이 아니다.
+  // ⚠ 남은 한계 — 위쪽 검증(진짜 열스트레스에서 실제로 임계를 넘는가)은 표본이 없다.
+
+  // 앵커 — 금지 검사는 대상이 사라져도 통과한다. 판정 호출이 실재함을 먼저 고정한다.
+  assert.match(dash, /coreTempStatusC\(/, "판정 호출이 여기에 없다 — 아래 검사가 공허하다");
+  assert.match(dash, /overallStatus\(/, "판정 호출이 여기에 없다 — 아래 검사가 공허하다");
+
+  // ① 라이브 판정이 칼만을 실제로 먹는가.
+  assert.match(
+    dash,
+    /coreTempStatusC\(\s*(coreTempEstC|data\.coreTempEst)/,
+    "체온 판정에 칼만이 안 들어간다 — 판정 근거가 사라졌거나 손목으로 되돌아갔다",
+  );
+  // ①-2 ★ **종합 판정이 인자를 흘려보내는가.** ① 은 파일 어디든 한 곳만 맞으면 통과라,
+  //      `overallStatus` 안에서만 `undefined` 로 바꿔 체온을 통째로 죽여도 초록이었다
+  //      (2026-08-26 변이 시험에서 실측으로 잡힘 · [[L-104]]). 그 자리를 따로 못 박는다.
+  const overallBody = dash.slice(
+    dash.indexOf("function overallStatus("),
+    dash.indexOf("function overallStatus(") + 900,
+  );
+  assert.ok(overallBody, "overallStatus 를 못 찾았다 — 가드 재작성 필요");
+  assert.match(
+    overallBody,
+    /coreTempStatusC\(coreTempEstC\)/,
+    "overallStatus 가 받은 칼만을 판정에 안 넘긴다 — 종합 판정에서 체온이 조용히 빠진다",
+  );
+  // ② ★ 손목 실측으로 되돌아가지 않았는가(되돌리면 오탐 58% 가 그대로 돌아온다).
+  //    ⚠ 주석을 먼저 걷는다 — 되돌리지 말라고 적어 둔 **설명문 자체**가 이 금지 검사에
+  //      걸려 빨간불이 났다(2026-08-26 실측). 근거 서술을 지우게 만드는 가드는 잘못 조준된
+  //      가드다. 같은 형태를 오늘만 두 번 밟았다(측정 체온 가드 ④ 매직넘버 검사).
+  //    `coreTempStatusC` 는 다른 함수이므로 경계(`\(`)로 가른다 — 접미 C 가 붙으면 안 걸린다.
+  const dashCode = dash.replace(/\/\/[^\n]*/g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+  assert.doesNotMatch(
+    dashCode,
+    /\bcoreTempStatus\(/,
+    "손목 기반 판정(coreTempStatus)이 화면에 되살아났다 — 기기 발열이 판정에 섞인다",
+  );
+
+  // ③ ★ **모든 판정 호출이 칼만을 들고 가는가.** ①·①-2 는 "어딘가 한 곳" 과 "정의부" 만 본다.
+  //    호출부에서 세 번째 인자를 빼면 그 화면만 조용히 체온 판정을 잃는데, 위 둘로는 안 잡혔다
+  //    (2026-08-26 변이 시험 실측 — 표 행에서 인자를 빼도 초록이었다).
+  //    ⚠ 괄호 대응 스캐너로 인자를 뽑는다. `data.coreTempEst?.[id]?.tempC` 처럼 중첩 괄호가
+  //      섞여서 정규식 `\(([^)]*)\)` 로는 인자가 중간에 잘린다.
+  const argsOf = (src: string, at: number): string => {
+    let depth = 0;
+    for (let i = at; i < src.length; i++) {
+      if (src[i] === "(") depth++;
+      else if (src[i] === ")") {
+        depth--;
+        if (depth === 0) return src.slice(at + 1, i);
+      }
+    }
+    return "";
+  };
+  const bad: string[] = [];
+  for (const m of dashCode.matchAll(/\b(overallStatus|workerStatus)\(/g)) {
+    const open = m.index! + m[0].length - 1;
+    // 정의부(`function overallStatus(`)는 호출이 아니다 — 건너뛴다.
+    if (/function\s+$/.test(dashCode.slice(Math.max(0, m.index! - 10), m.index!))) continue;
+    const args = argsOf(dashCode, open);
+    if (!/coreTempEst/.test(args)) bad.push(`${m[1]}(${args.slice(0, 60)})`);
+  }
+  assert.deepEqual(
+    bad,
+    [],
+    `판정 호출이 칼만을 안 넘긴다 — 그 화면만 체온 판정을 잃는다: ${bad.join(" | ")}`,
+  );
 });
 
 test("서버 추정 — analyzers 순수 함수 사용 + 예약/테스트 워커 제외 + 무상태 재계산(캐시만)", () => {
@@ -61,10 +138,14 @@ test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(�
     .slice(1)
     .filter((c) => /return coreTempStatus\b/.test(c))
     .map((c) => c.slice(0, c.indexOf('"')));
+  // ★ 2026-08-26 — 기대값이 `["skinTempC"]` 에서 **`[]`** 로 바뀌었다. 실측 체온 탭에서 점
+  //   강조·참고선을 뺐기 때문이다(차트 점의 54~57%가 주의 이상으로 칠해지던 것을 제거).
+  //   즉 **체온 계열 탭 어디에도 판정 색이 붙지 않는다** — 실측 탭은 진단용이고 추정 탭은
+  //   종전대로 참고선만 둔다. 판정은 차트가 아니라 표 행·카드·신호등이 진다.
   assert.deepEqual(
     owners,
-    ["skinTempC"],
-    `체온 판정은 실측(skinTempC)에만 붙어야 한다 — 실제로 붙은 곳: ${owners.join(", ") || "없음"}`,
+    [],
+    `체온 탭에는 점 판정을 붙이지 않는다 — 실제로 붙은 곳: ${owners.join(", ") || "없음"}`,
   );
 });
 
