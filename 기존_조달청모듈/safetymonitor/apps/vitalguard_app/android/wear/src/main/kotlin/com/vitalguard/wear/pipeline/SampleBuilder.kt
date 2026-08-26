@@ -45,6 +45,13 @@ class SampleBuilder {
         stillSec: Double? = null,
         variabilityMg: Int? = null,
         batteryPct: Int? = null,
+        /**
+         * 배터리 잔량 **충전카운터**(µAh). 퍼센트는 정수라 1% 계단(445mAh 기준 4,450µAh)
+         * 아래를 못 본다 — 6.6%/h 로 떨어져도 한 계단에 9분이 걸린다. 이 값은 µAh 단위라
+         * **해상도가 약 100배**이고, 표본 두 개만 있으면 그 사이 소모율이 바로 나온다.
+         * 08-26 실측 = 100초에 4,680µAh(→168mAh/h) 를 퍼센트 계단 없이 읽어냈다.
+         */
+        batteryChargeUah: Long? = null,
         fix: LocationFix? = null,
     ): Map<String, Any>? {
         val v = LinkedHashMap<String, Any>()
@@ -68,9 +75,11 @@ class SampleBuilder {
             stillSec?.let { v["motionStillSec"] = it }
             variabilityMg?.let { v["motionVariabilityMg"] = it }
             batteryPct?.let { v["batteryPct"] = it }
+            batteryChargeUah?.let { v["batteryChargeUah"] = it }
         } else if (stillSec != null) {
             v["motionStillSec"] = stillSec        // 단독 전송 — iOS flush 의 그 규칙
             batteryPct?.let { v["batteryPct"] = it }
+            batteryChargeUah?.let { v["batteryChargeUah"] = it }
         } else {
             reset()
             return null

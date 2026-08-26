@@ -365,6 +365,10 @@ async function initSchema(): Promise<void> {
     -- 오류 종료의 도메인#코드(2026-08-22 · 예 com.apple.healthkit#12). 읽는 곳 = 수사 절차의
     -- 지문 조회(docs/watch-auto-resume/checklist.md SQL). 판정·경보·화면 유입 금지(가드 고정).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_error TEXT;
+    -- 배터리 충전카운터(µAh) — 퍼센트(battery_pct)보다 약 100배 촘촘한 잔량. 두 표본의 차이가
+    -- 곧 그 사이 소모량이라 짧은 구간의 소모율을 계단 없이 잴 수 있다(2026-08-26 · 워치 A안).
+    -- BIGINT 인 이유 = 폰 배터리(수천 mAh = 수천만 µAh)도 같은 열을 쓴다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS battery_charge_uah BIGINT;
     -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
     -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
@@ -1019,6 +1023,7 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     skin_temp_c: sample.skinTempC ?? null,
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
+    battery_charge_uah: sample.batteryChargeUah ?? null,
     session_started_at: sample.sessionStartedAt ?? null,
     motion_var_mg: sample.motionVariabilityMg ?? null,
     session_auto_resumed:

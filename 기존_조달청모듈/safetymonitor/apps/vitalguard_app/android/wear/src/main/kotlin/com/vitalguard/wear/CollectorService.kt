@@ -74,6 +74,11 @@ class CollectorService : Service() {
             batteryPct = {
                 battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 1..100 }
             },
+            // ⚠ 못 읽는 기기는 Int.MIN_VALUE 또는 0 을 준다 — 그대로 실으면 "0µAh 남음" 이 된다.
+            //   갤럭시워치9 실측값은 388,908µAh(=388mAh · 정격 445mAh) 대역이다.
+            batteryChargeUah = {
+                battery.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).takeIf { it > 0L }
+            },
             latestFix = { now -> gps.currentFix(now) },
         )
         pipeline = UploadPipeline(queue, HttpTransport(config.baseUrl))

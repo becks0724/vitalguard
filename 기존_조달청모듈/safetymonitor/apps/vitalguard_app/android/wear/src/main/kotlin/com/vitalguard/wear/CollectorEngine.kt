@@ -22,6 +22,8 @@ class CollectorEngine(
     private val source: TrackerSource,
     private val queue: VitalQueue,
     private val batteryPct: () -> Int?,
+    /** 배터리 충전카운터(µAh) — 퍼센트보다 약 100배 촘촘하다. 못 읽는 기기면 null. */
+    private val batteryChargeUah: () -> Long? = { null },
     private val latestFix: (nowMs: Long) -> LocationFix? = { null },   // 배치당 1회 조회(iOS 규칙)
 ) : TrackerListener {
 
@@ -224,6 +226,7 @@ class CollectorEngine(
             stillSec = stillSecNow(nowMs),
             variabilityMg = motion.variabilityMg(),
             batteryPct = batteryPct(),
+            batteryChargeUah = batteryChargeUah(),
             fix = latestFix(nowMs),
         ) ?: return false
         // 스트레스 이력 — 활동 재료가 모이는 flush 시점에 계산해 담는다.
