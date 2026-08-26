@@ -32,7 +32,13 @@ import {
 
 // coreTempStatusC = 심부체온 직접 판정(칼만 입력 · 라이브 판정의 정본).
 // coreTempStatus(손목 입력)는 이 파일에서 더 쓰지 않는다 — 기기 발열 오염 때문에 판정에서 뺐다.
-import { heartRateStatus, spo2Status, coreTempStatusC, workActivity } from "../../lib/severity";
+import {
+  heartRateStatus,
+  spo2Status,
+  coreTempStatusC,
+  CORE_TEMP_EST_MAX_AGE_MIN,
+  workActivity,
+} from "../../lib/severity";
 import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { formatElapsed } from "../../lib/absence-watch";
@@ -5312,6 +5318,19 @@ export function DemoDashboard() {
 
   // 생체 위험 경보 대상 — 실제 수신 워커(data.latest, 가상 워커 제외) 중 심박/SpO₂/체온 danger.
   // SOS·낙상은 SOS 모달이 처리하므로 제외(중복 팝업 방지).
+  // ★ 신선한 칼만만 내보낸다(2026-08-26). 서버는 심박이 끊겨도 마지막 추정치를 계속 준다 —
+  //   그날 실측에서 EMP-6861 은 **심박이 32분째 없는데 행(피부온·배터리)은 3분 전까지** 왔다.
+  //   행 신선도로는 안 걸리므로 여기서 막는다. 낡으면 `undefined` → 판정도 표시도 "모름" 이 된다.
+  //   ⚠ 판정뿐 아니라 **표시·PSI 도 함께** 막힌다. 그게 맞다 — 32분 전 값을 현재값으로 보여주는
+  //     것이 이 레포가 반복해 고쳐 온 형태다(하트비트 12시간·sticky 병합·지도 고스트).
+  const freshCoreTemp = (workerId: string): number | undefined => {
+    const est = data.coreTempEst?.[workerId];
+    if (!est) return undefined;
+    const ageMs = now - Date.parse(est.lastHrTs);
+    if (!Number.isFinite(ageMs) || ageMs > CORE_TEMP_EST_MAX_AGE_MIN * 60_000) return undefined;
+    return est.tempC;
+  };
+
   const dangerVitalWorkers = useMemo(() => {
     const out: VitalSample[] = [];
     for (const s of data.latest) {
@@ -5320,7 +5339,7 @@ export function DemoDashboard() {
         heartRateStatus(s.heartRate, workActivity(s)) === "danger" ||
         // SpO₂ 는 신선한 측정(30분 이내)만 — 낡은 저산소 값이 경보를 계속 발화시키는 오탐 방지.
         spo2Status(freshSpo2(s, now)) === "danger" ||
-        coreTempStatusC(data.coreTempEst?.[s.workerId]?.tempC) === "danger";
+        coreTempStatusC(freshCoreTemp(s.workerId)) === "danger";
       if (danger) out.push(s);
     }
     return out;
@@ -5725,7 +5744,7 @@ export function DemoDashboard() {
         lon >= 123.5 &&
         lon <= 132.5
       ) {
-        const status = workerStatus(s, now, data.coreTempEst?.[s.workerId]?.tempC);
+        const status = workerStatus(s, now, freshCoreTemp(s.workerId));
         const ageMs = now - Date.parse(s.ts);
         const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.round(ageMs / 1000)) : null;
         // 문턱(애플 60초·갤럭시 150초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 —
@@ -6066,7 +6085,7 @@ export function DemoDashboard() {
     for (let pos = 0; pos < filledSlots.length; pos++) {
       const slot = filledSlots[pos];
       if (!slot) continue;
-      const status = overallStatus(latestMap.get(slot.workerId), now, data.coreTempEst?.[slot.workerId]?.tempC);
+      const status = overallStatus(latestMap.get(slot.workerId), now, freshCoreTemp(slot.workerId));
       if (status === "caution" || status === "danger") return pos;
     }
     return -1;
@@ -6100,7 +6119,7 @@ export function DemoDashboard() {
       // caution 단계는 텔레그램·표시 전용(신호등 불변). 생체 판정(workerStatus)은 건드리지 않고
       // 톤 합성에만 얹는다 — stale 이면 온열 판정도 낡은 데이터라 얹지 않는다.
       const heatWarning = !stale && data.heatStage?.[slot.workerId] === "warning";
-      const baseTone = effectiveTone(workerStatus(sample, now, data.coreTempEst?.[slot.workerId]?.tempC).tone, {
+      const baseTone = effectiveTone(workerStatus(sample, now, freshCoreTemp(slot.workerId)).tone, {
         stale,
         outside,
       });
@@ -6118,7 +6137,7 @@ export function DemoDashboard() {
         if (hr === "caution" || hr === "danger") ms.push("심박");
         const sp = spo2Status(freshSpo2(sample, now));
         if (sp === "caution" || sp === "danger") ms.push("SpO₂");
-        const tp = coreTempStatusC(data.coreTempEst?.[slot.workerId]?.tempC);
+        const tp = coreTempStatusC(freshCoreTemp(slot.workerId));
         if (tp === "caution" || tp === "danger") ms.push("체온");
         if (heatWarning) ms.push("온열 경고");
         const withLoc = withOutsideMetric(ms, outside);
@@ -6771,7 +6790,7 @@ export function DemoDashboard() {
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
-                          coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
+                          coreTempEstC={freshCoreTemp(entry.workerId)}
                           heatPattern={data.heatPattern?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}
@@ -6812,7 +6831,7 @@ export function DemoDashboard() {
                           outside={outsideWorkers.has(entry.workerId)}
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
-                          coreTempEstC={data.coreTempEst?.[entry.workerId]?.tempC}
+                          coreTempEstC={freshCoreTemp(entry.workerId)}
                           heatPattern={data.heatPattern?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}

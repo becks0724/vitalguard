@@ -95,13 +95,49 @@ test("★ 라이브 체온 판정은 칼만 추정으로 한다 — 오염된 �
     // 정의부(`function overallStatus(`)는 호출이 아니다 — 건너뛴다.
     if (/function\s+$/.test(dashCode.slice(Math.max(0, m.index! - 10), m.index!))) continue;
     const args = argsOf(dashCode, open);
-    if (!/coreTempEst/.test(args)) bad.push(`${m[1]}(${args.slice(0, 60)})`);
+    // 허용되는 것은 **신선도 게이트를 통과한 값**뿐이다 — `freshCoreTemp(id)` 또는 그것으로
+    // 채워진 prop(`coreTempEstC`). 원시 맵(`data.coreTempEst?.[...]`)을 바로 넘기면 안 된다.
+    if (!/freshCoreTemp\(|coreTempEstC/.test(args)) bad.push(`${m[1]}(${args.slice(0, 60)})`);
   }
   assert.deepEqual(
     bad,
     [],
-    `판정 호출이 칼만을 안 넘긴다 — 그 화면만 체온 판정을 잃는다: ${bad.join(" | ")}`,
+    `판정 호출이 신선한 칼만을 안 넘긴다 — 그 화면만 체온 판정을 잃는다: ${bad.join(" | ")}`,
   );
+
+  // ④ ★★ **신선도 게이트가 실재하고, 판정이 원시 맵을 우회하지 않는가.**
+  //    2026-08-26 실측 — 서버는 심박이 끊겨도 마지막 추정치를 계속 내려보낸다. EMP-6861 은
+  //    **심박 32분 공백인데 행은 3분 전까지** 들어왔다. 행 신선도로는 안 걸리므로, 게이트가
+  //    없으면 32분 전 심박에서 나온 값으로 위험/주의를 가른다.
+  //    ⚠ 손목 기반 판정에는 없던 성질이다 — 그 값은 행과 함께 와서 자동으로 신선했다.
+  //      칼만으로 옮기면서 생긴 구멍이라, 이관과 같은 자리에서 묶는다.
+  const gateAt = dashCode.indexOf("const freshCoreTemp = ");
+  assert.ok(gateAt > 0, "신선도 게이트가 사라졌다 — 낡은 추정이 판정에 든다");
+  // ⚠ 상수의 **존재**만 보면 안 된다 — `if (false) return undefined;` 로 조건을 죽여도 상수는
+  //   죽은 코드에 남아 통과한다(2026-08-26 변이 시험 실측). **비교식 자체**를 못 박는다.
+  const gateBody = dashCode.slice(gateAt, gateAt + 500);
+  assert.match(
+    gateBody,
+    /ageMs\s*>\s*CORE_TEMP_EST_MAX_AGE_MIN\s*\*\s*60_000/,
+    "유효기간 비교가 사라졌다 — 게이트가 껍데기만 남았다(상수는 죽은 코드에도 남는다)",
+  );
+  assert.match(gateBody, /return undefined;/, "낡았을 때 값을 비우지 않는다");
+
+  // 판정·표시로 가는 경로가 게이트를 우회해 원시 맵을 읽지 않는가.
+  assert.doesNotMatch(
+    dashCode,
+    /(overallStatus|workerStatus|coreTempStatusC)\([^;]{0,80}data\.coreTempEst/,
+    "판정이 신선도 게이트를 우회해 원시 추정 맵을 읽는다",
+  );
+  // ⚠ prop 경유도 막는다 — 행 컴포넌트는 `coreTempEstC` 를 판정·표시·PSI 에 모두 쓴다.
+  //   여기로 원시 맵을 넣으면 위 검사를 전부 비켜 간다(변이 시험에서 실제로 비켜 갔다).
+  for (const m of dashCode.matchAll(/coreTempEstC=\{([^}]*)\}/g)) {
+    assert.match(
+      m[1]!,
+      /freshCoreTemp\(/,
+      `행 prop 이 게이트를 안 거친다 — coreTempEstC={${m[1]}}`,
+    );
+  }
 });
 
 test("서버 추정 — analyzers 순수 함수 사용 + 예약/테스트 워커 제외 + 무상태 재계산(캐시만)", () => {
