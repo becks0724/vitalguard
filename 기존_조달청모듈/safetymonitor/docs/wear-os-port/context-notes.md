@@ -565,3 +565,72 @@ SpO₂ 처럼 성긴 지표에서 선을 이으면 **측정하지 않은 구간�
 `MetricHistoryTest` 6건 = 창 덮기 · 봉우리 생존 · 일정값에서도 적재 · 창 밖 폐기 · 최신 즉시 · 시간순.
 변이 = ①상세 차트 1개 제거 ②요약에 차트 삽입 ③솎기 제거(`minGapMs=1`) ④봉우리 대신 끝값
 ⑤주변온 겹치기 제거 → 각각 SeverityTest.kt:228 / :224 / :234, MetricHistoryTest.kt:26 / :42.
+
+## R-28 · 워치는 단독이므로 서명을 폰과 맞출 이유가 없다 — 릴리스 변종을 세웠다 (08-26 사용자 결정)
+
+**사용자 결정.** "워치 앱을 단독으로 진행하는 상황."
+
+**그 전까지의 상태 = 디버그 전용.** 실측으로 확인한 것.
+`wear/build.gradle.kts` 에 `buildTypes` 블록 0건 · 디스크 APK 는 `wear-debug.apk` 하나 ·
+빌드 중간산출물 `debug` 62디렉터리 대 `release` **0디렉터리**(릴리스는 한 번도 빌드된 적 없음) ·
+병합 매니페스트 `android:debuggable="true"` · `aapt2 dump badging` 에 `application-debuggable` ·
+Gradle 태스크에 **`installDebug` 만**(`installRelease` 없음) · 서명 = `~/.android/debug.keystore`.
+
+**릴리스가 없던 게 아니라 서명이 없었다.** `assembleRelease`·`bundleRelease` 는 AGP 기본으로
+존재했다. 없던 것은 `installRelease` 와 `validateSigningRelease` 다 — **AGP 는 서명 설정이 없는
+릴리스 변종에는 install 태스크를 만들지 않는다.** `signingReport` 가 그대로 말한다(`Config: null`).
+즉 "릴리스 모드가 있느냐" 의 답은 있다/없다가 아니라 **"있는데 설치가 안 되는 상태"** 였다.
+
+**서명 제약이 실제로 있는지 코드로 갈랐다.** `applicationId` 주석은 "Data Layer 가 같은
+applicationId·서명을 요구한다 — 폰 앱과 일치시킨다" 고 적혀 있었다. 그런데 실측 =
+`play-services-wearable` 의존 **0건** · `DataClient`/`MessageClient`/`CapabilityClient` 참조 **0건**.
+**그 주석은 지금 코드에 대해 거짓이다.** 단독 노선이면 폰과 키를 맞출 이유가 없다 → 워치 전용 키.
+주석은 실측 근거로 갈아끼웠다. `applicationId` 자체는 **바꾸지 않았다** — 서버 적재분과의 연속성
+때문이고, 바꾸면 기존 설치본과 별개 패키지가 된다.
+
+**★ 릴리스에서만 도는 lint 가 결함을 하나 잡았다.** `assembleRelease` 첫 시도가
+`lintVitalRelease` 에서 fatal 로 막혔다 — `InvalidFragmentVersionForActivityResult`.
+원인은 **어제 앰비언트 때문에 넣은 `androidx.wear:wear:1.3.0` 이 `androidx.fragment:1.2.4` 를
+딸려온다**는 것이었다(의존 트리 621행 → 670행). `registerForActivityResult` 는 fragment 1.3.0+ 를
+요구한다 — 그 아래의 `FragmentActivity` 는 `super.onRequestPermissionsResult()` 를 안 부르고
+잘못된 요청코드를 쓴다.
+
+이 앱의 `MainActivity` 는 `ComponentActivity` 이고 소스에 Fragment 참조가 0건이라 **실사용 경로는
+아니다.** 그래도 낡은 fragment 를 클래스패스에 두는 것 자체가 함정이라 제약으로 1.8.5 로 올렸다
+(`1.2.4 -> 1.8.5` 로 해석되는 것 확인). **교훈은 따로 있다 — 디버그만 돌리면 `lintVitalRelease`
+가 한 번도 안 돈다.** 릴리스 빌드는 서명 문제이기 이전에 **검사 한 겹이 더 붙는 문제**다.
+
+**R8 은 켜지 않았다**(`isMinifyEnabled = false` 명시). 삼성 SDK 는 트래커 타입·`ValueKey` 를
+문자열로 짚는다. 켤 거면 keep 규칙을 쓰고 **실기에서 SpO₂·피부온이 살아 있는지 재측정한 뒤** 켠다.
+기본값에 기대지 않고 명시한 이유는 다음 사람이 조용히 켜는 것을 막기 위해서다.
+
+**키 자료는 레포에 안 들어간다.** `wear/key.properties` + `wear/vitalguard-wear-release.jks`,
+둘 다 `android/.gitignore` 의 `key.properties`·`**/*.jks` 에 걸리는 것을 `git check-ignore -v` 로
+확인했다(양성 통제군 = 무시 안 되는 파일은 exit 1). `key.properties` 가 **없으면 signingConfig 를
+만들지 않는다** — 키 없는 머신에서도 `assembleDebug` 는 그대로 돌고, 릴리스만 미서명이 되며 그
+사실이 `signingReport` 에 `Config: null` 로 드러난다.
+⚠ **두 파일은 함께 백업해야 한다.** 하나라도 잃으면 같은 키로 재서명이 불가능하다.
+
+**검증(전부 실측).**
+`signingReport` release `Config: release` / alias `vitalguard-wear` / SHA-256 `CF:24:1C:…` ·
+debug 는 그대로 `AndroidDebugKey` SHA1 `84:DF:26:23:…`(비회귀) ·
+`wear-release.apk` 24.2MB 생성(debug 33.2MB) ·
+`aapt2 dump badging` 의 `application-debuggable` = release **0건** / debug **1건**(양성 통제군) ·
+`apksigner verify` = `Verifies`, v2 스킴, DN `CN=VitAlGuard Wear` ·
+태스크 목록에 `installRelease`·`validateSigningRelease` **생성됨** ·
+단위테스트 154/154 · `assembleDebug`·`assembleRelease`·`:app` configure 전부 비회귀.
+
+**가드 · 변이 6종 실측**(모두 단언에서 빨간불 · L-113). `ReleaseBuildTest` 7건.
+변이 = ①릴리스 서명 대입 삭제 ②디버그 키로 서명 ③비밀번호 리터럴 박기 ④fragment 제약
+되돌리기(1.2.4) ⑤R8 켜기 ⑥키 부재 방어 제거(`takeIf { true }`) → 각각 fail 1·2·1·1·1·1.
+복원 대조(`cmp -s`) 통과, 복원 후 기준선 fail 0.
+
+**미확인 · 남은 것.**
+① **릴리스 APK 를 실기에 넣어 보지 않았다** — 워치가 ADB 에 안 붙어 있다(`adb devices` 0건,
+mDNS 0건, adb 자체는 살아 있음 1.0.41). **서명 키가 디버그와 다르므로 `pm install -r` 로 못 덮는다 —
+기존 설치본을 지우고 넣어야 한다**(지우면 `ConfigStore` 의 토큰·workerId 도 함께 날아간다).
+② 매니페스트에 선언돼 있는데 `requestSensorPermissions()` 가 **요청하지 않는** 권한 3건 —
+`BODY_SENSORS_BACKGROUND` · `health.READ_FLOORS_CLIMBED` · `health.READ_ACTIVE_CALORIES_BURNED`.
+adb 없이 넘기는 빌드에서는 이 셋이 미부여로 남는다. 빌드 타입과 무관한 선존 결함이라 **이번에
+손대지 않았다** — 층·칼로리가 실제로 필요한지 정하고 별건으로 다룬다.
+③ `versionCode = 1` · `versionName = "0.1-probe"` 그대로다.

@@ -51,6 +51,14 @@
 - [x] 매니페스트 권한 — Wear OS 6(API 36) 신·구 권한 병기
 - [x] 실측 도구 3종 (SDK 프로브 · Health Services 프로브 · 심박 FGS)
 - [x] `assembleDebug` 통과 — **성공 기준 ①** (08-24 · wear-debug.apk 9.6MB · dex 내 삼성 SDK 참조 96건 실측 · :app 비회귀 확인)
+- [x] **릴리스 변종 세움 (08-26 · R-28)** — 사용자 결정 "워치 단독". 종전엔 디버그 전용이었다
+  (`buildTypes` 0건 · release 중간산출물 0디렉터리 · `installRelease` 태스크 없음 = 미서명).
+  워치 전용 키(`wear/key.properties` + `.jks`, 둘 다 gitignore)로 서명 붙임. `wear-release.apk`
+  24.2MB · `application-debuggable` 0건(debug 는 1건 = 양성 통제군) · `apksigner` Verifies(v2).
+  ★ 릴리스에서만 도는 `lintVitalRelease` 가 결함 1건을 잡았다 — `androidx.wear:wear:1.3.0` 이
+  딸려오는 `fragment:1.2.4` 가 `registerForActivityResult` 계약과 불일치 → 제약으로 1.8.5.
+  시험 154건 통과 · 변이 6종 실측.
+  ⚠ **실기 미설치** — 워치 ADB 미연결. 서명이 달라 `pm install -r` 불가, **지우고 재설치**해야 한다.
 
 ## 1.5단계 — 워치 도착 전 선행 (B → A → C · 사용자 승인 08-24)
 
@@ -122,5 +130,7 @@
 
 - [ ] SpO₂ 주기 결정 (⑦ 성공률이 정한다)
 - [ ] 배치 주기 결정 — 5초 그대로는 LTE 배터리에서 부딪힌다. 30~60초 후보
-- [ ] JWT 를 워치에 넣는 경로 (Data Layer 페어링 · 같은 패키지·서명 필요)
+- [ ] JWT 를 워치에 넣는 경로 — ⚠ **"Data Layer 페어링·같은 패키지·서명 필요" 는 폐기**(R-28).
+  실측 = `play-services-wearable` 의존 0건 · Data Layer API 참조 0건, 워치는 단독 노선이다.
+  현재 경로는 adb 인텐트 엑스트라(`absorbConfigExtras`) 뿐 — 워치 단독 자격 주입 수단을 정해야 한다.
 - [ ] 가드 18개를 Kotlin 면까지 넓히기 ([[L-113]] 변이 통과 의례 포함)
