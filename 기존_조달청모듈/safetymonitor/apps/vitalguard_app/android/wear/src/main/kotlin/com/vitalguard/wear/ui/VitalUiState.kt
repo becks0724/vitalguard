@@ -3,7 +3,6 @@ package com.vitalguard.wear.ui
 
 import com.vitalguard.wear.core.Severity
 import com.vitalguard.wear.core.coreTempSeverity
-import com.vitalguard.wear.core.estimateCoreTempC
 import com.vitalguard.wear.core.heartRateSeverity
 import com.vitalguard.wear.core.Psi
 import com.vitalguard.wear.core.overallSeverity
@@ -57,8 +56,18 @@ data class VitalUiState(
     val nowMs: Long = 0L,
     /** 오늘 관측된 심박 범위 — 사진의 "95-102" 자리. 표본이 없으면 null. */
     val bpmRange: Pair<Int, Int>? = null,
+    /**
+     * 심부체온 **추정**(℃) — 심박 시계열 + 칼만([[CoreTempKalman]]). 워밍업 전이면 null.
+     *
+     * ★ 왜 피부온이 아니라 이걸 쓰나. 기기 자체 발열이 피부온 센서를 오염시킨다([[R-25]]).
+     *   이 추정은 **심박만** 쓰므로 그 오염에 구조적으로 면역이다.
+     * ★ 관제웹도 같은 알고리즘을 쓴다(`coreTempEstimates`). 종전 워치는 피부온+상수 오프셋이라
+     *   서버와 값이 갈렸는데(실측 워치 38.16 vs 서버 37.4), 이제 같은 재료·같은 식이다.
+     */
+    val coreTempC: Double? = null,
+    /** 워밍업까지 남은 1분 버킷 수. 0 이면 추정이 나온다. 화면이 "몇 분 더" 를 말하는 데 쓴다. */
+    val coreWarmupBuckets: Int = 0,
 ) {
-    val coreTempC: Double? get() = estimateCoreTempC(skinTempC)
 
     /**
      * 생리적 부담 지수(PSI) — 문헌 지수. **표시 전용이라 `severity` 에 넣지 않는다.**

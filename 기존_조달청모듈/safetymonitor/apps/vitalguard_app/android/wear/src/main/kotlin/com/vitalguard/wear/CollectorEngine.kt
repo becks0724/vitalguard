@@ -2,6 +2,8 @@
 package com.vitalguard.wear
 
 import com.vitalguard.wear.core.HistoryWindow
+import com.vitalguard.wear.core.CoreTempKalman
+import com.vitalguard.wear.core.HrSample
 import com.vitalguard.wear.core.MetricHistory
 import com.vitalguard.wear.core.MotionTracker
 import com.vitalguard.wear.core.Sdnn
@@ -65,6 +67,18 @@ class CollectorEngine(
     val stressHistory = MetricHistory(HistoryWindow.STRESS_MS)
     /** 걸음 — 누계라 우상향한다. 기울기가 "지금 얼마나 움직이는가" 다. */
     val stepsHistory = MetricHistory(HistoryWindow.STEPS_MS)
+
+    /**
+     * 칼만 심부체온 추정용 심박 원본. **`heartHistory` 를 못 쓴다** — 그쪽은 창이 15분이고
+     * 봉우리 보존 방식으로 솎아내서 극값이 남는다. 칼만은 1분 **평균**을 요구하므로 솎으면
+     * 값이 왜곡된다. 여기는 안 솎고 그대로 들되 창(180분) 밖만 버린다.
+     * 갤럭시 심박은 약 2분 간격이라 180분이어도 90점 안팎이다(메모리 부담 없음).
+     */
+    private val hrLog = ArrayDeque<HrSample>()
+
+    /** 칼만 입력 스냅샷 — 화면이 읽는다. 복사본이라 호출자가 들고 있어도 안전하다. */
+    @Synchronized
+    fun hrSamples(): List<HrSample> = hrLog.toList()
     private val motion = MotionTracker()
     private val ibiWindow = mutableListOf<Pair<Long, Int>>()   // (측정시각, ibi)
     private var ibiStatusWindow = mutableListOf<Int>()
@@ -112,6 +126,10 @@ class CollectorEngine(
             lastBpm = bpm
             samples++
             heartHistory.add(atMs, bpm.toDouble())
+            // 칼만용 원본 — 솎지 않는다. 창 밖만 버린다.
+            hrLog.addLast(HrSample(atMs, bpm))
+            val hrCutoff = atMs - CoreTempKalman.WINDOW_MINUTES * 60_000L
+            while (hrLog.isNotEmpty() && hrLog.first().tsMs < hrCutoff) hrLog.removeFirst()
         }
         ibiMs.forEachIndexed { i, ibi ->
             ibiWindow.add(atMs to ibi)

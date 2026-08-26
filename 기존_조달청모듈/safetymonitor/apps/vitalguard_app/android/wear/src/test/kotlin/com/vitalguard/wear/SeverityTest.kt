@@ -369,7 +369,10 @@ class PsiTest {
         val sev = src.substringAfter("val severity: Severity").substringBefore("\n\n")
         org.junit.Assert.assertFalse("판정식이 PSI 를 읽는다 — 표시 전용 규율이 깨졌다", sev.contains("psi"))
         // 그리고 실제로도 정상 판정이 유지된다.
-        val s = VitalUiState(bpm = 109, skinTempC = 37.9, collecting = true)
+        // ⚠ 08-26(R-30) 이후 심부체온은 피부온 파생이 아니라 **칼만 추정 입력**이다.
+        //   종전 표본은 skinTempC=37.9 → 오프셋 +0.5 = 38.4 를 암묵적으로 썼다.
+        //   같은 PSI(4.75)를 유지하려고 그 값을 이제 명시로 넣는다.
+        val s = VitalUiState(bpm = 109, skinTempC = 37.9, coreTempC = 38.4, collecting = true)
         org.junit.Assert.assertTrue("표본의 PSI 가 0 이면 시험이 헛돈다", s.psi!! > 3.0)
         assertEquals(Severity.NORMAL, s.severity)
     }

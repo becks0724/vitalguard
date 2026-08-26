@@ -226,10 +226,18 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     val bpms = timeline.map { it.bpm }
+                    // 칼만 입력 — 엔진이 든 심박 원본(솎지 않은 180분 창).
+                    val hrSamples = engine?.hrSamples()
                     vitals = VitalUiState(
                         timeline = timeline.toList(),
                         nowMs = now,
                         bpmRange = if (bpms.size >= 2) bpms.min() to bpms.max() else null,
+                        // 심부체온 추정 — 심박만 쓰는 칼만이라 기기 발열에 오염되지 않는다(R-25·R-30).
+                        // 서버 coreTempEstimates 와 같은 알고리즘이라 두 화면이 같은 값을 말한다.
+                        coreTempC = hrSamples?.let { com.vitalguard.wear.core.CoreTempKalman.estimate(it) },
+                        coreWarmupBuckets = hrSamples
+                            ?.let { com.vitalguard.wear.core.CoreTempKalman.bucketsRemaining(it) }
+                            ?: com.vitalguard.wear.core.CoreTempKalman.MIN_BUCKETS,
                         workerName = workerName,
                         bpm = bpm,
                         spo2 = engine?.lastSpo2,

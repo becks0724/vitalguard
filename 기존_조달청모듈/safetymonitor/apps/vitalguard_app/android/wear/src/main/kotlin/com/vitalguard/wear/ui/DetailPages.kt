@@ -105,6 +105,19 @@ fun TempDetailPage(state: VitalUiState) {
             )
         },
         rows = buildList {
+            // ★ 심부(추정) 를 피부온 바로 옆에 둔다 — 이 값은 **심박만** 쓰므로 기기 발열에
+            //   오염되지 않는다([[R-25]]·[[R-30]]). 피부온만 오르고 이쪽이 가만히 있으면
+            //   그 벌어짐이 곧 발열 신호다. 판정 문구는 아직 달지 않는다 — 임계를 정할
+            //   근거(라벨된 실측)가 없고, 없는 근거로 숫자를 지어내지 않는다([[L-107]]).
+            add(
+                when {
+                    state.coreTempC != null ->
+                        DetailRow("심부(추정)", "%.1f ℃".format(state.coreTempC), VgColors.Primary)
+                    // 워밍업 중 — 왜 비어 있는지 말한다. 갤럭시 심박은 약 2분 간격이라
+                    // 남은 버킷 수가 곧 남은 분 수는 아니다. 버킷으로 정직하게 적는다.
+                    else -> DetailRow("심부(추정)", "착용 ${state.coreWarmupBuckets}회분 더", VgColors.Idle)
+                },
+            )
             state.ambientTempC?.let { add(DetailRow("주변", "%.1f ℃".format(it), VgColors.Accent)) }
             if (state.skinTempC != null && state.ambientTempC != null) {
                 add(DetailRow("차이", "%.1f ℃".format(state.skinTempC - state.ambientTempC)))
