@@ -126,7 +126,16 @@ function weatherGuidance(summary: string): { short: string; effect: string; acti
   return { short: "발효 특보 — 현장 영향 점검", effect: "발효 특보에 따른 현장 위험 점검 필요.", action: "특보 종류별 작업 안전 조치 시행." };
 }
 
-type LampRow = { icon: string; label: string; sev: LampSev; summary: string; short: string; detail: LampDetail };
+type LampRow = {
+  icon: string;
+  label: string;
+  sev: LampSev;
+  summary: string;
+  short: string;
+  detail: LampDetail;
+  /** 펼침에서 보일 상세 줄 수(기본 2 · summaryLines 참조). 행마다 필요한 밀도가 다르다. */
+  maxLines?: number;
+};
 
 export function SafetySignalBoard({
   lat,
@@ -200,6 +209,9 @@ export function SafetySignalBoard({
     summary: worker.summary,
     short: worker.short,
     detail: worker.detail,
+    // 이 행만 4줄 — 인원 상태가 곧 행의 내용이라 `이상 N · 수신 중 · 수신 대기 · 권장 대응`
+    // 이 한 벌이다. 2줄이면 수신 중·수신 대기가 잘려 "이상자 외에는 아무 정보 없음" 이 된다.
+    maxLines: 4,
   };
 
   // 가스/AED 상세는 AED 점검 모듈 캐시(60초 폴링)·시간 기반 D-day 에 의존 — 빈 deps 메모이즈는 마운트 시점 값으로 동결.
@@ -278,16 +290,22 @@ export function SafetySignalBoard({
 // 펼침 요약 — '작업자 영향'과 '권장 대응' 2줄만 남긴다(사용자 요청).
 // 라벨이 항목마다 달라(가스=측정/노출 기준, AED=교환 임박/관리책임자) 인덱스가 아니라 라벨로 고른다.
 // 둘 다 없거나 하나뿐이면 원래 순서대로 앞에서 채운다 — 빈 펼침이 되지 않게.
+//
+// ⚠ **이 컷이 정보를 조용히 먹는다.** 2026-08-26 실측 — 작업자 행의 상세는
+// `이상 N · 수신 중 · 수신 대기 · 골든타임 · 권장 대응` 5줄인데 화면엔 2줄(이상 1·권장 대응)만
+// 떴다. 사용자에게는 "김태곤(수신 중)이 신호등에 전혀 반영되지 않는다" 로 보였고, 실제로
+// 문구는 만들어지고 있었으나 **여기서 잘렸다.** 그래서 행마다 상한을 달리 받는다 —
+// 작업자 행은 인원 상태가 곧 그 행의 내용이라 2줄로는 구조적으로 부족하다.
 const SUMMARY_LABEL = /영향|대응/;
-function summaryLines(lines: LampDetail["lines"]): LampDetail["lines"] {
+function summaryLines(lines: LampDetail["lines"], max = 2): LampDetail["lines"] {
   const picked = lines.filter((l) => SUMMARY_LABEL.test(l.label));
   const filled = [...picked];
   for (const l of lines) {
-    if (filled.length >= 2) break;
+    if (filled.length >= max) break;
     if (!filled.includes(l)) filled.push(l);
   }
   // 원문 순서를 지킨다 — '대응'이 '측정'보다 앞에 오면 읽는 순서가 뒤집힌다.
-  return lines.filter((l) => filled.includes(l)).slice(0, 2);
+  return lines.filter((l) => filled.includes(l)).slice(0, max);
 }
 
 // 행 펼침 상세 — 팝업이 아니라 그 자리에서 연다. 라벨 폭을 좁히고 글자를 줄여 컴팩트하게.
@@ -298,7 +316,7 @@ function SignalRowDetail({ id, row }: { id: string; row: LampRow }) {
       className="rounded-b-lg border-t border-hairline bg-canvas px-2.5 py-2 dark:border-white/10 dark:bg-surface-dark"
     >
       <div className="space-y-1">
-        {summaryLines(row.detail.lines).map((ln, i) => (
+        {summaryLines(row.detail.lines, row.maxLines).map((ln, i) => (
           <div key={i} className="grid grid-cols-[4.5rem_1fr] items-start gap-2">
             <span className="whitespace-pre-line text-[10px] font-semibold leading-snug text-muted dark:text-on-dark-soft">
               {ln.label.replace("(", "\n(")}

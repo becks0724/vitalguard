@@ -6076,6 +6076,9 @@ export function DemoDashboard() {
     // 생체 미수신이라 **판정 자체가 불가능했던** 작업자 — 등록 인원에는 들어가지만 "정상"이 아니다.
     // 이 분리가 없으면 이상 0명일 때 대기 인원까지 "정상 N명 · 전 작업자 정상 범위"로 나간다.
     const waitingNames: string[] = [];
+    // 수신 중·이상 없음 — 종전엔 아무 데도 안 실려서, 이상자가 하나라도 있으면 신호등이
+    // 정상 수신 중인 사람을 통째로 침묵했다(2026-08-26 사용자 제보).
+    const normalNames: string[] = [];
     for (const slot of filledSlots) {
       if (!slot) continue;
       count += 1;
@@ -6119,6 +6122,10 @@ export function DemoDashboard() {
         // 생체 샘플이 없어 판정 자체를 못 한 작업자. stale 이면 effectiveTone 이 caution 으로
         // 올리므로 여기 오지 않는다 — 즉 이 목록은 순수한 '수신 대기'다.
         waitingNames.push(name);
+      } else {
+        // 남는 것은 tone === "normal" — 수신 중이고 생체도 정상 범위. 여기까지 온 사람만
+        // "지금 감시되고 있다" 고 말할 수 있다(stale·이상은 위 분기가 이미 걷어 갔다).
+        normalNames.push(name);
       }
     }
     // 문구 산출은 순수 함수에 위임 — 등록 인원과 **판정된 인원**을 분리해 적는다(가드 테스트로 고정).
@@ -6127,6 +6134,7 @@ export function DemoDashboard() {
       evaluated: count - waitingNames.length,
       issues,
       waitingNames,
+      normalNames,
     });
     return {
       sev,

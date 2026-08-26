@@ -103,11 +103,40 @@ export type WorkerTally = {
   issues: { name: string; metrics: string }[];
   /** 생체 미수신이라 판정 대상이 아니었던 작업자 표시명 */
   waitingNames: string[];
+  /**
+   * 수신 중이고 이상 없는 작업자 표시명(선택).
+   *
+   * ★ 2026-08-26 추가 — 이상자가 있으면 보드가 **이상자만** 말하고 정상 수신 중인 사람은
+   * 어디에도 안 나왔다(사용자 제보: "김태곤의 연결상태를 전혀 반영하지 못한다").
+   * 인원수는 `evaluated - issues.length` 로 늘 계산되지만, 이름은 호출부만 안다.
+   * 선택 필드인 이유 = 호출부가 안 넘겨도 **수치는 정확**해야 하기 때문이다(이름만 생략된다).
+   */
+  normalNames?: string[];
 };
 
 function waitingLine(names: string[]): SignalLine[] {
   if (names.length === 0) return [];
   return [{ label: "수신 대기", text: `${names.join("·")} — 생체 미수신이라 판정 대상이 아니다.` }];
+}
+
+/** 수신 중·이상 없음 명단. 이름이 안 넘어오면 줄을 만들지 않는다(수치는 summary 가 진다). */
+function normalLine(names: string[] | undefined): SignalLine[] {
+  if (!names || names.length === 0) return [];
+  return [{ label: "수신 중", text: `${names.join("·")} — 연결 정상·생체 정상 범위` }];
+}
+
+/**
+ * 연결 상태 배분 — `이상 N · 수신 M · 대기 W / 전체 C`.
+ *
+ * ★ 0 인 항목은 적지 않는다. "대기 0명" 같은 문구는 정보가 아니라 잡음이고, 한 줄로 이어 붙는
+ * 헤더에서 자리만 먹는다. 다만 **전체 인원은 항상 적는다** — 분모가 없으면 "이상 1" 이
+ * 4명 중 1명인지 40명 중 1명인지 알 수 없다.
+ */
+function tallySummary(anomaly: number, normal: number, waiting: number, count: number): string {
+  const parts = [`이상 ${anomaly}`];
+  if (normal > 0) parts.push(`수신 ${normal}`);
+  if (waiting > 0) parts.push(`대기 ${waiting}`);
+  return `${parts.join(" · ")} / 전체 ${count}명`;
 }
 
 /**
@@ -150,15 +179,21 @@ export function workerSignalCopy(t: WorkerTally): {
   }
 
   if (anomaly > 0 && first) {
+    // ★ 이상자가 있어도 **나머지 전원의 연결 상태를 함께** 적는다(2026-08-26).
+    //   종전엔 `이상 1명 / 전체 4명` 이라 "나머지 3명이 어떤 상태인가" 가 통째로 빠졌다 —
+    //   수신 중인 사람과 아예 안 오는 사람이 같은 '나머지' 로 뭉쳐 관제가 구별할 수 없었다.
+    //   수치는 판정된 인원에서 이상자를 뺀 값이라 호출부가 이름을 안 넘겨도 정확하다.
+    const normal = Math.max(t.evaluated - anomaly, 0);
     return {
-      summary: `이상 ${anomaly}명 / 전체 ${t.count}명`,
+      summary: tallySummary(anomaly, normal, waiting, t.count),
       short:
         first.metrics === "연결끊김"
           ? `${first.name} 연결끊김 — 즉시 연락·현장 확인`
           : `${first.name} ${first.metrics} 이상 — 심정지·SOS 골든타임 4분`,
-      title: `작업자 이상 ${anomaly}명 / 전체 ${t.count}명`,
+      title: `작업자 ${tallySummary(anomaly, normal, waiting, t.count)}`,
       lines: [
         ...t.issues.map((it, idx) => ({ label: `이상 ${idx + 1}`, text: `${it.name} — ${it.metrics}` })),
+        ...normalLine(t.normalNames),
         ...waitingLine(t.waitingNames),
         { label: "골든타임", text: "심정지·SOS 4분 / 낙상 후 의식없음 즉시 / 열사병 즉시 냉각·수분" },
         {
@@ -189,6 +224,9 @@ export function workerSignalCopy(t: WorkerTally): {
       title: `작업자 정상 ${t.evaluated}명 · 대기 ${waiting}명 (등록 ${t.count}명)`,
       lines: [
         { label: "상태", text: `판정 ${t.evaluated}명 정상 범위(심박·SpO₂·체온·낙상·SOS)` },
+        // 이상이 없을 때도 **누가 수신 중인지**를 실명으로 남긴다 — 수치만으로는
+        // "그 1명이 누구인가" 를 표에서 다시 찾아야 한다.
+        ...normalLine(t.normalNames),
         ...waitingLine(t.waitingNames),
       ],
     };
