@@ -48,7 +48,24 @@ test("추세 차트 — 추정 점에 위험도 판정을 붙이지 않는다(�
   const panel = readFileSync(join(ROOT, "app", "components", "VitalHistoryPanel.tsx"), "utf8");
   const sevFn = panel.slice(panel.indexOf("function metricPointSeverity"));
   assert.match(sevFn, /case "coreTempEst":[\s\S]{0,200}?return undefined/, "추정 점이 판정 색을 받는다");
-  assert.doesNotMatch(panel, /coreTempStatus/, "패널이 추정값에 체온 판정을 다시 붙였다");
+
+  // ⚠ 종전엔 **파일 전체**에서 `coreTempStatus` 를 금지했다. 그 대리 지표는 패널에 실측 체온
+  //    시리즈가 없던 동안만 성립했다 — 2026-08-26 에 `skinTempC`(워치 온도 센서 실측) 탭이
+  //    생겼고, 실측은 표 행·카드와 **같은 판정 함수**를 써야 화면끼리 숫자·색이 갈리지 않는다.
+  //    그래서 금지를 없애지 않고 **추정 경로로 좁힌다** — 지키려는 한 문장은 그대로다:
+  //    "판정이 붙는 체온 시리즈는 실측뿐이고, 추정에는 붙지 않는다."
+  //    case 블록으로 쪼개 소유자를 뽑는다(정규식 창으로 재면 앞 case 에서 뒤 case 의 return 까지
+  //    건너뛰어 엉뚱한 메트릭을 범인으로 지목한다).
+  const owners = sevFn
+    .split(/\bcase "/)
+    .slice(1)
+    .filter((c) => /return coreTempStatus\b/.test(c))
+    .map((c) => c.slice(0, c.indexOf('"')));
+  assert.deepEqual(
+    owners,
+    ["skinTempC"],
+    `체온 판정은 실측(skinTempC)에만 붙어야 한다 — 실제로 붙은 곳: ${owners.join(", ") || "없음"}`,
+  );
 });
 
 test("SpO₂ 추세 — 실데이터 경로 편입 + 24시간 뷰는 측정 시각 위치의 점(dot)", () => {

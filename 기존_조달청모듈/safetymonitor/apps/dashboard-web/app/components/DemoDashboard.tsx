@@ -120,7 +120,17 @@ import { MyProfileModal } from "./MyProfileModal";
 import { ProfileGateModal } from "./ProfileGateModal";
 import { UserManagementModal } from "./UserManagementModal";
 
-type HistoryMetric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
+// ⚠ VitalHistoryPanel 의 `Metric` 과 **같은 집합이어야 한다** — 한쪽만 늘리면 탭을 눌러도
+//    선택이 전달되지 않거나(좁은 쪽이 여기) 타입만 통과하고 서버가 400 을 낸다(좁은 쪽이 저기).
+//    `skinTempC` = 워치 온도 센서 실측(2026-08-26 복원 · coreTempEst 와 다른 값).
+type HistoryMetric =
+  | "heartRate"
+  | "spo2"
+  | "skinTempC"
+  | "coreTempEst"
+  | "activity"
+  | "fall"
+  | "coverage";
 type Selection = { workerId: string; metric: HistoryMetric };
 
 type MockVitalResponse = {
@@ -253,6 +263,8 @@ function hasLiveMetric(
 ): boolean {
   if (metric === "fall") return lastFallTs !== undefined;
   if (metric === "coreTempEst") return typeof coreTempEstC === "number";
+  // 실측 피부온 — 아래 `sample[metric]` 일반 경로가 그대로 맞는다(메트릭 키 = 필드명 skinTempC).
+  // 애플 전용 워커는 센서값이 안 와서 false 로 떨어지고 탭이 placeholder 가 된다(정직한 표시).
   // SpO₂ = 기회 측정 — "지금 신선한 값"이 아니라 "기간 내 측정"이 기준이라 항상 열고 서버 데이터로 판정.
   if (metric === "spo2") return true;
   // 활동 = 구간 합 이력 — 지금 정지 중(증분 없음)이어도 기간 내 이력은 있다. 서버 데이터로 판정.
@@ -7130,12 +7142,15 @@ export function DemoDashboard() {
                   <th className="px-4 py-3">작업자</th>
                   <th className="px-4 py-3">심박 (bpm)</th>
                   <th className="px-4 py-3">산소포화도 (%)</th>
-                  {/* 손목 온도 열 삭제(08-13 사용자 결정) — Apple 실시간 미개방이라 상시 "--" 였다. */}
+                  {/* ★ 2026-08-26 실측 복원. 08-13 에 손목 온도 열을 내린 근거는 "Apple 실시간
+                      미개방이라 상시 --" 였는데, 갤럭시(Wear OS) 온도 센서가 행마다 실측을 보내면서
+                      그 전제가 깨졌다. 이제 이 열은 **행 자신의 측정값**을 먼저 보여준다 —
+                      추정은 워커 단위 1분 해상도라 같은 워커의 여러 행에 같은 값이 반복됐다. */}
                   <th
                     className="px-4 py-3"
-                    title="심박 기반 심부체온 추정(칼만필터·1분 해상도 현재 추정치) — 의료 판정 아님"
+                    title="워치 온도 센서 실측(행별 값). 실측이 없는 행은 심박 기반 추정치를 ≈ 로 표시 — 의료 판정 아님"
                   >
-                    체온 추정 (℃)
+                    체온 (℃)
                   </th>
                 </tr>
               </thead>
@@ -7151,10 +7166,13 @@ export function DemoDashboard() {
                     <td className="px-4 py-3">{workerCell(sample)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
                     <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
-                    {/* 칼만 추정(HR 기반)의 현재 추정치 — 행 워커(별칭 접기)의 1분 해상도 값이라
-                        같은 워커의 최근 행들에는 같은 값이 붙는 것이 정직한 표현이다. */}
+                    {/* 실측 우선. 값의 성격이 다르므로 **한 칸에 섞지 않고 표기로 가른다** —
+                        실측은 그대로, 추정은 `≈` 를 붙인다. 마크를 떼면 센서가 죽은 구간이
+                        측정된 것처럼 보인다(이 레포가 반복해 고쳐 온 false-OK 형태). */}
                     <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
                       {(() => {
+                        if (sample.skinTempC != null) return formatTemp(sample.skinTempC);
+                        // 폴백 = 워커 단위 1분 해상도 추정치라 같은 워커의 여러 행에 같은 값이 붙는다.
                         const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
                         const est = data.coreTempEst?.[primary]?.tempC;
                         return est == null ? "--" : `≈${formatTemp(est)}`;

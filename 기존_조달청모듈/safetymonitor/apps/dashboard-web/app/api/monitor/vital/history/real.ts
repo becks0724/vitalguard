@@ -11,12 +11,13 @@ import {
   firstDataDay,
   getWorkerAliasMap,
   heartRateBucketAverages,
+  skinTempBucketAverages,
   spo2MeasurementsBetween,
 } from "../../../../../lib/db";
 
 import type { HistoryPoint } from "./data";
 
-export type RealMetric = "heartRate" | "coreTempEst" | "spo2" | "activity" | "coverage";
+export type RealMetric = "heartRate" | "skinTempC" | "coreTempEst" | "spo2" | "activity" | "coverage";
 
 /** 추정 궤적 제공 상한(일) — 열 스트레스는 시간 단위 현상이고 장기 추정 추세는 검증 근거가 없다. */
 export const CORE_TEMP_EST_MAX_DAYS = 7;
@@ -120,6 +121,18 @@ export async function buildRealHistory(
       const { date, label } = kstLabel(at, spanDays);
       // tsMs = 버킷 시작(시간축·결측 끊기 — 심박과 동일 계약).
       return { date, label, value: Math.round(Number(r.kcal) * 100) / 100, tsMs: at };
+    });
+  }
+
+  if (metric === "skinTempC") {
+    // 워치 온도 센서 실측. 심박과 같은 버킷 폭을 쓴다 — 같은 시간축에 놓고 비교하게 되는 값이라
+    // 해상도가 갈리면 "체온만 튄다"처럼 보인다. 버킷에 행이 없으면 점을 만들지 않는다(결측은 끊는다).
+    const rows = await skinTempBucketAverages(ids, fromMs, toMs, hrBucketSec(spanDays));
+    return rows.map((r) => {
+      const at = r.bucket_start_sec * 1000;
+      const { date, label } = kstLabel(at, spanDays);
+      // 소수 1자리 — 표 셀(formatTemp)·카드와 같은 자릿수라 화면 간 숫자가 어긋나지 않는다.
+      return { date, label, value: Math.round(Number(r.temp_c) * 10) / 10, tsMs: at };
     });
   }
 

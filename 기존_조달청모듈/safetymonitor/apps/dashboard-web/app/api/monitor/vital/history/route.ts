@@ -23,6 +23,8 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ALLOWED_METRICS: HistoryMetric[] = [
   "heartRate",
   "spo2",
+  // 실측 피부온 — 갤럭시(Wear OS) 온도 센서가 실제로 잰 값. 아래 coreTempEst 와 **다른 값**이다.
+  "skinTempC",
   "coreTempEst",
   "activity",
   "fall",
@@ -30,7 +32,14 @@ const ALLOWED_METRICS: HistoryMetric[] = [
   "coverage",
 ];
 const ALLOWED_RANGES: HistoryRange[] = [1, 7, 30, 60, 365];
-const REAL_METRICS: RealMetric[] = ["heartRate", "coreTempEst", "spo2", "activity", "coverage"];
+const REAL_METRICS: RealMetric[] = [
+  "heartRate",
+  "skinTempC",
+  "coreTempEst",
+  "spo2",
+  "activity",
+  "coverage",
+];
 
 // KST 달력일 경계 → epoch ms. 프리셋(days)은 "지금부터 N일 전".
 const kstDayStartMs = (day: string) => Date.parse(`${day}T00:00:00+09:00`);
@@ -54,7 +63,12 @@ export async function GET(request: Request) {
 
   if (!workerId || !metric || !ALLOWED_METRICS.includes(metric)) {
     return NextResponse.json(
-      { ok: false, error: "workerId / metric (heartRate|spo2|coreTempEst|activity|fall|coverage) 필수" },
+      // 거부는 소리가 나게 — 받은 값과 허용 목록을 함께 찍는다([[L-115]]④). 목록을 손으로 적지
+      // 않고 ALLOWED_METRICS 에서 만든다: 두 벌이 되면 늘 한쪽만 갱신된다.
+      {
+        ok: false,
+        error: `workerId 필수 · metric 은 ${ALLOWED_METRICS.join("|")} 중 하나여야 합니다(받은 값: ${metric ?? "없음"}).`,
+      },
       { status: 400 },
     );
   }

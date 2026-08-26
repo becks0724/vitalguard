@@ -1224,6 +1224,40 @@ export async function heartRateBucketAverages(
 }
 
 /**
+ * 구간 **실측 피부온** 버킷 평균 — 추세 차트의 '체온(실측)' 시리즈.
+ *
+ * ★ 왜 심박 추정과 따로 두나. 추정 궤적(`estimateCoreTempSeries`)은 심박에서 만든 **파생값**이고
+ * 이것은 워치 온도 센서가 실제로 잰 값이다. 둘을 한 시리즈로 섞으면 센서가 죽은 구간을 추정이
+ * 메워 "측정이 있었다"로 보인다 — 이 레포가 반복해 고쳐 온 false-OK 형태다([[L-115]] 계열).
+ *
+ * ⚠ **시간 기준은 `ts` 다** — 심박(`heart_rate_measured_at`)·SpO₂(`spo2_measured_at`)와 달리
+ * 피부온에는 측정 시각 컬럼이 **없다**(스키마 확인 2026-08-26). 따라서 전달이 끊겼다 복구되면
+ * 그 구간 측정이 복구 순간에 뭉치는 경계 효과가 심박보다 크게 남는다. 컬럼을 추가하기 전에는
+ * 이 한계가 구조적이므로, 없는 정확도를 있는 척하지 않고 여기 적어 둔다.
+ */
+export async function skinTempBucketAverages(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+  bucketSec: number,
+): Promise<{ bucket_start_sec: number; temp_c: number }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ bucket_start_sec: number; temp_c: number }>(
+    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+            avg(skin_temp_c) AS temp_c
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND skin_temp_c IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000), bucketSec],
+  );
+  return rows;
+}
+
+/**
  * KST 달력일별 **수집된 분** (0~1440) — 커버리지 히트맵의 칸 값.
  *
  * 왜 시간이 아니라 분인가. `COUNT(DISTINCT hour)` 로 재면 **한 시간에 샘플 하나만 와도 그 시간이
