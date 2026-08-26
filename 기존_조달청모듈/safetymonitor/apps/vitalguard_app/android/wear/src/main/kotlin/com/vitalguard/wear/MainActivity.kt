@@ -33,7 +33,16 @@ import com.vitalguard.wear.ui.TempDetailPage
 import com.vitalguard.wear.ui.TimelinePoint
 import com.vitalguard.wear.ui.VitalScreen
 import com.vitalguard.wear.ui.VitalUiState
+import com.vitalguard.wear.ui.LoginScreen
+import com.vitalguard.wear.ui.LoginUiState
+import com.vitalguard.wear.ui.SettingsPage
+import com.vitalguard.wear.pipeline.AuthClient
+import com.vitalguard.wear.pipeline.LoginResult
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
@@ -89,6 +98,72 @@ class MainActivity : ComponentActivity() {
         // 탭은 이제 아무 것도 안 붙잡는다 — 플래그가 이미 상시다. 호출부 호환으로 남긴다.
     }
 
+    // ── 로그인 ─────────────────────────────────────────────────────────────────
+    private var showLogin by mutableStateOf(false)
+    private var login by mutableStateOf(LoginUiState())
+    /** 화면이 읽는 신원. 로그인·로그아웃 즉시 갈아끼우려고 상태로 든다(prefs 를 매 프레임 읽지 않는다). */
+    private var workerId by mutableStateOf<String?>(null)
+    private var workerName by mutableStateOf<String?>(null)
+
+    /**
+     * 워치 텍스트 입력 = RemoteInput. 시스템 입력 화면(키보드·필기·음성)이 전체화면으로 뜨고
+     * 결과가 인텐트로 돌아온다. Wear M3 에는 텍스트 필드가 없어서 이 경로가 정식 수단이다.
+     */
+    private val idInputLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { r -> remoteInputText(r.data, KEY_ID)?.let { login = login.copy(id = it, error = null) } }
+
+    private val passwordInputLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { r -> remoteInputText(r.data, KEY_PASSWORD)?.let { login = login.copy(password = it, error = null) } }
+
+    private fun remoteInputText(data: Intent?, key: String): String? =
+        data?.let { android.app.RemoteInput.getResultsFromIntent(it)?.getCharSequence(key)?.toString() }
+
+    private fun askText(launcher: androidx.activity.result.ActivityResultLauncher<Intent>, key: String, label: String) {
+        val intent = androidx.wear.input.RemoteInputIntentHelper.createActionRemoteInputIntent()
+        androidx.wear.input.RemoteInputIntentHelper.putRemoteInputsExtra(
+            intent,
+            listOf(android.app.RemoteInput.Builder(key).setLabel(label).build()),
+        )
+        launcher.launch(intent)
+    }
+
+    /** 로그인 시도 — 네트워크는 IO 로 빼고 결과만 화면 스레드로 돌린다. */
+    private fun submitLogin() {
+        if (login.busy) return
+        login = login.copy(busy = true, error = null)
+        lifecycleScope.launch {
+            val cfg = ConfigStore(this@MainActivity)
+            val result = withContext(Dispatchers.IO) {
+                AuthClient(cfg.baseUrl).login(login.id.trim(), login.password)
+            }
+            when (result) {
+                is LoginResult.Ok -> {
+                    cfg.saveSession(result.token, result.workerId, result.workerName)
+                    workerId = result.workerId
+                    workerName = result.workerName
+                    // ⚠ 비밀번호는 저장하지도 화면에 남기지도 않는다 — 상태를 통째로 비운다.
+                    login = LoginUiState()
+                    showLogin = false
+                    Log.i(AuthClient.TAG, "로그인 성공 worker=${result.workerId}")
+                }
+                is LoginResult.Failed -> {
+                    login = login.copy(busy = false, error = result.message)
+                    Log.w(AuthClient.TAG, "로그인 실패: ${result.message}")
+                }
+            }
+        }
+    }
+
+    private fun logout() {
+        ConfigStore(this).clearSession()
+        workerId = null
+        workerName = null
+        login = LoginUiState()
+        Log.i(AuthClient.TAG, "로그아웃 — 자격을 지웠다")
+    }
+
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -103,6 +178,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         absorbConfigExtras()
+        // 저장된 신원을 상태로 끌어온다 — 화면은 prefs 가 아니라 이 상태를 본다.
+        ConfigStore(this).let { workerId = it.workerId; workerName = it.workerName }
 
         // ★ 시계 화면으로 돌아가지 않게 하는 수단 = **앰비언트**.
         //   화면이 꺼질 자리에서 앱이 어두운 채 남는다.
@@ -153,7 +230,7 @@ class MainActivity : ComponentActivity() {
                         timeline = timeline.toList(),
                         nowMs = now,
                         bpmRange = if (bpms.size >= 2) bpms.min() to bpms.max() else null,
-                        workerName = ConfigStore(this@MainActivity).workerName,
+                        workerName = workerName,
                         bpm = bpm,
                         spo2 = engine?.lastSpo2,
                         spo2AgeSec = engine?.lastSpo2AtMs?.let { (now - it) / 1000 },
@@ -202,7 +279,15 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            if (showDiagnostics) {
+            if (showLogin) {
+                LoginScreen(
+                    state = login,
+                    onEditId = { askText(idInputLauncher, KEY_ID, "아이디") },
+                    onEditPassword = { askText(passwordInputLauncher, KEY_PASSWORD, "비밀번호") },
+                    onSubmit = { submitLogin() },
+                    onCancel = { showLogin = false; login = LoginUiState() },
+                )
+            } else if (showDiagnostics) {
                 ProbeScreen(
                     state = ProbeUiState(
                         bpm = bpm,
@@ -244,7 +329,13 @@ class MainActivity : ComponentActivity() {
                             2 -> Spo2DetailPage(vitals)
                             3 -> TempDetailPage(vitals)
                             4 -> ActivityDetailPage(vitals)
-                            else -> StepsDetailPage(vitals)
+                            5 -> StepsDetailPage(vitals)
+                            else -> SettingsPage(
+                                workerName = workerName,
+                                workerId = workerId,
+                                onLogin = { login = LoginUiState(); showLogin = true },
+                                onLogout = { logout() },
+                            )
                         }
                     }
                 }
@@ -254,6 +345,10 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** RemoteInput 결과 번들의 키 — 요청과 회수가 같은 문자열을 봐야 한다. */
+        const val KEY_ID = "vg_login_id"
+        const val KEY_PASSWORD = "vg_login_password"
+
         /** 평상시 화면 갱신 주기 — iOS 화면과 같은 3초. */
         const val ACTIVE_POLL_MS = 3_000L
 

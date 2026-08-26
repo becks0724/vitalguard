@@ -28,6 +28,23 @@ class ConfigStore(context: Context) {
         get() = prefs.getString("baseUrl", DEFAULT_BASE_URL)!!
         set(v) { prefs.edit().putString("baseUrl", v).apply() }
 
+    /**
+     * 로그인 성공분을 한 번에 적는다 — 셋을 따로 쓰면 중간에 죽었을 때 사번만 남는 반쪽 상태가 된다.
+     * 그 반쪽 상태는 업로드가 401 로만 드러나서 원인을 못 찾는다.
+     */
+    fun saveSession(token: String, workerId: String, workerName: String?) {
+        prefs.edit()
+            .putString("token", token)
+            .putString("workerId", workerId)
+            .putString("workerName", workerName)
+            .apply()
+    }
+
+    /** 로그아웃 — 자격만 지운다. baseUrl 은 기기 설정이라 남긴다. */
+    fun clearSession() {
+        prefs.edit().remove("token").remove("workerId").remove("workerName").apply()
+    }
+
     fun uploadConfig(): UploadConfig? {
         val t = token ?: return null
         val w = workerId ?: return null

@@ -105,6 +105,9 @@ dependencies {
     // 앰비언트(항상 켜짐) — 화면이 꺼질 때 시계로 돌아가지 않고 앱이 어두운 채 남는다.
     // ⚠ FLAG_KEEP_SCREEN_ON 만으로는 안 된다(08-25 실측: 플래그가 걸려 있는데도 시계 복귀).
     implementation("androidx.wear:wear:1.3.0")
+    // 워치 텍스트 입력 = RemoteInput. 워치엔 Compose 텍스트 필드가 없다(Wear M3 1.5.0 실측 0건) —
+    // 시스템 입력 화면(키보드·필기·음성)을 띄우는 이 경로가 워치에서 글자를 받는 정식 수단이다.
+    implementation("androidx.wear:wear-input:1.1.0")
     implementation("androidx.wear:wear-tooling-preview:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
