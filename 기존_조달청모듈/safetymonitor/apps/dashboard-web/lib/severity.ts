@@ -74,13 +74,73 @@ export function spo2Status(spo2: number | null | undefined): Status {
   return "normal";
 }
 
-// 손목 온도 → 추정 심부 체온 변환 후 판정
+/**
+ * ★ **심부 체온을 직접 받아 판정한다** — 라이브 판정의 정본(2026-08-26 신설).
+ *
+ * 입력은 심박 기반 칼만 추정치(`estimateCoreTempSeries`)를 상정한다. 아래
+ * `coreTempStatus(skin)` 와 임계는 같지만 **입력의 출처가 다르다** — 그것이 이 함수를
+ * 따로 둔 이유다. 손목 실측에는 기기 발열이 섞이고(주변온≥33 구간에서 +0.841℃),
+ * 심박 경로는 같은 구간에서 +0.019℃ 로 사실상 안 움직인다(2026-08-26 실측).
+ *
+ * ⚠ `undefined` 는 "정상"이 아니라 **판정 불가(idle)** 다. 칼만은 30분 심박 이력을 먹는
+ *   필터라 워밍업 전에는 값이 없다. 그때 손목 실측으로 폴백하면 이 함수를 만든 이유가
+ *   사라지므로 **폴백하지 않는다** — 모르는 것은 모른다고 둔다.
+ */
+export function coreTempStatusC(coreTempC: number | null | undefined): Status {
+  if (coreTempC === null || coreTempC === undefined) return "idle";
+  if (coreTempC >= THRESHOLDS.coreTemp.dangerC) return "danger";
+  if (coreTempC >= THRESHOLDS.coreTemp.cautionC) return "caution";
+  return "normal";
+}
+
+/**
+ * 칼만 추정의 유효기간(분) — 마지막 **심박**으로부터.
+ *
+ * ★ 왜 필요한가(2026-08-26 실측). 서버는 심박 이력이 끊겨도 마지막 추정치를 계속 내려보낸다.
+ *   그날 EMP-6861 은 **심박이 32분째 없는데 행(피부온·배터리)은 3분 전까지 들어왔다** —
+ *   즉 행 신선도로는 안 걸리고, 판정은 32분 전 심박에서 나온 값으로 이뤄진다.
+ *   종전 손목 기반 판정은 값이 행과 함께 와서 자동으로 신선했다. 칼만으로 옮기면서
+ *   **"판정 근거가 행보다 임의로 늙을 수 있다"** 는 성질이 새로 생겼고, 그 구멍을 여기서 막는다.
+ *
+ * ★ 값의 근거 = 문헌 계수에서 파생한다(매직넘버 아님). 과정 잡음 γ=0.022℃/분이므로 심박 없이
+ *   t분이 지나면 상태 표준편차가 대략 γ·√t 만큼 자란다. 모델 자체 오차(RMSE 0.21~0.30℃)에
+ *   닿는 지점이 자연스러운 경계이고, γ·√t ≈ 0.22℃ 가 되는 t 가 100분이다 — 너무 길다.
+ *   실제로는 **심박이 끊기면 그 사이 열부하 변화를 아예 못 본다**는 쪽이 더 큰 위험이라,
+ *   "정상 수집이면 이 안에 반드시 새 심박이 온다" 는 관측 주기 기준으로 잡는다.
+ *   갤럭시 전송 주기 120초 · 애플 30초 배칭이므로 **10분이면 정상 수집에서는 결코 안 걸리고**
+ *   (5배 여유), 스트림이 죽으면 곧바로 걸린다. 이 구간의 표류는 γ·√10 ≈ 0.07℃ 로 무시할 만하다.
+ */
+export const CORE_TEMP_EST_MAX_AGE_MIN = 10;
+
+/**
+ * 신선도까지 본 심부체온 판정 — **라이브 판정은 이것을 쓴다**.
+ *
+ * `lastHrTs` 가 없거나 유효기간을 넘겼으면 `idle`(판정 불가)다. 값을 그대로 쓰지 않는 이유는
+ * 이 레포가 반복해 고쳐 온 형태이기 때문이다 — 낡은 값을 현재값처럼 보여주면 화면이 거짓말을 한다
+ * (하트비트 12시간 · sticky 병합 · 지도 고스트 강등이 전부 같은 계열이다).
+ */
+export function coreTempStatusFresh(
+  est: { tempC: number; lastHrTs: string } | undefined,
+  nowMs: number,
+): Status {
+  if (!est) return "idle";
+  const ageMs = nowMs - Date.parse(est.lastHrTs);
+  if (!Number.isFinite(ageMs) || ageMs > CORE_TEMP_EST_MAX_AGE_MIN * 60_000) return "idle";
+  return coreTempStatusC(est.tempC);
+}
+
+/**
+ * 손목 온도 → 추정 심부 체온 변환 후 판정.
+ *
+ * ⚠ **입력이 오염된다.** 워치 온도 센서가 기기 표면 근처라 발열이 섞이고, `wristToCoreOffsetC`
+ * 자체도 근거 미확인이다. 그래서 **라이브 판정에는 위 `coreTempStatusC` 를 쓴다.**
+ * 이 함수는 **칼만을 만들 수 없는 자리**에만 남아 있다 — 행 단위 과거 조회·내보내기·
+ * 수집 시점 경보(`dangerMetrics`)는 단일 행이라 심박 이력이 없어 필터를 돌릴 수 없다.
+ * 그 경로들을 칼만으로 옮기는 것은 별건이다(서버가 워커별 심박 창을 들어야 한다).
+ */
 export function coreTempStatus(skinTempC: number | null | undefined): Status {
   if (skinTempC === null || skinTempC === undefined) return "idle";
-  const core = estimateCoreTempC(skinTempC);
-  if (core >= THRESHOLDS.coreTemp.dangerC) return "danger";
-  if (core >= THRESHOLDS.coreTemp.cautionC) return "caution";
-  return "normal";
+  return coreTempStatusC(estimateCoreTempC(skinTempC));
 }
 
 // SQL 집계(내보내기 미리보기 카운트)용 임계 파라미터 — 위 판정 함수들과 동일 상수에서 파생(단일 소스).

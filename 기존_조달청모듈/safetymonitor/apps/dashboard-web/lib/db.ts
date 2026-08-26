@@ -365,6 +365,10 @@ async function initSchema(): Promise<void> {
     -- 오류 종료의 도메인#코드(2026-08-22 · 예 com.apple.healthkit#12). 읽는 곳 = 수사 절차의
     -- 지문 조회(docs/watch-auto-resume/checklist.md SQL). 판정·경보·화면 유입 금지(가드 고정).
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS session_end_error TEXT;
+    -- 배터리 충전카운터(µAh) — 퍼센트(battery_pct)보다 약 100배 촘촘한 잔량. 두 표본의 차이가
+    -- 곧 그 사이 소모량이라 짧은 구간의 소모율을 계단 없이 잴 수 있다(2026-08-26 · 워치 A안).
+    -- BIGINT 인 이유 = 폰 배터리(수천 mAh = 수천만 µAh)도 같은 열을 쓴다.
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS battery_charge_uah BIGINT;
     -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
     -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
@@ -1019,6 +1023,7 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     skin_temp_c: sample.skinTempC ?? null,
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
+    battery_charge_uah: sample.batteryChargeUah ?? null,
     session_started_at: sample.sessionStartedAt ?? null,
     motion_var_mg: sample.motionVariabilityMg ?? null,
     session_auto_resumed:
@@ -1214,6 +1219,40 @@ export async function heartRateBucketAverages(
        FROM vital_samples
       WHERE worker_id = ANY($1)
         AND heart_rate IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000), bucketSec],
+  );
+  return rows;
+}
+
+/**
+ * 구간 **실측 피부온** 버킷 평균 — 추세 차트의 '체온(실측)' 시리즈.
+ *
+ * ★ 왜 심박 추정과 따로 두나. 추정 궤적(`estimateCoreTempSeries`)은 심박에서 만든 **파생값**이고
+ * 이것은 워치 온도 센서가 실제로 잰 값이다. 둘을 한 시리즈로 섞으면 센서가 죽은 구간을 추정이
+ * 메워 "측정이 있었다"로 보인다 — 이 레포가 반복해 고쳐 온 false-OK 형태다([[L-115]] 계열).
+ *
+ * ⚠ **시간 기준은 `ts` 다** — 심박(`heart_rate_measured_at`)·SpO₂(`spo2_measured_at`)와 달리
+ * 피부온에는 측정 시각 컬럼이 **없다**(스키마 확인 2026-08-26). 따라서 전달이 끊겼다 복구되면
+ * 그 구간 측정이 복구 순간에 뭉치는 경계 효과가 심박보다 크게 남는다. 컬럼을 추가하기 전에는
+ * 이 한계가 구조적이므로, 없는 정확도를 있는 척하지 않고 여기 적어 둔다.
+ */
+export async function skinTempBucketAverages(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+  bucketSec: number,
+): Promise<{ bucket_start_sec: number; temp_c: number }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ bucket_start_sec: number; temp_c: number }>(
+    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+            avg(skin_temp_c) AS temp_c
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND skin_temp_c IS NOT NULL
         AND ts::timestamptz >= to_timestamp($2)
         AND ts::timestamptz < to_timestamp($3)
       GROUP BY 1

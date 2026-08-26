@@ -1,5 +1,6 @@
 // 가스 누출 감지기 표시 오버라이드 — 조회(GET)=로그인 세션, 수정(PUT=설치위치·가스종류)=관리자 권한(권한있음)만.
 import { NextResponse } from "next/server";
+import { readOr503 } from "../../../../lib/route-read";
 
 import { getSession, hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { getGaspodConfigs, setGaspodConfig } from "../../../../lib/db";
@@ -13,8 +14,9 @@ export async function GET(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
-  const configs = await getGaspodConfigs();
-  return NextResponse.json({ ok: true, configs });
+  return readOr503("gaspod/config", getGaspodConfigs, (configs) =>
+    NextResponse.json({ ok: true, configs }),
+  );
 }
 
 export async function PUT(request: Request) {

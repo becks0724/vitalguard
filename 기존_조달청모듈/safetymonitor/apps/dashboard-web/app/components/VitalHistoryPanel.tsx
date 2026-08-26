@@ -23,7 +23,7 @@ import { CoverageHeatmap } from "./CoverageHeatmap";
 import { getSessionToken } from "./session-token";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
-type Metric = "heartRate" | "spo2" | "coreTempEst" | "activity" | "fall" | "coverage";
+type Metric = "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "activity" | "fall" | "coverage";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
 
@@ -51,7 +51,13 @@ type HistoryResponse = {
 const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; decimals: number }> = {
   heartRate: { name: "심박", unit: "bpm", color: "#f87171", decimals: 0 },
   spo2: { name: "산소포화도", unit: "%", color: "#22d3ee", decimals: 0 },
-  // 워치 실측 손목온도는 서드파티 미개방(수면 전용 API)이라 탭에서 내림 — 심박 기반 추정으로 대체.
+  // ★ 실측 피부온 — 2026-08-26 복원. 08-13 에 이 탭을 내린 근거는 "애플 손목온도가 서드파티
+  //   미개방(수면 전용 API)이라 상시 비어 있다"였는데, 갤럭시(Wear OS) 온도 센서가 실측을
+  //   보내오면서 그 전제가 깨졌다(DB 실측 — EMP-6861 24시간 150건 · 34.1~38.9℃).
+  //   애플 전용 워커는 여전히 비므로 hasLiveMetric 이 탭 자체를 placeholder 로 돌린다.
+  skinTempC: { name: "체온(실측)", unit: "℃", color: "#fb7185", decimals: 1 },
+  // 심박 기반 추정 — 위 실측과 **다른 값**이다. 센서가 없거나 죽은 구간을 메우는 파생값이라
+  // 한 시리즈로 합치지 않는다(합치면 측정이 없던 구간이 "측정됨"으로 보인다).
   coreTempEst: { name: "체온(심박 추정)", unit: "℃", color: "#34d399", decimals: 1 },
   // 활동 = 작업 강도 축(kcal 구간 합·실측) — ≤1주 뷰는 심박 선 오버레이 복합 차트(사용자 승인 08-13).
   activity: { name: "활동", unit: "kcal", color: "#fb923c", decimals: 2 },
@@ -60,7 +66,24 @@ const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; 
   coverage: { name: "수집", unit: "분", color: "#22d3ee", decimals: 0 },
 };
 
-const METRICS: Metric[] = ["heartRate", "spo2", "coreTempEst", "activity", "fall", "coverage"];
+const METRICS: Metric[] = ["heartRate", "spo2", "skinTempC", "coreTempEst", "activity", "fall", "coverage"];
+
+/**
+ * 탭 버튼 툴팁 — 값의 성격이 이름만으로 안 드러나는 지표에만 단다.
+ *
+ * ★ 체온 두 탭이 이게 필요한 자리다(2026-08-26). 실측 탭에서 참고선·점 강조를 뺐는데,
+ *   이유를 어디에도 안 적으면 "색이 왜 없지" 로 읽히고 다음 사람이 되살린다.
+ */
+const METRIC_TITLE: Partial<Record<Metric, string>> = {
+  skinTempC:
+    "워치 온도 센서 실측(손목 피부온). 센서가 기기 표면 근처라 **기기 발열이 섞일 수 있다** — " +
+    "주변온이 함께 오르면 발열 쪽, 피부온만 오르면 체온 쪽이다(2026-08-25 실측: 앱 재설치만으로 −2.4℃). " +
+    "그래서 이 탭은 진단용이고 위험/주의 판정을 붙이지 않는다. 판정은 심박 기반 심부체온 추정으로 한다.",
+  coreTempEst:
+    "심박 기반 심부체온 추정(칼만필터 · Buller 2013 · 문헌 RMSE 0.21~0.30℃). 기기 발열을 타지 않는다 " +
+    "— 발열 구간에서 실측 피부온은 +0.84℃ 오르는데 이 값은 +0.02℃ 움직인다(2026-08-26 실측). " +
+    "의료 판정 아님. 심박 억제 약물 복용자는 과소추정될 수 있다.",
+};
 
 /** epoch ms → KST 달력일 `YYYY-MM-DD`. 서버 로컬이 UTC 라 getDate() 로 뽑으면 9시간 밀린다. */
 function kstDayKey(ms: number): string {
@@ -312,6 +335,7 @@ export function VitalHistoryPanel({
                       : "border-zinc-300 text-zinc-600 hover:border-zinc-500 hover:text-zinc-900 dark:border-white/10 dark:text-zinc-400 dark:hover:border-white/30 dark:hover:text-zinc-200"
                   }`}
                   style={isActive ? { color: label.color } : undefined}
+                  title={METRIC_TITLE[m]}
                 >
                   {label.name}
                 </button>
@@ -697,6 +721,20 @@ function metricReferenceLines(metric: Metric): ReferenceLine[] {
         { value: THRESHOLDS.spo2.dangerPct, label: `위험 ${THRESHOLDS.spo2.dangerPct}`, color: REF_DANGER },
         { value: THRESHOLDS.spo2.cautionPct, label: `주의 ${THRESHOLDS.spo2.cautionPct}`, color: REF_CAUTION },
       ];
+    case "skinTempC":
+      // ★ 참고선을 긋지 않는다(2026-08-26 · 사용자 결정).
+      //
+      // 처음엔 심부 임계를 `wristToCoreOffsetC` 로 역산해 손목 스케일에 그었다. 그으니
+      // **7일 차트 점의 54~57%가 주의 이상**으로 칠해졌다(24시간 뷰 115점 중 위험 31%·주의 26%).
+      // 원인 둘 다 이 선을 정당화하지 못한다.
+      //   ① 입력 오염 — 이 값에는 기기 발열이 섞인다(주변온≥33 구간 평균 37.58 vs 깨끗 36.69).
+      //   ② 오프셋 0.5 미검증 — 문헌값이 아니라 우리가 고른 수다.
+      // 근거 없는 선을 굵게 그어 두면 관제자가 색을 무시하는 습관이 붙고, 그건 되돌리기 어렵다.
+      //
+      // ⚠ 판정을 없앤 것이 아니다 — **판정은 심박 기반 칼만으로 옮겼다**(`coreTempStatusC`).
+      //   이 탭은 그래서 판정용이 아니라 **진단용**이다: 센서가 무엇을 봤는지 그대로 보여주고,
+      //   해석은 사람이 한다(추정 탭이 같은 원칙으로 이미 참고선만 두고 점 강조를 안 한다).
+      return [];
     case "coreTempEst":
       // 값이 심부체온 추정치라 심부 임계를 그대로 긋는다(참고선 — 판정 아님).
       return [
@@ -722,6 +760,10 @@ function metricPointSeverity(metric: Metric): ((value: number) => Status) | unde
       return workHeartRateStatus; // 작업 중 기준(작업부하 밴드)
     case "spo2":
       return spo2Status;
+    case "skinTempC":
+      // 점 강조 없음 — 위 metricReferenceLines 와 **같은 근거**다(입력 오염 + 오프셋 미검증).
+      // 선만 빼고 점은 칠하면 "선은 없는데 점은 빨갛다"가 되어 더 읽기 어렵다.
+      return undefined;
     case "coreTempEst":
       // 추정치는 판정 미주입 원칙 — 점 강조·안전율 계산 없이 참고선만 둔다.
       return undefined;

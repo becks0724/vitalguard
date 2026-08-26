@@ -99,10 +99,20 @@ else
   echo "  ★ 라이브 검증 목록은 '내가 무엇을 고쳤나'가 아니라 위 범위 전체에서 만든다(L-59)."
 fi
 
-say "1/5 커밋 고정 아카이브 (이미지=HEAD 보증 · L-32)"
+say "1/5 커밋 고정 아카이브 (이미지=\$SHA 보증 · L-32·L-116⑥)"
 TMP=$(mktemp -d /tmp/vg-deploy.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
-git -c core.quotepath=false archive "HEAD:$SUBTREE" | tar -x -C "$TMP"
+# ★ `HEAD` 가 아니라 **39행에서 떠 둔 $SHA** 를 아카이브한다(2026-08-26 · L-116⑥).
+#
+# 왜. `HEAD` 는 이름이라 **읽을 때마다 다른 커밋을 가리킬 수 있다.** 39행에서 $SHA 를 뜨고
+# 여기까지 오는 사이(상태 검사·범위 산출로 수 초~수십 초) 병렬 세션이 커밋하면, 라벨은 $SHA 인데
+# 아카이브는 새 커밋이 된다 — 이미지가 무엇인지 판정하는 유일한 근거(commit-sha 라벨)가 거짓이 된다.
+# 공유 워킹트리에 세 세션이 붙어 있는 이 레포에서 실현 가능한 창이고, 08-26 배포에서는 옆 세션에
+# **커밋 홀드를 부탁해서** 막았다. 사람의 협조로 막는 것은 구조가 아니다.
+#
+# ⚠ 대조로는 못 닫는다 — "검사 후 아카이브" 사이가 임계 구간이라 [[L-31]] 과 같은 모양이다.
+#   닫는 방법은 이름 대신 **값**을 쓰는 것뿐이다. 아래 한 줄이 그 전부다.
+git -c core.quotepath=false archive "$SHA:$SUBTREE" | tar -x -C "$TMP"
 for f in Dockerfile cloudbuild.dashboard.yaml .gcloudignore .dockerignore pnpm-lock.yaml pnpm-workspace.yaml; do
   [ -f "$TMP/$f" ] || die "아카이브에 $f 없음 — git 추적 여부 확인"
 done

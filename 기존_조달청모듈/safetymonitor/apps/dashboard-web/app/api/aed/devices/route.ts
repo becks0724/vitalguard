@@ -1,6 +1,7 @@
 // AED(제세동기 알림) 실 연동 장비 등록 — 조회(GET)=로그인 세션, 등록/해제(PUT=register|remove)=관리자 권한(권한있음)만.
 // 데모 프리셋(AED_DEVICES)과 별개: 여기 등록된 장비만 실 연동(RPi가 aed_id로 알림 레벨 폴링).
 import { NextResponse } from "next/server";
+import { readOr503 } from "../../../../lib/route-read";
 
 import { getSession, hasAdminMenuAccess, verifyBasicAuth } from "../../../../lib/admin-auth";
 import { findAedDevice } from "../../../../lib/aed-devices";
@@ -12,8 +13,9 @@ export async function GET(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
-  const devices = await listRegisteredAedDevices();
-  return NextResponse.json({ ok: true, devices });
+  return readOr503("aed/devices", listRegisteredAedDevices, (devices) =>
+    NextResponse.json({ ok: true, devices }),
+  );
 }
 
 export async function PUT(request: Request) {

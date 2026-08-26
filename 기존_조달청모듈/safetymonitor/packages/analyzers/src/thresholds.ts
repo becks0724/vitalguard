@@ -24,13 +24,37 @@ export const THRESHOLDS = {
     dangerPct: 88,
   },
   coreTemp: {
-    // 추정 심부 체온 (estimated core temperature) 기준 — 손목 온도 + wristToCoreOffsetC 로 derive
-    cautionC: 37.5,
-    dangerC: 38.0,
+    // 심부 체온 기준.
+    //
+    // ★ 2026-08-26 상향 (37.5/38.0 → 38.0/38.5). 종전 값은 **임상 발열 기준**이라 작업 맥락에
+    //   맞지 않았다. 심부체온 추정기(Buller 2013)의 관측 모델은 심박 100bpm 을 37.489℃ 로 놓는데,
+    //   작업 중 심박 100 은 정상이다. 즉 옛 주의선 37.5 가 **작업 중 정상 심박 바로 위**에
+    //   앉아 있어서 정상 작업자가 상시 주의로 칠해졌다.
+    //
+    //   실측 근거(7일 · 칼만 추정점 2,823개 · 피부온 233점).
+    //     칼만 심부 판정   37.5/38.0 → 경보 42%(주의)   ‖ 38.0/38.5 → 경보 0%
+    //     피부온+오프셋    37.5/38.0 → 경보 58%         ‖ 38.0/38.5 → 경보 35%
+    //   같은 창의 칼만 최댓값이 37.903℃ 이고 그 기간에 실제 열스트레스자는 없었다 —
+    //   **경보 0이 정답인 구간에서 0을 내는 것**이 올바른 보정이다. 37.5 는 42%를 냈다.
+    //
+    // ⚠ 위쪽 검증은 아직 없다 — "진짜 열스트레스에서 실제로 38.0 을 넘는가" 를 볼 표본이 없다
+    //   (혹서기 옥외·지하주차장 작업 표본 필요). 상향은 오탐 제거이지 민감도 검증이 아니다.
+    cautionC: 38.0,
+    dangerC: 38.5,
     // 손목 → 심부 보정 오프셋. 의학 reference: 손목/액와 vs 구강/직장 평균 차이 0.5℃,
-    // Apple Watch SLEEP_WRIST_TEMPERATURE 평균 35~36℃ 기준. Android Health Connect 의
-    // BODY_TEMPERATURE 는 이미 body 측정값이라 본 보정이 약간 과대지만 단일 상수로 통일.
-    // 2차에 source(SLEEP_WRIST vs BODY) 분기 + ambient/hr 회귀로 정교화 예정.
+    // Apple Watch SLEEP_WRIST_TEMPERATURE 평균 35~36℃ 기준.
+    //
+    // ⚠ **이 상수는 근거가 확인된 적 없다** — 문헌값이 아니라 우리가 고른 수다. 그리고 이 경로의
+    //   입력(손목 실측)에는 **기기 발열이 섞인다**(2026-08-26 실측: 주변온≥33 구간 평균 37.58 vs
+    //   깨끗 36.69 · 0.89℃ 차 · 주변온 최댓값 38.45℃ = 공기가 아니라 기기 표면). 그래서
+    //   **판정은 가능하면 이 경로를 쓰지 않는다** — 심박 기반 칼만(`estimateCoreTempSeries`)이
+    //   같은 구간에서 발열 상승 +0.019℃(피부온은 +0.841℃)로 오염을 타지 않는다.
+    //   이 오프셋 경로는 칼만을 못 만드는 자리(행 단위 과거 조회·내보내기)에만 남아 있다.
+    //
+    // ⚠ 구 주석의 "Android Health Connect BODY_TEMPERATURE 는 이미 body 라 보정이 과대" 는
+    //   **갤럭시에 해당 없다**(2026-08-26 정정). 삼성 Health Sensor SDK 직결이고
+    //   (`SamsungTrackerSource.kt` `SKIN_TEMPERATURE_CONTINUOUS` → `OBJECT_TEMPERATURE`)
+    //   `androidx.health.connect` 의존은 0건이다. 이름 그대로 피부온이다.
     wristToCoreOffsetC: 0.5,
   },
 } as const;

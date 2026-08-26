@@ -132,6 +132,12 @@ export const VitalSampleSchema = z.object({
   // 음수는 CoreLocation 의 "측위 실패" 표식이므로 앱이 보내지 않는다(min 0 이 계약).
   locationAccuracyMeters: z.number().min(0).max(10000).optional(),
   batteryPct: z.number().min(0).max(100).optional(),
+  // 배터리 **충전카운터**(µAh) — 퍼센트는 정수라 1% 계단(445mAh 워치 기준 4,450µAh) 아래를 못 본다.
+  // 6.6%/h 로 떨어져도 한 계단에 9분이 걸려 짧은 구간의 소모율을 아예 못 잰다.
+  // 이 값은 µAh 단위라 해상도가 약 100배이고, 표본 두 개의 차이가 곧 그 사이 소모량이다.
+  // (08-26 실측 = 100초에 4,680µAh → 168mAh/h 를 퍼센트 계단 없이 읽어냈다.)
+  // 상한은 물리 상한이 아니라 저장 가치의 경계다 — 워치 정격 445mAh, 폰도 수천 mAh 대역이다.
+  batteryChargeUah: z.number().int().min(0).max(50_000_000).optional(),
   // 워치 세션 계측 (2026-08-19 · docs/vital-absence-triage §4-7).
   // sessionStartedAt 이 바뀌는 지점이 곧 HKWorkoutSession 재시작이고, sessionAutoResumed 가
   // 그 재시작의 주체(자동 복구 vs 사람이 [시작])를 가른다.

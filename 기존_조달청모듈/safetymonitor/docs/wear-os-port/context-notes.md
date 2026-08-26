@@ -565,3 +565,220 @@ SpO₂ 처럼 성긴 지표에서 선을 이으면 **측정하지 않은 구간�
 `MetricHistoryTest` 6건 = 창 덮기 · 봉우리 생존 · 일정값에서도 적재 · 창 밖 폐기 · 최신 즉시 · 시간순.
 변이 = ①상세 차트 1개 제거 ②요약에 차트 삽입 ③솎기 제거(`minGapMs=1`) ④봉우리 대신 끝값
 ⑤주변온 겹치기 제거 → 각각 SeverityTest.kt:228 / :224 / :234, MetricHistoryTest.kt:26 / :42.
+
+## R-28 · 워치는 단독이므로 서명을 폰과 맞출 이유가 없다 — 릴리스 변종을 세웠다 (08-26 사용자 결정)
+
+**사용자 결정.** "워치 앱을 단독으로 진행하는 상황."
+
+**그 전까지의 상태 = 디버그 전용.** 실측으로 확인한 것.
+`wear/build.gradle.kts` 에 `buildTypes` 블록 0건 · 디스크 APK 는 `wear-debug.apk` 하나 ·
+빌드 중간산출물 `debug` 62디렉터리 대 `release` **0디렉터리**(릴리스는 한 번도 빌드된 적 없음) ·
+병합 매니페스트 `android:debuggable="true"` · `aapt2 dump badging` 에 `application-debuggable` ·
+Gradle 태스크에 **`installDebug` 만**(`installRelease` 없음) · 서명 = `~/.android/debug.keystore`.
+
+**릴리스가 없던 게 아니라 서명이 없었다.** `assembleRelease`·`bundleRelease` 는 AGP 기본으로
+존재했다. 없던 것은 `installRelease` 와 `validateSigningRelease` 다 — **AGP 는 서명 설정이 없는
+릴리스 변종에는 install 태스크를 만들지 않는다.** `signingReport` 가 그대로 말한다(`Config: null`).
+즉 "릴리스 모드가 있느냐" 의 답은 있다/없다가 아니라 **"있는데 설치가 안 되는 상태"** 였다.
+
+**서명 제약이 실제로 있는지 코드로 갈랐다.** `applicationId` 주석은 "Data Layer 가 같은
+applicationId·서명을 요구한다 — 폰 앱과 일치시킨다" 고 적혀 있었다. 그런데 실측 =
+`play-services-wearable` 의존 **0건** · `DataClient`/`MessageClient`/`CapabilityClient` 참조 **0건**.
+**그 주석은 지금 코드에 대해 거짓이다.** 단독 노선이면 폰과 키를 맞출 이유가 없다 → 워치 전용 키.
+주석은 실측 근거로 갈아끼웠다. `applicationId` 자체는 **바꾸지 않았다** — 서버 적재분과의 연속성
+때문이고, 바꾸면 기존 설치본과 별개 패키지가 된다.
+
+**★ 릴리스에서만 도는 lint 가 결함을 하나 잡았다.** `assembleRelease` 첫 시도가
+`lintVitalRelease` 에서 fatal 로 막혔다 — `InvalidFragmentVersionForActivityResult`.
+원인은 **어제 앰비언트 때문에 넣은 `androidx.wear:wear:1.3.0` 이 `androidx.fragment:1.2.4` 를
+딸려온다**는 것이었다(의존 트리 621행 → 670행). `registerForActivityResult` 는 fragment 1.3.0+ 를
+요구한다 — 그 아래의 `FragmentActivity` 는 `super.onRequestPermissionsResult()` 를 안 부르고
+잘못된 요청코드를 쓴다.
+
+이 앱의 `MainActivity` 는 `ComponentActivity` 이고 소스에 Fragment 참조가 0건이라 **실사용 경로는
+아니다.** 그래도 낡은 fragment 를 클래스패스에 두는 것 자체가 함정이라 제약으로 1.8.5 로 올렸다
+(`1.2.4 -> 1.8.5` 로 해석되는 것 확인). **교훈은 따로 있다 — 디버그만 돌리면 `lintVitalRelease`
+가 한 번도 안 돈다.** 릴리스 빌드는 서명 문제이기 이전에 **검사 한 겹이 더 붙는 문제**다.
+
+**R8 은 켜지 않았다**(`isMinifyEnabled = false` 명시). 삼성 SDK 는 트래커 타입·`ValueKey` 를
+문자열로 짚는다. 켤 거면 keep 규칙을 쓰고 **실기에서 SpO₂·피부온이 살아 있는지 재측정한 뒤** 켠다.
+기본값에 기대지 않고 명시한 이유는 다음 사람이 조용히 켜는 것을 막기 위해서다.
+
+**키 자료는 레포에 안 들어간다.** `wear/key.properties` + `wear/vitalguard-wear-release.jks`,
+둘 다 `android/.gitignore` 의 `key.properties`·`**/*.jks` 에 걸리는 것을 `git check-ignore -v` 로
+확인했다(양성 통제군 = 무시 안 되는 파일은 exit 1). `key.properties` 가 **없으면 signingConfig 를
+만들지 않는다** — 키 없는 머신에서도 `assembleDebug` 는 그대로 돌고, 릴리스만 미서명이 되며 그
+사실이 `signingReport` 에 `Config: null` 로 드러난다.
+⚠ **두 파일은 함께 백업해야 한다.** 하나라도 잃으면 같은 키로 재서명이 불가능하다.
+
+**검증(전부 실측).**
+`signingReport` release `Config: release` / alias `vitalguard-wear` / SHA-256 `CF:24:1C:…` ·
+debug 는 그대로 `AndroidDebugKey` SHA1 `84:DF:26:23:…`(비회귀) ·
+`wear-release.apk` 24.2MB 생성(debug 33.2MB) ·
+`aapt2 dump badging` 의 `application-debuggable` = release **0건** / debug **1건**(양성 통제군) ·
+`apksigner verify` = `Verifies`, v2 스킴, DN `CN=VitAlGuard Wear` ·
+태스크 목록에 `installRelease`·`validateSigningRelease` **생성됨** ·
+단위테스트 154/154 · `assembleDebug`·`assembleRelease`·`:app` configure 전부 비회귀.
+
+**가드 · 변이 6종 실측**(모두 단언에서 빨간불 · L-113). `ReleaseBuildTest` 7건.
+변이 = ①릴리스 서명 대입 삭제 ②디버그 키로 서명 ③비밀번호 리터럴 박기 ④fragment 제약
+되돌리기(1.2.4) ⑤R8 켜기 ⑥키 부재 방어 제거(`takeIf { true }`) → 각각 fail 1·2·1·1·1·1.
+복원 대조(`cmp -s`) 통과, 복원 후 기준선 fail 0.
+
+**미확인 · 남은 것.**
+① **릴리스 APK 를 실기에 넣어 보지 않았다** — 워치가 ADB 에 안 붙어 있다(`adb devices` 0건,
+mDNS 0건, adb 자체는 살아 있음 1.0.41). **서명 키가 디버그와 다르므로 `pm install -r` 로 못 덮는다 —
+기존 설치본을 지우고 넣어야 한다**(지우면 `ConfigStore` 의 토큰·workerId 도 함께 날아간다).
+② 매니페스트에 선언돼 있는데 `requestSensorPermissions()` 가 **요청하지 않는** 권한 3건 —
+`BODY_SENSORS_BACKGROUND` · `health.READ_FLOORS_CLIMBED` · `health.READ_ACTIVE_CALORIES_BURNED`.
+adb 없이 넘기는 빌드에서는 이 셋이 미부여로 남는다. 빌드 타입과 무관한 선존 결함이라 **이번에
+손대지 않았다** — 층·칼로리가 실제로 필요한지 정하고 별건으로 다룬다.
+③ `versionCode = 1` · `versionName = "0.1-probe"` 그대로다.
+
+## R-29 · 신원은 하드코딩이 아니라 로그인에서 온다 — 설정 페이지를 스와이프 맨 끝에 둔다 (08-26 사용자 지시)
+
+**사용자 지시 2건.** ①"이름/ID/PW는 하드코딩이 아닌 유기적으로 변경이 가능해야함."
+②"로그인/로그아웃 기능은 스와이프로 맨 하단에 설정아이콘을 만들어서 선택하면 …가장 자연스러울거 같다."
+
+**종전 = adb 주입뿐이었다.** `MainActivity.absorbConfigExtras()` 가 인텐트 엑스트라를 읽어
+`ConfigStore` 에 옮기는 것이 유일한 자격 경로였다. 실측 단계에는 맞지만 **작업자가 바꿀 수단이 0** 이다.
+
+**서버는 이미 준비돼 있었다.** `POST /api/app-auth/login` 이 `{id, password}` 를 받아
+`{ok, token, user:{id, name, role, workerId}}` 를 준다(30일 JWT). 그 라우트 주석은 "워치는 자체
+로그인이 없어 폰이 WCSession 으로 밀어준다" 고 적혀 있는데 그건 **애플워치** 이야기다 —
+갤럭시워치는 단독(R-28)이라 이 엔드포인트를 직접 부르면 된다.
+
+**★ 사번이 비면 로그인 단계에서 막는다.** `lib/app-login.ts` 의 타입이 `workerId: string | null`
+이고, 같은 파일 주석이 **빈 사번 토큰이 발급돼 수집이 401 이 되고 배포를 4회 롤백한 사고**를
+기록해 뒀다. 그 구멍이 워치까지 그대로 이어진다 — 빈 채로 저장하면 **로그인은 성공한 척하고
+업로드만 조용히 죽는다.** `AuthClient.parse` 가 null·빈 문자열·문자열 "null" 을 전부 거부하고
+"관리자에게 사번 등록을 요청하세요" 로 돌려준다. 실패 문구는 코드가 아니라 **한국어 문장**으로
+준다 — 워치 화면은 좁아서 코드만 던지면 작업자가 무엇을 고칠지 알 수 없다.
+
+**입력 수단 = RemoteInput**(사용자 선택). 실측으로 갈랐다 — Wear Compose Material3 1.5.0 AAR 에
+**TextField 계열 0건**(통제군 = curved 4건). 즉 워치엔 Compose 텍스트 필드가 없다. 정식 수단은
+시스템 입력 화면이고, 그것을 띄우는 클래스는 `androidx.wear:wear-input:1.1.0` 의
+**`RemoteInputIntentHelper`** 다 — 흔히 알려진 `RemoteInputIntent` 라는 이름은 이 버전에 **없다**
+(바이트코드 전수 9클래스로 확인). 결과 회수는 플랫폼 `android.app.RemoteInput.getResultsFromIntent`.
+
+**비밀번호는 세 곳 어디에도 원문으로 남기지 않는다.** ①디스크 — `ConfigStore` 는 token·workerId·
+workerName 만 쓴다. ②로그 — `Log.` 호출 줄에 password 식별자가 못 붙는다(가드). ③화면 —
+`maskedPassword()` 로만 그리고 길이도 12자에서 자른다. 성공 즉시 `login = LoginUiState()` 로
+상태를 통째 비운다.
+
+**배치 = 세로 페이저 맨 끝**(6번). 게이트 화면(토큰 없으면 로그인부터)이 아니라 **설정 페이지**다 —
+사용자 지시대로다. 수집은 로그인 없이도 돌고, 설정 면이 "로그인해야 서버로 전송됩니다" 로
+그 상태를 드러낸다. 톱니 아이콘은 Canvas 로 직접 그린다(아이콘 하나 때문에 의존을 늘리지 않는다).
+
+**부수로 잡은 함정 — `absorbConfigExtras()` 는 `onCreate` 에서만 돈다.** 앱이 떠 있는 상태로
+`am start --es token …` 을 하면 액티비티가 재사용되어 **주입이 조용히 무시된다.** 대조군 이름
+("대조군XYZ")을 넣었는데 화면이 안 바뀌어 드러났고, `force-stop` 후 넣으니 바뀌었다.
+adb 로 자격을 재주입할 때는 **반드시 `force-stop` 이 먼저다.**
+
+**가드 · 변이 10종 실측**(전부 단언에서 빨간불 · L-113). `LoginTest` 4클래스.
+변이 = ①빈 사번 통과 ②비밀번호 prefs 저장 ③비밀번호 로그 유출 ④마스킹 제거 ⑤설정 페이지 제거
+⑥로그아웃이 이름 안 지움 ⑦로그아웃이 화면 이름 안 비움 ⑧같은 것 사번 ⑨성공 후 비밀번호 잔존
+⑩로그아웃 주석 처리.
+
+**★ 그 중 2종이 처음엔 통과했다 — 앵커가 약했다.** ⓐ `// workerName = null` 로 **주석 처리한
+변이**가 `contains("workerName = null")` 을 그대로 통과했다. → `uncommented()` 로 주석을 걷어낸 뒤
+본다. ⓑ `login = LoginUiState()` 는 취소·진입 경로에도 있어서, **성공 경로에서 사라져도** 파일
+전체 `contains` 는 초록이었다. → 앵커를 `is LoginResult.Ok ->` 분기 안으로 좁히고, 분기를 못 찾으면
+"앵커가 낡았다" 로 먼저 실패하게 했다. **교훈 = 소스를 문자열로 보는 가드는 (1) 주석을 걷어내고
+(2) 범위를 좁히고 (3) 범위 자체가 살아 있는지 먼저 단언해야 한다.**
+
+**검증.** 단위테스트 170/170(신설 17) · `assembleDebug`·`assembleRelease` 통과(lintVitalRelease 포함) ·
+릴리스 APK 24.4MB 를 실기에 `pm install -r` 로 덮어 설치 성공(같은 키라 제거 불필요, 권한·자격 보존) ·
+dex 에 SpO₂ 경로 실림 확인(`classes2.dex` SPO2_ON_DEMAND=1 · 통제군 HEART_RATE_CONTINUOUS=2).
+
+**실기 검증 — 전 경로 통과(08-26 09:44~09:48).**
+①맨 끝(6번) 설정 페이지 = 톱니 + `장우진` + `EMP-6861` + 로그아웃, 우측 페이지 점도 마지막 칸.
+②로그아웃 = 이름·사번이 사라지고 "로그인해야 서버로 전송됩니다"(주의색)로 바뀐다.
+③로그인 폼 = 아이디·비밀번호 두 칸 + 로그인.
+④칸을 탭하면 **삼성 시스템 입력(천지인 키보드)** 이 전체화면으로 뜬다.
+⑤`input text "admin6861"` → ✓ → **폼의 아이디 칸에 그대로 돌아왔다**(RemoteInput 왕복 성립).
+⑥비밀번호는 `●` 10개로만 보인다(입력값 10자와 일치).
+⑦**서버 왕복** — 비밀번호를 몰라 **틀린 값 1회**로 확인했다. 실제 Cloud Run 까지 갔다 와서
+   화면에 "아이디 또는 비밀번호가 맞지 않습니다." 가 떴고, 로그에는 **사유만** 남았다
+   (`W VgAuth: 로그인 실패: …` — 비밀번호 원문 0건).
+⑧복원 = `force-stop` 후 인텐트 재주입으로 원래 세션으로 되돌렸다.
+
+**★ ADB 링크 함정(R-11 계열) — 원인이 절전이 아니었다.** 처음엔 화면 꺼짐·wifi 절전을 의심했는데
+실측은 반대였다(`Wireless powered: true` · `mWakefulness=Awake` · 배터리 99%). 실제로 갈린 것은
+**`adb` 명령을 몇 번 부르느냐**였다.
+  · `adb shell A` · `adb shell B` · `adb shell C` 처럼 **따로 부르면 1~2개 뒤 `device offline`**,
+    심하면 목록에서 사라져 `not found` 가 된다.
+  · **`adb shell 'A; B; C'` 로 한 번에 부르면 안정적이다** — 스와이프 6회 + screencap 까지 붙는다.
+  그래서 실기 절차는 **기기 안에서 도는 한 덩어리 스크립트**로 짠다. 파일 회수만 `adb pull` 로
+  따로 한다. (킵얼라이브 셸은 툴 호출이 끝나면 같이 죽어서 호출 간에는 도움이 안 된다.)
+**무선 디버깅을 껐다 켜면 포트가 바뀐다**(34695 → 37411). 페어링은 유지되므로 재페어링은 불필요하고,
+`dns-sd -L` 로 새 포트만 다시 읽으면 된다. 판정 순서 = ①mDNS 광고 ②`ping6` 도달 ③`nc -z` 포트.
+①②가 살아 있는데 ③만 죽었으면 **데몬이 포트를 바꾼 것**이지 네트워크 문제가 아니다.
+
+## R-30 · 심부체온을 심박에서 추정한다 — 기기 발열 오염을 구조로 끊는다 (08-26 · 1단계)
+
+**사용자 물음.** "칼만+센싱 실체온을 알고리즘화해서 안정적으로 체온 추정이 가능한가."
+조사 끝에 **1단계(칼만 이식)만으로 문제의 실질이 풀린다**는 결론이 나왔고, 그것부터 했다.
+
+**조사에서 나온 것 넷.**
+
+① **★ 칼만은 이미 갤럭시 심박에도 돌고 있었다.** 서버 `recentHeartRates` 가 `data_origin` 을
+   안 가린다. 밀도도 충분하다 — 08-25 14시대에 1분 버킷 **39개**(워밍업 임계 30 초과).
+
+② **★ 워치와 서버가 서로 다른 체온을 쓰고 있었다.** 서버 PSI 는 칼만 추정치(`coreMap[me].tempC`),
+   워치 PSI 는 `skinTempC + 0.5`. 그런데 `Severity.kt` 주석은 "화면은 이 함수를 쓰지 않는다" 라고
+   적혀 있었다 — **거짓이었다.** `VitalUiState.coreTempC` → `Psi.compute` 경로로 화면(생리적부담)에
+   닿아 있었고, 그 경로가 기기 발열을 그대로 실어 날랐다.
+
+③ **가장 뻔한 해법(피부온 − 주변온)은 실측이 죽였다.** wearos 161행 기준.
+
+   | 관측 | SD | corr(HR) | corr(배터리) |
+   |---|---|---|---|
+   | 피부온 원시 | 0.927 | **0.255** | −0.182 |
+   | 피부온 − 주변온 | **1.260** | **0.014** | −0.058 |
+
+   격차를 쓰면 발열은 좀 빠지는데 **생리 신호가 함께 사라지고**(0.255→0.014) 분산은 오히려 커진다.
+   이유 = 그 "주변온" 센서도 기기 열을 읽는다. **결정적 증거 = 주변온 최댓값 38.45℃**
+   (8월 실내 공기가 그럴 수 없다). corr(피부온, 주변온) = 0.563.
+
+④ **데이터가 절대 부족하다.** wearos 194행 · 3종 다 있는 행 137개 · 사실상 1~2회 착용.
+   애플워치는 90,222행이지만 **주변온이 105행뿐**이라 융합 학습에 못 쓴다.
+
+**그래서 한 일 = 칼만을 워치로 이식했다**(`core/CoreTempKalman.kt`).
+심박만 쓰므로 **기기 발열에 구조적으로 면역**이다. 그리고 서버와 같은 알고리즘이라 두 화면이 같은
+값을 말한다(종전 워치 38.16 vs 서버 37.4 의 벌어짐이 원인째 사라진다).
+
+**계수는 논문값 그대로다.** 원본 주석의 규율을 이식본도 그대로 진다 — *정답(실측 심부체온)이
+없어 자체 보정은 검증 불가능한 조작이 된다.*
+
+**★ 이식의 성공 기준 = 숫자가 같은가.** 손계산·눈대중이 아니라 **원본 TS 를 실제로 실행해서**
+골든값을 받아 적었다(`node` + `analyzers/dist/core-temp-estimator.js` · dist 가 src 와 같은 계수임을
+먼저 대조). 5개 표본 = 상승 / 워밍업 미달 / **갤럭시 2분 간격** / 61분 공백 리셋 / 오측·같은 분 평균.
+Kotlin 이 1e-9 이내로 같은 값을 낸다.
+
+**갤럭시는 워밍업이 애플워치의 2배 걸린다.** 심박 도착 간격 중앙값 **120.7초**(실측 · p75 129.4 ·
+p90 209.2)라 버킷 30개를 채우려면 **약 60분** 연속 착용이 필요하다(애플워치는 30분). 화면은 그동안
+"착용 N회분 더" 로 **왜 비어 있는지** 말한다 — 버킷 수로 적는다. 분으로 적으면 거짓말이 된다.
+
+**판정 문구는 달지 않았다.** "피부온만 오르고 심부는 가만 → 기기 발열" 은 맞는 판별이지만,
+그것을 **숫자 임계로 만들 근거(라벨된 실측)가 없다.** 없는 근거로 숫자를 지어내지 않는다([[L-107]]).
+지금은 두 값을 나란히 보여주는 데서 멈춘다 — 벌어짐은 사람이 읽는다.
+
+**가드 · 변이 7종 실측**(전부 검출 · L-113). `CoreTempKalmanGoldenTest` 7건 + `CoreTempWiringTest` 6건.
+변이 = ①문헌 계수 변조(B1) fail=4 ②워밍업 임계 완화 fail=6 ③세션 리셋 제거 fail=1 ④오측 필터 완화
+fail=2 ⑤화면이 칼만을 안 씀 fail=1 ⑥CT0 이중 기재 fail=1 ⑦심부 행 라벨 제거 fail=1.
+
+**부수.** 기존 `PsiTest` 표본이 `skinTempC=37.9 → 오프셋 +0.5` 를 암묵 전제하고 있어 NPE 로 깨졌다.
+의도(판정식이 PSI 를 안 읽는다)는 그대로 두고 `coreTempC = 38.4` 를 **명시**로 바꿔 같은 PSI(4.75)를
+유지했다. `estimateCoreTempC` 는 지우지 않았다 — 3단계(피부온 융합)에서 채울 자리다. 주석만 사실로
+고쳤다("호출부가 없다").
+
+**검증.** 단위테스트 **183/183** · `assembleDebug`·`assembleRelease` 통과(lintVitalRelease 포함) ·
+릴리스 APK 24.4MB 빌드됨.
+**⚠ 실기 미설치.** 빌드 사이에 워치가 **네트워크에서 이탈**했다 — 직전 진단은 `ping6` 0% 손실이었는데
+이번엔 **100% 손실**이고 포트 2개(37411·41947) 모두 무응답이다. 포트 문제(데몬 재시작)와 다른 층이다.
+워치 wifi 를 확인해야 한다.
+
+**다음 = 2·3단계**(사용자 승인 후). 2단계 = 발열 판별자를 실측으로 고른다
+(`PowerManager.getCurrentThermalStatus()` · 배터리 하강률 · 착용 직후 상승 곡선의 시정수) +
+R-25 형태의 통제 실험으로 라벨 만들기. 3단계 = 판별자가 서면 적응형 관측잡음(σ_skin)으로 융합.

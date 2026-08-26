@@ -369,7 +369,10 @@ class PsiTest {
         val sev = src.substringAfter("val severity: Severity").substringBefore("\n\n")
         org.junit.Assert.assertFalse("판정식이 PSI 를 읽는다 — 표시 전용 규율이 깨졌다", sev.contains("psi"))
         // 그리고 실제로도 정상 판정이 유지된다.
-        val s = VitalUiState(bpm = 109, skinTempC = 37.9, collecting = true)
+        // ⚠ 08-26(R-30) 이후 심부체온은 피부온 파생이 아니라 **칼만 추정 입력**이다.
+        //   종전 표본은 skinTempC=37.9 → 오프셋 +0.5 = 38.4 를 암묵적으로 썼다.
+        //   같은 PSI(4.75)를 유지하려고 그 값을 이제 명시로 넣는다.
+        val s = VitalUiState(bpm = 109, skinTempC = 37.9, coreTempC = 38.4, collecting = true)
         org.junit.Assert.assertTrue("표본의 PSI 가 0 이면 시험이 헛돈다", s.psi!! > 3.0)
         assertEquals(Severity.NORMAL, s.severity)
     }
@@ -500,8 +503,14 @@ class ChartTest {
             5,
             Regex("TrendChart\\(").findAll(detail).count(),
         )
-        // 페이지 수 = 요약 1 + 상세 5. 늘려 놓고 배선을 빠뜨리면 빈 화면이 생긴다.
-        org.junit.Assert.assertEquals("페이지 수가 상세 면 수와 안 맞는다", 6, com.vitalguard.wear.ui.DETAIL_PAGE_COUNT)
+        // 페이지 수 = 요약 1 + 지표 상세 5 + 설정 1. 늘려 놓고 배선을 빠뜨리면 빈 화면이 생긴다.
+        // 차트 수(5)에서 계산해 세운다 — 숫자를 손으로 적으면 지표를 늘렸을 때 여기만 낡는다.
+        val chartPages = Regex("TrendChart\\(").findAll(detail).count()
+        org.junit.Assert.assertEquals(
+            "페이지 수가 (요약 1 + 차트 $chartPages + 설정 1) 과 안 맞는다",
+            1 + chartPages + 1,
+            com.vitalguard.wear.ui.DETAIL_PAGE_COUNT,
+        )
         // 체온은 주변온을 **같은 축에 겹쳐야** 기기 발열과 진짜 체온이 갈린다(R-25).
         org.junit.Assert.assertTrue(
             "체온 차트에 주변온 겹치기가 없다",

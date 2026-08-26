@@ -32,6 +32,10 @@ fun HeartDetailPage(state: VitalUiState) {
             )
         },
         rows = buildList {
+            // 언제 잰 값인가 — 없으면 죽은 스트림의 옛 값이 현재값처럼 읽힌다(08-26 실기).
+            state.bpmAgeSec?.let {
+                add(DetailRow("마지막 측정", ageLabel(it), if (state.bpmStale) VgColors.Caution else VgColors.Primary))
+            }
             if (vals.size >= 2) {
                 add(DetailRow("최저 / 최고", "${vals.min().toInt()} / ${vals.max().toInt()}"))
                 add(DetailRow("평균", "${vals.average().toInt()}"))
@@ -105,6 +109,19 @@ fun TempDetailPage(state: VitalUiState) {
             )
         },
         rows = buildList {
+            // ★ 심부(추정) 를 피부온 바로 옆에 둔다 — 이 값은 **심박만** 쓰므로 기기 발열에
+            //   오염되지 않는다([[R-25]]·[[R-30]]). 피부온만 오르고 이쪽이 가만히 있으면
+            //   그 벌어짐이 곧 발열 신호다. 판정 문구는 아직 달지 않는다 — 임계를 정할
+            //   근거(라벨된 실측)가 없고, 없는 근거로 숫자를 지어내지 않는다([[L-107]]).
+            add(
+                when {
+                    state.coreTempC != null ->
+                        DetailRow("심부(추정)", "%.1f ℃".format(state.coreTempC), VgColors.Primary)
+                    // 워밍업 중 — 왜 비어 있는지 말한다. 갤럭시 심박은 약 2분 간격이라
+                    // 남은 버킷 수가 곧 남은 분 수는 아니다. 버킷으로 정직하게 적는다.
+                    else -> DetailRow("심부(추정)", "착용 ${state.coreWarmupBuckets}회분 더", VgColors.Idle)
+                },
+            )
             state.ambientTempC?.let { add(DetailRow("주변", "%.1f ℃".format(it), VgColors.Accent)) }
             if (state.skinTempC != null && state.ambientTempC != null) {
                 add(DetailRow("차이", "%.1f ℃".format(state.skinTempC - state.ambientTempC)))
@@ -193,5 +210,8 @@ fun StepsDetailPage(state: VitalUiState) {
     )
 }
 
-/** 페이지 목록 — 요약이 0번. **뒤에만 더한다** — 순서를 바꾸면 익힌 위치가 흐트러진다. */
-val DETAIL_PAGE_COUNT = 6
+/**
+ * 페이지 목록 — 요약이 0번, **맨 끝이 설정**(로그인/로그아웃). **뒤에만 더한다** —
+ * 순서를 바꾸면 익힌 위치가 흐트러진다. 설정을 맨 아래 두는 것은 08-26 사용자 지시다.
+ */
+val DETAIL_PAGE_COUNT = 7

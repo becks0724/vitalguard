@@ -42,6 +42,8 @@ class CollectorService : Service() {
     /** 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다). */
     private var sensing = false
     private var uploadBlockedUntilMs = 0L
+    /** 심박 재구독 횟수 — 로그에 남겨 "몇 번째 되살림인가" 를 볼 수 있게 한다. */
+    private var hrRevives = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -74,20 +76,49 @@ class CollectorService : Service() {
             batteryPct = {
                 battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 1..100 }
             },
+            // ⚠ 못 읽는 기기는 Int.MIN_VALUE 또는 0 을 준다 — 그대로 실으면 "0µAh 남음" 이 된다.
+            //   갤럭시워치9 실측값은 388,908µAh(=388mAh · 정격 445mAh) 대역이다.
+            batteryChargeUah = {
+                battery.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).takeIf { it > 0L }
+            },
             latestFix = { now -> gps.currentFix(now) },
         )
         pipeline = UploadPipeline(queue, HttpTransport(config.baseUrl))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = Notification.Builder(this, CH)
+        // ⚠ OngoingActivity 는 **NotificationCompat.Builder** 를 요구한다(플랫폼 Notification.Builder 는
+        //   못 받는다 — 바이트코드 확인). 그래서 알림 생성부를 androidx 쪽으로 옮긴다.
+        val builder = androidx.core.app.NotificationCompat.Builder(this, CH)
             .setContentTitle("VitAlGuard 수집 중")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setOngoing(true)
+            .setCategory(androidx.core.app.NotificationCompat.CATEGORY_WORKOUT)
+
+        // ★ 진행 중 활동 선언 — 시계 화면 복귀를 막는 정식 수단(운동 앱이 쓰는 것).
+        //   탭하면 우리 화면으로 돌아온다. 08-26 실측에서 앰비언트만으로는 약 1분 뒤 시계로
+        //   돌아갔다(앰비언트 진입 11:16:10 → 해제 11:17:09 → 시계). 그 자리를 이것으로 시도한다.
+        val touch = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        androidx.wear.ongoing.OngoingActivity.Builder(this, FGS_NOTIFICATION_ID, builder)
+            .setStaticIcon(android.R.drawable.stat_notify_sync)
+            .setTouchIntent(touch)
+            .setStatus(
+                androidx.wear.ongoing.Status.forPart(
+                    androidx.wear.ongoing.Status.TextPart("생체 수집 중"),
+                ),
+            )
             .build()
+            .apply(this)
+
         // 60초 규칙 — 시작 즉시 승격. 타입은 매니페스트 선언(health|location)과 같아야 한다.
         startForeground(
-            2,
-            notification,
+            FGS_NOTIFICATION_ID,
+            builder.build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
         )
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
@@ -146,8 +177,32 @@ class CollectorService : Service() {
                     }
                 }
             }
+            reviveHrIfStalled(now)
             handler.postDelayed(this, FLUSH_INTERVAL_MS)
         }
+    }
+
+    /**
+     * ★ 죽은 심박 스트림을 되살린다.
+     *
+     * 08-26 실기 — 심박이 `12:22:30` 을 끝으로 28분간 한 건도 안 왔는데 앱은 `collecting=true`
+     * 였고 화면엔 마지막 값 `101` 이 그대로 남아 있었다. 서버는 옳게 "연결끊김" 을 냈는데
+     * **워치만 정상인 척했다.** 앱이 스트림 사망을 감지하는 장치가 아예 없었던 것이 원인이다.
+     *
+     * ⚠ 이건 표시 문제가 아니라 안전 문제다 — 심박이 끊긴 것을 앱이 모르면
+     * **쓰러진 작업자와 센서 고장을 구별할 수 없다.**
+     *
+     * 재구독은 `stop()`+`start()` 다. 큐·칼만 심박원본(hrLog)은 보존되고(그쪽을 안 건드린다),
+     * 화면 스냅숏과 IBI 창만 비워진다 — 낡은 값이 사라지는 것은 의도한 효과다.
+     */
+    private fun reviveHrIfStalled(now: Long) {
+        if (!sensing) return
+        val silence = engine.hrSilenceMs(now) ?: return
+        if (silence < HR_STALL_MS) return
+        hrRevives++
+        Log.w(TAG, "심박 침묵 ${silence / 1000}초 — 트래커 재구독 (${hrRevives}회째)")
+        engine.stop()
+        engine.start(now)
     }
 
     override fun onDestroy() {
@@ -165,6 +220,30 @@ class CollectorService : Service() {
 
     companion object {
         private const val CH = "vg-collector"
+
+        /**
+         * 포그라운드 알림 id. **`startForeground` 와 `OngoingActivity` 가 같은 값을 써야 한다** —
+         * 어긋나면 진행중활동이 어느 알림에도 안 붙고 **조용히** 효과가 사라진다(예외도 로그도 없다).
+         * 숫자를 두 곳에 적지 않으려고 상수로 둔다([[L-106]]).
+         */
+        private const val FGS_NOTIFICATION_ID = 2
+
+        /**
+         * 심박 침묵 한계 — 이 시간을 넘기면 트래커가 죽은 것으로 보고 재구독한다.
+         *
+         * 근거(08-26 실측 · wearos 심박 도착 간격 149구간) — 중앙값 **120.7초** · p75 129.4 ·
+         * p90 **209.2초**. 정상 간격에도 200초대가 나오므로 문턱이 그 위로 넉넉해야 재구독이
+         * 정상 동작에 튀지 않는다. 5분은 p90 의 1.4배이고, 안전 장비에서 5분간 심박이 없는 것은
+         * 어느 쪽이든(사람이든 센서든) 확인이 필요한 상태다.
+         */
+        const val HR_STALL_MS = 300_000L
+
+        /**
+         * 화면이 "낡았다" 고 말하기 시작하는 나이. **서버 `STALE_MS_WEAROS`(150초)와 같은 값** —
+         * 관제웹이 연결끊김으로 보는 시점과 워치가 낡았다고 말하는 시점이 어긋나면
+         * "워치는 멀쩡한데 관제만 끊김" 이라는 오해가 다시 생긴다. 두 화면이 같은 시점을 봐야 한다.
+         */
+        const val HR_STALE_MS = 150_000L
         const val TAG = "VgCollector"
         /**
          * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).

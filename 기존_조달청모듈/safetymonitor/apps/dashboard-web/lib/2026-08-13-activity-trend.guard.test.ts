@@ -52,6 +52,13 @@ test("④ 복합 차트 — 심박 선은 withTimeGaps + connectNulls=false + do
 });
 
 test("패널 탭 — 활동이 메트릭 목록에 있고 라벨 단위는 kcal", () => {
-  assert.match(panel, /"heartRate", "spo2", "coreTempEst", "activity", "fall"/);
+  // ⚠ 종전엔 배열 전문(`"heartRate", "spo2", "coreTempEst", "activity", "fall"`)을 통째로 맞췄다.
+  //    메트릭이 하나 늘 때마다 이 가드가 빨개지는데(2026-08-26 실측 체온 `skinTempC` 추가에서 실제
+  //    발생), 그 실패가 말하는 것은 "활동이 사라졌다"가 아니라 "목록이 길어졌다"다 — 신호가 아니라
+  //    잡음이고, 잡음은 다음 사람이 가드를 통째로 지우게 만든다. 지키려는 한 문장으로 좁힌다.
+  //    보장 = "활동 탭이 메트릭 목록에 실재하고, 그 라벨 단위가 kcal 이다."
+  const metricsLine = panel.match(/const METRICS: Metric\[\] = \[[^\]]*\]/)?.[0] ?? "";
+  assert.ok(metricsLine, "METRICS 배열을 못 찾았다 — 가드 재작성 필요");
+  assert.match(metricsLine, /"activity"/, "활동 탭이 메트릭 목록에서 사라졌다");
   assert.match(panel, /activity: \{ name: "활동", unit: "kcal"/);
 });
