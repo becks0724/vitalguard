@@ -108,6 +108,9 @@ dependencies {
     // 워치 텍스트 입력 = RemoteInput. 워치엔 Compose 텍스트 필드가 없다(Wear M3 1.5.0 실측 0건) —
     // 시스템 입력 화면(키보드·필기·음성)을 띄우는 이 경로가 워치에서 글자를 받는 정식 수단이다.
     implementation("androidx.wear:wear-input:1.1.0")
+    // 진행 중 활동(OngoingActivity) — 운동 앱이 "시계로 안 돌아가게" 쓰는 정식 수단.
+    // ⚠ 이 의존이 실제로 시계 복귀를 막는지는 실기에서 재고 판정한다(추정으로 두지 않는다).
+    implementation("androidx.wear:wear-ongoing:1.0.0")
     implementation("androidx.wear:wear-tooling-preview:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
 

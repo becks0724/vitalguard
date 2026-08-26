@@ -80,14 +80,38 @@ class CollectorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = Notification.Builder(this, CH)
+        // ⚠ OngoingActivity 는 **NotificationCompat.Builder** 를 요구한다(플랫폼 Notification.Builder 는
+        //   못 받는다 — 바이트코드 확인). 그래서 알림 생성부를 androidx 쪽으로 옮긴다.
+        val builder = androidx.core.app.NotificationCompat.Builder(this, CH)
             .setContentTitle("VitAlGuard 수집 중")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setOngoing(true)
+            .setCategory(androidx.core.app.NotificationCompat.CATEGORY_WORKOUT)
+
+        // ★ 진행 중 활동 선언 — 시계 화면 복귀를 막는 정식 수단(운동 앱이 쓰는 것).
+        //   탭하면 우리 화면으로 돌아온다. 08-26 실측에서 앰비언트만으로는 약 1분 뒤 시계로
+        //   돌아갔다(앰비언트 진입 11:16:10 → 해제 11:17:09 → 시계). 그 자리를 이것으로 시도한다.
+        val touch = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java),
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        androidx.wear.ongoing.OngoingActivity.Builder(this, FGS_NOTIFICATION_ID, builder)
+            .setStaticIcon(android.R.drawable.stat_notify_sync)
+            .setTouchIntent(touch)
+            .setStatus(
+                androidx.wear.ongoing.Status.forPart(
+                    androidx.wear.ongoing.Status.TextPart("생체 수집 중"),
+                ),
+            )
             .build()
+            .apply(this)
+
         // 60초 규칙 — 시작 즉시 승격. 타입은 매니페스트 선언(health|location)과 같아야 한다.
         startForeground(
-            2,
-            notification,
+            FGS_NOTIFICATION_ID,
+            builder.build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
         )
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
@@ -165,6 +189,13 @@ class CollectorService : Service() {
 
     companion object {
         private const val CH = "vg-collector"
+
+        /**
+         * 포그라운드 알림 id. **`startForeground` 와 `OngoingActivity` 가 같은 값을 써야 한다** —
+         * 어긋나면 진행중활동이 어느 알림에도 안 붙고 **조용히** 효과가 사라진다(예외도 로그도 없다).
+         * 숫자를 두 곳에 적지 않으려고 상수로 둔다([[L-106]]).
+         */
+        private const val FGS_NOTIFICATION_ID = 2
         const val TAG = "VgCollector"
         /**
          * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).
