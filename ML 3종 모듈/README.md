@@ -15,8 +15,8 @@ Apple Watch 온디바이스 낙상 판정 모듈 — **work_veto · impact · re
 ## 구성
 
 ```
-Sources/        판정 코어 6파일 — 애플워치(Swift, 진입점 = FallMLModule.swift)
-SourcesWearOS/  판정 코어 6파일 — 갤럭시워치(Kotlin, 동일 계약·동일 수치)
+Sources/        판정 코어 6파일 + 섀도 보고 1파일 — 애플워치(Swift, 진입점 = FallMLModule.swift)
+SourcesWearOS/  판정 코어 6파일 + 섀도 보고 1파일 — 갤럭시워치(Kotlin, 동일 계약·동일 수치)
 Models/         mlmodel 3개 + thresholds.json (임계 산출 근거) — 애플워치용
 ModelsWearOS/   onnx 3개 + thresholds.json + 정답지 사본 — 갤럭시워치용(assets 로 복사)
 Verification/   자가검증 정답지 + 검증절차(모델 교체 게이트 규칙)
@@ -25,7 +25,7 @@ WearOS통합가이드.md  갤럭시워치 통합 절차 (애플워치는 통합�
 작업기록.md      모듈 작업 로그 (모든 변경은 여기 기록)
 ```
 
-## 판정 구조 (v6.1.0)
+## 판정 구조 (v6.1.1)
 
 ```
 12초 윈도(충격 전2s+후10s) → FallMLModule.assess()

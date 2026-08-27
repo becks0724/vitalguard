@@ -7,7 +7,7 @@
 
 | 폴더 | 내용 | 앱에서의 위치 |
 |---|---|---|
-| `SourcesWearOS/` | 판정 코어 6파일 (Kotlin, `package com.vitalguard.ml`) | `src/main/kotlin/com/vitalguard/ml/` |
+| `SourcesWearOS/` | 판정 코어 6파일 + FallShadowReporter(섀도 보고) (Kotlin, `package com.vitalguard.ml`) | `src/main/kotlin/com/vitalguard/ml/` |
 | `ModelsWearOS/` | `work_veto.onnx` `impact.onnx` `recovery.onnx` + `thresholds.json` + `ml_selfcheck.json` | `src/main/assets/` |
 
 모듈 업데이트 흐름(애플워치와 동일 계약): ML 담당이 새 버전 커밋 → 앱 담당은 **위 두 폴더 내용을 통째 교체** →
@@ -40,8 +40,9 @@ implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
 `기존_조달청모듈/safetymonitor/apps/vitalguard_app/android/wear/` — 코어 6파일은
 `src/main/kotlin/com/vitalguard/ml/`, onnx·정답지는 `src/main/assets/`. 모듈 업데이트 시
-이 두 위치를 통째 교체하면 된다. 판정의 서버 섀도 적재(fallTrace)는 같은 모듈의
-`FallShadowReporter`(앱 코드)가 담당 — 모듈 폴더 교체와 무관하게 유지된다.
+이 두 위치를 통째 교체하면 된다. 판정의 서버 섀도 적재(fallTrace)는 모듈의
+`FallShadowReporter`(v6.1.1부터 모듈 소속)가 담당 — 추적기의 생성과 전송이 한 경계 안에 있어
+전송 계층 변조·오류도 모듈 무결성 검사로 추적된다. 앱 배선은 enqueue 콜백·onVerdict·feed 3점뿐.
 
 ## 검수 3단계 (애플워치판과 동일)
 
@@ -53,3 +54,4 @@ implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
   있어, 자가검증(수치 이식 확인)과 별개로 **실기기 시나리오 검증(낙상 4종·작업동작 오탐 라운드)이 필수**.
   결과가 나쁘면 갤럭시워치 수집분으로 증량 재학습이 답이다(삭제가 아니라 추가 — v4 교훈).
 - recovery 는 정답지에 없어(애플워치판과 동일) 자가검증은 work_veto·impact 6건 기준이다.
+- 애플판 섀도 보고는 `Sources/FallShadowReporter.swift` — 같은 계약, 릴레이 축약 키 차이만 있다.
