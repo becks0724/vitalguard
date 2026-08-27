@@ -24,13 +24,15 @@ struct ContentView: View {
     ///   지금은 탭 한 번이면 끝난다. **[시작] 에는 확인을 걸지 않는다** — 켜는 쪽은 오탭이어도
     ///   손해가 없고, 급할 때 한 번에 켜지는 편이 낫다.
     @State private var confirmingStop = false
-    @State private var page = Page.vitals
+    /// ⚠ `scrollPosition(id:)` 은 **Optional** 을 요구한다 — 스크롤이 어느 면에도 안 걸린
+    ///   순간이 있기 때문이다. 그 순간을 `vitals` 로 단정하면 점이 깜빡인다.
+    @State private var page: Page? = .vitals
     @State private var now = Date()
     private let clockTick = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     /// 크라운을 내리는 순서. 생체 → 종류별 상세 → 마지막이 설정이다.
     /// ⚠ 설정을 맨 끝에 둔다 — 손목에서 늘 보는 것은 생체이고, 동작 버튼은 하루 두어 번이다.
-    private enum Page: Hashable {
+    private enum Page: Hashable, CaseIterable {
         case vitals
         case heartRate
         case spo2
@@ -48,15 +50,53 @@ struct ContentView: View {
     }
 
     var body: some View {
-        TabView(selection: $page) {
-            vitalsPage.tag(Page.vitals)
-            heartRatePage.tag(Page.heartRate)
-            spo2Page.tag(Page.spo2)
-            energyPage.tag(Page.energy)
-            transmitPage.tag(Page.transmit)
-            settingsPage.tag(Page.settings)
+        // ★ `TabView(.verticalPage)` 를 쓰지 않는다 — 그 스타일은 세로 페이징 점을 **끌 수가
+        //   없다**. `VerticalPageTabViewStyle` 에 `indexDisplayMode` 가 없고(가로
+        //   `PageTabViewStyle` 에만 있다 · SDK 실측) 밑줄 API 에도 없다. 덮어 보려 했으나
+        //   그 점은 앱 그림 위에 그려져 `.overlay` 로도 안 가려진다(시뮬레이터 실측).
+        //   그래서 페이징 `ScrollView` 로 바꿨다 — 크라운 페이징은 그대로고 점이 없다.
+        //   점은 아래에서 **내가** 그리므로 1면에서 숨기는 것이 가능해진다(사용자 요청).
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(Page.allCases, id: \.self) { item in
+                    self.view(for: item)
+                        .containerRelativeFrame(.vertical)
+                        .id(item)
+                }
+            }
+            .scrollTargetLayout()
         }
-        .tabViewStyle(.verticalPage)
+        .scrollTargetBehavior(.paging)
+        .scrollIndicators(.hidden)
+        .scrollPosition(id: $page)
+        // ⚠ 안전영역 무시는 **컨테이너에** 건다. 면 안쪽에 걸면 컨테이너 높이는 안전영역만큼
+        //   작은데 면 내용은 화면 전체를 그려서 한 면 높이가 안 맞고 **다음 면이 아래로 비친다**
+        //   (시뮬레이터 실측). `containerRelativeFrame(.vertical)` 이 재는 것이 이 높이다.
+        .ignoresSafeArea()
+        // ★ 시스템 시계를 숨기고 위 가운데에 직접 그린다(사용자 결정 · 울트라 페이스 배치).
+        //
+        // ⚠ **`_statusBarHidden` 은 밑줄로 시작하는 비공식 API 다.** 공개 `statusBarHidden(_:)`
+        //   은 `@available(watchOS, unavailable)` 이고, 워치에서 되는 것은 이 밑줄 쪽뿐이다
+        //   (WatchOS.sdk SwiftUI.swiftinterface 실측 · watchOS 6.0+). 문서화돼 있지 않으므로
+        //   **애플이 언제든 없애거나 동작을 바꿀 수 있다.**
+        //
+        // ⚠ **고장 증상을 미리 적어 둔다** — 아래 둘 중 하나가 보이면 이 줄부터 의심한다.
+        //   ① 시계가 **둘** 보인다 → 모디파이어가 안 먹었다(시스템 시계가 살아났다).
+        //   ② 시계가 **하나도** 없다 → 아래 `Text(Self.clock(now))` 이 지워졌다.
+        //   되돌리는 법 = 이 줄과 그 `Text` 를 **함께** 지운다. 하나만 지우면 위 두 증상이 된다.
+        //   그 짝은 가드가 단언한다(2026-08-27-watch-status-bar-pair.guard.test.ts).
+        ._statusBarHidden(true)
+        .onReceive(clockTick) { now = $0 }
+
+        // ★ 점은 2면부터만 그린다(사용자 결정) — 1면에서는 오른쪽 베젤 눈금과 겹쳐 둘 다 안 읽혔다.
+        // ⚠ 1면에서 "면이 더 있다" 를 알리는 일은 그 화면의 "크라운을 내리면 상세" 글줄이
+        //   대신한다. 그 줄을 지우면 1면이 막다른 화면처럼 보인다.
+        .overlay(alignment: .trailing) {
+            if let page, page != .vitals {
+                PageDots(pages: Page.allCases, current: page)
+                    .padding(.trailing, 3)
+            }
+        }
         .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
             Button("중지", role: .destructive) { streamer.stop() }
             Button("취소", role: .cancel) {}
@@ -101,9 +141,7 @@ struct ContentView: View {
                 value: streamer.latestSpO2,
                 range: 85...100,
                 zone: WatchVitalZone.spo2,
-                side: .trailing,
-                // 세로 페이징 점이 오른쪽 위–가운데에 앉는다(실측). 그 구간만 눈금을 비운다.
-                indexGap: 0.18...0.46
+                side: .trailing
             )
 
             VStack(spacing: 4) {
@@ -197,21 +235,6 @@ struct ContentView: View {
             .padding(.horizontal, 26)
             .padding(.bottom, 4)
         }
-        .ignoresSafeArea()
-        // ★ 시스템 시계를 숨기고 위 가운데에 직접 그린다(사용자 결정 · 울트라 페이스 배치).
-        //
-        // ⚠ **`_statusBarHidden` 은 밑줄로 시작하는 비공식 API 다.** 공개 `statusBarHidden(_:)`
-        //   은 `@available(watchOS, unavailable)` 이고, 워치에서 되는 것은 이 밑줄 쪽뿐이다
-        //   (WatchOS.sdk SwiftUI.swiftinterface 실측 · watchOS 6.0+). 문서화돼 있지 않으므로
-        //   **애플이 언제든 없애거나 동작을 바꿀 수 있다.**
-        //
-        // ⚠ **고장 증상을 미리 적어 둔다** — 아래 둘 중 하나가 보이면 이 줄부터 의심한다.
-        //   ① 시계가 **둘** 보인다 → 모디파이어가 안 먹었다(시스템 시계가 살아났다).
-        //   ② 시계가 **하나도** 없다 → 아래 `Text(Self.clock(now))` 이 지워졌다.
-        //   되돌리는 법 = 이 줄과 그 `Text` 를 **함께** 지운다. 하나만 지우면 위 두 증상이 된다.
-        //   그 짝은 가드가 단언한다(2026-08-27-watch-status-bar-pair.guard.test.ts).
-        ._statusBarHidden(true)
-        .onReceive(clockTick) { now = $0 }
     }
 
     /// 그래프 아래 시각 눈금. 점이 모자라면 아무것도 안 적는다 — 축만 있고 값이 없으면
@@ -236,6 +259,18 @@ struct ContentView: View {
 
     private static func clock(_ date: Date) -> String {
         date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+    }
+
+    @ViewBuilder
+    private func view(for item: Page) -> some View {
+        switch item {
+        case .vitals: vitalsPage
+        case .heartRate: heartRatePage
+        case .spo2: spo2Page
+        case .energy: energyPage
+        case .transmit: transmitPage
+        case .settings: settingsPage
+        }
     }
 
     // MARK: - 상세 면들
@@ -499,6 +534,27 @@ struct DiscreteCountsGrid: View {
                 }
             }
         }
+    }
+}
+
+/// 세로 페이징 점 — 시스템 것을 못 끄기에 직접 그린다.
+///
+/// ⚠ 장식이 아니라 **위치 정보**다. VoiceOver 가 읽도록 라벨을 준다.
+private struct PageDots<Item: Hashable>: View {
+    let pages: [Item]
+    let current: Item
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(pages, id: \.self) { item in
+                Circle()
+                    .fill(item == current ? Color.white : Color.white.opacity(0.32))
+                    .frame(width: item == current ? 6 : 4, height: item == current ? 6 : 4)
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("페이지")
+        .accessibilityValue("\((pages.firstIndex(of: current) ?? 0) + 1) / \(pages.count)")
     }
 }
 
