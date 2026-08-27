@@ -14,8 +14,8 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var streamer = WatchStreamer()
-    /// 낙상 ML 자가검증 결과(6줄). nil = 아직 안 돌림.
-    @State private var selfCheckResult: String?
+    /// 낙상 ML 자가검증 결과(6줄). nil = 아직 안 돌림. 시트로 띄운다.
+    @State private var selfCheckReport: SelfCheckReport?
     /// [중지] 확인 시트 표시 여부.
     ///
     /// ★ 2026-08-20 — 세션이 "사용자가 끝냈다" 로 표시된 채 끝났는데 **사용자는 누른 적이
@@ -27,6 +27,8 @@ struct ContentView: View {
     /// ⚠ `scrollPosition(id:)` 은 **Optional** 을 요구한다 — 스크롤이 어느 면에도 안 걸린
     ///   순간이 있기 때문이다. 그 순간을 `vitals` 로 단정하면 점이 깜빡인다.
     @State private var page: Page? = .vitals
+    /// 눌러서 이동할 목표. 한 번 쓰고 곧바로 비운다 — 남겨 두면 스크롤할 때마다 되돌아간다.
+    @State private var jumpTarget: Page?
     @State private var now = Date()
     private let clockTick = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
@@ -56,6 +58,7 @@ struct ContentView: View {
         //   그 점은 앱 그림 위에 그려져 `.overlay` 로도 안 가려진다(시뮬레이터 실측).
         //   그래서 페이징 `ScrollView` 로 바꿨다 — 크라운 페이징은 그대로고 점이 없다.
         //   점은 아래에서 **내가** 그리므로 1면에서 숨기는 것이 가능해진다(사용자 요청).
+        ScrollViewReader { proxy in
         ScrollView(.vertical) {
             LazyVStack(spacing: 0) {
                 ForEach(Page.allCases, id: \.self) { item in
@@ -87,6 +90,16 @@ struct ContentView: View {
         //   그 짝은 가드가 단언한다(2026-08-27-watch-status-bar-pair.guard.test.ts).
         ._statusBarHidden(true)
         .onReceive(clockTick) { now = $0 }
+        // ★ 프로그램 이동은 **`proxy.scrollTo`** 로 한다.
+        // ⚠ `page` 바인딩에 목표를 대입하는 방식은 불안정하다 — 스크롤이 애니메이션 도중
+        //   지나가는 면을 그 바인딩에 **되써서** 목표가 흔들린다(실측: SpO₂ 를 목표했는데
+        //   전달 면에 섰다). 바인딩은 "지금 어느 면인가" 를 읽는 데만 쓴다.
+        .onChange(of: jumpTarget) { _, target in
+            guard let target else { return }
+            withAnimation { proxy.scrollTo(target, anchor: .top) }
+            jumpTarget = nil
+        }
+        }
 
         // ★ 점은 2면부터만 그린다(사용자 결정) — 1면에서는 오른쪽 베젤 눈금과 겹쳐 둘 다 안 읽혔다.
         // ⚠ 1면에서 "면이 더 있다" 를 알리는 일은 그 화면의 "크라운을 내리면 상세" 글줄이
@@ -95,6 +108,15 @@ struct ContentView: View {
             if let page, page != .vitals {
                 PageDots(pages: Page.allCases, current: page)
                     .padding(.trailing, 3)
+            }
+        }
+        .sheet(item: $selfCheckReport) { report in
+            ScrollView {
+                Text(report.text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
             }
         }
         .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
@@ -221,7 +243,7 @@ struct ContentView: View {
                         .foregroundStyle(VitalGuardWatchPalette.ink)
                 } else {
                     Button {
-                        page = .settings
+                        jumpTarget = .settings
                     } label: {
                         Text("수집 OFF · 눌러서 시작")
                             .font(.system(size: 11, weight: .semibold))
@@ -368,8 +390,9 @@ struct ContentView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 12)
-        .padding(.top, 26)
-        .frame(maxHeight: .infinity, alignment: .top)
+        // ⚠ 위로 붙이면 아래가 통째로 빈다 — 이 면은 요소가 한 줄뿐이라 **세로 가운데**가 맞다
+        //   (사용자 요청). 다른 면들은 그래프 판이 위를 채워서 위 정렬이 맞다.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     /// 4면 · 활동 에너지 — 애플 "Move" 화면 배치(막대 그래프 + 큰 합계).
@@ -446,59 +469,67 @@ struct ContentView: View {
 
     // MARK: - 마지막 면 · 설정    // MARK: - 마지막 면 · 설정
 
-    /// ⚠ 내용을 **뷰포트 높이만큼 최소 높이로 잡고 가운데 정렬**한다. 그냥 위에서부터 쌓으면
-    ///   제목이 화면 맨 위 둥근 모서리에 걸려 잘리고(실기기 제보) 아래는 비어 남는다.
-    ///   `minHeight` 라서 자가검증 결과가 길어지면 그대로 스크롤된다.
+    /// 마지막 면 · 설정.
+    ///
+    /// ⚠ **여기에 `ScrollView` 를 두지 말 것.** 바깥이 세로 페이징 `ScrollView` 라서 세로
+    ///   스크롤이 겹치면 **크라운이 안쪽에 먹히고 위 면으로 못 올라간다**(실기기 제보로 확인).
+    ///   안쪽은 스크롤할 것이 없어 아무 일도 안 일어나고 바깥으로 넘겨주지도 않는다.
+    ///   그래서 이 면은 스크롤 없이 **한 화면에 들어가는 만큼만** 둔다.
+    /// ⚠ 자가검증 결과(6줄)는 여기 펼치지 않고 시트로 띄운다 — 펼치면 화면을 넘겨 다시
+    ///   스크롤이 필요해지고, 위 함정으로 되돌아간다.
     private var settingsPage: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(spacing: 8) {
-                    Text("설정")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(VitalGuardWatchPalette.ink)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
 
-                    Button {
-                        if streamer.isRunning { confirmingStop = true } else { streamer.start() }
-                    } label: {
-                        Label(
-                            streamer.isRunning ? "수집 중지" : "수집 시작",
-                            systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
-                        )
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                    }
-                    .tint(streamer.isRunning ? .red : .green)
+            Text("설정")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(VitalGuardWatchPalette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                    // 낙상 카운트다운 테스트 — **감지(ML)는 안 거치고** 카운트다운 화면·햅틱·취소
-                    // 경로만 사람이 확인하는 자리다. 감지까지 보려면 아래 [ML 자가검증] 이 그 자리다.
-                    Button {
-                        streamer.startFallCountdownTest()
-                    } label: {
-                        Label("낙상 카운트다운 테스트", systemImage: "figure.fall")
-                            .font(.system(size: 12))
-                            .frame(maxWidth: .infinity)
-                    }
-                    .tint(.orange)
-                    .disabled(streamer.fallCountdownActive)
-
-                    // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
-                    // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
-                    Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
-                        .font(.system(size: 12))
-
-                    if let selfCheckResult {
-                        Text(selfCheckResult)
-                            .font(.system(size: 11, design: .monospaced))
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
-                .padding(.horizontal, 2)
+            Button {
+                if streamer.isRunning { confirmingStop = true } else { streamer.start() }
+            } label: {
+                Label(
+                    streamer.isRunning ? "수집 중지" : "수집 시작",
+                    systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
+                )
+                .font(.system(size: 14, weight: .semibold))
+                .frame(maxWidth: .infinity)
             }
+            .tint(streamer.isRunning ? .red : .green)
+
+            // 낙상 카운트다운 테스트 — **감지(ML)는 안 거치고** 카운트다운 화면·햅틱·취소
+            // 경로만 사람이 확인하는 자리다. 감지까지 보려면 아래 [ML 자가검증] 이 그 자리다.
+            Button {
+                streamer.startFallCountdownTest()
+            } label: {
+                Label("낙상 카운트다운 테스트", systemImage: "figure.fall")
+                    .font(.system(size: 12))
+                    .frame(maxWidth: .infinity)
+            }
+            .tint(.orange)
+            .disabled(streamer.fallCountdownActive)
+
+            // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
+            // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
+            Button("ML 자가검증") {
+                selfCheckReport = SelfCheckReport(text: MLSelfCheck.run())
+            }
+            .font(.system(size: 12))
+
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+/// 자가검증 결과를 시트로 띄우기 위한 그릇.
+/// ⚠ `sheet(isPresented:)` + 수동 `Binding(get:set:)` 대신 `sheet(item:)` 을 쓴다 —
+///   본문에서 손으로 만든 바인딩은 상태가 둘로 갈려 어긋나기 쉽다.
+private struct SelfCheckReport: Identifiable {
+    let id = UUID()
+    let text: String
 }
 
 
