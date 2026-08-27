@@ -286,7 +286,7 @@ struct ContentView: View {
                 tint: zone?.color ?? VitalGuardWatchPalette.inkStrong,
                 style: .line
             )
-            .frame(height: 84)
+            .frame(height: 108)
 
             Text("심박")
                 .font(.system(size: 14, weight: .semibold))
@@ -319,7 +319,9 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.top, 26)
+        // ⚠ 이 면에는 시계가 없다(시계는 1면만 그린다) — 위 여백은 화면 둥근 모서리를 피할
+        //   만큼만 있으면 된다. 남는 자리는 그래프 판에 준다.
+        .padding(.top, 12)
     }
 
     private func subline(values: [Double]) -> String {
@@ -444,50 +446,57 @@ struct ContentView: View {
 
     // MARK: - 마지막 면 · 설정    // MARK: - 마지막 면 · 설정
 
+    /// ⚠ 내용을 **뷰포트 높이만큼 최소 높이로 잡고 가운데 정렬**한다. 그냥 위에서부터 쌓으면
+    ///   제목이 화면 맨 위 둥근 모서리에 걸려 잘리고(실기기 제보) 아래는 비어 남는다.
+    ///   `minHeight` 라서 자가검증 결과가 길어지면 그대로 스크롤된다.
     private var settingsPage: some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                Text("설정")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    if streamer.isRunning { confirmingStop = true } else { streamer.start() }
-                } label: {
-                    Label(
-                        streamer.isRunning ? "수집 중지" : "수집 시작",
-                        systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
-                    )
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(maxWidth: .infinity)
-                }
-                .tint(streamer.isRunning ? .red : .green)
-
-                // 낙상 카운트다운 테스트 — **감지(ML)는 안 거치고** 카운트다운 화면·햅틱·취소
-                // 경로만 사람이 확인하는 자리다. 감지까지 보려면 아래 [ML 자가검증] 이 그 자리다.
-                Button {
-                    streamer.startFallCountdownTest()
-                } label: {
-                    Label("낙상 카운트다운 테스트", systemImage: "figure.fall")
-                        .font(.system(size: 12))
-                        .frame(maxWidth: .infinity)
-                }
-                .tint(.orange)
-                .disabled(streamer.fallCountdownActive)
-
-                // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
-                // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
-                Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
-                    .font(.system(size: 12))
-
-                if let selfCheckResult {
-                    Text(selfCheckResult)
-                        .font(.system(size: 11, design: .monospaced))
-                        .multilineTextAlignment(.leading)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 8) {
+                    Text("설정")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(VitalGuardWatchPalette.ink)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        if streamer.isRunning { confirmingStop = true } else { streamer.start() }
+                    } label: {
+                        Label(
+                            streamer.isRunning ? "수집 중지" : "수집 시작",
+                            systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
+                        )
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                    }
+                    .tint(streamer.isRunning ? .red : .green)
+
+                    // 낙상 카운트다운 테스트 — **감지(ML)는 안 거치고** 카운트다운 화면·햅틱·취소
+                    // 경로만 사람이 확인하는 자리다. 감지까지 보려면 아래 [ML 자가검증] 이 그 자리다.
+                    Button {
+                        streamer.startFallCountdownTest()
+                    } label: {
+                        Label("낙상 카운트다운 테스트", systemImage: "figure.fall")
+                            .font(.system(size: 12))
+                            .frame(maxWidth: .infinity)
+                    }
+                    .tint(.orange)
+                    .disabled(streamer.fallCountdownActive)
+
+                    // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
+                    // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
+                    Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
+                        .font(.system(size: 12))
+
+                    if let selfCheckResult {
+                        Text(selfCheckResult)
+                            .font(.system(size: 11, design: .monospaced))
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
+                .frame(maxWidth: .infinity, minHeight: geo.size.height, alignment: .center)
+                .padding(.horizontal, 2)
             }
-            .padding(.horizontal, 2)
         }
     }
 }
