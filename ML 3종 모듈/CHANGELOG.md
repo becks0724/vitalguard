@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## v6.1.1 — 2026-08-27 (섀도 보고를 모듈로 편입 — 양 플랫폼)
+- **판정 로직·모델·임계 무변경.** 낙상 판정 섀도 서버 적재(`FallShadowReporter`)를 모듈로 편입 —
+  추적기(trace)의 **생성과 전송이 한 경계** 안에 있어야, 전송이 끊기거나 모양이 바뀌었을 때
+  모듈 무결성 검사(MANIFEST·버전)로 책임 추적이 된다(ML 담당 결정).
+- 갤럭시(`SourcesWearOS/FallShadowReporter.kt`): 서버 키 직접 방출(직접 업로드 구조) · 앱 배선 3점.
+- 애플(`Sources/FallShadowReporter.swift`): 릴레이 축약 키 방출(fcid/fph/fpg/ftr/fpo/frs — 폰이
+  서버 키로 펼침) · **WatchStreamer 인라인 섀도 로직의 교체 대상**(통합은 앱 담당 — 통합가이드 ⑤).
+- 두 판 모두 fallDetected·fallDecision 을 만들지 않는다(섀도 계약) — 실경보 전환은 모듈 경유.
+
 ## v6.1.0 — 2026-08-27 (갤럭시워치 Wear OS 지원 추가)
 - **판정 로직·모델·임계 무변경** — 애플워치 경로(Sources/·Models/)는 버전 문자열 외 그대로.
 - 신규: `SourcesWearOS/` Kotlin 판정 코어 6파일 (Swift 와 동일 계약·동일 수치, `com.vitalguard.ml`)
