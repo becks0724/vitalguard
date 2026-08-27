@@ -104,31 +104,34 @@ struct ContentView: View {
                 side: .trailing
             )
 
-            VStack(spacing: 5) {
-                Spacer(minLength: 0)
-                // 시계를 가운데로 — 시스템 시계는 숨기고 직접 그린다.
-                Text(Self.clock(now))
-                    .font(.system(size: 15, weight: .semibold, design: .rounded))
-                    .foregroundStyle(VitalGuardWatchPalette.ink)
-                HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text("HR")
-                        .font(.system(size: 13, weight: .semibold))
+            VStack(spacing: 4) {
+                // ⚠ 위쪽 Spacer 를 두지 않는다 — 두면 내용이 세로 가운데로 몰려 상단이 빈다.
+                //   시계와 HR 은 한 덩어리로 붙여 화면 맨 위에 올린다(사용자 요청).
+                VStack(spacing: 0) {
+                    // 시계를 가운데로 — 시스템 시계는 숨기고 직접 그린다.
+                    Text(Self.clock(now))
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundStyle(VitalGuardWatchPalette.ink)
-                    Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
-                        .font(.system(size: 40, weight: .bold, design: .rounded))
-                        // ★ 큰 값은 지금 구간의 색을 쓴다 — 화면에서 가장 큰 글자가 상태를
-                        //   숨기면 안 된다. 값이 없으면 기본 녹색이다.
-                        .foregroundStyle(
-                            streamer.latestBPM.map { WatchVitalZone.heartRate($0).color }
-                                ?? VitalGuardWatchPalette.inkStrong
-                        )
-                        .minimumScaleFactor(0.6)
-                        .lineLimit(1)
-                    Text("bpm")
-                        .font(.system(size: 12))
-                        .foregroundStyle(VitalGuardWatchPalette.ink)
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text("HR")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(VitalGuardWatchPalette.ink)
+                        Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
+                            .font(.system(size: 40, weight: .bold, design: .rounded))
+                            // ★ 큰 값은 지금 구간의 색을 쓴다 — 화면에서 가장 큰 글자가 상태를
+                            //   숨기면 안 된다. 값이 없으면 기본 녹색이다.
+                            .foregroundStyle(
+                                streamer.latestBPM.map { WatchVitalZone.heartRate($0).color }
+                                    ?? VitalGuardWatchPalette.inkStrong
+                            )
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                        Text("bpm")
+                            .font(.system(size: 12))
+                            .foregroundStyle(VitalGuardWatchPalette.ink)
+                    }
                 }
-                .padding(.top, 0)
+                .padding(.top, 2)
 
                 VStack(spacing: 1) {
                     HeartRateSparkline(points: streamer.recentBPM)
@@ -561,7 +564,9 @@ private struct BezelScale: View {
     let zone: ((Double) -> WatchVitalZone)?
     let side: HorizontalEdge
 
-    private static let tickCount = 26
+    /// 눈금 개수. 촘촘할수록 페이스에 가깝지만, 잔눈금이 굵으면 띠가 뭉개진다 —
+    /// 개수를 늘리는 만큼 잔눈금은 짧고 가늘게 한다(아래 length·lineWidth).
+    private static let tickCount = 48
 
     private var ratio: Double? {
         guard let value else { return nil }
@@ -595,7 +600,8 @@ private struct BezelScale: View {
                     let t = Double(index) / Double(Self.tickCount)
                     guard let point = Self.point(on: path, at: t) else { continue }
                     let normal = Self.inwardNormal(from: point, toward: center)
-                    let length: CGFloat = index % 5 == 0 ? 12 : 7
+                    let isMajor = index % 6 == 0
+                    let length: CGFloat = isMajor ? 12 : 6
                     // ★ 눈금 하나하나가 **그 위치의 값**이 어느 구간인지 말한다 — 띠 전체가
                     //   신호등이 되어, 지금 값이 어디쯤인지 뿐 아니라 어디부터 위험인지도 보인다.
                     let tickValue = range.lowerBound
@@ -606,7 +612,7 @@ private struct BezelScale: View {
                     tick.move(to: point)
                     tick.addLine(to: CGPoint(x: point.x + normal.dx * length,
                                              y: point.y + normal.dy * length))
-                    context.stroke(tick, with: .color(color), lineWidth: 1.2)
+                    context.stroke(tick, with: .color(color), lineWidth: isMajor ? 1.4 : 1)
                 }
                 // 값 표식 — 위가 큰 값이다(참고 화면과 같은 방향).
                 if let ratio, let value, let point = Self.point(on: path, at: 1 - ratio) {
