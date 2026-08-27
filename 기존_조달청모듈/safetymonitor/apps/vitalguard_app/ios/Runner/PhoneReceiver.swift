@@ -99,6 +99,12 @@ final class PhoneReceiver: NSObject, WCSessionDelegate {
     }
 
     private func handle(_ payload: [String: Any], via channel: String) {
+        // 낙상 진단용 원시 윈도 — 생체 배치와 다른 라우트로 나가므로 여기서 갈라 보낸다.
+        // ⚠ 아래 hrBatch 분기 앞에 둔다. 뒤에 두면 "알 수 없는 페이로드" 로 버려진다.
+        if payload["type"] as? String == "imuWindow" {
+            ImuWindowUploader.shared.enqueue(payload)
+            return
+        }
         guard payload["type"] as? String == "hrBatch" else {
             log.notice("알 수 없는 페이로드 수신(\(channel, privacy: .public)): \(String(describing: payload), privacy: .public)")
             return

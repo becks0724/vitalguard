@@ -34,6 +34,7 @@
 		A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */; };
 		B1C2D3E4F5061728394A5B6C /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */; };
 		B9C4FE0981D25C98963D1608 /* MLSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEDB36C7BC394D24D3046C3 /* MLSelfCheck.swift */; };
+		CB94C8CEBB090C3769B9068A /* ImuWindowUploader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3322E07433B4F17058DE1D8B /* ImuWindowUploader.swift */; };
 		D1E2F30415263748596A7B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F405162738495A6B7C /* Assets.xcassets */; };
 		DC535E60EEA3143010B8D28A /* impact.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 5A59F3A708F2CE829E7BD373 /* impact.mlmodel */; };
 		E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D15ED07A527684C73E409BE /* VitalBridge.swift */; };
@@ -90,6 +91,7 @@
 		213CBD10071A259211BA20E9 /* VitalWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VitalWatch.entitlements; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3322E07433B4F17058DE1D8B /* ImuWindowUploader.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImuWindowUploader.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3D15ED07A527684C73E409BE /* VitalBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalBridge.swift; sourceTree = "<group>"; };
 		3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.example.plist; sourceTree = "<group>"; };
@@ -205,6 +207,7 @@
 				E5222D3F029C4480289E1731 /* PoCConfig.plist */,
 				3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */,
 				3D15ED07A527684C73E409BE /* VitalBridge.swift */,
+				3322E07433B4F17058DE1D8B /* ImuWindowUploader.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -464,6 +467,7 @@
 				0CA9E1A0000000000000BB01 /* MediaCapture.swift in Sources */,
 				61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */,
 				E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */,
+				CB94C8CEBB090C3769B9068A /* ImuWindowUploader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -145,6 +145,16 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 카운트다운이 도는 동안의 후보 ID·시작 시각 — 결말 항목이 후보 행을 찾아가는 열쇠.
     private var activeFallCandidateId: String?
     private var fallCountdownStartedAt: Date?
+    /// 원시 윈도 수집(진단) — `danger` 전량 + `not_alerted` **1/2 표집**(사용자 결정 2026-08-27).
+    ///
+    /// **왜 전량이 아닌가** — 통제군은 필요하지만 두 배 부피를 낼 값어치는 없다. 시간당 30윈도
+    /// ≈750KB 로 8시간 6MB. 전량이면 3MB/h 다.
+    /// **왜 실패 사례만 보내지 않는가** — `danger` 만 모으면 "무엇이 다른가" 를 말할 수가 없다.
+    /// 실측에서 두 집단이 **피크G·심박·무동작·활동량 어느 축으로도 안 갈렸다**(오탐 쪽 피크G가
+    /// 오히려 낮다). 차이가 파형에만 있으므로 정상 처리된 파형이 나란히 있어야 한다.
+    private var windowSampleCounter = 0
+    /// `danger` 윈도는 **결말이 나야 라벨이 정해진다** — 그때까지 들고 있는다.
+    private var heldFallWindow: (candidateId: String, window: ImuWindow)?
     /// 카운트다운 진행 상태 — UI 가 구독한다. 메인에서만 쓴다.
     @Published var fallCountdownActive = false
 
@@ -777,6 +787,16 @@ final class WatchStreamer: NSObject, ObservableObject {
             if v.decision != .danger { fallItem["fpo"] = "not_alerted" }
             self.pendingFallItems.append(fallItem)
 
+            // 원시 윈도 수집 — 판정 확률만으로는 못 고친다(모듈 88피처가 보는 것은 파형이다).
+            if v.decision == .danger {
+                // 결말이 나야 라벨이 정해지므로 보류한다.
+                self.heldFallWindow = (candidateId, window)
+            } else {
+                self.windowSampleCounter += 1
+                // 1/2 표집 — 무작위 대신 계수기로 한다(재현 가능하고 비율이 정확하다).
+                if self.windowSampleCounter % 2 == 0 { self.sendImuWindow(window, family: nil) }
+            }
+
             guard v.decision == .danger else { return }
             self.activeFallCandidateId = candidateId
             self.fallCountdownStartedAt = Date()
@@ -841,8 +861,42 @@ final class WatchStreamer: NSObject, ObservableObject {
             fallItem["frs"] = (Date().timeIntervalSince(startedAt) * 10).rounded() / 10
         }
         pendingFallItems.append(fallItem)
+
+        // 보류한 원시 윈도를 결말 라벨과 함께 내보낸다.
+        //
+        // ⚠ **`auto_escalated` 를 `nonrecovered` 로 라벨하면 틀린다.** 그건 "낙상 후 못 일어났다"가
+        //   아니라 "작업하다 30초 가만히 있었다" 다. 오늘처럼 실제 낙상이 0건인 날에는 특히 그렇다.
+        //   모르는 것은 `nil` 로 둔다 — 서버 `family` CHECK 가 허용 목록 밖을 거부하기도 하지만,
+        //   무엇보다 **아는 척한 라벨은 학습을 오염시킨다.**
+        // ⓐ `moved_cancelled` = 지속 움직임으로 자동취소 · ⓑ `dismissed` = 본인이 "낙상 아님".
+        //   둘 다 `recovered` 의 정의에 정확히 맞고, 그것이 지금 가장 굶주린 클래스다(13건).
+        if let held = heldFallWindow, held.candidateId == candidateId {
+            let family = (outcome == "moved_cancelled" || outcome == "dismissed") ? "recovered" : nil
+            sendImuWindow(held.window, family: family)
+            heldFallWindow = nil
+        }
+
         activeFallCandidateId = nil
         fallCountdownStartedAt = nil
+    }
+
+    /// 원시 6축 윈도를 폰으로 넘긴다 — 폰이 `/api/fall/imu-window` 로 올린다.
+    ///
+    /// ⚠ **`transferUserInfo` 로 보낸다**(`sendMessage` 아님). 25KB 짜리라 즉시 채널에 실으면
+    /// 5초 생체 배치와 대역을 다투고, 도달 불가 상태에서 그냥 실패한다. 큐 전송은 백그라운드에서도
+    /// 배달되고 앱 재기동을 넘어 살아남는다 — 진단 데이터의 성격에 맞다.
+    private func sendImuWindow(_ window: ImuWindow, family: String?) {
+        // 소수 3자리로 자른다 — 부피가 절반이 되고 정밀도 손실은 없다(모듈 정답지 자체가 3자리다).
+        let axes = window.samples.map { row in row.map { (Double($0) * 1000).rounded() / 1000 } }
+        var windowPayload: [String: Any] = [
+            "type": "imuWindow",
+            "fs": window.fs,
+            "impactIndex": window.impactIndex,
+            "axes": axes,
+        ]
+        if let family { windowPayload["family"] = family }
+        WCSession.default.transferUserInfo(windowPayload)
+        log.notice("[IMU] 윈도 전송 — \(axes.count, privacy: .public)행 · family \(family ?? "(미정)", privacy: .public)")
     }
 
     /// UI 에서 "낙상 아님" 버튼이 부른다.
