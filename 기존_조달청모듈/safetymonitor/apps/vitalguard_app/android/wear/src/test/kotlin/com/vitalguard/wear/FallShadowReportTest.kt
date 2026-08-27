@@ -75,8 +75,10 @@ class FallShadowReportTest {
         assertEquals("prompt_result", r["fallUpdatePhase"])
         assertEquals("moved_cancelled", r["fallPromptOutcome"])
         assertEquals(items[0]["fallCandidateId"], r["fallCandidateId"])
-        // 결말 항목은 UPDATE 경로다 — 후보 표식·trace 를 다시 싣지 않는다(애플과 동일).
-        assertFalse(r.containsKey("fallCandidate"))
+        // 결말 항목도 fallCandidate=true 를 싣는다 — 서버 빈 샘플 게이트 통과 표식(애플 폰 확장과
+        // 동일 와이어 형식). v6.1.1 은 이걸 빼서 결말 54건 전량이 폐기됐다(2026-08-27 실측).
+        // trace 는 후보에만 — 결말은 UPDATE 경로라 다시 싣지 않는다.
+        assertEquals(true, r["fallCandidate"])
         assertFalse(r.containsKey("fallTrace"))
         assertEquals(5.0, r["fallPromptResponseSec"] as Double, 0.2)
     }
