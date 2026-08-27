@@ -2,6 +2,7 @@
 package com.vitalguard.wear
 
 import com.vitalguard.ml.FallMLModule
+import com.vitalguard.ml.FallShadowReporter
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

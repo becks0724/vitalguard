@@ -1,9 +1,13 @@
 // 낙상 섀도 보고 — 판정을 서버에 남긴다. **경보는 안 보낸다** (애플워치 P7 1단계의 wear 이식)
-package com.vitalguard.wear
+//
+// ★ v6.1.1 부터 모듈 소속이다 — 추적기(trace)의 생성(FallMLModule)과 **전송(이 파일)** 이 한 경계
+//   안에 있어야, 전송이 끊기거나 모양이 바뀌었을 때 모듈 무결성 검사(MANIFEST·버전)로 책임 추적이
+//   된다. 수정은 ML 담당 경유 — 앱 쪽에서 임의 수정 금지(모듈 계약).
+package com.vitalguard.ml
 
-import com.vitalguard.ml.CountdownGuard
-import com.vitalguard.ml.FallMLModule
-import com.vitalguard.wear.pipeline.IsoMs
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -46,7 +50,7 @@ class FallShadowReporter(
     fun onVerdict(v: FallMLModule.Verdict) {
         val id = UUID.randomUUID().toString()
         val item = LinkedHashMap<String, Any>()
-        item["ts"] = IsoMs.format(nowMs())
+        item["ts"] = iso(nowMs())
         item["fallCandidateId"] = id
         // 후보 행의 표식 — 서버 갱신 경로가 `fall_candidate = 1` 인 행만 찾는다.
         item["fallCandidate"] = true
@@ -75,7 +79,7 @@ class FallShadowReporter(
     private fun outcome(outcome: String) {
         val id = activeCandidateId ?: return
         val item = LinkedHashMap<String, Any>()
-        item["ts"] = IsoMs.format(nowMs())
+        item["ts"] = iso(nowMs())
         item["fallCandidateId"] = id
         item["fallUpdatePhase"] = "prompt_result"
         item["fallPromptOutcome"] = outcome
@@ -83,5 +87,12 @@ class FallShadowReporter(
         item["fallPromptResponseSec"] = ((nowMs() - countdownStartedAtMs) / 100L) / 10.0
         enqueue(item)
         activeCandidateId = null
+    }
+
+    private companion object {
+        // 서버 정준 ts 형식(앱 IsoMs 와 동일 산출) — 모듈은 앱 코드에 의존하지 않으므로 여기 둔다.
+        private val ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+            .withZone(ZoneOffset.UTC)
+        private fun iso(ms: Long): String = ISO.format(Instant.ofEpochMilli(ms))
     }
 }

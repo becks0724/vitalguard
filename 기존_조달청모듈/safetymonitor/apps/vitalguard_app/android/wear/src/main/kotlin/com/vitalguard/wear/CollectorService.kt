@@ -19,6 +19,7 @@ import com.vitalguard.wear.pipeline.QueueStorage
 import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.ml.FallMLModule
+import com.vitalguard.ml.FallShadowReporter
 import com.vitalguard.ml.ImuWindowLogger
 import com.vitalguard.ml.MLSelfCheck
 import com.vitalguard.wear.source.GpsLocationSource
