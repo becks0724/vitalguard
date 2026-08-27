@@ -5793,6 +5793,31 @@ export function DemoDashboard() {
   // ── 현장 구획(반경 100m) 이탈 알림 ──────────────────────────────────────────
   // 지도 원과 동일 중심·반경으로 히스테리시스 판정. 워커별 상태 + 마지막 관측 ts(같은 샘플 재관측 시
   // 상태머신을 전진시키지 않아 이상치 1건이 틱 반복으로 이탈 확정되는 것을 방지).
+// 이탈 streak 이 살아 있는 한계(ms) — **판정 신선도와 다른 축이다**(2026-08-27).
+//
+// 왜 나눠야 하나. 이탈 확정은 `GEOFENCE_EXIT_STREAK`(연속 3회)가 필요한데, 종전에는 상태 보존을
+// 판정 게이트(60초)에 묶어 두었다. 그래서 **전송 주기가 60초보다 느린 기기는 streak 이 절대
+// 3에 도달하지 못한다** — 새 표본이 오기 전에 상태가 지워져 1로 되돌아간다.
+//
+//   실측(2026-08-27 · 프로덕션 하루)
+//     장우진 watchOS  전송 간격 중앙값   5.0초 · 60초 이상 간격   0.1% → 이탈 알림 1건
+//     김태곤 WearOS   전송 간격 중앙값 120.6초 · 60초 이상 간격 100.0% → 이탈 알림 **0건**
+//     같은 날 김태곤은 3연속 이상 이탈 구간이 2개 있었다(23/97 표본이 반경 밖 · 최대 482m).
+//     이 effect 를 실제 타임스탬프로 재현하니 **상태 삭제 96회 / 표본 97개**, 최대 streak 1/3.
+//
+// 그래서 둘을 분리한다 — **낡은 좌표로 판정하지는 않되(게이트 유지), 상태까지 지우지는 않는다.**
+//
+// 20분은 손으로 고른 값이 아니라 **분포에서 나온 값**이다(GPS 동반 표본 7일 · 초).
+//     watchos  p50   5.0 · p95   5.1
+//     wearos   p50 120.7 · p95 **982.1** · p99 11,990
+//   보존을 p95(≈16.4분) 위로 올려야 정상 전송이 몇 번 걸러져도 streak 이 살아남는다.
+//   실데이터 재현에서 발화 수가 **p95 이상에서 2회로 안정**됐다(10분은 3회 — 상태 리셋이 한
+//   이탈 구간을 둘로 쪼갠 과다 발화다). 20분·30분·60분 결과가 같아 **평탄 구간의 하단**을 골랐다.
+//   p99(3.3시간)까지 덮지 않는 이유 = 그 간격은 근무 중이 아니다(야간·기기 꺼짐).
+//
+// ⚠ 이 값을 판정 게이트와 같은 숫자로 되돌리지 말 것 — 그 순간 느린 기기가 다시 조용해진다.
+const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
+
   const geofenceStates = useRef(new Map<string, { st: GeofenceState; lastTs: string }>());
 
   // 이탈 확정 전이 시 DB 이력 기록(전이당 1건, worker/type/ts 자연키 dedup).
@@ -5819,11 +5844,15 @@ export function DemoDashboard() {
       setOutsideWorkers((prev) => (prev.size === 0 ? prev : new Set()));
       return;
     }
-    const fresh = new Set<string>();
+    // ★ 두 집합을 나눈다 — `keep` 은 **상태를 살려 둘 대상**, 판정은 그중 신선한 것만.
+    //   종전에는 하나였고, 그래서 전송이 느린 기기는 streak 이 못 쌓였다(GEOFENCE_STATE_KEEP_MS 주석).
+    const keep = new Set<string>();
     for (const pt of workerMapData.pts) {
-      // 60초 초과 미수신(연결끊김 상태머신과 동일 임계)은 stale 좌표 발화 방지를 위해 판정 보류.
+      const ageMs = pt.ageSec === null ? Number.POSITIVE_INFINITY : pt.ageSec * 1000;
+      // 오래 사라진 것이 아니면 상태를 보존한다(미수신 ≠ 복귀).
+      if (ageMs < GEOFENCE_STATE_KEEP_MS) keep.add(pt.workerId);
+      // 판정은 신선한 좌표로만 — 낡은 좌표로 이탈을 선언하지 않는다.
       if (pt.ageSec === null || pt.ageSec >= 60) continue;
-      fresh.add(pt.workerId);
       const base = latestMap.get(pt.workerId);
       const entry = states.get(pt.workerId);
       if (!base?.ts || entry?.lastTs === base.ts) continue; // 새 관측 없음 — 상태 유지
@@ -5838,9 +5867,10 @@ export function DemoDashboard() {
         recordGeofenceAlert(pt.workerId, base.workerName ?? pt.name ?? null, base.ts);
       }
     }
-    // GPS 가 끊긴 워커는 상태 제거 — 재수신 시 초기 상태부터 다시 판정(미수신 ≠ 이탈).
+    // 오래(GEOFENCE_STATE_KEEP_MS) 사라진 워커만 상태 제거 — 재수신 시 초기 상태부터 다시 판정.
+    // ⚠ 조건을 판정 게이트(60초)로 되돌리면 느린 기기의 streak 이 매번 초기화된다.
     for (const id of Array.from(states.keys())) {
-      if (!fresh.has(id)) states.delete(id);
+      if (!keep.has(id)) states.delete(id);
     }
     const outs = new Set<string>();
     for (const [id, entry] of states) if (entry.st.outside) outs.add(id);
