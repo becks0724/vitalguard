@@ -29,6 +29,13 @@ android {
         applicationId = "com.vitalguard.vitalguard_app"
         minSdk = 30            // Wear OS 3(워치4) 이상 — Sensor SDK 지원 하한
         targetSdk = 36         // 갤럭시워치8 = Wear OS 6 = Android 16
+
+        // ONNX Runtime 이 ABI 4종의 .so 를 싣는다 — 실측 x86 19.4 · x86_64 19.4 · arm64-v8a 16.8 ·
+        // armeabi-v7a 11.8 MB. x86 계열은 에뮬레이터 전용이라 실기 배포에는 순수 낭비다(38.8MB).
+        // ⚠ 둘 중 어느 팔(arm)이 필요한지는 기기가 정한다 — 워치가 32비트면 arm64 만 남겼을 때
+        //   설치가 실패한다. 실기에서 `adb shell getprop ro.product.cpu.abilist` 로 확정하기 전까지
+        //   둘 다 남긴다. 확정되면 한쪽을 더 지워 ~11.8MB 를 더 줄일 수 있다.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
         versionCode = 1
         versionName = "0.1-probe"
     }
@@ -86,6 +93,10 @@ dependencies {
 
     // 삼성 Health Sensor SDK — 로컬 AAR (원본: 조달청-공모전 관련자료/samsung health sdk/1.4.1)
     implementation(files("libs/samsung-health-sensor-api-1.4.1.aar"))
+
+    // 낙상 ML 3종 모듈(com.vitalguard.ml)의 추론 런타임. 모듈은 assets/*.onnx 를 읽는다.
+    // ⚠ 애플워치판은 Core ML 이라 런타임 의존이 0인데, 이쪽은 이 한 줄이 필요하다.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
     // 구글 Health Services — 삼성 SDK 없이(파트너 승인 없이) 되는 범위를 실측하기 위한 대조군
     implementation("androidx.health:health-services-client:1.0.0")
     // health-services 의 ListenableFuture 는 빈 스텁(9999.0-empty)으로 풀린다 — 실물 guava 를 명시
