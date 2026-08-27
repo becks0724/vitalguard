@@ -31,11 +31,13 @@ android {
         targetSdk = 36         // 갤럭시워치8 = Wear OS 6 = Android 16
 
         // ONNX Runtime 이 ABI 4종의 .so 를 싣는다 — 실측 x86 19.4 · x86_64 19.4 · arm64-v8a 16.8 ·
-        // armeabi-v7a 11.8 MB. x86 계열은 에뮬레이터 전용이라 실기 배포에는 순수 낭비다(38.8MB).
-        // ⚠ 둘 중 어느 팔(arm)이 필요한지는 기기가 정한다 — 워치가 32비트면 arm64 만 남겼을 때
-        //   설치가 실패한다. 실기에서 `adb shell getprop ro.product.cpu.abilist` 로 확정하기 전까지
-        //   둘 다 남긴다. 확정되면 한쪽을 더 지워 ~11.8MB 를 더 줄일 수 있다.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // armeabi-v7a 11.8 MB. 실기가 정하는 문제라 추측하지 않고 물었다(2026-08-27 · SM-L355N).
+        //     abilist   = armeabi-v7a,armeabi
+        //     abilist64 = (비어 있음)          ← 이 워치는 32비트 전용이다
+        // 그래서 armeabi-v7a 하나만 남긴다. x86 계열(에뮬레이터 전용) 38.8MB + arm64 16.8MB 제거.
+        // ⚠ 64비트 워치(워치7 이후 Exynos W1000 계열)를 지원 대상에 넣으면 arm64-v8a 를 되살려야
+        //   한다 — 없으면 그 기기에서 **설치 자체가 실패**한다. 기기를 늘릴 때 이 줄을 먼저 본다.
+        ndk { abiFilters += listOf("armeabi-v7a") }
         versionCode = 1
         versionName = "0.1-probe"
     }

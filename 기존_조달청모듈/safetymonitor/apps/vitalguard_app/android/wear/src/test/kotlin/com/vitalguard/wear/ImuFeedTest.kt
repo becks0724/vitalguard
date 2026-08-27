@@ -79,6 +79,19 @@ class ImuFeedTest {
     }
 
     @Test
+    fun `실효 Hz 는 못 잰 것을 0 으로 적지 않는다`() {
+        // ★ 2단계에서 이 값 하나로 "화면 꺼진 뒤에도 표본이 오는가" 를 판정한다.
+        //   경과가 0인데 0.0Hz 로 적으면 **"안 왔다"** 로 읽히는데, 실제로는 **"아직 못 쟀다"** 다.
+        //   둘을 섞으면 관측이 결론을 만든다.
+        assertEquals("?", ImuSource.hz(1, 0L))
+        assertEquals("?", ImuSource.hz(3000, -5L))
+        // 50Hz — 3,000표본이 60초(6e10 ns)에 걸쳐 왔다.
+        assertEquals("50.0", ImuSource.hz(3000, 60_000_000_000L))
+        // 뭉쳐 온 경우도 그대로 드러나야 한다 — 3,000건이 1초에 몰리면 3000Hz 로 보인다.
+        assertEquals("3000.0", ImuSource.hz(3000, 1_000_000_000L))
+    }
+
+    @Test
     fun `행이 6축을 그대로 싣는다 — 자이로는 변환 없이 통과`() {
         // 자이로는 안드로이드·모듈 양쪽 다 rad/s 다. 여기에 변환을 끼우면 회전 피처가 통째로 어긋난다.
         val r = ImuSource.pair(floatArrayOf(0f, 0f, 9.80665f), floatArrayOf(0.1f, -0.2f, 0.3f), 7_000L)!!

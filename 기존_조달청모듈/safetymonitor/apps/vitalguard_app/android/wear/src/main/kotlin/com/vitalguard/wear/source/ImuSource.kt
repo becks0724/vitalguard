@@ -66,6 +66,22 @@ class ImuSource(context: Context) : SensorEventListener {
      */
     private var thread: HandlerThread? = null
 
+    // ── 실효 Hz 계측 ──────────────────────────────────────────────────────
+    // ★ 왜 필요한가. 이 워치의 가속도·자이로는 **wake-up 변형이 없다**(2026-08-27 실측 —
+    //   `dumpsys sensorservice` 에 모션 계열 wakeUp 0건, 통제군 Wakeup 센서 148개). 게다가
+    //   CollectorService 는 웨이크락을 안 잡는다(`Wake Locks: size=0`). 그러면 CPU 가 절전에
+    //   들어갔을 때 표본이 **끊기는지 · 뭉쳐 오는지 · 그냥 느려지는지** 를 알 수 없다.
+    //   웨이크락은 배터리를 먹으므로 붙이기 전에 먼저 잰다.
+    // ⚠ 두 시각을 따로 센다 — 하나로는 못 가른다.
+    //   표본 시각(event.timestamp) 기준 Hz = 센서가 실제로 몇 번 쟀나
+    //   도착 시각(elapsedRealtime) 기준 Hz = 우리가 몇 번 받았나
+    //   둘이 같으면 정상, 도착 쪽만 튀면 뭉쳐 온 것(배칭), 둘 다 낮으면 센서가 느려진 것.
+    private var statN = 0
+    private var statFirstEventNs = 0L
+    private var statFirstArrivalNs = 0L
+    private var statPrevArrivalNs = 0L
+    private var statMaxGapMs = 0L
+
     /** 한 표본 — 모듈의 `ingest` 인자와 1:1. 시각은 `SensorEvent.timestamp`(부팅 후 나노초). */
     class Row(
         val ax: Double, val ay: Double, val az: Double,
@@ -95,6 +111,25 @@ class ImuSource(context: Context) : SensorEventListener {
             "자이로 wake=${gyro?.isWakeUpSensor} min=${gyro?.minDelay}µs")
     }
 
+    /** 표본 하나가 도착했다 — 주기적으로 실효 Hz 를 찍는다. */
+    private fun tally(eventNs: Long) {
+        val arrivalNs = android.os.SystemClock.elapsedRealtimeNanos()
+        if (statN == 0) {
+            statFirstEventNs = eventNs; statFirstArrivalNs = arrivalNs; statPrevArrivalNs = arrivalNs
+        } else {
+            val gapMs = (arrivalNs - statPrevArrivalNs) / 1_000_000L
+            if (gapMs > statMaxGapMs) statMaxGapMs = gapMs
+            statPrevArrivalNs = arrivalNs
+        }
+        statN++
+        if (statN < STAT_EVERY) return
+        val bySample = hz(statN, eventNs - statFirstEventNs)
+        val byArrival = hz(statN, arrivalNs - statFirstArrivalNs)
+        Log.i(TAG, "실효Hz 표본기준=$bySample 도착기준=$byArrival · ${statN}건 · " +
+            "최대공백=${statMaxGapMs}ms · 요청=${1_000_000 / SAMPLING_US}Hz")
+        statN = 0; statMaxGapMs = 0
+    }
+
     fun stop() {
         manager.unregisterListener(this)
         // ⚠ 순서가 중요하다 — 구독을 먼저 끊고 스레드를 접는다. 반대로 하면 죽은 루퍼로
@@ -122,6 +157,7 @@ class ImuSource(context: Context) : SensorEventListener {
             Sensor.TYPE_ACCELEROMETER -> {
                 val cb = onSample ?: return
                 val row = pair(event.values, lastGyro, event.timestamp) ?: return
+                tally(event.timestamp)
                 cb(row)
             }
         }
@@ -140,6 +176,15 @@ class ImuSource(context: Context) : SensorEventListener {
             Sensor.TYPE_LINEAR_ACCELERATION, Sensor.TYPE_GRAVITY,
             Sensor.TYPE_ROTATION_VECTOR, Sensor.TYPE_SIGNIFICANT_MOTION,
         )
+
+        /** 몇 표본마다 실효 Hz 를 찍나. 50Hz 요청이면 60초에 한 번꼴이다. */
+        const val STAT_EVERY = 3_000
+
+        /** 건수와 경과 나노초 → Hz(소수 1자리). 경과가 0 이하면 **0 이 아니라 null 문자열**을 낸다. */
+        internal fun hz(n: Int, elapsedNs: Long): String {
+            if (elapsedNs <= 0L) return "?"      // 0.0 으로 적으면 "안 왔다" 로 오독된다
+            return String.format(java.util.Locale.US, "%.1f", n * 1e9 / elapsedNs)
+        }
 
         /** 표준 중력. 안드로이드 `SensorManager.GRAVITY_EARTH` 와 같은 값이되 시험에서 쓰려고 뗀다. */
         const val G = 9.80665

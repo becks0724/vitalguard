@@ -20,6 +20,7 @@ import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.ml.FallMLModule
 import com.vitalguard.ml.ImuWindowLogger
+import com.vitalguard.ml.MLSelfCheck
 import com.vitalguard.wear.source.GpsLocationSource
 import com.vitalguard.wear.source.ImuSource
 import com.vitalguard.wear.source.OffBodySource
@@ -110,7 +111,39 @@ class CollectorService : Service() {
                 // ★ 추적성은 모듈의 계약이다(README) — trace 를 통째로 남긴다. 이 줄이 있어야
                 //   나중에 "왜 그렇게 판정했나" 를 원시 윈도 없이도 되짚을 수 있다.
                 Log.i(TAG, "낙상판정 ${v.trace}")
+                warnIfInferenceLooksDead(v)
             }
+        }
+
+        // ★ 자가검증을 **버튼에 두지 않고 기동 시 1회 자동 실행**한다.
+        //   "모델이 로드됐다" 와 "특징추출·추론 수치가 파이썬 정답지와 맞는다" 는 다른 말이다.
+        //   버튼만 두면 아무도 안 누른 채 배포되고, 그 차이는 낙상이 나야 드러난다.
+        //   ⚠ 메인 스레드에서 돌리면 안 된다 — 6슬라이스 × (88피처 + ONNX 추론) 이다.
+        handler.post {
+            val report = runCatching { MLSelfCheck.run(this) }.getOrElse { "자가검증 예외: $it" }
+            Log.i(TAG, "ML 자가검증 (모듈 ${FallMLModule.VERSION})\n$report")
+        }
+    }
+
+    /**
+     * recovery 추론이 죽었는지 **지문으로** 잡는다 — 모듈은 안 고치고 관측만 붙인다.
+     *
+     * ★ 모듈의 `prob()` 은 모든 예외를 `0.0` 으로 삼킨다. 그 0.0 이 `0.35` 미만이라 판정은
+     *   `no_danger` 가 된다 — 즉 **추론이 실패하면 조용히 "위험 아님"** 이 된다. 코드가 선언한
+     *   의도("애매하면 위험")와 정반대다. 애플워치 판(Swift 원본)도 같은 성질이라 포팅 결함이
+     *   아니고, 계약상 모듈 내부는 못 고친다(폴더 통째 교체라 고쳐도 다음 판에 되돌아간다).
+     * ★ 지문 = 확률이 **정확히** 0.0. 학습된 모델이 그 값을 낼 일은 사실상 없다.
+     * ⚠ 판정은 바꾸지 않는다. 여기서 위험측으로 뒤집으면 모듈의 계약을 호스트가 몰래 덮는 것이고,
+     *   ML 담당의 답이 오기 전에 임계 동작을 바꾸는 셈이다. 지금 필요한 것은 **증거**다.
+     */
+    private fun warnIfInferenceLooksDead(v: FallMLModule.Verdict) {
+        if (v.nonrecoveryProb == 0.0) {
+            Log.e(TAG, "★ recovery 추론 실패 의심 — p=0.0 이라 판정이 ${v.decision.raw} 로 떨어졌다. " +
+                "실패면 '위험 아님'이 아니라 '모름'이어야 한다. trace=${v.trace}")
+        }
+        // work_veto·impact 는 0.0 이어도 안전측이다(기각 안 함 · 증거 전용). 사실만 남긴다.
+        if (v.workProb == 0.0 || v.impactProb == 0.0) {
+            Log.w(TAG, "추론 확률에 정확한 0.0 이 섞였다 — work=${v.workProb} impact=${v.impactProb}")
         }
     }
 
