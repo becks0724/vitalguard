@@ -92,6 +92,11 @@ class ImuSource(context: Context) : SensorEventListener {
 
     fun start(onSample: (Row) -> Unit) {
         this.onSample = onSample
+        // ★ 통계를 여기서 반드시 초기화한다. 안 하면 **정지 구간이 센서 공백으로 둔갑한다** —
+        //   08-27 첫 실측에서 착용이 떨려(착용→벗음→착용) `최대공백=4329ms` 가 찍혔는데
+        //   그건 센서가 쉰 게 아니라 내가 `stop()` 을 부른 시간이었다. 다음 사람이 이 값을
+        //   기기 문제로 읽으면 엉뚱한 곳을 판다.
+        resetStats()
         if (!supported) {
             // ⚠ 이 로그가 자이로 유무를 확정하는 유일한 자리다 — 기기 없이는 코드로 못 안다.
             Log.w(TAG, "6축 미충족 — 가속도=${accel != null} 자이로=${gyro != null} · ML 비활성")
@@ -111,6 +116,11 @@ class ImuSource(context: Context) : SensorEventListener {
             "자이로 wake=${gyro?.isWakeUpSensor} min=${gyro?.minDelay}µs")
     }
 
+    private fun resetStats() {
+        statN = 0
+        statMaxGapMs = 0
+    }
+
     /** 표본 하나가 도착했다 — 주기적으로 실효 Hz 를 찍는다. */
     private fun tally(eventNs: Long) {
         val arrivalNs = android.os.SystemClock.elapsedRealtimeNanos()
@@ -127,7 +137,7 @@ class ImuSource(context: Context) : SensorEventListener {
         val byArrival = hz(statN, arrivalNs - statFirstArrivalNs)
         Log.i(TAG, "실효Hz 표본기준=$bySample 도착기준=$byArrival · ${statN}건 · " +
             "최대공백=${statMaxGapMs}ms · 요청=${1_000_000 / SAMPLING_US}Hz")
-        statN = 0; statMaxGapMs = 0
+        resetStats()
     }
 
     fun stop() {
