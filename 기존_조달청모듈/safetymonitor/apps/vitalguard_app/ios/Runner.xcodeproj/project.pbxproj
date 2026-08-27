@@ -7,24 +7,35 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		04B275663FD7A34D3F4B2C88 /* ml_selfcheck.json in Resources */ = {isa = PBXBuildFile; fileRef = 1DEB1C497506F47F7521670A /* ml_selfcheck.json */; };
+		0CA9E1A0000000000000BB01 /* MediaCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA9E1A0000000000000AA01 /* MediaCapture.swift */; };
+		12588BAA7221D6EF0BD05F29 /* FallMLModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F721BB96785BED92F3735E6 /* FallMLModule.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
 		3DA0EFC7264FD6F15D4771EF /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 58EA3DFF7C17BBD3277C2224 /* Foundation.framework */; };
 		3F9511CADAC6F67ED55FFDF2 /* PoCConfig.plist in Resources */ = {isa = PBXBuildFile; fileRef = E5222D3F029C4480289E1731 /* PoCConfig.plist */; };
-		D1E2F30415263748596A7B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F405162738495A6B7C /* Assets.xcassets */; };
+		44A7C618F49722D05F05915F /* CountdownGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74BD0433809A013F0D291C0 /* CountdownGuard.swift */; };
+		4BDC9B9E3C278EB392037F25 /* work_veto.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 54A6B72E0BBB49CDA6E84E71 /* work_veto.mlmodel */; };
 		4F115CA80FCB6D06D2BA5D08 /* PhoneReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */; };
-		B1C2D3E4F5061728394A5B6C /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */; };
-		0CA9E1A0000000000000BB01 /* MediaCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA9E1A0000000000000AA01 /* MediaCapture.swift */; };
+		589F54E8D092063EA7FB2099 /* FeatureExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F2FFCCA59F4577993FC0323 /* FeatureExtractor.swift */; };
+		5B2C8E8513778EA425F81A4D /* recovery.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = B37B0CF04BC08068AE0FD2B9 /* recovery.mlmodel */; };
 		61433DF4DDF0D5701D7704D8 /* VitalPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */; };
+		70FEE442E0898820444AC09F /* thresholds.json in Resources */ = {isa = PBXBuildFile; fileRef = D45D00E3726FFBF2A30967A6 /* thresholds.json */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
+		7BAAF117F041BA90C6E70D72 /* FallMLPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9830028644D55CCF605D1EA /* FallMLPipeline.swift */; };
 		92292AEEEA9B7318A10FD9F7 /* VitalWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 734B76231052F47AAE6C8840 /* VitalWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		9FED1474FAA9A0F8F28AE711 /* IMUWindowLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E208FDCADD2ED3C38A539FB /* IMUWindowLogger.swift */; };
 		A53C8AA38CFA07CD5F33D473 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84264EFCC0DAD014BF186C92 /* ContentView.swift */; };
 		A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */; };
+		B1C2D3E4F5061728394A5B6C /* LocationProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */; };
+		B9C4FE0981D25C98963D1608 /* MLSelfCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EEDB36C7BC394D24D3046C3 /* MLSelfCheck.swift */; };
+		D1E2F30415263748596A7B8C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C1D2E3F405162738495A6B7C /* Assets.xcassets */; };
+		DC535E60EEA3143010B8D28A /* impact.mlmodel in Resources */ = {isa = PBXBuildFile; fileRef = 5A59F3A708F2CE829E7BD373 /* impact.mlmodel */; };
 		E2F1D0722F15A666027525DB /* VitalBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D15ED07A527684C73E409BE /* VitalBridge.swift */; };
 		E3685334E9EA58503BA4B9B3 /* VitalWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */; };
 /* End PBXBuildFile section */
@@ -71,25 +82,29 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0CA9E1A0000000000000AA01 /* MediaCapture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaCapture.swift; sourceTree = "<group>"; };
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		1DEB1C497506F47F7521670A /* ml_selfcheck.json */ = {isa = PBXFileReference; includeInIndex = 1; path = ml_selfcheck.json; sourceTree = "<group>"; };
+		1EEDB36C7BC394D24D3046C3 /* MLSelfCheck.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MLSelfCheck.swift; sourceTree = "<group>"; };
 		213CBD10071A259211BA20E9 /* VitalWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VitalWatch.entitlements; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		3D15ED07A527684C73E409BE /* VitalBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalBridge.swift; sourceTree = "<group>"; };
 		3E160AB3EED27C71DBDE1631 /* PoCConfig.example.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.example.plist; sourceTree = "<group>"; };
+		3E208FDCADD2ED3C38A539FB /* IMUWindowLogger.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = IMUWindowLogger.swift; sourceTree = "<group>"; };
+		54A6B72E0BBB49CDA6E84E71 /* work_veto.mlmodel */ = {isa = PBXFileReference; includeInIndex = 1; path = work_veto.mlmodel; sourceTree = "<group>"; };
 		5688B8CC2F2D3033CABFC013 /* VitalPipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalPipeline.swift; sourceTree = "<group>"; };
 		58EA3DFF7C17BBD3277C2224 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
-		C1D2E3F405162738495A6B7C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5A59F3A708F2CE829E7BD373 /* impact.mlmodel */ = {isa = PBXFileReference; includeInIndex = 1; path = impact.mlmodel; sourceTree = "<group>"; };
 		6207C3FA73AE46F15F4D5C59 /* PhoneReceiver.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PhoneReceiver.swift; sourceTree = "<group>"; };
-		A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
-		0CA9E1A0000000000000AA01 /* MediaCapture.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MediaCapture.swift; sourceTree = "<group>"; };
 		734B76231052F47AAE6C8840 /* VitalWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VitalWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = Flutter/Release.xcconfig; sourceTree = "<group>"; };
+		7F721BB96785BED92F3735E6 /* FallMLModule.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FallMLModule.swift; sourceTree = "<group>"; };
 		84264EFCC0DAD014BF186C92 /* ContentView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9740EEB21CF90195004384FC /* Debug.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = Flutter/Debug.xcconfig; sourceTree = "<group>"; };
 		9740EEB31CF90195004384FC /* Generated.xcconfig */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.xcconfig; name = Generated.xcconfig; path = Flutter/Generated.xcconfig; sourceTree = "<group>"; };
@@ -98,8 +113,15 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		9F2FFCCA59F4577993FC0323 /* FeatureExtractor.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FeatureExtractor.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5C /* LocationProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationProvider.swift; sourceTree = "<group>"; };
+		B37B0CF04BC08068AE0FD2B9 /* recovery.mlmodel */ = {isa = PBXFileReference; includeInIndex = 1; path = recovery.mlmodel; sourceTree = "<group>"; };
 		B3D6879EC00860A9E5E8B39D /* VitalWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VitalWatchApp.swift; sourceTree = "<group>"; };
 		B667521F6AD57D6DF6F2E389 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B74BD0433809A013F0D291C0 /* CountdownGuard.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CountdownGuard.swift; sourceTree = "<group>"; };
+		B9830028644D55CCF605D1EA /* FallMLPipeline.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FallMLPipeline.swift; sourceTree = "<group>"; };
+		C1D2E3F405162738495A6B7C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		D45D00E3726FFBF2A30967A6 /* thresholds.json */ = {isa = PBXFileReference; includeInIndex = 1; path = thresholds.json; sourceTree = "<group>"; };
 		E5222D3F029C4480289E1731 /* PoCConfig.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = PoCConfig.plist; sourceTree = "<group>"; };
 		FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchStreamer.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -187,6 +209,25 @@
 			path = Runner;
 			sourceTree = "<group>";
 		};
+		A6E108C7CF82A4C4F4930AF3 /* FallML */ = {
+			isa = PBXGroup;
+			children = (
+				B74BD0433809A013F0D291C0 /* CountdownGuard.swift */,
+				7F721BB96785BED92F3735E6 /* FallMLModule.swift */,
+				B9830028644D55CCF605D1EA /* FallMLPipeline.swift */,
+				9F2FFCCA59F4577993FC0323 /* FeatureExtractor.swift */,
+				3E208FDCADD2ED3C38A539FB /* IMUWindowLogger.swift */,
+				1EEDB36C7BC394D24D3046C3 /* MLSelfCheck.swift */,
+				54A6B72E0BBB49CDA6E84E71 /* work_veto.mlmodel */,
+				5A59F3A708F2CE829E7BD373 /* impact.mlmodel */,
+				B37B0CF04BC08068AE0FD2B9 /* recovery.mlmodel */,
+				D45D00E3726FFBF2A30967A6 /* thresholds.json */,
+				1DEB1C497506F47F7521670A /* ml_selfcheck.json */,
+			);
+			name = FallML;
+			path = FallML;
+			sourceTree = "<group>";
+		};
 		B6AF9980F6160A7BF94C0DB6 /* VitalWatch */ = {
 			isa = PBXGroup;
 			children = (
@@ -196,6 +237,7 @@
 				B667521F6AD57D6DF6F2E389 /* Info.plist */,
 				213CBD10071A259211BA20E9 /* VitalWatch.entitlements */,
 				FF80483D91E47C41BFF6F03F /* WatchStreamer.swift */,
+				A6E108C7CF82A4C4F4930AF3 /* FallML */,
 			);
 			name = VitalWatch;
 			path = VitalWatch;
@@ -341,6 +383,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				D1E2F30415263748596A7B8C /* Assets.xcassets in Resources */,
+				4BDC9B9E3C278EB392037F25 /* work_veto.mlmodel in Resources */,
+				DC535E60EEA3143010B8D28A /* impact.mlmodel in Resources */,
+				5B2C8E8513778EA425F81A4D /* recovery.mlmodel in Resources */,
+				70FEE442E0898820444AC09F /* thresholds.json in Resources */,
+				04B275663FD7A34D3F4B2C88 /* ml_selfcheck.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -396,6 +443,12 @@
 				E3685334E9EA58503BA4B9B3 /* VitalWatchApp.swift in Sources */,
 				A53C8AA38CFA07CD5F33D473 /* ContentView.swift in Sources */,
 				A617DB1041E0574304A0A80E /* WatchStreamer.swift in Sources */,
+				44A7C618F49722D05F05915F /* CountdownGuard.swift in Sources */,
+				12588BAA7221D6EF0BD05F29 /* FallMLModule.swift in Sources */,
+				7BAAF117F041BA90C6E70D72 /* FallMLPipeline.swift in Sources */,
+				589F54E8D092063EA7FB2099 /* FeatureExtractor.swift in Sources */,
+				9FED1474FAA9A0F8F28AE711 /* IMUWindowLogger.swift in Sources */,
+				B9C4FE0981D25C98963D1608 /* MLSelfCheck.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
