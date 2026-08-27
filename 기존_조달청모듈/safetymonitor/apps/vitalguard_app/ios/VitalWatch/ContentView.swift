@@ -101,7 +101,9 @@ struct ContentView: View {
                 value: streamer.latestSpO2,
                 range: 85...100,
                 zone: WatchVitalZone.spo2,
-                side: .trailing
+                side: .trailing,
+                // 세로 페이징 점이 오른쪽 위–가운데에 앉는다(실측). 그 구간만 눈금을 비운다.
+                indexGap: 0.18...0.46
             )
 
             VStack(spacing: 4) {
@@ -563,6 +565,13 @@ private struct BezelScale: View {
     /// 그 위치의 값이 어느 구간인가. nil 이면 구간을 안 칠한다(근거 있는 임계가 없는 값).
     let zone: ((Double) -> WatchVitalZone)?
     let side: HorizontalEdge
+    /// 눈금을 비울 구간(경로 비율). 세로 페이징 점이 앉는 자리를 내준다.
+    ///
+    /// ⚠ **점을 끌 수가 없어서 비키는 것이다.** `VerticalPageTabViewStyle` 에는
+    ///   `indexDisplayMode` 가 없다(가로 `PageTabViewStyle` 에만 있다 · SDK 실측). 밑줄 API 도
+    ///   없다. 그래서 "1면에서만 점 숨기기" 는 TabView 로는 불가능하고, 대신 그 자리를 비운다.
+    /// ⚠ 점을 없애는 쪽으로 바꾸지 말 것 — 점은 "면이 더 있다" 를 알리는 **유일한** 단서다.
+    var indexGap: ClosedRange<Double>? = nil
 
     /// 눈금 개수. 촘촘할수록 페이스에 가깝지만, 잔눈금이 굵으면 띠가 뭉개진다 —
     /// 개수를 늘리는 만큼 잔눈금은 짧고 가늘게 한다(아래 length·lineWidth).
@@ -598,6 +607,8 @@ private struct BezelScale: View {
                 let center = CGPoint(x: rect.midX, y: rect.midY)
                 for index in 0...Self.tickCount {
                     let t = Double(index) / Double(Self.tickCount)
+                    // 점이 앉는 구간은 비운다(위 `indexGap` 주석 참조).
+                    if let indexGap, indexGap.contains(t) { continue }
                     guard let point = Self.point(on: path, at: t) else { continue }
                     let normal = Self.inwardNormal(from: point, toward: center)
                     let isMajor = index % 6 == 0
