@@ -6,7 +6,7 @@ import Foundation
 
 final class FallMLModule {
     /// 모듈 버전 — 모델 교체·로직 변경 시 반드시 올릴 것 (추적성의 기준점)
-    static let version = "6.0.0"
+    static let version = "6.1.0"
 
     struct Verdict {
         enum Decision: String {
