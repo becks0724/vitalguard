@@ -6,9 +6,30 @@ import WatchConnectivity
 import WatchKit
 import os
 
+/// 화면 그래프의 한 점. 전송 페이로드와 무관한 **표시 전용** 값이다.
+struct WatchBPMPoint: Identifiable, Equatable {
+    let at: Date
+    let bpm: Double
+    var id: TimeInterval { at.timeIntervalSince1970 }
+}
+
 final class WatchStreamer: NSObject, ObservableObject {
     @Published var isRunning = false
     @Published var latestBPM: Double?
+
+    /// 손목 화면 그래프용 심박 이력.
+    ///
+    /// ⚠ 전송 큐(`pendingSamples`)와 **별개**다 — 그쪽은 flush 마다 비워지므로 그래프의
+    ///   재료로 쓸 수 없다. 이 배열은 표시 전용이고 판정·전송은 이것을 안 본다.
+    /// ⚠ 1분에 한 점만 남긴다. 심박은 초 단위로 들어와서 그대로 쌓으면 상한에 먼저 닿고
+    ///   창이 조용히 짧아진다(폰 `HeartRateHistory` 와 같은 규칙).
+    @Published var recentBPM: [WatchBPMPoint] = []
+    /// 그래프가 덮는 시간. 손목 화면은 좁아 폰(3시간)보다 짧게 잡는다.
+    static let bpmHistoryWindow: TimeInterval = 60 * 60
+    private static let bpmHistoryBucket: TimeInterval = 60
+    /// 지금 버킷이 열린 시각. ⚠ 직전 점의 시각이 아니다 — 그걸 기준으로 재면 기준이 매번
+    /// 앞으로 밀려 새 점이 영영 안 생긴다.
+    private var bpmBucketAt: Date?
     @Published var latestSpO2: Double?
     @Published var latestSpO2At: Date?
     @Published var sessionEnergyKcal: Double = 0
@@ -1080,6 +1101,25 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
     }
 }
 
+extension WatchStreamer {
+    /// 그래프용 이력에 한 점. 같은 1분 버킷은 최신 값으로 덮는다.
+    func appendDisplayBPM(_ bpm: Double, at now: Date = Date()) {
+        guard bpm >= 25, bpm <= 250 else { return }
+        if let last = recentBPM.last, now <= last.at { return }
+
+        if let bucket = bpmBucketAt, !recentBPM.isEmpty,
+           now.timeIntervalSince(bucket) < Self.bpmHistoryBucket {
+            recentBPM[recentBPM.count - 1] = WatchBPMPoint(at: now, bpm: bpm)
+        } else {
+            bpmBucketAt = now
+            recentBPM.append(WatchBPMPoint(at: now, bpm: bpm))
+        }
+
+        let cutoff = now.addingTimeInterval(-Self.bpmHistoryWindow)
+        recentBPM.removeAll { $0.at < cutoff }
+    }
+}
+
 // MARK: - HKLiveWorkoutBuilderDelegate
 
 extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
@@ -1090,6 +1130,7 @@ extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
             let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
             DispatchQueue.main.async {
                 self.latestBPM = bpm
+                self.appendDisplayBPM(bpm)
                 // 실측이 들어온 시각 — 하트비트 유효기간의 기준점(여기서만 갱신된다).
                 self.latestBPMAt = Date()
                 self.pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
