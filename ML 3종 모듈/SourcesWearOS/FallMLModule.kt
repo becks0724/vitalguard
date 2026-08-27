@@ -12,7 +12,7 @@ import kotlin.math.sqrt
 class FallMLModule private constructor(private val pipeline: FallMLPipeline) {
     companion object {
         /** 모듈 버전 — 모델 교체·로직 변경 시 반드시 올릴 것 (추적성의 기준점) */
-        const val VERSION = "6.1.2"
+        const val VERSION = "6.1.3"
 
         /** assets 에 모델 3개(.onnx)가 없으면 null — 통합측은 null 이면 ML 기능 비활성으로 처리. */
         fun create(context: Context): FallMLModule? =
