@@ -25,39 +25,15 @@ struct ContentView: View {
     @State private var confirmingStop = false
     @State private var page = Page.vitals
 
+    /// 크라운을 내리는 순서. 생체 → 종류별 상세 → 마지막이 설정이다.
+    /// ⚠ 설정을 맨 끝에 둔다 — 손목에서 늘 보는 것은 생체이고, 동작 버튼은 하루 두어 번이다.
     private enum Page: Hashable {
         case vitals
+        case heartRate
+        case spo2
+        case energy
+        case transmit
         case settings
-    }
-
-    /// 이산 측정 한 줄 — 도착한 종류만 짧은 한국어 라벨로 적는다(0 건은 생략).
-    /// HRV 는 값이 있으면 ms 까지 보여준다(상시 워크아웃 중엔 구조상 안 나오는 것이 정상).
-    private var discreteLine: String {
-        let labels: [(key: String, name: String)] = [
-            ("pe", "강도"), ("dl", "일광"), ("rhr", "안정"), ("whr", "보행"), ("rr", "호흡"),
-        ]
-        var parts = labels.compactMap { item -> String? in
-            guard let n = streamer.discreteCounts[item.key], n > 0 else { return nil }
-            return "\(item.name)\(n)"
-        }
-        if let ms = streamer.latestHrvMs {
-            parts.append(String(format: "HRV %.0fms", ms))
-        } else if let n = streamer.discreteCounts["hrv"], n > 0 {
-            parts.append("HRV\(n)")
-        }
-        return parts.isEmpty ? "이산 0건" : parts.joined(separator: " ")
-    }
-
-    /// 전송·전달 채널 한 줄 — 0 은 생략한다(이산 측정 줄과 같은 규칙).
-    ///
-    /// `잔량` = 아직 폰에 도달하지 않은 큐. 이것이 실시간으로 늘어나면 전달이 밀리는 중이라는
-    /// 뜻이고, 08-18 거리 시험의 판정 근거가 된다. `즉시` 는 `전송 − 큐` 라 따로 적지 않는다.
-    private var transmitLine: String {
-        var parts = ["전송\(streamer.batchesSent)", streamer.reachable ? "도달" : "단절"]
-        let queued = streamer.sentQueued + streamer.immediateFailed
-        if queued > 0 { parts.append("큐\(queued)") }
-        if streamer.pendingTransfers > 0 { parts.append("잔량\(streamer.pendingTransfers)") }
-        return parts.joined(separator: " ")
     }
 
     /// 그래프가 실제로 덮은 시간. "1시간" 이라 적어 두고 3분치를 그리면 화면이 거짓말한다.
@@ -71,6 +47,10 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $page) {
             vitalsPage.tag(Page.vitals)
+            heartRatePage.tag(Page.heartRate)
+            spo2Page.tag(Page.spo2)
+            energyPage.tag(Page.energy)
+            transmitPage.tag(Page.transmit)
             settingsPage.tag(Page.settings)
         }
         .tabViewStyle(.verticalPage)
@@ -97,14 +77,11 @@ struct ContentView: View {
                 HeartRateSparkline(points: streamer.recentBPM)
                     .frame(height: 40)
                 stats
-                if streamer.isRunning {
-                    Text(discreteLine)
-                        .font(.system(size: 11))
-                        .foregroundStyle(streamer.latestHrvMs == nil ? Color.secondary : Color.purple)
-                }
-                Text(transmitLine)
-                    .font(.system(size: 11))
-                    .foregroundStyle(streamer.pendingTransfers > 0 ? Color.orange : Color.secondary)
+                // ⚠ 이산·전달 줄은 각 상세 면으로 옮겼다 — 같은 값을 두 곳에 두면 어느 쪽이
+                //   최신인지 읽는 사람이 판단해야 한다. 여기서는 "더 있다" 만 알린다.
+                Text("크라운을 내리면 종류별 상세")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 2)
         }
@@ -163,7 +140,90 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - 2면 · 설정
+    // MARK: - 상세 면들
+
+    /// 심박 상세 — 참고 디자인의 첫 카드. 큰 값 · 추이 · 최저/최고.
+    /// ⚠ 최저·최고는 **그래프가 덮은 창 안**의 값이지 하루치가 아니다. 창을 라벨에 적는다.
+    private var heartRatePage: some View {
+        let values = streamer.recentBPM.map(\.bpm)
+        return VitalDetailPage(
+            title: "심박 · \(windowLabel)",
+            symbol: "heart.fill",
+            tint: .red,
+            value: streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--",
+            unit: "bpm",
+            left: ("최저", values.min().map { String(format: "%.0f", $0) } ?? "--"),
+            right: ("최고", values.max().map { String(format: "%.0f", $0) } ?? "--")
+        ) {
+            HeartRateSparkline(points: streamer.recentBPM)
+                .frame(height: 44)
+        }
+    }
+
+    /// SpO₂ 상세 — 기회 측정이라 상시 값이 아니다. 언제 잰 것인지가 값만큼 중요하다.
+    private var spo2Page: some View {
+        VitalDetailPage(
+            title: "산소포화도",
+            symbol: "drop.fill",
+            tint: .cyan,
+            value: streamer.latestSpO2.map { "\(Int($0))" } ?? "--",
+            unit: "%",
+            left: (
+                "측정 시각",
+                streamer.latestSpO2At?.formatted(date: .omitted, time: .shortened) ?? "--"
+            ),
+            right: ("수신", "\(streamer.discreteCounts["spo2"] ?? 0)건")
+        ) {
+            // ⚠ 추이를 안 그린다 — 기회 측정이라 점 사이 간격이 제멋대로고, 선으로 이으면
+            //   측정하지 않은 구간을 측정한 것처럼 보이게 한다.
+            Text("기회 측정 — 워치가 잴 때만 들어옵니다")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 활동 에너지 상세 — 세션 누적. 온열 ① 의 현장 검증용 값이다.
+    private var energyPage: some View {
+        VitalDetailPage(
+            title: "활동 에너지",
+            symbol: "flame.fill",
+            tint: .orange,
+            value: streamer.sessionEnergyKcal > 0
+                ? String(format: "%.1f", streamer.sessionEnergyKcal)
+                : "--",
+            unit: "kcal",
+            left: ("이번 세션", streamer.isRunning ? "수집 중" : "정지"),
+            right: nil
+        ) {
+            // 이산 측정은 여기 얹는다 — 종류별 건수는 "정말 들어오는가" 의 판정 근거다.
+            DiscreteCountsGrid(
+                counts: streamer.discreteCounts,
+                hrvMs: streamer.latestHrvMs
+            )
+        }
+    }
+
+    /// 전달 상세 — 08-18 거리 시험의 판정 근거. 폰이 멀어지면 여기 숫자가 먼저 움직인다.
+    private var transmitPage: some View {
+        VitalDetailPage(
+            title: "전달",
+            symbol: "antenna.radiowaves.left.and.right",
+            tint: streamer.reachable ? .green : .orange,
+            value: "\(streamer.batchesSent)",
+            unit: "배치",
+            left: ("연결", streamer.reachable ? "도달" : "단절"),
+            right: ("잔량", "\(streamer.pendingTransfers)건")
+        ) {
+            let queued = streamer.sentQueued + streamer.immediateFailed
+            Text(queued > 0 ? "큐 \(queued)건 — 즉시 전달이 밀리는 중" : "즉시 전달 정상")
+                .font(.system(size: 10))
+                .foregroundStyle(queued > 0 ? .orange : .secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - 마지막 면 · 설정
 
     private var settingsPage: some View {
         ScrollView {
@@ -209,6 +269,137 @@ struct ContentView: View {
                 }
             }
             .padding(.horizontal, 2)
+        }
+    }
+}
+
+
+// MARK: - 생체 상세 면 부품
+//
+// 참고 디자인(사용자 제공)의 카드 = 라벨 · 큰 값 · 가운데 시각화 · 하단 두 칸.
+// ⚠ **가진 값만 페이지로 만든다.** 참고 이미지에는 혈압·호흡수 카드가 있지만 워치는
+//   혈압을 아예 못 재고, 호흡은 값이 아니라 **수신 건수**만 있다. 없는 값을 카드로 만들면
+//   화면이 거짓말을 한다 — 이 앱이 여러 번 지켜 온 규칙이다.
+// ⚠ 참고 디자인의 `Measure` 버튼도 안 넣는다. 우리 앱은 온디맨드 측정을 못 하고, 눌러도
+//   아무 일이 없는 버튼은 "고장" 으로 읽힌다.
+// ⚠ 별도 파일로 두지 않았다 — 이 프로젝트는 파일을 pbxproj 에 일일이 등록하는 방식이라
+//   새 파일은 타깃에 자동으로 안 들어간다(실제로 "cannot find in scope" 로 겪었다).
+
+/// 상세 한 면의 공통 틀. 종류마다 가운데만 다르다.
+struct VitalDetailPage<Middle: View>: View {
+    let title: String
+    let symbol: String
+    let tint: Color
+    /// 큰 값. 없으면 `--` 를 넣는다(칸을 지우지 않는다).
+    let value: String
+    let unit: String
+    /// 하단 두 칸 — (라벨, 값). nil 이면 그 칸을 안 그린다.
+    let left: (label: String, value: String)?
+    let right: (label: String, value: String)?
+    @ViewBuilder let middle: Middle
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 4) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 11))
+                        .foregroundStyle(tint)
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text(value)
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .foregroundStyle(tint)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text(unit)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                middle
+
+                if left != nil || right != nil {
+                    HStack(spacing: 4) {
+                        if let left { VitalSubStat(label: left.label, value: left.value) }
+                        if let right { VitalSubStat(label: right.label, value: right.value) }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 2)
+        }
+    }
+}
+
+/// 하단 보조 칸. 참고 디자인의 두 칸을 옮긴 것이다.
+struct VitalSubStat: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(spacing: 1) {
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// 이산 측정 종류별 건수 — 값이 아니라 **건수**다. 라벨에 그렇게 적는다.
+///
+/// ⚠ 0 건인 종류는 칸을 안 만든다. 이 앱의 기존 규칙이고, "0 건" 을 늘어놓으면 진짜로
+///   안 들어오는 종류가 묻힌다(2026-08-14 유실 진단에서 실제로 시간을 잃었다).
+struct DiscreteCountsGrid: View {
+    let counts: [String: Int]
+    let hrvMs: Double?
+
+    private static let labels: [(key: String, name: String)] = [
+        ("pe", "강도"), ("dl", "일광"), ("rhr", "안정"), ("whr", "보행"), ("rr", "호흡"),
+    ]
+
+    private var rows: [(String, String)] {
+        var out = Self.labels.compactMap { item -> (String, String)? in
+            guard let n = counts[item.key], n > 0 else { return nil }
+            return (item.name, "\(n)건")
+        }
+        if let hrvMs {
+            out.append(("HRV", String(format: "%.0fms", hrvMs)))
+        } else if let n = counts["hrv"], n > 0 {
+            out.append(("HRV", "\(n)건"))
+        }
+        return out
+    }
+
+    var body: some View {
+        if rows.isEmpty {
+            Text("아직 도착한 이산 측정이 없습니다")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(spacing: 3) {
+                ForEach(Array(stride(from: 0, to: rows.count, by: 2)), id: \.self) { index in
+                    HStack(spacing: 4) {
+                        VitalSubStat(label: rows[index].0, value: rows[index].1)
+                        if index + 1 < rows.count {
+                            VitalSubStat(label: rows[index + 1].0, value: rows[index + 1].1)
+                        } else {
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
         }
     }
 }
