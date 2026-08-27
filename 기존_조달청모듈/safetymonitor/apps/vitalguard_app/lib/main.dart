@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'glass_tab_bar.dart';
+import 'heart_rate_trend.dart';
 import 'own_vitals.dart';
 import 'record_screen.dart';
 import 'settings_screen.dart';
@@ -132,29 +133,52 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const Icon(Icons.favorite, size: 56, color: VgColors.heart),
                 const SizedBox(height: 12),
-                const Text('VitAlGuard', textAlign: TextAlign.center, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+                const Text(
+                  'VitAlGuard',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 4),
                 // 관제웹 로그인과 동일한 브랜드·문구 — 작업자가 같은 로그인임을 바로 알게 한다.
-                const Text('OPEN SAFETY · NEVER ALONE',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: VgColors.muted, fontSize: 12, letterSpacing: 1.2)),
+                const Text(
+                  'OPEN SAFETY · NEVER ALONE',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: VgColors.muted,
+                    fontSize: 12,
+                    letterSpacing: 1.2,
+                  ),
+                ),
                 const SizedBox(height: 20),
-                const Text('로그인', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const Text(
+                  '로그인',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 4),
-                const Text('관제웹과 같은 ID·비밀번호를 사용합니다',
-                    textAlign: TextAlign.center, style: TextStyle(color: VgColors.body)),
+                const Text(
+                  '관제웹과 같은 ID·비밀번호를 사용합니다',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: VgColors.body),
+                ),
                 const SizedBox(height: 24),
                 TextField(
                   controller: _idController,
                   autocorrect: false,
-                  decoration: const InputDecoration(labelText: 'ID', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'ID',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: _pwController,
                   obscureText: true,
                   onSubmitted: (_) => _busy ? null : _login(),
-                  decoration: const InputDecoration(labelText: '비밀번호', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: '비밀번호',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
@@ -163,7 +187,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 FilledButton(
                   onPressed: _busy ? null : _login,
-                  style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
                   child: _busy ? const Text('확인 중…') : const Text('로그인'),
                 ),
               ],
@@ -194,6 +220,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // 실시간 표시 상태(EventChannel) — 폴링(_status)과 별개로 즉시 갱신된다.
   // 네이티브가 누적 스냅숏을 통째로 보내므로 마지막 이벤트 하나만 들고 있으면 된다.
   VitalStreamEvent? _vitals;
+  final _hrHistory = HeartRateHistory();
   int? _livePending;
   bool _authRejected = false;
 
@@ -206,7 +233,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _refresh();
     _timer = Timer.periodic(const Duration(seconds: 3), (_) => _refresh());
     _refreshOwn();
-    _ownTimer = Timer.periodic(const Duration(seconds: 60), (_) => _refreshOwn());
+    _ownTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _refreshOwn(),
+    );
     _subscribe();
   }
 
@@ -222,7 +252,10 @@ class _HomeScreenState extends State<HomeScreen> {
         (e) {
           if (!mounted) return;
           setState(() {
-            if (e.type == 'hr') _vitals = e;
+            if (e.type == 'hr') {
+              _vitals = e;
+              _recordHeartRate(e);
+            }
             if (e.pending != null) _livePending = e.pending;
             if (e.authRejected == true) _authRejected = true;
             if (e.uploadOk == true) _authRejected = false;
@@ -271,9 +304,15 @@ class _HomeScreenState extends State<HomeScreen> {
     //   화면이 안 흔들리고, 죽어 있으면 이 경로가 3초 안에 화면을 되살린다.
     //   즉시성은 스트림이, 정확성은 이 폴링이 맡는다.
     try {
-      final snap = await _bridge.invokeMapMethod<String, dynamic>('vitalsSnapshot');
+      final snap = await _bridge.invokeMapMethod<String, dynamic>(
+        'vitalsSnapshot',
+      );
       if (mounted && snap != null && snap['type'] == 'hr') {
-        setState(() => _vitals = VitalStreamEvent.fromMap(snap));
+        final event = VitalStreamEvent.fromMap(snap);
+        setState(() {
+          _vitals = event;
+          _recordHeartRate(event);
+        });
       }
     } catch (_) {
       // 브리지 부재(테스트 등) — 스트림 값만 유지한다.
@@ -310,6 +349,15 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
     );
+  }
+
+  /// 심박 이력에 한 점 넣는다. 스트림과 폴링이 **같은 값**을 주므로 같은 측정 시각은
+  /// 버퍼가 거른다 — 안 거르면 한 측정이 두 번 세어져 평균이 그쪽으로 끌린다.
+  void _recordHeartRate(VitalStreamEvent e) {
+    final bpm = e.bpm;
+    final at = e.measuredAt;
+    if (bpm == null || at == null) return;
+    _hrHistory.add(bpm, at);
   }
 
   /// 심박에만 상대 시각을 쓴다 — 5초마다 오는 값이라 나이가 곧 수신 상태다.
@@ -353,23 +401,29 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 6),
         FittedBox(
           fit: BoxFit.scaleDown,
-          child: Text(value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: has ? VgColors.primary : VgColors.muted,
-              )),
+          child: Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: has ? VgColors.primary : VgColors.muted,
+            ),
+          ),
         ),
         const SizedBox(height: 1),
-        Text(unit,
+        Text(
+          unit,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 9, color: VgColors.muted),
+        ),
+        if (detail != null)
+          Text(
+            detail,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 9, color: VgColors.muted)),
-        if (detail != null)
-          Text(detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9, color: VgColors.muted)),
+            style: const TextStyle(fontSize: 9, color: VgColors.muted),
+          ),
       ],
     );
   }
@@ -380,13 +434,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final lines = <Widget>[];
     for (var i = 0; i < cells.length; i += 5) {
       if (lines.isNotEmpty) lines.add(const SizedBox(height: 14));
-      lines.add(Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (var c = 0; c < 5; c++)
-            Expanded(child: i + c < cells.length ? cells[i + c] : const SizedBox()),
-        ],
-      ));
+      lines.add(
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var c = 0; c < 5; c++)
+              Expanded(
+                child: i + c < cells.length ? cells[i + c] : const SizedBox(),
+              ),
+          ],
+        ),
+      );
     }
     return Column(children: lines);
   }
@@ -422,26 +480,27 @@ class _HomeScreenState extends State<HomeScreen> {
   /// 값을 안 그리는 항목의 사유 한 줄. **빈 자리로 두지 않는다** — 빈 칸은 "아직 안 만들었다"
   /// 나 "고장" 으로 읽히고, 이 앱은 같은 자리(활동 에너지)에서 이미 사유를 적는 쪽을 택했다.
   Widget _heldRow(IconData icon, String label, String why) => Row(
-        children: [
-          Icon(icon, size: 13, color: VgColors.muted),
-          const SizedBox(width: 5),
-          Text(label, style: const TextStyle(fontSize: 11, color: VgColors.body)),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              why,
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: VgColors.muted),
-            ),
-          ),
-        ],
-      );
+    children: [
+      Icon(icon, size: 13, color: VgColors.muted),
+      const SizedBox(width: 5),
+      Text(label, style: const TextStyle(fontSize: 11, color: VgColors.body)),
+      const Spacer(),
+      Flexible(
+        child: Text(
+          why,
+          textAlign: TextAlign.right,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 10, color: VgColors.muted),
+        ),
+      ),
+    ],
+  );
 
   Widget _vitalsCard(VitalStreamEvent? vitals, List<VitalRow> bodyRows) {
     final d = vitals?.discreteValues ?? const <String, double>{};
-    String f(double? v, int digits) => v == null ? '--' : v.toStringAsFixed(digits);
+    String f(double? v, int digits) =>
+        v == null ? '--' : v.toStringAsFixed(digits);
     final psi = _serverRow('생리적 부담(PSI)');
     final stress = _serverRow('스트레스');
 
@@ -450,19 +509,36 @@ class _HomeScreenState extends State<HomeScreen> {
     String spec(String k) => discreteSpecs[k]!.label;
 
     final primary = <Widget>[
-      _metricCell(label: spec('hrv'), value: f(d['hrv'], 0), unit: 'ms', has: d['hrv'] != null),
-      _metricCell(label: spec('rhr'), value: f(d['rhr'], 0), unit: 'bpm', has: d['rhr'] != null),
-      _metricCell(label: spec('rr'), value: f(d['rr'], 1), unit: '회/분', has: d['rr'] != null),
       _metricCell(
-          label: '생리적 부담',
-          value: psi?.value ?? '--',
-          unit: psi?.unit ?? '/10',
-          has: psi != null),
+        label: spec('hrv'),
+        value: f(d['hrv'], 0),
+        unit: 'ms',
+        has: d['hrv'] != null,
+      ),
       _metricCell(
-          label: '스트레스',
-          value: stress?.value ?? '--',
-          unit: stress?.unit ?? '지수',
-          has: stress != null),
+        label: spec('rhr'),
+        value: f(d['rhr'], 0),
+        unit: 'bpm',
+        has: d['rhr'] != null,
+      ),
+      _metricCell(
+        label: spec('rr'),
+        value: f(d['rr'], 1),
+        unit: '회/분',
+        has: d['rr'] != null,
+      ),
+      _metricCell(
+        label: '생리적 부담',
+        value: psi?.value ?? '--',
+        unit: psi?.unit ?? '/10',
+        has: psi != null,
+      ),
+      _metricCell(
+        label: '스트레스',
+        value: stress?.value ?? '--',
+        unit: stress?.unit ?? '지수',
+        has: stress != null,
+      ),
     ];
 
     final steps = vitals?.steps;
@@ -470,22 +546,30 @@ class _HomeScreenState extends State<HomeScreen> {
     final still = vitals?.stillSec;
     final secondary = <Widget>[
       for (final r in bodyRows)
-        _metricCell(label: r.label, value: r.value, unit: r.unit, detail: r.detail, has: true),
+        _metricCell(
+          label: r.label,
+          value: r.value,
+          unit: r.unit,
+          detail: r.detail,
+          has: true,
+        ),
       _metricCell(
-          label: '걸음',
-          value: steps == null ? '--' : formatCount(steps),
-          unit: '보',
-          has: steps != null),
+        label: '걸음',
+        value: steps == null ? '--' : formatCount(steps),
+        unit: '보',
+        has: steps != null,
+      ),
       // ⚠ 오른 층은 격자에서 뺐다(2026-08-20 사용자 결정) — **수집은 계속한다.**
       //   애플 자신의 기록이 비어 있어(건강 앱 08-19 하루 1층) 화면에 올릴 값이 없다.
       //   유력한 원인은 상시 `HKWorkoutSession`(`locationType = .indoor`)이 고도 기반 지표를
       //   막는 것이고, 그 구성은 폰 강제종료·잠금 생존의 근거라 바꾸지 않는다.
       //   ⟹ 화면에서 빼되 **아래 보류 줄에 사유를 적는다**(빈 자리는 '빠뜨림'으로 읽힌다).
       _metricCell(
-          label: '정지 지속',
-          value: still?.toStringAsFixed(1) ?? '--',
-          unit: '초',
-          has: still != null),
+        label: '정지 지속',
+        value: still?.toStringAsFixed(1) ?? '--',
+        unit: '초',
+        has: still != null,
+      ),
     ];
 
     return Card(
@@ -494,8 +578,14 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('주요 생체',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: VgColors.ink)),
+            const Text(
+              '주요 생체',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: VgColors.ink,
+              ),
+            ),
             const SizedBox(height: 12),
             _cellGrid(primary),
             const SizedBox(height: 12),
@@ -506,7 +596,11 @@ class _HomeScreenState extends State<HomeScreen> {
             const Divider(height: 1, color: VgColors.hairline),
             const SizedBox(height: 8),
             // 빼놓은 것을 화면에도 적는다 — 빈 자리는 "아직 안 만들었다" 로 읽힌다.
-            _heldRow(Icons.local_fire_department_outlined, '활동 에너지', '보류 — 측정축 정리 중'),
+            _heldRow(
+              Icons.local_fire_department_outlined,
+              '활동 에너지',
+              '보류 — 측정축 정리 중',
+            ),
             const SizedBox(height: 4),
             _heldRow(Icons.stairs_outlined, '오른 층', '수집만 — 기기가 층을 거의 안 센다'),
           ],
@@ -515,81 +609,67 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// 현재 상태 카드 — 참고 디자인(사용자 제공)의 **배치만** 옮긴 것.
-  /// 좌 산소포화도 · 가운데 심박 링 · 우 추정 체온. 세 자리가 늘 같은 폭이라 링이 가운데 온다.
+  /// 심박 히어로 — 참고 디자인(사용자 제공)의 배치를 옮긴 것.
+  /// 큰 현재값 + 상태 배지 + 추이 그래프 + 평균/최소/최대. 그래프와 3분할 요약은
+  /// 폰이 실제로 받은 심박만 읽는다(`_hrHistory`).
   ///
-  /// ★ 아래 3열 밴드 행은 뺐다(2026-08-18 실기기 확인) — 심박은 링이, 산소·체온은 좌우가
-  /// 이미 말하고 있어 같은 값이 한 카드에 두 번 나왔다.
-  Widget _statusCard(VitalStreamEvent? vitals) {
-    final bpm = vitals?.bpm;
-    final receiving = bpm != null;
+  /// ★ 종전의 링(StatusRing)은 이 카드에서 뺐다 — 같은 값을 링과 큰 숫자가 두 번
+  ///   말하게 된다. 이 앱은 2026-08-18 실기기 확인에서 같은 이유로 3열 밴드 행을
+  ///   이미 한 번 지운 적이 있다.
+  Widget _heartRateCard(VitalStreamEvent? vitals) {
+    final receiving = vitals?.bpm != null;
+    return HeartRateHeroCard(
+      bpm: vitals?.bpm,
+      history: _hrHistory.samples,
+      footnote: receiving
+          ? '측정 ${_measuredAgoText()} · 배치 #${vitals?.seq ?? '-'}'
+          : null,
+    );
+  }
+
+  /// 심박 카드 아래 2분할 — 산소포화도와 추정 체온.
+  /// ⚠ 체온은 상태를 주지 않는다. 추정치가 입력이라 판정·경보에 올리지 않기로 한 값이다.
+  Widget _sideVitalsRow(VitalStreamEvent? vitals) {
     final spo2 = vitals?.spo2;
     final core = _serverRow('체온(심박 추정)');
-
-    return Card(
-      color: VgColors.primarySubtle,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(vgCardRadius),
-        side: const BorderSide(color: VgColors.primaryRing),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                // 좌 — 임계가 있어 상태 배지를 받는다.
-                Expanded(
-                  child: RingSideValue(
-                    label: '산소포화도',
-                    value: spo2 == null ? '--' : spo2.toStringAsFixed(0),
-                    unit: spo2 == null ? '' : '%',
-                    status: spo2 == null ? null : spo2Status(spo2),
-                    note: spo2 == null ? '미수신' : null,
-                  ),
-                ),
-                if (receiving)
-                  StatusRing(range: heartRateRange, value: bpm, unit: 'bpm')
-                else
-                  const SizedBox(
-                    width: 124,
-                    height: 124,
-                    child: Center(
-                      child: Text('수집 대기', style: TextStyle(fontSize: 13, color: VgColors.muted)),
-                    ),
-                  ),
-                // 우 — ★ 상태를 주지 않는다. 추정치가 입력이라 판정·경보에 올리지 않기로 한 값이다.
-                Expanded(
-                  child: RingSideValue(
-                    label: '체온(추정)',
-                    value: core?.value ?? '--',
-                    unit: core?.unit ?? '',
-                    note: core == null ? '미수신' : '의료 판정 아님',
-                  ),
-                ),
-              ],
-            ),
-            if (receiving) ...[
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  // 폰엔 활동 게이트가 없다 — 이 표기가 빠지면 작업 중 상승이 "주의" 로 읽힌다.
-                  const Text('안정 기준', style: TextStyle(fontSize: 10, color: VgColors.muted)),
-                  const Spacer(),
-                  Flexible(
-                    child: Text(
-                      '측정 ${_measuredAgoText()} · 배치 #${vitals?.seq ?? '-'}',
-                      textAlign: TextAlign.right,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 10, color: VgColors.muted),
-                    ),
-                  ),
-                ],
+    // ⚠ ListView 안의 Row 에 stretch 를 주면 자식이 무한 높이를 받는다.
+    //   두 카드 높이를 맞추려면 IntrinsicHeight 로 한 번 감싸야 한다.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _sideCard(
+              RingSideValue(
+                label: '산소포화도',
+                value: spo2 == null ? '--' : spo2.toStringAsFixed(0),
+                unit: spo2 == null ? '' : '%',
+                status: spo2 == null ? null : spo2Status(spo2),
+                note: spo2 == null ? '미수신' : null,
               ),
-            ],
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _sideCard(
+              RingSideValue(
+                label: '체온(추정)',
+                value: core?.value ?? '--',
+                unit: core?.unit ?? '',
+                note: core == null ? '미수신' : '의료 판정 아님',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sideCard(Widget child) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        child: child,
       ),
     );
   }
@@ -600,16 +680,22 @@ class _HomeScreenState extends State<HomeScreen> {
     final vitals = _vitals;
     // 워치가 보낸 것 + 서버가 계산한 것을 한 격자에 둔다. 둘 다 "지금 이 사람의 몸" 이라
     // 성격이 같고, 출처가 다르다고 나누면 같은 걸 두 번 찾게 된다(활동 누계와는 다르다).
-    final sections = splitVitalSections(vitals == null ? const [] : buildVitalRows(vitals));
+    final sections = splitVitalSections(
+      vitals == null ? const [] : buildVitalRows(vitals),
+    );
     // 요약 행에 올라간 것은 격자에서 뺀다 — 같은 값이 한 화면에 두 번 뜨면
     // 어느 쪽이 최신인지 읽는 사람이 판단해야 한다.
-    final bodyRows = [...sections.body, ...buildServerRows(_own)]
-        .where((r) => !summaryLabels.contains(r.label))
-        .toList();
+    final bodyRows = [
+      ...sections.body,
+      ...buildServerRows(_own),
+    ].where((r) => !summaryLabels.contains(r.label)).toList();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('VitAlGuard', style: TextStyle(fontWeight: FontWeight.w700)),
+        title: const Text(
+          'VitAlGuard',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
         actions: [
           // ★ 큐가 밀리면 톱니에 점을 찍는다 — 전송 상태를 설정 안으로 옮기면서
           //   "밀리고 있다" 는 신호까지 함께 숨기지 않기 위한 것이다(평시엔 아무 표시 없음).
@@ -624,7 +710,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   )
                 : const Icon(Icons.settings_outlined),
           ),
-          IconButton(onPressed: _logout, tooltip: '로그아웃', icon: const Icon(Icons.logout)),
+          IconButton(
+            onPressed: _logout,
+            tooltip: '로그아웃',
+            icon: const Icon(Icons.logout),
+          ),
         ],
       ),
       // ★ 본문이 유리 바 **아래로 지나가야** 블러가 보인다. 대신 마지막 카드가 가리므로
@@ -633,11 +723,7 @@ class _HomeScreenState extends State<HomeScreen> {
       body: switch (_tab) {
         0 => _summaryBody(vitals, bodyRows),
         1 => const RecordScreen(),
-        _ => _notBuiltYet(
-            Icons.grid_view,
-            '둘러보기',
-            '담을 내용을 정하는 중입니다.',
-          ),
+        _ => _notBuiltYet(Icons.grid_view, '둘러보기', '담을 내용을 정하는 중입니다.'),
       },
       bottomNavigationBar: GlassTabBar(
         tabs: _tabs,
@@ -670,14 +756,18 @@ class _HomeScreenState extends State<HomeScreen> {
             MaterialBanner(
               backgroundColor: VgColors.danger.withValues(alpha: 0.08),
               content: const Text('서버가 인증을 거부했습니다. 다시 로그인해 주세요.'),
-              actions: [TextButton(onPressed: _logout, child: const Text('재로그인'))],
+              actions: [
+                TextButton(onPressed: _logout, child: const Text('재로그인')),
+              ],
             ),
-          _statusCard(vitals),
+          _heartRateCard(vitals),
+          const SizedBox(height: 10),
+          _sideVitalsRow(vitals),
           const SizedBox(height: 10),
           // 측정 안 된 종류는 아랫줄에 칸 자체가 없다 — 0 을 적으면 "측정했는데 0" 이 된다.
           _vitalsCard(vitals, bodyRows),
         ],
-        ),
+      ),
     );
   }
 
@@ -692,16 +782,29 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Icon(icon, size: 34, color: VgColors.muted),
             const SizedBox(height: 12),
-            Text(title,
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700, color: VgColors.ink)),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: VgColors.ink,
+              ),
+            ),
             const SizedBox(height: 6),
-            const Text('준비 중',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: VgColors.caution)),
+            const Text(
+              '준비 중',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: VgColors.caution,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text(why,
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, color: VgColors.body)),
+            Text(
+              why,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12, color: VgColors.body),
+            ),
           ],
         ),
       ),

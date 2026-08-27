@@ -70,7 +70,13 @@ void main() {
     });
     await _pumpHome(tester);
     // 스트림 이벤트 0건인데도 값이 보인다 — 종전 코드였다면 `--` 로 남았다.
-    expect(find.text('83'), findsOneWidget);
+    // ⚠ `findsOneWidget` 로 세지 않는다 — 심박 카드는 같은 값을 **큰 현재값과 평균/최소/최대**
+    //   네 곳에 적는다(점이 하나면 셋이 같은 값이다). 대신 44pt 인 **히어로 값 하나**만 센다.
+    //   `findsWidgets` 로 푸는 것은 안 된다 — 요약칸만 채워져도 통과해 버린다.
+    final hero = tester
+        .widgetList<Text>(find.text('83'))
+        .where((t) => t.style?.fontSize == 44);
+    expect(hero, hasLength(1));
   });
 
   testWidgets('★ 네이티브가 값을 안 주면 지어내지 않는다', (tester) async {
