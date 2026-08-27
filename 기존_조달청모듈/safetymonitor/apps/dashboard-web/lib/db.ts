@@ -691,6 +691,9 @@ async function initSchema(): Promise<void> {
       confirmed_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_pcc_notice ON procure_cost_confirm(notice_id, id DESC);
+    -- 공고 제목 — "확정된 공고 다시 보기"용(2026-08-27). 공고가 목록 롤링 창(최근 3일)에서
+    -- 빠지면 notice_id 만으로는 사람이 못 알아본다. 확정 시점의 제목을 함께 얼려 둔다.
+    ALTER TABLE procure_cost_confirm ADD COLUMN IF NOT EXISTS notice_title TEXT;
 
     -- AED 실 연동 장비 등록 — 관리자가 등록한 실제 장비(RPi가 aed_id로 알림 레벨 폴링). 데모 프리셋(AED_DEVICES)과 별개.
     -- 이 테이블 행만 '실 연동', 코드 프리셋은 '데모(발표용)'. 단말 배터리·교환주기는 등록 입력값.
@@ -1856,6 +1859,7 @@ export async function getUsePlan(siteId: string): Promise<UsePlanRow | null> {
 export type ProcureCostConfirmRow = {
   id: number;
   notice_id: string;
+  notice_title: string | null; // 확정 시점의 공고 제목 — 롤링 창에서 빠져도 사람이 알아본다
   target_amount: number | null;
   declared_cost: number | null;
   construction_type: string | null;
@@ -1868,7 +1872,7 @@ export type ProcureCostConfirmRow = {
   confirmed_at: string;
 };
 
-const PCC_COLS = `id, notice_id, target_amount, declared_cost, construction_type,
+const PCC_COLS = `id, notice_id, notice_title, target_amount, declared_cost, construction_type,
                   evidence_file, evidence_url, evidence_locus, draft_json, note,
                   confirmed_by, confirmed_at`;
 
@@ -1877,12 +1881,13 @@ export async function insertProcureCostConfirm(
 ): Promise<ProcureCostConfirmRow> {
   const { rows } = await q<ProcureCostConfirmRow>(
     `INSERT INTO procure_cost_confirm
-       (notice_id, target_amount, declared_cost, construction_type,
+       (notice_id, notice_title, target_amount, declared_cost, construction_type,
         evidence_file, evidence_url, evidence_locus, draft_json, note, confirmed_by, confirmed_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, ${NOW_ISO})
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ${NOW_ISO})
      RETURNING ${PCC_COLS}`,
     [
       input.notice_id.slice(0, 60),
+      input.notice_title?.slice(0, 300) ?? null,
       input.target_amount == null ? null : Math.round(input.target_amount),
       input.declared_cost == null ? null : Math.round(input.declared_cost),
       input.construction_type?.slice(0, 20) ?? null,
@@ -1907,6 +1912,21 @@ export async function latestProcureCostConfirm(noticeId: string): Promise<Procur
     [noticeId],
   );
   return rows[0] ?? null;
+}
+
+/** 확정된 공고 전체(공고당 현행 1건·최신 확정 먼저) — "확정 공고 다시 보기"용(2026-08-27).
+ *  공고 목록은 최근 3일 롤링 창이라 확정해 둔 공고가 목록에서 사라진다 — 이 조회는 창과 무관하게
+ *  DB 의 확정 이력을 근거로 보여 준다. draft_json 은 무겁고 목록에 불필요해 뺀다. */
+export async function listAllProcureCostConfirms(limit = 50): Promise<Omit<ProcureCostConfirmRow, "draft_json">[]> {
+  const lim = Math.min(200, Math.max(1, Math.floor(limit)));
+  const { rows } = await q<Omit<ProcureCostConfirmRow, "draft_json">>(
+    `SELECT id, notice_id, notice_title, target_amount, declared_cost, construction_type,
+            evidence_file, evidence_url, evidence_locus, note, confirmed_by, confirmed_at
+       FROM (SELECT DISTINCT ON (notice_id) * FROM procure_cost_confirm ORDER BY notice_id, id DESC) cur
+      ORDER BY id DESC LIMIT $1`,
+    [lim],
+  );
+  return rows;
 }
 
 /** 확정 이력(최신 먼저) — 화면에서 "누가 언제 무엇을 바꿨나"를 보여 준다. */

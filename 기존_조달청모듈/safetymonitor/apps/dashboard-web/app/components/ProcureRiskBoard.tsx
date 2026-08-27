@@ -30,12 +30,36 @@ function verdictChip(v: string): string {
 }
 const VERDICT_SHORT: Record<string, string> = { "과소계상_의심": "과소계상 의심", "과다계상_의심": "과다계상 의심", "검토필요": "검토 필요", "정상": "정상" };
 
+// 확정된 공고 목록 행 — /api/g2b/cost-confirm (id 없음) 응답.
+type ConfirmedItem = {
+  id: number;
+  notice_id: string;
+  notice_title: string | null;
+  target_amount: number | null;
+  declared_cost: number | null;
+  construction_type: string | null;
+  confirmed_by: string;
+  confirmed_at: string;
+};
+
 export default function ProcureRiskBoard() {
   const [items, setItems] = useState<ProcureRiskDetail[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<"live" | "mock">("mock");
+  // 확정된 공고 전체(공고당 현행 1건) — 공고 목록은 최근 3일 롤링 창이라, 창에서 빠진 확정
+  // 공고를 다시 볼 자리가 없었다(2026-08-27). DB 확정 이력이 근거라 창과 무관하다.
+  const [confirmed, setConfirmed] = useState<ConfirmedItem[]>([]);
+  const reloadConfirmed = useCallback(async () => {
+    const r = await fetch("/api/g2b/cost-confirm", { cache: "no-store" });
+    if (!r.ok) return;
+    const j = (await r.json()) as { items?: ConfirmedItem[] };
+    setConfirmed(j.items ?? []);
+  }, []);
+  useEffect(() => {
+    void reloadConfirmed();
+  }, [reloadConfirmed]);
 
   useEffect(() => {
     let alive = true;
@@ -130,6 +154,53 @@ export default function ProcureRiskBoard() {
               );
             })}
             {items.length === 0 && <li className="text-xs text-muted">표시할 공고가 없습니다.</li>}
+
+            {/* 확정된 공고 다시 보기 — 목록(최근 3일 창)에서 빠진 공고의 확정 이력도 여기 남는다. */}
+            {confirmed.length > 0 && (
+              <li className="pt-2">
+                <p className="text-[11px] font-semibold text-body dark:text-on-dark-soft">
+                  확정된 공고 ({confirmed.length})
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {confirmed.map((c) => {
+                    const inList = items.some((d) => d.notice.id === c.notice_id);
+                    return (
+                      <li
+                        key={c.notice_id}
+                        className="rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          {inList ? (
+                            <button
+                              onClick={() => setSelected(c.notice_id)}
+                              className="truncate text-left text-xs font-semibold text-primary underline-offset-2 hover:underline"
+                            >
+                              {c.notice_title ?? c.notice_id}
+                            </button>
+                          ) : (
+                            <span
+                              className="truncate text-xs font-semibold text-ink dark:text-on-dark"
+                              title="공고가 최근 목록 창(3일)에서 빠짐 — 확정 이력만 표시"
+                            >
+                              {c.notice_title ?? c.notice_id}
+                            </span>
+                          )}
+                          <span className="shrink-0 rounded-pill bg-[#05b169]/12 px-1.5 py-0.5 text-[10px] font-semibold text-semantic-up dark:bg-[#05b169]/25">
+                            확정
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+                          {c.confirmed_at.slice(0, 16).replace("T", " ")} · {c.confirmed_by} · 계상액{" "}
+                          {won(c.declared_cost)}
+                          {c.construction_type && ` · ${c.construction_type}`}
+                          {!inList && " · 목록 창 밖"}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            )}
           </ul>
 
           {/* 선택 카드 + 담당관 확정 */}
@@ -140,8 +211,12 @@ export default function ProcureRiskBoard() {
                 <ProcureCostConfirm
                   key={current.notice.id}
                   noticeId={current.notice.id}
+                  noticeTitle={current.notice.title}
                   specDocs={current.notice.specDocs}
-                  onConfirmed={() => refreshOne(current.notice.id)}
+                  onConfirmed={() => {
+                    refreshOne(current.notice.id);
+                    reloadConfirmed();
+                  }}
                 />
               </>
             )}

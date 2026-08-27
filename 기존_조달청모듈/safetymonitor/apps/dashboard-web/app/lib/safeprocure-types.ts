@@ -59,6 +59,8 @@ export interface NoticeSummary {
   endDate?: string;
   licenses: string[]; // 면허/업종 제한
   winRate?: number | null; // 낙찰률(%) — 계약 건은 낙찰정보서비스에서 보강
+  /** 시공사(계약업체명, cntrctCorpNm) — 계약 건에만 있다. 시공사 가입 화이트리스트의 출처. */
+  contractor?: string | null;
 }
 
 /** 공고 상세(분석 입력). */

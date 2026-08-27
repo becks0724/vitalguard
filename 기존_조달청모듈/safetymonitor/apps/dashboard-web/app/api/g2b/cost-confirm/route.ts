@@ -8,7 +8,12 @@
 import { NextResponse } from "next/server";
 
 import { getSession, procureConfirmAccess } from "../../../../lib/admin-auth";
-import { insertProcureCostConfirm, latestProcureCostConfirm, listProcureCostConfirms } from "../../../../lib/db";
+import {
+  insertProcureCostConfirm,
+  latestProcureCostConfirm,
+  listAllProcureCostConfirms,
+  listProcureCostConfirms,
+} from "../../../../lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -27,8 +32,18 @@ function money(v: unknown): number | null | undefined {
 
 export async function GET(req: Request) {
   const id = new URL(req.url).searchParams.get("id")?.trim();
-  if (!id || !ID_OK.test(id)) {
-    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "공고번호(id)가 필요합니다" } }, { status: 400 });
+  // id 없는 GET = 확정된 공고 전체(공고당 현행 1건) — 공고가 롤링 창에서 빠져도 확정 이력을 본다.
+  if (!id) {
+    try {
+      const items = await listAllProcureCostConfirms();
+      return NextResponse.json({ ok: true, items });
+    } catch (err) {
+      console.error("[api/g2b/cost-confirm GET all]", err);
+      return NextResponse.json({ error: { code: "INTERNAL", message: "확정 목록 조회 실패" } }, { status: 500 });
+    }
+  }
+  if (!ID_OK.test(id)) {
+    return NextResponse.json({ error: { code: "BAD_REQUEST", message: "잘못된 공고번호(id)" } }, { status: 400 });
   }
   try {
     const [confirmed, history] = await Promise.all([latestProcureCostConfirm(id), listProcureCostConfirms(id)]);
@@ -106,6 +121,7 @@ export async function POST(req: Request) {
   try {
     const row = await insertProcureCostConfirm({
       notice_id: noticeId,
+      notice_title: typeof body.noticeTitle === "string" ? body.noticeTitle : null,
       target_amount: targetAmount,
       declared_cost: declaredCost,
       construction_type: constructionType,

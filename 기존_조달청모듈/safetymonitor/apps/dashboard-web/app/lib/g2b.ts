@@ -135,6 +135,23 @@ function normalizeDetail(row: Record<string, unknown>): NoticeDetail {
 // ── 계약(핵심: 진행 중 현장) 정규화 ────────────────────────────────────
 // 필드명은 실응답([g2b-contract-raw] 로그, 2026-07-09)으로 교정 —
 // 공사명=cnstwkNm, 계약기관=cntrctInsttNm, 착공=cbgnDate, 준공=ttalCcmpltDate, 계약일=cntrctDate.
+// 계약업체명 — 전용 필드가 없고 corpList 팩킹 문자열 안에 있다(2026-08-27 원시 응답 실측):
+//   "[1^주계약업체^단독^주식회사 백산건설^정지영^대한민국^100^주식회사 백산건설^^3178108200]"
+//   항목 구분 "],[" · 필드 구분 "^" · 4번째(인덱스 3) = 업체명. 공동도급이면 주계약업체를 우선한다.
+function contractorFromCorpList(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const entries = raw.replace(/^\[|\]$/g, "").split("],[");
+  let first: string | null = null;
+  for (const e of entries) {
+    const f = e.split("^");
+    const name = f[3]?.trim();
+    if (!name) continue;
+    if (!first) first = name;
+    if (f[1]?.includes("주계약")) return name;
+  }
+  return first;
+}
+
 function normalizeContractSummary(row: Record<string, unknown>): NoticeSummary {
   const licenseRaw = pick(row, ["mainCnsttyNm", "cntrctCorpNm", "corpNm", "indstrytyNm"]);
   return {
@@ -148,6 +165,8 @@ function normalizeContractSummary(row: Record<string, unknown>): NoticeSummary {
     startDate: normDate(pick(row, ["cbgnDate", "cntrctDate", "cntrctDt", "cntrctBgnDt", "cntrctCnclsDt", "startDate"])),
     endDate: normDate(pick(row, ["ttalCcmpltDate", "thtmCcmpltDate", "cntrctEndDt", "cntrctPrdEndDt", "endDate"])),
     licenses: licenseRaw ? [licenseRaw] : [],
+    // 시공사(계약업체명) — 종전엔 버려지던 정보. 시공사 가입 화이트리스트·화면 표기의 출처.
+    contractor: contractorFromCorpList(pick(row, ["corpList"])) ?? pick(row, ["cntrctCorpNm", "corpNm"]) ?? null,
   };
 }
 function normalizeContractDetail(row: Record<string, unknown>): NoticeDetail {
@@ -240,6 +259,7 @@ function toSummary(d: NoticeDetail): NoticeSummary {
     endDate: d.endDate,
     licenses: d.licenses,
     winRate: d.winRate ?? null,
+    contractor: d.contractor ?? null,
   };
 }
 

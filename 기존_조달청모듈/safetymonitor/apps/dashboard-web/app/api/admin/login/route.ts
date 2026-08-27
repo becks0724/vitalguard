@@ -9,7 +9,7 @@ import {
 } from "../../../../lib/admin-auth";
 import { loginLockRemainingMs, recordLoginResult } from "../../../../lib/login-attempts";
 import { findUserByUsername } from "../../../../lib/db";
-import { DEMO_ENABLED, verifyDemoMember } from "../../../../lib/demo-members";
+import { DEMO_ENABLED, getDemoProfile, verifyDemoMember } from "../../../../lib/demo-members";
 import { verifyPassword } from "../../../../lib/password";
 
 export async function POST(request: Request) {
@@ -60,8 +60,9 @@ export async function POST(request: Request) {
     await recordLoginResult(lockKey, true);
     return NextResponse.json({
       ok: true,
-      token: createSession("owner", id),
+      token: createSession("owner", id, "vitalguard"),
       role: "owner",
+      orgType: "vitalguard",
     });
   }
 
@@ -75,7 +76,8 @@ export async function POST(request: Request) {
         { status: 401 },
       );
     }
-    return NextResponse.json({ ok: true, token: createSession("admin", id), role: "admin" });
+    const demoOrg = getDemoProfile(id)?.org_type;
+    return NextResponse.json({ ok: true, token: createSession("admin", id, demoOrg), role: "admin", orgType: demoOrg });
   }
 
   // 2) DB 가입 관리자 — 비번 검증 후 승인 상태에 따라 분기.
@@ -133,8 +135,9 @@ export async function POST(request: Request) {
   // 임시 비밀번호로 들어온 경우 화면이 "내 정보에서 바꾸라"고 안내하도록 표식을 함께 내린다.
   return NextResponse.json({
     ok: true,
-    token: createSession("admin", user.username),
+    token: createSession("admin", user.username, user.org_type),
     role: "admin",
+    orgType: user.org_type,
     mustChangePassword: user.temp_password_expires_at !== null,
   });
 }

@@ -54,7 +54,8 @@ test("확정하면 판정이 갱신된다 — 저장만 되고 끝나지 않는�
   assert.match(risk, /confirmedType \?\? classifyConstructionType/, "확정 공사종류가 추정에 밀린다");
   assert.match(noticeRoute, /buildRiskProfile\(notice, tags, confirmed\?\.construction_type/, "확정 공사종류가 판정에 안 넘어간다");
   // 화면도 확정 직후 다시 받아야 한다 — 안 그러면 칩이 '검토 필요'로 남아 아무 일도 안 한 것처럼 보인다.
-  assert.match(board, /onConfirmed=\{\(\) => refreshOne\(current\.notice\.id\)\}/, "확정 후 갱신이 배선되지 않았다");
+  // 확정 후 갱신은 두 갈래다 — 판정(refreshOne)과 확정 공고 목록(reloadConfirmed).
+  assert.match(board, /refreshOne\(current\.notice\.id\);\s*\n\s*reloadConfirmed\(\);/, "확정 후 갱신이 배선되지 않았다");
 });
 
 // ── ①-2 역할 분리(2026-08-27 사용자 결정 3차) — 확정은 owner 또는 현장 담당관만
@@ -84,14 +85,20 @@ test("담당관 부여 — 시공사에게는 부여되지 않는다(라우트·
   assert.match(db, /SET site_officer = \$1 WHERE id = \$2 AND \(\$1 = false OR org_type <> 'contractor'\)/, "DB 쪽 시공사 제외 조건 소실");
 });
 
-// 시공사 가입은 상호 화이트리스트가 비어 있는 동안 서버 게이트가 자동으로 막는다 —
-// 목록을 채우는 것이 곧 개방이므로, 게이트 함수가 시공사 목록을 실제로 보는지 본다.
+// 시공사 가입은 상호 화이트리스트가 잠금장치다 — 목록을 채우는 것이 곧 개방이다.
+// 2026-08-27 사용자 결정으로 **데모용 개방**: 나라장터 실계약 3건의 주계약업체로 채웠다.
 test("시공사 가입 게이트 — 상호 화이트리스트가 잠금장치다", () => {
   const companies = read("lib/companies.ts");
   assert.match(companies, /CONTRACTOR_COMPANIES/, "시공사 상호 목록 소실");
   assert.match(companies, /if \(orgType === "contractor"\) return CONTRACTOR_COMPANIES;/, "가입 게이트가 시공사 목록을 안 본다");
   const org = read("lib/org-type.ts");
   assert.match(org, /"vitalguard", "member", "contractor"/, "org_type 에서 contractor 가 사라졌다");
+  // 목록은 실계약 실측 출처가 주석으로 남아 있어야 한다 — 근거 없는 상호가 끼는 것을 막는다.
+  assert.match(companies, /R26TE13895124/, "화이트리스트 출처(계약번호) 주석 소실");
+  assert.match(companies, /"주식회사 백산건설", "현대도건 주식회사", "성광종합건설\(주\)"/, "실측 시공사 3사 목록이 바뀌었다 — 출처 주석과 함께 갱신할 것");
+  // 가입 화면에도 시공사 유형이 열려 있어야 한다(목록만 채우고 UI 가 없으면 개방이 아니다).
+  const login = read("app/components/LoginScreen.tsx");
+  assert.match(login, /value: "contractor" as const, label: t\.orgTypeContractor/, "가입 화면에 시공사 유형이 없다");
 });
 
 // ── ①-3 태그 사전 분리(2026-08-27 사용자 결정 4차) — 안전조달 전용 사전만 쓴다
@@ -103,6 +110,51 @@ test("안전조달은 전용 태그 사전만 쓴다 — 공용 사전에 얹지
   // 역방향 — 배치 어시스턴트가 조달 전용 사전을 끌어다 쓰면 분리가 무의미해진다.
   const assignment = read("app/api/assignment/task-doc/route.ts") + read("lib/assignment-rules.ts");
   assert.doesNotMatch(assignment, /procure-risk-tags/, "배치 어시스턴트가 조달 전용 사전을 쓴다");
+});
+
+// ── ①-4 시공사 열람 차단(2026-08-27 사용자 결정 5차 "다음에 이어갈만한 것 진행") ─────
+//   시공사 실계정이 발급되면 그 계정도 role=admin 이라, 로그인만 보는 게이트로는 관제 생체
+//   데이터까지 전부 열린다. 공용 게이트(verifyBasicAuth)가 시공사 세션을 **기본 거부**하고,
+//   제출 통로 두 곳만 명시적으로 연다 — 새 라우트가 생겨도 기본 보호되는 구조.
+test("시공사 세션은 관제 API 에서 기본 거부다 — 제출 통로만 연다", () => {
+  const auth = read("lib/admin-auth.ts");
+  assert.match(auth, /opts\?\.allowContractor === true \|\| info\.orgType !== "contractor"/, "기본 거부가 사라졌다 — 시공사가 관제 데이터를 본다");
+  // 제출 통로 2곳(주간보고 수치·사진)만 허용 — 여기가 늘면 그만큼 시공사에게 열린 것이다.
+  const inputs = read("app/api/weekly-report/inputs/route.ts");
+  const photos = read("app/api/weekly-report/photos/route.ts");
+  assert.match(inputs, /verifyBasicAuth\(req, \{ allowContractor: true \}\)/, "수치 제출 통로가 닫혔다 — 시공사가 제출을 못 한다");
+  assert.match(photos, /verifyBasicAuth\(req, \{ allowContractor: true \}\)/, "사진 제출 통로가 닫혔다");
+});
+
+test("orgType 클레임이 세 발급 경로 전부에 실린다 — 하나라도 빠지면 그 경로로 차단이 풀린다", () => {
+  const login = read("app/api/admin/login/route.ts");
+  assert.match(login, /createSession\("owner", id, "vitalguard"\)/, "owner 발급에 orgType 누락");
+  assert.match(login, /createSession\("admin", id, demoOrg\)/, "데모 발급에 orgType 누락");
+  assert.match(login, /createSession\("admin", user\.username, user\.org_type\)/, "DB 가입자 발급에 orgType 누락");
+  const refresh = read("app/api/admin/session/refresh/route.ts");
+  assert.match(refresh, /createSession\(session\.role, session\.username, session\.orgType\)/, "리프레시가 orgType 을 흘린다 — 연장 순간 차단이 풀린다");
+  const google = read("app/api/auth/google/callback/route.ts");
+  assert.match(google, /createSession\("admin", existing\.username, existing\.org_type\)/, "구글 로그인에 orgType 누락");
+});
+
+test("시공사 세션은 화면에서도 제출 화면으로만 간다 — 클레임을 읽어 리다이렉트", () => {
+  const gate = read("app/components/LoginGate.tsx");
+  assert.match(gate, /getSessionOrgType\(\) === "contractor"/, "시공사 판정이 사라졌다");
+  assert.match(gate, /window\.location\.pathname\.startsWith\("\/contractor"\)/, "허용 경로 판정 소실");
+  assert.match(gate, /if \(contractorMisrouted\) return null;/, "이동 중 관제 화면이 순간 노출된다");
+  // 클레임은 저장 키가 아니라 토큰에서 읽는다 — 발급 경로 셋의 저장 누락 위험을 원천 제거.
+  const tok = read("app/components/session-token.ts");
+  assert.match(tok, /export function getSessionOrgType/, "클레임 리더 소실");
+});
+
+// ── ①-5 확정된 공고 다시 보기 — 공고 목록은 3일 롤링 창이라 확정 공고가 목록에서 사라진다.
+test("확정 공고 목록이 롤링 창과 무관하게 남는다 — 제목을 확정 시점에 얼려 둔다", () => {
+  assert.match(db, /listAllProcureCostConfirms/, "전체 확정 조회 소실");
+  assert.match(db, /DISTINCT ON \(notice_id\)/, "공고당 현행 1건 규칙 소실 — 정정 이력이 목록에 중복된다");
+  assert.match(db, /ADD COLUMN IF NOT EXISTS notice_title/, "제목 컬럼 소실 — 창에서 빠진 공고를 사람이 못 알아본다");
+  assert.match(confirmRoute, /notice_title: typeof body\.noticeTitle === "string"/, "확정 시 제목 저장이 사라졌다");
+  assert.match(board, /확정된 공고 \(\{confirmed\.length\}\)/, "확정 공고 패널 소실");
+  assert.match(board, /목록 창 밖/, "창 밖 공고 표시가 사라졌다 — 클릭 안 되는 이유를 화면이 설명 못 한다");
 });
 
 // ── ② 확정자는 세션에서만 온다

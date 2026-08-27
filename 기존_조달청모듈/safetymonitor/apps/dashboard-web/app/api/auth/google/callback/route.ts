@@ -57,7 +57,7 @@ export async function GET(request: Request) {
 
   if (existing.status === "approved") {
     // 승인됨 — 세션 발급 후 핸드오프 쿠키로 클라이언트에 전달.
-    const token = createSession("admin", existing.username);
+    const token = createSession("admin", existing.username, existing.org_type);
     const res = go("?gauth=1");
     res.cookies.set("vg_handoff", token, {
       httpOnly: true,

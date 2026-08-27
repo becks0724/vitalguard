@@ -12,7 +12,7 @@ const MAX_PHOTOS = 20;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024; // 파일당 10MB
 
 export async function POST(req: Request) {
-  if (!verifyBasicAuth(req)) {
+  if (!verifyBasicAuth(req, { allowContractor: true })) {
     return NextResponse.json({ error: { code: "UNAUTH", message: "인증이 필요합니다" } }, { status: 401 });
   }
   try {
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  if (!verifyBasicAuth(req)) {
+  if (!verifyBasicAuth(req, { allowContractor: true })) {
     return NextResponse.json({ error: { code: "UNAUTH", message: "인증이 필요합니다" } }, { status: 401 });
   }
   const url = new URL(req.url);

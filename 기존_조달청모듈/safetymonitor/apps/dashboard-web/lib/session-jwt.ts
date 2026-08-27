@@ -8,6 +8,10 @@ export type SessionRole = "owner" | "admin";
 export type SessionClaims = {
   sub: string; // username
   role: SessionRole;
+  /** 가입 유형(vitalguard|member|contractor) — 시공사 세션의 관제 데이터 차단 판정용(2026-08-27).
+   *  ⚠ 옵셔널인 이유 = 배포 시점에 살아 있는 구 토큰엔 이 클레임이 없다. 구 토큰은 전부
+   *  직원(관제) 계정이므로 "없음 = 직원"으로 해석한다 — 시공사 실계정은 아직 발급 전이다. */
+  orgType?: string;
   iat: number; // 발급(초)
   exp: number; // 만료(초)
 };
@@ -53,12 +57,13 @@ function sign(data: string): string {
   return createHmac("sha256", signingKey()).update(data).digest("base64url");
 }
 
-export function signSessionJwt(input: { sub: string; role: SessionRole }): string {
+export function signSessionJwt(input: { sub: string; role: SessionRole; orgType?: string }): string {
   const now = Math.floor(Date.now() / 1000);
   const header = b64urlJson({ alg: "HS256", typ: "JWT" });
   const payload = b64urlJson({
     sub: input.sub,
     role: input.role,
+    ...(input.orgType ? { orgType: input.orgType } : {}),
     iat: now,
     exp: now + ttlSec(),
   });

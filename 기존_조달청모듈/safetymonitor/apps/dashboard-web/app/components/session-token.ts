@@ -41,3 +41,19 @@ export function getSessionRole(): string | null {
     return null;
   }
 }
+
+// 가입 유형(orgType) — 토큰 페이로드에서 직접 읽는다(서명 검증은 서버 몫, 여기선 표시·라우팅용).
+// ★ 별도 저장 키를 안 만드는 이유 = 로그인 경로가 셋(비번·구글 핸드오프·리프레시)이라 저장을
+//   한 곳이라도 빠뜨리면 어긋난다. 클레임은 토큰 자체에 있으니 읽는 쪽을 하나로 모은다.
+//   구 토큰(클레임 없음)은 null = 직원으로 해석(시공사 실계정은 클레임 도입 후에만 생긴다).
+export function getSessionOrgType(): string | null {
+  try {
+    const token = window.sessionStorage.getItem(SESSION_KEY);
+    const payload = token?.split(".")[1];
+    if (!payload) return null;
+    const claims = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { orgType?: string };
+    return claims.orgType ?? null;
+  } catch {
+    return null;
+  }
+}

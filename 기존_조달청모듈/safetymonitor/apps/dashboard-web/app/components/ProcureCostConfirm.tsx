@@ -62,10 +62,13 @@ function locus(h: CostHit | null): string {
 
 export default function ProcureCostConfirm({
   noticeId,
+  noticeTitle,
   specDocs,
   onConfirmed,
 }: {
   noticeId: string;
+  /** 확정 이력에 얼려 둘 공고 제목 — 공고가 롤링 창에서 빠져도 사람이 알아보게. */
+  noticeTitle?: string;
   specDocs?: { name: string; url: string }[];
   onConfirmed?: () => void;
 }) {
@@ -140,6 +143,7 @@ export default function ProcureCostConfirm({
         },
         body: JSON.stringify({
           noticeId,
+          noticeTitle,
           targetAmount: target,
           declaredCost: declared,
           constructionType: ctype || null,

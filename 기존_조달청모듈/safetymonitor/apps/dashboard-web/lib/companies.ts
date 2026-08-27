@@ -9,10 +9,13 @@ export const VITALGUARD_COMPANY = "VitAlGuard";
 // 회원사 — 회원사 관리자 유형의 선택지.
 export const MEMBER_COMPANIES = ["스마트인재개발원", "조달청", "고용노동부", "행정안전부"];
 
-// 시공사 — contractor 유형의 선택지(2026-08-27 실계정 발급 결정).
-// ⚠ 비어 있는 동안은 시공사 가입이 서버 게이트에서 자동으로 막힌다(고를 상호가 없다).
-//   어떤 시공사를 받을지는 발주 계약과 맞물린 결정이라 여기 하드코딩 목록을 채우는 것으로 연다.
-export const CONTRACTOR_COMPANIES: string[] = [];
+// 시공사 — contractor 유형의 선택지(2026-08-27 실계정 발급 결정 · 데모용).
+// 출처 = 나라장터 실계약 3건의 주계약업체(계약 API corpList 원시 응답 실측, 2026-08-27):
+//   R26TE13895124 시민문화복지센터 내진성능 보강공사 → 주식회사 백산건설
+//   R26TE13894834 사직동 코워킹스페이스 리모델링공사 → 현대도건 주식회사
+//   R26TE13877355 삼계2교 외 2개소 교량보수공사     → 성광종합건설(주)
+// ⚠ 목록을 비우면 시공사 가입이 서버 게이트에서 다시 잠긴다(고를 상호가 없어진다).
+export const CONTRACTOR_COMPANIES: string[] = ["주식회사 백산건설", "현대도건 주식회사", "성광종합건설(주)"];
 
 export const ALLOWED_COMPANIES = [VITALGUARD_COMPANY, ...MEMBER_COMPANIES, ...CONTRACTOR_COMPANIES];
 
