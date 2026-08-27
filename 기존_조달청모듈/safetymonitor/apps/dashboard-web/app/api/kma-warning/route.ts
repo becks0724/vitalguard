@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../lib/admin-auth";
 import { cronAuth } from "../../../lib/cron-auth";
+import { clearLiftedKmaAlertStates } from "../../../lib/db";
 import { notifyEnvAlerts } from "../../../lib/env-alert-notify";
 import { warningsForLocation } from "../../lib/kma";
 
@@ -26,6 +27,7 @@ export async function GET(request: Request) {
     console.warn("[kma] 무인증 조회 — 특보 알림 발사를 건너뛴다");
   }
   if (data.source === "live" && trusted) {
+    const activeKeys = data.warnings.map((w) => `kma:${w.type}`);
     try {
       await notifyEnvAlerts(
         data.warnings.map((w) => ({
@@ -38,6 +40,19 @@ export async function GET(request: Request) {
       );
     } catch (notifyError) {
       console.error("[kma] env alert notify failed:", notifyError);
+    }
+    // ★ 해제된 특보를 normal 로 되돌린다 — 이 소스에는 **해제 신호가 없다.**
+    //   발효 목록에서 빠지는 것이 곧 해제인데, 그러면 상태 행이 마지막 심각도로 굳고
+    //   `shouldSendEnv` 의 악화 전이 조건 때문에 **재발효돼도 알림이 영영 안 간다**.
+    //   실측(2026-08-27) — kma:폭염중대경보 danger 가 08-07 이후 20일째 굳어 있었다.
+    //   ⚠ notify 뒤에 둔다. 앞에 두면 지금 발효 중인 것까지 normal 로 만들었다가 다시 올려
+    //     **없던 전이가 생겨 오알림**이 난다.
+    //   ⚠ live + trusted 안에서만 — 목업·무인증 조회가 실제 상태를 지우면 안 된다.
+    try {
+      const lifted = await clearLiftedKmaAlertStates(activeKeys);
+      if (lifted.length > 0) console.warn(`[kma] 해제된 특보 상태 복귀 — ${lifted.join(", ")}`);
+    } catch (clearError) {
+      console.error("[kma] 해제 특보 상태 복귀 실패:", clearError);
     }
   }
 

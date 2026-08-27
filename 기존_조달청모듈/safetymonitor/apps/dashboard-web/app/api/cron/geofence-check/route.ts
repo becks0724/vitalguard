@@ -98,6 +98,23 @@ export async function GET(request: Request) {
     alerted += 1;
   }
 
+  // ★ 한 줄 요약을 반드시 남긴다 — 안 남기면 **정상과 고장이 똑같이 200 으로 보인다**.
+  //
+  //   이 크론이 조용한 이유는 셋인데 응답 코드만으로는 안 갈린다.
+  //     ⓐ 정상        아무도 구획을 안 벗어남
+  //     ⓑ 입력 고장    좌표가 안 들어옴(전송 끊김·창 밖)
+  //     ⓒ 출력 고장    이탈은 잡았는데 알림이 안 나감
+  //   `workers`·`fixes`·`outside`·`alerted` 네 숫자가 이 셋을 즉시 가른다.
+  //   실제로 첫 실행(2026-08-27 07:25Z)이 200 이었지만 창 안 좌표가 0건이라 판정 자체가
+  //   돌지 않았다 — 그 사실을 알아내려고 DB 를 따로 뒤져야 했다. 그래서 넣는다.
+  //
+  // ⚠ 개인 식별자는 남기지 않는다 — 이탈자는 **수**만 찍고 명단은 응답 본문에만 둔다.
+  // eslint-disable-next-line no-console -- 5분 주기 정상 요약이라 warn/error 로 올리면 진짜 경고가 묻힌다.
+  console.log(
+    `[구획이탈] 중심=${centerSource} · 좌표 ${fixes.length}건 · 작업자 ${verdicts.length}명 · ` +
+      `이탈 ${outside.length}명 · 알림 ${alerted}건 · 건너뜀 ${skipped}건`,
+  );
+
   return NextResponse.json({
     ok: true,
     centerSource,

@@ -69,3 +69,25 @@ test("⑤ 통지는 recordAlert 관문을 거친다 — 별도 텔레그램 경�
   assert.doesNotMatch(route, /sendTelegramMessage/,
     "크론이 텔레그램을 직접 부른다 — dedup 관문을 우회해 중복 통지된다");
 });
+
+test("⑥ ★ 한 줄 요약을 남긴다 — 없으면 정상과 고장이 똑같이 200 으로 보인다", () => {
+  // 첫 실행(2026-08-27 07:25Z)이 200 이었지만 창 안 좌표가 0건이라 판정이 아예 안 돌았다.
+  // 그 사실을 알아내려고 DB 를 따로 뒤져야 했다 — 응답 코드만으로는 아래 셋이 안 갈린다.
+  //   ⓐ 정상(아무도 안 벗어남) ⓑ 입력 고장(좌표 0) ⓒ 출력 고장(이탈은 잡았는데 알림 0)
+  assert.match(route, /console\.log\(/, "요약 로그가 없다 — 조용한 실패를 못 본다");
+  // 위 셋을 가르는 네 숫자가 모두 있어야 한다. 하나라도 빠지면 가르지 못한다.
+  const log = route.slice(route.indexOf("console.log("), route.indexOf("return NextResponse.json({", route.indexOf("console.log(")));
+  for (const [what, re] of [
+    ["좌표 건수", /fixes\.length/],
+    ["작업자 수", /verdicts\.length/],
+    ["이탈자 수", /outside\.length/],
+    ["알림 건수", /\$\{alerted\}/],
+  ] as const) {
+    assert.match(log, re, `요약에 ${what}가 없다 — 고장 유형을 못 가른다`);
+  }
+  // 중심 출처도 남긴다 — 주소/캐시가 바뀌면 판정이 1km 어긋난다(②).
+  assert.match(log, /centerSource/, "요약에 중심 출처가 없다");
+  // ⚠ 개인 식별자 금지 — 이탈자는 수만 남기고 명단은 응답 본문에만.
+  assert.doesNotMatch(log, /outside\.join|workerName|workerId/,
+    "요약 로그에 개인 식별자가 들어갔다 — 수만 남긴다");
+});

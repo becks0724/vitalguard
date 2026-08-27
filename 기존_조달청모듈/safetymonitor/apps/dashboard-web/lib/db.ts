@@ -2445,6 +2445,34 @@ export async function upsertEnvAlertState(
   return rows[0]?.prev_severity ?? null;
 }
 
+// 발효가 끝난 기상특보 상태를 normal 로 되돌린다 — **해제 신호가 없는 소스의 필수 대응**.
+//
+// ★ 왜 필요한가(2026-08-27 실측). `kma-warning` 라우트는 **발효 중인 특보만** `notifyEnvAlerts`
+//   에 넘긴다. 해제되면 그 항목이 목록에서 사라질 뿐이라 `env_alert_state` 행이 마지막 심각도로
+//   **영원히 굳는다.** 그리고 `shouldSendEnv` 는 악화 전이(next > prev)에서만 발송하므로,
+//   굳은 항목은 **다시 발효돼도 알림이 영영 안 간다.**
+//     실측  kma:폭염중대경보 = danger (08-07 이후 20일째 갱신 없음) → 재발효돼도 무음
+//           kma:폭염주의보   = caution (08-20)                      → 같은 등급 재발효 시 무음
+//   재난문자 경로는 이 함정을 이미 겪고 "화이트리스트 전 유형을 매번 normal 로 반환" 으로 풀었다
+//   (`disaster-msg.ts` — "빠뜨리면 유형당 알림이 딱 한 번만 가고 영영 안 간다").
+//   특보는 유형이 열려 있어 화이트리스트를 못 쓰므로, **지금 발효 중이 아닌 것을 되돌리는** 쪽으로 푼다.
+//
+// ⚠ 지우지 않고 normal 로 둔다 — 행을 지우면 다음 발효 때 prev=null 이라 같은 결과지만,
+//   "언제 해제됐나" 를 잃는다. updated_at 이 해제 시각이 된다.
+// ⚠ 호출측이 **live + 인증된** 경로에서만 부를 것. 목업·무인증 조회로 부르면 실제 특보 상태를 지운다.
+export async function clearLiftedKmaAlertStates(activeItemKeys: string[]): Promise<string[]> {
+  const { rows } = await q<{ item_key: string }>(
+    `UPDATE env_alert_state
+        SET severity = 'normal', updated_at = ${NOW_ISO}
+      WHERE item_key LIKE 'kma:%'
+        AND severity <> 'normal'
+        AND NOT (item_key = ANY($1::text[]))
+      RETURNING item_key`,
+    [activeItemKeys],
+  );
+  return rows.map((r) => r.item_key);
+}
+
 // ── AED NFC 점검 기록 ──────────────────────────────────────────────────────
 export type AedInspectionRow = {
   id: number;
