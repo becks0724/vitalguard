@@ -134,6 +134,12 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 카운트다운 진행 상태 — UI 가 구독한다. 메인에서만 쓴다.
     @Published var fallCountdownActive = false
 
+    /// 지금 뜬 카운트다운이 **테스트로 띄운 것**인가.
+    ///
+    /// ⚠ 실제 감지 경로는 이 값을 반드시 `false` 로 내린다 — 테스트 직후 진짜 낙상이 나면
+    ///   테스트로 기록되고 신고가 통째로 사라진다. "안 내려도 되겠지" 가 사람을 잃는 자리다.
+    @Published private(set) var fallCountdownIsTest = false
+
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
     private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
@@ -724,6 +730,8 @@ final class WatchStreamer: NSObject, ObservableObject {
             guard v.decision == .danger else { return }
             self.fallGuard.start()
             DispatchQueue.main.async {
+                // ⚠ 실제 감지다 — 테스트 플래그를 여기서 반드시 내린다.
+                self.fallCountdownIsTest = false
                 self.fallCountdownActive = true
                 WKInterfaceDevice.current().play(.notification)
             }
@@ -738,10 +746,17 @@ final class WatchStreamer: NSObject, ObservableObject {
             self?.endCountdown()
         }
         fallGuard.onConfirm = { [weak self] in
-            // ⚠ 아직 서버로 보내지 않는다(P7 — 서버가 이 판정 어휘와 trace 를 받을 그릇이 없다).
-            //   보내는 척하지 않고 로그로만 남긴다.
-            self?.log.error("[FALL] ★ 낙상 확정(무반응) — 서버 신고는 미구현(P7)")
-            self?.endCountdown()
+            guard let self else { return }
+            // ★ 테스트는 여기서 끝난다. P7 에서 서버 신고를 붙일 때 **이 분기 아래에만** 붙인다 —
+            //   위에 붙이면 손목에서 누른 테스트가 관제에 진짜 낙상으로 올라간다.
+            if self.fallCountdownIsTest {
+                self.log.notice("[FALL] 카운트다운 테스트 만료 — 신고 없음(테스트)")
+            } else {
+                // ⚠ 아직 서버로 보내지 않는다(P7 — 서버가 이 판정 어휘와 trace 를 받을 그릇이 없다).
+                //   보내는 척하지 않고 로그로만 남긴다.
+                self.log.error("[FALL] ★ 낙상 확정(무반응) — 서버 신고는 미구현(P7)")
+            }
+            self.endCountdown()
             DispatchQueue.main.async { WKInterfaceDevice.current().play(.failure) }
         }
     }
@@ -749,8 +764,26 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// UI 에서 "낙상 아님" 버튼이 부른다.
     func cancelFallCountdown() { fallGuard.cancelByUser() }
 
+    /// 설정 화면의 [낙상 카운트다운 테스트].
+    ///
+    /// ★ 이름 그대로 **카운트다운 이후만** 시험한다 — 감지(ML)는 안 거친다. 감지까지 보려면
+    ///   `MLSelfCheck` 가 그 자리다. 두 개를 한 버튼으로 묶으면 실패했을 때 어느 쪽인지 못 가른다.
+    /// ⚠ "지속 움직임 자동취소" 경로는 수집이 켜져 있어야 돈다(가속도를 `feed` 해야 한다).
+    ///   꺼진 채로 테스트하면 취소 버튼을 누르거나 만료되는 두 갈래만 확인된다.
+    func startFallCountdownTest() {
+        guard !fallCountdownActive else { return }
+        log.notice("[FALL] 카운트다운 테스트 시작 — 감지는 거치지 않는다(사람 확인용)")
+        fallCountdownIsTest = true
+        fallGuard.start()
+        fallCountdownActive = true
+        WKInterfaceDevice.current().play(.notification)
+    }
+
     private func endCountdown() {
-        DispatchQueue.main.async { self.fallCountdownActive = false }
+        DispatchQueue.main.async {
+            self.fallCountdownActive = false
+            self.fallCountdownIsTest = false
+        }
     }
 
     /// 무동작 지속(초). 콜백이 한 번도 안 돌았으면 **0 이 아니라 nil** 이다 —
@@ -1130,9 +1163,12 @@ extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
             let bpm = quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
             DispatchQueue.main.async {
                 self.latestBPM = bpm
-                self.appendDisplayBPM(bpm)
                 // 실측이 들어온 시각 — 하트비트 유효기간의 기준점(여기서만 갱신된다).
                 self.latestBPMAt = Date()
+                // ⚠ 이 호출을 위 두 줄 **사이에 끼우지 말 것.** 값과 그 시각은 한 쌍이라 붙어
+                //   있어야 하고, 관제웹 가드(2026-08-15-watch-heartbeat-max-age ④)가 그 인접을
+                //   정규식으로 단언한다 — 사이에 끼우면 코드가 멀쩡한데 가드가 빨개진다(실제로 겪음).
+                self.appendDisplayBPM(bpm)
                 self.pendingSamples.append(["ts": Date().timeIntervalSince1970, "bpm": bpm])
             }
         }

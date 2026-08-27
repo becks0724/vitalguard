@@ -1,10 +1,11 @@
-// 워치 메인 화면 — 심박 추이·생체 요약을 카드로 보여주고 세션을 시작/중지한다
+// 워치 메인 화면 — 1면 생체(심박 추이·요약) · 2면 설정(수집·낙상 테스트·자가검증)
 //
 // ★ 2026-08-27 재배치. 종전에는 글자 줄을 세로로 쌓았는데, 낙상 기능이 붙으면서 줄이 늘어
 //   **[중지]·[ML 자가검증] 버튼이 화면 밖으로 밀려 눌 수 없었다**(사용자 제보).
 //   ⚠ 원인은 줄 수만이 아니다 — 바깥이 `VStack` 이라 넘친 만큼이 **잘려서 스크롤도 안 됐다**.
-//     그래서 카드로 압축하는 것과 별개로 `ScrollView` 를 씌운다. 압축만 하면 다음에 줄이
-//     하나 늘어날 때 같은 사고가 그대로 재발한다.
+//     그래서 각 면을 `ScrollView` 로 감싼다. 면을 나누는 것만으로는 같은 사고가 재발한다.
+// ★ 동작 버튼은 크라운으로 내려가는 2면에 모았다(사용자 결정) — 손목에서 늘 보는 것은
+//   생체이고, 수집 시작/중지는 하루에 두어 번 누르는 것이다.
 // ⚠ 심박 그래프에 상태색(정상/주의/위험)을 쓰지 않는다 — 워치에는 판정 임계가 없고,
 //   여기서 새로 정의하면 근거 문서 없는 의학 판정이 기기마다 갈린다(폰 `vital_range.dart`
 //   가 같은 이유로 임계 자체 정의를 금지한다). 판정은 폰·관제웹이 한다.
@@ -22,6 +23,12 @@ struct ContentView: View {
     ///   지금은 탭 한 번이면 끝난다. **[시작] 에는 확인을 걸지 않는다** — 켜는 쪽은 오탭이어도
     ///   손해가 없고, 급할 때 한 번에 켜지는 편이 낫다.
     @State private var confirmingStop = false
+    @State private var page = Page.vitals
+
+    private enum Page: Hashable {
+        case vitals
+        case settings
+    }
 
     /// 이산 측정 한 줄 — 도착한 종류만 짧은 한국어 라벨로 적는다(0 건은 생략).
     /// HRV 는 값이 있으면 ms 까지 보여준다(상시 워크아웃 중엔 구조상 안 나오는 것이 정상).
@@ -62,16 +69,34 @@ struct ContentView: View {
     }
 
     var body: some View {
-        // ⚠ ScrollView 를 벗기지 말 것 — 줄이 하나만 늘어도 아래 버튼이 잘려 못 누르게 된다.
+        TabView(selection: $page) {
+            vitalsPage.tag(Page.vitals)
+            settingsPage.tag(Page.settings)
+        }
+        .tabViewStyle(.verticalPage)
+        .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
+            Button("중지", role: .destructive) { streamer.stop() }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("중지하면 자동으로 다시 켜지지 않습니다.")
+        }
+        // 낙상 카운트다운 — 화면을 덮는다. 쓰러진 사람이 목록을 스크롤해 버튼을 찾을 수는 없다.
+        // ⚠ TabView 바깥에 건다 — 어느 면에 있든 덮어야 한다.
+        .overlay {
+            if streamer.fallCountdownActive { FallCountdownOverlay(streamer: streamer) }
+        }
+    }
+
+    // MARK: - 1면 · 생체
+
+    /// ⚠ ScrollView 를 벗기지 말 것 — 줄이 하나만 늘어도 아래가 잘려 못 보게 된다.
+    private var vitalsPage: some View {
         ScrollView {
             VStack(spacing: 4) {
                 header
                 HeartRateSparkline(points: streamer.recentBPM)
-                    .frame(height: 38)
+                    .frame(height: 40)
                 stats
-                primaryButton
-
-                // 상세는 카드 아래로 — 평시엔 안 봐도 되고, 진단할 때만 읽는 줄이다.
                 if streamer.isRunning {
                     Text(discreteLine)
                         .font(.system(size: 11))
@@ -80,28 +105,8 @@ struct ContentView: View {
                 Text(transmitLine)
                     .font(.system(size: 11))
                     .foregroundStyle(streamer.pendingTransfers > 0 ? Color.orange : Color.secondary)
-
-                // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
-                // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
-                Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
-                    .font(.footnote)
-                if let selfCheckResult {
-                    Text(selfCheckResult)
-                        .font(.system(size: 11, design: .monospaced))
-                        .multilineTextAlignment(.leading)
-                }
             }
             .padding(.horizontal, 2)
-        }
-        .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
-            Button("중지", role: .destructive) { streamer.stop() }
-            Button("취소", role: .cancel) {}
-        } message: {
-            Text("중지하면 자동으로 다시 켜지지 않습니다.")
-        }
-        // 낙상 카운트다운 — 화면을 덮는다. 쓰러진 사람이 목록을 스크롤해 버튼을 찾을 수는 없다.
-        .overlay {
-            if streamer.fallCountdownActive { FallCountdownOverlay(streamer: streamer) }
         }
     }
 
@@ -127,7 +132,7 @@ struct ContentView: View {
         }
     }
 
-    /// 3분할 카드 — 참고 디자인의 배치. 종전에 네 줄을 차지하던 값들을 한 줄로 접었다.
+    /// 3분할 카드 — 종전에 네 줄을 차지하던 값들을 한 줄로 접었다.
     /// ⚠ 값이 없으면 `--` 를 적고 칸은 남긴다. 칸이 사라지면 "그 측정이 없는 앱" 으로 읽힌다.
     private var stats: some View {
         HStack(spacing: 4) {
@@ -145,28 +150,66 @@ struct ContentView: View {
                     : "--",
                 note: "kcal"
             )
-            WatchStatCard(
-                tint: streamer.isRunning ? .green : .gray,
-                label: "수집",
-                value: streamer.isRunning ? "ON" : "OFF",
-                note: streamer.statusText
-            )
+            // ★ 꺼져 있으면 이 칸이 곧 시작 버튼으로 가는 문이다 — 동작 버튼을 2면으로 옮기면서
+            //   "켜는 법을 못 찾는" 자리가 생겼다. 꺼진 것을 눌러 켜는 곳으로 가는 게 자연스럽다.
+            if streamer.isRunning {
+                WatchStatCard(tint: .green, label: "수집", value: "ON", note: streamer.statusText)
+            } else {
+                Button { page = .settings } label: {
+                    WatchStatCard(tint: .gray, label: "수집", value: "OFF", note: "눌러서 시작")
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
-    /// 참고 디자인의 넓은 알약 버튼. 손목에서 누르는 유일한 상시 동작이라 폭을 다 준다.
-    private var primaryButton: some View {
-        Button {
-            if streamer.isRunning { confirmingStop = true } else { streamer.start() }
-        } label: {
-            Label(
-                streamer.isRunning ? "중지" : "시작",
-                systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
-            )
-            .font(.system(size: 14, weight: .semibold))
-            .frame(maxWidth: .infinity)
+    // MARK: - 2면 · 설정
+
+    private var settingsPage: some View {
+        ScrollView {
+            VStack(spacing: 6) {
+                Text("설정")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Button {
+                    if streamer.isRunning { confirmingStop = true } else { streamer.start() }
+                } label: {
+                    Label(
+                        streamer.isRunning ? "수집 중지" : "수집 시작",
+                        systemImage: streamer.isRunning ? "stop.fill" : "play.fill"
+                    )
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                }
+                .tint(streamer.isRunning ? .red : .green)
+
+                // 낙상 카운트다운 테스트 — **감지(ML)는 안 거치고** 카운트다운 화면·햅틱·취소
+                // 경로만 사람이 확인하는 자리다. 감지까지 보려면 아래 [ML 자가검증] 이 그 자리다.
+                Button {
+                    streamer.startFallCountdownTest()
+                } label: {
+                    Label("낙상 카운트다운 테스트", systemImage: "figure.fall")
+                        .font(.system(size: 12))
+                        .frame(maxWidth: .infinity)
+                }
+                .tint(.orange)
+                .disabled(streamer.fallCountdownActive)
+
+                // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
+                // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
+                Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
+                    .font(.system(size: 12))
+
+                if let selfCheckResult {
+                    Text(selfCheckResult)
+                        .font(.system(size: 11, design: .monospaced))
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding(.horizontal, 2)
         }
-        .tint(streamer.isRunning ? .red : .green)
     }
 }
 
@@ -272,7 +315,14 @@ private struct FallCountdownOverlay: View {
     @ObservedObject var streamer: WatchStreamer
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
+            // ★ 테스트로 띄운 것이면 화면이 먼저 그렇게 말한다 — 옆 사람이 보고 진짜로 착각하거나,
+            //   본인이 진짜인 줄 알고 놀라는 일이 없게 한다.
+            if streamer.fallCountdownIsTest {
+                Text("테스트")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(.orange)
+            }
             Text("낙상 감지")
                 .font(.headline)
                 .foregroundStyle(.red)
