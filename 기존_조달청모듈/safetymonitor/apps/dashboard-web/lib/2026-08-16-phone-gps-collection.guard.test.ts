@@ -34,6 +34,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { stripComments } from "./test-support/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const IOS = join(ROOT, "..", "vitalguard_app", "ios", "Runner");
 
@@ -54,12 +56,11 @@ const gpsMap = readFileSync(join(ROOT, "app", "components", "WorkerGpsMap.tsx"),
  * ⚠ 금지 패턴 검사에 필요하다 — 주석에 "이 값을 쓰지 말 것" 이라고 적어 두면 그 설명 자체가
  *   금지 패턴에 걸려 가드가 자기 근거를 실패로 읽는다(작성 중 실제로 발생).
  */
-function codeOnly(src: string): string {
-  return src
-    .split("\n")
-    .map((l) => l.replace(/\/\/.*$/, ""))
-    .join("\n");
-}
+// ⚠️ 종전 구현은 `l.replace(/\/\/.*$/, "")` 였다. 이 가드가 읽는 WorkerGpsMap.tsx 에는
+//   Esri 타일 URL 두 줄이 있어 `const SAT = "https:` 까지만 남고 잘렸다. 지금 단언들은
+//   그 줄을 안 봐서 통과하고 있었지만, 금지형 단언이 하나라도 그 줄에 걸리면 **거짓 초록**
+//   이 된다(금지 패턴이 URL 과 함께 증발). 문자열 안을 건너뛰는 공유 헬퍼로 교체 — [[L-119]].
+const codeOnly = stripComments;
 
 /** 숫자 상수 하나를 뽑는다. 못 뽑으면 가드가 참조를 잃은 것이라 즉시 실패시킨다. */
 function num(src: string, re: RegExp, label: string): number {

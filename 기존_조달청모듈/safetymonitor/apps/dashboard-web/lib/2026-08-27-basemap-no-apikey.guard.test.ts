@@ -23,6 +23,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { stripComments as strip } from "./test-support/strip-comments";
+
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (...p: string[]) => readFileSync(join(ROOT, ...p), "utf8");
 
@@ -39,40 +41,8 @@ const MAP_COMPONENTS: [label: string, file: string][] = [
 // 주석은 검사 대상이 아니다 — 위 배경 설명에 호스트 이름이 등장하므로,
 // 주석을 지우지 않으면 **설명문이 스스로를 잡아** 거짓 빨간불이 난다(이 레포에서 3회 발생).
 //
-// ⚠️ 순진한 `replace(/\/\/[^\n]*/g, "")` 를 쓰면 안 된다 — URL 의 `https://` 를 주석 시작으로
-//   먹어서 **코드를 잘라낸다**(이 가드를 처음 돌릴 때 실제로 당했다: `const ESRI_CANVAS = "https:`
-//   까지만 남아 ② 가 거짓 빨간불). 그래서 따옴표 안을 건너뛰는 스캐너로 지운다.
-function strip(src: string): string {
-  let out = "";
-  let quote: string | null = null; // 문자열 안이면 그 따옴표 문자
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (quote) {
-      out += c;
-      if (c === "\\") out += src[++i] ?? "";
-      else if (c === quote) quote = null;
-      continue;
-    }
-    if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-      out += c;
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "/") {
-      while (i < src.length && src[i] !== "\n") i++;
-      out += "\n";
-      continue;
-    }
-    if (c === "/" && src[i + 1] === "*") {
-      i += 2;
-      while (i < src.length && !(src[i] === "*" && src[i + 1] === "/")) i++;
-      i++;
-      continue;
-    }
-    out += c;
-  }
-  return out;
-}
+// ⚠️ 순진한 정규식 제거기를 직접 쓰지 않는다 — URL 의 `https://` 를 주석 시작으로 먹어
+//   코드를 잘라낸다(이 가드를 처음 돌릴 때 실제로 당했다). 경위·양방향 위험도는 [[L-119]].
 
 const radar = read("app", "components", "RadarRealtime.tsx");
 const radarCode = strip(radar);
