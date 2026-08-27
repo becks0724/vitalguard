@@ -179,6 +179,21 @@ export async function verifyUserAdmin(request: Request): Promise<boolean> {
   return !!user && canApproveUsers(user);
 }
 
+// 안전관리비 담당관 확정 권한(2026-08-27 사용자 결정) —
+//   owner(대시보드 최고관리자) = 전부 가능 · site_officer(현장 담당관 부여 계정) = 확정 가능 ·
+//   contractor(시공사) = **부여 여부와 무관하게 불가**(피검증자 자기확정 방지) · 그 외 admin = 불가.
+// ⚠ job_title(직책) 글자를 보지 않는다 — 본인 편집 필드라 글자만 바꾸면 자가승격이 된다.
+export type ProcureConfirmAccess = "ok" | "no_session" | "contractor" | "not_officer";
+export async function procureConfirmAccess(request: Request): Promise<ProcureConfirmAccess> {
+  const session = getSession(request);
+  if (!session) return "no_session";
+  if (session.role === "owner") return "ok";
+  const user = await findUserByUsername(session.username).catch(() => null);
+  if (!user) return "not_officer";
+  if (user.org_type === "contractor") return "contractor";
+  return user.site_officer ? "ok" : "not_officer";
+}
+
 // 앱 업로드 토큰 일치 검사 — 어디서 온 토큰이든(헤더/폼 필드) env APP_UPLOAD_TOKEN 과 비교.
 //  - 미설정 시 항상 거부(fail-closed). 세션 토큰과 충돌하지 않음(세션은 발급분만 매칭).
 export function appUploadTokenMatches(token: string | null | undefined): boolean {

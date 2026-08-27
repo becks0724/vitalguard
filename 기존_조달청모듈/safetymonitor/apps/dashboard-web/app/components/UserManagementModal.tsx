@@ -17,12 +17,13 @@ type User = {
   email_verified: boolean;
   auth_provider: string;
   role: string;
-  org_type: string; // 'vitalguard' | 'member'
+  org_type: string; // 'vitalguard' | 'member' | 'contractor'
   status: string;
   birth_date: string | null;
   department: string | null;
   job_title: string | null;
   admin_access: boolean;
+  site_officer: boolean; // 현장 담당관(안전관리비 확정 권한)
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -192,7 +193,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const act = useCallback(
     async (
       id: number,
-      action: "approve" | "reject" | "delete" | "grant_admin" | "revoke_admin",
+      action: "approve" | "reject" | "delete" | "grant_admin" | "revoke_admin" | "grant_officer" | "revoke_officer",
     ) => {
       if (action === "delete") {
         const u = users?.find((x) => x.id === id);
@@ -455,6 +456,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                     <th className={TH}>역할</th>
                     <th className={TH}>상태</th>
                     <th className={TH}>관리자권한</th>
+                    <th className={TH}>현장담당관</th>
                     <th className={TH}>가입일</th>
                     <th className={TH}>승인일</th>
                     <th className={TH}>승인자</th>
@@ -609,6 +611,34 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             ].join(" ")}
                           >
                             {u.admin_access ? "권한있음 ✓" : "권한없음"}
+                          </button>
+                        )}
+                      </td>
+                      <td className={TD}>
+                        {/* 현장 담당관(안전관리비 확정 권한) — admin_access 와 같은 부여 패턴.
+                            시공사는 피검증자라 부여 대상이 아니다(서버·DB 도 같은 규칙으로 막는다). */}
+                        {u.role === "owner" ? (
+                          <span className="text-muted dark:text-on-dark-soft">owner</span>
+                        ) : u.org_type === "contractor" ? (
+                          <span className="text-muted dark:text-on-dark-soft" title="시공사 계정은 확정 권한을 가질 수 없습니다">
+                            시공사
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              act(u.id, u.site_officer ? "revoke_officer" : "grant_officer")
+                            }
+                            disabled={busyId === u.id}
+                            title={u.site_officer ? "현장 담당관(확정 권한) 회수" : "현장 담당관(확정 권한) 부여"}
+                            className={[
+                              "rounded-md px-2 py-1 text-[11px] font-semibold transition disabled:opacity-50",
+                              u.site_officer
+                                ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-200"
+                                : "border border-hairline text-muted hover:bg-surface-strong dark:border-white/15 dark:hover:bg-white/10",
+                            ].join(" ")}
+                          >
+                            {u.site_officer ? "담당관 ✓" : "미지정"}
                           </button>
                         )}
                       </td>

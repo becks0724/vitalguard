@@ -9,12 +9,19 @@ export const VITALGUARD_COMPANY = "VitAlGuard";
 // 회원사 — 회원사 관리자 유형의 선택지.
 export const MEMBER_COMPANIES = ["스마트인재개발원", "조달청", "고용노동부", "행정안전부"];
 
-export const ALLOWED_COMPANIES = [VITALGUARD_COMPANY, ...MEMBER_COMPANIES];
+// 시공사 — contractor 유형의 선택지(2026-08-27 실계정 발급 결정).
+// ⚠ 비어 있는 동안은 시공사 가입이 서버 게이트에서 자동으로 막힌다(고를 상호가 없다).
+//   어떤 시공사를 받을지는 발주 계약과 맞물린 결정이라 여기 하드코딩 목록을 채우는 것으로 연다.
+export const CONTRACTOR_COMPANIES: string[] = [];
+
+export const ALLOWED_COMPANIES = [VITALGUARD_COMPANY, ...MEMBER_COMPANIES, ...CONTRACTOR_COMPANIES];
 
 // 가입 유형이 고를 수 있는 상호 — 화면(선택지)과 서버(게이트)가 같은 함수를 본다.
 // 둘이 어긋나면 "고를 수는 있는데 저장은 거부되는" 항목이 생긴다.
 export function companiesForOrgType(orgType: OrgType): string[] {
-  return orgType === "vitalguard" ? [VITALGUARD_COMPANY] : MEMBER_COMPANIES;
+  if (orgType === "vitalguard") return [VITALGUARD_COMPANY];
+  if (orgType === "contractor") return CONTRACTOR_COMPANIES;
+  return MEMBER_COMPANIES;
 }
 
 // 제출된 회사(상호)가 승인 목록에 있는지 검증(서버 게이트 — API 직접 호출 우회 차단).

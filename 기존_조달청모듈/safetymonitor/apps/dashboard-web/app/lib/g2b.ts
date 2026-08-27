@@ -74,6 +74,16 @@ function extractRows(json: unknown): Record<string, unknown>[] {
   return [];
 }
 
+/** 응답의 총건수(totalCount) — 없으면 null. 최신 공고가 **마지막 페이지**에 있어 페이지 계산에 쓴다. */
+function extractTotalCount(json: unknown): number | null {
+  const root = json as Record<string, unknown> | null;
+  const body = ((root?.response as Record<string, unknown>)?.body ?? root?.body) as
+    | Record<string, unknown>
+    | undefined;
+  const n = Number(body?.totalCount);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 function assertNormal(json: unknown): void {
   const header = ((json as Record<string, unknown>)?.response as Record<string, unknown>)?.header as
     | Record<string, unknown>
@@ -243,25 +253,69 @@ async function fetchList(
   normalize: (row: Record<string, unknown>) => NoticeDetail,
   rows: number,
   page: number,
+  /** 조회 창(일). ⚠ 나라장터 목록 API 는 장기간 조회에서 **정상응답 + 0건**을 돌려준다
+   *  (실측 2026-08-27: 1·7·30일 = 20건 / 90일 = 0건. 공개 예제들도 1~12일 창을 쓴다).
+   *  ★ 기본 3일 — 역순 수집이라 창이 넓을수록 마지막 페이지가 멀어져 느려진다.
+   *    실측: 1일 4.5초 · 3일 4.5초 · 7일 10.4초 · 30일 15초 타임아웃(샘플 폴백). */
+  days = 3,
 ): Promise<NoticesPayload> {
   const hit = getCached<NoticesPayload>(cacheKey);
   if (hit) return hit;
-  const url = new URL(`${G2B_BASE}/${opPath}`);
-  url.searchParams.set("serviceKey", process.env.G2B_SERVICE_KEY as string);
-  url.searchParams.set("pageNo", String(page));
-  url.searchParams.set("numOfRows", String(rows));
-  url.searchParams.set("inqryDiv", "1");
-  const nowDt = new Date();
-  url.searchParams.set("inqryBgnDt", fmtG2bDate(new Date(nowDt.getTime() - 90 * 24 * 60 * 60 * 1000)));
-  url.searchParams.set("inqryEndDt", fmtG2bDate(nowDt));
-  url.searchParams.set("type", "json");
 
-  // 나라장터 API가 목록 쿼리(20건·90일 창)에 ~9초 걸리는 시기가 있음(실측) → 8초면 상시 타임아웃.
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = (await res.json()) as unknown;
-  assertNormal(json);
-  const rawRows = extractRows(json);
+  const nowDt = new Date();
+  const bgn = fmtG2bDate(new Date(nowDt.getTime() - days * 24 * 60 * 60 * 1000));
+  const end = fmtG2bDate(nowDt);
+  const buildUrl = (pageNo: number, numOfRows: number) => {
+    const url = new URL(`${G2B_BASE}/${opPath}`);
+    url.searchParams.set("serviceKey", process.env.G2B_SERVICE_KEY as string);
+    url.searchParams.set("pageNo", String(pageNo));
+    url.searchParams.set("numOfRows", String(numOfRows));
+    url.searchParams.set("inqryDiv", "1");
+    url.searchParams.set("inqryBgnDt", bgn);
+    url.searchParams.set("inqryEndDt", end);
+    url.searchParams.set("type", "json");
+    return url;
+  };
+  // 나라장터 API가 목록 쿼리(20건·창 30일)에 ~8초 걸리는 시기가 있음(실측) → 8초면 상시 타임아웃.
+  const call = async (url: URL): Promise<unknown> => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = (await res.json()) as unknown;
+    assertNormal(json);
+    return json;
+  };
+
+  // ★ 나라장터 목록은 **오래된 순(오름차순)** 이다 — 1페이지를 그냥 받으면 창의 맨 앞(가장 오래된)
+  //   공고만 온다(실측 2026-08-27: 30일 창 1페이지가 전부 07-28 하루치). 착공 전 선별 화면에서
+  //   한 달 전 공고를 보여주는 셈이라, **총건수를 먼저 세고 뒤에서부터** 가져온다.
+  const probe = await call(buildUrl(1, 1));
+  const totalCount = extractTotalCount(probe);
+  if (totalCount === 0) {
+    const empty: NoticesPayload = { source: "live", items: [], page, total: 0, note: "검색 결과 없음" };
+    setCached(cacheKey, empty);
+    return empty;
+  }
+
+  let rawRows: Record<string, unknown>[];
+  if (totalCount == null) {
+    // 총건수를 못 읽으면 옛 방식(앞에서부터)으로라도 동작시킨다 — 비는 것보다 낫다.
+    rawRows = extractRows(await call(buildUrl(page, rows)));
+  } else {
+    // 원하는 절대 구간(오름차순 기준) = 끝에서 (page-1)*rows 만큼 건너뛴 rows 건.
+    const endIdx = Math.max(0, totalCount - (page - 1) * rows);
+    const startIdx = Math.max(0, endIdx - rows);
+    const firstPage = Math.floor(startIdx / rows) + 1;
+    const lastPage = Math.max(firstPage, Math.ceil(endIdx / rows));
+    const collected: Record<string, unknown>[] = [];
+    for (let p = firstPage; p <= lastPage; p++) {
+      collected.push(...extractRows(await call(buildUrl(p, rows))));
+    }
+    // 페이지 경계로 앞뒤가 넘칠 수 있어 절대 인덱스로 잘라낸다.
+    const offset = (firstPage - 1) * rows;
+    rawRows = collected.slice(Math.max(0, startIdx - offset), Math.max(0, endIdx - offset));
+    rawRows.reverse(); // 최신이 위로
+  }
+
   if (rawRows.length === 0) {
     const empty: NoticesPayload = { source: "live", items: [], page, total: 0, note: "검색 결과 없음" };
     setCached(cacheKey, empty);
@@ -276,7 +330,7 @@ async function fetchList(
 }
 
 // 입찰공고(부가 — 발주 위험선별).
-export async function getNotices(opts: { kind?: string; region?: string; page?: number; rows?: number } = {}): Promise<NoticesPayload> {
+export async function getNotices(opts: { kind?: string; region?: string; page?: number; rows?: number; days?: number } = {}): Promise<NoticesPayload> {
   const page = opts.page ?? 1;
   const rows = Math.min(opts.rows ?? 20, 100);
   if (!hasKey()) {
@@ -288,7 +342,8 @@ export async function getNotices(opts: { kind?: string; region?: string; page?: 
     return { source: "live", items: [], page, total: 0, note: "현재 공사 부문만 실데이터 지원(MVP)" };
   }
   try {
-    return await fetchList(G2B_PATH.bidListConstruction, `notices:공사:${opts.region ?? ""}:${page}:${rows}`, normalizeDetail, rows, page);
+    const days = opts.days ?? 3;
+    return await fetchList(G2B_PATH.bidListConstruction, `notices:공사:${opts.region ?? ""}:${page}:${rows}:${days}`, normalizeDetail, rows, page, days);
   } catch (err) {
     console.error("[g2b] getNotices fallback to mock:", err);
     return { source: "mock", items: MOCK_NOTICES.map(toSummary), page, total: MOCK_NOTICES.length, note: "실 API 응답 실패 — 샘플 데이터 표시" };

@@ -8,6 +8,7 @@ import {
   setUserStatus,
   setUserAdminAccess,
   setUserProfileFields,
+  setUserSiteOfficer,
   type UserRow,
 } from "../../../../lib/db";
 
@@ -30,6 +31,7 @@ function publicUser(u: UserRow) {
     department: u.department,
     job_title: u.job_title,
     admin_access: u.admin_access,
+    site_officer: u.site_officer,
     created_at: u.created_at,
     approved_at: u.approved_at,
     approved_by: u.approved_by,
@@ -58,10 +60,10 @@ export async function POST(request: Request) {
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
 
-  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "set_profile"];
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|set_profile) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile) 이 필요합니다." },
       { status: 400 },
     );
   }
@@ -81,6 +83,20 @@ export async function POST(request: Request) {
     const updated = await setUserProfileFields(id, norm(company), norm(department), norm(jobTitle));
     if (!updated) {
       return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated) });
+  }
+
+  // 현장 담당관(안전관리비 확정 권한) 부여/회수 — admin_access 와 같은 관리 경로(자가취득 불가).
+  // ⚠ 시공사(contractor)에게는 부여 불가 — 피검증자가 확정 권한을 가지면 검증이 성립하지 않는다.
+  //   DB 함수(setUserSiteOfficer)도 같은 조건을 걸어, 대상이 시공사면 0행이 돌아와 404 로 떨어진다.
+  if (action === "grant_officer" || action === "revoke_officer") {
+    const updated = await setUserSiteOfficer(id, action === "grant_officer");
+    if (!updated) {
+      return NextResponse.json(
+        { ok: false, error: "사용자를 찾을 수 없거나 시공사 계정에는 부여할 수 없습니다." },
+        { status: 404 },
+      );
     }
     return NextResponse.json({ ok: true, user: publicUser(updated) });
   }

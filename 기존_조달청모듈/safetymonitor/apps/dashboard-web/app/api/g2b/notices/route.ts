@@ -16,8 +16,11 @@ export async function GET(req: Request) {
     const region = regionRaw && regionRaw.length <= 20 ? regionRaw : undefined; // 길이 제한(남용 방지)
     const page = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     const rows = Math.min(100, Math.max(1, Number(searchParams.get("rows") ?? "20") || 20));
+    // 조회 창(일) — 기본 3일. 넓히면 역순 수집의 마지막 페이지가 멀어져 느려지고(7일 10초·30일 타임아웃),
+    // 90일은 나라장터가 정상응답 + 0건을 돌려준다(2026-08-27 실측).
+    const days = Math.min(90, Math.max(1, Number(searchParams.get("days") ?? "3") || 3));
 
-    const data = await getNotices({ kind, region, page, rows });
+    const data = await getNotices({ kind, region, page, rows, days });
     return NextResponse.json(data);
   } catch (err) {
     console.error("[api/g2b/notices]", err);
