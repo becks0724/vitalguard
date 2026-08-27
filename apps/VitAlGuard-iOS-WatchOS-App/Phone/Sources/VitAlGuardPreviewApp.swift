@@ -6923,7 +6923,6 @@ final class VitAlGuardPreviewController: UIViewController,
     ]
     private var watchVitals: [WatchVital] {
         let snapshot = PhoneMeasuredVitalSnapshot.current
-        let heartRate = snapshot.formattedInt("heartRate", unit: "bpm")
         let spo2 = snapshot.formattedInt("spo2", unit: "%")
         let ecg = snapshot.stringValue("ecgStatus").map { ($0, "") } ?? ("--", "")
         let steps = snapshot.formattedInt("steps", unit: "보")
@@ -6939,8 +6938,8 @@ final class VitAlGuardPreviewController: UIViewController,
             ?? snapshot.stringValue("sleepApneaRisk")
             ?? "--"
         let wristTemperature = snapshot.formattedWristTemperature(unit: "℃")
+        // 심박은 패널 맨 위 카드가 맡는다 — 타일로 또 보여 주면 같은 값이 두 번 뜬다.
         var vitals: [WatchVital] = [
-            ("심박", heartRate.value, heartRate.unit, UIColor(red: 0.83, green: 0.00, blue: 0.02, alpha: 1.0)),
             ("SpO₂", spo2.value, spo2.unit, UIColor(red: 0.067, green: 0.318, blue: 1.0, alpha: 1.0)),
             ("ECG", ecg.0, ecg.1, UIColor(red: 0.00, green: 0.49, blue: 0.28, alpha: 1.0)),
             ("손목 온도", wristTemperature.value, wristTemperature.unit, UIColor(red: 0.70, green: 0.42, blue: 0.00, alpha: 1.0))
@@ -6977,6 +6976,8 @@ final class VitAlGuardPreviewController: UIViewController,
     private let hairline = UIColor(red: 0.88, green: 0.89, blue: 0.91, alpha: 1.0)
     private let sale = UIColor(red: 0.827, green: 0.0, blue: 0.02, alpha: 1.0)
     private let charcoal = UIColor(red: 0.13, green: 0.13, blue: 0.14, alpha: 1.0)
+    private let heartRateCardHeight: CGFloat = 320
+    private let heartRateNormalTint = UIColor(red: 0.831, green: 0.937, blue: 0.290, alpha: 1.0)
     private let glassLight = UIColor.white.withAlphaComponent(0.92)
     private let glassDark = UIColor.white.withAlphaComponent(0.16)
     private let watermarkLocationManager = CLLocationManager()
@@ -8330,31 +8331,185 @@ final class VitAlGuardPreviewController: UIViewController,
     }
 
     private func metricsGrid() -> UIView {
+        let snapshot = PhoneMeasuredVitalSnapshot.current
+        let spo2 = snapshot.formattedInt("spo2", unit: "%")
+        let wristTemperature = snapshot.formattedWristTemperature(unit: "℃")
+
         let row = UIStackView()
         row.translatesAutoresizingMaskIntoConstraints = false
         row.axis = .horizontal
         row.spacing = 8
         row.distribution = .fillEqually
-
-        let snapshot = PhoneMeasuredVitalSnapshot.current
-        let heartRate = snapshot.formattedInt("heartRate", unit: "bpm")
-        let spo2 = snapshot.formattedInt("spo2", unit: "%")
-        let wristTemperature = snapshot.formattedWristTemperature(unit: "℃")
-        row.addArrangedSubview(metric("심박", heartRate.value, heartRate.unit, sale))
         row.addArrangedSubview(metric("SpO₂", spo2.value, spo2.unit, UIColor(red: 0.067, green: 0.318, blue: 1.0, alpha: 1.0)))
         row.addArrangedSubview(metric("손목 온도", wristTemperature.value, wristTemperature.unit, UIColor(red: 0.70, green: 0.42, blue: 0.00, alpha: 1.0)))
 
+        let card = heartRateCard(snapshot: snapshot)
         let wrapper = UIView()
         wrapper.translatesAutoresizingMaskIntoConstraints = false
+        wrapper.addSubview(card)
         wrapper.addSubview(row)
         NSLayoutConstraint.activate([
-            wrapper.heightAnchor.constraint(equalToConstant: 104),
-            row.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            wrapper.heightAnchor.constraint(equalToConstant: heartRateCardHeight + 8 + 104),
+            card.topAnchor.constraint(equalTo: wrapper.topAnchor),
+            card.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
+            row.topAnchor.constraint(equalTo: card.bottomAnchor, constant: 8),
             row.leadingAnchor.constraint(equalTo: wrapper.leadingAnchor),
             row.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
             row.bottomAnchor.constraint(equalTo: wrapper.bottomAnchor)
         ])
         return wrapper
+    }
+
+    // 홈 상단 심박 카드 — 현재값·상태·추이·평균/최소/최대를 한 장에 담는다.
+    // 그래프와 3분할 요약은 폰에 실제로 쌓인 측정값만 읽는다 — 없으면 그리지 않고 "심박 누적 중"을 띄운다.
+    private func heartRateCard(snapshot: PhoneMeasuredVitalSnapshot) -> UIView {
+        let card = panelView(height: heartRateCardHeight, color: tileColor)
+        let history = VitAlGuardSharedStorage.loadHeartRateHistory()
+        let current = snapshot.intValue("heartRate")
+        // 이상 경계는 Watch 이상 신호 알림(watchAnomalyMessage)과 같은 값을 쓴다.
+        let isAbnormal = current.map { $0 >= 130 || $0 <= 45 } ?? false
+        let statusTint = current == nil ? stone : (isAbnormal ? sale : heartRateNormalTint)
+        let statusInk = isAbnormal ? UIColor.white : ink
+
+        let valueLabel = label(current.map { "\($0)" } ?? "--", size: 46, weight: .black, color: textColor)
+        let unitLabel = label("BPM", size: 13, weight: .bold, color: secondaryTextColor)
+        let pill = heartRateStatusPill(
+            text: current == nil ? "대기" : (isAbnormal ? "주의" : "정상"),
+            tint: statusTint,
+            ink: statusInk
+        )
+
+        let chart = HeartRateTrendChartView()
+        chart.translatesAutoresizingMaskIntoConstraints = false
+        chart.samples = history.map { HeartRateTrendChartView.Sample(date: $0.date, bpm: $0.bpm) }
+        chart.lineColor = textColor
+        chart.paperColor = isDark ? ink : canvas
+        chart.gridColor = glassStroke
+        chart.axisTextColor = secondaryTextColor
+        chart.highlightColor = statusTint
+
+        let rule = UIView()
+        rule.translatesAutoresizingMaskIntoConstraints = false
+        rule.backgroundColor = glassStroke
+
+        let bpmValues = history.map { $0.bpm }
+        let average = bpmValues.isEmpty
+            ? nil
+            : Int((Double(bpmValues.reduce(0, +)) / Double(bpmValues.count)).rounded())
+        let averageColumn = heartRateSummaryColumn(title: "평균", value: average)
+        let minimumColumn = heartRateSummaryColumn(title: "최소", value: bpmValues.min())
+        let maximumColumn = heartRateSummaryColumn(title: "최대", value: bpmValues.max())
+        let summary = UIStackView(arrangedSubviews: [
+            averageColumn,
+            heartRateSummaryDivider(),
+            minimumColumn,
+            heartRateSummaryDivider(),
+            maximumColumn
+        ])
+        summary.translatesAutoresizingMaskIntoConstraints = false
+        summary.axis = .horizontal
+        summary.alignment = .fill
+
+        card.addSubview(valueLabel)
+        card.addSubview(unitLabel)
+        card.addSubview(pill)
+        card.addSubview(chart)
+        card.addSubview(rule)
+        card.addSubview(summary)
+        NSLayoutConstraint.activate([
+            valueLabel.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 20),
+            valueLabel.topAnchor.constraint(equalTo: card.topAnchor, constant: 16),
+            unitLabel.leadingAnchor.constraint(equalTo: valueLabel.trailingAnchor, constant: 6),
+            unitLabel.lastBaselineAnchor.constraint(equalTo: valueLabel.lastBaselineAnchor),
+            pill.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            pill.centerYAnchor.constraint(equalTo: valueLabel.centerYAnchor),
+            pill.leadingAnchor.constraint(greaterThanOrEqualTo: unitLabel.trailingAnchor, constant: 10),
+            chart.topAnchor.constraint(equalTo: valueLabel.bottomAnchor, constant: 8),
+            chart.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            chart.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            rule.topAnchor.constraint(equalTo: chart.bottomAnchor, constant: 10),
+            rule.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            rule.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            rule.heightAnchor.constraint(equalToConstant: 1),
+            summary.topAnchor.constraint(equalTo: rule.bottomAnchor, constant: 10),
+            summary.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            summary.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            summary.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -16),
+            summary.heightAnchor.constraint(equalToConstant: 62),
+            minimumColumn.widthAnchor.constraint(equalTo: averageColumn.widthAnchor),
+            maximumColumn.widthAnchor.constraint(equalTo: averageColumn.widthAnchor)
+        ])
+        return card
+    }
+
+    private func heartRateStatusPill(text: String, tint: UIColor, ink pillInk: UIColor) -> UIView {
+        let pill = UIView()
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.backgroundColor = tint
+        pill.layer.cornerRadius = 17
+        pill.layer.cornerCurve = .continuous
+        pill.clipsToBounds = true
+
+        let badge = UIImageView(image: UIImage(systemName: "heart.fill"))
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        badge.tintColor = tint
+        badge.backgroundColor = pillInk
+        badge.contentMode = .center
+        badge.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+        badge.layer.cornerRadius = 13
+        badge.clipsToBounds = true
+
+        let title = label(text, size: 14, weight: .black, color: pillInk)
+
+        pill.addSubview(badge)
+        pill.addSubview(title)
+        NSLayoutConstraint.activate([
+            pill.heightAnchor.constraint(equalToConstant: 34),
+            badge.leadingAnchor.constraint(equalTo: pill.leadingAnchor, constant: 4),
+            badge.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
+            badge.widthAnchor.constraint(equalToConstant: 26),
+            badge.heightAnchor.constraint(equalToConstant: 26),
+            title.leadingAnchor.constraint(equalTo: badge.trailingAnchor, constant: 7),
+            title.trailingAnchor.constraint(equalTo: pill.trailingAnchor, constant: -14),
+            title.centerYAnchor.constraint(equalTo: pill.centerYAnchor)
+        ])
+        return pill
+    }
+
+    private func heartRateSummaryColumn(title: String, value: Int?) -> UIView {
+        let column = UIView()
+        column.translatesAutoresizingMaskIntoConstraints = false
+        let titleLabel = label(title, size: 12, weight: .bold, color: secondaryTextColor)
+        titleLabel.textAlignment = .center
+        let valueLabel = label(value.map { "\($0)" } ?? "--", size: 22, weight: .black, color: textColor)
+        valueLabel.textAlignment = .center
+        let unitLabel = label("BPM", size: 10, weight: .bold, color: secondaryTextColor)
+        unitLabel.textAlignment = .center
+
+        column.addSubview(titleLabel)
+        column.addSubview(valueLabel)
+        column.addSubview(unitLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: column.topAnchor, constant: 2),
+            titleLabel.leadingAnchor.constraint(equalTo: column.leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(equalTo: column.trailingAnchor, constant: -4),
+            valueLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            valueLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            valueLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor),
+            unitLabel.topAnchor.constraint(equalTo: valueLabel.bottomAnchor, constant: 1),
+            unitLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            unitLabel.trailingAnchor.constraint(equalTo: titleLabel.trailingAnchor)
+        ])
+        return column
+    }
+
+    private func heartRateSummaryDivider() -> UIView {
+        let divider = UIView()
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.backgroundColor = glassStroke
+        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+        return divider
     }
 
     private func siteWeatherPanel() -> UIView {
@@ -8520,7 +8675,7 @@ final class VitAlGuardPreviewController: UIViewController,
 
     private func watchDataPanel(title titleText: String, subtitle subtitleText: String) -> UIView {
         let rows = Int(ceil(Double(watchVitals.count) / 2.0))
-        let panel = panelView(height: CGFloat(96 + rows * 70))
+        let panel = panelView(height: CGFloat(96 + rows * 70) + heartRateCardHeight + 12)
         let title = label(titleText, size: 20, weight: .black, color: textColor)
         let refresh = compactIconButton(symbol: "arrow.clockwise", accessibilityLabel: "Watch 데이터 새로고침")
         refresh.addTarget(self, action: #selector(refreshWatchFromButton(_:)), for: .touchUpInside)
@@ -8541,6 +8696,14 @@ final class VitAlGuardPreviewController: UIViewController,
             sub.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 6),
             sub.leadingAnchor.constraint(equalTo: title.leadingAnchor),
             sub.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -18)
+        ])
+
+        let heartRate = heartRateCard(snapshot: PhoneMeasuredVitalSnapshot.current)
+        panel.addSubview(heartRate)
+        NSLayoutConstraint.activate([
+            heartRate.topAnchor.constraint(equalTo: sub.bottomAnchor, constant: 12),
+            heartRate.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 18),
+            heartRate.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -18)
         ])
 
         let grid = UIStackView()
@@ -8569,7 +8732,7 @@ final class VitAlGuardPreviewController: UIViewController,
         }
 
         NSLayoutConstraint.activate([
-            grid.topAnchor.constraint(equalTo: sub.bottomAnchor, constant: 14),
+            grid.topAnchor.constraint(equalTo: heartRate.bottomAnchor, constant: 10),
             grid.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 18),
             grid.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -18),
             grid.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -18)
@@ -19469,5 +19632,226 @@ private final class PhoneAppLockViewController: UIViewController {
                 else { self.message.text = error?.localizedDescription ?? "생체 인증에 실패했습니다."; self.message.textColor = .systemRed }
             }
         }
+    }
+}
+
+// 홈 심박 카드의 추이 그래프. 폰에 실제로 쌓인 측정값만 그리고, 점이 모자라면 선 대신 안내를 띄운다.
+private final class HeartRateTrendChartView: UIView {
+    struct Sample {
+        let date: Date
+        let bpm: Int
+    }
+
+    var samples: [Sample] = [] { didSet { setNeedsDisplay() } }
+    var lineColor: UIColor = .label { didSet { setNeedsDisplay() } }
+    // lineColor 의 반대쪽 — 점 안쪽과 말풍선 글자에 쓴다(다크 모드에서 선과 같은 색이면 사라진다).
+    var paperColor: UIColor = .systemBackground { didSet { setNeedsDisplay() } }
+    var gridColor: UIColor = .separator { didSet { setNeedsDisplay() } }
+    var axisTextColor: UIColor = .secondaryLabel { didSet { setNeedsDisplay() } }
+    var highlightColor: UIColor = .systemGreen { didSet { setNeedsDisplay() } }
+    var emptyMessage: String = "심박 누적 중" { didSet { setNeedsDisplay() } }
+
+    private let gutterWidth: CGFloat = 34
+    private let axisHeight: CGFloat = 20
+    private let bubbleHeight: CGFloat = 24
+    private let gridStep: Double = 20
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configure()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configure()
+    }
+
+    private func configure() {
+        backgroundColor = .clear
+        isOpaque = false
+        contentMode = .redraw
+    }
+
+    override func draw(_ rect: CGRect) {
+        let plot = CGRect(
+            x: gutterWidth,
+            y: bubbleHeight,
+            width: bounds.width - gutterWidth - 8,
+            height: bounds.height - bubbleHeight - axisHeight
+        )
+        guard plot.width > 8, plot.height > 8 else { return }
+        guard samples.count >= 2 else {
+            drawText(
+                emptyMessage,
+                in: CGRect(x: plot.minX, y: plot.midY - 9, width: plot.width, height: 18),
+                size: 13,
+                weight: .bold,
+                color: axisTextColor,
+                alignment: .center
+            )
+            return
+        }
+
+        let bpmValues = samples.map { Double($0.bpm) }
+        let lower = ((bpmValues.min() ?? 0) / gridStep).rounded(.down) * gridStep
+        var upper = ((bpmValues.max() ?? 0) / gridStep).rounded(.up) * gridStep
+        // 값이 거의 일정하면 눈금이 한 칸도 안 생긴다 — 최소 두 칸은 벌려 둔다.
+        if upper - lower < gridStep * 2 {
+            upper = lower + gridStep * 2
+        }
+        let span = upper - lower
+        let startTime = samples[0].date.timeIntervalSince1970
+        let endTime = samples[samples.count - 1].date.timeIntervalSince1970
+        let timeSpan = max(endTime - startTime, 1)
+
+        // 가로 눈금선과 세로축 값
+        gridColor.setStroke()
+        var level = lower
+        while level <= upper {
+            let y = plot.maxY - plot.height * CGFloat((level - lower) / span)
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: plot.minX, y: y))
+            line.addLine(to: CGPoint(x: plot.maxX, y: y))
+            line.lineWidth = 0.5
+            line.stroke()
+            drawText(
+                "\(Int(level))",
+                in: CGRect(x: 0, y: y - 7, width: gutterWidth - 8, height: 14),
+                size: 10,
+                weight: .semibold,
+                color: axisTextColor,
+                alignment: .right
+            )
+            level += gridStep
+        }
+
+        let points = samples.map { sample -> CGPoint in
+            CGPoint(
+                x: plot.minX + plot.width * CGFloat((sample.date.timeIntervalSince1970 - startTime) / timeSpan),
+                y: plot.maxY - plot.height * CGFloat((Double(sample.bpm) - lower) / span)
+            )
+        }
+
+        // 곡선 아래 옅은 면 — 값이 아니라 흐름을 읽게 한다.
+        if let context = UIGraphicsGetCurrentContext() {
+            let area = smoothPath(through: points)
+            area.addLine(to: CGPoint(x: plot.maxX, y: plot.maxY))
+            area.addLine(to: CGPoint(x: plot.minX, y: plot.maxY))
+            area.close()
+            context.saveGState()
+            area.addClip()
+            let shades = [lineColor.withAlphaComponent(0.16).cgColor, lineColor.withAlphaComponent(0).cgColor] as CFArray
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: shades, locations: [0, 1]) {
+                context.drawLinearGradient(
+                    gradient,
+                    start: CGPoint(x: plot.minX, y: plot.minY),
+                    end: CGPoint(x: plot.minX, y: plot.maxY),
+                    options: []
+                )
+            }
+            context.restoreGState()
+        }
+
+        let latest = samples[samples.count - 1]
+        let marker = CGPoint(
+            x: min(max(points[points.count - 1].x, plot.minX + 5), plot.maxX - 5),
+            y: points[points.count - 1].y
+        )
+
+        // 최신 값 강조 막대는 선 아래에 깔아 곡선을 가리지 않게 한다.
+        highlightColor.setFill()
+        UIBezierPath(
+            roundedRect: CGRect(x: marker.x - 4, y: marker.y, width: 8, height: plot.maxY - marker.y),
+            cornerRadius: 4
+        ).fill()
+
+        let curve = smoothPath(through: points)
+        curve.lineWidth = 2
+        curve.lineJoinStyle = .round
+        curve.lineCapStyle = .round
+        lineColor.setStroke()
+        curve.stroke()
+
+        let dot = UIBezierPath(arcCenter: marker, radius: 5, startAngle: 0, endAngle: .pi * 2, clockwise: true)
+        paperColor.setFill()
+        dot.fill()
+        dot.lineWidth = 3
+        lineColor.setStroke()
+        dot.stroke()
+
+        // 현재값 말풍선
+        let bubbleText = "\(latest.bpm)"
+        let bubbleFont = UIFont.systemFont(ofSize: 12, weight: .heavy)
+        let bubbleWidth = (bubbleText as NSString).size(withAttributes: [.font: bubbleFont]).width + 18
+        let bubbleRect = CGRect(
+            x: min(max(marker.x - bubbleWidth / 2, 0), bounds.width - bubbleWidth),
+            y: max(marker.y - bubbleHeight - 6, 0),
+            width: bubbleWidth,
+            height: bubbleHeight - 4
+        )
+        lineColor.setFill()
+        UIBezierPath(roundedRect: bubbleRect, cornerRadius: 10).fill()
+        drawText(bubbleText, in: bubbleRect.insetBy(dx: 0, dy: 2), size: 12, weight: .heavy, color: paperColor, alignment: .center)
+
+        // 가로축 시각 — 마지막 눈금이 현재 시각이라 그것만 진하게 둔다.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "HH:mm"
+        let tickCount = 4
+        for index in 0..<tickCount {
+            let ratio = Double(index) / Double(tickCount - 1)
+            let x = plot.minX + plot.width * CGFloat(ratio)
+            let isLatest = index == tickCount - 1
+            drawText(
+                formatter.string(from: Date(timeIntervalSince1970: startTime + timeSpan * ratio)),
+                in: CGRect(
+                    x: min(max(x - 26, 0), bounds.width - 52),
+                    y: plot.maxY + 5,
+                    width: 52,
+                    height: 14
+                ),
+                size: 10,
+                weight: isLatest ? .heavy : .semibold,
+                color: isLatest ? lineColor : axisTextColor,
+                alignment: .center
+            )
+        }
+    }
+
+    // Catmull-Rom 을 3차 베지어로 옮겨 각진 꺾임 없이 잇는다.
+    private func smoothPath(through points: [CGPoint]) -> UIBezierPath {
+        let path = UIBezierPath()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        guard points.count > 1 else { return path }
+        for index in 0..<(points.count - 1) {
+            let previous = points[max(index - 1, 0)]
+            let current = points[index]
+            let next = points[index + 1]
+            let following = points[min(index + 2, points.count - 1)]
+            path.addCurve(
+                to: next,
+                controlPoint1: CGPoint(x: current.x + (next.x - previous.x) / 6, y: current.y + (next.y - previous.y) / 6),
+                controlPoint2: CGPoint(x: next.x - (following.x - current.x) / 6, y: next.y - (following.y - current.y) / 6)
+            )
+        }
+        return path
+    }
+
+    private func drawText(
+        _ text: String,
+        in rect: CGRect,
+        size: CGFloat,
+        weight: UIFont.Weight,
+        color: UIColor,
+        alignment: NSTextAlignment
+    ) {
+        let style = NSMutableParagraphStyle()
+        style.alignment = alignment
+        (text as NSString).draw(in: rect, withAttributes: [
+            .font: UIFont.systemFont(ofSize: size, weight: weight),
+            .foregroundColor: color,
+            .paragraphStyle: style
+        ])
     }
 }

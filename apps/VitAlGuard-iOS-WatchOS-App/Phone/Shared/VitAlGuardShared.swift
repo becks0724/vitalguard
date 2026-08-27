@@ -177,6 +177,11 @@ enum VitAlGuardSharedStorage {
     private static let walletQRPNGDataKey = "preview.walletQRPNGData"
     private static let walletBarcodePNGDataKey = "preview.walletBarcodePNGData"
     private static let walletSyncKey = "preview.lastWalletSync"
+    private static let heartRateHistoryKey = "preview.heartRateHistory"
+    // 홈 심박 카드가 덮는 시간 창. 1분에 한 점만 남기므로 3시간이면 최대 180점이다.
+    private static let heartRateHistoryWindow: TimeInterval = 3 * 60 * 60
+    private static let heartRateHistoryBucket: TimeInterval = 60
+    private static let heartRatePlausibleRange = 25.0...250.0
     private static let wristTemperatureKeys: Set<String> = [
         "wristTemperatureC",
         "wristTemperature",
@@ -353,6 +358,10 @@ enum VitAlGuardSharedStorage {
         let defaults = appDefaults
         defaults.set(data, forKey: snapshotKey)
         defaults.set(Date(), forKey: syncKey)
+        // 병합본이 아니라 이번에 들어온 payload 의 심박만 쌓는다 — 병합본은 직전 값을 그대로 물고 온다.
+        if let raw = payload["heartRate"], let bpm = numericValue(raw) {
+            appendHeartRateSample(Int(bpm.rounded()))
+        }
         return true
     }
 
@@ -363,6 +372,48 @@ enum VitAlGuardSharedStorage {
         else { return nil }
         let receivedAt = defaults.object(forKey: syncKey) as? Date ?? Date.distantPast
         return (values, receivedAt)
+    }
+
+    // 워치가 실제로 보내온 심박만 시각과 함께 쌓는다. 홈 심박 카드의 그래프·평균/최소/최대는 이 기록만 읽는다.
+    static func appendHeartRateSample(_ bpm: Int, at date: Date = Date()) {
+        guard heartRatePlausibleRange.contains(Double(bpm)) else { return }
+        let defaults = appDefaults
+        let stored = defaults.dictionary(forKey: heartRateHistoryKey)
+        var times = stored?["t"] as? [Double] ?? []
+        var values = stored?["v"] as? [Int] ?? []
+        let stamp = date.timeIntervalSince1970
+        guard times.count == values.count else {
+            // 두 배열의 길이가 어긋나면 어느 시각의 값인지 말할 수 없다. 이어 붙이지 않고 버린다.
+            defaults.set(["t": [stamp], "v": [bpm]], forKey: heartRateHistoryKey)
+            return
+        }
+        // 같은 1분 버킷은 최신 값으로 덮는다 — 초 단위 수신을 그대로 쌓으면 창이 조용히 짧아진다.
+        if let last = times.last, stamp - last < heartRateHistoryBucket {
+            times[times.count - 1] = stamp
+            values[values.count - 1] = bpm
+        } else {
+            times.append(stamp)
+            values.append(bpm)
+        }
+        let cutoff = stamp - heartRateHistoryWindow
+        while let first = times.first, first < cutoff {
+            times.removeFirst()
+            values.removeFirst()
+        }
+        defaults.set(["t": times, "v": values], forKey: heartRateHistoryKey)
+    }
+
+    // 창 밖 점은 읽는 쪽에서도 한 번 더 걸러 낸다 — 마지막 수신이 오래된 채 앱만 다시 열릴 수 있다.
+    static func loadHeartRateHistory(now: Date = Date()) -> [(date: Date, bpm: Int)] {
+        guard let stored = appDefaults.dictionary(forKey: heartRateHistoryKey),
+              let times = stored["t"] as? [Double],
+              let values = stored["v"] as? [Int],
+              times.count == values.count
+        else { return [] }
+        let cutoff = now.timeIntervalSince1970 - heartRateHistoryWindow
+        return zip(times, values)
+            .filter { $0.0 >= cutoff }
+            .map { (date: Date(timeIntervalSince1970: $0.0), bpm: $0.1) }
     }
 
     static func saveAppMode(_ mode: AppMode) {
