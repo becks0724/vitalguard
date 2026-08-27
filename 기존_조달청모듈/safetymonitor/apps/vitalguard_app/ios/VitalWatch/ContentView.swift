@@ -88,14 +88,16 @@ struct ContentView: View {
                 title: "HR",
                 value: streamer.latestBPM,
                 range: 30...170,
-                tint: .red,
+                zone: WatchVitalZone.heartRate,
                 side: .leading
             )
+            // ⚠ 오른쪽은 HRV 가 아니라 SpO₂ 다 — HRV 에는 근거 있는 임계가 없어 구간을 못 준다.
+            //   구간 표시를 요청받은 자리라 **임계가 있는 값**을 놓는다. HRV 는 아래 원에 남는다.
             BezelScale(
-                title: "HRV",
-                value: streamer.latestHrvMs,
-                range: 0...150,
-                tint: .purple,
+                title: "SpO₂",
+                value: streamer.latestSpO2,
+                range: 85...100,
+                zone: WatchVitalZone.spo2,
                 side: .trailing
             )
 
@@ -104,14 +106,20 @@ struct ContentView: View {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text("HR")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(VitalGuardWatchPalette.ink)
                     Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
                         .font(.system(size: 40, weight: .bold, design: .rounded))
+                        // ★ 큰 값은 지금 구간의 색을 쓴다 — 화면에서 가장 큰 글자가 상태를
+                        //   숨기면 안 된다. 값이 없으면 기본 녹색이다.
+                        .foregroundStyle(
+                            streamer.latestBPM.map { WatchVitalZone.heartRate($0).color }
+                                ?? VitalGuardWatchPalette.inkStrong
+                        )
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text("bpm")
                         .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(VitalGuardWatchPalette.ink)
                 }
                 // 시계 밴드를 피해 이 줄부터 시작한다 — 눈금은 그 위로 지나가도 된다.
                 .padding(.top, 26)
@@ -133,7 +141,8 @@ struct ContentView: View {
                         range: 85...100,
                         unit: "%",
                         digits: 0,
-                        tint: .cyan
+                        tint: streamer.latestSpO2.map { WatchVitalZone.spo2($0).color }
+                            ?? VitalGuardWatchPalette.ink
                     )
                     CircleStat(
                         label: "활동",
@@ -142,8 +151,10 @@ struct ContentView: View {
                         //   없는 상한을 지어내면 "얼마나 찼는가" 가 거짓이 된다.
                         range: nil,
                         unit: "kcal",
+                        // ⚠ 활동·HRV 는 근거 있는 임계가 없다 — 상태색을 안 쓰고 기본 녹색이다.
+                        //   여기에 색을 주면 없는 판정을 화면이 말하게 된다.
                         digits: 1,
-                        tint: .orange
+                        tint: VitalGuardWatchPalette.inkStrong
                     )
                     CircleStat(
                         label: "HRV",
@@ -151,14 +162,14 @@ struct ContentView: View {
                         range: 0...150,
                         unit: "ms",
                         digits: 0,
-                        tint: .purple
+                        tint: VitalGuardWatchPalette.inkStrong
                     )
                 }
 
                 if streamer.isRunning {
                     Text("수집 중 · 크라운을 내리면 상세")
                         .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(VitalGuardWatchPalette.ink)
                 } else {
                     Button {
                         page = .settings
@@ -194,8 +205,8 @@ struct ContentView: View {
                 Text(" ")
             }
         }
-        .font(.system(size: 8))
-        .foregroundStyle(.secondary)
+        .font(.system(size: 9))
+        .foregroundStyle(VitalGuardWatchPalette.ink)
     }
 
     private static func clock(_ date: Date) -> String {
@@ -466,6 +477,55 @@ struct DiscreteCountsGrid: View {
     }
 }
 
+/// 워치 표시용 구간 판정.
+///
+/// ⚠ **임계를 여기서 새로 만들지 않는다.** 값은 관제웹 `apps/dashboard-web/lib/severity.ts`
+///   (= 폰 `lib/vital_range.dart`)와 같은 출처다. 두 곳이 갈리면 손목과 관제가 다른 말을 하고,
+///   오경보의 책임 소재가 사라진다.
+/// ⚠ **근거 있는 임계는 심박·SpO₂ 뿐이다.** HRV·활동 에너지에는 문헌 임계가 없어 구간을
+///   주지 않는다 — 없는 판정을 색으로 지어내지 않는다.
+/// ⚠ 활동 게이트가 없어 **안정 기준**이다 — 작업 중 상승이 주의로 뜰 수 있다(폰과 같은 한계).
+enum WatchVitalZone {
+    case normal
+    case caution
+    case danger
+
+    /// severity.ts `heartRateStatus`(활동 미지정) · 위험 ≥130·≤40 · 주의 ≥110·≤50 · 정상 51–109
+    static func heartRate(_ bpm: Double) -> WatchVitalZone {
+        if bpm >= 130 || bpm <= 40 { return .danger }
+        if bpm >= 110 || bpm <= 50 { return .caution }
+        return .normal
+    }
+
+    /// severity.ts `spo2Status` · 위험 <88 · 주의 88–91 · 정상 ≥92
+    static func spo2(_ pct: Double) -> WatchVitalZone {
+        if pct < 88 { return .danger }
+        if pct < 92 { return .caution }
+        return .normal
+    }
+
+    var color: Color {
+        switch self {
+        case .normal: VitalGuardWatchPalette.normal
+        case .caution: VitalGuardWatchPalette.caution
+        case .danger: VitalGuardWatchPalette.danger
+        }
+    }
+}
+
+/// 손목 화면 색. 기본 글자는 녹색 계열이고(사용자 결정) 상태색은 **판정에만** 쓴다.
+/// ⚠ 정상 구간 색과 기본 글자 색을 같은 값으로 두지 않는다 — 같으면 "정상이라 초록" 인지
+///   "그냥 글자라 초록" 인지 구별이 안 된다. 기본은 낮은 채도, 정상은 선명한 초록이다.
+enum VitalGuardWatchPalette {
+    /// 기본 글자 — 라벨·단위·안내.
+    static let ink = Color(red: 0.44, green: 0.86, blue: 0.62)
+    /// 큰 값처럼 눈이 먼저 가는 자리.
+    static let inkStrong = Color(red: 0.30, green: 0.95, blue: 0.58)
+    static let normal = Color(red: 0.06, green: 0.85, blue: 0.44)
+    static let caution = Color(red: 0.98, green: 0.70, blue: 0.10)
+    static let danger = Color(red: 0.98, green: 0.28, blue: 0.24)
+}
+
 /// 울트라 페이스의 베젤 눈금 — **화면의 둥근 모서리까지 따라 도는** 눈금자.
 ///
 /// 곧은 세로줄이 아니라 실제 페이스처럼 모서리 곡선을 타고 내려간다. 눈금 위치는 직접 만든
@@ -477,7 +537,8 @@ private struct BezelScale: View {
     let title: String
     let value: Double?
     let range: ClosedRange<Double>
-    let tint: Color
+    /// 그 위치의 값이 어느 구간인가. nil 이면 구간을 안 칠한다(근거 있는 임계가 없는 값).
+    let zone: ((Double) -> WatchVitalZone)?
     let side: HorizontalEdge
 
     private static let tickCount = 26
@@ -514,27 +575,36 @@ private struct BezelScale: View {
                     let t = Double(index) / Double(Self.tickCount)
                     guard let point = Self.point(on: path, at: t) else { continue }
                     let normal = Self.inwardNormal(from: point, toward: center)
-                    let length: CGFloat = index % 5 == 0 ? 11 : 6
+                    let length: CGFloat = index % 5 == 0 ? 12 : 7
+                    // ★ 눈금 하나하나가 **그 위치의 값**이 어느 구간인지 말한다 — 띠 전체가
+                    //   신호등이 되어, 지금 값이 어디쯤인지 뿐 아니라 어디부터 위험인지도 보인다.
+                    let tickValue = range.lowerBound
+                        + (range.upperBound - range.lowerBound) * (1 - t)
+                    let color = zone.map { $0(tickValue).color.opacity(0.85) }
+                        ?? Color.white.opacity(0.30)
                     var tick = Path()
                     tick.move(to: point)
                     tick.addLine(to: CGPoint(x: point.x + normal.dx * length,
                                              y: point.y + normal.dy * length))
-                    context.stroke(tick, with: .color(.white.opacity(0.30)), lineWidth: 1)
+                    context.stroke(tick, with: .color(color), lineWidth: 1.2)
                 }
                 // 값 표식 — 위가 큰 값이다(참고 화면과 같은 방향).
-                if let ratio, let point = Self.point(on: path, at: 1 - ratio) {
+                if let ratio, let value, let point = Self.point(on: path, at: 1 - ratio) {
                     let normal = Self.inwardNormal(from: point, toward: center)
                     var marker = Path()
                     marker.move(to: point)
-                    marker.addLine(to: CGPoint(x: point.x + normal.dx * 14,
-                                               y: point.y + normal.dy * 14))
-                    context.stroke(marker, with: .color(tint), lineWidth: 3)
+                    marker.addLine(to: CGPoint(x: point.x + normal.dx * 17,
+                                               y: point.y + normal.dy * 17))
+                    // 검은 테두리를 먼저 깔아 눈금 위에서도 표식이 묻히지 않게 한다.
+                    let markerColor = zone.map { $0(value).color } ?? VitalGuardWatchPalette.ink
+                    context.stroke(marker, with: .color(.black), lineWidth: 5)
+                    context.stroke(marker, with: .color(markerColor), lineWidth: 3)
                 }
             }
             .overlay(alignment: side == .leading ? .topLeading : .topTrailing) {
                 Text(title)
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
                     // ⚠ 칸이 좁아 그냥 두면 `HRV` 가 `HR/V` 로 접힌다.
                     .fixedSize()
                     // ⚠ 실기기는 화면 모서리가 둥글어 구석에 둔 글자가 잘린다(시뮬레이터 실측).
@@ -625,7 +695,7 @@ private struct CircleStat: View {
                 }
                 Text(text)
                     .font(.system(size: 16, weight: .bold, design: .rounded))
-                    .foregroundStyle(value == nil ? Color.secondary : tint)
+                    .foregroundStyle(value == nil ? VitalGuardWatchPalette.ink : tint)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(.horizontal, 3)
@@ -633,7 +703,7 @@ private struct CircleStat: View {
             .frame(width: 50, height: 50)
             Text("\(label) \(unit)")
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(VitalGuardWatchPalette.ink)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
         }
@@ -650,13 +720,16 @@ private struct HeartRateSparkline: View {
             if points.count < 2 {
                 Text("심박 수집 중")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
                     .frame(width: geo.size.width, height: geo.size.height)
             } else {
                 ZStack {
                     line(in: geo.size).stroke(
                         LinearGradient(
-                            colors: [.red.opacity(0.55), .red],
+                            colors: [
+                                VitalGuardWatchPalette.ink.opacity(0.5),
+                                VitalGuardWatchPalette.inkStrong,
+                            ],
                             startPoint: .leading,
                             endPoint: .trailing
                         ),
@@ -700,7 +773,7 @@ private struct HeartRateSparkline: View {
     private func marker(in size: CGSize) -> some View {
         let last = position(points.count - 1, in: size)
         return Circle()
-            .fill(.red)
+            .fill(VitalGuardWatchPalette.inkStrong)
             .frame(width: 5, height: 5)
             .position(x: min(last.x, size.width - 3), y: last.y)
     }
