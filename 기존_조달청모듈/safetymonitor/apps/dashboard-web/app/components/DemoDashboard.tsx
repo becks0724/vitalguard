@@ -59,6 +59,7 @@ import { ExpandableTabs } from "./ExpandableTabs";
 import { useSession } from "./LoginGate";
 import { getSessionRole, getSessionToken } from "./session-token";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
+import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 import {
   WorkerGpsMap,
   type MapFocus,
@@ -872,6 +873,19 @@ const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
 const CALENDAR_MIGRATED_KEY = "safetymonitor.calendar-migrated.v1";
 
 // 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정과 같은 서버 레이어(테이블 별개).
+/** 미확인 새 현장 사진 — 탭 배지와 미니 달력 아래 미확인 리스트가 공유하는 최소 정보. */
+type CalendarUnseenMedia = {
+  id: string;
+  dateKey: string;
+  capturedAt: string | null;
+  mediaType: string;
+  title: string | null;
+  uploader: string | null;
+  thumbnailUrl: string | null;
+  /** 썸네일이 없을 때의 폴백 — 사이드바(4207행 부근)와 같은 규칙. 영상이면 img 에 못 넣으니 아이콘. */
+  mediaUrl: string | null;
+};
+
 type CalendarMediaComment = {
   id: string;
   authorName: string | null;
@@ -1488,6 +1502,22 @@ function CalendarEventChip({
   );
 }
 
+/** 일정 폼의 "지금 값" 묶음 — 저장 버튼의 변경 여부(dirty) 판정에만 쓴다.
+ *  ★ 새 입력 필드를 추가하면 여기에도 넣어야 한다. 빠뜨리면 그 필드만 고쳤을 때
+ *    버튼이 잠긴 채로 남아 저장할 수 없다(폼 상태·payload·복원과 한 벌). */
+type ScheduleFormValues = {
+  title: string;
+  labelId: string;
+  startTime: string;
+  endTime: string;
+  hazardType: string;
+  dateDraft: string;
+  endDateDraft: string;
+  note: string;
+  allDay: boolean;
+};
+const scheduleFormSignature = (v: ScheduleFormValues) => JSON.stringify(v);
+
 function ScheduleEventFormModal({
   floating = false,
   dateKey,
@@ -1498,7 +1528,6 @@ function ScheduleEventFormModal({
   onLabelsChange,
   onAdd,
   onUpdate,
-  onDelete,
   onClose,
 }: {
   // 모달이 열린 기준 날짜 — 신규 등록의 기본값이자 편집 취소 시 되돌아갈 값.
@@ -1507,12 +1536,11 @@ function ScheduleEventFormModal({
   labels: ScheduleLabelDef[];
   // 라벨 편집(전체교체)은 총괄 관리자 전용 — 서버 판정을 받아쓴다.
   labelsCanEdit: boolean;
-  // 목록의 [수정] 으로 열렸을 때 처음부터 편집 상태로 채울 대상.
+  // 사이드바 연필로 열렸을 때 처음부터 편집 상태로 채울 대상.
   initialEditId: string | null;
   onLabelsChange: (labels: ScheduleLabelDef[]) => void;
   onAdd: (event: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => void;
   onUpdate: (id: string, event: Omit<CalendarEvent, "id" | "dateKey">, dateKey: string) => void;
-  onDelete: (event: CalendarEvent) => void;
   onClose: () => void;
   /** 탭(inline)에서 body 로 포털돼 뜨는가. 그때는 fixed + 높은 z 를 쓴다. */
   floating?: boolean;
@@ -1532,6 +1560,38 @@ function ScheduleEventFormModal({
   const [allDay, setAllDay] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [labelEditOpen, setLabelEditOpen] = useState(false);
+  // 편집을 닫은 직후 잠깐 초록 체크(확대→복귀 팝)를 보여주는 상태 — 0.7초 뒤 + 버튼으로 복귀.
+  const [labelSavedFlash, setLabelSavedFlash] = useState(false);
+  useEffect(() => {
+    if (!labelSavedFlash) return;
+    const t = setTimeout(() => setLabelSavedFlash(false), 700);
+    return () => clearTimeout(t);
+  }, [labelSavedFlash]);
+
+  // 변경 여부 기준선 — 폼을 채우는 두 자리(resetForm·startEdit)에서만 갱신한다.
+  // 지금 값이 이것과 같으면 "바뀐 게 없다" → 저장 버튼을 반투명으로 잠근다.
+  const baselineRef = useRef(
+    scheduleFormSignature({
+      title: "",
+      labelId: labels[0]?.id ?? "",
+      startTime: "",
+      endTime: "",
+      hazardType: "",
+      dateDraft: dateKey,
+      endDateDraft: "",
+      note: "",
+      allDay: false,
+    }),
+  );
+  // 저장 직후 초록 체크(확대→복귀)를 보여주는 구간 — 그다음 창을 닫는다.
+  const [submitFlash, setSubmitFlash] = useState(false);
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
+    },
+    [],
+  );
 
   const resetForm = useCallback(() => {
     setTitle("");
@@ -1544,6 +1604,17 @@ function ScheduleEventFormModal({
     setHazardType("");
     setDateDraft(dateKey);
     setEditingId(null);
+    baselineRef.current = scheduleFormSignature({
+      title: "",
+      labelId: labels[0]?.id ?? "",
+      startTime: "",
+      endTime: "",
+      hazardType: "",
+      dateDraft: dateKey,
+      endDateDraft: "",
+      note: "",
+      allDay: false,
+    });
   }, [labels, dateKey]);
 
   const startEdit = useCallback(
@@ -1560,6 +1631,17 @@ function ScheduleEventFormModal({
       setEndDateDraft(event.endDateKey ?? "");
       setNote(event.note ?? "");
       setAllDay(!event.startTime);
+      baselineRef.current = scheduleFormSignature({
+        title: event.title,
+        labelId: labels.some((l) => l.id === event.labelId) ? event.labelId : labels[0]?.id ?? "",
+        startTime: event.startTime ?? "",
+        endTime: event.endTime ?? "",
+        hazardType: event.hazardType ?? "",
+        dateDraft: event.dateKey,
+        endDateDraft: event.endDateKey ?? "",
+        note: event.note ?? "",
+        allDay: !event.startTime,
+      });
     },
     [labels],
   );
@@ -1616,10 +1698,15 @@ function ScheduleEventFormModal({
     } else {
       onAdd(draft, dateDraft);
     }
-    resetForm();
-    // 등록·수정을 마치면 닫는다(사용자 요청 2026-08-20). 종전엔 폼만 비우고 열려 있어
-    // "저장이 됐나" 를 화면으로 확인할 수 없었다.
-    onClose();
+    // 저장은 이미 끝났다 — 화면만 초록 체크로 바꿔 "됐다"를 보여주고 잠깐 뒤 닫는다.
+    // ★ 저장을 지연시키지 않는다. 애니메이션 중 사용자가 X 로 닫아도 데이터는 이미 갔다.
+    setSubmitFlash(true);
+    submitTimerRef.current = setTimeout(() => {
+      resetForm();
+      // 등록·수정을 마치면 닫는다(사용자 요청 2026-08-20). 종전엔 폼만 비우고 열려 있어
+      // "저장이 됐나" 를 화면으로 확인할 수 없었다.
+      onClose();
+    }, 620);
   };
 
   const addLabel = () => {
@@ -1653,7 +1740,8 @@ function ScheduleEventFormModal({
           ? "fixed inset-0 z-[75] flex items-end justify-center bg-black/40 p-3 sm:items-center"
           : "absolute inset-0 z-10 flex items-end justify-center bg-black/30 p-3 sm:items-center"
       }
-      onClick={onClose}
+      // ⚠ 바깥(배경) 클릭으로 닫지 않는다(2026-08-27 사용자 결정) — 입력·수정 중인 내용이
+      //   오클릭 한 번에 통째로 날아가고 되돌릴 수단이 없다. 닫기는 우상단 X 와 ESC 로만.
       role="dialog"
       aria-modal="true"
       aria-label="일정 등록"
@@ -1718,24 +1806,9 @@ function ScheduleEventFormModal({
                     </div>
                     <CalendarEventChip event={event} color={findLabelDef(labels, event.labelId).color} />
                   </div>
-                  {event.canEdit && (
-                    <div className="flex shrink-0 flex-col gap-1">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(event)}
-                        className="rounded-lg px-2 py-1 text-[10px] font-medium text-ink transition hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10"
-                      >
-                        수정
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDelete(event)}
-                        className="rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                      >
-                        삭제
-                      </button>
-                    </div>
-                  )}
+                  {/* 수정·삭제 버튼은 두지 않는다(2026-08-27 사용자 결정) — 이 모달은 사이드바 연필로
+                      열리는 순간 이미 그 일정을 편집 중이라 [수정]이 같은 값을 다시 싣는 무동작이었고,
+                      수정·삭제는 사이드바 카드의 연필·휴지통에 이미 있다. 여기는 읽기용 목록이다. */}
                 </li>
               ))}
             </ul>
@@ -1806,13 +1879,37 @@ function ScheduleEventFormModal({
             <div className="mb-1.5 flex items-center justify-between">
               <p className="text-[11px] font-semibold text-muted dark:text-on-dark-soft">일정 라벨</p>
               {labelsCanEdit && (
+                // 원 노드 3상태 — 닫힘: 진한 검정 + · 열림: 진한 검정 체크(=완료) ·
+                // 완료 직후 0.7초: 초록 체크가 확대→복귀 팝(label-saved-pop) 후 + 로 복귀.
                 <button
                   type="button"
-                  onClick={() => setLabelEditOpen((v) => !v)}
-                  className="rounded-lg px-2 py-0.5 text-[11px] font-medium text-brand-accent transition hover:bg-surface-strong dark:text-primary dark:hover:bg-white/10"
+                  onClick={() => {
+                    if (labelEditOpen) {
+                      setLabelEditOpen(false);
+                      setLabelSavedFlash(true);
+                    } else {
+                      setLabelSavedFlash(false);
+                      setLabelEditOpen(true);
+                    }
+                  }}
+                  className="grid h-6 w-6 place-items-center rounded-full border border-hairline bg-canvas transition hover:bg-surface-strong dark:border-white/15 dark:bg-surface-dark dark:hover:bg-white/10"
                   aria-expanded={labelEditOpen}
+                  aria-label={labelEditOpen ? "편집 완료" : "라벨 편집"}
+                  title={labelEditOpen ? "편집 완료" : "라벨 편집"}
                 >
-                  {labelEditOpen ? "편집 완료" : "라벨 편집"}
+                  {labelEditOpen ? (
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="text-ink dark:text-on-dark">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : labelSavedFlash ? (
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="label-saved-pop text-semantic-up">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true" className="text-ink dark:text-on-dark">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                  )}
                 </button>
               )}
             </div>
@@ -1821,7 +1918,7 @@ function ScheduleEventFormModal({
                 <label
                   key={l.id}
                   className={[
-                    "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition",
+                    "group relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition",
                     labelId === l.id
                       ? "border-ink/20 bg-surface-card text-ink dark:border-white/20 dark:bg-surface-dark-elevated dark:text-on-dark"
                       : "border-hairline text-muted hover:bg-surface-soft dark:border-white/10 dark:hover:bg-white/5",
@@ -1837,11 +1934,44 @@ function ScheduleEventFormModal({
                   />
                   <ScheduleLabelDot color={l.color} className="h-2 w-2" />
                   {l.name.trim() || "(이름 없음)"}
+                  {/* 호버 삭제 노드 — 칩 우상단 빈 원 + x. 권한자에게만, 마지막 1개는 못 지운다.
+                      ⚠ label 안의 버튼이라 preventDefault 로 라디오 선택(label 기본 동작)을 막아야 한다.
+                      ⚠ 선택 중인 라벨을 지우면 labelId 가 허공을 가리키므로 남는 라벨로 옮겨 준다. */}
+                  {labelsCanEdit && labels.length > 1 && (
+                    <button
+                      type="button"
+                      aria-label={`라벨 삭제: ${l.name.trim() || "(이름 없음)"}`}
+                      title="라벨 삭제"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (labelId === l.id) setLabelId(labels.find((x) => x.id !== l.id)?.id ?? "");
+                        removeLabel(l.id);
+                      }}
+                      className="absolute -right-1.5 -top-1.5 z-10 grid h-4 w-4 place-items-center rounded-full border border-hairline bg-canvas text-red-600 opacity-0 shadow-sm transition group-hover:opacity-100 focus-visible:opacity-100 dark:border-white/15 dark:bg-surface-dark dark:text-red-400"
+                    >
+                      <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                        <path d="M6 6l12 12M18 6L6 18" />
+                      </svg>
+                    </button>
+                  )}
                 </label>
               ))}
             </div>
 
-            {labelEditOpen && (
+            {/* 라벨 편집 패널 — 열고 닫을 때 스르륵(grid-rows 0fr↔1fr 트랜지션).
+                ⚠ max-height 방식이 아니라 grid-rows 인 이유: 내용 높이(라벨 수)를 몰라도 동작한다.
+                ⚠ 조건부 언마운트가 아니라 상시 마운트 — 언마운트면 닫힘 애니메이션이 없다.
+                  닫힘 상태의 포커스·클릭은 inert 가 막는다(React 19). */}
+            <div
+              className={[
+                "grid transition-[grid-template-rows,opacity] duration-300 ease-out",
+                labelEditOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+              ].join(" ")}
+              inert={!labelEditOpen}
+              aria-hidden={!labelEditOpen}
+            >
+              <div className="overflow-hidden">
               <div className="mt-2 space-y-2 rounded-xl border border-hairline bg-surface-soft p-2.5 dark:border-white/10 dark:bg-surface-dark-elevated">
                 {labels.map((l) => (
                   <div
@@ -1861,9 +1991,13 @@ function ScheduleEventFormModal({
                         type="button"
                         onClick={() => removeLabel(l.id)}
                         disabled={labels.length <= 1}
-                        className="shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-red-400 dark:hover:bg-red-500/10"
+                        aria-label="라벨 삭제"
+                        title="라벨 삭제"
+                        className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-hairline bg-canvas text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/15 dark:bg-surface-dark dark:text-red-400 dark:hover:bg-red-500/10"
                       >
-                        삭제
+                        <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true">
+                          <path d="M6 6l12 12M18 6L6 18" />
+                        </svg>
                       </button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
@@ -1894,7 +2028,8 @@ function ScheduleEventFormModal({
                   + 라벨 추가
                 </button>
               </div>
-            )}
+              </div>
+            </div>
           </div>
 
           <div>
@@ -1984,30 +2119,60 @@ function ScheduleEventFormModal({
           </div>
         </div>
 
+        {/* 하단은 저장 하나만 둔다(2026-08-27 사용자 결정) — [닫기]는 우상단 X 와 중복이고,
+            [수정 취소]도 닫으면 어차피 편집이 풀리므로 같은 일을 두 번 말하던 버튼이었다. */}
         <div className="flex justify-end gap-2 border-t border-hairline px-4 py-3 dark:border-white/10">
-          {editingId && (
-            <button
-              type="button"
-              onClick={resetForm}
-              className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:bg-surface-strong dark:hover:bg-white/10"
-            >
-              수정 취소
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium text-muted hover:bg-surface-strong dark:hover:bg-white/10"
-          >
-            닫기
-          </button>
+          {/* 저장 버튼 — 3상태(2026-08-27 사용자 결정).
+              ① 바뀐 게 없거나 필수값 미충족 → 반투명(잠김)  ② 변경 발생 → 불투명
+              ③ 누르면 초록 체크가 살짝 커졌다 돌아온 뒤 창이 닫힌다.
+              수정 모드는 흰 배경 + 검은 테두리, 신규 등록은 기존 파란 CTA 를 유지한다. */}
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={!title.trim() || !DATE_KEY_RE.test(dateDraft)}
-            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-on-primary transition hover:bg-primary-active disabled:cursor-not-allowed disabled:bg-primary-disabled disabled:text-muted"
+            disabled={
+              submitFlash ||
+              !title.trim() ||
+              !DATE_KEY_RE.test(dateDraft) ||
+              scheduleFormSignature({
+                title,
+                labelId,
+                startTime,
+                endTime,
+                hazardType,
+                dateDraft,
+                endDateDraft,
+                note,
+                allDay,
+              }) === baselineRef.current
+            }
+            className={[
+              "grid min-w-[4.5rem] place-items-center rounded-lg px-4 py-1.5 text-sm font-semibold transition",
+              "disabled:cursor-not-allowed disabled:opacity-40",
+              editingId
+                ? "border border-ink bg-canvas text-ink hover:bg-surface-strong dark:border-white/70 dark:bg-surface-dark dark:text-on-dark dark:hover:bg-white/10"
+                : "bg-primary text-on-primary hover:bg-primary-active",
+            ].join(" ")}
           >
-            {editingId ? "수정 완료" : "일정 추가"}
+            {submitFlash ? (
+              <svg
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="label-saved-pop text-semantic-up"
+              >
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : editingId ? (
+              "수정"
+            ) : (
+              "일정 추가"
+            )}
           </button>
         </div>
       </div>
@@ -2202,6 +2367,14 @@ function startOfWeek(d: Date) {
 }
 
 /** 미니 월간 — 날짜 이동 전용. 일정 칩·날씨·배지는 일부러 안 그린다(주간 격자가 그 역할). */
+/** 미니 월간의 기간 표시 한 칸 — 색 + 앞뒤 연속 여부(연속이면 그쪽 끝을 각지게 해 옆 칸과 붙인다). */
+type SpanDayMark = { color: LabelColor; contPrev: boolean; contNext: boolean };
+/** 날짜키 → **레인별** 표시. 배열 인덱스가 곧 세로 줄 위치이고, 그 날 그 레인이 비면 undefined.
+ *  ★ 색으로 뭉치지 않는다 — 일정마다 자기 줄을 갖는다(같은 파란색 두 일정도 두 줄). */
+type SpanDayLanes = Map<string, (SpanDayMark | undefined)[]>;
+/** 미니 월간에 그릴 최대 줄 수. 넘치는 일정은 메인 「기간」 행에서 본다(미니는 요약 신호다). */
+const MINI_SPAN_LANE_MAX = 4;
+
 function MiniMonth({
   viewDate,
   selected,
@@ -2214,8 +2387,10 @@ function MiniMonth({
   viewDate: Date;
   selected: Date;
   today: Date;
-  /** 기간 일정이 걸친 날짜키 → 라벨 색. 미니 월간에도 기간이 보이게 한다(사용자 요청 2026-08-20). */
-  spanDays?: Map<string, LabelColor>;
+  /** 기간 일정이 걸친 날짜키 → 레인별 표시. 미니 월간에도 기간이 보이게 한다(사용자 요청 2026-08-20).
+   *  2026-08-27: ①칸마다 끊긴 짧은 바 → **날짜 수만큼 이어지는 띠** ②색으로 뭉치지 않고
+   *  **일정마다 자기 줄**(메인 「기간」 행이 여러 줄로 쌓는 것과 같은 읽기). */
+  spanDays?: SpanDayLanes;
   onSelect: (d: Date) => void;
   onPrev: () => void;
   onNext: () => void;
@@ -2225,6 +2400,14 @@ function MiniMonth({
   const days = new Date(year, month + 1, 0).getDate();
   const lead = new Date(year, month, 1).getDay();
   const cells: (number | null)[] = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
+  // 이 달에 필요한 줄 수 — 칸마다 다르면 숫자 높이가 들쭉날쭉해지므로 **달 전체를 같은 줄 수**로 맞춘다.
+  const spanLaneCount = Math.min(
+    MINI_SPAN_LANE_MAX,
+    Math.max(
+      0,
+      ...cells.map((d) => (d === null ? 0 : (spanDays?.get(toDateKey(new Date(year, month, d)))?.length ?? 0))),
+    ),
+  );
   return (
     <div className="w-[13.5rem] shrink-0 rounded-xl border border-hairline bg-surface-soft p-2 dark:border-white/10 dark:bg-surface-dark-elevated">
       <div className="mb-1 flex items-center justify-between">
@@ -2246,32 +2429,51 @@ function MiniMonth({
           const isToday = calendarSameDay(date, today);
           const isSel = calendarSameDay(date, selected);
           // 기간 일정이 걸친 날 — 숫자 아래 얇은 색 막대. 숫자 자체는 안 건드린다(오늘/선택 표시와 겹치지 않게).
-          const spanColor = spanDays?.get(toDateKey(date));
+          const spanLanes = spanDays?.get(toDateKey(date));
           return (
             <button
               key={d}
               type="button"
               onClick={() => onSelect(date)}
-              aria-label={`${year}년 ${month + 1}월 ${d}일${spanColor ? " · 기간 일정" : ""}`}
+              aria-label={`${year}년 ${month + 1}월 ${d}일${spanLanes?.some(Boolean) ? " · 기간 일정" : ""}`}
               aria-pressed={isSel}
               className="grid place-items-center py-0.5"
             >
               <span
                 className={[
                   "grid h-[1.35rem] w-[1.35rem] place-items-center rounded-full text-[10px] tabular-nums transition",
-                  isToday
+                  // ★ 선택이 오늘보다 우선 — 오늘은 반투명(primary-subtle), 선택은 푸른 채움.
+                  //   오늘을 클릭하면 반투명 → 푸른 채움으로 바뀌는 것이 요구 동작(2026-08-27 사용자 결정).
+                  isSel
                     ? "bg-primary font-bold text-on-primary"
-                    : isSel
+                    : isToday
                       ? "bg-primary-subtle font-semibold text-primary"
                       : "text-ink hover:bg-surface-strong dark:text-on-dark dark:hover:bg-white/10",
                 ].join(" ")}
               >
                 {d}
               </span>
-              <span
-                aria-hidden="true"
-                className={`mt-[1px] block h-[2px] w-3.5 rounded-full ${spanColor ? LABEL_COLOR_META[spanColor].dot : "bg-transparent"}`}
-              />
+              {/* 기간 띠 — **일정마다 한 줄**(레인). 칸 폭 전체라 옆 날과 맞닿아 가로로 이어지고,
+                  이어지는 쪽 끝은 각지게·시작/종료 끝만 둥글게(메인 「기간」 행의 openStart/openEnd 규칙).
+                  ⚠ 빈 레인도 자리를 남긴다 — 안 남기면 같은 일정의 줄이 날마다 위아래로 흔들린다. */}
+              {spanLaneCount > 0 && (
+                <span aria-hidden="true" className="mt-[1px] flex w-full flex-col gap-[1px]">
+                  {Array.from({ length: spanLaneCount }, (_, lane) => {
+                    const mk = spanLanes?.[lane];
+                    return (
+                      <span
+                        key={lane}
+                        className={[
+                          "block h-[2px] w-full",
+                          mk ? LABEL_COLOR_META[mk.color].dot : "bg-transparent",
+                          mk && !mk.contPrev ? "rounded-l-full" : "",
+                          mk && !mk.contNext ? "rounded-r-full" : "",
+                        ].join(" ")}
+                      />
+                    );
+                  })}
+                </span>
+              )}
             </button>
           );
         })}
@@ -2335,10 +2537,17 @@ function WeekGrid({
                 <span className={`text-[10px] font-semibold ${wd === 0 ? "text-red-500" : wd === 6 ? "text-blue-600" : "text-muted dark:text-on-dark-soft"}`}>
                   {CALENDAR_WEEKDAYS[wd]}
                 </span>
+                {/* 선택 날짜도 표시한다 — 미니 달력과 같은 규칙(선택=푸른 채움이 우선, 오늘=반투명).
+                    없으면 미니 달력에서 같은 주의 날짜를 골랐을 때 메인이 안 따라온 것처럼 보인다(2026-08-27 실측).
+                    오늘을 선택하면 반투명 → 푸른 채움으로 바뀐다(사용자 결정). */}
                 <span
                   className={[
                     "grid h-6 w-6 place-items-center rounded-full text-xs tabular-nums",
-                    isToday ? "bg-primary font-bold text-on-primary" : "font-semibold text-ink dark:text-on-dark",
+                    calendarSameDay(d, selected)
+                      ? "bg-primary font-bold text-on-primary"
+                      : isToday
+                        ? "bg-primary-subtle font-semibold text-primary"
+                        : "font-semibold text-ink dark:text-on-dark",
                   ].join(" ")}
                 >
                   {d.getDate()}
@@ -2600,6 +2809,9 @@ function HeaderCalendarPopup({
   variant = "popup",
   active = false,
   workerAliases,
+  unseenMedia,
+  onSeeMedia,
+  onSeeAllMedia,
 }: {
   open: boolean;
   onClose: () => void;
@@ -2607,6 +2819,11 @@ function HeaderCalendarPopup({
   lon?: number;
   workerCount: number;
   variant?: "popup" | "inline";
+  /** 미확인 새 현장 사진 — inline 주간 모드에서 미니 달력 아래 리스트로 그린다(2026-08-26). */
+  unseenMedia?: CalendarUnseenMedia[];
+  /** 리스트 항목 클릭 → 그 항목을 봄 처리(부모의 미확인 집합이 원천 — 여기서 직접 지우지 않는다). */
+  onSeeMedia?: (id: string) => void;
+  onSeeAllMedia?: () => void;
   // 탭 활성 여부. 페이저가 **모든 페이지를 마운트 유지**하므로, 이게 없으면 다른 탭에서도
   // 우측 고정 사이드바가 화면에 남는다.
   active?: boolean;
@@ -2682,6 +2899,9 @@ function HeaderCalendarPopup({
   const [lightbox, setLightbox] = useState<CalendarMedia | null>(null);
   // 초기 일정·라벨 로드 완료 플래그 — 로드 전엔 라벨 서버 반영(PUT) 보류
   const [hydrated, setHydrated] = useState(false);
+  // 첫 미디어 조회가 끝났는가 — 일정(hydrated)과 함께 로딩 화면의 종료 조건이다.
+  // ★ 둘을 함께 기다린다. 일정만 보고 열면 격자가 먼저 뜨고 사진 칩이 뒤늦게 튀어 들어온다.
+  const [mediaHydrated, setMediaHydrated] = useState(false);
   // 플로팅 창 드래그 위치(기본 위치 대비 translate 오프셋). null = 기본(우상단). 열 때마다 리셋.
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -2754,6 +2974,10 @@ function HeaderCalendarPopup({
       setMediaByDate(map);
     } catch {
       // 미디어 조회 실패는 조용히 무시 — 캘린더 본기능 유지
+    } finally {
+      // ⚠ 성공·실패·무시(옛 달 응답) 어느 경로로 빠져나가도 반드시 내린다 —
+      //   한 갈래라도 빠뜨리면 로딩 화면이 영원히 걸린 채로 남는다.
+      setMediaHydrated(true);
     }
   }, []);
 
@@ -3115,8 +3339,13 @@ function HeaderCalendarPopup({
       if (e.key === "Escape") {
         // 삭제 확인이 떠 있으면 그것부터 닫는다(가장 위 레이어 우선).
         if (pendingDelete) setPendingDelete(null);
-        else if (formDate) setFormDate(null);
-        else onClose();
+        else if (formDate) {
+          // ⚠ 둘을 **함께** 지운다 — `formEditId` 만 남으면 다음에 새 일정으로 연 모달이
+          //   그 옛 일정의 편집 모드로 열린다(2026-08-27 실측: 처음부터 「일정 수정」 ·
+          //   목록의 수정 버튼이 무반응으로 보임 · 저장하면 옛 일정을 덮어쓴다).
+          setFormDate(null);
+          setFormEditId(null);
+        } else onClose();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -3217,18 +3446,43 @@ function HeaderCalendarPopup({
   const selectedKey = toDateKey(selected);
   // 기간 일정이 걸친 날짜 → 라벨 색. 미니 월간이 이걸 밑줄로 그린다.
   // ⚠ 겹치면 먼저 만난 것을 쓴다 — 미니에서 색을 겹쳐 봐야 읽히지 않는다.
-  const spanDayColors = useMemo(() => {
-    const out = new Map<string, LabelColor>();
+  const spanDayLanes = useMemo<SpanDayLanes>(() => {
+    const out: SpanDayLanes = new Map();
+    // ① 기간 일정만 모은다(같은 일정이 여러 날짜키에 들어 있어 id 로 접는다) + 시작일 순 정렬 —
+    //    정렬해야 레인 배정이 안정적이다(같은 데이터면 항상 같은 줄).
     const seen = new Set<string>();
-    for (const e of Object.values(eventsByDate).flat()) {
-      if (!isSpanEvent(e) || seen.has(e.id)) continue;
-      seen.add(e.id);
+    const spans = Object.values(eventsByDate)
+      .flat()
+      .filter((e) => {
+        if (!isSpanEvent(e) || seen.has(e.id)) return false;
+        seen.add(e.id);
+        return true;
+      })
+      .sort(
+        (a, b) =>
+          a.dateKey.localeCompare(b.dateKey) ||
+          (b.endDateKey ?? b.dateKey).localeCompare(a.endDateKey ?? a.dateKey),
+      );
+    // ② 레인 배정 — 겹치지 않는 일정끼리는 같은 줄을 재사용한다(구간 그리디).
+    //    ★ 색이 아니라 **일정**이 줄의 단위다. 같은 파란색 두 일정도 서로 다른 줄을 갖는다.
+    const laneLastEnd: number[] = []; // 레인별 마지막 점유일(ms)
+    for (const e of spans) {
+      const from = dateFromKey(e.dateKey).getTime();
+      const to = dateFromKey(e.endDateKey ?? e.dateKey).getTime();
+      let lane = laneLastEnd.findIndex((end) => end < from);
+      if (lane < 0) lane = laneLastEnd.length;
+      laneLastEnd[lane] = to;
       const color = findLabelDef(labels, e.labelId).color;
-      const from = dateFromKey(e.dateKey);
-      const to = dateFromKey(e.endDateKey ?? e.dateKey);
-      for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+      for (let d = new Date(from); d.getTime() <= to; d.setDate(d.getDate() + 1)) {
         const k = toDateKey(d);
-        if (!out.has(k)) out.set(k, color);
+        const lanes = out.get(k) ?? [];
+        // 앞·뒤로 **같은 일정**이 이어지는지 — 띠를 끊지 않고 잇는 근거다.
+        lanes[lane] = {
+          color,
+          contPrev: d.getTime() > from,
+          contNext: d.getTime() < to,
+        };
+        out.set(k, lanes);
       }
     }
     return out;
@@ -3577,18 +3831,96 @@ function HeaderCalendarPopup({
             </button>
           </div>
 
-          {inline && weekMode ? (
+          {/* 첫 조회가 끝나기 전에는 빈 격자 대신 로더를 보여준다(2026-08-27 사용자 요청) —
+              안전관리비·공단 보조금 검증 보드와 같은 표현(QuantumPulseLoader).
+              ⚠ 일정과 미디어를 **함께** 기다린다. 한쪽만 보면 격자가 먼저 뜨고 나머지가 튀어 들어온다. */}
+          {!(hydrated && mediaHydrated) ? (
+            <QuantumPulseLoader text="일정 불러오는 중" />
+          ) : inline && weekMode ? (
             // 구글 캘린더식 — 좌상단 미니 월간(날짜 이동) + 메인 주간 일정표.
             <div className="flex items-start gap-3">
-              <MiniMonth
-                viewDate={viewDate}
-                selected={selected}
-                today={today}
-                spanDays={spanDayColors}
-                onSelect={setSelected}
-                onPrev={goPrevMonth}
-                onNext={goNextMonth}
-              />
+              <div className="flex w-[13.5rem] shrink-0 flex-col gap-3">
+                <MiniMonth
+                  viewDate={viewDate}
+                  selected={selected}
+                  today={today}
+                  spanDays={spanDayLanes}
+                  onSelect={setSelected}
+                  onPrev={goPrevMonth}
+                  onNext={goNextMonth}
+                />
+                {/* 미확인 사진 리스트 — 탭 배지의 그 숫자를 목록으로 푼다. 항목 클릭 = 주간 격자
+                    사진 클릭과 같은 이동 규칙(선택 날짜 + 사이드바 초점) + 그 항목만 봄 처리.
+                    ⚠ viewDate 도 함께 옮긴다 — 미디어 조회 범위가 viewDate 의 달이라, 다른 달
+                      사진이면 안 옮기면 사이드바에 그 항목이 없다. */}
+                {unseenMedia && (
+                  <div className="rounded-xl border border-hairline bg-surface-soft p-2 dark:border-white/10 dark:bg-surface-dark-elevated">
+                    <div className="mb-1 flex items-center justify-between px-1">
+                      <p className="text-[11px] font-bold text-ink dark:text-on-dark">
+                        미확인 사진 <span className="tabular-nums text-primary">{unseenMedia.length}</span>
+                      </p>
+                      {unseenMedia.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => onSeeAllMedia?.()}
+                          className="text-[10px] font-semibold text-muted transition hover:text-ink dark:text-on-dark-soft dark:hover:text-on-dark"
+                        >
+                          모두 확인
+                        </button>
+                      )}
+                    </div>
+                    {/* 0건이어도 박스는 남긴다 — 조건부로 통째로 숨기면 기능이 있는지조차 안 보인다
+                        (2026-08-26 실측: 구 로직이 전부 봄 처리해 둔 상태에서 "리스트가 없다"로 읽힘). */}
+                    {unseenMedia.length === 0 && (
+                      <p className="px-1 pb-1 text-[10px] text-muted dark:text-on-dark-soft">
+                        새 현장 사진이 도착하면 여기에 쌓입니다.
+                      </p>
+                    )}
+                    <ul className="flex max-h-52 flex-col gap-0.5 overflow-y-auto">
+                      {unseenMedia.map((m) => {
+                        // 실제 사진 미리보기 — 썸네일 → (이미지일 때만) 원본 순 폴백. 아이콘은 최후 수단.
+                        const thumb = m.thumbnailUrl ?? (m.mediaType !== "video" ? m.mediaUrl : null);
+                        return (
+                        <li key={m.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const d = dateFromKey(m.dateKey);
+                              setSelected(d);
+                              setViewDate(new Date(d.getFullYear(), d.getMonth(), 1));
+                              scrolledForRef.current = null; // 같은 항목을 다시 눌러도 다시 스크롤한다
+                              setFocusMediaId(m.id);
+                              onSeeMedia?.(m.id);
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg p-1 text-left transition hover:bg-surface-strong dark:hover:bg-white/10"
+                          >
+                            {thumb ? (
+                              <img src={thumb} alt="" className="h-8 w-8 shrink-0 rounded-md object-cover" />
+                            ) : (
+                              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[#0052ff]/10 text-primary dark:bg-[#0052ff]/25">
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z" />
+                                  <circle cx="12" cy="13" r="3" />
+                                </svg>
+                              </span>
+                            )}
+                            <span className="min-w-0">
+                              <span className="block truncate text-[11px] font-semibold text-ink dark:text-on-dark">
+                                {m.title ?? "현장 사진"}
+                              </span>
+                              <span className="block truncate text-[10px] tabular-nums text-muted dark:text-on-dark-soft">
+                                {m.dateKey.slice(5).replace("-", "/")}
+                                {m.uploader ? ` · ${m.uploader}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => shiftWeek(-1)}
@@ -3608,6 +3940,9 @@ function HeaderCalendarPopup({
                 onSelectDate={setSelected}
                 onCreateAt={(d) => {
                   setSelected(d);
+                  // ⚠ 새 일정으로 여는 자리다 — 남아 있던 편집 대상을 반드시 끊는다.
+                  //   안 끊으면 모달이 그 일정의 **수정 모드**로 열린다(위 ESC 주석과 같은 사고).
+                  setFormEditId(null);
                   setFormDate(d);
                 }}
                 onOpenEvent={(e) => {
@@ -3790,14 +4125,17 @@ function HeaderCalendarPopup({
                       {day}
                     </span>
                   ) : (
-                    // 구글 캘린더식 — **오늘은 채운 원, 나머지는 맨 숫자.** 원형을 오늘에만 쓰는 이유는
-                    // 그것이 화면에서 유일해야 눈에 띄기 때문이다(선택은 셀 배경이 이미 말한다).
+                    // 선택 = 푸른 채움 원 · 오늘(미선택) = 반투명 파랑 원 — 미니 달력·주간 헤더와 같은
+                    // 규칙. 오늘을 클릭하면 반투명이 푸른 채움으로 바뀐다(2026-08-27 사용자 결정 —
+                    // 종전 "원형은 오늘 전용" 원칙을 이 결정이 대체한다).
                     <span
                       className={[
                         "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
-                        isToday
+                        isSelected
                           ? "bg-primary font-bold text-on-primary"
-                          : weekday === 0
+                          : isToday
+                            ? "bg-primary-subtle font-bold text-primary"
+                            : weekday === 0
                             ? "text-red-500 dark:text-red-400"
                             : weekday === 6
                               ? "text-blue-600 dark:text-blue-400"
@@ -4248,12 +4586,19 @@ function HeaderCalendarPopup({
                           </span>
                         )}
                         {m.canDelete && (
+                          // 일정 카드의 휴지통과 같은 아이콘 버튼 — 문자 버튼 금지(2026-08-27 사용자 결정).
                           <button
                             type="button"
                             onClick={() => deleteMedia(m.id)}
-                            className="h-fit shrink-0 rounded-lg px-2 py-1 text-[10px] font-medium text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                            aria-label="사진 삭제"
+                            title="삭제"
+                            className="grid h-6 w-6 shrink-0 place-items-center rounded-lg text-red-600 transition hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
                           >
-                            삭제
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M3 6h18" />
+                              <path d="M8 6V4h8v2" />
+                              <path d="M19 6l-1 14H6L5 6" />
+                            </svg>
                           </button>
                         )}
                       </div>
@@ -4336,12 +4681,19 @@ function HeaderCalendarPopup({
                                   rows={2}
                                   className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-canvas px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark dark:text-on-dark"
                                 />
+                                {/* 원문과 같거나 비어 있으면 **흰 바탕 + 반투명**(잠김) →
+                                    고치면 **살짝 진한 회색 + 불투명**(2026-08-27 사용자 결정).
+                                    ⚠ 빨강은 이 화면에서 삭제 계열이 쓰고 있어 저장에 쓰지 않는다. */}
                                 <button
                                   type="button"
                                   onClick={saveCommentEdit}
-                                  className="shrink-0 rounded-lg bg-primary px-2 py-1.5 text-[10px] font-semibold text-on-primary transition hover:bg-primary-active"
+                                  disabled={
+                                    !editingComment.body.trim() ||
+                                    editingComment.body.trim() === c.body.trim()
+                                  }
+                                  className="shrink-0 rounded-lg border border-hairline bg-surface-strong px-2 py-1.5 text-[10px] font-semibold text-ink transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-canvas disabled:opacity-40 dark:border-white/10 dark:bg-white/15 dark:text-on-dark dark:disabled:bg-surface-dark"
                                 >
-                                  저장
+                                  수정
                                 </button>
                                 <button
                                   type="button"
@@ -4370,12 +4722,21 @@ function HeaderCalendarPopup({
                             rows={2}
                             className="min-w-0 flex-1 resize-none rounded-lg border border-hairline bg-surface-soft px-2 py-1 text-[11px] text-ink outline-none focus:ring-2 focus:ring-ink/20 dark:border-white/10 dark:bg-surface-dark-elevated dark:text-on-dark"
                           />
+                          {/* 원형 전송 버튼(위 화살표) — 입력이 비어 있으면 반투명(잠김) → 입력하면
+                              불투명(2026-08-27 사용자 결정). 문자 라벨을 쓰지 않으므로
+                              「한국어 단독·영문 라벨 금지」 규칙과도 충돌하지 않는다. */}
                           <button
                             type="button"
                             onClick={() => addComment(m.id)}
-                            className="shrink-0 rounded-lg bg-primary px-2.5 py-1.5 text-[11px] font-semibold text-on-primary transition hover:bg-primary-active"
+                            disabled={!(commentDraft[m.id] ?? "").trim()}
+                            aria-label="댓글 등록"
+                            title="댓글 등록"
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-on-primary transition hover:bg-primary-active disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            저장
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 19V5" />
+                              <path d="m5 12 7-7 7 7" />
+                            </svg>
                           </button>
                         </div>
                       </div>
@@ -4404,7 +4765,6 @@ function HeaderCalendarPopup({
             onLabelsChange={handleLabelsChange}
             onAdd={handleAddEvent}
             onUpdate={handleUpdateEvent}
-            onDelete={setPendingDelete}
             onClose={() => {
               setFormDate(null);
               setFormEditId(null);
@@ -4669,28 +5029,39 @@ export function DemoDashboard() {
   }, [alertsOpen]);
 
   // 팝업을 걷어낸 뒤(2026-08-20) "캘린더가 열려 있다" = "캘린더 탭이 활성이다".
-  // 아래 두 곳이 이 값을 본다 — 미확인 배지 즉시 해소 · 위험작업 재집계.
+  // 위험작업 재집계가 이 값을 본다. (미확인 배지 즉시 해소는 2026-08-26 에 걷어냈다 —
+  // 확인의 단위가 "탭 열기"에서 "리스트 항목 클릭/[모두 확인]"으로 바뀌었기 때문.)
   const calendarOpen = pagerIdx === CALENDAR_PAGE_IDX;
   // 캘린더 배지·토스트 — 새 현장 사진(앱 업로드 미디어) 미확인 개수 배지 + 도착 알림 토스트.
   const [calendarNewCount, setCalendarNewCount] = useState(0);
+  // 미확인 사진 목록 — 미니 달력 아래 리스트가 이것을 그린다. 배지 숫자와 같은 원천을 공유한다
+  // (따로 세면 배지 10 · 리스트 8 같은 어긋남이 난다).
+  const [calendarUnseenList, setCalendarUnseenList] = useState<CalendarUnseenMedia[]>([]);
   const [calendarToast, setCalendarToast] = useState<{ count: number; key: number } | null>(null);
   const calendarSeenRef = useRef<Set<string>>(new Set());
   const calendarRecentIdsRef = useRef<string[]>([]);
   const calendarSeenExistedRef = useRef(false);
   const calendarFirstPollRef = useRef(true);
   const calendarToastKeyRef = useRef(0);
-  const calendarOpenRef = useRef(false);
-  useEffect(() => {
-    calendarOpenRef.current = calendarOpen;
-  }, [calendarOpen]);
 
-  // 현재 조회된 미디어 전부를 '봄' 처리 → 배지 0. 캘린더 열 때 호출.
+  // 현재 조회된 미디어 전부를 '봄' 처리 → 배지 0. 미확인 리스트의 [모두 확인]이 호출한다.
   const markCalendarSeen = useCallback(() => {
     const seen = calendarSeenRef.current;
     calendarRecentIdsRef.current.forEach((id) => seen.add(id));
     saveCalendarSeen([...seen]);
     setCalendarNewCount(0);
+    setCalendarUnseenList([]);
     setCalendarToast(null);
+  }, []);
+
+  // 항목 하나를 '봄' 처리 — 미확인 리스트에서 클릭할 때. 배지도 함께 준다.
+  const markCalendarMediaSeen = useCallback((id: string) => {
+    const seen = calendarSeenRef.current;
+    if (seen.has(id)) return;
+    seen.add(id);
+    saveCalendarSeen([...seen]);
+    setCalendarUnseenList((prev) => prev.filter((m) => m.id !== id));
+    setCalendarNewCount((prev) => Math.max(0, prev - 1));
   }, []);
 
   // 최근 30일 현장 사진을 조회해 미확인(새 id) 개수를 계산 — 팝업 열림/닫힘과 무관하게 백그라운드 동작.
@@ -4706,31 +5077,55 @@ export function DemoDashboard() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) return;
-      const json = (await res.json()) as { ok?: boolean; media?: { id?: string | null }[] };
+      const json = (await res.json()) as {
+        ok?: boolean;
+        media?: (Record<string, string | null> & { id?: string | null })[];
+      };
       if (!json.ok || !Array.isArray(json.media)) return;
-      const ids = json.media.map((m) => m.id).filter((x): x is string => !!x);
+      const items: CalendarUnseenMedia[] = [];
+      for (const m of json.media) {
+        if (!m.id || !m.date_key) continue;
+        items.push({
+          id: m.id,
+          dateKey: m.date_key,
+          capturedAt: m.captured_at ?? null,
+          mediaType: m.media_type ?? "image",
+          title: m.title ?? null,
+          uploader: m.uploader ?? null,
+          thumbnailUrl: m.thumbnail_url ?? null,
+          mediaUrl: m.media_url ?? null,
+        });
+      }
+      const ids = items.map((m) => m.id);
       const seen = calendarSeenRef.current;
       const wasFirst = calendarFirstPollRef.current;
       calendarFirstPollRef.current = false;
 
-      // (a) 캘린더 열려 있으면 즉시 봄 처리, (b) 첫 폴이고 저장된 seen 이 없으면 baseline(현재 전부 봄) → 배지 0.
-      if (calendarOpenRef.current || (wasFirst && !calendarSeenExistedRef.current)) {
+      // 첫 폴이고 저장된 seen 이 없으면 baseline(현재 전부 봄) → 배지 0.
+      // ⚠ 종전의 "캘린더 열려 있으면 즉시 봄 처리" 분기는 제거했다(2026-08-26) —
+      //   확인 단위가 항목 클릭/[모두 확인]으로 바뀌어, 열려 있다는 이유로 폴이 지우면
+      //   미확인 리스트가 60초 안에 증발한다.
+      if (wasFirst && !calendarSeenExistedRef.current) {
         ids.forEach((id) => seen.add(id));
         saveCalendarSeen([...seen]);
         calendarRecentIdsRef.current = ids;
         setCalendarNewCount(0);
+        setCalendarUnseenList([]);
         return;
       }
 
       const prevIds = new Set(calendarRecentIdsRef.current);
-      const unseen = ids.filter((id) => !seen.has(id));
-      const arrived = unseen.filter((id) => !prevIds.has(id)); // 직전 조회엔 없던 새 도착분
+      const unseenItems = items.filter((m) => !seen.has(m.id));
+      // 최신 도착이 위로 — 촬영시각이 없으면 날짜키로 대신 정렬한다.
+      unseenItems.sort((a, b) => (b.capturedAt ?? b.dateKey).localeCompare(a.capturedAt ?? a.dateKey));
+      const arrived = unseenItems.filter((m) => !prevIds.has(m.id)); // 직전 조회엔 없던 새 도착분
       calendarRecentIdsRef.current = ids;
-      setCalendarNewCount(unseen.length);
+      setCalendarNewCount(unseenItems.length);
+      setCalendarUnseenList(unseenItems);
       // 새로 도착한 사진이 있고 첫 폴이 아니면 토스트(초기 로드 스팸 방지).
       if (arrived.length > 0 && !wasFirst) {
         calendarToastKeyRef.current += 1;
-        setCalendarToast({ count: unseen.length, key: calendarToastKeyRef.current });
+        setCalendarToast({ count: unseenItems.length, key: calendarToastKeyRef.current });
       }
     } catch {
       // 조용히 무시 — 배지 없이도 캘린더 본기능 유지
@@ -6595,10 +6990,8 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               {todayHazard.total > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    goCalendarTab();
-                    markCalendarSeen();
-                  }}
+                  // 캘린더만 연다 — 사진 확인은 미확인 리스트의 항목 클릭/[모두 확인]으로(2026-08-26).
+                  onClick={goCalendarTab}
                   aria-label="오늘 위험작업 일정 — 일정 캘린더 열기"
                   className={[
                     "mt-2 inline-flex items-center gap-1.5 self-start rounded-full border px-3 py-1.5 text-[11px] font-semibold transition",
@@ -6926,6 +7319,9 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                 // 남지 않도록 활성 여부를 넘긴다.
                 active={pagerIdx === CALENDAR_PAGE_IDX}
                 workerAliases={data.workerAliases}
+                unseenMedia={calendarUnseenList}
+                onSeeMedia={markCalendarMediaSeen}
+                onSeeAllMedia={markCalendarSeen}
               />
             ),
           },
@@ -7077,14 +7473,15 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
 
       {alertsOpen && <AlertHistoryModal onClose={() => setAlertsOpen(false)} />}
 
-      {/* 새 현장 사진 도착 알림 토스트 — 클릭 시 캘린더 열림+확인 처리, 6초 후 자동 사라짐. */}
+      {/* 새 현장 사진 도착 알림 토스트 — 클릭 시 캘린더 열림, 6초 후 자동 사라짐.
+          확인 처리는 여기서 하지 않는다 — 미확인 리스트에서 항목을 하나씩 확인한다(2026-08-26). */}
       {calendarToast && (
         <button
           type="button"
           aria-live="polite"
           onClick={() => {
             goCalendarTab();
-            markCalendarSeen();
+            setCalendarToast(null);
           }}
           className="fixed right-4 top-20 z-[70] flex max-w-[20rem] items-center gap-3 rounded-2xl border border-hairline bg-surface-strong px-4 py-3 text-left shadow-xl transition hover:brightness-105 dark:border-white/10 dark:bg-surface-dark-elevated"
         >

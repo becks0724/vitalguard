@@ -1,16 +1,22 @@
 "use client";
-// 안전관리비 검증 카드 섹션 — 세 화면을 라우트 이동 없이 탭으로 전환.
-// (각 화면 /weekly-report·/contractor·/safety-audit 라우트는 전체화면·공유용으로 유지)
+// 안전관리비 검증 카드 섹션 — 네 화면을 라우트 이동 없이 탭으로 전환.
+// (각 화면 /safeprocure·/weekly-report·/contractor·/safety-audit 라우트는 전체화면·공유용으로 유지)
+//
+// 탭 순서 = 돈이 흐르는 순서다(2026-08-27 사용자 결정 — 안전조달을 맨 왼쪽에).
+//   안전조달(계상: 착공 전 공고) → 주간 보고서·청구 제출·실집행(집행: 착공 후)
+// ⚠ 안전조달은 종전 탭 진입점이 없어 주소를 아는 사람만 열 수 있었다(2026-08-27 전수조사에서 확인).
 import { useState, type FormEvent } from "react";
 
 import ContractorSubmitForm from "./ContractorSubmitForm";
+import ProcureRiskBoard from "./ProcureRiskBoard";
 import SafetyCostAuditBoard from "./SafetyCostAuditBoard";
 import WeeklyReportBoard from "./WeeklyReportBoard";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
-type Tab = "audit" | "contractor" | "weekly";
+type Tab = "procure" | "audit" | "contractor" | "weekly";
 
 const TABS: { id: Tab; label: string }[] = [
+  { id: "procure", label: "안전조달" },
   { id: "weekly", label: "주간 검증 보고서" },
   { id: "contractor", label: "시공사 청구 제출" },
   { id: "audit", label: "실집행 검증" },
@@ -96,6 +102,7 @@ export default function SafetyVerificationTabs() {
       </nav>
 
       <section className="overflow-hidden rounded-xl border border-hairline bg-canvas px-6 py-4 text-ink dark:border-white/10 dark:bg-surface-dark dark:text-on-dark max-[640px]:px-5">
+        {tab === "procure" && <ProcureRiskBoard />}
         {tab === "audit" && <SafetyCostAuditBoard />}
         {tab === "contractor" &&
           (contractorAuthed ? (
