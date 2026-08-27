@@ -59,6 +59,16 @@ class HeartRateHistory {
   }
 }
 
+/// 선 한 구간의 상태 — 두 끝점 중 **더 나쁜 쪽**. 관제웹 `worseTone` 과 같은 어법이다.
+///
+/// ⚠ 좋은 쪽으로 칠하면 스파이크 한 점이 양옆 정상 구간에 묻혀 화면에서 사라진다.
+///   선을 신호등으로 칠하는 이유가 "지나간 위험이 선에 남는 것" 이므로 여기서 지면 안 된다.
+VitalStatus heartRateSegmentStatus(double a, double b) {
+  final left = heartRateRange.statusOf(a);
+  final right = heartRateRange.statusOf(b);
+  return left.index >= right.index ? left : right;
+}
+
 /// 심박 히어로 카드 — 현재값·상태·추이·평균/최소/최대를 한 장에 담는다.
 class HeartRateHeroCard extends StatelessWidget {
   const HeartRateHeroCard({
@@ -77,9 +87,11 @@ class HeartRateHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = bpm == null
+    // 적는 숫자로 판정한다(요약 칸과 같은 이유) — 색과 숫자가 갈리면 안 된다.
+    final shown = bpm?.roundToDouble();
+    final status = shown == null
         ? VitalStatus.idle
-        : heartRateRange.statusOf(bpm!);
+        : heartRateRange.statusOf(shown);
     final tint = vgStatusColor(status);
     final values = history.map((s) => s.bpm).toList();
 
@@ -98,12 +110,15 @@ class HeartRateHeroCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  bpm == null ? '--' : bpm!.toStringAsFixed(0),
+                  shown == null ? '--' : shown.toStringAsFixed(0),
                   style: TextStyle(
                     fontSize: 44,
                     height: 1.0,
                     fontWeight: FontWeight.w800,
-                    color: vgValueColor(bpm == null ? null : status),
+                    // ★ 이 카드만 값에도 상태색을 쓴다(2026-08-27 사용자 결정).
+                    //   앱 기본 규칙은 `vgValueColor`(값=브랜드 파랑·위험만 빨강)이고
+                    //   다른 타일은 그대로다 — 여기만 예외라는 사실을 남긴다.
+                    color: shown == null ? VgColors.muted : tint,
                   ),
                 ),
                 const Padding(
@@ -143,12 +158,22 @@ class HeartRateHeroCard extends StatelessWidget {
                         ),
                       ),
                     )
-                  : CustomPaint(
-                      painter: HeartRateTrendPainter(
-                        samples: history,
-                        highlight: tint,
+                  : TweenAnimationBuilder<double>(
+                      // 값이 5초마다 바뀐다. 그때마다 선 끝과 게이지가 툭 튀면 눈이 따라가지
+                      // 못하므로 이전 값에서 새 값으로 이어 준다.
+                      // ⚠ 움직이는 것은 **위치뿐**이고 숫자는 안 건드린다 — 중간 프레임의
+                      //   91.4 같은 값은 측정된 적이 없다. 말풍선·큰 값은 늘 실측 그대로다.
+                      tween: Tween<double>(end: history.last.bpm),
+                      duration: const Duration(milliseconds: 600),
+                      curve: Curves.easeOutCubic,
+                      builder: (context, animatedLast, _) => CustomPaint(
+                        painter: HeartRateTrendPainter(
+                          samples: history,
+                          highlight: tint,
+                          animatedLastBpm: animatedLast,
+                        ),
+                        child: const SizedBox.expand(),
                       ),
-                      child: const SizedBox.expand(),
                     ),
             ),
             const SizedBox(height: 8),
@@ -173,6 +198,8 @@ class HeartRateHeroCard extends StatelessWidget {
                     value: _extreme(values, min: false),
                   ),
                 ),
+                // ⚠ 세 칸은 **각자 제 값의 상태**를 따른다. 현재 상태로 셋을 다 칠하면
+                //   최대 135(위험)를 지난 구간이 지금 정상이라는 이유로 초록이 된다.
               ],
             ),
             if (footnote != null) ...[
@@ -269,6 +296,12 @@ class _SummaryColumn extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠ **적는 숫자로 판정한다.** 109.5 를 "110" 으로 적으면서 109.5 로 판정하면
+    //   화면에 초록색 110 이 뜬다 — 110 은 주의 구간이다. 색과 숫자가 다른 말을 한다.
+    final shown = value?.roundToDouble();
+    final tone = shown == null
+        ? VgColors.muted
+        : vgStatusColor(heartRateRange.statusOf(shown));
     return Column(
       children: [
         Text(
@@ -281,12 +314,12 @@ class _SummaryColumn extends StatelessWidget {
         ),
         const SizedBox(height: 3),
         Text(
-          value == null ? '--' : value!.toStringAsFixed(0),
-          style: const TextStyle(
+          shown == null ? '--' : shown.toStringAsFixed(0),
+          style: TextStyle(
             fontSize: 21,
             height: 1.0,
             fontWeight: FontWeight.w800,
-            color: VgColors.ink,
+            color: tone,
           ),
         ),
         const SizedBox(height: 2),
@@ -310,10 +343,18 @@ class _SummaryDivider extends StatelessWidget {
 
 /// 추이 그래프. 점이 2개 미만이면 선을 그리지 않고 안내를 적는다.
 class HeartRateTrendPainter extends CustomPainter {
-  HeartRateTrendPainter({required this.samples, required this.highlight});
+  HeartRateTrendPainter({
+    required this.samples,
+    required this.highlight,
+    this.animatedLastBpm,
+  });
 
   final List<HeartRateSample> samples;
   final Color highlight;
+
+  /// 마지막 점을 그릴 때만 쓰는 중간값(전환용). null 이면 실측 그대로 그린다.
+  /// ⚠ 눈금 범위·평균/최소/최대는 이 값을 **안 본다** — 표시 숫자는 실측만 쓴다.
+  final double? animatedLastBpm;
 
   static const double _gutter = 34;
   static const double _axisHeight = 20;
@@ -361,17 +402,21 @@ class HeartRateTrendPainter extends CustomPainter {
       label.paint(canvas, Offset(0, y - 7));
     }
 
-    final points = samples
-        .map(
-          (s) => Offset(
-            plot.left +
-                plot.width *
-                    ((s.at.millisecondsSinceEpoch.toDouble() - start) /
-                        timeSpan),
-            plot.bottom - plot.height * ((s.bpm - lower) / span),
-          ),
-        )
-        .toList();
+    // 마지막 점만 전환값으로 그린다. 눈금 범위는 실측으로 잡혀 있으므로 전환 중간값이
+    // 잠깐 그 밖으로 나갈 수 있다 — 가둬서 선이 판 밖으로 튀지 않게 한다.
+    final points = List<Offset>.generate(samples.length, (i) {
+      final sample = samples[i];
+      final bpm = (i == samples.length - 1 && animatedLastBpm != null)
+          ? animatedLastBpm!.clamp(lower, upper)
+          : sample.bpm;
+      return Offset(
+        plot.left +
+            plot.width *
+                ((sample.at.millisecondsSinceEpoch.toDouble() - start) /
+                    timeSpan),
+        plot.bottom - plot.height * ((bpm - lower) / span),
+      );
+    });
 
     final curve = _smoothPath(points);
 
@@ -407,15 +452,24 @@ class HeartRateTrendPainter extends CustomPainter {
       Paint()..color = highlight,
     );
 
-    canvas.drawPath(
-      curve,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round
-        ..color = VgColors.ink,
-    );
+    // ★ 선은 한 색이 아니라 구간별 신호등 색이다 — 지금이 정상이어도 아까 주의였다면
+    //   그 사실이 선에 남아야 한다. 한 색으로 그으면 지나간 위험이 지워진다.
+    // ⚠ 색은 두 끝점 중 **더 나쁜 쪽**을 쓴다. 좋은 쪽으로 칠하면 스파이크 한 점이
+    //   양옆 정상 구간에 묻혀 화면에서 사라진다.
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    for (var i = 0; i < points.length - 1; i++) {
+      canvas.drawPath(
+        _segmentPath(points, i),
+        stroke
+          ..color = vgStatusColor(
+            heartRateSegmentStatus(samples[i].bpm, samples[i + 1].bpm),
+          ),
+      );
+    }
 
     canvas.drawCircle(marker, 5, Paint()..color = VgColors.canvas);
     canvas.drawCircle(
@@ -424,15 +478,20 @@ class HeartRateTrendPainter extends CustomPainter {
       Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = 3
-        ..color = VgColors.ink,
+        ..color = highlight,
     );
 
     // 현재값 말풍선
+    // ⚠ 주황 위에 흰 글자는 대비가 약하다 — 말풍선 숫자는 이 카드에서 가장 자주 읽는
+    //   값이라 여기서 지면 안 된다. 주의만 먹색으로 뒤집는다.
+    final bubbleInk = highlight == VgColors.caution
+        ? VgColors.ink
+        : VgColors.canvas;
     final bubble = _text(
       samples.last.bpm.toStringAsFixed(0),
       12,
       FontWeight.w800,
-      VgColors.canvas,
+      bubbleInk,
     )..layout();
     final bubbleWidth = bubble.width + 18;
     final bubbleLeft = (marker.dx - bubbleWidth / 2).clamp(
@@ -445,7 +504,8 @@ class HeartRateTrendPainter extends CustomPainter {
         Rect.fromLTWH(bubbleLeft, bubbleTop, bubbleWidth, _bubbleHeight - 4),
         const Radius.circular(10),
       ),
-      Paint()..color = VgColors.ink,
+      // 말풍선도 상태색 — 지금 값이 무슨 구간인지 숫자 옆에서 바로 읽히게 한다.
+      Paint()..color = highlight,
     );
     bubble.paint(canvas, Offset(bubbleLeft + 9, bubbleTop + 2));
 
@@ -469,6 +529,24 @@ class HeartRateTrendPainter extends CustomPainter {
       );
       tick.paint(canvas, Offset(left, plot.bottom + 5));
     }
+  }
+
+  /// `_smoothPath` 의 한 구간만 떼어 낸 것. 구간마다 색이 달라 따로 그어야 한다.
+  static Path _segmentPath(List<Offset> points, int i) {
+    final previous = points[math.max(i - 1, 0)];
+    final current = points[i];
+    final next = points[i + 1];
+    final following = points[math.min(i + 2, points.length - 1)];
+    return Path()
+      ..moveTo(current.dx, current.dy)
+      ..cubicTo(
+        current.dx + (next.dx - previous.dx) / 6,
+        current.dy + (next.dy - previous.dy) / 6,
+        next.dx - (following.dx - current.dx) / 6,
+        next.dy - (following.dy - current.dy) / 6,
+        next.dx,
+        next.dy,
+      );
   }
 
   /// Catmull-Rom 을 3차 베지어로 옮겨 각진 꺾임 없이 잇는다.
@@ -511,6 +589,7 @@ class HeartRateTrendPainter extends CustomPainter {
   bool shouldRepaint(covariant HeartRateTrendPainter old) =>
       old.samples.length != samples.length ||
       old.highlight != highlight ||
+      old.animatedLastBpm != animatedLastBpm ||
       (samples.isNotEmpty &&
           old.samples.isNotEmpty &&
           old.samples.last.bpm != samples.last.bpm);

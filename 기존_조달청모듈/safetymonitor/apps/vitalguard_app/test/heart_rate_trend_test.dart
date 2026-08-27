@@ -68,6 +68,23 @@ void main() {
     });
   });
 
+  group('선 구간 색', () {
+    test('두 끝점 중 나쁜 쪽을 쓴다 — 스파이크가 양옆 정상에 묻히면 안 된다', () {
+      expect(heartRateSegmentStatus(80, 84), VitalStatus.normal);
+      expect(heartRateSegmentStatus(80, 115), VitalStatus.caution);
+      expect(heartRateSegmentStatus(115, 80), VitalStatus.caution);
+      expect(heartRateSegmentStatus(80, 135), VitalStatus.danger);
+      // 주의와 위험이 만나면 위험이 남는다.
+      expect(heartRateSegmentStatus(115, 135), VitalStatus.danger);
+    });
+
+    test('판정은 관제웹 임계 그대로다 — 여기서 새로 만들지 않는다', () {
+      expect(heartRateSegmentStatus(109, 109), heartRateRange.statusOf(109));
+      expect(heartRateSegmentStatus(110, 110), heartRateRange.statusOf(110));
+      expect(heartRateSegmentStatus(130, 130), heartRateRange.statusOf(130));
+    });
+  });
+
   group('카드', () {
     testWidgets('★ 점이 모자라면 선 대신 사유를 적고 요약은 비운다', (tester) async {
       await tester.pumpWidget(_frame(
@@ -101,16 +118,34 @@ void main() {
         HeartRateHeroCard(bpm: 130, history: _samples([120, 130])),
       ));
       expect(find.text(vitalStatusLabel[VitalStatus.danger]!), findsOneWidget);
-      // 위험을 파랑으로 두면 화면에서 가장 큰 글자가 위험을 숨긴다(metric_tile.dart 규칙).
-      expect(_hero(tester).style?.color, vgValueColor(VitalStatus.danger));
+      expect(_hero(tester).style?.color, vgStatusColor(VitalStatus.danger));
     });
 
-    testWidgets('정상 심박은 큰 값이 브랜드 파랑이다 — 상태는 배지가 전담한다', (tester) async {
+    testWidgets('★ 큰 값은 상태색을 따른다 — 이 카드는 앱 기본 규칙의 예외다', (tester) async {
+      // 앱 기본은 `vgValueColor`(값=브랜드 파랑·위험만 빨강)이지만 이 카드는 신호등이다
+      // (2026-08-27 사용자 결정). 파랑으로 되돌아가면 이 시험이 잡는다.
       await tester.pumpWidget(_frame(
         HeartRateHeroCard(bpm: 84, history: _samples([80, 88])),
       ));
       expect(find.text(vitalStatusLabel[VitalStatus.normal]!), findsOneWidget);
-      expect(_hero(tester).style?.color, VgColors.primary);
+      expect(_hero(tester).style?.color, vgStatusColor(VitalStatus.normal));
+      expect(_hero(tester).style?.color, isNot(VgColors.primary));
+    });
+
+    testWidgets('★ 평균/최소/최대는 각자 제 값의 상태색이다', (tester) async {
+      // 최대만 위험 구간에 든 이력 — 지금은 정상이어도 최대 칸은 빨강이어야 한다.
+      await tester.pumpWidget(_frame(
+        HeartRateHeroCard(bpm: 84, history: _samples([84, 135])),
+      ));
+      // 21pt 인 요약 칸만 고른다 — 큰 값(44pt)이 같은 숫자를 적을 수 있다.
+      Color? colorOf(String text) => tester
+          .widgetList<Text>(find.text(text))
+          .firstWhere((t) => t.style?.fontSize == 21)
+          .style
+          ?.color;
+      expect(colorOf('110'), vgStatusColor(VitalStatus.caution)); // 평균 109.5 → 110
+      expect(colorOf('84'), vgStatusColor(VitalStatus.normal)); // 최소
+      expect(colorOf('135'), vgStatusColor(VitalStatus.danger)); // 최대
     });
   });
 }

@@ -57,6 +57,12 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  assets:
+    # VitAlGuard_logo/vitalguard_logo_light_mode(blue).png 에서 방패+워드마크만 잘라 가로로
+    # 묶은 것. 원본은 4267² 정사각에 여백이 커서 앱바에 그대로 두면 로고가 점만 해진다.
+    # 태그라인(Industrial Safety OS)은 앱바 크기에서 안 읽혀 뺐다.
+    - assets/vitalguard_wordmark.png
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg

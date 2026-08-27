@@ -692,9 +692,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'VitAlGuard',
-          style: TextStyle(fontWeight: FontWeight.w700),
+        // 글자 대신 로고 락업. 높이만 고정하고 너비는 비율에 맡긴다 — 폭을 고정하면
+        // 기기 폭이 좁을 때 로고가 눌린다.
+        title: Image.asset(
+          'assets/vitalguard_wordmark.png',
+          height: 26,
+          fit: BoxFit.contain,
+          // 이미지가 못 뜨면 화면이 비는 대신 글자로 돌아간다 — 앱 이름이 사라지지 않게.
+          errorBuilder: (_, _, _) => const Text(
+            'VitAlGuard',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          semanticLabel: 'VitAlGuard',
         ),
         actions: [
           // ★ 큐가 밀리면 톱니에 점을 찍는다 — 전송 상태를 설정 안으로 옮기면서
