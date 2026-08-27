@@ -69,74 +69,110 @@ struct ContentView: View {
 
     // MARK: - 1면 · 생체
 
-    /// ⚠ ScrollView 를 벗기지 말 것 — 줄이 하나만 늘어도 아래가 잘려 못 보게 된다.
+    /// 1면 — 애플워치 울트라 메인 페이스 배치를 옮긴 것(사용자 제공 참고 화면).
+    ///
+    /// 좌·우 세로 눈금 = 심박 · HRV · 가운데 큰 값 = 지금 심박(참고 화면의 시계 자리) ·
+    /// 그 아래 띠 = 실시간 심박 그래프(참고 화면의 나침반 띠 자리) · 하단 원 3개 = SpO₂·활동·HRV.
+    ///
+    /// ⚠ **참고 화면의 스트레스·피부온·생리적 부담은 안 넣었다.** 워치는 스트레스 점수도
+    ///   PSI 도 계산하지 않고(서버가 한다) 손목 온도는 수집조차 안 한다. 폰→워치 수신 경로도
+    ///   없어서 서버 계산값을 가져올 방법이 지금은 없다. 없는 값에 게이지를 씌우면 화면이
+    ///   거짓말을 하므로 **워치가 실제로 가진 값**(심박·SpO₂·활동·HRV)으로 채웠다(사용자 결정).
+    /// ⚠ 눈금 범위는 **표시용**이지 판정이 아니다 — 색으로 상태를 말하지 않는다(워치엔 임계가 없다).
     private var vitalsPage: some View {
-        ScrollView {
-            VStack(spacing: 4) {
-                header
-                HeartRateSparkline(points: streamer.recentBPM)
-                    .frame(height: 40)
-                stats
-                // ⚠ 이산·전달 줄은 각 상세 면으로 옮겼다 — 같은 값을 두 곳에 두면 어느 쪽이
-                //   최신인지 읽는 사람이 판단해야 한다. 여기서는 "더 있다" 만 알린다.
-                Text("크라운을 내리면 종류별 상세")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+        ZStack {
+            HStack(spacing: 0) {
+                SideScale(
+                    title: "HR",
+                    value: streamer.latestBPM,
+                    range: 30...170,
+                    tint: .red,
+                    alignment: .leading
+                )
+                Spacer(minLength: 0)
+                SideScale(
+                    title: "HRV",
+                    value: streamer.latestHrvMs,
+                    range: 0...150,
+                    tint: .purple,
+                    alignment: .trailing
+                )
+                // ⚠ 세로 페이징 점이 오른쪽 끝에 그려진다 — 안 들이면 눈금과 겹쳐서 둘 다 안 읽힌다.
+                //   점을 숨기지 않는다: "면이 더 있다" 는 유일한 단서다.
+                .padding(.trailing, 11)
             }
-            .padding(.horizontal, 2)
-        }
-    }
 
-    /// 좌 라벨 · 우 현재값. 값은 오른쪽 끝에 붙여 두 자리·세 자리가 바뀌어도 안 흔들린다.
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(.red)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("심박")
-                    .font(.system(size: 13, weight: .semibold))
-                Text(windowLabel)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 4)
-            Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
-                .font(.system(size: 26, weight: .bold, design: .rounded))
-            Text("bpm")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-        }
-    }
+            VStack(spacing: 3) {
+                Spacer(minLength: 0)
 
-    /// 3분할 카드 — 종전에 네 줄을 차지하던 값들을 한 줄로 접었다.
-    /// ⚠ 값이 없으면 `--` 를 적고 칸은 남긴다. 칸이 사라지면 "그 측정이 없는 앱" 으로 읽힌다.
-    private var stats: some View {
-        HStack(spacing: 4) {
-            WatchStatCard(
-                tint: .cyan,
-                label: "SpO₂",
-                value: streamer.latestSpO2.map { "\(Int($0))%" } ?? "--",
-                note: streamer.latestSpO2At?.formatted(date: .omitted, time: .shortened)
-            )
-            WatchStatCard(
-                tint: .orange,
-                label: "활동",
-                value: streamer.sessionEnergyKcal > 0
-                    ? String(format: "%.1f", streamer.sessionEnergyKcal)
-                    : "--",
-                note: "kcal"
-            )
-            // ★ 꺼져 있으면 이 칸이 곧 시작 버튼으로 가는 문이다 — 동작 버튼을 2면으로 옮기면서
-            //   "켜는 법을 못 찾는" 자리가 생겼다. 꺼진 것을 눌러 켜는 곳으로 가는 게 자연스럽다.
-            if streamer.isRunning {
-                WatchStatCard(tint: .green, label: "수집", value: "ON", note: streamer.statusText)
-            } else {
-                Button { page = .settings } label: {
-                    WatchStatCard(tint: .gray, label: "수집", value: "OFF", note: "눌러서 시작")
+                // 참고 화면의 시계 자리 — 지금 심박이 가장 큰 글자다.
+                HStack(alignment: .firstTextBaseline, spacing: 3) {
+                    Text("HR")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text("bpm")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+
+                // 참고 화면의 나침반 띠 자리 — 실시간 심박 그래프.
+                HeartRateSparkline(points: streamer.recentBPM)
+                    .frame(height: 34)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+
+                // 참고 화면 하단 원 3개.
+                HStack(spacing: 5) {
+                    CircleStat(
+                        label: "SpO₂",
+                        value: streamer.latestSpO2,
+                        range: 85...100,
+                        unit: "%",
+                        digits: 0,
+                        tint: .cyan
+                    )
+                    CircleStat(
+                        label: "활동",
+                        value: streamer.sessionEnergyKcal > 0 ? streamer.sessionEnergyKcal : nil,
+                        // ⚠ 세션 누적이라 자연스러운 상한이 없다 — 고리를 채우지 않고 숫자만 적는다.
+                        //   없는 상한을 지어내면 "얼마나 찼는가" 가 거짓이 된다.
+                        range: nil,
+                        unit: "kcal",
+                        digits: 1,
+                        tint: .orange
+                    )
+                    CircleStat(
+                        label: "HRV",
+                        value: streamer.latestHrvMs,
+                        range: 0...150,
+                        unit: "ms",
+                        digits: 0,
+                        tint: .purple
+                    )
+                }
+
+                // 수집이 꺼져 있으면 여기가 설정으로 가는 문이다(동작 버튼은 마지막 면에 있다).
+                if streamer.isRunning {
+                    Text("수집 중 · 크라운을 내리면 상세")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                } else {
+                    Button { page = .settings } label: {
+                        Text("수집 OFF · 눌러서 시작")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(.orange)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 26)
         }
     }
 
@@ -404,34 +440,104 @@ struct DiscreteCountsGrid: View {
     }
 }
 
-/// 3분할 칸 하나. 색은 **종류 구분**이지 판정이 아니다 — 워치는 상태를 말하지 않는다.
-private struct WatchStatCard: View {
+/// 울트라 페이스의 좌·우 세로 눈금. 참고 화면의 가장자리 눈금자를 옮긴 것이다.
+///
+/// ⚠ 눈금 범위는 **표시용**이다. 워치엔 판정 임계가 없으므로 색이 상태를 뜻하지 않는다 —
+///   색은 종류 구분(심박=빨강 · HRV=보라)일 뿐이다.
+private struct SideScale: View {
+    let title: String
+    let value: Double?
+    let range: ClosedRange<Double>
     let tint: Color
+    let alignment: HorizontalAlignment
+
+    private var ratio: Double? {
+        guard let value else { return nil }
+        let clamped = min(max(value, range.lowerBound), range.upperBound)
+        return (clamped - range.lowerBound) / (range.upperBound - range.lowerBound)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let ticks = 22
+            VStack(alignment: alignment, spacing: 0) {
+                Text(title)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    // ⚠ 칸이 좁아 그냥 두면 `HRV` 가 `HR/V` 로 접힌다.
+                    .fixedSize()
+                ZStack(alignment: alignment == .leading ? .topLeading : .topTrailing) {
+                    VStack(spacing: 0) {
+                        ForEach(0..<ticks, id: \.self) { index in
+                            Rectangle()
+                                .fill(Color.white.opacity(0.28))
+                                // 5칸마다 긴 눈금 — 눈금이 다 같으면 위치가 안 읽힌다.
+                                .frame(width: index % 5 == 0 ? 11 : 6, height: 1)
+                                .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
+                            if index < ticks - 1 { Spacer(minLength: 0) }
+                        }
+                    }
+                    if let ratio {
+                        // 값이 클수록 위로 — 참고 화면과 같은 방향이다.
+                        let track = max(geo.size.height - 16, 1)
+                        Capsule()
+                            .fill(tint)
+                            .frame(width: 13, height: 3)
+                            .offset(y: track * (1 - ratio))
+                    }
+                }
+                .frame(maxHeight: .infinity)
+            }
+            .frame(width: 15)
+        }
+        .frame(width: 15)
+    }
+}
+
+/// 하단 원형 지표. `range` 가 있으면 고리를 채우고, 없으면 **테두리만** 그리고 숫자만 적는다.
+///
+/// ⚠ 상한이 없는 값(세션 누적 kcal)에 고리를 씌우지 않는다 — 상한을 지어내면 "얼마나 찼는가"
+///   자체가 거짓이 된다. 이 앱이 없는 값을 안 그리는 규칙과 같은 줄기다.
+private struct CircleStat: View {
     let label: String
-    let value: String
-    let note: String?
+    let value: Double?
+    let range: ClosedRange<Double>?
+    let unit: String
+    let digits: Int
+    let tint: Color
+
+    private var text: String {
+        guard let value else { return "--" }
+        return String(format: "%.\(digits)f", value)
+    }
 
     var body: some View {
         VStack(spacing: 1) {
-            Text(label)
-                .font(.system(size: 9))
+            ZStack {
+                Circle()
+                    .stroke(Color.white.opacity(0.16), lineWidth: 3)
+                if let range, let value {
+                    let clamped = min(max(value, range.lowerBound), range.upperBound)
+                    let ratio = (clamped - range.lowerBound) / (range.upperBound - range.lowerBound)
+                    Circle()
+                        .trim(from: 0, to: ratio)
+                        .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                Text(text)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .foregroundStyle(value == nil ? Color.secondary : tint)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .padding(.horizontal, 3)
+            }
+            .frame(width: 42, height: 42)
+            Text("\(label) \(unit)")
+                .font(.system(size: 8))
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(tint)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
-            if let note {
-                Text(note)
-                    .font(.system(size: 8))
-                    .foregroundStyle(.secondary)
-                    .minimumScaleFactor(0.6)
-                    .lineLimit(1)
-            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 3)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
