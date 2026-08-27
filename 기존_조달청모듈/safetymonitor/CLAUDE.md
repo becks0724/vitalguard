@@ -16,7 +16,33 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00323-974` (커밋 `53b0f7e` · 08-27 00:4x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00324-7sn` (커밋 `003afb3` · 08-27 09:5x · 서빙 digest
+  `sha256:0dedc9ed…` **대조 일치** · env 28 유지 · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건 ·
+  검증 **1235/1235 @ 아카이브**).
+  **레이더 지도의 "API KEY REQUIRED" 워터마크 제거 — CARTO → Esri.** CARTO(`basemaps.cartocdn.com`)가
+  키 없는 요청에 워터마크를 **구워서** 보내기 시작했다(실측 `HTTP 200 · 31,957B · 정상 PNG`).
+  ★ **어떤 자동 검증도 못 잡았다 — 200 이고 서버를 안 거친다.** 베이스맵은 브라우저가 CDN 에서
+  직접 받으므로 `/api/radar`(RainViewer 프레임 목록만 본다)·5xx 사후 관찰·에러 로그 어디에도
+  안 남는다. 사용자가 눈으로 찾았다. [[L-118]] 로 박제 + `/deploy` 가드레일에 배선.
+  교체처 = Esri Canvas `World_{Light,Dark}_Gray_Base` + `_Gray_Reference`(지명). **태풍 진로·작업자
+  GPS 지도가 이미 쓰는 호스트**라 외부 의존이 안 늘고 CSP(`img-src https:`)도 그대로다.
+  ⚠ Esri 타일 경로는 **`z/y/x`** 다(XYZ 와 반대). 뒤집어도 정상 200 으로 엉뚱한 지역이 온다.
+  ⚠ 손해 = 선명도 하나. `@2x` 가 없어 256px 소스라 레티나에서 지명이 조금 무르다(레이더 512px 무관).
+  가드 `lib/2026-08-27-basemap-no-apikey.guard.test.ts` 5건 · 변이 6종 격추.
+  라이브 실증(배포 전후 같은 자로 측정) —
+  ```
+  cartocdn                          1 → 0     ← 수리됨
+  _Gray_Base/MapServer/tile         0 → 1     ← 레이더 바탕이 Esri
+  _Gray_Reference/MapServer/tile    0 → 1     ← 지명 레이어
+  World_Imagery/MapServer/tile      1 → 1     ← 태풍·GPS 지도 무변화(부수 피해 없음)
+  번들 원문  concat(aY,"/World_").concat(e,"_Gray_Bas…")   · 그 URL 실측 200 · 6,668B jpeg
+  ```
+  **함께 나간 팀원 변경**(L-59 — 검증 목록은 범위 전체에서 만든다) = `0ca3fc6` 검증 탭 호버 시
+  흰 글자 실종 수리(글자색을 `active` 가 아니라 표시자 위치 `targeted` 에 묶음). 라이브 실증 =
+  번들에 `text-body hover:text-ink dark:text-on-dark-soft dark:hover:text-on-dark` **0 → 1**.
+  그 외 5커밋은 문서·가드·이음새 배선도라 서빙 영향 없음.
+
+- **직전** = `vitalguard-dashboard-00323-974` (커밋 `53b0f7e` · 08-27 00:4x · 서빙 digest
   `sha256:a421f07e…` **대조 일치** · env 28 유지 · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건 ·
   검증 **1235/1235 @ 워킹트리**).
   **조회 라우트 5곳을 "읽을 수 있는 실패" 로** — `gaspod/config`·`aed/config`·`aed/devices`·
