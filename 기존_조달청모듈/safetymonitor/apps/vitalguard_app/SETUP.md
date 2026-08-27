@@ -546,13 +546,53 @@ xcrun devicectl device process launch --device <워치UUID> --terminate-existing
 **절차.**
 ```
 ① 캐시의 .mobileprovision 삭제(백업 권장 — 재발급이 막히면 되돌린다)
-② Xcode Run 1회
+② Xcode Run 1회 (CLI 로는 flutter build ios --release)
 ③ 앱 1회 전면 실행
 ④ 검증 — 빌드 산출물의 만료일을 읽어 실제로 밀렸는지 확인한다
    security cms -D -i <App>/embedded.mobileprovision \
      | plutil -extract ExpirationDate raw -o - -
 ```
 **④ 를 생략하지 않는다.** 이 함정은 "재서명했다" 는 착각을 남기고 만료일에 앱이 죽는다.
+
+### ★★ 재발급 프로파일에서 워치가 빠진다 — 만료일만 봐서는 안 보인다 (2026-08-27 실측)
+
+**④ 의 만료일 검증을 통과하고도 워치 설치가 거절될 수 있다.** 재발급 시점에 워치가
+`devicectl list devices` 에서 `disconnected` 면 **Xcode 가 워치를 뺀 프로파일을 발급한다.**
+
+```
+구 프로파일(08-20 발급) ProvisionedDevices 2  — 폰 ✅ 워치 ✅
+신 프로파일(08-27 발급) ProvisionedDevices 1  — 폰 ✅ 워치 ❌
+```
+그 프로파일로 워치에 설치하면 이렇게 죽는다(폰 설치는 멀쩡히 성공하므로 **폰만 보면 통과로 보인다**).
+```
+ERROR: ... IXUserPresentableErrorDomain error 14
+  Failed to install embedded profile for com.vitalguard.vitalguardApp.watchkitapp
+  : 0xe8008012 (This provisioning profile cannot be installed on this device.)
+```
+
+**해법 = 워치를 목적지로 지정해 한 번 빌드한다.** Xcode 가 그 기기를 등록하며 프로파일을 다시 낸다.
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcodebuild -workspace ios/Runner.xcworkspace -scheme VitalWatch -configuration Release \
+  -destination 'platform=watchOS,id=<워치UDID>' \
+  -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+```
+그 다음 `flutter build ios --release` 로 다시 빌드해야 **새 워치 프로파일이 임베드**된다.
+
+**⑤ 로 검증한다 — 만료일만이 아니라 기기 목록까지 읽는다.**
+```bash
+security cms -D -i <App>/embedded.mobileprovision | python3 -c "
+import sys,plistlib; p=plistlib.loads(sys.stdin.buffer.read())
+print(len(p.get('ProvisionedDevices',[])), p.get('ExpirationDate'))"
+```
+Runner 는 폰만 있어도 되지만 **VitalWatch 프로파일에는 워치 UDID 가 반드시 있어야 한다.**
+
+⚠ **워치 UDID 는 `devicectl list devices` 의 Identifier 가 아니다** — 그것은 CoreDevice 식별자고,
+설치·프로파일이 쓰는 하드웨어 UDID 는 `--json-output` 의 `hardwareProperties.udid` 다(두 값이 다르다).
+
+⚠ 워치가 `disconnected` 여도 `xcrun devicectl device info details --device <워치>` 는 터널을 열어
+성공한다. **그 성공을 `connected` 로 읽지 말 것** — 목록은 여전히 `disconnected` 이고,
+프로파일 발급은 목록 쪽 상태를 본다.
 
 ⚠ 캐시 삭제는 **맥의 캐시만** 지운다 — 기기에 설치된 앱은 안 건드리므로, 재발급이 실패해도
 기존 만료일까지는 그대로 돌아간다. 최악의 결과가 "지금과 같음" 이라 안전하게 시도할 수 있다.

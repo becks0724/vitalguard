@@ -143,12 +143,16 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 **대기 중인 창 · 묶어야 할 것**
 
-- **재서명 08-26.** `TimeToLive` 7일이 발급일 기준이라 만료(08-27 10:09 KST) 직전에 한다.
-  ⚠ 워치 코드 변경은 반드시 이 창에 묶는다 — 워치 재설치는 세션을 끊고 **자동 재개되지 않는다**.
-- **08-26 앱 묶음** = B-2 정확도 선택 + `±NNm` · `NSMotionUsageDescription`(없으면 `CMAltimeter`
-  크래시) · 응답 본문 읽기 6곳 중 `VitalPipeline:287` · **워치 하드웨어 모델 `wdm`**(`413942c` —
-  소스·가드·빌드 완료, 설치만 남음. 설치 후 확인 = `SELECT DISTINCT watch_device_model` 에
-  `Watch…,…` 꼴이 뜨는가. 종전 값 `Apple Watch` 는 판별력 0 이라 되살린 것이 아니다).
+- **재서명 — ✅ 완료(08-27 09:10).** 만료 08-27 10:09 → **09-03 09:09 KST**. 폰·워치 둘 다 설치.
+  `wdm` 도 함께 실려 닫혔다(`413942c` · 09:19 도착분부터 `watch_device_model=Watch6,18`).
+  ⚠ **다음 만료 09-03 09:09 · 미리 알림 09-01.** 워치 코드 변경은 이 창에 묶는다(재설치가 세션을 끊는다).
+  ⚠ **새 함정** — 재발급 프로파일에서 **워치가 빠질 수 있다**(발급 시점에 `disconnected` 면 제외).
+  만료일만 보면 통과로 보이고 워치 설치에서만 죽는다. 절차·검증은
+  [apps/vitalguard_app/SETUP.md](apps/vitalguard_app/SETUP.md) "재발급 프로파일에서 워치가 빠진다".
+- **08-26 앱 묶음 잔여 2건**(둘 다 폰(Runner) 쪽 = 재설치 비용 0초라 재서명 창을 기다릴 이유가 없다).
+  ⓐ 응답 본문 읽기 6곳 중 `VitalPipeline:287` — 아직 `dataTask` 가 본문을 `_` 로 버린다.
+  ⓑ `NSMotionUsageDescription` — **전제 재확인 필요.** 코드에 `CMAltimeter` 가 없고 워치의
+  `CMMotionManager`(deviceMotion)뿐인데 그 API 는 이 키를 요구하지 않는다. 넣을 근거부터 확인한다.
 - **지하주차장 재촬영** — 좌표 수정을 검증할 유일한 자리다(실외는 고치기 전에도 통과한다).
 - **C-1 `seBy=0` 대기**(창 5일) · **B-1 배터리 판정**(6.5%↓ 유지 / 8%↑ 연장 / 사이 = 안 갈림).
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
