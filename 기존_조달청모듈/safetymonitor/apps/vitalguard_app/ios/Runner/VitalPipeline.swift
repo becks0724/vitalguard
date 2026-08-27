@@ -291,7 +291,7 @@ final class VitalPipeline {
         }
         request.httpBody = body
 
-        let task = URLSession.shared.dataTask(with: request) { _, response, error in
+        let task = URLSession.shared.dataTask(with: request) { data, response, error in
             self.work.async {
                 if let error {
                     self.log.warning("업로드 실패(네트워크): \(error.localizedDescription, privacy: .public) — 30초 후 재시도, 큐 \(self.pending.count, privacy: .public)건")
@@ -300,28 +300,75 @@ final class VitalPipeline {
                     return
                 }
                 let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                let reply = Self.parseReply(data)
                 switch status {
                 case 200...299:
                     self.pending.removeFirst(min(batch.count, self.pending.count))
                     self.persist()
-                    self.log.notice("[UP] \(batch.count, privacy: .public)건 업로드 성공(\(status, privacy: .public)) — 잔여 큐 \(self.pending.count, privacy: .public)건")
+                    self.log.notice("[UP] \(batch.count, privacy: .public)건 업로드 성공(\(status, privacy: .public)) — 서버 저장 \(reply.accepted ?? -1, privacy: .public)건, 잔여 큐 \(self.pending.count, privacy: .public)건")
+                    // ★ 201 이어도 서버는 조용히 버릴 수 있다(미등록 source·검증 실패). 큐에서는 이미 지운 뒤라
+                    //   이 로그가 유일한 흔적이다 — 세지 않으면 유실이 어디에도 안 남는다.
+                    //   재전송하지 않는 이유 = 폐기 사유가 내용에 있어 다시 보내도 같은 결과다(무한 재시도 방지).
+                    if let accepted = reply.accepted, accepted < batch.count {
+                        self.log.error("[UP] ★ 서버 폐기 \(batch.count - accepted, privacy: .public)건 — 보낸 \(batch.count, privacy: .public) 저장 \(accepted, privacy: .public) · dropped=\(reply.dropped ?? -1, privacy: .public)(검증실패 \(reply.droppedInvalid ?? -1, privacy: .public))")
+                    }
                     VitalBridge.shared.emit(["type": "pipeline", "pending": self.pending.count, "uploadOk": true])
                     finish()
                     // 잔여가 있으면 즉시 다음 배치.
                     self.uploadLocked()
                 case 401, 403:
-                    self.log.error("업로드 인증 거부(\(status, privacy: .public)) — 토큰 확인 필요, 5분 후 재시도")
+                    self.log.error("업로드 인증 거부(\(status, privacy: .public)) — 서버: \(reply.message ?? "(본문 없음)", privacy: .public) — 토큰 확인 필요, 5분 후 재시도")
                     VitalBridge.shared.emit(["type": "pipeline", "pending": self.pending.count, "uploadOk": false, "authRejected": true])
                     finish()
                     self.scheduleRetry(after: 300)
                 default:
-                    self.log.warning("업로드 실패(HTTP \(status, privacy: .public)) — 30초 후 재시도")
+                    self.log.warning("업로드 실패(HTTP \(status, privacy: .public)) — 서버: \(reply.message ?? "(본문 없음)", privacy: .public) — 30초 후 재시도")
+                    // 503 부분 저장은 재전송이 중복 행을 만든다(서버 route.ts 주석 참조). 빈도를 여기서 관측한다.
+                    if let saved = reply.accepted, saved > 0 {
+                        self.log.error("[UP] ★ 부분 저장 후 실패 — 이미 저장 \(saved, privacy: .public)건 · 저장실패 \(reply.persistFailures ?? -1, privacy: .public)건. 재전송이 중복을 만든다")
+                    }
                     finish()
                     self.scheduleRetry(after: 30)
                 }
             }
         }
         task.resume()
+    }
+
+    // MARK: - 서버 응답 본문
+
+    /// 서버가 돌려준 판정 결과. 폰이 보낸 건수와 서버가 실제로 저장한 건수가 갈리는 것을 보려고 읽는다.
+    /// ⚠ 생체 수치(`sample`·`last`)는 일부러 꺼내지 않는다 — 로그로 새어 나갈 이유가 없다.
+    private struct ServerReply {
+        var accepted: Int?
+        var dropped: Int?
+        var droppedInvalid: Int?
+        var persistFailures: Int?
+        var message: String?
+    }
+
+    /// 배치 경로 응답만 해석한다(폰은 항상 배열을 보내므로 단건 경로로 갈 일이 없다).
+    /// 계약 = 201 `{ok,accepted,dropped,droppedInvalid,last}` · 503 `{ok,error,accepted,persistFailures}` · 그 외 `{ok,error}`.
+    private static func parseReply(_ data: Data?) -> ServerReply {
+        guard let data, !data.isEmpty,
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return ServerReply() }
+
+        var reply = ServerReply()
+        reply.accepted = obj["accepted"] as? Int
+        reply.dropped = obj["dropped"] as? Int
+        reply.droppedInvalid = obj["droppedInvalid"] as? Int
+        reply.persistFailures = obj["persistFailures"] as? Int
+
+        // error 는 문자열이 보통이지만 400(Zod)은 객체다 — 그대로 찍으면 길어서 잘라 둔다.
+        if let text = obj["error"] as? String {
+            reply.message = text
+        } else if let value = obj["error"],
+                  let encoded = try? JSONSerialization.data(withJSONObject: value, options: []),
+                  let text = String(data: encoded, encoding: .utf8) {
+            reply.message = text.count > 300 ? String(text.prefix(300)) + "…(생략)" : text
+        }
+        return reply
     }
 
     private var retryScheduled = false
