@@ -19,29 +19,30 @@
       · 앱 18.3MB → **19.0MB**
 - [x] **검증** — 복사본 11파일 전수 `cmp` → **불일치 0건**(제시본과 바이트 동일)
 
-## P2 — 50Hz IMU 스트림
-- [ ] `deviceMotionUpdateInterval` 1.0 → 1/50 · 전용 직렬 `OperationQueue` 로 이관
-- [ ] ★ **무동작 경로 보존** — `motionMagWindow`(창 60 = 1Hz 에서 60초)를 50Hz 가 1.2초로 만든다.
-      1Hz 로 다운샘플해 적재해야 `motionVariabilityMg` 의미가 유지된다
-- [ ] `motionUpdates`·`motionMaxG` 카운터 의미 재확인(로그 문구가 "콜백 N회" 라 50배 부푼다)
-- [ ] 실효 Hz 를 계산해 로그·`trace` 에 남긴다(스로틀링 실측용 — 모듈이 `spanSec` 로 요구)
-- [ ] **검증** — 실효 Hz ≥45 · `motionStillSec` 정상 · `motionVariabilityMg` 가 60초 창을 유지
+## P2 — 50Hz IMU 스트림 ✅ 코드 (08-27 · 실기기 확인 진행중)
+- [x] `deviceMotionUpdateInterval` 1.0 → 1/50 · 전용 직렬 `OperationQueue`(`userInitiated`) 로 이관
+- [x] ★ **무동작 경로 보존** — 1Hz 다운샘플(`stillTickInterval`)로 창 60 = 60초 유지
+- [x] ★ **메인 스레드 계약 유지** — 무동작 변수는 메인 런루프 `flush()` 가 읽으므로 쓰기도 메인
+- [x] 종료 로그 문구 `콜백 N회` → `1Hz 틱 N회`(50배 부푼 값을 종전 이름으로 부르지 않는다)
+- [x] 실효 Hz 를 세션 종료 로그에 남긴다
+- [ ] **검증** — 실효 Hz ≥45 (실기기)
+- [ ] **검증** — `motionStillSec`·`motionVariabilityMg` 종전과 같은 의미(DB `msc`·`mv` 도착 확인)
 
-## P3 — 배선 4조각
-- [ ] `IMUWindowLogger(preSec:2, postSec:10, logThresholdG:1.5, refractorySec:2)` 생성
-- [ ] `FallMLModule()` — nil 이면 ML 비활성(모델 미탑재)으로 처리하고 **로그로 알린다**
-- [ ] `CountdownGuard()` 생성
-- [ ] deviceMotion 콜백에 `logger.ingest(...)` + `guard_.feed(...)`
-- [ ] `logger.onWindow` → `ml.assess(window)` → `danger` 면 `guard_.start()`
-- [ ] ★ `v.trace` 를 **반드시** 로그에 남긴다(추적성 계약 · 사후 재현의 유일한 근거)
-- [ ] **검증** — 손목 흔들어 1.5G 넘기면 12초 뒤 `onWindow` 로그 · `trace` 3종 확률 출력
+## P3 — 배선 4조각 ✅ 코드 (08-27)
+- [x] `IMUWindowLogger(preSec:2, postSec:10, logThresholdG:1.5, refractorySec:2)`
+- [x] `FallMLModule()` — nil 이면 **`log.error` 로 알린다**(조용한 비활성 금지)
+- [x] `CountdownGuard()`
+- [x] 콜백에 `ingest(...)` + `feed(...)` — 가속도는 `userAcceleration + gravity`(G·정지 −1g)
+- [x] `onWindow` → `assess(window, spanSec: 12.0)` → `danger` 면 `start()`
+- [x] ★ `trace` 전량 로그(`[FALL] decision · 확률3 · 샘플 · 실효Hz · 피크G · 모듈버전`)
+- [ ] **검증** — 1.5G 넘기고 12초 뒤 `[FALL]` 로그 출현(실기기)
 
-## P4 — UI
-- [ ] 카운트다운 화면(남은 초 표시) + **"낙상 아님"** 버튼 → `guard_.cancelByUser()`
-- [ ] 햅틱 — `WKInterfaceDevice.current().play(.notification)`
-- [ ] 결말 3종 배선 — `onAutoCancel`·`onManualCancel`·`onConfirm`
-- [ ] 디버그 화면에 `MLSelfCheck.run()` 버튼
-- [ ] ⚠ `onConfirm` 은 **아직 서버로 안 보낸다**(P7) — 로그만. 보내는 척하지 않는다
+## P4 — UI ✅ 코드 (08-27)
+- [x] 카운트다운 오버레이(전체 화면 — 쓰러진 사람이 목록을 스크롤할 수 없다) + **"낙상 아님"**
+- [x] 햅틱 — 진입 `.notification` · 확정 `.failure`
+- [x] 결말 3종 배선 — `onAutoCancel`·`onManualCancel`·`onConfirm`
+- [x] `MLSelfCheck.run()` 버튼 + 결과 6줄 표시
+- [x] ⚠ `onConfirm` 은 로그만 — 서버 신고 미구현(P7). **보내는 척하지 않는다**
 
 ## P5 — 실기기 자가검증 (통과 의례)
 - [ ] `MLSelfCheck.run()` **6줄 전부 ✅**

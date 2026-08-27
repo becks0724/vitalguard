@@ -665,11 +665,41 @@ final class WatchStreamer: NSObject, ObservableObject {
         }
         log.notice("낙상 ML 활성 — 모듈 \(FallMLModule.version, privacy: .public) · 50Hz · 게이트 1.5G")
 
+        // 자가검증을 기동 시 1회 자동 실행한다(통합가이드 "3. 확인(필수)").
+        // 화면 버튼만 두면 **아무도 안 누른 채 배포된다** — 모델이 로드됐다는 것과 특징추출이
+        // 파이썬 정답지와 수치가 맞는다는 것은 다른 말이고, 후자는 눌러 보기 전엔 알 수 없다.
+        // 비용은 정답지 6건 추론뿐(모듈 주석 기준 ~ms)이고 세션당 한 번이다.
+        motionQueue.addOperation { [weak self] in
+            let result = MLSelfCheck.run()
+            let ok = !result.contains("❌") && !result.contains("없음")
+            if ok {
+                self?.log.notice("[FALL] 자가검증 통과\n\(result, privacy: .public)")
+            } else {
+                self?.log.error("[FALL] ★ 자가검증 실패 — 탑재가 온전하지 않다\n\(result, privacy: .public)")
+            }
+        }
+
         fallLogger.onWindow = { [weak self] window in
             guard let self else { return }
             let v = ml.assess(window, spanSec: 12.0)
             // ★ 추적성 계약 — trace 가 없으면 어떤 판정도 사후 재현이 불가능하다(README).
             self.log.notice("[FALL] \(v.decision.rawValue, privacy: .public) · work \(String(format: "%.3f", v.workProb), privacy: .public) · nonrecovery \(String(format: "%.3f", v.nonrecoveryProb), privacy: .public) · impact \(String(format: "%.3f", v.impactProb), privacy: .public) · 샘플 \(v.sampleCount, privacy: .public) · 실효 \(String(format: "%.1f", v.effectiveHz), privacy: .public)Hz · 피크 \(String(format: "%.2f", v.peakG), privacy: .public)G · 모듈 \(v.moduleVersion, privacy: .public)")
+
+            // ★ 추론 실패의 지문 — 확률 정확히 0.0 (2026-08-27 · 옆 세션 19·59 지적, 원문 대조 확인).
+            //
+            // 모듈 `prob()` 은 MLMultiArray 생성·FeatureProvider·prediction 이 실패하면 **0 을 돌려준다.**
+            // 그런데 `nonrecoveryProb` 의 nil 은 **모델 부재일 때만** 나므로, 모델이 있는데 추론이
+            // 실패하면 `rec = 0` 이 되고 `0 >= 0.35` 가 거짓이라 **no_danger 로 빠진다** —
+            // 즉 낙상인데 조용히 알림이 없다. 모듈 주석의 "부재 시 안전측(위험)으로"(`?? 1.0`)는
+            // 이 경로에 안 걸린다. work_veto 쪽 실패는 반대로 안전한 방향이라(기각이 안 됨) 비대칭이다.
+            //
+            // ⚠ **판정은 바꾸지 않는다** — 임계 동작 변경은 ML 담당 판단이고 모듈 내부 수정은 계약 위반이다.
+            //   여기서는 **보이게만** 한다. 학습된 확률이 정확히 0.0 으로 떨어질 일은 사실상 없으므로
+            //   이 조건은 실패의 지문으로 쓸 수 있다.
+            if v.nonrecoveryProb == 0 || (v.workProb == 0 && v.impactProb == 0) {
+                self.log.error("[FALL] ★ 추론 실패 의심 — 확률이 정확히 0 이다(work \(String(format: "%.3f", v.workProb), privacy: .public) · nonrecovery \(String(format: "%.3f", v.nonrecoveryProb), privacy: .public) · impact \(String(format: "%.3f", v.impactProb), privacy: .public)). 이 경우 모듈은 no_danger 로 판정한다 — 낙상이어도 알림이 없다")
+            }
+
             guard v.decision == .danger else { return }
             self.fallGuard.start()
             DispatchQueue.main.async {
