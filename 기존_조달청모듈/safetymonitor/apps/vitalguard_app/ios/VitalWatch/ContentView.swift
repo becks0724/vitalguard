@@ -9,6 +9,7 @@
 // ⚠ 심박 그래프에 상태색(정상/주의/위험)을 쓰지 않는다 — 워치에는 판정 임계가 없고,
 //   여기서 새로 정의하면 근거 문서 없는 의학 판정이 기기마다 갈린다(폰 `vital_range.dart`
 //   가 같은 이유로 임계 자체 정의를 금지한다). 판정은 폰·관제웹이 한다.
+import Combine
 import SwiftUI
 
 struct ContentView: View {
@@ -24,6 +25,8 @@ struct ContentView: View {
     ///   손해가 없고, 급할 때 한 번에 켜지는 편이 낫다.
     @State private var confirmingStop = false
     @State private var page = Page.vitals
+    @State private var now = Date()
+    private let clockTick = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     /// 크라운을 내리는 순서. 생체 → 종류별 상세 → 마지막이 설정이다.
     /// ⚠ 설정을 맨 끝에 둔다 — 손목에서 늘 보는 것은 생체이고, 동작 버튼은 하루 두어 번이다.
@@ -103,6 +106,10 @@ struct ContentView: View {
 
             VStack(spacing: 5) {
                 Spacer(minLength: 0)
+                // 시계를 가운데로 — 시스템 시계는 숨기고 직접 그린다.
+                Text(Self.clock(now))
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text("HR")
                         .font(.system(size: 13, weight: .semibold))
@@ -121,12 +128,11 @@ struct ContentView: View {
                         .font(.system(size: 12))
                         .foregroundStyle(VitalGuardWatchPalette.ink)
                 }
-                // 시계 밴드를 피해 이 줄부터 시작한다 — 눈금은 그 위로 지나가도 된다.
-                .padding(.top, 26)
+                .padding(.top, 0)
 
                 VStack(spacing: 1) {
                     HeartRateSparkline(points: streamer.recentBPM)
-                        .frame(height: 44)
+                        .frame(height: 58)
                     // ★ x축 눈금 — 가로가 무엇인지 안 적으면 폭이 몇 분인지 알 수 없다.
                     timeAxis
                 }
@@ -187,6 +193,20 @@ struct ContentView: View {
             .padding(.bottom, 4)
         }
         .ignoresSafeArea()
+        // ★ 시스템 시계를 숨기고 위 가운데에 직접 그린다(사용자 결정 · 울트라 페이스 배치).
+        //
+        // ⚠ **`_statusBarHidden` 은 밑줄로 시작하는 비공식 API 다.** 공개 `statusBarHidden(_:)`
+        //   은 `@available(watchOS, unavailable)` 이고, 워치에서 되는 것은 이 밑줄 쪽뿐이다
+        //   (WatchOS.sdk SwiftUI.swiftinterface 실측 · watchOS 6.0+). 문서화돼 있지 않으므로
+        //   **애플이 언제든 없애거나 동작을 바꿀 수 있다.**
+        //
+        // ⚠ **고장 증상을 미리 적어 둔다** — 아래 둘 중 하나가 보이면 이 줄부터 의심한다.
+        //   ① 시계가 **둘** 보인다 → 모디파이어가 안 먹었다(시스템 시계가 살아났다).
+        //   ② 시계가 **하나도** 없다 → 아래 `Text(Self.clock(now))` 이 지워졌다.
+        //   되돌리는 법 = 이 줄과 그 `Text` 를 **함께** 지운다. 하나만 지우면 위 두 증상이 된다.
+        //   그 짝은 가드가 단언한다(2026-08-27-watch-status-bar-pair.guard.test.ts).
+        ._statusBarHidden(true)
+        .onReceive(clockTick) { now = $0 }
     }
 
     /// 그래프 아래 시각 눈금. 점이 모자라면 아무것도 안 적는다 — 축만 있고 값이 없으면
