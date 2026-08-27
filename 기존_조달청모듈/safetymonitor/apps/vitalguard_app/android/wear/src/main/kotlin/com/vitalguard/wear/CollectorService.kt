@@ -18,7 +18,10 @@ import com.vitalguard.wear.pipeline.HttpTransport
 import com.vitalguard.wear.pipeline.QueueStorage
 import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
+import com.vitalguard.ml.FallMLModule
+import com.vitalguard.ml.ImuWindowLogger
 import com.vitalguard.wear.source.GpsLocationSource
+import com.vitalguard.wear.source.ImuSource
 import com.vitalguard.wear.source.OffBodySource
 import com.vitalguard.wear.source.ActivitySource
 import com.vitalguard.wear.source.CompositeTrackerSource
@@ -39,6 +42,14 @@ class CollectorService : Service() {
     private lateinit var pipeline: UploadPipeline
     private lateinit var gps: GpsLocationSource
     private lateinit var offBody: OffBodySource
+    /**
+     * 낙상 ML — 6축 IMU 전용 통로. 기존 `onAccelMagG`(무동작·변동폭) 경로와 **별개**다.
+     * ⚠ 셋 중 하나라도 서지 않으면 ML 은 통째로 쉰다(자이로 없음 · assets 없음). 낙상 판정이
+     *   없는 것과 **틀린 판정이 나가는 것**은 다른 문제이고, 후자가 훨씬 비싸다.
+     */
+    private lateinit var imu: ImuSource
+    private var fallMl: FallMLModule? = null
+    private lateinit var imuLogger: ImuWindowLogger
     /** 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다). */
     private var sensing = false
     private var uploadBlockedUntilMs = 0L
@@ -84,6 +95,23 @@ class CollectorService : Service() {
             latestFix = { now -> gps.currentFix(now) },
         )
         pipeline = UploadPipeline(queue, HttpTransport(config.baseUrl))
+
+        // ── 낙상 ML 3종 모듈 (v6.1.0) ────────────────────────────────────────────
+        // 모듈 계약 = 12초 윈도(충격 전 2s + 후 10s) 하나를 넣으면 판정이 나온다.
+        // 여기서는 **판정을 로그로만** 낸다 — 카운트다운 UI·서버 신고는 다음 단계다.
+        imu = ImuSource(this)
+        imuLogger = ImuWindowLogger()          // 기본값 = fs 50 · pre 2s · post 10s · 게이트 1.8G
+        fallMl = FallMLModule.create(this)     // assets 에 onnx 3개가 없으면 null
+        if (fallMl == null) Log.w(TAG, "낙상 ML 비활성 — assets 모델 로드 실패")
+        imuLogger.onWindow = { w ->
+            val ml = fallMl
+            if (ml != null) {
+                val v = ml.assess(w)
+                // ★ 추적성은 모듈의 계약이다(README) — trace 를 통째로 남긴다. 이 줄이 있어야
+                //   나중에 "왜 그렇게 판정했나" 를 원시 윈도 없이도 되짚을 수 있다.
+                Log.i(TAG, "낙상판정 ${v.trace}")
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -141,7 +169,11 @@ class CollectorService : Service() {
         collecting = true
         gps.start()
         engine.start(System.currentTimeMillis())
-        Log.i(TAG, "착용 — 수집 개시")
+        // ML 은 착용 중에만 돈다 — 벗은 워치의 6축 50Hz 는 전력만 쓴다.
+        if (fallMl != null && imu.supported) {
+            imu.start { r -> imuLogger.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.totalG, r.atNs) }
+        }
+        Log.i(TAG, "착용 — 수집 개시 (낙상ML=${if (fallMl != null && imu.supported) "on" else "off"})")
     }
 
     /** 벗음 — 센서를 뗀다. **큐는 지우지 않는다**(미전송분은 다시 찼을 때 함께 올라간다). */
@@ -152,6 +184,7 @@ class CollectorService : Service() {
         collecting = false
         engine.stop()
         gps.stop()
+        imu.stop()
         Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")
     }
 
