@@ -143,7 +143,10 @@ class HeartRateHeroCard extends StatelessWidget {
             SizedBox(
               // ⚠ 이 높이는 "한 화면에 스크롤 없이" 라는 요구에서 나온 값이다. 늘리려면
               //   아래 생체 카드까지 함께 재고 늘려야 한다(2026-08-27 사용자 요청).
-              height: 108,
+              //   같은 날 생체 칸이 참고 디자인의 카드 격자로 바뀌며 108 → 86 으로 한 번 더
+              //   줄었다 — 격자가 네 줄이라 이 22pt 가 없으면 마지막 줄이 화면 밖으로 나간다.
+              //   `summary_one_screen_test` 가 그 예산을 숫자로 지킨다.
+              height: 86,
               // ★ 안내 문구는 Canvas 가 아니라 위젯으로 올린다 — 캔버스에 그리면 시험도
               //   스크린리더도 못 읽고, "안내가 떴다" 를 아무도 확인할 수 없다.
               child: history.length < 2
@@ -383,7 +386,7 @@ class HeartRateTrendPainter extends CustomPainter {
     var upper = (highest / _gridStep).ceilToDouble() * _gridStep;
     // 값이 거의 일정하면 눈금이 한 칸도 안 생긴다 — 최소 두 칸은 벌려 둔다.
     if (upper - lower < _gridStep * 2) upper = lower + _gridStep * 2;
-    // ⚠ 판이 짧아져서(108pt) 20 간격을 고집하면 눈금이 여섯 줄까지 들어차 값이 안 읽힌다.
+    // ⚠ 판이 짧아져서(86pt) 20 간격을 고집하면 눈금이 여섯 줄까지 들어차 값이 안 읽힌다.
     //   네 칸을 넘으면 간격을 배로 늘려 줄 수를 줄인다.
     var step = _gridStep;
     while ((upper - lower) / step > 4) {

@@ -13,6 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vitalguard_app/main.dart';
 import 'package:vitalguard_app/own_vitals.dart';
 import 'package:vitalguard_app/theme.dart';
+import 'package:vitalguard_app/vital_card.dart';
 import 'package:vitalguard_app/vital_display.dart';
 
 void _mockBridge([Map<String, dynamic>? stream]) {
@@ -98,8 +99,13 @@ void main() {
         reason: '서버 파생행의 스트레스 이름이 바뀌었다 — 요약 행 라벨도 함께 고쳐야 한다');
   });
 
-  testWidgets('★ 지표·활동이 주요 생체와 한 카드에 들어간다', (tester) async {
-    // 2026-08-19 사용자 지시로 세 박스를 합쳤다. 카드가 다시 갈리면 이 가드가 잡는다.
+  testWidgets('★ 지표·활동이 주요 생체와 한 격자에 들어간다', (tester) async {
+    // 2026-08-19 사용자 지시로 세 박스(주요 생체·그 밖의 지표·활동)를 합쳤다.
+    // 섹션이 다시 갈리면 이 가드가 잡는다.
+    //
+    // ⚠ 2026-08-27 에 **무엇을 세는지**가 바뀌었다. 참고 디자인을 옮기며 칸마다 카드를 두고
+    //   바깥 카드를 없앴으므로 `Card` 개수로는 합쳐졌는지 알 수 없다 — 대신 모든 칸이
+    //   **같은 격자 하나**에 들어 있는지를 본다. 합쳐진 상태를 더 정확히 재는 축이다.
     tester.view.physicalSize = const Size(1170, 3400);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -116,22 +122,23 @@ void main() {
     });
     await _pumpHome(tester);
 
-    final card = find.ancestor(of: find.text('주요 생체'), matching: find.byType(Card));
-    expect(card, findsOneWidget);
+    expect(find.text('주요 생체'), findsOneWidget);
+    final grid = find.byType(VitalCardGrid);
+    expect(grid, findsOneWidget, reason: '격자가 둘로 갈렸다 — 세 박스를 합친 결정이 되돌아갔다');
 
     // 옛 섹션 제목은 사라졌다 — 남아 있으면 박스가 다시 갈린 것이다.
     expect(find.text('그 밖의 지표'), findsNothing);
 
     for (final label in ['운동 강도', '일광 시간', '걸음', '정지 지속']) {
-      expect(find.descendant(of: card, matching: find.text(label)), findsOneWidget,
-          reason: '$label 이 주요 생체 카드 밖으로 나갔다');
+      expect(find.descendant(of: grid, matching: find.text(label)), findsOneWidget,
+          reason: '$label 이 주요 생체 격자 밖으로 나갔다');
     }
     // 값도 함께 옮겨왔는지 — 이름만 옮기고 값이 빠지면 칸이 장식이 된다.
-    expect(find.descendant(of: card, matching: find.text('2,872')), findsOneWidget);
-    expect(find.descendant(of: card, matching: find.text('4.4')), findsOneWidget);
+    expect(find.descendant(of: grid, matching: find.text('2,872')), findsOneWidget);
+    expect(find.descendant(of: grid, matching: find.text('4.4')), findsOneWidget);
   });
 
-  testWidgets('아이콘이 이름을 대신하지 않는다', (tester) async {
+  testWidgets('★ 아이콘이 이름을 대신하지 않는다', (tester) async {
     tester.view.physicalSize = const Size(1170, 3400);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -139,14 +146,18 @@ void main() {
     _mockBridge();
     await _pumpHome(tester);
 
-    // ⚠ 카드 전체가 아니라 **칸 하나**만 본다 — 같은 카드 아래 `활동 에너지 — 보류` 줄이
-    //   아이콘을 정당하게 쓰고 있고, 다른 항목도 같은 아이콘을 쓴다.
-    for (final label in labels) {
-      final cell = find.ancestor(of: find.text(label), matching: find.byType(Column)).first;
+    // ⚠ 2026-08-27 — 종전 가드는 칸에 `Icon` 이 **없을 것**을 단언했다. 참고 디자인을 옮기며
+    //   아이콘이 이름 **옆에** 들어왔으므로(사용자 지시) 그 단언은 더 못 쓴다. 다만 2026-08-19
+    //   실기기 확인에서 나온 사실 — *아이콘만으로는 무슨 값인지 알 수 없다* — 은 그대로다.
+    //   그래서 금지형을 **동반형**으로 바꾼다: 아이콘이 있어도 이름 글자가 반드시 함께 있다.
+    //   이름을 빼고 아이콘만 남기는 되돌림은 여전히 여기서 잡힌다(변이 실측 · 커밋 메시지).
+    final cards = tester.widgetList<VitalCard>(find.byType(VitalCard)).toList();
+    expect(cards, isNotEmpty, reason: '칸이 하나도 안 그려졌다 — 가드가 아무것도 안 본다');
+    for (final card in cards) {
       expect(
-        find.descendant(of: cell, matching: find.byType(Icon)),
-        findsNothing,
-        reason: '$label 칸에 아이콘 표기가 되살아났다 — 아이콘만으로는 무슨 값인지 알 수 없다',
+        find.descendant(of: find.byWidget(card), matching: find.text(card.row.label)),
+        findsOneWidget,
+        reason: '${card.row.label} 칸이 아이콘만 남고 이름이 사라졌다',
       );
     }
   });
