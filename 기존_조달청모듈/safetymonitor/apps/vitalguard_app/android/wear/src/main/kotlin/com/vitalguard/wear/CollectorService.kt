@@ -51,6 +51,7 @@ class CollectorService : Service() {
     private lateinit var imu: ImuSource
     private var fallMl: FallMLModule? = null
     private lateinit var imuLogger: ImuWindowLogger
+    private lateinit var fallShadow: FallShadowReporter
     /**
      * 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다).
      * ⚠ `@Volatile` = 쓰기는 메인, 읽기는 수집 스레드와 IMU 감시 경로 둘이다. 종전에도 교차
@@ -103,11 +104,14 @@ class CollectorService : Service() {
 
         // ── 낙상 ML 3종 모듈 (v6.1.0) ────────────────────────────────────────────
         // 모듈 계약 = 12초 윈도(충격 전 2s + 후 10s) 하나를 넣으면 판정이 나온다.
-        // 여기서는 **판정을 로그로만** 낸다 — 카운트다운 UI·서버 신고는 다음 단계다.
+        // 판정은 로그 + **섀도 보고**(FallShadowReporter — 서버 적재, 경보 없음)로 낸다.
+        // 카운트다운 화면("낙상 아님" 버튼)은 다음 단계다 — 지금 결말은 자동 2종뿐.
         imu = ImuSource(this)
         imuLogger = ImuWindowLogger()          // 기본값 = fs 50 · pre 2s · post 10s · 게이트 1.8G
         fallMl = FallMLModule.create(this)     // assets 에 onnx 3개가 없으면 null
         if (fallMl == null) Log.w(TAG, "낙상 ML 비활성 — assets 모델 로드 실패")
+        // 항목 생성은 IMU 스레드, 큐 적재는 수집 스레드 — 큐(플러시와 같은 스레드) 계약 유지.
+        fallShadow = FallShadowReporter(enqueue = { item -> handler.post { queue.add(item) } })
         imuLogger.onWindow = { w ->
             val ml = fallMl
             if (ml != null) {
@@ -116,6 +120,7 @@ class CollectorService : Service() {
                 //   나중에 "왜 그렇게 판정했나" 를 원시 윈도 없이도 되짚을 수 있다.
                 Log.i(TAG, "낙상판정 ${v.trace}")
                 warnIfInferenceLooksDead(v)
+                fallShadow.onVerdict(v)
             }
         }
 
@@ -209,6 +214,7 @@ class CollectorService : Service() {
         // ML 은 착용 중에만 돈다 — 벗은 워치의 6축 50Hz 는 전력만 쓴다.
         if (fallMl != null && imu.supported) {
             imu.start { r ->
+                fallShadow.feed(r.totalG)    // 카운트다운 열려 있을 때만 일한다(평시 no-op)
                 imuLogger.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.totalG, r.atNs)
                 watchdogFromImu()
             }
