@@ -110,6 +110,13 @@ export const VitalSampleSchema = z.object({
     ])
     .optional(),
   fallPromptResponseSec: z.number().min(0).max(600).optional(),
+  // 낙상 ML 모듈 추적정보(2026-08-27) — module_version·확률 3종·샘플수·실효Hz·피크G·판정시각.
+  // ★ 이것이 없으면 어떤 판정도 사후 재현이 불가능하다(모듈 README 의 추적성 계약).
+  // ⚠ **컬럼을 새로 만들지 않는다** — `persistSample` 이 파싱된 샘플 전체를 `raw_json` 에
+  //   넣으므로 이 필드를 스키마에 등재하는 것만으로 저장된다. 반대로 등재하지 않으면
+  //   `z.object` 기본값(strip)이 업로드 도중 지워 `raw_json` 에도 안 남는다.
+  // 값은 모듈이 만든 dict 를 그대로 받는다(키를 여기서 재정의하면 모듈 교체 때 어긋난다).
+  fallTrace: z.record(z.string(), z.unknown()).optional(),
   freefallPreceded: z.boolean().optional(),
   peakRotationRadS: z.number().min(0).max(50).optional(),
   hrPreMean10s: z.number().min(20).max(250).optional(),
@@ -277,6 +284,10 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "sessionEndError",
   // 워치 하드웨어 모델 — 귀속용 메타데이터. 길이 초과가 생체를 죽이면 안 된다(위와 같은 이유).
   "watchDeviceModel",
+  // 낙상 ML 추적정보 — 진단 텔레메트리다. 모듈이 만든 dict 를 그대로 받으므로 모듈 교체로
+  // 모양이 바뀔 수 있는데, 그때 추적 필드 하나가 낙상 후보 행을 통째로 버리면 손해가 훨씬 크다
+  // (같은 이유로 위 `mlWorkVetoProb`·`mlImpactProb` 도 여기 있다).
+  "fallTrace",
 ]);
 
 export function parseResilientVitalSample(

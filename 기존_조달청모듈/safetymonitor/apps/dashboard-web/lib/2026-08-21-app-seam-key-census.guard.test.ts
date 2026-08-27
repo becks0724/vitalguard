@@ -43,6 +43,9 @@ const SAMPLE_KEYS = [
   "seAt", "seBy", "seErr", "srAt", "srN", "mv", "wdm",
   "hrv", "rhr", "whr", "rr", "pe", "dl",
   "spo2", "spo2Ts", "still",
+  // 낙상 ML 판정(2026-08-27 · 섀도) — fcid=후보 UUID · fph=단계 · fpo=결말 ·
+  // frs=응답 초 · fpg=피크 G · ftr=모듈 추적 dict.
+  "fcid", "fph", "fpo", "frs", "fpg", "ftr",
 ].sort();
 // B 이음새 — EventChannel 이벤트 키 15개("hr" 스냅숏 12 + "pipeline" 상태 3).
 const EVENT_KEYS = [
@@ -69,6 +72,11 @@ function watchWriteKeys(src: string): Set<string> {
     ...caps(src, /pendingSamples\[idx\]\["([A-Za-z0-9]+)"\]\s*=/g),
     ...caps(src, /\bkey:\s*"([A-Za-z0-9]+)"/g),
     ...caps(src, /out\["([A-Za-z0-9]+)"\]\s*=/g),
+    // 낙상 판정 항목(2026-08-27) — 판정은 5초 주기 밖에서 나므로 대기열에 담았다가 flush 에서
+    // 싣는다. 그래서 `pendingSamples` 에 직접 쓰지 않고 `fallItem` 을 거친다 = 위 네 형태로는
+    // 안 잡힌다. 변수명을 계약으로 고정하고 여기서 읽는다(이름을 바꾸면 이 가드가 빨개진다).
+    ...caps(src, /var fallItem: \[String: Any\] = \[([^\]]*)\]/g).flatMap((c) => caps(c, DICT_KEY)),
+    ...caps(src, /fallItem\["([A-Za-z0-9]+)"\]\s*=/g),
   ]);
 }
 // 폰 읽기 쪽 — ingest() 의 `s["키"] as?` 전부.

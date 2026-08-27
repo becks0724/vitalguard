@@ -154,9 +154,21 @@ final class VitalPipeline {
                 // 워치 하드웨어 모델(2026-08-25) — 어느 기기가 보냈는지. 출처(watchos/wearos)가
                 // 벤더를 가르고 이 값이 모델을 가른다.
                 let wdm = s["wdm"] as? String
+                // 낙상 ML 판정(2026-08-27 · 섀도) — 워치가 짧은 키로 보내고 여기서 서버 이름으로 바꾼다.
+                // fcid 는 후보 상관 ID(UUID) · fph 는 단계(candidate/prompt_result) ·
+                // fpo 는 결말 · frs 는 응답 시간(초) · fpg 는 피크 G · ftr 은 추적 dict.
+                let fcid = s["fcid"] as? String
+                let fph = s["fph"] as? String
+                let fpo = s["fpo"] as? String
+                let frs = s["frs"] as? Double
+                let fpg = s["fpg"] as? Double
+                let ftr = s["ftr"] as? [String: Any]
+                // ⚠ 낙상 결말 항목은 생체가 하나도 없다 — 이 관문에 fcid 를 안 넣으면
+                //   여기서 통째로 버려지고 후보 행이 영원히 미완결로 남는다.
                 guard bpm != nil || spo2 != nil || ae != nil
                     || hrv != nil || rhr != nil || whr != nil || rr != nil
                     || stp != nil || flt != nil || pe != nil || dl != nil || still != nil
+                    || fcid != nil
                 else { continue }
                 var v: [String: Any] = ["ts": sentAt]
                 if let bpm {
@@ -203,6 +215,22 @@ final class VitalPipeline {
                 // 08-18 진단에서 긴 공백 3건이 전부 수집 정지로 확정됐는데 **방전·충전·앱 종료를
                 // 가를 신호가 이것 하나뿐**이라 우선순위가 올라갔다(레벨의 시간 변화가 가른다).
                 if let bat { v["batteryPct"] = bat }
+                // 낙상 ML 판정 — 서버 계약이 구 앱(fall-ml) 시절부터 완비돼 있어 스키마·컬럼·insert
+                // 모두 그대로 쓴다. 신규는 `fallTrace` 하나뿐(확률 3종·모듈 버전·실효Hz 보관처).
+                // ⚠ **섀도 단계라 `fallDetected`·`fallDecision` 은 싣지 않는다** — 그 둘 중 하나라도
+                //   실리면 서버가 양성으로 세고 recordAlert 가 텔레그램을 울린다. 오탐률을 재는
+                //   동안은 경보가 나가면 안 된다. 3단계에서 워치가 그 키를 보내기 시작한다.
+                if let fcid {
+                    v["fallCandidateId"] = fcid
+                    // 후보 행의 표식 — 서버 갱신 경로가 `fall_candidate = 1` 인 행만 찾는다.
+                    v["fallCandidate"] = true
+                }
+                if let fph { v["fallUpdatePhase"] = fph }
+                if let fpo { v["fallPromptOutcome"] = fpo }
+                if let frs { v["fallPromptResponseSec"] = frs }
+                // 피크 G — 기존 필드에 그대로 맞는다(서버 상한 20G).
+                if let fpg { v["accelMagnitudeG"] = fpg }
+                if let ftr { v["fallTrace"] = ftr }
                 // 세션 계측 — `sessionStartedAt` 이 바뀌는 지점이 곧 HKWorkoutSession 재시작이고
                 // `sessionAutoResumed` 가 그 주체(자동 복구 vs 사람이 [시작])를 가른다.
                 // ⚠ 위 guard 에 넣지 않는다 — 이 값만으로 행을 만들면 안 된다(배터리와 같은 계약).

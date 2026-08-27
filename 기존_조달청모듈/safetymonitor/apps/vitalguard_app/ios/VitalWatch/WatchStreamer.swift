@@ -131,6 +131,11 @@ final class WatchStreamer: NSObject, ObservableObject {
     /// 실효 Hz 관측용(스로틀링 실측). 모듈 `trace.effective_hz` 와 별개로 스트림 자체를 잰다.
     private var imuSamples = 0
     private var imuRateStartedAt: Date?
+    /// 낙상 판정 전송 대기열 — 5초 flush 에서 배치에 싣는다(판정은 아무 때나 나므로 큐가 필요하다).
+    private var pendingFallItems: [[String: Any]] = []
+    /// 카운트다운이 도는 동안의 후보 ID·시작 시각 — 결말 항목이 후보 행을 찾아가는 열쇠.
+    private var activeFallCandidateId: String?
+    private var fallCountdownStartedAt: Date?
     /// 카운트다운 진행 상태 — UI 가 구독한다. 메인에서만 쓴다.
     @Published var fallCountdownActive = false
 
@@ -515,6 +520,12 @@ final class WatchStreamer: NSObject, ObservableObject {
             }
             // 모션 변동폭 — 같은 계약(심박 항목 동승 · 행 수 불증가). 창이 덜 찼으면 키를 생략한다.
             if let mv = motionVariabilityMg { pendingSamples[idx]["mv"] = mv }
+            // 낙상 후보(candidate) — 배터리·wdm 과 같은 계약으로 심박 항목에 얹는다.
+            // ⚠ 단독 항목으로 만들면 배치 내 `ts` 중복으로 서버가 조용히 버린다(uq_vs_worker_ts).
+            //   결말(prompt_result)은 반대다 — 삽입을 안 타므로 아래에서 단독으로 보낸다.
+            if let i = pendingFallItems.firstIndex(where: { $0["fph"] as? String == "candidate" }) {
+                for (k, v) in pendingFallItems.remove(at: i) { pendingSamples[idx][k] = v }
+            }
             // 기기 모델(2026-08-25) — 같은 계약. 07-30~08-01 에만 값이 있고 이후 416,959행이 NULL 이라
             // **어느 워치가 보냈는지 되짚을 수 없었다**. 출처(watchos/wearos)는 벤더만 가르므로
             // 모델 세부는 이 필드가 유일한 근거다.
@@ -557,6 +568,17 @@ final class WatchStreamer: NSObject, ObservableObject {
             } else {
                 pendingSamples.append(["ts": Date().timeIntervalSince1970, "still": still])
             }
+        }
+        // 낙상 결말(prompt_result) — **단독 항목**으로 싣는다. 서버가 후보 행을 UPDATE 하고 그 자리에서
+        // 반환하므로(경보 플래그가 없으면 조기 return) 행이 삽입되지 않는다 → `ts` 중복에 안 걸리고,
+        // 심박 항목에 얹었다면 그 심박 행까지 통째로 안 들어갈 뻔했다.
+        if !pendingFallItems.isEmpty {
+            for item in pendingFallItems where item["fph"] as? String == "prompt_result" {
+                var fallItem = item
+                fallItem["ts"] = Date().timeIntervalSince1970
+                pendingSamples.append(fallItem)
+            }
+            pendingFallItems.removeAll { $0["fph"] as? String == "prompt_result" }
         }
         guard !pendingSamples.isEmpty else { return }
         seq += 1
@@ -727,38 +749,88 @@ final class WatchStreamer: NSObject, ObservableObject {
                 self.log.error("[FALL] ★ 추론 실패 의심 — 확률이 정확히 0 이다(work \(String(format: "%.3f", v.workProb), privacy: .public) · nonrecovery \(String(format: "%.3f", v.nonrecoveryProb), privacy: .public) · impact \(String(format: "%.3f", v.impactProb), privacy: .public)). 이 경우 모듈은 no_danger 로 판정한다 — 낙상이어도 알림이 없다")
             }
 
+            // 섀도(P7 1단계) — 판정을 서버에 남긴다. **경보는 안 보낸다**(`fallDetected`·
+            // `fallDecision` 미전송) → `recordAlert` 가 안 돌아 텔레그램이 울리지 않는다.
+            // 목적은 오탐률을 숫자로 만드는 것이고, 그 표가 곧 recovery 증량 학습의 재료다.
+            // ⚠ 변수명 `fallItem` 은 키 인구조사 가드(`app-seam-key-census`)의 추출기가 보는 형태다.
+            //   바꾸면 워치 쓰기 키가 계약 목록에서 사라져 가드가 빨개진다.
+            let candidateId = UUID().uuidString
+            var fallItem: [String: Any] = [
+                "fcid": candidateId,
+                "fph": "candidate",
+                "fpg": v.peakG,
+                "ftr": v.trace,
+            ]
+            // 기각·무해는 여기서 결말이 확정된다(카운트다운이 안 뜨므로 후속 항목이 없다).
+            if v.decision != .danger { fallItem["fpo"] = "not_alerted" }
+            self.pendingFallItems.append(fallItem)
+
             guard v.decision == .danger else { return }
+            self.activeFallCandidateId = candidateId
+            self.fallCountdownStartedAt = Date()
             self.fallGuard.start()
             DispatchQueue.main.async {
                 // ⚠ 실제 감지다 — 테스트 플래그를 여기서 반드시 내린다.
                 self.fallCountdownIsTest = false
                 self.fallCountdownActive = true
-                WKInterfaceDevice.current().play(.notification)
+                // ⚠ **실제 감지에는 진동을 울리지 않는다**(2026-08-27 사용자 요청 · 실착용 관측).
+                //   `work_veto` 재현율이 0.154 라 평상 작업 동작의 85% 가 기각을 통과해 recovery 로
+                //   넘어가고, 그중 오탐이 진동으로 나오면 작업자가 낙상 여부를 계속 되짚게 되어
+                //   업무를 방해한다. 테스트 버튼(`startFallCountdownTest`)은 사람이 직접 누른
+                //   것이라 진동을 남긴다 — 방해가 아니라 확인이다.
+                //   ★ 3단계(실경보)로 갈 때 **반드시 다시 설계한다** — 진동이 없으면 착용자가
+                //     카운트다운을 모르고, 모르면 취소권을 행사할 수 없어 **조용히 확정**된다.
+                //     섀도라 지금은 무해하다(확정돼도 아무 데도 안 간다).
             }
         }
 
         fallGuard.onAutoCancel = { [weak self] in
             self?.log.notice("[FALL] 카운트다운 자동취소 — 지속 움직임(회복)")
+            self?.reportFallOutcome("moved_cancelled")
             self?.endCountdown()
         }
         fallGuard.onManualCancel = { [weak self] in
             self?.log.notice("[FALL] 카운트다운 수동취소 — '낙상 아님'")
+            self?.reportFallOutcome("dismissed")
             self?.endCountdown()
         }
         fallGuard.onConfirm = { [weak self] in
             guard let self else { return }
-            // ★ 테스트는 여기서 끝난다. P7 에서 서버 신고를 붙일 때 **이 분기 아래에만** 붙인다 —
+            // ★ 테스트는 여기서 끝난다. 3단계에서 실경보를 붙일 때 **이 분기 아래에만** 붙인다 —
             //   위에 붙이면 손목에서 누른 테스트가 관제에 진짜 낙상으로 올라간다.
             if self.fallCountdownIsTest {
                 self.log.notice("[FALL] 카운트다운 테스트 만료 — 신고 없음(테스트)")
+                // 테스트는 사람이 부른 것이라 결말 진동을 남긴다.
+                DispatchQueue.main.async { WKInterfaceDevice.current().play(.failure) }
             } else {
-                // ⚠ 아직 서버로 보내지 않는다(P7 — 서버가 이 판정 어휘와 trace 를 받을 그릇이 없다).
-                //   보내는 척하지 않고 로그로만 남긴다.
-                self.log.error("[FALL] ★ 낙상 확정(무반응) — 서버 신고는 미구현(P7)")
+                // ⚠ 섀도라 결말만 기록하고 **경보는 안 보낸다**. 3단계에서 여기에
+                //   `fallDetected: true` + `fallDecision: "fall"` 을 실으면 텔레그램이 울린다.
+                self.log.error("[FALL] ★ 낙상 확정(무반응) — 섀도 기록만, 경보 미전송")
+                self.reportFallOutcome("auto_escalated")
             }
             self.endCountdown()
-            DispatchQueue.main.async { WKInterfaceDevice.current().play(.failure) }
         }
+    }
+
+    /// 카운트다운 결말을 후속 항목으로 남긴다 — 서버가 `fallCandidateId` 로 후보 행을 갱신한다.
+    ///
+    /// ⚠ **심박 항목에 얹지 않고 단독으로 보낸다.** `prompt_result` 는 서버에서 갱신 경로를 타고
+    /// 그 자리에서 반환되므로(`store.ts` — `fallDetected` 없으면 조기 return) **행이 삽입되지
+    /// 않는다.** 심박 항목에 얹으면 그 심박 행까지 통째로 안 들어간다.
+    /// 삽입이 없으니 배치 내 `ts` 중복(`uq_vs_worker_ts`)에도 안 걸린다.
+    private func reportFallOutcome(_ outcome: String) {
+        guard let candidateId = activeFallCandidateId else { return }
+        var fallItem: [String: Any] = [
+            "fcid": candidateId,
+            "fph": "prompt_result",
+            "fpo": outcome,
+        ]
+        if let startedAt = fallCountdownStartedAt {
+            fallItem["frs"] = (Date().timeIntervalSince(startedAt) * 10).rounded() / 10
+        }
+        pendingFallItems.append(fallItem)
+        activeFallCandidateId = nil
+        fallCountdownStartedAt = nil
     }
 
     /// UI 에서 "낙상 아님" 버튼이 부른다.

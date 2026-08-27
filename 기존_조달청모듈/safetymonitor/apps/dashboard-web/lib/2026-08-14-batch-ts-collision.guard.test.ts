@@ -28,6 +28,17 @@ function section(src: string, marker: string, len = 2000): string {
   return src.slice(i, i + len);
 }
 
+/// 마커부터 **다음 `// MARK:` 까지** — 길이를 안 정하므로 함수가 자라도 검사 대상이 안 밀린다.
+/// 고정 길이 창이 세 번 밀린 뒤(08-14·08-19·08-27) 도입했다. 다음 MARK 이 없으면 파일 끝까지.
+/// ⚠ 끝을 파일 끝으로 늘리지 말 것 — 함수 밖의 우연한 일치가 통과로 읽힌다.
+function sectionUntilMark(src: string, marker: string): string {
+  const i = src.indexOf(marker);
+  assert.ok(i >= 0, `구간 마커 없음: ${marker}`);
+  const rest = src.slice(i);
+  const end = rest.indexOf("// MARK:", marker.length);
+  return end >= 0 ? rest.slice(0, end) : rest;
+}
+
 test("① 이산 측정은 단독 항목으로 append 하지 않는다 — 버퍼에 담는다", () => {
   const s = section(watch, "private func ingestDiscrete", 1400);
   assert.match(s, /pendingDiscrete\[input\.key\] =/, "이산 측정 버퍼가 사라짐");
@@ -50,10 +61,10 @@ test("② flush 는 이산 측정을 심박 항목에 병합한다", () => {
 
 test("③ 전제 — 폰은 배치 전체에 같은 ts(전송 시각)를 붙인다", () => {
   // 이 전제가 깨지면(항목별 ts) 병합할 이유가 사라진다. 바뀌면 이 가드부터 다시 읽어야 한다.
-  // 창은 넉넉히 — 키 파싱이 늘면 검사 대상이 고정 창 밖으로 밀린다(같은 날 두 번 겪음).
-  // ⚠ 2026-08-19 세 번째로 밀렸다(세션 계측 키 2개 추가). 창을 넓히는 것은 임시 처방이고,
-  //    근본은 고정 길이 창이다 — 다음에 또 밀리면 함수 끝까지 자르는 방식으로 바꾼다.
-  const s = section(phone, "func ingest(payload:", 3200);
+  // ★ 2026-08-27 네 번째로 밀렸다(낙상 ML 키 6개 추가). 예고한 대로 **고정 창을 버렸다** —
+  //    이제 함수 시작부터 다음 `// MARK:` 까지를 통째로 본다. 키가 몇 개 더 늘어도 안 밀린다.
+  //    (창을 넓히는 임시 처방을 세 번 반복했고 네 번째에 근본을 고친다는 것이 종전 주석의 약속이다.)
+  const s = sectionUntilMark(phone, "func ingest(payload:");
   assert.match(s, /let sentAt = self\.isoMs\.string\(from: Date\(\)\)/, "배치 공통 ts 가 사라짐");
   assert.match(s, /var v: \[String: Any\] = \["ts": sentAt\]/, "항목이 배치 ts 를 쓰지 않음");
 });
