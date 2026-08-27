@@ -51,8 +51,12 @@ class CollectorService : Service() {
     private lateinit var imu: ImuSource
     private var fallMl: FallMLModule? = null
     private lateinit var imuLogger: ImuWindowLogger
-    /** 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다). */
-    private var sensing = false
+    /**
+     * 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다).
+     * ⚠ `@Volatile` = 쓰기는 메인, 읽기는 수집 스레드와 IMU 감시 경로 둘이다. 종전에도 교차
+     *   읽기였지만 내 변경이 그 빈도를 늘리므로 가시성을 명시한다.
+     */
+    @Volatile private var sensing = false
     private var uploadBlockedUntilMs = 0L
     /** 심박 재구독 횟수 — 로그에 남겨 "몇 번째 되살림인가" 를 볼 수 있게 한다. */
     private var hrRevives = 0
@@ -204,7 +208,10 @@ class CollectorService : Service() {
         engine.start(System.currentTimeMillis())
         // ML 은 착용 중에만 돈다 — 벗은 워치의 6축 50Hz 는 전력만 쓴다.
         if (fallMl != null && imu.supported) {
-            imu.start { r -> imuLogger.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.totalG, r.atNs) }
+            imu.start { r ->
+                imuLogger.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.totalG, r.atNs)
+                watchdogFromImu()
+            }
         }
         Log.i(TAG, "착용 — 수집 개시 (낙상ML=${if (fallMl != null && imu.supported) "on" else "off"})")
     }
@@ -219,6 +226,32 @@ class CollectorService : Service() {
         gps.stop()
         imu.stop()
         Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")
+    }
+
+    /**
+     * ★ 심박 감시를 `tick` 밖으로 — 순환을 끊는다.
+     *
+     * 종전에는 `reviveHrIfStalled` 가 `tick` **안**에서만 불렸다. 그런데 `tick` 은
+     * `handler.postDelayed` 로 도는데 그것은 `uptimeMillis` 기준이라 **CPU 가 절전에 들면 함께
+     * 멈춘다**. 즉 심박이 죽은 바로 그 상황(기기가 조용해진 상황)에서 되살리는 장치도 같이 죽었다.
+     * 08-27 실측 = EMP-admin3470 워치에서 심박이 **6,132초(1.7시간)** 끊겼는데 재구독이 한 번도
+     * 안 돌았다(300초면 돌았어야 한다).
+     *
+     * 시계를 바꾼다 — IMU 표본 스트림은 Dozing 에서도 살아 있는 것이 실측됐다(8분간 59.6Hz ·
+     * 배칭 0). 그 위에 `elapsedRealtime`(절전에도 진행)로 30초 스로틀을 건다.
+     *
+     * ⚠ 이것은 `tick` 의 검사를 **대체하지 않고 더한다.** IMU 는 ML 이 켜져 있고 착용 중일 때만
+     *   돈다 — ML 을 끄면 이 시계도 사라지므로, 그때는 종전 경로가 그대로 남아야 한다.
+     * ⚠ 실제 재구독은 **수집 스레드로 넘겨서** 한다. IMU 스레드에서 `engine.stop()/start()` 를
+     *   직접 부르면 flush 와 겹칠 수 있다(`@Synchronized` 가 자료 경쟁은 막지만 순서는 안 지킨다).
+     */
+    private var lastStallCheckRt = 0L
+
+    private fun watchdogFromImu() {
+        val rt = android.os.SystemClock.elapsedRealtime()
+        if (!shouldCheckStall(rt, lastStallCheckRt)) return
+        lastStallCheckRt = rt
+        handler.post { reviveHrIfStalled(System.currentTimeMillis()) }
     }
 
     /** flush → 업로드 1회 — 재시도 대기는 FlushOutcome 이 정한 시각까지 업로드만 쉰다(수집은 계속). */
@@ -303,6 +336,23 @@ class CollectorService : Service() {
          * 어느 쪽이든(사람이든 센서든) 확인이 필요한 상태다.
          */
         const val HR_STALL_MS = 300_000L
+
+        /**
+         * 심박 침묵 검사 주기(ms). IMU 는 59.6Hz 로 오므로 매 표본 검사하면 초당 60번 post 한다.
+         * 30초면 `HR_STALL_MS`(300초)의 10분의 1이라 감지가 늦어지는 몫은 최대 30초다.
+         */
+        const val STALL_CHECK_MS = 30_000L
+
+        /**
+         * 검사할 때가 됐나. **첫 호출(last=0)은 즉시 통과한다** — 착용 직후를 건너뛰면
+         * 그 구간의 침묵을 영영 못 본다.
+         * ⚠ `lastRt == 0L` 을 따로 두는 이유 = 뺄셈만으로는 **부팅 직후에만** 첫 검사가 밀린다
+         *   (`elapsedRealtime` 이 아직 30초 미만). 재현이 드물어 더 위험한 형태라 규칙으로 박는다.
+         * ⚠ 기준 시계는 반드시 `elapsedRealtime` 이다. `uptimeMillis` 를 쓰면 절전에서 멈춰
+         *   이 수리가 고치려는 바로 그 병을 그대로 옮겨 온다.
+         */
+        internal fun shouldCheckStall(nowRt: Long, lastRt: Long): Boolean =
+            lastRt == 0L || nowRt - lastRt >= STALL_CHECK_MS
 
         /**
          * 화면이 "낡았다" 고 말하기 시작하는 나이. **서버 `STALE_MS_WEAROS`(150초)와 같은 값** —
