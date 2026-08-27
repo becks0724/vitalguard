@@ -3,6 +3,8 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var streamer = WatchStreamer()
+    /// 낙상 ML 자가검증 결과(6줄). nil = 아직 안 돌림.
+    @State private var selfCheckResult: String?
     /// [중지] 확인 시트 표시 여부.
     ///
     /// ★ 2026-08-20 — 세션이 "사용자가 끝냈다" 로 표시된 채 끝났는데 **사용자는 누른 적이
@@ -91,6 +93,16 @@ struct ContentView: View {
                 if streamer.isRunning { confirmingStop = true } else { streamer.start() }
             }
             .tint(streamer.isRunning ? .red : .green)
+
+            // 낙상 ML 자가검증 — 모듈이 정한 탑재 확인 절차(6줄 전부 ✅ 여야 탑재 성공).
+            // 표본율이 모자라면 판정이 조용히 안 도는 구조라, 눈으로 확인할 자리가 반드시 필요하다.
+            Button("ML 자가검증") { selfCheckResult = MLSelfCheck.run() }
+                .font(.footnote)
+            if let selfCheckResult {
+                Text(selfCheckResult)
+                    .font(.system(size: 11, design: .monospaced))
+                    .multilineTextAlignment(.leading)
+            }
         }
         .padding(.horizontal, 4)
         .confirmationDialog("수집을 중지할까요?", isPresented: $confirmingStop) {
@@ -99,5 +111,31 @@ struct ContentView: View {
         } message: {
             Text("중지하면 자동으로 다시 켜지지 않습니다.")
         }
+        // 낙상 카운트다운 — 화면을 덮는다. 쓰러진 사람이 목록을 스크롤해 버튼을 찾을 수는 없다.
+        .overlay {
+            if streamer.fallCountdownActive { FallCountdownOverlay(streamer: streamer) }
+        }
+    }
+}
+
+/// 낙상 확정 전 30초 확인 창. 취소 경로는 셋이다 — 이 버튼 · 지속 움직임(모듈 자동) · 무반응(확정).
+private struct FallCountdownOverlay: View {
+    @ObservedObject var streamer: WatchStreamer
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("낙상 감지")
+                .font(.headline)
+                .foregroundStyle(.red)
+            Text("괜찮으시면 눌러 주세요")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("낙상 아님") { streamer.cancelFallCountdown() }
+                .tint(.green)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.92))
     }
 }

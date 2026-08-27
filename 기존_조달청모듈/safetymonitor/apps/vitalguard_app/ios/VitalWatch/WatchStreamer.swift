@@ -76,6 +76,43 @@ final class WatchStreamer: NSObject, ObservableObject {
     private var motionMagWindow: [Double] = []
     private let motionWindowSize = 60
 
+    // MARK: - 낙상 ML 3종 모듈 (v6.1.0 · 2026-08-27 주입)
+    //
+    // 모듈 내부(`FallML/`)는 **수정하지 않는다** — 폴더 교체만으로 업데이트되는 경계다.
+    // 여기 있는 것은 호스트 배선뿐이고, 임계·판정은 전부 모듈 안에 있다.
+    //
+    // ⚠ **모듈은 50Hz 를 전제한다.** 종전 1Hz 로는 12초 윈도가 12샘플이라
+    // `IMUWindowLogger.emit()` 이 `count >= fs`(50) 미만을 버려 `onWindow` 가 영영 안 불린다 —
+    // 크래시도 로그도 없이 ML 이 없는 것처럼 동작한다. 그래서 스트림을 50Hz 로 올렸다.
+    //
+    // ⚠ **가속도 규약 = G 단위 · 정지 시 축값 −1g**(모듈 학습 데이터 규약. WearOS통합가이드가
+    // `a_모듈 = -a_안드로이드 / 9.80665` 로 명시하고, 정답지 `ml_selfcheck.json` 의 정지 구간도
+    // `az ≈ −1.0` 이다). iOS 의 `userAcceleration + gravity` 가 정확히 그 값이라 변환이 필요 없다.
+    // **`userAcceleration` 만 넘기면 안 된다** — 자유낙하 피처가 `|accel| < 0.5` 를 세는데
+    // 중력을 빼면 자유낙하에서 1g 가 나와 그 피처가 영영 0 이 된다.
+    private let fallLogger = IMUWindowLogger(preSec: 2.0, postSec: 10.0,
+                                             logThresholdG: 1.5, refractorySec: 2.0)
+    /// 모델 3종이 번들에 없으면 nil — ML 비활성. 조용히 넘어가지 않고 기동 로그로 알린다.
+    private let fallML = FallMLModule()
+    private let fallGuard = CountdownGuard()
+    /// deviceMotion 전용 직렬 큐. 50Hz 특징추출을 메인에 올리지 않는다.
+    /// 모듈이 "로거와 가드를 같은 직렬 큐에서" 를 안전 전제로 달고 있어 그 계약도 여기서 지켜진다.
+    private let motionQueue: OperationQueue = {
+        let q = OperationQueue()
+        q.name = "com.vitalguard.watch.motion"
+        q.maxConcurrentOperationCount = 1
+        q.qualityOfService = .userInitiated
+        return q
+    }()
+    /// 무동작 경로 다운샘플 시각 — 아래 `stillTickInterval` 참조.
+    private var lastStillTickAt: Date?
+    private let stillTickInterval = 1.0
+    /// 실효 Hz 관측용(스로틀링 실측). 모듈 `trace.effective_hz` 와 별개로 스트림 자체를 잰다.
+    private var imuSamples = 0
+    private var imuRateStartedAt: Date?
+    /// 카운트다운 진행 상태 — UI 가 구독한다. 메인에서만 쓴다.
+    @Published var fallCountdownActive = false
+
     private let healthStore = HKHealthStore()
     private let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
     private let spo2Type = HKQuantityType.quantityType(forIdentifier: .oxygenSaturation)!
@@ -580,17 +617,89 @@ final class WatchStreamer: NSObject, ObservableObject {
         motionUpdates = 0
         motionMaxG = 0
         lastMovementAt = Date()
-        motion.deviceMotionUpdateInterval = 1.0
-        motion.startDeviceMotionUpdates(to: .main) { [weak self] dm, _ in
+        lastStillTickAt = nil
+        imuSamples = 0
+        imuRateStartedAt = Date()
+        wireFallML()
+
+        // 50Hz — 낙상 ML 모듈의 요구치. 무동작 경로는 아래에서 1Hz 로 다운샘플해 종전 의미를 지킨다.
+        motion.deviceMotionUpdateInterval = 1.0 / 50.0
+        motion.startDeviceMotionUpdates(to: motionQueue) { [weak self] dm, _ in
             guard let self, let dm else { return }
-            let a = dm.userAcceleration
-            let mag = (a.x * a.x + a.y * a.y + a.z * a.z).squareRoot()
-            self.motionUpdates += 1
-            self.motionMagWindow.append(mag)
-            if self.motionMagWindow.count > self.motionWindowSize { self.motionMagWindow.removeFirst() }
-            if mag > self.motionMaxG { self.motionMaxG = mag }
-            if mag >= self.motionMoveThresholdG { self.lastMovementAt = Date() }
+            let now = Date()
+            self.imuSamples += 1
+
+            // ── 낙상 ML (직렬 큐) ──
+            // 원시 가속도 = 중력 포함. 모듈 규약이 '정지 시 축값 −1g' 라 이 합이 곧 그 값이다.
+            let ua = dm.userAcceleration, g = dm.gravity
+            let ax = ua.x + g.x, ay = ua.y + g.y, az = ua.z + g.z
+            let totalG = (ax * ax + ay * ay + az * az).squareRoot()
+            let r = dm.rotationRate      // rad/s — 모듈과 같은 단위라 변환 없음
+            self.fallLogger.ingest(ax: ax, ay: ay, az: az,
+                                   gx: r.x, gy: r.y, gz: r.z,
+                                   totalG: totalG, at: now)
+            self.fallGuard.feed(totalG: totalG, now: now)
+
+            // ── 무동작·변동폭 (기존 경로 · 1Hz 다운샘플 · 메인 스레드 계약 유지) ──
+            // ⚠ 창 크기 60 은 "1Hz 에서 60초" 다. 50Hz 를 그대로 넣으면 같은 60개가 1.2초가 되어
+            //   `motionVariabilityMg` 의 뜻이 조용히 바뀐다. 그래서 여기서 솎는다.
+            // ⚠ 이 변수들은 메인 런루프의 flush() 가 읽는다 — 쓰기도 메인에서 한다(종전과 동일).
+            if let last = self.lastStillTickAt, now.timeIntervalSince(last) < self.stillTickInterval { return }
+            self.lastStillTickAt = now
+            let mag = (ua.x * ua.x + ua.y * ua.y + ua.z * ua.z).squareRoot()
+            DispatchQueue.main.async {
+                self.motionUpdates += 1
+                self.motionMagWindow.append(mag)
+                if self.motionMagWindow.count > self.motionWindowSize { self.motionMagWindow.removeFirst() }
+                if mag > self.motionMaxG { self.motionMaxG = mag }
+                if mag >= self.motionMoveThresholdG { self.lastMovementAt = Date() }
+            }
         }
+    }
+
+    /// 낙상 ML 배선 — 통합가이드의 4조각 중 ③④. 모듈 내부는 건드리지 않는다.
+    private func wireFallML() {
+        guard let ml = fallML else {
+            log.error("낙상 ML 비활성 — 번들에 모델 3종(.mlmodelc)이 없다. 탑재 확인 필요")
+            return
+        }
+        log.notice("낙상 ML 활성 — 모듈 \(FallMLModule.version, privacy: .public) · 50Hz · 게이트 1.5G")
+
+        fallLogger.onWindow = { [weak self] window in
+            guard let self else { return }
+            let v = ml.assess(window, spanSec: 12.0)
+            // ★ 추적성 계약 — trace 가 없으면 어떤 판정도 사후 재현이 불가능하다(README).
+            self.log.notice("[FALL] \(v.decision.rawValue, privacy: .public) · work \(String(format: "%.3f", v.workProb), privacy: .public) · nonrecovery \(String(format: "%.3f", v.nonrecoveryProb), privacy: .public) · impact \(String(format: "%.3f", v.impactProb), privacy: .public) · 샘플 \(v.sampleCount, privacy: .public) · 실효 \(String(format: "%.1f", v.effectiveHz), privacy: .public)Hz · 피크 \(String(format: "%.2f", v.peakG), privacy: .public)G · 모듈 \(v.moduleVersion, privacy: .public)")
+            guard v.decision == .danger else { return }
+            self.fallGuard.start()
+            DispatchQueue.main.async {
+                self.fallCountdownActive = true
+                WKInterfaceDevice.current().play(.notification)
+            }
+        }
+
+        fallGuard.onAutoCancel = { [weak self] in
+            self?.log.notice("[FALL] 카운트다운 자동취소 — 지속 움직임(회복)")
+            self?.endCountdown()
+        }
+        fallGuard.onManualCancel = { [weak self] in
+            self?.log.notice("[FALL] 카운트다운 수동취소 — '낙상 아님'")
+            self?.endCountdown()
+        }
+        fallGuard.onConfirm = { [weak self] in
+            // ⚠ 아직 서버로 보내지 않는다(P7 — 서버가 이 판정 어휘와 trace 를 받을 그릇이 없다).
+            //   보내는 척하지 않고 로그로만 남긴다.
+            self?.log.error("[FALL] ★ 낙상 확정(무반응) — 서버 신고는 미구현(P7)")
+            self?.endCountdown()
+            DispatchQueue.main.async { WKInterfaceDevice.current().play(.failure) }
+        }
+    }
+
+    /// UI 에서 "낙상 아님" 버튼이 부른다.
+    func cancelFallCountdown() { fallGuard.cancelByUser() }
+
+    private func endCountdown() {
+        DispatchQueue.main.async { self.fallCountdownActive = false }
     }
 
     /// 무동작 지속(초). 콜백이 한 번도 안 돌았으면 **0 이 아니라 nil** 이다 —
@@ -779,7 +888,17 @@ final class WatchStreamer: NSObject, ObservableObject {
         // 무동작 지속 — 센서를 끄고 기준점도 버린다. 남겨 두면 재시작 직후 세션 밖의 정지 시간이
         // 이어져 찍힌다(하트비트 기준점을 버리는 것과 같은 이유).
         if motion.isDeviceMotionActive { motion.stopDeviceMotionUpdates() }
-        log.notice("무동작 수집 종료 — 콜백 \(self.motionUpdates, privacy: .public)회 · 최대 \(String(format: "%.3f", self.motionMaxG), privacy: .public)g (임계 \(String(format: "%.2f", self.motionMoveThresholdG), privacy: .public)g · 임계 보정 근거)")
+        log.notice("무동작 수집 종료 — 1Hz 틱 \(self.motionUpdates, privacy: .public)회 · 최대 \(String(format: "%.3f", self.motionMaxG), privacy: .public)g (임계 \(String(format: "%.2f", self.motionMoveThresholdG), privacy: .public)g · 임계 보정 근거)")
+        // 실효 Hz — 모듈이 50Hz 를 전제하므로 스로틀링이 얼마나 먹었는지 세션마다 남긴다.
+        // 45Hz 를 밑돌면 윈도가 짧아져 판정 품질이 떨어지고, 더 내려가면 조용히 안 불린다.
+        if let started = imuRateStartedAt {
+            let span = Date().timeIntervalSince(started)
+            let hz = span > 0 ? Double(imuSamples) / span : 0
+            log.notice("IMU 스트림 종료 — \(self.imuSamples, privacy: .public)샘플 / \(String(format: "%.0f", span), privacy: .public)초 = 실효 \(String(format: "%.1f", hz), privacy: .public)Hz (목표 50)")
+        }
+        imuSamples = 0
+        imuRateStartedAt = nil
+        lastStillTickAt = nil
         lastMovementAt = nil
         motionUpdates = 0
         motionMaxG = 0
