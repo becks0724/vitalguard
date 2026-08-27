@@ -80,54 +80,53 @@ struct ContentView: View {
     ///   거짓말을 하므로 **워치가 실제로 가진 값**(심박·SpO₂·활동·HRV)으로 채웠다(사용자 결정).
     /// ⚠ 눈금 범위는 **표시용**이지 판정이 아니다 — 색으로 상태를 말하지 않는다(워치엔 임계가 없다).
     private var vitalsPage: some View {
+        // ⚠ `ignoresSafeArea` 가 없으면 위아래에 시계용 여백이 그대로 남아 화면의 1/4 을 버린다
+        //   (사용자 실측 지적). 눈금 띠가 화면 끝까지 가야 페이스처럼 읽힌다.
         ZStack {
-            HStack(spacing: 0) {
-                SideScale(
-                    title: "HR",
-                    value: streamer.latestBPM,
-                    range: 30...170,
-                    tint: .red,
-                    alignment: .leading
-                )
-                Spacer(minLength: 0)
-                SideScale(
-                    title: "HRV",
-                    value: streamer.latestHrvMs,
-                    range: 0...150,
-                    tint: .purple,
-                    alignment: .trailing
-                )
-                // ⚠ 세로 페이징 점이 오른쪽 끝에 그려진다 — 안 들이면 눈금과 겹쳐서 둘 다 안 읽힌다.
-                //   점을 숨기지 않는다: "면이 더 있다" 는 유일한 단서다.
-                .padding(.trailing, 11)
-            }
+            // 베젤 눈금 — 화면 곡선을 따라 돈다(울트라 페이스의 그 눈금자).
+            BezelScale(
+                title: "HR",
+                value: streamer.latestBPM,
+                range: 30...170,
+                tint: .red,
+                side: .leading
+            )
+            BezelScale(
+                title: "HRV",
+                value: streamer.latestHrvMs,
+                range: 0...150,
+                tint: .purple,
+                side: .trailing
+            )
 
-            VStack(spacing: 3) {
+            VStack(spacing: 5) {
                 Spacer(minLength: 0)
-
-                // 참고 화면의 시계 자리 — 지금 심박이 가장 큰 글자다.
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text("HR")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.secondary)
                     Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
-                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                        .font(.system(size: 40, weight: .bold, design: .rounded))
                         .minimumScaleFactor(0.6)
                         .lineLimit(1)
                     Text("bpm")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
+                // 시계 밴드를 피해 이 줄부터 시작한다 — 눈금은 그 위로 지나가도 된다.
+                .padding(.top, 26)
 
-                // 참고 화면의 나침반 띠 자리 — 실시간 심박 그래프.
-                HeartRateSparkline(points: streamer.recentBPM)
-                    .frame(height: 34)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 3)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                VStack(spacing: 1) {
+                    HeartRateSparkline(points: streamer.recentBPM)
+                        .frame(height: 44)
+                    // ★ x축 눈금 — 가로가 무엇인지 안 적으면 폭이 몇 분인지 알 수 없다.
+                    timeAxis
+                }
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
 
-                // 참고 화면 하단 원 3개.
-                HStack(spacing: 5) {
+                HStack(spacing: 6) {
                     CircleStat(
                         label: "SpO₂",
                         value: streamer.latestSpO2,
@@ -156,15 +155,16 @@ struct ContentView: View {
                     )
                 }
 
-                // 수집이 꺼져 있으면 여기가 설정으로 가는 문이다(동작 버튼은 마지막 면에 있다).
                 if streamer.isRunning {
                     Text("수집 중 · 크라운을 내리면 상세")
-                        .font(.system(size: 9))
+                        .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 } else {
-                    Button { page = .settings } label: {
+                    Button {
+                        page = .settings
+                    } label: {
                         Text("수집 OFF · 눌러서 시작")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.orange)
                     }
                     .buttonStyle(.plain)
@@ -173,7 +173,33 @@ struct ContentView: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 26)
+            .padding(.bottom, 4)
         }
+        .ignoresSafeArea()
+    }
+
+    /// 그래프 아래 시각 눈금. 점이 모자라면 아무것도 안 적는다 — 축만 있고 값이 없으면
+    /// 그 폭이 얼마인지 화면이 답하지 못한다.
+    private var timeAxis: some View {
+        HStack(spacing: 0) {
+            if let first = streamer.recentBPM.first, let last = streamer.recentBPM.last,
+               streamer.recentBPM.count >= 2 {
+                Text(Self.clock(first.at))
+                Spacer(minLength: 0)
+                Text(Self.clock(Date(timeIntervalSince1970:
+                    (first.at.timeIntervalSince1970 + last.at.timeIntervalSince1970) / 2)))
+                Spacer(minLength: 0)
+                Text(Self.clock(last.at))
+            } else {
+                Text(" ")
+            }
+        }
+        .font(.system(size: 8))
+        .foregroundStyle(.secondary)
+    }
+
+    private static func clock(_ date: Date) -> String {
+        date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
     }
 
     // MARK: - 상세 면들
@@ -440,16 +466,21 @@ struct DiscreteCountsGrid: View {
     }
 }
 
-/// 울트라 페이스의 좌·우 세로 눈금. 참고 화면의 가장자리 눈금자를 옮긴 것이다.
+/// 울트라 페이스의 베젤 눈금 — **화면의 둥근 모서리까지 따라 도는** 눈금자.
 ///
-/// ⚠ 눈금 범위는 **표시용**이다. 워치엔 판정 임계가 없으므로 색이 상태를 뜻하지 않는다 —
-///   색은 종류 구분(심박=빨강 · HRV=보라)일 뿐이다.
-private struct SideScale: View {
+/// 곧은 세로줄이 아니라 실제 페이스처럼 모서리 곡선을 타고 내려간다. 눈금 위치는 직접 만든
+/// 경로를 `trimmedPath` 로 잘라 그 지점을 얻고, 눈금 방향은 화면 중심을 향하는 법선이다.
+/// ⚠ 눈금 범위는 **표시용**이다 — 워치엔 판정 임계가 없으므로 색이 상태를 뜻하지 않는다.
+///   색은 종류 구분(심박 빨강 · HRV 보라)일 뿐이다.
+/// ⚠ 그림 자체는 VoiceOver 가 읽을 수 없다 — 값을 접근성 라벨로 따로 준다.
+private struct BezelScale: View {
     let title: String
     let value: Double?
     let range: ClosedRange<Double>
     let tint: Color
-    let alignment: HorizontalAlignment
+    let side: HorizontalEdge
+
+    private static let tickCount = 26
 
     private var ratio: Double? {
         guard let value else { return nil }
@@ -459,38 +490,106 @@ private struct SideScale: View {
 
     var body: some View {
         GeometryReader { geo in
-            let ticks = 22
-            VStack(alignment: alignment, spacing: 0) {
+            // ⚠ 오른쪽은 세로 페이징 점이 그려지는 자리라 한 겹 더 들인다 — 안 들이면 겹쳐서
+            //   눈금도 점도 안 읽힌다. 점은 "면이 더 있다" 는 유일한 단서라 숨기지 않는다.
+            let inset: CGFloat = side == .trailing ? 13 : 3
+            // ⚠ `CGRect.inset(by:)` 는 UIKit 의 `UIEdgeInsets` 를 요구한다 — UIKit 을 끌어들이지
+            //   않으려고 좌·우를 따로 계산한다.
+            let leading: CGFloat = side == .leading ? 3 : inset
+            let trailing: CGFloat = side == .trailing ? inset : 3
+            // ⚠ **시스템 시계는 앱이 옮기지도 숨기지도 못한다**(워치페이스만 가능하고 서드파티는
+            //   워치페이스를 못 만든다). 그래서 피하지 않고 **아래로 지나가게** 둔다 — 눈금은
+            //   화면 맨 끝의 가는 선이고 시계 글자는 안쪽이라 서로 안 가린다.
+            //   이렇게 해야 네 모서리가 다 살아난다(안전 영역만큼 비우면 위가 잘린다).
+            let rect = CGRect(
+                x: leading,
+                y: 3,
+                width: max(geo.size.width - leading - trailing, 1),
+                height: max(geo.size.height - 6, 1)
+            )
+            Canvas { context, _ in
+                let path = Self.edgePath(in: rect, side: side)
+                let center = CGPoint(x: rect.midX, y: rect.midY)
+                for index in 0...Self.tickCount {
+                    let t = Double(index) / Double(Self.tickCount)
+                    guard let point = Self.point(on: path, at: t) else { continue }
+                    let normal = Self.inwardNormal(from: point, toward: center)
+                    let length: CGFloat = index % 5 == 0 ? 11 : 6
+                    var tick = Path()
+                    tick.move(to: point)
+                    tick.addLine(to: CGPoint(x: point.x + normal.dx * length,
+                                             y: point.y + normal.dy * length))
+                    context.stroke(tick, with: .color(.white.opacity(0.30)), lineWidth: 1)
+                }
+                // 값 표식 — 위가 큰 값이다(참고 화면과 같은 방향).
+                if let ratio, let point = Self.point(on: path, at: 1 - ratio) {
+                    let normal = Self.inwardNormal(from: point, toward: center)
+                    var marker = Path()
+                    marker.move(to: point)
+                    marker.addLine(to: CGPoint(x: point.x + normal.dx * 14,
+                                               y: point.y + normal.dy * 14))
+                    context.stroke(marker, with: .color(tint), lineWidth: 3)
+                }
+            }
+            .overlay(alignment: side == .leading ? .topLeading : .topTrailing) {
                 Text(title)
                     .font(.system(size: 8, weight: .semibold))
                     .foregroundStyle(.secondary)
                     // ⚠ 칸이 좁아 그냥 두면 `HRV` 가 `HR/V` 로 접힌다.
                     .fixedSize()
-                ZStack(alignment: alignment == .leading ? .topLeading : .topTrailing) {
-                    VStack(spacing: 0) {
-                        ForEach(0..<ticks, id: \.self) { index in
-                            Rectangle()
-                                .fill(Color.white.opacity(0.28))
-                                // 5칸마다 긴 눈금 — 눈금이 다 같으면 위치가 안 읽힌다.
-                                .frame(width: index % 5 == 0 ? 11 : 6, height: 1)
-                                .frame(maxWidth: .infinity, alignment: alignment == .leading ? .leading : .trailing)
-                            if index < ticks - 1 { Spacer(minLength: 0) }
-                        }
-                    }
-                    if let ratio {
-                        // 값이 클수록 위로 — 참고 화면과 같은 방향이다.
-                        let track = max(geo.size.height - 16, 1)
-                        Capsule()
-                            .fill(tint)
-                            .frame(width: 13, height: 3)
-                            .offset(y: track * (1 - ratio))
-                    }
-                }
-                .frame(maxHeight: .infinity)
+                    // ⚠ 실기기는 화면 모서리가 둥글어 구석에 둔 글자가 잘린다(시뮬레이터 실측).
+                    //   눈금이 시작되는 높이보다 위, 그리고 가장자리에서 충분히 안쪽에 둔다.
+                    // 시계 밴드 아래로 내린다 — 위에 두면 시계와 같은 줄에 놓인다.
+                    .padding(.top, 34)
+                    .padding(side == .leading ? .leading : .trailing,
+                             side == .leading ? 6 : 14)
             }
-            .frame(width: 15)
         }
-        .frame(width: 15)
+        .accessibilityElement()
+        .accessibilityLabel(title)
+        .accessibilityValue(value.map { String(format: "%.0f", $0) } ?? "측정 없음")
+    }
+
+    /// 한쪽 가장자리 경로 — 위에서 아래로 내려와 모서리를 돌아 나간다.
+    /// 직접 만들어야 `trimmedPath` 의 0~1 이 어느 방향인지 확정된다.
+    private static func edgePath(in rect: CGRect, side: HorizontalEdge) -> Path {
+        // 위·아래 모서리를 **둘 다** 돈다 — 아래만 돌면 반쪽이라 페이스처럼 안 읽힌다.
+        let corner = min(rect.width, rect.height) * 0.30
+        var path = Path()
+        if side == .leading {
+            path.move(to: CGPoint(x: rect.minX + corner, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.minX, y: rect.minY + corner),
+                              control: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - corner))
+            path.addQuadCurve(to: CGPoint(x: rect.minX + corner, y: rect.maxY),
+                              control: CGPoint(x: rect.minX, y: rect.maxY))
+        } else {
+            path.move(to: CGPoint(x: rect.maxX - corner, y: rect.minY))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.minY + corner),
+                              control: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - corner))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX - corner, y: rect.maxY),
+                              control: CGPoint(x: rect.maxX, y: rect.maxY))
+        }
+        return path
+    }
+
+    /// 경로 위 비율 `t` 의 좌표. 아주 짧게 잘라 그 조각의 중심을 쓴다.
+    private static func point(on path: Path, at t: Double) -> CGPoint? {
+        let clamped = min(max(t, 0), 1)
+        let span = 0.002
+        let from = min(clamped, 1 - span)
+        let box = path.trimmedPath(from: from, to: from + span).boundingRect
+        guard box.width.isFinite, box.height.isFinite else { return nil }
+        return CGPoint(x: box.midX, y: box.midY)
+    }
+
+    /// 화면 안쪽을 향하는 단위 법선. 눈금이 늘 중심 쪽으로 뻗는다.
+    private static func inwardNormal(from point: CGPoint, toward center: CGPoint) -> CGVector {
+        let dx = center.x - point.x
+        let dy = center.y - point.y
+        let length = max((dx * dx + dy * dy).squareRoot(), 0.001)
+        return CGVector(dx: dx / length, dy: dy / length)
     }
 }
 
@@ -525,15 +624,15 @@ private struct CircleStat: View {
                         .rotationEffect(.degrees(-90))
                 }
                 Text(text)
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundStyle(value == nil ? Color.secondary : tint)
                     .minimumScaleFactor(0.5)
                     .lineLimit(1)
                     .padding(.horizontal, 3)
             }
-            .frame(width: 42, height: 42)
+            .frame(width: 50, height: 50)
             Text("\(label) \(unit)")
-                .font(.system(size: 8))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(.secondary)
                 .minimumScaleFactor(0.6)
                 .lineLimit(1)
