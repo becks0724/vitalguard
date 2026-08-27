@@ -257,7 +257,7 @@ struct ContentView: View {
         .foregroundStyle(VitalGuardWatchPalette.ink)
     }
 
-    private static func clock(_ date: Date) -> String {
+    static func clock(_ date: Date) -> String {
         date.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
     }
 
@@ -275,88 +275,174 @@ struct ContentView: View {
 
     // MARK: - 상세 면들
 
-    /// 심박 상세 — 참고 디자인의 첫 카드. 큰 값 · 추이 · 최저/최고.
-    /// ⚠ 최저·최고는 **그래프가 덮은 창 안**의 값이지 하루치가 아니다. 창을 라벨에 적는다.
+    /// 2면 · 심박 — 애플 건강 앱 심박 화면 배치(사용자 제공 참고 이미지).
+    /// 위 = 그래프 판(좌하단 시각 눈금 · 우측 최고/최저) · 아래 = 제목 · 큰 값 + BPM · 부연 한 줄.
     private var heartRatePage: some View {
         let values = streamer.recentBPM.map(\.bpm)
-        return VitalDetailPage(
-            title: "심박 · \(windowLabel)",
-            symbol: "heart.fill",
-            tint: .red,
-            value: streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--",
-            unit: "bpm",
-            left: ("최저", values.min().map { String(format: "%.0f", $0) } ?? "--"),
-            right: ("최고", values.max().map { String(format: "%.0f", $0) } ?? "--")
-        ) {
-            HeartRateSparkline(points: streamer.recentBPM)
-                .frame(height: 44)
-        }
-    }
-
-    /// SpO₂ 상세 — 기회 측정이라 상시 값이 아니다. 언제 잰 것인지가 값만큼 중요하다.
-    private var spo2Page: some View {
-        VitalDetailPage(
-            title: "산소포화도",
-            symbol: "drop.fill",
-            tint: .cyan,
-            value: streamer.latestSpO2.map { "\(Int($0))" } ?? "--",
-            unit: "%",
-            left: (
-                "측정 시각",
-                streamer.latestSpO2At?.formatted(date: .omitted, time: .shortened) ?? "--"
-            ),
-            right: ("수신", "\(streamer.discreteCounts["spo2"] ?? 0)건")
-        ) {
-            // ⚠ 추이를 안 그린다 — 기회 측정이라 점 사이 간격이 제멋대로고, 선으로 이으면
-            //   측정하지 않은 구간을 측정한 것처럼 보이게 한다.
-            Text("기회 측정 — 워치가 잴 때만 들어옵니다")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    /// 활동 에너지 상세 — 세션 누적. 온열 ① 의 현장 검증용 값이다.
-    private var energyPage: some View {
-        VitalDetailPage(
-            title: "활동 에너지",
-            symbol: "flame.fill",
-            tint: .orange,
-            value: streamer.sessionEnergyKcal > 0
-                ? String(format: "%.1f", streamer.sessionEnergyKcal)
-                : "--",
-            unit: "kcal",
-            left: ("이번 세션", streamer.isRunning ? "수집 중" : "정지"),
-            right: nil
-        ) {
-            // 이산 측정은 여기 얹는다 — 종류별 건수는 "정말 들어오는가" 의 판정 근거다.
-            DiscreteCountsGrid(
-                counts: streamer.discreteCounts,
-                hrvMs: streamer.latestHrvMs
+        let zone = streamer.latestBPM.map(WatchVitalZone.heartRate)
+        return VStack(alignment: .leading, spacing: 4) {
+            HistoryPanel(
+                points: streamer.recentBPM,
+                tint: zone?.color ?? VitalGuardWatchPalette.inkStrong,
+                style: .line
             )
+            .frame(height: 84)
+
+            Text("심박")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(VitalGuardWatchPalette.ink)
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(streamer.latestBPM.map { String(format: "%.0f", $0) } ?? "--")
+                    .font(.system(size: 40, weight: .bold, design: .rounded))
+                    .foregroundStyle(zone?.color ?? VitalGuardWatchPalette.inkStrong)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: -2) {
+                    Text("BPM")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(zone?.color ?? VitalGuardWatchPalette.ink)
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(zone?.color ?? VitalGuardWatchPalette.ink)
+                }
+                Spacer(minLength: 0)
+            }
+
+            // ⚠ 최저·최고는 **그래프가 덮은 창 안**의 값이지 하루치가 아니다 — 창을 함께 적는다.
+            Text(subline(values: values))
+                .font(.system(size: 11))
+                .foregroundStyle(VitalGuardWatchPalette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.top, 26)
     }
 
-    /// 전달 상세 — 08-18 거리 시험의 판정 근거. 폰이 멀어지면 여기 숫자가 먼저 움직인다.
+    private func subline(values: [Double]) -> String {
+        guard let low = values.min(), let high = values.max(), values.count >= 2 else {
+            return "심박 수집 중"
+        }
+        return "최저 \(Int(low)) · 최고 \(Int(high)) · \(windowLabel)"
+    }
+
+    /// 3면 · 산소포화도 — 애플 "Oxygen saturation" 카드 배치.
+    /// 좌 = 원형 게이지 · 우 = 라벨 · 큰 값 · 부연.
+    private var spo2Page: some View {
+        let zone = streamer.latestSpO2.map(WatchVitalZone.spo2)
+        return HStack(spacing: 10) {
+            DialGauge(
+                value: streamer.latestSpO2,
+                range: 85...100,
+                tint: zone?.color ?? VitalGuardWatchPalette.ink,
+                symbol: "drop.fill"
+            )
+            .frame(width: 60, height: 60)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("산소포화도")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(streamer.latestSpO2.map { "\(Int($0))" } ?? "--")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(zone?.color ?? VitalGuardWatchPalette.inkStrong)
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
+                    Text("%")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(zone?.color ?? VitalGuardWatchPalette.ink)
+                }
+                // ⚠ 기회 측정이라 "언제 잰 값인가" 가 값만큼 중요하다.
+                Text(streamer.latestSpO2At.map { "마지막 측정 \(Self.clock($0))" } ?? "아직 측정 없음")
+                    .font(.system(size: 10))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 26)
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    /// 4면 · 활동 에너지 — 애플 "Move" 화면 배치(막대 그래프 + 큰 합계).
+    ///
+    /// ⚠ **목표치 고리와 달성률(174% 같은)은 안 넣는다.** 우리에겐 목표가 없다 — 없는 분모를
+    ///   지어내면 "얼마나 찼는가" 자체가 거짓이 된다. 참고 이미지의 고리·`/600 CAL`·`%` 는
+    ///   그래서 뺐고, 대신 세션 누적만 크게 둔다.
+    private var energyPage: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HistoryPanel(
+                points: streamer.recentEnergy,
+                tint: VitalGuardWatchPalette.inkStrong,
+                style: .bars
+            )
+            .frame(height: 84)
+
+            Text("활동 에너지")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(VitalGuardWatchPalette.ink)
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(streamer.sessionEnergyKcal > 0
+                     ? String(format: "%.1f", streamer.sessionEnergyKcal) : "--")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(VitalGuardWatchPalette.inkStrong)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
+                Text("kcal")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
+                Spacer(minLength: 0)
+            }
+
+            Text(streamer.isRunning ? "이번 세션 누적 · 목표 없음" : "수집 정지")
+                .font(.system(size: 11))
+                .foregroundStyle(VitalGuardWatchPalette.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.top, 26)
+    }
+
+    /// 5면 · 전달 — 애플 소음 앱의 눈금 다이얼 배치(참고 이미지 레드박스). 색은 이 앱 것을 쓴다.
+    ///
+    /// ⚠ 다이얼이 차는 축은 **밀린 정도**다(큐 + 잔량). 0 이면 가득 찬 게 아니라 **깨끗한** 것이라
+    ///   가운데에 체크를 둔다 — 눈금만 있으면 "0 이라 비었다" 로 읽힌다.
     private var transmitPage: some View {
-        VitalDetailPage(
-            title: "전달",
-            symbol: "antenna.radiowaves.left.and.right",
-            tint: streamer.reachable ? .green : .orange,
-            value: "\(streamer.batchesSent)",
-            unit: "배치",
-            left: ("연결", streamer.reachable ? "도달" : "단절"),
-            right: ("잔량", "\(streamer.pendingTransfers)건")
-        ) {
-            let queued = streamer.sentQueued + streamer.immediateFailed
-            Text(queued > 0 ? "큐 \(queued)건 — 즉시 전달이 밀리는 중" : "즉시 전달 정상")
+        let queued = streamer.sentQueued + streamer.immediateFailed + streamer.pendingTransfers
+        let healthy = streamer.reachable && queued == 0
+        return VStack(spacing: 6) {
+            TickDial(
+                filled: min(Double(queued) / 20, 1),
+                tint: healthy ? VitalGuardWatchPalette.normal : VitalGuardWatchPalette.caution,
+                healthy: healthy,
+                center: healthy ? "\(streamer.batchesSent)" : "\(queued)"
+            )
+            .frame(width: 108, height: 108)
+
+            Text(healthy ? "전달 정상 · 전송 \(streamer.batchesSent)배치" : "밀림 \(queued)건")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(healthy ? VitalGuardWatchPalette.ink : VitalGuardWatchPalette.caution)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(streamer.reachable ? "폰에 도달" : "폰과 단절")
                 .font(.system(size: 10))
-                .foregroundStyle(queued > 0 ? .orange : .secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(VitalGuardWatchPalette.ink)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.top, 20)
     }
 
-    // MARK: - 마지막 면 · 설정
+    // MARK: - 마지막 면 · 설정    // MARK: - 마지막 면 · 설정
 
     private var settingsPage: some View {
         ScrollView {
@@ -532,6 +618,188 @@ struct DiscreteCountsGrid: View {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/// 애플 건강 앱의 그래프 판 — 어두운 면 위에 선 또는 막대, 좌하단 시각·우측 최고/최저.
+///
+/// ⚠ 축 라벨이 없으면 그 폭이 몇 분인지 화면이 답하지 못한다 — 점이 2개 미만이면 판만
+///   그리고 사유를 적는다(빈 판에 선을 그으면 없는 사실을 말하게 된다).
+private struct HistoryPanel: View {
+    enum Style {
+        case line
+        case bars
+    }
+
+    let points: [WatchBPMPoint]
+    let tint: Color
+    let style: Style
+
+    private var values: [Double] { points.map(\.bpm) }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(0.07))
+
+            if points.count < 2 {
+                Text("수집 중")
+                    .font(.system(size: 11))
+                    .foregroundStyle(VitalGuardWatchPalette.ink)
+            } else {
+                GeometryReader { geo in
+                    let plot = CGRect(x: 6, y: 6, width: geo.size.width - 34,
+                                      height: geo.size.height - 24)
+                    Canvas { context, _ in
+                        draw(in: context, plot: plot)
+                    }
+                    axisLabels(in: geo.size, plot: plot)
+                }
+            }
+        }
+    }
+
+    private func draw(in context: GraphicsContext, plot: CGRect) {
+        let low = values.min() ?? 0
+        let high = values.max() ?? 0
+        let span = max(high - low, 1)
+        func point(_ index: Int) -> CGPoint {
+            CGPoint(
+                x: plot.minX + plot.width * CGFloat(index) / CGFloat(max(points.count - 1, 1)),
+                y: plot.maxY - plot.height * CGFloat((points[index].bpm - low) / span)
+            )
+        }
+
+        switch style {
+        case .line:
+            var path = Path()
+            for index in points.indices {
+                let p = point(index)
+                if index == 0 { path.move(to: p) } else { path.addLine(to: p) }
+            }
+            context.stroke(path, with: .color(tint),
+                           style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+        case .bars:
+            // 막대는 바닥에서 올라온다 — 값의 크기를 길이로 읽게 한다.
+            let width = max(plot.width / CGFloat(max(points.count, 1)) * 0.6, 1)
+            for index in points.indices {
+                let p = point(index)
+                var bar = Path()
+                bar.addRect(CGRect(x: p.x - width / 2, y: p.y,
+                                   width: width, height: plot.maxY - p.y))
+                context.fill(bar, with: .color(tint))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func axisLabels(in size: CGSize, plot: CGRect) -> some View {
+        let low = values.min() ?? 0
+        let high = values.max() ?? 0
+        ZStack(alignment: .topLeading) {
+            // 우측 = 최고/최저(애플 배치와 같은 자리).
+            VStack(alignment: .trailing) {
+                Text(format(high))
+                Spacer(minLength: 0)
+                Text(format(low))
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(VitalGuardWatchPalette.ink)
+            .frame(width: 26, height: plot.height + 12, alignment: .trailing)
+            .position(x: size.width - 13, y: (plot.height + 12) / 2 + 2)
+
+            // 좌하단 = 시각.
+            HStack {
+                Text(points.first.map { ContentView.clock($0.at) } ?? "")
+                Spacer(minLength: 0)
+                Text(points.last.map { ContentView.clock($0.at) } ?? "")
+            }
+            .font(.system(size: 9))
+            .foregroundStyle(VitalGuardWatchPalette.ink)
+            .frame(width: plot.width)
+            .position(x: plot.midX, y: size.height - 8)
+        }
+    }
+
+    private func format(_ value: Double) -> String {
+        value < 10 ? String(format: "%.1f", value) : String(format: "%.0f", value)
+    }
+}
+
+/// 애플 "Oxygen saturation" 카드의 원형 게이지.
+private struct DialGauge: View {
+    let value: Double?
+    let range: ClosedRange<Double>
+    let tint: Color
+    let symbol: String
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.14), lineWidth: 5)
+            if let value {
+                let clamped = min(max(value, range.lowerBound), range.upperBound)
+                let ratio = (clamped - range.lowerBound) / (range.upperBound - range.lowerBound)
+                Circle()
+                    .trim(from: 0, to: ratio)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+            }
+            Image(systemName: symbol)
+                .font(.system(size: 18))
+                .foregroundStyle(value == nil ? VitalGuardWatchPalette.ink : tint)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// 애플 소음 앱의 눈금 다이얼 — 눈금 링 + 가운데 원.
+///
+/// ⚠ 가운데 체크는 "정상" 이라는 판정이 아니라 **밀린 것이 없다**는 사실 표시다.
+private struct TickDial: View {
+    let filled: Double
+    let tint: Color
+    let healthy: Bool
+    let center: String
+
+    private static let ticks = 28
+
+    var body: some View {
+        ZStack {
+            GeometryReader { geo in
+                Canvas { context, size in
+                    let radius = min(size.width, size.height) / 2 - 5
+                    let origin = CGPoint(x: size.width / 2, y: size.height / 2)
+                    for index in 0..<Self.ticks {
+                        // 위에서 시작해 시계 방향 — 애플 배치와 같다.
+                        let angle = Double(index) / Double(Self.ticks) * 2 * .pi - .pi / 2
+                        let on = Double(index) / Double(Self.ticks) < max(filled, 1.0 / Double(Self.ticks))
+                        let inner = radius - 9
+                        var tick = Path()
+                        tick.move(to: CGPoint(x: origin.x + cos(angle) * inner,
+                                              y: origin.y + sin(angle) * inner))
+                        tick.addLine(to: CGPoint(x: origin.x + cos(angle) * radius,
+                                                 y: origin.y + sin(angle) * radius))
+                        context.stroke(
+                            tick,
+                            with: .color(on ? tint : Color.white.opacity(0.18)),
+                            style: StrokeStyle(lineWidth: 4, lineCap: .round)
+                        )
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+            }
+
+            VStack(spacing: 1) {
+                Image(systemName: healthy ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(tint)
+                Text(center)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundStyle(VitalGuardWatchPalette.inkStrong)
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
             }
         }
     }

@@ -26,13 +26,22 @@ final class WatchStreamer: NSObject, ObservableObject {
     @Published var recentBPM: [WatchBPMPoint] = []
     /// 그래프가 덮는 시간. 손목 화면은 좁아 폰(3시간)보다 짧게 잡는다.
     static let bpmHistoryWindow: TimeInterval = 60 * 60
-    private static let bpmHistoryBucket: TimeInterval = 60
+    static let bpmHistoryBucket: TimeInterval = 60
     /// 지금 버킷이 열린 시각. ⚠ 직전 점의 시각이 아니다 — 그걸 기준으로 재면 기준이 매번
     /// 앞으로 밀려 새 점이 영영 안 생긴다.
     private var bpmBucketAt: Date?
     @Published var latestSpO2: Double?
     @Published var latestSpO2At: Date?
     @Published var sessionEnergyKcal: Double = 0
+
+    /// 활동 에너지 **막대 그래프**용 이력 — 분 단위 증분(kcal).
+    ///
+    /// ⚠ `sessionEnergyKcal` 은 누적이라 그대로 그리면 계단만 올라간다. 그래프가 답해야 할
+    ///   질문은 "언제 많이 썼나" 이므로 **증분**을 쌓는다.
+    /// ⚠ 표시 전용이다 — 전송·판정은 이 배열을 안 본다(`recentBPM` 과 같은 규칙).
+    @Published var recentEnergy: [WatchBPMPoint] = []
+    private var energyBucketAt: Date?
+    private var energyBucketBase: Double = 0
     // 이산 측정 상태 — 실기기 게이트에서 "정말 들어오는가·몇 건인가"를 워치 화면에서 바로 본다.
     // HRV 는 표본 빈도 자체가 미지수라(작업시간 중 시간당 0~수 건 예상) 이 카운터가 판정 근거다.
     @Published var latestHrvMs: Double?
@@ -397,6 +406,9 @@ final class WatchStreamer: NSObject, ObservableObject {
         // 배터리 모니터링 — 켜지 않으면 batteryLevel 이 -1 을 돌려준다(값이 아니라 "모름").
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         sessionEnergyKcal = 0
+        recentEnergy = []
+        energyBucketAt = nil
+        energyBucketBase = 0
         energyReportedKcal = 0
         sessionSteps = 0
         stepsReported = 0
@@ -1207,6 +1219,33 @@ extension WatchStreamer: HKWorkoutSessionDelegate {
 }
 
 extension WatchStreamer {
+    /// 활동 에너지 막대 한 칸. 누적값을 받아 **그 분의 증분**으로 바꿔 쌓는다.
+    func appendDisplayEnergy(_ cumulativeKcal: Double, at now: Date = Date()) {
+        guard cumulativeKcal.isFinite, cumulativeKcal >= 0 else { return }
+        if energyBucketAt == nil || recentEnergy.isEmpty {
+            energyBucketAt = now
+            energyBucketBase = cumulativeKcal
+            recentEnergy.append(WatchBPMPoint(at: now, bpm: 0))
+            return
+        }
+        guard let bucket = energyBucketAt else { return }
+        if now.timeIntervalSince(bucket) < Self.bpmHistoryBucket {
+            // 같은 분 안에서는 그 분의 증분을 갱신한다.
+            recentEnergy[recentEnergy.count - 1] =
+                WatchBPMPoint(at: now, bpm: max(cumulativeKcal - energyBucketBase, 0))
+        } else {
+            energyBucketAt = now
+            energyBucketBase = recentEnergy.isEmpty
+                ? cumulativeKcal
+                : energyBucketBase + recentEnergy[recentEnergy.count - 1].bpm
+            recentEnergy.append(
+                WatchBPMPoint(at: now, bpm: max(cumulativeKcal - energyBucketBase, 0))
+            )
+        }
+        let cutoff = now.addingTimeInterval(-Self.bpmHistoryWindow)
+        recentEnergy.removeAll { $0.at < cutoff }
+    }
+
     /// 그래프용 이력에 한 점. 같은 1분 버킷은 최신 값으로 덮는다.
     func appendDisplayBPM(_ bpm: Double, at now: Date = Date()) {
         guard bpm >= 25, bpm <= 250 else { return }
@@ -1250,6 +1289,7 @@ extension WatchStreamer: HKLiveWorkoutBuilderDelegate {
             let kcal = sum.doubleValue(for: .kilocalorie())
             DispatchQueue.main.async {
                 self.sessionEnergyKcal = kcal
+                self.appendDisplayEnergy(kcal)
             }
         }
         // 걸음·오른층도 누적치만 갱신(증분은 flush) — 에너지와 같은 규칙.
