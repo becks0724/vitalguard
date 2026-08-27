@@ -112,3 +112,42 @@ test("⑤ 라이트/다크가 짝을 이룬다 — 한쪽만 남기면 실패", 
     assert.match(p, /dark \? "Dark" : "Light"/, `Esri 레이어 이름과 안 맞는 테마 분기 — ${p}`);
   }
 });
+
+test("⑦ ★ 지명은 z+1 이고 인덱스가 2배다 — 둘은 반드시 함께 간다", () => {
+  // 2026-08-27 사용자 요청으로 지명 글자를 절반으로 줄였다. 방법은 z+1 타일 4장을
+  // 절반 크기로 까는 것인데, **줌만 올리고 인덱스 2배를 빼먹으면 지명이 엉뚱한 지역**
+  // 을 가리킨다. 그런데 타일은 정상 200 으로 온다 — ②의 z/y/x 함정과 같은 계열이고
+  // 화면을 봐야만 안다. 그래서 줌과 인덱스를 한 단언에 묶는다.
+  //
+  // ⚠ 두 화면이 인덱스를 **다른 자리에서** 2배 한다. 호출부만 보면 인라인 쪽을 놓친다
+  //   (가드를 처음 썼을 때 실제로 거짓 빨간불이 났다 — 코드가 아니라 가드가 좁았다).
+  //     인라인  격자 생성부에서  labelCells.push({ x: x0 * 2 + c, … })
+  //     팝업    호출부에서       labelTileUrl(base, t.z + OFFSET, t.x * 2 + dx, …)
+  assert.match(radarCode, /LABEL_ZOOM_OFFSET = 1\b/, "지명 줌 오프셋 상수가 없다");
+
+  // ⓐ 두 호출부 모두 줌을 올린다.
+  const calls = [...radarCode.matchAll(/(?<!function )labelTileUrl\(([^)]*)\)/g)].map((m) => m[1]!);
+  assert.equal(calls.length, 2, `지명 호출부가 2곳이 아니다(실측 ${calls.length})`);
+  for (const args of calls) {
+    const z = args.split(",")[1]?.trim() ?? "";
+    assert.match(z, /\+ LABEL_ZOOM_OFFSET/, `지명 줌이 z+1 이 아니다 — ${args}`);
+  }
+
+  // ⓑ 인라인 — 격자 자체가 2배로 지어진다(원점·칸 수 둘 다).
+  assert.match(radarCode, /labelCells\.push\(\{ c, r, x: x0 \* 2 \+ c, y: y0 \* 2 \+ r \}\)/,
+    "인라인 지명 격자의 원점이 2배가 아니다 — 지명이 어긋난다");
+  assert.match(radarCode, /const lCols = cols \* 2;/, "인라인 지명 격자 열 수가 2배가 아니다");
+  assert.match(radarCode, /const lRows = rows \* 2;/, "인라인 지명 격자 행 수가 2배가 아니다");
+
+  // ⓒ 팝업 — 호출부 인자가 2배다.
+  const popup = calls.find((a) => a.includes("t.z"));
+  assert.ok(popup, "팝업 지명 호출부를 못 찾았다");
+  const [, , px, py] = popup.split(",").map((x) => x.trim());
+  assert.match(px ?? "", /t\.x \* 2/, `팝업 지명 x 가 2배가 아니다 — ${popup}`);
+  assert.match(py ?? "", /t\.y \* 2/, `팝업 지명 y 가 2배가 아니다 — ${popup}`);
+
+  // ⓓ 바탕은 올리면 안 된다 — 올리면 바탕만 확대돼 레이더와 어긋난다.
+  for (const m of radarCode.matchAll(/(?<!function )baseTileUrl\(([^)]*)\)/g)) {
+    assert.doesNotMatch(m[1]!, /LABEL_ZOOM_OFFSET|\* 2/, `바탕 인자가 지명 규칙에 오염됐다 — ${m[1]}`);
+  }
+});

@@ -94,6 +94,13 @@ function baseTileUrl(base: string, z: number, x: number, y: number): string {
   return `${ESRI_CANVAS}/World_${base}_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
 }
 // 지명·행정경계 오버레이 — 바탕과 짝을 이룬다(위 ② 참조).
+//
+// ⚠️ 지명은 **바탕보다 한 단계 높은 줌**에서 받아 **절반 크기로** 그린다(2026-08-27 · 사용자 요청).
+//   라스터 타일이라 글자 크기를 CSS 로 못 줄인다. z+1 타일 4장은 z 타일 1장과 **정확히 같은 영역**
+//   을 덮으므로(인덱스 2배), 각 장을 절반 크기로 놓으면 지리 정렬은 그대로인 채 글자만 1/2 이 된다.
+//   ⚠ 대가 = 지명 수가 는다(z+1 은 더 작은 도시까지 싣는다). 줄이려면 z 로 되돌리는 것이지
+//     투명도를 낮추는 것이 아니다 — 흐린 글씨는 작은 글씨보다 읽기 나쁘다.
+export const LABEL_ZOOM_OFFSET = 1;
 function labelTileUrl(base: string, z: number, x: number, y: number): string {
   return `${ESRI_CANVAS}/World_${base}_Gray_Reference/MapServer/tile/${z}/${y}/${x}`;
 }
@@ -134,6 +141,23 @@ function RadarTiles({
     height: `${100 / rows}%`,
   });
 
+  // 지명 격자 — 인덱스 2배·칸 2배로 같은 영역을 4배 조밀하게 덮는다(글자 1/2).
+  const lCols = cols * 2;
+  const lRows = rows * 2;
+  const labelCells = [];
+  for (let r = 0; r < lRows; r++) {
+    for (let c = 0; c < lCols; c++) {
+      labelCells.push({ c, r, x: x0 * 2 + c, y: y0 * 2 + r });
+    }
+  }
+  const labelStyle = (c: number, r: number): React.CSSProperties => ({
+    position: "absolute",
+    left: `${(c / lCols) * 100}%`,
+    top: `${(r / lRows) * 100}%`,
+    width: `${100 / lCols}%`,
+    height: `${100 / lRows}%`,
+  });
+
   return (
     <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-200 dark:bg-slate-800">
       {cells.map((t) => (
@@ -146,14 +170,14 @@ function RadarTiles({
           style={style(t.c, t.r)}
         />
       ))}
-      {cells.map((t) => (
+      {labelCells.map((t) => (
         <img
           key={`l-${t.x}-${t.y}`}
-          src={labelTileUrl(base, zoom, t.x, t.y)}
+          src={labelTileUrl(base, zoom + LABEL_ZOOM_OFFSET, t.x, t.y)}
           alt=""
           aria-hidden
           draggable={false}
-          style={style(t.c, t.r)}
+          style={labelStyle(t.c, t.r)}
         />
       ))}
       {framePath &&
@@ -361,16 +385,28 @@ function RadarSlippyMap({
           style={tileStyle(t)}
         />
       ))}
-      {tiles.map((t) => (
-        <img
-          key={`l-${t.key}`}
-          src={labelTileUrl(base, t.z, t.x, t.y)}
-          alt=""
-          aria-hidden
-          draggable={false}
-          style={tileStyle(t)}
-        />
-      ))}
+      {tiles.flatMap((t) =>
+        // 타일 하나당 z+1 네 장(2×2)을 절반 크기로 — 같은 영역·글자 1/2.
+        [0, 1].flatMap((dy) =>
+          [0, 1].map((dx) => (
+            <img
+              key={`l-${t.key}-${dx}${dy}`}
+              src={labelTileUrl(base, t.z + LABEL_ZOOM_OFFSET, t.x * 2 + dx, t.y * 2 + dy)}
+              alt=""
+              aria-hidden
+              draggable={false}
+              style={{
+                position: "absolute",
+                left: t.left + dx * (TILE / 2),
+                top: t.top + dy * (TILE / 2),
+                width: TILE / 2,
+                height: TILE / 2,
+                maxWidth: "none",
+              }}
+            />
+          )),
+        ),
+      )}
       {framePath &&
         tiles.map((t) => (
           <img
