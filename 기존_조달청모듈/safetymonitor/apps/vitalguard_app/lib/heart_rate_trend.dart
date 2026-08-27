@@ -102,7 +102,7 @@ class HeartRateHeroCard extends StatelessWidget {
         side: const BorderSide(color: VgColors.primaryRing),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -139,9 +139,11 @@ class HeartRateHeroCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             SizedBox(
-              height: 150,
+              // ⚠ 이 높이는 "한 화면에 스크롤 없이" 라는 요구에서 나온 값이다. 늘리려면
+              //   아래 생체 카드까지 함께 재고 늘려야 한다(2026-08-27 사용자 요청).
+              height: 108,
               // ★ 안내 문구는 Canvas 가 아니라 위젯으로 올린다 — 캔버스에 그리면 시험도
               //   스크린리더도 못 읽고, "안내가 떴다" 를 아무도 확인할 수 없다.
               child: history.length < 2
@@ -176,9 +178,9 @@ class HeartRateHeroCard extends StatelessWidget {
                       ),
                     ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             const Divider(height: 1, color: VgColors.hairlineStrong),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -357,8 +359,8 @@ class HeartRateTrendPainter extends CustomPainter {
   final double? animatedLastBpm;
 
   static const double _gutter = 34;
-  static const double _axisHeight = 20;
-  static const double _bubbleHeight = 24;
+  static const double _axisHeight = 18;
+  static const double _bubbleHeight = 20;
   static const double _gridStep = 20;
 
   @override
@@ -377,10 +379,18 @@ class HeartRateTrendPainter extends CustomPainter {
     final values = samples.map((s) => s.bpm).toList();
     final lowest = values.reduce(math.min);
     final highest = values.reduce(math.max);
-    final lower = (lowest / _gridStep).floorToDouble() * _gridStep;
+    var lower = (lowest / _gridStep).floorToDouble() * _gridStep;
     var upper = (highest / _gridStep).ceilToDouble() * _gridStep;
     // 값이 거의 일정하면 눈금이 한 칸도 안 생긴다 — 최소 두 칸은 벌려 둔다.
     if (upper - lower < _gridStep * 2) upper = lower + _gridStep * 2;
+    // ⚠ 판이 짧아져서(108pt) 20 간격을 고집하면 눈금이 여섯 줄까지 들어차 값이 안 읽힌다.
+    //   네 칸을 넘으면 간격을 배로 늘려 줄 수를 줄인다.
+    var step = _gridStep;
+    while ((upper - lower) / step > 4) {
+      step *= 2;
+      lower = (lower / step).floorToDouble() * step;
+      upper = (upper / step).ceilToDouble() * step;
+    }
     final span = upper - lower;
 
     final start = samples.first.at.millisecondsSinceEpoch.toDouble();
@@ -390,7 +400,7 @@ class HeartRateTrendPainter extends CustomPainter {
     final grid = Paint()
       ..color = VgColors.hairlineStrong
       ..strokeWidth = 0.6;
-    for (var level = lower; level <= upper; level += _gridStep) {
+    for (var level = lower; level <= upper; level += step) {
       final y = plot.bottom - plot.height * ((level - lower) / span);
       canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), grid);
       final label = _text(
@@ -442,6 +452,37 @@ class HeartRateTrendPainter extends CustomPainter {
       points.last.dx.clamp(plot.left + 4, plot.right - 4),
       points.last.dy,
     );
+
+    // ★ 게이지를 주기적으로 남긴다 — 지금 값 하나만 세워 두면 지나간 값은 선에만 남고
+    //   "얼마나 오래 그 구간에 있었나" 가 안 읽힌다. 바가 쌓이면 그게 보인다.
+    // ⚠ 점마다 세우지 않는다. 1분 버킷 3시간이면 180개라 판이 새까매진다 — 폭에서
+    //   간격을 정해 바끼리 최소 세 배 폭만큼 벌린다.
+    const barWidth = 5.0;
+    final stride = math.max(
+      1,
+      (points.length * barWidth * 3 / plot.width).ceil(),
+    );
+    for (var i = 0; i < points.length - 1; i += stride) {
+      final x = points[i].dx.clamp(
+        plot.left + barWidth / 2,
+        plot.right - barWidth / 2,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(
+            x - barWidth / 2,
+            points[i].dy,
+            x + barWidth / 2,
+            plot.bottom,
+          ),
+          const Radius.circular(barWidth / 2),
+        ),
+        Paint()
+          ..color = vgStatusColor(
+            heartRateRange.statusOf(samples[i].bpm),
+          ).withValues(alpha: 0.30),
+      );
+    }
 
     // 최신 값 강조 막대는 선 아래에 깔아 곡선을 가리지 않게 한다.
     canvas.drawRRect(
