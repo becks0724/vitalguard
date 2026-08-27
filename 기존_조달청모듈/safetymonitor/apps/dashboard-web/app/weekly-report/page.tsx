@@ -1,4 +1,5 @@
 // 안전관리비 주간 검증 보고서 — 감독관 제출본(데모). 4축 + 4중 교차대조 종합.
+import { LoginGate } from "../components/LoginGate";
 import WeeklyReportBoard from "../components/WeeklyReportBoard";
 
 export const metadata = {
@@ -8,8 +9,10 @@ export const metadata = {
 
 export default function WeeklyReportPage() {
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <WeeklyReportBoard />
-    </main>
+    <LoginGate>
+      <main className="mx-auto max-w-3xl px-4 py-8">
+        <WeeklyReportBoard />
+      </main>
+    </LoginGate>
   );
 }

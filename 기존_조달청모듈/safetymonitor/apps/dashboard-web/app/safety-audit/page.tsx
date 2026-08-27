@@ -1,4 +1,5 @@
-// 안전관리비 실집행 검증 — VitAlGuard 핵심 응용. 독립 라우트(로그인 없이 데모).
+// 안전관리비 실집행 검증 — VitAlGuard 핵심 응용. 독립 라우트(로그인 필요).
+import { LoginGate } from "../components/LoginGate";
 import SafetyCostAuditBoard from "../components/SafetyCostAuditBoard";
 
 export const metadata = {
@@ -8,8 +9,10 @@ export const metadata = {
 
 export default function SafetyAuditPage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <SafetyCostAuditBoard />
-    </main>
+    <LoginGate>
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <SafetyCostAuditBoard />
+      </main>
+    </LoginGate>
   );
 }

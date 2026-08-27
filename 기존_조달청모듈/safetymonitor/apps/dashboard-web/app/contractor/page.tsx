@@ -1,4 +1,5 @@
 // 시공사 청구 제출 — 피검증자(시공사/현장 담당) 입력 화면. 검증 화면(/weekly-report)과 역할 분리.
+import { LoginGate } from "../components/LoginGate";
 import ContractorSubmitForm from "../components/ContractorSubmitForm";
 
 export const metadata = {
@@ -8,8 +9,10 @@ export const metadata = {
 
 export default function ContractorPage() {
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
-      <ContractorSubmitForm />
-    </main>
+    <LoginGate>
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <ContractorSubmitForm />
+      </main>
+    </LoginGate>
   );
 }

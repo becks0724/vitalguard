@@ -1,5 +1,6 @@
-// 안전조달(SafeProcure) 독립 데모 페이지 — 기존 화면을 건드리지 않는 신규 라우트.
+// 안전조달(SafeProcure) 독립 페이지(로그인 필요) — 기존 화면을 건드리지 않는 신규 라우트.
 // 방문: /safeprocure (키 없으면 샘플 데이터로 동작).
+import { LoginGate } from "../components/LoginGate";
 import ProcureRiskBoard from "../components/ProcureRiskBoard";
 
 export const metadata = {
@@ -9,8 +10,10 @@ export const metadata = {
 
 export default function SafeProcurePage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <ProcureRiskBoard />
-    </main>
+    <LoginGate>
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <ProcureRiskBoard />
+      </main>
+    </LoginGate>
   );
 }

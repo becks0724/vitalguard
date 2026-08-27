@@ -7,6 +7,8 @@
 // 계상 산출은 관제와 동일한 현행 고시(제2025-11호) 요율 엔진(lib/safety-cost)을 재사용 — 두 시스템이 같은 법정 기준.
 import { useEffect, useMemo, useState } from "react";
 
+import { LoginGate } from "../components/LoginGate";
+
 import { computeRequiredSafetyCost, SAFETY_COST_RATES, type RateRow } from "../lib/safety-cost";
 import type { ConstructionType } from "../lib/safeprocure-types";
 
@@ -236,7 +238,7 @@ function computeAppropriation(
 
 type Tab = "plan" | "usage" | "invoice";
 
-export default function ErpDemoPage() {
+function ErpDemoPageInner() {
   const [siteId, setSiteId] = useState(COMPANIES[1]!.siteId);
   const [tab, setTab] = useState<Tab>("plan");
   const [sent, setSent] = useState<Set<string>>(new Set());
@@ -910,5 +912,14 @@ export default function ErpDemoPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// 로그인 게이트 — 링크만 알면 열리던 것을 막는다(2026-08-27 사용자 결정, 전 라우트 공통).
+export default function ErpDemoPage() {
+  return (
+    <LoginGate>
+      <ErpDemoPageInner />
+    </LoginGate>
   );
 }
