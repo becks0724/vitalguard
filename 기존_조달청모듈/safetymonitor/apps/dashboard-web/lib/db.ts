@@ -2984,6 +2984,56 @@ export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteIn
   return row;
 }
 
+// 구획 이탈 서버 판정용 — 최근 창의 GPS 동반 표본을 작업자별 시간순으로 낸다.
+//
+// ⚠ `ts` 가 text 라 비교를 캐스트 없이 **문자열로** 한다. 이 컬럼은 ISO-8601 UTC(`Z`)라
+//   글자 순서 = 시간 순서이고, 캐스트를 붙이면 행마다 함수가 걸려 인덱스를 못 탄다
+//   (`lastSeenByWorker` 가 그 이유로 41만 행을 훑어 5분 크론을 300초까지 끌었다).
+export async function recentGpsFixes(
+  sinceIso: string,
+  limit = 5000,
+): Promise<{ workerId: string; workerName: string | null; ts: string; lat: number; lon: number }[]> {
+  const { rows } = await q<{
+    worker_id: string;
+    worker_name: string | null;
+    ts: string;
+    latitude: number;
+    longitude: number;
+  }>(
+    `SELECT worker_id, worker_name, ts, latitude, longitude
+       FROM vital_samples
+      WHERE ts > $1 AND latitude IS NOT NULL AND longitude IS NOT NULL
+      ORDER BY worker_id, ts
+      LIMIT $2`,
+    [sinceIso, limit],
+  );
+  return rows.map((r) => ({
+    workerId: r.worker_id,
+    workerName: r.worker_name,
+    ts: r.ts,
+    lat: Number(r.latitude),
+    lon: Number(r.longitude),
+  }));
+}
+
+// 작업자별 마지막 구획 이탈 알림 시각 — 같은 이탈 구간을 두 경로(화면·크론)가 각자
+// 다른 표본 ts 로 기록해 **중복 통지**가 되는 것을 막는다. 자연키 dedup 은 ts 가 정확히
+// 같을 때만 듣는데, 화면과 서버가 본 표본 열이 다르면 ts 가 갈릴 수 있다.
+export async function lastGeofenceAlertTsByWorker(
+  sinceIso: string,
+): Promise<Record<string, string>> {
+  const { rows } = await q<{ worker_id: string; last_ts: string }>(
+    `SELECT worker_id, max(ts) AS last_ts
+       FROM alerts
+      WHERE type = 'geofence' AND ts > $1
+      GROUP BY worker_id`,
+    [sinceIso],
+  );
+  const out: Record<string, string> = {};
+  for (const r of rows) out[r.worker_id] = r.last_ts;
+  return out;
+}
+
 export async function getLatestSiteInfo(): Promise<SiteInfoRow | null> {
   const { rows } = await q<SiteInfoRow>(
     "SELECT * FROM site_info_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
