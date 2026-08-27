@@ -116,6 +116,16 @@ echo '```'
 g -E "cronAuth\(|x-cron-key" --include='*.ts' "$WEB/app/api/cron" | sed "s|$WEB/||"
 echo '```'
 
+echo
+echo '### 1-8. Kotlin(갤럭시워치 Wear OS) → 관제 서버'
+echo
+echo '```'
+g -E "URL\(baseUrl|openConnection\(\)|setRequestProperty|DEFAULT_BASE_URL" --include='*.kt' "$APP/android/wear/src/main" \
+  | sed "s|$APP/android/wear/src/main/kotlin/com/vitalguard/wear/||"
+echo '```'
+echo
+echo '폰을 거치지 않는다 — 워치가 직접 LTE 로 POST 한다. 근거는 2절 끝의 0건이다.'
+
 # ── 2. WCSession ─────────────────────────────────────────────────────
 echo
 echo '## 2. WCSession (워치 ↔ 폰)'
@@ -130,6 +140,21 @@ echo
 OLD_WC=$(n -E "\.sendMessage\(|\.transferUserInfo\(|\.updateApplicationContext\(" --include='*.swift' apps 2>/dev/null)
 echo "⚠ 구 앱 트리(\`apps/VitAlGuard-*\`)에도 같은 API 가 **${OLD_WC}건** 있다."
 echo "   어느 트리가 살아 있는지는 코드로 안 갈린다 — 셋 다 git 추적 중이다."
+
+echo
+echo '### 갤럭시워치 — 폰과 잇는 층이 없다 (0건 + 양성 통제군)'
+echo
+# ★ 이 0 은 이음새 M 의 성격을 가르는 값이다. 애플 쪽(A)은 워치가 폰에 실어 보내지만
+#   갤럭시 쪽은 워치가 직접 LTE 로 나간다. "폰을 안 거친다" 를 산문이 아니라 조회로 남긴다.
+#   통제군은 **양성**이어야 한다(L-108) — 같은 대상에서 있어야 정상인 것을 센다.
+WEAR_SRC="$APP/android/wear/src"
+WEAR_DL=$(n -E "com\.google\.android\.gms\.wearable|MessageClient|DataClient|CapabilityClient|WearableListenerService" \
+  --include='*.kt' "$WEAR_SRC" "$APP/android/app/src")
+echo '```'
+echo "Wear Data Layer 참조: ${WEAR_DL}건"
+echo "[통제군] wear 모듈에서 import 가 잡히는 .kt 파일: $(files 'import' --include='*.kt' "$WEAR_SRC")개"
+echo "[통제군] wear 모듈 .kt 파일 총수: $(g -l '' --include='*.kt' "$WEAR_SRC" | wc -l | tr -d ' ')개"
+echo '```'
 
 # ── 3. Swift ↔ Dart 채널 ─────────────────────────────────────────────
 echo

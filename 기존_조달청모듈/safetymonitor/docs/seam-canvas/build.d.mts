@@ -19,6 +19,11 @@ export type SeamRow = {
 /** 절 제목 → 그 아래 코드블록 줄들. `parent` 는 상위 `##` 제목(하위 절일 때만). */
 export type CallsiteSection = { parent: string | null; lines: string[] };
 
+export declare const SEAM_IDS: string[];
+
+/** `seams.md` 의 `기준 = <날짜> · 커밋 `<sha>`` 한 줄에서 뽑는다. */
+export declare function readBaseline(): { date: string; commit: string };
+
 export declare function readSeamTable(): Map<string, SeamRow>;
 export declare function readCallsites(): Map<string, CallsiteSection>;
 export declare function sitesFor(

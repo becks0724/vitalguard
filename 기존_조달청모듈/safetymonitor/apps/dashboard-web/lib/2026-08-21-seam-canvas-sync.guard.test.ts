@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BEGIN, END, TIERS, buildBlock, readSeamTable, sitesFor, readCallsites } from "../../../docs/seam-canvas/build.mjs";
+import { BEGIN, END, SEAM_IDS, TIERS, buildBlock, readSeamTable, sitesFor, readCallsites } from "../../../docs/seam-canvas/build.mjs";
 
 const CANVAS = join(fileURLToPath(new URL("..", import.meta.url)), "..", "..", "docs", "seam-canvas", "index.html");
 const html = readFileSync(CANVAS, "utf8");
@@ -44,12 +44,12 @@ test("★ 캔버스 문안이 docs 원본과 한 글자도 안 갈렸다", () =>
   );
 });
 
-test("★ 12행을 다 읽었다 — 표 형식이 바뀌면 조용히 줄어들 수 있다", () => {
+test("★ 표의 모든 행을 다 읽었다 — 표 형식이 바뀌면 조용히 줄어들 수 있다", () => {
   // 파서가 몇 행을 놓쳐도 위 비교는 통과한다(양쪽 다 같은 파서를 쓰니까).
   // 그래서 개수는 따로 못 박는다 — 같은 파서로 두 번 재는 것의 맹점이다.
   const rows = readSeamTable();
-  assert.equal(rows.size, 12, `seams.md 표에서 ${rows.size}행만 읽혔다`);
-  for (const id of "ABCDEFGHIJKL") {
+  assert.equal(rows.size, SEAM_IDS.length, `seams.md 표에서 ${rows.size}행만 읽혔다`);
+  for (const id of SEAM_IDS) {
     const r = rows.get(id);
     assert.ok(r, `${id} 행이 없다`);
     for (const k of ["name", "rt", "how", "where", "broken"] as const) {
@@ -74,16 +74,34 @@ test("★ 강도는 seams.md 가 유일한 원본이다 — 손 사본이 남아
   }
 });
 
-test("★ 12행 전부 아는 토큰이고, 런타임 단은 seams.md 결론문과 일치한다", () => {
+/**
+ * 결론문에서 각 단의 이음새 나열을 뽑는 자리. **파생이 아니라 대조용**이다 —
+ * 못 찾으면 기본값으로 흘리지 않고 즉시 실패시킨다([[L-104]] 의 반대쪽 안전판).
+ */
+const TIER_PROSE: Record<string, RegExp> = {
+  런타임: /런타임에 값을 검사하는 것은 ([A-M·]+) 만이다/,
+  커밋: /층\(값이 아니라 코드 형태를 검사한다\)은 ([A-M·]+) 다/,
+  없음: /나머지\(([A-M·]+)\)는/,
+};
+
+test("★ 모든 행이 아는 토큰이고, 3단 전부가 seams.md 결론문과 일치한다", () => {
   const rows = readSeamTable(); // 모르는 토큰이면 여기서 이미 throw 다
   const names = Object.keys(TIERS);
   for (const [id, r] of rows) {
     assert.ok(names.includes(r.tier), `${id} 의 강도 "${r.tier}" 가 3단 밖이다`);
   }
-  const runtime = [...rows].filter(([, r]) => r.tier === "런타임").map(([id]) => id).sort();
-  assert.deepEqual(runtime, ["C", "D", "J"], `런타임 단이 ${runtime.join("·")} 로 바뀌었다`);
-  // 표와 결론문이 갈리면 어느 쪽이 맞는지 사람이 정한다 — 조용히 넘기지 않는다.
-  assert.match(seamsMd, /C·D·J 만/, "seams.md 결론문이 표의 런타임 단과 갈렸다");
+  // ⚠ 종전 가드는 **런타임 단만** 결론문과 대조했다. 그 사이 표는 G·H 를 `커밋` 으로 올렸는데
+  //   결론문은 둘을 여전히 합의 층에 적고 있었고, 스위트는 초록이었다(08-27 발견). 그래서
+  //   3단 전부를 대조한다 — 대조하지 않는 단이 곧 낡는 단이다.
+  const flat = seamsMd.replace(/\s+/g, " ");
+  for (const [tier, re] of Object.entries(TIER_PROSE)) {
+    const table = [...rows].filter(([, r]) => r.tier === tier).map(([id]) => id).sort();
+    const listed = re.exec(flat)?.[1];
+    // 못 찾으면 빈 목록으로 흘리지 않는다 — 그러면 문구가 바뀐 날 대조가 조용히 사라진다.
+    if (!listed) assert.fail(`seams.md 결론문에서 "${tier}" 단 나열을 못 찾았다 — 문구가 바뀌었으면 이 규칙도 함께 고칠 것`);
+    const prose = listed.split("·").map((x) => x.trim()).filter(Boolean).sort();
+    assert.deepEqual(prose, table, `"${tier}" 단이 표=${table.join("·")} 결론문=${prose.join("·")} 로 갈렸다`);
+  }
 });
 
 test("★ 3단이 화면 어디에도 빠짐없이 실린다", () => {
@@ -113,4 +131,16 @@ test("호출 지점 색인 — 있는 것은 싣고 없는 것은 0으로 남긴
   // 없는 것: 텔레그램·Colab 은 실제로 색인에 없다. 0 도 사실이라 지어내지 않는다.
   assert.equal(sitesFor("K", sections).length, 0, "K 에 색인이 생겼다면 규칙을 채울 것");
   assert.equal(sitesFor("L", sections).length, 0, "L 은 사람이 파일을 옮기는 경로다 — 코드가 없다");
+  // M(갤럭시워치 → 서버)은 `scripts/scan-seams.sh` 의 1-8 절에서 온다. 그 절 이름이 바뀌거나
+  // Kotlin 조회가 눈멀면 여기서 0 이 되고, 화면에는 "색인에 없음" 이 조용히 뜬다([[L-112]]).
+  assert.ok(sitesFor("M", sections).length > 0, "M(갤럭시워치→서버) 색인이 0건 — 1-8 절을 확인할 것");
+});
+
+test("★ 머리말·요지에 손으로 적은 셈이 없다", () => {
+  // 08-21 판은 "런타임 4 · 이음새 12 · 코드로 강제 3/12" 와 "12곳 중 셋뿐 · C·D·J" 를 손으로
+  // 들고 있었고, Kotlin 이 늘고 강도가 3단이 된 뒤에도 그대로 남아 그림과 다른 말을 했다.
+  const outside = codeOnly(html.replace(generatedBlock(), ""));
+  assert.doesNotMatch(outside, /\d+\s*곳 중/, "요지에 이음새 수가 박혀 있다 — LINKS.length 에서 낼 것");
+  assert.doesNotMatch(outside, /<dd>\s*\d/, "머리말 tally 에 숫자가 박혀 있다 — 데이터에서 낼 것");
+  assert.doesNotMatch(outside, /\b[A-M] · [A-M] · [A-M]\b/, "요지에 이음새 나열이 박혀 있다 — 강도에서 낼 것");
 });

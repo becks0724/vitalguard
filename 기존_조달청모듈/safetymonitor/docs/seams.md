@@ -1,7 +1,11 @@
 # 런타임 이음새
 
-이 레포는 런타임이 넷이다(TS·Python·Swift/Dart·Arduino C++). 런타임 **안쪽**은 각자 타입 검사와
-CI 가 지키는데, **런타임이 만나는 지점**은 대체로 어느 것도 닿지 않는다. 이 문서가 그 지점의 목록이다.
+이 레포는 런타임이 다섯이다(TS·Python·Swift/Dart·**Kotlin**·Arduino C++). 런타임 **안쪽**은 각자
+타입 검사와 CI 가 지키는데, **런타임이 만나는 지점**은 대체로 어느 것도 닿지 않는다. 이 문서가 그
+지점의 목록이다.
+
+> Kotlin 은 2026-08 에 늘었다 — 갤럭시워치(Wear OS) 단독 수집기(`android/wear`, 43파일·5,024줄).
+> 애플 쪽과 달리 **폰을 거치지 않고** 워치가 직접 LTE 로 서버에 POST 한다(이음새 M).
 
 그림은 커밋하지 않는다(재생성물 · `.gitignore`). 이 파일은 **지키려고** 두는 것이라 커밋한다 —
 "순환이 언제 생겼나"·"이음새가 언제 늘었나"를 `git log -p` 로 추적할 수 있어야 한다.
@@ -10,11 +14,11 @@ CI 가 지키는데, **런타임이 만나는 지점**은 대체로 어느 것�
 > 코드가 바뀔 때마다 다시 뽑는다. 이 파일은 손으로 쓰는 **성격·계약** 쪽이고,
 > 그쪽은 기계가 뽑는 **위치** 쪽이다. 줄 번호를 이 파일에 적지 않는 이유가 그것이다.
 
-기준 = 2026-08-21 · 커밋 `c590712` 시점 실측.
+기준 = 2026-08-27 · 커밋 `d514ce0` 시점 실측.
 
 ---
 
-## 1. 이음새 12곳
+## 1. 이음새 13곳
 
 마지막 열이 이 표의 값이다. 이음새는 예외를 던지며 죽지 않고 **조용히 값이 사라지는 모습**으로
 나타난다. 무엇을 보아야 하는지 미리 적어 둔다.
@@ -33,15 +37,27 @@ CI 가 지키는데, **런타임이 만나는 지점**은 대체로 어느 것�
 | J | 서버 → DB | TS → PostgreSQL | 첫 쿼리에 `ensureSchema()` · CREATE/ALTER 89건 | 런타임 | 런타임 DDL **과** `db/*.sql` 12개 | 스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — **있어도 읽는 경로가 없으면 같은 결과다**(§1-1) |
 | K | 서버 → 텔레그램 | TS → 외부 | `recordAlert` 관문 · 수치 미포함 · 이름 마스킹 | 커밋 | 관문 타입(수치 필드 자체가 없음) + 발신 지점 허용목록 가드(2026-08-21) | 관문을 우회해 보내면 **발동 이력이 원장에 안 남는다**. 전례가 있다 |
 | L | Colab → 엣지 | Python → Python | 사람이 파일을 옮긴다 (`.pt` → `.engine`) | 없음 | 파일 이름의 `_v5_` 문자열 | 엔진과 노트북 버전이 어긋나도 아무 데서도 안 걸린다. 태그만 맞아 보인다 |
+| M | 갤럭시워치 → 서버 | Kotlin → TS | HTTPS POST `/api/app/vital` · 앱 JWT · **폰을 안 거치고 LTE 직송** · 2분 배치 ≤500 · 디스크 큐 5,000 | 런타임 | zod `packages/schemas` + 서버 source 화이트리스트(`classifyVitalDataOrigin`) — **Kotlin 은 schemas 참조 0건이라 필드명을 손으로 맞춘다** · source 문자열은 커밋 가드가 서버 목록과 대조 | 화이트리스트 밖 source 는 **201 을 받고도 저장되지 않는다**. 그 거부는 `persistFailed` 를 안 세우므로 워치는 성공으로 알고 큐를 지운다 — 배포 순서가 뒤집히면 전량 조용히 사라진다 |
 
-**계약이 코드로 강제되는 이음새 — 두 층이다(2026-08-21).** **런타임에 값을 검사하는 것은
-C·D·J 만이다**(zod 스키마·DB 컬럼 — 배선도가 초록으로 그리는 집합도 이것이다). A·B·K 는
-2026-08-21 에 **가드 계약**(커밋 게이트 — 값이 아니라 코드 형태를 검사한다)으로 승격됐다.
-A·B = 키 전수 집합 대조(`2026-08-21-app-seam-key-census`) · K = 발신 지점
+**계약이 코드로 강제되는 이음새 — 두 층이다(갱신 2026-08-27).** **런타임에 값을 검사하는 것은
+C·D·J·M 만이다**(zod 스키마·DB 컬럼 — 배선도가 초록으로 그리는 집합도 이것이다). **커밋 게이트**
+층(값이 아니라 코드 형태를 검사한다)은 A·B·G·H·K 다 — A·B = 키 전수 집합
+대조(`2026-08-21-app-seam-key-census`) · G·H = 미디어 계약과 업로드 다리
+봉인(`2026-08-19-media-capture-contract` · `2026-08-21-media-upload-bridge-sealed` ·
+`2026-08-20-media-delete-object`) · K = 발신 지점
 허용목록(`2026-08-21-telegram-callsite-allowlist`) · 조사·근거 = `docs/seam-contracts/findings.md`.
-나머지(E·F·G·I·L)는 문자열 키·필드명·빌드 인자·파일 이름 같은 *합의*로 유지되고, 어긋나도
-예외가 나지 않는다. H 의 업로드 다리는 계약 대신 **철거**를 택했다(레포 안 호출자 0 +
-프로덕션 30일 성공 0 실측).
+나머지(E·F·I·L)는 문자열 키·필드명·빌드 인자·파일 이름 같은 *합의*로 유지되고, 어긋나도
+예외가 나지 않는다. H 의 업로드 다리는 계약 대신 **철거**를 택했고(레포 안 호출자 0 +
+프로덕션 30일 성공 0 실측) 남은 계약은 그것을 **다시 세우지 못하게 막는** 봉인 쪽이다.
+
+M 은 두 층을 겹쳐 쓴다 — 런타임 검사(zod·source 화이트리스트) 위에 커밋
+가드(`2026-08-25-watch-source-origin`)가 워치의 source 문자열을 서버 목록과 대조한다. 강도 열은
+3단이라 더 강한 쪽인 `런타임` 으로 적는다.
+
+⚠ **08-27 정정.** 종전 결론문은 커밋 층을 A·B·K 로, 합의 층을 E·F·G·I·L 로 적었다. 표의 `강도`
+열은 그때 이미 G·H 를 `커밋` 으로 두고 있었으므로 **낡은 것은 결론문 쪽이었다** — 근거는 위에
+적은 가드 파일 셋이 실재한다는 것이다. 가드가 못 잡은 이유 = 런타임 층만 표와 대조하고 커밋
+층은 안 봤기 때문이고, 그 대조를 08-27 에 3단 전부로 넓혔다.
 
 ⚠ `/api/cctv/event` 는 **레포 안에 호출자가 0건**이다(외부 기기가 부른다). 생산자를 코드로 확인할
 수 없으므로 이 라우트의 계약 변경은 레포 안 검색만으로 안전을 판단할 수 없다.
@@ -95,10 +111,11 @@ worker.ts             작업자
 ### ⚠ 실측 — 소비자는 TypeScript 뿐이다
 
 ```
-TS      24개 파일이 import (아래 목록)
+TS      26개 파일이 import (아래 목록)
 Python  0건   — cctv-ai · ml 어디에서도 참조하지 않는다
 Swift   0건   — apps/vitalguard_app 에서 참조 0
 Dart    0건   — 같음
+Kotlin  0건   — android/wear 에서 참조 0 (2026-08 신설 · 이음새 M)
 ```
 
 **"엣지·웹·앱이 같은 이벤트 스키마를 쓴다" 는 성립하지 않는다.** 패키지 매니저가 다르니
@@ -107,13 +124,14 @@ Dart    0건   — 같음
 ```
 zod (vital-stream)   workerId · heartRate · heartRateMeasuredAt · phoneReceivedAt · dataOrigin …
 Swift 가 싣는 키      workerId · heartRate · heartRateMeasuredAt …   ← 컴파일러가 잇지 않는다
+Kotlin 이 싣는 키     heartRate · heartRateMeasuredAt · skinTempC …  ← 같음 (SampleBuilder.kt)
 ```
 
 ⟹ **이것이 이 패키지가 seams 분석의 핵심인 진짜 이유다.** 공유돼서가 아니라 **공유되지 않는데
-같은 이름을 쓰기 때문**이다. zod 필드를 고치면 TS 24곳은 컴파일러가 잡지만 Swift 는 아무 일도
+같은 이름을 쓰기 때문**이다. zod 필드를 고치면 TS 26곳은 컴파일러가 잡지만 Swift·Kotlin 은 아무 일도
 일어나지 않고, 값은 파싱에서 조용히 탈락한다(감사 BND-CONTRACT-01 — 같은 형태로 세 번 당했다).
 
-### 소비자 목록 (dist 제외 · 24)
+### 소비자 목록 (dist 제외 · 26)
 
 재생성 = `grep -rl "@safetymonitor/schemas" apps packages --include="*.ts" --include="*.tsx" | grep -v /dist/ | sort`
 
@@ -131,6 +149,7 @@ apps/dashboard-web/app/components/WorkerQueueModal.tsx
 apps/dashboard-web/lib/2026-07-30-measured-at.guard.test.ts
 apps/dashboard-web/lib/2026-07-31-ts-canonical-format.guard.test.ts
 apps/dashboard-web/lib/2026-08-20-session-end-telemetry.guard.test.ts
+apps/dashboard-web/lib/2026-08-26-battery-charge-counter.guard.test.ts
 apps/dashboard-web/lib/cctv-fall-poller.test.ts
 apps/dashboard-web/lib/cctv-poller.ts
 apps/dashboard-web/lib/db.ts
@@ -142,15 +161,17 @@ packages/analyzers/src/hyperthermia.ts
 packages/analyzers/src/sos.ts
 packages/analyzers/src/spo2.ts
 packages/analyzers/src/stress-index.ts
+packages/schemas/src/index.ts
 ```
 
-★ **스키마 필드를 바꿀 때 이 목록만으로는 부족하다.** TS 24곳은 `tsc` 가 잡는다 — 잡히지 않는
-쪽이 위험한 쪽이고, 그것은 목록에 **없는** 셋이다.
+★ **스키마 필드를 바꿀 때 이 목록만으로는 부족하다.** TS 26곳은 `tsc` 가 잡는다 — 잡히지 않는
+쪽이 위험한 쪽이고, 그것은 목록에 **없는** 넷이다.
 
 ```
-apps/vitalguard_app/ios/Runner/VitalPipeline.swift    폰이 싣는 키
-apps/vitalguard_app/ios/VitalWatch/WatchStreamer.swift 워치가 싣는 키
-cctv-ai/main.py · cctv-ai/edge/*.py                    엣지가 싣는 필드
+apps/vitalguard_app/ios/Runner/VitalPipeline.swift            폰이 싣는 키
+apps/vitalguard_app/ios/VitalWatch/WatchStreamer.swift        워치가 싣는 키
+apps/vitalguard_app/android/wear/…/pipeline/SampleBuilder.kt  갤럭시워치가 싣는 키
+cctv-ai/main.py · cctv-ai/edge/*.py                            엣지가 싣는 필드
 ```
 
 ---

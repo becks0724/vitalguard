@@ -52,12 +52,18 @@ export const TIERS = {
   없음: { short: "합의뿐", label: "합의뿐 — 어긋나도 조용하다", color: "#d2a022" },
 };
 
-/** seams.md 의 A~L 표 — 7열. `강도` 와 6열 문안이 계약의 전부다. */
+/**
+ * 이음새 식별자 — **늘어날 때 고치는 자리는 여기 하나다.**
+ * (M = 갤럭시워치 → 서버 · 2026-08-27 추가. Kotlin 이 다섯째 런타임이 되면서 생겼다.)
+ */
+export const SEAM_IDS = [..."ABCDEFGHIJKLM"];
+
+/** seams.md 의 A~M 표 — 7열. `강도` 와 6열 문안이 계약의 전부다. */
 export function readSeamTable() {
   const md = readFileSync(join(DOCS, "seams.md"), "utf8");
   const rows = new Map();
   for (const line of md.split("\n")) {
-    const m = /^\|\s*([A-L])\s*\|(.+)$/.exec(line);
+    const m = /^\|\s*([A-M])\s*\|(.+)$/.exec(line);
     if (!m) continue;
     const cells = m[2].split("|").map((c) => c.trim());
     if (cells.length < 6) continue;
@@ -75,8 +81,10 @@ export function readSeamTable() {
       broken: cells[5],
     });
   }
-  if (rows.size !== 12) {
-    throw new Error(`seams.md 표에서 12행을 못 읽었다 (읽은 수 ${rows.size}) — 표 형식이 바뀌었는지 확인할 것`);
+  if (rows.size !== SEAM_IDS.length) {
+    throw new Error(
+      `seams.md 표에서 ${SEAM_IDS.length}행을 못 읽었다 (읽은 수 ${rows.size}) — 표 형식이 바뀌었는지 확인할 것`,
+    );
   }
   return rows;
 }
@@ -124,6 +132,7 @@ const SITE_RULES = {
   J: [{ sec: /^4\. DB 클라이언트/ }],
   K: [],
   L: [],
+  M: [{ sec: /^1-8\./ }],
 };
 
 export function sitesFor(id, sections) {
@@ -138,11 +147,25 @@ export function sitesFor(id, sections) {
   return out;
 }
 
+/**
+ * `기준 = 2026-08-27 · 커밋 \`d514ce0\` 시점 실측.` 한 줄에서 날짜와 커밋을 뽑는다.
+ *
+ * ★ 왜 생성하는가. 종전 `index.html` 은 이 날짜를 머리말과 힌트 두 곳에 **손으로** 들고 있었고,
+ *   08-21 원본이 08-27 로 옮겨간 뒤에도 화면은 08-21 이라고 말했다. 사본은 반드시 낡는다.
+ */
+export function readBaseline() {
+  const md = readFileSync(join(DOCS, "seams.md"), "utf8");
+  const m = /^기준 = (\d{4}-\d{2}-\d{2}) · 커밋 `([0-9a-f]{7,40})`/m.exec(md);
+  if (!m) throw new Error("seams.md 에서 `기준 = <날짜> · 커밋 `<sha>`` 줄을 못 찾았다");
+  return { date: m[1], commit: m[2] };
+}
+
 export function buildBlock() {
   const table = readSeamTable();
   const sections = readCallsites();
+  const baseline = readBaseline();
   const parts = [];
-  for (const id of "ABCDEFGHIJKL") {
+  for (const id of SEAM_IDS) {
     const r = table.get(id);
     const sites = sitesFor(id, sections);
     const siteJs = sites.length
@@ -160,6 +183,7 @@ export function buildBlock() {
     BEGIN,
     "  // 원본 = docs/seams.md 표(강도 포함) + docs/seams-callsites.md 코드블록",
     "  // ⚠ 색·문안도 여기서 나온다 — 손 사본을 두면 반드시 갈린다(그래서 WIRING 의 hard 를 없앴다).",
+    `  const BASELINE = { date: ${q(baseline.date)}, commit: ${q(baseline.commit)} };`,
     "  const TIER_STYLE = {",
     ...tierParts,
     "  };",

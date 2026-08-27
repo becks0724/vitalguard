@@ -7,7 +7,7 @@ grep 으로 실제 코드에서 찾은 것만 적는다. 추정·설계 의도�
 없는 것은 0으로 적되 **그 조회가 눈멀지 않았음을 보이는 통제군**을 옆에 둔다.
 
 - 생성 = `scripts/scan-seams.sh` (에이전트는 `/graph-scan`)
-- 기준 커밋 = `9c16b8d`
+- 기준 커밋 = `26c003f`
 - 제외 = node_modules · .next · Pods · build · dist · __pycache__ · .dart_tool · DerivedData
 
 > 이음새의 **성격·계약·실패 양상**은 `docs/seams.md` 에 있다. 이 파일은 **줄 번호 색인**이다.
@@ -19,10 +19,10 @@ grep 으로 실제 코드에서 찾은 것만 적는다. 추정·설계 의도�
 ### 1-1. Swift(폰) → 관제 서버
 
 ```
-Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/app/vital"))
-Runner/VitalPipeline.swift:287:        let task = URLSession.shared.dataTask(with: request) { _, response, error in
-Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app-media"))
-Runner/MediaCapture.swift:367:        URLSession.shared.dataTask(with: request) { data, response, error in
+Runner/VitalPipeline.swift:280:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent("api/app/vital"))
+Runner/VitalPipeline.swift:294:        let task = URLSession.shared.dataTask(with: request) { _, response, error in
+Runner/MediaCapture.swift:369:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app-media"))
+Runner/MediaCapture.swift:378:        URLSession.shared.dataTask(with: request) { data, response, error in
 Runner/VitalBridge.swift:225:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app/me/vitals"))
 Runner/VitalBridge.swift:237:        URLSession.shared.dataTask(with: request) { data, response, error in
 Runner/VitalBridge.swift:279:        var request = URLRequest(url: url)
@@ -83,6 +83,7 @@ lib/storage.ts:19:"https://kr.object.ncloudstorage.com
 app/lib/tax-invoice-issuance.ts:12:"https://oauth.codef.io
 lib/google-oauth.ts:7:"https://oauth2.googleapis.com
 app/api/radar/route.ts:27:"https://tilecache.rainviewer.com
+lib/test-support/strip-comments.ts:8:"https://tiles.example.com
 app/lib/vworld.ts:8:"https://vitalguard-dashboard-569797426568.asia-northeast3.run.app
 app/lib/jma-typhoon.ts:18:"https://www.jma.go.jp
 app/lib/moleg.ts:14:"https://www.law.go.kr
@@ -111,6 +112,22 @@ app/api/cron/env-check/route.ts:44:  const cronHeaders = { "x-cron-key": process
 app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.get("x-cron-key"), process.env.CRON_SECRET);
 ```
 
+### 1-8. Kotlin(갤럭시워치 Wear OS) → 관제 서버
+
+```
+pipeline/AuthClient.kt:19:    private val endpoint = URL(baseUrl.trimEnd('/') + "/api/app-auth/login")
+pipeline/AuthClient.kt:31:                conn.setRequestProperty("Content-Type", "application/json")
+pipeline/AuthClient.kt:77:        private val defaultOpen: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }
+pipeline/HttpTransport.kt:9:    private val endpoint = URL(baseUrl.trimEnd('/') + "/api/app/vital")
+pipeline/HttpTransport.kt:17:            val conn = endpoint.openConnection() as HttpURLConnection
+pipeline/HttpTransport.kt:23:                conn.setRequestProperty("Content-Type", "application/json")
+pipeline/HttpTransport.kt:24:                conn.setRequestProperty("Authorization", "Bearer $token")
+pipeline/ConfigStore.kt:28:        get() = prefs.getString("baseUrl", DEFAULT_BASE_URL)!!
+pipeline/ConfigStore.kt:55:        const val DEFAULT_BASE_URL = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
+```
+
+폰을 거치지 않는다 — 워치가 직접 LTE 로 POST 한다. 근거는 2절 끝의 0건이다.
+
 ## 2. WCSession (워치 ↔ 폰)
 
 ### 현행 앱 — apps/vitalguard_app
@@ -119,13 +136,21 @@ app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.g
 Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
 Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
 VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()
-VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in
-VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)
-VitalWatch/WatchStreamer.swift:510:            wc.transferUserInfo(payload)
+VitalWatch/WatchStreamer.swift:509:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in
+VitalWatch/WatchStreamer.swift:511:                wc.transferUserInfo(payload)
+VitalWatch/WatchStreamer.swift:516:            wc.transferUserInfo(payload)
 ```
 
-⚠ 구 앱 트리(`apps/VitAlGuard-*`)에도 같은 API 가 **31건** 있다.
+⚠ 구 앱 트리(`apps/VitAlGuard-*`)에도 같은 API 가 **26건** 있다.
    어느 트리가 살아 있는지는 코드로 안 갈린다 — 셋 다 git 추적 중이다.
+
+### 갤럭시워치 — 폰과 잇는 층이 없다 (0건 + 양성 통제군)
+
+```
+Wear Data Layer 참조: 0건
+[통제군] wear 모듈에서 import 가 잡히는 .kt 파일: 47개
+[통제군] wear 모듈 .kt 파일 총수: 58개
+```
 
 ## 3. Swift ↔ Dart 채널
 
@@ -143,8 +168,8 @@ lib/record_screen.dart:16:const MethodChannel _bridge = MethodChannel('vitalguar
 ## 4. DB 클라이언트
 
 ```
-apps/dashboard-web/lib/db.ts:4:import pg, { Pool } from "pg";
-apps/dashboard-web/lib/db.ts:154:    const pool = new Pool({
+apps/dashboard-web/lib/db.ts:4:import pg, { Pool, type PoolClient } from "pg";
+apps/dashboard-web/lib/db.ts:214:    const pool = new Pool({
 scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })
 ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });
 ```
@@ -158,8 +183,8 @@ ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connection
 
 **통제군** — 같은 대상 파일에서 있는 것을 찾으면 나온다.
 ```
-*.swift 에서 import : 50개 파일
-*.dart  에서 import : 35개 파일
+*.swift 에서 import : 46개 파일
+*.dart  에서 import : 30개 파일
 *.ino   에서 WiFi   : 2개 파일
 ```
 
@@ -180,7 +205,6 @@ ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connection
 backend/infrastructure/lib/iot-stack.ts:4:import * as iot from "aws-cdk-lib/aws-iot";
 backend/infrastructure/lib/iot-stack.ts:9:  public readonly thing: iot.CfnThing;
 backend/infrastructure/lib/iot-stack.ts:25:    this.thing = new iot.CfnThing(this, "DemoWorkerThing", {
-backend/infrastructure/lib/iot-stack.d.ts:3:import * as iot from "aws-cdk-lib/aws-iot";
 ```
 
 ### Supabase — 0건

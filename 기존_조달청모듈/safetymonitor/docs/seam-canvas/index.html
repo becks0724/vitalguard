@@ -339,14 +339,13 @@
   <header>
     <div class="brand">
       <h1>이음새 배선도</h1>
-      <span class="sub">VitAlGuard · 2026-08-21</span>
+      <span class="sub" id="sub"></span>
+      <!-- 날짜·커밋은 BASELINE 에서 온다 — seams.md 의 `기준 =` 한 줄이 원본이다 -->
     </div>
 
-    <dl class="tally">
-      <div><dt>런타임</dt><dd>4</dd></div>
-      <div><dt>이음새</dt><dd>12</dd></div>
-      <div><dt>코드로 강제</dt><dd>3<span>/12</span></dd></div>
-    </dl>
+    <dl class="tally" id="tally"></dl>
+    <!-- 셈도 데이터에서 낸다. 손으로 적힌 "런타임 4 · 이음새 12 · 코드로 강제 3/12" 는
+         Kotlin 이 늘고 강도가 3단이 된 뒤에도 그대로 남아 있었다. -->
 
     <div class="legend">
       <div class="lg">
@@ -382,12 +381,15 @@
 (() => {
   "use strict";
 
+  // `own` = 우리가 쓰는 런타임. 머리말의 "런타임 N" 은 이 표식에서 센다 — 숫자를 손으로
+  // 적으면 런타임이 늘 때 조용히 낡는다(08-21 판이 실제로 "4" 를 박아 두고 있었다).
   const RT = {
-    app:  { label: "앱 · Swift / Dart",   hue: "#f0883e" },
-    edge: { label: "엣지 · Python",        hue: "#4fc3d9" },
-    web:  { label: "관제웹 · TypeScript",  hue: "#9d7cf4" },
-    pod:  { label: "가스포드 · C++",       hue: "#e05c6e" },
-    ext:  { label: "외부 시스템",           hue: "#7d8b9c" },
+    app:  { label: "앱 · Swift / Dart",    hue: "#f0883e", own: true },
+    wear: { label: "갤럭시워치 · Kotlin",   hue: "#3d7bea", own: true },
+    edge: { label: "엣지 · Python",         hue: "#4fc3d9", own: true },
+    web:  { label: "관제웹 · TypeScript",   hue: "#9d7cf4", own: true },
+    pod:  { label: "가스포드 · C++",        hue: "#e05c6e", own: true },
+    ext:  { label: "외부 시스템",            hue: "#7d8b9c" },
   };
 
   // 노드 — x/y 는 손 배치다. 21개뿐이라 자동 배치가 오히려 읽기 나쁘다.
@@ -404,6 +406,10 @@
     { id: "media",  rt: "app",  t: "MediaCapture",   m: "431줄 · 촬영·각인",       x: 820, y: 272, out: ["POST"] },
     { id: "dart",   rt: "app",  t: "lib/ Flutter",   m: "11 파일 · 2,594줄 · 표시 전용", x: 1090, y: 150, in: ["stream"] },
 
+    // 갤럭시워치 ───────────────────────────────────────
+    // ★ 폰 상자가 앞에 없다. 그것이 이 노드의 요지다 — 워치가 직접 LTE 로 서버에 붙는다.
+    { id: "gwatch", rt: "wear", t: "갤럭시워치 수집기", m: "Wear OS · 43 파일 · 5,024줄 · 2분 배치", x: 1090, y: 430, out: ["POST"] },
+
     // 엣지 ─────────────────────────────────────────────
     { id: "jetson", rt: "edge", t: "젯슨 Orin",       m: "TensorRT · 추론 12fps",  x: 300, y: 410, in: [".engine"], out: ["ingest3"] },
     { id: "cctvai", rt: "edge", t: "cctv-ai",        m: "FastAPI · main.py 896줄", x: 560, y: 410, in: ["ingest3"], out: ["MJPEG"] },
@@ -412,7 +418,7 @@
     { id: "pod",    rt: "pod",  t: "gaspod v5",      m: "ESP32 · Arduino C++ · 5초", x: 300, y: 630, out: ["telemetry"] },
 
     // 관제웹 ───────────────────────────────────────────
-    { id: "rVital", rt: "web",  t: "api/app/vital",  m: "앱 JWT · zod",           x: 1360, y: 30, in: ["POST"], out: ["sample"] },
+    { id: "rVital", rt: "web",  t: "api/app/vital",  m: "앱 JWT · zod",           x: 1360, y: 30, in: ["폰 POST", "워치 POST"], out: ["sample"] },
     { id: "rMedia", rt: "web",  t: "api/app-media",  m: "업로드 + 등록",           x: 1360, y: 250, in: ["POST"], out: ["object"] },
     { id: "rCctv",  rt: "web",  t: "api/cctv/*",     m: "_AI_URL 빌드 치환",       x: 1360, y: 400, in: ["MJPEG"] },
     { id: "rPod",   rt: "web",  t: "api/gaspod/*",   m: "zod + DB 컬럼",           x: 1360, y: 560, in: ["telemetry"], out: ["sample"] },
@@ -435,24 +441,26 @@
   // <<< 생성 구역 시작 — build.mjs 가 씁니다. 손으로 고치지 마십시오 >>>
   // 원본 = docs/seams.md 표(강도 포함) + docs/seams-callsites.md 코드블록
   // ⚠ 색·문안도 여기서 나온다 — 손 사본을 두면 반드시 갈린다(그래서 WIRING 의 hard 를 없앴다).
+  const BASELINE = { date: "2026-08-27", commit: "d514ce0" };
   const TIER_STYLE = {
     "런타임": { short: "값을 검사", label: "코드가 값을 검사한다", color: "#3fb950" },
     "커밋": { short: "게이트만", label: "커밋 게이트는 있다 — 현장 버전 어긋남은 못 본다", color: "#d9a441" },
     "없음": { short: "합의뿐", label: "합의뿐 — 어긋나도 조용하다", color: "#d2a022" },
   };
   const SEAM_TEXT = {
-    A: { name: "워치 → 폰", rt: "Swift → Swift", tier: "커밋", how: "WCSession sendMessage, 실패 시 transferUserInfo · 5초", where: "가드 계약(2026-08-21) — 키 26개 양끝 집합 대조 · 런타임 검증은 없음", broken: "측정은 이어지는데 도착만 끊긴다. 복귀 시 수 분치가 한꺼번에 온다", sites: [{ sec: "2. WCSession (워치 ↔ 폰) › 현행 앱 — apps/vitalguard_app", lines: ["Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {", "Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {", "VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()", "VitalWatch/WatchStreamer.swift:503:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in", "VitalWatch/WatchStreamer.swift:505:                wc.transferUserInfo(payload)", "VitalWatch/WatchStreamer.swift:510:            wc.transferUserInfo(payload)"] }] },
+    A: { name: "워치 → 폰", rt: "Swift → Swift", tier: "커밋", how: "WCSession sendMessage, 실패 시 transferUserInfo · 5초", where: "가드 계약(2026-08-21) — 키 26개 양끝 집합 대조 · 런타임 검증은 없음", broken: "측정은 이어지는데 도착만 끊긴다. 복귀 시 수 분치가 한꺼번에 온다", sites: [{ sec: "2. WCSession (워치 ↔ 폰) › 현행 앱 — apps/vitalguard_app", lines: ["Runner/PhoneReceiver.swift:210:    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {", "Runner/PhoneReceiver.swift:214:    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {", "VitalWatch/WatchStreamer.swift:262:        WCSession.default.activate()", "VitalWatch/WatchStreamer.swift:509:            wc.sendMessage(payload, replyHandler: nil) { [weak self] _ in", "VitalWatch/WatchStreamer.swift:511:                wc.transferUserInfo(payload)", "VitalWatch/WatchStreamer.swift:516:            wc.transferUserInfo(payload)"] }, { sec: "2. WCSession (워치 ↔ 폰) › 갤럭시워치 — 폰과 잇는 층이 없다 (0건 + 양성 통제군)", lines: ["Wear Data Layer 참조: 0건", "[통제군] wear 모듈에서 import 가 잡히는 .kt 파일: 47개", "[통제군] wear 모듈 .kt 파일 총수: 58개"] }] },
     B: { name: "Swift → Dart", rt: "Swift → Dart", tier: "커밋", how: "FlutterEventChannel <code>vitalguard/stream</code>", where: "가드 계약(2026-08-21) — 채널명·이벤트 키 15 양끝 집합 대조 · 런타임 검증은 없음", broken: "서버는 정상 수신 중인데 폰 화면만 언다. 서버 쪽엔 아무 이상이 안 보인다", sites: [{ sec: "3. Swift ↔ Dart 채널", lines: ["ios/Runner/VitalBridge.swift:88:        let channel = FlutterMethodChannel(name: \"vitalguard/bridge\", binaryMessenger: messenger)", "ios/Runner/VitalBridge.swift:92:        let events = FlutterEventChannel(name: \"vitalguard/stream\", binaryMessenger: messenger)", "lib/vital_stream.dart:1:// 네이티브 EventChannel(vitalguard/stream) 구독 래퍼 — 표시용 상태만 다룬다(원본 생체 경로는 네이티브 전담)", "lib/vital_stream.dart:86:  static const EventChannel _channel = EventChannel('vitalguard/stream');", "lib/main.dart:17:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');", "lib/record_screen.dart:16:const MethodChannel _bridge = MethodChannel('vitalguard/bridge');"] }] },
-    C: { name: "폰 → 서버", rt: "Swift → TS", tier: "런타임", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> — <em>Swift 쪽은 손으로 맞춘 것</em>", broken: "스키마에 없는 필드는 파싱에서 조용히 탈락한다. 앱은 201 을 받고 큐를 지운다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/VitalPipeline.swift:273:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent(\"api/app/vital\"))"] }] },
+    C: { name: "폰 → 서버", rt: "Swift → TS", tier: "런타임", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> — <em>Swift 쪽은 손으로 맞춘 것</em>", broken: "스키마에 없는 필드는 파싱에서 조용히 탈락한다. 앱은 201 을 받고 큐를 지운다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/VitalPipeline.swift:280:        var request = URLRequest(url: cfg.baseURL.appendingPathComponent(\"api/app/vital\"))"] }] },
     D: { name: "가스포드 → 서버", rt: "C++ → TS", tier: "런타임", how: "POST <code>/api/gaspod/telemetry</code> · 5초 · soft 토큰", where: "zod + DB 컬럼", broken: "기기는 보내는데 행이 안 쌓인다. 링버퍼 폴백이 있어 화면은 잠시 정상으로 보인다", sites: [{ sec: "1. HTTP › 1-4. Arduino(ESP32) → 관제 서버", lines: ["Final_GasPod/firmware/gaspod_v4.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v4.ino:52:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v4.ino:55:  if(!http.begin(client, SERVER_URL)) { Serial.println(\"[net] begin 실패\"); return; }", "Final_GasPod/firmware/gaspod_v4.ino:63:  int code=http.POST(body);", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:4:#include <WiFiClientSecure.h>", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:57:  WiFiClientSecure client; client.setInsecure();", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:59:  if(!http.begin(client, SERVER_URL)) return;", "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino:67:  int code=http.POST(body);"] }] },
     E: { name: "엣지 → cctv-ai", rt: "Python → Python", tier: "없음", how: "HTTP POST <code>/cctv/ingest3</code> · 푸시 6fps · 추론 12fps", where: "없음 (multipart 필드명)", broken: "타일이 마지막 프레임에서 정지한다. 젯슨 로그를 봐야 푸시가 끊긴 건지 안다", sites: [{ sec: "1. HTTP › 1-3. Python(젯슨 엣지) → cctv-ai · 카메라 기기", lines: ["cctv-ai/edge/gopro_ppe_edge.py:96:            urllib.request.urlopen(path, timeout=5).read()", "cctv-ai/edge/gopro_ppe_edge.py:232:                req = urllib.request.Request(f\"{url}?{q}\", data=jpg,", "cctv-ai/edge/gopro_ppe_edge.py:234:                with urllib.request.urlopen(req, timeout=4):", "cctv-ai/edge/phone_ppe_relay.py:165:            req = urllib.request.Request(f\"{url_base}?{q}\", data=jpg,", "cctv-ai/edge/phone_ppe_relay.py:168:                with urllib.request.urlopen(req, timeout=4):"] }] },
     F: { name: "cctv-ai → 관제웹", rt: "Python → TS", tier: "없음", how: "관제웹이 <em>당겨간다</em> (<code>lib/cctv-poller.ts</code>) · MJPEG <code>/cctv/stream3</code>", where: "빌드 인자 <code>_AI_URL</code> + zod <code>cctv-event</code>", broken: "치환을 빠뜨리면 localhost 로 폴백해 타일만 깨진다. 서버는 200 을 낸다", sites: [{ sec: "1. HTTP › 1-6. 브라우저 → cctv-ai (서버를 안 거친다)", lines: ["app/components/CctvQuadView.tsx:13:const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || \"http://localhost:8000\";", "app/components/CctvQuadView.tsx:30:  { id: \"CAM-01\", location: \"정문 출입구\", aiApi: AI_CCTV_API, aiKind: \"object\", aiSuffix: \"\" },", "app/components/CctvQuadView.tsx:31:  { id: \"CAM-02\", location: \"지하 기계실\", aiApi: AI_CCTV_API, aiKind: \"fall\", aiSuffix: \"2\" },", "app/components/CctvQuadView.tsx:32:  { id: \"CAM-03\", location: \"현장 작업구역(GoPro)\", aiApi: AI_CCTV_API, aiKind: \"ppe\", aiSuffix: \"3\" },", "app/components/CctvQuadView.tsx:125:  aiApi: string;", "app/components/CctvQuadView.tsx:384:function useAiStats<T>(aiApi: string, suffix: string) {", "app/components/CctvQuadView.tsx:424:function DetectionStrip({ aiApi, suffix = \"\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:485:function FallDetectionStrip({ aiApi, suffix = \"2\" }: { aiApi: string; suffix?: string }) {", "app/components/CctvQuadView.tsx:551:function PpeDetectionStrip({ aiApi, suffix = \"3\" }: { aiApi: string; suffix?: string }) {"] }] },
-    G: { name: "앱 → 스토리지", rt: "Swift → 외부", tier: "커밋", how: "서버 경유 <code>/api/app-media</code>", where: "서버가 업로드·등록을 함께", broken: "경로가 둘로 갈려 있다 — H 와 실패 모드가 다르다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/MediaCapture.swift:358:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent(\"api/app-media\"))"] }] },
+    G: { name: "앱 → 스토리지", rt: "Swift → 외부", tier: "커밋", how: "서버 경유 <code>/api/app-media</code>", where: "서버가 업로드·등록을 함께", broken: "경로가 둘로 갈려 있다 — H 와 실패 모드가 다르다", sites: [{ sec: "1. HTTP › 1-1. Swift(폰) → 관제 서버", lines: ["Runner/MediaCapture.swift:369:        var request = URLRequest(url: VitalPipeline.resolvedBaseURL().appendingPathComponent(\"api/app-media\"))"] }] },
     H: { name: "관제웹 → 스토리지", rt: "브라우저 → 외부", tier: "커밋", how: "만료형 프리사인 GET(표시·다운로드) · 삭제는 행→실물 순서. 업로드 다리(PUT+등록)는 2026-08-21 철거 — 30일 실사용 0 실측", where: "만료형 URL + 봉인 가드(재생성 금지)", broken: "DELETE 의 실물 삭제 실패가 warn 로그만 남기고 <em>고아</em>가 된다 — 대사 스크립트가 없어 수작업 전수 대조가 유일한 회수 수단이다", sites: [{ sec: "1. HTTP › 1-5. TS(관제 서버) → 외부 서비스 — 호스트 상수 정의 지점", lines: ["lib/storage.ts:19:\"https://kr.object.ncloudstorage.com"] }] },
     I: { name: "스케줄러 → 서버", rt: "GCP → TS", tier: "없음", how: "Cloud Scheduler · <code>x-cron-key</code>", where: "<code>CRON_SECRET</code> 시크릿", broken: "401 이 조용히 반복된다. 부재 감시가 죽어도 화면엔 표시가 없다", sites: [{ sec: "1. HTTP › 1-7. Cloud Scheduler → 서버 (받는 쪽만 코드에 있다)", lines: ["app/api/cron/env-check/route.ts:11:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);", "app/api/cron/env-check/route.ts:44:  const cronHeaders = { \"x-cron-key\": process.env.CRON_SECRET ?? \"\" };", "app/api/cron/absence-check/route.ts:31:  const auth = cronAuth(request.headers.get(\"x-cron-key\"), process.env.CRON_SECRET);"] }] },
-    J: { name: "서버 → DB", rt: "TS → PostgreSQL", tier: "런타임", how: "첫 쿼리에 <code>ensureSchema()</code> · CREATE/ALTER 89건", where: "런타임 DDL <em>과</em> <code>db/*.sql</code> 12개", broken: "스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — <em>있어도 읽는 경로가 없으면 같은 결과다</em>(§1-1)", sites: [{ sec: "4. DB 클라이언트", lines: ["apps/dashboard-web/lib/db.ts:4:import pg, { Pool } from \"pg\";", "apps/dashboard-web/lib/db.ts:154:    const pool = new Pool({", "scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })", "ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });"] }] },
+    J: { name: "서버 → DB", rt: "TS → PostgreSQL", tier: "런타임", how: "첫 쿼리에 <code>ensureSchema()</code> · CREATE/ALTER 89건", where: "런타임 DDL <em>과</em> <code>db/*.sql</code> 12개", broken: "스키마 소스가 둘이라 갈릴 수 있다. 컬럼이 없으면 그 필드만 사라진다 — <em>있어도 읽는 경로가 없으면 같은 결과다</em>(§1-1)", sites: [{ sec: "4. DB 클라이언트", lines: ["apps/dashboard-web/lib/db.ts:4:import pg, { Pool, type PoolClient } from \"pg\";", "apps/dashboard-web/lib/db.ts:214:    const pool = new Pool({", "scripts/fall-ml/01-db-audit.mjs:28:const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, connectionTimeoutMillis: 5000, statement_timeout: 15000 })", "ml/fall-detection/extract_imu_features.mjs:10:const pool = new Pool({ connectionString: m[1].trim(), max: 1 });"] }] },
     K: { name: "서버 → 텔레그램", rt: "TS → 외부", tier: "커밋", how: "<code>recordAlert</code> 관문 · 수치 미포함 · 이름 마스킹", where: "관문 타입(수치 필드 자체가 없음) + 발신 지점 허용목록 가드(2026-08-21)", broken: "관문을 우회해 보내면 <em>발동 이력이 원장에 안 남는다</em>. 전례가 있다", sites: [] },
     L: { name: "Colab → 엣지", rt: "Python → Python", tier: "없음", how: "사람이 파일을 옮긴다 (<code>.pt</code> → <code>.engine</code>)", where: "파일 이름의 <code>_v5_</code> 문자열", broken: "엔진과 노트북 버전이 어긋나도 아무 데서도 안 걸린다. 태그만 맞아 보인다", sites: [] },
+    M: { name: "갤럭시워치 → 서버", rt: "Kotlin → TS", tier: "런타임", how: "HTTPS POST <code>/api/app/vital</code> · 앱 JWT · <em>폰을 안 거치고 LTE 직송</em> · 2분 배치 ≤500 · 디스크 큐 5,000", where: "zod <code>packages/schemas</code> + 서버 source 화이트리스트(<code>classifyVitalDataOrigin</code>) — <em>Kotlin 은 schemas 참조 0건이라 필드명을 손으로 맞춘다</em> · source 문자열은 커밋 가드가 서버 목록과 대조", broken: "화이트리스트 밖 source 는 <em>201 을 받고도 저장되지 않는다</em>. 그 거부는 <code>persistFailed</code> 를 안 세우므로 워치는 성공으로 알고 큐를 지운다 — 배포 순서가 뒤집히면 전량 조용히 사라진다", sites: [{ sec: "1. HTTP › 1-8. Kotlin(갤럭시워치 Wear OS) → 관제 서버", lines: ["pipeline/AuthClient.kt:19:    private val endpoint = URL(baseUrl.trimEnd('/') + \"/api/app-auth/login\")", "pipeline/AuthClient.kt:31:                conn.setRequestProperty(\"Content-Type\", \"application/json\")", "pipeline/AuthClient.kt:77:        private val defaultOpen: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection }", "pipeline/HttpTransport.kt:9:    private val endpoint = URL(baseUrl.trimEnd('/') + \"/api/app/vital\")", "pipeline/HttpTransport.kt:17:            val conn = endpoint.openConnection() as HttpURLConnection", "pipeline/HttpTransport.kt:23:                conn.setRequestProperty(\"Content-Type\", \"application/json\")", "pipeline/HttpTransport.kt:24:                conn.setRequestProperty(\"Authorization\", \"Bearer $token\")", "pipeline/ConfigStore.kt:28:        get() = prefs.getString(\"baseUrl\", DEFAULT_BASE_URL)!!", "pipeline/ConfigStore.kt:55:        const val DEFAULT_BASE_URL = \"https://vitalguard-dashboard-569797426568.asia-northeast3.run.app\""] }] },
   };
   // <<< 생성 구역 끝 >>>
 
@@ -472,6 +480,7 @@
     { id: "J", map: "⑧", from: ["store", 0], to: ["pg", 0], dashed: false },
     { id: "K", map: "⑨", from: ["store", 1], to: ["tg", 0], dashed: false },
     { id: "L", map: "⑩", from: ["colab", 0], to: ["jetson", 0], dashed: true },
+    { id: "M", map: "⑪", from: ["gwatch", 0], to: ["rVital", 1], dashed: false },
   ];
 
   const LINKS = WIRING.map((w) => ({ ...w, ...SEAM_TEXT[w.id] }));
@@ -483,9 +492,29 @@
     return t;
   }
 
+  /** 강도별 이음새 id. 머리말의 셈과 요지 문장이 **같은 곳**에서 센다. */
+  function idsByTier() {
+    const by = new Map(Object.keys(TIER_STYLE).map((k) => [k, []]));
+    for (const L of LINKS) {
+      tierOf(L);                    // 모르는 강도면 여기서 던진다
+      by.get(L.tier).push(L.id);
+    }
+    return by;
+  }
+
   // 범례도 같은 표에서 낸다. 강도가 3단이 아니게 되면 칩 수가 저절로 따라간다.
   document.getElementById("lg-tier").innerHTML = Object.entries(TIER_STYLE)
     .map(([k, v]) => `<span class="chip line"><i style="background:${v.color}"></i>${k} — ${v.short}</span>`)
+    .join("");
+
+  document.getElementById("sub").textContent = `VitAlGuard · ${BASELINE.date} · ${BASELINE.commit}`;
+
+  document.getElementById("tally").innerHTML = [
+    ["런타임", String(Object.values(RT).filter((r) => r.own).length), ""],
+    ["이음새", String(LINKS.length), ""],
+    ...[...idsByTier()].map(([tier, ids]) => [tier, String(ids.length), `/${LINKS.length}`]),
+  ]
+    .map(([k, v, tail]) => `<div><dt>${k}</dt><dd>${v}${tail ? `<span>${tail}</span>` : ""}</dd></div>`)
     .join("");
 
   // 추가 배선 — 이음새가 아닌 같은 런타임 안의 흐름(회색·가늘게). 문맥을 위해 그린다.
@@ -497,6 +526,7 @@
 
   const GROUPS = [
     { rt: "app",  label: "폰 · 워치 앱", ids: ["watch", "recv", "pipe", "bridge", "media", "dart"] },
+    { rt: "wear", label: "갤럭시워치 (Wear OS · 단독 LTE)", ids: ["gwatch"] },
     { rt: "edge", label: "현장 엣지",     ids: ["jetson", "cctvai"] },
     { rt: "pod",  label: "가스포드",       ids: ["pod"] },
     { rt: "web",  label: "관제웹 (Cloud Run · 서울)", ids: ["rVital", "rMedia", "rCctv", "rPod", "rCron", "store", "ui"] },
@@ -636,13 +666,25 @@
   }
 
   // ── 인스펙터 ────────────────────────────────────────────────────────
-  const THESIS = `
+  /**
+   * 첫 화면의 요지. **숫자와 이음새 이름을 문장 안에 손으로 적지 않는다** —
+   * 종전 판은 "12곳 중 셋뿐 · C·D·J" 를 문장에 박아 두었고, 강도가 3단이 되고 M 이 늘어난
+   * 뒤에도 그대로 남아 그림과 다른 말을 했다. 문장도 표에서 파생시킨다.
+   */
+  function thesisHtml() {
+    const by = idsByTier();
+    const rt = by.get("런타임"), gate = by.get("커밋"), none = by.get("없음");
+    const j = (a) => a.join(" · ");
+    return `
     <div class="ins-kicker">읽는 법</div>
-    <p class="ins-title">계약이 코드로 강제되는 이음새는 12곳 중 셋뿐이다</p>
+    <p class="ins-title">런타임이 값을 검사하는 이음새는 ${LINKS.length}곳 중 ${rt.length}곳뿐이다</p>
     <p class="thesis" style="margin-top:12px">
-      <strong>C · D · J</strong> 만 zod 스키마나 DB 컬럼이 값을 실제로 검사한다(초록 선).
-      나머지 아홉은 문자열 키, 필드 이름, 빌드 인자, 파일 이름 같은 <strong>합의</strong>로
-      유지되고, 어긋나도 예외가 나지 않는다.
+      <strong>${j(rt)}</strong> 만 zod 스키마나 DB 컬럼이 값 자체를 검사한다
+      (<span style="color:${TIER_STYLE["런타임"].color}">${TIER_STYLE["런타임"].short}</span> 선).
+      <strong>${j(gate)}</strong> 는 커밋 게이트가 <em style="font-style:normal;color:var(--ink)">코드 형태</em>를
+      검사한다 — 값은 안 본다.
+      남은 <strong>${j(none)}</strong> 은 문자열 키, 필드 이름, 빌드 인자, 파일 이름 같은
+      <strong>합의</strong>로 유지되고, 어긋나도 예외가 나지 않는다.
     </p>
     <p class="thesis" style="margin-top:12px">
       런타임 안쪽은 각자 멀쩡하다. 문제가 사는 곳은 런타임이 만나는 지점이고,
@@ -652,12 +694,13 @@
       선을 클릭 → 그 이음새의 계약<br>
       노드를 클릭 → 그 노드가 물린 이음새<br>
       <kbd>드래그</kbd> 팬 · <kbd>휠</kbd> 줌 · <kbd>Esc</kbd> 해제<br>
-      <span style="color:var(--ink-3)">문안 원본 · <code style="font-size:9px">docs/seams.md</code> 표 (2026-08-21)</span>
+      <span style="color:var(--ink-3)">문안 원본 · <code style="font-size:9px">docs/seams.md</code> 표 (${BASELINE.date})</span>
     </div>`;
+  }
 
   function esc(s) { return String(s).replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c])); }
 
-  function showThesis() { inspector.innerHTML = THESIS; }
+  function showThesis() { inspector.innerHTML = thesisHtml(); }
 
   /**
    * 호출 지점 색인 — `docs/seams-callsites.md` 가 grep 으로 뽑아 둔 실제 파일:줄.
