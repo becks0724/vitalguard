@@ -76,10 +76,26 @@ function SquareFit({ children }: { children: React.ReactNode }) {
 
 // 타일 URL — 인라인 그리드와 팝업 슬리피맵이 같은 함수를 쓴다. 한쪽만 바꾸면 두 화면이 갈린다.
 //
-// 베이스맵은 @2x(512px) 레티나 타일. 소스 해상도를 올려도 배치 크기는 그대로이고 선명도만 오른다.
-// 레이더만 512 로 올리면 배경이 상대적으로 흐려져 오히려 산만해진다.
+// ⚠️ 베이스맵은 2026-08-27 에 CARTO(basemaps.cartocdn.com) 에서 Esri 로 옮겼다.
+// CARTO 가 키 없는 요청에 **워터마크를 구워 보내기 시작**했기 때문이다("API KEY REQUIRED"
+// 사선 문구). HTTP 200 에 정상 PNG 라 서버 라우트 검증(/api/radar)·에러 로그·경보 어디에도
+// 안 잡히고 오직 눈으로만 보인다 — 베이스맵은 브라우저가 CDN 에서 직접 받아 서버를 안 거친다.
+// 되돌리지 말 것. CARTO 로 가려면 키 발급·도메인 등록·과금 관리가 함께 와야 한다.
+//
+// Esri 는 태풍 진로·작업자 GPS 지도가 이미 쓰는 호스트라 외부 의존이 늘지 않는다.
+// 대신 CARTO 와 두 가지가 다르다.
+//   ① @2x 가 없다 — 256px 소스라 레티나에서 지명이 조금 무르다(레이더 512px 는 그대로).
+//   ② 바탕과 지명이 분리돼 있다 — Base 위에 Reference 를 겹쳐야 CARTO light_all 과 같아진다.
+//      쌓는 순서는 바탕 → 지명 → 레이더. 종전 CARTO 는 지명이 바탕에 구워져 레이더 아래
+//      있었으므로, 지명을 레이더 위로 올리면 그때 화면 인상이 바뀐다.
+const ESRI_CANVAS = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas";
+// ⚠️ Esri 타일 경로는 z/y/x 순서다(XYZ 의 z/x/y 가 아니다). 뒤집으면 엉뚱한 곳이 그려진다.
 function baseTileUrl(base: string, z: number, x: number, y: number): string {
-  return `https://a.basemaps.cartocdn.com/${base}/${z}/${x}/${y}@2x.png`;
+  return `${ESRI_CANVAS}/World_${base}_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
+}
+// 지명·행정경계 오버레이 — 바탕과 짝을 이룬다(위 ② 참조).
+function labelTileUrl(base: string, z: number, x: number, y: number): string {
+  return `${ESRI_CANVAS}/World_${base}_Gray_Reference/MapServer/tile/${z}/${y}/${x}`;
 }
 // ⚠️ URL 끝의 color(7)·snow(_1) 는 **RainViewer 무료 API 가 무시한다**(실측: 색상 0~8 이
 // 전부 동일 md5, `1_1` 과 `1_0` 도 동일). 색상 스킴을 바꿔 가독성을 높이려는 시도는
@@ -103,7 +119,7 @@ function RadarTiles({
   dark: boolean;
 }) {
   const { x0, y0, cols, rows } = tilesForBBox(zoom);
-  const base = dark ? "dark_all" : "light_all";
+  const base = dark ? "Dark" : "Light";
   const cells = [];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -124,6 +140,16 @@ function RadarTiles({
         <img
           key={`b-${t.x}-${t.y}`}
           src={baseTileUrl(base, zoom, t.x, t.y)}
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={style(t.c, t.r)}
+        />
+      ))}
+      {cells.map((t) => (
+        <img
+          key={`l-${t.x}-${t.y}`}
+          src={labelTileUrl(base, zoom, t.x, t.y)}
           alt=""
           aria-hidden
           draggable={false}
@@ -283,7 +309,7 @@ function RadarSlippyMap({
     if (size.w) setView(fitKorea(size.w, size.h));
   };
 
-  const base = dark ? "dark_all" : "light_all";
+  const base = dark ? "Dark" : "Light";
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
   if (view && size.w > 0) {
     const z = view.zoom;
@@ -329,6 +355,16 @@ function RadarSlippyMap({
         <img
           key={`b-${t.key}`}
           src={baseTileUrl(base, t.z, t.x, t.y)}
+          alt=""
+          aria-hidden
+          draggable={false}
+          style={tileStyle(t)}
+        />
+      ))}
+      {tiles.map((t) => (
+        <img
+          key={`l-${t.key}`}
+          src={labelTileUrl(base, t.z, t.x, t.y)}
           alt=""
           aria-hidden
           draggable={false}
