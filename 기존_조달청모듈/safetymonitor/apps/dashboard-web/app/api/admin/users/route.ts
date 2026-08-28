@@ -9,8 +9,10 @@ import {
   setUserAdminAccess,
   setUserProfileFields,
   setUserSiteOfficer,
+  setUserOrgType,
   type UserRow,
 } from "../../../../lib/db";
+import { isOrgType } from "../../../../lib/org-type";
 
 // password_hash·google_sub(민감/불필요) 만 제외하고 DB 스키마 그대로 반환.
 function publicUser(u: UserRow) {
@@ -60,12 +62,28 @@ export async function POST(request: Request) {
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
 
-  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile"];
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile", "set_org_type"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile|set_org_type) 이 필요합니다." },
       { status: 400 },
     );
+  }
+
+  // 가입 유형 변경 — 'test'(양쪽 검증 화면 열람)를 부여하는 유일한 경로다(가입 폼에는 없다).
+  // ⚠ 여기서는 isOrgType 이 맞다 — 가입 경로가 아니라 관리 경로이고, test 를 주는 것이 이 액션의 목적이다.
+  //   대신 verifyUserAdmin 이 이미 위에서 관리 권한자만 통과시킨다(자가취득 불가).
+  // ⚠ 유형을 내리면 담당관 자격을 잃을 수 있다 — setUserOrgType 이 같은 UPDATE 에서 정리한다.
+  if (action === "set_org_type") {
+    const { orgType } = (body ?? {}) as { orgType?: unknown };
+    if (!isOrgType(orgType)) {
+      return NextResponse.json({ ok: false, error: "orgType 이 올바르지 않습니다." }, { status: 400 });
+    }
+    const updated = await setUserOrgType(id, orgType);
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated) });
   }
 
   // 회사(상호)/부서/직책 직접 수정 — 관리 권한자가 사용자 관리에서 편집. 빈 문자열은 null 로 정규화.
@@ -88,13 +106,14 @@ export async function POST(request: Request) {
   }
 
   // 현장 담당관(안전관리비 확정 권한) 부여/회수 — admin_access 와 같은 관리 경로(자가취득 불가).
-  // ⚠ 시공사(contractor)에게는 부여 불가 — 피검증자가 확정 권한을 가지면 검증이 성립하지 않는다.
-  //   DB 함수(setUserSiteOfficer)도 같은 조건을 걸어, 대상이 시공사면 0행이 돌아와 404 로 떨어진다.
+  // ⚠ 안전관리비 영역 밖 유형에는 부여 불가 — 현장 관리자(피검증자가 확정하면 검증이 성립하지 않는다)와
+  //   산업안전공단 관리자(안전관리비는 조달청 업무 · 2026-08-28)가 여기 걸린다.
+  //   DB 함수(setUserSiteOfficer)도 같은 조건을 걸어, 자격 없는 유형이면 0행이 돌아와 404 로 떨어진다.
   if (action === "grant_officer" || action === "revoke_officer") {
     const updated = await setUserSiteOfficer(id, action === "grant_officer");
     if (!updated) {
       return NextResponse.json(
-        { ok: false, error: "사용자를 찾을 수 없거나 시공사 계정에는 부여할 수 없습니다." },
+        { ok: false, error: "사용자를 찾을 수 없거나 이 가입 유형에는 부여할 수 없습니다." },
         { status: 404 },
       );
     }

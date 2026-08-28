@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { orgTypeLabel } from "../../lib/org-type";
+import { ORG_TYPES, canHoldSiteOfficer, isOrgType, orgTypeLabel } from "../../lib/org-type";
 import { getSessionToken } from "./session-token";
 
 type User = {
@@ -17,7 +17,7 @@ type User = {
   email_verified: boolean;
   auth_provider: string;
   role: string;
-  org_type: string; // 'vitalguard' | 'member' | 'contractor'
+  org_type: string; // lib/org-type ORG_TYPES — 구 'member' 잔여분이 올 수 있다
   status: string;
   birth_date: string | null;
   department: string | null;
@@ -193,7 +193,17 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
   const act = useCallback(
     async (
       id: number,
-      action: "approve" | "reject" | "delete" | "grant_admin" | "revoke_admin" | "grant_officer" | "revoke_officer",
+      action:
+        | "approve"
+        | "reject"
+        | "delete"
+        | "grant_admin"
+        | "revoke_admin"
+        | "grant_officer"
+        | "revoke_officer"
+        | "set_org_type",
+      // 액션별 추가 필드(set_org_type 의 orgType 등) — 본문에 그대로 펼쳐 보낸다.
+      payload?: Record<string, unknown>,
     ) => {
       if (action === "delete") {
         const u = users?.find((x) => x.id === id);
@@ -211,7 +221,7 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
             "content-type": "application/json",
             authorization: `Bearer ${getSessionToken() ?? ""}`,
           },
-          body: JSON.stringify({ id, action }),
+          body: JSON.stringify({ id, action, ...payload }),
         });
         const json = (await res.json()) as { ok?: boolean; error?: string };
         if (!res.ok || !json.ok) {
@@ -480,7 +490,29 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       <td className={TD}>{u.name ?? "-"}</td>
                       <td className={TD}>{u.birth_date ?? "-"}</td>
                       <td className={TD}>
-                        {u.role === "worker" ? "작업자" : orgTypeLabel(u.org_type)}
+                        {/* 가입 유형 — 여기가 '테스트 계정'(양쪽 검증 화면 열람)을 부여하는 유일한
+                            경로다. 가입 폼에는 그 선택지가 없다(lib/org-type SIGNUP_ORG_TYPES).
+                            ⚠ 유형을 내리면 담당관 자격을 잃을 수 있고, 서버가 같은 UPDATE 에서
+                            site_officer 를 정리한다 — 그래서 변경 후 목록을 다시 읽는다(act 가 load 호출). */}
+                        {u.role === "worker" ? (
+                          "작업자"
+                        ) : u.role === "owner" ? (
+                          orgTypeLabel(u.org_type)
+                        ) : (
+                          <select
+                            value={isOrgType(u.org_type) ? u.org_type : "jodal"}
+                            onChange={(e) => act(u.id, "set_org_type", { orgType: e.target.value })}
+                            disabled={busyId === u.id}
+                            title="가입 유형 변경 — 볼 수 있는 검증 화면이 바뀝니다"
+                            className="rounded-md border border-hairline bg-transparent px-1.5 py-1 text-[11px] font-semibold text-ink transition disabled:opacity-50 dark:border-white/15 dark:text-on-dark"
+                          >
+                            {ORG_TYPES.map((v) => (
+                              <option key={v} value={v}>
+                                {orgTypeLabel(v)}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </td>
                       {editProfileId === u.id ? (
                         <>
@@ -616,12 +648,16 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                       </td>
                       <td className={TD}>
                         {/* 현장 담당관(안전관리비 확정 권한) — admin_access 와 같은 부여 패턴.
-                            시공사는 피검증자라 부여 대상이 아니다(서버·DB 도 같은 규칙으로 막는다). */}
+                            안전관리비 영역 밖 유형(현장 관리자·산업안전공단 관리자)은 부여 대상이
+                            아니다(서버·DB 도 lib/org-type 의 같은 규칙으로 막는다). */}
                         {u.role === "owner" ? (
                           <span className="text-muted dark:text-on-dark-soft">owner</span>
-                        ) : u.org_type === "contractor" ? (
-                          <span className="text-muted dark:text-on-dark-soft" title="시공사 계정은 확정 권한을 가질 수 없습니다">
-                            시공사
+                        ) : !canHoldSiteOfficer(u.org_type) ? (
+                          <span
+                            className="text-muted dark:text-on-dark-soft"
+                            title={`${orgTypeLabel(u.org_type)} 계정은 안전관리비 확정 권한을 가질 수 없습니다`}
+                          >
+                            대상 아님
                           </span>
                         ) : (
                           <button

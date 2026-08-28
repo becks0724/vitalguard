@@ -137,7 +137,7 @@ export default function ContractorSubmitForm() {
 
   return (
     <section className="rounded-2xl border border-hairline bg-canvas p-6 dark:border-white/10 dark:bg-surface-dark">
-      <h1 className="text-lg font-bold text-ink dark:text-on-dark">시공사 안전관리비 청구 제출</h1>
+      <h1 className="text-lg font-bold text-ink dark:text-on-dark">안전관리비 청구 제출</h1>
       <p className="mt-1 text-xs text-muted dark:text-on-dark-soft">
         세금계산서·계좌이체·근로자 대장·사진대지를 제출합니다. 제출분은 조달청 검증 화면에서 워치 실측과 대조됩니다(검증자 수정 불가).
       </p>

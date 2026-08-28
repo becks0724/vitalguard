@@ -1,5 +1,5 @@
 // 관리자 회원가입 — 신규 계정을 status=pending 으로 저장(승인제). 승인 전엔 로그인 불가.
-// 가입 유형(VitAlGuard 관리자 / 회원사 관리자)은 role 이 아니라 org_type 으로 저장한다(앱 호환).
+// 가입 유형(VitAlGuard / 조달청 / 산업안전공단 / 현장 관리자)은 role 이 아니라 org_type 으로 저장한다(앱 호환).
 import { NextResponse } from "next/server";
 
 import {
@@ -11,7 +11,7 @@ import {
 } from "../../../../lib/account-policy";
 import { isAllowedCompanyForOrgType } from "../../../../lib/companies";
 import { createUser } from "../../../../lib/db";
-import { DEFAULT_ORG_TYPE, isOrgType } from "../../../../lib/org-type";
+import { DEFAULT_ORG_TYPE, isSignupOrgType } from "../../../../lib/org-type";
 import { hashPassword } from "../../../../lib/password";
 
 export async function POST(request: Request) {
@@ -68,14 +68,16 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  // 가입 유형 — 미지정이면 회원사 관리자. 목록 밖 값은 거부(API 직접 호출 우회 차단).
-  if (orgType !== undefined && !isOrgType(orgType)) {
+  // 가입 유형 — 미지정이면 조달청 관리자(DEFAULT_ORG_TYPE). 목록 밖 값은 거부(API 직접 호출 우회 차단).
+  // ⚠ isOrgType 이 아니라 isSignupOrgType 이다 — 'test'(양쪽 검증 화면 열람)를 가입 경로로
+  //   만들 수 없게 막는다. 화면 선택지를 좁히는 것만으로는 API 직접 호출을 못 막는다.
+  if (orgType !== undefined && !isSignupOrgType(orgType)) {
     return NextResponse.json(
       { ok: false, error: "가입 유형이 올바르지 않습니다." },
       { status: 400 },
     );
   }
-  const kind = isOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
+  const kind = isSignupOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
   // B2B — 승인된 기업(상호)만, 그리고 그 가입 유형이 쓸 수 있는 상호만 허용.
   // 화면에서 선택지를 좁히는 것만으로는 이 요청을 직접 만들어 보내는 것을 못 막는다.
   if (!isAllowedCompanyForOrgType(coName, kind)) {

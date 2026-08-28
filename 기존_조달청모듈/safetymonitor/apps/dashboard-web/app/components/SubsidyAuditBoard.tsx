@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, XAxis, YAxis } from "recharts";
 
 import type { SubsidyReconRow } from "../api/subsidy-audit/route";
+import { authHeaders } from "./session-token";
 import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 
 // 검사별 표시 기준(임계) — 판정이 아니라 화면 표시용 관측 기준. 값은 화면에 그대로 명시한다.
@@ -857,7 +858,7 @@ export default function SubsidyAuditBoard() {
     let alive = true;
     (async () => {
       try {
-        const r = await fetch("/api/subsidy-audit");
+        const r = await fetch("/api/subsidy-audit", { headers: authHeaders() });
         if (!r.ok) throw new Error(`교부 건 목록 조회 실패 (${r.status})`);
         const j = (await r.json()) as ApiResp;
         if (alive) setData(j);

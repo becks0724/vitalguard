@@ -1,6 +1,7 @@
 // 안전관리비 실집행 감사 — ?id=공고번호 [&from&to(ISO)]. ①계상(조달)×③실집행(워치 출역) 교차.
 import { NextResponse } from "next/server";
 
+import { verifyAreaAccess } from "../../../lib/admin-auth";
 import { getNoticeDetail } from "../../lib/g2b";
 import { auditWorkerDays } from "../../../lib/db";
 import { buildExecutionAudit } from "../../lib/safety-execution";
@@ -17,6 +18,15 @@ const AUDIT_PERIOD_FROM = "2026-06-22";
 const AUDIT_PERIOD_TO = "2026-07-30";
 
 export async function GET(req: Request) {
+  // 안전관리비 영역 — 공단 관리자·현장 관리자는 거부(2026-08-28 소속별 화면 분리).
+  // ⚠ 종전엔 게이트가 없어 비로그인 호출도 통과했다. 화면(SafetyCostAuditBoard)이 세션 토큰을
+  //   함께 보내도록 같이 고쳤다.
+  if (!(await verifyAreaAccess(req, "safetyCost"))) {
+    return NextResponse.json(
+      { error: { code: "FORBIDDEN", message: "안전관리비 검증 열람 권한이 없습니다" } },
+      { status: 403 },
+    );
+  }
   try {
     const url = new URL(req.url);
     const id = url.searchParams.get("id");

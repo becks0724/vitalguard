@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import BusinessVerifyCard from "./BusinessVerifyCard";
 import SafetyIncreaseAuditCard from "./SafetyIncreaseAuditCard";
+import { authHeaders } from "./session-token";
 
 import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 // 실집행 검증은 "현재 선택된 현장" 1곳만 노출 — 현장 선택 드롭다운(LoginSiteSelect)이
@@ -141,7 +142,9 @@ export default function SafetyCostAuditBoard() {
     setLoadingAudit(true);
     (async () => {
       try {
-        const r = await fetch(`/api/safety-audit?id=${encodeURIComponent(selected)}`);
+        const r = await fetch(`/api/safety-audit?id=${encodeURIComponent(selected)}`, {
+          headers: authHeaders(),
+        });
         if (!r.ok) throw new Error(`감사 실패 (${r.status})`);
         const j = (await r.json()) as AuditResp;
         if (alive) setData(j);
