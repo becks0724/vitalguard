@@ -109,7 +109,7 @@ import {
   workerSignalCopy,
   worseTone,
 } from "../../lib/worker-signal";
-import { vitalAgeMs, staleThresholdMs, STALE_MS_DEFAULT } from "../../lib/vital-age";
+import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -258,8 +258,12 @@ function formatInt(value?: number | null) {
 const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데이터가 들어오지 않습니다";
 // 연결끊김일 때는 "센서 없음" 이 아니라 "수신 중단" 이므로 사유를 구분해 표시한다.
 // ★ 종전 문구는 "60초 초과" 고정이라 12시간 끊김도 1분처럼 읽혔다 — 실제 경과를 적는다.
-const tempStaleTitle = (ageMs: number) =>
-  `연결끊김 — ${formatElapsed(ageMs)}째 수신 없음. 직전 값은 현재 상태가 아닙니다`;
+// ★ 종류에 따라 조치가 정반대다(2026-08-28) — 샘플이 도착 중이면 기기가 아니라 착용을 봐야 한다.
+//   근거는 lib/vital-age.ts 의 staleKind 주석.
+const tempStaleTitle = (ageMs: number, kind: StaleKind) =>
+  kind === "hrSilent"
+    ? `${STALE_LABEL.hrSilent} — ${formatElapsed(ageMs)}째 심박 없음. 기기는 수신 중이니 워치 착용을 확인하세요`
+    : `${STALE_LABEL.disconnected} — ${formatElapsed(ageMs)}째 수신 없음. 직전 값은 현재 상태가 아닙니다`;
 
 // 누적 추세 차트는 자체 웨어러블 디바이스가 실측한 메트릭에만 표시.
 // 폰 측 store 에 해당 metric 값이 실시간 들어와 있는 경우만 live 로 판정.
@@ -6163,7 +6167,12 @@ export function DemoDashboard() {
           heartRate: s.heartRate,
           spo2: s.spo2,
           skinTempC: s.skinTempC,
-          statusLabel: stale ? "연결끊김" : status.label,
+          // ★ 여기는 **행 ts 기준**이라 stale 이면 실제로 "샘플이 안 온다" 뿐이다 —
+          //   그래서 종류를 재지 않고 disconnected 로 고정한다(리터럴 대신 라벨 정본을 쓴다).
+          //   ⚠ 표(`isStale`)는 심박 시각 기준이라 이 둘은 **같은 기준이 아니다**(위 주석의
+          //     "동일 기준"은 부정확하다). 표에서 심박끊김인 작업자가 지도에선 정상색이다.
+          //     판정 기준을 맞추는 것은 이 트랙(라벨 분리) 밖이라 손대지 않았다.
+          statusLabel: stale ? STALE_LABEL.disconnected : status.label,
           tone: stale ? "idle" : status.tone,
           ageSec,
           stale,
@@ -7830,6 +7839,11 @@ function WorkerTableRow({
   // 연결끊김 — sample 존재 + 신호 문턱 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 문턱은 배칭 주기의 함수라 출처마다 다르다(애플 60초·갤럭시 150초 — lib/vital-age.ts 참조).
   const stale = sample !== undefined && signal === 0;
+  // ★ 끊김의 **종류** — 라벨만 가른다. 판정(stale)·게이트(gateStaleVitals)·톤(effectiveTone)은
+  //   이 값을 안 본다. 근거와 실측은 lib/vital-age.ts 의 staleKind 주석.
+  const kind: StaleKind | undefined =
+    stale && sample !== undefined ? staleKind(sample, nowMs, sample.dataOrigin) : undefined;
+  const staleLabel = kind !== undefined ? STALE_LABEL[kind] : "";
   // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
   const overall = effectiveTone(overallVital, { stale, outside });
   const heading = workerHeading(sample, workerId, nameFallback);
@@ -7911,7 +7925,7 @@ function WorkerTableRow({
 
       {/* 2 작업자 — 신호등 + 이름/사번 */}
       <div className="flex min-w-0 items-center gap-2">
-        <TrafficLight status={overall} stale={stale} />
+        <TrafficLight status={overall} stale={stale} staleLabel={staleLabel} />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-ink dark:text-on-dark">
             {heading.title}
@@ -8031,13 +8045,17 @@ function WorkerTableRow({
           ) : (
             <span
               className="leading-tight"
-              title={stale ? tempStaleTitle(vitalAgeMs(sample, nowMs)) : TEMP_UNAVAILABLE_TITLE}
+              title={
+                stale && kind !== undefined
+                  ? tempStaleTitle(vitalAgeMs(sample, nowMs), kind)
+                  : TEMP_UNAVAILABLE_TITLE
+              }
             >
               <span className="font-mono text-sm tabular-nums text-muted">
                 --<span className="ml-0.5 text-[10px]">℃</span>
               </span>
               <span className="block text-[9px] leading-none text-muted">
-                {stale ? "연결끊김" : "미수신"}
+                {stale ? staleLabel : "미수신"}
               </span>
             </span>
           )
@@ -8105,7 +8123,7 @@ function WorkerTableRow({
           // ★ 경과를 함께 적는다 — 라벨만 있으면 1분 끊김과 12시간 끊김이 같은 화면이라
           //   관제자가 둘 다 "곧 돌아오겠지" 로 읽는다(2026-08-18 12.9시간 무경보 사고).
           <span className="flex flex-col items-center leading-tight text-slate-500 dark:text-slate-300">
-            <span className="whitespace-nowrap text-xs font-semibold">연결끊김</span>
+            <span className="whitespace-nowrap text-xs font-semibold">{staleLabel}</span>
             <span className="whitespace-nowrap font-mono text-[10px]">
               {formatElapsed(vitalAgeMs(sample, nowMs))}
             </span>
@@ -8709,7 +8727,16 @@ function StressChip({ result, hrvBacked }: { result: StressResult; hrvBacked: bo
 }
 
 // 작업자 카드 헤더의 종합 상태 인디케이터 — 신호등 (녹/주/빨). 정상은 정적, 주의/위험은 블링크.
-function TrafficLight({ status, stale }: { status: VitalStatus; stale?: boolean }) {
+function TrafficLight({
+  status,
+  stale,
+  /** 끊김 종류별 라벨(lib/vital-age.ts `STALE_LABEL`). 색·점멸은 종류를 안 탄다 — 글자만 다르다. */
+  staleLabel,
+}: {
+  status: VitalStatus;
+  stale?: boolean;
+  staleLabel?: string;
+}) {
   const map: Record<VitalStatus, string> = {
     idle: "bg-muted-soft",
     normal: "bg-semantic-up",
@@ -8718,7 +8745,8 @@ function TrafficLight({ status, stale }: { status: VitalStatus; stale?: boolean 
   };
   // 연결끊김은 어떤 생체 상태보다 우선 — 슬레이트 점멸로 "정상 녹색" false-OK 차단.
   const cls = stale ? "bg-slate-400 dark:bg-slate-500 animate-pulse" : map[status];
-  const label = stale ? "연결끊김" : STATUS_LABEL[status];
+  // 라벨이 안 넘어오면 종전 문구로 떨어진다 — 다른 호출부가 생겨도 빈 글자가 뜨지 않게.
+  const label = stale ? (staleLabel || STALE_LABEL.disconnected) : STATUS_LABEL[status];
   return (
     <span
       aria-label={`종합 상태 ${label}`}

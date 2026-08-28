@@ -76,3 +76,60 @@ export const STALE_MS_WEAROS = 150_000;
 export function staleThresholdMs(dataOrigin: string | undefined): number {
   return dataOrigin === "wearos_data_vitalguard" ? STALE_MS_WEAROS : STALE_MS_DEFAULT;
 }
+
+// ── 끊김의 두 종류 — 같은 stale 이라도 관제자가 할 일이 정반대다 ──────────────
+//
+// ★ **판정은 안 가른다.** 두 종류 모두 `stale` 이고 sticky 값 차단·신호 강등·톤 강등·
+//   이상 집계는 전부 종전 그대로다. 가르는 것은 **관제자가 읽는 글자뿐**이다.
+//   판정을 건드리면 안전 동작 다섯 곳의 회귀 위험을 지는데 얻는 것은 이름표 하나다.
+//
+// 실측 근거(2026-08-28 · 7일) —
+//   갤럭시 심박 간격 p50 120.9s · p90 231.9s · p95 461.7s · p99 4,210s (n=650)
+//   애플                p50   5.0s · p90   5.5s · p95   6.2s · p99     9.6s (n=28,318)
+// 애플은 주기의 1.9배 안에서 도는데 갤럭시는 35배까지 벌어진다. 그런데 **전송은 정상이다** —
+// 배치 간격 median 120.3s 로 `CollectorService.FLUSH_INTERVAL_MS` 와 일치한다.
+// 즉 링크는 멀쩡한 채 심박만 묵는 구간이 상시 생긴다(갤럭시 샘플의 70.4%가 심박 없는 빈 행 ·
+// 애플은 0.0%).
+//
+// 이 둘을 같은 "연결끊김" 으로 부르면 관제자가 폰을 찾아 현장에 간다 — 정작 필요한 것은
+// "워치를 고쳐 차세요" 한마디다.
+//
+// ⚠ 문턱을 올려 덮는 방향은 막혀 있고, 막혀 있는 것이 옳다 — 가드 상한(주기 2배)까지 올려도
+//   오탐이 651건 중 104→64 로만 줄고, 그 위는 진짜 끊김을 한 주기 통째로 놓친다
+//   (2026-08-25-stale-threshold-by-origin.guard.test.ts).
+export type StaleKind =
+  /** 샘플 자체가 안 온다 — 폰·네트워크·앱. 사람을 찾아가야 한다. */
+  | "disconnected"
+  /** 샘플은 오는데 심박만 묵는다 — 워치 착용·센서. 말 한마디로 끝난다. */
+  | "hrSilent";
+
+/**
+ * `stale` 로 판정된 샘플이 둘 중 어느 종류인가.
+ *
+ * ⚠ **이 함수는 stale 여부를 판정하지 않는다** — 이미 stale 인 것의 종류만 가른다.
+ *   stale 이 아닌 샘플에 부르면 결과는 무의미하다(호출부가 stale 분기 안에서만 쓴다).
+ *
+ * 기준 = **행 나이**. 행이 신선하다는 것은 샘플이 도착하고 있다는 뜻이고(링크 생존),
+ * 그런데도 stale 이라는 것은 심박 시각만 묵었다는 뜻이다.
+ * 문턱은 심박 쪽과 같은 값을 쓴다 — 갤럭시 샘플도 같은 120초 주기로 오므로 자가 같다.
+ *
+ * 파싱 불가한 `ts` 는 `disconnected` — 도착을 확인할 수 없으면 안전측(사람이 가 보는 쪽)으로 센다.
+ */
+export function staleKind(
+  sample: VitalAgeSample,
+  nowMs: number,
+  dataOrigin: string | undefined,
+): StaleKind {
+  const rowMs = new Date(sample.ts).getTime();
+  if (!Number.isFinite(rowMs)) return "disconnected";
+  return nowMs - rowMs > staleThresholdMs(dataOrigin) ? "disconnected" : "hrSilent";
+}
+
+/**
+ * 화면 라벨 — **여기 한 곳에서만 만든다.**
+ * 글자 수를 맞춘다(넉 자) — 표의 상태 칸 폭이 종류마다 흔들리면 목록이 출렁인다.
+ */
+export const STALE_LABEL: Record<StaleKind, string> = {
+  disconnected: "연결끊김",
+  hrSilent: "심박끊김",
+};

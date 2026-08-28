@@ -2,7 +2,9 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { vitalAgeMs } from "./vital-age";
+import { STALE_LABEL, staleKind, vitalAgeMs } from "./vital-age";
+
+const WEAROS = "wearos_data_vitalguard";
 
 const NOW = Date.parse("2026-08-15T10:00:00.000Z");
 const at = (sec: number) => new Date(NOW - sec * 1000).toISOString();
@@ -52,4 +54,42 @@ test("활동에너지만 계속 와도 나이는 자란다(이 수정의 목적)
   }
   hrAt = at(3); // 착용 재개 → 즉시 회복
   assert.ok(vitalAgeMs({ ts: at(2), heartRateMeasuredAt: hrAt }, NOW) < 60_000, "재개 시 바로 정상");
+});
+
+// ── staleKind — 같은 stale 이라도 관제자가 할 일이 정반대다 ──────────────────
+
+test("★ 샘플은 오는데 심박만 묵으면 hrSilent — 갤럭시의 상시 형태", () => {
+  // 실측 형태(2026-08-28) = 빈 행이 120초마다 도착하는데 마지막 심박은 5분 전.
+  const sample = { ts: at(30), heartRateMeasuredAt: at(300) };
+  assert.ok(vitalAgeMs(sample, NOW) > 150_000, "전제 — 이 샘플은 stale 이다");
+  assert.equal(staleKind(sample, NOW, WEAROS), "hrSilent", "행이 30초 전이면 링크는 살아 있다");
+});
+
+test("★ 샘플 자체가 안 오면 disconnected — 사람을 찾아가야 하는 쪽", () => {
+  const sample = { ts: at(400), heartRateMeasuredAt: at(400) };
+  assert.equal(staleKind(sample, NOW, WEAROS), "disconnected");
+});
+
+test("★ 경계는 출처별 문턱을 탄다 — 같은 행 나이가 기기마다 다르게 갈린다", () => {
+  // 행 나이 100초. 갤럭시(150초)는 아직 도착 중이고, 애플(60초)은 이미 끊긴 것이다.
+  const sample = { ts: at(100), heartRateMeasuredAt: at(900) };
+  assert.equal(staleKind(sample, NOW, WEAROS), "hrSilent", "갤럭시 100초는 정상 주기 안");
+  assert.equal(staleKind(sample, NOW, undefined), "disconnected", "애플 100초는 이미 끊김");
+});
+
+test("★ 문턱 바로 양옆 — 갤럭시 150초", () => {
+  const kind = (rowAgeSec: number) =>
+    staleKind({ ts: at(rowAgeSec), heartRateMeasuredAt: at(9_999) }, NOW, WEAROS);
+  assert.equal(kind(149), "hrSilent", "149초는 아직 도착 중");
+  assert.equal(kind(151), "disconnected", "151초는 도착이 끊겼다");
+});
+
+test("★ 파싱 불가한 ts 는 disconnected — 안전측(사람이 가 보는 쪽)", () => {
+  // 도착을 확인할 수 없는데 "링크는 살아 있다" 고 부르면 아무도 안 간다.
+  assert.equal(staleKind({ ts: "쓰레기값" }, NOW, WEAROS), "disconnected");
+});
+
+test("★ 라벨은 넉 자로 맞춘다 — 표 상태 칸이 종류마다 출렁이면 목록이 흔들린다", () => {
+  assert.equal(STALE_LABEL.disconnected.length, STALE_LABEL.hrSilent.length);
+  assert.notEqual(STALE_LABEL.disconnected, STALE_LABEL.hrSilent, "두 상태가 같은 글자면 가른 의미가 없다");
 });
