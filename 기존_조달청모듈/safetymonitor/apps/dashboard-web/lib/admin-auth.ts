@@ -4,7 +4,12 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 import { clientIpFromRequest } from "./client-ip";
 import { findUserByUsername } from "./db";
-import { canApproveUsers } from "./org-type";
+import {
+  canApproveUsers,
+  canHoldSiteOfficer,
+  canViewArea,
+  type VerificationArea,
+} from "./org-type";
 import {
   signSessionJwt,
   verifySessionJwt,
@@ -194,7 +199,29 @@ export async function procureConfirmAccess(request: Request): Promise<ProcureCon
   const user = await findUserByUsername(session.username).catch(() => null);
   if (!user) return "not_officer";
   if (user.org_type === "contractor") return "contractor";
+  // 유형 자체가 안전관리비 영역 밖이면(공단 관리자 등) 플래그가 남아 있어도 거부한다.
+  // 부여 게이트(setUserSiteOfficer)와 이중 방어 — DB 를 직접 고쳐 플래그만 남은 계정을 막는다.
+  if (!canHoldSiteOfficer(user.org_type)) return "not_officer";
   return user.site_officer ? "ok" : "not_officer";
+}
+
+// 검증 영역(안전관리비 / 공단 보조금) 열람 권한 — 그 영역 전용 데이터 API 게이트.
+// 화면(LoginGate)의 리다이렉트는 UX 이고, 실제 차단은 여기서 한다(주소 직접 입력·API 직접 호출).
+// ⚠ orgType 은 세션 클레임에서 읽는다 — 유형을 바꿔도 이미 발급된 세션은 만료까지 옛 권한을 들고 있다.
+//   (verifyBasicAuth 의 contractor 판정과 같은 성질) 즉시 끊어야 하면 그 계정을 rejected 로 내린다.
+//   구 토큰은 클레임이 없어 DB 로 폴백한다.
+export async function verifyAreaAccess(
+  request: Request,
+  area: VerificationArea,
+): Promise<boolean> {
+  const session = getSession(request);
+  if (!session) return false;
+  if (session.role === "owner") return true;
+  let orgType: string | null | undefined = session.orgType;
+  if (!orgType) {
+    orgType = (await findUserByUsername(session.username).catch(() => null))?.org_type;
+  }
+  return canViewArea(orgType, area);
 }
 
 // 앱 업로드 토큰 일치 검사 — 어디서 온 토큰이든(헤더/폼 필드) env APP_UPLOAD_TOKEN 과 비교.

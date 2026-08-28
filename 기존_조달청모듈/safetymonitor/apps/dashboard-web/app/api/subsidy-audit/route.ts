@@ -3,6 +3,7 @@
 // 게이트: 교부통지서 실물 → subsidy_grant 적재 / 공단 온보드 → 표준가격·대장. (ERD 14번)
 import { NextResponse } from "next/server";
 
+import { verifyAreaAccess } from "../../../lib/admin-auth";
 import { getShopPrices } from "../../lib/g2b-shop";
 
 export const dynamic = "force-dynamic";
@@ -92,7 +93,16 @@ const SAMPLE_ROWS: SubsidyReconRow[] = [
   },
 ];
 
-export async function GET() {
+export async function GET(req: Request) {
+  // 공단 보조금 영역 — 조달청 관리자·현장 관리자는 거부(2026-08-28 소속별 화면 분리).
+  // ⚠ 종전엔 게이트가 아예 없어 비로그인 호출도 통과했다. 화면(SubsidyAuditBoard)이 세션
+  //   토큰을 Authorization 으로 함께 보내도록 같이 고쳤다 — 한쪽만 바꾸면 보드가 401 로 빈다.
+  if (!(await verifyAreaAccess(req, "subsidy"))) {
+    return NextResponse.json(
+      { error: { code: "FORBIDDEN", message: "공단 보조금 검증 열람 권한이 없습니다" } },
+      { status: 403 },
+    );
+  }
   const rows: SubsidyReconRow[] = SAMPLE_ROWS.map((r) => ({ ...r }));
 
   // 참조가 ② 실연동 — 당일 피드에 잡히는 품목만 live 로 전환(부분 성공 허용, 실패 시 샘플 유지).

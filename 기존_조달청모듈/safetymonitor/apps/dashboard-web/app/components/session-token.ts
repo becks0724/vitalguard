@@ -22,6 +22,14 @@ export function getSessionToken(): string | null {
   }
 }
 
+// 게이트가 걸린 API 를 부를 때 동봉하는 Authorization 헤더 — 검증 보드 호출부 공용.
+// ⚠ 토큰이 없으면 빈 객체를 준다(헤더를 만들지 않는다) — 빈 Bearer 는 서버 정규식에 걸려
+//   같은 401 이라도 "토큰 없음"과 "토큰 이상"을 구분 못 하게 만든다.
+export function authHeaders(): Record<string, string> {
+  const token = getSessionToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 // 서버가 401 로 거부한 낡은 토큰을 제거 — 게이트가 로그인 화면으로 복귀할 수 있게 한다.
 // (LoginGate 는 토큰 존재만 보므로, 무효 토큰이 남으면 게이트 통과+서버 거부 상태에 갇힌다.)
 export function clearSessionToken(): void {

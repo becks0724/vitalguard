@@ -13,7 +13,7 @@ import {
 } from "../../lib/account-policy";
 import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
 import { VITALGUARD_COMPANY, companiesForOrgType } from "../../lib/companies";
-import { DEFAULT_ORG_TYPE, type OrgType } from "../../lib/org-type";
+import { DEFAULT_ORG_TYPE, type SignupOrgType } from "../../lib/org-type";
 import { AccountRecovery } from "./AccountRecovery";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
@@ -21,7 +21,6 @@ import { LoginShaderBackground } from "./LoginShaderBackground";
 import { LoginSiteSelect } from "./LoginSiteSelect";
 import { FIELD_BASE, INPUT_CLASS } from "./login-styles";
 import { StoreBadges } from "./StoreBadges";
-import { ThemeToggle } from "./ThemeToggle";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Lang = "ko" | "en";
@@ -45,10 +44,13 @@ type Strings = {
   footer: string;
   // 회원가입(승인제)
   signupTitle: string;
-  // 가입 유형(VitAlGuard 관리자 / 회원사 관리자) — DB 에는 org_type 으로 저장
+  // 가입 유형 — DB 에는 org_type 으로 저장. 담당 업무 축이라 소속 기관과 1:1 이 아니다.
+  // ⚠ '테스트 계정'(test)은 여기 없다 — 양쪽 검증 화면을 다 보는 유형이라 가입 폼에 노출하지
+  //   않는다(최고관리자가 사용자 관리에서만 지정 · lib/org-type.ts SIGNUP_ORG_TYPES).
   orgTypeLabel: string;
   orgTypeVitalguard: string;
-  orgTypeMember: string;
+  orgTypeJodal: string;
+  orgTypeKosha: string;
   orgTypeContractor: string;
   birthLabel: string;
   companyLabel: string;
@@ -64,6 +66,9 @@ type Strings = {
   pwConfirmPlaceholder: string;
   signupSubmit: string;
   signupSubmitting: string;
+  // 가입 위저드(3단계) 이동 버튼
+  signupNext: string;
+  signupBack: string;
   toSignup: string;
   toLogin: string;
   noAccount: string;
@@ -93,7 +98,6 @@ type Strings = {
   // 이메일(아이디 + 도메인 선택 + 인증)
   emailLocalPlaceholder: string;
   emailDomainCustom: string;
-  emailDomainPlaceholder: string;
   emailVerifyBtn: string;
   emailResendBtn: string;
   emailSending: string;
@@ -137,8 +141,9 @@ const T: Record<Lang, Strings> = {
     signupTitle: "관리자 회원가입",
     orgTypeLabel: "가입 유형",
     orgTypeVitalguard: "VitAlGuard 관리자",
-    orgTypeMember: "회원사 관리자",
-    orgTypeContractor: "시공사",
+    orgTypeJodal: "조달청 관리자",
+    orgTypeKosha: "산업안전공단 관리자",
+    orgTypeContractor: "현장 관리자",
     birthLabel: "생년월일",
     companyLabel: "회사(상호)",
     companyPlaceholder: "(주)바이탈가드",
@@ -147,12 +152,14 @@ const T: Record<Lang, Strings> = {
     namePlaceholder: "홍길동",
     phoneLabel: "연락처",
     phonePlaceholder: "010-1234-5678",
-    emailLabel: "관리자 이메일",
+    emailLabel: "이메일",
     emailPlaceholder: "admin@company.com",
     pwConfirmLabel: "비밀번호 확인",
     pwConfirmPlaceholder: "비밀번호 재입력",
     signupSubmit: "가입 신청",
     signupSubmitting: "신청 중…",
+    signupNext: "다음",
+    signupBack: "이전",
     toSignup: "회원가입",
     toLogin: "로그인으로 돌아가기",
     noAccount: "계정이 없으신가요?",
@@ -176,10 +183,9 @@ const T: Record<Lang, Strings> = {
     idReserved: "사용할 수 없는 ID입니다.",
     idNeedCheck: "ID 중복 확인을 해주세요.",
     carrierLabel: "통신사",
-    carrierSelect: "통신사 선택",
-    emailLocalPlaceholder: "이메일 아이디",
+    carrierSelect: "선택",
+    emailLocalPlaceholder: "아이디 입력",
     emailDomainCustom: "직접 입력",
-    emailDomainPlaceholder: "도메인 입력 (예: company.com)",
     emailVerifyBtn: "인증번호 받기",
     emailResendBtn: "재발송",
     emailSending: "발송 중…",
@@ -217,8 +223,9 @@ const T: Record<Lang, Strings> = {
     signupTitle: "Admin sign-up",
     orgTypeLabel: "Account type",
     orgTypeVitalguard: "VitAlGuard admin",
-    orgTypeMember: "Member company admin",
-    orgTypeContractor: "Contractor",
+    orgTypeJodal: "PPS admin",
+    orgTypeKosha: "KOSHA admin",
+    orgTypeContractor: "Site manager",
     birthLabel: "Date of birth",
     companyLabel: "Company",
     companyPlaceholder: "VitAlGuard Inc.",
@@ -227,12 +234,14 @@ const T: Record<Lang, Strings> = {
     namePlaceholder: "Jane Doe",
     phoneLabel: "Phone",
     phonePlaceholder: "+82 10-1234-5678",
-    emailLabel: "Admin email",
+    emailLabel: "Email",
     emailPlaceholder: "admin@company.com",
     pwConfirmLabel: "Confirm password",
     pwConfirmPlaceholder: "Re-enter password",
     signupSubmit: "Request sign-up",
     signupSubmitting: "Submitting…",
+    signupNext: "Next",
+    signupBack: "Back",
     toSignup: "Sign up",
     toLogin: "Back to sign in",
     noAccount: "No account?",
@@ -256,10 +265,9 @@ const T: Record<Lang, Strings> = {
     idReserved: "This ID is reserved.",
     idNeedCheck: "Please check ID availability.",
     carrierLabel: "Carrier",
-    carrierSelect: "Select carrier",
-    emailLocalPlaceholder: "email id",
+    carrierSelect: "Select",
+    emailLocalPlaceholder: "Enter ID",
     emailDomainCustom: "Custom",
-    emailDomainPlaceholder: "domain (e.g. company.com)",
     emailVerifyBtn: "Send code",
     emailResendBtn: "Resend",
     emailSending: "Sending…",
@@ -403,6 +411,8 @@ export function LoginScreen({
   onLogin: (token: string, role?: string) => void;
 }) {
   const [lang, setLang] = useState<Lang>("ko");
+  // 회원가입 3단계 위저드(2026-08-28 사용자 시나리오) — ①가입 유형 ②회사(상호) ③나머지 입력.
+  const [signupStep, setSignupStep] = useState<1 | 2 | 3>(1);
   const [mode, setMode] = useState<
     "login" | "signup" | "gcomplete" | "recovery"
   >("login");
@@ -412,7 +422,7 @@ export function LoginScreen({
   const [submitting, setSubmitting] = useState(false);
   // 회원가입 입력(전 항목 필수) + 가입 성공 안내(로그인 모드 상단에 표시).
   // 가입 유형 — role 이 아니라 org_type 으로 저장(배포된 앱이 role 3종만 해석하므로).
-  const [sOrgType, setSOrgType] = useState<OrgType>(DEFAULT_ORG_TYPE);
+  const [sOrgType, setSOrgType] = useState<SignupOrgType>(DEFAULT_ORG_TYPE);
   const [sCompany, setSCompany] = useState("");
   const [sId, setSId] = useState("");
   const [sName, setSName] = useState("");
@@ -432,10 +442,9 @@ export function LoginScreen({
   const [mvno, setMvno] = useState(""); // 알뜰폰일 때 호스트망(KT/SKT/LG U+)
   // 이메일 — 아이디 + 도메인(선택/직접입력). 인증 제거 — 가입 신청 후 관리자 승인 구조.
   const [emailLocal, setEmailLocal] = useState("");
-  const [emailDomain, setEmailDomain] = useState(EMAIL_DOMAINS[0]!);
   const [emailDomainCustom, setEmailDomainCustom] = useState("");
   // 구글 가입 추가정보(유형·회사·연락처) — 구글 인증 후 입력 단계.
-  const [gOrgType, setGOrgType] = useState<OrgType>(DEFAULT_ORG_TYPE);
+  const [gOrgType, setGOrgType] = useState<SignupOrgType>(DEFAULT_ORG_TYPE);
   const [gCompany, setGCompany] = useState("");
   const [gPhone, setGPhone] = useState("");
   // 로그인 성공 후 현장 선택 단계로 보류해 둔 세션 토큰/역할(null = 아직 로그인 폼 단계).
@@ -465,8 +474,19 @@ export function LoginScreen({
   const t = T[lang];
 
   // 회원가입 파생값 — 합성 이메일/연락처 + 라이브 검증.
-  const emailDomainFinal =
-    emailDomain === CUSTOM_DOMAIN ? emailDomainCustom.trim() : emailDomain;
+  // 도메인 = 탭 안에 친 텍스트가 유일한 진실(프리셋 선택도 같은 칸에 채워진다 · 2026-08-28).
+  const emailDomainFinal = emailDomainCustom.trim();
+
+  // ★ VitAlGuard 관리자는 상호가 자사 하나뿐이라 고를 것이 없다(2026-08-28 사용자 지시) —
+  //   2단계(회사 선택)를 건너뛰어 전체가 **2단계**가 되고, 상호는 유형 선택 시 자동으로 채워진다.
+  //   내부 단계 번호(1·2·3)는 그대로 두고 **표시만** 접는다 — 번호를 바꾸면 분기가 두 벌이 된다.
+  const skipCompanyStep = sOrgType === "vitalguard";
+  const totalSignupSteps = skipCompanyStep ? 2 : 3;
+  const shownSignupStep = skipCompanyStep && signupStep === 3 ? 2 : signupStep;
+  const stepAfterOrgType = skipCompanyStep ? 3 : 2;
+  // ⚠ 상호를 유형 선택 이벤트(onChange)에만 맡기지 않는다 — 그 이벤트가 한 번이라도 어긋나면
+  //   상호가 빈 채 제출된다. 건너뛰는 유형은 여기서 자사 상호로 확정한다.
+  const signupCompany = skipCompanyStep ? VITALGUARD_COMPANY : sCompany.trim();
   const composedEmail = `${emailLocal.trim()}@${emailDomainFinal}`;
   const composedPhone = `${phonePrefix}-${phoneMid}-${phoneLast}`;
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(composedEmail);
@@ -543,11 +563,21 @@ export function LoginScreen({
     async (e: FormEvent) => {
       e.preventDefault();
       if (submitting) return;
+      // ⚠ 위저드 중간 단계에서 Enter 를 치면 폼이 제출된다 — 그때는 '다음'으로 넘긴다.
+      //   여기서 안 막으면 필수값이 빈 채 검증에 걸려 엉뚱한 오류 문구가 뜬다.
+      if (signupStep === 1) {
+        setSignupStep(stepAfterOrgType);
+        return;
+      }
+      if (signupStep === 2) {
+        if (sCompany.trim()) setSignupStep(3);
+        return;
+      }
       setError(null);
       setSignupMsg(null);
       // 필수 항목 + 보안 게이트(ID 중복확인·이메일 인증·비번 규칙) 전부 충족해야 제출.
       if (
-        !sCompany.trim() ||
+        !signupCompany ||
         !sId.trim() ||
         !sName.trim() ||
         !sBirth ||
@@ -585,7 +615,7 @@ export function LoginScreen({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             orgType: sOrgType,
-            company: sCompany.trim(),
+            company: signupCompany,
             username: sId.trim(),
             name: sName.trim(),
             birthDate: sBirth,
@@ -602,6 +632,7 @@ export function LoginScreen({
         }
         // 성공 → 로그인 모드로 돌아가 안내 노출, 입력 전부 초기화.
         setMode("login");
+        setSignupStep(1);
         setSignupMsg(t.signupSuccess);
         setSOrgType(DEFAULT_ORG_TYPE);
         setSCompany("");
@@ -614,7 +645,6 @@ export function LoginScreen({
         setCarrierBase("");
       setMvno("");
         setEmailLocal("");
-        setEmailDomain(EMAIL_DOMAINS[0]!);
         setEmailDomainCustom("");
         setIdCheck("idle");
         setSPw("");
@@ -626,6 +656,9 @@ export function LoginScreen({
       }
     },
     [
+      signupStep,
+      stepAfterOrgType,
+      signupCompany,
       sOrgType,
       sCompany,
       sId,
@@ -765,18 +798,31 @@ export function LoginScreen({
       {/* 배경 — MeshGradient 셰이더(콘텐츠 뒤 고정 레이어) */}
       <LoginShaderBackground />
 
-      {/* 우상단 — 한·영 + 라이트/다크 토글 */}
+      {/* 우상단 — 한·영 토글만. 라이트/다크 토글은 뺐다(2026-08-28 사용자 지시 — 대시보드 진입
+          전(로그인·회원가입)에는 불필요. 테마 전환은 로그인 후 대시보드에서). */}
       <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
         <LangToggle lang={lang} onChange={changeLang} />
-        <ThemeToggle />
       </div>
 
       {/* 로그인 카드(레드박스) — 반투명 글래스. overflow 는 풀어 현장 콤보박스 드롭다운이 잘리지 않게(모서리 클리핑은 이미지 컬럼만). */}
-      <div className="relative z-10 flex w-full max-w-5xl rounded-3xl border border-white/15 bg-white/5 shadow-2xl backdrop-blur-md">
-        {/* 좌측 — 현장 사진(데스크톱 전용, 폼과 1:1 동일 비율로 꽉 채움). 파일: public/brand/mainpic0.jpg (없으면 네이비 폴백). */}
-        <div className="relative hidden w-1/2 overflow-hidden rounded-l-3xl md:block">
+      {/* ★ 카드 크기를 **고정**한다(2026-08-28 사용자 지시) — 종전엔 화면(로그인·가입 1~3단계)마다
+          폼 길이가 달라 카드가 늘었다 줄었고, 그때마다 사진이 다른 비율로 잘렸다.
+          높이를 830px(가장 긴 화면인 로그인 폼 817px 기준) 로 못 박고 사진 컬럼 폭을 원본 비율에서 역산하면 어느 화면에서도 같은 카드다. */}
+      <div className="relative z-10 flex w-full max-w-[1180px] rounded-3xl border border-white/15 bg-white/5 shadow-2xl backdrop-blur-md md:h-[min(830px,calc(100dvh-5rem))]">
+        {/* 좌측 — 현장 사진. 파일: public/brand/mainpic0.jpg (723×975 세로형, 없으면 네이비 폴백).
+            ⚠ 2026-08-28 에 원본(820×1024)을 두 번 잘랐다. ①장식 프레임 선 제거(좌15·우805·
+              상16·하994 픽셀 실측) → 787×975 ②「Strong Structures.」 좌우 여백 축소(문구 여백이
+              66·64px 이라 절반씩) → **723×975**. 파일을 되돌리면 아래 aspect 도 함께 되돌릴 것 —
+              둘이 어긋나면 그 차이만큼 사진이 잘린다.
+            ★ 높이의 기준은 **사진**이다(2026-08-28 사용자 지시 — 옆 폼·버튼에 맞추지 말 것).
+              종전엔 폼 높이에 사진을 맞춰(bg-cover) 위저드 1단계처럼 폼이 짧으면 포스터가 잘렸다.
+              지금은 aspect 로 원본 비율을 고정해 사진이 카드 최소 높이를 정하고, 폼이 그보다
+              길어질 때만(3단계 등) 카드가 늘어난다 — 그때도 사진은 비율을 지킨 채 위에 남는다. */}
+        {/* 폭을 원본 비율(723/975)에서 역산 — 카드 높이 830px × 0.742 ≈ 615px.
+            컨테이너 비율 = 파일 비율이라 bg-cover 여도 **잘리는 데가 없다**. */}
+        <div className="relative hidden h-full shrink-0 aspect-[723/975] overflow-hidden rounded-l-3xl md:block">
           <div
-            className="h-full w-full bg-cover"
+            className="absolute inset-0 bg-cover"
             style={{
               backgroundColor: "#13243f",
               backgroundImage: "url(/brand/mainpic0.jpg)",
@@ -786,9 +832,10 @@ export function LoginScreen({
           />
         </div>
 
-        {/* 우측 — 로그인 폼 (좌측 사진과 1:1 동일 비율) */}
+        {/* 우측 — 로그인 폼. 고정된 카드 높이 안에서 세로 중앙, 내용이 넘치면 이 칸만 스크롤한다
+            (카드·사진 크기는 그대로 유지 — 넘치는 쪽이 양보한다). */}
         <div
-          className={`flex w-full flex-col items-center px-6 md:w-1/2 ${
+          className={`no-scrollbar flex w-full flex-col items-center justify-center overflow-y-auto px-6 md:min-w-0 md:flex-1 ${
             compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-6" : "py-10"
           }`}
         >
@@ -928,6 +975,7 @@ export function LoginScreen({
               type="button"
               onClick={() => {
                 setMode("signup");
+                setSignupStep(1);
                 setError(null);
                 setSignupMsg(null);
               }}
@@ -967,8 +1015,12 @@ export function LoginScreen({
         >
           <p className="text-center text-xs font-semibold uppercase tracking-wider text-white/75 drop-shadow col-span-2">
             {t.signupTitle}
+            <span className="ml-2 font-normal normal-case tracking-normal text-white/55">
+              {shownSignupStep} / {totalSignupSteps}
+            </span>
           </p>
-          {/* 가입 유형 — VitAlGuard 관리자 / 회원사 관리자. 저장은 org_type 컬럼(role 은 그대로 admin). */}
+          {/* ── 1단계 · 가입 유형 — 저장은 org_type 컬럼(role 은 그대로 admin). */}
+          {signupStep === 1 && (
           <div className="col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.orgTypeLabel}</span>
             <SlidingSegmented
@@ -976,14 +1028,15 @@ export function LoginScreen({
               indicatorClassName="rounded-xl border border-white/70 bg-white/25 backdrop-blur-md"
               items={[
                 { value: "vitalguard" as const, label: t.orgTypeVitalguard },
-                { value: "member" as const, label: t.orgTypeMember },
+                { value: "jodal" as const, label: t.orgTypeJodal },
+                { value: "kosha" as const, label: t.orgTypeKosha },
                 { value: "contractor" as const, label: t.orgTypeContractor },
               ]}
               value={sOrgType}
               onChange={(value) => {
                 setSOrgType(value);
                 // 유형이 바뀌면 고를 수 있는 상호가 달라진다 — 자사 유형은 단일이라 바로 채우고,
-                // 회원사는 비워 다시 고르게 한다(안 비우면 이전 유형의 상호가 남아 제출된다).
+                // 그 외 유형은 비워 다시 고르게 한다(안 비우면 이전 유형의 상호가 남아 제출된다).
                 setSCompany(value === "vitalguard" ? VITALGUARD_COMPANY : "");
               }}
               itemClassName={(active) =>
@@ -993,7 +1046,19 @@ export function LoginScreen({
               }
             />
           </div>
-          <label className="block">
+          )}
+          {signupStep === 1 && (
+            <LiquidMetalButton
+              type="button"
+              onClick={() => setSignupStep(stepAfterOrgType)}
+              label={t.signupNext}
+              className="mt-1 w-full col-span-2"
+            />
+          )}
+
+          {/* ── 2단계 · 회사(상호). 선택지는 1단계의 가입 유형이 정한다. */}
+          {signupStep === 2 && (
+          <label className="block col-span-2">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.companyLabel}
             </span>
@@ -1017,50 +1082,29 @@ export function LoginScreen({
               ))}
             </select>
           </label>
-          <div>
-            <span className="text-xs font-semibold text-white/90 drop-shadow">
-              {t.idLabel}
-            </span>
-            <div className="mt-1 flex items-stretch gap-2">
-              <input
-                type="text"
-                value={sId}
-                onChange={(e) => {
-                  setSId(e.target.value);
-                  setIdCheck("idle");
-                }}
-                placeholder={t.idPlaceholder}
-                autoComplete="username"
-                required
-                // min-w-0 없으면 input 이 기본 최소 폭 아래로 안 줄어 2열에서 '중복 확인' 이 카드 밖으로 넘친다.
-                className={`${FIELD_BASE} min-w-0 flex-1`}
+          )}
+          {signupStep === 2 && (
+            <>
+              <LiquidMetalButton
+                type="button"
+                onClick={() => setSignupStep(3)}
+                disabled={!sCompany}
+                label={t.signupNext}
+                className="mt-1 w-full col-span-2"
               />
               <button
                 type="button"
-                onClick={handleCheckId}
-                disabled={idCheck === "checking" || !sId.trim()}
-                className={MINI_BTN}
+                onClick={() => setSignupStep(1)}
+                className="col-span-2 pt-1 text-center text-xs font-semibold text-white/80 underline underline-offset-2 drop-shadow hover:text-sky-200"
               >
-                {idCheck === "checking" ? t.idChecking : t.idCheckBtn}
+                {t.signupBack}
               </button>
-            </div>
-            {idCheck === "available" && (
-              <p className="mt-1 text-[11px] font-semibold text-emerald-200 drop-shadow">
-                {t.idAvailable}
-              </p>
-            )}
-            {(idCheck === "taken" ||
-              idCheck === "invalid" ||
-              idCheck === "reserved") && (
-              <p className="mt-1 text-[11px] font-semibold text-red-200 drop-shadow">
-                {idCheck === "taken"
-                  ? t.idTaken
-                  : idCheck === "reserved"
-                    ? t.idReserved
-                    : t.idInvalid}
-              </p>
-            )}
-          </div>
+            </>
+          )}
+
+          {/* ── 3단계 · 나머지 입력(이름 → … → 비밀번호 확인) */}
+          {signupStep === 3 && (
+          <>
           <label className="block">
             <span className="text-xs font-semibold text-white/90 drop-shadow">
               {t.nameLabel}
@@ -1093,92 +1137,100 @@ export function LoginScreen({
               className={`${INPUT_CLASS} [color-scheme:dark]`}
             />
           </label>
-          <div className="col-span-2">
-            <span className={LABEL_PHONE_HIDDEN}>{t.phoneLabel}</span>
-            <div className="mt-1 flex items-center gap-1.5">
-              <select
-                value={phonePrefix}
-                onChange={(e) => setPhonePrefix(e.target.value)}
-                style={SELECT_CHEVRON}
-                className={`${SELECT_BASE} w-24`}
-              >
-                {PHONE_PREFIXES.map((p) => (
-                  <option key={p} value={p} className="text-black">
-                    {p}
-                  </option>
-                ))}
-              </select>
-              <span className="text-white/50">-</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                maxLength={4}
-                value={phoneMid}
-                onChange={(e) =>
-                  setPhoneMid(e.target.value.replace(/\D/g, "").slice(0, 4))
-                }
-                placeholder="0000"
-                required
-                className={`${FIELD_BASE} w-full flex-1 text-center`}
-              />
-              <span className="text-white/50">-</span>
-              <input
-                type="tel"
-                inputMode="numeric"
-                maxLength={4}
-                value={phoneLast}
-                onChange={(e) =>
-                  setPhoneLast(e.target.value.replace(/\D/g, "").slice(0, 4))
-                }
-                placeholder="0000"
-                required
-                className={`${FIELD_BASE} w-full flex-1 text-center`}
-              />
-            </div>
-          </div>
-          <label className="block col-span-2">
-            <span className={LABEL_PHONE_HIDDEN}>{t.carrierLabel}</span>
-            <div className="mt-1 flex gap-1.5">
-              <select
-                value={carrierBase}
-                onChange={(e) => {
-                  setCarrierBase(e.target.value);
-                  if (e.target.value !== "알뜰폰") setMvno(""); // 일반 3사로 바꾸면 망 선택 해제
-                }}
-                required
-                style={SELECT_CHEVRON}
-                className={`${SELECT_BASE} min-w-0 flex-1`}
-              >
-                <option value="" className="text-black">
-                  {t.carrierSelect}
-                </option>
-                {CARRIERS.map((c) => (
-                  <option key={c} value={c} className="text-black">
-                    {c}
-                  </option>
-                ))}
-              </select>
-              {carrierBase === "알뜰폰" && (
+          {/* 통신사(30%) + 연락처(70%) — 한 줄, 통신사 먼저. 라벨은 칸마다 따로 둔다(2026-08-28
+              사용자 지시 — 합친 라벨로는 어느 칸이 무엇인지 구분이 안 된다). 폭 배분 근거 =
+              통신사 텍스트는 짧고(SKT 등) 전화번호는 3분절로 길다. */}
+          <div className="col-span-2 flex justify-between gap-1.5">
+            {/* 통신사 칸을 30%→25% 로 줄여 연락처와의 사이 여백을 벌린다(2026-08-28 사용자 지시 —
+                여백은 통신사 칸을 줄이는 방식으로). 남는 ~5% 가 justify-between 으로 사이 여백이 된다. */}
+            <label className="block w-[25%] min-w-0">
+              <span className={LABEL_PHONE_HIDDEN}>{t.carrierLabel}</span>
+              <div className="mt-1 flex flex-wrap gap-1.5">
                 <select
-                  value={mvno}
-                  onChange={(e) => setMvno(e.target.value)}
+                  value={carrierBase}
+                  onChange={(e) => {
+                    setCarrierBase(e.target.value);
+                    if (e.target.value !== "알뜰폰") setMvno(""); // 일반 3사로 바꾸면 망 선택 해제
+                  }}
                   required
                   style={SELECT_CHEVRON}
-                  className={`${SELECT_BASE} min-w-0 flex-1`}
-                  aria-label="알뜰폰 사용 망"
+                  className={`${SELECT_BASE} w-full min-w-0`}
                 >
                   <option value="" className="text-black">
-                    알뜰폰 통신사 선택
+                    {t.carrierSelect}
                   </option>
-                  {MVNO_NETS.map((n) => (
-                    <option key={n} value={n} className="text-black">
-                      알뜰폰 {n}
+                  {CARRIERS.map((c) => (
+                    <option key={c} value={c} className="text-black">
+                      {c}
                     </option>
                   ))}
                 </select>
-              )}
+                {carrierBase === "알뜰폰" && (
+                  <select
+                    value={mvno}
+                    onChange={(e) => setMvno(e.target.value)}
+                    required
+                    style={SELECT_CHEVRON}
+                    className={`${SELECT_BASE} w-full min-w-0`}
+                    aria-label="알뜰폰 사용 망"
+                  >
+                    <option value="" className="text-black">
+                      알뜰폰 통신사 선택
+                    </option>
+                    {MVNO_NETS.map((n) => (
+                      <option key={n} value={n} className="text-black">
+                        알뜰폰 {n}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </label>
+            <div className="w-[70%] min-w-0">
+              <span className={LABEL_PHONE_HIDDEN}>{t.phoneLabel}</span>
+              <div className="mt-1 flex items-center gap-1.5">
+                <select
+                  value={phonePrefix}
+                  onChange={(e) => setPhonePrefix(e.target.value)}
+                  style={SELECT_CHEVRON}
+                  className={`${SELECT_BASE} w-20`}
+                  aria-label={t.phoneLabel}
+                >
+                  {PHONE_PREFIXES.map((p) => (
+                    <option key={p} value={p} className="text-black">
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-white/50">-</span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={phoneMid}
+                  onChange={(e) =>
+                    setPhoneMid(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  placeholder="0000"
+                  required
+                  className={`${FIELD_BASE} w-full min-w-0 flex-1 text-center`}
+                />
+                <span className="text-white/50">-</span>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={phoneLast}
+                  onChange={(e) =>
+                    setPhoneLast(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  }
+                  placeholder="0000"
+                  required
+                  className={`${FIELD_BASE} w-full min-w-0 flex-1 text-center`}
+                />
+              </div>
             </div>
-          </label>
+          </div>
           <div className="col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.emailLabel}</span>
             <div className="mt-1 flex items-center gap-1.5">
@@ -1192,34 +1244,89 @@ export function LoginScreen({
                 className={`${FIELD_BASE} w-full flex-1`}
               />
               <span className="text-white/60">@</span>
-              <select
-                value={emailDomain}
-                onChange={(e) => setEmailDomain(e.target.value)}
-                style={SELECT_CHEVRON}
-                className={`${SELECT_BASE} flex-1`}
-              >
-                {EMAIL_DOMAINS.map((d) => (
-                  <option key={d} value={d} className="text-black">
-                    {d}
+              {/* 도메인 = **탭 하나**(2026-08-28 사용자 지시 — 입력칸과 화살표를 분리하지 않는다).
+                  겉보기엔 화살표 달린 입력 필드 하나다: 그 안에 도메인을 바로 치고(반투명
+                  플레이스홀더 「직접 입력」), 우측 화살표를 누르면 목록(직접 입력·프리셋)이
+                  열린다 — 프리셋을 고르면 **같은 칸에** 채워지고 이어서 수정도 된다.
+                  구현 = 입력 위에 투명 셀렉트를 화살표 폭만큼 겹쳐 놓은 것. */}
+              <div className="relative min-w-0 flex-1">
+                <input
+                  type="text"
+                  value={emailDomainCustom}
+                  onChange={(e) => setEmailDomainCustom(e.target.value.replace(/[\s@]/g, ""))}
+                  placeholder={t.emailDomainCustom}
+                  style={SELECT_CHEVRON}
+                  className={`${FIELD_BASE} w-full min-w-0 pr-9`}
+                />
+                <select
+                  // 친 값이 프리셋과 같으면 목록에서 그 항목에 체크가 가게, 아니면 직접 입력에.
+                  value={EMAIL_DOMAINS.includes(emailDomainCustom) ? emailDomainCustom : CUSTOM_DOMAIN}
+                  onChange={(e) =>
+                    setEmailDomainCustom(e.target.value === CUSTOM_DOMAIN ? "" : e.target.value)
+                  }
+                  className="absolute inset-y-0 right-0 w-10 cursor-pointer opacity-0"
+                  aria-label="이메일 도메인 선택"
+                >
+                  <option value={CUSTOM_DOMAIN} className="text-black">
+                    {t.emailDomainCustom}
                   </option>
-                ))}
-                <option value={CUSTOM_DOMAIN} className="text-black">
-                  {t.emailDomainCustom}
-                </option>
-              </select>
+                  {EMAIL_DOMAINS.map((d) => (
+                    <option key={d} value={d} className="text-black">
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            {emailDomain === CUSTOM_DOMAIN && (
+          </div>
+          {/* 계정 묶음 — 관리자 ID(중복확인) → 비밀번호 → 비밀번호 확인 순 세로 배치
+              (2026-08-28 사용자 지시 "관리자 ID 비밀번호 위에 위치"). */}
+          <div className="col-span-2">
+            <span className="text-xs font-semibold text-white/90 drop-shadow">
+              {t.idLabel}
+            </span>
+            <div className="mt-1 flex items-stretch gap-2">
               <input
                 type="text"
-                value={emailDomainCustom}
-                onChange={(e) => setEmailDomainCustom(e.target.value.replace(/[\s@]/g, ""))}
-                placeholder={t.emailDomainPlaceholder}
-                className={INPUT_CLASS}
+                value={sId}
+                onChange={(e) => {
+                  setSId(e.target.value);
+                  setIdCheck("idle");
+                }}
+                placeholder={t.idPlaceholder}
+                autoComplete="username"
+                required
+                className={`${FIELD_BASE} min-w-0 flex-1`}
               />
+              <button
+                type="button"
+                onClick={handleCheckId}
+                disabled={idCheck === "checking" || !sId.trim()}
+                className={MINI_BTN}
+              >
+                {idCheck === "checking" ? t.idChecking : t.idCheckBtn}
+              </button>
+            </div>
+            {idCheck === "available" && (
+              <p className="mt-1 text-[11px] font-semibold text-emerald-200 drop-shadow">
+                {t.idAvailable}
+              </p>
             )}
-
+            {(idCheck === "taken" ||
+              idCheck === "invalid" ||
+              idCheck === "reserved") && (
+              <p className="mt-1 text-[11px] font-semibold text-red-200 drop-shadow">
+                {idCheck === "taken"
+                  ? t.idTaken
+                  : idCheck === "reserved"
+                    ? t.idReserved
+                    : t.idInvalid}
+              </p>
+            )}
           </div>
-          <label className="block">
+          {/* 비밀번호 → 그 아래 비밀번호 확인 — 세로 배치(2026-08-28 사용자 지시).
+              규칙 메시지는 비밀번호 바로 아래, 불일치 메시지는 확인 칸 바로 아래에 둔다. */}
+          <label className="block col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.pwLabel}</span>
             <input
               type="password"
@@ -1234,7 +1341,12 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          <label className="block">
+          {pwVerdictMsg && (
+            <p className="col-span-2 text-[11px] font-semibold text-amber-200 drop-shadow">
+              {pwVerdictMsg}
+            </p>
+          )}
+          <label className="block col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.pwConfirmLabel}</span>
             <input
               type="password"
@@ -1249,16 +1361,8 @@ export function LoginScreen({
               className={INPUT_CLASS}
             />
           </label>
-          {/* 비밀번호 규칙 — 입력값 기반 라이브 판정(요건을 채우면 즉시 사라짐).
-              2열에서 비밀번호·확인이 같은 행에 오도록 두 입력 뒤로 모으고, 각 메시지는 자기 입력칸 아래 열에 둔다.
-              불일치는 col-start-2 로 고정 — 규칙 메시지가 없을 때도 '확인' 칸 아래에 남아야 한다. */}
-          {pwVerdictMsg && (
-            <p className="text-[11px] font-semibold text-amber-200 drop-shadow">
-              {pwVerdictMsg}
-            </p>
-          )}
           {pwMismatchLive && (
-            <p className="text-[11px] font-semibold text-amber-200 drop-shadow col-start-2">
+            <p className="col-span-2 text-[11px] font-semibold text-amber-200 drop-shadow">
               {t.pwMismatch}
             </p>
           )}
@@ -1273,7 +1377,7 @@ export function LoginScreen({
             type="submit"
             disabled={
               submitting ||
-              !sCompany ||
+              !signupCompany ||
               !sId ||
               !sName ||
               !sBirth ||
@@ -1291,6 +1395,15 @@ export function LoginScreen({
             label={submitting ? t.signupSubmitting : t.signupSubmit}
             className="w-full col-span-2"
           />
+          <button
+            type="button"
+            onClick={() => setSignupStep(skipCompanyStep ? 1 : 2)}
+            className="col-span-2 pt-1 text-center text-xs font-semibold text-white/80 underline underline-offset-2 drop-shadow hover:text-sky-200"
+          >
+            {t.signupBack}
+          </button>
+          </>
+          )}
 
           {/* 로그인 전환 */}
           <p className="pt-1 text-center text-xs text-white/80 drop-shadow col-span-2">
@@ -1327,7 +1440,9 @@ export function LoginScreen({
               {(
                 [
                   ["vitalguard", t.orgTypeVitalguard],
-                  ["member", t.orgTypeMember],
+                  ["jodal", t.orgTypeJodal],
+                  ["kosha", t.orgTypeKosha],
+                  ["contractor", t.orgTypeContractor],
                 ] as const
               ).map(([value, label]) => (
                 <button

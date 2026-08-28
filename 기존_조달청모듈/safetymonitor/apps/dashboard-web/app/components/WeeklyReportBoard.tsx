@@ -3,7 +3,7 @@
 //   제출 시 /api/weekly-report/submit 으로 제출 이력을 DB에 영속. (검증자는 청구 수치 수정 불가 — 시공사 제출분)
 import { useEffect, useState } from "react";
 
-import { getSessionToken } from "./session-token";
+import { authHeaders, getSessionToken } from "./session-token";
 
 import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 type Check = { label: string; detail: string; ok: boolean; note: string };
@@ -52,7 +52,7 @@ export default function WeeklyReportBoard() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/api/weekly-report");
+        const res = await fetch("/api/weekly-report", { headers: authHeaders() });
         if (!res.ok) throw new Error(`보고서 생성 실패 (${res.status})`);
         const j = (await res.json()) as Report;
         if (alive) setReport(j);

@@ -13,6 +13,7 @@ import { buildBulkInsert, chunkSizeFor } from "./bulk-insert";
 import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
+import { SITE_OFFICER_ORG_TYPES } from "./org-type";
 import { notifyAlertTelegram } from "./telegram";
 
 export type { CalendarEventScope, CommentScope, MediaScope };
@@ -832,11 +833,16 @@ async function initSchema(): Promise<void> {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_phone TEXT;
     -- 생년월일(가입 필수) — 비밀번호에 생년월일을 못 넣게 막는 판정 입력이기도 하다.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS birth_date TEXT;
-    -- 가입 유형 — VitAlGuard 소속 관리자('vitalguard') vs 회원사 관리자('member').
+    -- 가입 유형 — 담당 업무 축(lib/org-type.ts 가 단일 소스).
     -- ★ role 을 늘리지 않고 이 컬럼으로 나눈다. 배포된 iOS 앱이 role 을 owner/admin/worker 셋만
-    -- 해석해서(modeForServerRole), 새 role 값을 주면 앱 로그인이 실패한다. 기존 행은 'member' 가 되고
-    -- VitAlGuard 소속은 별도 백필로 올린다.
+    -- 해석해서(modeForServerRole), 새 role 값을 주면 앱 로그인이 실패한다.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS org_type TEXT NOT NULL DEFAULT 'member';
+    -- 2026-08-28 조직 유형 재편(사용자 결정) — 'member' 하나가 조달청·공단 검증 화면을 다 보던 것을
+    -- 담당 업무로 쪼갠다. jodal=안전관리비 · kosha=공단 보조금 · test=양쪽 다 보는 시연 계정.
+    -- ⚠ 멱등적이다 — WHERE 가 'member' 만 잡으므로 두 번째 실행부터는 0행이다(신규 가입은 jodal/kosha 로
+    --   들어오지 이 UPDATE 를 타지 않는다). 회사명으로 가르는 것은 이 1회 이전에 한정된다.
+    UPDATE users SET org_type = 'test'  WHERE org_type = 'member' AND company = '행정안전부';
+    UPDATE users SET org_type = 'jodal' WHERE org_type = 'member';
     -- 임시 비밀번호 만료(ISO) — owner 가 재설정을 승인하면 채워지고, 본인이 비번을 바꾸면 NULL 로 돌아간다.
     -- 이 컬럼 하나가 "임시 비번 상태인가"와 "언제까지인가"를 함께 표현한다(플래그 컬럼을 따로 두지 않는 이유).
     -- 만료가 지나면 로그인 자체를 거부한다 — 클라이언트 '변경 강제' 화면은 우회되므로 만료가 실질 방어다.
@@ -4007,9 +4013,29 @@ export async function setUserSiteOfficer(
   id: number,
   value: boolean,
 ): Promise<UserRow | null> {
+  // 부여(true)는 안전관리비 영역을 보는 유형만 — 공단 관리자(kosha)·현장 관리자(contractor)는 거부한다
+  // (2026-08-28 사용자 결정). 회수(false)는 유형과 무관하게 항상 통과해야 한다 —
+  // 유형이 바뀌어 자격을 잃은 계정의 잔여 플래그를 내릴 길이 막히면 안 된다.
+  // ⚠ 유형 목록을 SQL 에 적지 않는다 — lib/org-type.ts 의 규칙에서 유도한 값을 파라미터로 넘긴다.
   const { rows } = await q<UserRow>(
-    `UPDATE users SET site_officer = $1 WHERE id = $2 AND ($1 = false OR org_type <> 'contractor') RETURNING *`,
-    [value, id],
+    `UPDATE users SET site_officer = $1 WHERE id = $2 AND ($1 = false OR org_type = ANY($3)) RETURNING *`,
+    [value, id, SITE_OFFICER_ORG_TYPES],
+  );
+  return rows[0] ?? null;
+}
+
+// 가입 유형 변경 — owner 가 사용자 관리에서 지정(자가취득 불가). 'test'(양쪽 검증 화면 열람)를
+// 부여하는 유일한 경로다 — 가입 폼에는 노출되지 않는다(SIGNUP_ORG_TYPES).
+// ⚠ 유형을 내리면 담당관 자격을 잃을 수 있다. 같은 UPDATE 에서 site_officer 를 함께 정리하지 않으면
+//   "공단 관리자인데 안전관리비를 확정할 수 있는" 계정이 남는다(부여 게이트만으론 못 막는다).
+export async function setUserOrgType(id: number, orgType: string): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users
+        SET org_type = $1,
+            site_officer = CASE WHEN $1 = ANY($3) THEN site_officer ELSE false END
+      WHERE id = $2
+      RETURNING *`,
+    [orgType, id, SITE_OFFICER_ORG_TYPES],
   );
   return rows[0] ?? null;
 }

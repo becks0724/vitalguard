@@ -11,6 +11,9 @@ import {
   type ReactNode,
 } from "react";
 
+import { areasForOrgType, canViewArea, isContractorOrgType } from "../../lib/org-type";
+import { AREA_HOME, areaForPath } from "../../lib/verification-area";
+
 import { LoginScreen } from "./LoginScreen";
 import { SessionKeeper } from "./SessionKeeper";
 import { getSessionOrgType, ROLE_KEY, SESSION_KEY } from "./session-token";
@@ -31,17 +34,35 @@ export function LoginGate({ children }: { children: ReactNode }) {
   // null = 판정 전(스플래시), false = 미인증, true = 인증
   const [authed, setAuthed] = useState<boolean | null>(null);
 
-  // ★ 시공사 세션은 제출 화면(/contractor)으로만 들어간다(2026-08-27 역할 설계 — 시공사는
-  //   근거 문서 제출까지). 서버는 verifyBasicAuth 가 기본 거부하므로 이 리다이렉트는 UX 용이고,
-  //   우회해도 관제 API 가 401 을 준다. orgType 은 토큰 클레임에서 읽는다(경로 셋 공통).
+  // ★ 현장 관리자(내부 키 contractor) 세션은 제출 화면(/contractor)으로만 들어간다(2026-08-27
+  //   역할 설계 — 근거 문서 제출까지). 서버는 verifyBasicAuth 가 기본 거부하므로 이 리다이렉트는
+  //   UX 용이고, 우회해도 관제 API 가 401 을 준다. orgType 은 토큰 클레임에서 읽는다(경로 셋 공통).
   const contractorMisrouted =
     authed === true &&
-    getSessionOrgType() === "contractor" &&
+    isContractorOrgType(getSessionOrgType()) &&
     typeof window !== "undefined" &&
     !window.location.pathname.startsWith("/contractor");
   useEffect(() => {
     if (contractorMisrouted) window.location.replace("/contractor");
   }, [contractorMisrouted]);
+
+  // ★ 검증 화면 소속별 분리(2026-08-28) — 조달청 관리자는 안전관리비만, 공단 관리자는 보조금만.
+  //   영역 밖 경로로 들어오면 자기 영역 첫 화면으로 되돌린다. 이것도 UX 이고 실제 차단은
+  //   서버(verifyAreaAccess)가 한다 — 리다이렉트를 우회해도 데이터 API 가 403 을 준다.
+  // ⚠ 현장 관리자는 위 분기가 이미 처리하므로 여기서 제외한다. 둘 다 걸리면 리다이렉트가
+  //   서로를 덮어써 무한 이동이 된다(/contractor 는 안전관리비 영역이라 두 규칙이 겹친다).
+  const areaMisrouted = (() => {
+    if (authed !== true || typeof window === "undefined") return null;
+    const orgType = getSessionOrgType();
+    if (isContractorOrgType(orgType)) return null;
+    const area = areaForPath(window.location.pathname);
+    if (!area || canViewArea(orgType, area)) return null;
+    const allowed = areasForOrgType(orgType);
+    return allowed.length > 0 ? AREA_HOME[allowed[0]!] : "/";
+  })();
+  useEffect(() => {
+    if (areaMisrouted) window.location.replace(areaMisrouted);
+  }, [areaMisrouted]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -129,8 +150,8 @@ export function LoginGate({ children }: { children: ReactNode }) {
     );
   }
 
-  // 시공사 오라우팅 — 이동이 끝날 때까지 관제 화면을 렌더하지 않는다(순간 노출 방지).
-  if (contractorMisrouted) return null;
+  // 오라우팅 — 이동이 끝날 때까지 화면을 렌더하지 않는다(남의 영역 순간 노출 방지).
+  if (contractorMisrouted || areaMisrouted) return null;
 
   return (
     <SessionContext.Provider value={{ logout }}>

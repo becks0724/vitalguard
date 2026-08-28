@@ -114,13 +114,18 @@ export function LiquidMetalButton({
           pointerEvents: "none",
         }}
       />
-      {/* 어두운 메탈 마감 오버레이 — 셰이더 위 대비 확보 */}
+      {/* 어두운 메탈 마감 오버레이 — 셰이더 위 대비 확보.
+          호버하면 파란 마감으로 바뀐다(2026-08-28 사용자 지시). 색만 갈아끼우고 전환은
+          transition 이 맡아 "반응형"으로 스며들게 한다 — 셰이더·리플은 그대로 산다.
+          ⚠ disabled 는 제외 — 못 누르는 버튼이 눌릴 것처럼 보이면 안 된다. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-full"
+        className="pointer-events-none absolute inset-0 rounded-full transition-[background] duration-200"
         style={{
           background:
-            "linear-gradient(180deg, rgba(22,22,22,0.42) 0%, rgba(0,0,0,0.74) 100%)",
+            hovered && !disabled
+              ? "linear-gradient(180deg, rgba(37,99,235,0.55) 0%, rgba(29,78,216,0.88) 100%)"
+              : "linear-gradient(180deg, rgba(22,22,22,0.42) 0%, rgba(0,0,0,0.74) 100%)",
         }}
       />
       {/* 라벨 */}

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { isAllowedCompanyForOrgType } from "../../../../../lib/companies";
 import { createGoogleUser } from "../../../../../lib/db";
 import { readCookie, verifyPayload } from "../../../../../lib/google-oauth";
-import { DEFAULT_ORG_TYPE, isOrgType } from "../../../../../lib/org-type";
+import { DEFAULT_ORG_TYPE, isSignupOrgType } from "../../../../../lib/org-type";
 
 export async function POST(request: Request) {
   const ticket = verifyPayload(readCookie(request, "vg_gsignup"));
@@ -40,12 +40,13 @@ export async function POST(request: Request) {
   if (!/^[0-9+\-\s]{7,20}$/.test(tel)) {
     return NextResponse.json({ ok: false, error: "연락처 형식이 올바르지 않습니다." }, { status: 400 });
   }
-  // 가입 유형 — 미지정이면 회원사 관리자. 목록 밖 값은 거부.
+  // 가입 유형 — 미지정이면 조달청 관리자(DEFAULT_ORG_TYPE). 목록 밖 값은 거부.
   // 상호 검증이 유형에 의존하므로 유형을 먼저 확정한다.
-  if (orgType !== undefined && !isOrgType(orgType)) {
+  // ⚠ 가입 경로라 isSignupOrgType — 'test' 는 최고관리자만 지정한다(register 와 동일 규칙).
+  if (orgType !== undefined && !isSignupOrgType(orgType)) {
     return NextResponse.json({ ok: false, error: "가입 유형이 올바르지 않습니다." }, { status: 400 });
   }
-  const kind = isOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
+  const kind = isSignupOrgType(orgType) ? orgType : DEFAULT_ORG_TYPE;
   // B2B — 승인된 기업(상호)만, 그리고 그 가입 유형이 쓸 수 있는 상호만 허용.
   if (!isAllowedCompanyForOrgType(coName, kind)) {
     return NextResponse.json(
