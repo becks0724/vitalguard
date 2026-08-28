@@ -59,11 +59,14 @@ class FallShadowReporter(
         item["accelMagnitudeG"] = v.peakG
         // ★ 추적성은 모듈의 계약이다(README) — 이것이 없으면 사후 재현이 불가능하다.
         item["fallTrace"] = v.trace
-        // 기각·무해는 여기서 결말 확정(카운트다운이 안 열리므로 후속 항목이 없다).
-        if (v.decision != FallMLModule.Decision.DANGER) item["fallPromptOutcome"] = "not_alerted"
+        // 카운트다운(=경보 대리)은 danger 이면서 경보 게이트(2.8G)를 넘은 것만 연다.
+        // 게이트 미달 danger 도 판정·trace 는 그대로 남는다 — 게이트가 놓친 낙상의 사후 실측용(v6.2.0).
+        val opensCountdown = v.decision == FallMLModule.Decision.DANGER && v.alertGatePassed
+        // 카운트다운이 안 열리는 판정은 결말이 그 자리에서 확정된다(후속 항목 없음).
+        if (!opensCountdown) item["fallPromptOutcome"] = "not_alerted"
         enqueue(item)
 
-        if (v.decision == FallMLModule.Decision.DANGER) {
+        if (opensCountdown) {
             // 진행 중 카운트다운이 있으면 애플과 같은 규칙 — 새 후보가 이긴다(이전 후보는 결말 없음).
             activeCandidateId = id
             countdownStartedAtMs = nowMs()

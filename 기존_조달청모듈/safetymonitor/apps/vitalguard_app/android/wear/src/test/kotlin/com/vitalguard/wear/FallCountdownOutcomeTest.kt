@@ -25,7 +25,11 @@ class FallCountdownOutcomeTest {
         decision = FallMLModule.Decision.DANGER,
         workProb = 0.23, nonrecoveryProb = 0.64, impactProb = 0.25,
         moduleVersion = FallMLModule.VERSION,
-        sampleCount = 649, effectiveHz = 54.083333333333336, peakG = 1.89,
+        // peakG 는 경보 게이트(2.8) 위 값이어야 한다 — v6.2.0 부터 게이트 미달 danger 는
+        // 카운트다운을 열지 않고 candidate 에서 not_alerted 로 확정된다(결정 1 · 2026-08-28).
+        // 종전 실측값 1.89 는 이제 그 경로로 빠지므로, 이 시험의 보장(결말 항목 발행)은
+        // 게이트 통과 danger 에 대해서만 성립한다.
+        sampleCount = 649, effectiveHz = 54.083333333333336, peakG = 3.2,
         judgedAt = Instant.ofEpochMilli(0L),
     )
 

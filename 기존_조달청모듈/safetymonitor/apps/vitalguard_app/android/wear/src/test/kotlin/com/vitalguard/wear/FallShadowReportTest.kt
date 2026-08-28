@@ -27,11 +27,11 @@ class FallShadowReportTest {
     private val items = mutableListOf<Map<String, Any>>()
     private val reporter = FallShadowReporter(enqueue = { items.add(it) }, nowMs = { now })
 
-    private fun verdict(decision: FallMLModule.Decision) = FallMLModule.Verdict(
+    private fun verdict(decision: FallMLModule.Decision, peakG: Double = 3.2) = FallMLModule.Verdict(
         decision = decision,
         workProb = 0.11, nonrecoveryProb = 0.80, impactProb = 0.87,
         moduleVersion = FallMLModule.VERSION,
-        sampleCount = 600, effectiveHz = 50.0, peakG = 3.2,
+        sampleCount = 600, effectiveHz = 50.0, peakG = peakG,
         judgedAt = Instant.ofEpochMilli(now),
     )
 
@@ -96,6 +96,37 @@ class FallShadowReportTest {
         // 결말 후에는 카운트다운이 닫힌다 — 추가 움직임이 항목을 만들면 안 된다.
         feedOneSecond(moving = true)
         assertEquals(2, items.size)
+    }
+
+    @Test
+    fun `게이트 미달 danger 는 카운트다운 없이 not_alerted 로 그 자리에서 확정된다`() {
+        // v6.2.0 경보 게이트 — 피크 2.8G 미만이면 danger 라도 카운트다운(=경보)에 못 들어간다.
+        reporter.onVerdict(verdict(FallMLModule.Decision.DANGER, peakG = 2.0))
+        assertEquals(1, items.size)
+        val c = items[0]
+        assertEquals("not_alerted", c["fallPromptOutcome"])
+        // 판정·trace 는 그대로 남는다 — 게이트가 놓친 낙상의 사후 실측용.
+        @Suppress("UNCHECKED_CAST")
+        val trace = c["fallTrace"] as Map<String, Any>
+        assertEquals("danger", trace["decision"])
+        assertEquals(false, trace["alert_gate_passed"])
+        assertEquals(FallMLModule.ALERT_GATE_G, trace["alert_gate_g"] as Double, 1e-9)
+        // 카운트다운이 안 열렸으니 이후 정지 30초가 결말을 만들면 안 된다.
+        repeat(31) { feedOneSecond(moving = false) }
+        assertEquals(1, items.size)
+    }
+
+    @Test
+    fun `게이트 이상 danger 는 종전대로 카운트다운이 열린다 — trace 에 통과 표식`() {
+        reporter.onVerdict(verdict(FallMLModule.Decision.DANGER, peakG = FallMLModule.ALERT_GATE_G))
+        assertEquals(1, items.size)
+        assertNull(items[0]["fallPromptOutcome"])          // 결말은 카운트다운이 정한다
+        @Suppress("UNCHECKED_CAST")
+        val trace = items[0]["fallTrace"] as Map<String, Any>
+        assertEquals(true, trace["alert_gate_passed"])
+        repeat(31) { feedOneSecond(moving = false) }        // 정지 30초 → 무반응 확정
+        assertEquals(2, items.size)
+        assertEquals("auto_escalated", items[1]["fallPromptOutcome"])
     }
 
     @Test

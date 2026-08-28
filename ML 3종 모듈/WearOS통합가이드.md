@@ -28,8 +28,11 @@ implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
    `ImuResampler`(모듈 소속, v6.1.3)를 거쳐 50Hz 격자로 접어서 로거에 먹일 것.
    배포 확인 지표 = trace 의 `effective_hz` 가 ~50.0 (종전 52~54면 구본).
 2. **로거**: 변환된 6축 + totalG 를 `ImuWindowLogger.ingest(..., nowNs = event.timestamp)` 로 매 샘플 공급.
-3. **판정**: `logger.onWindow = { w -> module.assess(w) }` → `Verdict.decision` 이 `DANGER` 면 카운트다운.
-   `Verdict.trace` 는 신고 payload·로그에 그대로 실을 것 (README 추적성 계약 — `module_version` 포함).
+3. **판정**: `logger.onWindow = { w -> module.assess(w) }` → 판정은 `FallShadowReporter.onVerdict(v)` 로 넘긴다.
+   ⚠ v6.2.0 경보 게이트 — `DANGER` 라도 피크가 2.8G(`FallMLModule.ALERT_GATE_G`) 미만이면 리포터가
+   카운트다운을 열지 않고 `not_alerted` 로 확정한다(판정·trace 기록은 그대로 — 게이트가 놓친 낙상의
+   사후 실측용). 배포 확인 지표 = trace 에 `alert_gate_g`·`alert_gate_passed` 키 존재(구본엔 없음).
+   `Verdict.trace` 는 신고 payload·로그에 그대로 실을 것 (통합가이드 ⑥ trace 계약 — additive-only).
 4. **카운트다운**: `CountdownGuard.start()` 후 매 샘플 `feed(totalG)`. 버튼 → `cancelByUser()`.
 
 ## ONNX 모델 출처·검증 (2026-08-27)
