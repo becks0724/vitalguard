@@ -22,7 +22,6 @@ import { stripComments } from "./test-support/strip-comments";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const vworld = readFileSync(join(here, "..", "app", "lib", "vworld.ts"), "utf8");
-const fmt = readFileSync(join(here, "..", "app", "lib", "address-format.ts"), "utf8");
 const route = readFileSync(join(here, "..", "app", "api", "app", "address", "route.ts"), "utf8");
 const media = readFileSync(
   join(here, "..", "..", "vitalguard_app", "ios", "Runner", "MediaCapture.swift"),
