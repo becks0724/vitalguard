@@ -37,8 +37,10 @@
 - [x] `MediaCapture.resolveAddress` 를 서버 호출로 교체 (`serverAddress` 신설)
 - [x] 실패 시 CLGeocoder 폴백 + `(기기 추정)` 표기 (`deviceAddress` 로 분리)
 - [x] 표기 규칙(도로명/지번)을 **서버가 정한다** — `display` 한 필드.
-      도로명 우선으로 뒀다(2014년부터 법정 표준). 지번으로 바꾸려면 `address-format.ts`
-      의 `display: road ?? jibun` 한 줄만 뒤집고 **앱은 안 건드린다**.
+      ⚠ **지번 우선**이다(`display: jibun ?? road`). 처음엔 도로명 우선으로 뒀다가
+      VWorld 로 갈아탄 뒤 실측을 보고 뒤집었다 — `type=ROAD` 가 촬영지점·하남산단·계림동
+      **3/3 NOT_FOUND** 라 우리 현장에 도로명이 아예 없다. 근거는 context-notes 결정 ④.
+      뒤집으려면 그 한 줄만 고치고 **앱은 안 건드린다**.
 - [x] 각인 형식 변경의 파장 확인
   - `lib/ocr-stamp.ts` 파서 — 새 형식·폴백 형식 둘 다 읽는 것을 가드로 고정
   - `2026-08-22-stamp-accuracy` — 좌표 줄만 보므로 무영향
