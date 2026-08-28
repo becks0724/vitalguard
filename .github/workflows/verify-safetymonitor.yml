@@ -1,15 +1,24 @@
 # safetymonitor 모노레포의 typecheck·lint·test 를 push/PR 마다 강제하는 CI (lessons L-17)
 name: Verify safetymonitor
 
+# ⚠ 문서만 바뀐 커밋에는 돌지 않는다(2026-08-28) — Free 플랜 Actions 2,000분/월을 8월에
+#   **정확히 100% 소진**해 CI 전체가 멈췄다. 최근 100건을 세어 보니 docs/chore 커밋이 유발한
+#   실행이 31건(31%)이었고, 이 워크플로만 15건이었다(2분×15 = 30분).
+#   ★ `!` 부정 패턴은 **나중 줄이 이긴다** — 제외 규칙을 포함 규칙 뒤에 둘 것.
+#   ⚠ 워크플로 파일 자신은 제외 뒤에 다시 넣는다. 안 그러면 CI 설정을 고쳐도 검증이 안 돈다.
 on:
   push:
     branches: [main]
     paths:
       - '기존_조달청모듈/safetymonitor/**'
+      - '!기존_조달청모듈/safetymonitor/docs/**'
+      - '!기존_조달청모듈/safetymonitor/**/*.md'
       - '.github/workflows/verify-safetymonitor.yml'
   pull_request:
     paths:
       - '기존_조달청모듈/safetymonitor/**'
+      - '!기존_조달청모듈/safetymonitor/docs/**'
+      - '!기존_조달청모듈/safetymonitor/**/*.md'
       - '.github/workflows/verify-safetymonitor.yml'
 
 permissions:
