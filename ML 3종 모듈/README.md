@@ -25,21 +25,27 @@ WearOS통합가이드.md  갤럭시워치 통합 절차 (애플워치는 통합�
 작업기록.md      모듈 작업 로그 (모든 변경은 여기 기록)
 ```
 
-## 판정 구조 (v6.1.3)
+## 판정 구조 (v6.2.0)
 
 ```
 12초 윈도(충격 전2s+후10s) → FallMLModule.assess()
   ① work_veto p≥0.675 → veto_work (기각)          [기각권 — precision 0.97]
-  ② recovery 비회복 p≥0.35 → danger → CountdownGuard [주판정 — 애매하면 위험]
-     └ 30초: 버튼 취소 ∨ 지속움직임 자동취소 ∨ 무반응→확정
+  ② recovery 비회복 p≥0.35 → danger                 [주판정 — 애매하면 위험]
+     └ 경보 게이트: 피크 ≥2.8G(ALERT_GATE_G) 일 때만 CountdownGuard 진입 (v6.2.0)
+        └ 30초: 버튼 취소 ∨ 지속움직임 자동취소 ∨ 무반응→확정
+        └ 게이트 미달 danger 는 not_alerted 확정 — 단 판정·trace 는 기록(사후 실측용)
   ③ impact p → 증거 첨부 전용 (거부권 없음 — fail-open 원칙)
 ```
 
 ## 추적성 (디버그 계약)
 
-`Verdict.trace`(dict)를 **신고 payload와 로그에 반드시 포함**할 것:
-module_version · decision · 확률 3종 · 샘플수 · 실효Hz · 피크G · 판정시각.
-이 정보 + 원시 윈도가 DB에 남으면 어떤 판정이든 사후 완전 재현 가능하다 (v5 사태 같은 회귀를 데이터로 잡는 장치).
+`Verdict.trace`(dict)를 **신고 payload와 로그에 반드시 포함**할 것. 키 목록의 정본은
+통합가이드 "추적정보(trace) 계약" 절 — **additive-only**(기존 키의 이름·타입·의미 불변, 추가만
+허용, 모양 판별자는 `module_version`)로 고정돼 있어(2026-08-28 결정 4) 서버가 이 모양을 근거로
+컬럼·도착 가드를 만들 수 있다.
+이 정보 + 원시 윈도가 남으면 어떤 판정이든 사후 재현 가능하다 (v5 사태 같은 회귀를 데이터로 잡는 장치).
+⚠ 저장 실태(2026-08-28 확인): 서버에 전용 컬럼은 없고 `vital_samples.raw_json` 안에 남는다 —
+"DB에 남으면"의 실체가 raw_json 이다. 조회는 `raw_json::jsonb -> 'fallTrace'`.
 
 ## 절대 규칙 (v5 사태 재발 방지 — Verification/검증절차.md)
 

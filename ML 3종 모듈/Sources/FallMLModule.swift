@@ -6,7 +6,15 @@ import Foundation
 
 final class FallMLModule {
     /// 모듈 버전 — 모델 교체·로직 변경 시 반드시 올릴 것 (추적성의 기준점)
-    static let version = "6.1.3"
+    static let version = "6.2.0"
+
+    /// 경보 게이트(G) — danger 라도 윈도 피크가 이 값 미만이면 카운트다운(=경보)에 못 들어간다.
+    /// 수집 게이트(IMUWindowLogger 1.5)와는 별개다 — 판정·섀도 기록은 계속되므로,
+    /// 이 게이트가 놓치는 낙상은 데이터로 남아 사후 실측이 가능하다.
+    /// 근거: 섀도 7일 1,431건에서 2.8G 적용 시 오탐 87% 감소(5.29→0.65건/h·애플) ·
+    ///   단 트랙A 스윕(낙상 189윈도)의 피크 P50=2.76G 라 매트 기준 낙상 절반이 이 게이트 아래다
+    ///   (완충 최악 하한). 증량 재학습 후 2.0~2.2 하향 검토(2026-08-28 결정 1).
+    static let alertGateG = 2.8
 
     struct Verdict {
         enum Decision: String {
@@ -25,12 +33,19 @@ final class FallMLModule {
         let peakG: Double
         let judgedAt: Date
 
-        /// 서버 전송·로그용 — 이 dict 가 DB에 남으면 사후 완전 재현 가능
+        /// 경보 게이트 통과 여부 — danger 여도 false 면 카운트다운을 열지 않는다(기록은 남는다).
+        var alertGatePassed: Bool { peakG >= FallMLModule.alertGateG }
+
+        /// 서버 전송·로그용 — vital_samples.raw_json 에 남는다(전용 컬럼 없음, 2026-08-28 확인).
+        /// ★ 키 계약은 additive-only 다 — 기존 키의 이름·타입·의미는 바꾸지 않고 추가만 한다.
+        ///   서버가 이 모양을 근거로 컬럼·도착 가드를 만들 수 있게 고정한 것(결정 4). 모양 판별자는
+        ///   module_version. 키 목록의 정본은 통합가이드 "추적정보(trace) 계약" 절.
         var trace: [String: Any] {
             ["module_version": moduleVersion,
              "decision": decision.rawValue,
              "p_work": workProb, "p_nonrecovery": nonrecoveryProb, "p_impact": impactProb,
              "samples": sampleCount, "effective_hz": effectiveHz, "peak_g": peakG,
+             "alert_gate_g": FallMLModule.alertGateG, "alert_gate_passed": alertGatePassed,
              "judged_at": ISO8601DateFormatter().string(from: judgedAt)]
         }
     }

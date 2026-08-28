@@ -45,11 +45,14 @@ final class FallShadowReporter {
             "fpg": v.peakG,        // 피크 G — 기존 필드(accelMagnitudeG)로 펼쳐진다
             "ftr": v.trace,        // ★ 추적성 계약 — 없으면 사후 재현 불가(README)
         ]
-        // 기각·무해는 여기서 결말 확정(카운트다운이 안 열리므로 후속 항목이 없다).
-        if v.decision != .danger { item["fpo"] = "not_alerted" }
+        // 카운트다운(=경보 대리)은 danger 이면서 경보 게이트(2.8G)를 넘은 것만 연다.
+        // 게이트 미달 danger 도 판정·trace 는 그대로 남는다 — 게이트가 놓친 낙상의 사후 실측용(v6.2.0).
+        let opensCountdown = v.decision == .danger && v.alertGatePassed
+        // 카운트다운이 안 열리는 판정은 결말이 그 자리에서 확정된다(후속 항목 없음).
+        if !opensCountdown { item["fpo"] = "not_alerted" }
         emit(item)
 
-        guard v.decision == .danger else { return }
+        guard opensCountdown else { return }
         // 진행 중 카운트다운이 있으면 새 후보가 이긴다(이전 후보는 결말 없음) — 종전 동작 유지.
         activeCandidateId = id
         countdownStartedAt = now()
