@@ -208,3 +208,28 @@ SD≤2.5 단독  오탐 26.5% · 미탐 1/7        SD≤1.5 단독  오탐  3.1%
   그리고 현장에서 "평평 ∧ 정지 5분" 은 벗음이든 의식 소실이든 **가서 봐야 하는 상태** 라 `무동작` 의 의미와 같다 — `벗음 의심` 은
   그 위에 얹는 부가 정보이지 다른 조치를 만들지 않는다.
 - 실측 ② 착용 21:51:20 → 심박 21:52:10 → 21:52:31 화면 `수신 중 · 86bpm` ✅ (트랙 라이브 실측 완결)
+
+## 참고 — 애플워치 앱이 읽는 센싱 데이터 전수 (08-28 · 코드 기준 `VitalWatch/WatchStreamer.swift` · `Runner/LocationProvider.swift`)
+
+| 구분 | 키 → 서버 열 | 출처(센서/API) | 주기 | 벗음 판별 |
+|---|---|---|---|---|
+| HK 워크아웃 | `bpm` → heart_rate | `.heartRate` ← 광학 PPG · `HKLiveWorkoutBuilder` | 5s | ✗ 벗어도 옴(붙들기) · 평평함은 표시용 후보 |
+| HK 워크아웃 | `ae` → active_energy_kcal | `.activeEnergyBurned`(심박·가속도 파생) | 5s 증분 | ✗ |
+| HK 앵커 | `stp` → steps · `flt` → flights_climbed | `.stepCount`(가속도) · `.flightsClimbed`(기압) | 세션 증분 | 벗음=0 이나 착용-정지도 0 |
+| HK 앵커 | `spo2` → spo2 | `.oxygenSaturation`(적색/적외 PPG · watchOS 가 정지 시 간헐) | 7일 14회 · p50 200분 | 너무 드묾 |
+| HK 앵커 | `hrv` → hrv_sdnn_ms | `.heartRateVariabilitySDNN` | 15분 신선도 · **워크아웃 중 배타**(08-13) | 안 옴 |
+| HK 앵커 | `rhr`·`whr` → resting/walking_heart_rate | 일 단위 파생 | 일 | ✗ |
+| HK 앵커 | `rr` → respiratory_rate | `.respiratoryRate`(수면 중) | 15분 | 거의 안 옴 |
+| HK 앵커 | `pe` → physical_effort_met · `dl` → time_in_daylight_min | `.physicalEffort`(MET 파생) · `.timeInDaylight`(주변광 누적) | 15분 | ✗ |
+| CoreMotion 50Hz | `still` → motion_still_sec | \|userAcceleration\| ≥ 0.03g 이후 경과(1Hz) | 5s | ✓ 무동작 라벨 |
+| CoreMotion 50Hz | `mv` → motion_var_mg | 60초 표준편차 ×1000 | 5s | ✗ 기각(08-19) |
+| CoreMotion 50Hz | `fpg·ftr·axes·fcid·fph·fpo·frs` → fall_* · accel_magnitude_g · peak_rotation_rad_s | userAcceleration+gravity · rotationRate → 낙상 ML 모듈(**팀원 소관 · 임의 수정 금지**) | 이벤트 | 해당 없음 |
+| WatchKit | `bat` → battery_pct | `batteryLevel`(5% 단위) | 5s | 상승=충전=벗음 · **`batteryState` 미사용** |
+| WatchKit | `wdm`·`sst`·`sar`·`seAt/seBy/seErr`·`srAt/srN`·`seq` → watch_device_model · session_* | 기기 식별·세션 상태(센서 아님) | | 세션 종료=끊김 |
+| 폰 | lat/lon/acc/ts → latitude·longitude·location_accuracy_m·location_timestamp | `CLLocationManager` 100m | | 워치 아님 |
+| 폰 앱 | manual_sos | 앱 버튼(워치 경로 없음 — `type` 는 `hrBatch`·`imuWindow` 뿐) | 이벤트 | |
+| **웹 파생(센싱 아님)** | skin_temp_c(애플은 안 보냄=null) · 화면 `≈37.3℃ 추정`=심박 기반 심부체온 · PSI · 스트레스(심박) · ambient_temp_c(기상 API) · hr_pre/post(낙상 문맥) | | | |
+
+**공개 API 에 있는데 안 읽는 것** — `WKInterfaceDevice.batteryState`(충전 중) · `HKMetadataKeyHeartRateMotionContext`(심박 표본 메타 sedentary/active) ·
+`HKHeartbeatSeries`(박동 간격 · 간헐) · `.appleSleepingWristTemperature`(수면 중만). 착용 여부 자체는 **공개 API 없음**.
+재서명 창 후보 = `chg`(batteryState) + `hrctx`(MotionContext 메타) — 둘 다 한두 줄이고, 벗은 심박 표본의 메타가 착용과 다른지는 실측해야 안다.
