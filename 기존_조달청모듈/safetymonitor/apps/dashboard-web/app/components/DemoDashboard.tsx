@@ -490,10 +490,6 @@ function computeSiteProgress(
   };
 }
 
-// 0~100% RGB 스펙트럼 (빨강→주황→노랑→초록→파랑→보라). 게이지 채움 색.
-const PROGRESS_GRADIENT =
-  "linear-gradient(90deg,#ff3b30,#ff9500,#ffd60a,#34c759,#0a84ff,#5e5ce6)";
-
 // 무사고 연속 일수 — 착수일(또는 마지막 사고 시각, 둘 중 나중) 부터 셈. 다음 100일 마일스톤까지 진행률.
 // 마지막 사고 시각 = SOS 후 보호자/119 연락 시 기록 → 무사고 카운터 초기화.
 function computeSafetyStreak(
@@ -558,6 +554,12 @@ function GaugeRow({
       setLabelRight(label.offsetWidth + 8 > filled);
     };
     measure();
+    // ⚠ 라벨은 픽셀 글꼴(`font-pixel`)이고 `font-display: swap` 이라 **나중에 도착한다.**
+    //   글꼴이 바뀌면 글자 폭이 달라져 flip 판정이 어긋나므로 로드 완료 시점에 한 번 더 잰다.
+    //   ResizeObserver 는 트랙만 보므로 이 변화를 못 잡는다.
+    if (typeof document !== "undefined" && document.fonts) {
+      document.fonts.ready.then(measure).catch(() => {});
+    }
     // 바는 flex-1 이라 창 크기·형제 폭에 따라 계속 변한다 — 한 번 재고 끝내면 어긋난다.
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
@@ -624,48 +626,83 @@ function GaugeRow({
       </div>
       {/* 우 — 게이지 바 (오른쪽 끝 안쪽에 상태 텍스트 삽입). 남는 폭을 전부 쓴다. */}
       <div
-        ref={trackRef}
-        className="relative min-w-0 flex-1 overflow-hidden rounded-md ring-1 ring-black/10 dark:ring-white/10"
-        style={{ background: PROGRESS_GRADIENT }}
+        className="relative min-w-0 flex-1 rounded-full p-[2px] ring-2 ring-ink/45 dark:ring-white/25"
         role="progressbar"
         aria-valuenow={known ? Math.round(pct) : undefined}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={ariaLabel}
       >
-        {/* 진행 지점 이후는 어둡게 가려 채움 위치 표시 (그라데이션은 0~100 고정) */}
-        <motion.div
-          className="absolute inset-y-0 right-0 bg-black/45 dark:bg-black/65"
-          initial={{ left: "0%" }}
-          animate={{ left: `${known ? pct : 0}%` }}
-          transition={fillTransition}
-        />
-        {/* 현재 위치 마커 */}
-        {known && (
+        {/* 안쪽 트랙 — 바깥 테두리와 채움 사이 여백(2026-08-28 사용자 지시)을 padding 으로 만든다.
+            ⚠ 채움·눈금·라벨은 전부 `absolute inset-*` 이라 **부모의 padding 을 무시한다.** 그래서
+              여백을 주려면 이렇게 트랙을 한 겹 더 둘 수밖에 없다(패딩만 추가하면 아무 변화가 없다).
+            ⚠ 폭 측정(labelRight 판정)의 기준도 이 트랙이다 — ref 를 바깥 div 에 두면 좌우 padding
+              6px 만큼 넓게 재어 라벨이 뒤집히는 지점이 어긋난다. */}
+        <div ref={trackRef} className="relative h-full w-full overflow-hidden rounded-full">
+          {/* 채움(2026-08-28 사용자 지시) — 종전에는 반대였다: 0~100 무지개 그라데이션을 깔고
+              진행 **이후**를 검정 반투명으로 덮었다. 그래서 남는 쪽이 남색(파랑·보라 구간 + 검정)으로
+              보였다. 이제 진행 **까지**를 칠하고 나머지는 비운다.
+              ★ 색은 `body` 토큰이다(2026-08-28 사용자 지시로 검정 → 회색). 라이트 96·100·108 /
+                다크 176·180·186 이라 테마가 알아서 뒤집힌다 — `bg-gray-500` 같은 고정색을 박으면
+                다크모드에서 대비가 무너진다.
+              ⚠ `muted`(153·153·153)를 쓰지 않은 이유 = 그 위의 흰 라벨 대비가 **2.85:1** 로
+                WCAG AA(4.5:1) 미달이다. `body` 는 5.68:1 로 통과한다.
+              ⚠ 채움과 라벨 배경은 **같은 토큰**이어야 한다. 한쪽만 바꾸면 라벨 자리에서 색이
+                끊겨 "끝만 회색"으로 보인다(2026-08-28 실제로 그렇게 나갔다).
+              ⚠ `left` 가 아니라 `width` 를 애니메이션한다. 채움은 왼쪽 끝이 고정이다. */}
           <motion.div
-            className="absolute inset-y-0 w-[2px] -translate-x-1/2 bg-white/90 shadow-[0_0_3px_rgba(0,0,0,0.5)]"
-            initial={{ left: "0%" }}
-            animate={{ left: `${pct}%` }}
+            className="absolute inset-y-0 left-0 rounded-full bg-body"
+            initial={{ width: "0%" }}
+            animate={{ width: `${known ? pct : 0}%` }}
             transition={fillTransition}
           />
-        )}
-        {/* 상태(D-day 등) — 마커에 붙인다(2026-08-28 사용자 지시).
-            ⚠ 종전에는 `right-2` 고정이라 pct 가 커지면 **마커선이 글자를 관통했다** —
-              실측: 공정률 80.5% 에서 '준공까지'의 '공'이 흰 선에 덮였다.
-            ★ 원인은 둘이 **서로 다른 기준**으로 놓여 있던 것이다(마커=pct, 라벨=오른쪽 끝).
-              어떤 값에서는 반드시 만난다. 같은 기준(pct)에 묶어야 겹침이 원천적으로 사라진다.
-            채움 쪽이 기본 — 라벨이 채움 끝을 가리켜 마커 역할을 겸한다. 좁으면 반대편으로. */}
-        <motion.span
-          ref={labelRef}
-          className={`pointer-events-none absolute inset-y-0 flex items-center whitespace-nowrap font-mono text-[10px] font-medium text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)] ${
-            labelRight ? "pl-2" : "-translate-x-full pr-2"
-          }`}
-          initial={{ left: "0%" }}
-          animate={{ left: `${known ? pct : 0}%` }}
-          transition={fillTransition}
-        >
-          {status}
-        </motion.span>
+          {/* 20칸 눈금(2026-08-28 사용자 지시 "레트로 디지털 풍") — 21st.dev `@theorcdev/8bit-progress`
+              의 retro variant 가 20분할이라 그 칸 수를 그대로 가져왔다. 그 컴포넌트 자체는 못 쓴다:
+              class-variance-authority 를 요구하는데 이 레포에 없고, 채움이 단색이라 그라데이션이 죽는다.
+              ★ div 20개를 놓지 않고 **repeating-linear-gradient 한 겹**으로 나눈다 — 칸을 요소로 만들면
+                바 폭이 유동적(flex-1)이라 소수 픽셀에서 칸마다 폭이 1px 씩 어긋난다.
+              ⚠ 구분선 색은 canvas 토큰이다. 흰색을 박으면 다크모드에서 칸이 흰 격자로 뜬다
+                (같은 실수를 이 레포가 전에 한 번 했다 — tailwind 색은 `-rgb` 채널이 단일 소스).
+              ⚠ 마커·라벨보다 **아래**에 둔다. 위에 두면 눈금선이 글자를 가로지른다.
+              ⚠ 구간을 `calc(5% - 2px)` 로 잡았다가 브라우저 렌더러가 멈췄다 — 바는 flex-1 이라
+                폭이 유동적이고, 좁아지면 5% 가 2px 밑으로 내려가 **구간이 음수**가 된다.
+                픽셀을 섞지 말고 비율로만 잡는다(4.2% 채움 + 0.8% 틈 = 한 칸 5%). */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(90deg, transparent 0 4.2%, rgb(var(--color-canvas-rgb)) 4.2% 5%)",
+            }}
+            aria-hidden="true"
+          />
+          {/* 마커는 뺐다 — 채움이 그 자리에서 끊기므로 경계가 곧 마커다. 남겨 두면 흰 선의 절반이
+              채움 위(검정), 절반이 빈 공간(흰 배경) 에 걸쳐 반쪽만 보인다. */}
+          {/* 상태(D-day 등) — 마커에 붙인다(2026-08-28 사용자 지시).
+              ⚠ 종전에는 `right-2` 고정이라 pct 가 커지면 **마커선이 글자를 관통했다** —
+                실측: 공정률 80.5% 에서 '준공까지'의 '공'이 흰 선에 덮였다.
+              ★ 원인은 둘이 **서로 다른 기준**으로 놓여 있던 것이다(마커=pct, 라벨=오른쪽 끝).
+                어떤 값에서는 반드시 만난다. 같은 기준(pct)에 묶어야 겹침이 원천적으로 사라진다.
+              채움 쪽이 기본 — 라벨이 채움 끝을 가리켜 마커 역할을 겸한다. 좁으면 반대편으로.
+              ★ 색은 놓이는 쪽에 따라 **정반대**다. 채움 위(검정)면 canvas, 빈 공간(흰 바탕)이면 ink.
+                한쪽 색으로 고정하면 flip 되는 순간 글자가 바탕에 묻는다.
+                두 토큰 다 다크모드에서 뒤집히므로 dark: 변형이 따로 필요 없다.
+              ★ 바탕색도 같이 깐다 — 20칸 눈금선이 canvas 색이라 **흰 글자와 같은 색**이 되어
+                '준공까지'의 획을 세로줄이 먹었다(실측). 글자 뒤에서만 눈금을 덮는다.
+                배경은 자기가 놓인 바닥과 같은 색이라 사각형이 따로 보이지는 않는다. */}
+          <motion.span
+            ref={labelRef}
+            className={`pointer-events-none absolute inset-y-0 flex items-center whitespace-nowrap font-pixel text-[10px] font-normal ${
+              labelRight
+              ? "rounded-l-full pl-2 pr-1 text-ink bg-canvas"
+              : "-translate-x-full rounded-r-full pl-1 pr-2 text-canvas bg-body"
+            }`}
+            initial={{ left: "0%" }}
+            animate={{ left: `${known ? pct : 0}%` }}
+            transition={fillTransition}
+          >
+            {status}
+          </motion.span>
+        </div>
       </div>
     </div>
   );
@@ -4974,14 +5011,16 @@ function ScheduleDeleteConfirm({
   );
 }
 
-// 문자열을 글자 단위 span 으로 렌더 — key 에 글자값을 넣어 바뀐 글자만 remount → 롤링(슬라이드업) 애니메이션.
-// 헤더 시계와 DB 누적 숫자가 같은 애니메이션(.clock-roll-char)을 공유한다.
+// 문자열을 글자 단위 span 으로 렌더 — key 에 글자값을 넣어 바뀐 글자만 remount 되어
+// 롤링(슬라이드업) 애니메이션이 돈다. 헤더 시계와 같은 `.clock-roll-char` 를 공유한다.
+// ⚠ 한때 헤더 부제 전용이라 보고 지웠다가 되살렸다(2026-08-28) — 부제를 없애면서 사용처가
+//   0 이 됐지만, 하단 누적 스트립도 같은 롤링을 쓰기로 했다.
 function RollingChars({ text }: { text: string }) {
   return (
     <>
       {text.split("").map((ch, i) => (
         <span key={`${i}-${ch}`} className="clock-roll-char">
-          {ch === " " ? " " : ch}
+          {ch === " " ? " " : ch}
         </span>
       ))}
     </>
@@ -5005,9 +5044,12 @@ function HeaderClock() {
   const time = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
   return (
+    // gap-6 — 날짜(글꼴)와 시각(도트) 사이를 벌린다(2026-08-28 사용자 지시 · 2.5 → 4 → 6).
+    // 둘이 한 덩어리로 붙어 보였다: 날짜는 글꼴 숫자, 시각은 도트 격자라 표기 체계가 다른데
+    // 간격이 좁으면 같은 문자열로 읽힌다.
     <div
       aria-label={`현재 시각 ${text} ${time}`}
-      className="hidden select-none items-center gap-2.5 lg:flex"
+      className="hidden select-none items-center gap-6 lg:flex"
     >
       {/* 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션 재생(변한 글자만 움직임). */}
       <span className="font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark">
@@ -6893,12 +6935,13 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
             <h1 className="truncate font-display text-[24px] font-semibold leading-none tracking-[-0.4px] text-ink dark:text-on-dark">
               VitAlGuard
             </h1>
-            <p className="mt-1 truncate text-xs text-body dark:text-on-dark-soft">
-              관제 · 실시간 수집 · DB 영속{" "}
-              <span className="font-semibold tabular-nums text-ink dark:text-on-dark">
-                <RollingChars text={formatPersisted(data.totalPersisted)} />
-              </span>
-              건 누적
+            {/* 부제("관제 · 실시간 수집 · DB 영속 N건 누적")는 뺐다(2026-08-28 사용자 지시).
+                같은 누적 수치는 관제 탭 하단 스트립이 그대로 말한다(`formatPersisted(data.totalPersisted)`).
+                ★ 평시에는 h1 하나만 남아 로고와 세로 가운데로 맞는다 — 부모가 items-center 라
+                  줄이 하나면 정렬이 저절로 성립한다(별도 정렬 클래스가 필요 없다).
+                ⚠ DB 조회 실패 경고는 **남긴다.** 장식이 아니라 운영 정보다 — 지우면 누적 집계가
+                  비어 있는 이유를 화면 어디서도 알 수 없다. 평시엔 렌더되지 않아 정렬도 안 깨진다. */}
+            <p className="mt-1 truncate text-xs text-body empty:hidden dark:text-on-dark-soft">
               {/* DB 조회 실패를 화면이 말한다 — `—` 만 보면 "값이 원래 없다"로 읽힌다.
                   실시간 감시(latest)는 메모리라 계속 도는 중이므로 그 점도 함께 밝힌다. */}
               {data.degraded && data.degraded.length > 0 && (
@@ -7726,7 +7769,10 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
         >
           <span>
             실시간 수집 · DB 영속{" "}
-            <span className="font-mono">{formatPersisted(data.totalPersisted)}</span>건 누적
+            <span className="font-mono">
+              <RollingChars text={formatPersisted(data.totalPersisted)} />
+            </span>
+            건 누적
             <span className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft">
               (화면 표시 최근 {data.recent.length}건)
             </span>

@@ -3,6 +3,32 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 픽셀 글꼴 — 게이지 바 안 상태 라벨 전용(2026-08-28 사용자 지시 "레트로 디지털 풍").
+   ★ 패키지의 `galmuri/dist/galmuri.css` 를 **그대로 import 하지 않는다.** 그 파일은 폰트 9종을
+     선언하고 각각 woff2 + ttf 를 참조해 빌드 산출물에 **65MB** 가 딸려 온다(woff2 만 3.2MB).
+     실제로 쓰는 Galmuri9 woff2 한 벌(429KB)만 `public/fonts` 로 옮겨 여기서 직접 선언한다.
+   ⚠ ttf 폴백은 뺐다 — woff2 를 못 읽는 브라우저는 이 대시보드의 대상이 아니고,
+     넣으면 4.6MB 가 더 붙는다.
+   ⚠ 이 글꼴에는 굵기가 400 하나뿐이다. `font-medium`(500) 을 걸면 브라우저가 **합성 볼드**를
+     만들어 픽셀이 뭉갠다. 쓰는 자리는 반드시 `font-normal` 로 둘 것.
+   라이선스 = SIL OFL 1.1(상업 사용 가능 · 폰트 자체 판매만 금지). 재배포 조건을 맞추려고
+   고지 사본을 `public/fonts/Galmuri-OFL.md`(국문 `-ko`)로 함께 배포한다. */
+@font-face {
+  font-family: Galmuri9;
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Galmuri9 Regular'), url('/fonts/Galmuri9.woff2') format('woff2');
+}
+
+@layer utilities {
+  /* ⚠ Galmuri9 의 설계 크기는 **10px** 이다. 정수 배수(10·20·30…)를 벗어나면 픽셀이 보간되어
+     흐려진다 — 이 화면은 devicePixelRatio=1 이라 특히 그렇다. */
+  .font-pixel {
+    font-family: Galmuri9, ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}
+
 /* ★ 색 토큰은 채널값(`R G B`)이 단일 소스이고 `--color-*` 는 거기서 파생한다.
    Tailwind 의 투명도 수식(`bg-ink/20`)이 채널 변수를 참조해야 동작하기 때문이다(tailwind.config.ts).
    hex 를 그대로 담으면 `/투명도` 클래스가 조용히 생성되지 않고 기본값으로 폴백한다 — 2026-08-25 전역 정정.
