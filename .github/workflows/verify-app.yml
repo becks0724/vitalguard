@@ -15,15 +15,20 @@
 
 name: Verify app
 
+# ⚠ 문서만 바뀐 커밋에는 돌지 않는다(2026-08-28 · verify-safetymonitor 와 같은 규칙).
+#   앱 폴더에도 SETUP.md 같은 문서가 있어 그것만 고쳐도 Flutter 검증이 통째로 돌았다.
+#   ★ `!` 부정 패턴은 나중 줄이 이긴다 — 워크플로 파일 자신은 제외 뒤에 다시 넣는다.
 on:
   push:
     branches: [main]
     paths:
       - '기존_조달청모듈/safetymonitor/apps/vitalguard_app/**'
+      - '!기존_조달청모듈/safetymonitor/apps/vitalguard_app/**/*.md'
       - '.github/workflows/verify-app.yml'
   pull_request:
     paths:
       - '기존_조달청모듈/safetymonitor/apps/vitalguard_app/**'
+      - '!기존_조달청모듈/safetymonitor/apps/vitalguard_app/**/*.md'
       - '.github/workflows/verify-app.yml'
 
 permissions:
