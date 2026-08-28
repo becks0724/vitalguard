@@ -52,6 +52,15 @@ class SampleBuilder {
          * 08-26 실측 = 100초에 4,680µAh(→168mAh/h) 를 퍼센트 계단 없이 읽어냈다.
          */
         batteryChargeUah: Long? = null,
+        /**
+         * 심박 트래커를 마지막으로 재구독한 시각(epoch ms). 한 번도 없었으면 null —
+         * **없음도 지문이다**(서비스 시작 이래 워치독이 안 돌았다는 뜻).
+         *
+         * 카운터가 아니라 시각인 이유는 `sessionStartedAt` 과 같다 — 카운터는 프로세스가
+         * 죽으면 0 부터 다시 세어 재설치와 구별이 안 된다. 시각은 두 행을 비교하는 것만으로
+         * **그 사이에 재구독이 있었는지**를 낸다.
+         */
+        hrLastReviveAtMs: Long? = null,
         fix: LocationFix? = null,
     ): Map<String, Any>? {
         val v = LinkedHashMap<String, Any>()
@@ -76,10 +85,12 @@ class SampleBuilder {
             variabilityMg?.let { v["motionVariabilityMg"] = it }
             batteryPct?.let { v["batteryPct"] = it }
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
+            hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
         } else if (stillSec != null) {
             v["motionStillSec"] = stillSec        // 단독 전송 — iOS flush 의 그 규칙
             batteryPct?.let { v["batteryPct"] = it }
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
+            hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
         } else {
             reset()
             return null

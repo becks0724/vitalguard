@@ -180,6 +180,22 @@ export const VitalSampleSchema = z.object({
   // 횟수로 두는 이유 — 불리언 `gaveUp` 은 "안 했다"와 "한 번 했다"를 못 가른다.
   // 0=시도 없음 · 1~3=시도 · >3=포기. 숫자라 아래 스트립 허용목록의 보호도 받는다.
   sessionResumeTries: z.number().int().min(0).max(99).optional(),
+  // 심박 트래커 **재구독 시각** (2026-08-28 · docs/wear-os-port · Wear OS 전용).
+  //
+  // ★ 왜 필요한가 — 갤럭시 워치는 하루 17구간·2.4시간 동안 **착용 중인데 수집 tick 이 멈춘다**
+  //   (Doze · `CollectorService:248` 이 예고한 그대로). 그 구간을 되살리는 장치가
+  //   `reviveHrIfStalled` 인데, **DB 로는 그것이 돌았는지 알 길이 없다** — 돌고도 실패한 것과
+  //   아예 안 돈 것이 똑같이 "행이 없다" 로 보인다. 둘은 조치가 정반대다
+  //   (전자는 재구독 방식을 고치고, 후자는 워치독을 절전 밖으로 빼야 한다).
+  //   `hrRevives` 카운터는 앱 안에서 로그로만 쓰이고 올라오지 않아 os_log 를 떠야 했다.
+  //
+  // ⚠ **카운터가 아니라 시각인 이유는 위 `sessionStartedAt` 과 같다** — 카운터는 프로세스가
+  //   죽으면 0 부터 다시 세어 재설치와 구별이 안 된다. 시각은 그 문제가 없고, 두 행을 비교해
+  //   **그 사이에 재구독이 있었는지**를 바로 낸다(값이 바뀌었으면 있었다).
+  //
+  // ⚠ 없음도 지문이다 — 서비스 시작 이래 한 번도 재구독이 없었다는 뜻이다.
+  //   판정·경보·화면 어디에도 쓰지 않는다. 순수 관측값이다.
+  hrLastReviveAt: z.string().datetime().optional(),
   // 모션 변동폭 (2026-08-19 · 옆 세션 착용 판별 트랙 요청). 1Hz deviceMotion 60초 창의
   // |userAcceleration| 표준편차 × 1000(밀리g 정수).
   // ⚠ **판정·경보·화면 어디에도 쓰지 않는다** — 분포 검증 전까지 순수 관측값이다.
@@ -280,6 +296,10 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "motionVariabilityMg",
   // 자동 재개 시도 횟수 — 진단용이라 범위를 벗어나도 버려서 안전하다(위와 같은 이유).
   "sessionResumeTries",
+  // ⚠ `hrLastReviveAt` 은 **일부러 안 넣었다.** 아래 스트립 로직은 `too_small`·`too_big`
+  //   이슈의 **숫자 필드만** 지운다(`field.unwrap() instanceof z.ZodNumber`). 시각 문자열은
+  //   여기 적어도 실제로 안 지워지므로, 넣으면 **얻지 못할 보호를 주장하는 주석**이 된다.
+  //   다른 시각 필드(`sessionStartedAt`·`sessionResumeTriedAt`…)도 같은 이유로 여기 없다.
   // 오류 종료 도메인#코드 — 진단용 문자열. 길이 초과가 생체 샘플을 통째로 죽이면 안 된다.
   "sessionEndError",
   // 워치 하드웨어 모델 — 귀속용 메타데이터. 길이 초과가 생체를 죽이면 안 된다(위와 같은 이유).
