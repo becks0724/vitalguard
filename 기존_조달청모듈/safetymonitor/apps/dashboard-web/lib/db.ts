@@ -9,6 +9,7 @@ import {
   type CalendarEventScope,
 } from "./calendar-event-scope";
 import type { AlertType } from "./alert-type";
+import { buildBulkInsert, chunkSizeFor } from "./bulk-insert";
 import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
@@ -995,20 +996,27 @@ const REAL_DEVICE_ORIGINS: ReadonlySet<string> = new Set([
   "wearos_data_vitalguard",
 ]);
 
-// 단건 insert — sample 은 zod 검증 통과한 정상 값
-export async function persistSample(sample: VitalSample): Promise<void> {
-  // ★ 이 관문의 목적은 **목업 격리**다 — 실데이터 테이블에 mockup_* 이 섞이는 것을 막는다.
-  //   실기기 출처가 늘어나면 여기도 함께 늘려야 한다. 08-25 에 갤럭시(`wearos_…`)를 추가하며
-  //   store.ts·스키마·컬럼만 보고 여기를 빠뜨려, 실기에서 store 는 accepted 인데 persist 가
-  //   throw 하는 상태가 됐다(워치 롤백으로 복구). 관문은 넷이다 — 스키마·분류·**여기**·컬럼.
-  // dataOrigin 은 스키마상 optional 이라 undefined 가 올 수 있다 — 그때도 거부다(종전 동작 유지).
+// 실기기 출처 관문 — 단건 저장과 배치 저장이 **함께** 쓴다.
+//
+// ★ 이 관문의 목적은 **목업 격리**다 — 실데이터 테이블에 mockup_* 이 섞이는 것을 막는다.
+//   실기기 출처가 늘어나면 여기도 함께 늘려야 한다. 08-25 에 갤럭시(`wearos_…`)를 추가하며
+//   store.ts·스키마·컬럼만 보고 여기를 빠뜨려, 실기에서 store 는 accepted 인데 persist 가
+//   throw 하는 상태가 됐다(워치 롤백으로 복구). 관문은 넷이다 — 스키마·분류·**여기**·컬럼.
+// dataOrigin 은 스키마상 optional 이라 undefined 가 올 수 있다 — 그때도 거부다(종전 동작 유지).
+function assertRealDeviceOrigin(sample: VitalSample): void {
   if (sample.dataOrigin === undefined || !REAL_DEVICE_ORIGINS.has(sample.dataOrigin)) {
     throw new Error(
       `실데이터 테이블에는 실기기 출처만 저장할 수 있습니다(받은 값 ${sample.dataOrigin}). ` +
         `허용: ${[...REAL_DEVICE_ORIGINS].join(", ")}`,
     );
   }
-  const cols: Record<string, unknown> = {
+}
+
+// vital_samples 한 행의 컬럼 맵 — 단건 저장과 배치 저장이 **같은 것**을 쓴다.
+// ★ 사본을 만들지 않는다. 컬럼이 55개라 사본이 생기면 다음 컬럼 추가 때 한쪽만 늘어나고,
+//   그 결함은 "배치로 들어온 행만 값이 빈다" 는 모양이라 눈에 잘 안 띈다.
+function vitalSampleColumns(sample: VitalSample): Record<string, unknown> {
+  return {
     data_origin: sample.dataOrigin,
     source: sample.source ?? null,
     worker_id: sample.workerId,
@@ -1091,10 +1099,50 @@ export async function persistSample(sample: VitalSample): Promise<void> {
     watch_device_model: sample.watchDeviceModel ?? null,
     raw_json: JSON.stringify(sample),
   };
-  const { text, values } = buildInsert("vital_samples", cols);
-  // 멱등 적재 — 같은 (worker_id, ts) 재전송/backlog flush 는 중복 무시(감사 BE-IDEM-01).
-  // 종전엔 유니크 위반이 23505 예외로 터져 호출측 catch 에서 실제 장애와 같은 신호가 됐다(DB-POOL-02).
-  await q(text + " ON CONFLICT (worker_id, ts) DO NOTHING", values);
+}
+
+// 멱등 적재 — 같은 (worker_id, ts) 재전송/backlog flush 는 중복 무시(감사 BE-IDEM-01).
+// 종전엔 유니크 위반이 23505 예외로 터져 호출측 catch 에서 실제 장애와 같은 신호가 됐다(DB-POOL-02).
+const VITAL_UPSERT_SUFFIX = "ON CONFLICT (worker_id, ts) DO NOTHING";
+
+// 단건 insert — sample 은 zod 검증 통과한 정상 값
+export async function persistSample(sample: VitalSample): Promise<void> {
+  assertRealDeviceOrigin(sample);
+  const { text, values } = buildInsert("vital_samples", vitalSampleColumns(sample));
+  await q(`${text} ${VITAL_UPSERT_SUFFIX}`, values);
+}
+
+/**
+ * 배치 insert — 여러 샘플을 **한 왕복**으로 적재한다.
+ *
+ * ★ 왜 있는가(2026-08-28). 종전엔 폰이 보낸 500건 배치를 건별로 INSERT 해 왕복이 500번이었고,
+ * 건당 33ms × 500 = 16.5초가 걸려 **폰 타임아웃 15초를 넘겼다**. 폰은 매번 실패로 보고 같은
+ * 500건을 재전송했고, 서버는 매번 끝까지 처리해 201 을 썼지만 받는 사람이 없었다 — 스스로
+ * 못 빠져나오는 고착 루프다(장우진 20분 무수신). 왕복 수가 원인이므로 왕복을 접는다.
+ *
+ * 실패는 **전량 실패**다. 한 문 안에서는 부분 저장이 없으므로 호출부는 배치 전체를 재전송하면
+ * 되고, 이미 들어간 행은 위 ON CONFLICT 가 걸러낸다.
+ */
+export async function persistSamples(samples: VitalSample[]): Promise<void> {
+  if (samples.length === 0) return;
+  // 관문은 저장 전에 전부 통과해야 한다 — 한 건이라도 목업이면 아무것도 넣지 않는다.
+  for (const sample of samples) assertRealDeviceOrigin(sample);
+
+  const rows = samples.map(vitalSampleColumns);
+  const [firstRow] = rows;
+  if (!firstRow) return;
+  const keys = Object.keys(firstRow);
+  // 청크는 컬럼 수에서 계산한다 — 컬럼이 늘면 자동으로 쪼개져 바인드 상한을 안 넘는다.
+  const chunk = chunkSizeFor(keys.length);
+  for (let i = 0; i < rows.length; i += chunk) {
+    const { text, values } = buildBulkInsert(
+      "vital_samples",
+      keys,
+      rows.slice(i, i + chunk),
+      VITAL_UPSERT_SUFFIX,
+    );
+    await q(text, values);
+  }
 }
 
 // 목업은 실데이터와 구조적으로 분리된 data_mockup 으로만 저장한다.

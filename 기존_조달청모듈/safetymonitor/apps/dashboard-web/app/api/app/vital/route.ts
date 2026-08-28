@@ -8,6 +8,7 @@ import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import {
   addSample,
+  persistSamples,
   countsByWorker,
   coreTempEstimates,
   heatPatterns,
@@ -223,13 +224,17 @@ export async function POST(request: Request) {
       // DB 저장 실패 건수 — 하나라도 있으면 배치 전체를 503 으로 돌려 폰이 재전송하게 한다.
       let persistFailures = 0;
       let last = null;
+      // ★ 저장은 루프 밖에서 한 왕복으로 모아 한다(2026-08-28). 건별 INSERT 는 500건에
+      //   16.5초가 걸려 폰 타임아웃 15초를 넘겼고, 폰이 매번 실패로 보고 같은 배치를 영원히
+      //   재전송하는 고착 루프를 만들었다(장우진 20분 무수신). 왕복 수가 원인이었다.
+      const toPersist: VitalSample[] = [];
       for (const item of body) {
         // 항목별 격리 — 한 샘플이 검증 실패(ZodError)해도 전체 400 으로 묶지 않는다.
         // 묶으면 앞 정상 샘플은 이미 적재됐는데 클라가 배치 전체를 재전송(중복) + 뒤 샘플 유실.
         // 실패 항목만 dropped 로 세고 건너뛰며 나머지는 계속 처리.
         let result;
         try {
-          result = await addSample(item);
+          result = await addSample(item, { deferPersist: true });
         } catch (itemError: unknown) {
           if (itemError instanceof ZodError) {
             // 심층방어 — 응급 플래그(manualSos/fallDetected) 샘플이 파싱 불가(ts 형식 오류 등
@@ -257,10 +262,21 @@ export async function POST(request: Request) {
           throw itemError;
         }
         if (result.persistFailed) persistFailures += 1;
+        if (result.pendingPersist) toPersist.push(result.pendingPersist);
         if (result.sample === null) dropped += 1;
         else {
           accepted += 1;
           last = result.sample;
+        }
+      }
+      // 모아 둔 샘플을 한 왕복(컬럼 수에 따라 청크)으로 적재한다.
+      // 한 문 안에서는 부분 저장이 없으므로, 실패하면 이 배치는 통째로 안 들어간 것이다.
+      if (toPersist.length > 0) {
+        try {
+          await persistSamples(toPersist);
+        } catch (error) {
+          persistFailures = toPersist.length;
+          console.error("[store] DB persist failed(batch):", error);
         }
       }
       // 온열 예방 알림(온열 ③) — 수집이 곧 판정 틱. 60초 스로틀 내장·fire-and-forget
@@ -277,8 +293,8 @@ export async function POST(request: Request) {
       // 지우므로 그 구간이 영구 유실된다. 503 을 주면 디스크 큐(5,000건 ≈ 6.9시간)에 남기고
       // 30초 뒤 재전송한다. 2026-08-15 DB 장애 3시간 50분치가 201 하나 때문에 사라졌다.
       // ⚠ 경보는 이 응답과 무관하게 이미 나갔다(addSample 안에서 별도 try — DB-POOL-02).
-      // ⚠ 부분 저장 뒤 재전송은 중복 행을 만들 수 있다(ts 가 전송 시각이라 ON CONFLICT 가 못 잡는다).
-      //   전면 장애에서는 저장이 0 건이라 해당 없고, 부분 실패 빈도를 이 로그로 관측한다.
+      // ⚠ 부분 저장은 이제 없다(2026-08-28) — 배치가 한 문으로 들어가므로 실패하면 전량 미저장이고,
+      //   재전송이 중복 행을 만들 여지도 함께 사라졌다.
       if (persistFailures > 0) {
         console.error(
           `[vital] DB 저장 실패 ${persistFailures}/${body.length}건 — 503 반환(폰 재전송 유도), accepted=${accepted}`,
