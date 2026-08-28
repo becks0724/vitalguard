@@ -132,3 +132,7 @@ backend/infrastructure/bin/*.js
 backend/infrastructure/bin/*.d.ts
 backend/infrastructure/lib/*.js
 backend/infrastructure/lib/*.d.ts
+
+# impeccable 디자인 훅 — config.json(오탐 무시 규칙·사유)은 팀 공유라 커밋하고,
+# hook.cache.json 은 스캔 결과 캐시라 사람마다 달라져 제외한다(2026-08-28).
+.impeccable/hook.cache.json

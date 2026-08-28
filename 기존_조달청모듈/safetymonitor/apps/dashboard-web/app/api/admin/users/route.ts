@@ -10,11 +10,15 @@ import {
   setUserProfileFields,
   setUserSiteOfficer,
   setUserOrgType,
+  disableTotp,
   type UserRow,
 } from "../../../../lib/db";
 import { isOrgType } from "../../../../lib/org-type";
 
-// password_hash·google_sub(민감/불필요) 만 제외하고 DB 스키마 그대로 반환.
+// ★ 화이트리스트다 — 내보낼 필드를 하나씩 적는다. "민감한 것만 빼고 스프레드" 로 바꾸지 말 것:
+//   그러면 나중에 추가되는 비밀 컬럼이 **자동으로 새어 나간다.** 실제로 2026-08-28 에 추가된
+//   totp_secret 이 이 방식 덕분에 저절로 막혔다(적지 않았으니 안 나간다).
+//   password_hash · google_sub · totp_secret · totp_last_step 은 여기 적지 않는다.
 function publicUser(u: UserRow) {
   return {
     id: u.id,
@@ -34,6 +38,8 @@ function publicUser(u: UserRow) {
     job_title: u.job_title,
     admin_access: u.admin_access,
     site_officer: u.site_officer,
+    // 켜졌는지(불리언)만 — 시크릿은 절대 나가지 않는다.
+    totp_enabled: u.totp_enabled,
     created_at: u.created_at,
     approved_at: u.approved_at,
     approved_by: u.approved_by,
@@ -62,12 +68,24 @@ export async function POST(request: Request) {
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
 
-  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile", "set_org_type"];
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile", "set_org_type", "reset_totp"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile|set_org_type) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile|set_org_type|reset_totp) 이 필요합니다." },
       { status: 400 },
     );
+  }
+
+  // 2단계 인증 초기화 — 인증 앱이 든 단말을 잃어버린 사람을 풀어 주는 유일한 경로.
+  // ⚠ 본인은 자기 것을 코드 없이 못 끈다(/api/admin/totp disable 이 코드를 요구한다).
+  //   그래서 분실 복구는 반드시 사람을 거친다 — 임시 비밀번호 승인과 같은 성격이다.
+  // ⚠ 초기화하면 그 계정은 다음 로그인에 6자리를 묻지 않는다. 본인 확인을 마친 뒤에 누를 것.
+  if (action === "reset_totp") {
+    const updated = await disableTotp(id);
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated) });
   }
 
   // 가입 유형 변경 — 'test'(양쪽 검증 화면 열람)를 부여하는 유일한 경로다(가입 폼에는 없다).

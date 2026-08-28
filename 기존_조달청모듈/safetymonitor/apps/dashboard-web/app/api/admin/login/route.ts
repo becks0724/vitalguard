@@ -8,9 +8,11 @@ import {
   verifyCredentials,
 } from "../../../../lib/admin-auth";
 import { loginLockRemainingMs, recordLoginResult } from "../../../../lib/login-attempts";
-import { findUserByUsername } from "../../../../lib/db";
+import { findUserByUsername, markTotpStepUsed } from "../../../../lib/db";
 import { DEMO_ENABLED, getDemoProfile, verifyDemoMember } from "../../../../lib/demo-members";
 import { verifyPassword } from "../../../../lib/password";
+import { verifyTotp } from "../../../../lib/totp";
+import { shouldChallenge, twoFactorPending } from "../../../../lib/two-factor";
 
 export async function POST(request: Request) {
   let body: unknown;
@@ -30,7 +32,14 @@ export async function POST(request: Request) {
     );
   }
 
-  const { id, password } = body as { id?: unknown; password?: unknown };
+  // totpCode = 2단계 인증 6자리. 1단계 요청엔 없다(서버가 twoFactorRequired 로 되물으면
+  // 화면이 비밀번호를 그대로 쥔 채 코드만 더해 다시 보낸다 — 중간 토큰을 만들지 않는 이유는
+  // 발급·만료·폐기가 통째로 늘어나는데 잠금 카운터가 이미 무차별 대입을 막고 있어서다).
+  const { id, password, totpCode } = body as {
+    id?: unknown;
+    password?: unknown;
+    totpCode?: unknown;
+  };
   if (typeof id !== "string" || typeof password !== "string") {
     return NextResponse.json(
       { ok: false, error: "id / password 필수" },
@@ -87,8 +96,11 @@ export async function POST(request: Request) {
     user && user.password_hash
       ? await verifyPassword(password, user.password_hash)
       : false;
-  // 비번 일치=잠금 리셋(미승인이라도 brute-force 아님), 불일치=실패 누적.
-  await recordLoginResult(lockKey, pwOk);
+  // ⚠ 비번이 맞아도 여기서 잠금을 리셋하지 않는다(2026-08-28) — 2단계 인증이 붙으면서
+  //   "비번 통과 = 성공" 이 아니게 됐다. 여기서 리셋하면 비번을 아는 사람이 6자리를 무한정
+  //   시도할 수 있다(30초마다 100만분의 1이 아니라, 잠금 없는 전수 탐색이 된다).
+  //   리셋은 **2단계까지 끝난 뒤** 아래에서 한 번만 한다.
+  if (!pwOk) await recordLoginResult(lockKey, false);
   if (!user || !pwOk) {
     return NextResponse.json(
       { ok: false, error: "관리자 ID 또는 비밀번호가 일치하지 않습니다." },
@@ -131,6 +143,38 @@ export async function POST(request: Request) {
     );
   }
 
+  // ── 2단계 인증(2026-08-28) — 고권한 계정만. 대상·활성 판정은 lib/two-factor 하나가 쥔다.
+  if (shouldChallenge(user)) {
+    // 1단계만 보낸 요청 = 실패가 아니라 다음 단계 요청이다. 잠금 카운터를 건드리지 않는다.
+    if (typeof totpCode !== "string" || totpCode.trim().length === 0) {
+      return NextResponse.json(
+        { ok: false, twoFactorRequired: true, error: "인증 앱의 6자리 코드를 입력하세요." },
+        { status: 401 },
+      );
+    }
+    const result = verifyTotp(user.totp_secret ?? "", totpCode);
+    if (!result.ok) {
+      await recordLoginResult(lockKey, false);
+      return NextResponse.json(
+        { ok: false, twoFactorRequired: true, error: "코드가 일치하지 않습니다. 다시 확인해주세요." },
+        { status: 401 },
+      );
+    }
+    // ★ 같은 30초 창의 재사용 차단 — 코드가 30초 살아 있어 어깨너머로 본 사람이 곧바로 다시 쓸 수 있다.
+    //   판정을 DB 조건에 둔 이유는 Cloud Run 이 다중 인스턴스라 메모리로 세면 인스턴스마다
+    //   따로 세어 같은 코드가 인스턴스 수만큼 통과하기 때문이다(markTotpStepUsed 주석).
+    if (!(await markTotpStepUsed(user.id, result.step))) {
+      await recordLoginResult(lockKey, false);
+      return NextResponse.json(
+        { ok: false, twoFactorRequired: true, error: "이미 사용한 코드입니다. 다음 코드를 기다려주세요." },
+        { status: 401 },
+      );
+    }
+  }
+
+  // 여기까지 와야 성공이다 — 잠금 리셋은 단 한 번, 모든 단계를 통과한 뒤.
+  await recordLoginResult(lockKey, true);
+
   // 승인된 관리자 — admin 역할 세션 발급(비밀번호 무관 랜덤 토큰, 서버측 TTL).
   // 임시 비밀번호로 들어온 경우 화면이 "내 정보에서 바꾸라"고 안내하도록 표식을 함께 내린다.
   return NextResponse.json({
@@ -139,5 +183,8 @@ export async function POST(request: Request) {
     role: "admin",
     orgType: user.org_type,
     mustChangePassword: user.temp_password_expires_at !== null,
+    // 대상인데 아직 등록을 안 한 계정 — 화면이 등록을 권한다. 여기서 막지 않는다(막으면
+    // 등록 화면이 로그인 뒤에 있어 계정이 잠긴다).
+    twoFactorPending: twoFactorPending(user),
   });
 }

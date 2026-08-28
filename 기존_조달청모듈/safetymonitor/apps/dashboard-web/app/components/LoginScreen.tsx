@@ -17,6 +17,7 @@ import { DEFAULT_ORG_TYPE, type SignupOrgType } from "../../lib/org-type";
 import { AccountRecovery } from "./AccountRecovery";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
+import { TwoFactorPrompt } from "./TwoFactorPrompt";
 import { LoginShaderBackground } from "./LoginShaderBackground";
 import { LoginSiteSelect } from "./LoginSiteSelect";
 import { FIELD_BASE, INPUT_CLASS } from "./login-styles";
@@ -76,6 +77,7 @@ type Strings = {
   // 계정 찾기(아이디·비밀번호) 진입 + 임시 비밀번호 로그인 안내
   findAccount: string;
   tempPwNotice: string;
+  twoFactorPendingNotice: string;
   pwMismatch: string;
   pwTooShort: string;
   pwTooLong: string;
@@ -167,6 +169,8 @@ const T: Record<Lang, Strings> = {
     findAccount: "아이디·비밀번호 찾기",
     tempPwNotice:
       "임시 비밀번호로 로그인했습니다. 24시간 안에 '내 정보'에서 비밀번호를 변경해주세요.",
+    twoFactorPendingNotice:
+      "권한이 큰 계정입니다. '내 정보'에서 2단계 인증을 등록해주세요.",
     pwMismatch: "비밀번호가 일치하지 않습니다.",
     pwTooShort: `비밀번호는 ${PASSWORD_MIN}자 이상이어야 합니다.`,
     pwTooLong: `비밀번호는 ${PASSWORD_MAX}자 이하여야 합니다.`,
@@ -249,6 +253,8 @@ const T: Record<Lang, Strings> = {
     findAccount: "Find ID or password",
     tempPwNotice:
       "You signed in with a temporary password. Change it under 'My profile' within 24 hours.",
+    twoFactorPendingNotice:
+      "This account has elevated access. Set up two-factor authentication under 'My profile'.",
     pwMismatch: "Passwords do not match.",
     pwTooShort: `Password must be at least ${PASSWORD_MIN} characters.`,
     pwTooLong: `Password must be at most ${PASSWORD_MAX} characters.`,
@@ -452,6 +458,14 @@ export function LoginScreen({
   const [pendingRole, setPendingRole] = useState<string | null>(null);
   // 임시 비밀번호로 들어왔는가(서버 판정) — 현장 선택 단계에서 변경 안내를 띄운다.
   const [mustChangePw, setMustChangePw] = useState(false);
+  // 2단계 인증(2026-08-28) — 로그인 카드 위에 떠오르는 패널의 상태.
+  // ⚠ twoFactorError 를 로그인 폼의 error 와 나눠 두는 이유 = 섞으면 패널을 닫은 뒤에도
+  //   빨간 글씨가 카드에 남아 "로그인 자체가 실패했다"로 읽힌다.
+  const [twoFactorOpen, setTwoFactorOpen] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+  // 고권한인데 아직 2단계를 등록하지 않은 계정 — 입장은 시키되 안내한다(막으면 등록 화면이
+  // 로그인 뒤에 있어 계정이 잠긴다).
+  const [twoFactorPendingNotice, setTwoFactorPendingNotice] = useState(false);
 
   useEffect(() => {
     try {
@@ -521,17 +535,21 @@ export function LoginScreen({
     if (gsignup || gmsg) window.history.replaceState({}, "", "/");
   }, []);
 
-  const handleSubmit = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      if (submitting) return;
+  // 로그인 시도 — 1단계(비번만)와 2단계(비번+6자리)가 같은 엔드포인트를 쓴다.
+  // ★ 비밀번호를 2단계 패널까지 내리지 않는다. 코드만 올려받아 여기서 합쳐 보낸다 —
+  //   패널이 비번을 들고 있으면 그 컴포넌트가 커질수록 노출면이 같이 커진다.
+  // ⚠ 서버가 twoFactorRequired 로 되물으면 **에러가 아니라 다음 단계**다. 로그인 폼의
+  //   error 자리에 쓰지 않고 패널을 띄운다(빨간 글씨로 뜨면 실패한 줄 안다).
+  const attemptLogin = useCallback(
+    async (code?: string) => {
       setSubmitting(true);
-      setError(null);
+      if (code) setTwoFactorError(null);
+      else setError(null);
       try {
         const res = await fetch("/api/admin/login", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, password }),
+          body: JSON.stringify({ id, password, ...(code ? { totpCode: code } : {}) }),
         });
         const json = (await res.json()) as {
           ok?: boolean;
@@ -539,23 +557,44 @@ export function LoginScreen({
           role?: string;
           error?: string;
           mustChangePassword?: boolean;
+          twoFactorRequired?: boolean;
+          twoFactorPending?: boolean;
         };
+        if (json.twoFactorRequired) {
+          setTwoFactorOpen(true);
+          // 첫 요구엔 메시지를 비운다(아직 틀린 게 없다). 재시도 실패에만 사유를 보인다.
+          setTwoFactorError(code ? (json.error ?? t.error) : null);
+          return;
+        }
         if (!res.ok || !json.ok || !json.token) {
           // 서버 안내(승인 대기·거절 등)가 있으면 그대로, 없으면 기본 메시지.
+          setTwoFactorOpen(false);
           setError(json.error || t.error);
           return;
         }
         // 로그인 성공 → 바로 입장하지 않고 현장 선택 단계로 전환(역할도 보류).
+        setTwoFactorOpen(false);
         setPendingToken(json.token);
         setPendingRole(json.role ?? null);
         setMustChangePw(json.mustChangePassword === true);
+        setTwoFactorPendingNotice(json.twoFactorPending === true);
       } catch {
-        setError(t.networkError);
+        if (code) setTwoFactorError(t.networkError);
+        else setError(t.networkError);
       } finally {
         setSubmitting(false);
       }
     },
-    [id, password, submitting, t],
+    [id, password, t],
+  );
+
+  const handleSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (submitting) return;
+      await attemptLogin(undefined);
+    },
+    [attemptLogin, submitting],
   );
 
   // 회원가입 — /api/admin/register 로 가입 신청(승인제). 성공 시 로그인 모드로 전환하고 안내.
@@ -1540,6 +1579,14 @@ export function LoginScreen({
                 {t.tempPwNotice}
               </p>
             )}
+            {/* 2단계 인증 미등록 안내 — 고권한 계정인데 아직 안 켠 경우.
+                ⚠ 입장을 막지 않는다. 등록 화면이 로그인 뒤(내 정보)에 있어서, 여기서 막으면
+                  등록할 방법 자체가 사라져 계정이 잠긴다. */}
+            {twoFactorPendingNotice && (
+              <p className="mt-4 w-full max-w-sm rounded-xl border border-sky-300/50 bg-sky-500/25 px-3 py-2 text-xs text-sky-50 backdrop-blur-md">
+                {t.twoFactorPendingNotice}
+              </p>
+            )}
             <LoginSiteSelect
               lang={lang}
               onConfirm={handleSiteConfirm}
@@ -1549,6 +1596,21 @@ export function LoginScreen({
         )}
           </div>
         </div>
+
+        {/* 2단계 인증 — 카드 안에 절대배치해 카드 위로 떠오른다(2026-08-28 사용자 지시).
+            ⚠ 카드 밖(화면 전체)에 두지 않는다 — 뒤 카드가 흐려진 채 그대로 보여야
+              "로그인이 취소된 게 아니라 한 단계가 남았다"로 읽힌다. */}
+        {twoFactorOpen && (
+          <TwoFactorPrompt
+            submitting={submitting}
+            error={twoFactorError}
+            onSubmit={(code) => void attemptLogin(code)}
+            onCancel={() => {
+              setTwoFactorOpen(false);
+              setTwoFactorError(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );

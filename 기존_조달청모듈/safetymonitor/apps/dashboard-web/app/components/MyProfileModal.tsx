@@ -10,6 +10,7 @@ import { companiesForOrgType } from "../../lib/companies";
 import { GUARDIAN_RELATIONS, composeGuardian, parseGuardian } from "../../lib/guardian";
 import { DEFAULT_ORG_TYPE, isOrgType, type OrgType } from "../../lib/org-type";
 import { getSessionToken } from "./session-token";
+import { TwoFactorSetup } from "./TwoFactorSetup";
 
 const PHONE_PREFIXES = ["010", "011", "016", "017", "018", "019"];
 
@@ -539,6 +540,11 @@ export function MyProfileModal({ onClose }: { onClose: () => void }) {
                     </div>
                   ))}
               </div>
+
+              {/* 2단계 인증 — 고권한 계정에만 보인다(대상 판정은 서버가 하고 컴포넌트가 스스로 숨는다).
+                  ⚠ 저장 버튼 바깥이다 — 등록·해제는 자체 API 로 즉시 반영되므로 프로필 저장과
+                    묶으면 "저장을 눌러야 켜지는 줄" 알고 창을 닫아 버린다. */}
+              <TwoFactorSetup />
 
               <button
                 type="button"

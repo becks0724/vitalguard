@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "lib/totp-qr.test.ts"
+        ],
+        "createdAt": "2026-08-28T03:48:16.294Z",
+        "reason": "오탐: 테스트 이름 문자열에 '<img src>' 가 포함된 것이지 마크업이 아님. 서버 모듈(totp-qr) 단위 테스트라 렌더링 대상이 없다."
+      }
+    ]
+  }
+}

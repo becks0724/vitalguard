@@ -848,6 +848,18 @@ async function initSchema(): Promise<void> {
     -- 만료가 지나면 로그인 자체를 거부한다 — 클라이언트 '변경 강제' 화면은 우회되므로 만료가 실질 방어다.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS temp_password_expires_at TEXT;
 
+    -- 2단계 인증(TOTP · 2026-08-28 사용자 결정) — 비밀번호 하나로만 지키던 고권한 계정을 보강한다.
+    -- ⚠ 대상은 owner · admin_access · site_officer 셋뿐이다(lib/two-factor.ts requiresTwoFactor).
+    --   현장 근로자 앱 로그인까지 걸면 현장에서 못 쓴다(앱은 role 만 해석하고 6자리 화면이 없다).
+    -- totp_secret        = Base32 시크릿. 등록 확인 전에도 채워지므로 **이 값의 존재가 곧 활성이 아니다**.
+    -- totp_enabled       = 6자리 확인까지 끝난 계정만 true. 로그인 게이트는 이 열만 본다.
+    --                      (확인 전에 활성으로 치면 앱에 등록 못 한 사람이 자기 계정에서 잠긴다)
+    -- totp_last_step     = 마지막으로 통과한 30초 창 번호. 같은 창의 재사용을 막는다 —
+    --                      코드가 30초 살아 있어 어깨너머로 본 사람이 같은 창에 다시 쓸 수 있다.
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_last_step BIGINT;
+
     -- 비밀번호 재설정 요청(승인제) — 사용자가 신청하고 owner 가 사용자 관리 화면에서 처리한다.
     -- 이메일 발송 경로가 막혀 있어(EMAIL_FROM 미설정 → Resend 계정 본인 메일로만 배달) 사람이 승인한다.
     -- 도메인 확보 후 메일 링크로 전환하더라도 이 테이블은 그대로 쓴다(승인 주체만 사람→토큰으로 바뀜).
@@ -3552,6 +3564,11 @@ export type UserRow = {
   admin_access: boolean;
   site_officer: boolean; // 현장 담당관(안전관리비 확정 권한) — owner 부여, 자가취득 불가
   temp_password_expires_at: string | null; // 임시 비밀번호 상태가 아니면 null
+  // 2단계 인증(TOTP) — ⚠ secret 이 있어도 enabled 가 false 면 아직 등록 확인 전이다.
+  //    로그인 게이트는 totp_enabled 만 본다(secret 존재로 판정하면 등록 도중 계정이 잠긴다).
+  totp_secret: string | null;
+  totp_enabled: boolean;
+  totp_last_step: number | null; // 마지막 통과 창 — 같은 창 재사용 차단용
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -4020,6 +4037,60 @@ export async function setUserSiteOfficer(
   const { rows } = await q<UserRow>(
     `UPDATE users SET site_officer = $1 WHERE id = $2 AND ($1 = false OR org_type = ANY($3)) RETURNING *`,
     [value, id, SITE_OFFICER_ORG_TYPES],
+  );
+  return rows[0] ?? null;
+}
+
+// ── 2단계 인증(TOTP) ────────────────────────────────────────────────────────
+
+// 등록 시작 — 시크릿을 심되 **활성화하지는 않는다**(enabled=false 유지).
+// 확인(6자리 입력)까지 끝나야 로그인에서 묻기 시작한다. 그 사이 로그인은 종전과 같다.
+// ⚠ 이미 활성인 계정의 시크릿은 덮어쓰지 않는다 — 덮으면 쓰던 앱 등록이 조용히 죽고,
+//   본인은 다음 로그인에서야 알게 된다. 다시 등록하려면 먼저 해제(disable)를 거쳐야 한다.
+export async function beginTotpEnrollment(id: number, secret: string): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users
+        SET totp_secret = $1, totp_enabled = false, totp_last_step = NULL
+      WHERE id = $2 AND totp_enabled = false
+      RETURNING *`,
+    [secret, id],
+  );
+  return rows[0] ?? null;
+}
+
+// 등록 확인 — 6자리가 맞았을 때만 활성화. step 을 함께 기록해 같은 창 재사용을 막는다.
+export async function confirmTotpEnrollment(id: number, step: number): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users SET totp_enabled = true, totp_last_step = $2 WHERE id = $1 RETURNING *`,
+    [id, step],
+  );
+  return rows[0] ?? null;
+}
+
+// 로그인 검증 성공 기록 — **이 UPDATE 가 재사용 차단의 실체다.**
+// WHERE 절이 "마지막 통과 창보다 뒤" 를 요구하므로, 같은 코드를 두 번 내면 0행이 돌아온다.
+// ★ 판정을 애플리케이션이 아니라 DB 조건으로 둔 이유 = Cloud Run 이 다중 인스턴스라
+//   메모리로 세면 인스턴스마다 따로 세어 같은 코드가 인스턴스 수만큼 통과한다.
+export async function markTotpStepUsed(id: number, step: number): Promise<boolean> {
+  const { rows } = await q<{ id: number }>(
+    `UPDATE users
+        SET totp_last_step = $2
+      WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)
+      RETURNING id`,
+    [id, step],
+  );
+  return rows.length > 0;
+}
+
+// 2단계 인증 해제 — 본인 재등록용이자, 단말 분실 시 관리자가 풀어 주는 경로.
+// 시크릿까지 지운다(플래그만 내리면 옛 시크릿이 남아 다음 등록에서 되살아난다).
+export async function disableTotp(id: number): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users
+        SET totp_secret = NULL, totp_enabled = false, totp_last_step = NULL
+      WHERE id = $1
+      RETURNING *`,
+    [id],
   );
   return rows[0] ?? null;
 }
