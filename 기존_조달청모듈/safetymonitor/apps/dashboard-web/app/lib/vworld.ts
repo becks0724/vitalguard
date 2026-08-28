@@ -3,6 +3,8 @@
 //   지오코딩은 주소별 6h 캐시(도로명 실패 시 지번 1회 재시도), 미설정/실패는 configured/ok=false 로 graceful.
 import "server-only";
 
+import { buildAddresses, type VworldAddress } from "./address-format";
+
 const KEY = process.env.VWORLD_KEY ?? "";
 // VWorld 인증키의 등록 서비스 URL — WMS 가 이 도메인을 Referer 로 요구한다(불일치 시 INCORRECT_KEY).
 const REGISTERED_REFERER = "https://vitalguard-dashboard-569797426568.asia-northeast3.run.app";
@@ -174,6 +176,65 @@ export async function fetchTile(url: string): Promise<{ body: ArrayBuffer; conte
     return { body: await res.arrayBuffer(), contentType };
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 좌표 → 주소(역지오코딩). 촬영 각인이 쓴다.
+//
+// ★ 왜 여기에 붙였는가 — 같은 키·같은 호스트·같은 정책이라 별도 모듈을 만들면 사본이 된다.
+//   NCP Maps 도 후보였으나 상품 구독이 필요했고(실측 `401 errorCode 210`), VWorld 는
+//   **이미 있는 키로 즉시 됐다.** 국토부 원본이라 주소 정확도도 이쪽이 낫다.
+
+/** 각인용 한 줄은 `address-format.ts` 가 고른다 — 표기 규칙을 여기 섞지 않는다. */
+export type ReverseGeocoded = {
+  configured: boolean;
+  road: string | null;
+  jibun: string | null;
+  display: string | null;
+  note?: string;
+};
+
+/**
+ * 좌표 한 건을 도로명·지번 주소로 바꾼다.
+ *
+ * 실패는 **던진다** — 호출자가 "주소 없음"과 "조회 실패"를 갈라야 하기 때문이다.
+ * 빈 값으로 열화하면 앱이 기기 추정 폴백을 쓸지 판단할 근거를 잃는다.
+ */
+export async function reverseGeocode(lat: number, lon: number): Promise<ReverseGeocoded> {
+  if (!vworldConfigured()) {
+    return { configured: false, road: null, jibun: null, display: null, note: "VWORLD_KEY 미설정" };
+  }
+  // ⚠ `point` 는 **경도,위도**(x,y) 순서다. 뒤집으면 정상 200 으로 엉뚱한 지역이 온다
+  //   ([[L-118]] 계열 — 상태코드로는 판별이 안 되는 고장). 가드가 이 순서를 못 박는다.
+  // ⚠ `type=BOTH` 여야 도로명이 함께 온다. `PARCEL` 만 걸면 도로명은 영영 안 온다.
+  const url =
+    "https://api.vworld.kr/req/address?service=address&request=getAddress&version=2.0" +
+    `&crs=epsg:4326&point=${lon},${lat}&format=json&type=BOTH&key=${KEY}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+  try {
+    const res = await fetch(url, { signal: controller.signal, cache: "no-store" });
+    if (!res.ok) throw new Error(`VWorld 역지오코딩 HTTP ${res.status}`);
+    const json = (await res.json()) as {
+      response?: { status?: string; result?: VworldAddress[] };
+    };
+    const status = json.response?.status;
+    // NOT_FOUND = 바다·미등록 구역. 실패가 아니라 **빈 결과**다(실측: 125,34 → NOT_FOUND).
+    if (status === "NOT_FOUND") {
+      return {
+        configured: true,
+        road: null,
+        jibun: null,
+        display: null,
+        note: "좌표에 등록된 주소가 없습니다.",
+      };
+    }
+    if (status !== "OK") throw new Error(`VWorld 역지오코딩 상태 ${status ?? "없음"}`);
+    const { road, jibun, display } = buildAddresses(json.response?.result);
+    return { configured: true, road, jibun, display };
   } finally {
     clearTimeout(timer);
   }

@@ -5,7 +5,7 @@
 import { NextResponse } from "next/server";
 
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
-import { reverseGeocode } from "../../../lib/reverse-geocode";
+import { reverseGeocode } from "../../../lib/vworld";
 
 export async function GET(request: Request) {
   // ★ 인증 없이 열지 않는다 — 지오코딩은 과금 쿼터라 열어 두면 남이 태운다.
