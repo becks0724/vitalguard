@@ -44,6 +44,7 @@ import {
 } from "../../../../lib/heat-alert";
 import { sendTelegramMessage } from "../../../../lib/telegram";
 import { heartRateStatus, spo2Status, coreTempStatus } from "../../../../lib/severity";
+import { offWristSuspect, type OffWristSuspect } from "../../../../lib/vital-offwrist";
 
 type Store = {
   samples: VitalSample[];
@@ -621,6 +622,42 @@ export async function heatStages(aliasMap: Record<string, string>): Promise<Heat
   } catch (e) {
     console.warn("[vital] 온열 단계 판정 실패 — 표시·알림 생략", e);
     return _heatStageCache?.map ?? {};
+  }
+}
+
+// 벗음 의심(표시 전용) — 워커별 최근 15분 심박 → 평평 창 3개 연속이면 라벨. 온열 단계와 같은 골격
+// (무상태 재계산·60초 캐시·실패 시 표시 생략). 판정·경보 어디에도 안 닿는다(lib/vital-offwrist.ts ·
+// docs/vital-offwrist-suspect). 화면은 `무동작` 이 떠 있을 때만 이 값을 쓴다(평평 ∧ 정지).
+const OFFWRIST_CACHE_MS = 60_000;
+const OFFWRIST_QUERY_MINUTES = 16; // 창 3개(15분) + 경계 여유 1분
+export type OffWristMap = Record<string, OffWristSuspect>;
+let _offWristCache: { at: number; map: OffWristMap } | null = null;
+
+export async function offWristSuspects(aliasMap: Record<string, string>): Promise<OffWristMap> {
+  const now = Date.now();
+  if (_offWristCache && now - _offWristCache.at < OFFWRIST_CACHE_MS) return _offWristCache.map;
+  try {
+    const rows = await recentHeartRates(OFFWRIST_QUERY_MINUTES);
+    const byPrimary = new Map<string, HrPoint[]>();
+    for (const r of rows) {
+      if (isReservedTestWorker(r.worker_id)) continue;
+      const key = aliasMap[r.worker_id] ?? r.worker_id;
+      const tsMs = Date.parse(r.ts);
+      if (Number.isNaN(tsMs)) continue;
+      const arr = byPrimary.get(key) ?? [];
+      arr.push({ tsMs, bpm: r.heart_rate });
+      byPrimary.set(key, arr);
+    }
+    const map: OffWristMap = {};
+    for (const [workerId, points] of byPrimary) {
+      const suspect = offWristSuspect(points, now);
+      if (suspect) map[workerId] = suspect;
+    }
+    _offWristCache = { at: now, map };
+    return map;
+  } catch (e) {
+    console.warn("[vital] 벗음 의심 판정 실패 — 표시 생략", e);
+    return _offWristCache?.map ?? {};
   }
 }
 

@@ -14,6 +14,7 @@ import {
   heatPatterns,
   workRates,
   heatStages,
+  offWristSuspects,
   notifyHeatIfDue,
   latestByWorkerWithSpo2,
   recentSamples,
@@ -100,6 +101,8 @@ export async function GET(request: Request) {
     workRate: await workRates(aliasMap),
     // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등에 쓰인다(사용자 결정).
     heatStage: await heatStages(aliasMap),
+    // 벗음 의심(표시 전용·판정 미주입) — 15분째 평평한 심박 워커만. 화면은 `무동작` 아래 한 줄로만 쓴다.
+    offWrist: await offWristSuspects(aliasMap),
     // 직급은 없으면 그 표기만 빠진다 — 빈 맵이 안전한 폴백.
     workerProfiles: await softly("직급", workerProfiles, {}, degraded),
     // 이름 — 링 버퍼(41.7분) 밖 작업자는 sample 이 없어 이름·사번이 통째로 사라지고 사번이 이름
