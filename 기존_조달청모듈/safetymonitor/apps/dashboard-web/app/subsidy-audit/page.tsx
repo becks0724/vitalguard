@@ -1,4 +1,5 @@
-// 공단 보조금 정합 검증 — 독립 라우트(로그인 없이 데모). /safety-audit 형태를 따른다.
+// 공단 보조금 정합 검증 — 독립 라우트(로그인 필요). /safety-audit 형태를 따른다.
+import { LoginGate } from "../components/LoginGate";
 import SubsidyAuditBoard from "../components/SubsidyAuditBoard";
 
 export const metadata = {
@@ -8,8 +9,10 @@ export const metadata = {
 
 export default function SubsidyAuditPage() {
   return (
-    <main className="mx-auto max-w-5xl px-4 py-8">
-      <SubsidyAuditBoard />
-    </main>
+    <LoginGate>
+      <main className="mx-auto max-w-5xl px-4 py-8">
+        <SubsidyAuditBoard />
+      </main>
+    </LoginGate>
   );
 }

@@ -667,6 +667,35 @@ async function initSchema(): Promise<void> {
       received_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
 
+    -- 조달 공고 안전관리비 **담당관 확정** — 검증 판정이 쓰는 유일한 확정값.
+    -- ★ 왜 따로 두나 — 값의 출처가 셋인데 신뢰도가 다르다.
+    --   ⓐ 조달 API = 안 준다(2026-08-27 실측: 공고 143·계약 43 필드에 안전관리비 없음)
+    --   ⓑ 첨부 내역서 파싱 = **초안**이다. 공란 내역서·구형 .xls·PDF 가 흔하고 오독도 난다.
+    --   ⓒ 시공사 자기신고 = 피검증자가 판정 기준을 적는 것이라 검증이 성립하지 않는다.
+    --   그래서 확정은 근거 문서를 **본** 담당관만 한다(2026-08-27 사용자 설계 결정).
+    -- ⚠ append-only — UPDATE·DELETE 를 만들지 않는다. 수정은 새 행이고 최신은 id DESC 한 건이다.
+    --   확정값이 조용히 바뀌면 "그때 무엇을 보고 그렇게 판정했나"를 재구성할 수 없다.
+    -- ⚠ draft_json 은 **확정 당시의 파싱 초안**이다. 파서를 고치면 오늘의 초안은 달라지므로
+    --   담당관이 실제로 마주했던 화면을 남기려면 그때 값을 그대로 얼려 둬야 한다.
+    CREATE TABLE IF NOT EXISTS procure_cost_confirm (
+      id SERIAL PRIMARY KEY,
+      notice_id TEXT NOT NULL,
+      target_amount BIGINT,
+      declared_cost BIGINT,
+      construction_type TEXT,
+      evidence_file TEXT,
+      evidence_url TEXT,
+      evidence_locus TEXT,
+      draft_json TEXT,
+      note TEXT,
+      confirmed_by TEXT NOT NULL,
+      confirmed_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_pcc_notice ON procure_cost_confirm(notice_id, id DESC);
+    -- 공고 제목 — "확정된 공고 다시 보기"용(2026-08-27). 공고가 목록 롤링 창(최근 3일)에서
+    -- 빠지면 notice_id 만으로는 사람이 못 알아본다. 확정 시점의 제목을 함께 얼려 둔다.
+    ALTER TABLE procure_cost_confirm ADD COLUMN IF NOT EXISTS notice_title TEXT;
+
     -- AED 실 연동 장비 등록 — 관리자가 등록한 실제 장비(RPi가 aed_id로 알림 레벨 폴링). 데모 프리셋(AED_DEVICES)과 별개.
     -- 이 테이블 행만 '실 연동', 코드 프리셋은 '데모(발표용)'. 단말 배터리·교환주기는 등록 입력값.
     CREATE TABLE IF NOT EXISTS aed_registered_device (
@@ -794,6 +823,10 @@ async function initSchema(): Promise<void> {
     -- 멱등이라 재기동마다 돌아도 두 번째부터는 0행이다.
     UPDATE users SET employee_id = 'EMP-' || username WHERE employee_id IS NULL OR trim(employee_id) = '';
     ALTER TABLE users ADD COLUMN IF NOT EXISTS admin_access BOOLEAN NOT NULL DEFAULT false;
+    -- 현장 담당관(안전관리비 확정 권한) — owner 가 사용자 관리에서 부여(자가취득 불가).
+    -- ⚠ job_title(직책)에 권한을 걸지 않는다 — 그 컬럼은 본인 편집이라 글자만 바꾸면 자가승격이 된다.
+    --   admin_access 와 같은 패턴: 표기는 직책이 하되 권한은 이 비트가 결정한다(2026-08-27 사용자 결정).
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS site_officer BOOLEAN NOT NULL DEFAULT false;
     -- 보호자 연락처(본인 편집) — SOS/낙상 알람에서 사번(employee_id) 매칭으로 본인 보호자 표출.
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_name TEXT;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS guardian_phone TEXT;
@@ -1866,6 +1899,92 @@ export async function getUsePlan(siteId: string): Promise<UsePlanRow | null> {
     [siteId],
   );
   return rows[0] ?? null;
+}
+
+// ── 조달 공고 안전관리비 담당관 확정(append-only) ──
+// ⚠ 갱신 함수를 만들지 않는다. 값을 고치려면 새 행을 넣고, 최신 한 건이 현행이다.
+//   판정에 쓰이는 값이라 "언제 누가 무엇을 보고 그렇게 정했나"가 남아야 한다.
+export type ProcureCostConfirmRow = {
+  id: number;
+  notice_id: string;
+  notice_title: string | null; // 확정 시점의 공고 제목 — 롤링 창에서 빠져도 사람이 알아본다
+  target_amount: number | null;
+  declared_cost: number | null;
+  construction_type: string | null;
+  evidence_file: string | null;
+  evidence_url: string | null;
+  evidence_locus: string | null;
+  draft_json: string | null;
+  note: string | null;
+  confirmed_by: string;
+  confirmed_at: string;
+};
+
+const PCC_COLS = `id, notice_id, notice_title, target_amount, declared_cost, construction_type,
+                  evidence_file, evidence_url, evidence_locus, draft_json, note,
+                  confirmed_by, confirmed_at`;
+
+export async function insertProcureCostConfirm(
+  input: Omit<ProcureCostConfirmRow, "id" | "confirmed_at">,
+): Promise<ProcureCostConfirmRow> {
+  const { rows } = await q<ProcureCostConfirmRow>(
+    `INSERT INTO procure_cost_confirm
+       (notice_id, notice_title, target_amount, declared_cost, construction_type,
+        evidence_file, evidence_url, evidence_locus, draft_json, note, confirmed_by, confirmed_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, ${NOW_ISO})
+     RETURNING ${PCC_COLS}`,
+    [
+      input.notice_id.slice(0, 60),
+      input.notice_title?.slice(0, 300) ?? null,
+      input.target_amount == null ? null : Math.round(input.target_amount),
+      input.declared_cost == null ? null : Math.round(input.declared_cost),
+      input.construction_type?.slice(0, 20) ?? null,
+      input.evidence_file?.slice(0, 300) ?? null,
+      input.evidence_url?.slice(0, 1000) ?? null,
+      input.evidence_locus?.slice(0, 200) ?? null,
+      input.draft_json?.slice(0, 20000) ?? null,
+      input.note?.slice(0, 1000) ?? null,
+      input.confirmed_by.slice(0, 60),
+    ],
+  );
+  // RETURNING 이 있는 INSERT 라 행은 반드시 하나다 — 없으면 저장이 안 된 것이니 조용히 넘기지 않는다.
+  const row = rows[0];
+  if (!row) throw new Error("procure_cost_confirm INSERT 가 행을 반환하지 않았습니다");
+  return row;
+}
+
+/** 현행 확정값 — 최신 한 건. 없으면 null(= 아직 확정 전이고, 판정은 '검토필요'로 남는다). */
+export async function latestProcureCostConfirm(noticeId: string): Promise<ProcureCostConfirmRow | null> {
+  const { rows } = await q<ProcureCostConfirmRow>(
+    `SELECT ${PCC_COLS} FROM procure_cost_confirm WHERE notice_id = $1 ORDER BY id DESC LIMIT 1`,
+    [noticeId],
+  );
+  return rows[0] ?? null;
+}
+
+/** 확정된 공고 전체(공고당 현행 1건·최신 확정 먼저) — "확정 공고 다시 보기"용(2026-08-27).
+ *  공고 목록은 최근 3일 롤링 창이라 확정해 둔 공고가 목록에서 사라진다 — 이 조회는 창과 무관하게
+ *  DB 의 확정 이력을 근거로 보여 준다. draft_json 은 무겁고 목록에 불필요해 뺀다. */
+export async function listAllProcureCostConfirms(limit = 50): Promise<Omit<ProcureCostConfirmRow, "draft_json">[]> {
+  const lim = Math.min(200, Math.max(1, Math.floor(limit)));
+  const { rows } = await q<Omit<ProcureCostConfirmRow, "draft_json">>(
+    `SELECT id, notice_id, notice_title, target_amount, declared_cost, construction_type,
+            evidence_file, evidence_url, evidence_locus, note, confirmed_by, confirmed_at
+       FROM (SELECT DISTINCT ON (notice_id) * FROM procure_cost_confirm ORDER BY notice_id, id DESC) cur
+      ORDER BY id DESC LIMIT $1`,
+    [lim],
+  );
+  return rows;
+}
+
+/** 확정 이력(최신 먼저) — 화면에서 "누가 언제 무엇을 바꿨나"를 보여 준다. */
+export async function listProcureCostConfirms(noticeId: string, limit = 20): Promise<ProcureCostConfirmRow[]> {
+  const lim = Math.min(100, Math.max(1, Math.floor(limit)));
+  const { rows } = await q<ProcureCostConfirmRow>(
+    `SELECT ${PCC_COLS} FROM procure_cost_confirm WHERE notice_id = $1 ORDER BY id DESC LIMIT $2`,
+    [noticeId, lim],
+  );
+  return rows;
 }
 
 // 현장별 수신 계산서(최신 먼저). siteId 생략 시 전체 최근 N건(ERP 전송상태 표시용).
@@ -3425,6 +3544,7 @@ export type UserRow = {
   guardian_name: string | null;
   guardian_phone: string | null;
   admin_access: boolean;
+  site_officer: boolean; // 현장 담당관(안전관리비 확정 권한) — owner 부여, 자가취득 불가
   temp_password_expires_at: string | null; // 임시 비밀번호 상태가 아니면 null
   created_at: string;
   approved_at: string | null;
@@ -3875,6 +3995,20 @@ export async function setUserAdminAccess(
 ): Promise<UserRow | null> {
   const { rows } = await q<UserRow>(
     "UPDATE users SET admin_access = $1 WHERE id = $2 RETURNING *",
+    [value, id],
+  );
+  return rows[0] ?? null;
+}
+
+// 현장 담당관(안전관리비 확정 권한) 부여/회수 — admin_access 와 같은 패턴(owner 부여, 자가취득 불가).
+// ⚠ 시공사(org_type=contractor)에게는 부여하지 않는다 — 피검증자가 확정 권한을 갖는 순간
+//   검증이 성립하지 않는다. 라우트가 막지만 여기서도 한 번 더 거른다(경로가 늘어도 안 뚫리게).
+export async function setUserSiteOfficer(
+  id: number,
+  value: boolean,
+): Promise<UserRow | null> {
+  const { rows } = await q<UserRow>(
+    `UPDATE users SET site_officer = $1 WHERE id = $2 AND ($1 = false OR org_type <> 'contractor') RETURNING *`,
     [value, id],
   );
   return rows[0] ?? null;

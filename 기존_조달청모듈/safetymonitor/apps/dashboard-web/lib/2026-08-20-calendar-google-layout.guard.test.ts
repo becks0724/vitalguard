@@ -45,12 +45,13 @@ test("흰 글자 분기가 되살아나지 않았다 — 셀 안 배지·칩", (
   assert.match(cal, /inverted=\{false\}/, "일정 칩 반전이 되살아났다");
 });
 
-test("오늘만 채운 원 — 원형이 유일해야 눈에 띈다", () => {
-  assert.match(
-    cal,
-    /isToday\s*\n\s*\? "bg-primary font-bold text-on-primary"/,
-    "오늘 표시(채운 원)가 사라졌다",
-  );
+// ⚠ 전제가 바뀌었다(2026-08-27 사용자 결정) — 종전 규칙은 "원형은 오늘 전용"이었으나,
+//   **선택이 오늘보다 우선**하는 규칙으로 대체됐다: 오늘(미선택)=반투명(primary-subtle) ·
+//   선택=푸른 채움(bg-primary). 오늘을 클릭하면 반투명 → 채움으로 바뀌는 전환이 요구사항이다.
+//   그래서 `isToday ? "bg-primary…"` 를 그대로 단언하면 거짓 빨간불이 난다 — 두 상태를 함께 본다.
+test("오늘=반투명 · 선택=채운 원 — 선택이 오늘보다 우선한다", () => {
+  assert.match(cal, /isSelected\s*\n?\s*\?\s*"bg-primary font-bold text-on-primary"/, "선택 표시(채운 원)가 사라졌다");
+  assert.match(cal, /isToday\s*\n?\s*\?\s*"bg-primary-subtle/, "오늘 표시(반투명)가 사라졌다");
 });
 
 // ── ② 주 행 균등

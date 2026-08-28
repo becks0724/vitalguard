@@ -21,9 +21,12 @@ implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
 
 ## 배선 4조각 (애플워치판과 동일 구조 — 참조 구현 = vitalguard_app/android/wear 의 CollectorService.kt)
 
-1. **센서 → 단위 변환**: `TYPE_ACCELEROMETER`(50Hz = 20,000µs) 값은 m/s²·정지 시 +1g.
+1. **센서 → 단위 변환 → 리샘플**: `TYPE_ACCELEROMETER`(요청 20,000µs) 값은 m/s²·정지 시 +1g.
    학습 데이터 규약(애플워치: G 단위·정지 시 축값 -1g)으로 변환해 공급한다:
    `a_모듈 = -a_안드로이드 / 9.80665`. 자이로(`TYPE_GYROSCOPE`)는 양쪽 다 rad/s — 그대로.
+   ⚠ 갤럭시는 50Hz 를 지원하지 않아 ~60Hz 로 공급된다(실측 실효 52~54) — 반드시
+   `ImuResampler`(모듈 소속, v6.1.3)를 거쳐 50Hz 격자로 접어서 로거에 먹일 것.
+   배포 확인 지표 = trace 의 `effective_hz` 가 ~50.0 (종전 52~54면 구본).
 2. **로거**: 변환된 6축 + totalG 를 `ImuWindowLogger.ingest(..., nowNs = event.timestamp)` 로 매 샘플 공급.
 3. **판정**: `logger.onWindow = { w -> module.assess(w) }` → `Verdict.decision` 이 `DANGER` 면 카운트다운.
    `Verdict.trace` 는 신고 payload·로그에 그대로 실을 것 (README 추적성 계약 — `module_version` 포함).

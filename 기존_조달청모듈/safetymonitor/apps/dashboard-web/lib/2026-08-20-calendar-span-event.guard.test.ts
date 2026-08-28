@@ -158,12 +158,18 @@ test("월간 기간 띠가 해당 주 행 위에 놓인다", () => {
 });
 
 test("미니 월간에도 기간이 보인다", () => {
-  assert.match(dash, /spanDays\?: Map<string, LabelColor>;/, "미니 월간 기간 프롭 소실");
-  assert.match(dash, /const spanColor = spanDays\?\.get\(toDateKey\(date\)\);/, "미니 월간이 기간을 안 읽는다");
-  assert.match(dash, /spanDays=\{spanDayColors\}/, "호출부가 기간 맵을 안 넘긴다");
-  assert.match(dash, /const spanDayColors = useMemo\(/, "기간 날짜 맵 계산이 사라졌다");
+  // ⚠ 전제가 바뀌었다(2026-08-27 사용자 결정) — 종전엔 "날짜 → 색 하나"라 겹치는 두 기간이
+  //   한 줄로 뭉쳤다. 이제 **일정마다 자기 줄(레인)** 을 갖고, 띠는 칸 폭 전체(w-full)로 그려
+  //   날짜 수만큼 **가로로 이어진다**(끝만 둥글게). 그래서 옛 타입·짧은 바 단언은 거짓 실패다.
+  assert.match(dash, /spanDays\?: SpanDayLanes;/, "미니 월간 기간 프롭 소실");
+  assert.match(dash, /const spanLanes = spanDays\?\.get\(toDateKey\(date\)\);/, "미니 월간이 기간을 안 읽는다");
+  assert.match(dash, /spanDays=\{spanDayLanes\}/, "호출부가 기간 맵을 안 넘긴다");
+  assert.match(dash, /const spanDayLanes = useMemo</, "기간 날짜 맵 계산이 사라졌다");
   // ⚠ 숫자에 색을 칠하면 오늘·선택 표시와 겹친다 — 밑줄로 둔다.
-  assert.match(dash, /h-\[2px\] w-3\.5 rounded-full/, "기간 밑줄 표시가 사라졌다");
+  assert.match(dash, /"block h-\[2px\] w-full"/, "기간 밑줄 표시가 사라졌다");
+  // 이어짐의 근거 — 시작·끝만 둥글게. 이게 빠지면 칸마다 끊긴 알약으로 되돌아간다.
+  assert.match(dash, /!mk\.contPrev \? "rounded-l-full"/, "띠 시작 처리 소실");
+  assert.match(dash, /!mk\.contNext \? "rounded-r-full"/, "띠 종료 처리 소실");
 });
 
 // ⚠ 사용자 실측 결함 2건 더(2026-08-20).

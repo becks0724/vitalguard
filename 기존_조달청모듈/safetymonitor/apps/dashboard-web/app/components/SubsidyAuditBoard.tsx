@@ -699,7 +699,7 @@ function StepRail({ step }: { step: 1 | 2 | 3 }) {
       <span className={`${line} ${stem}`} />
       {/* 가로 가지 — 줄기(left-0)와 노드(right-0) 사이를 잇는다. 검사 1 도 있어야 노드가 줄기에 붙는다 */}
       <span className={`${line} left-0 top-4 h-px w-3`} />
-      <span className="absolute right-0 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-on-primary">
+      <span className="absolute right-0 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-primary text-[9px] font-bold leading-none tabular-nums text-on-primary">
         {step}
       </span>
     </div>

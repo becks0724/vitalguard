@@ -13,7 +13,7 @@ import {
 
 import { LoginScreen } from "./LoginScreen";
 import { SessionKeeper } from "./SessionKeeper";
-import { ROLE_KEY, SESSION_KEY } from "./session-token";
+import { getSessionOrgType, ROLE_KEY, SESSION_KEY } from "./session-token";
 
 // 로그인 후 자식(대시보드)에서 로그아웃을 호출하기 위한 컨텍스트.
 type SessionContextValue = { logout: () => void };
@@ -30,6 +30,18 @@ export function useSession(): SessionContextValue {
 export function LoginGate({ children }: { children: ReactNode }) {
   // null = 판정 전(스플래시), false = 미인증, true = 인증
   const [authed, setAuthed] = useState<boolean | null>(null);
+
+  // ★ 시공사 세션은 제출 화면(/contractor)으로만 들어간다(2026-08-27 역할 설계 — 시공사는
+  //   근거 문서 제출까지). 서버는 verifyBasicAuth 가 기본 거부하므로 이 리다이렉트는 UX 용이고,
+  //   우회해도 관제 API 가 401 을 준다. orgType 은 토큰 클레임에서 읽는다(경로 셋 공통).
+  const contractorMisrouted =
+    authed === true &&
+    getSessionOrgType() === "contractor" &&
+    typeof window !== "undefined" &&
+    !window.location.pathname.startsWith("/contractor");
+  useEffect(() => {
+    if (contractorMisrouted) window.location.replace("/contractor");
+  }, [contractorMisrouted]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -116,6 +128,9 @@ export function LoginGate({ children }: { children: ReactNode }) {
       />
     );
   }
+
+  // 시공사 오라우팅 — 이동이 끝날 때까지 관제 화면을 렌더하지 않는다(순간 노출 방지).
+  if (contractorMisrouted) return null;
 
   return (
     <SessionContext.Provider value={{ logout }}>

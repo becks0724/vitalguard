@@ -1,6 +1,7 @@
 // 사전 안전 리스크 종합 — 설명가능 가중 스코어(학습모델 아님).
 // 기여도(breakdown)를 그대로 노출해 블랙박스가 되지 않게 한다.
-import type { NoticeDetail, RiskProfile, RiskTag } from "./safeprocure-types";
+import { PROCURE_KEYWORD_RULES } from "./procure-risk-tags";
+import type { ConstructionType, NoticeDetail, RiskProfile, RiskTag } from "./safeprocure-types";
 import { classifyConstructionType, evaluateSafetyCost } from "./safety-cost";
 
 // 가중 상한(TRD §5.3): 위험작업40 + 안전관리비25 + 낙찰공기15 + 공종재해20 = 100.
@@ -26,13 +27,27 @@ const TAG_RECO: Record<string, string> = {
   "중장비/양중": "중장비 양중작업 신호수 배치 및 작업반경 통제 확인",
   "해체/철거": "해체계획서 검토 및 인접 구조물·낙하물 방지 대책 확인",
   "도장/화기": "화기작업 허가, 소화설비 비치 및 환기 확인",
+  // 신설(procure-risk-tags.ts · 2026-08-27) — 권고가 없으면 기본 문구가 표시된다.
+  "벌목": "벌도목 방향 통제·대피로 확보와 작업반경 내 접근 통제 확인",
+  "예초/풀베기": "예초 작업 전 베임방지 보호구(안면보호구·보호장갑) 착용과 사면 전도 방지 확인",
+  "도로상 작업": "차량 통행 병행 구간 신호수·교통안전시설(라바콘·싸인보드) 배치와 작업구간 통제 확인",
+  "수중/하천": "하천·수중 작업 전 기상·수위 확인, 구명조끼 착용 및 급류 시 작업중지 기준 확인",
+  "승강기": "승강로 개구부 추락 방지 조치와 전원 차단·잠금(LOTO) 절차 확인",
 };
 
-// ⚠ 공종 재해 가중(정적) — KOSHA 재해통계 기반 근사. 실 운영 시 KOSHA 모듈 통계로 대체.
-const HIGH_RISK_TAGS = new Set(["고소작업", "굴착/흙막이", "밀폐공간", "해체/철거"]);
+// 공종 재해 가중 — 사망사고 통계에서 파생(태그 심각도 3 = 유형별 구성비 6% 이상인 형태).
+// 종전엔 손으로 적은 근사 목록({고소,굴착,밀폐,해체})이었고 "실 운영 시 통계로 대체" 주석이
+// 있었다 — 2026-08-27 심각도 데이터 근거화와 함께 그 약속을 이행(단일 소스 = severityFromForm).
+const HIGH_RISK_TAGS = new Set(PROCURE_KEYWORD_RULES.filter((r) => r.severity === 3).map((r) => r.tag));
 
-export function buildRiskProfile(notice: NoticeDetail, tags: RiskTag[]): RiskProfile {
-  const { type: constructionType } = classifyConstructionType(notice.licenses, notice.taskText);
+// ⚠ 공사종류는 요율을 가르는 축이라 틀리면 기준액이 통째로 틀린다(특수 2.07% vs 건축 3.11%).
+//   면허·과업문 추정은 휴리스틱이므로, 담당관이 근거 문서를 보고 확정했으면 그것이 이긴다.
+export function buildRiskProfile(
+  notice: NoticeDetail,
+  tags: RiskTag[],
+  confirmedType?: ConstructionType | null,
+): RiskProfile {
+  const constructionType = confirmedType ?? classifyConstructionType(notice.licenses, notice.taskText).type;
 
   // 대상액: 계약 대상액이 있으면 정밀, 없으면 추정가격 근사(→ 검토필요로 강등).
   const targetKnown = notice.targetAmount != null;
@@ -99,7 +114,9 @@ export function buildRiskProfile(notice: NoticeDetail, tags: RiskTag[]): RiskPro
     const r = TAG_RECO[t.tag];
     if (r && !recos.includes(r)) recos.push(r);
   }
-  while (recos.length < 3) recos.push("착공 전 위험성평가 및 안전보건관리계획 수립 여부 확인");
+  // ⚠ 3개를 채우려고 같은 문구를 반복하지 않는다(2026-08-27 사용자 지시 "표시 소음은 정리") —
+  //   실측: 태그 1개 공고에서 기본 문구가 2줄 중복돼 권고가 소음이 됐다. 기본 문구는 한 번만.
+  if (recos.length === 0) recos.push("착공 전 위험성평가 및 안전보건관리계획 수립 여부 확인");
 
   return { noticeId: notice.id, score, breakdown, topFactors, recommendations: recos.slice(0, 3), safetyCost, tags };
 }

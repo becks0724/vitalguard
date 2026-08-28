@@ -119,7 +119,10 @@ test("날짜가 바뀌어도 고른 항목이 그 날짜에 있으면 초점을 
 
 test("주/월 전환이 있다 — 월간을 버리지 않았다", () => {
   assert.match(dash, /const \[weekMode, setWeekMode\] = useState\(true\)/, "주/월 상태 소실");
-  assert.match(dash, /\{inline && weekMode \? \(/, "주간 분기 소실");
+  // ⚠ 앞의 `{` 를 묶지 않는다 — 2026-08-27 에 **로딩 게이트가 이 분기 앞에 붙어**
+  //   `{!(hydrated && mediaHydrated) ? (…) : inline && weekMode ? (` 가 됐다. 분기는 멀쩡한데
+  //   여는 괄호 하나 때문에 거짓 빨간불이 났다. 가드가 지켜야 할 것은 **분기의 존재**다.
+  assert.match(dash, /inline && weekMode \? \(/, "주간 분기 소실");
   // 팝업(580px)은 주간 격자가 안 들어간다 — inline 조건이 빠지면 팝업이 깨진다.
   assert.doesNotMatch(dash, /\{weekMode \? \(/, "inline 조건 없이 주간을 그린다 — 팝업이 깨진다");
 });

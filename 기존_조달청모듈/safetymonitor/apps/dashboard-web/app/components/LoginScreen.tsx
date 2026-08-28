@@ -49,6 +49,7 @@ type Strings = {
   orgTypeLabel: string;
   orgTypeVitalguard: string;
   orgTypeMember: string;
+  orgTypeContractor: string;
   birthLabel: string;
   companyLabel: string;
   companyPlaceholder: string;
@@ -137,6 +138,7 @@ const T: Record<Lang, Strings> = {
     orgTypeLabel: "가입 유형",
     orgTypeVitalguard: "VitAlGuard 관리자",
     orgTypeMember: "회원사 관리자",
+    orgTypeContractor: "시공사",
     birthLabel: "생년월일",
     companyLabel: "회사(상호)",
     companyPlaceholder: "(주)바이탈가드",
@@ -216,6 +218,7 @@ const T: Record<Lang, Strings> = {
     orgTypeLabel: "Account type",
     orgTypeVitalguard: "VitAlGuard admin",
     orgTypeMember: "Member company admin",
+    orgTypeContractor: "Contractor",
     birthLabel: "Date of birth",
     companyLabel: "Company",
     companyPlaceholder: "VitAlGuard Inc.",
@@ -969,11 +972,12 @@ export function LoginScreen({
           <div className="col-span-2">
             <span className={LABEL_PHONE_HIDDEN}>{t.orgTypeLabel}</span>
             <SlidingSegmented
-              className="mt-1 grid grid-cols-2 gap-1.5"
+              className="mt-1 grid grid-cols-3 gap-1.5"
               indicatorClassName="rounded-xl border border-white/70 bg-white/25 backdrop-blur-md"
               items={[
                 { value: "vitalguard" as const, label: t.orgTypeVitalguard },
                 { value: "member" as const, label: t.orgTypeMember },
+                { value: "contractor" as const, label: t.orgTypeContractor },
               ]}
               value={sOrgType}
               onChange={(value) => {

@@ -2,11 +2,12 @@
 // AED NFC 점검 기록 페이지 — 장비별 NFC 태그(URL)의 도착지. 점검자 이름·교체 항목 입력 후 관제 웹으로 전송.
 import { useEffect, useState } from "react";
 
+import { LoginGate } from "../../components/LoginGate";
 import { findAedDevice } from "../../../lib/aed-devices";
 
 type Phase = "loading" | "form" | "sending" | "done" | "error";
 
-export default function AedInspectPage() {
+function AedInspectPageInner() {
   const [aedId, setAedId] = useState("");
   const [sig, setSig] = useState("");
   const [loc, setLoc] = useState<string | null>(null);
@@ -144,5 +145,16 @@ export default function AedInspectPage() {
         )}
       </div>
     </main>
+  );
+}
+
+// 로그인 게이트 — 전 라우트 공통 적용(2026-08-27 사용자 결정).
+// ⚠ 이 화면은 AED 장비의 NFC 태그가 가리키는 도착지다. 태그를 찍은 사람이 로그인 계정을
+//    갖고 있지 않으면 점검 기록을 남길 수 없다 — 현장 운용 방식과 함께 판단할 것.
+export default function AedInspectPage() {
+  return (
+    <LoginGate>
+      <AedInspectPageInner />
+    </LoginGate>
   );
 }

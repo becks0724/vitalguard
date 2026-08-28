@@ -75,25 +75,22 @@ export function clientIpFromXff(request: Request): string {
 
 // owner = env 관리자(최초 승인자, 사용자 관리 권한), admin = 가입 후 승인된 관리자.
 export type { SessionRole };
-export type SessionInfo = { expiresAt: number; role: SessionRole; username: string };
+export type SessionInfo = { expiresAt: number; role: SessionRole; username: string; orgType?: string };
 
-// 역할·아이디를 담아 세션 발급(기본은 env owner — 기존 호출 호환). 반환 = 서명 JWT.
+// 역할·아이디·가입유형을 담아 세션 발급(기본은 env owner — 기존 호출 호환). 반환 = 서명 JWT.
 export function createSession(
   role: SessionRole = "owner",
   username: string = ADMIN_ID,
+  orgType?: string,
 ): string {
-  return signSessionJwt({ sub: username, role });
+  return signSessionJwt({ sub: username, role, orgType });
 }
 
 // 유효 세션 정보 반환(서명·만료 검증 실패 시 null).
 function getValidSession(token: string): SessionInfo | null {
   const claims = verifySessionJwt(token);
   if (!claims) return null;
-  return { expiresAt: claims.exp * 1000, role: claims.role, username: claims.sub };
-}
-
-function validateSession(token: string): boolean {
-  return getValidSession(token) !== null;
+  return { expiresAt: claims.exp * 1000, role: claims.role, username: claims.sub, orgType: claims.orgType };
 }
 
 // 토큰 문자열로 직접 세션 정보 조회 — OAuth 핸드오프(쿠키→sessionStorage)에서 role 확인용.
@@ -105,7 +102,11 @@ export function sessionInfoForToken(token: string): SessionInfo | null {
 //  - Bearer <token> : 로그인 발급 불투명 세션 토큰만(비밀번호 미포함). base64(id:pw) 는 거부.
 //  - Basic <value>  : 세션 토큰(AdminExportModal 이 Basic 으로 전송) 또는 base64(id:pw)(curl 등 직접 호출).
 // (이전엔 Bearer 로도 base64(id:pw) 가 복호 통과돼 평문 자격을 Bearer 로 우회 전송 가능했음 → 차단.)
-export function verifyBasicAuth(request: Request): boolean {
+// ★ 시공사(contractor) 세션은 **기본 거부**다(2026-08-27 사용자 결정 — 시공사는 근거 문서
+//   제출까지). 이 함수가 관제 데이터 라우트 37곳의 공용 게이트라, 여기서 한 번 거르면 새
+//   라우트도 기본 보호된다. 시공사가 써야 하는 제출 라우트만 { allowContractor: true } 로 연다.
+//   구 토큰(orgType 클레임 없음)은 전부 직원 계정이라 직원으로 해석한다(session-jwt 주석 참조).
+export function verifyBasicAuth(request: Request, opts?: { allowContractor?: boolean }): boolean {
   const header = request.headers.get("authorization");
   if (!header) return false;
   const match = header.match(/^(basic|bearer)\s+(.+)$/i);
@@ -115,7 +116,8 @@ export function verifyBasicAuth(request: Request): boolean {
   if (!value) return false;
 
   // 세션 토큰은 두 스킴 모두 허용(기존 클라이언트 호환: 대시보드=Bearer, 관리자 모달=Basic).
-  if (validateSession(value)) return true;
+  const info = getValidSession(value);
+  if (info) return opts?.allowContractor === true || info.orgType !== "contractor";
 
   // base64(id:pw) 직접 자격은 Basic 스킴에서만 허용 — Bearer 로의 자격 우회 전송을 막는다.
   if (scheme !== "basic") return false;
@@ -155,6 +157,7 @@ export function getSession(request: Request): SessionInfo | null {
           expiresAt: Date.now() + sessionTtlSec() * 1000,
           role: "owner",
           username: ADMIN_ID,
+          orgType: "vitalguard", // env owner = 자사 최고관리자
         };
       }
     } catch {
@@ -177,6 +180,21 @@ export async function verifyUserAdmin(request: Request): Promise<boolean> {
   if (session.role === "owner") return true;
   const user = await findUserByUsername(session.username).catch(() => null);
   return !!user && canApproveUsers(user);
+}
+
+// 안전관리비 담당관 확정 권한(2026-08-27 사용자 결정) —
+//   owner(대시보드 최고관리자) = 전부 가능 · site_officer(현장 담당관 부여 계정) = 확정 가능 ·
+//   contractor(시공사) = **부여 여부와 무관하게 불가**(피검증자 자기확정 방지) · 그 외 admin = 불가.
+// ⚠ job_title(직책) 글자를 보지 않는다 — 본인 편집 필드라 글자만 바꾸면 자가승격이 된다.
+export type ProcureConfirmAccess = "ok" | "no_session" | "contractor" | "not_officer";
+export async function procureConfirmAccess(request: Request): Promise<ProcureConfirmAccess> {
+  const session = getSession(request);
+  if (!session) return "no_session";
+  if (session.role === "owner") return "ok";
+  const user = await findUserByUsername(session.username).catch(() => null);
+  if (!user) return "not_officer";
+  if (user.org_type === "contractor") return "contractor";
+  return user.site_officer ? "ok" : "not_officer";
 }
 
 // 앱 업로드 토큰 일치 검사 — 어디서 온 토큰이든(헤더/폼 필드) env APP_UPLOAD_TOKEN 과 비교.

@@ -13,6 +13,8 @@ export type ProcureRiskDetail = {
     startDate?: string;
     endDate?: string;
     licenses: string[];
+    /** 공고 첨부 — 담당관 확정 화면이 "근거 문서"로 지정하는 대상. */
+    specDocs?: { name: string; url: string }[];
   };
   safetyCost: SafetyCostCheck;
   tags: RiskTag[];
@@ -129,6 +131,10 @@ export default function ProcureRiskCard({ data }: { data: ProcureRiskDetail }) {
           )}
         </dl>
         <p className="mt-2 rounded bg-canvas p-2 text-[11px] text-body dark:bg-surface-dark dark:text-on-dark-soft">산정식: {safetyCost.formula}</p>
+        {/* 끝수 폭 안내 — 기준액보다 몇 원 적은데 '정상'인 이유(제47조). 없으면 렌더 안 함. */}
+        {safetyCost.verdictNote && (
+          <p className="mt-1 rounded bg-[#05b169]/10 p-2 text-[11px] text-semantic-up dark:bg-[#05b169]/20">{safetyCost.verdictNote}</p>
+        )}
         <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-300">{safetyCost.rateNote}</p>
       </div>
 

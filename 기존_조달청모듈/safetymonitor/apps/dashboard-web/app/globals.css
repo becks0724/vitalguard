@@ -351,3 +351,13 @@ body[data-hide-assistant="1"] .assignment-chat-dock {
   stroke-dasharray: 24;
   animation: ack-check-draw 0.35s ease-out forwards;
 }
+
+/* 라벨 편집 완료 확인 — 초록 체크가 살짝 커졌다 원래대로(1회 팝). 완료 직후 0.7초만 보인다. */
+@keyframes label-saved-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.label-saved-pop {
+  animation: label-saved-pop 0.45s ease-out;
+}

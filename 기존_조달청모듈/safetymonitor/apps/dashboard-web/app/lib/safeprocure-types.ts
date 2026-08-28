@@ -41,6 +41,10 @@ export interface SafetyCostCheck {
   declaredCost: number | null;
   verdict: SafetyCostVerdict;
   rateNote: string; // ⚠ 요율 출처/검증 안내
+  /** 끝수 폭(국고금 관리법 제47조)이 판정을 가른 경우의 안내 — 없으면 표시 안 함.
+   *  ⚠ 2026-08-27 병렬 세션 lost-update 로 두 번 지워진 필드 — 지우면 typecheck 가 깨진다
+   *    (소비처: safety-cost.ts evaluateSafetyCost · ProcureRiskCard.tsx). */
+  verdictNote?: string;
 }
 
 /** 표준화된 조달 공고 요약(목록용). */
@@ -55,6 +59,8 @@ export interface NoticeSummary {
   endDate?: string;
   licenses: string[]; // 면허/업종 제한
   winRate?: number | null; // 낙찰률(%) — 계약 건은 낙찰정보서비스에서 보강
+  /** 시공사(계약업체명, cntrctCorpNm) — 계약 건에만 있다. 시공사 가입 화이트리스트의 출처. */
+  contractor?: string | null;
 }
 
 /** 공고 상세(분석 입력). */

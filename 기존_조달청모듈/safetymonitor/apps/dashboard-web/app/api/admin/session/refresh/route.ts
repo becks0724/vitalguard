@@ -32,6 +32,6 @@ export async function POST(request: Request) {
     }
   }
 
-  const token = createSession(session.role, session.username);
+  const token = createSession(session.role, session.username, session.orgType);
   return NextResponse.json({ ok: true, token, role: session.role });
 }

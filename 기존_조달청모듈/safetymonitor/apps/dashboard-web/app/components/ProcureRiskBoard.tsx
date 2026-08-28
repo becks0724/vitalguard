@@ -2,8 +2,10 @@
 // 안전조달 보드 — 조달 공사 공고를 사전 위험도 순으로 보여주고, 선택 시 상세 리스크 카드를 표시.
 // 데이터: /api/g2b/notices (목록) → 각 공고 /api/g2b/notice/:id (안전관리비+태그+위험도).
 // 색은 기존 대시보드 디자인 토큰을 따르되, 위험도/판정은 의미색(semantic-up/down·amber)으로 가시성을 준다.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import ProcureCostConfirm from "./ProcureCostConfirm";
 import ProcureRiskCard, { type ProcureRiskDetail } from "./ProcureRiskCard";
+import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 
 function won(n: number | null | undefined): string {
   return n == null ? "-" : `${Math.round(n).toLocaleString("ko-KR")}원`;
@@ -28,12 +30,36 @@ function verdictChip(v: string): string {
 }
 const VERDICT_SHORT: Record<string, string> = { "과소계상_의심": "과소계상 의심", "과다계상_의심": "과다계상 의심", "검토필요": "검토 필요", "정상": "정상" };
 
+// 확정된 공고 목록 행 — /api/g2b/cost-confirm (id 없음) 응답.
+type ConfirmedItem = {
+  id: number;
+  notice_id: string;
+  notice_title: string | null;
+  target_amount: number | null;
+  declared_cost: number | null;
+  construction_type: string | null;
+  confirmed_by: string;
+  confirmed_at: string;
+};
+
 export default function ProcureRiskBoard() {
   const [items, setItems] = useState<ProcureRiskDetail[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<"live" | "mock">("mock");
+  // 확정된 공고 전체(공고당 현행 1건) — 공고 목록은 최근 3일 롤링 창이라, 창에서 빠진 확정
+  // 공고를 다시 볼 자리가 없었다(2026-08-27). DB 확정 이력이 근거라 창과 무관하다.
+  const [confirmed, setConfirmed] = useState<ConfirmedItem[]>([]);
+  const reloadConfirmed = useCallback(async () => {
+    const r = await fetch("/api/g2b/cost-confirm", { cache: "no-store" });
+    if (!r.ok) return;
+    const j = (await r.json()) as { items?: ConfirmedItem[] };
+    setConfirmed(j.items ?? []);
+  }, []);
+  useEffect(() => {
+    void reloadConfirmed();
+  }, [reloadConfirmed]);
 
   useEffect(() => {
     let alive = true;
@@ -68,6 +94,16 @@ export default function ProcureRiskBoard() {
 
   const current = items.find((d) => d.notice.id === selected) ?? null;
 
+  // 확정 직후 그 공고만 다시 받아 판정을 갱신한다 — 갱신을 안 하면 확정해도 칩이 '검토 필요'로 남아
+  // 확정이 아무 일도 안 한 것처럼 보인다. 목록 정렬(위험도 순)도 함께 다시 맞춘다.
+  const refreshOne = useCallback(async (id: string) => {
+    const r = await fetch(`/api/g2b/notice/${encodeURIComponent(id)}`);
+    if (!r.ok) return;
+    const fresh = (await r.json()) as ProcureRiskDetail;
+    if (!fresh.risk) return;
+    setItems((prev) => prev.map((d) => (d.notice.id === id ? fresh : d)).sort((a, b) => b.risk.score - a.risk.score));
+  }, []);
+
   return (
     <section className="w-full">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -80,7 +116,8 @@ export default function ProcureRiskBoard() {
         </span>
       </div>
 
-      {loading && <p className="py-10 text-center text-xs text-muted">분석 중…</p>}
+      {/* 주간 검증 보고서·실집행 검증과 같은 로딩 표현으로 통일(2026-08-27 사용자 결정). */}
+      {loading && <QuantumPulseLoader text="공고 분석 중" />}
       {error && <p className="py-10 text-center text-xs text-semantic-down">{error}</p>}
 
       {!loading && !error && (
@@ -117,10 +154,73 @@ export default function ProcureRiskBoard() {
               );
             })}
             {items.length === 0 && <li className="text-xs text-muted">표시할 공고가 없습니다.</li>}
+
+            {/* 확정된 공고 다시 보기 — 목록(최근 3일 창)에서 빠진 공고의 확정 이력도 여기 남는다. */}
+            {confirmed.length > 0 && (
+              <li className="pt-2">
+                <p className="text-[11px] font-semibold text-body dark:text-on-dark-soft">
+                  확정된 공고 ({confirmed.length})
+                </p>
+                <ul className="mt-1 space-y-1">
+                  {confirmed.map((c) => {
+                    const inList = items.some((d) => d.notice.id === c.notice_id);
+                    return (
+                      <li
+                        key={c.notice_id}
+                        className="rounded-lg border border-hairline bg-canvas p-2 dark:border-white/10 dark:bg-surface-dark"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          {inList ? (
+                            <button
+                              onClick={() => setSelected(c.notice_id)}
+                              className="truncate text-left text-xs font-semibold text-primary underline-offset-2 hover:underline"
+                            >
+                              {c.notice_title ?? c.notice_id}
+                            </button>
+                          ) : (
+                            <span
+                              className="truncate text-xs font-semibold text-ink dark:text-on-dark"
+                              title="공고가 최근 목록 창(3일)에서 빠짐 — 확정 이력만 표시"
+                            >
+                              {c.notice_title ?? c.notice_id}
+                            </span>
+                          )}
+                          <span className="shrink-0 rounded-pill bg-[#05b169]/12 px-1.5 py-0.5 text-[10px] font-semibold text-semantic-up dark:bg-[#05b169]/25">
+                            확정
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+                          {c.confirmed_at.slice(0, 16).replace("T", " ")} · {c.confirmed_by} · 계상액{" "}
+                          {won(c.declared_cost)}
+                          {c.construction_type && ` · ${c.construction_type}`}
+                          {!inList && " · 목록 창 밖"}
+                        </p>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            )}
           </ul>
 
-          {/* 선택 카드 */}
-          <div>{current && <ProcureRiskCard data={current} />}</div>
+          {/* 선택 카드 + 담당관 확정 */}
+          <div>
+            {current && (
+              <>
+                <ProcureRiskCard data={current} />
+                <ProcureCostConfirm
+                  key={current.notice.id}
+                  noticeId={current.notice.id}
+                  noticeTitle={current.notice.title}
+                  specDocs={current.notice.specDocs}
+                  onConfirmed={() => {
+                    refreshOne(current.notice.id);
+                    reloadConfirmed();
+                  }}
+                />
+              </>
+            )}
+          </div>
         </div>
       )}
     </section>

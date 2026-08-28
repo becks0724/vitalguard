@@ -81,6 +81,12 @@ class FallShadowReporter(
         val item = LinkedHashMap<String, Any>()
         item["ts"] = iso(nowMs())
         item["fallCandidateId"] = id
+        // ★ 빈 샘플 게이트 통과용 — 서버 store.hasMonitorableSignal 은 실측 신호가 하나도 없는
+        //   샘플을 낙상 갱신 분기 **이전에** 폐기한다. fallCandidate=true 가 그 통과 표식이고,
+        //   애플도 폰(VitalPipeline)이 fcid 있는 항목마다 이 키를 붙여 같은 게이트를 지난다.
+        //   갱신 경로는 UPDATE 후 조기 반환이라 이 플래그로 행이 새로 생기지는 않는다.
+        //   (v6.1.1 이 관측치를 빠뜨려 결말 54건 전량이 소리 없이 폐기됐다 — 2026-08-27 실측)
+        item["fallCandidate"] = true
         item["fallUpdatePhase"] = "prompt_result"
         item["fallPromptOutcome"] = outcome
         // 0.1초 정밀도 — 애플(frs) 반올림 규칙과 동일.

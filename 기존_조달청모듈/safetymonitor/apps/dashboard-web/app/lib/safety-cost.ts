@@ -124,6 +124,45 @@ export function computeRequiredSafetyCost(
   return { requiredCost, rateApplied, baseAdded, bracket, formula };
 }
 
+/**
+ * 문서에 적힌 요율(%)로 공사종류를 **역추론**한다 — 담당관이 공종을 고를 때 쓰는 힌트.
+ *
+ * ★ 왜 필요한가 — `classifyConstructionType` 은 면허·과업문 키워드 추측이고, 안 걸리면 건축공사로
+ *   떨어진다("모르겠다"가 "건축공사"로 보인다). 반면 내역서의 요율은 **발주처가 공종을 판단한 결과**라
+ *   근거의 격이 다르다. 실측: 「가운중앙근린공원 리모델링」 추정=건축(3.11%) vs 문서=2.07%(특수).
+ *
+ * ⚠ 답이 하나로 안 떨어질 수 있다 — 3.11% 는 건축(5억 미만)이자 중건설(50억 이상)이다.
+ *   그래서 하나를 고르지 않고 **후보 전부**를 돌려준다. 대상액을 알면 구간이 정해져 후보가 좁는다.
+ */
+export function typesMatchingRate(
+  ratePercent: number,
+  baseAmount?: number | null,
+  rates: Record<ConstructionType, RateRow> = SAFETY_COST_RATES,
+): { type: ConstructionType; bracket: CostBracket }[] {
+  const rate = ratePercent / 100;
+  const wanted = baseAmount != null && baseAmount > 0 ? bracketOf(baseAmount) : null;
+  const out: { type: ConstructionType; bracket: CostBracket }[] = [];
+  for (const [type, row] of Object.entries(rates) as [ConstructionType, RateRow][]) {
+    const pairs: [CostBracket, number][] = [
+      ["under5", row.under5],
+      ["mid", row.mid.rate],
+      ["over50", row.over50],
+    ];
+    for (const [bracket, r] of pairs) {
+      if (wanted && bracket !== wanted) continue;
+      // 부동소수(2.07/100 = 0.020700000000000003)라 정확 비교를 쓰지 않는다.
+      if (Math.abs(r - rate) < 1e-9) out.push({ type, bracket });
+    }
+  }
+  return out;
+}
+
+export const BRACKET_LABEL: Record<CostBracket, string> = {
+  under5: "5억 미만",
+  mid: "5억~50억",
+  over50: "50억 이상",
+};
+
 // 과다계상 선별 배수 — 법정 계상액의 이 배수를 넘으면 '과다계상_의심'.
 // 1.3 인 이유: 법정 요율은 '최소' 기준이라 초과 계상 자체는 적법하고, 설계변경·공종 특성으로 20~30%
 // 차이는 흔하다. 그 위부터를 대상액 부풀리기·집행 미달 가능성이 있는 검토 대상으로 좁힌다.
@@ -148,15 +187,28 @@ export function evaluateSafetyCost(input: SafetyCostInput): SafetyCostCheck {
     baseAmount,
   );
 
+  // ★ 과소 판정 하한 = 정확값의 10원 미만 끝수 버림 — 국고금 관리법 제47조(끝수 계산) ①·③.
+  //   발주처(지자체 준용)는 10원 미만 끝수를 계산하지 않을 수 있으므로, 그 범위의 결손은
+  //   과소계상이 아니라 법정 끝수 처리다. 반올림한 requiredCost 와 비교하면 가짜 미달이 생긴다
+  //   — 실측(2026-08-27): 풀베기사업 원가계산서 829,508원 vs 반올림 기준액 829,509원 → 1원 오탐.
+  //   10원 이상 미달은 종전대로 전부 잡힌다.
+  const legalFloor = Math.floor((baseAmount * rateApplied + baseAdded) / 10) * 10;
+
   let verdict: SafetyCostCheck["verdict"];
+  let verdictNote: string | undefined;
   if (inputSufficiency === "partial") {
     verdict = "검토필요";
-  } else if ((declaredCost as number) < requiredCost) {
+  } else if ((declaredCost as number) < legalFloor) {
     verdict = "과소계상_의심";
   } else if ((declaredCost as number) > requiredCost * OVER_APPROPRIATION_RATIO) {
     verdict = "과다계상_의심";
   } else {
     verdict = "정상";
+    // 끝수 폭이 판정을 가른 경우 — 화면만 보면 "기준액보다 적은데 왜 정상?"이 되므로 근거를 싣는다.
+    if ((declaredCost as number) < requiredCost) {
+      const gap = requiredCost - (declaredCost as number);
+      verdictNote = `계상액이 기준액보다 ${gap.toLocaleString("ko-KR")}원 적지만 정상 — 국고금 관리법 제47조(10원 미만 끝수는 계산하지 않음, 지자체 준용)의 법정 절사 범위입니다.`;
+    }
   }
 
   return {
@@ -171,5 +223,6 @@ export function evaluateSafetyCost(input: SafetyCostInput): SafetyCostCheck {
     declaredCost,
     verdict,
     rateNote: RATE_NOTE,
+    ...(verdictNote ? { verdictNote } : {}),
   };
 }

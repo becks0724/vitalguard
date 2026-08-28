@@ -109,8 +109,11 @@ export function GlassTabBar({
             <span className="relative">{t}</span>
             {/* 미확인 배지 — 헤더 아이콘을 걷어내며 여기로 옮겼다(2026-08-20).
                 아이콘만 지우고 배지를 안 옮기면 미확인 개수가 화면 어디에도 안 남는다. */}
+            {/* ⚠ 높이 없이 leading 으로 원을 만들면 숫자가 베이스라인을 타고 위로 뜬다(2026-08-26 실측)
+                — 고정 높이 + 그리드 중앙 배치 + leading-none 이 이 코드베이스의 배지 관례다(ExpandableTabs).
+                단 inline-grid 여야 한다 — grid 는 블록 레벨이라 배지가 라벨 아래 줄로 떨어진다. */}
             {!!badges?.[i] && (
-              <span className="relative ml-1 inline-flex min-w-[1.05rem] items-center justify-center rounded-full bg-semantic-down px-1 text-[9px] font-bold leading-[1.05rem] text-white">
+              <span className="relative ml-1 inline-grid h-[1.05rem] min-w-[1.05rem] place-items-center rounded-full bg-semantic-down px-1 text-[9px] font-bold leading-none tabular-nums text-white">
                 {badges[i]}
               </span>
             )}

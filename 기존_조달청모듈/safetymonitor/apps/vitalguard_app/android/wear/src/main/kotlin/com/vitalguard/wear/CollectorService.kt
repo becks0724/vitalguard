@@ -20,6 +20,7 @@ import com.vitalguard.wear.pipeline.UploadPipeline
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.ml.FallMLModule
 import com.vitalguard.ml.FallShadowReporter
+import com.vitalguard.ml.ImuResampler
 import com.vitalguard.ml.ImuWindowLogger
 import com.vitalguard.ml.MLSelfCheck
 import com.vitalguard.wear.source.GpsLocationSource
@@ -53,6 +54,7 @@ class CollectorService : Service() {
     private var fallMl: FallMLModule? = null
     private lateinit var imuLogger: ImuWindowLogger
     private lateinit var fallShadow: FallShadowReporter
+    private lateinit var imuResampler: ImuResampler
     /**
      * 센서가 붙어 있는가 — 벗으면 떼고 차면 다시 붙인다(서비스는 계속 산다).
      * ⚠ `@Volatile` = 쓰기는 메인, 읽기는 수집 스레드와 IMU 감시 경로 둘이다. 종전에도 교차
@@ -113,6 +115,12 @@ class CollectorService : Service() {
         if (fallMl == null) Log.w(TAG, "낙상 ML 비활성 — assets 모델 로드 실패")
         // 항목 생성은 IMU 스레드, 큐 적재는 수집 스레드 — 큐(플러시와 같은 스레드) 계약 유지.
         fallShadow = FallShadowReporter(enqueue = { item -> handler.post { queue.add(item) } })
+        // 갤럭시 센서는 50Hz 가 없어 ~60Hz 로 공급된다 — 모듈 계약(50Hz)으로 리샘플해서 먹인다.
+        // 실효 Hz 가 trace 에 ~50.0 으로 찍히는지가 배포 확인 지표다(종전 52~54).
+        imuResampler = ImuResampler(onSample = { ax, ay, az, gx, gy, gz, totalG, tNs ->
+            fallShadow.feed(totalG)    // 카운트다운 열려 있을 때만 일한다(평시 no-op)
+            imuLogger.ingest(ax, ay, az, gx, gy, gz, totalG, tNs)
+        })
         imuLogger.onWindow = { w ->
             val ml = fallMl
             if (ml != null) {
@@ -215,9 +223,8 @@ class CollectorService : Service() {
         // ML 은 착용 중에만 돈다 — 벗은 워치의 6축 50Hz 는 전력만 쓴다.
         if (fallMl != null && imu.supported) {
             imu.start { r ->
-                fallShadow.feed(r.totalG)    // 카운트다운 열려 있을 때만 일한다(평시 no-op)
-                imuLogger.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.totalG, r.atNs)
-                watchdogFromImu()
+                imuResampler.ingest(r.ax, r.ay, r.az, r.gx, r.gy, r.gz, r.atNs)
+                watchdogFromImu()    // 감시는 원시 콜백 기준 — 센서 생존을 재는 것이라 리샘플 밖
             }
         }
         Log.i(TAG, "착용 — 수집 개시 (낙상ML=${if (fallMl != null && imu.supported) "on" else "off"})")

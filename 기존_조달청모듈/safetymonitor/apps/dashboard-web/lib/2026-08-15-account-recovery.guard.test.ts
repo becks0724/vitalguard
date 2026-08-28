@@ -82,7 +82,7 @@ test("로그인 — 임시 비밀번호 만료를 세션 발급 전에 막는다
   const body = handlerBody(loginSource, "POST");
   const expiredAt = body.indexOf("tempPasswordExpired(");
   assert.ok(expiredAt >= 0, "로그인이 임시 비밀번호 만료를 보지 않는다 — 임시 비번이 영구히 산다");
-  const tokenAt = body.indexOf('createSession("admin", user.username)');
+  const tokenAt = body.indexOf('createSession("admin", user.username, user.org_type)');
   assert.ok(
     tokenAt > expiredAt,
     "만료 검사가 세션 발급보다 뒤에 있다 — 토큰이 먼저 나가면 만료가 무의미하다",

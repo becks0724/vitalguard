@@ -37,12 +37,17 @@ test("캘린더 진입점은 탭 하나뿐이다 — 헤더 아이콘·팝업은
 // ★ 아이콘을 지우면서 알림을 잃지 않았는지 — 토스트·칩이 탭으로 보내야 한다.
 test("새 현장 사진 토스트와 위험작업 칩이 캘린더 탭으로 보낸다", () => {
   assert.match(dash, /const CALENDAR_PAGE_IDX = \d/, "캘린더 탭 인덱스 상수 소실");
-  const jumps = dash.match(/goCalendarTab\(\);/g) ?? [];
-  assert.equal(jumps.length, 2, `탭 이동 호출이 ${jumps.length}곳 — 토스트·칩 2곳이어야 한다`);
+  // ⚠ 호출 **개수**로 세지 않는다 — 칩이 일괄 확인을 떼면서 `onClick={goCalendarTab}` 참조 형태가
+  //   됐고(2026-08-27), `goCalendarTab();` 만 세던 가드가 거짓 실패했다. 두 자리를 각각 짚는다.
+  assert.match(dash, /goCalendarTab\(\);/, "토스트가 캘린더 탭으로 안 보낸다");
+  assert.match(dash, /onClick=\{goCalendarTab\}/, "위험작업 칩이 캘린더 탭으로 안 보낸다");
   assert.match(dash, /gotoSignal=\{calendarJump\}/, "페이저에 이동 신호가 연결되지 않았다");
-  // 미확인 배지 해소가 함께 남아 있어야 한다 — 안 그러면 배지가 영영 안 꺼진다.
-  const seen = dash.match(/markCalendarSeen\(\);/g) ?? [];
-  assert.ok(seen.length >= 2, `markCalendarSeen 이 ${seen.length}곳 — 이동 지점마다 있어야 한다`);
+  // ⚠ 전제가 바뀌었다(2026-08-27 사용자 결정) — 확인의 단위가 **탭 열기**에서
+  //   **미확인 리스트의 항목 클릭 / [모두 확인]** 으로 옮겨졌다. 그래서 토스트·칩은 이동만 하고
+  //   일괄 확인하지 않는다(누르자마자 다 읽음 처리되면 리스트가 만들어지자마자 비어 버린다).
+  //   지켜야 할 것은 **배지를 끌 수단이 존재한다**는 것 — 리스트의 두 경로가 그것이다.
+  assert.match(dash, /onSeeMedia=\{markCalendarMediaSeen\}/, "항목 단위 확인 경로 소실 — 배지를 하나씩 못 끈다");
+  assert.match(dash, /onSeeAllMedia=\{markCalendarSeen\}/, "[모두 확인] 경로 소실 — 배지를 일괄로 못 끈다");
 });
 
 // ⚠ 이 가드가 처음엔 없어서 구멍이 있었다 — 클릭 대상(토스트·칩)만 옮기고 **배지 숫자 자체**는

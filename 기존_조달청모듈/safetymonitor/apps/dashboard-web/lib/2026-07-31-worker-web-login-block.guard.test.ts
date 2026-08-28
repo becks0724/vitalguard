@@ -33,7 +33,7 @@ test("관제웹 로그인 — 작업자 계정을 403 으로 막는다(세션 �
     "로그인 라우트에 worker 차단이 없다 — 앱 전용 작업자 계정이 관제 화면에 들어온다",
   );
   // DB 가입자에게 세션을 주는 지점 — 로컬 데모 분기(createSession("admin", id))와 구분한다.
-  const tokenAt = body.indexOf('createSession("admin", user.username)');
+  const tokenAt = body.indexOf('createSession("admin", user.username, user.org_type)');
   assert.ok(
     tokenAt > guardAt,
     "worker 차단이 세션 발급보다 뒤에 있다 — 토큰이 먼저 나가면 차단이 무의미하다",
