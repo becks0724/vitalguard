@@ -113,6 +113,7 @@ import {
   worseTone,
 } from "../../lib/worker-signal";
 import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
+import { stillLabel } from "../../lib/vital-still";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -7963,6 +7964,9 @@ function WorkerTableRow({
   const kind: StaleKind | undefined =
     stale && sample !== undefined ? staleKind(sample, nowMs, sample.dataOrigin) : undefined;
   const staleLabel = kind !== undefined ? STALE_LABEL[kind] : "";
+  // ★ 무동작 — 라벨만. `수신 중` 자리만 대신하고 톤·게이트·집계는 이 값을 모른다(2026-08-28).
+  //   벗음도 응급도 단정하지 않는다 — 심박은 착용의 증거가 아니라서(lib/vital-still.ts).
+  const still = stillLabel(sample ?? {}, stale, wstatus.tone);
   // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
   const overall = effectiveTone(overallVital, { stale, outside });
   const heading = workerHeading(sample, workerId, nameFallback);
@@ -8246,6 +8250,15 @@ function WorkerTableRow({
             <span className="whitespace-nowrap font-mono text-[10px]">
               {formatElapsed(vitalAgeMs(sample, nowMs))}
             </span>
+          </span>
+        ) : still ? (
+          // 무동작 — `수신 중` 자리에서만. 경과를 함께 적어 5분과 40분이 다른 화면이 되게 한다.
+          <span
+            className="flex flex-col items-center leading-tight text-slate-500 dark:text-slate-300"
+            title={`${formatElapsed(still.elapsedMs)}째 움직임 없음. 착용 중인지·의식이 있는지 확인하세요`}
+          >
+            <span className="whitespace-nowrap text-xs font-semibold">{still.label}</span>
+            <span className="whitespace-nowrap font-mono text-[10px]">{formatElapsed(still.elapsedMs)}</span>
           </span>
         ) : (
           <span className={`whitespace-nowrap text-xs font-semibold ${WSTATUS_TONE[wstatus.tone]}`}>
