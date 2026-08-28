@@ -113,6 +113,7 @@ import {
 } from "../../lib/worker-signal";
 import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
 import { stillLabel } from "../../lib/vital-still";
+import { type OffWristSuspect } from "../../lib/vital-offwrist";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
 import { ThemeToggle } from "./ThemeToggle";
 import { VitalHistoryPanel } from "./VitalHistoryPanel";
@@ -164,6 +165,7 @@ type MockVitalResponse = {
   // 온열 단계(온열 ③) — caution/warning 워커만. warning 은 신호등 주의 점등(사용자 결정 08-13).
   // workerStatus/overallStatus(생체 판정)에는 여전히 미주입 — 통제된 예외는 신호등 톤 합성뿐.
   heatStage?: Record<string, "caution" | "warning">;
+  offWrist?: Record<string, OffWristSuspect>;
   // 별칭 맵(secondary → primary) — 실시간 수집 행(발신 ID)을 추정 맵(주 ID 키)에 잇는 데 쓴다.
   workerAliases?: Record<string, string>;
   // 직급/직책 관제 웹 오버라이드(workerId → 직급) — 폰 발신값(sample.jobTitle)보다 우선.
@@ -7303,6 +7305,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                           nowMs={now}
                           coreTempEstC={freshCoreTemp(entry.workerId)}
                           heatPattern={data.heatPattern?.[entry.workerId]}
+                          offWrist={data.offWrist?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
@@ -7344,6 +7347,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                           nowMs={now}
                           coreTempEstC={freshCoreTemp(entry.workerId)}
                           heatPattern={data.heatPattern?.[entry.workerId]}
+                          offWrist={data.offWrist?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
                           isAnomaly={pos === anomalyPos}
                           fallTs={lastFallByWorker.get(entry.workerId)}
@@ -7833,6 +7837,7 @@ type WorkerTableRowProps = {
   coreTempEstC?: number;
   // 저활동·고심박 패턴(온열 ②) — 있으면 flagged 상태. 체온 추정 셀의 주석(툴팁·라벨)에만 쓴다.
   heatPattern?: { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number };
+  offWrist?: OffWristSuspect;
   /** hrvBacked = 이 지수에 HRV 가 실제로 들어갔는가(칩 문구를 산출 근거에 맞추는 데 쓴다). */
   stress: { result: StressResult; hrvBacked: boolean };
   isAnomaly: boolean;
@@ -7871,6 +7876,7 @@ function WorkerTableRow({
   nowMs,
   coreTempEstC,
   heatPattern,
+  offWrist,
   stress,
   isAnomaly,
   outside,
@@ -7906,6 +7912,9 @@ function WorkerTableRow({
   // ★ 무동작 — 라벨만. `수신 중` 자리만 대신하고 톤·게이트·집계는 이 값을 모른다(2026-08-28).
   //   벗음도 응급도 단정하지 않는다 — 심박은 착용의 증거가 아니라서(lib/vital-still.ts).
   const still = stillLabel(sample ?? {}, stale, wstatus.tone);
+  // ★ 벗음 의심 — 라벨만. `무동작` 이 떠 있을 때만(평평 ∧ 정지) 그 아래 한 줄. 서버가 15분 심박으로
+  //   계산하고 톤·게이트·집계·경보는 이 값을 모른다(lib/vital-offwrist.ts · docs/vital-offwrist-suspect).
+  const suspect = still ? offWrist : undefined;
   // 신호등·좌측 강조선에 쓰는 최종 톤 — 생체 판정에 구획 이탈을 얹는다(stale 이면 위치 무시).
   const overall = effectiveTone(overallVital, { stale, outside });
   const heading = workerHeading(sample, workerId, nameFallback);
@@ -8194,10 +8203,11 @@ function WorkerTableRow({
           // 무동작 — `수신 중` 자리에서만. 경과를 함께 적어 5분과 40분이 다른 화면이 되게 한다.
           <span
             className="flex flex-col items-center leading-tight text-slate-500 dark:text-slate-300"
-            title={`${formatElapsed(still.elapsedMs)}째 움직임 없음. 착용 중인지·의식이 있는지 확인하세요`}
+            title={`${formatElapsed(still.elapsedMs)}째 움직임 없음${suspect ? " · 심박도 15분째 평평합니다 — 벗어 둔 워치일 수 있습니다" : ""}. 착용 중인지·의식이 있는지 확인하세요`}
           >
             <span className="whitespace-nowrap text-xs font-semibold">{still.label}</span>
             <span className="whitespace-nowrap font-mono text-[10px]">{formatElapsed(still.elapsedMs)}</span>
+            {suspect ? <span className="whitespace-nowrap text-[10px]">{suspect.label}</span> : null}
           </span>
         ) : (
           <span className={`whitespace-nowrap text-xs font-semibold ${WSTATUS_TONE[wstatus.tone]}`}>
