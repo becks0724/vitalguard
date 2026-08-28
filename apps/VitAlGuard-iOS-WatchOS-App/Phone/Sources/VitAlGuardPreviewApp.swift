@@ -4824,6 +4824,7 @@ private enum HomeSection: String, CaseIterable {
     case workerSafety
     case workerWatch
     case workerAppleHealth
+    case workerMetrics
     case workerWeather
     case nearbyCctv
     case workerDashboardWeather
@@ -4834,7 +4835,7 @@ private enum HomeSection: String, CaseIterable {
         case .safetySignal: return "현장 통합 안전 신호등"
         case .siteWeather: return "작업 구역 기상"
         case .adminWatch: return "실시간 Watch 데이터"
-        case .metrics: return "생체 요약"
+        case .metrics, .workerMetrics: return "생체 요약"
         case .workers: return "작업자 모니터링"
         case .cctv: return "현장 CCTV"
         case .adminAppleHealth: return "Apple Health / Wallet"
@@ -4854,7 +4855,7 @@ private enum HomeSection: String, CaseIterable {
         switch self {
         case .safetySignal, .siteWeather, .adminWatch, .metrics, .workers, .cctv, .adminAppleHealth, .dashboardWeather, .adminActions:
             return .admin
-        case .workerSafety, .workerWatch, .workerAppleHealth, .workerWeather, .nearbyCctv, .workerDashboardWeather, .workerActions:
+        case .workerSafety, .workerWatch, .workerAppleHealth, .workerMetrics, .workerWeather, .nearbyCctv, .workerDashboardWeather, .workerActions:
             return .worker
         }
     }
@@ -4862,9 +4863,9 @@ private enum HomeSection: String, CaseIterable {
     static func defaults(for mode: AppMode) -> [HomeSection] {
         switch mode {
         case .admin:
-            return [.safetySignal, .siteWeather, .dashboardWeather, .adminWatch, .adminAppleHealth, .metrics, .workers, .cctv]
+            return [.metrics, .safetySignal, .siteWeather, .dashboardWeather, .adminWatch, .adminAppleHealth, .workers, .cctv]
         case .worker:
-            return [.workerSafety, .workerWeather, .workerDashboardWeather, .workerWatch, .workerAppleHealth, .nearbyCctv]
+            return [.workerMetrics, .workerSafety, .workerWeather, .workerDashboardWeather, .workerWatch, .workerAppleHealth, .nearbyCctv]
         }
     }
 
@@ -4927,8 +4928,8 @@ private enum MainTab: CaseIterable {
 
     func sections(for mode: AppMode) -> [HomeSection] {
         switch (self, mode) {
-        case (.home, .admin): return [.safetySignal, .siteWeather, .dashboardWeather]
-        case (.home, .worker): return [.workerSafety, .workerWeather, .workerDashboardWeather]
+        case (.home, .admin): return [.metrics, .safetySignal, .siteWeather, .dashboardWeather]
+        case (.home, .worker): return [.workerMetrics, .workerSafety, .workerWeather, .workerDashboardWeather]
         case (.watch, .admin): return [.adminWatch]
         case (.watch, .worker): return [.workerWatch]
         case (.cctv, .admin): return [.cctv]
@@ -7581,7 +7582,7 @@ final class VitAlGuardPreviewController: UIViewController,
             return siteWeatherPanel()
         case .adminWatch:
             return watchDataPanel(title: "실시간 Watch 데이터", subtitle: "관리자 관제 · \(watchDeviceDisplayText) · \(lastWatchSyncText)")
-        case .metrics:
+        case .metrics, .workerMetrics:
             return metricsGrid()
         case .workers:
             return workerPanel()
