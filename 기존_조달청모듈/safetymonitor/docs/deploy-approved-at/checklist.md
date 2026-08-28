@@ -48,8 +48,11 @@
 
 ## 5. 마감
 
-- [ ] `harness/4-guardrails/lessons.md` L-116⑥·L-122④ 에 "구현됨" 표시
-- [ ] 커밋 (scripts + 가드 + docs. `.claude/` 는 제외)
+- [x] `harness/4-guardrails/lessons.md` L-116⑥ 자동화 절을 "✅ 구현됨(2026-08-28)" 으로 갱신.
+      종전 문구 *"다만 아직 만들지 않았다"* 를 지우고 실제 동작·가드·남은 간극을 적었다
+      (⚠ `harness/` 는 로컬 전용이라 커밋되지 않는다)
+- [x] 커밋 `805f0d8` → push (`15745a8..805f0d8`). 5파일 · 남의 미커밋은 안 딸려 갔다
+      (같은 분에 옆 세션이 `docs/wear-os-port/checklist.md` 를 별도 커밋 — 경로 지정 커밋이 갈랐다)
 
 ---
 
