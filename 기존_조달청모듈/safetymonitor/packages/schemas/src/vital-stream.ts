@@ -296,10 +296,14 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "motionVariabilityMg",
   // 자동 재개 시도 횟수 — 진단용이라 범위를 벗어나도 버려서 안전하다(위와 같은 이유).
   "sessionResumeTries",
-  // ⚠ `hrLastReviveAt` 은 **일부러 안 넣었다.** 아래 스트립 로직은 `too_small`·`too_big`
-  //   이슈의 **숫자 필드만** 지운다(`field.unwrap() instanceof z.ZodNumber`). 시각 문자열은
-  //   여기 적어도 실제로 안 지워지므로, 넣으면 **얻지 못할 보호를 주장하는 주석**이 된다.
-  //   다른 시각 필드(`sessionStartedAt`·`sessionResumeTriedAt`…)도 같은 이유로 여기 없다.
+  // 심박 재구독 시각 — 진단용 시각 문자열. 형식이 깨져도 버려서 안전하다.
+  // 판정·경보·화면 어디에도 안 쓰므로, 이것 하나가 생체 샘플을 죽이는 쪽이 훨씬 나쁘다.
+  "hrLastReviveAt",
+  // ⚠ 여기 **없는** 것들 — `sessionStartedAt`·`sessionResumeTriedAt`·`sessionEndSeenAt` 은
+  //   성격이 같은 진단 시각인데 등재돼 있지 않다. 08-28 스트립 수리 전에는 등재해도 효과가
+  //   없어서 넣을 이유가 없었고, 수리 뒤에는 넣을 수 있게 됐다. **판단이 필요한 변경이라
+  //   이 트랙에서 임의로 넣지 않았다** — 넣으면 그 필드가 깨졌을 때 동작이 거부→스트립으로
+  //   바뀐다. 필요해지면 그때 근거와 함께 넣는다.
   // 오류 종료 도메인#코드 — 진단용 문자열. 길이 초과가 생체 샘플을 통째로 죽이면 안 된다.
   "sessionEndError",
   // 워치 하드웨어 모델 — 귀속용 메타데이터. 길이 초과가 생체를 죽이면 안 된다(위와 같은 이유).
@@ -335,16 +339,28 @@ export function parseResilientVitalSample(
   for (let attempt = 0; attempt < 4; attempt += 1) {
     let stripped = false;
     for (const issue of lastError.issues) {
-      if (issue.code !== "too_small" && issue.code !== "too_big") continue;
       if (issue.path.length !== 1) continue;
       const key = issue.path[0];
       if (typeof key !== "string") continue;
+      const isDiagnostic = NON_SAFETY_STRIPPABLE_KEYS.has(key);
       // 비-이벤트 샘플에서 생체값은 스트립하지 않는다 → 샘플 전체가 거부되어 ts 가 늙고
       // 신선도 게이트가 "연결끊김"으로 드러낸다(조용한 정상 표시보다 안전한 실패).
-      if (!isEventSample && !NON_SAFETY_STRIPPABLE_KEYS.has(key)) continue;
+      if (!isEventSample && !isDiagnostic) continue;
+      // ★ 허용목록(진단) 필드는 **이슈 종류와 타입을 안 가리고** 버린다.
+      //   2026-08-28 까지 여기에 `too_small|too_big` + `ZodNumber` 두 제약이 걸려 있어
+      //   **문자열·record 항목은 등재돼 있어도 실제로는 안 지워졌다** — 10개 중 3개
+      //   (`sessionEndError`·`watchDeviceModel`·`fallTrace`)가 무효였고, 그 사실이 주석에는
+      //   "버려서 안전하다" 로 적혀 있어 **있지도 않은 보호를 약속**하고 있었다.
+      //   진단값은 정의상 판정에 안 쓰이므로 어떤 형태로 깨지든(범위·형식·타입) 버리는 쪽이 옳다.
+      //   남기면 그 하나가 생체 샘플을 통째로 죽인다 — 정확히 반대 방향의 사고다.
+      //
+      //   ⚠ 그 밖(이벤트 샘플의 **생체값**)은 종전 그대로 범위 위반만 스트립한다.
+      //     생체값의 타입이 통째로 틀린 것은 "값이 크다" 와 성격이 다르다 — 앱 결함이거나
+      //     남의 payload 이고, 그것을 조용히 지워 경보를 살리면 무엇을 근거로 울렸는지가 사라진다.
+      if (!isDiagnostic && issue.code !== "too_small" && issue.code !== "too_big") continue;
       const field = shape[key];
       if (!(field instanceof z.ZodOptional)) continue;
-      if (!(field.unwrap() instanceof z.ZodNumber)) continue;
+      if (!isDiagnostic && !(field.unwrap() instanceof z.ZodNumber)) continue;
       if (candidate[key] === undefined) continue;
       delete candidate[key];
       strippedKeys.push(key);
