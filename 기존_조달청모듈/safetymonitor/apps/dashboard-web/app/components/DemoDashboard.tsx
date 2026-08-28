@@ -1,5 +1,6 @@
 "use client";
 
+import { motion, useReducedMotion, type Transition } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -57,7 +58,7 @@ import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-sc
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
 import { DotMatrix } from "./DotMatrix";
-import { SevenSegment } from "./SevenSegment";
+import { AnimateNumber } from "./AnimateNumber";
 import { useSession } from "./LoginGate";
 import { getSessionRole, getSessionToken } from "./session-token";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
@@ -519,6 +520,7 @@ function GaugeRow({
   title,
   status,
   value,
+  fractionDigits = 0,
   unit,
   unitTight,
   note,
@@ -528,8 +530,10 @@ function GaugeRow({
 }: {
   title: string;
   status: string;
-  /** 도트로 그릴 값 — 숫자·콜론·마침표·%·- 만 담을 것(그 외 글자는 공백이 된다). */
-  value: string;
+  /** 표시할 값. 자릿수 단위로 애니메이션하므로 **문자열이 아니라 숫자**로 넘긴다. */
+  value: number;
+  /** 소수 자릿수 — Intl 로 고정한다. 자릿수가 흔들리면 슬롯이 어긋나 엉뚱한 자리가 움직인다. */
+  fractionDigits?: number;
   /** 단위 — 글리프에 없거나(한글) 도트로 그리면 뭉개지는 글자(%)는 여기로 뺀다(글꼴로 렌더). */
   unit?: string;
   /** 단위를 숫자에 붙일지. '%'처럼 값과 한 덩어리로 읽히는 기호는 true, '일'처럼 낱말이면 false. */
@@ -539,32 +543,71 @@ function GaugeRow({
   known: boolean;
   ariaLabel: string;
 }) {
+  // 상태 라벨을 마커의 어느 쪽에 둘지 — 채움 쪽(왼쪽)이 기본이고, 그쪽 폭이 라벨보다 좁으면
+  // 반대편으로 넘긴다. 폭은 글자 수로 어림할 수 없어(한글·숫자·공백이 섞인다) 실제로 잰다.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const labelRef = useRef<HTMLSpanElement>(null);
+  const [labelRight, setLabelRight] = useState(false);
+  useEffect(() => {
+    const track = trackRef.current;
+    const label = labelRef.current;
+    if (!track || !label) return;
+    const measure = () => {
+      const filled = track.clientWidth * ((known ? pct : 0) / 100);
+      setLabelRight(label.offsetWidth + 8 > filled);
+    };
+    measure();
+    // 바는 flex-1 이라 창 크기·형제 폭에 따라 계속 변한다 — 한 번 재고 끝내면 어긋난다.
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(track);
+    return () => ro.disconnect();
+  }, [pct, known, status]);
+
+  // 채움이 0 에서 현재 값까지 차오른다(2026-08-28 사용자 지시 "로딩하는 것처럼").
+  //
+  // ★ 처음엔 21st.dev `@ddoemonn/progress-bar` 의 FILL 계수(stiffness 210·damping 34·mass 0.9)를
+  //   그대로 썼는데 **0.6초 만에 끝나 사용자가 "바뀐 게 없다"고 했다** — 코드는 돌고 있었지만
+  //   눈 깜빡할 사이였다. 그래서 계수 대신 **시간을 직접 지정**한다(1.4초).
+  // ⚠ bounce: 0 — 게이지가 목표값을 넘었다 돌아오면 그 순간 **틀린 수치로 보인다.** 튐은 금물.
+  // ⚠ 덮개·마커·라벨이 **같은 transition** 을 써야 한 덩어리로 움직인다. 하나라도 빠지면
+  //   차오르는 동안 마커만 먼저 가 있어 어긋나 보인다.
+  // ⚠ `left` 는 레이아웃 속성이라 보통은 transform 을 쓰지만, 여기 움직이는 요소는 셋뿐이고
+  //   값이 바뀔 때만 도는 애니메이션이라 그대로 둔다(구조를 비틀면 덮개의 right-0 이 깨진다).
+  const reduced = useReducedMotion();
+  const fillTransition: Transition = reduced
+    ? { duration: 0 }
+    : { type: "spring", duration: 1.4, bounce: 0 };
+
   return (
     // items-stretch(기본) — 게이지가 텍스트 줄 높이를 그대로 받아 둘이 정확히 같아진다(고정값 없음).
     <div className="flex items-stretch gap-2.5">
       {/* 좌 — 라벨 + 값 + 경과/총 */}
-      <div className="flex shrink-0 items-center gap-1.5">
+      {/* items-baseline — AnimateNumber 는 an-root 가 baseline 정렬이라 라벨·단위와 밑선이 맞는다.
+          items-center 로 두면 값만 반 픽셀 떠 보인다(7-세그먼트 시절의 정렬값이었다). */}
+      <div className="flex shrink-0 items-baseline gap-1.5">
         <span className="text-[13px] font-semibold leading-none text-ink dark:text-on-dark">{title}</span>
-        {/* 값은 도트 매트릭스(2026-08-28 사용자 지시). 미상(--)도 도트로 그린다 —
-            여기만 글꼴로 남기면 값이 없을 때 표시가 튄다. */}
-        {/* size=2 · gap=1 → 20px. 종전 글꼴 값 17px 보다 3px 크지만 바를 눈에 띄게 밀지는 않는다.
-            ★ **정수 픽셀만 쓴다.** gap=0.5 로 17px 을 정확히 맞췄더니 브라우저가 각 점을 물리
-              픽셀에 스냅하면서 어떤 간격은 0px, 어떤 간격은 1px 로 반올림돼 **점 분포가 끊겨
-              보였다**(2026-08-28 사용자 지적). 소수 간격은 크기가 맞아도 격자가 무너진다.
-            ⚠ size=3 계열(21~27px)은 바를 밀거나(gap≥1) 점이 맞붙어 진하다(gap=0).
-            ⚠ 글리프를 3×5 로 줄이는 길은 기각했다 — 점은 성기어지지만 0/8·5/6 이 구분되지 않는다. */}
-        {/* 7-세그먼트(2026-08-28 사용자 지시로 도트 격자에서 전환).
-            ★ 도트로는 이 크기에서 답이 없었다 — DPR=1 이라 소수 픽셀은 흐려지고, 정수만 쓰면
-              높이가 14px 다음 곧바로 21px 로 뛰어 "작고·떨어져 있고·굵은" 조합이 없었다.
-              세그먼트는 획 하나가 면적을 가져 14px 에서도 굵기가 남는다. */}
-        <SevenSegment
-          text={known ? value : "--"}
-          height={14}
-          label={`${title} ${known ? `${value}${unit ?? ""}` : "미상"}`}
-        />
-        {/* 단위는 글꼴로 — 한글('일')이 5×7 글리프에 없다. 값만 도트로 그리고 단위를 옆에 붙인다.
-            ⚠ 값에 단위를 섞어 넘기지 말 것: 없는 글자는 공백으로 그려져 조용히 사라진다.
-            ml-1 — 도트와 단위가 붙으면 '157일'이 한 덩어리로 읽힌다(2026-08-28 사용자 지시로 벌림). */}
+        {/* 값 표시(2026-08-28) — 도트 격자 → 7-세그먼트 → **글꼴 + 자릿수 애니메이션**으로 왔다.
+            ★ 앞의 둘이 실패한 이유는 같다: 이 화면은 devicePixelRatio=1 이라 격자가 정수 픽셀에
+              갇히고, 14px 다음 크기가 곧바로 21px 로 뛴다. "작고·떨어져 있고·굵은" 조합이 없었다.
+            그래서 크기는 세그먼트 도입 **이전 값(font-mono 17px semibold)** 으로 되돌리고,
+            "값이 바뀌었다"는 신호는 형태가 아니라 **움직임**이 맡는다 — 바뀐 자릿수만 블러 슬라이드.
+            ⚠ 미상(--)은 애니메이션 대상이 아니다(숫자가 아니라 상태다). 같은 크기의 글꼴로 그린다.
+            ⚠ blur 기본값 21px 은 원본 데모의 60px 글자 기준이다. 17px 에 그대로 쓰면 획이 뭉갠다. */}
+        {known ? (
+          <AnimateNumber
+            value={value}
+            format={{ minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }}
+            duration={420}
+            blur={8}
+            className="font-mono text-[17px] font-semibold leading-none text-ink dark:text-on-dark"
+          />
+        ) : (
+          <span className="font-mono text-[17px] font-semibold leading-none text-ink dark:text-on-dark">--</span>
+        )}
+        {/* 단위는 값과 분리해 둔다 — 값만 애니메이션하고 단위는 가만히 있어야 눈이 값을 쫓는다.
+            ⚠ 값에 단위를 섞어 넘길 수 없다: value 가 number 라 애초에 안 들어간다.
+            ml-1 — 값과 단위가 붙으면 '157일'이 한 덩어리로 읽힌다(2026-08-28 사용자 지시로 벌림). */}
         {known && unit && (
           <span
             className={`${unitTight ? "ml-0.5" : "ml-1"} text-[13px] font-semibold leading-none text-ink dark:text-on-dark`}
@@ -580,6 +623,7 @@ function GaugeRow({
       </div>
       {/* 우 — 게이지 바 (오른쪽 끝 안쪽에 상태 텍스트 삽입). 남는 폭을 전부 쓴다. */}
       <div
+        ref={trackRef}
         className="relative min-w-0 flex-1 overflow-hidden rounded-md ring-1 ring-black/10 dark:ring-white/10"
         style={{ background: PROGRESS_GRADIENT }}
         role="progressbar"
@@ -589,21 +633,38 @@ function GaugeRow({
         aria-label={ariaLabel}
       >
         {/* 진행 지점 이후는 어둡게 가려 채움 위치 표시 (그라데이션은 0~100 고정) */}
-        <div
+        <motion.div
           className="absolute inset-y-0 right-0 bg-black/45 dark:bg-black/65"
-          style={{ left: `${known ? pct : 0}%` }}
+          initial={{ left: "0%" }}
+          animate={{ left: `${known ? pct : 0}%` }}
+          transition={fillTransition}
         />
         {/* 현재 위치 마커 */}
         {known && (
-          <div
+          <motion.div
             className="absolute inset-y-0 w-[2px] -translate-x-1/2 bg-white/90 shadow-[0_0_3px_rgba(0,0,0,0.5)]"
-            style={{ left: `${pct}%` }}
+            initial={{ left: "0%" }}
+            animate={{ left: `${pct}%` }}
+            transition={fillTransition}
           />
         )}
-        {/* 상태(D-day 등) — 바 오른쪽 끝 안쪽 */}
-        <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center font-mono text-[10px] font-medium text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)]">
+        {/* 상태(D-day 등) — 마커에 붙인다(2026-08-28 사용자 지시).
+            ⚠ 종전에는 `right-2` 고정이라 pct 가 커지면 **마커선이 글자를 관통했다** —
+              실측: 공정률 80.5% 에서 '준공까지'의 '공'이 흰 선에 덮였다.
+            ★ 원인은 둘이 **서로 다른 기준**으로 놓여 있던 것이다(마커=pct, 라벨=오른쪽 끝).
+              어떤 값에서는 반드시 만난다. 같은 기준(pct)에 묶어야 겹침이 원천적으로 사라진다.
+            채움 쪽이 기본 — 라벨이 채움 끝을 가리켜 마커 역할을 겸한다. 좁으면 반대편으로. */}
+        <motion.span
+          ref={labelRef}
+          className={`pointer-events-none absolute inset-y-0 flex items-center whitespace-nowrap font-mono text-[10px] font-medium text-white [text-shadow:0_1px_2px_rgba(0,0,0,0.7)] ${
+            labelRight ? "pl-2" : "-translate-x-full pr-2"
+          }`}
+          initial={{ left: "0%" }}
+          animate={{ left: `${known ? pct : 0}%` }}
+          transition={fillTransition}
+        >
           {status}
-        </span>
+        </motion.span>
       </div>
     </div>
   );
@@ -647,7 +708,8 @@ function GaugePanel({
           <GaugeRow
             title="공정률"
             status={pStatus}
-            value={p.pct.toFixed(1)}
+            value={p.pct}
+            fractionDigits={1}
             unit="%"
             unitTight
             note={`경과 ${p.elapsedDays}일 / 총 ${p.totalDays}일`}
@@ -658,7 +720,7 @@ function GaugePanel({
           <GaugeRow
             title="무사고"
             status={sStatus}
-            value={`${s.days}`}
+            value={s.days}
             unit="일"
             note={s.reset ? "사고 후 재집계" : "연속 무사고"}
             pct={s.pct}
@@ -7117,18 +7179,17 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               <div className="flex h-full flex-col">
                 {/* 툴바 — 등록 버튼 + 자동/수동 토글 (제목은 캐러셀 헤더가 표시) */}
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-2 dark:border-white/10">
-                  {/* 작업자 수 — 배지(알약 배경)를 풀었다(2026-08-28 사용자 지시).
-                      도트가 이미 형태를 갖고 있어 배경까지 두면 덩어리가 두 겹으로 겹쳐 보인다.
-                      ⚠ 색을 text-ink 로 맞춘다 — 도트는 bg-ink(검정)인데 단위만 text-body(회색)면
-                        한 값인데 두 색으로 갈린다(배경이 없어지니 그 어긋남이 그대로 드러난다).
-                      ★ 게이지 값과 같은 size/gap 을 쓴다 — 한 화면의 도트가 자리마다 다른 격자를
-                        가지면 같은 표기 체계로 안 읽힌다. 소수 픽셀(1.5/0.5)은 점 분포가 끊겨
-                        보여 기각했다(2026-08-28 사용자 지적). */}
-                  <span className="inline-flex items-center text-xs font-semibold text-ink dark:text-on-dark">
-                    <SevenSegment
-                      text={`${filledSlots.length}`}
-                      height={13}
-                      label={`작업자 ${filledSlots.length}명`}
+                  {/* 작업자 수 — 배지(알약 배경)는 풀어 둔 채다(2026-08-28 사용자 지시).
+                      ⚠ 색을 text-ink 로 맞춘다 — 값과 단위가 다른 색이면 한 값인데 둘로 갈려 보인다.
+                      ★ 게이지 값과 같은 표기 체계(AnimateNumber)를 쓴다. 크기만 이 툴바에 맞춰
+                        한 단계 작다 — 여기는 라벨이 아니라 툴바 안의 보조 수치다. */}
+                  <span className="inline-flex items-baseline text-xs font-semibold text-ink dark:text-on-dark">
+                    <span className="mr-1">총</span>
+                    <AnimateNumber
+                      value={filledSlots.length}
+                      duration={380}
+                      blur={6}
+                      className="font-mono text-[15px] font-semibold leading-none"
                     />
                     <span className="ml-1">명</span>
                   </span>

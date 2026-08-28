@@ -3,10 +3,12 @@
 // 팝업은 태풍 진로와 같은 슬리피맵 — 휠/＋－ 버튼 줌 + 드래그 팬 + ↺ 원래대로. 재생/일시정지 + 타임라인.
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { latToWorldY, lonToWorldX, TILE, worldXToLon, worldYToLat } from "../lib/slippy-tiles";
+import { QuantumPulseLoader } from "./ui/quantum-pulse-loader";
 
 type Frame = { time: number; path: string };
 type Payload = { ok: boolean; host: string; frames: Frame[]; fetchedAt?: string };
@@ -474,9 +476,44 @@ function Timeline({
         type="button"
         onClick={onToggle}
         aria-label={playing ? "일시정지" : "재생"}
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-pill bg-primary text-xs text-on-primary active:scale-90"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-pill bg-primary text-on-primary active:scale-90"
       >
-        {playing ? "❚❚" : "▶"}
+        {/* 아이콘(2026-08-28) — 종전에는 유니코드 글리프 "❚❚"(U+275A)·"▶"(U+25B6)였다.
+            ★ 정렬 때문이 아니다 — 실측하니 두 글리프 폭 차이 0.34px, 버튼 중심에서 0.5px 로
+              이미 잘 맞았다. 바꾼 이유는 **글꼴 폴백**이다: 이 글자들은 Inter 에 없어 OS 마다
+              다른 글꼴로 떨어지고, 심사장 PC(Windows)에서 모양이 달라질 수 있다. SVG 는 그 변수가 없다.
+            도형 좌표는 21st.dev `@dev.yadhakim/animated-state-icons` 의 PlayPauseIcon 에서 가져와
+            이 버튼 크기(24px)에 맞게 키웠다. 원본은 자체 타이머(useAutoToggle)로 혼자 도는 구조라
+            그대로는 못 쓴다 — 여기서는 실제 재생 상태(`playing`)가 형태를 정한다.
+            ⚠ initial={false} — 없으면 페이지가 열릴 때 아이콘이 한 번 튀어나온다. */}
+        <svg viewBox="0 0 40 40" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+          <AnimatePresence mode="wait" initial={false}>
+            {playing ? (
+              <motion.g
+                key="pause"
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{ transformOrigin: "20px 20px" }}
+              >
+                <rect x="12" y="6" width="6.5" height="28" rx="2" />
+                <rect x="21.5" y="6" width="6.5" height="28" rx="2" />
+              </motion.g>
+            ) : (
+              <motion.g
+                key="play"
+                initial={{ scale: 0.5, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.5, opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                style={{ transformOrigin: "20px 20px" }}
+              >
+                <polygon points="13,6 32,20 13,34" />
+              </motion.g>
+            )}
+          </AnimatePresence>
+        </svg>
       </button>
       <div className="wx-cards-scroll flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
         {shown.map(({ f, i }) => (
@@ -549,8 +586,10 @@ export function RadarRealtime() {
   }
   if (!data || frames.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center p-4 text-xs text-muted dark:text-on-dark-soft">
-        레이더 영상 불러오는 중…
+      // 안전관리비·공단 보조금 검증 화면과 같은 로더를 쓴다(2026-08-28 사용자 지시).
+      // ★ 한 대시보드 안에서 "불러오는 중"의 생김새가 화면마다 다르면 같은 상태로 안 읽힌다.
+      <div className="flex h-full items-center justify-center p-4">
+        <QuantumPulseLoader text="레이더 영상 불러오는 중" />
       </div>
     );
   }
