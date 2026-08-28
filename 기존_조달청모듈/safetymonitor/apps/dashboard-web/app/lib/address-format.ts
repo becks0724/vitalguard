@@ -31,6 +31,15 @@ export type Addresses = {
   road: string | null;
   /** 지번주소 — 시도 + 시군구 + 읍면동 + 번지. */
   jibun: string | null;
+  /**
+   * 사진 각인에 실제로 찍는 한 줄. **도로명 우선, 없으면 지번.**
+   *
+   * ★ 표기 규칙을 앱이 아니라 여기에 둔다 — 규칙이 서버에 있으면 바꿀 때 앱을 다시 깔지
+   *   않아도 된다(서버 경유를 택한 이유 그 자체다). 지번으로 바꾸려면 아래 한 줄만 뒤집는다.
+   *
+   * 도로명을 기본으로 둔 근거 = 2014년부터 법정 표준이라 증빙 서류의 기준이 그쪽이다.
+   */
+  display: string | null;
 };
 
 const t = (s?: string) => (s ?? "").trim();
@@ -78,5 +87,5 @@ export function buildAddresses(results: NcpResult[] | undefined | null): Address
     }
   }
 
-  return { road, jibun };
+  return { road, jibun, display: road ?? jibun };
 }

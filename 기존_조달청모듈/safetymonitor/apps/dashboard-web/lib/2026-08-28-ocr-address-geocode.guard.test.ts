@@ -7,7 +7,8 @@
 //
 // ★ 이 가드가 초록일 때 보장하는 것(한 문장) —
 //   **조립된 주소가 광역·자치구를 반드시 담고, 도로명과 지번이 각각 따로 나오며,
-//   NCP 좌표 인자가 경도·위도 순서이고, 조회 실패가 200 으로 위장되지 않는다.**
+//   NCP 좌표 인자가 경도·위도 순서이고, 조회 실패가 200 으로 위장되지 않으며,
+//   앱이 그 서버 값을 실제로 각인에 쓰고 못 받았을 때는 `(기기 추정)` 이라고 밝힌다.**
 //   보장하지 않는 것 = NCP 가 옳은 주소를 주는가(그것은 실응답 1건으로 사람이 확인한다).
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -16,6 +17,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildAddresses, type NcpResult } from "../app/lib/address-format";
+import { parseOcrStamp } from "./ocr-stamp";
 import { stripComments } from "./test-support/strip-comments";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -25,6 +27,11 @@ const route = readFileSync(
   join(here, "..", "app", "api", "app", "address", "route.ts"),
   "utf8",
 );
+const media = readFileSync(
+  join(here, "..", "..", "vitalguard_app", "ios", "Runner", "MediaCapture.swift"),
+  "utf8",
+);
+const mediaCode = stripComments(media);
 
 /** 2026-08-28 촬영 지점. 실제 주소는 사용자가 확인해 준 `전남광주 동구 금남로3가 1-10`. */
 const FIXTURE: NcpResult[] = [
@@ -98,8 +105,8 @@ test("★ 값이 모자라면 문자열을 만들지 않는다 — 반쪽 주소
     { name: "roadaddr", region: { area1: { name: "전남광주통합특별시" }, area2: { name: "동구" } }, land: { number1: "194" } },
   ]);
   assert.equal(noStreet.road, null, "도로명이 없는데 도로명주소를 만들었다");
-  assert.deepEqual(buildAddresses(undefined), { road: null, jibun: null });
-  assert.deepEqual(buildAddresses([]), { road: null, jibun: null });
+  assert.deepEqual(buildAddresses(undefined), { road: null, jibun: null, display: null });
+  assert.deepEqual(buildAddresses([]), { road: null, jibun: null, display: null });
 });
 
 test("★★ NCP 좌표 인자가 경도,위도 순서다 — 뒤집혀도 정상 200 이라 다른 방법으로는 안 잡힌다", () => {
@@ -131,4 +138,64 @@ test("★ 라우트가 앱 JWT 로 잠겨 있고 실패를 200 으로 감추지 
   // 실패 경로가 빈 주소를 성공으로 포장하지 않는지 — `ok: true` 는 성공 분기 한 곳뿐이어야 한다.
   const okTrue = code.split("\n").filter((l) => l.includes("ok: true"));
   assert.equal(okTrue.length, 1, `\`ok: true\` 가 ${okTrue.length}곳이다 — 실패가 성공으로 새어나갈 수 있다`);
+});
+
+// ── 2단계 · 앱 배선 ──────────────────────────────────────────────────────────
+// 서버 라우트가 있어도 앱이 안 부르면 각인은 그대로 애플 값이다. 양 끝을 함께 단언한다([[L-115]]③).
+
+test("★ display 는 도로명 우선 — 없으면 지번으로 떨어진다", () => {
+  assert.equal(
+    buildAddresses(FIXTURE).display,
+    "전남광주통합특별시 동구 중앙로 194 (금성직업전문학교)",
+  );
+  const jibunOnly = buildAddresses([FIXTURE[1]!]);
+  assert.equal(jibunOnly.road, null, "고정물이 바뀌었다 — 지번만 있는 경우가 아니다");
+  assert.equal(jibunOnly.display, jibunOnly.jibun, "도로명이 없으면 지번이 각인에 실려야 한다");
+  assert.equal(buildAddresses([]).display, null, "빈 결과에 문자열을 만들었다");
+});
+
+test("★★ 각인 주소는 서버가 정본 — 기기 지오코딩은 폴백이고 반드시 그렇다고 적는다", () => {
+  const fn = mediaCode.slice(mediaCode.indexOf("private func resolveAddress"));
+  const body = fn.slice(0, fn.indexOf("private static func serverAddress"));
+  assert.ok(body.length > 100, "resolveAddress 본문을 못 잘랐다 — 가드를 다시 맞춰야 한다");
+  assert.match(body, /Self\.serverAddress\(lat: lat, lon: lon\)/, "서버 역지오코딩을 먼저 안 부른다");
+
+  // ★ 이 건의 핵심. 폴백 값이 라벨 없이 나가면 **틀린 주소가 확정으로 읽힌다.**
+  //   애플 값을 그냥 쓰던 것이 정확히 그 결함이었다.
+  const fallback = body.slice(body.indexOf("deviceAddress"));
+  assert.ok(fallback.length > 20, "폴백 분기를 못 잘랐다");
+  assert.match(fallback, /\(기기 추정\)/, "기기 추정 폴백에 라벨이 안 붙는다 — 틀린 주소가 확정으로 읽힌다");
+});
+
+test("★ 서버 호출이 앱 JWT 를 싣고 /api/app/address 로 가며 서버가 정한 표기를 쓴다", () => {
+  const fn = mediaCode.slice(mediaCode.indexOf("private static func serverAddress"));
+  const body = fn.slice(0, fn.indexOf("private func deviceAddress"));
+  assert.ok(body.length > 100, "serverAddress 본문을 못 잘랐다");
+  assert.match(body, /appendingPathComponent\("api\/app\/address"\)/, "라우트 경로가 다르다");
+  assert.match(body, /"Bearer \\\(token\)"/, "앱 JWT 를 안 싣는다 — 서버가 401 을 낸다");
+  assert.match(
+    body,
+    /json\["display"\]/,
+    "서버가 정한 표기(display)를 안 쓴다 — 앱이 규칙을 다시 고르면 서버 경유의 의미가 사라진다",
+  );
+});
+
+test("★★ 바뀐 각인 형식을 서버 파서가 여전히 읽는다 — 양 끝을 함께 단언한다", () => {
+  // 각인 넉 줄을 실제 순서대로 만든다(시각 · 주소 · 좌표 · 작업자).
+  const road = buildAddresses(FIXTURE).display!;
+  const stamped = [
+    "[2026-08-28 09:45:11]",
+    road,
+    "35.150535, 126.916294 (±10m)",
+    "작업자/ID: 장우진, EMP-6861",
+  ].join("\n");
+  const parsed = parseOcrStamp(stamped);
+  assert.equal(parsed.roadAddress, road, "새 주소 줄을 서버 파서가 못 읽는다");
+  assert.equal(parsed.gps, "35.150535, 126.916294", "좌표 추출이 깨졌다");
+  assert.equal(parsed.workerId, "EMP-6861");
+  assert.equal(parsed.capturedAt, "2026-08-28 09:45");
+
+  // 폴백 표기가 붙어도 읽혀야 한다 — 안 읽히면 라벨을 붙인 대가로 주소를 잃는다.
+  const fallback = ["[2026-08-28 09:45:11]", "광주광역시 금남로3가 15-2 (기기 추정)"].join("\n");
+  assert.equal(parseOcrStamp(fallback).roadAddress, "광주광역시 금남로3가 15-2 (기기 추정)");
 });

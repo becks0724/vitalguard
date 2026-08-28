@@ -19,6 +19,8 @@ export type ReverseGeocoded = {
   configured: boolean;
   road: string | null;
   jibun: string | null;
+  /** 앱이 각인에 그대로 찍는 한 줄. 표기 규칙은 `address-format.ts` 가 정한다. */
+  display: string | null;
   note?: string;
 };
 
@@ -45,6 +47,7 @@ export async function reverseGeocode(lat: number, lon: number): Promise<ReverseG
       configured: false,
       road: null,
       jibun: null,
+      display: null,
       note: "NAVER_SEARCH_CLIENT_ID/SECRET 미설정",
     };
   }
@@ -72,7 +75,13 @@ export async function reverseGeocode(lat: number, lon: number): Promise<ReverseG
 
   // code 3 = 해당 좌표에 주소가 없다(바다·미등록 구역). 실패가 아니라 **빈 결과**다.
   if (json.status?.code === 3) {
-    return { configured: true, road: null, jibun: null, note: "좌표에 등록된 주소가 없습니다." };
+    return {
+      configured: true,
+      road: null,
+      jibun: null,
+      display: null,
+      note: "좌표에 등록된 주소가 없습니다.",
+    };
   }
   if (json.status?.code !== 0) {
     throw new Error(
@@ -80,6 +89,6 @@ export async function reverseGeocode(lat: number, lon: number): Promise<ReverseG
     );
   }
 
-  const { road, jibun } = buildAddresses(json.results);
-  return { configured: true, road, jibun };
+  const { road, jibun, display } = buildAddresses(json.results);
+  return { configured: true, road, jibun, display };
 }

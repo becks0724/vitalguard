@@ -108,16 +108,71 @@ final class MediaCapture: NSObject {
         }
     }
 
-    /// 좌표 → 도로명 주소. 실패해도 업로드는 계속한다(주소는 있으면 좋은 값이지 조건이 아니다).
+    /// 좌표 → 주소. **서버 역지오코딩이 정본**이고, 실패하면 기기 추정으로 떨어지되 그렇다고 밝힌다.
+    ///
+    /// ★ 왜 서버인가(2026-08-28 실측 · docs/ocr-address-geocode/context-notes.md).
+    ///   애플 `CLGeocoder` 가 같은 좌표에서 **광역명·자치구·지번 세 축을 동시에** 틀렸다 —
+    ///   실제 `전남광주 동구 금남로3가 1-10` 인 자리를 `광주광역시 금남로3가 15-2` 로 냈다.
+    ///   셋 중 둘이 애플 데이터 문제라 필드를 더 읽어도 안 고쳐진다.
+    ///   ⚠ 좌표는 무죄였다 — 같은 자리에서 기본 카메라(최고 등급)와 0.8m 차로 일치했다.
+    ///
+    /// ⚠ 실패해도 업로드는 계속한다(주소는 있으면 좋은 값이지 조건이 아니다).
     private func resolveAddress(_ fix: [String: Any]?, done: @escaping (String?) -> Void) {
         guard let lat = fix?["latitude"] as? Double, let lon = fix?["longitude"] as? Double else {
             done(nil)
             return
         }
+        Self.serverAddress(lat: lat, lon: lon) { [weak self] server in
+            if let server { done(server); return }
+            // ★ 기기 추정으로 떨어질 때는 **그렇다고 적는다.** 좌표 각인이 `±00m`·`N분 전 좌표` 로
+            //   불확실성을 밝히는 것과 같은 규칙이다 — 증빙에서 위험한 것은 부정확이 아니라
+            //   **부정확을 확정처럼 적는 것**이다.
+            guard let self else { done(nil); return }
+            self.deviceAddress(lat: lat, lon: lon) { local in
+                done(local.map { "\($0) (기기 추정)" })
+            }
+        }
+    }
+
+    /// 관제웹 역지오코딩(`GET /api/app/address`). 못 받으면 nil — 호출자가 기기 추정으로 떨어진다.
+    ///
+    /// ⚠ 도로명이냐 지번이냐는 **서버가 정한다**(`display` 한 필드). 앱이 고르면 표기를 바꿀 때마다
+    ///   재설치가 필요해져서, 서버 경유를 택한 이유 자체가 사라진다.
+    private static func serverAddress(lat: Double, lon: Double, done: @escaping (String?) -> Void) {
+        guard let token = AuthStore.token else { done(nil); return }
+        var comps = URLComponents(
+            url: VitalPipeline.resolvedBaseURL().appendingPathComponent("api/app/address"),
+            resolvingAgainstBaseURL: false
+        )
+        comps?.queryItems = [
+            URLQueryItem(name: "lat", value: String(format: "%.6f", lat)),
+            URLQueryItem(name: "lon", value: String(format: "%.6f", lon)),
+        ]
+        guard let url = comps?.url else { done(nil); return }
+        var request = URLRequest(url: url)
+        // 촬영은 사람이 셔터 앞에서 기다리는 경로다. 좌표 요청(최대 12초) 뒤에 붙으므로 짧게 끊는다.
+        request.timeoutInterval = 6
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let display = json["display"] as? String,
+                  !display.isEmpty
+            else { done(nil); return }
+            done(display)
+        }.resume()
+    }
+
+    /// 기기 지오코딩(`CLGeocoder`). **폴백 전용** — 틀릴 수 있어 호출자가 `(기기 추정)` 을 붙인다.
+    private func deviceAddress(lat: Double, lon: Double, done: @escaping (String?) -> Void) {
         let loc = CLLocation(latitude: lat, longitude: lon)
         geocoder.reverseGeocodeLocation(loc, preferredLocale: Locale(identifier: "ko_KR")) { marks, _ in
             guard let p = marks?.first else { done(nil); return }
-            // 도로명 우선 — 없으면 지번 단위로 떨어진다. 나라별 필드 차이를 여기서 흡수한다.
+            // ⚠ **"도로명 우선"이 아니다.** 종전 주석이 그렇게 적혀 있었으나 실측은 반대였다 —
+            //   `thoroughfare` 가 도로명이 아니라 **법정동**(금남로3가)을, `subThoroughfare` 가
+            //   **지번**(15-2)을 낸다. 게다가 자치구(동구)는 이 다섯 필드 어디에도 없다.
+            //   그래서 이 경로는 폴백으로 내려앉았다(정본은 `serverAddress`).
             //
             // ⚠ **중복을 걷어낸다.** 광역시는 `administrativeArea` 와 `locality` 가 둘 다
             //   `광주광역시` 이고, 동 이름이 도로명과 같으면 `subLocality` 와 `thoroughfare` 도
