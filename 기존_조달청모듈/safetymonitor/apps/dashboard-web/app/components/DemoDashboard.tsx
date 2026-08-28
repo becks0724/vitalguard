@@ -5028,7 +5028,11 @@ function RollingChars({ text }: { text: string }) {
 }
 
 // 헤더 중앙 라이브 시계 — yyyy/mm/dd(요일) hh:mm:ss. 매초 갱신, 바뀐 글자만 롤링(슬라이드업) 애니메이션.
-function HeaderClock() {
+// `part` 로 갈라 **다른 자리에** 렌더한다(2026-08-28 사용자 지시) — date 는 브랜드(VitAlGuard)
+// 옆, time 은 헤더 정중앙. 한 덩어리로 두면 둘이 함께 오른쪽으로 밀려 중앙에 못 온다.
+// ⚠ 두 번 쓰므로 타이머도 둘이다. 상위에서 now 를 만들어 내려보내면 매초 DemoDashboard 전체가
+//   리렌더된다 — 시계가 이 컴포넌트로 격리돼 있는 이유가 그것이다. 초당 setState 2회가 훨씬 싸다.
+function HeaderClock({ part }: { part: "date" | "time" }) {
   // SSR/하이드레이션 시각 불일치 방지 — 마운트 후에만 렌더(초기 null).
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
@@ -5043,33 +5047,32 @@ function HeaderClock() {
   const text = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())}(${dow})`;
   const time = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
-  return (
-    // gap-6 — 날짜(글꼴)와 시각(도트) 사이를 벌린다(2026-08-28 사용자 지시 · 2.5 → 4 → 6).
-    // 둘이 한 덩어리로 붙어 보였다: 날짜는 글꼴 숫자, 시각은 도트 격자라 표기 체계가 다른데
-    // 간격이 좁으면 같은 문자열로 읽힌다.
-    <div
-      aria-label={`현재 시각 ${text} ${time}`}
-      className="hidden select-none items-center gap-6 lg:flex"
-    >
-      {/* 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션 재생(변한 글자만 움직임). */}
-      <span className="font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark">
+  // 날짜 — 브랜드 옆. 글꼴 그대로 둔다: 한글 요일과 괄호는 5×7 도트 글리프로 못 그린다
+  // (한글은 5열에 안 들어가고, 늘리면 자릿수 규칙이 깨진다).
+  // 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션이 돈다.
+  if (part === "date") {
+    return (
+      <span
+        aria-label={`현재 날짜 ${text}`}
+        className="hidden select-none whitespace-nowrap font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark lg:inline"
+      >
         {text.split("").map((ch, i) => (
           <span key={`${i}-${ch}`} className="clock-roll-char">
-            {ch === " " ? " " : ch}
+            {ch === " " ? " " : ch}
           </span>
         ))}
       </span>
-      {/* 시:분:초만 도트(2026-08-28 사용자 지시). 날짜는 글꼴 그대로 둔다 — 한글 요일과 괄호는
-          5×7 글리프로 안 그린다(한글은 5열에 안 들어가고, 늘리면 자릿수 규칙이 깨진다).
-          ⚠ 초는 매초 바뀌는 자리라 롤링(위로 슬라이드)이 아니라 뒤집기가 맞다 — 롤링은 글자가
-            위아래로 흘러 읽는 동안 시선이 따라가지만, 뒤집기는 제자리에서 값만 갈린다. */}
-      {/* 시계만 도트로 되돌린다(2026-08-28 사용자 결정) — 7-세그먼트는 dim(꺼진 획)까지 켜니
-          이 크기에서 획이 흐릿하게 뭉쳐 보였다. 도트는 켜진 점만 그려 또렷하다.
-          ⚠ digitsOnly — 콜론까지 도트로 그리면 숫자와 무게가 같아져 시·분·초의 경계가
-            흐려진다. 구분자는 글꼴로 두어 덩어리를 갈라 준다. */}
-      <DotMatrix text={time} size={3} gap={1} digitsOnly label={`시각 ${time}`} />
-    </div>
-  );
+    );
+  }
+
+  // 시:분:초만 도트(2026-08-28 사용자 지시).
+  // ⚠ 초는 매초 바뀌는 자리라 롤링(위로 슬라이드)이 아니라 뒤집기가 맞다 — 롤링은 글자가
+  //   위아래로 흘러 읽는 동안 시선이 따라가지만, 뒤집기는 제자리에서 값만 갈린다.
+  // ★ 7-세그먼트가 아니라 도트다(사용자 결정) — 세그먼트는 dim(꺼진 획)까지 켜서 이 크기에서
+  //   획이 흐릿하게 뭉쳐 보였다. 도트는 켜진 점만 그려 또렷하다.
+  // ⚠ digitsOnly — 콜론까지 도트로 그리면 숫자와 무게가 같아져 시·분·초의 경계가 흐려진다.
+  //   구분자는 글꼴로 두어 덩어리를 갈라 준다.
+  return <DotMatrix text={time} size={3} gap={1} digitsOnly label={`시각 ${time}`} />;
 }
 
 export function DemoDashboard() {
@@ -6908,7 +6911,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
           SOS 경보음 활성화 — 한 번 클릭하면 이후 SOS 시 자동으로 사이렌이 울립니다
         </button>
       )}
-      <header className="flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
+      <header className="relative flex min-h-16 flex-wrap items-center justify-between gap-4 rounded-xl border border-hairline-strong bg-canvas px-6 py-3 dark:border-white/10 dark:bg-surface-dark">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -6954,9 +6957,23 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               )}
             </p>
           </div>
+          {/* 날짜는 브랜드 옆에 붙인다(2026-08-28 사용자 지시) — 도트 시계가 중앙으로 빠지면서
+              혼자 남으면 헤더 오른쪽이 비어 보인다. */}
+          <HeaderClock part="date" />
         </div>
 
-        <HeaderClock />
+        {/* 도트 시계 — 헤더 **정중앙**(2026-08-28 사용자 지시).
+            ★ justify-between 으로는 중앙이 안 맞는다 — 좌우 블록 폭이 다르면 가운데 칸이 그만큼
+              밀린다. 헤더 폭 기준의 절대 중앙이어야 하므로 absolute + -translate-x-1/2 로 못박는다.
+            ⚠ pointer-events-none — 절대 배치라 좌우 블록 위를 덮을 수 있는데 시계는 클릭 대상이
+              아니다. 아래 버튼의 클릭을 가로채면 안 된다.
+            ⚠ 래퍼는 **flex 여야 한다.** `block` 으로 두면 DotMatrix 가 인라인 라인박스에 놓이고,
+              `inline-grid` 의 baseline 이 **마지막 도트 행**에 맞춰지면서 위쪽에 여백이 생긴다
+              — 래퍼는 중앙인데 시계만 7.3px 아래로 쏠린다(2026-08-28 실측). flex 는 baseline
+              정렬을 쓰지 않으므로 래퍼 높이가 곧 시계 높이가 되고 -translate-y-1/2 가 맞아떨어진다. */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center lg:flex">
+          <HeaderClock part="time" />
+        </div>
 
         <div className="flex min-w-0 items-center gap-2">
           {/* 로그인 상태 칩 — 표시 전용(클릭 없음). 접속점 + 이름/직책만(사번·아이디 비노출).
