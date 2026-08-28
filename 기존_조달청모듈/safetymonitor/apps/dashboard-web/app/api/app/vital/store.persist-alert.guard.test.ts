@@ -23,8 +23,15 @@ function fnSlice(source: string, marker: string): string {
 
 test("BE-IDEM-01 — persistSample 은 (worker_id, ts) 멱등 적재다(중복이 예외로 안 터짐)", () => {
   const body = fnSlice(dbSource, "export async function persistSample");
+  const literal = "ON CONFLICT (worker_id, ts) DO NOTHING";
+  // 2026-08-28 에 이 꼬리말이 상수(VITAL_UPSERT_SUFFIX)로 빠졌다 — 배치 저장(persistSamples)이
+  // **같은 것**을 쓰게 하기 위해서다. 그래서 리터럴 직접 포함도, 상수 경유도 통과시킨다.
+  // ⚠ 상수 경유일 때는 **그 상수의 값까지** 확인한다 — 이름만 보면 값이 바뀌어도 초록이다.
+  const viaConst =
+    body.includes("VITAL_UPSERT_SUFFIX") &&
+    dbSource.includes(`const VITAL_UPSERT_SUFFIX = "${literal}"`);
   assert.ok(
-    body.includes("ON CONFLICT (worker_id, ts) DO NOTHING"),
+    body.includes(literal) || viaConst,
     "persistSample 의 INSERT 에 ON CONFLICT (worker_id, ts) DO NOTHING 이 없다 — 중복 재전송이 23505 예외로 터져 실제 장애와 같은 catch 로 들어간다(DB-POOL-02 의 절반)",
   );
 });

@@ -13,6 +13,7 @@ import {
 
 import {
   persistSample,
+  persistSamples,
   persistDataMockup,
   updateFallCandidateState,
   totalPersisted as dbTotalPersisted,
@@ -197,9 +198,29 @@ function warnUnknownFields(input: unknown): void {
 export type AddSampleResult = {
   sample: VitalSample | null;
   persistFailed: boolean;
+  /**
+   * `deferPersist` 일 때만 채워진다 — 이 샘플은 **아직 저장 안 됐다**. 호출부가 모아서
+   * `persistSamples` 로 한 번에 넣어야 한다. 안 넣으면 조용히 유실된다.
+   */
+  pendingPersist?: VitalSample;
 };
 
-export async function addSample(input: unknown): Promise<AddSampleResult> {
+/**
+ * `addSample` 옵션.
+ *
+ * `deferPersist` — DB 저장을 호출부로 미룬다. 배치 수집(POST 라우트)이 500건을 건별로 넣어
+ * 왕복 500번을 돌던 것을 한 왕복으로 접기 위한 것이다(2026-08-28 · `persistSamples` 주석 참조).
+ * ring 갱신·위험 전이 판정·경보 기록은 **미루지 않는다** — 순서에 의존하고 저장과 분리돼
+ * 있어야 하기 때문이다(감사 DB-POOL-02).
+ */
+export type AddSampleOptions = {
+  deferPersist?: boolean;
+};
+
+export async function addSample(
+  input: unknown,
+  options?: AddSampleOptions,
+): Promise<AddSampleResult> {
   warnUnknownFields(input);
   const normalized =
     typeof input === "object" && input !== null && "hr" in input
@@ -269,12 +290,20 @@ export async function addSample(input: unknown): Promise<AddSampleResult> {
   // ★ 삼키되 알린다 — catch 는 그대로 두고(경보가 이 아래에서 나가야 한다) 실패 사실만
   //   호출부로 올린다. 종전엔 삼키고 끝이라 POST 가 201 을 줬고, 폰이 성공으로 알아
   //   원본을 큐에서 지웠다. 2026-08-15 DB 장애 3시간 50분 구간이 그렇게 사라졌다.
+  // ★ 배치 경로는 여기서 안 넣는다 — 호출부가 모아 한 왕복으로 넣는다(persistSamples).
+  //   건별로 넣으면 500건에 16.5초가 걸려 폰 타임아웃 15초를 넘기고, 폰이 같은 배치를
+  //   영원히 재전송하는 고착 루프에 빠진다(2026-08-28 실사고).
   let persistFailed = false;
-  try {
-    await persistSample(sample);
-  } catch (error) {
-    persistFailed = true;
-    console.error("[store] DB persist failed:", error);
+  let pendingPersist: VitalSample | undefined;
+  if (options?.deferPersist) {
+    pendingPersist = sample;
+  } else {
+    try {
+      await persistSample(sample);
+    } catch (error) {
+      persistFailed = true;
+      console.error("[store] DB persist failed:", error);
+    }
   }
   try {
     // SOS/낙상 이벤트는 알림 이력에 기록(중복은 DB UNIQUE 로 무시) — AF4.
@@ -312,8 +341,15 @@ export async function addSample(input: unknown): Promise<AddSampleResult> {
   } catch (error) {
     console.error("[store] 경보 기록 실패:", error);
   }
-  return { sample, persistFailed };
+  return { sample, persistFailed, pendingPersist };
 }
+
+/**
+ * 미뤄 둔 샘플을 한 왕복으로 적재한다 — `addSample(_, { deferPersist: true })` 의 짝.
+ *
+ * 저장 계층을 store 경유로 유지하기 위한 재노출이다(라우트가 db.ts 를 직접 부르지 않는다).
+ */
+export { persistSamples };
 
 // ── 폴링 경로 전용 TTL 메모 (2026-08-20 · 풀 고갈 대응) ──────────────────────
 // 관제 화면은 GET 을 짧은 주기로 반복하는데, 이 응답의 누적 집계는 그 주기로 새로 잴 값이
