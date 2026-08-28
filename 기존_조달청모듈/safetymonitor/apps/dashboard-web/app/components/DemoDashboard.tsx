@@ -7099,10 +7099,30 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                     : "bg-surface-strong text-body dark:bg-surface-dark dark:text-on-dark-soft"
                 }`}
               >
-                <span
-                  className={`inline-block h-2 w-2 rounded-full ${slideMode === "auto" ? "bg-semantic-up" : "bg-muted-soft"}`}
-                />
-                {slideMode === "auto" ? "자동 슬라이딩" : "수동 (드래그 정렬)"}
+                {/* 자물쇠로 상태를 말한다(2026-08-28 사용자 지시) — 흐르는 중이면 열린 자물쇠,
+                    멈춰서 드래그로 정렬하는 중이면 잠긴 자물쇠. 라벨은 '슬라이딩' 하나로 고정하고
+                    켜짐/꺼짐은 아이콘과 색이 말한다(라벨까지 바뀌면 무엇을 누르는 버튼인지 흔들린다).
+                    ⚠ 몸통(rect)은 두 상태가 같고 고리(path)만 다르다 — 그래야 전환이 자물쇠가
+                    열리는 동작으로 읽힌다. 아이콘 크기·굵기는 옆 '지도' 버튼과 맞췄다. */}
+                <svg
+                  viewBox="0 0 24 24"
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  {slideMode === "auto" ? (
+                    <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                  ) : (
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  )}
+                </svg>
+                슬라이딩
               </button>
             )}
             <button

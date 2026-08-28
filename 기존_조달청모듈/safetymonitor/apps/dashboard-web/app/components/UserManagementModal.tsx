@@ -24,6 +24,7 @@ type User = {
   job_title: string | null;
   admin_access: boolean;
   site_officer: boolean; // 현장 담당관(안전관리비 확정 권한)
+  totp_enabled: boolean; // 2단계 인증 — 켜짐 여부만(시크릿은 서버가 절대 안 내려준다)
   created_at: string;
   approved_at: string | null;
   approved_by: string | null;
@@ -201,7 +202,8 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
         | "revoke_admin"
         | "grant_officer"
         | "revoke_officer"
-        | "set_org_type",
+        | "set_org_type"
+        | "reset_totp",
       // 액션별 추가 필드(set_org_type 의 orgType 등) — 본문에 그대로 펼쳐 보낸다.
       payload?: Record<string, unknown>,
     ) => {
@@ -675,6 +677,26 @@ export function UserManagementModal({ onClose }: { onClose: () => void }) {
                             ].join(" ")}
                           >
                             {u.site_officer ? "담당관 ✓" : "미지정"}
+                          </button>
+                        )}
+                        {/* 2단계 인증 초기화 — 인증 앱이 든 기기를 잃어버린 사람을 풀어 주는
+                            유일한 경로다(본인은 코드 없이 못 끈다). 켜져 있을 때만 보인다.
+                            ⚠ 누르면 그 계정은 다음 로그인에 6자리를 묻지 않는다 — 본인 확인 뒤에 누를 것.
+                               임시 비밀번호 승인과 같은 성격이라 확인을 한 번 받는다. */}
+                        {u.totp_enabled && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const ok = window.confirm(
+                                `${u.username} 계정의 2단계 인증을 초기화할까요?\n초기화하면 다음 로그인부터 6자리를 묻지 않습니다. 본인 확인을 마친 뒤 진행하세요.`,
+                              );
+                              if (ok) act(u.id, "reset_totp");
+                            }}
+                            disabled={busyId === u.id}
+                            title="2단계 인증 초기화 (기기 분실 복구)"
+                            className="ml-1 rounded-md border border-hairline px-2 py-1 text-[11px] font-semibold text-muted transition hover:border-semantic-down/50 hover:bg-semantic-down/10 hover:text-semantic-down disabled:opacity-50 dark:border-white/15 dark:text-on-dark-soft"
+                          >
+                            2FA 초기화
                           </button>
                         )}
                       </td>
