@@ -76,3 +76,86 @@ export const STALE_MS_WEAROS = 150_000;
 export function staleThresholdMs(dataOrigin: string | undefined): number {
   return dataOrigin === "wearos_data_vitalguard" ? STALE_MS_WEAROS : STALE_MS_DEFAULT;
 }
+
+// ── 끊김의 두 종류 — 같은 stale 이라도 관제자가 할 일이 정반대다 ──────────────
+//
+// ★ **판정은 안 가른다.** 두 종류 모두 `stale` 이고 sticky 값 차단·신호 강등·톤 강등·
+//   이상 집계는 전부 종전 그대로다. 가르는 것은 **관제자가 읽는 글자뿐**이다.
+//   판정을 건드리면 안전 동작 다섯 곳의 회귀 위험을 지는데 얻는 것은 이름표 하나다.
+//
+// 실측 근거(2026-08-28 · 7일) —
+//   갤럭시 심박 간격 p50 120.9s · p90 231.9s · p95 461.7s · p99 4,210s (n=650)
+//   애플                p50   5.0s · p90   5.5s · p95   6.2s · p99     9.6s (n=28,318)
+// 애플은 주기의 1.9배 안에서 도는데 갤럭시는 35배까지 벌어진다. 그런데 **전송은 정상이다** —
+// 배치 간격 median 120.3s 로 `CollectorService.FLUSH_INTERVAL_MS` 와 일치한다.
+// 즉 링크는 멀쩡한 채 심박만 묵는 구간이 상시 생긴다.
+//
+// ⚠ 행 수로 세지 말 것 — 08-27 ML 투입 이후 **낙상 섀도 행**이 섞인다(같은 24시간에 489건).
+//   섀도는 `ts`·`fallCandidateId`·`accelMagnitudeG`·`fallTrace` 만 싣고 심박·배터리를 **설계상**
+//   안 싣는다. 이걸 안 빼면 "샘플의 70%가 빈 행" 같은 틀린 수가 나온다(실제로 한 번 그렇게 셌다).
+//   섀도를 뺀 생체 행은 215건 중 202건이 심박을 단다(94.0%) — 그중 13건만 심박이 없고
+//   그 13건은 **전부 배터리를 싣는다**. 즉 수집 tick 은 돌았고 심박만 안 잡힌 것이다.
+//   `AND fall_candidate IS NULL AND fall_update_phase IS NULL` 로 거른다.
+//
+// 이 둘을 같은 "연결끊김" 으로 부르면 관제자가 폰을 찾아 현장에 간다 — 정작 필요한 것은
+// "워치를 고쳐 차세요" 한마디다.
+//
+// ⚠ 문턱을 올려 덮는 방향은 막혀 있고, 막혀 있는 것이 옳다 — 가드 상한(주기 2배)까지 올려도
+//   오탐이 651건 중 104→64 로만 줄고, 그 위는 진짜 끊김을 한 주기 통째로 놓친다
+//   (2026-08-25-stale-threshold-by-origin.guard.test.ts).
+export type StaleKind =
+  /** 샘플 자체가 안 온다 — 폰·네트워크·앱. 사람을 찾아가야 한다. */
+  | "disconnected"
+  /** 샘플은 오는데 심박만 묵는다 — 워치 착용·센서. 말 한마디로 끝난다. */
+  | "hrSilent";
+
+/**
+ * `stale` 로 판정된 샘플이 둘 중 어느 종류인가.
+ *
+ * ⚠ **이 함수는 stale 여부를 판정하지 않는다** — 이미 stale 인 것의 종류만 가른다.
+ *   stale 이 아닌 샘플에 부르면 결과는 무의미하다(호출부가 stale 분기 안에서만 쓴다).
+ *
+ * 기준 = **행 나이**. 행이 신선하다는 것은 샘플이 도착하고 있다는 뜻이고(링크 생존),
+ * 그런데도 stale 이라는 것은 심박 시각만 묵었다는 뜻이다.
+ * 문턱은 심박 쪽과 같은 값을 쓴다 — 갤럭시 샘플도 같은 120초 주기로 오므로 자가 같다.
+ *
+ * ★ **낙상 섀도 행도 도착 근거로 센다 — 의도한 것이다.**(2026-08-28 · 옆 세션 지적으로 검토)
+ *   섀도는 생체를 안 싣지만 워치의 같은 큐에 들어가 **같은 flush 로** 올라온다.
+ *   그리고 워치에 **업로드 경로가 그 하나뿐**이다(전부 `CollectorService.kt` 실측) —
+ *     `:77`  `queue` 객체 하나를 만들어 `:95` 수집 엔진과 `:117` `FallShadowReporter` 가 공유
+ *     `:106` `HttpTransport` 생성은 여기 한 번, `pipeline` 에만 물린다
+ *     `:277` `pipeline.flushOnce` 호출은 **`tick`(`:272-295`) 안 한 곳뿐**
+ *   즉 섀도가 서버에 닿았다는 것은 "링크가 살아 있다" 보다 강한 **"`tick` 이 돌았다"** 이다.
+ *
+ *   이 사실이 반례 하나를 미리 닫는다 — *IMU 경로만 살아 있고 수집 tick 은 죽었는데 섀도가
+ *   그 죽음을 가리는 경우*. **성립 불가다.** tick 이 안 돌면 flush 가 없고, flush 가 없으면
+ *   섀도도 서버에 못 온다. (섀도 항목 생성은 IMU 스레드지만 전송은 아니다.)
+ *
+ *   여기서 묻는 것은 "생체가 오는가" 가 아니라 **"사람을 찾아가야 하는가"** 이고,
+ *   tick 이 도는 기기에 사람을 보낼 이유는 없다.
+ *   ⚠ 워치가 죽으면 섀도도 함께 끊기므로 `disconnected` 로 넘어간다 — 그 경로는 막히지 않는다.
+ *
+ *   ⚠ **아래 수를 비율 상수로 읽지 말 것.** 섀도는 주기 신호가 아니라 1.8G 게이트에 걸릴 때만
+ *     나는 **산발** 신호라, 그날의 후보 발생률일 뿐이다(가드에도 안 박았다).
+ *     2026-08-28 하루 관측 = 섀도 489건 중 89건이 직전 150초에 생체 행 없이 도착 → 이 판단을 탐.
+ *
+ * 파싱 불가한 `ts` 는 `disconnected` — 도착을 확인할 수 없으면 안전측(사람이 가 보는 쪽)으로 센다.
+ */
+export function staleKind(
+  sample: VitalAgeSample,
+  nowMs: number,
+  dataOrigin: string | undefined,
+): StaleKind {
+  const rowMs = new Date(sample.ts).getTime();
+  if (!Number.isFinite(rowMs)) return "disconnected";
+  return nowMs - rowMs > staleThresholdMs(dataOrigin) ? "disconnected" : "hrSilent";
+}
+
+/**
+ * 화면 라벨 — **여기 한 곳에서만 만든다.**
+ * 글자 수를 맞춘다(넉 자) — 표의 상태 칸 폭이 종류마다 흔들리면 목록이 출렁인다.
+ */
+export const STALE_LABEL: Record<StaleKind, string> = {
+  disconnected: "연결끊김",
+  hrSilent: "심박끊김",
+};

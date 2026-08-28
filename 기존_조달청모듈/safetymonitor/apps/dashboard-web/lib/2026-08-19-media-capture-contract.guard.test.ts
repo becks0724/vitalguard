@@ -97,9 +97,15 @@ test("★ 역지오코딩 결과에서 중복 지명을 걷어낸다", () => {
   // 실측(2026-08-19 실기기) — 광역시는 administrativeArea·locality 가 둘 다 `광주광역시` 이고
   // 동 이름이 도로명과 같으면 subLocality·thoroughfare 도 겹친다. 단순 join 은
   // `광주광역시 광주광역시 금남로3가 금남로3가 15-2` 를 만든다. 사진에 각인되므로 되돌리기 어렵다.
-  const fn = code.slice(code.indexOf("private func resolveAddress("));
+  // ⚠ 2026-08-28 앵커 이동 — 주소의 정본이 **서버 역지오코딩**으로 옮겨가면서 `CLGeocoder`
+  //   조립부가 `resolveAddress` → `deviceAddress`(폴백) 로 내려갔다. **계약은 그대로다** —
+  //   기기 지오코딩을 쓰는 한 중복 제거는 필요하고, 여기가 그 유일한 조립부다.
+  //   (정본이 서버라는 것 자체는 `2026-08-28-ocr-address-geocode` 가 지킨다.)
+  const fn = code.slice(code.indexOf("private func deviceAddress("));
   const body = fn.slice(0, fn.indexOf("\n    private func"));
   assert.ok(body.length > 100, "함수 본문을 못 잘랐다 — 가드를 다시 맞춰야 한다");
+  // 앵커 — 폴백이 정말 CLGeocoder 조립부인지 확인한다. 아니면 아래 검사가 엉뚱한 곳을 본다.
+  assert.match(body, /reverseGeocodeLocation/, "deviceAddress 가 기기 지오코딩 조립부가 아니다");
   assert.match(body, /seen\.contains\(part\)/, "중복 제거가 없다 — 같은 지명이 두 번 찍힌다");
   assert.doesNotMatch(
     body,
