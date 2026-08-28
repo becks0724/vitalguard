@@ -56,6 +56,8 @@ import {
 import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-schedule";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
 import { ExpandableTabs } from "./ExpandableTabs";
+import { DotMatrix } from "./DotMatrix";
+import { SevenSegment } from "./SevenSegment";
 import { useSession } from "./LoginGate";
 import { getSessionRole, getSessionToken } from "./session-token";
 import { SafetySignalBoard, type WorkerSignal } from "./SafetySignalBoard";
@@ -517,6 +519,8 @@ function GaugeRow({
   title,
   status,
   value,
+  unit,
+  unitTight,
   note,
   pct,
   known,
@@ -524,7 +528,12 @@ function GaugeRow({
 }: {
   title: string;
   status: string;
+  /** 도트로 그릴 값 — 숫자·콜론·마침표·%·- 만 담을 것(그 외 글자는 공백이 된다). */
   value: string;
+  /** 단위 — 글리프에 없거나(한글) 도트로 그리면 뭉개지는 글자(%)는 여기로 뺀다(글꼴로 렌더). */
+  unit?: string;
+  /** 단위를 숫자에 붙일지. '%'처럼 값과 한 덩어리로 읽히는 기호는 true, '일'처럼 낱말이면 false. */
+  unitTight?: boolean;
   note?: string;
   pct: number;
   known: boolean;
@@ -534,11 +543,35 @@ function GaugeRow({
     // items-stretch(기본) — 게이지가 텍스트 줄 높이를 그대로 받아 둘이 정확히 같아진다(고정값 없음).
     <div className="flex items-stretch gap-2.5">
       {/* 좌 — 라벨 + 값 + 경과/총 */}
-      <div className="flex shrink-0 items-baseline gap-1.5">
+      <div className="flex shrink-0 items-center gap-1.5">
         <span className="text-[13px] font-semibold leading-none text-ink dark:text-on-dark">{title}</span>
-        <span className="font-mono text-[17px] font-semibold leading-none text-ink dark:text-on-dark">
-          {known ? value : "--"}
-        </span>
+        {/* 값은 도트 매트릭스(2026-08-28 사용자 지시). 미상(--)도 도트로 그린다 —
+            여기만 글꼴로 남기면 값이 없을 때 표시가 튄다. */}
+        {/* size=2 · gap=1 → 20px. 종전 글꼴 값 17px 보다 3px 크지만 바를 눈에 띄게 밀지는 않는다.
+            ★ **정수 픽셀만 쓴다.** gap=0.5 로 17px 을 정확히 맞췄더니 브라우저가 각 점을 물리
+              픽셀에 스냅하면서 어떤 간격은 0px, 어떤 간격은 1px 로 반올림돼 **점 분포가 끊겨
+              보였다**(2026-08-28 사용자 지적). 소수 간격은 크기가 맞아도 격자가 무너진다.
+            ⚠ size=3 계열(21~27px)은 바를 밀거나(gap≥1) 점이 맞붙어 진하다(gap=0).
+            ⚠ 글리프를 3×5 로 줄이는 길은 기각했다 — 점은 성기어지지만 0/8·5/6 이 구분되지 않는다. */}
+        {/* 7-세그먼트(2026-08-28 사용자 지시로 도트 격자에서 전환).
+            ★ 도트로는 이 크기에서 답이 없었다 — DPR=1 이라 소수 픽셀은 흐려지고, 정수만 쓰면
+              높이가 14px 다음 곧바로 21px 로 뛰어 "작고·떨어져 있고·굵은" 조합이 없었다.
+              세그먼트는 획 하나가 면적을 가져 14px 에서도 굵기가 남는다. */}
+        <SevenSegment
+          text={known ? value : "--"}
+          height={14}
+          label={`${title} ${known ? `${value}${unit ?? ""}` : "미상"}`}
+        />
+        {/* 단위는 글꼴로 — 한글('일')이 5×7 글리프에 없다. 값만 도트로 그리고 단위를 옆에 붙인다.
+            ⚠ 값에 단위를 섞어 넘기지 말 것: 없는 글자는 공백으로 그려져 조용히 사라진다.
+            ml-1 — 도트와 단위가 붙으면 '157일'이 한 덩어리로 읽힌다(2026-08-28 사용자 지시로 벌림). */}
+        {known && unit && (
+          <span
+            className={`${unitTight ? "ml-0.5" : "ml-1"} text-[13px] font-semibold leading-none text-ink dark:text-on-dark`}
+          >
+            {unit}
+          </span>
+        )}
         {known && note && (
           <span className="whitespace-nowrap font-mono text-[10px] leading-none text-body dark:text-on-dark-soft">
             {note}
@@ -614,7 +647,9 @@ function GaugePanel({
           <GaugeRow
             title="공정률"
             status={pStatus}
-            value={`${p.pct.toFixed(1)}%`}
+            value={p.pct.toFixed(1)}
+            unit="%"
+            unitTight
             note={`경과 ${p.elapsedDays}일 / 총 ${p.totalDays}일`}
             pct={p.pct}
             known={pKnown}
@@ -623,7 +658,8 @@ function GaugePanel({
           <GaugeRow
             title="무사고"
             status={sStatus}
-            value={`${s.days}일`}
+            value={`${s.days}`}
+            unit="일"
             note={s.reset ? "사고 후 재집계" : "연속 무사고"}
             pct={s.pct}
             known={s.known}
@@ -4902,12 +4938,13 @@ function HeaderClock() {
 
   const p2 = (n: number) => String(n).padStart(2, "0");
   const dow = ["일", "월", "화", "수", "목", "금", "토"][now.getDay()];
-  const text = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())}(${dow}) ${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+  const text = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())}(${dow})`;
+  const time = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
   return (
     <div
-      aria-label={`현재 시각 ${text}`}
-      className="hidden select-none items-center lg:flex"
+      aria-label={`현재 시각 ${text} ${time}`}
+      className="hidden select-none items-center gap-2.5 lg:flex"
     >
       {/* 각 글자를 개별 span 으로 — 바뀐 글자만 key 변경으로 remount 되어 롤링 애니메이션 재생(변한 글자만 움직임). */}
       <span className="font-mono text-[15px] font-semibold tabular-nums tracking-[0.04em] text-ink dark:text-on-dark">
@@ -4917,6 +4954,15 @@ function HeaderClock() {
           </span>
         ))}
       </span>
+      {/* 시:분:초만 도트(2026-08-28 사용자 지시). 날짜는 글꼴 그대로 둔다 — 한글 요일과 괄호는
+          5×7 글리프로 안 그린다(한글은 5열에 안 들어가고, 늘리면 자릿수 규칙이 깨진다).
+          ⚠ 초는 매초 바뀌는 자리라 롤링(위로 슬라이드)이 아니라 뒤집기가 맞다 — 롤링은 글자가
+            위아래로 흘러 읽는 동안 시선이 따라가지만, 뒤집기는 제자리에서 값만 갈린다. */}
+      {/* 시계만 도트로 되돌린다(2026-08-28 사용자 결정) — 7-세그먼트는 dim(꺼진 획)까지 켜니
+          이 크기에서 획이 흐릿하게 뭉쳐 보였다. 도트는 켜진 점만 그려 또렷하다.
+          ⚠ digitsOnly — 콜론까지 도트로 그리면 숫자와 무게가 같아져 시·분·초의 경계가
+            흐려진다. 구분자는 글꼴로 두어 덩어리를 갈라 준다. */}
+      <DotMatrix text={time} size={3} gap={1} digitsOnly label={`시각 ${time}`} />
     </div>
   );
 }
@@ -7071,8 +7117,20 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               <div className="flex h-full flex-col">
                 {/* 툴바 — 등록 버튼 + 자동/수동 토글 (제목은 캐러셀 헤더가 표시) */}
                 <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-2 dark:border-white/10">
-                  <span className="rounded-pill bg-surface-strong px-2 py-0.5 text-xs font-medium text-body dark:bg-surface-dark dark:text-on-dark-soft">
-                    {filledSlots.length}명
+                  {/* 작업자 수 — 배지(알약 배경)를 풀었다(2026-08-28 사용자 지시).
+                      도트가 이미 형태를 갖고 있어 배경까지 두면 덩어리가 두 겹으로 겹쳐 보인다.
+                      ⚠ 색을 text-ink 로 맞춘다 — 도트는 bg-ink(검정)인데 단위만 text-body(회색)면
+                        한 값인데 두 색으로 갈린다(배경이 없어지니 그 어긋남이 그대로 드러난다).
+                      ★ 게이지 값과 같은 size/gap 을 쓴다 — 한 화면의 도트가 자리마다 다른 격자를
+                        가지면 같은 표기 체계로 안 읽힌다. 소수 픽셀(1.5/0.5)은 점 분포가 끊겨
+                        보여 기각했다(2026-08-28 사용자 지적). */}
+                  <span className="inline-flex items-center text-xs font-semibold text-ink dark:text-on-dark">
+                    <SevenSegment
+                      text={`${filledSlots.length}`}
+                      height={13}
+                      label={`작업자 ${filledSlots.length}명`}
+                    />
+                    <span className="ml-1">명</span>
                   </span>
                   <div className="flex items-center gap-2">
             <button
