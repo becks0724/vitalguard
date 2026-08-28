@@ -14,6 +14,9 @@
 #                     재면 "검증한 것 ≠ 배포한 것"이 되어, 미커밋 변경이 타입 오류를 가려주고 있었을 때
 #                     검증은 통과하고 이미지가 깨진다. 대가로 의존성 설치가 붙어 수 분 더 걸린다.
 #   ALLOW_UNPUSHED=1  origin/main 미반영 커밋 배포 허용
+#   APPROVED_AT=<sha> 배포 대상을 **승인 시점 커밋**으로 고정(기본 HEAD · L-116⑥).
+#                     승인 이후 쌓인 커밋은 출력에는 보이되 이미지에는 안 실린다.
+#                     검증도 그 트리(아카이브)에서 한다 — 워킹트리는 배포될 트리가 아니게 되므로.
 #   AI_URL=…          _AI_URL 치환 재정의(기본 cctv-ai 프로덕션)
 set -euo pipefail
 
@@ -36,7 +39,32 @@ cd "$REPO"
 
 say "0/5 상태 검사"
 git fetch origin -q
-SHA=$(git rev-parse HEAD)
+HEAD_SHA=$(git rev-parse HEAD)
+
+# ── 배포 대상 = 승인 시점 커밋 (2026-08-28 · L-116⑥ 의 나머지 절반) ──────────────
+# 아래에서 `HEAD` 를 뜨는 것만으로는 창이 하나 남는다 — **사용자가 승인한 시각과 스크립트가
+# 시작한 시각 사이.** 그 사이 옆 세션이 커밋하면(이 레포는 세션 셋이 한 워킹트리에 붙어 있다)
+# 승인한 적 없는 코드가 같은 이미지로 나간다. 그리고 tsc·lint·test 3종은 그것을 못 잡는다 —
+# **타입검사는 색을 안 본다**(L-116④ · 전역 CSS·색 토큰은 3종을 통과한 채 화면을 깬다).
+#
+# ⚠ 창 하나는 이미 같은 방식으로 닫혀 있다(1/5 의 고정 아카이브 · L-116⑥ 앞절반). 여기도 같은 처방이다 —
+#   ★ 그 줄을 여기서 **글자 그대로 인용하지 않는다** — 옛 가드가 그 문자열을 파일에서 처음
+#     나오는 자리로 앵커해 1/5 구간을 찾는다. 주석이 인용하면 앵커가 주석을 집어 가드가 거짓
+#     빨간불을 낸다(2026-08-28 실측). 앵커의 유일성은 파일 전체의 성질이고 주석도 그 일부다.
+#   **대조가 아니라 값.** 대조로 닫으려 하면 검사와 사용 사이가 또 임계 구간이 된다([[L-31]]).
+# ⚠ 기본값은 바꾸지 않는다. APPROVED_AT 이 없으면 오늘과 완전히 같이 동작한다(옵트인).
+if [ -n "${APPROVED_AT:-}" ]; then
+  SHA=$(git rev-parse --verify --quiet "${APPROVED_AT}^{commit}") \
+    || die "APPROVED_AT=${APPROVED_AT} 가 이 클론의 커밋이 아니다"
+  # ★ 조상 검사가 없으면 APPROVED_AT 은 안전장치가 아니라 **임의 커밋 배포 도구**가 된다.
+  git merge-base --is-ancestor "$SHA" "$HEAD_SHA" \
+    || die "APPROVED_AT ${SHA:0:7} 이 HEAD(${HEAD_SHA:0:7})의 조상이 아니다 — 오타이거나 갈라진 히스토리"
+else
+  SHA=$HEAD_SHA
+fi
+PINNED=""
+if [ "$SHA" != "$HEAD_SHA" ]; then PINNED=1; fi
+
 BEHIND=$(git rev-list --count HEAD..origin/main)
 AHEAD=$(git rev-list --count origin/main..HEAD)
 [ "$BEHIND" = 0 ] || die "origin/main 보다 ${BEHIND}커밋 뒤짐 — pull 후 재실행"
@@ -49,11 +77,11 @@ DIRTY=$(git -c core.quotepath=false status --porcelain -- "$SUBTREE" \
 if [ -n "$DIRTY" ]; then
   if [ "${ALLOW_DIRTY:-}" != 1 ]; then
     echo "$DIRTY"
-    die "빌드 범위에 미커밋 변경 — 커밋 후 재실행(강행: ALLOW_DIRTY=1 · 이미지는 HEAD 고정이라 위 변경은 배포에서 빠진다)"
+    die "빌드 범위에 미커밋 변경 — 커밋 후 재실행(강행: ALLOW_DIRTY=1 · 이미지는 ${SHA:0:7} 고정이라 위 변경은 배포에서 빠진다)"
   fi
-  echo "HEAD=$SHA (origin 동기 · ⚠ ALLOW_DIRTY 강행 — 빌드 범위 dirty, 이미지에는 HEAD 커밋만 실린다)"
+  echo "배포대상=$SHA${PINNED:+ ★APPROVED_AT 고정} (origin 동기 · ⚠ ALLOW_DIRTY 강행 — 빌드 범위 dirty, 이미지에는 해당 커밋만 실린다)"
 else
-  echo "HEAD=$SHA (origin 동기 · 빌드 범위 clean)"
+  echo "배포대상=$SHA${PINNED:+ ★APPROVED_AT 고정} (origin 동기 · 빌드 범위 clean)"
 fi
 
 # ── 배포 범위 = "내 커밋"이 아니라 <직전 라이브>..HEAD 전부다 (L-59) ─────────────
@@ -81,7 +109,7 @@ elif [ "$LIVE_SHA" = "$SHA" ]; then
 else
   RANGE="${LIVE_SHA}..${SHA}"
   git merge-base --is-ancestor "$LIVE_SHA" "$SHA" 2>/dev/null \
-    || echo "⚠ 라이브 커밋이 HEAD 의 조상이 아니다 — 롤백 이후이거나 갈라진 히스토리다. 아래 목록을 그대로 믿지 말 것"
+    || echo "⚠ 라이브 커밋이 배포대상의 조상이 아니다 — 롤백 이후이거나 갈라진 히스토리다. 아래 목록을 그대로 믿지 말 것"
   NCOMMIT=$(git rev-list --count "$RANGE")
   # ⚠ 작성자는 **팀원**을 가리지 병렬 세션을 가리지 못한다 — 같은 맥의 세션들은 같은 git 신원을 쓴다.
   # 세션 간 혼입은 작성자가 아니라 **커밋 제목**으로 판별한다(아래 목록).
@@ -91,12 +119,23 @@ else
   #   저자가 1명이면 이 필드는 판별력이 0이다(병렬 세션은 같은 git 신원). 여럿이면 실제로 팀원을 가리므로 조용히 둔다.
   AUTHOR_NOTE=""
   [ "$NAUTHOR" = "1" ] && AUTHOR_NOTE="  ⚠ 1명 — 이 필드로는 병렬 세션이 안 갈린다. 제목·diff 로 판별할 것"
-  echo "배포 범위 = $LIVE_REV(${LIVE_SHA:0:7}) → HEAD(${SHA:0:7}) · ${NCOMMIT}커밋 · 작성자: ${AUTHORS}${AUTHOR_NOTE}"
+  echo "배포 범위 = $LIVE_REV(${LIVE_SHA:0:7}) → 배포대상(${SHA:0:7}) · ${NCOMMIT}커밋 · 작성자: ${AUTHORS}${AUTHOR_NOTE}"
   # `| head` 는 pipefail 과 함께 SIGPIPE 로 파이프라인을 실패시킨다 — `-n` 으로 git 쪽에서 자른다.
   git log -n 20 --format='  %h %an — %s' "$RANGE"
   if [ "$NCOMMIT" -gt 20 ]; then echo "  … 이하 $((NCOMMIT - 20))커밋 생략"; fi
   git -c core.quotepath=false diff --stat "$RANGE" -- "$SUBTREE" | tail -1 | sed 's/^/  /'
   echo "  ★ 라이브 검증 목록은 '내가 무엇을 고쳤나'가 아니라 위 범위 전체에서 만든다(L-59)."
+fi
+
+# ── 제외 범위 — 승인 이후 쌓였지만 이번에 안 나가는 것 ──────────────────────────
+# 고정의 값어치는 여기서 눈에 보인다. 되묻기(L-116③)의 성격이 판정에서 **정보**로 바뀐다 —
+# "5커밋 더 있는데 진행할까요" 가 아니라 "N줄이 더 쌓였지만 이번 배포엔 안 실립니다".
+if [ -n "$PINNED" ]; then
+  NEX=$(git rev-list --count "${SHA}..${HEAD_SHA}")
+  echo "제외 범위 = 배포대상(${SHA:0:7}) → HEAD(${HEAD_SHA:0:7}) · ${NEX}커밋 — ★이번 배포에 안 실린다"
+  git log -n 10 --format='  − %h %an — %s' "${SHA}..${HEAD_SHA}"
+  if [ "$NEX" -gt 10 ]; then echo "  … 이하 $((NEX - 10))커밋 생략"; fi
+  git -c core.quotepath=false diff --stat "${SHA}..${HEAD_SHA}" -- "$SUBTREE" | tail -1 | sed 's/^/  − /'
 fi
 
 say "1/5 커밋 고정 아카이브 (이미지=\$SHA 보증 · L-32·L-116⑥)"
@@ -121,16 +160,22 @@ N=$(find "$TMP" -type f | wc -l | tr -d ' ')
 echo "아카이브 ${N}파일 → $TMP"
 
 say "2/5 선검증 tsc·lint·test (L-10 — 3종 전부)"
-# 검증 대상은 **배포될 트리**여야 한다. clean 이면 워킹트리 = HEAD 라 워킹트리에서 재며(node_modules
-# 재사용으로 빠르다), ALLOW_DIRTY 강행이면 둘이 갈라지므로 아카이브에서 잰다.
+# 검증 대상은 **배포될 트리**여야 한다. clean 이고 고정이 없으면 워킹트리 = 배포대상이라 워킹트리에서
+# 재며(node_modules 재사용으로 빠르다), 갈라지면 아카이브에서 잰다.
 # 갈라진 채 워킹트리로 검증하면 "검증한 것 ≠ 배포한 것"이 된다 — 미커밋 변경이 타입 오류를
 # 가려주고 있었다면 검증은 통과하고 이미지는 깨진다(2026-08-01 ALLOW_DIRTY 배포에서 드러난 구멍).
+#
+# ★ 갈라지는 길이 **둘**이다(2026-08-28). ① ALLOW_DIRTY 강행 ② APPROVED_AT 고정.
+#   ②를 빠뜨리면 ①이 만들었던 구멍과 **완전히 같은 모양**이 된다 — 워킹트리는 HEAD 인데
+#   배포되는 것은 승인 시점 커밋이므로, 승인 이후 커밋이 타입 오류를 가려주고 있으면 그대로 나간다.
+VERIFY_IN_ARCHIVE=""
+if [ -n "$DIRTY" ] || [ -n "$PINNED" ]; then VERIFY_IN_ARCHIVE=1; fi
 if [ "${SKIP_VERIFY:-}" = 1 ]; then
-  echo "SKIP_VERIFY=1 — 생략(같은 HEAD 직전 검증 전제)"
+  echo "SKIP_VERIFY=1 — 생략(같은 커밋 직전 검증 전제)"
 else
   VLOG=$(mktemp)
-  if [ -n "$DIRTY" ]; then
-    echo "⚠ dirty 강행 — 워킹트리 대신 아카이브에서 검증(검증=이미지 보장). 의존성 설치가 필요해 수 분 걸린다."
+  if [ -n "$VERIFY_IN_ARCHIVE" ]; then
+    echo "⚠ 워킹트리 ≠ 배포대상(${DIRTY:+dirty 강행}${DIRTY:+ · }${PINNED:+APPROVED_AT 고정}) — 아카이브에서 검증한다(검증=이미지 보장). 의존성 설치가 필요해 수 분 걸린다."
     (cd "$TMP" && pnpm install --frozen-lockfile) >"$VLOG" 2>&1 \
       || { tail -30 "$VLOG"; die "아카이브 pnpm install 실패"; }
     # analyzers·schemas 는 dist 를 import 한다 — 빌드 전에는 tsc 가 대량 실패한다.
@@ -157,7 +202,7 @@ else
   (cd "$VROOT" && pnpm test) >"$VLOG" 2>&1 \
     || { grep -E "^not ok|# fail|# pass" "$VLOG" | head -20; die "test 실패"; }
   grep -hE "^apps/dashboard-web test: # (tests|pass|fail)" "$VLOG" || true
-  echo "검증 트리 = $([ -n "$DIRTY" ] && echo "아카이브(HEAD 고정)" || echo "워킹트리(= HEAD)")"
+  echo "검증 트리 = $([ -n "$VERIFY_IN_ARCHIVE" ] && echo "아카이브(${SHA:0:7} 고정)" || echo "워킹트리(= ${SHA:0:7})")"
   rm -f "$VLOG"
 fi
 

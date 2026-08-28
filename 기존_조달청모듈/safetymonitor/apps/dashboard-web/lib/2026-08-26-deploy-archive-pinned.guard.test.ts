@@ -47,17 +47,35 @@ test("① ★ 아카이브가 이름이 아니라 값을 쓴다", () => {
 
 test("② SHA 는 아카이브보다 먼저 떠 둔 값이다", () => {
   // 순서가 뒤집히면 "먼저 뜬 값" 이라는 전제가 깨진다(같은 줄에서 다시 읽는 것과 같아진다).
-  const iSha = code.search(/^SHA=\$\(git rev-parse HEAD\)/m);
+  //
+  // ⚠ 2026-08-28 에 단언을 **리터럴에서 계약으로** 되돌렸다. 원래는 `SHA=$(git rev-parse HEAD)` 를
+  //   글자 그대로 찾았는데, APPROVED_AT 고정이 들어오며 대입 형태가 갈라져 빨간불이 났다.
+  //   [[L-123]]③ 대로 "왜 빨개졌나" 를 물었고 답은 **부순 것이 아니라 고친 것** 이었다 —
+  //   이 시험의 계약은 위 한 줄("먼저 떠 둔 값")이지 특정 표현이 아니다. 그래서 대입이 몇 개로
+  //   갈리든 **전부** 아카이브 앞에 있는지로 단언한다(하나라도 뒤에 있으면 고정이 깨진다).
   const iArc = code.search(/^git .*archive "\$SHA:/m);
-  assert.ok(iSha >= 0, "SHA 캡처가 사라졌다");
   assert.ok(iArc >= 0, "고정 아카이브가 사라졌다");
-  assert.ok(iSha < iArc, "SHA 를 아카이브 뒤에 뜬다 — 고정의 의미가 없다");
+  const assigns = [...code.matchAll(/^\s*SHA=/gm)].map((m) => m.index ?? -1);
+  assert.ok(assigns.length > 0, "SHA 캡처가 사라졌다");
+  for (const i of assigns) {
+    assert.ok(i < iArc, "SHA 를 아카이브 뒤에서 대입한다 — 고정의 의미가 없다");
+  }
 });
 
 test("③ ★ 라벨과 아카이브가 같은 변수에서 나온다", () => {
   // 둘이 다른 출처면 이 가드가 초록인 채로도 어긋날 수 있다 — 양 끝을 함께 묶는다([[L-115]]③).
-  const label = code.match(/--update-labels commit-sha=\$\{?(\w+)/)?.[1];
-  assert.equal(label, "SHA", `라벨이 SHA 가 아닌 ${label ?? "미상"} 에서 나온다`);
+  //
+  // ⚠ 2026-08-28 변이 시험이 이 단언의 결함을 잡았다. 원래 정규식은 따옴표 없는
+  //   `commit-sha=$SHA` 만 찾았는데 **실제 배포 줄은 `commit-sha="$SHA"` 로 따옴표가 있다** —
+  //   그래서 매칭된 것은 DRY_RUN 안내 출력 줄이었고, 진짜 배포 줄의 변수를 바꿔도 초록이었다.
+  //   [[L-101]] 계열(단언이 엉뚱한 대상을 가리킨다)이고, **전수로 바꿔** 두 자리를 다 묶는다.
+  const labels = [...code.matchAll(/--update-labels commit-sha="?\$\{?(\w+)/g)].map((m) => m[1]);
+  assert.ok(labels.length > 0, "commit-sha 라벨 부착이 사라졌다");
+  // 실배포 줄과 DRY_RUN 안내 줄 둘 다 — 안내가 실제와 다르면 그것도 거짓말이다.
+  assert.ok(labels.length >= 2, `라벨 부착 자리가 ${labels.length}곳 — 실배포·DRY_RUN 둘을 다 못 찾았다`);
+  for (const l of labels) {
+    assert.equal(l, "SHA", `라벨이 SHA 가 아닌 ${l} 에서 나온다`);
+  }
 });
 
 test("④ 근거가 코드에 남아 있다 — 다음 사람이 HEAD 로 되돌리지 않게", () => {
