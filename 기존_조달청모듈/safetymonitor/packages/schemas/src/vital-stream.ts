@@ -180,6 +180,22 @@ export const VitalSampleSchema = z.object({
   // 횟수로 두는 이유 — 불리언 `gaveUp` 은 "안 했다"와 "한 번 했다"를 못 가른다.
   // 0=시도 없음 · 1~3=시도 · >3=포기. 숫자라 아래 스트립 허용목록의 보호도 받는다.
   sessionResumeTries: z.number().int().min(0).max(99).optional(),
+  // 심박 트래커 **재구독 시각** (2026-08-28 · docs/wear-os-port · Wear OS 전용).
+  //
+  // ★ 왜 필요한가 — 갤럭시 워치는 하루 17구간·2.4시간 동안 **착용 중인데 수집 tick 이 멈춘다**
+  //   (Doze · `CollectorService:248` 이 예고한 그대로). 그 구간을 되살리는 장치가
+  //   `reviveHrIfStalled` 인데, **DB 로는 그것이 돌았는지 알 길이 없다** — 돌고도 실패한 것과
+  //   아예 안 돈 것이 똑같이 "행이 없다" 로 보인다. 둘은 조치가 정반대다
+  //   (전자는 재구독 방식을 고치고, 후자는 워치독을 절전 밖으로 빼야 한다).
+  //   `hrRevives` 카운터는 앱 안에서 로그로만 쓰이고 올라오지 않아 os_log 를 떠야 했다.
+  //
+  // ⚠ **카운터가 아니라 시각인 이유는 위 `sessionStartedAt` 과 같다** — 카운터는 프로세스가
+  //   죽으면 0 부터 다시 세어 재설치와 구별이 안 된다. 시각은 그 문제가 없고, 두 행을 비교해
+  //   **그 사이에 재구독이 있었는지**를 바로 낸다(값이 바뀌었으면 있었다).
+  //
+  // ⚠ 없음도 지문이다 — 서비스 시작 이래 한 번도 재구독이 없었다는 뜻이다.
+  //   판정·경보·화면 어디에도 쓰지 않는다. 순수 관측값이다.
+  hrLastReviveAt: z.string().datetime().optional(),
   // 모션 변동폭 (2026-08-19 · 옆 세션 착용 판별 트랙 요청). 1Hz deviceMotion 60초 창의
   // |userAcceleration| 표준편차 × 1000(밀리g 정수).
   // ⚠ **판정·경보·화면 어디에도 쓰지 않는다** — 분포 검증 전까지 순수 관측값이다.
@@ -280,6 +296,14 @@ const NON_SAFETY_STRIPPABLE_KEYS = new Set([
   "motionVariabilityMg",
   // 자동 재개 시도 횟수 — 진단용이라 범위를 벗어나도 버려서 안전하다(위와 같은 이유).
   "sessionResumeTries",
+  // 심박 재구독 시각 — 진단용 시각 문자열. 형식이 깨져도 버려서 안전하다.
+  // 판정·경보·화면 어디에도 안 쓰므로, 이것 하나가 생체 샘플을 죽이는 쪽이 훨씬 나쁘다.
+  "hrLastReviveAt",
+  // ⚠ 여기 **없는** 것들 — `sessionStartedAt`·`sessionResumeTriedAt`·`sessionEndSeenAt` 은
+  //   성격이 같은 진단 시각인데 등재돼 있지 않다. 08-28 스트립 수리 전에는 등재해도 효과가
+  //   없어서 넣을 이유가 없었고, 수리 뒤에는 넣을 수 있게 됐다. **판단이 필요한 변경이라
+  //   이 트랙에서 임의로 넣지 않았다** — 넣으면 그 필드가 깨졌을 때 동작이 거부→스트립으로
+  //   바뀐다. 필요해지면 그때 근거와 함께 넣는다.
   // 오류 종료 도메인#코드 — 진단용 문자열. 길이 초과가 생체 샘플을 통째로 죽이면 안 된다.
   "sessionEndError",
   // 워치 하드웨어 모델 — 귀속용 메타데이터. 길이 초과가 생체를 죽이면 안 된다(위와 같은 이유).
@@ -315,16 +339,28 @@ export function parseResilientVitalSample(
   for (let attempt = 0; attempt < 4; attempt += 1) {
     let stripped = false;
     for (const issue of lastError.issues) {
-      if (issue.code !== "too_small" && issue.code !== "too_big") continue;
       if (issue.path.length !== 1) continue;
       const key = issue.path[0];
       if (typeof key !== "string") continue;
+      const isDiagnostic = NON_SAFETY_STRIPPABLE_KEYS.has(key);
       // 비-이벤트 샘플에서 생체값은 스트립하지 않는다 → 샘플 전체가 거부되어 ts 가 늙고
       // 신선도 게이트가 "연결끊김"으로 드러낸다(조용한 정상 표시보다 안전한 실패).
-      if (!isEventSample && !NON_SAFETY_STRIPPABLE_KEYS.has(key)) continue;
+      if (!isEventSample && !isDiagnostic) continue;
+      // ★ 허용목록(진단) 필드는 **이슈 종류와 타입을 안 가리고** 버린다.
+      //   2026-08-28 까지 여기에 `too_small|too_big` + `ZodNumber` 두 제약이 걸려 있어
+      //   **문자열·record 항목은 등재돼 있어도 실제로는 안 지워졌다** — 10개 중 3개
+      //   (`sessionEndError`·`watchDeviceModel`·`fallTrace`)가 무효였고, 그 사실이 주석에는
+      //   "버려서 안전하다" 로 적혀 있어 **있지도 않은 보호를 약속**하고 있었다.
+      //   진단값은 정의상 판정에 안 쓰이므로 어떤 형태로 깨지든(범위·형식·타입) 버리는 쪽이 옳다.
+      //   남기면 그 하나가 생체 샘플을 통째로 죽인다 — 정확히 반대 방향의 사고다.
+      //
+      //   ⚠ 그 밖(이벤트 샘플의 **생체값**)은 종전 그대로 범위 위반만 스트립한다.
+      //     생체값의 타입이 통째로 틀린 것은 "값이 크다" 와 성격이 다르다 — 앱 결함이거나
+      //     남의 payload 이고, 그것을 조용히 지워 경보를 살리면 무엇을 근거로 울렸는지가 사라진다.
+      if (!isDiagnostic && issue.code !== "too_small" && issue.code !== "too_big") continue;
       const field = shape[key];
       if (!(field instanceof z.ZodOptional)) continue;
-      if (!(field.unwrap() instanceof z.ZodNumber)) continue;
+      if (!isDiagnostic && !(field.unwrap() instanceof z.ZodNumber)) continue;
       if (candidate[key] === undefined) continue;
       delete candidate[key];
       strippedKeys.push(key);

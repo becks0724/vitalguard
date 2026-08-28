@@ -65,6 +65,13 @@ class CollectorService : Service() {
     /** 심박 재구독 횟수 — 로그에 남겨 "몇 번째 되살림인가" 를 볼 수 있게 한다. */
     private var hrRevives = 0
 
+    /**
+     * 마지막 재구독 시각(epoch ms) — 표본에 실려 서버로 간다. `null` 이면 아직 한 번도
+     * 없었다는 뜻이고 **그 없음도 지문이다**(워치독이 안 돌았다). `@Volatile` 인 이유 =
+     * 쓰는 곳은 수집 스레드인데 읽는 곳은 `flush` 다.
+     */
+    @Volatile private var hrLastReviveAtMs: Long? = null
+
     override fun onCreate() {
         super.onCreate()
         worker = HandlerThread("vg-collector").apply { start() }
@@ -101,6 +108,7 @@ class CollectorService : Service() {
             batteryChargeUah = {
                 battery.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).takeIf { it > 0L }
             },
+            hrLastReviveAtMs = { hrLastReviveAtMs },
             latestFix = { now -> gps.currentFix(now) },
         )
         pipeline = UploadPipeline(queue, HttpTransport(config.baseUrl))
@@ -313,6 +321,12 @@ class CollectorService : Service() {
         val silence = engine.hrSilenceMs(now) ?: return
         if (silence < HR_STALL_MS) return
         hrRevives++
+        // ★ 시각도 남긴다 — 이것만 서버로 올라간다(`hrLastReviveAt`). 로그는 os_log 를 떠야
+        //   읽히는데 08-28 실측에서 그 회수 경로가 막혔다(무선 디버깅 미광고). 시각 하나면
+        //   두 행을 비교해 **그 사이에 재구독이 있었는지**가 DB 에서 바로 갈린다.
+        //   ⚠ 카운터(`hrRevives`)를 안 올리는 이유 = 프로세스가 죽으면 0 부터 다시 세어
+        //     재설치와 구별이 안 된다(`sessionStartedAt` 이 시각인 것과 같은 사유).
+        hrLastReviveAtMs = now
         Log.w(TAG, "심박 침묵 ${silence / 1000}초 — 트래커 재구독 (${hrRevives}회째)")
         engine.stop()
         engine.start(now)
