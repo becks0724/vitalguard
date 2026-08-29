@@ -60,8 +60,20 @@ private val working = VitalUiState(
 @PreviewTest @Preview(name = "p6 설정 로그아웃", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSettingsOut() = SettingsPage(workerName = null, workerId = null, onLogin = {}, onLogout = {})
 
-@PreviewTest @Preview(name = "p7 로그인", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
-@Composable fun ShotPageLogin() = LoginScreen(state = LoginUiState(), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+@PreviewTest @Preview(name = "p7 로그인 QR", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginQr() = LoginScreen(state = LoginUiState(qr = sampleQrWaiting), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p7 로그인 QR 받는중", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginQrLoading() = LoginScreen(state = LoginUiState(), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p7 로그인 QR 만료", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginQrExpired() = LoginScreen(state = LoginUiState(qr = sampleQrWaiting.copy(phase = QrPhase.EXPIRED, secondsLeft = 0)), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p7 로그인 QR 오류", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginQrError() = LoginScreen(state = LoginUiState(qr = QrLoginUiState(phase = QrPhase.ERROR, error = "서버에 연결하지 못했습니다.")), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p7 로그인 직접입력", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLogin() = LoginScreen(state = LoginUiState(mode = LoginMode.MANUAL), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
 // 워밍업 전 상세 — 값이 없을 때 "측정 대기"·"착용 N회분 더" 가 어떻게 보이나
 @PreviewTest @Preview(name = "p3 체온 추이(워밍업)", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
