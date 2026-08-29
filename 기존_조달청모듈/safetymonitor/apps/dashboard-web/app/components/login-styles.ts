@@ -6,3 +6,7 @@ export const FIELD_BASE =
   "rounded-xl border border-white/25 bg-white/10 px-4 py-3 text-sm text-white outline-none backdrop-blur-md transition placeholder:text-white/50 focus:border-white/70 focus:bg-white/15";
 
 export const INPUT_CLASS = `mt-1 w-full ${FIELD_BASE}`;
+
+// 라벨 — 폰에서는 감추고(placeholder 와 같은 문구) md 이상에서 보인다. 로그인·/pair 가 같은 규칙을 쓴다.
+export const LABEL_PHONE_HIDDEN =
+  "sr-only text-xs font-semibold text-white/90 drop-shadow md:not-sr-only";

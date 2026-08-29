@@ -781,6 +781,22 @@ async function initSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
 
+    -- 워치 QR 로그인(기기 승인) 코드 — 인스턴스 간 공유가 필요해 DB 다(login_attempt 와 같은 사유). 5분 만료·1회 소비.
+    CREATE TABLE IF NOT EXISTS app_device_login (
+      code TEXT PRIMARY KEY,
+      secret_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      token TEXT,
+      user_sub TEXT,
+      worker_id TEXT,
+      worker_name TEXT,
+      created_ip TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      approved_at TIMESTAMPTZ,
+      consumed_at TIMESTAMPTZ
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
@@ -4668,4 +4684,78 @@ export async function workerConditionSignals(input: {
     vitalAlerts: a?.vital_n ?? 0,
     unackedAlerts: a?.unacked_n ?? 0,
   };
+}
+
+// ── 워치 QR 로그인(기기 승인) — lib/device-login.ts 와 짝. 상태 = pending → approved → consumed ──
+export type DeviceLoginRow = {
+  code: string;
+  secret_hash: string;
+  status: string;
+  token: string | null;
+  user_sub: string | null;
+  worker_id: string | null;
+  worker_name: string | null;
+  expired: boolean;
+};
+
+/** 코드 발급. 충돌(같은 코드가 살아 있음)이면 false — 호출자가 새 코드로 다시 시도한다. */
+export async function createDeviceLogin(
+  code: string,
+  secretHash: string,
+  ttlSec: number,
+  ip: string | null,
+): Promise<boolean> {
+  // 하루 지난 잔재는 발급 때마다 치운다(별도 크론 없이 · 행 수가 작아 비용 0).
+  await q(`DELETE FROM app_device_login WHERE expires_at < now() - interval '1 day'`);
+  const { rowCount } = await q(
+    `INSERT INTO app_device_login (code, secret_hash, created_ip, expires_at)
+     VALUES ($1, $2, $3, now() + make_interval(secs => $4::double precision))
+     ON CONFLICT (code) DO NOTHING`,
+    [code, secretHash, ip, ttlSec],
+  );
+  return rowCount === 1;
+}
+
+export async function readDeviceLogin(code: string): Promise<DeviceLoginRow | null> {
+  const { rows } = await q<DeviceLoginRow>(
+    `SELECT code, secret_hash, status, token, user_sub, worker_id, worker_name, (expires_at <= now()) AS expired
+       FROM app_device_login WHERE code = $1`,
+    [code],
+  );
+  return rows[0] ?? null;
+}
+
+/** 승인 — pending 이고 안 만료된 코드에만 토큰을 묶는다(한 문장 · 경쟁해도 한 번만). 성공 여부를 돌려준다. */
+export async function approveDeviceLogin(
+  code: string,
+  bound: { token: string; sub: string; workerId: string | null; workerName: string | null },
+): Promise<boolean> {
+  const { rowCount } = await q(
+    `UPDATE app_device_login
+        SET status = 'approved', token = $2, user_sub = $3, worker_id = $4, worker_name = $5, approved_at = now()
+      WHERE code = $1 AND status = 'pending' AND expires_at > now()`,
+    [code, bound.token, bound.sub, bound.workerId, bound.workerName],
+  );
+  return rowCount === 1;
+}
+
+/** 소비 — approved 를 consumed 로 넘기며 토큰을 **한 번만** 내준다. 두 번째 poll 은 null. */
+export async function consumeDeviceLogin(
+  code: string,
+): Promise<{ token: string; workerId: string | null; workerName: string | null } | null> {
+  const { rows } = await q<{ token: string; worker_id: string | null; worker_name: string | null }>(
+    `WITH cur AS (
+       SELECT token, worker_id, worker_name FROM app_device_login
+        WHERE code = $1 AND status = 'approved' FOR UPDATE
+     )
+     UPDATE app_device_login AS a
+        SET status = 'consumed', consumed_at = now(), token = NULL
+       FROM cur
+      WHERE a.code = $1 AND a.status = 'approved'
+      RETURNING cur.token AS token, a.worker_id, a.worker_name`,
+    [code],
+  );
+  const r = rows[0];
+  if (!r || !r.token) return null;
+  return { token: r.token, workerId: r.worker_id, workerName: r.worker_name };
 }

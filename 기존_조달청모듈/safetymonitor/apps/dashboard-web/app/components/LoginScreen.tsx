@@ -20,7 +20,7 @@ import { LiquidMetalButton } from "./LiquidMetalButton";
 import { TwoFactorPrompt } from "./TwoFactorPrompt";
 import { LoginShaderBackground } from "./LoginShaderBackground";
 import { LoginSiteSelect } from "./LoginSiteSelect";
-import { FIELD_BASE, INPUT_CLASS } from "./login-styles";
+import { FIELD_BASE, INPUT_CLASS, LABEL_PHONE_HIDDEN } from "./login-styles";
 import { StoreBadges } from "./StoreBadges";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
@@ -328,8 +328,7 @@ const SELECT_CHEVRON = {
 // 폼 라벨 — 폰에서만 시각적으로 감춘다(sr-only 라 스크린리더에는 남는다).
 // placeholder·선택지 첫 항목으로 뜻이 드러나는 필드에만 쓴다. 회원가입의 회사·ID·이름·생년월일은
 // 그 자체로 알아볼 수 없어(홍길동·mm/dd/yyyy) 폰에서도 라벨을 남긴다.
-const LABEL_PHONE_HIDDEN =
-  "sr-only text-xs font-semibold text-white/90 drop-shadow md:not-sr-only";
+// LABEL_PHONE_HIDDEN 은 login-styles 로 옮겼다(/pair 와 공유 · 2026-08-29).
 
 // 인라인 보조 버튼(중복 확인). 폰에서는 ID 입력과 반쪽 칸을 나눠 쓰므로 버튼을 줄여 입력 폭을 넘겨준다
 // — 안 줄이면 375px 에서 입력이 60px 로 좁아져 placeholder 가 '관리:' 까지만 보인다.
