@@ -39,14 +39,14 @@ fun DetailPage(
 ) {
     val w = LocalConfiguration.current.screenWidthDp
     // ★ 둥근 화면 예산(08-29 · 프리뷰 454px 에서 마지막 줄이 아래 가장자리에 잘렸다).
-    //   세로 = 위아래 7% + 제목 + 값(30sp) + 차트(58 + 축 12) + 보조줄 ≤ 4 × 14dp → 226dp 안.
-    //   가로 = 보조줄은 차트보다 5% 씩 더 들여 **아래쪽 좁은 현(chord) 안**에 둔다 —
-    //   맨 아래 줄은 중심에서 ~70dp 아래라 현의 폭이 176dp 뿐이고 차트 폭(163dp)은 거기서 잘린다.
+    //   세로 = 위 6% · 아래 8%(무게를 위로) + 제목 + 값(30sp) + 차트(58 + 축 12) + 보조줄 ≤ 4 × 14dp → 226dp 안.
+    //   가로 = 보조줄은 차트보다 8% 씩 더 들여 **아래쪽 좁은 현(chord) 안**에 둔다 —
+    //   4줄째는 중심에서 ~80dp 아래라 현의 폭이 158dp 뿐이다. 5% 로는 글자 끝이 테두리에 닿았다(08-29 사용자 지적).
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VgColors.Background)
-            .padding(horizontal = (w * 0.14f).dp, vertical = (w * 0.07f).dp),
+            .padding(start = (w * 0.14f).dp, end = (w * 0.14f).dp, top = (w * 0.06f).dp, bottom = (w * 0.08f).dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -73,7 +73,7 @@ fun DetailPage(
         }
         rows.forEach { r ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 1.dp, start = (w * 0.05f).dp, end = (w * 0.05f).dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 1.dp, start = (w * 0.08f).dp, end = (w * 0.08f).dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(r.label, color = VgColors.Secondary, fontSize = 10.sp)
