@@ -156,3 +156,11 @@ Preview Screenshot Test Engine > initializationError
 - **보정(18:5x) — 우측 띠 눈금 누락.** 사용자 지적. 원인 = `drawBand` 가 켜진 구간이 없으면(값 null) `?: return` 으로
   **눈금 전에 빠져나갔다.** 우측(스트레스)은 프리뷰 표본에 값이 없어 트랙만 있었고 그래서 눈금 0. 켜진 구간을 `drawLitZone`
   으로 빼고 눈금은 항상 마지막에. 눈금 색도 회색(가는)·흰색(임계)로 올렸다. 픽셀 검증 = 우측 띠 −48°~48° 12° 간격 9개 검출.
+
+## 9차 (18:5x) — 최종본 실기 반영 (사용자 "워치에 적용")
+- WATCH.APP 의 30분 소등 측정 창을 사용자 지시로 끊었다(상대에게 시각 통지 · 그쪽은 18:53 에 창을 닫음).
+- `assembleRelease`(wear 키 서명 · 37.2MB) → 링크로컬 `:36649` 재연결 → push + `pm install -r` Success (18:54:51).
+  WATCH.APP 의 `ad8747f`(정확 알람)가 HEAD 조상임을 `merge-base` 로 확인 — 설치가 남의 수리를 되돌리지 않았다.
+- 캡처 7장(stayon · 장마다 깨움) → **베젤 둥근 끝·양쪽 눈금·게이지 눈금이 실기 480px 에서 프리뷰와 같다.**
+- adb 완전 종료 18:55:52(disconnect + kill-server) → WATCH.APP 새 30분 창. 그동안 adb 금지.
+- 실기 PNG = `build/wear-shots-device/vg_0~6.png`(이전 2회분은 `prev/`·`prev2/`).
