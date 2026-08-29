@@ -100,6 +100,12 @@ fun VitalBubble(
                     style = Stroke(width = stroke, cap = StrokeCap.Round),
                 )
             }
+            // 눈금(08-29 사용자 요청) — 버블이 작아 25% 마다만, 임계 자리는 굵게. 베젤 띠와 같은 새김.
+            drawTicks(
+                cx = size.width / 2f, cy = size.height / 2f, arcR = d / 2f, width = stroke,
+                startDeg = ARC_START, sweepDeg = ARC_SWEEP, minorStep = 0.25f,
+                majors = zones.map { it.to }.dropLast(1),
+            )
         }
         // 값만 원 안에. 라벨은 호출부가 원 밖에 둔다.
         Text(

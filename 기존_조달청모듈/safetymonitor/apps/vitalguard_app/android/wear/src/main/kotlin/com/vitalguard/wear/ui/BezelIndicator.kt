@@ -114,6 +114,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
         colorStops = b.gradientStops(alpha),
         center = Offset(cx, cy),
     )
+    // 양끝 둥글게(08-29 사용자 요청). Round 캡은 호를 양쪽으로 반폭씩 늘린다 — 12시·6시 여백은 그만큼 준다.
     drawArc(
         brush = brush(TRACK_ALPHA),
         startAngle = minOf(a0, a1),
@@ -121,7 +122,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
         useCenter = false,
         topLeft = topLeft,
         size = boxSize,
-        style = Stroke(width = width, cap = StrokeCap.Butt),
+        style = Stroke(width = width, cap = StrokeCap.Round),
     )
 
     // ★ **현재 구간만 밝게**(08-25 사용자 결정) — 같은 그라데이션을 그 구간만 원색으로 다시 칠한다.
@@ -129,9 +130,23 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
     val gap = GAP_DEG / 2f
     val c0 = b.startDeg + b.sweepDeg * cur.from
     val c1 = b.startDeg + b.sweepDeg * cur.to
-    val s = minOf(c0, c1) + gap
-    val e = maxOf(c0, c1) - gap
+    var s = minOf(c0, c1) + gap
+    var e = maxOf(c0, c1) - gap
     if (e <= s) return
+    // 켜진 구간이 띠의 끝 구간이면 그 바깥쪽 끝도 트랙처럼 둥글어야 한다. Round 캡은 **양끝**을 반폭씩
+    // 늘리므로, 안쪽 끝은 그만큼 미리 당겨 종전 자리(틈)에 두고 바깥쪽만 트랙 끝과 겹치게 한다.
+    val bandLo = minOf(a0, a1)
+    val bandHi = maxOf(a0, a1)
+    val touchesLo = kotlin.math.abs(minOf(c0, c1) - bandLo) < 0.01f
+    val touchesHi = kotlin.math.abs(maxOf(c0, c1) - bandHi) < 0.01f
+    val cap = if (touchesLo || touchesHi) StrokeCap.Round else StrokeCap.Butt
+    if (cap == StrokeCap.Round) {
+        val capDeg = Math.toDegrees(((width / 2f) / arcR).toDouble()).toFloat()
+        if (touchesLo) { s = bandLo; e -= capDeg } else { s += capDeg; e = bandHi }
+        // 뒤집힌 경우(구간 하나가 띠 전체)면 양끝 다 둥글게 — 당길 필요 없다
+        if (touchesLo && touchesHi) { s = bandLo; e = bandHi }
+        if (e <= s) return
+    }
     drawArc(
         brush = brush(1f),
         startAngle = s,
@@ -139,8 +154,46 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBand(
         useCenter = false,
         topLeft = topLeft,
         size = boxSize,
-        style = Stroke(width = width, cap = StrokeCap.Butt),
+        style = Stroke(width = width, cap = cap),
     )
+
+    // 눈금(08-29 사용자 요청) — 10% 마다 가는 새김, 임계(구간 경계)에 굵은 새김. 트랙·채움 위에 마지막으로 새긴다.
+    drawTicks(cx, cy, arcR, width, b.startDeg, b.sweepDeg, minorStep = 0.1f, majors = b.zones.map { it.to }.dropLast(1))
+}
+
+/**
+ * 호를 가로지르는 **새김**으로 눈금을 낸다 — 띠 밖에 선을 두면 이름(0.94r)과 부딪히고 안쪽은 본문과
+ * 부딪히니, 띠 위에 직접 긋는다. ⚠ 검정으로 파면 흐린 트랙(alpha 0.22)에서는 안 보인다(첫 렌더에서 실측) —
+ * 그래서 회색으로 긋는다. 밝은 채움 위에서도, 흐린 트랙 위에서도 읽힌다.
+ * `minorStep` 간격의 가는 새김 + `majors`(비율) 자리의 굵은 새김. 양끝(0·1)은 둥근 캡이라 새기지 않는다.
+ */
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawTicks(
+    cx: Float,
+    cy: Float,
+    arcR: Float,
+    width: Float,
+    startDeg: Float,
+    sweepDeg: Float,
+    minorStep: Float,
+    majors: List<Float>,
+) {
+    fun tick(f: Float, strokePx: Float, overhang: Float, color: Color) {
+        val a = Math.toRadians((startDeg + sweepDeg * f).toDouble())
+        val r0 = arcR - width / 2f - overhang
+        val r1 = arcR + width / 2f + overhang
+        drawLine(
+            color = color,
+            start = Offset(cx + r0 * kotlin.math.cos(a).toFloat(), cy + r0 * kotlin.math.sin(a).toFloat()),
+            end = Offset(cx + r1 * kotlin.math.cos(a).toFloat(), cy + r1 * kotlin.math.sin(a).toFloat()),
+            strokeWidth = strokePx,
+        )
+    }
+    var f = minorStep
+    while (f < 0.999f) {
+        tick(f, strokePx = width * 0.10f, overhang = 0f, color = VgColors.Idle.copy(alpha = 0.85f))
+        f += minorStep
+    }
+    majors.filter { it > 0.001f && it < 0.999f }.forEach { tick(it, strokePx = width * 0.22f, overhang = 1f, color = VgColors.Secondary) }
 }
 
 /**
