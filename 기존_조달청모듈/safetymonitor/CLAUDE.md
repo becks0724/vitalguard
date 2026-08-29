@@ -28,8 +28,9 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   ✅ **라이브 실측 완료** — 로그인 탭에서 `/api/monitor/track?workerId=EMP-6861&mins=180` → `points 51 · coarse 5(100·100·100·100·200m)
   · quality.points 56`(옛 서버엔 `coarse` 키 자체가 없다). 번들 `app/page-e2e35a9d…js` 에 `선 제외`·`worker-trail-coarse` 각 1(통제군
   `정확도 중앙` 1). 화면의 원 렌더는 워치가 다시 켜진 뒤(지금은 충전 · 20:02 마지막 행) 30분 경로에서 눈으로 본다.
-  ★ **`APPROVED_AT` 고정 경로(아카이브 검증)의 첫 실배포 완주.** 워킹트리에 남의 미커밋 1개(wear 프리뷰 빈 줄)가 있어
-  `ALLOW_DIRTY=1` 로 강행 — 이미지는 `2c63611` 고정이라 그 변경은 빠졌고 검증도 아카이브에서 했다.
+  ★ **아카이브 검증 경로의 첫 실배포 완주 — 단, 진입은 PINNED 가 아니라 DIRTY 였다**(WATCH.DESIGN 정정). SHA=HEAD 라
+  PINNED 조건(SHA≠HEAD)은 여전히 미완주. 워킹트리에 남의 미커밋 1개(wear 프리뷰 빈 줄 · IDE 생성)가 있어 `ALLOW_DIRTY=1`
+  로 강행 — 이미지는 `2c63611` 고정이라 그 변경은 빠졌고 검증도 아카이브에서 했다(`docs/deploy-approved-at/checklist.md`).
   ⚠ 직전 라이브는 이 절에 없던 `00337-mkn`(`fa9e912` · 08-28 23:0x · 헤더 재배치·레트로 게이지 — 다른 세션)이다.
   함께 나간 것(L-59) = 23커밋 · 워치 `:wear` 정확 알람(`ad8747f`)·UI 7건·문서 — 서빙 코드는 `8b54197` 하나.
 - 직전 = `vitalguard-dashboard-00336-wz4` (커밋 `68f4825` · 08-28 22:2x · 서빙 digest
