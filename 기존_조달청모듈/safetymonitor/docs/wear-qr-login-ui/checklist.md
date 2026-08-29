@@ -12,4 +12,4 @@
 - [ ] 갤러리 재생성 → 아티팩트 같은 URL 재배포 → 사용자 확인.
 - [x] `./gradlew :wear:testDebugUnitTest` — Login 계열 18/18(신규 QrLoginScreenTest 4).
 - [x] 커밋 `20423d3` → [WATCH.APP] 이 push(origin/main `3dc788e` · 실조회) · 그쪽 배선 `7c32197` 이 계약(LOADING→WAITING(code·size·rows·expiresInSec)→1초 secondsLeft→승인 시 saveSession→`login = LoginUiState()` · EXPIRED 는 phase 만 · onQrRefresh/onSwitchMode/onCancel) 그대로 쓰는 것 확인.
-- [ ] 실기 — **선행 = 서버 라우트 `/deploy`(사용자)** → 내일 A안 판정 창 뒤 [WATCH.APP] 재설치 → 로그아웃 → QR → 폰 스캔 → /pair 승인 → 워치 로그인. 폰 판독 불안 시 여백 2모듈 → ECC L(서버 `ecc` 옵션은 그쪽이 연다).
+- [x] **실기 성공(08-29 22:13:15)** — 00339-m8n 라이브 후 사용자 지시로 즉시 진행. 22:12:11 `pm install -r`(HEAD 2b02bad 릴리스 서명 · 면제 유지) → 22:12:46 start(코드 V2U6-WEQZ · 41×41) → 4초 poll → 22:12:55 iPhone 카메라 스캔 → `/pair` → 22:13:11 approve → 22:13:14 poll approved → 22:13:15 `QR 로그인 성공 worker=EMP-6861` → 22:14:38 `/api/app/vital` 업로드 재개. 실기 QR 화면 캡처 = 프리뷰와 동일 배치. adb 종료 22:15:32.
