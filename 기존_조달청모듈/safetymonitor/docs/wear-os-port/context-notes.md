@@ -1200,3 +1200,29 @@ B 15:57~17:03                    31%        11%       p50 372s        387s
 뚫고 CPU 를 깨우는 타이머** — `AlarmManager` `ELAPSED_REALTIME_WAKEUP` 정확 알람(`setExact`/`setExactAndAllowWhileIdle`,
 API 31+ 는 `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM` 필요) + tick 동안만 `PARTIAL_WAKE_LOCK`(1~4초). 상시 wakelock(A 구간
 59 mA)은 배제. 선택·구현은 :wear 트랙 몫이며, 낙상 경보 지연(08-28 절 p90 6.9분)도 같은 수리로 풀린다.
+
+### R-32 결론 · 사용자 3문(08-29 18:2x) — 송출 원활한가 / 관제 끊김 확인 / 해결 방안
+
+**① 워치→관제 송출.** 전송 자체는 원활하다 — 17:00 이후 POST 27/27 `201`, 도착지연 p50 1초·최대 52초, 배치당 생체 1행이
+만들어진 즉시 올라간다. 문제는 **행이 만들어지는 주기**다. 오늘 15:07~18:20(193분) 생체 61행 · 간격 p50 121s · p90 404s ·
+max 819s · 150s 초과 16/60.
+**② 관제 끊김.** 같은 창에서 `연결끊김` 누적 **62분 = 32%**(문턱 150s). 화면 소등·정지 시 3~14분마다 한 행이라 문턱을 넘는다.
+⚠ ADB 를 붙여 두면 간격이 120s 로 붙는다(adbd 가 CPU 를 깨움) — 18:0x~18:18 의 정상 구간은 그것이고 실측이 아니다.
+ADB 를 끊자마자 166·175s 로 되돌아갔다. 무선 logcat 스트림은 Wi-Fi 절전에 조용히 죽어(R-11 ④) 실시간 관측 도구로 못 쓴다.
+
+**③ 해결 방안(제안 · 구현은 :wear 트랙).**
+```
+A ★ tick 을 알람으로 — CollectorService.tick 의 handler.postDelayed(120s) 를
+    AlarmManager.setExactAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP, now+120s, OnAlarmListener, handler) 로 교체.
+    알람 콜백 안에서 PARTIAL_WAKE_LOCK(timeout 20s) 잡고 engine.flush + pipeline.flushOnce 후 해제.
+    권한: API 31+ exact 알람 = USE_EXACT_ALARM(설치 시 부여 · Play 정책 제약은 사이드로드 배포라 무관) 또는
+    SCHEDULE_EXACT_ALARM(사용자 승인). WAKE_LOCK 은 이미 매니페스트에 있다.
+    비용: 매 120s 에 1~4초 기상 = 듀티 +1~3% → 정지 구간 30mA 기준 +1~2mA. 상시 wakelock(59mA)과 비교 불가.
+B (보강 · 권한 불필요) 심박 콜백을 시계로 — onHeartRate 가 오는 순간(센서 기상 창) elapsedRealtime 로 120s 경과면 즉시 flush.
+    watchdogFromImu 와 같은 수법. 단독으론 센서 배치 주기(~14s 기상)에 묶이므로 A 의 보조.
+C (하지 않는다) 서버 STALE_MS_WEAROS 150s 완화 — 안전장비에서 문턱을 올리는 것은 증상 은폐다. 애플은 5s 배치·워크아웃
+    세션이라 해당 없음(08-28 대조 1분 초과 0건) — "양쪽 적용" 항목이 아니다.
+D (별건 · 표시) 실시간 수집 표에서 낙상 섀도 행(fall_update_phase 있음) 제외 — 오늘 화면의 `——` 행 90건의 정체.
+```
+**검증 기준(설치 후 1시간 · 착용 · 화면 소등).** 행 간격 p90 ≤ 150s · 연결끊김 누적 < 2% · `batterystats` awake 듀티 증가 ≤ 5%p ·
+낙상 섀도 `received_at − ts` p90 ≤ 150s(08-28 6.9분에서). 측정 스크립트 = 이 세션 scratchpad `galaxy-today.mjs`(절대 창).
