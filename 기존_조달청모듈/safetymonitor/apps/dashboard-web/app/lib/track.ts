@@ -116,3 +116,30 @@ export function downsampleTrack(points: TrackPoint[], maxPoints = TRACK_MAX_POIN
   }
   return out;
 }
+
+/**
+ * 경로 **선**에 쓰는 정확도 상한(m). 이 값을 넘는 점은 선으로 잇지 않고 "부정확 점" 으로 따로 낸다.
+ *
+ * ★ 왜 (2026-08-29 · wear-os-port R-33). 워치가 FUSED 공급자라 위성(±12~40m)과 wifi·기지국(±100·200·300·1,366m)
+ *   좌표가 한 줄에 섞여 온다. 하루 84점 중 정확도 >100m 가 10점이고, 연속 점 83구간 중 도보 불가 속도(>15km/h)
+ *   8구간의 7이 정확도 >50m 였다 — 사용자가 "동선과 다르다" 고 짚은 500m 점프가 정확히 그 점들이다.
+ *   선은 "지나간 길" 로 읽히므로 ±200m 짜리 점을 이으면 없는 길을 그린다. 원으로 두면 "이 근방 어딘가" 로 읽힌다.
+ * ★ 50m 인 이유 = 위성 점의 p90(약 40m)과 기지국 최소값(93~100m) 사이. 데이터는 버리지 않는다(`coarse` 로 같이 간다).
+ * ⚠ 정확도 **미보고(null)는 선에 남긴다** — 컬럼 도입 이전 행·애플 옛 행이 그것이고, 모르는 것을 나쁜 것으로 취급하면
+ *   이력이 통째로 사라진다(sanitizeTrack 의 "메타는 게이트가 아니다" 와 같은 원칙).
+ */
+export const TRACK_LINE_ACC_MAX_M = 50;
+
+/** 부정확 점 — 지도가 선 대신 반경=정확도의 흐린 원으로 그린다. */
+export type TrackCoarsePoint = { lat: number; lon: number; accM: number };
+
+/** 선에 쓸 점(정확도 ≤ 상한 또는 미보고)과 부정확 점을 가른다. 순서는 각각 보존된다. */
+export function partitionTrackByAccuracy(points: TrackPoint[]): { line: TrackPoint[]; coarse: TrackPoint[] } {
+  const line: TrackPoint[] = [];
+  const coarse: TrackPoint[] = [];
+  for (const p of points) {
+    if (p.accM === null || p.accM <= TRACK_LINE_ACC_MAX_M) line.push(p);
+    else coarse.push(p);
+  }
+  return { line, coarse };
+}

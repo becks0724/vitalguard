@@ -95,7 +95,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, type TrackPoint, type TrackQuality } from "../lib/track";
+import { TRACK_WINDOW_MIN, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -5145,6 +5145,7 @@ export function DemoDashboard() {
   const [trailPoints, setTrailPoints] = useState<TrackPoint[] | null>(null);
   // 좌표 품질 요약 — 서버가 **솎기 전** 점으로 계산해 준다(점별이 아니라 구간 하나에 한 벌).
   const [trailQuality, setTrailQuality] = useState<TrackQuality | null>(null);
+  const [trailCoarse, setTrailCoarse] = useState<TrackCoarsePoint[] | null>(null);
   // 위험구역(진입 금지 존) — 서버 등록 존 + 진입 확정 워커×존 키(`workerId|zoneId`) + 팝업/ack.
   const [dangerZones, setDangerZones] = useState<MapZone[]>([]);
   const [activeZoneAlert, setActiveZoneAlert] = useState<{
@@ -5628,6 +5629,7 @@ export function DemoDashboard() {
     if (!trailWorkerId || workerView !== "map") {
       setTrailPoints(null);
       setTrailQuality(null);
+      setTrailCoarse(null);
       return;
     }
     let alive = true;
@@ -5641,12 +5643,14 @@ export function DemoDashboard() {
         const j = (await res.json()) as {
           ok?: boolean;
           points?: TrackPoint[];
+          coarse?: TrackCoarsePoint[];
           quality?: TrackQuality;
         };
         if (alive && res.ok && j.ok && Array.isArray(j.points)) {
           setTrailPoints(j.points);
           // 요약이 없으면 옛 서버다 — 비워서 화면이 "모름" 으로 그리게 한다(0 으로 위장 금지).
           setTrailQuality(j.quality ?? null);
+          setTrailCoarse(Array.isArray(j.coarse) ? j.coarse : null);
         }
       } catch {
         // 트레일은 보조 표시 — 일시 실패 시 직전 경로 유지
@@ -7377,6 +7381,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                                 latestMap.get(trailWorkerId)?.workerName ?? trailWorkerId,
                               windowMin: TRACK_WINDOW_MIN,
                               points: trailPoints ?? [],
+                              coarse: trailCoarse ?? undefined,
                               quality: trailQuality,
                             }
                           : undefined

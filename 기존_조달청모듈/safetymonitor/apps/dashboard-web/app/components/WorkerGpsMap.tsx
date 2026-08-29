@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { TrackQuality } from "../lib/track";
+import { TRACK_LINE_ACC_MAX_M, type TrackCoarsePoint, type TrackQuality } from "../lib/track";
 
 export type WorkerMapPoint = {
   workerId: string;
@@ -42,6 +42,11 @@ export type WorkerTrail = {
   name: string;
   windowMin: number;
   points: { lat: number; lon: number }[];
+  /**
+   * 선에서 제외된 부정확 점(정확도 > TRACK_LINE_ACC_MAX_M) — 반경=정확도의 흐린 원으로만 그린다(R-33).
+   * 없으면 옛 서버다(전부 선으로 그린 채 둔다 — 없는 것을 필터된 것으로 위장하지 않는다).
+   */
+  coarse?: TrackCoarsePoint[];
   /**
    * 이 구간 좌표의 품질 요약 — 서버가 **솎기 전** 점으로 계산해 보내준다.
    * null = 옛 서버이거나 아직 안 왔다. 없는 것을 0 으로 그리지 않는다.
@@ -374,6 +379,7 @@ export function WorkerGpsMap({
   let circle: { x: number; y: number; r: number } | null = null;
   let focusPt: { x: number; y: number } | null = null;
   let trailPts: { x: number; y: number }[] | null = null;
+  let coarsePts: { x: number; y: number; r: number }[] | null = null;
   const zoneCircles: { zone: MapZone; x: number; y: number; r: number }[] = [];
   let draftPt: { x: number; y: number; r: number } | null = null;
   let polyPts: { x: number; y: number }[] | null = null;
@@ -405,6 +411,14 @@ export function WorkerGpsMap({
       trailPts = trail.points.map((p) => ({
         x: lonToWorldX(p.lon, z) - tlx,
         y: latToWorldY(p.lat, z) - tly,
+      }));
+    }
+    if (trail && trail.coarse && trail.coarse.length > 0) {
+      // 부정확 점 — 선 대신 원. 반경은 보고된 정확도 그대로(픽셀 환산)라 줌을 바꿔도 지리적 크기가 맞다.
+      coarsePts = trail.coarse.map((p) => ({
+        x: lonToWorldX(p.lon, z) - tlx,
+        y: latToWorldY(p.lat, z) - tly,
+        r: Math.max(4, p.accM / metersPerPx(p.lat)),
       }));
     }
     if (sitePolygon && sitePolygon.length >= 4) {
@@ -702,6 +716,32 @@ export function WorkerGpsMap({
           </svg>
         )}
 
+        {/* 부정확 점 — 선에서 뺀 기지국·wifi 좌표. 채운 원 = "이 근방 어딘가". 이어 그리면 없는 길이 된다(R-33). */}
+        {coarsePts && (
+          <svg
+            aria-hidden
+            data-testid="worker-trail-coarse"
+            className="pointer-events-none absolute inset-0 z-[6]"
+            width={size.w}
+            height={size.h}
+          >
+            {coarsePts.map((c, i) => (
+              <circle
+                key={i}
+                cx={c.x}
+                cy={c.y}
+                r={c.r}
+                fill="#38bdf8"
+                fillOpacity={0.1}
+                stroke="#38bdf8"
+                strokeOpacity={0.35}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+            ))}
+          </svg>
+        )}
+
         {/* 알림 포커스 펄스 링 — 알림 모달 "관제 지도에서 보기"로 진입한 위치 강조(12초 후 부모가 해제). */}
         {focusPt && (
           <span
@@ -870,6 +910,8 @@ export function WorkerGpsMap({
               좌표 {trail.quality.points}점
               {trail.quality.accuracyMedianM !== null &&
                 ` · 정확도 중앙 ±${Math.round(trail.quality.accuracyMedianM)}m`}
+              {trail.coarse && trail.coarse.length > 0 &&
+                ` · 부정확 ${trail.coarse.length}점 선 제외(>${TRACK_LINE_ACC_MAX_M}m)`}
               {" · "}
               <span
                 title={

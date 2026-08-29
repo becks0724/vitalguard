@@ -5,6 +5,7 @@ import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { getWorkerAliasMap, listWorkerTrack } from "../../../../lib/db";
 import {
   downsampleTrack,
+  partitionTrackByAccuracy,
   sanitizeTrack,
   summarizeTrackQuality,
   TRACK_WINDOW_MIN,
@@ -38,10 +39,14 @@ export async function GET(request: Request) {
   // ★ 요약은 **솎기 전** 점으로 낸다. `downsampleTrack` 이 240점으로 줄이므로 뒤에서 세면
   //   실제 분포가 아니라 표본의 분포를 재게 된다 — 한 점뿐인 큰 지연이 통째로 사라진다.
   const quality = summarizeTrackQuality(all);
-  const points = downsampleTrack(all);
+  // ★ 선은 정확도 ≤ 상한(또는 미보고) 점만 잇는다 — 기지국 좌표(±100~1,366m)가 500m 점프를 그리던 것(R-33).
+  //   부정확 점은 버리지 않고 `coarse` 로 따로 보낸다(지도가 반경=정확도 원으로 그린다). 둘 다 솎는다.
+  const { line, coarse: coarseAll } = partitionTrackByAccuracy(all);
+  const points = downsampleTrack(line);
+  const coarse = downsampleTrack(coarseAll).map((p) => ({ lat: p.lat, lon: p.lon, accM: p.accM as number }));
 
   return NextResponse.json(
-    { ok: true, workerId, mins, points, quality },
+    { ok: true, workerId, mins, points, coarse, quality },
     { headers: { "cache-control": "no-store" } },
   );
 }
