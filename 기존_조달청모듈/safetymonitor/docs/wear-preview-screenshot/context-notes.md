@@ -164,3 +164,12 @@ Preview Screenshot Test Engine > initializationError
 - 캡처 7장(stayon · 장마다 깨움) → **베젤 둥근 끝·양쪽 눈금·게이지 눈금이 실기 480px 에서 프리뷰와 같다.**
 - adb 완전 종료 18:55:52(disconnect + kill-server) → WATCH.APP 새 30분 창. 그동안 adb 금지.
 - 실기 PNG = `build/wear-shots-device/vg_0~6.png`(이전 2회분은 `prev/`·`prev2/`).
+
+## 10차 (19:0x~19:4x) — 판단거리 2건 (사용자 결정 ①B · ②B)
+- **①B 로그인 [취소|로그인] 반폭** — 다섯 항목이 한 화면에. `Row` + `weight(1f)` · 높이 40dp · 간격 6dp. 오류 문구는 칸과 버튼 사이.
+  480 렌더에서 제목·칸 2·버튼 줄이 전부 원 안. 실기 반영은 다음 설치 때(WATCH.APP 측정 창 뒤).
+- **②B 워치9 스펙 프리뷰 추가(교체 아님)** — `WearWatch9Shots.kt` 17장 · `spec:width=480px,height=480px,dpi=340,isRound=true`.
+  ⚠ 구형 문법 `spec:shape=Round,width=480,height=480,unit=px,dpi=340` 은 스크린샷 렌더러가 못 읽어 **1080×2400(폰 기본값)** 으로
+  떨어졌다(첫 렌더 실측 · 치수 확인으로 잡음). 454·384 판은 다른 원형 기기 대표로 유지. 총 40장 · 6.2초.
+- 갤러리 생성기를 `scratchpad/gen_gallery.py` 로 새로 짰다(정규식 덧칠 누적 → 디렉터리에서 한 번에 생성). 기본 섹션 = 480 판.
+- 단위테스트 249/249.

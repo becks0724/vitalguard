@@ -6,6 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -67,27 +70,12 @@ fun LoginScreen(
         modifier = Modifier.fillMaxSize().background(VgColors.Background),
         horizontalAlignment = Alignment.CenterHorizontally,
         // ★ 세로 패딩이 없으면 첫 줄과 마지막 버튼이 둥근 가장자리에 잘린다(08-29 프리뷰·실기 대조).
-        //   위아래 22dp 를 비우고 칸·버튼을 낮춰 제목·칸 2·로그인이 한 화면(226dp)에 들어온다.
+        //   위아래 22dp 를 비우고 칸·버튼을 낮춰 제목·칸 2·[취소|로그인] 이 한 화면(226dp)에 들어온다.
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 22.dp),
     ) {
         item { Text("VitAlGuard", color = VgColors.Primary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 2.dp)) }
         item { InputRow("아이디", state.id, "탭하여 입력", !state.busy, onEditId) }
         item { InputRow("비밀번호", maskedPassword(state.password), "탭하여 입력", !state.busy, onEditPassword) }
-        item {
-            Button(
-                onClick = onSubmit,
-                enabled = !state.busy,
-                label = {
-                    Text(
-                        if (state.busy) "확인 중…" else "로그인",
-                        fontSize = 13.sp,
-                        color = Color.Black,
-                    )
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = VgColors.Normal),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(40.dp),
-            )
-        }
         state.error?.let { msg ->
             item {
                 Text(
@@ -95,18 +83,37 @@ fun LoginScreen(
                     color = VgColors.Danger,
                     fontSize = 12.sp,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 6.dp),
+                    modifier = Modifier.padding(top = 4.dp),
                 )
             }
         }
+        // ★ 취소·로그인을 **반폭으로 한 줄에**(08-29 사용자 결정 ①B) — 다섯 항목을 세로로 쌓으면 226dp 화면에
+        //   안 들어가 취소가 스크롤 아래로 숨었다. 워치 표준 뒤로가기(가로 스와이프)는 이 앱에서 앱을 닫으므로
+        //   취소 버튼은 화면 안에 있어야 한다. 아래쪽은 둥근 화면이 좁아 버튼 하나가 ~70dp 지만 글자는 들어간다.
         item {
-            Button(
-                onClick = onCancel,
-                enabled = !state.busy,
-                label = { Text("취소", fontSize = 13.sp, color = VgColors.Primary) },
-                colors = ButtonDefaults.buttonColors(containerColor = VgColors.Pill),
-                modifier = Modifier.fillMaxWidth().padding(top = 3.dp).height(40.dp),
-            )
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Button(
+                    onClick = onCancel,
+                    enabled = !state.busy,
+                    label = { Text("취소", fontSize = 13.sp, color = VgColors.Primary) },
+                    colors = ButtonDefaults.buttonColors(containerColor = VgColors.Pill),
+                    modifier = Modifier.weight(1f).height(40.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Button(
+                    onClick = onSubmit,
+                    enabled = !state.busy,
+                    label = {
+                        Text(
+                            if (state.busy) "확인 중…" else "로그인",
+                            fontSize = 13.sp,
+                            color = Color.Black,
+                        )
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = VgColors.Normal),
+                    modifier = Modifier.weight(1f).height(40.dp),
+                )
+            }
         }
     }
 }
