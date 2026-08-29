@@ -36,4 +36,5 @@
 ## 4. 마감
 - [x] 래퍼 `scripts/wear-shots.sh` — rsync→ASCII 캐시→update→PNG 를 `build/wear-shots/` 로 (git 무시 경로)
 - [x] 결과를 `context-notes.md` 에 · 사용법 = `scripts/wear-shots.sh` 머리 주석
-- [~] 커밋(`git commit -- <경로>`) → push 는 담당 세션에 요청 (L-125 · 담당은 사용자 확인 중)
+- [x] 커밋(`git commit -- <경로>`) → push 는 담당 세션([WATCH.APP])이 사용자 지시로 일괄 — `6641faf..b1cf983` 9커밋 (08-29 18:5x · ls-remote 로 10건 전부 원격 확인)
+- [x] **실기 반영** — 최종본 `0281851` 릴리스 서명 설치(18:54:51) · 7장 캡처 대조 · 둥근 끝·눈금·그라데이션 전부 실기와 일치
