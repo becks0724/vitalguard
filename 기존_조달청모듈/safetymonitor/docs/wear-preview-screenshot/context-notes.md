@@ -198,3 +198,5 @@ Preview Screenshot Test Engine > initializationError
   (대기 N건 주황 / 전송 Ns / 수집 중). 폭 ≈136dp < 148dp(옆 여백 제외 현). 큰 글꼴(1.24)도 한 줄.
 - `FooterLine` 은 안내만 남긴다 — 착용 전·준비 중·**낡은 심박 나이**(HrStallTest 앵커 `if (state.bpmStale)`·`ageLabel(it)` 를 여기로 옮김).
   빈 문자열도 그려 줄 높이를 지킨다. 단위시험 268/268(StatusRowTest 2 추가).
+- **실기 반영(23:05:31 · HEAD 2f4250d 릴리스 · pm install -r)** — 무선 디버깅 포트 또 변경(44013→44993 · 링크로컬 스캔 20초). 설치 뒤
+  로그인 유지(이름 표시) · deviceidle whitelist 잔존 · 상태 줄 `장우진 ▮▮▮▮ [87%] 수집 중` 이 프리뷰와 같은 배치. adb 종료 23:06.
