@@ -16,7 +16,19 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00338-crt` (커밋 `2c63611` · 08-29 20:4x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00339-m8n` (커밋 `a39d686` · 08-29 22:0x · 서빙 digest
+  `sha256:c4402f46…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1475/1475 @ 아카이브(a39d686 고정)**(= 워킹트리 1485 − ARCHIVE_SKIP 10) · commit-sha 라벨 = APPROVED_AT 일치 · DIRTY 진입(IDE 빈 줄 1 · ALLOW_DIRTY)).
+  **워치 QR 로그인(기기 승인) 서버**(`24258ec` · `docs/device-login/`) — 갤럭시워치 화면이 좁아 아이디·비번 입력이 어렵다(08-29 사용자 지시).
+  `POST /api/app-auth/device/start`(코드 `XXXX-XXXX`·secret·300s·QR 41×41 · **토큰 없음**) · `POST …/approve`(폰 `/pair` 가 코드+자격 ·
+  판정·잠금·발급은 login 과 **같은 함수** · 코드는 자격 뒤에 확인) · `GET …/poll?code&secret`(승인분 **1회 소비** · 없음/불일치 동일 404) ·
+  테이블 `app_device_login` · `/pair` 페이지는 **관제웹 로그인 화면과 같은 재료**(셰이더·글래스 카드·로고·login-styles·LiquidMetal).
+  가드 5 + 단위 4 · 변이 9종 중 8 검출(1 등가). 워치 쪽(`a3e907e` 클라이언트 · `20423d3` QR 모드 UI · `7c32197` MainActivity 배선 · :wear 262/262)
+  은 assembleRelease 만 됐고 **미설치** — 내일 A안 판정 창 뒤 재설치·실기(로그아웃 → QR → 폰 스캔 → /pair 승인).
+  ✅ **라이브 실측** — start 실호출 `6XET-FC4J`(secret 64·QR 41×41·token 키 없음) · poll 맞는 secret → pending / 틀린 secret → 404 ·
+  approve 잘못된 자격 → 401 · `/pair?code=` 브라우저 렌더(로그인 화면 구성 그대로 · 코드 자동 채움) 눈으로 확인.
+  함께 나간 것(L-59) = 9커밋 · 서빙 코드는 `24258ec` 하나(워치 3 · 문서 5).
+- 직전 = `vitalguard-dashboard-00338-crt` (커밋 `2c63611` · 08-29 20:4x · 서빙 digest
   `sha256:d2cc9f84…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok(radar·typhoon·
   weather·disaster-msg·health/db) · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **1466/1466 @ 아카이브(2c63611 고정)**(= 워킹트리 1476 − ARCHIVE_SKIP 10) · **commit-sha 라벨 = APPROVED_AT 일치**).
