@@ -11,5 +11,5 @@
 - [x] `scripts/wear-shots.sh` → PNG 판독 — 둥근 가장자리 잘림 0(오류 문구는 카드 안으로 옮겨 해결) · 칸 ≈6px · **OpenCV 가 실제 URL 로 디코드**.
 - [ ] 갤러리 재생성 → 아티팩트 같은 URL 재배포 → 사용자 확인.
 - [x] `./gradlew :wear:testDebugUnitTest` — Login 계열 18/18(신규 QrLoginScreenTest 4).
-- [ ] 커밋 `git commit -- <내 파일>` → SHA 를 [WATCH.APP] 에 전달(push 는 그쪽).
-- [ ] 실기(그쪽 배선 후) — 로그아웃 → QR → 폰 스캔 → /pair 승인 → 워치 로그인 · 측정 창과 안 겹치게.
+- [x] 커밋 `20423d3` → [WATCH.APP] 이 push(origin/main `3dc788e` · 실조회) · 그쪽 배선 `7c32197` 이 계약(LOADING→WAITING(code·size·rows·expiresInSec)→1초 secondsLeft→승인 시 saveSession→`login = LoginUiState()` · EXPIRED 는 phase 만 · onQrRefresh/onSwitchMode/onCancel) 그대로 쓰는 것 확인.
+- [ ] 실기 — **선행 = 서버 라우트 `/deploy`(사용자)** → 내일 A안 판정 창 뒤 [WATCH.APP] 재설치 → 로그아웃 → QR → 폰 스캔 → /pair 승인 → 워치 로그인. 폰 판독 불안 시 여백 2모듈 → ECC L(서버 `ecc` 옵션은 그쪽이 연다).
