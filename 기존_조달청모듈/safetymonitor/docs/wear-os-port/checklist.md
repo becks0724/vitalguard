@@ -277,6 +277,10 @@
 - [x] 워치 설치 18:41:35(Success · 서명 동일) → 서비스 자동 재기동(pid 19938 · 18:42:01) → `dumpsys alarm` 에
       `ELAPSED_WAKEUP tag=VgCollector window=0 exactAllowReason=listener` 확인. ★ 리스너형 알람은 **권한 없이도 exact 허용**
       (`exactAllowReason=listener`) — 매니페스트 권한은 보험이다.
-- [ ] **ADB 해제** 후 화면 소등 30분 DB 실측(WATCH.DESIGN screencap 뒤).
+- [x] ADB 해제 실측 — 1차 4연속·2차 8연속 120초대(소등). 결손 2건(238s·477s)은 **깊은 Doze 유예**(`device_idle=full` 50% 구간 ·
+      배달 목록에 19:15/25/27/29 없음) → 19:37 화이트리스트 등록(`dumpsys deviceidle whitelist +pkg`). ⚠ "Doze 0건" 정정(토큰 `device_idle=`).
+- [ ] **화이트리스트 후 판정 창** — 착석·소등 30분 이상(Doze full 이 드는 조건) · p90 ≤ 150s · 결손 0. 내일 절대 창.
+- [ ] 작업자 배포용 앱 내 1회 요청(`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` + 로그인 화면) — MainActivity 라 WATCH.DESIGN 과 조율.
+- [ ] R-33 경로 정확도 필터(지도 ⓐ) — 별건 · 사용자 결정 대기.
 - [ ] 판정 = 간격 p90 ≤ 150s · 연결끊김 < 2% (`galaxy-today.mjs` 절대 창) · 배터리 %/h 전후 비교.
 - [ ] 커밋(내 경로만) → push 묶음 · WATCH.DESIGN 에 설치 완료 한 줄(그쪽 screencap 대조 대기 중).
