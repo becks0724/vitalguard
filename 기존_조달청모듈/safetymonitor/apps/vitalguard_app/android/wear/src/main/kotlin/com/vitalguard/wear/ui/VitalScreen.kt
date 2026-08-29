@@ -140,18 +140,26 @@ private fun StatusDot(active: Boolean, activeColor: Color, label: String) {
 /** ② 큰 주값 — 사진의 시각 자리에 심박이 온다. 색이 곧 판정. */
 @Composable
 private fun HeroValue(state: VitalUiState, large: Boolean) {
-    Row(verticalAlignment = Alignment.Bottom) {
-        // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은
-        //   공간만 먹는다. 판정은 아래 이름 글자색이 말한다(08-29 사용자 지시 — 숫자 옆 판정색 점은
-        //   이름 줄 위에 떠 보여서 뺐다).
+    // ★ **숫자가 화면 가운데**, "bpm" 은 그 오른쪽에 매달린다(08-29 사용자 지시). 종전엔 숫자+단위 묶음을
+    //   가운데 맞춰 숫자가 왼쪽으로 밀렸다. 양쪽에 같은 weight 칸을 두면 숫자 폭과 무관하게 중심이 고정된다.
+    // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은 공간만 먹는다.
+    //   판정은 아래 이름 글자색이 말한다(숫자 옆 판정색 점은 이름 줄 위에 떠 보여서 뺐다).
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Spacer(Modifier.weight(1f))
         Text(
             state.bpm?.toString() ?: "--",
             color = VgColors.Primary,
             fontSize = if (large) 44.sp else 36.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 3.dp),
         )
-        Text("bpm", color = VgColors.Secondary, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+        Box(Modifier.weight(1f)) {
+            Text(
+                "bpm",
+                color = VgColors.Secondary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(start = 3.dp, bottom = 6.dp),
+            )
+        }
     }
 }
 
