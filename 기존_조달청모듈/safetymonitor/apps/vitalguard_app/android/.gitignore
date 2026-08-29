@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# Kotlin 2.x 컴파일러 세션 디렉터리(생성물) — 스크린샷 테스트 첫 실행 때 나타났다
+.kotlin/
