@@ -16,7 +16,23 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00336-wz4` (커밋 `68f4825` · 08-28 22:2x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00338-crt` (커밋 `2c63611` · 08-29 20:4x · 서빙 digest
+  `sha256:d2cc9f84…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok(radar·typhoon·
+  weather·disaster-msg·health/db) · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1466/1466 @ 아카이브(2c63611 고정)**(= 워킹트리 1476 − ARCHIVE_SKIP 10) · **commit-sha 라벨 = APPROVED_AT 일치**).
+  **경로 선은 정확도 ≤50m 점만 잇고, 기지국·wifi 좌표(>50m)는 반경=정확도의 흐린 원으로**(`8b54197` · R-33).
+  사용자 제보 "동선과 상반된 GPS" 의 정체 = FUSED 공급자의 기지국 추정(±100·200·300·1,366m)이 위성 점과 같은 선으로
+  이어진 것 — 도보 불가 속도 8구간 중 7이 정확도 >50m. 서버가 가르고(`partitionTrackByAccuracy` · null 은 선에 남김)
+  응답에 `coarse` 를 **추가**(additive)한다. 데이터 손실 0 · 캡션 `부정확 N점 선 제외(>50m)`.
+  가드 `2026-08-29-trail-accuracy-filter`(4) + 단위 3 · **변이 7/7 검출**.
+  ✅ **라이브 실측 완료** — 로그인 탭에서 `/api/monitor/track?workerId=EMP-6861&mins=180` → `points 51 · coarse 5(100·100·100·100·200m)
+  · quality.points 56`(옛 서버엔 `coarse` 키 자체가 없다). 번들 `app/page-e2e35a9d…js` 에 `선 제외`·`worker-trail-coarse` 각 1(통제군
+  `정확도 중앙` 1). 화면의 원 렌더는 워치가 다시 켜진 뒤(지금은 충전 · 20:02 마지막 행) 30분 경로에서 눈으로 본다.
+  ★ **`APPROVED_AT` 고정 경로(아카이브 검증)의 첫 실배포 완주.** 워킹트리에 남의 미커밋 1개(wear 프리뷰 빈 줄)가 있어
+  `ALLOW_DIRTY=1` 로 강행 — 이미지는 `2c63611` 고정이라 그 변경은 빠졌고 검증도 아카이브에서 했다.
+  ⚠ 직전 라이브는 이 절에 없던 `00337-mkn`(`fa9e912` · 08-28 23:0x · 헤더 재배치·레트로 게이지 — 다른 세션)이다.
+  함께 나간 것(L-59) = 23커밋 · 워치 `:wear` 정확 알람(`ad8747f`)·UI 7건·문서 — 서빙 코드는 `8b54197` 하나.
+- 직전 = `vitalguard-dashboard-00336-wz4` (커밋 `68f4825` · 08-28 22:2x · 서빙 digest
   `sha256:88ac56c8…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok(radar·typhoon·
   weather·disaster-msg·health/db) · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **1469/1469 @ 워킹트리(= HEAD)** · **commit-sha 라벨 = APPROVED_AT `68f4825` 일치**).
