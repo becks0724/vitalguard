@@ -44,6 +44,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 전송 tick 의 정확 알람(08-29 R-32) — 화면 소등 suspend 에서 uptimeMillis 가 서므로 알람으로 CPU 를 깨운다.
+         API 33+ 는 USE_EXACT_ALARM(설치 시 부여 · 사이드로드라 Play 정책 무관), 31~32 는 SCHEDULE_EXACT_ALARM(사용자 승인).
+         ⚠ 둘 다 없으면 setExact 가 SecurityException — CollectorService.scheduleTick 이 30초 창 부정확 알람으로 물러선다. -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application

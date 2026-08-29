@@ -263,3 +263,20 @@
   > 라벨은 어느 쪽이든 뜨지만 **뜨는 이유가 설계한 이유인지**는 별개다(`-50` 몫).
 - [ ] 결과가 ⓑ 로 확정되면 `-50` 트랙의 150초 문턱을 재검토한다.
       ⚠ **순서를 지킨다** — 심박이 불안정한 채로 재면 그 불안정이 문턱을 정당화한다([[L-101]] 모양).
+
+## A안 — 전송 tick 을 정확 알람으로 (08-29 사용자 지시 · [WATCH.APP])
+근거 = context-notes R-32(간격 ≈ 120s ÷ CPU-awake · Doze 0건 · 주기 단축은 해결 아님).
+- [x] `CollectorService` — `handler.postDelayed(tick)` 3곳(onStartCommand·tick 말미·onDestroy)을
+      `AlarmManager.setExact(ELAPSED_REALTIME_WAKEUP, …, OnAlarmListener, handler)` 로. 리스너는 **같은 worker handler**
+      (큐·엔진의 스레드 계약 유지) · 콜백 동안 시스템 wakelock 이라 별도 wakelock 없음 · 권한 없으면 30초 창 `setWindow` 로 후퇴.
+- [x] 매니페스트 — `USE_EXACT_ALARM`(API 33+ 설치 시 부여) + `SCHEDULE_EXACT_ALARM`(maxSdk 32).
+- [x] 가드 — `TickAlarmTest`(구조 검사 · HrWatchdogTest 와 같은 수법): tick 예약이 알람이고 `postDelayed(tick|this` 가 코드에 없다 ·
+      리스너가 `handler` 로 배달된다 · 매니페스트 권한. 변이 1종 이상으로 검출 확인.
+- [x] `:wear:testDebugUnitTest` **249/249**(246+3) → `:wear:assembleRelease` 성공(18:40:05 · 37MB · HEAD eee1cfe). 변이 3종 검출
+      (WAKEUP 제거 · postDelayed 복귀 · 리스너 메인스레드) — 첫 판은 WAKEUP 변이를 놓쳐 호출별 검사로 조였다.
+- [x] 워치 설치 18:41:35(Success · 서명 동일) → 서비스 자동 재기동(pid 19938 · 18:42:01) → `dumpsys alarm` 에
+      `ELAPSED_WAKEUP tag=VgCollector window=0 exactAllowReason=listener` 확인. ★ 리스너형 알람은 **권한 없이도 exact 허용**
+      (`exactAllowReason=listener`) — 매니페스트 권한은 보험이다.
+- [ ] **ADB 해제** 후 화면 소등 30분 DB 실측(WATCH.DESIGN screencap 뒤).
+- [ ] 판정 = 간격 p90 ≤ 150s · 연결끊김 < 2% (`galaxy-today.mjs` 절대 창) · 배터리 %/h 전후 비교.
+- [ ] 커밋(내 경로만) → push 묶음 · WATCH.DESIGN 에 설치 완료 한 줄(그쪽 screencap 대조 대기 중).
