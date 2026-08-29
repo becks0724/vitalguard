@@ -196,9 +196,10 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
         LabeledBubble(
             value = state.spo2?.toString() ?: "--",
             label = "SpO₂",
-            fraction = gaugeFraction(state.spo2?.toDouble(), 85.0, 100.0),
+            fraction = gaugeFraction(state.spo2?.toDouble(), SPO2_GAUGE_MIN, SPO2_GAUGE_MAX),
             severity = spo2Severity(state.spo2),
             diameter = diameter,
+            zones = spo2Zones(),
         )
         // ★ **실측 피부온을 그대로 보여준다**(08-25 C안). 종전엔 +0.5 해서 "체온" 이라 적었는데,
         //   그 상수는 애플 수면 손목온 기준이라 삼성 실측(37.4~37.7)과 전제가 다르고,
@@ -214,6 +215,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             ),
             severity = skinTempSeverity(state.skinTempC),
             diameter = diameter,
+            zones = skinZones(),
         )
         // 생리적 부담 지수(PSI) — 문헌 지수(Moran 1998). **표시 전용**이고 전체 판정엔 안 넣는다.
         //   스트레스는 우측 띠로 옮겨 갔다(08-25 사용자 결정) — 같은 값을 두 곳에 두지 않는다.
@@ -223,6 +225,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             fraction = gaugeFraction(state.psi, 0.0, Psi.GAUGE_MAX),
             severity = Psi.severity(state.psi),
             diameter = diameter,
+            zones = psiZones(),
         )
     }
 }
@@ -235,11 +238,49 @@ private fun LabeledBubble(
     fraction: Float?,
     severity: Severity,
     diameter: androidx.compose.ui.unit.Dp,
+    zones: List<BezelZone> = emptyList(),
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter)
+        VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter, zones = zones)
         Text(label, color = VgColors.Secondary, fontSize = 9.sp)
     }
+}
+
+/** SpO₂ 게이지 축 — 85~100. 위험 88 = 20% · 주의 92 = 47% 라 정상(≥92)이 절반 넘게 찬다. */
+private const val SPO2_GAUGE_MIN = 85.0
+private const val SPO2_GAUGE_MAX = 100.0
+
+/**
+ * 버블 트랙의 구간 — 좌측 띠의 `hrZones()` 와 같은 규율. **임계 상수에서 만든다**(숫자를 여기 다시 적지 않는다).
+ * SpO₂ 는 낮은 쪽이 위험이라 빨→주→초, 피부온·PSI 는 높은 쪽이 위험이라 초→주→빨.
+ */
+internal fun spo2Zones(): List<BezelZone> {
+    fun p(v: Double) = ((v - SPO2_GAUGE_MIN) / (SPO2_GAUGE_MAX - SPO2_GAUGE_MIN)).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Thresholds.SPO2_DANGER.toDouble()), VgColors.Danger),
+        BezelZone(p(Thresholds.SPO2_DANGER.toDouble()), p(Thresholds.SPO2_CAUTION.toDouble()), VgColors.Caution),
+        BezelZone(p(Thresholds.SPO2_CAUTION.toDouble()), 1f, VgColors.Normal),
+    )
+}
+
+internal fun skinZones(): List<BezelZone> {
+    val lo = Thresholds.SKIN_GAUGE_MIN_C
+    val hi = Thresholds.SKIN_GAUGE_MAX_C
+    fun p(v: Double) = ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Thresholds.SKIN_TEMP_CAUTION_C), VgColors.Normal),
+        BezelZone(p(Thresholds.SKIN_TEMP_CAUTION_C), p(Thresholds.SKIN_TEMP_DANGER_C), VgColors.Caution),
+        BezelZone(p(Thresholds.SKIN_TEMP_DANGER_C), 1f, VgColors.Danger),
+    )
+}
+
+internal fun psiZones(): List<BezelZone> {
+    fun p(v: Double) = (v / Psi.GAUGE_MAX).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Psi.HIGH), VgColors.Normal),
+        BezelZone(p(Psi.HIGH), p(Psi.CRITICAL), VgColors.Caution),
+        BezelZone(p(Psi.CRITICAL), 1f, VgColors.Danger),
+    )
 }
 
 /** 스와이프 힌트 — 세로 페이저가 있다는 것을 알려야 발견된다(지침 §6 작업의 명확성). */
