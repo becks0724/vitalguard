@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -93,7 +94,7 @@ fun VitalScreen(
             //   여기 남는 것은 ① 상태 배지 ② 큰 주값 ③ 라벨·범위 ④ 버블 3개 ⑤ 하단 상태.
             TopIcons(state)
             HeroValue(state, large)
-            NameAndSignal(state)
+            StatusRow(state)
             BubbleRow(state, bubble)
             FooterLine(state)
             // 아래로 스와이프하면 상세 — 발견성을 위해 힌트를 남긴다(지침: 작업의 명확성).
@@ -155,36 +156,83 @@ private fun HeroValue(state: VitalUiState, large: Boolean) {
 }
 
 /**
- * ③ 이름 + 수신 막대 — 사진의 "심박수 … 95-102" 줄이었다. **범위는 뺐다**(08-29 사용자 지시 — 상세 페이지에
- * 있으니 요약에선 중복). 대신 이름 옆에 **수신 막대 4칸**: 심박 스트림이 얼마나 최근에 들어왔나(값의 나이).
+ * ③ 상태 줄 — **이름 · 수신 막대 · 배터리(아이콘 안에 %) · 전송 상태** 를 한 줄 가운데에(08-29 사용자 지시 2건).
+ * 종전엔 이름+범위(95-102)가 여기, 전송·배터리는 맨 아래 줄이었다. 범위는 상세에 있으니 지웠고 아래 줄은 여기로 올렸다.
+ * 폭 예산(226dp · 옆 여백 15.5% 제외 ≈ 148dp): 이름 ~30 + 막대 15 + 배터리 30 + 상태 ~45 + 간격 16 ≈ 136dp.
  */
 @Composable
-private fun NameAndSignal(state: VitalUiState) {
+private fun StatusRow(state: VitalUiState) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                state.workerName ?: "심박수",
-                color = state.severity.color(),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
+        Text(
+            state.workerName ?: "심박수",
+            color = state.severity.color(),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(5.dp))
+        val level = signalLevel(state.bpmAgeSec, state.collecting)
+        SignalBars(level = level, color = signalColor(level))
+        Spacer(Modifier.width(6.dp))
+        BatteryIcon(state.batteryPct)
+        Spacer(Modifier.width(5.dp))
+        val (text, tint) = uploadStatus(state)
+        Text(text, color = tint, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+/** 전송 상태 글자 — 큐가 쌓이면 주황 "대기 N건", 아니면 마지막 업로드 나이. 착용·준비 안내는 아래 줄(FooterLine) 몫. */
+internal fun uploadStatus(state: VitalUiState): Pair<String, Color> = when {
+    state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
+    state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
+    else -> "수집 중" to VgColors.Normal
+}
+
+/** 배터리 잔량 색 — 15% 이하만 빨강(종전 하단 줄 규칙 그대로), 값 없음은 회색. */
+internal fun batteryColor(pct: Int?): Color = when {
+    pct == null -> VgColors.Idle
+    pct <= 15 -> VgColors.Danger
+    else -> VgColors.Normal
+}
+
+/** 배터리 아이콘 — 몸통 테두리 + 꼭지, 잔량만큼 옅게 채우고 **안에 "78%" 글자**(사용자 지시). 값 없으면 "--%". */
+@Composable
+internal fun BatteryIcon(pct: Int?, modifier: Modifier = Modifier) {
+    Box(modifier.size(width = 30.dp, height = 13.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 1.dp.toPx()
+            val nubW = 2.dp.toPx()
+            val bodyW = size.width - nubW - 1.dp.toPx()
+            drawRoundRect(
+                VgColors.Secondary, Offset(stroke / 2, stroke / 2), Size(bodyW - stroke, size.height - stroke),
+                CornerRadius(2.dp.toPx()), style = Stroke(stroke),
             )
-            Spacer(Modifier.width(5.dp))
-            val level = signalLevel(state.bpmAgeSec, state.collecting)
-            SignalBars(level = level, color = signalColor(level))
-        }
-        // ★ 낡은 심박은 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간 화면에 마지막 값이
-        //   그대로 남아 현재값처럼 읽혔다). 막대 1칸(빨강)만으로는 "얼마나" 를 못 말하므로 글자를 남긴다.
-        if (state.bpmStale) {
-            Text(
-                state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음",
-                color = VgColors.Caution,
-                fontSize = 10.sp,
+            val nubH = size.height * 0.4f
+            drawRoundRect(
+                VgColors.Secondary, Offset(bodyW + 1.dp.toPx(), (size.height - nubH) / 2), Size(nubW, nubH),
+                CornerRadius(1.dp.toPx()),
             )
+            pct?.let {
+                val inset = stroke * 2
+                drawRoundRect(
+                    batteryColor(it).copy(alpha = 0.45f), Offset(inset, inset),
+                    Size((bodyW - 2 * inset) * (it.coerceIn(0, 100) / 100f), size.height - 2 * inset),
+                    CornerRadius(1.dp.toPx()),
+                )
+            }
         }
+        Text(
+            pct?.let { "$it%" } ?: "--%",
+            color = VgColors.Primary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.padding(end = 3.dp),
+        )
     }
 }
 
@@ -340,30 +388,21 @@ private fun SwipeHint() {
     )
 }
 
-/** ⑥ 하단 — 사진의 일출·일몰 자리에 전송 상태와 배터리를 넣는다. */
+/**
+ * ⑥ 하단 — 전송·배터리는 ③ 상태 줄로 올라갔다(08-29). 여기엔 **안내 문구**만: 착용 전·준비 중, 그리고 낡은 심박의 나이.
+ * ★ 낡은 심박은 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간 마지막 값이 현재값처럼 읽혔다). 상태 줄의 막대
+ *   1칸(빨강)은 "얼마나" 를 못 말하므로 글자를 여기 둔다. 빈 문자열도 그려 줄 높이를 지킨다(상태마다 배치가 흔들리지 않게).
+ */
 @Composable
 private fun FooterLine(state: VitalUiState) {
+    val staleText = if (state.bpmStale) (state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음") else null
     val (text, tint) = when {
         !state.worn -> "착용하면 시작됩니다" to VgColors.Idle
         !state.collecting -> "준비 중" to VgColors.Idle
-        state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
-        state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
-        else -> "수집 중" to VgColors.Normal
+        staleText != null -> staleText to VgColors.Caution
+        else -> "" to VgColors.Idle
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, color = tint, fontSize = 10.sp)
-        state.batteryPct?.let {
-            Text(
-                " · $it%",
-                color = if (it <= 15) VgColors.Danger else VgColors.Secondary,
-                fontSize = 10.sp,
-            )
-        }
-    }
+    Text(text, color = tint, fontSize = 10.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
 }
 
 /**

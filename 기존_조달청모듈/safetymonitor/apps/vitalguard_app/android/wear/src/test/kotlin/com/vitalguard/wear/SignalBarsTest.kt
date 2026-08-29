@@ -43,3 +43,20 @@ class SignalBarsTest {
         assertFalse("요약이 아직 범위(\$lo-\$hi)를 그린다", screen.contains("\"\$lo-\$hi\""))
     }
 }
+
+/** 상태 줄의 전송·배터리 — 하단 줄에서 올라온 규칙이 그대로인가. */
+class StatusRowTest {
+    @Test
+    fun `전송 상태는 큐 우선이고 없으면 마지막 업로드 나이다`() {
+        assertEquals("대기 12건" to VgColors.Caution, com.vitalguard.wear.ui.uploadStatus(com.vitalguard.wear.ui.VitalUiState(collecting = true, queued = 12, lastUploadAgeSec = 8)))
+        assertEquals("전송 35s" to VgColors.Normal, com.vitalguard.wear.ui.uploadStatus(com.vitalguard.wear.ui.VitalUiState(collecting = true, lastUploadAgeSec = 35)))
+        assertEquals("수집 중" to VgColors.Normal, com.vitalguard.wear.ui.uploadStatus(com.vitalguard.wear.ui.VitalUiState(collecting = true)))
+    }
+
+    @Test
+    fun `배터리는 15퍼센트 이하만 빨강이다`() {
+        assertEquals(VgColors.Danger, com.vitalguard.wear.ui.batteryColor(15))
+        assertEquals(VgColors.Normal, com.vitalguard.wear.ui.batteryColor(16))
+        assertEquals(VgColors.Idle, com.vitalguard.wear.ui.batteryColor(null))
+    }
+}

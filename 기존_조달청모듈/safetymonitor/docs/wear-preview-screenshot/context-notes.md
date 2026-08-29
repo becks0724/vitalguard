@@ -191,3 +191,10 @@ Preview Screenshot Test Engine > initializationError
   관제웹 "연결끊김"(HR_STALE_MS)과 한 수 — 시험이 못 박음(SignalBarsTest). 낡으면 "N분 전 값" 글자는 오른쪽에 그대로(HrStallTest 앵커).
 - 숫자 옆 **판정색 점을 뺐다** — Row(Bottom 정렬)+padding 때문에 이름 줄 위에 떠 보였고(레드박스 안), 이름 글자색이 이미 판정색이라 정보 손실 0.
 - 프리뷰 8종에 `bpmAgeSec` 를 넣어 칸 수가 갈리게 했다(정상 4 · 무동작 70초→2). 단위시험 266/266.
+
+## 13차 (08-29 23:0x) — 하단 "전송 35s · 78%" 를 상태 줄로 올림 + 배터리 아이콘
+- 사용자 지시 — 이름·수신 막대 옆에 **배터리 이모티콘(안에 --%)** 과 **전송 상태**를 두고 가운데 정렬. 하단 줄은 그 자리에서 사라진다.
+- `StatusRow` = 이름 · SignalBars · BatteryIcon(Canvas 30×13dp · 테두리+꼭지 · 잔량 45% 알파 채움 · 안에 8sp 굵게 "78%") · `uploadStatus`
+  (대기 N건 주황 / 전송 Ns / 수집 중). 폭 ≈136dp < 148dp(옆 여백 제외 현). 큰 글꼴(1.24)도 한 줄.
+- `FooterLine` 은 안내만 남긴다 — 착용 전·준비 중·**낡은 심박 나이**(HrStallTest 앵커 `if (state.bpmStale)`·`ageLabel(it)` 를 여기로 옮김).
+  빈 문자열도 그려 줄 높이를 지킨다. 단위시험 268/268(StatusRowTest 2 추가).
