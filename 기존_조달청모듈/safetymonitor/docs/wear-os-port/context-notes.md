@@ -1169,3 +1169,34 @@ B 15:57~17:11    74~93      37.2→34.2 / 32→30   16:11 걸음 545 뒤 정지 
   SYN 무응답**(포트 변경 의심 · mDNS 광고 없음). 다음 시도 = 페어링 창의 포트·코드로 `adb pair` 부터.
 - 전류 68.7 mA(화면+Wi-Fi+핫스팟) vs 정지 17.6 mA — "깨워 두기" 는 처방이 아니다. 처방은 08-28 절 후보 중
   **알람 기반**(`setExactAndAllowWhileIdle`/`setAlarmClock`) 또는 **낙상만 별도 즉시 경로** 로 좁혀진다.
+
+**★ 워치 내부 실측(08-29 18:0x · 무선 ADB 성공 · `dumpsys batterystats --history`·`deviceidle`·`power`) — Doze 가 아니라 CPU suspend 다.**
+
+연결 경로 = 핫스팟(IPv6 전용) + 링크로컬 `[fe80::…%en0]:<무선디버깅 포트>` · 포트는 워치 화면에서 읽음(mDNS 광고는
+핫스팟에서 안 옴) · 선행 조건 = **맥 호스트 앱(Orca)에 로컬 네트워크 권한**(없으면 링크로컬 TCP 전부 `No route to host`).
+산출물 = 세션 scratchpad `watch-dump/`(bs-history 16,332줄 · deviceidle · power · alarm).
+
+```
+                              CPU awake   화면 켜짐   행 간격(DB)     예측 120s/awake
+A 15:07~15:57                    97%        14%       121s            124s
+B 15:57~17:03                    31%        11%       p50 372s        387s
+  정지 예 16:40:05~16:53:44      13%         6%       819s            923s
+시험 소등 17:33:51~17:39:42      46%        33%       351s            261s
+시험 점등 17:42:04~17:50:09     100%        19%       121s            120s
+```
+- **`tick` 간격 ≈ 120s ÷ CPU-awake 비율.** 다섯 구간 전부 맞는다 — `postDelayed`=`uptimeMillis` 가 suspend 에서 멈춘다는
+  가설의 **정량 확정**이다.
+- **Doze 는 한 번도 안 들어갔다** — 08-28 20:19 리셋 이후 history 전체에 `doze=` 토큰 0건 · 지금 `mState=ACTIVE
+  mLightState=ACTIVE`(`mInactiveTimeout` 2분이지만 손목 움직임이 계속 리셋). ⟹ 08-28 절의 "Doze" 는 **틀렸다**. 정체는
+  화면 소등 뒤 Wear OS 의 **AP suspend** 다 — 정지 구간에 CPU 는 ~14초마다 0.2~0.5초씩만 깬다(TIME_TICK 알람·센서 배치).
+- A 구간이 97% 깨어 있던 이유 = 야외 이동(심박 100+·GPS `NetworkLocationScanner` walarm 36회·LTE `telephony-radio` 67회).
+  Wi-Fi 는 갈림 축이 아니다(A: 끊김 · B: 16:09~16:31 만 연결 · 정지 예 16:40~16:53 은 Wi-Fi 없이 정지).
+- 앱 프로세스는 14:58:48 부터 **한 번도 안 죽었다**(pid 3252 · 3h15m · FGS isForeground=true · lastStartId=5).
+  `AlarmManager` 등록 **0건**(dumpsys alarm) · 배터리 최적화 화이트리스트 **미등록** · standby bucket 10(ACTIVE).
+- logcat 은 1MiB 링이라 정지 구간 앱 로그가 이미 밀려나갔다(main 버퍼 시작 18:12) — 08-28 절의 "심박 침묵 로그" 판별은
+  이 워치에선 **사후 회수 불가**, 정지 중 실시간 `logcat` 만 가능.
+
+⟹ **처방 축이 바뀐다.** Doze 전용 API(`setAndAllowWhileIdle` 9분 제한 논의)는 핵심이 아니다. 필요한 것은 **suspend 를
+뚫고 CPU 를 깨우는 타이머** — `AlarmManager` `ELAPSED_REALTIME_WAKEUP` 정확 알람(`setExact`/`setExactAndAllowWhileIdle`,
+API 31+ 는 `SCHEDULE_EXACT_ALARM`/`USE_EXACT_ALARM` 필요) + tick 동안만 `PARTIAL_WAKE_LOCK`(1~4초). 상시 wakelock(A 구간
+59 mA)은 배제. 선택·구현은 :wear 트랙 몫이며, 낙상 경보 지연(08-28 절 p90 6.9분)도 같은 수리로 풀린다.
