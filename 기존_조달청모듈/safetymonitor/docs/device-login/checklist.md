@@ -15,7 +15,8 @@
 - [x] typecheck 0 · lint 0 오류 · **1485/1485** → 커밋 → push. 배포는 사용자 `/deploy`(워치 쪽이 붙기 전엔 서버만 먼저 나가도 무해 — 추가 라우트·테이블뿐).
 
 ## 워치(:wear · WATCH.DESIGN 과 분담)
-- [ ] `pipeline/DeviceLoginClient.kt` — start/poll HTTP + 행렬 모델(JVM 시험) — [WATCH.APP].
-- [ ] `LoginScreen` "QR 로 로그인" 모드 — QR Canvas + 코드 글자 + 4초 폴링 + 만료 재발급 — [WATCH.DESIGN](파일 소유).
-- [ ] 승인 시 `ConfigStore.saveSession` → 기존 로그인 성공 경로 그대로 · 워치 직접 입력은 유지.
+- [x] `pipeline/DeviceLoginClient.kt` — start/poll · secret 메모리만 · 사번 없는 승인 거부 · JVM 시험 6 (`a3e907e`).
+- [x] `LoginScreen` QR 모드(기본) — 흰 카드 140dp · 41×41 · 코드·카운트다운·[직접 입력|취소]·만료/오류 (WATCH.DESIGN `20423d3`) ·
+      MainActivity 배선(start→1초 카운트다운·4초 poll→saveSession · 취소/전환/onStop 에 Job 취소 · 가드 3) (`7c32197`) · `:wear` 262/262 · assembleRelease 21:53.
+- [x] 승인 시 `ConfigStore.saveSession` → 기존 로그인 성공 경로 그대로 · 직접 입력 유지(취소 → 재진입이 QR).
 - [ ] 실기 1회(폰 카메라 → /pair → 승인 → 워치 로그인) · 재설치가 필요하므로 측정 창과 안 겹치게.
