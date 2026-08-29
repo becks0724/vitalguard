@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -40,16 +41,16 @@ private fun InputRow(label: String, shown: String, placeholder: String, enabled:
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 3.dp)
+            .padding(vertical = 2.dp)
             .border(1.dp, VgColors.Divider, RoundedCornerShape(10.dp))
             .clickable(enabled = enabled, onClick = onTap)
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 5.dp),
     ) {
-        Text(label, color = VgColors.Secondary, fontSize = 10.sp)
+        Text(label, color = VgColors.Secondary, fontSize = 9.sp)
         Text(
             shown.ifEmpty { placeholder },
             color = if (shown.isEmpty()) VgColors.Idle else VgColors.Primary,
-            fontSize = 15.sp,
+            fontSize = 14.sp,
         )
     }
 }
@@ -65,9 +66,11 @@ fun LoginScreen(
     TransformingLazyColumn(
         modifier = Modifier.fillMaxSize().background(VgColors.Background),
         horizontalAlignment = Alignment.CenterHorizontally,
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp),
+        // ★ 세로 패딩이 없으면 첫 줄과 마지막 버튼이 둥근 가장자리에 잘린다(08-29 프리뷰·실기 대조).
+        //   위아래 22dp 를 비우고 칸·버튼을 낮춰 제목·칸 2·로그인이 한 화면(226dp)에 들어온다.
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 22.dp),
     ) {
-        item { Text("VitAlGuard", color = VgColors.Primary, fontSize = 16.sp, modifier = Modifier.padding(bottom = 4.dp)) }
+        item { Text("VitAlGuard", color = VgColors.Primary, fontSize = 14.sp, modifier = Modifier.padding(bottom = 2.dp)) }
         item { InputRow("아이디", state.id, "탭하여 입력", !state.busy, onEditId) }
         item { InputRow("비밀번호", maskedPassword(state.password), "탭하여 입력", !state.busy, onEditPassword) }
         item {
@@ -77,12 +80,12 @@ fun LoginScreen(
                 label = {
                     Text(
                         if (state.busy) "확인 중…" else "로그인",
-                        fontSize = 14.sp,
+                        fontSize = 13.sp,
                         color = Color.Black,
                     )
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = VgColors.Normal),
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp).height(40.dp),
             )
         }
         state.error?.let { msg ->
@@ -102,7 +105,7 @@ fun LoginScreen(
                 enabled = !state.busy,
                 label = { Text("취소", fontSize = 13.sp, color = VgColors.Primary) },
                 colors = ButtonDefaults.buttonColors(containerColor = VgColors.Pill),
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 3.dp).height(40.dp),
             )
         }
     }

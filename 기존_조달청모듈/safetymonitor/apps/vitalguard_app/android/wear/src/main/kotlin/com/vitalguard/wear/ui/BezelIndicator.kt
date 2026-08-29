@@ -13,21 +13,22 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 
 /**
  * 각도 규약 — 0° = 3시(우), +시계방향. 좌우 대칭으로 잡는다.
- *   우측 -35°~ +35°  (3시 중심 · 70°)
- *   좌측 145°~ 215°  (9시 중심 · 70°)
+ *   우측 -50°~ +50°  (3시 중심 · 100°)
+ *   좌측 130°~ 230°  (9시 중심 · 100°)
  * 12시·6시를 비우는 이유 — 위는 TimeText, 아래는 버튼이 앉는다.
+ * 08-29 사용자 요청으로 위아래 15° 씩 늘렸다(70° → 100°). 이름은 띠 한가운데라 자동으로 따라간다.
  */
 object Bezel {
-    /** 좌측 — 아래(145°)에서 위(215°)로. */
-    const val LEFT_START = 145f
-    const val SWEEP = 70f
+    /** 좌측 — 아래(130°)에서 위(230°)로. */
+    const val LEFT_START = 130f
+    const val SWEEP = 100f
 
     /**
-     * 우측 — **아래(35°)에서 위(-35°)로.** 화면 좌우라 각의 부호가 반대여서 sweep 이 음수다.
+     * 우측 — **아래(50°)에서 위(-50°)로.** 화면 좌우라 각의 부호가 반대여서 sweep 이 음수다.
      * 이렇게 두면 좌우가 같은 규약을 쓴다 = "비율 0 은 아래, 1 은 위".
      */
-    const val RIGHT_START = 35f
-    const val RIGHT_SWEEP = -70f
+    const val RIGHT_START = 50f
+    const val RIGHT_SWEEP = -100f
 }
 
 /**
