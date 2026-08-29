@@ -1,6 +1,7 @@
 // 작업자 화면 — Material 3 Expressive 원형 게이지. 숫자가 아니라 "호가 어디까지 찼나"로 읽힌다
 package com.vitalguard.wear.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,6 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
@@ -89,7 +93,7 @@ fun VitalScreen(
             //   여기 남는 것은 ① 상태 배지 ② 큰 주값 ③ 라벨·범위 ④ 버블 3개 ⑤ 하단 상태.
             TopIcons(state)
             HeroValue(state, large)
-            LabelAndRange(state)
+            NameAndSignal(state)
             BubbleRow(state, bubble)
             FooterLine(state)
             // 아래로 스와이프하면 상세 — 발견성을 위해 힌트를 남긴다(지침: 작업의 명확성).
@@ -137,13 +141,8 @@ private fun StatusDot(active: Boolean, activeColor: Color, label: String) {
 private fun HeroValue(state: VitalUiState, large: Boolean) {
     Row(verticalAlignment = Alignment.Bottom) {
         // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은
-        //   공간만 먹는다. 대신 **판정색 점**으로 상태를 알린다(색이 곧 정보).
-        Box(
-            Modifier
-                .size(if (large) 10.dp else 8.dp)
-                .background(state.severity.color(), CircleShape)
-                .padding(bottom = 6.dp),
-        )
+        //   공간만 먹는다. 판정은 아래 이름 글자색이 말한다(08-29 사용자 지시 — 숫자 옆 판정색 점은
+        //   이름 줄 위에 떠 보여서 뺐다).
         Text(
             state.bpm?.toString() ?: "--",
             color = VgColors.Primary,
@@ -155,32 +154,79 @@ private fun HeroValue(state: VitalUiState, large: Boolean) {
     }
 }
 
-/** ③ 라벨 + 범위 — 사진의 "심박수 … 95-102" 줄. 오늘 관측 범위를 오른쪽에 적는다. */
+/**
+ * ③ 이름 + 수신 막대 — 사진의 "심박수 … 95-102" 줄이었다. **범위는 뺐다**(08-29 사용자 지시 — 상세 페이지에
+ * 있으니 요약에선 중복). 대신 이름 옆에 **수신 막대 4칸**: 심박 스트림이 얼마나 최근에 들어왔나(값의 나이).
+ */
 @Composable
-private fun LabelAndRange(state: VitalUiState) {
+private fun NameAndSignal(state: VitalUiState) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            state.workerName ?: "심박수",
-            color = state.severity.color(),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-        )
-        // ★ 낡은 심박은 범위 대신 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간
-        //   화면에 마지막 값이 그대로 남아 현재값처럼 읽혔다). 범위는 "지금 이 정도" 라는
-        //   뜻이라 낡은 값 옆에 두면 거짓말이 한 겹 더 붙는다.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                state.workerName ?: "심박수",
+                color = state.severity.color(),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+            )
+            Spacer(Modifier.width(5.dp))
+            val level = signalLevel(state.bpmAgeSec, state.collecting)
+            SignalBars(level = level, color = signalColor(level))
+        }
+        // ★ 낡은 심박은 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간 화면에 마지막 값이
+        //   그대로 남아 현재값처럼 읽혔다). 막대 1칸(빨강)만으로는 "얼마나" 를 못 말하므로 글자를 남긴다.
         if (state.bpmStale) {
             Text(
                 state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음",
                 color = VgColors.Caution,
                 fontSize = 10.sp,
             )
-        } else {
-            state.bpmRange?.let { (lo, hi) ->
-                Text("$lo-$hi", color = VgColors.Secondary, fontSize = 10.sp)
-            }
+        }
+    }
+}
+
+/** 수신 막대 판정 문턱(초). 삼성 트래커는 1Hz 라 10초면 "지금 들어오는 중", 60초까지는 정상 배치 지연(R-12). */
+internal const val SIGNAL_LIVE_SEC = 10L
+internal const val SIGNAL_OK_SEC = 60L
+
+/**
+ * 수신 막대 칸 수 0~4 — 심박 값의 나이로 가른다. 4 = 방금(≤10초) · 3 = 1분 안 · 2 = 낡기 전(< HR_STALE_MS) ·
+ * 1 = 낡음(관제웹이 "연결끊김" 으로 보는 구간) · 0 = 수집 안 함/값 없음.
+ */
+internal fun signalLevel(bpmAgeSec: Long?, collecting: Boolean): Int = when {
+    !collecting || bpmAgeSec == null -> 0
+    bpmAgeSec <= SIGNAL_LIVE_SEC -> 4
+    bpmAgeSec <= SIGNAL_OK_SEC -> 3
+    bpmAgeSec * 1000L < com.vitalguard.wear.CollectorService.HR_STALE_MS -> 2
+    else -> 1
+}
+
+internal fun signalColor(level: Int): Color = when {
+    level >= 3 -> VgColors.Normal
+    level == 2 -> VgColors.Caution
+    level == 1 -> VgColors.Danger
+    else -> VgColors.Idle
+}
+
+/** 안테나 막대 4칸(높이 4·6·8·10dp) — 켜진 칸은 판정색, 나머지는 회색(사용자 제시 아이콘과 같은 꼴). */
+@Composable
+internal fun SignalBars(level: Int, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(width = 15.dp, height = 10.dp)) {
+        val bars = 4
+        val gap = 1.5.dp.toPx()
+        val w = (size.width - gap * (bars - 1)) / bars
+        val r = CornerRadius(w / 2, w / 2)
+        for (i in 0 until bars) {
+            val h = size.height * (i + 2) / (bars + 1)
+            drawRoundRect(
+                color = if (i < level) color else VgColors.Idle,
+                topLeft = Offset(i * (w + gap), size.height - h),
+                size = Size(w, h),
+                cornerRadius = r,
+            )
         }
     }
 }
