@@ -13,3 +13,12 @@
 - [x] `./gradlew :wear:testDebugUnitTest` — Login 계열 18/18(신규 QrLoginScreenTest 4).
 - [x] 커밋 `20423d3` → [WATCH.APP] 이 push(origin/main `3dc788e` · 실조회) · 그쪽 배선 `7c32197` 이 계약(LOADING→WAITING(code·size·rows·expiresInSec)→1초 secondsLeft→승인 시 saveSession→`login = LoginUiState()` · EXPIRED 는 phase 만 · onQrRefresh/onSwitchMode/onCancel) 그대로 쓰는 것 확인.
 - [x] **실기 성공(08-29 22:13:15)** — 00339-m8n 라이브 후 사용자 지시로 즉시 진행. 22:12:11 `pm install -r`(HEAD 2b02bad 릴리스 서명 · 면제 유지) → 22:12:46 start(코드 V2U6-WEQZ · 41×41) → 4초 poll → 22:12:55 iPhone 카메라 스캔 → `/pair` → 22:13:11 approve → 22:13:14 poll approved → 22:13:15 `QR 로그인 성공 worker=EMP-6861` → 22:14:38 `/api/app/vital` 업로드 재개. 실기 QR 화면 캡처 = 프리뷰와 동일 배치. adb 종료 22:15:32.
+
+## 08-31 · 워치8 40mm 적용
+- [x] 페어링(IPv6 링크로컬)·설치·실측(438×438·340dpi=206dp·SM-L325N)
+- [x] 신규 설치 FGS(health) 크래시 → 권한 가드 + 허용 콜백 시작 + 테스트 2건
+- [x] QR 카드 유도식 min(140, 지름−78) → 128dp · 수정 후 원 밖 0픽셀 실측
+- [x] WearWatch8Shots 프리뷰 레일 8장 · 전체 렌더 54장
+- [x] 실기 재설치·수정 전후 캡처 → 아티팩트 기기별 구분 갱신
+- [ ] QR 로그인 라이브(폰 스캔→승인) — 사용자 진행 대기
+- [ ] 배터리 1h 보정(착용) — 325mAh · 추정 ~9%/h 검증

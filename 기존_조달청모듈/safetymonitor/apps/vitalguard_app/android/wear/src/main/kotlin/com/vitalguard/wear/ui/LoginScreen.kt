@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,6 +35,7 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Text
 import kotlin.math.floor
+import kotlin.math.min
 
 /** 로그인 수단. 기본 = QR(08-29 사용자 지시 "로그인 방법을 QR 로 변경") · 직접 입력은 폰이 없을 때의 예비 경로. */
 enum class LoginMode { QR, MANUAL }
@@ -103,10 +105,17 @@ fun LoginScreen(
  * 버튼 줄 바닥(y≈+104) 의 현 폭이 88dp 라 [직접 입력]+[취소] 가 딱 들어간다. 더 키우려면 코드·버튼을
  * 다른 화면으로 빼야 한다. 41×41 + 여백 8 = 49칸 → 칸 ≈ 2.86dp ≈ 6.1px(340dpi) · QR 본체 ≈ 19mm.
  * 실기에서 판독이 불안하면 여백 2모듈(+8%)·ECC L(+9%) 순으로 키운다(둘 다면 +18%).
+ *
+ * ★ 카드는 화면 지름에서 유도한다 — `min(140, 지름 − 78)`. 워치8 40mm(실측 438px·340dpi = 206dp)는
+ * 128dp: 고정 140 이면 스택(207dp)이 화면을 넘쳐 안내줄이 원 밖으로 밀리고(08-31 실기에서 양끝 잘림)
+ * 카드 대각 quiet zone 도 4→1.7모듈로 깎인다. 128 이면 안내줄 현 폭 ≥ 문구 폭, quiet 4모듈이 원 안에
+ * 온전히 남는다(칸 ≈ 5.5px · QR 본체 ≈ 16mm — 판독 여유 유지). 226dp 이상은 종전 140 그대로.
  */
 @Composable
 private fun QrLoginPane(qr: QrLoginUiState, onRefresh: () -> Unit, onManual: () -> Unit, onCancel: () -> Unit) {
     val dim = qr.phase == QrPhase.EXPIRED || qr.phase == QrPhase.ERROR
+    // 워치8 40mm(206dp)=128 · 워치9 44mm(226dp)=140 — 근거는 위 doc 주석.
+    val cardDp = min(140, LocalConfiguration.current.screenHeightDp - 78).dp
     Column(
         modifier = Modifier.fillMaxSize().background(VgColors.Background),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -130,7 +139,7 @@ private fun QrLoginPane(qr: QrLoginUiState, onRefresh: () -> Unit, onManual: () 
         }
         QrCard(
             qr.qrSize, qr.qrRows, placeholder,
-            Modifier.padding(top = 2.dp).size(140.dp).alpha(if (dim && qr.qrSize > 0) 0.35f else 1f),
+            Modifier.padding(top = 2.dp).size(cardDp).alpha(if (dim && qr.qrSize > 0) 0.35f else 1f),
         )
 
         Text(

@@ -8,7 +8,7 @@ import com.android.tools.screenshot.PreviewTest
 /**
  * 실기 `wm size` 480×480 · `wm density` 340. LARGE_ROUND(454 · 320dpi)와 논리 크기는 226dp 로 거의 같지만
  * 밀도가 달라 글자·여백이 조금씩 어긋난다 — 08-29 에 "상세 보조줄 잘림" 판정이 프리뷰(454)와 실기에서 갈렸다.
- * ⚠ 454·384 판을 지우지 않는다 — 워치9 외 원형 기기(워치4~8 · 40mm 396px)의 대표는 그쪽이다.
+ * ⚠ 454·384 판을 지우지 않는다 — 워치4~7 원형 기기의 대표는 그쪽이다(워치8 40mm 은 WearWatch8Shots).
  */
 // ⚠ 구형 문법 `spec:shape=Round,width=480,height=480,unit=px,dpi=340` 은 스크린샷 렌더러가 못 읽어 1080×2400(폰 기본값)으로 떨어진다(실측).
 private const val WATCH9 = "spec:width=480px,height=480px,dpi=340,isRound=true"

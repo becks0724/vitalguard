@@ -28,3 +28,10 @@
   start 가 두 번 호출됐다(22:12:38·22:12:45 · 첫 코드는 버려짐). adb 자동화 부작용이지 사용자 경로는 아님 — 캡처 스크립트에서는
   스와이프 시작점을 버튼 밖(y=300)으로 둔다.
 - 22:14:20·22:14:26 Macintosh UA 의 `approve` 2건 — 제 호출 아님(제 프로브는 curl UA · 22:0x). 코드가 이미 consumed 라 무해.
+
+## 08-31 · 갤럭시워치8 40mm 적용
+- **실측** — SM-L325N(LTE 확정) · `wm size` 438×438 · `wm density` 340 = 논리 206dp(워치9와 같은 밀도 · 지름만 20dp 작음) · Android 16 · API 36.
+- **신규 설치 첫 실행 즉사(잠복 버그)** — 런타임 권한 0개 상태에서 CollectorService 의 FGS(health) 승격이 SecurityException(anyOf=[ACTIVITY_RECOGNITION·HIGH_SAMPLING_RATE_SENSORS·health.READ_*] 미충족). 워치9는 PoC 때 부여한 권한이 남아 못 봤다. → onCreate 에 `canStartHealthFgs()` 가드 + 허용 콜백이 시작을 이어받음(FreshInstallGuardTest 2건).
+- **QR 화면 기하 붕괴** — 226dp 기준 고정 카드 140dp 가 206dp 에서 넘쳐 안내줄이 원 상단 현 밖(밝은 픽셀 526개 실측), 카드 대각 quiet 4→1.7모듈. → 카드 = `min(140, 지름−78)` 유도식(206→128dp). 수정 후 실측: 원 밖 0픽셀 · 카드 272px=128dp · 모듈 ≈5.5px(스캔 여유 유지). 226dp 이상은 종전 140 그대로(스크린샷 골든 불변).
+- **프리뷰 레일** — `WearWatch8Shots.kt`(spec 438px·340dpi) 8장. 이후 40mm 기하 회귀는 실기 없이 이 레일로.
+- **실기 함정 3종** — ① 이 네트워크는 NAT64: 192.0.0.x 는 기기별 CLAT 가상 주소라 IPv4 도달 불가, `adb pair/connect` 는 **IPv6 링크로컬 `[fe80::…%en0]`** 로만 된다(mdns `adb-tls-pairing` 으로 포트 확인). ② 충전기 분리 시 `svc power stayon true` 무효 → 워치가 앰비언트 도즈로 빠져 `input` 스와이프를 삼킨다 — `settings put system screen_off_timeout 600000` 임시 설정(끝나면 60000 원복). ③ 무선 디버깅 접속 포트는 끊길 때마다 갈아치워질 수 있다 — 재접속 전 `adb mdns services`.
