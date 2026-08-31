@@ -1,5 +1,6 @@
 // 현장 구획(반경 원) 이탈 판정 — 히스테리시스 상태머신 (순수 로직, I/O 없음)
 import { haversineKm } from "./hospital";
+import { TRACK_LINE_ACC_MAX_M } from "./track";
 
 // GPS 지터(도심 5~30m) 플리커 방어 상수 — 이탈/복귀 판정의 단일 소스.
 export const GEOFENCE_EXIT_MARGIN_M = 10; // 이탈 후보 = 반경 + 10m 초과
@@ -15,6 +16,17 @@ export type GeofenceState = {
 export type GeofenceEvent = "exit" | "return" | null;
 
 export const GEOFENCE_INITIAL: GeofenceState = { outside: false, exitStreak: 0 };
+
+// 판정 가능 측위인가 — 부정확 좌표(> R-33 상한)는 구획/위험구역 상태머신을 전진시키지 않는다.
+// 2026-08-31 실사고: 워치가 현장 실내라 위성 신호를 못 잡고 셀/와이파이 폴백(acc=100m 등급 ·
+// 양자화 좌표 42~352m 왕복)으로 떨어졌는데, 그 가짜 좌표가 "현장에 있는데 이탈 +140m" 오탐
+// 경보를 만들었다. 문턱은 트레일 선 필터와 **같은 상수**를 공유한다 — 리터럴을 박으면 화면·
+// 서버·트레일 세 곳이 조용히 갈린다. 미보고(null/undefined)는 통과 — 정확도를 안 싣는 구
+// 경로의 행을 하루아침에 판정 불능으로 만들지 않는다(종전 동작 보존). 대가는 하나다 —
+// 실내 폴백만 있는 동안 판정이 마지막 확정 상태에 머물고, 실외 위성 fix 가 잡혀야 전진한다.
+export function fixUsableForJudgment(accM: number | null | undefined): boolean {
+  return accM == null || accM <= TRACK_LINE_ACC_MAX_M;
+}
 
 // 하버사인 거리(m) — 병원 패널과 동일 유틸 재사용.
 export function geofenceDistanceM(

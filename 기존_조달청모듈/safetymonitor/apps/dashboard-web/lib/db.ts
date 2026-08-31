@@ -3250,15 +3250,16 @@ export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteIn
 export async function recentGpsFixes(
   sinceIso: string,
   limit = 5000,
-): Promise<{ workerId: string; workerName: string | null; ts: string; lat: number; lon: number }[]> {
+): Promise<{ workerId: string; workerName: string | null; ts: string; lat: number; lon: number; accM: number | null }[]> {
   const { rows } = await q<{
     worker_id: string;
     worker_name: string | null;
     ts: string;
     latitude: number;
     longitude: number;
+    location_accuracy_m: number | null;
   }>(
-    `SELECT worker_id, worker_name, ts, latitude, longitude
+    `SELECT worker_id, worker_name, ts, latitude, longitude, location_accuracy_m
        FROM vital_samples
       WHERE ts > $1 AND latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY worker_id, ts
@@ -3271,6 +3272,7 @@ export async function recentGpsFixes(
     ts: r.ts,
     lat: Number(r.latitude),
     lon: Number(r.longitude),
+    accM: r.location_accuracy_m == null ? null : Number(r.location_accuracy_m),
   }));
 }
 

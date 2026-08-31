@@ -88,6 +88,7 @@ import { WarningVideoPanel } from "./WarningVideoPanel";
 import { HospitalPanel } from "./HospitalPanel";
 import { extractRegion } from "../lib/hospital";
 import {
+  fixUsableForJudgment,
   GEOFENCE_INITIAL,
   ZONE_ENTRY_INITIAL,
   geofenceDistanceM,
@@ -6438,6 +6439,9 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
       if (ageMs < GEOFENCE_STATE_KEEP_MS) keep.add(pt.workerId);
       // 판정은 신선한 좌표로만 — 낡은 좌표로 이탈을 선언하지 않는다.
       if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      // 부정확 측위(> R-33 상한)로는 판정하지 않는다 — 실내 셀/와이파이 폴백(±100m)이
+      // "현장에 있는데 이탈 +140m" 오탐 경보를 만들었다(2026-08-31 실사고).
+      if (!fixUsableForJudgment(pt.accM)) continue;
       const base = latestMap.get(pt.workerId);
       const entry = states.get(pt.workerId);
       if (!base?.ts || entry?.lastTs === base.ts) continue; // 새 관측 없음 — 상태 유지
@@ -6617,6 +6621,8 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
     for (const pt of workerMapData.pts) {
       // 60초 초과 미수신은 stale 좌표 발화 방지를 위해 판정 보류(미수신 ≠ 진입/이탈).
       if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      // 구획과 같은 정확도 게이트 — 반경 20m 존에 ±100m 폴백 좌표면 진입 오탐이 더 심하다.
+      if (!fixUsableForJudgment(pt.accM)) continue;
       const base = latestMap.get(pt.workerId);
       if (!base?.ts) continue;
       for (const zone of dangerZones) {
