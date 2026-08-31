@@ -266,6 +266,9 @@ function formatTemp(value?: number | null) {
 }
 
 // HR/SpO2 는 의학 표준 정수 표시 (폰이 raw double 보내도 round)
+// 끊김 중 "마지막 값 회색 유지" 상한(ms) — 링 웜스타트·트레일 창과 같은 30분. 그 이상 묵은 값은 운영 의미가 없다.
+const HELD_VALUE_MAX_MS = 30 * 60 * 1000;
+
 function formatInt(value?: number | null) {
   return value == null ? "--" : Math.round(value).toString();
 }
@@ -8156,6 +8159,16 @@ function WorkerTableRow({
   // 연결끊김이면 생체 3종을 비운다 — sticky 직전값을 현재값처럼 초록으로 보여주던 false-OK 차단.
   // (잠금 중에는 폰이 계속 POST 해 stale 이 아니므로 잠금 연속성은 그대로 유지된다.)
   const shown = gateStaleVitals(sample, stale);
+  // 끊김 중 마지막 값 유지(2026-08-31 사용자 목표 "끊김 없는 연속 표시") — 판정·PSI·신호등은 여전히
+  // `shown`(빈 값)을 쓴다. 여기서 만드는 것은 **회색 숫자 + "끊김 전 값 · 나이" 라벨**뿐이라, 옛 값이
+  // 정상색으로 현재값처럼 보이던 false-OK(2026-08-15 가드)는 그대로 막혀 있고 상태 강등(연결끊김)도 그대로다.
+  // ⚠ 상한 30분 — 그 뒤엔 종전대로 비운다. 미착용 90분 자동 로그아웃(wear ae33048) 이후엔 서버가 완전 무음이라
+  //   야간 충전이면 아침까지 이어지는데, 10시간 전 심박을 회색으로라도 밤새 띄워 두는 것은 정보가 아니라 소음이다.
+  const heldAgeMs = sample !== undefined ? vitalAgeMs(sample, nowMs) : NaN;
+  const held =
+    stale && sample !== undefined && Number.isFinite(heldAgeMs) && heldAgeMs <= HELD_VALUE_MAX_MS
+      ? { s: sample, ageLabel: `끊김 전 값 · ${formatElapsed(heldAgeMs)}` }
+      : null;
   // (종전 여기서 `손목+0.5` 를 '추정' 으로 만들어 카드에 적었다. 2026-08-26 에 그 표기를
   //  칼만(coreTempEstC)으로 바꾸면서 이 파생값은 쓰이는 곳이 없어졌다 — 지운다.)
   // 생리적 부담 지수(PSI · Moran 1998) — 추정 체온 + 심박. 표시 전용이라 판정·경보에 넣지 않는다.
@@ -8257,12 +8270,23 @@ function WorkerTableRow({
       {/* 4 심박 */}
       {metricCell(
         "heartRate",
-        <span className="font-mono text-sm tabular-nums">
-          <span className={STATUS_CLASS[heartRateStatus(shown.heartRate, workActivity(sample ?? {}))]}>
-            {formatInt(shown.heartRate)}
+        held && typeof held.s.heartRate === "number" ? (
+          // 끊김 중 — 마지막 심박을 회색으로 유지 + 나이. 판정색(STATUS_CLASS)은 걸지 않는다.
+          <span className="leading-tight">
+            <span className="font-mono text-sm tabular-nums text-muted">
+              {formatInt(held.s.heartRate)}
+              <span className="ml-0.5 text-[10px]">bpm</span>
+            </span>
+            <span className="block text-[9px] leading-none text-muted">{held.ageLabel}</span>
           </span>
-          <span className="ml-0.5 text-[10px] text-muted">bpm</span>
-        </span>,
+        ) : (
+          <span className="font-mono text-sm tabular-nums">
+            <span className={STATUS_CLASS[heartRateStatus(shown.heartRate, workActivity(sample ?? {}))]}>
+              {formatInt(shown.heartRate)}
+            </span>
+            <span className="ml-0.5 text-[10px] text-muted">bpm</span>
+          </span>
+        ),
         "심박 — 클릭 시 누적 추세",
       )}
 
@@ -8271,6 +8295,21 @@ function WorkerTableRow({
       {metricCell(
         "spo2",
         (() => {
+          if (held && typeof held.s.spo2 === "number") {
+            // 끊김 중 — 마지막 SpO₂ 를 회색으로 유지. 나이는 SpO₂ 자체의 측정 경과(기회 측정이라 심박보다 오래됐을 수 있다).
+            const heldAge = spo2AgeMs(held.s, nowMs);
+            return (
+              <span className="leading-tight">
+                <span className="font-mono text-sm tabular-nums text-muted">
+                  {formatInt(held.s.spo2)}
+                  <span className="ml-0.5 text-[10px]">%</span>
+                </span>
+                <span className="block text-[9px] leading-none text-muted">
+                  {heldAge !== null ? `끊김 전 값 · ${formatSpo2Age(heldAge)}` : held.ageLabel}
+                </span>
+              </span>
+            );
+          }
           // 나이는 원본 sample(측정 시각 보유)로 재고, 연결끊김 게이트(shown)가 값을 지웠으면 표기도 접는다.
           const gatedOut = typeof shown.spo2 !== "number";
           const age = gatedOut ? null : spo2AgeMs(sample, nowMs);
@@ -8298,7 +8337,16 @@ function WorkerTableRow({
       {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}
       {metricCell(
         "coreTempEst",
-        shown.skinTempC == null ? (
+        held && typeof held.s.skinTempC === "number" ? (
+          // 끊김 중 — 마지막 손목온도를 회색으로 유지 + 나이(주값은 원래 중립색이라 판정색 문제 없음).
+          <span className="leading-tight">
+            <span className="font-mono text-sm tabular-nums text-muted">
+              {formatTemp(held.s.skinTempC)}
+              <span className="ml-0.5 text-[10px]">℃</span>
+            </span>
+            <span className="block text-[9px] leading-none text-muted">{held.ageLabel}</span>
+          </span>
+        ) : shown.skinTempC == null ? (
           // 실측 손목온도 없음 — 심박 기반 추정이 있고 연결이 살아 있으면 그것을 폴백 표시.
           // "추정" 표기·판정 미주입은 의료 판정 아님 원칙(문헌 오차 ±0.3℃ 내외·선별 참고).
           !stale && coreTempEstC != null ? (

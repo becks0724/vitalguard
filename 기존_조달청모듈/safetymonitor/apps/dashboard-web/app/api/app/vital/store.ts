@@ -30,6 +30,7 @@ import {
   recordAlert,
   upsertEnvAlertState,
   rosterWorkerNames,
+  recentSamplesTail,
 } from "../../../../lib/db";
 import { SPO2_FRESH_MS } from "../../../../lib/spo2-freshness";
 import { overlayLatestSpo2 } from "../../../../lib/spo2-overlay";
@@ -704,6 +705,8 @@ export async function notifyHeatIfDue(): Promise<void> {
 // 표시 시점에 DB 의 마지막 spo2 를 겹쳐 어느 인스턴스가 응답해도 같은 값을 보이게 한다.
 // DB 실패 시 겹침만 생략(메모리 병합 결과 그대로 — 조용한 500 방지).
 export async function latestByWorkerWithSpo2(aliasMap: Record<string, string>) {
+  // 링이 비어 있는 새 인스턴스면 DB 꼬리로 먼저 채운다(GET 응답의 latest·recent 가 모두 그 뒤에 만들어진다).
+  await hydrateRingOnce();
   const latest = latestByWorker(aliasMap);
   try {
     overlayLatestSpo2(latest, await latestSpo2ByWorker(), aliasMap, SPO2_FRESH_MS, Date.now());
@@ -909,6 +912,68 @@ export function mergeLatestByWorker(
   return Array.from(latest.values()).sort((a, b) =>
     a.workerId.localeCompare(b.workerId),
   );
+}
+
+// ── 링 웜스타트(2026-08-31 · 사용자 목표 "끊김 없는 연속 표시") ─────────────────────────
+// 인스턴스가 새로 뜨면 링이 비어 관제 화면이 다음 배치(갤럭시 120초)까지 "대기" 로 떨어진다 —
+// 배포·스케일아웃마다 그렇고(08-31 하루 4회 실측), maxScale 4 라 폴이 빈 인스턴스에 닿을 수도 있다.
+// 첫 조회 때 한 번 DB 꼬리(최근 30분)로 링을 채운다. 실패해도 조회를 막지 않는다(종전과 같은 빈 링)
+// — 다만 영영 포기하지는 않고 60초 뒤 다음 조회가 다시 시도한다(기동 직후 DB 접속 타임아웃 대응).
+const RING_HYDRATE_WINDOW_MS = 30 * 60 * 1000;
+const RING_HYDRATE_RETRY_MS = 60 * 1000;
+// addSample 의 `.slice(-500)` 과 같은 상한 — 웜스타트가 링을 그보다 키우지 않는다.
+const RING_MAX = 500;
+let ringHydration: Promise<void> | null = null;
+let ringHydrateNotBeforeMs = 0;
+
+function sampleKey(s: VitalSample): string {
+  return `${s.workerId}|${s.ts}|${s.dataOrigin ?? ""}`;
+}
+
+/** 순수 병합 — DB 꼬리를 기존 링에 얹는다(창 밖·예약 ID·중복 제외 · ts 오름차순 · 상한). 시험 가능. */
+export function mergeHydratedSamples(
+  existing: VitalSample[],
+  tail: VitalSample[],
+  nowMs: number,
+  windowMs = RING_HYDRATE_WINDOW_MS,
+): VitalSample[] {
+  const cutoff = nowMs - windowMs;
+  const seen = new Set(existing.map(sampleKey));
+  const add: VitalSample[] = [];
+  for (const s of tail) {
+    const t = Date.parse(s.ts);
+    if (!Number.isFinite(t) || t < cutoff) continue;
+    if (isReservedTestWorker(s.workerId)) continue;
+    const k = sampleKey(s);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    add.push(s);
+  }
+  if (add.length === 0) return existing;
+  return [...existing, ...add]
+    .sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0))
+    .slice(-RING_MAX);
+}
+
+export function hydrateRingOnce(): Promise<void> {
+  if (ringHydration) return ringHydration;
+  if (Date.now() < ringHydrateNotBeforeMs) return Promise.resolve();
+  ringHydration = (async () => {
+    try {
+      const tail = await recentSamplesTail(1000);
+      const before = vitalStore.samples.length;
+      vitalStore.samples = mergeHydratedSamples(vitalStore.samples, tail, Date.now());
+      // eslint-disable-next-line no-console
+      console.log(
+        `[vital] 링 웜스타트 — DB 꼬리 ${tail.length}행 → 링 ${before}→${vitalStore.samples.length}건(창 ${RING_HYDRATE_WINDOW_MS / 60000}분)`,
+      );
+    } catch (e) {
+      console.warn("[vital] 링 웜스타트 실패 — 빈 링으로 계속(다음 배치가 채운다) · 60초 뒤 재시도", e);
+      ringHydration = null;
+      ringHydrateNotBeforeMs = Date.now() + RING_HYDRATE_RETRY_MS;
+    }
+  })();
+  return ringHydration;
 }
 
 // 별칭 맵(secondary→primary) — GET 핸들러가 표시 폴딩용으로 로드. DB 실패 시 빈 맵.
