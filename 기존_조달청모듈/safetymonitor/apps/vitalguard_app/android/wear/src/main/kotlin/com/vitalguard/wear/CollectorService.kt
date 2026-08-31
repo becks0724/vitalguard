@@ -1,6 +1,7 @@
 // 수집 본체 — 센서·GPS 소스 → 엔진 → 큐 → 업로드를 FGS(health|location)로 돌린다
 package com.vitalguard.wear
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,6 +12,7 @@ import android.os.BatteryManager
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import com.vitalguard.wear.pipeline.ConfigStore
 import com.vitalguard.wear.pipeline.FlushOutcome
@@ -40,6 +42,7 @@ class CollectorService : Service() {
     private lateinit var worker: HandlerThread
     private lateinit var handler: Handler
     private lateinit var config: ConfigStore
+    private lateinit var alarms: AlarmManager
     private lateinit var queue: VitalQueue
     private lateinit var engine: CollectorEngine
     private lateinit var pipeline: UploadPipeline
@@ -80,6 +83,7 @@ class CollectorService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(ch)
 
         config = ConfigStore(this)
+        alarms = getSystemService(AlarmManager::class.java)
         val file = File(filesDir, "vital-queue.json")
         queue = VitalQueue(object : QueueStorage {
             override fun save(text: String) { file.writeText(text) }
@@ -210,10 +214,22 @@ class CollectorService : Service() {
         )
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
         //   서비스 자체는 계속 산다(벗었다 다시 차면 사람 개입 없이 재개된다).
-        offBody.start { wornNow -> if (wornNow) beginSensing() else endSensing() }
+        // ★ 자동 로그아웃(미착용 90분) 정산 — 서비스가 죽어 있던 사이의 경과를 먼저 본다.
+        //   이 시점의 offBody.worn 은 기본값이지 관측이 아니다 — 판정은 영속 앵커로만 한다.
+        checkAutoLogout(System.currentTimeMillis())
+        offBody.start { wornNow ->
+            if (wornNow) {
+                beginSensing()
+                config.offBodySince = 0L
+            } else {
+                endSensing()
+                // 앵커는 최초 1회만 적는다 — 서비스 재시작이 시계를 되돌리면 안 된다.
+                if (config.offBodySince == 0L) config.offBodySince = System.currentTimeMillis()
+            }
+        }
         if (offBody.worn) beginSensing()
-        handler.removeCallbacks(tick)
-        handler.postDelayed(tick, FLUSH_INTERVAL_MS)
+        alarms.cancel(tickAlarm)
+        scheduleTick()
         running = true
         liveEngine = engine
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
@@ -255,7 +271,7 @@ class CollectorService : Service() {
      *
      * 종전에는 `reviveHrIfStalled` 가 `tick` **안**에서만 불렸다. 그런데 `tick` 은
      * `handler.postDelayed` 로 도는데 그것은 `uptimeMillis` 기준이라 **CPU 가 절전에 들면 함께
-     * 멈춘다**. 즉 심박이 죽은 바로 그 상황(기기가 조용해진 상황)에서 되살리는 장치도 같이 죽었다.
+     * 멈춘다**(08-29 부터 tick 은 정확 알람으로 옮겨 이 사유는 해소됐지만, 경로 둘은 그대로 둔다). 즉 심박이 죽은 바로 그 상황(기기가 조용해진 상황)에서 되살리는 장치도 같이 죽었다.
      * 08-27 실측 = EMP-admin3470 워치에서 심박이 **6,132초(1.7시간)** 끊겼는데 재구독이 한 번도
      * 안 돌았다(300초면 돌았어야 한다).
      *
@@ -276,10 +292,39 @@ class CollectorService : Service() {
         handler.post { reviveHrIfStalled(System.currentTimeMillis()) }
     }
 
+    /**
+     * ★ 자동 로그아웃 — 미착용이 90분 이상 이어지면 자격을 지운다(08-31 사용자 규칙).
+     *
+     * 시계는 별도 알람이 아니라 **기존 tick(120초 정확 알람)에 얹는다** — tick 은 suspend 에서도
+     * CPU 를 깨우는 것이 이미 실측된 경로다(R-32). 오차 최대 한 주기(2분)는 90분 규칙에서 무시
+     * 가능하고, 알람을 하나 더 만들면 취소·재예약 상태가 둘이 되어 어긋날 자리만 는다.
+     *
+     * ⚠ `offBody.observed` 전의 `worn=true` 는 기본값이지 관측이 아니다 — 그때는 영속 앵커로만
+     *   판정한다(재부팅·프로세스 사망 구간의 정산). 90분을 넘긴 채 다시 찼어도 로그아웃이 맞다 —
+     *   규칙의 시점(90분째)에 이미 만료됐어야 했다.
+     * ⚠ 관측된 착용 상태에서 잔존 앵커는 지운다 — 콜백은 상태 '변화' 에만 오므로, 이 자가치유가
+     *   없으면 (죽은 사이 다시 착용된 경우) 낡은 앵커가 다음 재시작 때 오폭한다.
+     * 충전 중도 미착용이다(규칙 문언 그대로 — 야간 충전 90분이면 아침에 QR 재로그인).
+     */
+    private fun checkAutoLogout(now: Long) {
+        if (offBody.observed && offBody.worn) {
+            if (config.offBodySince != 0L) config.offBodySince = 0L
+            return
+        }
+        if (!shouldAutoLogout(config.offBodySince, now)) return
+        val hadSession = config.token != null
+        if (hadSession) {
+            Log.i(TAG, "미착용 ${(now - config.offBodySince) / 60_000}분 — 자동 로그아웃 (worker=${config.workerId})")
+            config.clearSession()
+        }
+        config.offBodySince = 0L
+    }
+
     /** flush → 업로드 1회 — 재시도 대기는 FlushOutcome 이 정한 시각까지 업로드만 쉰다(수집은 계속). */
     private val tick = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
+            checkAutoLogout(now)
             engine.flush(now)
             if (now >= uploadBlockedUntilMs) {
                 when (val r = pipeline.flushOnce(config.uploadConfig())) {
@@ -299,7 +344,35 @@ class CollectorService : Service() {
                 }
             }
             reviveHrIfStalled(now)
-            handler.postDelayed(this, FLUSH_INTERVAL_MS)
+            scheduleTick()
+        }
+    }
+
+    /**
+     * ★ tick 예약을 `handler.postDelayed`(=`uptimeMillis`)에서 **CPU 를 깨우는 정확 알람**으로 옮겼다(08-29 · R-32).
+     *
+     * 화면이 꺼지면 Wear OS 가 AP 를 suspend 하고 그동안 `uptimeMillis` 가 서서, 120초 타이머가 3~14분이
+     * 됐다(실측: 간격 ≈ 120s ÷ CPU-awake 비율 · Doze 는 0건 — 정체는 Doze 가 아니라 suspend). 관제는 150초
+     * 문턱이라 그대로 `연결끊김` 이 됐다(오늘 누적 32%). `ELAPSED_REALTIME_WAKEUP` 은 suspend 에서도 진행하고
+     * 시각이 되면 CPU 를 깨운다.
+     *
+     * ⚠ 리스너는 반드시 **같은 `handler`(수집 스레드)** 로 받는다 — 큐·엔진은 그 스레드 하나에서만 만진다는
+     *   계약이 있다(`flush` 와 섀도 적재가 같은 looper). 리스너형 알람은 콜백이 끝날 때까지 시스템이 wakelock 을
+     *   쥐므로 flush+업로드를 콜백 안에서 동기로 끝내면 별도 wakelock 이 필요 없다.
+     * ⚠ API 31+ 는 정확 알람에 권한이 필요하다(`USE_EXACT_ALARM` · 매니페스트). 없으면 `SecurityException` 이라
+     *   먼저 물어보고, 안 되면 30초 창의 부정확 알람으로 물러선다 — 그래도 깨우기는 한다(종전보다 낫다).
+     * ⚠ 주기를 줄이는 것은 답이 아니었다 — 같은 시계면 60s 도 끊김 39%, 15s 도 6%(R-32 시뮬).
+     */
+    private val tickAlarm = AlarmManager.OnAlarmListener { tick.run() }
+
+    private fun scheduleTick() {
+        val at = SystemClock.elapsedRealtime() + FLUSH_INTERVAL_MS
+        val exact = android.os.Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
+        if (exact) {
+            alarms.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, TAG, tickAlarm, handler)
+        } else {
+            Log.w(TAG, "정확 알람 권한 없음 — 30초 창 부정확 알람으로 대체 (USE_EXACT_ALARM 확인)")
+            alarms.setWindow(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, 30_000L, TAG, tickAlarm, handler)
         }
     }
 
@@ -335,7 +408,7 @@ class CollectorService : Service() {
     override fun onDestroy() {
         running = false
         liveEngine = null
-        handler.removeCallbacks(tick)
+        alarms.cancel(tickAlarm)
         worker.quitSafely()
         offBody.stop()
         endSensing()
@@ -388,6 +461,16 @@ class CollectorService : Service() {
          * "워치는 멀쩡한데 관제만 끊김" 이라는 오해가 다시 생긴다. 두 화면이 같은 시점을 봐야 한다.
          */
         const val HR_STALE_MS = 150_000L
+        /**
+         * 자동 로그아웃 문턱 — 미착용(벗음 · 충전 포함)이 이 시간 이상 이어지면 자격을 지운다.
+         * 1시간 30분(08-31 사용자 규칙). 판정은 tick(120초) 주기라 실효 오차 ≤ 2분.
+         */
+        const val AUTO_LOGOUT_OFF_BODY_MS = 5_400_000L
+
+        /** 미착용 시작 앵커로 만료를 판정한다. 0 = 타이머 없음. 경계 포함(≥). */
+        internal fun shouldAutoLogout(offSinceMs: Long, nowMs: Long): Boolean =
+            offSinceMs != 0L && nowMs - offSinceMs >= AUTO_LOGOUT_OFF_BODY_MS
+
         const val TAG = "VgCollector"
         /**
          * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).

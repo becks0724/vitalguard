@@ -33,6 +33,13 @@ export const dynamic = "force-dynamic";
 /** 되짚는 창 — 화면의 상태 보존(20분)보다 넉넉히 잡아 느린 기기의 연속 3회를 담는다. */
 const REPLAY_WINDOW_MS = 60 * 60 * 1000;
 
+/** 기존 알림 조회 창 — 되짚기 창(60분)보다 길어야 한다(2026-08-31 · 08-30 79건 연발 수술).
+    이탈이 60분을 넘기면 전이가 되짚기 창 밖으로 밀려 매 실행 창 시작 부근의 새 exitTs 가
+    발급되는데, 조회 창이 되짚기 창과 같으면 직전 알림만 보여 그 표류 ts 가 매번 "새 사건" 으로
+    통과했다. 24시간이면 연속 이탈 재알림은 하루 1회로 준다(recordAlert 의 일일 통지 상한
+    3회가 그 위의 최종 안전망이다). */
+const GEOFENCE_ALERT_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
 export async function GET(request: Request) {
   const auth = cronAuth(request.headers.get("x-cron-key"), process.env.CRON_SECRET);
   if (auth === "notConfigured") {
@@ -72,7 +79,8 @@ export async function GET(request: Request) {
   const verdicts = replayGeofence(fixes, center, SITE_RADIUS_MAX_M);
 
   // ── ③ 이미 알린 구간은 건너뛴다(화면이 먼저 기록했을 수 있다).
-  const already = await lastGeofenceAlertTsByWorker(sinceIso).catch(
+  const lookbackIso = new Date(Date.now() - GEOFENCE_ALERT_LOOKBACK_MS).toISOString();
+  const already = await lastGeofenceAlertTsByWorker(lookbackIso).catch(
     () => ({}) as Record<string, string>,
   );
   const names = await rosterWorkerNames().catch(() => ({}) as Record<string, string>);
@@ -84,8 +92,11 @@ export async function GET(request: Request) {
     if (!v.outside || !v.exitTs) continue;
     outside.push(v.workerId);
     const prev = already[v.workerId];
-    // 이탈 시각 이후에 이미 알림이 있으면 같은 구간으로 본다.
-    if (prev && prev >= v.exitTs) {
+    // ★ 같은 이탈 에피소드는 다시 알리지 않는다 — "이전 알림 이후의 구획 안 관측" 이 있어야
+    //   새 사건이다(2026-08-31 개정). 종전의 `prev >= exitTs` 비교는 이탈이 되짚기 창(60분)을
+    //   넘기는 순간 무력화됐다: 전이가 창 밖으로 밀려 매 실행 새 exitTs 가 발급되고, 그 ts 는
+    //   항상 prev 보다 미래라 검사를 통과했다(08-30 실측: 같은 이탈 1건 → 79건 · 4~6분 간격).
+    if (prev && !(v.lastInsideTs && v.lastInsideTs > prev)) {
       skipped += 1;
       continue;
     }

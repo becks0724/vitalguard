@@ -190,3 +190,30 @@ test("★ 요약은 다운샘플 이전 점으로 내야 한다 — 표본의 �
     "다운샘플 이후 요약이 이전보다 크다 — 있을 수 없다",
   );
 });
+
+// ── 정확도 분할(R-33 · 2026-08-29) — 기지국 좌표가 선에 섞여 없는 길을 그리던 것 ──
+import { partitionTrackByAccuracy, TRACK_LINE_ACC_MAX_M } from "./track";
+
+function accPt(accM: number | null, i: number): TrackPoint {
+  return { lat: 35.1 + i * 1e-4, lon: 126.9, ts: new Date(1_700_000_000_000 + i * 120_000).toISOString(), fixTs: null, accM };
+}
+
+test("partitionTrackByAccuracy — 상한 초과만 coarse 로, 미보고(null)는 선에 남는다", () => {
+  const pts = [accPt(12, 0), accPt(null, 1), accPt(200, 2), accPt(TRACK_LINE_ACC_MAX_M, 3), accPt(1366, 4), accPt(40, 5)];
+  const { line, coarse } = partitionTrackByAccuracy(pts);
+  assert.deepEqual(line.map((p) => p.accM), [12, null, TRACK_LINE_ACC_MAX_M, 40]);
+  assert.deepEqual(coarse.map((p) => p.accM), [200, 1366]);
+});
+
+test("partitionTrackByAccuracy — 순서 보존·점 손실 0·빈 입력", () => {
+  const pts = [accPt(100, 0), accPt(10, 1), accPt(300, 2), accPt(20, 3)];
+  const { line, coarse } = partitionTrackByAccuracy(pts);
+  assert.equal(line.length + coarse.length, pts.length);
+  assert.deepEqual(line.map((p) => p.lat), [pts[1]!.lat, pts[3]!.lat]);
+  assert.deepEqual(coarse.map((p) => p.lat), [pts[0]!.lat, pts[2]!.lat]);
+  assert.deepEqual(partitionTrackByAccuracy([]), { line: [], coarse: [] });
+});
+
+test("TRACK_LINE_ACC_MAX_M — 위성 p90(≈40m)과 기지국 최소(≈100m) 사이", () => {
+  assert.ok(TRACK_LINE_ACC_MAX_M >= 30 && TRACK_LINE_ACC_MAX_M < 100, `상한 ${TRACK_LINE_ACC_MAX_M}m 가 근거 구간 밖이다`);
+});

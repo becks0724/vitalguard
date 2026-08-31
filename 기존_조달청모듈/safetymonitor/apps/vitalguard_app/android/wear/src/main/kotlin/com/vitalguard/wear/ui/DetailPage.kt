@@ -38,11 +38,15 @@ fun DetailPage(
     chart: (@Composable () -> Unit)? = null,
 ) {
     val w = LocalConfiguration.current.screenWidthDp
+    // ★ 둥근 화면 예산(08-29 · 프리뷰 454px 에서 마지막 줄이 아래 가장자리에 잘렸다).
+    //   세로 = 위 6% · 아래 8%(무게를 위로) + 제목 + 값(30sp) + 차트(58 + 축 12) + 보조줄 ≤ 4 × 14dp → 226dp 안.
+    //   가로 = 보조줄은 차트보다 8% 씩 더 들여 **아래쪽 좁은 현(chord) 안**에 둔다 —
+    //   4줄째는 중심에서 ~80dp 아래라 현의 폭이 158dp 뿐이다. 5% 로는 글자 끝이 테두리에 닿았다(08-29 사용자 지적).
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VgColors.Background)
-            .padding(horizontal = (w * 0.14f).dp, vertical = (w * 0.10f).dp),
+            .padding(start = (w * 0.14f).dp, end = (w * 0.14f).dp, top = (w * 0.06f).dp, bottom = (w * 0.08f).dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -51,8 +55,8 @@ fun DetailPage(
             Text(
                 value,
                 color = VgColors.Primary,
-                // 차트가 주인공이라 숫자를 낮춘다 — 40sp 면 차트+보조줄이 둥근 화면에서 잘린다.
-                fontSize = 34.sp,
+                // 차트가 주인공이라 숫자를 낮춘다 — 34sp 도 보조줄 4개면 아래가 잘렸다(08-29).
+                fontSize = 30.sp,
                 fontWeight = FontWeight.Bold,
             )
             if (unit.isNotEmpty()) {
@@ -69,11 +73,11 @@ fun DetailPage(
         }
         rows.forEach { r ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 1.dp, start = (w * 0.08f).dp, end = (w * 0.08f).dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(r.label, color = VgColors.Secondary, fontSize = 11.sp)
-                Text(r.value, color = r.tint, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                Text(r.label, color = VgColors.Secondary, fontSize = 10.sp)
+                Text(r.value, color = r.tint, fontSize = 10.sp, fontWeight = FontWeight.Medium)
             }
         }
         if (rows.isEmpty() && chart == null) {

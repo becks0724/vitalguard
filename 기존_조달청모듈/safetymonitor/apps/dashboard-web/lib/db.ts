@@ -14,7 +14,7 @@ import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
 import { SITE_OFFICER_ORG_TYPES } from "./org-type";
-import { notifyAlertTelegram } from "./telegram";
+import { GEOFENCE_NOTIFY_CAP_TAIL, GEOFENCE_NOTIFY_DAILY_CAP, notifyAlertTelegram } from "./telegram";
 
 export type { CalendarEventScope, CommentScope, MediaScope };
 
@@ -779,6 +779,22 @@ async function initSchema(): Promise<void> {
       fails INTEGER NOT NULL DEFAULT 0,
       locked_until TIMESTAMPTZ,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- 워치 QR 로그인(기기 승인) 코드 — 인스턴스 간 공유가 필요해 DB 다(login_attempt 와 같은 사유). 5분 만료·1회 소비.
+    CREATE TABLE IF NOT EXISTS app_device_login (
+      code TEXT PRIMARY KEY,
+      secret_hash TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      token TEXT,
+      user_sub TEXT,
+      worker_id TEXT,
+      worker_name TEXT,
+      created_ip TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      approved_at TIMESTAMPTZ,
+      consumed_at TIMESTAMPTZ
     );
 
     CREATE TABLE IF NOT EXISTS users (
@@ -2242,6 +2258,18 @@ export type AlertRow = {
   ack_by: string | null;
 };
 
+// 오늘(KST) 이 작업자의 구획이탈 알림 행 수 — 통지 상한 판정용. 원장 기준으로 세므로
+// 크론·화면(/api/alerts) 어느 경로로 적혔든 같은 상한을 공유한다.
+async function countGeofenceAlertsTodayKst(workerId: string): Promise<number> {
+  const { rows } = await q<{ n: string }>(
+    `SELECT count(*) AS n FROM alerts
+      WHERE worker_id = $1 AND type = 'geofence'
+        AND (ts::timestamptz AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+    [workerId],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 // SOS/낙상 발생 기록 — 중복(worker/type/ts)은 무시. addSample 에서 호출.
 // 신규 삽입(중복 아님)일 때만 텔레그램 알림 발신 — dedup 통과분만 1회 통지.
 /**
@@ -2278,7 +2306,24 @@ export async function recordAlert(
   }
   if (rowCount > 0 && notify) {
     // notifyAlertTelegram 은 미설정 시 no-op·실패 삼킴이라 여기서 await 해도 기록·수집을 막지 않는다.
-    await notifyAlertTelegram(input);
+    // ★ 구획이탈만 일일 통지 상한(작업자당 GEOFENCE_NOTIFY_DAILY_CAP 회·KST) — 08-30 같은 이탈
+    //   79건 연발의 최종 안전망(2026-08-31 사용자 결정 3회). 방금 넣은 행 **이후** 를 세므로 n 에
+    //   현재 건이 포함된다: 1·2회째 정상 통지, 상한 회째 꼬리로 침묵 예고, 그 뒤는 통지만 억제.
+    //   원장 기록·자연키 dedup 은 상한과 무관하게 위에서 이미 끝났다. 카운트 실패(0 폴백)는
+    //   통지를 막지 않는다 — 상한은 편의 장치고 경보 유실이 더 나쁘다.
+    if (input.type === "geofence") {
+      const n = await countGeofenceAlertsTodayKst(input.workerId).catch(() => 0);
+      if (n === GEOFENCE_NOTIFY_DAILY_CAP) {
+        await notifyAlertTelegram(input, GEOFENCE_NOTIFY_CAP_TAIL);
+      } else if (n > GEOFENCE_NOTIFY_DAILY_CAP) {
+        // eslint-disable-next-line no-console -- 상한 억제는 정상 동작 요약이라 warn 으로 올리면 진짜 경고가 묻힌다
+        console.log(`[alert] 구획이탈 통지 상한 억제 — ${input.workerId} 오늘 ${n}건째`);
+      } else {
+        await notifyAlertTelegram(input);
+      }
+    } else {
+      await notifyAlertTelegram(input);
+    }
   }
   return rowCount > 0;
 }
@@ -3205,15 +3250,16 @@ export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteIn
 export async function recentGpsFixes(
   sinceIso: string,
   limit = 5000,
-): Promise<{ workerId: string; workerName: string | null; ts: string; lat: number; lon: number }[]> {
+): Promise<{ workerId: string; workerName: string | null; ts: string; lat: number; lon: number; accM: number | null }[]> {
   const { rows } = await q<{
     worker_id: string;
     worker_name: string | null;
     ts: string;
     latitude: number;
     longitude: number;
+    location_accuracy_m: number | null;
   }>(
-    `SELECT worker_id, worker_name, ts, latitude, longitude
+    `SELECT worker_id, worker_name, ts, latitude, longitude, location_accuracy_m
        FROM vital_samples
       WHERE ts > $1 AND latitude IS NOT NULL AND longitude IS NOT NULL
       ORDER BY worker_id, ts
@@ -3226,6 +3272,7 @@ export async function recentGpsFixes(
     ts: r.ts,
     lat: Number(r.latitude),
     lon: Number(r.longitude),
+    accM: r.location_accuracy_m == null ? null : Number(r.location_accuracy_m),
   }));
 }
 
@@ -4668,4 +4715,78 @@ export async function workerConditionSignals(input: {
     vitalAlerts: a?.vital_n ?? 0,
     unackedAlerts: a?.unacked_n ?? 0,
   };
+}
+
+// ── 워치 QR 로그인(기기 승인) — lib/device-login.ts 와 짝. 상태 = pending → approved → consumed ──
+export type DeviceLoginRow = {
+  code: string;
+  secret_hash: string;
+  status: string;
+  token: string | null;
+  user_sub: string | null;
+  worker_id: string | null;
+  worker_name: string | null;
+  expired: boolean;
+};
+
+/** 코드 발급. 충돌(같은 코드가 살아 있음)이면 false — 호출자가 새 코드로 다시 시도한다. */
+export async function createDeviceLogin(
+  code: string,
+  secretHash: string,
+  ttlSec: number,
+  ip: string | null,
+): Promise<boolean> {
+  // 하루 지난 잔재는 발급 때마다 치운다(별도 크론 없이 · 행 수가 작아 비용 0).
+  await q(`DELETE FROM app_device_login WHERE expires_at < now() - interval '1 day'`);
+  const { rowCount } = await q(
+    `INSERT INTO app_device_login (code, secret_hash, created_ip, expires_at)
+     VALUES ($1, $2, $3, now() + make_interval(secs => $4::double precision))
+     ON CONFLICT (code) DO NOTHING`,
+    [code, secretHash, ip, ttlSec],
+  );
+  return rowCount === 1;
+}
+
+export async function readDeviceLogin(code: string): Promise<DeviceLoginRow | null> {
+  const { rows } = await q<DeviceLoginRow>(
+    `SELECT code, secret_hash, status, token, user_sub, worker_id, worker_name, (expires_at <= now()) AS expired
+       FROM app_device_login WHERE code = $1`,
+    [code],
+  );
+  return rows[0] ?? null;
+}
+
+/** 승인 — pending 이고 안 만료된 코드에만 토큰을 묶는다(한 문장 · 경쟁해도 한 번만). 성공 여부를 돌려준다. */
+export async function approveDeviceLogin(
+  code: string,
+  bound: { token: string; sub: string; workerId: string | null; workerName: string | null },
+): Promise<boolean> {
+  const { rowCount } = await q(
+    `UPDATE app_device_login
+        SET status = 'approved', token = $2, user_sub = $3, worker_id = $4, worker_name = $5, approved_at = now()
+      WHERE code = $1 AND status = 'pending' AND expires_at > now()`,
+    [code, bound.token, bound.sub, bound.workerId, bound.workerName],
+  );
+  return rowCount === 1;
+}
+
+/** 소비 — approved 를 consumed 로 넘기며 토큰을 **한 번만** 내준다. 두 번째 poll 은 null. */
+export async function consumeDeviceLogin(
+  code: string,
+): Promise<{ token: string; workerId: string | null; workerName: string | null } | null> {
+  const { rows } = await q<{ token: string; worker_id: string | null; worker_name: string | null }>(
+    `WITH cur AS (
+       SELECT token, worker_id, worker_name FROM app_device_login
+        WHERE code = $1 AND status = 'approved' FOR UPDATE
+     )
+     UPDATE app_device_login AS a
+        SET status = 'consumed', consumed_at = now(), token = NULL
+       FROM cur
+      WHERE a.code = $1 AND a.status = 'approved'
+      RETURNING cur.token AS token, a.worker_id, a.worker_name`,
+    [code],
+  );
+  const r = rows[0];
+  if (!r || !r.token) return null;
+  return { token: r.token, workerId: r.worker_id, workerName: r.worker_name };
 }

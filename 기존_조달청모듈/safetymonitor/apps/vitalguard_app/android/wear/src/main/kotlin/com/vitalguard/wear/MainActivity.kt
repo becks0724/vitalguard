@@ -18,7 +18,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.vitalguard.wear.pipeline.ConfigStore
+import com.vitalguard.wear.pipeline.DeviceLoginClient
+import com.vitalguard.wear.pipeline.DevicePoll
+import com.vitalguard.wear.pipeline.DeviceStart
+import com.vitalguard.wear.ui.LoginMode
 import com.vitalguard.wear.ui.ProbeAction
+import com.vitalguard.wear.ui.QrLoginUiState
+import com.vitalguard.wear.ui.QrPhase
 import com.vitalguard.wear.ui.ProbeScreen
 import com.vitalguard.wear.ui.ProbeUiState
 import com.vitalguard.wear.ui.VgColors
@@ -40,6 +46,7 @@ import com.vitalguard.wear.pipeline.AuthClient
 import com.vitalguard.wear.pipeline.LoginResult
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -101,6 +108,8 @@ class MainActivity : ComponentActivity() {
     // ── 로그인 ─────────────────────────────────────────────────────────────────
     private var showLogin by mutableStateOf(false)
     private var login by mutableStateOf(LoginUiState())
+    /** QR 로그인 코루틴 — 취소·모드 전환·화면 이탈 때 반드시 끊는다(secret 이 이 안에만 산다). */
+    private var qrJob: Job? = null
     /** 화면이 읽는 신원. 로그인·로그아웃 즉시 갈아끼우려고 상태로 든다(prefs 를 매 프레임 읽지 않는다). */
     private var workerId by mutableStateOf<String?>(null)
     private var workerName by mutableStateOf<String?>(null)
@@ -164,6 +173,88 @@ class MainActivity : ComponentActivity() {
         Log.i(AuthClient.TAG, "로그아웃 — 자격을 지웠다")
     }
 
+    /**
+     * 백그라운드 자동 로그아웃(미착용 90분 · CollectorService)을 화면에 반영한다.
+     * 액티비티가 재생성 없이 RESUMED 로 돌아오면 onCreate 의 신원 로딩이 다시 안 돌므로 —
+     * 이게 없으면 로그아웃됐는데 요약 화면이 신원을 계속 보이고 업로드는 401 로만 운다.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (ConfigStore(this).token == null && workerId != null) {
+            workerId = null
+            workerName = null
+            login = LoginUiState()
+        }
+    }
+
+    /**
+     * ★ QR 로그인(기기 승인 · 2026-08-29 사용자 지시). 워치 화면이 좁아 아이디·비번 입력이 어렵다 —
+     *   start → 코드·QR 표시 → 1초 카운트다운 · 4초 poll → 승인되면 **직접 로그인과 같은 성공 경로**
+     *   (`saveSession` → 신원 상태 → 화면 닫기). 폰은 /pair 에서 관제웹 계정으로 승인한다.
+     * ⚠ `secret` 은 이 코루틴의 지역변수뿐이다 — 저장·로그 금지. 토큰이 QR 로 안 나가는 열쇠가 이것이다.
+     * ⚠ EXPIRED 는 phase 만 바꾸고 code·rows 는 남긴다(화면이 흐린 QR 위에 [재발급]을 보인다 — UI 계약).
+     */
+    private fun startQrLogin() {
+        qrJob?.cancel()
+        login = login.copy(mode = LoginMode.QR, qr = QrLoginUiState(phase = QrPhase.LOADING), busy = false, error = null)
+        qrJob = lifecycleScope.launch {
+            val cfg = ConfigStore(this@MainActivity)
+            val client = DeviceLoginClient(cfg.baseUrl)
+            val s = when (val started = withContext(Dispatchers.IO) { client.start() }) {
+                is DeviceStart.Failed -> {
+                    login = login.copy(qr = login.qr.copy(phase = QrPhase.ERROR, error = started.message))
+                    return@launch
+                }
+                is DeviceStart.Ok -> started
+            }
+            login = login.copy(
+                qr = QrLoginUiState(QrPhase.WAITING, s.code, s.qrSize, s.qrRows, s.expiresInSec),
+            )
+            var left = s.expiresInSec
+            var sincePollMs = 0L
+            while (left > 0) {
+                delay(1_000)
+                left -= 1
+                sincePollMs += 1_000
+                login = login.copy(qr = login.qr.copy(secondsLeft = left))
+                if (sincePollMs < DeviceLoginClient.POLL_INTERVAL_MS) continue
+                sincePollMs = 0
+                when (val p = withContext(Dispatchers.IO) { client.poll(s.code, s.secret) }) {
+                    DevicePoll.Pending -> Unit
+                    is DevicePoll.Approved -> {
+                        cfg.saveSession(p.token, p.workerId, p.workerName)
+                        workerId = p.workerId
+                        workerName = p.workerName
+                        login = LoginUiState()
+                        showLogin = false
+                        Log.i(AuthClient.TAG, "QR 로그인 성공 worker=${p.workerId}")
+                        return@launch
+                    }
+                    DevicePoll.Expired -> {
+                        login = login.copy(qr = login.qr.copy(phase = QrPhase.EXPIRED, secondsLeft = 0))
+                        return@launch
+                    }
+                    is DevicePoll.Failed -> {
+                        login = login.copy(qr = login.qr.copy(phase = QrPhase.ERROR, error = p.message))
+                        return@launch
+                    }
+                }
+            }
+            login = login.copy(qr = login.qr.copy(phase = QrPhase.EXPIRED, secondsLeft = 0))
+        }
+    }
+
+    /** 화면을 떠나면 폴링을 끊는다 — 돌아오면 [재발급]으로 새 코드를 받는다(백그라운드 폴링 없음). */
+    override fun onStop() {
+        super.onStop()
+        if (qrJob?.isActive == true) {
+            qrJob?.cancel()
+            if (showLogin && login.mode == LoginMode.QR) {
+                login = login.copy(qr = login.qr.copy(phase = QrPhase.EXPIRED, secondsLeft = 0))
+            }
+        }
+    }
+
     /** ComponentActivity 는 onRequestPermissionsResult 대신 결과 계약을 쓴다(권장 경로). */
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
@@ -173,6 +264,10 @@ class MainActivity : ComponentActivity() {
                 "${p.substringAfterLast('.')} = ${if (granted) "허용" else "거부"}"
             },
         )
+        // 신규 설치 경로 — onCreate 가 미뤄둔 수집 서비스를 허용 직후에 올린다.
+        if (canStartHealthFgs() && !CollectorService.running) {
+            startForegroundService(Intent(this, CollectorService::class.java))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -194,7 +289,14 @@ class MainActivity : ComponentActivity() {
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
-        startForegroundService(Intent(this, CollectorService::class.java))
+        // ⚠ 신규 설치는 런타임 권한이 0개다 — 이대로 올리면 FGS(health) 승격이 SecurityException 으로
+        //   즉사한다(08-31 워치8 40mm 첫 설치 실측 · 워치9는 PoC 때 부여한 권한이 남아 있어 잠복했다).
+        //   권한이 없으면 먼저 묻고, 허용 콜백에서 서비스를 올린다.
+        if (canStartHealthFgs()) {
+            startForegroundService(Intent(this, CollectorService::class.java))
+        } else {
+            requestSensorPermissions()
+        }
 
         setContent {
             var bpm by remember { mutableStateOf<Int?>(null) }
@@ -300,7 +402,9 @@ class MainActivity : ComponentActivity() {
                     onEditId = { askText(idInputLauncher, KEY_ID, "아이디") },
                     onEditPassword = { askText(passwordInputLauncher, KEY_PASSWORD, "비밀번호") },
                     onSubmit = { submitLogin() },
-                    onCancel = { showLogin = false; login = LoginUiState() },
+                    onCancel = { qrJob?.cancel(); showLogin = false; login = LoginUiState() },
+                    onQrRefresh = { startQrLogin() },
+                    onSwitchMode = { qrJob?.cancel(); login = login.copy(mode = LoginMode.MANUAL, busy = false, error = null) },
                 )
             } else if (showDiagnostics) {
                 ProbeScreen(
@@ -348,7 +452,7 @@ class MainActivity : ComponentActivity() {
                             else -> SettingsPage(
                                 workerName = workerName,
                                 workerId = workerId,
-                                onLogin = { login = LoginUiState(); showLogin = true },
+                                onLogin = { login = LoginUiState(); showLogin = true; startQrLogin() },
                                 onLogout = { logout() },
                             )
                         }
@@ -428,6 +532,17 @@ class MainActivity : ComponentActivity() {
             show("본수집을 중지했습니다. 큐는 보존됩니다.")
         },
     )
+
+    /**
+     * FGS(health) 승격의 anyOf 요건을 하나라도 쥐고 있는가 — 신규 설치엔 0개라 시작 즉시 죽는다.
+     * OS 검사(08-31 워치8 실측): allOf=[FOREGROUND_SERVICE_HEALTH(설치형)] + anyOf=[ACTIVITY_RECOGNITION,
+     * HIGH_SAMPLING_RATE_SENSORS, health.READ_*]. 35 이하의 anyOf 는 BODY_SENSORS 계열.
+     */
+    private fun canStartHealthFgs(): Boolean {
+        val key = if (Build.VERSION.SDK_INT >= 36) "android.permission.health.READ_HEART_RATE"
+        else android.Manifest.permission.BODY_SENSORS
+        return checkSelfPermission(key) == PackageManager.PERMISSION_GRANTED
+    }
 
     /** API 36+ 는 health 권한, 35 이하는 BODY_SENSORS 계열 — 매니페스트의 신·구 병기와 짝. */
     private fun requestSensorPermissions() {

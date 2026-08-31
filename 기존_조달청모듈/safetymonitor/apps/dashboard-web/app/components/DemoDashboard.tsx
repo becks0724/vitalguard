@@ -44,6 +44,7 @@ import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { formatElapsed } from "../../lib/absence-watch";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
+import { impactRowView, isImpactSample, type ImpactRowView } from "../../lib/impact-row";
 import {
   evaluateHazardKmaWarnings,
   evaluateHazardWeather,
@@ -87,6 +88,7 @@ import { WarningVideoPanel } from "./WarningVideoPanel";
 import { HospitalPanel } from "./HospitalPanel";
 import { extractRegion } from "../lib/hospital";
 import {
+  fixUsableForJudgment,
   GEOFENCE_INITIAL,
   ZONE_ENTRY_INITIAL,
   geofenceDistanceM,
@@ -95,7 +97,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, type TrackPoint, type TrackQuality } from "../lib/track";
+import { TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -881,6 +883,23 @@ function workerCell(sample: VitalSample) {
   }
   return name ?? empId ?? sample.workerId;
 }
+
+// 충격 판정 행 색 — 색 ③(미경보 무채 · 확인 열림 앰버 · 실경보 빨강 · 2026-08-31 사용자 결정).
+// 지나간 판정 기록이라 어느 톤이든 블링크(vital-blink-*)는 붙이지 않는다 — 경보 피로.
+const IMPACT_TONE: Record<ImpactRowView["tone"], { chip: string; text: string }> = {
+  neutral: {
+    chip: "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft",
+    text: "text-muted dark:text-on-dark-soft",
+  },
+  caution: {
+    chip: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+    text: "text-body dark:text-on-dark-soft",
+  },
+  danger: {
+    chip: "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300",
+    text: "text-red-600 dark:text-red-400",
+  },
+};
 
 const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
@@ -5145,6 +5164,7 @@ export function DemoDashboard() {
   const [trailPoints, setTrailPoints] = useState<TrackPoint[] | null>(null);
   // 좌표 품질 요약 — 서버가 **솎기 전** 점으로 계산해 준다(점별이 아니라 구간 하나에 한 벌).
   const [trailQuality, setTrailQuality] = useState<TrackQuality | null>(null);
+  const [trailCoarse, setTrailCoarse] = useState<TrackCoarsePoint[] | null>(null);
   // 위험구역(진입 금지 존) — 서버 등록 존 + 진입 확정 워커×존 키(`workerId|zoneId`) + 팝업/ack.
   const [dangerZones, setDangerZones] = useState<MapZone[]>([]);
   const [activeZoneAlert, setActiveZoneAlert] = useState<{
@@ -5628,6 +5648,7 @@ export function DemoDashboard() {
     if (!trailWorkerId || workerView !== "map") {
       setTrailPoints(null);
       setTrailQuality(null);
+      setTrailCoarse(null);
       return;
     }
     let alive = true;
@@ -5641,12 +5662,14 @@ export function DemoDashboard() {
         const j = (await res.json()) as {
           ok?: boolean;
           points?: TrackPoint[];
+          coarse?: TrackCoarsePoint[];
           quality?: TrackQuality;
         };
         if (alive && res.ok && j.ok && Array.isArray(j.points)) {
           setTrailPoints(j.points);
           // 요약이 없으면 옛 서버다 — 비워서 화면이 "모름" 으로 그리게 한다(0 으로 위장 금지).
           setTrailQuality(j.quality ?? null);
+          setTrailCoarse(Array.isArray(j.coarse) ? j.coarse : null);
         }
       } catch {
         // 트레일은 보조 표시 — 일시 실패 시 직전 경로 유지
@@ -6333,6 +6356,9 @@ export function DemoDashboard() {
           ageSec,
           stale,
           fixAgeSec,
+          // 측위 정확도(m) — 실내 셀/와이파이 폴백(±100m 등급) 마커가 정밀한 점으로 위장하지
+          // 않게 지도에 전달(2026-08-31 · R-33 의 현재 위치 확장). 미보고는 null 그대로.
+          accM: s.locationAccuracyMeters ?? null,
         });
       } else {
         // ⚠ 사유 문구를 실제 원인에 맞춘다(2026-08-20). 종전 문구는 "위치 권한·로그인 게이트"만
@@ -6413,6 +6439,9 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
       if (ageMs < GEOFENCE_STATE_KEEP_MS) keep.add(pt.workerId);
       // 판정은 신선한 좌표로만 — 낡은 좌표로 이탈을 선언하지 않는다.
       if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      // 부정확 측위(> R-33 상한)로는 판정하지 않는다 — 실내 셀/와이파이 폴백(±100m)이
+      // "현장에 있는데 이탈 +140m" 오탐 경보를 만들었다(2026-08-31 실사고).
+      if (!fixUsableForJudgment(pt.accM)) continue;
       const base = latestMap.get(pt.workerId);
       const entry = states.get(pt.workerId);
       if (!base?.ts || entry?.lastTs === base.ts) continue; // 새 관측 없음 — 상태 유지
@@ -6592,6 +6621,8 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
     for (const pt of workerMapData.pts) {
       // 60초 초과 미수신은 stale 좌표 발화 방지를 위해 판정 보류(미수신 ≠ 진입/이탈).
       if (pt.ageSec === null || pt.ageSec >= 60) continue;
+      // 구획과 같은 정확도 게이트 — 반경 20m 존에 ±100m 폴백 좌표면 진입 오탐이 더 심하다.
+      if (!fixUsableForJudgment(pt.accM)) continue;
       const base = latestMap.get(pt.workerId);
       if (!base?.ts) continue;
       for (const zone of dangerZones) {
@@ -7377,7 +7408,12 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                                 latestMap.get(trailWorkerId)?.workerName ?? trailWorkerId,
                               windowMin: TRACK_WINDOW_MIN,
                               points: trailPoints ?? [],
+                              coarse: trailCoarse ?? undefined,
                               quality: trailQuality,
+                              seq:
+                                trailPoints && trailCoarse && trailCoarse.length > 0
+                                  ? mergeTrackSeq(trailPoints, trailCoarse)
+                                  : undefined,
                             }
                           : undefined
                       }
@@ -7794,9 +7830,19 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               <RollingChars text={formatPersisted(data.totalPersisted)} />
             </span>
             건 누적
-            <span className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft">
-              (화면 표시 최근 {data.recent.length}건)
-            </span>
+            {(() => {
+              // 충격 판정 행이 섞이는 날(08-31 실측 3.4배)엔 구성비를 헤더에서 바로 보인다.
+              const impacts = data.recent.filter(isImpactSample).length;
+              return (
+                <span
+                  className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft"
+                  title="충격 판정 = 워치 낙상 모듈이 기록한 판정 행(생체 측정 아님) — DB 누적에 포함"
+                >
+                  (화면 표시 최근 {data.recent.length}건
+                  {impacts > 0 ? ` · 생체 ${data.recent.length - impacts} · 충격 판정 ${impacts}` : ""})
+                </span>
+              );
+            })()}
           </span>
           <span className="shrink-0 text-xs text-muted dark:text-on-dark-soft">
             {logExpanded ? "▲ 줄이기" : "▼ 펼치기"}
@@ -7836,31 +7882,60 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                 </tr>
               </thead>
               <tbody>
-                {data.recent.map((sample, index) => (
-                  <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
-                    <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
-                      {formatTime(sample.ts)}
-                    </td>
-                    <td className="px-4 py-3 font-mono">
-                      {sample.activeEnergyKcal == null ? "--" : sample.activeEnergyKcal.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3">{workerCell(sample)}</td>
-                    <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
-                    <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
-                    {/* 실측 우선. 값의 성격이 다르므로 **한 칸에 섞지 않고 표기로 가른다** —
-                        실측은 그대로, 추정은 `≈` 를 붙인다. 마크를 떼면 센서가 죽은 구간이
-                        측정된 것처럼 보인다(이 레포가 반복해 고쳐 온 false-OK 형태). */}
-                    <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
-                      {(() => {
-                        if (sample.skinTempC != null) return formatTemp(sample.skinTempC);
-                        // 폴백 = 워커 단위 1분 해상도 추정치라 같은 워커의 여러 행에 같은 값이 붙는다.
-                        const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
-                        const est = data.coreTempEst?.[primary]?.tempC;
-                        return est == null ? "--" : `≈${formatTemp(est)}`;
-                      })()}
-                    </td>
-                  </tr>
-                ))}
+                {data.recent.map((sample, index) => {
+                  // 충격 판정(낙상 섀도)·낙상 행 — 생체 행이 아니므로 생체 칸(`--` 넷·`≈` 추정)을
+                  // 그리지 않고 한 줄 요약으로 가른다(2026-08-31 · 문구 A · 색 ③ · 배치 1).
+                  // 서버·링은 그대로 — 후보 행을 링에서 빼면 낙상 "확인 중"(fallPendingByWorker)이 죽는다.
+                  const impact = impactRowView(sample, workerCell(sample));
+                  if (impact) {
+                    const tone = IMPACT_TONE[impact.tone];
+                    return (
+                      <tr
+                        key={`${sample.workerId}-${sample.ts}-${index}`}
+                        className="border-t border-hairline dark:border-white/5"
+                        title={impact.title}
+                      >
+                        <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                          {formatTime(sample.ts)}
+                        </td>
+                        <td colSpan={5} className={`px-4 py-3 text-xs ${tone.text}`}>
+                          <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${tone.chip}`}>
+                            {impact.chip}
+                          </span>
+                          {impact.text}
+                          {impact.hint ? (
+                            <span className="ml-1 text-muted dark:text-on-dark-soft">{impact.hint}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
+                      <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                        {formatTime(sample.ts)}
+                      </td>
+                      <td className="px-4 py-3 font-mono">
+                        {sample.activeEnergyKcal == null ? "--" : sample.activeEnergyKcal.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">{workerCell(sample)}</td>
+                      <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
+                      <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
+                      {/* 실측 우선. 값의 성격이 다르므로 **한 칸에 섞지 않고 표기로 가른다** —
+                          실측은 그대로, 추정은 `≈` 를 붙인다. 마크를 떼면 센서가 죽은 구간이
+                          측정된 것처럼 보인다(이 레포가 반복해 고쳐 온 false-OK 형태). */}
+                      <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
+                        {(() => {
+                          if (sample.skinTempC != null) return formatTemp(sample.skinTempC);
+                          // 폴백 = 워커 단위 1분 해상도 추정치라 같은 워커의 여러 행에 같은 값이 붙는다.
+                          const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
+                          const est = data.coreTempEst?.[primary]?.tempC;
+                          return est == null ? "--" : `≈${formatTemp(est)}`;
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

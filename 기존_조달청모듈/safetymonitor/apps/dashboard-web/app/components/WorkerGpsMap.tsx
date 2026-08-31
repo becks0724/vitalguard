@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { TrackQuality } from "../lib/track";
+import { TRACK_LINE_ACC_MAX_M, type TrackCoarsePoint, type TrackQuality } from "../lib/track";
 
 export type WorkerMapPoint = {
   workerId: string;
@@ -25,6 +25,8 @@ export type WorkerMapPoint = {
   // 좌표 자체의 나이(초). `ageSec`(생체 수신 나이)과 **다른 축**이다 — 서버가 좌표를 직전 값에서
   // 이어 주므로 심박이 5초 전이어도 좌표는 40분 전 것일 수 있다. null = 측위 시각 미상.
   fixAgeSec?: number | null;
+  /** 측위 수평 정확도(m·기기 보고값). null/미보고 = 원 없이 종전대로 — 없는 것을 정밀로도, 부정확으로도 위장하지 않는다. */
+  accM?: number | null;
 };
 
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
@@ -43,10 +45,20 @@ export type WorkerTrail = {
   windowMin: number;
   points: { lat: number; lon: number }[];
   /**
+   * 선에서 제외된 부정확 점(정확도 > TRACK_LINE_ACC_MAX_M) — 반경=정확도의 흐린 원으로만 그린다(R-33).
+   * 없으면 옛 서버다(전부 선으로 그린 채 둔다 — 없는 것을 필터된 것으로 위장하지 않는다).
+   */
+  coarse?: TrackCoarsePoint[];
+  /**
    * 이 구간 좌표의 품질 요약 — 서버가 **솎기 전** 점으로 계산해 보내준다.
    * null = 옛 서버이거나 아직 안 왔다. 없는 것을 0 으로 그리지 않는다.
    */
   quality?: TrackQuality | null;
+  /**
+   * 근사 동선 — 정확·부정확 점을 시간순으로 병합한 전체 시퀀스(2026-08-31 사용자 지시).
+   * 점선으로만 그린다(확정 실선과 시각 구분). 부정확 점이 있을 때만 대시보드가 채운다.
+   */
+  seq?: { lat: number; lon: number }[];
 };
 
 // 위험구역(진입 금지 존) — 서버 등록분 표시 + 권한있음 계정의 배치/삭제 편집.
@@ -152,8 +164,9 @@ export function WorkerGpsMap({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // 수신 상태 펼침 패널 — 칩 클릭 토글, 지도 드래그 시작 시 닫힘.
   const [statusOpen, setStatusOpen] = useState(false);
-  // 베이스맵 모드 — sat: Esri 위성(기본) / air: VWorld 항공사진(국내 고해상·z19) / cad: VWorld 베이스 + 연속지적도.
-  const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("sat");
+  // 베이스맵 모드 — air: VWorld 항공사진(**기본** · 국내 고해상·z19 · 2026-08-31 사용자 결정) /
+  // sat: Esri 위성(전세계 — VWORLD_KEY 미설정 환경은 이 버튼으로 수동 전환) / cad: VWorld 베이스 + 연속지적도.
+  const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("air");
   // 위험구역 배치 모드 — "＋ 위험구역" 클릭 → 지도 클릭으로 중심 지정 → 이름·반경 폼.
   const [placingZone, setPlacingZone] = useState(false);
   const [zoneDraft, setZoneDraft] = useState<{ lat: number; lon: number } | null>(null);
@@ -370,10 +383,12 @@ export function WorkerGpsMap({
 
   // ── 타일/마커/구획 원 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
-  const markers: { p: WorkerMapPoint; x: number; y: number }[] = [];
+  const markers: { p: WorkerMapPoint; x: number; y: number; accR: number | null }[] = [];
   let circle: { x: number; y: number; r: number } | null = null;
   let focusPt: { x: number; y: number } | null = null;
   let trailPts: { x: number; y: number }[] | null = null;
+  let coarsePts: { x: number; y: number; r: number }[] | null = null;
+  let seqPts: { x: number; y: number }[] | null = null;
   const zoneCircles: { zone: MapZone; x: number; y: number; r: number }[] = [];
   let draftPt: { x: number; y: number; r: number } | null = null;
   let polyPts: { x: number; y: number }[] | null = null;
@@ -403,6 +418,20 @@ export function WorkerGpsMap({
     }
     if (trail && trail.points.length >= 2) {
       trailPts = trail.points.map((p) => ({
+        x: lonToWorldX(p.lon, z) - tlx,
+        y: latToWorldY(p.lat, z) - tly,
+      }));
+    }
+    if (trail && trail.coarse && trail.coarse.length > 0) {
+      // 부정확 점 — 선 대신 원. 반경은 보고된 정확도 그대로(픽셀 환산)라 줌을 바꿔도 지리적 크기가 맞다.
+      coarsePts = trail.coarse.map((p) => ({
+        x: lonToWorldX(p.lon, z) - tlx,
+        y: latToWorldY(p.lat, z) - tly,
+        r: Math.max(4, p.accM / metersPerPx(p.lat)),
+      }));
+    }
+    if (trail && trail.seq && trail.seq.length >= 2) {
+      seqPts = trail.seq.map((p) => ({
         x: lonToWorldX(p.lon, z) - tlx,
         y: latToWorldY(p.lat, z) - tly,
       }));
@@ -438,7 +467,12 @@ export function WorkerGpsMap({
       const x = lonToWorldX(p.lon, z) - tlx;
       const y = latToWorldY(p.lat, z) - tly;
       if (x < -60 || x > size.w + 60 || y < -60 || y > size.h + 60) continue;
-      markers.push({ p, x, y });
+      // 부정확 측위(> R-33 상한)만 반경=정확도 원을 함께 그린다 — 실내 셀/와이파이 폴백(±100m 등급)이
+      // 정밀한 점으로 위장하던 것(2026-08-31 실측: 현장 실내인데 양자화 좌표 42~352m 왕복).
+      // 양호(≤ 상한)·미보고는 종전과 동일. 반경은 지리값이라 줌과 함께 스케일된다(트레일 coarse 와 동일).
+      const accR =
+        p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? Math.max(4, p.accM / metersPerPx(p.lat)) : null;
+      markers.push({ p, x, y, accR });
     }
   }
 
@@ -670,6 +704,40 @@ export function WorkerGpsMap({
           </>
         )}
 
+        {/* 근사 동선 점선 — 정확·부정확 점을 시간순으로 이은 한 줄(2026-08-31 사용자 지시).
+            부정확 점이 원으로만 남으면 이동 순서를 읽을 수 없어서다. 확정 실선과 구분되게
+            **점선**으로만 긋는다 — 기지국 좌표 구간을 "지나간 길" 로 위장하지 않는다. */}
+        {seqPts && (
+          <svg
+            aria-hidden
+            data-testid="worker-trail-seq"
+            className="pointer-events-none absolute inset-0 z-[6]"
+            width={size.w}
+            height={size.h}
+          >
+            <polyline
+              points={seqPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#0b1420"
+              strokeWidth={3}
+              strokeOpacity={0.35}
+              strokeDasharray="6 6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <polyline
+              points={seqPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={1.5}
+              strokeOpacity={0.9}
+              strokeDasharray="6 6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+
         {/* 이동 경로 트레일 — 마커 클릭으로 토글된 작업자의 최근 동선 폴리라인(어두운 외곽선 + 시안 라인). */}
         {trailPts && (
           <svg
@@ -702,6 +770,32 @@ export function WorkerGpsMap({
           </svg>
         )}
 
+        {/* 부정확 점 — 선에서 뺀 기지국·wifi 좌표. 채운 원 = "이 근방 어딘가". 이어 그리면 없는 길이 된다(R-33). */}
+        {coarsePts && (
+          <svg
+            aria-hidden
+            data-testid="worker-trail-coarse"
+            className="pointer-events-none absolute inset-0 z-[6]"
+            width={size.w}
+            height={size.h}
+          >
+            {coarsePts.map((c, i) => (
+              <circle
+                key={i}
+                cx={c.x}
+                cy={c.y}
+                r={c.r}
+                fill="#38bdf8"
+                fillOpacity={0.1}
+                stroke="#38bdf8"
+                strokeOpacity={0.35}
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+            ))}
+          </svg>
+        )}
+
         {/* 알림 포커스 펄스 링 — 알림 모달 "관제 지도에서 보기"로 진입한 위치 강조(12초 후 부모가 해제). */}
         {focusPt && (
           <span
@@ -713,6 +807,35 @@ export function WorkerGpsMap({
             <span className="absolute inset-0 animate-ping rounded-full bg-red-500/40" />
             <span className="absolute inset-[13px] rounded-full border-2 border-red-400" />
           </span>
+        )}
+
+        {/* 측위 정확도 원 — 부정확 마커(> TRACK_LINE_ACC_MAX_M)에만 반경=정확도의 흐린 원.
+            R-33(트레일 coarse) 처방의 현재 위치 확장. 이벤트 통과·마커(z-10) 아래 레이어. */}
+        {markers.some((mk) => mk.accR != null) && (
+          <svg
+            aria-hidden
+            data-testid="worker-marker-accuracy"
+            className="pointer-events-none absolute inset-0 z-[7]"
+            width={size.w}
+            height={size.h}
+          >
+            {markers.map(({ p, x, y, accR }) =>
+              accR == null ? null : (
+                <circle
+                  key={p.workerId}
+                  cx={x}
+                  cy={y}
+                  r={accR}
+                  fill="#38bdf8"
+                  fillOpacity={0.08}
+                  stroke="#38bdf8"
+                  strokeOpacity={0.4}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                />
+              ),
+            )}
+          </svg>
         )}
 
         {/* 작업자 마커 — 신호등 톤 점 + 이름 칩. 호버 시 생체 툴팁.
@@ -795,6 +918,17 @@ export function WorkerGpsMap({
                       {p.fixAgeSec == null ? "측위 시각 미상" : ageLabel(p.fixAgeSec)}
                     </dd>
                   </div>
+                  {/* 측위 정확도 — 실내 폴백(±100m 등급)이면 이 숫자가 마커 위치의 신뢰 한계다. */}
+                  <div className="flex justify-between">
+                    <dt>측위</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? "text-amber-300" : ""
+                      }`}
+                    >
+                      {p.accM == null ? "정확도 미보고" : `±${Math.round(p.accM)}m`}
+                    </dd>
+                  </div>
                 </dl>
               </div>
             )}
@@ -870,6 +1004,8 @@ export function WorkerGpsMap({
               좌표 {trail.quality.points}점
               {trail.quality.accuracyMedianM !== null &&
                 ` · 정확도 중앙 ±${Math.round(trail.quality.accuracyMedianM)}m`}
+              {trail.coarse && trail.coarse.length > 0 &&
+                ` · 부정확 ${trail.coarse.length}점 점선 근사(>${TRACK_LINE_ACC_MAX_M}m)`}
               {" · "}
               <span
                 title={

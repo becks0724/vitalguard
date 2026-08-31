@@ -23,6 +23,14 @@ class ConfigStore(context: Context) {
         get() = prefs.getString("workerName", null)
         set(v) { prefs.edit().putString("workerName", v).apply() }
 
+    /**
+     * 미착용 시작 시각(epoch ms) — 자동 로그아웃(90분) 타이머의 영속 앵커. 0 = 착용 중(타이머 없음).
+     * prefs 에 두는 이유 = 서비스·기기 재시작을 건너뛰어도 "90분 경과" 정산이 살아남아야 한다.
+     */
+    var offBodySince: Long
+        get() = prefs.getLong("offBodySince", 0L)
+        set(v) { prefs.edit().putLong("offBodySince", v).apply() }
+
     /** 기본값 = 프로덕션 관제 서버(iOS productionBaseURL 과 동일). 개발 터널은 주입으로만 덮는다. */
     var baseUrl: String
         get() = prefs.getString("baseUrl", DEFAULT_BASE_URL)!!

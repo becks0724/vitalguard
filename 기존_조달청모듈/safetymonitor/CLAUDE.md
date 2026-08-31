@@ -16,7 +16,48 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00336-wz4` (커밋 `68f4825` · 08-28 22:2x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00340-zqz` (커밋 `879b0cf` · 08-31 10:5x · 서빙 digest
+  `sha256:0b10f40b…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1496/1496 @ 아카이브(879b0cf 고정)**(= 워킹트리 1506 − ARCHIVE_SKIP 10) · commit-sha 라벨 = APPROVED_AT 일치 ·
+  DIRTY 진입(타 세션 미커밋 2 · ALLOW_DIRTY)).
+  **웹 5건**([WATCH.APP] · 08-31) — ① 실시간 수집 표: 낙상 섀도 행 → **충격 판정 행**(문구 A·색 ③·배치 1 ·
+  `lib/impact-row.ts` · `--`·`≈` 위장 제거 · 헤더 생체/충격 구성비) ② **구획이탈 텔레그램 연발 수술** — 에피소드
+  규칙(`lastInsideTs` · 알림 조회 창 24h) + 작업자당 일일 통지 상한 3회(원장은 전부 기록 · 08-30 같은 이탈 79건
+  연발 대응) ③ 작업자 지도 **기본 베이스맵 위성→항공**(VWorld) ④ **마커 측위 정확도 원**(R-33 의 현재 위치 확장 ·
+  실내 폴백 ±100m 의 정밀 위장 해소) ⑤ **구획/위험구역 판정 정확도 게이트**(`fixUsableForJudgment` · >50m 좌표는
+  상태머신 미전진 · "현장에 있는데 이탈 +140m" 오탐 차단 · 설정 표면 없음). 가드 신규 3파일 + server-check ④ 개정.
+  ⚠ 라이브 실측 = 배포 직후 로그인 화면까지 확인(탭 열어둠) — 표·지도·마커 발현은 로그인 뒤 눈 확인 예정.
+  함께 나간 것(L-59) = 17커밋(웹 5 · wear 6 · docs 6) — **서빙 코드는 웹 5건뿐**(wear·docs 는 이미지 무관).
+- 직전 = `vitalguard-dashboard-00339-m8n` (커밋 `a39d686` · 08-29 22:0x · 서빙 digest
+  `sha256:c4402f46…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1475/1475 @ 아카이브(a39d686 고정)**(= 워킹트리 1485 − ARCHIVE_SKIP 10) · commit-sha 라벨 = APPROVED_AT 일치 · DIRTY 진입(IDE 빈 줄 1 · ALLOW_DIRTY)).
+  **워치 QR 로그인(기기 승인) 서버**(`24258ec` · `docs/device-login/`) — 갤럭시워치 화면이 좁아 아이디·비번 입력이 어렵다(08-29 사용자 지시).
+  `POST /api/app-auth/device/start`(코드 `XXXX-XXXX`·secret·300s·QR 41×41 · **토큰 없음**) · `POST …/approve`(폰 `/pair` 가 코드+자격 ·
+  판정·잠금·발급은 login 과 **같은 함수** · 코드는 자격 뒤에 확인) · `GET …/poll?code&secret`(승인분 **1회 소비** · 없음/불일치 동일 404) ·
+  테이블 `app_device_login` · `/pair` 페이지는 **관제웹 로그인 화면과 같은 재료**(셰이더·글래스 카드·로고·login-styles·LiquidMetal).
+  가드 5 + 단위 4 · 변이 9종 중 8 검출(1 등가). 워치 쪽(`a3e907e` 클라이언트 · `20423d3` QR 모드 UI · `7c32197` MainActivity 배선 · :wear 262/262)
+  은 assembleRelease 만 됐고 **미설치** — 내일 A안 판정 창 뒤 재설치·실기(로그아웃 → QR → 폰 스캔 → /pair 승인).
+  ✅ **라이브 실측** — start 실호출 `6XET-FC4J`(secret 64·QR 41×41·token 키 없음) · poll 맞는 secret → pending / 틀린 secret → 404 ·
+  approve 잘못된 자격 → 401 · `/pair?code=` 브라우저 렌더(로그인 화면 구성 그대로 · 코드 자동 채움) 눈으로 확인.
+  함께 나간 것(L-59) = 9커밋 · 서빙 코드는 `24258ec` 하나(워치 3 · 문서 5).
+- 직전 = `vitalguard-dashboard-00338-crt` (커밋 `2c63611` · 08-29 20:4x · 서빙 digest
+  `sha256:d2cc9f84…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok(radar·typhoon·
+  weather·disaster-msg·health/db) · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1466/1466 @ 아카이브(2c63611 고정)**(= 워킹트리 1476 − ARCHIVE_SKIP 10) · **commit-sha 라벨 = APPROVED_AT 일치**).
+  **경로 선은 정확도 ≤50m 점만 잇고, 기지국·wifi 좌표(>50m)는 반경=정확도의 흐린 원으로**(`8b54197` · R-33).
+  사용자 제보 "동선과 상반된 GPS" 의 정체 = FUSED 공급자의 기지국 추정(±100·200·300·1,366m)이 위성 점과 같은 선으로
+  이어진 것 — 도보 불가 속도 8구간 중 7이 정확도 >50m. 서버가 가르고(`partitionTrackByAccuracy` · null 은 선에 남김)
+  응답에 `coarse` 를 **추가**(additive)한다. 데이터 손실 0 · 캡션 `부정확 N점 선 제외(>50m)`.
+  가드 `2026-08-29-trail-accuracy-filter`(4) + 단위 3 · **변이 7/7 검출**.
+  ✅ **라이브 실측 완료** — 로그인 탭에서 `/api/monitor/track?workerId=EMP-6861&mins=180` → `points 51 · coarse 5(100·100·100·100·200m)
+  · quality.points 56`(옛 서버엔 `coarse` 키 자체가 없다). 번들 `app/page-e2e35a9d…js` 에 `선 제외`·`worker-trail-coarse` 각 1(통제군
+  `정확도 중앙` 1). 화면의 원 렌더는 워치가 다시 켜진 뒤(지금은 충전 · 20:02 마지막 행) 30분 경로에서 눈으로 본다.
+  ★ **아카이브 검증 경로의 첫 실배포 완주 — 단, 진입은 PINNED 가 아니라 DIRTY 였다**(WATCH.DESIGN 정정). SHA=HEAD 라
+  PINNED 조건(SHA≠HEAD)은 여전히 미완주. 워킹트리에 남의 미커밋 1개(wear 프리뷰 빈 줄 · IDE 생성)가 있어 `ALLOW_DIRTY=1`
+  로 강행 — 이미지는 `2c63611` 고정이라 그 변경은 빠졌고 검증도 아카이브에서 했다(`docs/deploy-approved-at/checklist.md`).
+  ⚠ 직전 라이브는 이 절에 없던 `00337-mkn`(`fa9e912` · 08-28 23:0x · 헤더 재배치·레트로 게이지 — 다른 세션)이다.
+  함께 나간 것(L-59) = 23커밋 · 워치 `:wear` 정확 알람(`ad8747f`)·UI 7건·문서 — 서빙 코드는 `8b54197` 하나.
+- 직전 = `vitalguard-dashboard-00336-wz4` (커밋 `68f4825` · 08-28 22:2x · 서빙 digest
   `sha256:88ac56c8…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok(radar·typhoon·
   weather·disaster-msg·health/db) · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **1469/1469 @ 워킹트리(= HEAD)** · **commit-sha 라벨 = APPROVED_AT `68f4825` 일치**).

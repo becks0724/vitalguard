@@ -1,6 +1,7 @@
 // 작업자 화면 — Material 3 Expressive 원형 게이지. 숫자가 아니라 "호가 어디까지 찼나"로 읽힌다
 package com.vitalguard.wear.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -20,8 +21,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -89,7 +94,7 @@ fun VitalScreen(
             //   여기 남는 것은 ① 상태 배지 ② 큰 주값 ③ 라벨·범위 ④ 버블 3개 ⑤ 하단 상태.
             TopIcons(state)
             HeroValue(state, large)
-            LabelAndRange(state)
+            StatusRow(state)
             BubbleRow(state, bubble)
             FooterLine(state)
             // 아래로 스와이프하면 상세 — 발견성을 위해 힌트를 남긴다(지침: 작업의 명확성).
@@ -135,52 +140,149 @@ private fun StatusDot(active: Boolean, activeColor: Color, label: String) {
 /** ② 큰 주값 — 사진의 시각 자리에 심박이 온다. 색이 곧 판정. */
 @Composable
 private fun HeroValue(state: VitalUiState, large: Boolean) {
-    Row(verticalAlignment = Alignment.Bottom) {
-        // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은
-        //   공간만 먹는다. 대신 **판정색 점**으로 상태를 알린다(색이 곧 정보).
-        Box(
-            Modifier
-                .size(if (large) 10.dp else 8.dp)
-                .background(state.severity.color(), CircleShape)
-                .padding(bottom = 6.dp),
-        )
+    // ★ **숫자가 화면 가운데**, "bpm" 은 그 오른쪽에 매달린다(08-29 사용자 지시). 종전엔 숫자+단위 묶음을
+    //   가운데 맞춰 숫자가 왼쪽으로 밀렸다. 양쪽에 같은 weight 칸을 두면 숫자 폭과 무관하게 중심이 고정된다.
+    // ★ 앱 로고를 뺐다(지침 §2) — 시스템이 앱 아이콘을 이미 보여주므로 화면 안 중복은 공간만 먹는다.
+    //   판정은 아래 이름 글자색이 말한다(숫자 옆 판정색 점은 이름 줄 위에 떠 보여서 뺐다).
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom) {
+        Spacer(Modifier.weight(1f))
         Text(
             state.bpm?.toString() ?: "--",
             color = VgColors.Primary,
             fontSize = if (large) 44.sp else 36.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 3.dp),
         )
-        Text("bpm", color = VgColors.Secondary, fontSize = 11.sp, modifier = Modifier.padding(bottom = 6.dp))
+        Box(Modifier.weight(1f)) {
+            Text(
+                "bpm",
+                color = VgColors.Secondary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(start = 3.dp, bottom = 6.dp),
+            )
+        }
     }
 }
 
-/** ③ 라벨 + 범위 — 사진의 "심박수 … 95-102" 줄. 오늘 관측 범위를 오른쪽에 적는다. */
+/**
+ * ③ 상태 줄 — **이름 · 수신 막대 · 배터리(아이콘 안에 %) · 전송 상태** 를 한 줄 가운데에(08-29 사용자 지시 2건).
+ * 종전엔 이름+범위(95-102)가 여기, 전송·배터리는 맨 아래 줄이었다. 범위는 상세에 있으니 지웠고 아래 줄은 여기로 올렸다.
+ * 폭 예산(226dp · 옆 여백 15.5% 제외 ≈ 148dp): 이름 ~30 + 막대 15 + 배터리 30 + 상태 ~45 + 간격 16 ≈ 136dp.
+ */
 @Composable
-private fun LabelAndRange(state: VitalUiState) {
+private fun StatusRow(state: VitalUiState) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 1.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             state.workerName ?: "심박수",
             color = state.severity.color(),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
+            maxLines = 1,
         )
-        // ★ 낡은 심박은 범위 대신 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간
-        //   화면에 마지막 값이 그대로 남아 현재값처럼 읽혔다). 범위는 "지금 이 정도" 라는
-        //   뜻이라 낡은 값 옆에 두면 거짓말이 한 겹 더 붙는다.
-        if (state.bpmStale) {
-            Text(
-                state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음",
-                color = VgColors.Caution,
-                fontSize = 10.sp,
+        Spacer(Modifier.width(5.dp))
+        val level = signalLevel(state.bpmAgeSec, state.collecting)
+        SignalBars(level = level, color = signalColor(level))
+        Spacer(Modifier.width(6.dp))
+        BatteryIcon(state.batteryPct)
+        Spacer(Modifier.width(5.dp))
+        val (text, tint) = uploadStatus(state)
+        Text(text, color = tint, fontSize = 10.sp, maxLines = 1)
+    }
+}
+
+/** 전송 상태 글자 — 큐가 쌓이면 주황 "대기 N건", 아니면 마지막 업로드 나이. 착용·준비 안내는 아래 줄(FooterLine) 몫. */
+internal fun uploadStatus(state: VitalUiState): Pair<String, Color> = when {
+    state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
+    state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
+    else -> "수집 중" to VgColors.Normal
+}
+
+/** 배터리 잔량 색 — 15% 이하만 빨강(종전 하단 줄 규칙 그대로), 값 없음은 회색. */
+internal fun batteryColor(pct: Int?): Color = when {
+    pct == null -> VgColors.Idle
+    pct <= 15 -> VgColors.Danger
+    else -> VgColors.Normal
+}
+
+/** 배터리 아이콘 — 몸통 테두리 + 꼭지, 잔량만큼 옅게 채우고 **안에 "78%" 글자**(사용자 지시). 값 없으면 "--%". */
+@Composable
+internal fun BatteryIcon(pct: Int?, modifier: Modifier = Modifier) {
+    Box(modifier.size(width = 30.dp, height = 13.dp), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val stroke = 1.dp.toPx()
+            val nubW = 2.dp.toPx()
+            val bodyW = size.width - nubW - 1.dp.toPx()
+            drawRoundRect(
+                VgColors.Secondary, Offset(stroke / 2, stroke / 2), Size(bodyW - stroke, size.height - stroke),
+                CornerRadius(2.dp.toPx()), style = Stroke(stroke),
             )
-        } else {
-            state.bpmRange?.let { (lo, hi) ->
-                Text("$lo-$hi", color = VgColors.Secondary, fontSize = 10.sp)
+            val nubH = size.height * 0.4f
+            drawRoundRect(
+                VgColors.Secondary, Offset(bodyW + 1.dp.toPx(), (size.height - nubH) / 2), Size(nubW, nubH),
+                CornerRadius(1.dp.toPx()),
+            )
+            pct?.let {
+                val inset = stroke * 2
+                drawRoundRect(
+                    batteryColor(it).copy(alpha = 0.45f), Offset(inset, inset),
+                    Size((bodyW - 2 * inset) * (it.coerceIn(0, 100) / 100f), size.height - 2 * inset),
+                    CornerRadius(1.dp.toPx()),
+                )
             }
+        }
+        Text(
+            pct?.let { "$it%" } ?: "--%",
+            color = VgColors.Primary,
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            modifier = Modifier.padding(end = 3.dp),
+        )
+    }
+}
+
+/** 수신 막대 판정 문턱(초). 삼성 트래커는 1Hz 라 10초면 "지금 들어오는 중", 60초까지는 정상 배치 지연(R-12). */
+internal const val SIGNAL_LIVE_SEC = 10L
+internal const val SIGNAL_OK_SEC = 60L
+
+/**
+ * 수신 막대 칸 수 0~4 — 심박 값의 나이로 가른다. 4 = 방금(≤10초) · 3 = 1분 안 · 2 = 낡기 전(< HR_STALE_MS) ·
+ * 1 = 낡음(관제웹이 "연결끊김" 으로 보는 구간) · 0 = 수집 안 함/값 없음.
+ */
+internal fun signalLevel(bpmAgeSec: Long?, collecting: Boolean): Int = when {
+    !collecting || bpmAgeSec == null -> 0
+    bpmAgeSec <= SIGNAL_LIVE_SEC -> 4
+    bpmAgeSec <= SIGNAL_OK_SEC -> 3
+    bpmAgeSec * 1000L < com.vitalguard.wear.CollectorService.HR_STALE_MS -> 2
+    else -> 1
+}
+
+internal fun signalColor(level: Int): Color = when {
+    level >= 3 -> VgColors.Normal
+    level == 2 -> VgColors.Caution
+    level == 1 -> VgColors.Danger
+    else -> VgColors.Idle
+}
+
+/** 안테나 막대 4칸(높이 4·6·8·10dp) — 켜진 칸은 판정색, 나머지는 회색(사용자 제시 아이콘과 같은 꼴). */
+@Composable
+internal fun SignalBars(level: Int, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.size(width = 15.dp, height = 10.dp)) {
+        val bars = 4
+        val gap = 1.5.dp.toPx()
+        val w = (size.width - gap * (bars - 1)) / bars
+        val r = CornerRadius(w / 2, w / 2)
+        for (i in 0 until bars) {
+            val h = size.height * (i + 2) / (bars + 1)
+            drawRoundRect(
+                color = if (i < level) color else VgColors.Idle,
+                topLeft = Offset(i * (w + gap), size.height - h),
+                size = Size(w, h),
+                cornerRadius = r,
+            )
         }
     }
 }
@@ -196,9 +298,10 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
         LabeledBubble(
             value = state.spo2?.toString() ?: "--",
             label = "SpO₂",
-            fraction = gaugeFraction(state.spo2?.toDouble(), 85.0, 100.0),
+            fraction = gaugeFraction(state.spo2?.toDouble(), SPO2_GAUGE_MIN, SPO2_GAUGE_MAX),
             severity = spo2Severity(state.spo2),
             diameter = diameter,
+            zones = spo2Zones(),
         )
         // ★ **실측 피부온을 그대로 보여준다**(08-25 C안). 종전엔 +0.5 해서 "체온" 이라 적었는데,
         //   그 상수는 애플 수면 손목온 기준이라 삼성 실측(37.4~37.7)과 전제가 다르고,
@@ -214,6 +317,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             ),
             severity = skinTempSeverity(state.skinTempC),
             diameter = diameter,
+            zones = skinZones(),
         )
         // 생리적 부담 지수(PSI) — 문헌 지수(Moran 1998). **표시 전용**이고 전체 판정엔 안 넣는다.
         //   스트레스는 우측 띠로 옮겨 갔다(08-25 사용자 결정) — 같은 값을 두 곳에 두지 않는다.
@@ -223,6 +327,7 @@ private fun BubbleRow(state: VitalUiState, diameter: androidx.compose.ui.unit.Dp
             fraction = gaugeFraction(state.psi, 0.0, Psi.GAUGE_MAX),
             severity = Psi.severity(state.psi),
             diameter = diameter,
+            zones = psiZones(),
         )
     }
 }
@@ -235,11 +340,49 @@ private fun LabeledBubble(
     fraction: Float?,
     severity: Severity,
     diameter: androidx.compose.ui.unit.Dp,
+    zones: List<BezelZone> = emptyList(),
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter)
+        VitalBubble(value = value, fraction = fraction, severity = severity, diameter = diameter, zones = zones)
         Text(label, color = VgColors.Secondary, fontSize = 9.sp)
     }
+}
+
+/** SpO₂ 게이지 축 — 85~100. 위험 88 = 20% · 주의 92 = 47% 라 정상(≥92)이 절반 넘게 찬다. */
+private const val SPO2_GAUGE_MIN = 85.0
+private const val SPO2_GAUGE_MAX = 100.0
+
+/**
+ * 버블 트랙의 구간 — 좌측 띠의 `hrZones()` 와 같은 규율. **임계 상수에서 만든다**(숫자를 여기 다시 적지 않는다).
+ * SpO₂ 는 낮은 쪽이 위험이라 빨→주→초, 피부온·PSI 는 높은 쪽이 위험이라 초→주→빨.
+ */
+internal fun spo2Zones(): List<BezelZone> {
+    fun p(v: Double) = ((v - SPO2_GAUGE_MIN) / (SPO2_GAUGE_MAX - SPO2_GAUGE_MIN)).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Thresholds.SPO2_DANGER.toDouble()), VgColors.Danger),
+        BezelZone(p(Thresholds.SPO2_DANGER.toDouble()), p(Thresholds.SPO2_CAUTION.toDouble()), VgColors.Caution),
+        BezelZone(p(Thresholds.SPO2_CAUTION.toDouble()), 1f, VgColors.Normal),
+    )
+}
+
+internal fun skinZones(): List<BezelZone> {
+    val lo = Thresholds.SKIN_GAUGE_MIN_C
+    val hi = Thresholds.SKIN_GAUGE_MAX_C
+    fun p(v: Double) = ((v - lo) / (hi - lo)).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Thresholds.SKIN_TEMP_CAUTION_C), VgColors.Normal),
+        BezelZone(p(Thresholds.SKIN_TEMP_CAUTION_C), p(Thresholds.SKIN_TEMP_DANGER_C), VgColors.Caution),
+        BezelZone(p(Thresholds.SKIN_TEMP_DANGER_C), 1f, VgColors.Danger),
+    )
+}
+
+internal fun psiZones(): List<BezelZone> {
+    fun p(v: Double) = (v / Psi.GAUGE_MAX).toFloat().coerceIn(0f, 1f)
+    return listOf(
+        BezelZone(0f, p(Psi.HIGH), VgColors.Normal),
+        BezelZone(p(Psi.HIGH), p(Psi.CRITICAL), VgColors.Caution),
+        BezelZone(p(Psi.CRITICAL), 1f, VgColors.Danger),
+    )
 }
 
 /** 스와이프 힌트 — 세로 페이저가 있다는 것을 알려야 발견된다(지침 §6 작업의 명확성). */
@@ -253,30 +396,21 @@ private fun SwipeHint() {
     )
 }
 
-/** ⑥ 하단 — 사진의 일출·일몰 자리에 전송 상태와 배터리를 넣는다. */
+/**
+ * ⑥ 하단 — 전송·배터리는 ③ 상태 줄로 올라갔다(08-29). 여기엔 **안내 문구**만: 착용 전·준비 중, 그리고 낡은 심박의 나이.
+ * ★ 낡은 심박은 **나이**를 말한다(08-26 실기 — 스트림이 죽은 뒤 28분간 마지막 값이 현재값처럼 읽혔다). 상태 줄의 막대
+ *   1칸(빨강)은 "얼마나" 를 못 말하므로 글자를 여기 둔다. 빈 문자열도 그려 줄 높이를 지킨다(상태마다 배치가 흔들리지 않게).
+ */
 @Composable
 private fun FooterLine(state: VitalUiState) {
+    val staleText = if (state.bpmStale) (state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음") else null
     val (text, tint) = when {
         !state.worn -> "착용하면 시작됩니다" to VgColors.Idle
         !state.collecting -> "준비 중" to VgColors.Idle
-        state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
-        state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
-        else -> "수집 중" to VgColors.Normal
+        staleText != null -> staleText to VgColors.Caution
+        else -> "" to VgColors.Idle
     }
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text, color = tint, fontSize = 10.sp)
-        state.batteryPct?.let {
-            Text(
-                " · $it%",
-                color = if (it <= 15) VgColors.Danger else VgColors.Secondary,
-                fontSize = 10.sp,
-            )
-        }
-    }
+    Text(text, color = tint, fontSize = 10.sp, maxLines = 1, modifier = Modifier.padding(top = 3.dp))
 }
 
 /**

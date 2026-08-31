@@ -13,7 +13,9 @@
 // ⚠ 되짚는 창은 유한하다. 창보다 오래전에 나간 사람은 창 안에 "이탈 전이"가 없어 안 잡힌다.
 //   그 대신 창 안에서는 **연속 3회**가 그대로 요구되므로 스쳐 지나간 좌표 하나로는 안 울린다.
 import {
+  fixUsableForJudgment,
   GEOFENCE_INITIAL,
+  GEOFENCE_RETURN_MARGIN_M,
   geofenceDistanceM,
   stepGeofence,
   type GeofenceState,
@@ -26,6 +28,8 @@ export type GpsFix = {
   ts: string;
   lat: number;
   lon: number;
+  /** 수평 정확도(m). null/미보고 = 판정 통과(정확도를 안 싣던 구 경로의 종전 동작 보존). */
+  accM?: number | null;
 };
 
 export type GeofenceVerdict = {
@@ -37,6 +41,12 @@ export type GeofenceVerdict = {
   exitTs: string | null;
   /** 이탈 확정 시점의 중심으로부터 거리(m) — 로그·판단용. */
   exitDistM: number | null;
+  /** 창 안에서 마지막으로 "확실히 안"(반경−마진 이내)에 관측된 표본의 ts — 에피소드 구분 근거.
+      이탈이 되짚기 창보다 오래 지속되면 전이가 창 밖으로 밀려 매 실행 새 exitTs 가 발급된다
+      (2026-08-30 실측: 같은 이탈 1건이 79건 통지 · 4~6분 간격). "이전 알림 이후 안 관측이
+      있어야 새 사건" 규칙의 근거가 이 값이다. 상태머신 복귀(return)가 아니라 표본 자체로 잡는다 —
+      창 시작이 이미 안쪽이면 return 이벤트는 영영 안 나오기 때문이다. */
+  lastInsideTs: string | null;
   /** 되짚는 데 쓴 표본 수. 0이면 판정 근거가 없다는 뜻이다. */
   usedFixes: number;
 };
@@ -68,11 +78,17 @@ export function replayGeofence(
     let st: GeofenceState = GEOFENCE_INITIAL;
     let exitTs: string | null = null;
     let exitDistM: number | null = null;
+    let lastInsideTs: string | null = null;
     let used = 0;
     for (const f of list) {
       if (!Number.isFinite(f.lat) || !Number.isFinite(f.lon)) continue;
+      // 부정확 측위(> R-33 상한)는 판정에도 에피소드 근거에도 안 쓴다 — 폴백 좌표가 이탈을
+      // 선언하는 것도, 가짜 "안 관측" 으로 에피소드를 끊어 재알림을 여는 것도 함께 막는다.
+      if (!fixUsableForJudgment(f.accM)) continue;
       used += 1;
       const dist = geofenceDistanceM(f.lat, f.lon, center.lat, center.lon);
+      // 회색지대(반경±마진)는 "안 관측" 이 아니다 — 경계 플리커가 에피소드를 끊으면 연발이 재발한다.
+      if (dist <= radiusM - GEOFENCE_RETURN_MARGIN_M) lastInsideTs = f.ts;
       const { state, event } = stepGeofence(st, dist, radiusM);
       st = state;
       if (event === "exit") {
@@ -90,6 +106,7 @@ export function replayGeofence(
       outside: st.outside,
       exitTs: st.outside ? exitTs : null,
       exitDistM: st.outside ? exitDistM : null,
+      lastInsideTs,
       usedFixes: used,
     });
   }

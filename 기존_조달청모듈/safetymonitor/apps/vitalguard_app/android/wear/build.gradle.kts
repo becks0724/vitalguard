@@ -7,6 +7,8 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // @Preview 를 빌드만으로 PNG 로 — 실기·에뮬레이터 없이 화면을 본다(docs/wear-preview-screenshot)
+    id("com.android.compose.screenshot")
 }
 
 // 릴리스 서명 키는 레포에 안 들어간다 — `key.properties` 와 `*.jks` 는 .gitignore 대상이다.
@@ -68,6 +70,9 @@ android {
         compose = true
     }
 
+    // 스크린샷 테스트 소스셋(src/screenshotTest) 활성화 — gradle.properties 의 같은 플래그와 짝이다
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -126,6 +131,11 @@ dependencies {
     implementation("androidx.wear:wear-ongoing:1.0.0")
     implementation("androidx.wear:wear-tooling-preview:1.0.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // 프리뷰 스크린샷 — @PreviewTest 애너테이션과 렌더러. BOM 은 implementation 에만 걸리므로 여기 다시 준다
+    screenshotTestImplementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    screenshotTestImplementation("androidx.compose.ui:ui-tooling")
+    screenshotTestImplementation("com.android.tools.screenshot:screenshot-validation-api:0.0.1-alpha15")
 
     testImplementation("junit:junit:4.13.2")
     // JVM 단위테스트에는 android.jar 의 org.json 이 없다 — 시험 전용으로 실물을 넣는다

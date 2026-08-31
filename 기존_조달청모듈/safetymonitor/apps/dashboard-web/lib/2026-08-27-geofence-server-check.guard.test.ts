@@ -58,9 +58,13 @@ test("③ ★ 판정 규칙은 화면과 같은 모듈을 공유한다 — 사�
 test("④ ★ 같은 이탈 구간을 두 번 알리지 않는다", () => {
   // ⓐ 전이 표본의 ts 를 자연키로 쓴다(크론 재실행 dedup).
   assert.match(watch, /exitTs = f\.ts;/, "이탈 ts 가 전이 표본의 것이 아니다 — 매번 새 알림이 된다");
-  // ⓑ 화면이 먼저 기록한 구간을 건너뛴다.
+  // ⓑ 화면이 먼저 기록한 구간을 건너뛴다 — 에피소드 규칙(2026-08-31 개정).
+  //   종전 `prev >= v.exitTs` 는 이탈이 되짚기 창(60분)을 넘기면 무력화됐다 — 전이가 창 밖으로
+  //   밀려 매 실행 새 exitTs 가 발급되고 그 ts 는 항상 prev 보다 미래였다(08-30 실측 79건 연발).
+  //   지금은 "이전 알림 이후의 구획 안 관측(lastInsideTs)" 이 있어야 새 사건이다.
   assert.match(route, /lastGeofenceAlertTsByWorker\(/, "기존 알림 조회가 없다 — 화면과 중복 통지된다");
-  assert.match(route, /if \(prev && prev >= v\.exitTs\)/, "이탈 시각 이후 알림을 건너뛰지 않는다");
+  assert.match(route, /if \(prev && !\(v\.lastInsideTs && v\.lastInsideTs > prev\)\)/,
+    "에피소드 재알림 금지 규칙이 아니다 — 되짚기 창 표류가 다시 연발을 만든다");
 });
 
 test("⑤ 통지는 recordAlert 관문을 거친다 — 별도 텔레그램 경로를 만들지 않는다", () => {
