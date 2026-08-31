@@ -51,6 +51,18 @@ export function formatAlertMessage(input: AlertNotifyInput): string {
   return [`${label}`, `작업자 ${who}`, `발생 ${formatKst(input.ts)}`].join("\n");
 }
 
+// ── 구획이탈 일일 통지 상한(2026-08-31 사용자 결정) ────────────────────────────
+// 원장(alerts 테이블)은 상한과 무관하게 전부 남는다 — 상한은 **텔레그램 통지에만** 건다.
+// 근거: 08-30 같은 이탈 1건이 79건 통지된 연발. 원인(크론 되짚기 창의 exitTs 표류)은
+// 따로 수술했고(geofence-check 에피소드 규칙), 이 상한은 경계 왕복·다중 기기 얽힘 같은
+// 변종의 최종 안전망이다. 미착용 연동은 채택하지 않았다 — 판별이 이번 사건을 못 잡았고
+// (still 0~2초), 벗음 의심은 "라벨만" 계약(가드 2건)이라 경보 경로에 넣지 않는다.
+/** 작업자당 하루(KST) 구획이탈 텔레그램 상한. */
+export const GEOFENCE_NOTIFY_DAILY_CAP = 3;
+/** 상한 도달(3회째) 꼬리 — 이후의 침묵을 예고해 관제자가 채널 고장으로 오해하지 않게 한다. */
+export const GEOFENCE_NOTIFY_CAP_TAIL =
+  "오늘 이 작업자의 구획 이탈 알림은 여기까지 — 이후는 관제웹에서 확인";
+
 // 발송 결과 — 호출부가 "보냈다/못 보냈다" 를 로그로 남길 수 있게 돌려준다.
 // 전에는 void 라 실패도 미배선도 호출부에서 구별할 수 없었다(L-35).
 export type TelegramSendResult = "sent" | "skipped" | "failed";
@@ -84,7 +96,9 @@ export async function sendTelegramMessage(text: string): Promise<TelegramSendRes
   }
 }
 
-// 작업자 알림(SOS/낙상/생체/구획이탈/위험구역진입) 전송.
-export async function notifyAlertTelegram(input: AlertNotifyInput): Promise<void> {
-  await sendTelegramMessage(formatAlertMessage(input));
+// 작업자 알림(SOS/낙상/생체/구획이탈/위험구역진입) 전송. `extraLine` 은 본문 끝에 한 줄
+// 덧붙인다(구획이탈 상한 도달 예고용) — formatAlertMessage 는 순수하게 두고 여기서만 조립한다.
+export async function notifyAlertTelegram(input: AlertNotifyInput, extraLine?: string): Promise<void> {
+  const body = formatAlertMessage(input);
+  await sendTelegramMessage(extraLine ? `${body}\n${extraLine}` : body);
 }

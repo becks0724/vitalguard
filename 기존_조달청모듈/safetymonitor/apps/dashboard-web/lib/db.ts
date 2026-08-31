@@ -14,7 +14,7 @@ import { commentScopeClause, type CommentScope } from "./comment-scope";
 import { defaultEmployeeId } from "./employee-id";
 import { mediaScopeClause, type MediaScope } from "./media-scope";
 import { SITE_OFFICER_ORG_TYPES } from "./org-type";
-import { notifyAlertTelegram } from "./telegram";
+import { GEOFENCE_NOTIFY_CAP_TAIL, GEOFENCE_NOTIFY_DAILY_CAP, notifyAlertTelegram } from "./telegram";
 
 export type { CalendarEventScope, CommentScope, MediaScope };
 
@@ -2258,6 +2258,18 @@ export type AlertRow = {
   ack_by: string | null;
 };
 
+// 오늘(KST) 이 작업자의 구획이탈 알림 행 수 — 통지 상한 판정용. 원장 기준으로 세므로
+// 크론·화면(/api/alerts) 어느 경로로 적혔든 같은 상한을 공유한다.
+async function countGeofenceAlertsTodayKst(workerId: string): Promise<number> {
+  const { rows } = await q<{ n: string }>(
+    `SELECT count(*) AS n FROM alerts
+      WHERE worker_id = $1 AND type = 'geofence'
+        AND (ts::timestamptz AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+    [workerId],
+  );
+  return Number(rows[0]?.n ?? 0);
+}
+
 // SOS/낙상 발생 기록 — 중복(worker/type/ts)은 무시. addSample 에서 호출.
 // 신규 삽입(중복 아님)일 때만 텔레그램 알림 발신 — dedup 통과분만 1회 통지.
 /**
@@ -2294,7 +2306,24 @@ export async function recordAlert(
   }
   if (rowCount > 0 && notify) {
     // notifyAlertTelegram 은 미설정 시 no-op·실패 삼킴이라 여기서 await 해도 기록·수집을 막지 않는다.
-    await notifyAlertTelegram(input);
+    // ★ 구획이탈만 일일 통지 상한(작업자당 GEOFENCE_NOTIFY_DAILY_CAP 회·KST) — 08-30 같은 이탈
+    //   79건 연발의 최종 안전망(2026-08-31 사용자 결정 3회). 방금 넣은 행 **이후** 를 세므로 n 에
+    //   현재 건이 포함된다: 1·2회째 정상 통지, 상한 회째 꼬리로 침묵 예고, 그 뒤는 통지만 억제.
+    //   원장 기록·자연키 dedup 은 상한과 무관하게 위에서 이미 끝났다. 카운트 실패(0 폴백)는
+    //   통지를 막지 않는다 — 상한은 편의 장치고 경보 유실이 더 나쁘다.
+    if (input.type === "geofence") {
+      const n = await countGeofenceAlertsTodayKst(input.workerId).catch(() => 0);
+      if (n === GEOFENCE_NOTIFY_DAILY_CAP) {
+        await notifyAlertTelegram(input, GEOFENCE_NOTIFY_CAP_TAIL);
+      } else if (n > GEOFENCE_NOTIFY_DAILY_CAP) {
+        // eslint-disable-next-line no-console -- 상한 억제는 정상 동작 요약이라 warn 으로 올리면 진짜 경고가 묻힌다
+        console.log(`[alert] 구획이탈 통지 상한 억제 — ${input.workerId} 오늘 ${n}건째`);
+      } else {
+        await notifyAlertTelegram(input);
+      }
+    } else {
+      await notifyAlertTelegram(input);
+    }
   }
   return rowCount > 0;
 }
