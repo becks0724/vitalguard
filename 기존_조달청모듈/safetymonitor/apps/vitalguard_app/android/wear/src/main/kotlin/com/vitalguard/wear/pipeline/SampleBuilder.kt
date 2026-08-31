@@ -102,6 +102,9 @@ class SampleBuilder {
             v["locationAccuracyMeters"] = it.accuracyMeters
             v["locationTimestamp"] = IsoMs.format(it.atMs)
         }
+        // 착용 상태 — 평시 표본은 항상 착용 중에 만들어진다(벗으면 수집이 멈춘다). 서버 sticky 가
+        // 벗음 표식(worn:false)을 이 값으로 되돌린다(2026-08-31).
+        v["worn"] = true
         v["ts"] = IsoMs.format(sentAtMs)
         reset()
         return v

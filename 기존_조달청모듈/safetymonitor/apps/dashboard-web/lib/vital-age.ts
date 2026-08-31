@@ -159,3 +159,6 @@ export const STALE_LABEL: Record<StaleKind, string> = {
   disconnected: "연결끊김",
   hrSilent: "심박끊김",
 };
+
+/** 미착용 라벨 — 워치 착용 표식(`worn:false`)이 있으면 끊김 라벨 대신 쓴다(2026-08-31 · 고장과 벗음을 가른다). */
+export const OFF_BODY_LABEL = "미착용";

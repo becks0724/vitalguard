@@ -155,6 +155,11 @@ export const VitalSampleSchema = z.object({
   //    구별이 안 된다. 시각은 그 문제가 없고 "언제 시작했는지"까지 준다.
   sessionStartedAt: z.string().datetime().optional(),
   sessionAutoResumed: z.boolean().optional(),
+  // 착용 상태(갤럭시 · 2026-08-31 사용자 지시). 워치가 손목 이탈을 감지한 **순간** `worn:false` 표식 1건을
+  // 즉시 올려, 관제가 "표본이 안 온다"(150초 문턱)로 늦게 알던 것을 바로 알게 한다 — 그리고 고장(연결끊김)과
+  // 정당한 미착용을 가른다. 평시 표본은 `worn:true`. 애플은 안 보낸다(HKWorkoutSession 이 손목 감지를
+  // 우회해 미착용 판별 불가 · 2026-08-19 확정) → undefined 로 남아 종전 표시 그대로다.
+  worn: z.boolean().optional(),
   // 세션 **종료** 계측 (2026-08-20 · docs/watch-auto-resume). 위 둘로는 못 가르는 것이 있다.
   //
   // ★ 실측 — 30시간 9세션 전부 `sessionAutoResumed = 0` 이다. 자동 재개(f67442f·08-18)가

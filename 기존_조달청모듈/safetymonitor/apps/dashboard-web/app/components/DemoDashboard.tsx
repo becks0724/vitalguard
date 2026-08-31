@@ -97,7 +97,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
+import { TRACK_LINE_ACC_MAX_M, TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -114,7 +114,7 @@ import {
   workerSignalCopy,
   worseTone,
 } from "../../lib/worker-signal";
-import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
+import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, OFF_BODY_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
 import { stillLabel } from "../../lib/vital-still";
 import { type OffWristSuspect } from "../../lib/vital-offwrist";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
@@ -148,8 +148,17 @@ type HistoryMetric =
   | "coverage";
 type Selection = { workerId: string; metric: HistoryMetric };
 
+// 서버 병합이 얹는 "마지막 정확 fix" 힌트(store.ts LatestVitalSample) — 스키마 밖 파생값이라 미러링.
+// 필드명이 서버와 갈리면 조용히 undefined 가 된다 — 가드(2026-08-31-marker-last-good-fix)가 양쪽을 못 박는다.
+type LatestSample = VitalSample & {
+  lastAccurateLat?: number;
+  lastAccurateLon?: number;
+  lastAccurateAccM?: number;
+  lastAccurateTs?: string;
+};
+
 type MockVitalResponse = {
-  latest: VitalSample[];
+  latest: LatestSample[];
   recent: VitalSample[];
   // ★ DB 조회 실패 시 서버가 **null** 을 준다(0 아님 — 2026-08-15 장애 대응).
   //   누적 21만 건이 "0건"으로 뜨면 미수신보다 나쁘므로 화면은 `—` 를 찍는다.
@@ -257,6 +266,9 @@ function formatTemp(value?: number | null) {
 }
 
 // HR/SpO2 는 의학 표준 정수 표시 (폰이 raw double 보내도 round)
+// 끊김 중 "마지막 값 회색 유지" 상한(ms) — 링 웜스타트·트레일 창과 같은 30분. 그 이상 묵은 값은 운영 의미가 없다.
+const HELD_VALUE_MAX_MS = 30 * 60 * 1000;
+
 function formatInt(value?: number | null) {
   return value == null ? "--" : Math.round(value).toString();
 }
@@ -6328,6 +6340,8 @@ export function DemoDashboard() {
         // 문턱(애플 60초·갤럭시 150초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 —
         // 지도도 마지막 상태색(false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
         const stale = ageSec !== null && ageSec * 1000 >= staleThresholdMs(s.dataOrigin);
+        // 미착용 표식 — 라벨을 가르고 고스트(마지막 위치)로 강등한다. 워치 위치는 사람 위치가 아니다.
+        const offBody = s.worn === false;
         // ★ 좌표 나이는 생체 나이와 **다른 축**이다(2026-08-20).
         //   서버 sticky merge 가 좌표를 직전 값에서 이어 주므로(store.ts `{...older, ...newer}` —
         //   좌표 없는 샘플엔 키 자체가 없어 older 가 살아남는다), 심박이 5초 전이어도 좌표는
@@ -6336,6 +6350,21 @@ export function DemoDashboard() {
         //   그래서 이어 주는 것 자체는 유지하고, **나이를 함께 실어** 판단은 사람에게 남긴다.
         const fixMs = s.locationTimestamp ? now - Date.parse(s.locationTimestamp) : NaN;
         const fixAgeSec = Number.isFinite(fixMs) ? Math.max(0, Math.round(fixMs / 1000)) : null;
+        // 마지막 정확 fix 폴백(2026-08-31 사용자 결정 ①) — 최신 좌표가 부정확(> R-33 상한)이고
+        // 최근 창(트레일 창과 동일 30분) 안에 정확 fix 가 있으면 **마커만** 그 위치를 우선한다.
+        // 구획/위험구역 판정 effect 는 여전히 원좌표(pt.lat/lon)를 본다 — 게이트가 걸러서 동작 불변.
+        const rawCoarse =
+          s.locationAccuracyMeters != null && s.locationAccuracyMeters > TRACK_LINE_ACC_MAX_M;
+        const goodTsMs = s.lastAccurateTs ? Date.parse(s.lastAccurateTs) : NaN;
+        const goodAgeSec = Number.isFinite(goodTsMs)
+          ? Math.max(0, Math.round((now - goodTsMs) / 1000))
+          : null;
+        const useGoodFix =
+          rawCoarse &&
+          typeof s.lastAccurateLat === "number" &&
+          typeof s.lastAccurateLon === "number" &&
+          goodAgeSec !== null &&
+          goodAgeSec <= TRACK_WINDOW_MIN * 60;
         pts.push({
           workerId,
           name: s.workerName ?? workerId,
@@ -6351,14 +6380,18 @@ export function DemoDashboard() {
           //   ⚠ 표(`isStale`)는 심박 시각 기준이라 이 둘은 **같은 기준이 아니다**(위 주석의
           //     "동일 기준"은 부정확하다). 표에서 심박끊김인 작업자가 지도에선 정상색이다.
           //     판정 기준을 맞추는 것은 이 트랙(라벨 분리) 밖이라 손대지 않았다.
-          statusLabel: stale ? STALE_LABEL.disconnected : status.label,
-          tone: stale ? "idle" : status.tone,
+          statusLabel: offBody ? OFF_BODY_LABEL : stale ? STALE_LABEL.disconnected : status.label,
+          tone: stale || offBody ? "idle" : status.tone,
           ageSec,
-          stale,
+          stale: stale || offBody,
           fixAgeSec,
           // 측위 정확도(m) — 실내 셀/와이파이 폴백(±100m 등급) 마커가 정밀한 점으로 위장하지
           // 않게 지도에 전달(2026-08-31 · R-33 의 현재 위치 확장). 미보고는 null 그대로.
           accM: s.locationAccuracyMeters ?? null,
+          goodLat: useGoodFix ? s.lastAccurateLat : null,
+          goodLon: useGoodFix ? s.lastAccurateLon : null,
+          goodAccM: useGoodFix ? (s.lastAccurateAccM ?? null) : null,
+          goodAgeSec: useGoodFix ? goodAgeSec : null,
         });
       } else {
         // ⚠ 사유 문구를 실제 원인에 맞춘다(2026-08-20). 종전 문구는 "위치 권한·로그인 게이트"만
@@ -8102,12 +8135,15 @@ function WorkerTableRow({
   const wstatus = workerStatus(sample, nowMs, coreTempEstC);
   // 연결끊김 — sample 존재 + 신호 문턱 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 문턱은 배칭 주기의 함수라 출처마다 다르다(애플 60초·갤럭시 150초 — lib/vital-age.ts 참조).
-  const stale = sample !== undefined && signal === 0;
+  // 미착용 — 워치가 손목 이탈 순간 보낸 표식(worn:false · 갤럭시). 값 게이트·톤 강등은 끊김과 같이 타되
+  // 라벨은 "미착용" 으로 갈라 고장(연결끊김)과 구분한다(2026-08-31 사용자 지시). 애플은 이 표식이 없다.
+  const offBody = sample?.worn === false;
+  const stale = sample !== undefined && (signal === 0 || offBody);
   // ★ 끊김의 **종류** — 라벨만 가른다. 판정(stale)·게이트(gateStaleVitals)·톤(effectiveTone)은
   //   이 값을 안 본다. 근거와 실측은 lib/vital-age.ts 의 staleKind 주석.
   const kind: StaleKind | undefined =
     stale && sample !== undefined ? staleKind(sample, nowMs, sample.dataOrigin) : undefined;
-  const staleLabel = kind !== undefined ? STALE_LABEL[kind] : "";
+  const staleLabel = offBody ? OFF_BODY_LABEL : kind !== undefined ? STALE_LABEL[kind] : "";
   // ★ 무동작 — 라벨만. `수신 중` 자리만 대신하고 톤·게이트·집계는 이 값을 모른다(2026-08-28).
   //   벗음도 응급도 단정하지 않는다 — 심박은 착용의 증거가 아니라서(lib/vital-still.ts).
   const still = stillLabel(sample ?? {}, stale, wstatus.tone);
@@ -8128,6 +8164,16 @@ function WorkerTableRow({
   // 연결끊김이면 생체 3종을 비운다 — sticky 직전값을 현재값처럼 초록으로 보여주던 false-OK 차단.
   // (잠금 중에는 폰이 계속 POST 해 stale 이 아니므로 잠금 연속성은 그대로 유지된다.)
   const shown = gateStaleVitals(sample, stale);
+  // 끊김 중 마지막 값 유지(2026-08-31 사용자 목표 "끊김 없는 연속 표시") — 판정·PSI·신호등은 여전히
+  // `shown`(빈 값)을 쓴다. 여기서 만드는 것은 **회색 숫자 + "끊김 전 값 · 나이" 라벨**뿐이라, 옛 값이
+  // 정상색으로 현재값처럼 보이던 false-OK(2026-08-15 가드)는 그대로 막혀 있고 상태 강등(연결끊김)도 그대로다.
+  // ⚠ 상한 30분 — 그 뒤엔 종전대로 비운다. 미착용 90분 자동 로그아웃(wear ae33048) 이후엔 서버가 완전 무음이라
+  //   야간 충전이면 아침까지 이어지는데, 10시간 전 심박을 회색으로라도 밤새 띄워 두는 것은 정보가 아니라 소음이다.
+  const heldAgeMs = sample !== undefined ? vitalAgeMs(sample, nowMs) : NaN;
+  const held =
+    stale && !offBody && sample !== undefined && Number.isFinite(heldAgeMs) && heldAgeMs <= HELD_VALUE_MAX_MS
+      ? { s: sample, ageLabel: `끊김 전 값 · ${formatElapsed(heldAgeMs)}` }
+      : null;
   // (종전 여기서 `손목+0.5` 를 '추정' 으로 만들어 카드에 적었다. 2026-08-26 에 그 표기를
   //  칼만(coreTempEstC)으로 바꾸면서 이 파생값은 쓰이는 곳이 없어졌다 — 지운다.)
   // 생리적 부담 지수(PSI · Moran 1998) — 추정 체온 + 심박. 표시 전용이라 판정·경보에 넣지 않는다.
@@ -8195,7 +8241,7 @@ function WorkerTableRow({
 
       {/* 2 작업자 — 신호등 + 이름/사번 */}
       <div className="flex min-w-0 items-center gap-2">
-        <TrafficLight status={overall} stale={stale} staleLabel={staleLabel} />
+        <TrafficLight status={overall} stale={stale} staleLabel={staleLabel} offBody={offBody} />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-ink dark:text-on-dark">
             {heading.title}
@@ -8229,12 +8275,23 @@ function WorkerTableRow({
       {/* 4 심박 */}
       {metricCell(
         "heartRate",
-        <span className="font-mono text-sm tabular-nums">
-          <span className={STATUS_CLASS[heartRateStatus(shown.heartRate, workActivity(sample ?? {}))]}>
-            {formatInt(shown.heartRate)}
+        held && typeof held.s.heartRate === "number" ? (
+          // 끊김 중 — 마지막 심박을 회색으로 유지 + 나이. 판정색(STATUS_CLASS)은 걸지 않는다.
+          <span className="leading-tight">
+            <span className="font-mono text-sm tabular-nums text-muted">
+              {formatInt(held.s.heartRate)}
+              <span className="ml-0.5 text-[10px]">bpm</span>
+            </span>
+            <span className="block text-[9px] leading-none text-muted">{held.ageLabel}</span>
           </span>
-          <span className="ml-0.5 text-[10px] text-muted">bpm</span>
-        </span>,
+        ) : (
+          <span className="font-mono text-sm tabular-nums">
+            <span className={STATUS_CLASS[heartRateStatus(shown.heartRate, workActivity(sample ?? {}))]}>
+              {formatInt(shown.heartRate)}
+            </span>
+            <span className="ml-0.5 text-[10px] text-muted">bpm</span>
+          </span>
+        ),
         "심박 — 클릭 시 누적 추세",
       )}
 
@@ -8243,6 +8300,21 @@ function WorkerTableRow({
       {metricCell(
         "spo2",
         (() => {
+          if (held && typeof held.s.spo2 === "number") {
+            // 끊김 중 — 마지막 SpO₂ 를 회색으로 유지. 나이는 SpO₂ 자체의 측정 경과(기회 측정이라 심박보다 오래됐을 수 있다).
+            const heldAge = spo2AgeMs(held.s, nowMs);
+            return (
+              <span className="leading-tight">
+                <span className="font-mono text-sm tabular-nums text-muted">
+                  {formatInt(held.s.spo2)}
+                  <span className="ml-0.5 text-[10px]">%</span>
+                </span>
+                <span className="block text-[9px] leading-none text-muted">
+                  {heldAge !== null ? `끊김 전 값 · ${formatSpo2Age(heldAge)}` : held.ageLabel}
+                </span>
+              </span>
+            );
+          }
           // 나이는 원본 sample(측정 시각 보유)로 재고, 연결끊김 게이트(shown)가 값을 지웠으면 표기도 접는다.
           const gatedOut = typeof shown.spo2 !== "number";
           const age = gatedOut ? null : spo2AgeMs(sample, nowMs);
@@ -8270,7 +8342,16 @@ function WorkerTableRow({
       {/* 6 체온 — 손목 + 추정 (미수신 시 명시) */}
       {metricCell(
         "coreTempEst",
-        shown.skinTempC == null ? (
+        held && typeof held.s.skinTempC === "number" ? (
+          // 끊김 중 — 마지막 손목온도를 회색으로 유지 + 나이(주값은 원래 중립색이라 판정색 문제 없음).
+          <span className="leading-tight">
+            <span className="font-mono text-sm tabular-nums text-muted">
+              {formatTemp(held.s.skinTempC)}
+              <span className="ml-0.5 text-[10px]">℃</span>
+            </span>
+            <span className="block text-[9px] leading-none text-muted">{held.ageLabel}</span>
+          </span>
+        ) : shown.skinTempC == null ? (
           // 실측 손목온도 없음 — 심박 기반 추정이 있고 연결이 살아 있으면 그것을 폴백 표시.
           // "추정" 표기·판정 미주입은 의료 판정 아님 원칙(문헌 오차 ±0.3℃ 내외·선별 참고).
           !stale && coreTempEstC != null ? (
@@ -9012,10 +9093,13 @@ function TrafficLight({
   stale,
   /** 끊김 종류별 라벨(lib/vital-age.ts `STALE_LABEL`). 색·점멸은 종류를 안 탄다 — 글자만 다르다. */
   staleLabel,
+  /** 미착용 — 슬레이트는 같되 점멸하지 않는다(점멸은 고장 신호다 · 2026-08-31). */
+  offBody,
 }: {
   status: VitalStatus;
   stale?: boolean;
   staleLabel?: string;
+  offBody?: boolean;
 }) {
   const map: Record<VitalStatus, string> = {
     idle: "bg-muted-soft",
@@ -9024,7 +9108,11 @@ function TrafficLight({
     danger: "bg-semantic-down vital-blink-danger",
   };
   // 연결끊김은 어떤 생체 상태보다 우선 — 슬레이트 점멸로 "정상 녹색" false-OK 차단.
-  const cls = stale ? "bg-slate-400 dark:bg-slate-500 animate-pulse" : map[status];
+  const cls = offBody
+    ? "bg-slate-400 dark:bg-slate-500"
+    : stale
+      ? "bg-slate-400 dark:bg-slate-500 animate-pulse"
+      : map[status];
   // 라벨이 안 넘어오면 종전 문구로 떨어진다 — 다른 호출부가 생겨도 빈 글자가 뜨지 않게.
   const label = stale ? (staleLabel || STALE_LABEL.disconnected) : STATUS_LABEL[status];
   return (

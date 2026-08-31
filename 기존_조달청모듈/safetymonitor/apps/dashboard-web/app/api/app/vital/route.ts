@@ -24,6 +24,7 @@ import {
   workerAliases,
   workerProfiles,
   rosterWorkerNamesMap,
+  type LatestVitalSample,
 } from "./store";
 import { recentZoneHazards } from "../../cctv/ingest";
 
@@ -34,13 +35,16 @@ import { recentZoneHazards } from "../../cctv/ingest";
 // 비로그인 익명 호출(URL 만 아는 외부인)은 마스터 스위치가 켜져 있어도 항상 redaction 된다.
 const EXPOSE_PII = process.env.MOCK_VITAL_EXPOSE_PII === "true";
 
-function redactPii(sample: VitalSample, exposePii: boolean): VitalSample {
+function redactPii(sample: LatestVitalSample, exposePii: boolean): LatestVitalSample {
   if (exposePii) return sample;
-  const { guardianName, guardianPhone, latitude, longitude, ...rest } = sample;
+  // lastAccurate* 좌표도 같은 PII 다 — latitude/longitude 만 지우고 이걸 남기면 마스킹이 뚫린다.
+  const { guardianName, guardianPhone, latitude, longitude, lastAccurateLat, lastAccurateLon, ...rest } = sample;
   void guardianName;
   void guardianPhone;
   void latitude;
   void longitude;
+  void lastAccurateLat;
+  void lastAccurateLon;
   return rest;
 }
 

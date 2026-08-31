@@ -1520,6 +1520,39 @@ export async function recentSamplesForWorkers(
 }
 
 /**
+ * 링 웜스타트용 — 최근 행 **꼬리**(id 역순 · PK 인덱스만 탄다 · 2026-08-31).
+ *
+ * 인스턴스가 새로 뜨면 메모리 링이 비어 관제 화면이 다음 배치(갤럭시 120초)까지 "대기" 로 떨어진다
+ * — 배포·스케일아웃마다 그렇다(08-31 하루 4회 실측). 이 꼬리로 링을 채워 그 구멍을 메운다.
+ * ⚠ `ts::timestamptz > now() - interval` 창 필터를 **쓰지 않는다** — `ts` 가 text 라 캐스트가 인덱스를
+ *   죽여 41만 행 Seq Scan(890MB)이 된다(`cron/absence-check` 5분 행의 실측 원인). id 역순 LIMIT 로
+ *   끊고 시간 창은 호출부가 JS 로 자른다. 원문(raw_json)을 스키마로 되살려 병합 규칙을 그대로 태운다.
+ */
+export async function recentSamplesTail(limit = 1000): Promise<VitalSample[]> {
+  const { rows } = await q<{ raw_json: unknown; data_origin: VitalDataOrigin | null }>(
+    `SELECT raw_json, data_origin FROM vital_samples ORDER BY id DESC LIMIT $1`,
+    [Math.min(Math.max(limit, 1), 2000)],
+  );
+  const samples: VitalSample[] = [];
+  for (const row of rows) {
+    try {
+      const raw = typeof row.raw_json === "string" ? JSON.parse(row.raw_json) : row.raw_json;
+      const parsed = VitalSampleSchema.safeParse(raw);
+      if (parsed.success) {
+        samples.push(
+          parsed.data.dataOrigin || !row.data_origin
+            ? parsed.data
+            : { ...parsed.data, dataOrigin: row.data_origin },
+        );
+      }
+    } catch {
+      // 원문 손상 행은 건너뛴다 — 한 행 때문에 웜스타트 전체를 잃지 않는다.
+    }
+  }
+  return samples.reverse(); // 오래된 순 — 링·병합의 "뒤가 최신" 계약
+}
+
+/**
  * 최근 안정 심박 — **기준값(baseline)이라 창을 길게 잡는다.**
  *
  * 애플이 하루 단위로 산출하는 값이라 며칠 전 값도 그 사람의 기준으로 유효하다. 반면

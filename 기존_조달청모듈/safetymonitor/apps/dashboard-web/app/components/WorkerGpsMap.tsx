@@ -27,6 +27,12 @@ export type WorkerMapPoint = {
   fixAgeSec?: number | null;
   /** 측위 수평 정확도(m·기기 보고값). null/미보고 = 원 없이 종전대로 — 없는 것을 정밀로도, 부정확으로도 위장하지 않는다. */
   accM?: number | null;
+  /** 마지막 정확 fix 폴백(≤50m 등급 · 30분 창) — 있으면 마커는 이 좌표를 우선하고, 원좌표(lat/lon)는
+   *  정확도 원의 닻으로만 남는다("최신 신호는 이 근방" 이라는 사실을 지우지 않는다). */
+  goodLat?: number | null;
+  goodLon?: number | null;
+  goodAccM?: number | null;
+  goodAgeSec?: number | null;
 };
 
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
@@ -383,7 +389,7 @@ export function WorkerGpsMap({
 
   // ── 타일/마커/구획 원 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
-  const markers: { p: WorkerMapPoint; x: number; y: number; accR: number | null }[] = [];
+  const markers: { p: WorkerMapPoint; x: number; y: number; accR: number | null; rawX: number; rawY: number }[] = [];
   let circle: { x: number; y: number; r: number } | null = null;
   let focusPt: { x: number; y: number } | null = null;
   let trailPts: { x: number; y: number }[] | null = null;
@@ -464,15 +470,18 @@ export function WorkerGpsMap({
       }
     }
     for (const p of points) {
-      const x = lonToWorldX(p.lon, z) - tlx;
-      const y = latToWorldY(p.lat, z) - tly;
+      // 원좌표(최신 표본) = 정확도 원의 닻. 마커는 정확 fix 폴백이 있으면 그 좌표를 우선한다(08-31 ①).
+      const rawX = lonToWorldX(p.lon, z) - tlx;
+      const rawY = latToWorldY(p.lat, z) - tly;
+      const x = p.goodLat != null && p.goodLon != null ? lonToWorldX(p.goodLon, z) - tlx : rawX;
+      const y = p.goodLat != null && p.goodLon != null ? latToWorldY(p.goodLat, z) - tly : rawY;
       if (x < -60 || x > size.w + 60 || y < -60 || y > size.h + 60) continue;
       // 부정확 측위(> R-33 상한)만 반경=정확도 원을 함께 그린다 — 실내 셀/와이파이 폴백(±100m 등급)이
       // 정밀한 점으로 위장하던 것(2026-08-31 실측: 현장 실내인데 양자화 좌표 42~352m 왕복).
       // 양호(≤ 상한)·미보고는 종전과 동일. 반경은 지리값이라 줌과 함께 스케일된다(트레일 coarse 와 동일).
       const accR =
         p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? Math.max(4, p.accM / metersPerPx(p.lat)) : null;
-      markers.push({ p, x, y, accR });
+      markers.push({ p, x, y, accR, rawX, rawY });
     }
   }
 
@@ -819,12 +828,12 @@ export function WorkerGpsMap({
             width={size.w}
             height={size.h}
           >
-            {markers.map(({ p, x, y, accR }) =>
+            {markers.map(({ p, rawX, rawY, accR }) =>
               accR == null ? null : (
                 <circle
                   key={p.workerId}
-                  cx={x}
-                  cy={y}
+                  cx={rawX}
+                  cy={rawY}
                   r={accR}
                   fill="#38bdf8"
                   fillOpacity={0.08}
@@ -923,10 +932,16 @@ export function WorkerGpsMap({
                     <dt>측위</dt>
                     <dd
                       className={`tabular-nums ${
-                        p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? "text-amber-300" : ""
+                        p.goodAccM == null && p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M
+                          ? "text-amber-300"
+                          : ""
                       }`}
                     >
-                      {p.accM == null ? "정확도 미보고" : `±${Math.round(p.accM)}m`}
+                      {p.goodAccM != null
+                        ? `정확 위치 ±${Math.round(p.goodAccM)}m · ${ageLabel(p.goodAgeSec ?? 0)} 전`
+                        : p.accM == null
+                          ? "정확도 미보고"
+                          : `±${Math.round(p.accM)}m`}
                     </dd>
                   </div>
                 </dl>
