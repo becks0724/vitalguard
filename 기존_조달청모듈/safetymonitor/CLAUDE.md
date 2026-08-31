@@ -16,7 +16,19 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00340-zqz` (커밋 `879b0cf` · 08-31 10:5x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00341-z74` (커밋 `e9c4472` · 08-31 15:1x · 서빙 digest
+  `sha256:39ac78cc…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **1501/1501 @ 아카이브(e9c4472 고정)**(= 워킹트리 1511 − ARCHIVE_SKIP 10) · commit-sha 라벨 = APPROVED_AT 일치 ·
+  DIRTY 진입(타 세션 미커밋 3 · 전부 주인 확인 · ALLOW_DIRTY)).
+  **웹 1건**([WATCH.APP] · 08-31) — 트레일 **근사 동선 점선**(`worker-trail-seq`). 실내 기지국·wifi 폴백
+  구간이 정확도 원 무더기로만 남아 이동 **순서**를 못 읽던 것(08-31 사용자 지시) — 정확·부정확 점을
+  시간순 병합(`mergeTrackSeq` · ts 없는 옛 응답 점은 제외)해 **점선으로만** 잇는다. 확정 실선(R-33)은
+  trail.points 그대로 · 캡션 `선 제외`→`점선 근사`. 가드 신규 5(`2026-08-31-trail-seq-line`) +
+  R-33 가드 캡션 단언 개정.
+  ✅ 라이브 실측 = 번들 `app/page-f6f80e9c…js` 에 `점선 근사`·`worker-trail-seq` 각 1(통제군 `정확도 중앙` 1).
+  화면 발현은 트레일 토글 시 부정확 점 있는 작업자에서 — 눈 확인은 다음 열람 때.
+  함께 나간 것(L-59) = 4커밋(웹 1 · wear 1 미착용 90분 자동 로그아웃 · docs 2) — 서빙 코드는 웹 1건뿐.
+- 직전 = `vitalguard-dashboard-00340-zqz` (커밋 `879b0cf` · 08-31 10:5x · 서빙 digest
   `sha256:0b10f40b…` **대조 일치** · env 28 유지(직전 28) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **1496/1496 @ 아카이브(879b0cf 고정)**(= 워킹트리 1506 − ARCHIVE_SKIP 10) · commit-sha 라벨 = APPROVED_AT 일치 ·
   DIRTY 진입(타 세션 미커밋 2 · ALLOW_DIRTY)).
