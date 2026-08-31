@@ -25,6 +25,8 @@ export type WorkerMapPoint = {
   // 좌표 자체의 나이(초). `ageSec`(생체 수신 나이)과 **다른 축**이다 — 서버가 좌표를 직전 값에서
   // 이어 주므로 심박이 5초 전이어도 좌표는 40분 전 것일 수 있다. null = 측위 시각 미상.
   fixAgeSec?: number | null;
+  /** 측위 수평 정확도(m·기기 보고값). null/미보고 = 원 없이 종전대로 — 없는 것을 정밀로도, 부정확으로도 위장하지 않는다. */
+  accM?: number | null;
 };
 
 // 지도에 못 올린 작업자(수신 상태 패널용) — 사유는 표시 문구 그대로 받는다.
@@ -376,7 +378,7 @@ export function WorkerGpsMap({
 
   // ── 타일/마커/구획 원 렌더 산출 ──
   const tiles: { key: string; left: number; top: number; z: number; x: number; y: number }[] = [];
-  const markers: { p: WorkerMapPoint; x: number; y: number }[] = [];
+  const markers: { p: WorkerMapPoint; x: number; y: number; accR: number | null }[] = [];
   let circle: { x: number; y: number; r: number } | null = null;
   let focusPt: { x: number; y: number } | null = null;
   let trailPts: { x: number; y: number }[] | null = null;
@@ -453,7 +455,12 @@ export function WorkerGpsMap({
       const x = lonToWorldX(p.lon, z) - tlx;
       const y = latToWorldY(p.lat, z) - tly;
       if (x < -60 || x > size.w + 60 || y < -60 || y > size.h + 60) continue;
-      markers.push({ p, x, y });
+      // 부정확 측위(> R-33 상한)만 반경=정확도 원을 함께 그린다 — 실내 셀/와이파이 폴백(±100m 등급)이
+      // 정밀한 점으로 위장하던 것(2026-08-31 실측: 현장 실내인데 양자화 좌표 42~352m 왕복).
+      // 양호(≤ 상한)·미보고는 종전과 동일. 반경은 지리값이라 줌과 함께 스케일된다(트레일 coarse 와 동일).
+      const accR =
+        p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? Math.max(4, p.accM / metersPerPx(p.lat)) : null;
+      markers.push({ p, x, y, accR });
     }
   }
 
@@ -756,6 +763,35 @@ export function WorkerGpsMap({
           </span>
         )}
 
+        {/* 측위 정확도 원 — 부정확 마커(> TRACK_LINE_ACC_MAX_M)에만 반경=정확도의 흐린 원.
+            R-33(트레일 coarse) 처방의 현재 위치 확장. 이벤트 통과·마커(z-10) 아래 레이어. */}
+        {markers.some((mk) => mk.accR != null) && (
+          <svg
+            aria-hidden
+            data-testid="worker-marker-accuracy"
+            className="pointer-events-none absolute inset-0 z-[7]"
+            width={size.w}
+            height={size.h}
+          >
+            {markers.map(({ p, x, y, accR }) =>
+              accR == null ? null : (
+                <circle
+                  key={p.workerId}
+                  cx={x}
+                  cy={y}
+                  r={accR}
+                  fill="#38bdf8"
+                  fillOpacity={0.08}
+                  stroke="#38bdf8"
+                  strokeOpacity={0.4}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                />
+              ),
+            )}
+          </svg>
+        )}
+
         {/* 작업자 마커 — 신호등 톤 점 + 이름 칩. 호버 시 생체 툴팁.
             연결끊김(stale)은 고스트 마커(회색·점선 링·경과 병기)로 마지막 확인 위치를 유지. */}
         {markers.map(({ p, x, y }) => (
@@ -834,6 +870,17 @@ export function WorkerGpsMap({
                       }`}
                     >
                       {p.fixAgeSec == null ? "측위 시각 미상" : ageLabel(p.fixAgeSec)}
+                    </dd>
+                  </div>
+                  {/* 측위 정확도 — 실내 폴백(±100m 등급)이면 이 숫자가 마커 위치의 신뢰 한계다. */}
+                  <div className="flex justify-between">
+                    <dt>측위</dt>
+                    <dd
+                      className={`tabular-nums ${
+                        p.accM != null && p.accM > TRACK_LINE_ACC_MAX_M ? "text-amber-300" : ""
+                      }`}
+                    >
+                      {p.accM == null ? "정확도 미보고" : `±${Math.round(p.accM)}m`}
                     </dd>
                   </div>
                 </dl>

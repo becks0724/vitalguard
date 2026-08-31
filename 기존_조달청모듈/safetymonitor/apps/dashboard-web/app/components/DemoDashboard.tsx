@@ -6355,6 +6355,9 @@ export function DemoDashboard() {
           ageSec,
           stale,
           fixAgeSec,
+          // 측위 정확도(m) — 실내 셀/와이파이 폴백(±100m 등급) 마커가 정밀한 점으로 위장하지
+          // 않게 지도에 전달(2026-08-31 · R-33 의 현재 위치 확장). 미보고는 null 그대로.
+          accM: s.locationAccuracyMeters ?? null,
         });
       } else {
         // ⚠ 사유 문구를 실제 원인에 맞춘다(2026-08-20). 종전 문구는 "위치 권한·로그인 게이트"만
