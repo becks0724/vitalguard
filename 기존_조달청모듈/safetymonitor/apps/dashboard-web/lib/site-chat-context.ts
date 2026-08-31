@@ -397,10 +397,16 @@ async function procurePriceContext(message: string) {
       출처구분: p.src,
     }));
   return {
-    출처: shop.source === "live" ? "나라장터 종합쇼핑몰 당일 피드" : "피드 준비 중(샘플·미조회)",
+    출처: shop.source === "live" ? "나라장터 종합쇼핑몰 당일 피드" : "당일 피드 미포착",
+    // 피드 특성(g2b-shop 헤더 주석 그대로) — 모델이 "다른 판매처를 찾아보라"류 발명을 하지 않게
+    // 원천의 성격을 서버가 명시한다.
+    피드특성:
+      "단가 원천은 나라장터 당일 납품요구(실거래)와 당일 카탈로그 등록·변경분 피드다. " +
+      "종합쇼핑몰에 등록된 품목이라도 오늘 거래·등록이 없으면 조회되지 않고, 거래가 발생하면 자동 반영된다. " +
+      "보호구처럼 거래 빈도가 낮은 품목은 당일 피드에 없는 날이 많다.",
     검색품명: keywords,
     단가: hits,
-    안내: hits.length === 0 ? "당일 피드에 해당 품명이 없습니다. 품명을 바꿔 질문해 주세요." : shop.note,
+    안내: hits.length === 0 ? shop.note : shop.note,
   };
 }
 
@@ -546,7 +552,10 @@ function fallbackFor(id: SiteChatIntentId, label: string, data: unknown): string
     case "procurePrice": {
       const hits = (d.단가 as { 품목명?: string; 단가원?: number; 공급가액원?: number }[]) ?? [];
       if (hits.length === 0) {
-        return String(d.안내 ?? "당일 피드에 해당 품명이 없습니다. 품명을 바꿔 질문해 주세요.");
+        return (
+          String(d.안내 ?? "당일 피드에 해당 품명이 없습니다.") +
+          "\n(단가 원천은 당일 거래·등록 피드라, 종합쇼핑몰 등록 품목이라도 오늘 거래가 없으면 조회되지 않습니다.)"
+        );
       }
       const lines = hits.map(
         (h) => `· ${h.품목명} — 단가 ${h.단가원?.toLocaleString()}원 (공급가액 ${h.공급가액원?.toLocaleString()}원)`,

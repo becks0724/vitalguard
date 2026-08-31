@@ -8,7 +8,10 @@ import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
-import { ASSIGNMENT_CHAT_CONTRACT } from "../../../../lib/assignment-chat-contract";
+import {
+  ASSIGNMENT_CHAT_CONTRACT,
+  type AssignmentChatContract,
+} from "../../../../lib/assignment-chat-contract";
 import { assessWorker, type WorkerAssignment } from "../../../../lib/assignment-service";
 import {
   decorateWorkerNames,
@@ -130,7 +133,33 @@ export async function GET(request: Request) {
   if (!chatRateAllowed(request)) {
     return NextResponse.json({ ok: false, error: "too_many_requests" }, { status: 429 });
   }
-  return NextResponse.json({ ok: true, contract: ASSIGNMENT_CHAT_CONTRACT }, { headers: { "Cache-Control": "private, max-age=60" } });
+  return NextResponse.json(
+    { ok: true, contract: await personalizedChatContract() },
+    { headers: { "Cache-Control": "private, max-age=60" } },
+  );
+}
+
+/** 예시 칩·환영문의 표본 사번(EMP-6861)을 현재 관제 로스터의 실제 작업자 이름으로 치환한다
+ *  (2026-08-31 사용자 결정 — 이름 조회 기능을 예시가 바로 보여주게). 이름을 하드코딩하지 않아
+ *  로스터가 바뀌면 자동 추종하고, 로스터·이름 조회 실패 시 정적 계약 그대로(챗을 막지 않는다). */
+async function personalizedChatContract(): Promise<AssignmentChatContract> {
+  try {
+    const slotIds = ((await getMonitorSlots()) ?? []).filter(
+      (s): s is string => !!s && /^(?:EMP|VW)-/i.test(s),
+    );
+    const names = await workerNamesFor(slotIds.slice(0, 5));
+    const firstId = slotIds.find((id) => names[id]);
+    if (!firstId) return ASSIGNMENT_CHAT_CONTRACT;
+    const name = names[firstId]!;
+    return {
+      ...ASSIGNMENT_CHAT_CONTRACT,
+      welcomeMessage: ASSIGNMENT_CHAT_CONTRACT.welcomeMessage.split("EMP-6861").join(name),
+      suggestions: ASSIGNMENT_CHAT_CONTRACT.suggestions.map((s) => s.split("EMP-6861").join(name)),
+    };
+  } catch (error) {
+    console.warn("[assignment-chat] 계약 개인화 실패(정적 문구 유지):", error);
+    return ASSIGNMENT_CHAT_CONTRACT;
+  }
 }
 
 // CLOVA 저수준 호출 — 배치·현장정보 두 흐름이 공유한다(마크다운 제거까지).
