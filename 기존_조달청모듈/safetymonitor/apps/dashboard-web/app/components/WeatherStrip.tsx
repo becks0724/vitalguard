@@ -2,6 +2,8 @@
 // 각 항목 클릭 시 정책 임계 단계 + 권고 조치 모달 표시. 정책 항목은 주의/위험 색상 자동 적용.
 "use client";
 
+import { weatherLabel } from "../../lib/weather-code-label";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useMarqueeScroll } from "../hooks/useMarqueeScroll";
@@ -787,21 +789,8 @@ function workRestAdviceText(wbgt: number | undefined): string {
   );
 }
 
-export function weatherLabel(code: number): string {
-  if (code === 0) return "맑음";
-  if (code === 1) return "대체로 맑음";
-  if (code === 2) return "구름 조금";
-  if (code === 3) return "흐림";
-  if (code === 45 || code === 48) return "안개";
-  if (code >= 51 && code <= 57) return "이슬비";
-  if (code >= 61 && code <= 67) return "비";
-  if (code >= 71 && code <= 77) return "눈";
-  if (code >= 80 && code <= 82) return "소나기";
-  if (code >= 85 && code <= 86) return "눈소나기";
-  if (code === 95) return "뇌우";
-  if (code === 96 || code === 99) return "강한 뇌우";
-  return `코드 ${code}`;
-}
+// weatherLabel 은 챗봇(서버)과 공유하려고 lib/weather-code-label.ts 로 내렸다(기존 임포터를 위해 재수출).
+export { weatherLabel };
 
 function uvLabel(uv: number): string {
   if (uv < 3) return "낮음";

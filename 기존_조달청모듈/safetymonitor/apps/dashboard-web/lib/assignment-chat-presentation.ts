@@ -100,6 +100,21 @@ export function toClovaChatContext(assignment: ChatAssignment) {
   };
 }
 
+/** 답변 텍스트의 가명 사번 옆에 실명을 결정적으로 병기한다 — "EMP-6861(장우진)".
+ *  ⚠ 이름은 CLOVA 에 절대 전달하지 않는다(개인정보 경계). 이 함수는 모델 응답이 확정된 뒤
+ *  서버가 후처리로만 호출한다(taskSummaries 카드와 같은 결정적 계층). 모델은 이름을 모르므로
+ *  본문에 나타나는 사번은 항상 맨몸이고, 여기서 한 번만 붙는다. */
+export function decorateWorkerNames(
+  text: string,
+  names: Record<string, string>,
+): string {
+  if (Object.keys(names).length === 0) return text;
+  return text.replace(/(?:EMP|VW)-[A-Za-z0-9_-]+/g, (id) => {
+    const name = names[id];
+    return name ? `${id}(${name})` : id;
+  });
+}
+
 /** CLOVA 실패·하네스 거절 시에도 같은 챗봇 전용 표현 계층을 사용한다. */
 export function formatChatRuleFallback(assignments: readonly ChatAssignment[]): string {
   return assignments

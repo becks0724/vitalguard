@@ -9,6 +9,7 @@ import { ASSIGNMENT_CHAT_CONTRACT, type AssignmentChatContract } from "../../lib
 // 규칙 엔진의 확정 판정 요약 — 신호등 배지는 LLM 문장이 아니라 이 값으로 그린다.
 type VerdictBadge = {
   workerId: string;
+  name?: string; // 실명 — 서버 workerNames 맵(결정적)에서만 온다
   grade: "fit" | "caution" | "restricted" | "unknown";
   blocked: number; // 배제 권고 태그 수
   allowed: number; // 배치 가능 태그 수
@@ -22,6 +23,13 @@ type TaskSummary = {
   pendingTags: string[];
 };
 
+type LawArticleCard = {
+  조: string;
+  제목: string;
+  개정이력?: string;
+  원문: string;
+};
+
 type ChatMessage = {
   role: "user" | "assistant";
   text: string;
@@ -29,12 +37,15 @@ type ChatMessage = {
   badges?: VerdictBadge[];
   taskSummaries?: TaskSummary[];
   candidates?: { workerId: string; name: string }[];
+  lawArticles?: LawArticleCard[];
+  workerNames?: Record<string, string>;
 };
 
 type ChatResponse = {
   ok: boolean;
   reply?: string;
   source?: "clova" | "rule";
+  intents?: string[];
   disclaimer?: string;
   error?: string;
   assignments?: {
@@ -44,6 +55,8 @@ type ChatResponse = {
   }[];
   taskSummaries?: TaskSummary[];
   candidates?: { workerId: string; name: string }[];
+  lawArticles?: LawArticleCard[];
+  workerNames?: Record<string, string>;
 };
 
 // 등급 → 신호등(대시보드 작업자 신호등과 동일 문법: 정상 정적·주의/위험 블링크).
@@ -109,6 +122,8 @@ export default function AssignmentChatBoard() {
   const [disclaimer, setDisclaimer] = useState<string | null>(null);
   // 직전 단일 서버 판정의 가명 사번만 보관한다. 대화 전문/이름은 보내지 않아 주입·개인정보 표면을 늘리지 않는다.
   const [followUpWorkerIds, setFollowUpWorkerIds] = useState<string[]>([]);
+  // 직전 현장 답변의 의도들 — 서버가 준 값만 되돌려보낸다(followUpWorkerIds 와 같은 철학).
+  const [followUpIntents, setFollowUpIntents] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -147,7 +162,7 @@ export default function AssignmentChatBoard() {
             "content-type": "application/json",
             ...(token ? { authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ message: question, followUpWorkerIds }),
+          body: JSON.stringify({ message: question, followUpWorkerIds, followUpIntents }),
         });
         if (res.status === 401) {
           // 서버가 거부한 낡은 토큰이 남아 있으면 LoginGate 가 로그인 화면을 안 띄우고 계속 401 에 갇힘
@@ -173,16 +188,18 @@ export default function AssignmentChatBoard() {
         if (json.disclaimer) setDisclaimer(json.disclaimer);
         const badges: VerdictBadge[] = (json.assignments ?? []).map((a) => ({
           workerId: a.workerId,
+          name: json.workerNames?.[a.workerId],
           grade: a.condition.grade,
           blocked: a.advice.perTag.filter((t) => !t.allowed && !t.pending).length,
           allowed: a.advice.perTag.filter((t) => t.allowed).length,
         }));
-        // 한 명만 조회한 직후에만 "배제 이유는?" 같은 짧은 후속 질문을 그 작업자에 연결한다.
-        // 전체 요약/복수 조회 뒤에는 대상이 모호하므로 문맥을 비운다.
+        // 후속 문맥은 마지막 답변의 성격을 따라간다 — 작업자 1명 답변이면 그 사번을,
+        // 현장 답변이면 그 의도들을 반송하고, 나머지(전체 요약·도움말)는 둘 다 비운다.
         const responseAssignments = json.assignments ?? [];
         const soleAssignment =
           responseAssignments.length === 1 ? responseAssignments[0] : undefined;
         setFollowUpWorkerIds(soleAssignment ? [soleAssignment.workerId] : []);
+        setFollowUpIntents(soleAssignment ? [] : (json.intents ?? []));
         setMessages((prev) => [
           ...prev,
           {
@@ -192,6 +209,8 @@ export default function AssignmentChatBoard() {
             badges,
             taskSummaries: json.taskSummaries,
             candidates: json.candidates,
+            lawArticles: json.lawArticles,
+            workerNames: json.workerNames,
           },
         ]);
       } catch {
@@ -207,19 +226,19 @@ export default function AssignmentChatBoard() {
         setBusy(false);
       }
     },
-    [busy, followUpWorkerIds, input],
+    [busy, followUpIntents, followUpWorkerIds, input],
   );
 
   return (
     <div className="flex h-full flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-white/10 dark:bg-zinc-900">
       <header className="border-b border-zinc-200 px-5 py-4 dark:border-white/10">
         <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-          작업 배치 어시스턴트
+          VitAlGuard 현장 어시스턴트
         </h1>
         <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-          컨디션 등급(결정적 규칙) × 위험작업 매칭 × 현장 환경(가스 감지기·기상특보) — 판정은
-          규칙 엔진, 답변 문장만 국내 LLM(HyperCLOVA X)이 작성합니다. 원시 생체데이터는 외부로
-          전송되지 않습니다.
+          작업자 배치·현장 환경(가스 감지기·기상)·조달 정보·법령 조문까지 — 판정과 수치는 서버
+          규칙 엔진이 확정하고, 답변 문장만 국내 LLM(HyperCLOVA X)이 작성합니다. 원시
+          생체데이터는 외부로 전송되지 않습니다.
         </p>
       </header>
 
@@ -245,7 +264,8 @@ export default function AssignmentChatBoard() {
                     >
                       <span className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-semibold">
                         <span className={"h-2.5 w-2.5 shrink-0 rounded-full " + meta.dot} />
-                        {b.workerId} · {meta.label}
+                        {b.workerId}
+                        {b.name ? `(${b.name})` : ""} · {meta.label}
                       </span>
                       <span className="inline-flex items-center whitespace-nowrap border-l border-inherit px-3 py-1 font-normal opacity-80">
                         {b.grade === "unknown"
@@ -286,6 +306,7 @@ export default function AssignmentChatBoard() {
                     <div key={summary.workerId} className="border-b border-zinc-100 last:border-b-0 dark:border-white/5">
                       <div className="bg-zinc-50 px-3 py-1 font-medium text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
                         {summary.workerId}
+                        {m.workerNames?.[summary.workerId] ? `(${m.workerNames[summary.workerId]})` : ""}
                       </div>
                       {rows.length > 0 ? (
                         <table className="w-full border-collapse">
@@ -320,6 +341,27 @@ export default function AssignmentChatBoard() {
                     </div>
                   );
                 })}
+              </div>
+            ) : null}
+            {m.role === "assistant" && m.lawArticles && m.lawArticles.length > 0 ? (
+              // 법령 조문 원문 카드 — 서버 스냅샷 원문의 결정적 표시(모델 문장과 독립).
+              <div className="w-[85%] max-w-full overflow-hidden rounded-xl border border-zinc-200 bg-white text-xs dark:border-white/10 dark:bg-white/5">
+                <div className="border-b border-zinc-200 px-3 py-2 font-semibold text-zinc-800 dark:border-white/10 dark:text-zinc-100">
+                  법령 조문 원문 (산업안전보건기준에 관한 규칙)
+                </div>
+                {m.lawArticles.map((article) => (
+                  <div key={article.조} className="border-b border-zinc-100 last:border-b-0 dark:border-white/5">
+                    <div className="bg-zinc-50 px-3 py-1 font-medium text-zinc-600 dark:bg-white/5 dark:text-zinc-300">
+                      {article.조} ({article.제목}){article.개정이력 ? ` · ${article.개정이력}` : ""}
+                    </div>
+                    <div className="whitespace-pre-line px-3 py-1.5 leading-relaxed text-zinc-700 dark:text-zinc-200">
+                      {article.원문}
+                    </div>
+                  </div>
+                ))}
+                <div className="px-3 py-1.5 text-[10px] text-zinc-400">
+                  발췌 원문 — 전체 원문은 법제처(국가법령정보센터)에서 확인
+                </div>
               </div>
             ) : null}
             {m.role === "assistant" && m.candidates && m.candidates.length > 0 ? (
@@ -378,9 +420,15 @@ export default function AssignmentChatBoard() {
           <button
             type="submit"
             disabled={busy || input.trim().length === 0}
-            className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+            aria-label={contract.requestLabel}
+            title={contract.requestLabel}
+            className="flex h-10 w-10 shrink-0 items-center justify-center self-center rounded-full bg-blue-600 text-white disabled:opacity-40"
           >
-            {contract.requestLabel}
+            {/* 전송 = 원형 노드 + 위쪽 화살표(텍스트 라벨은 aria/title 로 유지) */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{ width: 18, height: 18 }}>
+              <path d="M12 19V5" />
+              <path d="M5 12l7-7 7 7" />
+            </svg>
           </button>
         </form>
         <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
