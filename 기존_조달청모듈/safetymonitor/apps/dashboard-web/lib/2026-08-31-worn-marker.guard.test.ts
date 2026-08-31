@@ -66,8 +66,9 @@ test("④ 워치 — 벗음/착용 전이에서 표식을 큐에 넣고 **즉시
   const fn = collector.slice(collector.indexOf("private fun postWornMarker"));
   const body = fn.slice(0, fn.indexOf("\n    }\n") + 7);
   assert.match(body, /handler\.post \{/, "메인 스레드에서 큐를 만진다 — 큐 계약 위반");
-  assert.match(body, /queue\.add\(WornMarker\.build\(wornNow, System\.currentTimeMillis\(\)\)\)/, "표식을 큐에 안 넣는다");
-  assert.match(body, /uploadOnce\(System\.currentTimeMillis\(\)\)/, "즉시 업로드가 빠졌다 — 표식이 다음 tick(≤120s)을 기다린다");
+  assert.match(body, /queue\.add\(WornMarker\.build\(wornNow, now\)\)/, "표식을 큐에 안 넣는다(게이트와 무관하게 항상 적재해야 전이 시각이 남는다)");
+  assert.match(body, /if \(shouldUploadMarkerNow\(lastWornMarkerUploadMs, now\)\)[\s\S]*?uploadOnce\(now\)/, "즉시 업로드가 빠졌거나 플래핑 게이트가 없다(5초에 3전이 실측 — 라디오 폭주)");
+  assert.match(collector, /offBody\.stop\(\)\s*endSensing\(\)\s*worker\.quitSafely\(\)/, "onDestroy 에서 종료 표식이 quitSafely 뒤에 post 돼 조용히 버려진다");
   assert.match(collector, /Log\.i\(TAG, "벗음 — 수집 중지 \(큐 \$\{queue\.size\}건 보존\)"\)\s*postWornMarker\(false\)/, "endSensing 이 표식을 안 보낸다");
   assert.match(collector, /postWornMarker\(true\)/, "다시 찼을 때 표식이 없다 — 미착용이 다음 tick 까지 남는다");
   const tick = collector.slice(collector.indexOf("private val tick"), collector.indexOf("private fun uploadOnce"));

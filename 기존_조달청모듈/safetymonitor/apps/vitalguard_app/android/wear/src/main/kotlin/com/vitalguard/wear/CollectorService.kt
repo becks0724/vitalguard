@@ -66,6 +66,8 @@ class CollectorService : Service() {
      */
     @Volatile private var sensing = false
     private var uploadBlockedUntilMs = 0L
+    /** 마지막 착용 표식 즉시 업로드 시각(epoch ms) — 플래핑 게이트 기준. 0 = 아직 없음. */
+    private var lastWornMarkerUploadMs = 0L
     /** 심박 재구독 횟수 — 로그에 남겨 "몇 번째 되살림인가" 를 볼 수 있게 한다. */
     private var hrRevives = 0
 
@@ -367,9 +369,18 @@ class CollectorService : Service() {
      */
     private fun postWornMarker(wornNow: Boolean) {
         handler.post {
-            queue.add(WornMarker.build(wornNow, System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            queue.add(WornMarker.build(wornNow, now))   // 표식 자체는 항상 — 전이 시각의 정확성
             queuedCount = queue.size
-            uploadOnce(System.currentTimeMillis())
+            // 플래핑 흡수 — 착용 센서는 채우는 동작·소매 스침에서 5초에 3번도 뒤집힌다(08-31 워치8 logcat
+            // 16:25:23/27/28). 전이마다 라디오를 깨우면 이 기기에서 가장 비싼 행위가 폭주한다(시스템 바닥 =
+            // 무선 상주가 소모의 71% · WATCH.DESIGN 실측). 첫 전이는 즉시, 뒤따르는 것은 큐에 남겨 다음 tick 에.
+            if (shouldUploadMarkerNow(lastWornMarkerUploadMs, now)) {
+                lastWornMarkerUploadMs = now
+                uploadOnce(now)
+            } else {
+                Log.i(TAG, "착용 표식 큐 적재만 (${WORN_MARKER_UPLOAD_MIN_GAP_MS / 1000}s 내 재전이 · 다음 tick)")
+            }
         }
     }
 
@@ -434,9 +445,12 @@ class CollectorService : Service() {
         running = false
         liveEngine = null
         alarms.cancel(tickAlarm)
-        worker.quitSafely()
         offBody.stop()
+        // ★ 종료 표식(worn=false)이 살아 나가려면 endSensing 이 quitSafely **앞**이어야 한다 —
+        //   quitSafely 뒤의 handler.post 는 false 를 돌려주고 조용히 버려진다(WATCH.DESIGN 08-31 지적).
+        //   quitSafely 는 이미 큐에 든(만기 도래) 메시지는 처리하고 멈추므로 표식 업로드까지 마친다.
         endSensing()
+        worker.quitSafely()
         Log.i(TAG, "수집 종료 — 큐 ${queue.size}건 보존")
         super.onDestroy()
     }
@@ -506,6 +520,13 @@ class CollectorService : Service() {
          * 따로 푼다). 큐가 그 사이를 흡수하므로 유실은 없다.
          */
         const val FLUSH_INTERVAL_MS = 120_000L
+
+        /** 착용 표식 즉시 업로드의 최소 간격 — 이 안의 재전이(플래핑)는 큐에만 남긴다(2026-08-31). */
+        const val WORN_MARKER_UPLOAD_MIN_GAP_MS = 30_000L
+
+        /** 첫 전이(last=0)는 즉시, 그 뒤는 최소 간격이 지났을 때만. 순수 — 단위 시험. */
+        internal fun shouldUploadMarkerNow(lastMs: Long, nowMs: Long): Boolean =
+            lastMs == 0L || nowMs - lastMs >= WORN_MARKER_UPLOAD_MIN_GAP_MS
 
         /** 화면 표시용 — 큐 적체는 서버 장애의 유일한 가시 신호다(08-25 실황이 필요를 증명). */
         @Volatile var queuedCount = 0

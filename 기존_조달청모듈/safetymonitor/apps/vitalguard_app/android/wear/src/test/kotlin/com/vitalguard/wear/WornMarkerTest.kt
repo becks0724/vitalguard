@@ -4,6 +4,8 @@ package com.vitalguard.wear
 import com.vitalguard.wear.pipeline.SampleBuilder
 import com.vitalguard.wear.pipeline.WornMarker
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class WornMarkerTest {
@@ -26,6 +28,13 @@ class WornMarkerTest {
         b.heartRate(72, 1_700_000_000_000L)
         val v = b.buildAndReset(sentAtMs = 1_700_000_001_000L)!!
         assertEquals(true, v["worn"])
+    }
+
+    @Test
+    fun `표식 즉시 업로드 — 첫 전이는 즉시, 30초 내 재전이(플래핑)는 큐에만, 30초 뒤엔 다시 즉시`() {
+        assertTrue(CollectorService.shouldUploadMarkerNow(0L, 1_000L))
+        assertFalse(CollectorService.shouldUploadMarkerNow(1_000L, 6_300L))   // 08-31 워치8 실측: 5.3초에 3전이
+        assertTrue(CollectorService.shouldUploadMarkerNow(1_000L, 31_000L))
     }
 
     @Test
