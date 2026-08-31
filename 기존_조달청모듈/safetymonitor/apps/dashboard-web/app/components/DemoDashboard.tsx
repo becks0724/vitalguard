@@ -44,6 +44,7 @@ import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
 import { formatElapsed } from "../../lib/absence-watch";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
+import { impactRowView, isImpactSample, type ImpactRowView } from "../../lib/impact-row";
 import {
   evaluateHazardKmaWarnings,
   evaluateHazardWeather,
@@ -881,6 +882,23 @@ function workerCell(sample: VitalSample) {
   }
   return name ?? empId ?? sample.workerId;
 }
+
+// 충격 판정 행 색 — 색 ③(미경보 무채 · 확인 열림 앰버 · 실경보 빨강 · 2026-08-31 사용자 결정).
+// 지나간 판정 기록이라 어느 톤이든 블링크(vital-blink-*)는 붙이지 않는다 — 경보 피로.
+const IMPACT_TONE: Record<ImpactRowView["tone"], { chip: string; text: string }> = {
+  neutral: {
+    chip: "bg-surface-strong text-body dark:bg-white/10 dark:text-on-dark-soft",
+    text: "text-muted dark:text-on-dark-soft",
+  },
+  caution: {
+    chip: "bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400",
+    text: "text-body dark:text-on-dark-soft",
+  },
+  danger: {
+    chip: "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-300",
+    text: "text-red-600 dark:text-red-400",
+  },
+};
 
 const CALENDAR_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"] as const;
 
@@ -7799,9 +7817,19 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
               <RollingChars text={formatPersisted(data.totalPersisted)} />
             </span>
             건 누적
-            <span className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft">
-              (화면 표시 최근 {data.recent.length}건)
-            </span>
+            {(() => {
+              // 충격 판정 행이 섞이는 날(08-31 실측 3.4배)엔 구성비를 헤더에서 바로 보인다.
+              const impacts = data.recent.filter(isImpactSample).length;
+              return (
+                <span
+                  className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft"
+                  title="충격 판정 = 워치 낙상 모듈이 기록한 판정 행(생체 측정 아님) — DB 누적에 포함"
+                >
+                  (화면 표시 최근 {data.recent.length}건
+                  {impacts > 0 ? ` · 생체 ${data.recent.length - impacts} · 충격 판정 ${impacts}` : ""})
+                </span>
+              );
+            })()}
           </span>
           <span className="shrink-0 text-xs text-muted dark:text-on-dark-soft">
             {logExpanded ? "▲ 줄이기" : "▼ 펼치기"}
@@ -7841,31 +7869,60 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                 </tr>
               </thead>
               <tbody>
-                {data.recent.map((sample, index) => (
-                  <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
-                    <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
-                      {formatTime(sample.ts)}
-                    </td>
-                    <td className="px-4 py-3 font-mono">
-                      {sample.activeEnergyKcal == null ? "--" : sample.activeEnergyKcal.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3">{workerCell(sample)}</td>
-                    <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
-                    <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
-                    {/* 실측 우선. 값의 성격이 다르므로 **한 칸에 섞지 않고 표기로 가른다** —
-                        실측은 그대로, 추정은 `≈` 를 붙인다. 마크를 떼면 센서가 죽은 구간이
-                        측정된 것처럼 보인다(이 레포가 반복해 고쳐 온 false-OK 형태). */}
-                    <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
-                      {(() => {
-                        if (sample.skinTempC != null) return formatTemp(sample.skinTempC);
-                        // 폴백 = 워커 단위 1분 해상도 추정치라 같은 워커의 여러 행에 같은 값이 붙는다.
-                        const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
-                        const est = data.coreTempEst?.[primary]?.tempC;
-                        return est == null ? "--" : `≈${formatTemp(est)}`;
-                      })()}
-                    </td>
-                  </tr>
-                ))}
+                {data.recent.map((sample, index) => {
+                  // 충격 판정(낙상 섀도)·낙상 행 — 생체 행이 아니므로 생체 칸(`--` 넷·`≈` 추정)을
+                  // 그리지 않고 한 줄 요약으로 가른다(2026-08-31 · 문구 A · 색 ③ · 배치 1).
+                  // 서버·링은 그대로 — 후보 행을 링에서 빼면 낙상 "확인 중"(fallPendingByWorker)이 죽는다.
+                  const impact = impactRowView(sample, workerCell(sample));
+                  if (impact) {
+                    const tone = IMPACT_TONE[impact.tone];
+                    return (
+                      <tr
+                        key={`${sample.workerId}-${sample.ts}-${index}`}
+                        className="border-t border-hairline dark:border-white/5"
+                        title={impact.title}
+                      >
+                        <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                          {formatTime(sample.ts)}
+                        </td>
+                        <td colSpan={5} className={`px-4 py-3 text-xs ${tone.text}`}>
+                          <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${tone.chip}`}>
+                            {impact.chip}
+                          </span>
+                          {impact.text}
+                          {impact.hint ? (
+                            <span className="ml-1 text-muted dark:text-on-dark-soft">{impact.hint}</span>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return (
+                    <tr key={`${sample.workerId}-${sample.ts}-${index}`} className="border-t border-hairline dark:border-white/5">
+                      <td className="px-4 py-3 font-mono" title={`출처 ${sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                        {formatTime(sample.ts)}
+                      </td>
+                      <td className="px-4 py-3 font-mono">
+                        {sample.activeEnergyKcal == null ? "--" : sample.activeEnergyKcal.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">{workerCell(sample)}</td>
+                      <td className="px-4 py-3 font-mono">{formatInt(sample.heartRate)}</td>
+                      <td className="px-4 py-3 font-mono">{formatInt(sample.spo2)}</td>
+                      {/* 실측 우선. 값의 성격이 다르므로 **한 칸에 섞지 않고 표기로 가른다** —
+                          실측은 그대로, 추정은 `≈` 를 붙인다. 마크를 떼면 센서가 죽은 구간이
+                          측정된 것처럼 보인다(이 레포가 반복해 고쳐 온 false-OK 형태). */}
+                      <td className="px-4 py-3 font-mono text-body dark:text-on-dark-soft">
+                        {(() => {
+                          if (sample.skinTempC != null) return formatTemp(sample.skinTempC);
+                          // 폴백 = 워커 단위 1분 해상도 추정치라 같은 워커의 여러 행에 같은 값이 붙는다.
+                          const primary = data.workerAliases?.[sample.workerId] ?? sample.workerId;
+                          const est = data.coreTempEst?.[primary]?.tempC;
+                          return est == null ? "--" : `≈${formatTemp(est)}`;
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
