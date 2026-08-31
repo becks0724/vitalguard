@@ -5,6 +5,8 @@
 //   사용자가 "동선과 상반된다" 고 짚은 500m 점프가 그것이었다. 처방 = 선은 정확도 ≤ 상한만 · 초과는 반경=정확도 원.
 // ★ 되돌아가는 방식은 값이 아니라 **배선**이다(라우트가 분할을 빼거나, 지도가 coarse 를 선에 다시 넣거나, 캡션이 사라지거나).
 //   그래서 소스를 읽어 못 박는다. 주석에 이름만 남는 것을 막으려고 코드 본문만 본다.
+// ★ 08-31 보완(사용자 지시): 근사 동선 **점선**(worker-trail-seq · 전용 가드 2026-08-31-trail-seq-line)은
+//   예외로 전체 시퀀스를 잇는다. 이 파일의 계약은 "확정 실선은 coarse 를 잇지 않는다" 로 유지된다.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -46,7 +48,8 @@ test("③ 지도 — 폴리라인은 trail.points 로만 긋고, coarse 는 반�
   assert.match(map, /coarsePts = trail\.coarse\.map/, "부정확 점을 지도가 안 받는다");
   assert.match(map, /r: Math\.max\(4, p\.accM \/ metersPerPx\(p\.lat\)\)/, "원의 반경이 정확도가 아니다");
   assert.match(map, /data-testid="worker-trail-coarse"/, "부정확 점 레이어가 사라졌다");
-  assert.match(map, /부정확 \$\{trail\.coarse\.length\}점 선 제외/, "캡션이 제외 사실을 안 알린다 — 관제자는 점이 사라진 줄 모른다");
+  // 08-31 사용자 지시 — 부정확 점을 점선으로 잇게 되면서 캡션도 "선 제외" → "점선 근사" 로 사실에 맞췄다.
+  assert.match(map, /부정확 \$\{trail\.coarse\.length\}점 점선 근사/, "캡션이 부정확 점의 표기 방식을 안 알린다");
 });
 
 test("④ 대시보드 — 응답의 coarse 를 지도까지 넘긴다(끊기면 옛 서버처럼 전부 선으로 그린다)", () => {

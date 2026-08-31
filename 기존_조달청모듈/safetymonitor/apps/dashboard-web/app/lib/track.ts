@@ -130,8 +130,9 @@ export function downsampleTrack(points: TrackPoint[], maxPoints = TRACK_MAX_POIN
  */
 export const TRACK_LINE_ACC_MAX_M = 50;
 
-/** 부정확 점 — 지도가 선 대신 반경=정확도의 흐린 원으로 그린다. */
-export type TrackCoarsePoint = { lat: number; lon: number; accM: number };
+/** 부정확 점 — 지도가 선 대신 반경=정확도의 흐린 원으로 그린다. `ts` 는 근사 동선 점선의
+ * 시간순 병합용 — 라우트의 coarse 는 TrackPoint 그대로 실려 오므로 실제로 있다(옛 응답엔 없을 수 있다). */
+export type TrackCoarsePoint = { lat: number; lon: number; accM: number; ts?: string };
 
 /** 선에 쓸 점(정확도 ≤ 상한 또는 미보고)과 부정확 점을 가른다. 순서는 각각 보존된다. */
 export function partitionTrackByAccuracy(points: TrackPoint[]): { line: TrackPoint[]; coarse: TrackPoint[] } {
@@ -142,4 +143,30 @@ export function partitionTrackByAccuracy(points: TrackPoint[]): { line: TrackPoi
     else coarse.push(p);
   }
   return { line, coarse };
+}
+
+/**
+ * 근사 동선 병합 — 선 점(정확)과 부정확 점을 **시간순 한 줄**로 잇는다(2026-08-31 사용자 지시).
+ *
+ * ★ 왜. 실내(기지국·wifi 폴백)에서는 하루 대부분이 부정확 점이라 트레일이 정확도 원 무더기로만
+ *   남고 "어느 순서로 움직였는가" 를 읽을 수 없다. 확정 선(R-33)은 그대로 두고, 전체 시퀀스를
+ *   **점선(근사)** 으로 덧그린다 — 없는 길을 확정처럼 그리지 않으면서 순서는 보이게.
+ * ★ ts 없는 부정확 점(옛 응답)은 병합에서 뺀다 — 순서를 지어낼 수 없다.
+ */
+export function mergeTrackSeq(
+  points: { lat: number; lon: number; ts: string }[],
+  coarse: TrackCoarsePoint[],
+): { lat: number; lon: number }[] {
+  const merged: { lat: number; lon: number; t: number }[] = [];
+  for (const p of points) {
+    const t = Date.parse(p.ts);
+    if (Number.isFinite(t)) merged.push({ lat: p.lat, lon: p.lon, t });
+  }
+  for (const c of coarse) {
+    if (typeof c.ts !== "string") continue;
+    const t = Date.parse(c.ts);
+    if (Number.isFinite(t)) merged.push({ lat: c.lat, lon: c.lon, t });
+  }
+  merged.sort((a, b) => a.t - b.t);
+  return merged.map(({ lat, lon }) => ({ lat, lon }));
 }

@@ -97,7 +97,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
+import { TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -7410,6 +7410,10 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                               points: trailPoints ?? [],
                               coarse: trailCoarse ?? undefined,
                               quality: trailQuality,
+                              seq:
+                                trailPoints && trailCoarse && trailCoarse.length > 0
+                                  ? mergeTrackSeq(trailPoints, trailCoarse)
+                                  : undefined,
                             }
                           : undefined
                       }

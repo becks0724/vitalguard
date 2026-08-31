@@ -54,6 +54,11 @@ export type WorkerTrail = {
    * null = 옛 서버이거나 아직 안 왔다. 없는 것을 0 으로 그리지 않는다.
    */
   quality?: TrackQuality | null;
+  /**
+   * 근사 동선 — 정확·부정확 점을 시간순으로 병합한 전체 시퀀스(2026-08-31 사용자 지시).
+   * 점선으로만 그린다(확정 실선과 시각 구분). 부정확 점이 있을 때만 대시보드가 채운다.
+   */
+  seq?: { lat: number; lon: number }[];
 };
 
 // 위험구역(진입 금지 존) — 서버 등록분 표시 + 권한있음 계정의 배치/삭제 편집.
@@ -383,6 +388,7 @@ export function WorkerGpsMap({
   let focusPt: { x: number; y: number } | null = null;
   let trailPts: { x: number; y: number }[] | null = null;
   let coarsePts: { x: number; y: number; r: number }[] | null = null;
+  let seqPts: { x: number; y: number }[] | null = null;
   const zoneCircles: { zone: MapZone; x: number; y: number; r: number }[] = [];
   let draftPt: { x: number; y: number; r: number } | null = null;
   let polyPts: { x: number; y: number }[] | null = null;
@@ -422,6 +428,12 @@ export function WorkerGpsMap({
         x: lonToWorldX(p.lon, z) - tlx,
         y: latToWorldY(p.lat, z) - tly,
         r: Math.max(4, p.accM / metersPerPx(p.lat)),
+      }));
+    }
+    if (trail && trail.seq && trail.seq.length >= 2) {
+      seqPts = trail.seq.map((p) => ({
+        x: lonToWorldX(p.lon, z) - tlx,
+        y: latToWorldY(p.lat, z) - tly,
       }));
     }
     if (sitePolygon && sitePolygon.length >= 4) {
@@ -692,6 +704,40 @@ export function WorkerGpsMap({
           </>
         )}
 
+        {/* 근사 동선 점선 — 정확·부정확 점을 시간순으로 이은 한 줄(2026-08-31 사용자 지시).
+            부정확 점이 원으로만 남으면 이동 순서를 읽을 수 없어서다. 확정 실선과 구분되게
+            **점선**으로만 긋는다 — 기지국 좌표 구간을 "지나간 길" 로 위장하지 않는다. */}
+        {seqPts && (
+          <svg
+            aria-hidden
+            data-testid="worker-trail-seq"
+            className="pointer-events-none absolute inset-0 z-[6]"
+            width={size.w}
+            height={size.h}
+          >
+            <polyline
+              points={seqPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#0b1420"
+              strokeWidth={3}
+              strokeOpacity={0.35}
+              strokeDasharray="6 6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            <polyline
+              points={seqPts.map((p) => `${p.x},${p.y}`).join(" ")}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth={1.5}
+              strokeOpacity={0.9}
+              strokeDasharray="6 6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+
         {/* 이동 경로 트레일 — 마커 클릭으로 토글된 작업자의 최근 동선 폴리라인(어두운 외곽선 + 시안 라인). */}
         {trailPts && (
           <svg
@@ -959,7 +1005,7 @@ export function WorkerGpsMap({
               {trail.quality.accuracyMedianM !== null &&
                 ` · 정확도 중앙 ±${Math.round(trail.quality.accuracyMedianM)}m`}
               {trail.coarse && trail.coarse.length > 0 &&
-                ` · 부정확 ${trail.coarse.length}점 선 제외(>${TRACK_LINE_ACC_MAX_M}m)`}
+                ` · 부정확 ${trail.coarse.length}점 점선 근사(>${TRACK_LINE_ACC_MAX_M}m)`}
               {" · "}
               <span
                 title={
