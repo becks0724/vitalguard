@@ -97,7 +97,7 @@ import {
   type GeofenceState,
   type ZoneEntryState,
 } from "../lib/geofence";
-import { TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
+import { TRACK_LINE_ACC_MAX_M, TRACK_WINDOW_MIN, mergeTrackSeq, type TrackCoarsePoint, type TrackPoint, type TrackQuality } from "../lib/track";
 import {
   AedAlertTable,
   GasDetectorTable,
@@ -148,8 +148,17 @@ type HistoryMetric =
   | "coverage";
 type Selection = { workerId: string; metric: HistoryMetric };
 
+// 서버 병합이 얹는 "마지막 정확 fix" 힌트(store.ts LatestVitalSample) — 스키마 밖 파생값이라 미러링.
+// 필드명이 서버와 갈리면 조용히 undefined 가 된다 — 가드(2026-08-31-marker-last-good-fix)가 양쪽을 못 박는다.
+type LatestSample = VitalSample & {
+  lastAccurateLat?: number;
+  lastAccurateLon?: number;
+  lastAccurateAccM?: number;
+  lastAccurateTs?: string;
+};
+
 type MockVitalResponse = {
-  latest: VitalSample[];
+  latest: LatestSample[];
   recent: VitalSample[];
   // ★ DB 조회 실패 시 서버가 **null** 을 준다(0 아님 — 2026-08-15 장애 대응).
   //   누적 21만 건이 "0건"으로 뜨면 미수신보다 나쁘므로 화면은 `—` 를 찍는다.
@@ -6336,6 +6345,21 @@ export function DemoDashboard() {
         //   그래서 이어 주는 것 자체는 유지하고, **나이를 함께 실어** 판단은 사람에게 남긴다.
         const fixMs = s.locationTimestamp ? now - Date.parse(s.locationTimestamp) : NaN;
         const fixAgeSec = Number.isFinite(fixMs) ? Math.max(0, Math.round(fixMs / 1000)) : null;
+        // 마지막 정확 fix 폴백(2026-08-31 사용자 결정 ①) — 최신 좌표가 부정확(> R-33 상한)이고
+        // 최근 창(트레일 창과 동일 30분) 안에 정확 fix 가 있으면 **마커만** 그 위치를 우선한다.
+        // 구획/위험구역 판정 effect 는 여전히 원좌표(pt.lat/lon)를 본다 — 게이트가 걸러서 동작 불변.
+        const rawCoarse =
+          s.locationAccuracyMeters != null && s.locationAccuracyMeters > TRACK_LINE_ACC_MAX_M;
+        const goodTsMs = s.lastAccurateTs ? Date.parse(s.lastAccurateTs) : NaN;
+        const goodAgeSec = Number.isFinite(goodTsMs)
+          ? Math.max(0, Math.round((now - goodTsMs) / 1000))
+          : null;
+        const useGoodFix =
+          rawCoarse &&
+          typeof s.lastAccurateLat === "number" &&
+          typeof s.lastAccurateLon === "number" &&
+          goodAgeSec !== null &&
+          goodAgeSec <= TRACK_WINDOW_MIN * 60;
         pts.push({
           workerId,
           name: s.workerName ?? workerId,
@@ -6359,6 +6383,10 @@ export function DemoDashboard() {
           // 측위 정확도(m) — 실내 셀/와이파이 폴백(±100m 등급) 마커가 정밀한 점으로 위장하지
           // 않게 지도에 전달(2026-08-31 · R-33 의 현재 위치 확장). 미보고는 null 그대로.
           accM: s.locationAccuracyMeters ?? null,
+          goodLat: useGoodFix ? s.lastAccurateLat : null,
+          goodLon: useGoodFix ? s.lastAccurateLon : null,
+          goodAccM: useGoodFix ? (s.lastAccurateAccM ?? null) : null,
+          goodAgeSec: useGoodFix ? goodAgeSec : null,
         });
       } else {
         // ⚠ 사유 문구를 실제 원인에 맞춘다(2026-08-20). 종전 문구는 "위치 권한·로그인 게이트"만

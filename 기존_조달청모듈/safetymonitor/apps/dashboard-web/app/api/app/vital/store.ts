@@ -5,6 +5,8 @@ import {
   parseResilientVitalSample,
 } from "@safetymonitor/schemas";
 
+import { TRACK_LINE_ACC_MAX_M } from "../../../lib/track";
+
 import {
   estimateCoreTemp,
   estimateCoreTempSeries,
@@ -753,15 +755,32 @@ function spo2RunStartMs(obs: Spo2Obs[], current: number): number | null {
 // 수집시각(ts) 기준 최신 우선 + null 메트릭 sticky carry-forward + 이벤트 플래그 비-sticky.
 // aliasMap(secondary→primary) 가 있으면 표시 시점에 별칭을 주 ID로 접어 같은 사람을 한 카드로 병합한다
 // (인스턴스·캐시 타이밍 무관 — 매 GET 마다 DB 별칭으로 ring 을 재키잉).
+// 병합 산출물 전용 확장 — "마지막 정확 fix"(정확도 ≤ R-33 상한) 표시 힌트(2026-08-31 사용자 결정 ①).
+// ⚠ 스키마(VitalSample)에 넣지 않는다 — 단말이 보내는 값이 아니라 서버 병합이 계산하는 파생값이고,
+//   스키마에 올리면 단말 주입이 계약상 허용돼 버린다(지금은 zod 파싱이 unknown 을 strip 해 차단).
+export type LatestVitalSample = VitalSample & {
+  /** 마지막 정확 fix(≤ TRACK_LINE_ACC_MAX_M) 좌표 — 실내 폴백(±100m 등급) 중 마커 표시 폴백용. */
+  lastAccurateLat?: number;
+  lastAccurateLon?: number;
+  /** 그 fix 의 보고 정확도(m). */
+  lastAccurateAccM?: number;
+  /** 그 fix 의 측위 시각(ISO · locationTimestamp 우선, 없으면 행 ts) — 화면 "N분 전" 의 기준. */
+  lastAccurateTs?: string;
+};
+
 export function mergeLatestByWorker(
   samples: VitalSample[],
   aliasMap?: Record<string, string>,
-): VitalSample[] {
-  const latest = new Map<string, VitalSample>();
+): LatestVitalSample[] {
+  const latest = new Map<string, LatestVitalSample>();
   // 워커별 활동 분류 필드가 실제 존재했던 최대 샘플 ts(ms) — TTL 판정 기준(Date.now() 미사용 = 순수 유지).
   const activityTsMs = new Map<string, number>();
   // 워커별 SpO₂ 관측(ts, 값) — 값 변화 시점으로 나이를 산출하기 위해 모은다.
   const spo2Obs = new Map<string, Spo2Obs[]>();
+  // 워커별 마지막 "정확 fix"(좌표 유한 + 정확도 보고 ≤ 상한) — 실내 셀/와이파이 폴백이 최신일 때
+  // 마커가 수백 m 튀는 것의 표시 폴백(2026-08-31 실측 245m). 판정 경로와 무관(표시 힌트 전용).
+  // ordTs = 행 ts(최신 판정용) · fixTs = 측위 시각(나이 표시용) — 두 축을 섞지 않는다.
+  const lastAccurate = new Map<string, { lat: number; lon: number; accM: number; fixTs: string; ordTs: string }>();
 
   for (const sample of samples) {
     if (isReservedTestWorker(sample.workerId)) continue;
@@ -785,6 +804,28 @@ export function mergeLatestByWorker(
       }
     }
 
+    if (
+      typeof sample.latitude === "number" &&
+      typeof sample.longitude === "number" &&
+      Number.isFinite(sample.latitude) &&
+      Number.isFinite(sample.longitude) &&
+      sample.locationAccuracyMeters != null &&
+      sample.locationAccuracyMeters <= TRACK_LINE_ACC_MAX_M
+    ) {
+      // 정확도 미보고(null)는 자격 없음 — "정확한 위치" 라고 주장할 근거가 없다(R-33 의 null 관용과
+      // 반대 방향인 이유: 저기서는 버리면 이력이 사라지지만, 여기서는 올리면 가짜 확신이 생긴다).
+      const prevAcc = lastAccurate.get(wid);
+      if (!prevAcc || sample.ts >= prevAcc.ordTs) {
+        lastAccurate.set(wid, {
+          lat: sample.latitude,
+          lon: sample.longitude,
+          accM: sample.locationAccuracyMeters,
+          fixTs: sample.locationTimestamp ?? sample.ts,
+          ordTs: sample.ts,
+        });
+      }
+    }
+
     // 삽입 순서가 아닌 수집시각(ts) 기준으로 최신을 판정 — 워치는 오프라인 backlog 를 fresh 배치
     // 성공 후 별도 POST 로 보내므로 더 오래된 샘플이 더 나중에 삽입될 수 있다. 이때 그냥 last-writer 로
     // 덮으면 ts 가 역행하고 신선도 바가 stale 로 표시된다 → ts 가 더 큰 쪽을 newer 로 고정.
@@ -797,7 +838,7 @@ export function mergeLatestByWorker(
     // 카드가 마지막 실측값으로 살아있음). SOS/낙상 이벤트 샘플(생체 미동봉)도 동일하게 직전값 유지.
     // 센서가 아예 없는 메트릭(예: Apple Watch SE 의 SpO₂·손목온도)은 실측을 받은 적이 없어
     // older 도 undefined → "--" 유지(시연용 조작값은 폰 fallback 제거로 더 이상 안 들어옴).
-    const merged: VitalSample = {
+    const merged: LatestVitalSample = {
       ...older,
       ...newer,
       workerId: wid,
@@ -830,6 +871,15 @@ export function mergeLatestByWorker(
       fallDetected: newer.fallDetected,
       ts: newer.ts,
     };
+    // 마지막 정확 fix — 표시 폴백 힌트. 단말 주입은 스키마 파싱(strip)이 이미 차단하고, 여기서
+    // 서버 계산값으로만 채운다.
+    const acc = lastAccurate.get(wid);
+    if (acc) {
+      merged.lastAccurateLat = acc.lat;
+      merged.lastAccurateLon = acc.lon;
+      merged.lastAccurateAccM = acc.accM;
+      merged.lastAccurateTs = acc.fixTs;
+    }
 
     // 활동 분류 필드 TTL — 최신 샘플 ts 가 마지막 활동 관측 ts 보다 90초 넘게 지났으면 만료.
     // 90초 이내(신선)면 기존 sticky 와 완전 동일. 스트레스 입력은 활동 게이트와 무관하므로 유지.
