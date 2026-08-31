@@ -157,8 +157,9 @@ export function WorkerGpsMap({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // 수신 상태 펼침 패널 — 칩 클릭 토글, 지도 드래그 시작 시 닫힘.
   const [statusOpen, setStatusOpen] = useState(false);
-  // 베이스맵 모드 — sat: Esri 위성(기본) / air: VWorld 항공사진(국내 고해상·z19) / cad: VWorld 베이스 + 연속지적도.
-  const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("sat");
+  // 베이스맵 모드 — air: VWorld 항공사진(**기본** · 국내 고해상·z19 · 2026-08-31 사용자 결정) /
+  // sat: Esri 위성(전세계 — VWORLD_KEY 미설정 환경은 이 버튼으로 수동 전환) / cad: VWorld 베이스 + 연속지적도.
+  const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("air");
   // 위험구역 배치 모드 — "＋ 위험구역" 클릭 → 지도 클릭으로 중심 지정 → 이름·반경 폼.
   const [placingZone, setPlacingZone] = useState(false);
   const [zoneDraft, setZoneDraft] = useState<{ lat: number; lon: number } | null>(null);
