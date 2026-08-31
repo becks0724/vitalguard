@@ -19,6 +19,7 @@ import com.vitalguard.wear.pipeline.FlushOutcome
 import com.vitalguard.wear.pipeline.HttpTransport
 import com.vitalguard.wear.pipeline.QueueStorage
 import com.vitalguard.wear.pipeline.UploadPipeline
+import com.vitalguard.wear.pipeline.WornMarker
 import com.vitalguard.wear.pipeline.VitalQueue
 import com.vitalguard.ml.FallMLModule
 import com.vitalguard.ml.FallShadowReporter
@@ -252,6 +253,7 @@ class CollectorService : Service() {
             }
         }
         Log.i(TAG, "착용 — 수집 개시 (낙상ML=${if (fallMl != null && imu.supported) "on" else "off"})")
+        postWornMarker(true)
     }
 
     /** 벗음 — 센서를 뗀다. **큐는 지우지 않는다**(미전송분은 다시 찼을 때 함께 올라간다). */
@@ -264,6 +266,7 @@ class CollectorService : Service() {
         gps.stop()
         imu.stop()
         Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")
+        postWornMarker(false)
     }
 
     /**
@@ -326,25 +329,47 @@ class CollectorService : Service() {
             val now = System.currentTimeMillis()
             checkAutoLogout(now)
             engine.flush(now)
-            if (now >= uploadBlockedUntilMs) {
-                when (val r = pipeline.flushOnce(config.uploadConfig())) {
-                    is FlushOutcome.Sent -> {
-                        queuedCount = r.remaining
-                        lastUploadAtMs = now
-                        Log.i(TAG, "업로드 ${r.count}건 · 잔여 ${r.remaining}")
-                    }
-                    is FlushOutcome.RetryAfterSec -> {
-                        uploadBlockedUntilMs = now + r.sec * 1000L
-                        queuedCount = queue.size
-                        Log.w(TAG, "업로드 대기 ${r.sec}s (auth=${r.authRejected}) · 큐 ${queue.size}")
-                    }
-                    FlushOutcome.Idle -> if (config.uploadConfig() == null) {
-                        Log.w(TAG, "자격 없음 — 큐 ${queue.size}건 적재만 (①로 토큰 주입)")
-                    }
-                }
-            }
+            uploadOnce(now)
             reviveHrIfStalled(now)
             scheduleTick()
+        }
+    }
+
+    /**
+     * 업로드 1회 — tick 과 착용 표식(즉시 전송)이 공유한다. 알람 스케줄은 건드리지 않는다(tick 만의 몫).
+     * 재시도 대기 창(`uploadBlockedUntilMs`) 안이면 조용히 건너뛴다 — 표식도 그 창을 존중한다(큐에 남아 다음 tick 에 올라간다).
+     * ⚠ 수집 스레드(handler)에서만 부른다 — 큐 계약.
+     */
+    private fun uploadOnce(now: Long) {
+        if (now < uploadBlockedUntilMs) return
+        when (val r = pipeline.flushOnce(config.uploadConfig())) {
+            is FlushOutcome.Sent -> {
+                queuedCount = r.remaining
+                lastUploadAtMs = now
+                Log.i(TAG, "업로드 ${r.count}건 · 잔여 ${r.remaining}")
+            }
+            is FlushOutcome.RetryAfterSec -> {
+                uploadBlockedUntilMs = now + r.sec * 1000L
+                queuedCount = queue.size
+                Log.w(TAG, "업로드 대기 ${r.sec}s (auth=${r.authRejected}) · 큐 ${queue.size}")
+            }
+            FlushOutcome.Idle -> if (config.uploadConfig() == null) {
+                Log.w(TAG, "자격 없음 — 큐 ${queue.size}건 적재만 (①로 토큰 주입)")
+            }
+        }
+    }
+
+    /**
+     * 착용 상태 표식 — 벗음/착용이 바뀐 **그 순간** 표본 1건(`worn`+`ts`)을 큐에 넣고 곧바로 올린다(2026-08-31 사용자 지시).
+     * 종전엔 서버가 "표본이 안 온다" 로 150초 뒤에야 알았고, 그것이 고장(연결끊김)과 구분되지 않았다.
+     * 착용 센서 콜백은 메인 스레드라 큐 계약(수집 스레드)대로 handler 로 넘긴다. 업로드에 실패하면 큐에 남아
+     * 다음 tick 에 함께 올라간다 — 표식은 유실되지 않고 늦어질 뿐이다.
+     */
+    private fun postWornMarker(wornNow: Boolean) {
+        handler.post {
+            queue.add(WornMarker.build(wornNow, System.currentTimeMillis()))
+            queuedCount = queue.size
+            uploadOnce(System.currentTimeMillis())
         }
     }
 

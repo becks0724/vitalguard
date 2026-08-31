@@ -114,7 +114,7 @@ import {
   workerSignalCopy,
   worseTone,
 } from "../../lib/worker-signal";
-import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
+import { vitalAgeMs, staleThresholdMs, staleKind, STALE_LABEL, OFF_BODY_LABEL, STALE_MS_DEFAULT, type StaleKind } from "../../lib/vital-age";
 import { stillLabel } from "../../lib/vital-still";
 import { type OffWristSuspect } from "../../lib/vital-offwrist";
 import { SITE_RADIUS_MAX_M } from "../../lib/site-radius";
@@ -6340,6 +6340,8 @@ export function DemoDashboard() {
         // 문턱(애플 60초·갤럭시 150초) 초과 미수신 = 표의 "연결끊김" 강등과 동일 기준 —
         // 지도도 마지막 상태색(false-OK) 대신 고스트(마지막 확인 위치)로 강등한다.
         const stale = ageSec !== null && ageSec * 1000 >= staleThresholdMs(s.dataOrigin);
+        // 미착용 표식 — 라벨을 가르고 고스트(마지막 위치)로 강등한다. 워치 위치는 사람 위치가 아니다.
+        const offBody = s.worn === false;
         // ★ 좌표 나이는 생체 나이와 **다른 축**이다(2026-08-20).
         //   서버 sticky merge 가 좌표를 직전 값에서 이어 주므로(store.ts `{...older, ...newer}` —
         //   좌표 없는 샘플엔 키 자체가 없어 older 가 살아남는다), 심박이 5초 전이어도 좌표는
@@ -6378,10 +6380,10 @@ export function DemoDashboard() {
           //   ⚠ 표(`isStale`)는 심박 시각 기준이라 이 둘은 **같은 기준이 아니다**(위 주석의
           //     "동일 기준"은 부정확하다). 표에서 심박끊김인 작업자가 지도에선 정상색이다.
           //     판정 기준을 맞추는 것은 이 트랙(라벨 분리) 밖이라 손대지 않았다.
-          statusLabel: stale ? STALE_LABEL.disconnected : status.label,
-          tone: stale ? "idle" : status.tone,
+          statusLabel: offBody ? OFF_BODY_LABEL : stale ? STALE_LABEL.disconnected : status.label,
+          tone: stale || offBody ? "idle" : status.tone,
           ageSec,
-          stale,
+          stale: stale || offBody,
           fixAgeSec,
           // 측위 정확도(m) — 실내 셀/와이파이 폴백(±100m 등급) 마커가 정밀한 점으로 위장하지
           // 않게 지도에 전달(2026-08-31 · R-33 의 현재 위치 확장). 미보고는 null 그대로.
@@ -8133,12 +8135,15 @@ function WorkerTableRow({
   const wstatus = workerStatus(sample, nowMs, coreTempEstC);
   // 연결끊김 — sample 존재 + 신호 문턱 초과(signal===0). sticky 직전값을 "정상"으로 오인하는 false-OK 차단.
   // 문턱은 배칭 주기의 함수라 출처마다 다르다(애플 60초·갤럭시 150초 — lib/vital-age.ts 참조).
-  const stale = sample !== undefined && signal === 0;
+  // 미착용 — 워치가 손목 이탈 순간 보낸 표식(worn:false · 갤럭시). 값 게이트·톤 강등은 끊김과 같이 타되
+  // 라벨은 "미착용" 으로 갈라 고장(연결끊김)과 구분한다(2026-08-31 사용자 지시). 애플은 이 표식이 없다.
+  const offBody = sample?.worn === false;
+  const stale = sample !== undefined && (signal === 0 || offBody);
   // ★ 끊김의 **종류** — 라벨만 가른다. 판정(stale)·게이트(gateStaleVitals)·톤(effectiveTone)은
   //   이 값을 안 본다. 근거와 실측은 lib/vital-age.ts 의 staleKind 주석.
   const kind: StaleKind | undefined =
     stale && sample !== undefined ? staleKind(sample, nowMs, sample.dataOrigin) : undefined;
-  const staleLabel = kind !== undefined ? STALE_LABEL[kind] : "";
+  const staleLabel = offBody ? OFF_BODY_LABEL : kind !== undefined ? STALE_LABEL[kind] : "";
   // ★ 무동작 — 라벨만. `수신 중` 자리만 대신하고 톤·게이트·집계는 이 값을 모른다(2026-08-28).
   //   벗음도 응급도 단정하지 않는다 — 심박은 착용의 증거가 아니라서(lib/vital-still.ts).
   const still = stillLabel(sample ?? {}, stale, wstatus.tone);
@@ -8166,7 +8171,7 @@ function WorkerTableRow({
   //   야간 충전이면 아침까지 이어지는데, 10시간 전 심박을 회색으로라도 밤새 띄워 두는 것은 정보가 아니라 소음이다.
   const heldAgeMs = sample !== undefined ? vitalAgeMs(sample, nowMs) : NaN;
   const held =
-    stale && sample !== undefined && Number.isFinite(heldAgeMs) && heldAgeMs <= HELD_VALUE_MAX_MS
+    stale && !offBody && sample !== undefined && Number.isFinite(heldAgeMs) && heldAgeMs <= HELD_VALUE_MAX_MS
       ? { s: sample, ageLabel: `끊김 전 값 · ${formatElapsed(heldAgeMs)}` }
       : null;
   // (종전 여기서 `손목+0.5` 를 '추정' 으로 만들어 카드에 적었다. 2026-08-26 에 그 표기를
@@ -8236,7 +8241,7 @@ function WorkerTableRow({
 
       {/* 2 작업자 — 신호등 + 이름/사번 */}
       <div className="flex min-w-0 items-center gap-2">
-        <TrafficLight status={overall} stale={stale} staleLabel={staleLabel} />
+        <TrafficLight status={overall} stale={stale} staleLabel={staleLabel} offBody={offBody} />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-ink dark:text-on-dark">
             {heading.title}
@@ -9088,10 +9093,13 @@ function TrafficLight({
   stale,
   /** 끊김 종류별 라벨(lib/vital-age.ts `STALE_LABEL`). 색·점멸은 종류를 안 탄다 — 글자만 다르다. */
   staleLabel,
+  /** 미착용 — 슬레이트는 같되 점멸하지 않는다(점멸은 고장 신호다 · 2026-08-31). */
+  offBody,
 }: {
   status: VitalStatus;
   stale?: boolean;
   staleLabel?: string;
+  offBody?: boolean;
 }) {
   const map: Record<VitalStatus, string> = {
     idle: "bg-muted-soft",
@@ -9100,7 +9108,11 @@ function TrafficLight({
     danger: "bg-semantic-down vital-blink-danger",
   };
   // 연결끊김은 어떤 생체 상태보다 우선 — 슬레이트 점멸로 "정상 녹색" false-OK 차단.
-  const cls = stale ? "bg-slate-400 dark:bg-slate-500 animate-pulse" : map[status];
+  const cls = offBody
+    ? "bg-slate-400 dark:bg-slate-500"
+    : stale
+      ? "bg-slate-400 dark:bg-slate-500 animate-pulse"
+      : map[status];
   // 라벨이 안 넘어오면 종전 문구로 떨어진다 — 다른 호출부가 생겨도 빈 글자가 뜨지 않게.
   const label = stale ? (staleLabel || STALE_LABEL.disconnected) : STATUS_LABEL[status];
   return (

@@ -25,7 +25,7 @@ test("① 판정 입력은 불변 — 끊김이면 gateStaleVitals 는 여전히
 });
 
 test("② 유지 분기는 stale + 상한 안에서만 만들어지고, PSI 는 여전히 shown 을 먹는다", () => {
-  assert.match(board, /stale && sample !== undefined && Number\.isFinite\(heldAgeMs\) && heldAgeMs <= HELD_VALUE_MAX_MS/, "유지 조건(stale·상한)이 풀렸다");
+  assert.match(board, /stale && !offBody && sample !== undefined && Number\.isFinite\(heldAgeMs\) && heldAgeMs <= HELD_VALUE_MAX_MS/, "유지 조건(stale·상한)이 풀렸다");
   assert.match(board, /const HELD_VALUE_MAX_MS = 30 \* 60 \* 1000;/, "상한 상수가 사라지거나 값이 바뀌었다");
   assert.match(board, /heartRate: shown\.heartRate,/, "PSI 가 유지값을 먹는다 — 판정 경로 오염");
 });

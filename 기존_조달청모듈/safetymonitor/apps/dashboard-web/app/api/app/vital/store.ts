@@ -870,6 +870,9 @@ export function mergeLatestByWorker(
       respiratoryRate: newer.respiratoryRate ?? older?.respiratoryRate,
       // 이벤트 플래그는 sticky 금지 — 최신(newer) sample 의 자기 값만 사용 (없으면 undef).
       // 이벤트 자체의 시각 영속성은 dashboard 쪽 lastSosTs/lastFallTs 로 별도 관리.
+      // 착용 상태 sticky — 벗음 표식(worn:false) 뒤 표본이 안 오는 동안 그 사실이 유지돼야 한다.
+      // 다시 차면 평시 표본의 worn:true 가 덮는다.
+      worn: newer.worn ?? older?.worn,
       manualSos: newer.manualSos,
       fallDetected: newer.fallDetected,
       ts: newer.ts,
