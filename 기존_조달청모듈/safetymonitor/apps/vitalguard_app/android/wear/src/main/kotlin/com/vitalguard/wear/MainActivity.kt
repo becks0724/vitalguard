@@ -250,6 +250,10 @@ class MainActivity : ComponentActivity() {
                 "${p.substringAfterLast('.')} = ${if (granted) "허용" else "거부"}"
             },
         )
+        // 신규 설치 경로 — onCreate 가 미뤄둔 수집 서비스를 허용 직후에 올린다.
+        if (canStartHealthFgs() && !CollectorService.running) {
+            startForegroundService(Intent(this, CollectorService::class.java))
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -271,7 +275,14 @@ class MainActivity : ComponentActivity() {
 
         // ★ 시작 버튼이 없다 — 앱이 뜨면 수집 서비스가 스스로 붙고, 실제 수집 개시·중지는
         //   착용 센서가 정한다(08-25 사용자 결정 · 기기에 offbody_detect 실재 확인).
-        startForegroundService(Intent(this, CollectorService::class.java))
+        // ⚠ 신규 설치는 런타임 권한이 0개다 — 이대로 올리면 FGS(health) 승격이 SecurityException 으로
+        //   즉사한다(08-31 워치8 40mm 첫 설치 실측 · 워치9는 PoC 때 부여한 권한이 남아 있어 잠복했다).
+        //   권한이 없으면 먼저 묻고, 허용 콜백에서 서비스를 올린다.
+        if (canStartHealthFgs()) {
+            startForegroundService(Intent(this, CollectorService::class.java))
+        } else {
+            requestSensorPermissions()
+        }
 
         setContent {
             var bpm by remember { mutableStateOf<Int?>(null) }
@@ -507,6 +518,17 @@ class MainActivity : ComponentActivity() {
             show("본수집을 중지했습니다. 큐는 보존됩니다.")
         },
     )
+
+    /**
+     * FGS(health) 승격의 anyOf 요건을 하나라도 쥐고 있는가 — 신규 설치엔 0개라 시작 즉시 죽는다.
+     * OS 검사(08-31 워치8 실측): allOf=[FOREGROUND_SERVICE_HEALTH(설치형)] + anyOf=[ACTIVITY_RECOGNITION,
+     * HIGH_SAMPLING_RATE_SENSORS, health.READ_*]. 35 이하의 anyOf 는 BODY_SENSORS 계열.
+     */
+    private fun canStartHealthFgs(): Boolean {
+        val key = if (Build.VERSION.SDK_INT >= 36) "android.permission.health.READ_HEART_RATE"
+        else android.Manifest.permission.BODY_SENSORS
+        return checkSelfPermission(key) == PackageManager.PERMISSION_GRANTED
+    }
 
     /** API 36+ 는 health 권한, 35 이하는 BODY_SENSORS 계열 — 매니페스트의 신·구 병기와 짝. */
     private fun requestSensorPermissions() {
