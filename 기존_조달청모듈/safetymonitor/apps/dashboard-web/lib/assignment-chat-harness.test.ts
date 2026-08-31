@@ -220,3 +220,17 @@ test("로그인 계정 ID는 작업자 후보로 취급하지 않는다", () => 
   assert.equal(isWorkerId("admin6861"), false);
   assert.equal(isWorkerId("장우진"), false);
 });
+
+test("지어낸 법령 사유 거절을 감지해 교정한다(범위 안내는 유지)", () => {
+  const violations = findAiReplyPolicyViolations(
+    "죄송하지만 말씀하신 내용은 개인정보 보호법에 따라 수집하거나 제공하는 것이 불가능한 정보이므로 답변을 제공해 드릴 수 없습니다.",
+    { allowedCount: 3 },
+  );
+  assert.ok(violations.some((v) => v.code === "FABRICATED_LEGAL_REFUSAL"));
+  // 법령 인용 없는 정상 범위 안내는 위반이 아니다.
+  const clean = findAiReplyPolicyViolations(
+    "작업자 배치·컨디션과 현장 정보에 관한 질문에 답할 수 있습니다.",
+    { allowedCount: 3 },
+  );
+  assert.ok(!clean.some((v) => v.code === "FABRICATED_LEGAL_REFUSAL"));
+});

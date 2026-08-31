@@ -96,23 +96,35 @@ export function evaluateApparentTemp(t: number): RuleEvaluation {
 }
 
 // 풍속 (m/s, 정책 기준). Open-Meteo 는 km/h 반환 → 변환.
-// 규칙 §37·§143 임계는 순간풍속(돌풍) 기준 — 판정도 순간풍속으로(평균풍속 아님).
+// §37② 임계(10/15m/s)는 순간풍속(돌풍) 기준 — 판정도 순간풍속으로(평균풍속 아님).
+// ⚠ 조문 용어를 넓히지 말 것(2026-08-31 원문 대조·사용자 확정) — §37②는 "타워크레인"만
+//   콕 집은 의무이고(이동식 크레인·리프트는 대상 아님 · 그쪽은 KOSHA 권고로만 병기),
+//   §143은 "양중기" 전체(크레인·리프트 등)에 지운 의무다. 또 §37②는 "초과", §383은 "이상" —
+//   조문마다 경계 표현이 다르니 원문 그대로 쓴다.
 const WIND_STEPS: ThresholdStep[] = [
   {
     severity: "danger",
     binding: "legal",
-    label: "15m/s 이상 — 타워크레인 운전·옥외작업 중지",
+    label: "30m/s 초과 — 강풍·지진 경과 후 양중기 점검",
+    action:
+      "순간풍속 30m/s 초과 강풍(또는 중진 이상 지진)이 지나간 후에는, 옥외 양중기(크레인·리프트 등 인양 기계 전체) 사용 작업 전에 기계 각 부위 이상 유무를 점검해야 함. 바람이 부는 동안에는 아래 15m/s 운전 중지가 계속 적용.",
+    source: "안전보건규칙 §143",
+  },
+  {
+    severity: "danger",
+    binding: "legal",
+    label: "15m/s 초과 — 타워크레인 운전 중지",
     action:
       "타워크레인 운전 중지 (법적). 옥외작업 원칙 중지, 모든 양중·고소·비계 작업 중단 (권고).",
-    source: "안전보건규칙 §143 + KOSHA Guide",
+    source: "안전보건규칙 §37② + KOSHA Guide",
   },
   {
     severity: "caution",
     binding: "legal",
-    label: "10m/s 이상 — 타워크레인/고소 중지",
+    label: "10m/s 초과 — 타워크레인 설치·수리·점검·해체 중지",
     action:
       "타워크레인 설치·수리·점검·해체 중지 (법적). 비계·고소·양중작업 중지 (권고).",
-    source: "안전보건규칙 §37·§143",
+    source: "안전보건규칙 §37②",
   },
 ];
 
@@ -122,8 +134,9 @@ export function evaluateWindKmh(kmh: number, gustKmh?: number): RuleEvaluation {
   const ms = kmh / 3.6;
   const judgedMs = Math.max(kmh, gustKmh ?? kmh) / 3.6;
   let hit: ThresholdStep | undefined;
-  if (judgedMs >= 15) hit = WIND_STEPS[0];
-  else if (judgedMs >= 10) hit = WIND_STEPS[1];
+  if (judgedMs >= 30) hit = WIND_STEPS[0];
+  else if (judgedMs >= 15) hit = WIND_STEPS[1];
+  else if (judgedMs >= 10) hit = WIND_STEPS[2];
 
   const hasGust = gustKmh !== undefined;
   return {

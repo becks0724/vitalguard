@@ -74,7 +74,7 @@ export default function AssignmentChatWidget() {
             return !v;
           })
         }
-        aria-label={open ? "배치 어시스턴트 접기" : "배치 어시스턴트 열기"}
+        aria-label={open ? "현장 어시스턴트 접기" : "현장 어시스턴트 열기"}
         className={
           "fixed right-5 z-[61] flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl transition-all duration-500 ease-out hover:bg-blue-500 active:scale-95 " +
           // 접힘 = 우측 하단 / 열림 = 챗 카드 우측 상단 위로 이동(카드가 bottom-5 로 내려온 기준 추적)

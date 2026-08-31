@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  decorateWorkerNames,
   formatChatRuleFallback,
   toChatTaskSummary,
   toClovaChatContext,
@@ -63,4 +64,21 @@ test("챗봇 규칙 폴백은 배치 가능 작업명도 서버 결과 그대로
     },
   };
   assert.match(formatChatRuleFallback([partial]), /배치 가능 작업: 굴착\/흙막이/);
+});
+
+test("실명 병기는 아는 사번에만 붙고, 모르는 사번·기존 텍스트는 건드리지 않는다", () => {
+  const names = { "EMP-6861": "장우진" };
+  assert.equal(
+    decorateWorkerNames("EMP-6861 수신 신호 상태는 다음과 같습니다.", names),
+    "EMP-6861(장우진) 수신 신호 상태는 다음과 같습니다.",
+  );
+  // 모르는 사번은 맨몸 유지(이름을 지어내지 않는다).
+  assert.equal(decorateWorkerNames("VW-0001 판단 보류", names), "VW-0001 판단 보류");
+  // 빈 맵이면 원문 그대로.
+  assert.equal(decorateWorkerNames("EMP-6861 조회", {}), "EMP-6861 조회");
+  // 여러 사번 동시 장식.
+  assert.equal(
+    decorateWorkerNames("· EMP-6861 — 주의\n· VW-0002 — 양호", { "EMP-6861": "장우진", "VW-0002": "김태곤" }),
+    "· EMP-6861(장우진) — 주의\n· VW-0002(김태곤) — 양호",
+  );
 });
