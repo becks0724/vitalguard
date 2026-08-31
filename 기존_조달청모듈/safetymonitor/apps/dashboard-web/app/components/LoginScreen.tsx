@@ -43,6 +43,7 @@ type Strings = {
   error: string;
   networkError: string;
   footer: string;
+  privacyLink: string;
   // 회원가입(승인제)
   signupTitle: string;
   // 가입 유형 — DB 에는 org_type 으로 저장. 담당 업무 축이라 소속 기관과 1:1 이 아니다.
@@ -140,6 +141,7 @@ const T: Record<Lang, Strings> = {
     error: "아이디 또는 비밀번호가 일치하지 않습니다.",
     networkError: "로그인 요청 중 오류가 발생했습니다. 다시 시도하세요.",
     footer: "발표용 프로토타입 · (주)바이탈가드",
+    privacyLink: "보안·개인정보 처리방침",
     signupTitle: "관리자 회원가입",
     orgTypeLabel: "가입 유형",
     orgTypeVitalguard: "VitAlGuard 관리자",
@@ -224,6 +226,7 @@ const T: Record<Lang, Strings> = {
     error: "ID or password does not match.",
     networkError: "An error occurred while signing in. Please try again.",
     footer: "Demo prototype · VitAlGuard Inc.",
+    privacyLink: "Security & Privacy Policy",
     signupTitle: "Admin sign-up",
     orgTypeLabel: "Account type",
     orgTypeVitalguard: "VitAlGuard admin",
@@ -1027,6 +1030,10 @@ export function LoginScreen({
         {/* 푸터·스토어 배지는 폰에서 감춘다 — 둘이 168px 이고 로그인 자체에는 필요 없다. 데스크톱은 그대로. */}
         <p className="mt-4 hidden text-xs text-white/70 drop-shadow md:block">
           {t.footer}
+          {" · "}
+          <a href="/privacy" className="underline underline-offset-2 hover:text-white">
+            {t.privacyLink}
+          </a>
         </p>
 
         {/* 스토어 다운로드 배지 — 중앙 정렬(App Store / Google Play) */}
