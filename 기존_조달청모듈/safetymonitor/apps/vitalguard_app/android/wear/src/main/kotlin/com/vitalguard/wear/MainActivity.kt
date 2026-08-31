@@ -174,6 +174,20 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 백그라운드 자동 로그아웃(미착용 90분 · CollectorService)을 화면에 반영한다.
+     * 액티비티가 재생성 없이 RESUMED 로 돌아오면 onCreate 의 신원 로딩이 다시 안 돌므로 —
+     * 이게 없으면 로그아웃됐는데 요약 화면이 신원을 계속 보이고 업로드는 401 로만 운다.
+     */
+    override fun onResume() {
+        super.onResume()
+        if (ConfigStore(this).token == null && workerId != null) {
+            workerId = null
+            workerName = null
+            login = LoginUiState()
+        }
+    }
+
+    /**
      * ★ QR 로그인(기기 승인 · 2026-08-29 사용자 지시). 워치 화면이 좁아 아이디·비번 입력이 어렵다 —
      *   start → 코드·QR 표시 → 1초 카운트다운 · 4초 poll → 승인되면 **직접 로그인과 같은 성공 경로**
      *   (`saveSession` → 신원 상태 → 화면 닫기). 폰은 /pair 에서 관제웹 계정으로 승인한다.

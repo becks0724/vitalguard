@@ -32,6 +32,14 @@ class OffBodySource(context: Context) : SensorEventListener {
     var worn: Boolean = true
         private set
 
+    /**
+     * 첫 실측 이벤트가 왔는가 — 오기 전의 `worn=true` 는 **기본값이지 관측이 아니다.**
+     * 자동 로그아웃이 이 구별로 "재시작 직후의 기본값" 을 착용 증거로 오독하지 않는다.
+     */
+    @Volatile
+    var observed: Boolean = false
+        private set
+
     private var onChange: ((Boolean) -> Unit)? = null
 
     fun start(onChange: (Boolean) -> Unit) {
@@ -52,6 +60,7 @@ class OffBodySource(context: Context) : SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent) {
         val nowWorn = event.values.firstOrNull()?.let { it >= 0.5f } ?: return
+        observed = true
         if (nowWorn != worn) {
             worn = nowWorn
             Log.i(TAG, if (nowWorn) "착용 감지 — 수집 시작" else "벗음 감지 — 수집 중지")

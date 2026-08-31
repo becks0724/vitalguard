@@ -22,3 +22,10 @@
 - [x] 실기 재설치·수정 전후 캡처 → 아티팩트 기기별 구분 갱신
 - [ ] QR 로그인 라이브(폰 스캔→승인) — 사용자 진행 대기
 - [ ] 배터리 1h 보정(착용) — 325mAh · 추정 ~9%/h 검증
+
+## 08-31 · 자동 로그아웃(미착용 90분)
+- [x] ConfigStore.offBodySince 영속 앵커 + OffBodySource.observed
+- [x] CollectorService — 콜백 앵커 기록/해제 · tick 만료 검사 · 시작 정산 · shouldAutoLogout
+- [x] MainActivity.onResume — 백그라운드 로그아웃의 화면 반영
+- [x] AutoLogoutTest 6건
+- [ ] 실기 확인 — 워치 벗어 두고 90분 후 QR 로그인 화면 복귀(배터리 측정과 병행 가능)
