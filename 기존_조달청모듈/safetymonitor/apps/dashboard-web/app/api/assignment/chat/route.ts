@@ -8,10 +8,7 @@ import { NextResponse } from "next/server";
 
 import { hasAdminMenuAccess } from "../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../lib/app-jwt";
-import {
-  ASSIGNMENT_CHAT_CONTRACT,
-  type AssignmentChatContract,
-} from "../../../../lib/assignment-chat-contract";
+import { ASSIGNMENT_CHAT_CONTRACT } from "../../../../lib/assignment-chat-contract";
 import { assessWorker, type WorkerAssignment } from "../../../../lib/assignment-service";
 import {
   decorateWorkerNames,
@@ -133,33 +130,11 @@ export async function GET(request: Request) {
   if (!chatRateAllowed(request)) {
     return NextResponse.json({ ok: false, error: "too_many_requests" }, { status: 429 });
   }
+  // 예시 문구의 특정인 지칭 금지(2026-08-31) — 실명·실사번 개인화 없이 정적 계약 그대로.
   return NextResponse.json(
-    { ok: true, contract: await personalizedChatContract() },
+    { ok: true, contract: ASSIGNMENT_CHAT_CONTRACT },
     { headers: { "Cache-Control": "private, max-age=60" } },
   );
-}
-
-/** 예시 칩·환영문의 표본 사번(EMP-6861)을 현재 관제 로스터의 실제 작업자 이름으로 치환한다
- *  (2026-08-31 사용자 결정 — 이름 조회 기능을 예시가 바로 보여주게). 이름을 하드코딩하지 않아
- *  로스터가 바뀌면 자동 추종하고, 로스터·이름 조회 실패 시 정적 계약 그대로(챗을 막지 않는다). */
-async function personalizedChatContract(): Promise<AssignmentChatContract> {
-  try {
-    const slotIds = ((await getMonitorSlots()) ?? []).filter(
-      (s): s is string => !!s && /^(?:EMP|VW)-/i.test(s),
-    );
-    const names = await workerNamesFor(slotIds.slice(0, 5));
-    const firstId = slotIds.find((id) => names[id]);
-    if (!firstId) return ASSIGNMENT_CHAT_CONTRACT;
-    const name = names[firstId]!;
-    return {
-      ...ASSIGNMENT_CHAT_CONTRACT,
-      welcomeMessage: ASSIGNMENT_CHAT_CONTRACT.welcomeMessage.split("EMP-6861").join(name),
-      suggestions: ASSIGNMENT_CHAT_CONTRACT.suggestions.map((s) => s.split("EMP-6861").join(name)),
-    };
-  } catch (error) {
-    console.warn("[assignment-chat] 계약 개인화 실패(정적 문구 유지):", error);
-    return ASSIGNMENT_CHAT_CONTRACT;
-  }
 }
 
 // CLOVA 저수준 호출 — 배치·현장정보 두 흐름이 공유한다(마크다운 제거까지).
@@ -453,7 +428,7 @@ export async function POST(request: Request) {
           return `· ${a.workerId} — ${GRADE_LABEL[a.condition.grade]}${blocked ? ` (배제 ${blocked}종)` : ""}`;
         })
         .join("\n");
-      const example = assessed[0]?.workerId ?? "EMP-6861";
+      const example = assessed[0]?.workerId ?? "(사번)";
       const rosterNames = await workerNamesFor(assessed.map((a) => a.workerId));
       return NextResponse.json({
         ok: true,
@@ -524,7 +499,7 @@ export async function POST(request: Request) {
           reply:
             `'${unknownNames.join(", ")}' — 등록된 작업자 이름인지 확인할 수 없어 답변을 보류합니다.\n` +
             "작업자 조회라면 정확한 이름이나 사번으로 질문해 주세요.\n\n" +
-            '· 사번 조회: "EMP-6861 오늘 밀폐공간 배치 가능해?"\n' +
+            '· 사번 조회: "(사번) 오늘 밀폐공간 배치 가능해?"\n' +
             '· 전체 요약: "전체 작업자 컨디션 확인해줘"\n\n' +
             "작업자 조회가 아니었다면 현장 정보(체감온도·특보·가스·경보 이력)나 법령 조문(예: \"제560조 보여줘\")으로 질문해 주세요.\n\n" +
             "최종 배치 결정 권한은 감독관에게 있습니다.",
@@ -555,7 +530,7 @@ export async function POST(request: Request) {
         ok: true,
         reply:
           "작업자 배치와 현장 정보를 질문할 수 있습니다.\n\n" +
-          '· 배치 조회: "EMP-6861 오늘 밀폐공간 배치 가능해?" · "장우진 컨디션 알려줘" · "전체 작업자 컨디션 확인해줘"\n' +
+          '· 배치 조회: "(사번 또는 작업자 이름) 오늘 밀폐공간 배치 가능해?" · "전체 작업자 컨디션 확인해줘"\n' +
           '· 현장 환경: "현재 체감온도 대응 조치는?" · "가스 감지기 상태 알려줘" · "재난문자 온 거 있어?"\n' +
           '· 조달·법령: "안전모 단가 알려줘" · "제560조 보여줘"\n\n' +
           "최종 배치 결정 권한은 감독관에게 있습니다.",

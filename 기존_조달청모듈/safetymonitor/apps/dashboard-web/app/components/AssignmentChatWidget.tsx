@@ -3,16 +3,68 @@
 // 열면 챗 창만 표시, 과업지시서(PDF 업로드·나라장터 문서) 패널은 챗 상단 '과업지시서' 버튼으로
 // 좌측 슬라이드 서랍으로 여닫는다. createPortal(body) — 캐러셀 transform 간섭 회피(기존 모달 선례).
 // z-[60]: 콘텐츠 위, 긴급 모달(z-[70])보다는 아래.
+import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import AssignmentChatBoard from "./AssignmentChatBoard";
 import AssignmentTaskDocPanel from "./AssignmentTaskDocPanel";
+import { SiteAssistantMascot, type MascotState } from "./SiteAssistantMascot";
+
+// ── 떠다니는 마스코트(반응형 호버링) ───────────────────────────────────────────
+// 앵커는 뷰포트 픽셀이 아니라 카드 박스와 동일한 fixed 레이어 안의 % 좌표라, 해상도가
+// 바뀌어 카드가 줄어도 같은 상대 위치를 지킨다.
+// 이동은 전부 사용자 상호작용의 의미를 따른다(2026-08-31 사용자 지시 — 무작위 유영은
+// 어지러워서 폐기). 대기·질문 접수·생각 중 = 헤더 타이틀 위 근무 위치, 답변 계열 =
+// 최신 답변 말풍선 옆으로 내려가 손끝으로 가리킨다(답변 도착 신호). 상태가 풀리면
+// (위젯의 6초 decay) 근무 위치로 복귀한다. 제자리 부유(둥실)만 상시 유지.
+const MASCOT_ANCHORS = {
+  // ↖ 기본 근무 위치 — 헤더 타이틀을 가리지 않도록 카드 상단선 위로 걸터앉힌다(2026-08-31 교정).
+  //    top 이 음수라 마스코트 아랫부분이 카드 상단선에 겹치지 않는다.
+  home: { left: "4%", top: "-7%" },
+  answer: { left: "-3%", top: "60%" }, // ← 최신 답변 말풍선 왼쪽(자동 스크롤로 최신 답변이 하단에 온다)
+} as const;
+
+// 답변 계열 상태 — 이때만 답변 옆으로 내려간다(각 상태의 팔 포즈가 어조를 전달).
+const ANSWER_STATES: ReadonlySet<MascotState> = new Set(["answering", "alert", "sorry", "hold", "proud"]);
+
+function FloatingMascot({ chipHover, state }: { chipHover: boolean; state: MascotState }) {
+  const anchor = ANSWER_STATES.has(state) ? MASCOT_ANCHORS.answer : MASCOT_ANCHORS.home;
+  return (
+    <motion.div
+      animate={{ left: anchor.left, top: anchor.top }}
+      initial={false}
+      style={{ position: "absolute", transform: "translate(-50%, -50%)" }}
+      transition={{ duration: 1.4, ease: "easeInOut" }}
+    >
+      {/* 제자리 부유 — 이동과 별개의 둥실 리듬(주기를 다르게 둬 유기적으로). */}
+      <motion.div
+        animate={{ y: [0, -7, 0], rotate: [0, 1.6, 0, -1.6, 0] }}
+        transition={{
+          y: { duration: 3.2, ease: "easeInOut", repeat: Infinity },
+          rotate: { duration: 6.1, ease: "easeInOut", repeat: Infinity },
+        }}
+      >
+        <SiteAssistantMascot mouthOverride={chipHover ? "open" : undefined} size={104} state={state} />
+      </motion.div>
+    </motion.div>
+  );
+}
 
 export default function AssignmentChatWidget() {
   const [open, setOpen] = useState(false);
   const [docOpen, setDocOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [mascotState, setMascotState] = useState<MascotState>("idle");
+  // 예시 칩 hover — 입모양만 바꾸므로 자세(mascotState)와 분리해서 들고 있는다.
+  const [chipHover, setChipHover] = useState(false);
+
+  // 답변 계열 자세는 6초 뒤 대기(근무 위치 복귀)로 수렴 — 다음 상호작용이 오면 그쪽이 우선.
+  useEffect(() => {
+    if (mascotState === "idle" || mascotState === "thinking" || mascotState === "greet") return;
+    const timer = window.setTimeout(() => setMascotState("idle"), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [mascotState]);
 
   useEffect(() => setMounted(true), []);
   if (!mounted) return null;
@@ -38,7 +90,7 @@ export default function AssignmentChatWidget() {
 
           {/* 챗 창 — 서랍보다 높은 z(서랍이 카드 뒤에서 나오는 효과) */}
           <div className="fixed bottom-5 right-5 z-[61] h-[640px] max-h-[calc(100vh-7rem)] w-[440px] max-w-[calc(100vw-2.5rem)]">
-            <AssignmentChatBoard />
+            <AssignmentChatBoard onChipHover={setChipHover} onMascotState={setMascotState} />
             {/* 과업지시서 서랍 토글 — 카드 왼쪽 테두리 중앙의 ‹ › 버튼 */}
             <button
               type="button"
@@ -62,6 +114,16 @@ export default function AssignmentChatWidget() {
                 <polyline points="15 18 9 12 15 6" />
               </svg>
             </button>
+          </div>
+
+          {/* 마스코트 부유 레이어 — 챗 카드와 "같은 박스"를 겹쳐(pointer-events 없음) 그 안의
+              % 앵커로 유영시킨다. 카드가 해상도 따라 줄면 앵커도 함께 따라간다(사용자 결정 08-31).
+              카드보다 한 층 위(z-[62])라 모서리에 걸터앉은 듯 보이고, 클릭은 전부 통과한다. */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none fixed bottom-5 right-5 z-[62] hidden h-[640px] max-h-[calc(100vh-7rem)] w-[440px] max-w-[calc(100vw-2.5rem)] sm:block"
+          >
+            <FloatingMascot chipHover={chipHover} state={mascotState} />
           </div>
         </>
       ) : null}
