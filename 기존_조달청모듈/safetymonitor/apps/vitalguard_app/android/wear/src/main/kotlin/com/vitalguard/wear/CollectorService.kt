@@ -98,7 +98,7 @@ class CollectorService : Service() {
         val restored = queue.restore()
         if (restored > 0) Log.i(TAG, "큐 복원 ${restored}건")
 
-        gps = GpsLocationSource(this)
+        gps = GpsLocationSource(this, handler)
         offBody = OffBodySource(this)
         val battery = getSystemService(BatteryManager::class.java)
         engine = CollectorEngine(
@@ -349,6 +349,10 @@ class CollectorService : Service() {
             val now = System.currentTimeMillis()
             checkAutoLogout(now)
             engine.flush(now)
+            // ★ 위성은 **상시 구독이 아니라 tick 마다 단발**로 켠다(09-01 실측 대응).
+            //   상시 구독은 GNSS 를 계속 켜 둔다 — 실내 fix 0건 구간에서도 86% 가동, 소모 51 → 87.8 mAh/h.
+            //   움직임 임계는 실측에서 뽑았다: 실내 ≤78mg · 보행 ≥166mg → 100mg 로 가른다.
+            gps.requestSatelliteFix(now, (engine.motionVarNow() ?: 0) >= MOVING_VAR_MG)
             uploadOnce(now)
             reviveHrIfStalled(now)
             scheduleTick()
@@ -552,6 +556,13 @@ class CollectorService : Service() {
          * 따로 푼다). 큐가 그 사이를 흡수하므로 유실은 없다.
          */
         const val FLUSH_INTERVAL_MS = 120_000L
+
+        /**
+         * "움직이는 중" 문턱(밀리g) — 위성 재시도 백오프를 즉시 푸는 신호.
+         * 09-01 실측(워치9 · DB `motion_var_mg`): 실내 착석·손동작 1~78 · 실외 보행 166~212.
+         * 양쪽에 여유를 두고 100 으로 가른다. 넘으면 장소가 바뀌었을 수 있다고 보고 위성을 다시 켠다.
+         */
+        const val MOVING_VAR_MG = 100
 
         /** 착용 표식 즉시 업로드의 최소 간격 — 이 안의 재전이(플래핑)는 큐에만 남긴다(2026-08-31). */
         const val WORN_MARKER_UPLOAD_MIN_GAP_MS = 30_000L

@@ -79,10 +79,10 @@ class LocationProviderTest {
     }
 
     @Test
-    fun `두 공급자를 함께 구독한다 - 위성과 실내 폴백`() {
-        // ⚠ 종전 가드는 "GPS_PROVIDER 리터럴이 없을 것" 이었다. 09-01 에 위성을 **되살리면서**
-        //   그 문구는 불변식을 못 지킨다 — 리터럴이 없어도 폴백을 잃을 수 있고, 있어도 폴백이
-        //   살아 있을 수 있다. 진짜 불변식 둘을 직접 단언한다.
+    fun `폴백만 구독하고 위성은 단발로 켠다`() {
+        // ⚠ 09-01 실측이 이 계약을 바꿨다. 위성을 **구독**하면 GNSS 가 계속 켜져 있어
+        //   실내 fix 0건 구간에서도 86% 가동, 소모 51 → 87.8 mAh/h(수명 9.3 → 5.4시간).
+        //   그래서 폴백만 상시 구독하고 위성은 getCurrentLocation 단발로 켠다.
         val src = uncommented(
             File("src/main/kotlin/com/vitalguard/wear/source/GpsLocationSource.kt").readText(),
         )
@@ -90,14 +90,74 @@ class LocationProviderTest {
             "실내 폴백 구독이 사라졌다 — 실내에서 좌표가 영영 안 온다(08-26 실측 0건)",
             src.contains("subscribe(fallback)"),
         )
-        assertTrue(
-            "위성 구독이 없다 — FUSED 는 정확도 요구가 없으면 위성을 안 켠다(09-01 실측 gnss 198ms)",
+        assertFalse(
+            "위성을 구독으로 되돌렸다 — GNSS 가 계속 켜져 배터리가 71% 더 든다",
             src.contains("subscribe(LocationManager.GPS_PROVIDER)"),
         )
         assertTrue(
-            "폴백이 이미 위성일 때 중복 구독을 막는 가드가 없다",
-            src.contains("fallback != LocationManager.GPS_PROVIDER"),
+            "위성 단발 호출이 없다 — 되살린 정확도(82.6m → 13.4m)가 사라진다",
+            src.contains("manager.getCurrentLocation(LocationManager.GPS_PROVIDER"),
         )
+    }
+
+    @Test
+    fun `타임아웃 회수가 공유 핸들러를 통째로 지우지 않는다`() {
+        // ⚠ handler 는 CollectorService 와 공유한다. removeCallbacksAndMessages(null) 로 싹 지우면
+        //   tick 알람 콜백까지 날아가 수집이 조용히 멈춘다.
+        val src = uncommented(
+            File("src/main/kotlin/com/vitalguard/wear/source/GpsLocationSource.kt").readText(),
+        )
+        // ⚠ 낱말만 보면 KDoc 의 설명 문장까지 걸린다(uncommented 는 // 만 걷어낸다) — 호출 형태로 좁힌다.
+        assertFalse("공유 핸들러를 통째로 비운다", src.contains("handler.removeCallbacksAndMessages"))
+        assertTrue("내 타임아웃만 회수하지 않는다", src.contains("handler.removeCallbacks(it)"))
+    }
+
+    @Test
+    fun `겹쳐 쏘지 않는다 - GNSS 가 꺼질 틈을 남긴다`() {
+        // 요청이 떠 있는데 또 쏘면 상시 구독과 같아진다 — 이 게이트가 막으려던 바로 그 상태다.
+        assertFalse(
+            GpsLocationSource.shouldRequestSatellite(
+                nowMs = 10_000L, nextAllowedAtMs = 0L, inFlight = true, movingNow = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `백오프 중에는 안 켜지만 움직이면 즉시 켠다`() {
+        // 실내 = 실패 누적 → 간격을 벌린다. 실외로 나가는 순간이 곧 '움직임' 이다.
+        assertFalse(
+            "백오프 중에 켰다",
+            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, inFlight = false, movingNow = false),
+        )
+        assertTrue(
+            "움직였는데도 백오프에 갇혔다 — 실외로 나가도 최대 15분 늦는다",
+            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, inFlight = false, movingNow = true),
+        )
+        assertTrue(
+            "백오프가 끝났는데 안 켰다",
+            GpsLocationSource.shouldRequestSatellite(600_000L, 600_000L, inFlight = false, movingNow = false),
+        )
+    }
+
+    @Test
+    fun `첫 실패는 다음 tick 에 바로 다시 본다`() {
+        // 잠깐 처마 밑이었을 수 있다 — 한 번 실패했다고 5분을 쉬면 실외에서도 위치가 끊긴다.
+        assertEquals(0L, GpsLocationSource.backoffMs(1))
+        assertEquals(5 * 60_000L, GpsLocationSource.backoffMs(2))
+        assertEquals(10 * 60_000L, GpsLocationSource.backoffMs(3))
+        assertEquals(15 * 60_000L, GpsLocationSource.backoffMs(4))
+        assertEquals("상한이 없다 — 영영 안 켜질 수 있다", 15 * 60_000L, GpsLocationSource.backoffMs(99))
+    }
+
+    @Test
+    fun `움직임 문턱은 실측에서 왔고 tick 이 위성을 부른다`() {
+        // 09-01 워치9 실측(DB motion_var_mg): 실내 착석·손동작 1~78 · 실외 보행 166~212.
+        assertEquals(100, CollectorService.MOVING_VAR_MG)
+        val service = uncommented(
+            File("src/main/kotlin/com/vitalguard/wear/CollectorService.kt").readText(),
+        )
+        val tick = service.substringAfter("private val tick =").substringBefore("private fun uploadOnce")
+        assertTrue("tick 이 위성 단발을 안 부른다", tick.contains("gps.requestSatelliteFix("))
     }
 
     @Test

@@ -231,6 +231,12 @@ class CollectorEngine(
         if (motionStopped) null else motion.stillSec(nowMs)
 
     /**
+     * 모션 변동폭(밀리g) — 화면·표본이 쓰던 값을 **위치 게이트도** 읽는다.
+     * 창 60개가 안 차면 null(부분 창 금지 규칙 그대로).
+     */
+    fun motionVarNow(): Int? = if (motionStopped) null else motion.variabilityMg()
+
+    /**
      * 주기 flush — HRV 는 **창 주기당 1회만** 싣는다. 매 flush 마다 겹친 창을 재계산해 실으면
      * 구 앱이 만든 "같은 HRV 하루 수천 행" 의 가짜 밀도를 재현한다(VitalPipeline 주석의 그 사고).
      * 부족하면 키 생략 — 0 금지. 반환 = 적재 여부.
