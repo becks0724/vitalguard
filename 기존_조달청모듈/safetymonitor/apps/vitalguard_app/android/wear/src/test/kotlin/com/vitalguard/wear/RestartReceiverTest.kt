@@ -52,6 +52,40 @@ class RestartReceiverTest {
     }
 
     @Test
+    fun `백그라운드 시작이 location 거부로 앱을 죽이지 않는다`() {
+        // 09-01 워치9 실측 — 재설치 뒤 OS 가 서비스를 두 번 되살렸고 두 번 다 SecurityException 으로
+        // 즉사했다(pid 11624·11692). ACCESS_FINE_LOCATION 이 '사용 중에만' 권한이라 백그라운드 시작에는
+        // 자격이 없다. 생체 수집까지 함께 죽으면 안 되므로 health 로 물러선다.
+        val service = uncommented(File("src/main/kotlin/com/vitalguard/wear/CollectorService.kt").readText())
+        val promote = service.substringAfter("val fullTypes").substringBefore("offBody.start")
+        assertTrue("승격이 SecurityException 을 안 받는다", promote.contains("catch (e: SecurityException)"))
+        assertTrue(
+            "폴백이 health 단독이 아니다",
+            promote.contains("ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,"),
+        )
+    }
+
+    @Test
+    fun `매니페스트가 백그라운드 위치를 선언한다`() {
+        assertTrue(
+            "ACCESS_BACKGROUND_LOCATION 이 없으면 부팅 시작에서 GPS 가 늘 빠진다",
+            manifest.contains("android.permission.ACCESS_BACKGROUND_LOCATION"),
+        )
+    }
+
+    @Test
+    fun `백그라운드 위치를 다른 위치 권한과 같이 요청하지 않는다`() {
+        // ⚠ Android 11+ 는 전경·배경 위치를 한 요청에 담으면 **요청 전체를 조용히 거절한다.**
+        //   넣는 순간 지금 잘 되던 GPS 권한까지 통째로 죽는다. 부여는 설정 또는 pm grant 로 따로.
+        val activity = uncommented(File("src/main/kotlin/com/vitalguard/wear/MainActivity.kt").readText())
+        val request = activity.substringAfter("fun requestSensorPermissions").substringBefore("companion object")
+        assertFalse(
+            "런타임 요청 배열에 ACCESS_BACKGROUND_LOCATION 이 들어갔다 — 위치 권한 전체가 거절된다",
+            request.contains("ACCESS_BACKGROUND_LOCATION"),
+        )
+    }
+
+    @Test
     fun `권한 판단은 액티비티와 같은 함수를 쓴다`() {
         // 각자 복사해 두면 한쪽만 조건이 바뀌어도 다른 쪽이 부팅 직후 죽는다.
         val activity = uncommented(File("src/main/kotlin/com/vitalguard/wear/MainActivity.kt").readText())

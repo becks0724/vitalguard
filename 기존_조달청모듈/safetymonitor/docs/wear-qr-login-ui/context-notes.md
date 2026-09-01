@@ -60,3 +60,25 @@
 - **권한 판단을 액티비티와 공유한다** — `canStartHealthFgs` 를 CollectorService companion 으로 올리고 MainActivity 는 위임. 각자 복사해 두면 한쪽만 조건이 바뀌어도 **다른 쪽이 부팅 직후 SecurityException 으로 죽는다**(c7b188f 가 잡은 그 즉사). 권한이 없으면 리시버는 물러서고 사람이 앱을 열 때 액티비티가 묻는다.
 - 테스트 5건(`RestartReceiverTest` · 순수 `shouldRestart` + 매니페스트 스캔) · :wear 287 → **292 통과**.
 - APK 실측 확인 — `aapt2 dump xmltree` 에 RECEIVE_BOOT_COMPLETED · RestartReceiver(exported=true) · 액션 2종.
+
+### 09-01 · 자동 시작이 드러낸 **잠복 크래시** — FGS location 은 백그라운드에서 거부된다
+- 리시버는 첫 시험에서 정상 발동했다(`12:44:32 VgRestart: MY_PACKAGE_REPLACED — 수집 서비스 자동 시작`). 그런데 **앱이 죽었다.**
+  ```
+  SecurityException: Starting FGS with type location … targetSDK=36
+    requires … ACCESS_FINE_LOCATION and **the app must be in the eligible state**
+    at CollectorService.onStartCommand:216
+  ```
+- **원인** — `ACCESS_FINE_LOCATION` 은 '사용 중에만' 권한이다. 앱이 포그라운드가 아닌 상태에서 서비스가 시작되면 location 타입 승격 자격이 없다. 매니페스트 주석의 *"백그라운드 위치는 FGS location 타입으로 충족한다"* 는 **틀린 전제였다.**
+- ★ **이번 리시버가 만든 문제가 아니다.** 같은 창에서 **OS 가 sticky 서비스를 스스로 두 번 되살렸고 두 번 다 즉사했다**(pid 11624·11692). 즉 재부팅·재설치와 무관하게, **OS 가 서비스를 백그라운드에서 재시작할 때마다 앱이 죽는 잠복 경로**가 원래 있었다. 수집이 조용히 멈추는 원인 후보로 기록한다.
+- **처방 둘.**
+  ① `ACCESS_BACKGROUND_LOCATION` 선언 — 있으면 거부 자체가 안 난다.
+     ⚠ **런타임 요청 배열에 넣으면 안 된다** — Android 11+ 는 전경·배경 위치를 한 요청에 담으면 **요청 전체를 조용히 거절**한다. 지금 잘 되던 GPS 권한까지 죽는다. 부여는 설정(항상 허용) 또는 `pm grant` 로 따로.
+  ② 승격을 `try/catch(SecurityException)` 로 감싸고 **health 단독으로 물러선다** — 미부여 기기에서도 생체 수집까지 함께 죽지는 않게. GPS 는 다음 포그라운드 시작에서 붙는다.
+- **실기 검증(워치9 · 재설치 2회).**
+  | 조건 | 결과 |
+  |---|---|
+  | 백그라운드 위치 **미부여** | 자동 시작 성공 · `types=0x100`(health) · 폴백 경고 1줄 · **크래시 0** |
+  | 백그라운드 위치 **부여 후** | 자동 시작 성공 · `types=0x108`(health+location) · 경고 없음 |
+  둘 다 **사람이 앱을 열지 않았다.** DB 도 이어졌다(로그인 유지 · GPS 표본 · `worn:true` 표식 적재).
+- **신규 기기 셋업 체크리스트에 `pm grant … ACCESS_BACKGROUND_LOCATION` 을 추가할 것.** 없으면 부팅 시작에서 GPS 가 늘 빠진다.
+- 테스트 292 → **295**(FGS 폴백 · 매니페스트 선언 · 동시요청 금지 가드).

@@ -213,11 +213,26 @@ class CollectorService : Service() {
             .apply(this)
 
         // 60초 규칙 — 시작 즉시 승격. 타입은 매니페스트 선언(health|location)과 같아야 한다.
-        startForeground(
-            FGS_NOTIFICATION_ID,
-            builder.build(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION,
-        )
+        //
+        // ⚠⚠ **백그라운드 시작에서는 location 타입이 거부된다.** ACCESS_FINE_LOCATION 은 '사용 중에만'
+        //   권한이라 앱이 포그라운드가 아니면 자격이 없다(부팅·재설치·OS 의 sticky 재시작이 전부 여기 해당).
+        //   종전엔 그 거부가 SecurityException 으로 **앱을 통째로 죽였다** — 09-01 워치9 재설치 실측:
+        //   OS 가 서비스를 두 번 되살렸고 두 번 다 즉사했다(pid 11624·11692). 즉 이것은 이번 리시버가
+        //   만든 문제가 아니라 **원래 있던 잠복 크래시**이고, 수집이 조용히 멈추는 경로였다.
+        //   ACCESS_BACKGROUND_LOCATION 을 부여하면 거부 자체가 안 나지만, 미부여 기기에서도
+        //   **생체 수집까지 함께 죽지는 않도록** health 로 물러선다. GPS 는 다음 포그라운드 시작에서 붙는다.
+        val fullTypes = ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH or
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        try {
+            startForeground(FGS_NOTIFICATION_ID, builder.build(), fullTypes)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "FGS location 거부 — health 만으로 승격한다(GPS 없음): ${e.message}")
+            startForeground(
+                FGS_NOTIFICATION_ID,
+                builder.build(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
+            )
+        }
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
         //   서비스 자체는 계속 산다(벗었다 다시 차면 사람 개입 없이 재개된다).
         // ★ 자동 로그아웃(미착용 90분) 정산 — 서비스가 죽어 있던 사이의 경과를 먼저 본다.

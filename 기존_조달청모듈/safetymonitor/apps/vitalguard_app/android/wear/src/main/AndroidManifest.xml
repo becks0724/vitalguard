@@ -35,9 +35,16 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
-    <!-- GPS — 생체 + 위치 송출이 목표. 백그라운드 위치는 FGS location 타입으로 충족한다 -->
+    <!-- GPS — 생체 + 위치 송출이 목표.
+         ⚠ **"백그라운드 위치는 FGS location 타입으로 충족한다" 는 틀렸다**(09-01 워치9 실측으로 반증).
+         ACCESS_FINE_LOCATION 은 '사용 중에만' 권한이라, 앱이 포그라운드가 아닌 상태에서 서비스가
+         시작되면(부팅·재설치·OS 의 sticky 재시작) location 타입 승격이 SecurityException 으로 거부되고
+         **앱이 죽는다**. 그래서 ACCESS_BACKGROUND_LOCATION 을 선언한다.
+         ⚠ 이 권한은 **다른 위치 권한과 같은 요청에 넣으면 안 된다** — Android 11+ 는 그런 요청을
+         통째로 거절한다. 부여는 설정 화면(항상 허용) 또는 `pm grant` 로 따로 한다. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
     <!-- 화면 꺼짐 생존(60초 규칙) — 포그라운드 서비스 health 타입 필수 -->
