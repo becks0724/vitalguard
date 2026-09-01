@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { clearSessionToken, getSessionToken } from "./session-token";
+import type { MascotState } from "./SiteAssistantMascot";
 import { ASSIGNMENT_CHAT_CONTRACT, type AssignmentChatContract } from "../../lib/assignment-chat-contract";
 
 // 규칙 엔진의 확정 판정 요약 — 신호등 배지는 LLM 문장이 아니라 이 값으로 그린다.
@@ -108,7 +109,15 @@ const TASK_VERDICT: Record<
   },
 };
 
-export default function AssignmentChatBoard() {
+export default function AssignmentChatBoard({
+  onChipHover,
+  onMascotState,
+}: {
+  /** 예시 칩 hover 보고 — 마스코트 입모양만 바꾼다(자세는 그대로). */
+  onChipHover?: (hovering: boolean) => void;
+  /** 마스코트 상태 보고 — 표시·부유는 위젯 레이어(AssignmentChatWidget)가 소유한다. */
+  onMascotState?: (state: MascotState) => void;
+} = {}) {
   const [contract, setContract] = useState<AssignmentChatContract>(ASSIGNMENT_CHAT_CONTRACT);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -124,6 +133,7 @@ export default function AssignmentChatBoard() {
   const [followUpWorkerIds, setFollowUpWorkerIds] = useState<string[]>([]);
   // 직전 현장 답변의 의도들 — 서버가 준 값만 되돌려보낸다(followUpWorkerIds 와 같은 철학).
   const [followUpIntents, setFollowUpIntents] = useState<string[]>([]);
+  // 마스코트 상태는 보고만 한다 — 트리거는 전부 서버 응답의 결정적 필드에서만 파생(텍스트 추측 최소).
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -147,6 +157,18 @@ export default function AssignmentChatBoard() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy]);
 
+  // 응답 → 마스코트 상태. 우선순위: 오류/폴백(sorry) > 배제 권고(alert) > 보류·무권한(hold)
+  // > 전원 정상(proud·엄지척) > 설명(answering). 판정은 텍스트 추측이 아니라 결정적 필드(grade)로.
+  const mascotStateFor = (json: ChatResponse): MascotState => {
+    const reply = json.reply ?? "";
+    const assignments = json.assignments ?? [];
+    if (!json.ok || reply.startsWith("⚠")) return "sorry";
+    if (assignments.some((a) => a.condition.grade === "restricted")) return "alert";
+    if (reply.includes("열람 권한이 없습니다") || reply.includes("답변을 보류합니다")) return "hold";
+    if (assignments.length > 0 && assignments.every((a) => a.condition.grade === "fit")) return "proud";
+    return "answering";
+  };
+
   const send = useCallback(
     async (raw?: string) => {
       const question = (raw ?? input).trim();
@@ -154,6 +176,9 @@ export default function AssignmentChatBoard() {
       setInput("");
       setMessages((prev) => [...prev, { role: "user", text: question }]);
       setBusy(true);
+      // 질문 접수 인사 → 0.9초 뒤 로딩(생각) 자세로(전환·복귀 타이밍은 위젯이 소유).
+      onMascotState?.("greet");
+      window.setTimeout(() => onMascotState?.("thinking"), 900);
       try {
         const token = getSessionToken();
         const res = await fetch("/api/assignment/chat", {
@@ -200,6 +225,7 @@ export default function AssignmentChatBoard() {
           responseAssignments.length === 1 ? responseAssignments[0] : undefined;
         setFollowUpWorkerIds(soleAssignment ? [soleAssignment.workerId] : []);
         setFollowUpIntents(soleAssignment ? [] : (json.intents ?? []));
+        onMascotState?.(mascotStateFor(json));
         setMessages((prev) => [
           ...prev,
           {
@@ -214,6 +240,7 @@ export default function AssignmentChatBoard() {
           },
         ]);
       } catch {
+        onMascotState?.("sorry");
         setMessages((prev) => [
           ...prev,
           {
@@ -226,7 +253,7 @@ export default function AssignmentChatBoard() {
         setBusy(false);
       }
     },
-    [busy, followUpIntents, followUpWorkerIds, input],
+    [busy, followUpIntents, followUpWorkerIds, input, onMascotState],
   );
 
   return (
@@ -396,8 +423,21 @@ export default function AssignmentChatBoard() {
             <button
               key={s}
               type="button"
-              onClick={() => void send(s)}
+              onClick={() => {
+                // 자리표시자가 든 예시 칩은 전송하면 "확인 불가" 거절만 나온다 —
+                // 입력창에 채워 이름·사번만 바꿔 보내게 한다(특정인 예시 금지 결정의 짝).
+                if (s.includes("(작업자 이름)") || s.includes("(사번)")) {
+                  setInput(s);
+                  return;
+                }
+                void send(s);
+              }}
               disabled={busy}
+              // 칩에 마우스를 올리면 마스코트가 입을 벌린다 — "이거 물어보려고?" 하는 반응.
+              onMouseEnter={() => onChipHover?.(true)}
+              onMouseLeave={() => onChipHover?.(false)}
+              onFocus={() => onChipHover?.(true)}
+              onBlur={() => onChipHover?.(false)}
               className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-500 hover:bg-zinc-50 disabled:opacity-40 dark:border-white/10 dark:text-zinc-400 dark:hover:bg-white/5"
             >
               {s}
