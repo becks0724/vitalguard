@@ -50,6 +50,8 @@
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 재부팅 뒤 수집 자동 복구(09-01 사용자 지시) — 이 선언이 없으면 BOOT_COMPLETED 가 아예 안 온다. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:label="VitAlGuard"
@@ -75,6 +77,22 @@
             android:name=".HrForegroundService"
             android:exported="false"
             android:foregroundServiceType="health" />
+
+        <!-- 재부팅·재설치 뒤 수집을 스스로 되살린다. 종전엔 앱 소유 리시버가 **0개**라 둘 다에서
+             수집이 조용히 멈췄고, 화면은 평소와 같아 아무도 몰랐다(09-01 워치8 재설치 실측).
+             ⚠ exported=true 가 필요하다 — 이 둘은 시스템만 보낼 수 있는 protected broadcast 라
+             외부 앱이 흉내낼 수 없다. 다른 액션으로 넓히면 Android 12+ 의 백그라운드 FGS 제한에
+             걸린다(이 둘은 면제 대상). -->
+        <receiver
+            android:name=".RestartReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 수집 본체 — 생체(health) + GPS(location) 를 한 서비스가 든다 -->
         <service

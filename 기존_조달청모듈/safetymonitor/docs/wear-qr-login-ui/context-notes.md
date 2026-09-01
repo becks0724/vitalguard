@@ -50,3 +50,13 @@
 - **폭 예산으로 전송 자리를 비웠다** — 상태 줄 가용 ≈148dp 인데 `로그아웃(40) + 5 + 막대15 + 6 + 배터리30 + 5 + "전송 1h"(50) = 151dp` 로 넘친다. 게다가 자격이 없어 못 보내는 중에 전송 이력을 띄우면 보내는 것처럼 읽힌다. → `uploadStatus` 최우선 분기로 빈 문자열.
 - 테스트 6건(`LoggedOutLabelTest`) · :wear 281 → **287 통과**.
 - 미수정(기존 동작·범위 밖) — `shortAge` 가 `1h`·`3m` 처럼 영문 단위를 화면에 내보낸다. "한국어 단독" 관례와 어긋나지만 이번 변경이 만든 것이 아니라 손대지 않았다.
+
+## 09-01 · 재부팅·재설치 뒤 자동 시작 (사용자 지시)
+- 발단은 오해였다 — "워치9은 자동으로 올라오는데 워치8은 안 온다". **둘 다 자동이 아니었다.** 워치9은 [WATCH.APP] 이 17:09:23 에 `am start` 로 띄운 것이고, 두 워치는 md5 동일 APK 다. 판별은 `dumpsys package` 리시버 전수 — 앱 소유 리시버 **0개**(androidx.profileinstaller 3종뿐), BOOT_COMPLETED·MY_PACKAGE_REPLACED·RECEIVE_BOOT_COMPLETED 전부 없음. **"워치9처럼 만든다"가 아니라 없던 것을 새로 만드는 일이었다.**
+- `RestartReceiver` 신설 — BOOT_COMPLETED(재부팅) + MY_PACKAGE_REPLACED(재설치) 둘만 받는다.
+  ⚠ **액션을 넓히면 안 된다.** Android 12+ 는 백그라운드에서 FGS 를 못 올리는데 이 둘이 그 제한의 면제 대상이다. 다른 액션을 더하면 그 경로에서만 ForegroundServiceStartNotAllowedException 이 난다.
+  ⚠ exported=true 필수 — 시스템이 보내는 protected broadcast 라 false 면 아예 도달하지 않고, 외부 앱이 흉내낼 수도 없다.
+- **자격이 있을 때만 올린다** — 로그아웃 상태에서 수집이 저절로 켜지면 올릴 곳 없는 표본만 쌓인다. 자동 로그아웃(미착용 90분) 뒤 재부팅한 워치는 조용히 있는 것이 맞다.
+- **권한 판단을 액티비티와 공유한다** — `canStartHealthFgs` 를 CollectorService companion 으로 올리고 MainActivity 는 위임. 각자 복사해 두면 한쪽만 조건이 바뀌어도 **다른 쪽이 부팅 직후 SecurityException 으로 죽는다**(c7b188f 가 잡은 그 즉사). 권한이 없으면 리시버는 물러서고 사람이 앱을 열 때 액티비티가 묻는다.
+- 테스트 5건(`RestartReceiverTest` · 순수 `shouldRestart` + 매니페스트 스캔) · :wear 287 → **292 통과**.
+- APK 실측 확인 — `aapt2 dump xmltree` 에 RECEIVE_BOOT_COMPLETED · RestartReceiver(exported=true) · 액션 2종.

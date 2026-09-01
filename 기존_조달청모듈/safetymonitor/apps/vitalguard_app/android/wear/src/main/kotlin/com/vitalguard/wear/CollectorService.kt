@@ -6,8 +6,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.HandlerThread
@@ -459,6 +462,20 @@ class CollectorService : Service() {
 
     companion object {
         private const val CH = "vg-collector"
+
+        /**
+         * FGS(health) 승격의 anyOf 요건을 하나라도 쥐고 있는가 — 신규 설치엔 0개라 시작 즉시 죽는다(c7b188f).
+         * OS 검사(08-31 워치8 실측): allOf=[FOREGROUND_SERVICE_HEALTH(설치형)] + anyOf=[ACTIVITY_RECOGNITION,
+         * HIGH_SAMPLING_RATE_SENSORS, health.READ_*]. 35 이하의 anyOf 는 BODY_SENSORS 계열.
+         *
+         * ★ 여기 둔 이유 = **액티비티와 부팅 리시버가 같은 판단을 해야 한다.** 각자 복사해 두면
+         *   한쪽만 조건이 바뀌어도 다른 쪽이 부팅 직후 SecurityException 으로 죽는다.
+         */
+        internal fun canStartHealthFgs(context: Context): Boolean {
+            val key = if (Build.VERSION.SDK_INT >= 36) "android.permission.health.READ_HEART_RATE"
+            else android.Manifest.permission.BODY_SENSORS
+            return context.checkSelfPermission(key) == PackageManager.PERMISSION_GRANTED
+        }
 
         /**
          * 포그라운드 알림 id. **`startForeground` 와 `OngoingActivity` 가 같은 값을 써야 한다** —

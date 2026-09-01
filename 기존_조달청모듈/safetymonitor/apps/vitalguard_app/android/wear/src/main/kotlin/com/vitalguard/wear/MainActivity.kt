@@ -541,16 +541,8 @@ class MainActivity : ComponentActivity() {
         },
     )
 
-    /**
-     * FGS(health) 승격의 anyOf 요건을 하나라도 쥐고 있는가 — 신규 설치엔 0개라 시작 즉시 죽는다.
-     * OS 검사(08-31 워치8 실측): allOf=[FOREGROUND_SERVICE_HEALTH(설치형)] + anyOf=[ACTIVITY_RECOGNITION,
-     * HIGH_SAMPLING_RATE_SENSORS, health.READ_*]. 35 이하의 anyOf 는 BODY_SENSORS 계열.
-     */
-    private fun canStartHealthFgs(): Boolean {
-        val key = if (Build.VERSION.SDK_INT >= 36) "android.permission.health.READ_HEART_RATE"
-        else android.Manifest.permission.BODY_SENSORS
-        return checkSelfPermission(key) == PackageManager.PERMISSION_GRANTED
-    }
+    /** 정본은 [CollectorService.canStartHealthFgs] — 부팅 리시버와 **같은 판단**을 써야 한다. */
+    private fun canStartHealthFgs(): Boolean = CollectorService.canStartHealthFgs(this)
 
     /** API 36+ 는 health 권한, 35 이하는 BODY_SENSORS 계열 — 매니페스트의 신·구 병기와 짝. */
     private fun requestSensorPermissions() {
