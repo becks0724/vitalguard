@@ -311,6 +311,9 @@ test("hasMonitorableSignal — 실측 신호 유무 판별(빈 샘플=false)", (
   assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, manualSos: true })), true);
   assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, fallDetected: true })), true);
   assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, fallCandidate: true })), true);
+  // 착용 전이는 true/false 둘 다 신호 — 벗음 표식은 생체가 없어 이 줄이 없으면 통째로 버려진다(08-31 유실).
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, worn: false })), true);
+  assert.equal(hasMonitorableSignal(s({ workerId: "EMP-1", ts: TS, worn: true })), true);
   // 메타데이터/위치/배터리만 있으면 빈 샘플(false) — 모니터링 값 없음.
   assert.equal(
     hasMonitorableSignal(

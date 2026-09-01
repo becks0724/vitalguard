@@ -53,6 +53,17 @@ test("② 병합 — worn 은 sticky: 표식 뒤 무음이어도 유지되고, �
   assert.match(store, /worn: newer\.worn \?\? older\?\.worn,/, "병합 소스에서 sticky 줄이 사라졌다");
 });
 
+test("②-b 서버 게이트 — 빈 샘플 게이트가 착용 표식을 버리지 않는다", () => {
+  // 08-31 실증: 배치 5건 중 표식 1건만 DB 부재 — addSample 의 hasMonitorableSignal 게이트가 원인.
+  // 전이 표식은 생체가 하나도 없어서, 이 줄이 없으면 스키마·병합·화면이 다 맞아도 행이 안 남는다.
+  const gate = store.slice(store.indexOf("function hasMonitorableSignal("));
+  assert.match(
+    gate.slice(0, gate.indexOf("\n}")),
+    /typeof s\.worn === "boolean"/,
+    "빈 샘플 게이트가 착용 표식을 버린다 — 벗어도 '미착용' 이 안 뜬다",
+  );
+});
+
 test("③ 화면 — 미착용은 끊김과 같이 게이트·강등되되 라벨은 '미착용' 이고 유지값(회색)은 뜨지 않는다", () => {
   assert.match(board, /const offBody = sample\?\.worn === false;/, "행에서 표식을 안 읽는다");
   assert.match(board, /const stale = sample !== undefined && \(signal === 0 \|\| offBody\);/, "미착용이 값 게이트·톤 강등을 안 탄다");

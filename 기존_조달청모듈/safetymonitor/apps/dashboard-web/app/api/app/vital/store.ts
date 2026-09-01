@@ -151,7 +151,11 @@ export function hasMonitorableSignal(s: VitalSample): boolean {
     s.respiratoryRate !== undefined ||
     s.manualSos === true ||
     s.fallDetected === true ||
-    s.fallCandidate === true
+    s.fallCandidate === true ||
+    // 착용 전이(worn)는 그 자체가 신호다 — true/false 둘 다. 벗음 표식 `{worn:false,ts}` 는 생체가 하나도
+    // 없어서 위 조건에 안 걸리고 통째로 버려졌다(08-31 실측: 배치 5건 중 표식 1건만 DB 부재).
+    // v6.1.1 의 fallCandidate 54건 유실과 같은 자리다 — 새 이벤트 필드를 스키마에 더하면 이 목록도 넓힌다.
+    typeof s.worn === "boolean"
   );
 }
 
