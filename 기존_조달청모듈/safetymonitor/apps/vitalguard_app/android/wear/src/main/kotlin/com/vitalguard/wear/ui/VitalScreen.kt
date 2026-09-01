@@ -175,9 +175,11 @@ private fun StatusRow(state: VitalUiState) {
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // ★ 로그아웃이면 이름 자리가 상태를 말한다 — 이름만 사라지고 "심박수" 로 되돌아가면
+        //   평소 화면과 똑같아 보여 작업자가 수집이 멈춘 줄 모른다(08-31 사용자 지시).
         Text(
-            state.workerName ?: "심박수",
-            color = state.severity.color(),
+            if (state.loggedOut) "로그아웃" else state.workerName ?: "심박수",
+            color = if (state.loggedOut) VgColors.Caution else state.severity.color(),
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
@@ -195,6 +197,9 @@ private fun StatusRow(state: VitalUiState) {
 
 /** 전송 상태 글자 — 큐가 쌓이면 주황 "대기 N건", 아니면 마지막 업로드 나이. 착용·준비 안내는 아래 줄(FooterLine) 몫. */
 internal fun uploadStatus(state: VitalUiState): Pair<String, Color> = when {
+    // ⚠ 로그아웃이면 전송 자리를 비운다. 자격이 없어 못 보내는 중인데 "전송 1시간" 을 띄우면
+    //   보내고 있는 것처럼 읽힌다. 폭 예산(≈148dp)도 "로그아웃"(40dp) 과 함께면 넘친다.
+    state.loggedOut -> "" to VgColors.Idle
     state.queued > 0 -> "대기 ${state.queued}건" to VgColors.Caution
     state.lastUploadAgeSec != null -> "전송 ${shortAge(state.lastUploadAgeSec)}" to VgColors.Normal
     else -> "수집 중" to VgColors.Normal
@@ -405,6 +410,9 @@ private fun SwipeHint() {
 private fun FooterLine(state: VitalUiState) {
     val staleText = if (state.bpmStale) (state.bpmAgeSec?.let { "${ageLabel(it)} 값" } ?: "낡음") else null
     val (text, tint) = when {
+        // ⚠ 로그아웃을 착용보다 먼저 본다 — 그 상태에서 "착용하면 시작됩니다" 는 거짓이다.
+        //   차도 자격이 없어 전송이 안 된다. 해야 할 일(로그인)을 말해야 한다.
+        state.loggedOut -> "로그인이 필요합니다" to VgColors.Caution
         !state.worn -> "착용하면 시작됩니다" to VgColors.Idle
         !state.collecting -> "준비 중" to VgColors.Idle
         staleText != null -> staleText to VgColors.Caution

@@ -308,7 +308,14 @@ class MainActivity : ComponentActivity() {
 
             // iOS 화면과 같은 3초 폴링 — 스트림이 죽어도 화면이 3초 안에 되살아난다.
             LaunchedEffect(Unit) {
+                val cfg = ConfigStore(this@MainActivity)
                 while (true) {
+                    // ★ 자동 로그아웃(미착용 90분)은 서비스가 조용히 한다 — 화면은 매 틱 prefs 를 다시 본다.
+                    //   ⚠ onResume 에만 맡기면 못 잡는다: 이 앱은 앰비언트로 머물러 액티비티가 계속
+                    //   RESUMED 라 onResume 이 다시 오지 않는다(위 ambientObserver 참조).
+                    val live = cfg.token != null
+                    workerId = if (live) cfg.workerId else null
+                    workerName = if (live) cfg.workerName else null
                     // 진단 화면용(HrForegroundService) 과 본수집용(CollectorService) 을 모두 본다.
                     // ★ 둘 중 실제로 도는 쪽의 값을 쓴다 — 08-25 실기에서 화면이 진단 서비스만
                     //   보고 있어 본수집 중인데도 심박이 `--` 로 남았다.
@@ -347,6 +354,7 @@ class MainActivity : ComponentActivity() {
                             ?.let { com.vitalguard.wear.core.CoreTempKalman.bucketsRemaining(it) }
                             ?: com.vitalguard.wear.core.CoreTempKalman.MIN_BUCKETS,
                         workerName = workerName,
+                        loggedOut = workerId == null,
                         bpm = bpm,
                         spo2 = engine?.lastSpo2,
                         spo2AgeSec = engine?.lastSpo2AtMs?.let { (now - it) / 1000 },

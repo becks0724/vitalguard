@@ -15,6 +15,12 @@ import com.vitalguard.wear.core.spo2Severity
  */
 data class VitalUiState(
     val workerName: String? = null,
+    /**
+     * 로그인 세션이 없는가 — 자동 로그아웃(미착용 90분) 이후이거나 아직 로그인 전.
+     * ⚠ `workerName == null` 로는 못 가른다: 이름 자리가 "심박수" 로 되돌아가
+     * **평소 화면과 구분이 안 된다**(08-31 사용자 지적). 로그아웃은 별도 신호로 말한다.
+     */
+    val loggedOut: Boolean = false,
     val bpm: Int? = null,
     val spo2: Int? = null,
     /** SpO₂ 측정 후 경과(초) — 기회 측정이라 값의 나이를 함께 보여준다. */
