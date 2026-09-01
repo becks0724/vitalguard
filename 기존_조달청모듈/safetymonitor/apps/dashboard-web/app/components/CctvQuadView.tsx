@@ -569,6 +569,14 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
     { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count, scoped: true },
     { label: "안전조끼", scoped: false },
   ];
+  // ★ 준수율은 머리류를 하나라도 봤을 때만 성립한다(2026-09-01 실측).
+  //   엣지는 head+helmet 이 0 이면 compliance_rate 에 기본값 100 을 넣는다
+  //   (cctv-ai/edge/gopro_ppe_edge.py:117). "전원 착용" 이 아니라 "하나도 못 봄" 인데
+  //   화면에서는 준수율 100% 로 읽혔다 — 조끼 "미착용 0" 오독과 같은 자리다.
+  //   조경 현장 실사진 59장 중 46장이 이 상태였고, 안전모 검출은 작업자 73명에 1개뿐이라
+  //   화면의 100% 는 한 번도 "안전모를 봤다" 는 뜻이 아니었다.
+  //   근거 = ml/ppe-detection/context-notes.md 트랙 H.
+  const judged = (stats?.hardhat_count ?? 0) + (stats?.no_hardhat_count ?? 0) > 0;
 
   return (
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
@@ -576,7 +584,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         <span className="flex items-center gap-1.5 text-xs font-semibold">
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${
-              !stats ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
+              !stats || !judged ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
             }`}
           />
           PPE 안전모 감지
@@ -585,17 +593,26 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
           {stats ? (
             <>
               {AI_MODEL_LABEL.ppe} · 작업자 {stats.person_count}명 · 준수율{" "}
-              <span
-                className={
-                  stats.compliance_rate >= 100
-                    ? "text-emerald-300"
-                    : stats.compliance_rate >= 50
-                      ? "text-amber-300"
-                      : "text-red-300"
-                }
-              >
-                {Math.round(stats.compliance_rate)}%
-              </span>
+              {judged ? (
+                <span
+                  className={
+                    stats.compliance_rate >= 100
+                      ? "text-emerald-300"
+                      : stats.compliance_rate >= 50
+                        ? "text-amber-300"
+                        : "text-red-300"
+                  }
+                >
+                  {Math.round(stats.compliance_rate)}%
+                </span>
+              ) : (
+                <span
+                  title="안전모·맨머리를 하나도 검출하지 못했습니다. 준수율을 계산할 근거가 없어 판정하지 않습니다."
+                  className="text-zinc-400"
+                >
+                  판정 불가
+                </span>
+              )}
               {violations > 0 && <span className="ml-1.5 font-bold text-red-300">· 위반 {violations}건</span>}
             </>
           ) : (
