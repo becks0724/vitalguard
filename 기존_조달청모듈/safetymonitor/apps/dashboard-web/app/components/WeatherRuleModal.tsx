@@ -11,7 +11,7 @@ import {
   type ThresholdStep,
 } from "../../lib/weather-rules";
 
-// 모달 부가 예보 — 날씨 항목엔 일주일 예보, 기온 항목엔 24시간 시간대별 기온.
+// 모달 부가 예보 — 날씨 항목엔 일주일 예보, 기온 항목엔 앞으로 24시간 기온 예보.
 // WeatherStrip 이 날씨코드→아이콘/라벨 변환을 마친 뒤 문자열로 전달(모달엔 변환 로직 없음).
 export type ForecastDay = {
   dateLabel: string;
@@ -21,7 +21,8 @@ export type ForecastDay = {
   tMin: number;
   precipProb?: number;
 };
-export type ForecastHour = { label: string; temp: number };
+// time = 원시 ISO 로컬시각("2026-09-02T02:00") — x축 날짜 경계 판정용. label 은 표시용 시각만 담는다.
+export type ForecastHour = { time: string; label: string; temp: number };
 export type ForecastExtra = { days?: ForecastDay[]; hourly?: ForecastHour[] };
 
 type Props = {
@@ -216,7 +217,19 @@ function ForecastDays({ days }: { days: ForecastDay[] }) {
   );
 }
 
-// 24시간 시간대별 기온 — 인라인 SVG 라인/영역 차트. 3시간 간격으로 값·시각 라벨.
+// "2026-09-02T02:00" → "2026-09-02"
+function dayOf(iso: string): string {
+  return iso.slice(0, 10);
+}
+
+// "2026-09-02T02:00" → "9/2"
+function monthDay(iso: string): string {
+  const [, m, d] = dayOf(iso).split("-");
+  return `${Number(m)}/${Number(d)}`;
+}
+
+// 앞으로 24시간 기온 예보 — 인라인 SVG 라인/영역 차트. 3시간 간격으로 값·시각 라벨.
+// 왼쪽 끝이 현재 시각대, 오른쪽으로 갈수록 미래(api/weather 가 현재 시각부터 24칸을 슬라이스).
 function HourlyTempSection({ hourly }: { hourly: ForecastHour[] }) {
   // 빈 배열이면 Math.min/max 가 ±Infinity → span/yAt NaN 으로 SVG 깨짐 → 렌더 생략
   if (hourly.length === 0) return null;
@@ -235,7 +248,18 @@ function HourlyTempSection({ hourly }: { hourly: ForecastHour[] }) {
   const baseY = padTop + innerH;
   const xAt = (i: number) => padX + (n <= 1 ? 0 : (i / (n - 1)) * innerW);
   const yAt = (t: number) => padTop + innerH - ((t - min) / span) * innerH;
-  const pts = hourly.map((h, i) => ({ x: xAt(i), y: yAt(h.temp), temp: h.temp, label: h.label }));
+  // x축 라벨은 3칸마다만 찍힌다(아래 i % 3). 창이 "지금부터 24시간"이라 뒤쪽 절반이 다음 날인데
+  // "2시"만 보이면 오늘 새벽으로 오독된다 → 날짜가 바뀐 뒤 첫 라벨에 M/D 를 접두한다.
+  const pts = hourly.map((h, i) => {
+    const prevLabeled = hourly[i - 3]; // 직전 라벨 지점
+    const dayChanged = prevLabeled !== undefined && dayOf(prevLabeled.time) !== dayOf(h.time);
+    return {
+      x: xAt(i),
+      y: yAt(h.temp),
+      temp: h.temp,
+      label: dayChanged ? `${monthDay(h.time)} ${h.label}` : h.label,
+    };
+  });
   const linePath = pts
     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
     .join(" ");
@@ -249,14 +273,14 @@ function HourlyTempSection({ hourly }: { hourly: ForecastHour[] }) {
   return (
     <section className="mb-4">
       <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        24시간 시간대별 기온
+        앞으로 24시간 기온 예보
       </h3>
       <div className="rounded border border-zinc-200 bg-zinc-50 p-2 dark:border-white/10 dark:bg-white/[0.02]">
         <svg
           viewBox={`0 0 ${W} ${H}`}
           className="h-auto w-full"
           role="img"
-          aria-label="24시간 기온 추이"
+          aria-label="앞으로 24시간 기온 예보 추이"
         >
           <defs>
             <linearGradient id="tempArea" x1="0" y1="0" x2="0" y2="1">
