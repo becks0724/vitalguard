@@ -71,8 +71,15 @@
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
 
+        <!-- ★ 화면 회전 고정(09-01 사용자 지시) — 손목을 움직이면 화면이 따라 돌던 현상.
+             기기 자동회전이 켜져 있고(accelerometer_rotation=1) 액티비티가 방향을 안 정해 센서를
+             그대로 따랐다(실측: 착용 중 mRotation=ROTATION_180 = 뒤집힘).
+             ⚠ `portrait` 가 아니라 `nosensor` 다 — portrait 는 회전 0 으로 못박아, 반대 손목·버튼
+             방향으로 쓰는 사용자의 기기 기본 방향까지 뒤집어 버린다. nosensor 는 **기기 기본 방향을
+             그대로 쓰되 센서만 무시**하므로 어느 손목이든 바로 서고 움직여도 안 돈다. -->
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="nosensor"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
