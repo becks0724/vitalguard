@@ -1286,3 +1286,10 @@ B 15:57~17:03(awake31%) 끊김 62% · p90 566s   39% · 371s      20% · 217s   
 - ⚠ `dumpsys alarm` 의 앱별 배달 목록(`mAppWakeupHistory`)은 **면제 알람을 기록하지 않는다** — 19:37 화이트리스트 이후 19:41~45 는
   서버 201 인데 목록에 없다. 화이트리스트 후 판정은 DB(`window-stats.mjs`)로만 한다.
 - 배터리 14%(저전력 절전 진입 경계). 현장 운영상 **저전력 모드에서 수집이 유지되는가**는 별도 실측 항목이다 — 오늘은 충전으로 종료.
+
+## 09-01 · 화면 회전 고정 — 확정
+- 증상(사용자) — 손목 움직임에 따라 앱 화면이 돌았다. 실측 = 기기 자동회전 켜짐(`accelerometer_rotation=1`) + `MainActivity` 에 방향 미지정 → 센서 추종. 착용 중 `mRotation=ROTATION_180`(뒤집힘).
+- 처방 = `android:screenOrientation="nosensor"`.
+  ⚠ **`portrait` 가 아니다.** portrait 는 회전 0 으로 못박아 반대 손목·다른 버튼 방향 사용자의 **기기 기본 방향까지 뒤집는다.** nosensor 는 기본 방향을 그대로 쓰고 센서만 무시한다.
+- ⚠ **초록불을 믿지 않고 눈으로 확인했다** — 매니페스트(`screenOrientation=5`)·dumpsys(`SCREEN_ORIENTATION_NOSENSOR` · 출처 MainActivity)가 다 초록이어도 이 디스플레이는 `mIgnoreOrientationRequest=true` 라 **시스템이 앱 요청을 무시할 여지**가 있었다([[L-118]] 계열: 초록불이 답한 질문 ≠ 묻고 싶던 질문). 사용자 실기 확인으로 **09-01 수리 확정**.
+- 폴백(쓰지 않음) = 기기 자동회전 끄기(`settings put system accelerometer_rotation 0`). 앱 밖으로 새고 초기화하면 사라져 차선이다.
