@@ -76,9 +76,68 @@ class LocationProviderTest {
         )
         assertTrue("실패 사유를 안 남긴다", src.contains("onFailure"))
         assertTrue("어느 공급자로 붙었는지 안 남긴다", src.contains("onSuccess"))
-        assertFalse(
-            "위성 단독 구독으로 되돌아갔다 — 실내에서 좌표가 영영 안 온다",
-            src.contains("requestLocationUpdates(LocationManager.GPS_PROVIDER"),
+    }
+
+    @Test
+    fun `두 공급자를 함께 구독한다 - 위성과 실내 폴백`() {
+        // ⚠ 종전 가드는 "GPS_PROVIDER 리터럴이 없을 것" 이었다. 09-01 에 위성을 **되살리면서**
+        //   그 문구는 불변식을 못 지킨다 — 리터럴이 없어도 폴백을 잃을 수 있고, 있어도 폴백이
+        //   살아 있을 수 있다. 진짜 불변식 둘을 직접 단언한다.
+        val src = uncommented(
+            File("src/main/kotlin/com/vitalguard/wear/source/GpsLocationSource.kt").readText(),
         )
+        assertTrue(
+            "실내 폴백 구독이 사라졌다 — 실내에서 좌표가 영영 안 온다(08-26 실측 0건)",
+            src.contains("subscribe(fallback)"),
+        )
+        assertTrue(
+            "위성 구독이 없다 — FUSED 는 정확도 요구가 없으면 위성을 안 켠다(09-01 실측 gnss 198ms)",
+            src.contains("subscribe(LocationManager.GPS_PROVIDER)"),
+        )
+        assertTrue(
+            "폴백이 이미 위성일 때 중복 구독을 막는 가드가 없다",
+            src.contains("fallback != LocationManager.GPS_PROVIDER"),
+        )
+    }
+
+    @Test
+    fun `실외에서는 위성이 이긴다`() {
+        val sat = LocationFix(35.1, 126.9, accuracyMeters = 12.0, atMs = 1_000L)
+        val net = LocationFix(35.2, 126.8, accuracyMeters = 90.0, atMs = 1_000L)
+        assertEquals(sat, GpsLocationSource.pickFix(sat, net, nowMs = 2_000L, maxAgeMs = 120_000L))
+    }
+
+    @Test
+    fun `실내에서는 폴백만 남는다`() {
+        // 위성은 실내에서 영영 안 온다 — 폴백이 유일한 좌표다.
+        val net = LocationFix(35.2, 126.8, accuracyMeters = 300.0, atMs = 1_000L)
+        assertEquals(net, GpsLocationSource.pickFix(null, net, nowMs = 2_000L, maxAgeMs = 120_000L))
+    }
+
+    @Test
+    fun `위성이 튀면 더 정확한 폴백을 쓴다`() {
+        // ★ "위성이면 무조건 우선" 이 아닌 이유. 하늘이 가리면 위성도 수백 m 로 튄다.
+        val sat = LocationFix(35.1, 126.9, accuracyMeters = 500.0, atMs = 1_000L)
+        val net = LocationFix(35.2, 126.8, accuracyMeters = 60.0, atMs = 1_000L)
+        assertEquals(net, GpsLocationSource.pickFix(sat, net, nowMs = 2_000L, maxAgeMs = 120_000L))
+    }
+
+    @Test
+    fun `묵은 좌표는 정확해도 버린다`() {
+        // 묵은 좌표 금지는 종전 규칙 그대로다 — 사람이 그 사이 움직였을 수 있다.
+        val stale = LocationFix(35.1, 126.9, accuracyMeters = 5.0, atMs = 0L)
+        val fresh = LocationFix(35.2, 126.8, accuracyMeters = 200.0, atMs = 100_000L)
+        assertEquals(fresh, GpsLocationSource.pickFix(stale, fresh, nowMs = 130_000L, maxAgeMs = 120_000L))
+        assertEquals(null, GpsLocationSource.pickFix(stale, null, nowMs = 130_000L, maxAgeMs = 120_000L))
+    }
+
+    @Test
+    fun `정확도 미상은 최후순위다 - 단독일 때만 쓴다`() {
+        // ⚠ Location.accuracy 는 값이 없으면 0 을 낸다. 그대로 비교하면 품질 미상이 항상 이긴다.
+        val unknown = LocationFix(35.2, 126.8, accuracyMeters = 0.0, atMs = 1_000L)
+        val sat = LocationFix(35.1, 126.9, accuracyMeters = 15.0, atMs = 1_000L)
+        assertEquals(sat, GpsLocationSource.pickFix(sat, unknown, nowMs = 2_000L, maxAgeMs = 120_000L))
+        // 단독 후보면 그래도 쓴다 — 없는 것보다는 낫다.
+        assertEquals(unknown, GpsLocationSource.pickFix(null, unknown, nowMs = 2_000L, maxAgeMs = 120_000L))
     }
 }
