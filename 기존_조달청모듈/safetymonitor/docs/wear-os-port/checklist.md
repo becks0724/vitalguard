@@ -284,3 +284,43 @@
 - [ ] R-33 경로 정확도 필터(지도 ⓐ) — 별건 · 사용자 결정 대기.
 - [ ] 판정 = 간격 p90 ≤ 150s · 연결끊김 < 2% (`galaxy-today.mjs` 절대 창) · 배터리 %/h 전후 비교.
 - [ ] 커밋(내 경로만) → push 묶음 · WATCH.DESIGN 에 설치 완료 한 줄(그쪽 screencap 대조 대기 중).
+
+## 신규 워치 셋업 — 설치 직후 해야 하는 것 (09-01 신설)
+
+새 워치·초기화한 워치는 **설치만으로는 정상 동작하지 않는다.** 아래를 빠뜨리면 앱은 멀쩡히 도는데
+데이터 일부가 조용히 안 온다 — 셋 다 실기에서 당한 적이 있다.
+
+- [ ] **런타임 권한 부여**(사이드로드라 스토어 흐름이 없다)
+  ```bash
+  S=<adb 대상>   # 예: Android_770M271P.local:45607
+  for p in \
+    android.permission.BODY_SENSORS \
+    android.permission.BODY_SENSORS_BACKGROUND \
+    android.permission.health.READ_HEART_RATE \
+    android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND \
+    android.permission.health.READ_OXYGEN_SATURATION \
+    android.permission.health.READ_SKIN_TEMPERATURE \
+    android.permission.health.READ_STEPS \
+    android.permission.health.READ_FLOORS_CLIMBED \
+    android.permission.health.READ_ACTIVE_CALORIES_BURNED \
+    android.permission.ACTIVITY_RECOGNITION \
+    android.permission.ACCESS_FINE_LOCATION \
+    android.permission.ACCESS_COARSE_LOCATION \
+    android.permission.ACCESS_BACKGROUND_LOCATION \
+    android.permission.POST_NOTIFICATIONS ; do
+    adb -s "$S" shell pm grant com.vitalguard.vitalguard_app $p
+  done
+  ```
+  ⚠ **`ACCESS_BACKGROUND_LOCATION` 을 빠뜨리면 부팅·재설치 자동 시작에서 GPS 가 늘 빠진다**(생체만 온다).
+  거부가 나도 앱은 안 죽지만(09-01 폴백) 위치가 조용히 사라진다.
+  ⚠ 이 권한은 **앱의 런타임 요청 배열에 넣으면 안 된다** — Android 11+ 는 전경·배경 위치를 한 요청에
+  담으면 요청 전체를 거절해 **잘 되던 GPS 권한까지 죽는다.** 부여는 여기(또는 설정>항상 허용)에서만.
+
+- [ ] **Health Sensor Service 개발자 모드**(워치에서 직접) — 설정 > 앱 > Health Sensor Service > 제목 10회 탭.
+  초기화하면 리셋된다. 빠지면 **삼성 SDK 가 안 붙어 SpO₂·피부온·주변온이 통째로 누락**되는데
+  심박은 순정 폴백으로 계속 와서 **정상처럼 보인다**. 판별 = `raw_json` 에 `skinTempC` 키 자체가 없음.
+  ⚠ 다만 **HRV 가 들어오면 SDK 는 살아 있는 것**이다(HRV=삼성 IBI 전용) — 그 경우 원인은 다른 데 있다.
+
+- [ ] **설치 후 앱이 떴는지 확인** — `adb shell ps -A | grep vitalguard`.
+  `RestartReceiver`(09-01) 가 재설치·재부팅에서 자동으로 올리지만, 자격이 없거나 센서 권한이 없으면
+  일부러 물러선다. 안 떴으면 로그 `VgRestart` 한 줄이 이유를 말해 준다.
