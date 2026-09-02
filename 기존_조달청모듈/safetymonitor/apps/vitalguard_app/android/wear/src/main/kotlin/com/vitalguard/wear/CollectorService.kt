@@ -283,6 +283,11 @@ class CollectorService : Service() {
         worn = false
         collecting = false
         engine.stop()
+        // ★ 미방출 잔여물을 **여기서** 버린다 — 남기면 다음 틱의 flush 가 그 값으로 평시 표본을
+        //   만들고 거기 `worn:true` 가 실려 바로 아래 벗음 표식을 되돌린다(09-02 실측 5.22초).
+        //   ⚠ [CollectorEngine.stop] 안에 넣으면 안 된다 — `reviveHrIfStalled` 도 착용 중에
+        //     `stop() → start()` 로 재구독하므로 재구독마다 정상 측정값을 버리게 된다.
+        engine.discardPendingSample()
         gps.stop()
         imu.stop()
         Log.i(TAG, "벗음 — 수집 중지 (큐 ${queue.size}건 보존)")

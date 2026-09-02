@@ -137,6 +137,18 @@ class CollectorEngine(
     }
 
     /**
+     * 미방출 표본을 버린다 — 벗음 경로 전용.
+     *
+     * ⚠ **[stop] 안에 넣으면 안 된다.** 심박 워치독(`reviveHrIfStalled`)도 `stop() → start()` 로
+     * 재구독하므로, 거기 넣으면 착용 중인데도 재구독마다 정상 측정값을 버리게 된다.
+     * 부르는 곳은 `CollectorService.endSensing()` 하나뿐이다.
+     */
+    @Synchronized
+    fun discardPendingSample() {
+        builder.discard()
+    }
+
+    /**
      * 심박이 끊긴 지 얼마인가(ms). 한 건도 못 받았으면 `start()` 이후 경과.
      * 수집 중이 아니면 null — 벗은 상태의 침묵은 고장이 아니다.
      */
@@ -255,7 +267,11 @@ class CollectorEngine(
             // ★ 화면과 **같은 게이트**를 쓴다(stillSecNow). 종전엔 여기만 게이트를 안 거쳐
             //   벗어 둔 워치가 "N초째 무동작" 행을 계속 올렸다 — R-22 가 화면에서 막은 바로 그
             //   그림을 전송 경로가 그대로 재현한 것이다(08-25 서버 세션이 심박 없는 행 22건으로
-            //   관측). 미착용이면 실을 것이 없으니 buildAndReset 이 null 을 내고 행이 안 생긴다.
+            //   관측).
+            // ⚠ 종전 주석은 "미착용이면 실을 것이 없어 null 이 난다" 였는데 **거짓이었다**(09-02).
+            //   벗어도 빌더의 잔여물은 남아 여기서 표본 1건이 만들어졌고, 거기 실린 worn:true 가
+            //   벗음 표식을 5.22초 만에 되돌렸다. 이제 벗음 경로가 [discardPendingSample] 로
+            //   버려 주므로 null 이 난다 — 이 함수가 아니라 **그쪽**이 근거다.
             stillSec = stillSecNow(nowMs),
             variabilityMg = motion.variabilityMg(),
             batteryPct = batteryPct(),

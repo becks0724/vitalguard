@@ -102,13 +102,26 @@ class SampleBuilder {
             v["locationAccuracyMeters"] = it.accuracyMeters
             v["locationTimestamp"] = IsoMs.format(it.atMs)
         }
-        // 착용 상태 — 평시 표본은 항상 착용 중에 만들어진다(벗으면 수집이 멈춘다). 서버 sticky 가
+        // 착용 상태 — 평시 표본은 착용 중에 **모인** 값으로 만들어진다. 서버 sticky 가
         // 벗음 표식(worn:false)을 이 값으로 되돌린다(2026-08-31).
+        // ⚠ 종전 주석은 "벗으면 수집이 멈추니 여기 올 일이 없다" 였는데 **거짓이었다**(09-02).
+        //   멈추는 것은 유입이고 이 버퍼의 잔여물은 남는다 — 그래서 벗음 경로가 [discard] 로
+        //   버려 준다. 이 자리에서 착용 여부를 다시 보지는 않는다(그러면 재착용 복귀가 깨진다).
         v["worn"] = true
         v["ts"] = IsoMs.format(sentAtMs)
         reset()
         return v
     }
+
+    /**
+     * 미방출 버퍼를 버린다 — **벗음 직후에만** 쓴다.
+     *
+     * 벗어도 이 버퍼에는 직전 측정값이 남는다. 그대로 두면 다음 틱의 flush 가 그 값으로 표본을
+     * 만들고 [buildAndReset] 이 거기 `worn = true` 를 찍어 **방금 올린 벗음 표식을 되돌린다**
+     * (09-02 실측 = 관제 '미착용' 이 5.22초만 떴다 사라졌다 · 표식 17:02:56.325 → 잔여물 17:03:01.702).
+     * 잃는 것은 벗기 직전 부분표본 1건뿐이고, 그것은 어차피 벗은 뒤에 올라갈 값이다.
+     */
+    fun discard() = reset()
 
     private fun reset() {
         bpm = null; bpmAtMs = null; spo2Pct = null; spo2AtMs = null
