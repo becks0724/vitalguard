@@ -26,6 +26,10 @@ overrides:
   # 2026-08-14 재유입 — GHSA-2v37-7h3g-55p8 이 취약 범위를 <3.3.18 로 넓혀 종전 핀(3.3.17)이 안에 들어갔다.
   # 같은 nanoid 무한루프 계열의 두 번째 advisory다. 핀은 "그때 안전했던 값"이지 영구 안전이 아니다.
   nanoid@3: 3.3.18
+# browserslist high 2건(GHSA-c83g-rgw3-j3cx 캐시 무제한 증가로 OOM · GHSA-73wf-gq98-2v4g 신뢰할 수 없는
+# stats 로 프로토타입 쓰기 — 2026-09-02 유입). autoprefixer 경유 전이 의존이고 취약 범위가 <=4.28.6 이라
+# 같은 major 안의 패치로 해소된다(4.28.2 → 4.28.8). 코드 변경 없이 advisory DB 가 바뀌어 CI 가 빨개진 건이다.
+  browserslist@4: 4.28.8
 # CI `pnpm audit --audit-level=high` 게이트의 명시 예외 — 감사(2026-07-29) 시점의 기존 high 8건.
 # 대부분 exceljs 하위 의존(4주차 overrides 정리 대상). 새 취약점 유입만 게이트가 잡는다.
 # 항목을 지우려면 해당 GHSA 가 실제 해소(의존 업데이트/overrides)됐는지 pnpm audit 로 확인할 것.
