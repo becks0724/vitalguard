@@ -1377,3 +1377,42 @@ SDK 종료 뒤 **VgSamsung 콜백이 한 줄도 없다.** 그러니 `hr=76 · sp
 변이 2종 실측 — ① 호출 제거 ② 표식 뒤로 이동. **둘 다 테스트 실패**(컴파일 오류 아님을 확인 · `310 tests completed, 1 failed`).
 
 **미검증.** 설치 후 같은 벗음 시퀀스를 다시 돌려 **'미착용' 이 5.22초가 아니라 계속 유지되는지**가 최종 판정이다.
+
+## 09-02 — 수집이 통째로 멈추는 2단 크래시 (내가 만든 것 + 잠복하던 것)
+
+**발견 경위.** 벗음 수리를 검증하다 옆 세션이 "벗음 뒤 219초 무음" 을 짚었다. DB 만으로는 ⓐ재벗음 ⓑtick 정지 ⓒ업로드 실패를 못 갈랐고, logcat 이 답을 냈다 — **셋 다 아니고 앱이 죽어 있었다.**
+
+**1차 — 내가 만들었다.** `ConcurrentModificationException`
+```
+at MotionTracker.variabilityMg(MotionTracker.kt:48)
+at CollectorEngine.motionVarNow(CollectorEngine.kt:249)
+at CollectorService$tick$1.run(CollectorService.kt:360)
+```
+`motionVarNow()` 는 **09-01 GPS 백오프 게이트(feccaef)에서 내가 추가한 함수**인데 `@Synchronized` 를 빠뜨렸다. `MotionTracker` 는 스레드 안전하지 않고 `variabilityMg()` 는 창을 두 번 순회한다(`sum` · `sumOf`). 그 사이 IMU 스레드가 `onAccelMagG`(이쪽은 `@Synchronized` 가 있다)로 표본을 넣으면 터진다.
+⚠ **형제 함수에는 있는 표시가 새 함수에만 없었다.** 기존 코드를 읽으며 규약을 따랐다면 안 났을 실수다.
+
+**2차 — 원래 있던 것이 1차 덕에 드러났다.** `ForegroundServiceStartNotAllowedException`
+```
+mAllowStartForeground false
+at CollectorService.onStartCommand(CollectorService.kt:227)
+```
+tick 스레드가 죽자 OS 가 START_STICKY 로 서비스를 되살렸는데, **그 재시작이 백그라운드라** `startForeground` 가 거부돼 앱이 **또** 죽었다. 09-01 에 넣은 try/catch 는 `SecurityException`(FGS **타입** 자격)만 받는데 이쪽은 `IllegalStateException` 하위형(백그라운드 **시작** 금지)이라 안 걸렸다. **다른 고장이다.**
+
+**⟹ 합쳐서 일시적 고장이 영구 정지가 된다.** 같은 크래시 8건 · 219초 무음. 화면은 평소와 같아 아무도 모른다. ⚠ 관제에는 '착용 중인데 값이 안 온다'(끊김)로 보이는데 **미착용보다 나쁜 상태**다 — 벗어서 조용한 것과 고장 나서 조용한 것을 가르자는 게 이 기능의 출발점이었다.
+
+**수리 둘.**
+1. `CollectorEngine.motionVarNow()` 에 `@Synchronized`.
+2. `startForeground` 승격에 `IllegalStateException` 갈래 추가 → `giveUpForeground()` 가 `stopSelf()` + **`START_NOT_STICKY`**.
+   ⚠ `START_STICKY` 를 돌려주면 OS 가 또 백그라운드로 되살려 **같은 거부를 무한 반복**한다.
+   ⚠ health 폴백도 같은 거부를 받을 수 있어 그쪽도 감쌌다.
+   복구 경로 = 사람이 앱을 열거나 재부팅·재설치에서 `RestartReceiver` 가 올린다. 둘 다 포그라운드 자격이 있어 같은 거부가 안 난다.
+
+**가드 2종 + 변이 검증.**
+| 시험 | 변이 | 결과 |
+|---|---|---|
+| `모션 변동폭 읽기가 동기화돼 있다` | `@Synchronized` 제거(=실사고 재현) | 잡음 |
+| `백그라운드 시작 거부가 앱을 죽이지 않는다` | `START_NOT_STICKY` → `START_STICKY` | 잡음 |
+
+312/312 통과.
+
+⚠ **`stillSecNow()` 도 같은 비동기화 상태다**(`motion.stillSec` 호출). 다만 그쪽은 스칼라만 읽고 순회하지 않아 CME 가 안 난다. **내 변경이 만든 것이 아니라 손대지 않았다** — 기록만 남긴다.

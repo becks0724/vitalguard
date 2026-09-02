@@ -66,6 +66,38 @@ class RestartReceiverTest {
     }
 
     @Test
+    fun `백그라운드 시작 거부가 앱을 죽이지 않는다 - 일시 고장이 영구 정지가 되면 안 된다`() {
+        // 09-02 워치8 실측 — tick 스레드가 죽자 OS 가 서비스를 되살렸고, 그 재시작이 백그라운드라
+        // ForegroundServiceStartNotAllowedException(mAllowStartForeground false) 으로 **또** 죽었다.
+        // 같은 크래시 8건 · 219초 무음. 종전 try/catch 는 SecurityException 만 받아 이 갈래를 놓쳤다.
+        val service = uncommented(File("src/main/kotlin/com/vitalguard/wear/CollectorService.kt").readText())
+        val promote = service.substringAfter("val fullTypes").substringBefore("offBody.start")
+        assertTrue(
+            "IllegalStateException 갈래가 없다 — 백그라운드 재시작이 앱을 죽인다",
+            promote.contains("catch (e: IllegalStateException)"),
+        )
+        assertTrue("health 폴백도 같은 거부를 받을 수 있다 — 감싸지 않았다", promote.contains("catch (e2: IllegalStateException)"))
+
+        val giveUp = service.substringAfter("private fun giveUpForeground").substringBefore("\n    }")
+        assertTrue("물러설 때 서비스를 안 끝낸다", giveUp.contains("stopSelf()"))
+        // ⚠ START_STICKY 면 OS 가 또 백그라운드로 되살려 같은 거부를 무한 반복한다.
+        assertTrue("START_NOT_STICKY 가 아니다 — 거부가 무한 반복된다", giveUp.contains("START_NOT_STICKY"))
+    }
+
+    @Test
+    fun `모션 변동폭 읽기가 동기화돼 있다 - 안 하면 tick 스레드가 죽는다`() {
+        // 09-02 실사고 = ConcurrentModificationException @ MotionTracker.variabilityMg.
+        // MotionTracker 는 스레드 안전하지 않고 variabilityMg 는 창을 두 번 순회한다. 그 사이
+        // IMU 스레드가 onAccelMagG 로 표본을 넣으면 터진다. 형제 함수엔 있는 표시가 여기만 없었다.
+        val engine = File("src/main/kotlin/com/vitalguard/wear/CollectorEngine.kt").readText()
+        val decl = engine.substringBefore("fun motionVarNow()")
+        assertTrue(
+            "motionVarNow 에 @Synchronized 가 없다 — IMU 와 tick 이 같은 창을 동시에 만진다",
+            decl.trimEnd().endsWith("@Synchronized"),
+        )
+    }
+
+    @Test
     fun `매니페스트가 백그라운드 위치를 선언한다`() {
         assertTrue(
             "ACCESS_BACKGROUND_LOCATION 이 없으면 부팅 시작에서 GPS 가 늘 빠진다",

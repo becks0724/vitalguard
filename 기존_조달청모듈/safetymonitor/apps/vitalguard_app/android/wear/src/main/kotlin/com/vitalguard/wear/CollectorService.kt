@@ -227,11 +227,22 @@ class CollectorService : Service() {
             startForeground(FGS_NOTIFICATION_ID, builder.build(), fullTypes)
         } catch (e: SecurityException) {
             Log.w(TAG, "FGS location 거부 — health 만으로 승격한다(GPS 없음): ${e.message}")
-            startForeground(
-                FGS_NOTIFICATION_ID,
-                builder.build(),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
-            )
+            try {
+                startForeground(
+                    FGS_NOTIFICATION_ID,
+                    builder.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH,
+                )
+            } catch (e2: IllegalStateException) {
+                return giveUpForeground(e2)
+            }
+        } catch (e: IllegalStateException) {
+            // ⚠ 위 SecurityException 과 **다른 고장**이다. 이쪽은 타입 자격이 아니라
+            //   **백그라운드 시작 자체가 금지**된 경우다(`ForegroundServiceStartNotAllowedException`
+            //   = mAllowStartForeground false · IllegalStateException 의 하위형 · API 31+ 라
+            //   minSdk 30 에서 직접 참조하지 않으려고 상위형으로 받는다).
+            //   OS 가 START_STICKY 로 서비스를 되살릴 때 앱이 백그라운드면 여기 걸린다.
+            return giveUpForeground(e)
         }
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
         //   서비스 자체는 계속 산다(벗었다 다시 차면 사람 개입 없이 재개된다).
@@ -255,6 +266,27 @@ class CollectorService : Service() {
         liveEngine = engine
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
         return START_STICKY
+    }
+
+    /**
+     * FGS 승격이 아예 거부됐다 — **죽지 말고 조용히 물러선다.**
+     *
+     * 09-02 워치8 실측이 이 갈래의 값을 보여줬다. tick 스레드가 죽자 OS 가 서비스를 되살렸고,
+     * 그 재시작이 백그라운드라 `startForeground` 가 거부돼 **앱이 통째로 또 죽었다.** 그래서
+     * 한 번의 일시적 고장이 **영구 정지**가 됐다(같은 크래시 8건 · 219초 무음). 화면은 평소와
+     * 같아 아무도 모른다 — 관제에는 '착용 중인데 값이 안 온다'(끊김)로 보이는데, 이는
+     * 미착용보다 나쁜 상태다.
+     *
+     * 여기서 [stopSelf] 로 끝내면 크래시 대신 **정상 종료**가 되고, 다음 기동 경로가 되살린다 —
+     * 사람이 앱을 열거나, 재부팅·재설치에서 [RestartReceiver] 가 올린다. 둘 다 포그라운드
+     * 자격이 있어 같은 거부가 안 난다.
+     * ⚠ START_NOT_STICKY 를 돌려주는 것이 핵심이다. START_STICKY 면 OS 가 또 백그라운드로
+     *   되살려 같은 거부를 무한 반복한다.
+     */
+    private fun giveUpForeground(e: Exception): Int {
+        Log.w(TAG, "FGS 승격 거부(백그라운드 시작) — 크래시 대신 물러선다: ${e.message}")
+        stopSelf()
+        return START_NOT_STICKY
     }
 
     /** 착용 시작 — 센서를 붙인다. 이미 붙어 있으면 아무것도 안 한다(중복 등록 방지). */

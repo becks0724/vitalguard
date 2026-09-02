@@ -245,7 +245,15 @@ class CollectorEngine(
     /**
      * 모션 변동폭(밀리g) — 화면·표본이 쓰던 값을 **위치 게이트도** 읽는다.
      * 창 60개가 안 차면 null(부분 창 금지 규칙 그대로).
+     *
+     * ⚠ **[Synchronized] 를 빼면 앱이 죽는다.** [MotionTracker] 는 스레드 안전하지 않은데
+     * [variabilityMg] 는 창을 두 번 순회하고([sum]·[sumOf]) 그 사이 IMU 스레드가
+     * [onAccelMagG] 로 표본을 넣으면 `ConcurrentModificationException` 이 난다.
+     * 09-02 워치8 실측 — tick 스레드가 죽고 OS 가 서비스를 되살리다 FGS 승격에서 또 죽어
+     * **수집이 통째로 멈췄다**(같은 크래시 8건 · 219초 무음). 09-01 게이트 도입 때 형제 함수
+     * [onAccelMagG] 에는 있던 이 표시를 여기에만 빠뜨린 것이 원인이다.
      */
+    @Synchronized
     fun motionVarNow(): Int? = if (motionStopped) null else motion.variabilityMg()
 
     /**
