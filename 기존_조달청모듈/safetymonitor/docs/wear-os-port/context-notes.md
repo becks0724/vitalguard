@@ -1416,3 +1416,21 @@ tick 스레드가 죽자 OS 가 START_STICKY 로 서비스를 되살렸는데, *
 312/312 통과.
 
 ⚠ **`stillSecNow()` 도 같은 비동기화 상태다**(`motion.stillSec` 호출). 다만 그쪽은 스칼라만 읽고 순회하지 않아 CME 가 안 난다. **내 변경이 만든 것이 아니라 손대지 않았다** — 기록만 남긴다.
+
+### 부록 — `CollectorEngine` 동기화 현황 (09-02 · 새 함수를 더할 때 기준)
+
+이번 사고가 *"형제 함수엔 있는 표시를 새 함수에만 빠뜨려서"* 났으므로 현황을 적어 둔다. **코드에서 뽑은 것이지 손으로 센 것이 아니다.**
+
+| `@Synchronized` 있음 | 없음 |
+|---|---|
+| `hrSamples` · `start` · `stop` · `discardPendingSample` · `onHeartRate` · `onSpo2` · `onSkinTemp` · `onAccelMagG` · `onDailyTotals` · `onActivityDelta` · `motionVarNow` · `flush` | `hrSilenceMs` · `stillSecNow` |
+
+**규칙 — `MotionTracker` 를 만지면 반드시 붙인다.** 그것이 스레드 안전하지 않기 때문이다. 현재 접촉점 넷은 전부 덮여 있다.
+```
+CollectorEngine.kt:115  motion.start          ← start()        @Synchronized
+                  :209  motion.onSample       ← onAccelMagG    @Synchronized
+                  :257  motion.variabilityMg  ← motionVarNow   @Synchronized (09-02 추가)
+                  :284  motion.variabilityMg  ← flush          @Synchronized
+```
+
+**없어도 되는 둘의 근거.** `hrSilenceMs` · `stillSecNow` 는 **스칼라만 읽고 컬렉션을 순회하지 않는다** — `motion.stillSec` 은 `lastMovementAtMs`·`updates` 만 본다. 그래서 `ConcurrentModificationException` 이 원리적으로 안 난다(가시성 경합은 남지만 값이 한 틱 낡을 뿐이다). ⚠ **`stillSec` 이 앞으로 창을 순회하도록 바뀌면 이 근거가 깨진다** — 그때 둘도 붙여야 한다.
