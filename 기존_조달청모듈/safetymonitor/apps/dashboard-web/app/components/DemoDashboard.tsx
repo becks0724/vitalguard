@@ -148,7 +148,9 @@ type HistoryMetric =
   | "coreTempEst"
   | "activity"
   | "fall"
-  | "coverage";
+  | "coverage"
+  // 배터리 잔량(%) — 생체가 아니라 단말 상태다. 점에 charging 이 함께 실려 충전 구간을 음영으로 그린다.
+  | "battery";
 type Selection = { workerId: string; metric: HistoryMetric };
 
 // 서버 병합이 얹는 "마지막 정확 fix" 힌트(store.ts LatestVitalSample) — 스키마 밖 파생값이라 미러링.
@@ -194,14 +196,23 @@ const SLOTS_STORAGE_KEY = "safetymonitor.slots.v1";
 const SLIDEMODE_STORAGE_KEY = "safetymonitor.slidemode.v1";
 // 표 행 높이(h-12=48px) — 세로 자동 슬라이딩의 한 벌(firstCopyHeight) 계산용
 const TABLE_ROW_PX = 48;
-// 작업자 표 13열 그리드 — 헤더·행 공용. [정렬핸들·작업자·직급·심박·SpO₂·체온·낙상·스트레스·신호·상태·수신·누적·해제]
+// 작업자 표 14열 그리드 — 헤더·행 공용.
+// [정렬핸들·작업자·직급·심박·SpO₂·손목온도·낙상·스트레스·신호·배터리·상태·수신·누적·해제]
+//
+// ★ 배터리는 **신호 바로 뒤**다(2026-09-03 사용자 지시). 의미상으로도 맞는 자리다 —
+//   신호·배터리가 "단말이 살아 있는가" 2종으로 묶이고, 그 뒤부터 상태·수신·누적이 온다.
+// ★ 폭은 `minmax(4.5rem,1fr)` = 심박·SpO₂·누적과 **같은 균등 배분 조**에 넣었다. 내용이
+//   `88%` + 아래 `충전` 이라 4.5rem 안에 든다. 고정폭으로 두면 그만큼 1fr 몫이 줄어
+//   나머지 열이 좁아진다 — 사용자가 말한 "간격 균등" 은 이 조에 함께 참여시키는 것이다.
+// ⚠ 고정폭 넷(작업자 10rem·직급 4.5rem·신호 3.5rem·해제 3rem)은 건드리지 않는다.
+//   특히 스트레스 8rem 은 아래 주석의 실측 근거가 있다.
 // ★ 남는 폭은 생체 데이터 열들이 나눠 갖는다(각 minmax(…,1fr)). 종전엔 작업자 열만 `1.2fr` 이라
 //   넓은 화면에서 그 열 혼자 여백을 전부 흡수해 작업자↔직급이 벌어지고 나머지가 몰려 있었다.
 //   작업자 열은 가장 긴 표기("EMP-admin7276" + 신호등 = 127px 실측)가 들어가는 10rem 고정.
 //   스트레스 8rem 은 헤드리스 실측 기준 — 「스트레스 100 · 심박 기반」 칩이 123.6px 이다(지수 0~100 이라
 //   3자리가 도달 가능한 값). 좁히면 칩이 whitespace-nowrap·shrink-0 이라 줄지 않고 이웃 열로 넘친다.
 const TABLE_GRID =
-  "grid items-center gap-x-2 grid-cols-[1.75rem_10rem_4.5rem_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_minmax(6rem,1fr)_minmax(5rem,1fr)_minmax(8rem,1fr)_3.5rem_minmax(4.5rem,1fr)_minmax(5rem,1fr)_minmax(4.5rem,1fr)_3rem]";
+  "grid items-center gap-x-2 grid-cols-[1.75rem_10rem_4.5rem_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_minmax(6rem,1fr)_minmax(5rem,1fr)_minmax(8rem,1fr)_3.5rem_minmax(4.5rem,1fr)_minmax(4.5rem,1fr)_minmax(5rem,1fr)_minmax(4.5rem,1fr)_3rem]";
 
 type SlotAssignments = (string | null)[];
 
@@ -307,10 +318,35 @@ function hasLiveMetric(
   // 수집 커버리지 = 라이브 샘플이 아니라 과거 수집 이력이다. 지금 미수신이어도 지난 1년은 있다 —
   // 오히려 "지금 안 오는 워커"일수록 이 탭을 봐야 한다. 서버 데이터로 판정한다.
   if (metric === "coverage") return true;
+  // 배터리 — 메트릭 키("battery")와 필드명(batteryPct)이 다르므로 아래 일반 경로에 안 걸린다.
+  // 잔량이 한 번이라도 왔으면 이력이 있다(단말 상태라 착용 여부와 무관하게 계속 쌓인다).
+  if (metric === "battery") return typeof sample?.batteryPct === "number";
   if (!sample) return false;
   const value = sample[metric];
   return typeof value === "number" && Number.isFinite(value);
 }
+
+/**
+ * 배터리 잔량 색 — 설비(제세동기) 게이지와 **같은 임계**(≤20 위험 · ≤50 주의)를 쓴다.
+ * 두 화면이 다른 기준을 쓰면 같은 30% 가 한쪽은 빨강, 한쪽은 노랑이 된다.
+ */
+const batteryTone = (pct: number) =>
+  pct <= 20
+    ? "text-semantic-down"
+    : pct <= 50
+      ? "text-amber-600 dark:text-amber-300"
+      : "text-body dark:text-on-dark";
+
+/**
+ * 충전 중인가 — Android `BATTERY_STATUS_*` 원시값. **2(CHARGING)·5(FULL)만** 확정으로 본다.
+ *
+ * ⚠ 4(NOT_CHARGING)는 뺐다. 이 워치는 배터리 보호 모드 상한이 90% 라(09-03 실측 SM-L355N
+ *   `mMaximumProtectionThreshold: 90`) 독 위에서 4로 앉을 수 있지만, **4가 충전기 위를 뜻하는지
+ *   실기로 확인한 적이 없다**(그날 관측된 값은 3뿐). 4를 충전으로 치면 근거 없는 표시가 된다.
+ *   워치가 원시 정수를 보내므로 확인 뒤 **이 한 줄만** 고치면 된다(워치 재설치 불필요).
+ * ⚠ undefined 는 "모름" 이다 — 구 표본에는 상태가 없다. false 로 접으면 "방전 확인"이 된다.
+ */
+const isCharging = (status: number | undefined) => status === 2 || status === 5;
 
 type VitalStatus = "idle" | "normal" | "caution" | "danger";
 
@@ -7787,6 +7823,11 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
             if (selection.metric === "coreTempEst") {
               return data.coreTempEst?.[selection.workerId]?.tempC ?? null;
             }
+            // 배터리 — 메트릭 키와 필드명이 다르다(battery ↔ batteryPct). 아래 일반 색인에 안 걸린다.
+            if (selection.metric === "battery") {
+              const pct = latestMap.get(selection.workerId)?.batteryPct;
+              return typeof pct === "number" ? pct : null;
+            }
             const v = latestMap.get(selection.workerId)?.[selection.metric];
             return typeof v === "number" && Number.isFinite(v) ? v : null;
           })()}
@@ -7992,14 +8033,16 @@ function formatPersisted(n: number | null | undefined): string {
   return n == null ? "—" : n.toLocaleString();
 }
 
-// 작업자 표 헤더 — 13열 라벨. 수동 모드일 때만 첫 열에 "정렬" 라벨.
+// 작업자 표 헤더 — 14열 라벨. 수동 모드일 때만 첫 열에 "정렬" 라벨.
 function WorkerTableHeader({ manual }: { manual: boolean }) {
   // ★ "체온" → "손목온도" (2026-08-26 · 사용자 지시). 이 열의 주값은 **손목 피부온**이고
   //   그것은 체온이 아니다 — 실측 240점 중 8점(3%)이 35.0℃ 미만으로 내려가고 최저가 34.12℃ 다.
   //   "체온 34.1" 로 읽히면 **저체온증 오인**이고, 멀쩡한 작업자를 후송시킬 수 있다.
   //   같은 시각 칼만 심부체온은 37.34~37.36℃ 로 전부 정상이었다(심박 70~101bpm).
   //   ⚠ 고열 오독(38.9)보다 이쪽이 나쁘다 — 고열은 "덥나 보다" 로 끝나지만 저체온은 조치를 부른다.
-  const cols = ["", "작업자", "직급", "심박", "SpO₂", "손목온도", "낙상", "스트레스", "신호", "상태", "수신", "누적", ""];
+  // ⚠ 순서·개수가 TABLE_GRID 의 열 정의와 **한 칸이라도 어긋나면** 라벨이 통째로 밀린다.
+  //   배터리는 신호 뒤·상태 앞이다(2026-09-03).
+  const cols = ["", "작업자", "직급", "심박", "SpO₂", "손목온도", "낙상", "스트레스", "신호", "배터리", "상태", "수신", "누적", ""];
   return (
     <div
       className={`${TABLE_GRID} border-b border-hairline bg-surface-soft px-3 py-2 text-[11px] font-semibold text-muted dark:border-white/10 dark:bg-surface-dark dark:text-on-dark-soft`}
@@ -8422,7 +8465,31 @@ function WorkerTableRow({
         <SignalBars level={signal} />
       </div>
 
-      {/* 10 상태 — 연결끊김이면 생체 상태보다 우선 표시(false-OK 차단) */}
+      {/* 10 배터리 — 잔량 % · 충전 중이면 아래 줄. 클릭 → 하단 추세 차트(충전 구간 음영).
+          ⚠ 끊김이어도 회색으로 죽이지 않는다. 단말 상태는 착용·생체와 별개 축이고, 오히려
+            "끊겼는데 배터리가 몇 %였나" 가 방전인지 앱 종료인지를 가르는 신호다(08-18 근거). */}
+      {metricCell(
+        "battery",
+        sample?.batteryPct == null ? (
+          <span className="font-mono text-xs text-muted dark:text-on-dark-soft">--%</span>
+        ) : (
+          <span className="flex flex-col items-center leading-tight">
+            <span className={`font-mono text-xs font-semibold ${batteryTone(sample.batteryPct)}`}>
+              {sample.batteryPct}%
+            </span>
+            {isCharging(sample.batteryStatus) ? (
+              <span className="whitespace-nowrap text-[10px] text-semantic-up">충전</span>
+            ) : null}
+          </span>
+        ),
+        sample?.batteryPct == null
+          ? "배터리 잔량 미수신 — 클릭하면 누적 추세를 봅니다"
+          : `배터리 잔량 ${sample.batteryPct}%${
+              isCharging(sample.batteryStatus) ? " · 충전 중" : ""
+            } — 클릭하면 누적 추세와 충전 구간을 봅니다`,
+      )}
+
+      {/* 11 상태 — 연결끊김이면 생체 상태보다 우선 표시(false-OK 차단) */}
       <div className="flex items-center justify-center">
         {stale ? (
           // ★ 경과를 함께 적는다 — 라벨만 있으면 1분 끊김과 12시간 끊김이 같은 화면이라
@@ -8450,12 +8517,12 @@ function WorkerTableRow({
         )}
       </div>
 
-      {/* 11 수신시각 */}
+      {/* 12 수신시각 */}
       <div className="text-center font-mono text-[11px] text-muted dark:text-on-dark-soft">
         {formatTime(sample?.ts)}
       </div>
 
-      {/* 12 누적 건수 */}
+      {/* 13 누적 건수 */}
       <div
         className="text-center font-mono text-[11px] font-semibold text-body dark:text-on-dark"
         title={isVirtual ? "가상(테스트) 작업자" : "실시간 수집 DB 누적 건수"}
@@ -8463,7 +8530,7 @@ function WorkerTableRow({
         {isVirtual ? "가상" : formatPersisted(count)}
       </div>
 
-      {/* 13 해제 */}
+      {/* 14 해제 */}
       <div className="flex items-center justify-center">
         <button
           type="button"

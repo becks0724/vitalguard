@@ -1384,6 +1384,43 @@ export async function skinTempBucketAverages(
 }
 
 /**
+ * 버킷별 배터리 잔량(%) 평균 + 그 버킷에 **충전 구간이 있었는가**(2026-09-03).
+ *
+ * 한 쿼리로 둘을 내는 이유 — 차트가 잔량 선과 충전 음영을 같은 시간축에 겹쳐 그린다.
+ * 따로 두면 버킷 경계가 어긋나 음영이 선과 반 칸씩 밀린다.
+ *
+ * ⚠ **충전 판정은 2(CHARGING)·5(FULL)만이다.** 4(NOT_CHARGING)는 뺐다 —
+ *   이 워치는 배터리 보호 모드 상한이 90% 라 독 위에서 4로 앉을 수 있지만, 4가 **충전기에
+ *   올린 상태를 뜻하는지 실기로 확인한 적이 없다**(09-03 기준 관측된 값은 3뿐). 4를 충전으로
+ *   치면 아직 근거 없는 음영을 그리게 된다. 워치는 원시 정수를 그대로 보내므로 실기 확인 뒤
+ *   **여기 한 줄만** 고치면 된다(워치 재설치 불필요 — 그것이 정수로 받는 이유였다).
+ * ⚠ `bool_or` 는 상태가 하나도 없는 버킷에서 null 을 낸다 — 구 표본(batteryStatus 이전)이
+ *   그렇다. 화면은 null 을 "모름"으로 두고 음영을 안 그린다(false 로 접으면 "방전 확인"이 된다).
+ */
+export async function batteryBucketAverages(
+  workerIds: string[],
+  fromMs: number,
+  toMs: number,
+  bucketSec: number,
+): Promise<{ bucket_start_sec: number; pct: number; charging: boolean | null }[]> {
+  if (workerIds.length === 0) return [];
+  const { rows } = await q<{ bucket_start_sec: number; pct: number; charging: boolean | null }>(
+    `SELECT (floor(extract(epoch from ts::timestamptz) / $4) * $4)::bigint AS bucket_start_sec,
+            avg(battery_pct) AS pct,
+            bool_or(battery_status IN (2, 5)) AS charging
+       FROM vital_samples
+      WHERE worker_id = ANY($1)
+        AND battery_pct IS NOT NULL
+        AND ts::timestamptz >= to_timestamp($2)
+        AND ts::timestamptz < to_timestamp($3)
+      GROUP BY 1
+      ORDER BY 1`,
+    [workerIds, Math.floor(fromMs / 1000), Math.ceil(toMs / 1000), bucketSec],
+  );
+  return rows;
+}
+
+/**
  * KST 달력일별 **수집된 분** (0~1440) — 커버리지 히트맵의 칸 값.
  *
  * 왜 시간이 아니라 분인가. `COUNT(DISTINCT hour)` 로 재면 **한 시간에 샘플 하나만 와도 그 시간이

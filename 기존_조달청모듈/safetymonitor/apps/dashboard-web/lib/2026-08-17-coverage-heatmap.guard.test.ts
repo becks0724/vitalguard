@@ -107,7 +107,15 @@ test("⑥ 모의 생성기가 커버리지를 만들지 않는다", () => {
     /coverage: \{ base:/,
     "모의 프로필이 생겼다 — 가짜 커버리지 곡선이 그려진다",
   );
-  assert.match(route, /"coverage",\n\];/, "coverage 가 허용 메트릭에 없다");
+  // ⚠ 앵커를 `"coverage",\n];`(= 목록의 **마지막** 항목)에서 목록 내 포함으로 바꿨다(2026-09-03).
+  //   종전 형태는 coverage 뒤에 메트릭이 하나라도 더 붙으면 깨진다 — 실제로 battery 를 더하다
+  //   걸렸다. 이 시험의 뜻은 "coverage 가 허용 목록에 있다" 이지 "맨 뒤에 있다" 가 아니다.
+  //   바로 아래 REAL_METRICS 단언과 같은 형태로 맞춘다(약화 아님 — 같은 것을 위치 없이 본다).
+  assert.match(
+    route,
+    /const ALLOWED_METRICS: HistoryMetric\[\] = \[[^\]]*"coverage"/,
+    "coverage 가 허용 메트릭에 없다",
+  );
   assert.match(
     route,
     /const REAL_METRICS: RealMetric\[\] = \[[^\]]*"coverage"/,

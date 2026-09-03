@@ -10,6 +10,7 @@ import {
   Customized,
   Legend,
   Line,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Scatter,
@@ -23,6 +24,12 @@ import type { Status } from "../../lib/severity";
 
 type ChartPoint = { date: string; label?: string; value: number; tsMs?: number };
 type ReferenceLineSpec = { value: number; label: string; color?: string };
+/**
+ * 배경 음영 띠 — x 축이 **시간축일 때만** 그린다(x1/x2 가 epoch ms 다).
+ * 지금 쓰는 곳 = 배터리 차트의 충전 구간. 차트는 "무엇을 뜻하는 띠인지" 를 모른다 —
+ * 의미는 부르는 쪽이 정하고 여기는 좌표만 받는다(다른 메트릭이 재사용할 수 있게).
+ */
+type BandSpec = { from: number; to: number; color?: string };
 
 type Props = {
   points: ChartPoint[];
@@ -34,6 +41,8 @@ type Props = {
   hoverExtra?: (value: number) => string;
   /** 조회 창 [from, to] (epoch ms). 주면 시간축을 쓰고, 없으면 카테고리 축으로 떨어진다. */
   domain?: [number, number];
+  /** 배경 음영 띠(시간축 전용). 카테고리 축으로 떨어지면 조용히 무시한다 — 좌표가 없다. */
+  bands?: BandSpec[];
 };
 
 // 시간축을 쓸 수 있는 조건 — 창이 주어졌고 모든 점에 측정 시각이 있을 때.
@@ -117,6 +126,22 @@ function ChartTooltip({
 // 공통 축/격자/임계선 렌더 조각.
 const AXIS_TICK = { fontSize: 10, fill: "currentColor" as const };
 
+// 음영 띠 — 선/막대보다 **먼저** 그려야 뒤에 깔린다(recharts 는 선언 순서가 z 순서다).
+function renderBands(bands: BandSpec[] | undefined, timeAxis: boolean) {
+  if (!timeAxis || !bands || bands.length === 0) return null;
+  return bands.map((b, i) => (
+    <ReferenceArea
+      key={`band-${i}`}
+      x1={b.from}
+      x2={b.to}
+      ifOverflow="hidden"
+      fill={b.color ?? "#22c55e"}
+      fillOpacity={0.14}
+      stroke="none"
+    />
+  ));
+}
+
 function renderReferenceLines(refs: ReferenceLineSpec[]) {
   return refs.map((rl, i) => (
     <ReferenceLine
@@ -146,6 +171,7 @@ export function RechartsLineChart({
   pointSeverity,
   hoverExtra,
   domain,
+  bands,
 }: Props) {
   const refs = referenceLines ?? [];
   if (points.length === 0) {
@@ -161,6 +187,7 @@ export function RechartsLineChart({
     <div className="h-[220px] w-full text-zinc-500 dark:text-zinc-400">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={t ? t.data : points} margin={{ top: 12, right: 16, bottom: 4, left: 0 }}>
+          {renderBands(bands, t !== null)}
           <defs>
             <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity={0.22} />

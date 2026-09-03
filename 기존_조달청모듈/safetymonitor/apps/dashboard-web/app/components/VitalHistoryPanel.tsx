@@ -23,7 +23,10 @@ import { CoverageHeatmap } from "./CoverageHeatmap";
 import { getSessionToken } from "./session-token";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
-type Metric = "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "activity" | "fall" | "coverage";
+type Metric =
+  | "heartRate" | "spo2" | "skinTempC" | "coreTempEst" | "activity" | "fall" | "coverage"
+  // 배터리 잔량(%) — 생체가 아니라 단말 상태. 점에 charging 이 함께 온다(충전 구간 음영).
+  | "battery";
 type Range = 1 | 7 | 30 | 60 | 365;
 type ChartType = "line" | "bar";
 
@@ -40,7 +43,14 @@ type HistoryResponse = {
   range: Range | 0; // 0 = 사용자 지정 기간(from/to)
   from?: string;
   to?: string;
-  points: { date: string; label?: string; value: number; tsMs?: number }[];
+  points: {
+    date: string;
+    label?: string;
+    value: number;
+    tsMs?: number;
+    /** 배터리 전용 — 이 버킷에 충전 구간이 있었나. `undefined` = 모름(구 표본엔 상태가 없다). */
+    charging?: boolean;
+  }[];
   summary: { min: number; max: number; avg: number };
   windowFromMs?: number;
   windowToMs?: number;
@@ -64,9 +74,12 @@ const METRIC_LABEL: Record<Metric, { name: string; unit: string; color: string; 
   fall: { name: "낙상", unit: "회", color: "#facc15", decimals: 0 },
   // 수집 = 생체 값이 아니라 "그날 얼마나 수집됐나"(분). 히트맵 전용이라 선/막대 축을 쓰지 않는다.
   coverage: { name: "수집", unit: "분", color: "#22d3ee", decimals: 0 },
+  // 배터리 = 단말 잔량(%). 생체 색과 겹치지 않게 중립 슬레이트를 쓴다 — 이 선은 사람 상태가
+  // 아니라 기기 상태라, 심박·체온과 같은 경고색으로 그리면 "이상값" 으로 오독된다.
+  battery: { name: "배터리", unit: "%", color: "#94a3b8", decimals: 0 },
 };
 
-const METRICS: Metric[] = ["heartRate", "spo2", "skinTempC", "coreTempEst", "activity", "fall", "coverage"];
+const METRICS: Metric[] = ["heartRate", "spo2", "skinTempC", "coreTempEst", "activity", "fall", "coverage", "battery"];
 
 /**
  * 탭 버튼 툴팁 — 값의 성격이 이름만으로 안 드러나는 지표에만 단다.
@@ -517,6 +530,8 @@ export function VitalHistoryPanel({
                 referenceLines: metricReferenceLines(selection.metric),
                 pointSeverity: metricPointSeverity(selection.metric),
                 hoverExtra: coreHover,
+                // 충전 구간 음영 — 배터리 탭에서만. 다른 메트릭은 undefined 라 차트가 무시한다.
+                bands: chargingBands(selection.metric, displayPoints),
               };
               // 활동 = 복합 차트(막대 kcal + ≤1주 뷰 심박 선 오버레이) — 시간축 필수.
               // 장기 뷰의 심박 일평균은 착용 시간의 함수라 오버레이하지 않는다(체온 상한과 같은 원칙).
@@ -706,6 +721,44 @@ const REF_CAUTION = "#f59e0b";
 // 차트는 집계 버킷이라 per-점 활동맥락이 없어 작업부하 밴드를 '무조건' 적용한다
 // (카드/신호등은 활동 게이트로 작업 중일 때만 적용 — heartRateStatus(hr, activity)).
 
+/**
+ * 충전 구간 → 음영 띠(2026-09-03). 연속된 `charging: true` 버킷을 하나로 묶는다.
+ *
+ * ⚠ 띠의 오른쪽 끝은 **마지막 충전 버킷 + 버킷 폭**이다. 버킷 시작 시각만 쓰면 한 버킷짜리
+ *   충전이 폭 0 이 되어 아예 안 보인다. 폭은 점 간 최소 간격에서 역산한다 — 서버가 기간에
+ *   따라 버킷을 바꾸므로(5분/1시간/6시간…) 상수로 박으면 긴 기간에서 띠가 실제보다 얇아진다.
+ * ⚠ `charging === undefined`(구 표본 = 상태 없음)는 띠를 끊는다. 모름을 충전으로도 방전으로도
+ *   치지 않는다 — 화면이 없는 사실을 그리지 않게 하는 것이 이 필드의 계약이다.
+ */
+function chargingBands(
+  metric: Metric,
+  points: { tsMs?: number; charging?: boolean }[],
+): { from: number; to: number }[] | undefined {
+  if (metric !== "battery") return undefined;
+  const timed = points.filter((p): p is { tsMs: number; charging?: boolean } => typeof p.tsMs === "number");
+  if (timed.length === 0) return undefined;
+  let bucketMs = Infinity;
+  for (let i = 1; i < timed.length; i++) {
+    const gap = timed[i]!.tsMs - timed[i - 1]!.tsMs;
+    if (gap > 0 && gap < bucketMs) bucketMs = gap;
+  }
+  if (!Number.isFinite(bucketMs)) bucketMs = 300_000; // 점 하나뿐 — 5분(서버 최소 버킷)으로 둔다
+  const out: { from: number; to: number }[] = [];
+  let start: number | null = null;
+  let last = 0;
+  for (const p of timed) {
+    if (p.charging === true) {
+      if (start === null) start = p.tsMs;
+      last = p.tsMs;
+    } else if (start !== null) {
+      out.push({ from: start, to: last + bucketMs });
+      start = null;
+    }
+  }
+  if (start !== null) out.push({ from: start, to: last + bucketMs });
+  return out;
+}
+
 // 메트릭별 위험/주의 임계 기준선. 차트는 손목 온도(skinTempC)를 그리므로
 // 심부 체온 임계(38.0/37.5℃)를 손목 스케일로 역산(core = 손목 + offset).
 function metricReferenceLines(metric: Metric): ReferenceLine[] {
@@ -750,6 +803,13 @@ function metricReferenceLines(metric: Metric): ReferenceLine[] {
       // 수집량에는 안전 임계가 없다 — 이 값은 작업자 상태가 아니라 감시 여부다.
       // (히트맵 경로라 참고선을 쓰지도 않지만, 열거를 비워 두면 다음 사람이 임계를 채워 넣는다.)
       return [];
+    case "battery":
+      // 잔량 임계는 표 셀(batteryTone)과 **같은 값**을 쓴다 — 두 화면이 갈리면 같은 30% 가
+      // 표에서는 노랑, 차트에서는 아무 색도 아니게 된다. 설비(제세동기) 게이지도 같은 임계다.
+      return [
+        { value: 20, label: "위험 20", color: REF_DANGER },
+        { value: 50, label: "주의 50", color: REF_CAUTION },
+      ];
   }
 }
 

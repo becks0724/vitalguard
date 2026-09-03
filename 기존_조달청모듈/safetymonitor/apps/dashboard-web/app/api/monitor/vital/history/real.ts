@@ -7,6 +7,7 @@ import { estimateCoreTempSeries, type HrPoint } from "@safetymonitor/analyzers";
 
 import {
   activeEnergyBucketSums,
+  batteryBucketAverages,
   dailyCoverageMinutes,
   firstDataDay,
   getWorkerAliasMap,
@@ -17,7 +18,10 @@ import {
 
 import type { HistoryPoint } from "./data";
 
-export type RealMetric = "heartRate" | "skinTempC" | "coreTempEst" | "spo2" | "activity" | "coverage";
+export type RealMetric =
+  | "heartRate" | "skinTempC" | "coreTempEst" | "spo2" | "activity" | "coverage"
+  // 배터리는 모의 경로가 없다 — 단말 상태라 가짜 곡선이 "기기가 살아 있다" 는 거짓을 그린다.
+  | "battery";
 
 /** 추정 궤적 제공 상한(일) — 열 스트레스는 시간 단위 현상이고 장기 추정 추세는 검증 근거가 없다. */
 export const CORE_TEMP_EST_MAX_DAYS = 7;
@@ -133,6 +137,25 @@ export async function buildRealHistory(
       const { date, label } = kstLabel(at, spanDays);
       // 소수 1자리 — 표 셀(formatTemp)·카드와 같은 자릿수라 화면 간 숫자가 어긋나지 않는다.
       return { date, label, value: Math.round(Number(r.temp_c) * 10) / 10, tsMs: at };
+    });
+  }
+
+  if (metric === "battery") {
+    // 잔량은 단조 감소(충전 구간만 예외)라 심박과 같은 버킷 폭으로 충분하다.
+    // 값 = 그 버킷 평균 잔량(%), charging = 그 버킷에 충전 구간이 있었나.
+    const rows = await batteryBucketAverages(ids, fromMs, toMs, hrBucketSec(spanDays));
+    return rows.map((r) => {
+      const at = r.bucket_start_sec * 1000;
+      const { date, label } = kstLabel(at, spanDays);
+      return {
+        date,
+        label,
+        value: Math.round(Number(r.pct)),
+        tsMs: at,
+        // ⚠ null(상태 없음 = 구 표본)은 **키를 만들지 않는다.** false 로 접으면 "방전 확인"이
+        //   되어 화면이 없는 사실을 그린다.
+        ...(r.charging === null ? {} : { charging: r.charging }),
+      };
     });
   }
 

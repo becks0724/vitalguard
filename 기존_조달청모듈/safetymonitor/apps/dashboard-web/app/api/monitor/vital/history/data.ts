@@ -10,7 +10,10 @@ export type HistoryMetric =
   | "coreTempEst"
   | "activity"
   | "fall"
-  | "coverage";
+  | "coverage"
+  // 배터리 잔량(%) — 실데이터 전용이다(모의 곡선을 만들지 않는다). 생체가 아니라 단말 상태라
+  // 가짜 곡선이 "감시되고 있다"가 아니라 "기기가 살아 있다"는 더 위험한 거짓을 그린다.
+  | "battery";
 
 export type HistoryPoint = {
   date: string;
@@ -18,6 +21,12 @@ export type HistoryPoint = {
   value: number;
   /** 실데이터 경로 전용 — 측정 시각(epoch ms). 24시간 뷰의 시간축 점 배치에 쓴다. */
   tsMs?: number;
+  /**
+   * 배터리 전용 — 이 버킷에 **충전 구간이 있었는가**(2026-09-03).
+   * `true` 충전 확인 · `false` 방전 확인 · `undefined` **모름**(구 표본엔 상태가 없다).
+   * ⚠ 모름을 false 로 접지 않는다 — 그러면 "방전 확인" 이라는 없는 사실이 그려진다.
+   */
+  charging?: boolean;
 };
 
 export type HistoryRange = 1 | 7 | 30 | 60 | 365;
@@ -187,6 +196,9 @@ function numericValueAt(
   if (metric === "coreTempEst") return 0;
   if (metric === "activity") return 0;
   if (metric === "coverage") return 0;
+  // 배터리도 실데이터 전용이다 — 모의 잔량 곡선은 "기기가 살아 있다" 는 거짓을 그린다.
+  // 생체 모의값보다 나쁘다: 관제자가 그 곡선을 보고 "아직 40% 남았네" 로 조치를 미룬다.
+  if (metric === "battery") return 0;
   const profile = PROFILES[metric];
   const seasonal = Math.sin((i / span) * Math.PI * 2) * profile.amplitude * 0.6;
   const noise = (hashSeed(workerId, metric, seed) - 0.5) * 2 * profile.jitter;

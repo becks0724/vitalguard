@@ -30,6 +30,8 @@ const ALLOWED_METRICS: HistoryMetric[] = [
   "fall",
   // 수집 커버리지 — 생체 값이 아니라 "그날 얼마나 수집됐는가"다. 히트맵 전용.
   "coverage",
+  // 배터리 잔량(%) — 생체가 아니라 단말 상태. 점에 charging 이 함께 실린다(충전 구간 음영).
+  "battery",
 ];
 const ALLOWED_RANGES: HistoryRange[] = [1, 7, 30, 60, 365];
 const REAL_METRICS: RealMetric[] = [
@@ -39,6 +41,7 @@ const REAL_METRICS: RealMetric[] = [
   "spo2",
   "activity",
   "coverage",
+  "battery",
 ];
 
 // KST 달력일 경계 → epoch ms. 프리셋(days)은 "지금부터 N일 전".
