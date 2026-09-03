@@ -68,6 +68,23 @@ class CollectorService : Service() {
      *   읽기였지만 내 변경이 그 빈도를 늘리므로 가시성을 명시한다.
      */
     @Volatile private var sensing = false
+
+    /** 배터리 읽기 원천 — 엔진 람다와 미착용 표본이 **같은 함수**로 읽는다(두 벌 금지). */
+    private var battery: BatteryManager? = null
+
+    /** 미착용 배터리 표본을 마지막으로 올린 시각. 0 = 아직 없음(첫 회는 즉시). */
+    private var lastIdleBatteryMs = 0L
+
+    // ⚠ 못 읽는 기기는 Int.MIN_VALUE 또는 0 을 준다 — 그대로 실으면 "0µAh 남음" 이 된다.
+    //   갤럭시워치9 실측값은 388,908µAh(=388mAh · 정격 445mAh) 대역이다.
+    private fun batteryPctNow(): Int? =
+        battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it in 1..100 }
+
+    private fun batteryChargeUahNow(): Long? =
+        battery?.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER)?.takeIf { it > 0L }
+
+    private fun batteryStatusNow(): Int? =
+        battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)?.takeIf { it in 1..5 }
     private var uploadBlockedUntilMs = 0L
     /** 마지막 착용 표식 즉시 업로드 시각(epoch ms) — 플래핑 게이트 기준. 0 = 아직 없음. */
     private var lastWornMarkerUploadMs = 0L
@@ -100,7 +117,7 @@ class CollectorService : Service() {
 
         gps = GpsLocationSource(this, handler)
         offBody = OffBodySource(this)
-        val battery = getSystemService(BatteryManager::class.java)
+        battery = getSystemService(BatteryManager::class.java)
         engine = CollectorEngine(
             // 삼성이 주(SpO₂·체온·IBI), 순정이 바닥(심박·가속도) — 삼성이 막혀도 수집은 산다.
             source = CompositeTrackerSource(
@@ -110,23 +127,17 @@ class CollectorService : Service() {
                 extras = listOf(ActivitySource(this)),
             ),
             queue = queue,
-            batteryPct = {
-                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 1..100 }
-            },
-            // ⚠ 못 읽는 기기는 Int.MIN_VALUE 또는 0 을 준다 — 그대로 실으면 "0µAh 남음" 이 된다.
-            //   갤럭시워치9 실측값은 388,908µAh(=388mAh · 정격 445mAh) 대역이다.
-            batteryChargeUah = {
-                battery.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).takeIf { it > 0L }
-            },
+            // ⚠ 읽기는 아래 세 함수로 모은다 — **미착용 배터리 표본이 같은 함수를 쓴다.**
+            //   여기 인라인으로 두면 읽는 곳이 두 벌이 되고, 두 벌이 되면 늘 한쪽만 갱신된다.
+            batteryPct = { batteryPctNow() },
+            batteryChargeUah = { batteryChargeUahNow() },
             // 충전 상태 — **원시 정수 그대로** 올린다(1 모름 2 충전 3 방전 4 미충전 5 만충).
             // ⚠ 워치가 "충전 중인가" 를 판정하지 않는다 — 단말은 최소 분석, 판정은 서버라는
             //   레포 대원칙이고 여기선 실익도 있다. 이 워치는 배터리 보호 모드 상한이 90% 라
             //   **독 위에서 4(미충전)로 앉을 수 있다.** 불리언으로 접으면 그 구간이 사라지는데,
             //   해석이 바뀔 때마다 워치를 재설치하는 것은 비싸다(재서명 창에 묶인다).
-            // 09-03 실기(SM-L355N) `dumpsys battery` = status 3. 범위 밖 값은 null = "모름".
-            batteryStatus = {
-                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS).takeIf { it in 1..5 }
-            },
+            // 09-03 실기(SM-L355N) = 방전 3 · 무선 독 충전 2(보호 상한 90% 위인 93% 에서도 2).
+            batteryStatus = { batteryStatusNow() },
             hrLastReviveAtMs = { hrLastReviveAtMs },
             latestFix = { now -> gps.currentFix(now) },
         )
@@ -402,6 +413,7 @@ class CollectorService : Service() {
             //   가드가 없어 **벗어 둔 워치가 120초마다 GNSS 를 켜고 있었다**(09-03 전수 확인).
             //   바로 아래 `reviveHrIfStalled` 는 같은 가드를 안에 갖고 있는데 이쪽만 빠졌다.
             if (sensing) gps.requestSatelliteFix(now, (engine.motionVarNow() ?: 0) >= MOVING_VAR_MG)
+            postIdleBatteryIfDue(now)
             uploadOnce(now)
             reviveHrIfStalled(now)
             scheduleTick()
@@ -438,6 +450,33 @@ class CollectorService : Service() {
      * 착용 센서 콜백은 메인 스레드라 큐 계약(수집 스레드)대로 handler 로 넘긴다. 업로드에 실패하면 큐에 남아
      * 다음 tick 에 함께 올라간다 — 표식은 유실되지 않고 늦어질 뿐이다.
      */
+    /**
+     * 미착용 중 배터리 표본 — 충전 구간이 관제에 남는 **유일한** 경로(2026-09-03 사용자 결정 (나)안).
+     *
+     * 벗으면 수집이 멈춰 행이 아예 안 생긴다. 그런데 충전은 거의 항상 벗은 상태에서 일어난다 —
+     * 09-03 실측에서 워치는 `status:2`(무선 독 · +288mA)를 아는데 서버엔 9분간 0건이었다.
+     *
+     * 세 관문을 다 통과해야 보낸다.
+     *   ① 미착용일 것 — 착용 중에는 평시 표본이 이미 배터리를 싣는다(중복 금지).
+     *   ② 자격이 있을 것 — 자동 로그아웃(미착용 90분) 뒤에는 안 보낸다. **이것이 행 수의 상한**이다:
+     *      10분 주기 × 90분 = 미착용 에피소드당 최대 9행. 밤새 충전해도 9행에서 멈춘다.
+     *   ③ 주기가 됐을 것.
+     * ⚠ 이 표본은 라디오를 깨운다 — 그래서 주기가 tick(2분)이 아니라 10분이다. 충전은 시간 단위
+     *   현상이라 10분이면 구간을 그리기에 충분하다(24시간 뷰 버킷이 5분이므로 한 칸 걸러 채워진다).
+     */
+    private fun postIdleBatteryIfDue(now: Long) {
+        if (sensing) return
+        if (config.token == null) return
+        if (!shouldPostIdleBattery(lastIdleBatteryMs, now)) return
+        val row = WornMarker.idleBattery(now, batteryPctNow(), batteryChargeUahNow(), batteryStatusNow())
+            ?: return
+        lastIdleBatteryMs = now
+        queue.add(row)
+        queuedCount = queue.size
+        Log.i(TAG, "미착용 배터리 표본 — ${row["batteryPct"]}% status=${row["batteryStatus"] ?: "-"}")
+        uploadOnce(now)
+    }
+
     private fun postWornMarker(wornNow: Boolean) {
         handler.post {
             val now = System.currentTimeMillis()
@@ -619,6 +658,20 @@ class CollectorService : Service() {
         /** 첫 전이(last=0)는 즉시, 그 뒤는 최소 간격이 지났을 때만. 순수 — 단위 시험. */
         internal fun shouldUploadMarkerNow(lastMs: Long, nowMs: Long): Boolean =
             lastMs == 0L || nowMs - lastMs >= WORN_MARKER_UPLOAD_MIN_GAP_MS
+
+        /**
+         * 미착용 중 배터리 표본 주기 — 10분.
+         *
+         * tick(2분)을 쓰지 않는 이유 = 이 표본은 라디오를 깨우고, 무선 상주가 이 기기 소모의
+         * 71% 다(WATCH.DESIGN 실측). 충전은 시간 단위 현상이라 10분이면 구간을 그리기에 충분하다
+         * (관제 24시간 뷰의 버킷이 5분이므로 한 칸 걸러 채워진다).
+         * 행 수 상한은 이 값이 아니라 **자동 로그아웃**이 정한다 — 90분 ÷ 10분 = 에피소드당 9행.
+         */
+        const val IDLE_BATTERY_INTERVAL_MS = 600_000L
+
+        /** 첫 회(last=0)는 즉시. 순수 — 실기 없이 시험한다. */
+        internal fun shouldPostIdleBattery(lastMs: Long, nowMs: Long): Boolean =
+            lastMs == 0L || nowMs - lastMs >= IDLE_BATTERY_INTERVAL_MS
 
         /** 화면 표시용 — 큐 적체는 서버 장애의 유일한 가시 신호다(08-25 실황이 필요를 증명). */
         @Volatile var queuedCount = 0
