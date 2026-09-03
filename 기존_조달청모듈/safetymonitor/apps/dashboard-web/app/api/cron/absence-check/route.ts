@@ -9,7 +9,6 @@ import {
   absenceMessage,
   classifyRecovery,
   decideAbsences,
-  isWithinPushWindow,
   recoveryAckBy,
   recoveryMessage,
 } from "../../../../lib/absence-watch";
@@ -37,7 +36,6 @@ export async function GET(request: Request) {
   }
 
   const now = Date.now();
-  const pushWindow = isWithinPushWindow(now);
 
   // ★ 이름은 **관제 화면과 같은 소스**에서 가져온다(`rosterWorkerNames` = 시간 창 없는 최빈 라벨).
   //
@@ -78,7 +76,10 @@ export async function GET(request: Request) {
     resolved += 1;
 
     const gapMs = Date.parse(outcome.resumedAtIso) - Date.parse(open.ts);
-    if (pushWindow && Number.isFinite(gapMs)) {
+    // ★ 시각이 아니라 **그 공백이 어떤 공백이었나**로 정한다(2026-09-03).
+    //   벗어 둔 공백은 아래 ②에서 push 되지 않았다 — 그 복귀만 알리면 선행 알림 없이
+    //   "✅ 재개" 가 홀로 떠서 관제자가 무엇이 닫혔는지 모른다.
+    if (!outcome.offBody && Number.isFinite(gapMs)) {
       await sendTelegramMessage(
         recoveryMessage({
           workerId: open.worker_id,
@@ -91,9 +92,9 @@ export async function GET(request: Request) {
     }
   }
 
-  // ── ② 공백 감지. 원장에는 야간에도 남기고, push 만 근무시간으로 막는다.
-  //     ⚠ 야간에 시작해 아침까지 이어지는 공백은 push 되지 않는다(자연키가 같아 재삽입이 안 된다).
-  //     화면에는 보인다 — 야간을 표시만으로 둔 2026-08-19 결정에 포함된 결과다.
+  // ── ② 공백 감지. 원장에는 언제나 남기고, push 만 **착용 상태**로 막는다(2026-09-03).
+  //     종전엔 시계(07~19)로 막았는데 그러면 야간 작업자의 생체 알림을 통째로 못 받는다.
+  //     지금은 벗어 둔 워치만 조용하고, 차고 있는데 심박이 끊기면 시각 무관 push 한다.
   //
   //     ★ 명부가 비면 `workers` 도 비어 **아무 일도 안 일어난 것과 구별되지 않는다**(0건이
   //     "정상" 으로 읽히는 자리). 그래서 배정 수를 함께 응답에 싣는다.
@@ -102,12 +103,17 @@ export async function GET(request: Request) {
     workers.map((w) => ({
       workerId: w.worker_id,
       workerName: names[w.worker_id] ?? w.worker_name,
-      lastSeenIso: w.last_ts,
+      lastHeartbeatIso: w.last_hr_ts,
+      // 'true'/'false' 문자열 → boolean. 그 밖(없음·이상값)은 null = 모름 → push 쪽으로 떨어진다.
+      worn: w.last_worn === "true" ? true : w.last_worn === "false" ? false : null,
+      batteryStatus: w.last_battery_status,
     })),
     now,
   );
 
   let fired = 0;
+  // push 는 이제 시각이 아니라 착용 상태로 갈린다 — 응답에 건수를 실어 "조용한 이유" 를 남긴다.
+  let pushed = 0;
   for (const d of decisions) {
     // 원장이 먼저다 — 통지만 나가고 기록이 없으면 발동 이력을 아무도 못 본다(온열 알림 전례).
     const isNew = await recordAlert(
@@ -121,16 +127,19 @@ export async function GET(request: Request) {
     );
     if (!isNew) continue; // 같은 공백은 한 번만 — 자연키 (worker_id, type, ts) 가 막는다.
     fired += 1;
-    if (d.push) await sendTelegramMessage(absenceMessage(d));
+    if (d.push) {
+      pushed += 1;
+      await sendTelegramMessage(absenceMessage(d));
+    }
   }
 
   return NextResponse.json({
     ok: true,
-    pushWindow,
     roster,
     checked: workers.length,
     absent: decisions.length,
     fired,
+    pushed,
     resolved,
     ...(resolveFailed > 0 ? { resolveFailed } : {}),
   });

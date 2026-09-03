@@ -10,25 +10,31 @@ import { maskWorkerName } from "./telegram";
 export const ABSENCE_THRESHOLD_MS = 10 * 60 * 1000;
 
 /**
- * push 를 보내는 시간대(KST). 이 밖에서는 원장 기록과 화면 표시만 한다.
+ * ★★ **시계 게이트(07~19)를 걷어냈다 — 2026-09-03 사용자 결정.**
  *
- * 근거 — 10분 초과 공백 24건 중 **7건이 야간 시작이고 길이가 600~920분**이라 퇴근으로 보인다.
- * 여기에 push 하면 매일 밤 울려서 일주일이면 무시된다.
+ * 종전 규칙 = 근무시간에만 push, 야간은 원장·화면만. 근거는 "10분 초과 공백 24건 중 7건이
+ * 야간 시작 600~920분이라 퇴근으로 보인다" 였고, 밤마다 울리면 일주일이면 무시된다는 것이었다.
  *
- * ★ 무엇이 결정이고 무엇이 우리 기본값인지 구분해 둔다.
- *   · 사용자 결정(2026-08-19) = **"야간은 화면 표시만"** — 즉 push 를 근무시간으로 막는다는 것까지.
- *   · **07~19 라는 숫자는 우리가 고른 기본값이다.** 사용자가 시각을 짚은 적 없다.
- *     현장이 늘면 근거 없이 굳지 않게 여기서 바꾼다.
+ * ⚠ **그 규칙은 야간 작업자를 통째로 버린다.** 밤 11시에 차고 있던 작업자의 심박이 끊겨도
+ *   시계가 밤이라는 이유로 조용했다. 안전 알림에서 그것은 받아들일 수 없다(사용자 판단).
  *
- * ⚠ 야간 교대 현장에서는 이 규칙이 틀린다 — 교대 정보가 없어 시계로 자를 수밖에 없다.
- *   배터리로 "충전=퇴근" 을 가르는 안은 폐기됐다. **부재 중에는 아무 데이터도 안 오므로
- *   충전 여부는 복구된 뒤에야 보인다**(실시간 판단 불가).
- * ★ 다만 사후 검증 재료는 곧 생긴다 — 세션 계측(`session_auto_resumed`)이 워치에 올라가면
- *   긴 공백 뒤 `false` 인 지점이 "사람이 [시작] 을 누른 시각" = 복귀 시각이라, 며칠 쌓이면
- *   이 07~19 가정이 실제 근무 경계와 맞는지 대조할 수 있다.
+ * ★ 그리고 종전 주석이 "그래서 시계로 자를 수밖에 없다" 고 적은 **전제가 오늘 깨졌다.**
+ *   그 자리에는 이렇게 적혀 있었다 —
+ *     "배터리로 '충전=퇴근' 을 가르는 안은 폐기됐다. **부재 중에는 아무 데이터도 안 오므로**
+ *      충전 여부는 복구된 뒤에야 보인다(실시간 판단 불가)."
+ *   09-03 에 워치가 **미착용 중에도 10분마다 배터리를 보내기** 시작했다(WornMarker.idleBattery).
+ *   이제 부재 중에도 착용·충전 상태가 실시간으로 온다.
+ *
+ * ⟹ 시각이 아니라 **상태**로 가른다 — [shouldPushAbsence].
+ *   · 벗어 둠(충전기 위 포함) → push 안 함. 사람이 안 차고 있으니 감시 대상이 아니다.
+ *   · 차고 있는데 심박이 없음 → push. **시각 무관** — 밤 11시든 낮 2시든 같은 사건이다.
+ *   · 모름(구 표본·폰) → push. 안전 쪽으로 떨어뜨린다.
+ *
+ * ⚠ 남는 위험 = 착용 센서가 벗음을 놓치면(오작동) 야간에 울린다. 시계 게이트가 덮어 주던
+ *   자리다. 실측으로 시끄러우면 여기서 다시 정한다 — 시계로 되돌리지는 않는다.
  */
-export const PUSH_WINDOW_START_HOUR = 7;
-export const PUSH_WINDOW_END_HOUR = 19;
+/** 충전 중으로 보는 Android `BATTERY_STATUS_*` — 2 CHARGING · 5 FULL(09-03 실기 확인). */
+const CHARGING_STATUSES = new Set([2, 5]);
 
 /**
  * 복귀 직후 측정 지연이 이 값을 넘으면 **밀린 것이 몰려 온 것** = 전달 단절.
@@ -42,9 +48,29 @@ export const DELIVERY_STALL_LAG_SEC = 60;
 export type WorkerLastSeen = {
   workerId: string;
   workerName: string | null;
-  /** 마지막으로 받은 샘플의 시각. 한 번도 받은 적 없으면 null. */
-  lastSeenIso: string | null;
+  /**
+   * 마지막으로 **심박이 온** 시각. 한 번도 없었으면 null.
+   * ⚠ "행이 온 시각" 이 아니다 — 행은 생체 없이도 온다(착용 표식·미착용 배터리 표본).
+   */
+  lastHeartbeatIso: string | null;
+  /** 최근 관측된 착용 상태. `null` = 모름(구 표본·폰). */
+  worn: boolean | null;
+  /** 최근 관측된 배터리 상태 원시값(Android `BATTERY_STATUS_*`). `null` = 모름. */
+  batteryStatus: number | null;
 };
+
+/**
+ * 이 공백을 push 할 것인가 — **시각이 아니라 상태로** 정한다(2026-09-03).
+ *
+ * 벗어 둔 워치는 감시 대상이 아니다. 반대로 차고 있는데 심박이 끊긴 것은
+ * **밤이든 낮이든 같은 사건**이라 시각으로 막지 않는다.
+ * 모르면(둘 다 null) push 한다 — 안전 쪽으로 떨어뜨린다.
+ */
+export function shouldPushAbsence(worn: boolean | null, batteryStatus: number | null): boolean {
+  if (worn === false) return false;
+  if (batteryStatus !== null && CHARGING_STATUSES.has(batteryStatus)) return false;
+  return true;
+}
 
 export type AbsenceDecision = {
   workerId: string;
@@ -59,35 +85,27 @@ export type AbsenceDecision = {
 /** 복귀 사후 판정. 가를 재료가 없으면 지어내지 않고 unknown 을 낸다. */
 export type RecoveryCause = "collection" | "delivery" | "unknown";
 
-/** UTC epoch → KST 시(hour). 서버 타임존에 기대지 않는다. */
-function kstHour(nowMs: number): number {
-  return new Date(nowMs + 9 * 60 * 60 * 1000).getUTCHours();
-}
-
-export function isWithinPushWindow(nowMs: number): boolean {
-  const h = kstHour(nowMs);
-  return h >= PUSH_WINDOW_START_HOUR && h < PUSH_WINDOW_END_HOUR;
-}
-
 /**
- * 공백 판정. **한 번도 받은 적 없는 작업자는 제외한다** — 등록만 하고 아직 안 찬 슬롯이
+ * 공백 판정. **심박이 한 번도 온 적 없는 작업자는 제외한다** — 등록만 하고 아직 안 찬 슬롯이
  * 매 틱마다 알림을 내면 진짜 공백과 구별되지 않는다(관제 "작업자 대기" 와 같은 자리).
+ *
+ * ⚠ 판정은 야간에도 그대로 한다(원장·화면). 달라진 것은 **push 조건이 시각에서 상태로**
+ *   바뀐 것뿐이다 — 2026-08-19 의 "야간에도 원장은 남긴다" 결정은 그대로 산다.
  */
 export function decideAbsences(workers: WorkerLastSeen[], nowMs: number): AbsenceDecision[] {
-  const push = isWithinPushWindow(nowMs);
   const out: AbsenceDecision[] = [];
   for (const w of workers) {
-    if (!w.lastSeenIso) continue;
-    const last = Date.parse(w.lastSeenIso);
+    if (!w.lastHeartbeatIso) continue;
+    const last = Date.parse(w.lastHeartbeatIso);
     if (Number.isNaN(last)) continue;
     const elapsedMs = nowMs - last;
     if (elapsedMs < ABSENCE_THRESHOLD_MS) continue;
     out.push({
       workerId: w.workerId,
       workerName: w.workerName,
-      gapStartIso: w.lastSeenIso,
+      gapStartIso: w.lastHeartbeatIso,
       elapsedMs,
-      push,
+      push: shouldPushAbsence(w.worn, w.batteryStatus),
     });
   }
   return out;

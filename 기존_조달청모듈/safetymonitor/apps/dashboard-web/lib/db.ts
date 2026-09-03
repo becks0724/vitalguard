@@ -2460,10 +2460,19 @@ export async function ackAlertByKey(
  *   이보다 오래 끊긴 기기는 사건이 아니라 상태라서 알리지 않는다(41일 꺼진 기기를 매일 밀면
  *   하루면 무시된다). 그런 작업자는 관제 신호등이 `대기` 로 집계해 화면에 남는다.
  */
-export async function lastSeenByWorker(
-  maxGapHours = 24,
-): Promise<{ worker_id: string; worker_name: string | null; last_ts: string }[]> {
-  const { rows } = await q<{ worker_id: string; worker_name: string | null; last_ts: string }>(
+export type LastSeenRow = {
+  worker_id: string;
+  worker_name: string | null;
+  /** 마지막으로 **심박이 실린** 행의 측정 시각. 심박이 한 번도 없었으면 null. */
+  last_hr_ts: string | null;
+  /** 최근 행의 착용 상태 문자열('true'/'false'). 실은 적 없으면 null = 모름. */
+  last_worn: string | null;
+  /** 최근 행의 배터리 상태(Android BATTERY_STATUS_*). 실은 적 없으면 null = 모름. */
+  last_battery_status: number | null;
+};
+
+export async function lastSeenByWorker(maxGapHours = 24): Promise<LastSeenRow[]> {
+  const { rows } = await q<LastSeenRow>(
     `WITH roster AS (
        SELECT jsonb_array_elements_text(slots::jsonb) AS wid
          FROM monitor_slot_config WHERE id = 1
@@ -2477,7 +2486,21 @@ export async function lastSeenByWorker(
          JOIN roster r ON r.wid = a.primary_worker_id
      )
      SELECT i.canon AS worker_id,
-            MAX(v.ts) AS last_ts,
+            -- ★ **심박이 실린 행만** 센다(2026-09-03). 종전 MAX(v.ts) 는 "행이 왔나" 였는데
+            --   행은 생체 없이도 온다 — 착용 표식(worn) · 미착용 배터리 표본. 실제로 09-03 에
+            --   미착용 배터리 표본이 도착하자 "✅ 생체 수신 재개" 가 오발동했다(심박은 없었다).
+            --   화면은 2026-08-15 에 같은 이유로 이미 heartRateMeasuredAt 으로 옮겼는데
+            --   (lib/vital-age.ts) 알림만 안 따라와 **화면과 알림이 다른 기준**을 쓰고 있었다.
+            -- COALESCE = 측정 시각이 없는 구 표본 폴백(vital-age.ts 와 같은 규칙).
+            MAX(COALESCE(v.heart_rate_measured_at, v.ts))
+              FILTER (WHERE v.heart_rate IS NOT NULL) AS last_hr_ts,
+            -- 최근 착용·충전 — push 여부를 **시계가 아니라 이것으로** 정한다(2026-09-03 사용자 결정).
+            -- 07~19 시각 게이트로는 야간 작업자의 생체 알림을 받을 수 없다.
+            -- ⚠ worn 은 컬럼이 아니라 raw_json 안에만 있다. battery_status 는 컬럼이다.
+            (ARRAY_AGG(v.raw_json ->> 'worn' ORDER BY v.id DESC)
+               FILTER (WHERE v.raw_json ->> 'worn' IS NOT NULL))[1] AS last_worn,
+            (ARRAY_AGG(v.battery_status ORDER BY v.id DESC)
+               FILTER (WHERE v.battery_status IS NOT NULL))[1] AS last_battery_status,
             -- ★ **최빈 라벨**이지 최근 라벨이 아니다. 권위 있는 이름 테이블이 없어
             --   (worker_profile 은 직급만 · t_worker 는 비어 있다) 샘플이 실어 보낸 문자열이
             --   유일한 출처인데, 워커 하나에 시기별로 여러 라벨이 섞여 있다.
@@ -2587,11 +2610,15 @@ export async function maxMeasuredLagSecAfter(
   workerId: string,
   gapStartIso: string,
   windowSeconds = 60,
-): Promise<{ resumedAtIso: string; maxLagSec: number | null } | null> {
-  const { rows } = await q<{ resumed_at: string; max_lag: string | null }>(
+): Promise<{ resumedAtIso: string; maxLagSec: number | null; offBody: boolean } | null> {
+  const { rows } = await q<{ resumed_at: string; max_lag: string | null; off_body: boolean }>(
     `WITH resumed AS (
+       -- ★ **심박이 실린 첫 행**이 복귀다(2026-09-03). 종전엔 아무 행이나 복귀로 쳤는데,
+       --   미착용 배터리 표본이 도착하자 "생체 수신 재개" 가 오발동했다 — 알림 문구 스스로
+       --   "복귀 직후 심박이 없었음" 이라고 적으면서도 재개라고 불렀다.
        SELECT ts FROM vital_samples
         WHERE worker_id = $1 AND ts::timestamptz > $2::timestamptz
+          AND heart_rate IS NOT NULL
         ORDER BY ts ASC LIMIT 1
      )
      SELECT r.ts AS resumed_at,
@@ -2599,7 +2626,15 @@ export async function maxMeasuredLagSecAfter(
                FROM vital_samples s
               WHERE s.worker_id = $1
                 AND s.ts::timestamptz >= r.ts::timestamptz
-                AND s.ts::timestamptz < r.ts::timestamptz + $3::interval) AS max_lag
+                AND s.ts::timestamptz < r.ts::timestamptz + $3::interval) AS max_lag,
+            -- 공백 구간에 **미착용이 한 번이라도 관측됐나**. 벗어 둔 공백은 push 되지 않았으므로
+            -- 그 복귀도 push 하지 않는다 — 안 그러면 "✅ 재개" 만 홀로 뜬다(선행 알림 없이).
+            EXISTS (SELECT 1 FROM vital_samples o
+                     WHERE o.worker_id = $1
+                       AND o.ts::timestamptz > $2::timestamptz
+                       AND o.ts::timestamptz <= r.ts::timestamptz
+                       AND (o.raw_json ->> 'worn' = 'false'
+                            OR o.battery_status IN (2, 5))) AS off_body
        FROM resumed r`,
     [workerId, gapStartIso, `${windowSeconds} seconds`],
   );
@@ -2607,6 +2642,7 @@ export async function maxMeasuredLagSecAfter(
   if (!row) return null;
   return {
     resumedAtIso: row.resumed_at,
+    offBody: row.off_body === true,
     maxLagSec: row.max_lag === null ? null : Math.round(Number(row.max_lag)),
   };
 }
