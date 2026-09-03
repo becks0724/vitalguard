@@ -1434,3 +1434,85 @@ CollectorEngine.kt:115  motion.start          ← start()        @Synchronized
 ```
 
 **없어도 되는 둘의 근거.** `hrSilenceMs` · `stillSecNow` 는 **스칼라만 읽고 컬렉션을 순회하지 않는다** — `motion.stillSec` 은 `lastMovementAtMs`·`updates` 만 본다. 그래서 `ConcurrentModificationException` 이 원리적으로 안 난다(가시성 경합은 남지만 값이 한 틱 낡을 뿐이다). ⚠ **`stillSec` 이 앞으로 창을 순회하도록 바뀌면 이 근거가 깨진다** — 그때 둘도 붙여야 한다.
+
+---
+
+## 2026-09-03 · 위성 백오프가 이동 중에는 작동하지 않았다 — 코드 전수 확인
+
+### 왜 코드를 봤나 — DB 통계가 "없다" 고 답했는데 그게 틀렸다
+
+09-03 에 프로덕션 6,000행으로 배터리를 갈랐더니 이렇게 나왔다.
+
+```
+위성fix% vs 소모   r = 0.24~0.36     움직임 vs 소모   r = -0.09
+```
+
+여기서 **"GPS 는 배터리에 영향이 없다" 고 결론 냈는데 잘못이었다.** 위성 단발의 실제 몫은
+약 4.8 mAh/h 인데, 세션 간 소모 편차가 39~108 mAh/h 다. **효과가 잡음의 5% 미만이라 30분 창
+73개로는 애초에 검출 한계 아래**였다. 통계로 부재를 결론 내면 안 되는 전형적인 자리다.
+
+⟹ **규칙 — 효과 크기가 관측 잡음보다 작을 수 있는 축은 상관으로 기각하지 않는다. 코드를 읽거나
+통제 실험을 한다.**
+
+### 전수 확인 — GNSS 를 켜는 경로는 둘뿐이다
+
+```
+GpsLocationSource.kt:120   getCurrentLocation(GPS_PROVIDER, …)      ← 경로 B (tick 마다 단발)
+GpsLocationSource.kt:156   requestLocationUpdates(FUSED, 60s, 0f)   ← 경로 A (상시 구독)
+```
+모듈 전체에 다른 위치 API 호출이 없다. 그리고 **경로 A 의 GNSS 몫은 0 이다** — 09-01 실측이
+`gnss 누적 가동 198ms / 8시간 26분` 을 남겼다. 즉 전력을 쓰는 것은 경로 B 하나이고, DB 의
+≤20m fix 44% 도 전부 경로 B 산물이다.
+
+### 결함 1 — `failures` 가 2 에 도달할 수 없다
+
+```kotlin
+if (movingNow && failures > 0) { failures = 0; nextAllowedAtMs = 0L }   // ① 리셋
+if (!shouldRequestSatellite(nowMs, nextAllowedAtMs, inFlight, movingNow)) return
+//   shouldRequestSatellite:  movingNow -> true                          // ② 백오프 무시
+```
+`movingNow=true` 인 tick 의 순환 —
+```
+① failures=0 → ② 백오프 무시하고 요청 → 실패 → failures=1
+  → backoffMs(1)=0L → 백오프 없음 → 다음 tick 에서 다시 ①
+```
+**5분·10분·15분 백오프에 영원히 못 간다.** 도달하려면 `movingNow=false` 인 tick 이 연속으로
+와야 하는데 중간에 한 번만 움직이면 0 으로 되돌아간다. 15분(`failures≥4`)은 정지 4연속(8분)이
+필요하다 — 실측 이동 비율로 워치9 28% · 워치8 5.8% 확률이다.
+
+**의도는 맞았다.** 주석이 "실내에서 실외로 나가는 전이가 정확히 그 순간이다" 라고 밝힌다.
+구현이 *"전이 1회 면제"* 가 아니라 *"이동 중 매 tick 면제"* 로 된 것이 문제다.
+
+⚠ **기존 가드가 이 버그를 고정하고 있었다.** `백오프 중에는 안 켜지만 움직이면 즉시 켠다` 가
+`shouldRequestSatellite` 를 **순수 함수 단품으로만** 검사해서, 호출자의 `failures` 리셋과의
+상호작용을 안 본다. 고장은 함수 안이 아니라 **두 조각의 합성**에 있었다.
+⟹ 수리와 함께 그 가드를 새 계약으로 갱신하고, **합성을 도는 시험**을 새로 넣는다.
+
+### 결함 2 — 벗은 뒤에도 tick 이 위성을 켠다
+
+`tick` 에 착용 가드가 없다. 바로 옆 `reviveHrIfStalled` 는 `if (!sensing) return` 을 갖고 있는데
+`gps.requestSatelliteFix` 만 빠졌다. `endSensing()` 의 `gps.stop()` 은 구독만 끊고
+`satelliteOnDemand` 를 안 내린다.
+크기는 작다 — 벗으면 `motionVarNow()` 가 null 이라 `movingNow=false` 가 되고 그때는 백오프가
+정상 작동해 15분 간격으로 내려앉는다. 그래도 **0 이어야 할 자리에 2.2% duty 가 남는다.**
+
+### 배터리 산정 (코드 기반)
+
+GNSS 연속 전력을 09-01 실측에서 역산한다 — `87.8 − 51 = 36.8 mAh/h`, 그때 가동률 86% 이므로
+100% 환산 **42.8 mAh/h**.
+
+| | 시도 간격 | 평균 소요 | duty | 전력 |
+|---|---|---|---|---|
+| 현행 (성공률 44% 대입) | 120초 고정 | 13.4초 | 11.2% | **4.8 mAh/h** |
+| 현행 · 실내 이동만 | 120초 고정 | 20초 | 16.7% | 7.1 mAh/h |
+| 수리 후 | 성공 120초 / 실패 900초 | 3.7초 | 3.1% | 1.3 mAh/h |
+
+**절감 3.5 mAh/h**(실내 이동이 많으면 최대 6.2). 만충 구간 소모 39.2 mAh/h 기준 **8.9%**,
+수명 11.9시간 → 13.0시간.
+
+### 안 고친 것 — 폴백 구독 60초
+
+소비가 120초인데 구독이 60초라 fix 절반이 버려진다. 그러나 **120초로 맞추면 안 된다** —
+`maxAgeMs` 가 120초라 위상이 어긋나는 순간 폴백 fix 가 `pickFix` 의 신선도 필터에 걸려 버려지고,
+그러면 **실내 좌표가 통째로 사라진다**(08-26 에 겪은 그 고장이다). 경로 A 는 GNSS 를 안 쓰므로
+이득도 작다. 손대지 않는다.

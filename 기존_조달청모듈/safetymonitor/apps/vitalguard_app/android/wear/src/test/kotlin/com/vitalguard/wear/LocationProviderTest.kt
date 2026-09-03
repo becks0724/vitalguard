@@ -117,25 +117,83 @@ class LocationProviderTest {
         // 요청이 떠 있는데 또 쏘면 상시 구독과 같아진다 — 이 게이트가 막으려던 바로 그 상태다.
         assertFalse(
             GpsLocationSource.shouldRequestSatellite(
-                nowMs = 10_000L, nextAllowedAtMs = 0L, inFlight = true, movingNow = true,
+                nowMs = 10_000L, nextAllowedAtMs = 0L, inFlight = true,
+                movingNow = true, wasMoving = false,
             ),
         )
     }
 
     @Test
-    fun `백오프 중에는 안 켜지만 움직이면 즉시 켠다`() {
-        // 실내 = 실패 누적 → 간격을 벌린다. 실외로 나가는 순간이 곧 '움직임' 이다.
+    fun `백오프 중에는 안 켜지만 이동을 시작하면 즉시 켠다`() {
+        // 실내 = 실패 누적 → 간격을 벌린다. 실외로 나가는 순간이 곧 '이동 시작' 이다.
         assertFalse(
             "백오프 중에 켰다",
-            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, inFlight = false, movingNow = false),
+            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, false, movingNow = false, wasMoving = false),
         )
         assertTrue(
-            "움직였는데도 백오프에 갇혔다 — 실외로 나가도 최대 15분 늦는다",
-            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, inFlight = false, movingNow = true),
+            "정지→이동 전이인데도 백오프에 갇혔다 — 실외로 나가도 최대 15분 늦는다",
+            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, false, movingNow = true, wasMoving = false),
+        )
+        assertFalse(
+            "이동이 **이어지는** 중인데 백오프를 뚫었다 — 09-03 결함 그 자체다",
+            GpsLocationSource.shouldRequestSatellite(1_000L, 600_000L, false, movingNow = true, wasMoving = true),
         )
         assertTrue(
             "백오프가 끝났는데 안 켰다",
-            GpsLocationSource.shouldRequestSatellite(600_000L, 600_000L, inFlight = false, movingNow = false),
+            GpsLocationSource.shouldRequestSatellite(600_000L, 600_000L, false, movingNow = false, wasMoving = false),
+        )
+    }
+
+    @Test
+    fun `이동이 이어져도 백오프는 상한까지 자란다`() {
+        // ⚠⚠ 09-03 결함의 재발 방지. 고장은 함수 **안**이 아니라 두 조각의 **합성**에 있었다 —
+        //   백오프 해제가 `movingNow` 였을 때 이동 중 매 tick 이 failures 를 지워
+        //   backoffMs(1)=0 을 벗어나지 못했다. 그래서 여기서는 호출자의 순환을 그대로 돈다.
+        //   순수 함수 단품 검사로는 원리적으로 안 걸리는 자리다.
+        var failures = 0
+        var nextAllowed = 0L
+        var wasMoving = false
+        var now = 0L
+        var fired = 0
+        repeat(20) {                                   // tick 20회 = 40분, 내내 이동 중 · 실내라 매번 실패
+            val movingNow = true
+            if (GpsLocationSource.shouldClearBackoff(movingNow, wasMoving, failures)) {
+                failures = 0
+                nextAllowed = 0L
+            }
+            val fire = GpsLocationSource.shouldRequestSatellite(
+                now, nextAllowed, inFlight = false, movingNow = movingNow, wasMoving = wasMoving,
+            )
+            wasMoving = movingNow
+            if (fire) {
+                fired++
+                failures++
+                nextAllowed = now + GpsLocationSource.backoffMs(failures)
+            }
+            now += 120_000L
+        }
+        assertEquals(
+            "백오프가 상한까지 자라지 않았다 — 이동 중 해제가 failures 를 계속 지우고 있다",
+            15 * 60_000L,
+            GpsLocationSource.backoffMs(failures),
+        )
+        assertTrue(
+            "40분 동안 위성을 ${fired}번 켰다 — 백오프가 무력화됐다(정상은 6회 이하)",
+            fired <= 6,
+        )
+    }
+
+    @Test
+    fun `벗은 뒤에는 위성을 켜지 않는다`() {
+        // 09-03: tick 은 벗은 뒤에도 계속 도는데(큐 배출·자동 로그아웃) 위성 호출에만 착용 가드가
+        // 없어 벗어 둔 워치가 120초마다 GNSS 를 켰다. 형제 호출 reviveHrIfStalled 는 갖고 있다.
+        val service = uncommented(
+            File("src/main/kotlin/com/vitalguard/wear/CollectorService.kt").readText(),
+        )
+        val tick = service.substringAfter("private val tick =").substringBefore("private fun uploadOnce")
+        assertTrue(
+            "tick 이 착용 여부와 무관하게 위성을 켠다 — 벗어 둔 워치가 계속 GNSS 를 태운다",
+            Regex("""if\s*\(\s*sensing\s*\)\s*gps\.requestSatelliteFix\(""").containsMatchIn(tick),
         )
     }
 

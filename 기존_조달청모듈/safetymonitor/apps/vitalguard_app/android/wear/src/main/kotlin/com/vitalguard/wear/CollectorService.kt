@@ -389,7 +389,10 @@ class CollectorService : Service() {
             // ★ 위성은 **상시 구독이 아니라 tick 마다 단발**로 켠다(09-01 실측 대응).
             //   상시 구독은 GNSS 를 계속 켜 둔다 — 실내 fix 0건 구간에서도 86% 가동, 소모 51 → 87.8 mAh/h.
             //   움직임 임계는 실측에서 뽑았다: 실내 ≤78mg · 보행 ≥166mg → 100mg 로 가른다.
-            gps.requestSatelliteFix(now, (engine.motionVarNow() ?: 0) >= MOVING_VAR_MG)
+            // ⚠ 착용 중일 때만. tick 은 벗은 뒤에도 계속 도는데(큐 배출·자동 로그아웃) 여기에
+            //   가드가 없어 **벗어 둔 워치가 120초마다 GNSS 를 켜고 있었다**(09-03 전수 확인).
+            //   바로 아래 `reviveHrIfStalled` 는 같은 가드를 안에 갖고 있는데 이쪽만 빠졌다.
+            if (sensing) gps.requestSatelliteFix(now, (engine.motionVarNow() ?: 0) >= MOVING_VAR_MG)
             uploadOnce(now)
             reviveHrIfStalled(now)
             scheduleTick()

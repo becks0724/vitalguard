@@ -69,6 +69,15 @@ class GpsLocationSource(
     @Volatile private var nextAllowedAtMs = 0L
 
     /**
+     * 직전 tick 이 이동 중이었나 — 백오프를 푸는 것은 **정지→이동 전이 1회**뿐이다.
+     *
+     * ⚠ 이 상태가 없으면 이동이 이어지는 동안 매 tick 이 [failures] 를 지워 백오프가
+     *   **2 에 영영 도달하지 못한다**(09-03 코드 전수 확인). 실내에서 움직이며 일하면
+     *   120초마다 [fixTimeoutMs] 를 통째로 태우는 것이 무한 반복됐다.
+     */
+    @Volatile private var wasMoving = false
+
+    /**
      * 떠 있는 타임아웃 예약. **`handler` 는 서비스와 공유한다** — `removeCallbacksAndMessages(null)`
      * 로 싹 지우면 tick 알람 콜백까지 날아간다. 내가 건 것만 이 참조로 회수한다.
      */
@@ -92,23 +101,27 @@ class GpsLocationSource(
             fallback != LocationManager.GPS_PROVIDER && available.contains(LocationManager.GPS_PROVIDER)
         failures = 0
         nextAllowedAtMs = 0L
+        wasMoving = false
     }
 
     /**
      * 위성 단발 요청 — 서비스 tick(120초)이 부른다.
      *
      * `getCurrentLocation` 은 **한 번 재고 GNSS 를 끄는** 플랫폼 호출이다(API 30+ · minSdk 30 확인).
-     * 실패하면 백오프로 간격을 벌리고, 움직임이 감지되면 장소가 바뀌었다고 보고 즉시 다시 켠다.
+     * 실패하면 백오프로 간격을 벌리고, **움직이기 시작하면** 장소가 바뀌었다고 보고 즉시 다시 켠다.
      */
     @SuppressLint("MissingPermission")
     fun requestSatelliteFix(nowMs: Long, movingNow: Boolean) {
         if (!satelliteOnDemand) return
-        if (movingNow && failures > 0) {
-            Log.i(TAG, "움직임 감지 — 위성 백오프 해제(실패 ${failures}회 초기화)")
+        if (shouldClearBackoff(movingNow, wasMoving, failures)) {
+            Log.i(TAG, "움직이기 시작 — 위성 백오프 해제(실패 ${failures}회 초기화)")
             failures = 0
             nextAllowedAtMs = 0L
         }
-        if (!shouldRequestSatellite(nowMs, nextAllowedAtMs, inFlight, movingNow)) return
+        val fire = shouldRequestSatellite(nowMs, nextAllowedAtMs, inFlight, movingNow, wasMoving)
+        // 상태는 켜든 안 켜든 매 tick 전진한다 — 안 그러면 전이가 영영 안 끝난다.
+        wasMoving = movingNow
+        if (!fire) return
         inFlight = true
         val signal = CancellationSignal()
         // 타임아웃 = 우리가 끊는다. 안 끊으면 못 잡는 자리에서 GNSS 가 계속 돌 수 있다.
@@ -213,20 +226,33 @@ class GpsLocationSource(
          *   그대로 비교하면 **품질 미상이 항상 이긴다.** 단독 후보일 때는 그래도 쓴다(없는 것보단 낫다).
          */
         /**
+         * 백오프를 지금 풀 것인가 — **정지→이동 전이에서만** 푼다.
+         *
+         * ⚠⚠ 09-03 코드 전수 확인에서 나온 결함의 자리다. 조건이 `movingNow` 였을 때는
+         *   이동이 이어지는 동안 **매 tick 이 `failures` 를 0 으로 지워서** 백오프가
+         *   `backoffMs(1)=0` 을 벗어나지 못했다 — 5분·10분·15분 간격에 영영 도달하지 못한다.
+         *   실내에서 움직이며 일하는 작업자에게는 백오프가 없는 것과 같았다.
+         */
+        internal fun shouldClearBackoff(movingNow: Boolean, wasMoving: Boolean, failures: Int): Boolean =
+            movingNow && !wasMoving && failures > 0
+
+        /**
          * 위성을 지금 켤 것인가 — 순수 함수라 실기 없이 시험한다.
          *
          * ⚠ `inFlight` 를 먼저 본다. 겹쳐 쏘면 **GNSS 가 꺼질 틈이 없어** 상시 구독과 같아진다 —
          *   이 게이트가 막으려던 바로 그 상태다.
-         * ★ 움직였으면 백오프를 무시한다. 실내에서 실외로 나가는 전이가 정확히 그 순간이다.
+         * ★ **움직이기 시작하면** 백오프를 무시한다. 실내에서 실외로 나가는 전이가 그 순간이다.
+         *   ⚠ *이동 중* 이 아니라 *이동 시작* 이다 — 전자로 두면 백오프가 자라지 못한다([shouldClearBackoff]).
          */
         internal fun shouldRequestSatellite(
             nowMs: Long,
             nextAllowedAtMs: Long,
             inFlight: Boolean,
             movingNow: Boolean,
+            wasMoving: Boolean,
         ): Boolean = when {
             inFlight -> false
-            movingNow -> true
+            movingNow && !wasMoving -> true
             else -> nowMs >= nextAllowedAtMs
         }
 
