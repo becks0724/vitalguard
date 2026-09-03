@@ -1,6 +1,6 @@
 // 부재 알림 가드 — 기준이 '행이 왔나' 로 되돌아가지 않고, 시계 게이트가 되살아나지 않는가
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -90,14 +90,42 @@ test("⑥ 재개 push 는 그 공백이 push 됐을 때만", () => {
   assert.match(bodyOf(db, "maxMeasuredLagSecAfter"), /AS off_body/, "off_body 산출이 사라졌다");
 });
 
-test("★⑦-0 raw_json 은 text 다 — ->> 앞에 ::jsonb 가 반드시 붙는다", () => {
+test("★⑦-0 raw_json 은 text 다 — 어디에서든 ->> 앞에 ::jsonb 가 붙는다", () => {
   // 2026-09-03 실사고. `->>` 만 쓰고 배포했더니 크론이 500 을 냈고 부재 감지가 죽었다
   // (operator does not exist: text ->> unknown). 이 테이블은 ts·heart_rate_measured_at 도 text 다.
-  const uses = [...db.matchAll(/raw_json(::jsonb)? ->>/g)];
-  assert.ok(uses.length > 0, "raw_json 접근이 사라졌다 — 가드를 다시 맞춰야 한다");
-  for (const m of uses) {
-    assert.equal(m[1], "::jsonb", `raw_json ->> 에 ::jsonb 가 빠졌다 — 런타임에 크론이 죽는다: ${m[0]}`);
+  //
+  // ★ **범위가 db.ts 한 파일이면 안 된다**(L-118⑥ — 초록불이 답하는 질문을 한 문장으로 적어 볼 것).
+  //     좁은 질문 = "db.ts 안의 raw_json ->> 에 캐스트가 붙었나"
+  //     묻고 싶은 것 = "**어디에서든** raw_json ->> 에 캐스트가 빠졌나"
+  //   지금은 사용처 5곳이 다 db.ts 라 결과가 같지만, 다음 하나가 라우트나 store.ts 에
+  //   떨어지면 좁은 가드는 **조용히 통과한다.** 그래서 트리 전체를 훑는다.
+  const root = join(here, "..");
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === "node_modules" || e.name === ".next" || e.name.startsWith(".")) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".ts") || e.name.endsWith(".tsx")) files.push(full);
+    }
+  };
+  walk(root);
+
+  let total = 0;
+  for (const f of files) {
+    // 이 가드 자신은 건너뛴다 — 설명문에 반례를 적어 두므로 스스로에게 걸린다.
+    if (f.endsWith("2026-09-03-absence-heartbeat-gate.guard.test.ts")) continue;
+    for (const m of readFileSync(f, "utf8").matchAll(/raw_json(::jsonb)?\s*->>/g)) {
+      total += 1;
+      assert.equal(
+        m[1],
+        "::jsonb",
+        `${f.slice(root.length + 1)} 의 raw_json ->> 에 ::jsonb 가 빠졌다`
+          + " — 로컬 tsc·lint·test 는 SQL 문자열을 안 보므로 배포해야 터진다",
+      );
+    }
   }
+  assert.ok(total > 0, "raw_json ->> 사용처가 0건 — 가드가 아무것도 안 보고 있다(통제군)");
 });
 
 test("★⑦ 충전 판정이 세 곳에서 같다", () => {
