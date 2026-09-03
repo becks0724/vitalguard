@@ -19,6 +19,7 @@ Dockerfile
 apps/worker-phone
 apps/worker-watch-poc
 apps/vitalguard_app
+apps/vitalguard_admin
 cctv-ai
 ml
 demo

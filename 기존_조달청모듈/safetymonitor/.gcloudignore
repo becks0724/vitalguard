@@ -16,6 +16,7 @@
 apps/worker-phone
 apps/worker-watch-poc
 apps/vitalguard_app
+apps/vitalguard_admin
 
 # 대시보드 빌드에 불필요한 비-워크스페이스 디렉터리(특히 cctv-ai 모델 가중치 수백 MB → 업로드 hang의 실제 원인).
 # ★ backend/ 는 pnpm 워크스페이스 멤버라 제외 금지. cctv-ai 는 런타임 URL 참조라 소스 불필요.
