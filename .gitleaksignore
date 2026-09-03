@@ -9,3 +9,4 @@
 기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-jwt.test.ts:generic-api-key:10
 기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/app-auth-diagnosis.test.ts:generic-api-key:18
 기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/2026-07-31-expired-token-refresh.guard.test.ts:generic-api-key:23
+기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/2026-09-03-mobile-two-factor.guard.test.ts:generic-api-key:33

@@ -8,7 +8,7 @@
 // 라우트마다 다르기 때문(lib/login-attempts 참조).
 import { verifyCredentials } from "./admin-auth";
 import { bootstrapOwnerWorkerId } from "./app-jwt";
-import { findUserByUsername } from "./db";
+import { findUserByUsername, type UserRow } from "./db";
 import { defaultEmployeeId } from "./employee-id";
 import { verifyPassword } from "./password";
 
@@ -22,7 +22,20 @@ export type AppPrincipal = {
 };
 
 export type AppLoginOutcome =
-  | { ok: true; principal: AppPrincipal }
+  | {
+      ok: true;
+      principal: AppPrincipal;
+      /**
+       * 자격이 확인된 계정 행 — **2단계 인증 판정 재료**다(`lib/two-factor` 가 role·admin_access·
+       * site_officer·totp_enabled 를 본다). 라우트가 `findUserByUsername` 을 다시 부르지 않게
+       * 여기서 함께 돌려준다. 재조회는 DB 왕복이 느는 것보다 **판정 재료가 두 곳에서 오는 것**이
+       * 문제다 — 이 파일이 존재하는 이유가 바로 그 갈라짐을 막는 것이다.
+       *
+       * ⚠ env owner(부트스트랩 관리자)는 **DB 행이 없어 null** 이다. 시크릿을 저장할 곳이 없어
+       *   구조상 2단계를 걸 수 없고, 이는 관제웹도 같다(`/api/admin/totp` 의 NO_DB_ROW).
+       */
+      account: UserRow | null;
+    }
   /** 계정이 없거나 비밀번호 불일치. 둘을 구분해 응답하면 계정 존재 여부가 샌다. */
   | { ok: false; reason: "invalid_credentials" }
   /** 비밀번호는 맞았으나 승인 전. 이 경우는 무차별 대입이 아니므로 잠금 카운터를 올리지 않는다. */
@@ -38,6 +51,7 @@ export async function authenticateAppLogin(
     return {
       ok: true,
       principal: { sub: id, role: "owner", name: null, workerId: bootstrapOwnerWorkerId(id) },
+      account: null, // DB 행이 없다 — 2단계 인증 대상이 될 수 없다(관제웹과 동일).
     };
   }
 
@@ -67,12 +81,19 @@ export async function authenticateAppLogin(
       name: account.name ?? null,
       workerId,
     },
+    account,
   };
 }
 
 /**
  * 잠금 카운터에 성공으로 기록할지 여부.
  * 비밀번호가 맞았다면 승인 전이어도 무차별 대입이 아니므로 카운터를 리셋한다(기존 동작 유지).
+ *
+ * ⚠ **2단계 인증을 거는 경로에서는 `ok:true` 를 이 함수로 기록하면 안 된다.** 비번 통과만으로
+ *   잠금이 풀리면 비번을 아는 사람이 6자리를 무한정 시도할 수 있다 — 30초마다 100만분의 1이
+ *   아니라 잠금 없는 전수 탐색이 된다. 관제웹이 2026-08-28 에 같은 자리를 고쳤고,
+ *   `/api/mobile/v1/session/login` 은 **모든 단계를 통과한 뒤** 직접 `true` 를 기록한다.
+ *   이 함수는 그 경로에서 **실패 분기에만** 쓴다.
  */
 export function countsAsPasswordSuccess(outcome: AppLoginOutcome): boolean {
   return outcome.ok || outcome.reason === "not_approved";
