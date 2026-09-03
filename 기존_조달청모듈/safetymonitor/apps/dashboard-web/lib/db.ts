@@ -2496,9 +2496,17 @@ export async function lastSeenByWorker(maxGapHours = 24): Promise<LastSeenRow[]>
               FILTER (WHERE v.heart_rate IS NOT NULL) AS last_hr_ts,
             -- 최근 착용·충전 — push 여부를 **시계가 아니라 이것으로** 정한다(2026-09-03 사용자 결정).
             -- 07~19 시각 게이트로는 야간 작업자의 생체 알림을 받을 수 없다.
+            -- ⚠⚠ **raw_json 은 text 컬럼이다 — ->> 는 jsonb 연산자라 그냥 쓰면 터진다.**
+            --   2026-09-03 실사고: ->> 를 그대로 써서 배포했더니 크론이 500 을 냈고
+            --   (operator does not exist: text ->> unknown) 부재 감지가 통째로 죽었다.
+            --   ⚠ 이 줄에 백틱을 쓰지 말 것 — 이 SQL 은 JS 템플릿 리터럴 안이라 문자열이 끊긴다.
+            --     같은 함수 위쪽 MODE() 주석이 이미 그 경고를 하고 있었는데 그대로 밟았다(09-03).
+            --   ts·heart_rate_measured_at 도 text 다(이 테이블은 시각도 문자열이다).
+            --   ::jsonb 캐스트는 44만 행 전수에서 안전함을 실측했다(1.27초 · 실패 0) —
+            --   모든 행이 JSON.stringify 산물이라 깨진 JSON 이 없다.
             -- ⚠ worn 은 컬럼이 아니라 raw_json 안에만 있다. battery_status 는 컬럼이다.
-            (ARRAY_AGG(v.raw_json ->> 'worn' ORDER BY v.id DESC)
-               FILTER (WHERE v.raw_json ->> 'worn' IS NOT NULL))[1] AS last_worn,
+            (ARRAY_AGG(v.raw_json::jsonb ->> 'worn' ORDER BY v.id DESC)
+               FILTER (WHERE v.raw_json::jsonb ->> 'worn' IS NOT NULL))[1] AS last_worn,
             (ARRAY_AGG(v.battery_status ORDER BY v.id DESC)
                FILTER (WHERE v.battery_status IS NOT NULL))[1] AS last_battery_status,
             -- ★ **최빈 라벨**이지 최근 라벨이 아니다. 권위 있는 이름 테이블이 없어
@@ -2633,7 +2641,7 @@ export async function maxMeasuredLagSecAfter(
                      WHERE o.worker_id = $1
                        AND o.ts::timestamptz > $2::timestamptz
                        AND o.ts::timestamptz <= r.ts::timestamptz
-                       AND (o.raw_json ->> 'worn' = 'false'
+                       AND (o.raw_json::jsonb ->> 'worn' = 'false'   -- text 컬럼이라 캐스트 필수
                             OR o.battery_status IN (2, 5))) AS off_body
        FROM resumed r`,
     [workerId, gapStartIso, `${windowSeconds} seconds`],

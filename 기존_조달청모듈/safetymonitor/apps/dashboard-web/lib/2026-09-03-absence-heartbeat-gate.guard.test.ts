@@ -90,6 +90,16 @@ test("⑥ 재개 push 는 그 공백이 push 됐을 때만", () => {
   assert.match(bodyOf(db, "maxMeasuredLagSecAfter"), /AS off_body/, "off_body 산출이 사라졌다");
 });
 
+test("★⑦-0 raw_json 은 text 다 — ->> 앞에 ::jsonb 가 반드시 붙는다", () => {
+  // 2026-09-03 실사고. `->>` 만 쓰고 배포했더니 크론이 500 을 냈고 부재 감지가 죽었다
+  // (operator does not exist: text ->> unknown). 이 테이블은 ts·heart_rate_measured_at 도 text 다.
+  const uses = [...db.matchAll(/raw_json(::jsonb)? ->>/g)];
+  assert.ok(uses.length > 0, "raw_json 접근이 사라졌다 — 가드를 다시 맞춰야 한다");
+  for (const m of uses) {
+    assert.equal(m[1], "::jsonb", `raw_json ->> 에 ::jsonb 가 빠졌다 — 런타임에 크론이 죽는다: ${m[0]}`);
+  }
+});
+
 test("★⑦ 충전 판정이 세 곳에서 같다", () => {
   // 갈리면 같은 표본이 차트에서는 충전, 알림에서는 방전으로 읽힌다.
   // 09-03 실기 = 방전 3 · 무선 독 충전 2 · 만충 5. 4(NOT_CHARGING)는 관측된 적 없어 넣지 않는다.
