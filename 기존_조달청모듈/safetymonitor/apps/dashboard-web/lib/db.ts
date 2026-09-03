@@ -2624,10 +2624,16 @@ export async function maxMeasuredLagSecAfter(
        -- ★ **심박이 실린 첫 행**이 복귀다(2026-09-03). 종전엔 아무 행이나 복귀로 쳤는데,
        --   미착용 배터리 표본이 도착하자 "생체 수신 재개" 가 오발동했다 — 알림 문구 스스로
        --   "복귀 직후 심박이 없었음" 이라고 적으면서도 재개라고 불렀다.
+       -- ★★ 경계는 **측정 시각**으로 자른다 — 도착 시각(ts)으로 자르면 공백을 연 그 행이
+       --   스스로 복귀가 된다(2026-09-03 실사고). gapStartIso 는 lastSeenByWorker 가
+       --   COALESCE(heart_rate_measured_at, ts) 로 만든 값인데 여기서 ts 로 비교하면
+       --   측정 지연(실측 0.1~8초)만큼 어긋나 같은 행이 늘 조건을 만족한다.
+       --   실제로 EMP-6861 의 공백이 4초 만에 자동해제되며 부재 감시가 통째로 무장해제됐다.
        SELECT ts FROM vital_samples
-        WHERE worker_id = $1 AND ts::timestamptz > $2::timestamptz
+        WHERE worker_id = $1
+          AND COALESCE(heart_rate_measured_at, ts)::timestamptz > $2::timestamptz
           AND heart_rate IS NOT NULL
-        ORDER BY ts ASC LIMIT 1
+        ORDER BY COALESCE(heart_rate_measured_at, ts) ASC LIMIT 1
      )
      SELECT r.ts AS resumed_at,
             (SELECT MAX(EXTRACT(EPOCH FROM (s.ts::timestamptz - s.heart_rate_measured_at::timestamptz)))
@@ -2639,7 +2645,7 @@ export async function maxMeasuredLagSecAfter(
             -- 그 복귀도 push 하지 않는다 — 안 그러면 "✅ 재개" 만 홀로 뜬다(선행 알림 없이).
             EXISTS (SELECT 1 FROM vital_samples o
                      WHERE o.worker_id = $1
-                       AND o.ts::timestamptz > $2::timestamptz
+                       AND COALESCE(o.heart_rate_measured_at, o.ts)::timestamptz > $2::timestamptz
                        AND o.ts::timestamptz <= r.ts::timestamptz
                        AND (o.raw_json::jsonb ->> 'worn' = 'false'   -- text 컬럼이라 캐스트 필수
                             OR o.battery_status IN (2, 5))) AS off_body

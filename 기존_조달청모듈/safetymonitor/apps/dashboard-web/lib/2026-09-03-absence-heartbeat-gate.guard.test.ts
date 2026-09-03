@@ -139,3 +139,35 @@ test("★⑦ 충전 판정이 세 곳에서 같다", () => {
     "push 억제의 충전 판정이 바뀌었다",
   );
 });
+
+test("★⑧ 공백 경계는 양쪽 다 '측정 시각' 이다 — 도착 시각으로 자르면 알림이 스스로 닫힌다", () => {
+  // 2026-09-03 실사고(같은 날 두 번째). ①이 공백 키를 COALESCE(heart_rate_measured_at, ts) 로
+  // 옮겼는데 재개 조회는 ts(도착) 로 비교한 채 남았다. 둘은 측정 지연만큼 어긋나고
+  // (실측 0.1~8초), 그 차이 때문에 **공백을 연 바로 그 행이 늘 '복귀' 조건을 만족한다.**
+  //
+  // 결과 = 부재 알림이 열리자마자 자동해제된다. 프로덕션 원장 실측 —
+  //   alert 6986 ts=03:48:41.601Z(=마지막 심박) → ack "자동해제 · 수집이 멎어 있었음"
+  //   그 시각 이후 심박은 **한 건도 없었다.** 공백 4초로 닫히고 부재 감시가 무장해제됐다.
+  //   덤으로 선행 "📵" 없이 "✅ 재개 · 공백 0분" 만 홀로 나간다(⑥이 막으려던 모양).
+  //
+  // 프로덕션 대조(배포 전 · L-126③) — 수정 전 쿼리는 경계 행을 냈고, 수정 후에는 0행,
+  // 진짜로 복귀했던 옛 공백(02:46:59.749)에서는 그대로 복귀를 찾았다(판별력 확인).
+  assert.match(
+    bodyOf(db, "lastSeenByWorker"),
+    /COALESCE\(v\.heart_rate_measured_at, v\.ts\)/,
+    "공백 키가 측정 시각이 아니다 — ⑧의 전제가 무너졌다",
+  );
+
+  const fn = bodyOf(db, "maxMeasuredLagSecAfter");
+  const cte = fn.slice(fn.indexOf("WITH resumed"), fn.indexOf("SELECT r.ts"));
+  assert.match(
+    cte,
+    /AND COALESCE\(heart_rate_measured_at, ts\)::timestamptz > \$2::timestamptz/,
+    "재개 조회가 경계를 도착 시각으로 자른다 — 공백을 연 행이 스스로 복귀가 된다",
+  );
+  assert.doesNotMatch(
+    cte,
+    /AND ts::timestamptz > \$2::timestamptz/,
+    "종전 도착 시각 비교가 남아 있다",
+  );
+});
