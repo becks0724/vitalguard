@@ -145,6 +145,15 @@ export const VitalSampleSchema = z.object({
   // (08-26 실측 = 100초에 4,680µAh → 168mAh/h 를 퍼센트 계단 없이 읽어냈다.)
   // 상한은 물리 상한이 아니라 저장 가치의 경계다 — 워치 정격 445mAh, 폰도 수천 mAh 대역이다.
   batteryChargeUah: z.number().int().min(0).max(50_000_000).optional(),
+  // 배터리 충전 **상태** 원시값 — Android `BATTERY_STATUS_*`(1 모름 2 충전 3 방전 4 미충전 5 만충).
+  // 관제 배터리 차트의 "충전기에 올려둔 구간" 음영이 이 값으로 갈린다.
+  // ⚠ 종전엔 이 신호가 없어 서버가 `batteryChargeUah` 가 오르는 것을 보고 **사후 역산**했다 —
+  //   표본 두 개(전송 주기 2분 × 2)가 모여야 알 수 있어 실시간 화면에서는 쓸 수 없었다.
+  // ★ 불리언이 아니라 정수인 이유. 갤럭시워치는 배터리 보호 모드 상한이 90% 라(09-03 실측
+  //   SM-L355N `mMaximumProtectionThreshold: 90`) **독 위에서 4(미충전)로 앉는다.** 워치가
+  //   `charging` 불리언으로 접어 보내면 그 구간이 사라지고, 해석을 고치려면 워치를 재설치해야
+  //   한다(재서명 창에 묶인다). 원시값으로 받아 두면 판정은 서버에서 언제든 바뀔 수 있다.
+  batteryStatus: z.number().int().min(1).max(5).optional(),
   // 워치 세션 계측 (2026-08-19 · docs/vital-absence-triage §4-7).
   // sessionStartedAt 이 바뀌는 지점이 곧 HKWorkoutSession 재시작이고, sessionAutoResumed 가
   // 그 재시작의 주체(자동 복구 vs 사람이 [시작])를 가른다.

@@ -863,6 +863,15 @@ export function mergeLatestByWorker(
       skinTempC: newer.skinTempC ?? older?.skinTempC,
       ambientTempC: newer.ambientTempC ?? older?.ambientTempC,
       batteryPct: newer.batteryPct ?? older?.batteryPct,
+      // 배터리 µAh·상태도 **명시** sticky. 스프레드는 newer 에 키가 *없을* 때만 older 를 남기고,
+      //   키가 `undefined` 로 **있으면** 덮어 버린다 — 바로 위 heartRateMeasuredAt 주석이
+      //   기록한 그 함정이다. 표시되는 생체값은 전부 명시 줄을 갖고 있는데 배터리 3종 중
+      //   둘만 스프레드에 기대고 있었다(2026-09-03).
+      // ⚠ 정직하게 적어 둔다 — **현재 동작은 안 바뀐다.** 지금 경로(Zod parse 출력)는 없는 키를
+      //   만들지 않으므로 스프레드만으로도 값이 살아 있었다. 이 줄은 그 전제가 깨지는 날을 막고,
+      //   가드가 그 상황(undefined 키를 실은 newer)을 직접 시험한다.
+      batteryChargeUah: newer.batteryChargeUah ?? older?.batteryChargeUah,
+      batteryStatus: newer.batteryStatus ?? older?.batteryStatus,
       // 스트레스 입력은 60초 sub-cadence 라 대부분의 5초 폴 샘플엔 없음 → sticky 로
       // 직전 값 유지(빠른 vital 과 달리 느린 메트릭이라 carry-forward 가 정상).
       hrvSdnnMs: newer.hrvSdnnMs ?? older?.hrvSdnnMs,

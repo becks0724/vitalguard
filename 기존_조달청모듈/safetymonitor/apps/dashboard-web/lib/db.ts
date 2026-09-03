@@ -371,6 +371,11 @@ async function initSchema(): Promise<void> {
     -- 곧 그 사이 소모량이라 짧은 구간의 소모율을 계단 없이 잴 수 있다(2026-08-26 · 워치 A안).
     -- BIGINT 인 이유 = 폰 배터리(수천 mAh = 수천만 µAh)도 같은 열을 쓴다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS battery_charge_uah BIGINT;
+    -- 배터리 충전 상태 원시값(2026-09-03) — Android BATTERY_STATUS_*(1 모름 2 충전 3 방전
+    -- 4 미충전 5 만충). 관제 배터리 차트의 충전 구간 음영이 이 값으로 갈린다.
+    -- 종전엔 battery_charge_uah 가 오르는 것으로 사후 역산했는데 표본 두 개(4분)가 필요해
+    -- 실시간 화면에서는 못 썼다. SMALLINT 로 충분하다(값이 1~5).
+    ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS battery_status SMALLINT;
     -- 모션 변동폭(2026-08-19) — 1Hz 60초 창 |userAcceleration| 표준편차 밀리g.
     -- ⚠ 판정·경보·화면 미사용. 착용 판별 후보 축의 재료일 뿐이고 분포가 안 갈리면 폐기한다.
     ALTER TABLE vital_samples ADD COLUMN IF NOT EXISTS motion_var_mg SMALLINT;
@@ -1099,6 +1104,7 @@ function vitalSampleColumns(sample: VitalSample): Record<string, unknown> {
     ambient_temp_c: sample.ambientTempC ?? null,
     battery_pct: sample.batteryPct ?? null,
     battery_charge_uah: sample.batteryChargeUah ?? null,
+    battery_status: sample.batteryStatus ?? null,
     session_started_at: sample.sessionStartedAt ?? null,
     motion_var_mg: sample.motionVariabilityMg ?? null,
     session_auto_resumed:
