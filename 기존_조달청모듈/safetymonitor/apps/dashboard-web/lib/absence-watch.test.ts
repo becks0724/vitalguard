@@ -87,6 +87,29 @@ test("★★ 야간 근무자를 버리지 않는다 — 밤 2시라도 차고 �
   assert.equal(out[0]!.push, true, "밤이라는 이유로 야간 작업자의 생체 알림이 막혔다");
 });
 
+test("★★ 차고 있는 채 죽으면 낡은 worn=true 로 알린다 — 그것이 규칙의 근거다", () => {
+  // 배터리 방전·앱 사망이면 **새 행이 아예 안 온다.** 그러면 마지막 행의 worn 이 true 인 채
+  // 굳고 심박은 없으니 push 가 난다 — 손목에서 죽은 워치야말로 알아야 할 때다.
+  //
+  // ⚠ 이 시험이 지키는 것은 값이 아니라 **의도**다. 다음 사람이 낡은 worn 을
+  //   "착용 센서 오작동 오탐" 으로 읽고 불신하게 고치면 **가장 위험한 경우가 조용해진다.**
+  //   그 변경은 여기서 빨갛게 걸린다.
+  const now = kst(2026, 8, 19, 3, 0); // 새벽 — 종전 시계 게이트가 덮어 버리던 시각
+  const out = decideAbsences(
+    [{
+      workerId: "EMP-6861",
+      workerName: "장우진",
+      // 세 값 모두 **죽기 직전에 멈춘 것**이다. 그 뒤로 갱신이 없다.
+      lastHeartbeatIso: new Date(now - 3 * 60 * 60_000).toISOString(),
+      worn: true,
+      batteryStatus: 3,
+    }],
+    now,
+  );
+  assert.equal(out.length, 1);
+  assert.equal(out[0]!.push, true, "손목에서 죽은 워치를 조용히 넘겼다 — worn 을 불신하게 고쳤나?");
+});
+
 test("★ 벗어 두면 판정은 되고 push 만 꺼진다 — 원장·화면에서 사라지면 안 된다", () => {
   const noon = kst(2026, 8, 19, 14, 0);
   const out = decideAbsences(

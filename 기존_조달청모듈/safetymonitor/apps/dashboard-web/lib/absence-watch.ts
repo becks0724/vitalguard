@@ -65,6 +65,17 @@ export type WorkerLastSeen = {
  * 벗어 둔 워치는 감시 대상이 아니다. 반대로 차고 있는데 심박이 끊긴 것은
  * **밤이든 낮이든 같은 사건**이라 시각으로 막지 않는다.
  * 모르면(둘 다 null) push 한다 — 안전 쪽으로 떨어뜨린다.
+ *
+ * ★★ **`worn` 이 낡은 채 `true` 로 남는 것은 버그가 아니라 이 규칙의 근거다.**
+ *   차고 있는 채 워치가 죽으면(배터리 방전·앱 사망) **새 행이 아예 안 온다.** 그러면
+ *   [lastSeenByWorker] 가 읽는 "마지막 행의 worn" 이 `true` 인 채로 굳고, 심박은 없으니
+ *   여기서 push 가 난다 — **손목에서 죽은 워치야말로 알아야 할 때**이므로 그것이 옳다.
+ *   ⚠ 다음 사람이 이것을 "착용 센서 오작동 오탐" 으로 읽고 worn 을 불신하게 고치기 쉽다.
+ *     그렇게 하면 **가장 위험한 경우가 조용해진다.** 시험이 이 시나리오를 못 박고 있다
+ *     (absence-watch.test.ts — "차고 있는 채 죽으면 …").
+ *   ⚠ 경로를 헷갈리지 말 것 — 알림이 보는 것은 `store.ts` 의 sticky 병합
+ *     (`worn: newer.worn ?? older?.worn`)이 **아니라** SQL 이 고른 마지막 행이다.
+ *     둘 다 같은 결론에 닿지만 고칠 자리는 다르다(sticky 는 화면 쪽 계약이다).
  */
 export function shouldPushAbsence(worn: boolean | null, batteryStatus: number | null): boolean {
   if (worn === false) return false;
