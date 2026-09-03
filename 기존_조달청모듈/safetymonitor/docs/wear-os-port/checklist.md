@@ -329,14 +329,14 @@
 
 코드 전수 확인에서 나온 결함 둘. 근거·산정은 `context-notes.md` 의 같은 날 항목.
 
-- [ ] `GpsLocationSource` 에 `wasMoving` 추가 · `shouldClearBackoff` 순수 함수 분리
-- [ ] `shouldRequestSatellite` 인자 `movingNow` → `startedMoving` (이동 **전이** 만 백오프를 뚫는다)
-- [ ] `CollectorService.tick` 의 `gps.requestSatelliteFix` 에 `if (sensing)` 가드
-- [ ] 기존 가드 `백오프 중에는 안 켜지만 움직이면 즉시 켠다` 를 새 계약으로 갱신 — **이 가드가 버그를 고정하고 있었다**
-- [ ] 새 가드 ① 이동이 지속되면 백오프가 15분까지 자란다 (합성 루프 — 순수 함수 단품 검사로는 못 잡는 자리)
-- [ ] 새 가드 ② 벗은 뒤에는 위성을 안 켠다 (tick 소스 검사)
-- [ ] 변이 검증 2건 — 수리를 되돌리면 새 가드가 잡는가
-- [ ] 전체 시험 통과
+- [x] `GpsLocationSource` 에 `wasMoving` 추가 · `shouldClearBackoff` 순수 함수 분리
+- [x] `shouldRequestSatellite` 인자 `movingNow` → `startedMoving` (이동 **전이** 만 백오프를 뚫는다)
+- [x] `CollectorService.tick` 의 `gps.requestSatelliteFix` 에 `if (sensing)` 가드
+- [x] 기존 가드 `백오프 중에는 안 켜지만 움직이면 즉시 켠다` 를 새 계약으로 갱신 — **이 가드가 버그를 고정하고 있었다**
+- [x] 새 가드 ① 이동이 지속되면 백오프가 15분까지 자란다 (합성 루프 — 순수 함수 단품 검사로는 못 잡는 자리)
+- [x] 새 가드 ② 벗은 뒤에는 위성을 안 켠다 (tick 소스 검사)
+- [x] 변이 검증 2건 — 수리를 되돌리면 새 가드가 잡는가
+- [x] 전체 시험 통과
 - [ ] 실기 확인 — `VgGps` 에 `위성 fix 실패 N회 — 300s/600s/900s 뒤 재시도` 가 실제로 찍히는가
       (지금은 `0s` 만 반복되어야 정상 = 버그 상태)
 - [ ] 1시간 %/h 재측정 — **같은 잔량 구간(90→70%)** 에서 수리 전후 비교
