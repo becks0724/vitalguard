@@ -65,8 +65,10 @@ const LEAK = /offWrist|OFFWRIST|flatWindow|suspect/i;
 // ── ① 판정은 이 값을 모른다 ─────────────────────────────────────────────────
 test("★★ 판정 함수 다섯이 벗음 의심을 읽지 않는다 — 읽는 순간 신호등·집계·경보가 평평함을 판정한다", () => {
   const targets: Array<[string, string]> = [
-    [board, "function workerStatus("],
-    [board, "function overallStatus("],
+    // workerStatus·overallStatus 는 2026-09-03 에 worker-signal 로 옮겼다(관리자 앱이 같은
+    // 판정을 써야 해서다). 가드는 **함수를 따라간다** — 파일이 바뀌었을 뿐 지키는 성질은 같다.
+    [signal, "export function workerStatus("],
+    [signal, "export function overallStatus("],
     [board, "function signalLevel("],
     [signal, "export function effectiveTone("],
     [signal, "export function gateStaleVitals("],

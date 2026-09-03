@@ -15,15 +15,20 @@ import { test } from "node:test";
 
 const ROOT = join(import.meta.dirname, "..");
 const dash = readFileSync(join(ROOT, "app/components/DemoDashboard.tsx"), "utf8");
+// 상태 라벨 산출부는 2026-09-03 에 worker-signal 로 옮겼다(관리자 앱이 같은 판정을 써야 해서다).
+// 가드는 **함수를 따라간다** — 파일만 바뀌었고 지키는 성질은 그대로다.
+const signal = readFileSync(join(ROOT, "lib/worker-signal.ts"), "utf8");
 
 test("앵커 — 상태 라벨 산출부가 실재한다", () => {
-  assert.ok(dash.includes("function workerStatus("), "workerStatus 소실");
-  assert.ok(dash.includes("WorkerStatus"), "WorkerStatus 타입 소실");
+  assert.ok(signal.includes("function workerStatus("), "workerStatus 소실");
+  assert.ok(signal.includes("WorkerStatus"), "WorkerStatus 타입 소실");
+  // 화면이 실제로 그 함수를 쓰는지도 본다 — 옮기기만 하고 안 부르면 라벨 규칙이 죽는다.
+  assert.ok(dash.includes("workerStatus("), "화면이 상태 라벨 산출부를 안 부른다");
 });
 
 test("수신 중 작업자에게 `정상` 을 단언하지 않는다", () => {
-  const i = dash.indexOf("function workerStatus(");
-  const body = dash.slice(i, dash.indexOf("\n}\n", i));
+  const i = signal.indexOf("function workerStatus(");
+  const body = signal.slice(i, signal.indexOf("\n}\n", i));
   assert.match(
     body,
     /overall === "normal"\) return \{ label: "수신 중", tone: "normal" \}/,
@@ -34,8 +39,8 @@ test("수신 중 작업자에게 `정상` 을 단언하지 않는다", () => {
 
 // ★ 판정 불변 — 라벨만 정직해지고 신호등·집계는 그대로다.
 test("tone 은 normal 그대로다 — 판정·집계를 안 건드렸다", () => {
-  const i = dash.indexOf("function workerStatus(");
-  const body = dash.slice(i, dash.indexOf("\n}\n", i));
+  const i = signal.indexOf("function workerStatus(");
+  const body = signal.slice(i, signal.indexOf("\n}\n", i));
   for (const t of ['tone: "danger"', 'tone: "caution"', 'tone: "normal"', 'tone: "idle"']) {
     assert.ok(body.includes(t), `${t} 소실 — 톤 체계가 바뀌면 신호등·집계가 함께 바뀐다`);
   }

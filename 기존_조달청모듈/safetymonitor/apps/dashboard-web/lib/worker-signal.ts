@@ -1,6 +1,12 @@
 // 작업자 신호등 톤 합성 — 생체 판정에 위치(구획 이탈) 상태를 얹는 순수 함수.
 // 컴포넌트 안 useMemo 에 흩어져 있으면 회귀 테스트가 안 붙어 여기로 분리한다.
 // DemoDashboard 의 지역 VitalStatus 와 동일한 유니온(구조적 타이핑으로 상호 호환).
+import type { VitalSample } from "@safetymonitor/schemas";
+
+import { coreTempStatusC, heartRateStatus, spo2Status, workActivity } from "./severity";
+
+import { freshSpo2 } from "./spo2-freshness";
+
 export type SignalTone = "idle" | "normal" | "caution" | "danger";
 type VitalStatus = SignalTone;
 
@@ -238,4 +244,58 @@ export function workerSignalCopy(t: WorkerTally): {
     title: `작업자 정상 (${t.count}명)`,
     lines: [{ label: "상태", text: `등록 ${t.count}명 전부 정상 범위(심박·SpO₂·체온·낙상·SOS)` }],
   };
+}
+
+// ── 생체 판정 — 웹과 앱이 **같은 답**을 내야 하는 자리 ─────────────────────────
+// 2026-09-03 에 DemoDashboard 안의 지역 함수에서 여기로 옮겼다(순수 이동 · 동작 무변경).
+// 관리자 폰 앱이 같은 판정을 써야 하는데 컴포넌트 안에 있으면 서버 라우트에서 못 부른다.
+// 복제하면 같은 작업자가 웹과 앱에서 **다른 색으로** 뜬다 — 이 파일이 존재하는 이유이자
+// CLAUDE.md 의 "임계·색은 관제웹에서 가져온다"가 막으려는 바로 그 갈라짐이다.
+// 카드 전체에 worst-of 상태 — 신호등 인디케이터 + 상태 배지 라벨용.
+// nowMs 를 주면 SpO₂ 는 신선한 측정(30분 이내)만 판정에 넣는다 — 기회 측정이라 낡은 저산소 값이
+// 위험을 계속 점등하면 오탐이다. 미전달(레거시 호출)은 종전 동작 유지.
+// ★ `coreTempEstC` = 심박 기반 칼만 심부체온(서버 산출 · `data.coreTempEst[워커].tempC`).
+//   2026-08-26 부터 **체온 판정은 이 값으로만** 한다 — 손목 실측에는 기기 발열이 섞이고
+//   (주변온≥33 구간 +0.841℃) 칼만은 같은 구간에서 +0.019℃ 로 안 움직인다.
+//   미전달·워밍업 전이면 `coreTempStatusC` 가 idle 을 내 **판정을 보류**한다(손목으로 폴백하지 않는다).
+export function overallStatus(sample?: VitalSample, nowMs?: number, coreTempEstC?: number): VitalStatus {
+  if (!sample) return "idle";
+  const statuses: VitalStatus[] = [
+    heartRateStatus(sample.heartRate, workActivity(sample)), // 작업 중이면 작업부하 밴드
+    spo2Status(nowMs === undefined ? sample.spo2 : freshSpo2(sample, nowMs)),
+    coreTempStatusC(coreTempEstC),
+  ];
+  if (statuses.includes("danger")) return "danger";
+  if (statuses.includes("caution")) return "caution";
+  if (statuses.includes("normal")) return "normal";
+  return "idle";
+}
+
+// 작업자 상태 종합 — 워치 native 낙상 감지 + 폰 SOS + 생체 worst-of 조합.
+// 낙상/SOS 는 워치(Apple Watch · Galaxy Watch) 의 자체 fall detection 이 트리거하는 신호로 받음.
+export type WorkerStatus =
+  | { label: "낙상 감지"; tone: "danger" }
+  | { label: "SOS 요청"; tone: "danger" }
+  | { label: "위험"; tone: "danger" }
+  | { label: "주의"; tone: "caution" }
+  | { label: "수신 중"; tone: "normal" }
+  | { label: "대기"; tone: "idle" };
+
+// ★ `normal` 의 라벨은 `정상` 이 아니라 **`수신 중`** 이다(2026-08-20 · 사용자 결정).
+//   상시 HKWorkoutSession 이 watchOS 손목 감지를 우회해 **벗어도 그럴듯한 심박이 계속 온다**
+//   (책상 5분 반 평균 108.4bpm vs 착용 108.1 — 구별 불가). 대리 신호로 가르는 길도 닫혔다
+//   (모션 변동폭 `mv` 기각 — 착용+정지 바닥 1~5 vs 책상 1~3 완전 겹침, 2026-08-19 통제군 실측).
+//   ⟹ 미착용 구간에도 `정상` 을 단언하면 **본인이 보는 화면이 거짓말을 한다.** 남은 길은
+//     문구가 착용을 암시하지 않게 하는 것뿐이고, 이 라벨이 그 지점이다.
+// ⚠ `tone` 은 `normal` 그대로다 — 신호등 색·집계("이상 N명")는 tone 으로 계산하므로 안 바뀐다.
+//   라벨만 정직해지고 판정은 그대로다.
+export function workerStatus(sample?: VitalSample, nowMs?: number, coreTempEstC?: number): WorkerStatus {
+  if (!sample) return { label: "대기", tone: "idle" };
+  if (sample.fallDetected) return { label: "낙상 감지", tone: "danger" };
+  if (sample.manualSos) return { label: "SOS 요청", tone: "danger" };
+  const overall = overallStatus(sample, nowMs, coreTempEstC);
+  if (overall === "danger") return { label: "위험", tone: "danger" };
+  if (overall === "caution") return { label: "주의", tone: "caution" };
+  if (overall === "normal") return { label: "수신 중", tone: "normal" };
+  return { label: "대기", tone: "idle" };
 }

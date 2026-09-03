@@ -63,8 +63,10 @@ function bodyOf(src: string, decl: string): string {
 // 착용 판별 없이 정지를 판정에 넣으면 오탐이 압도적이다. 넷 중 하나라도 읽으면 빨간불.
 test("★★ 판정 함수 넷이 motionStillSec 을 읽지 않는다 — 읽는 순간 신호등·집계·경보가 정지를 판정한다", () => {
   const targets: Array<[string, string]> = [
-    [board, "function workerStatus("],
-    [board, "function overallStatus("],
+    // workerStatus·overallStatus 는 2026-09-03 에 worker-signal 로 옮겼다(관리자 앱이 같은
+    // 판정을 써야 해서다). 가드는 **함수를 따라간다** — 파일이 바뀌었을 뿐 지키는 성질은 같다.
+    [signal, "export function workerStatus("],
+    [signal, "export function overallStatus("],
     [signal, "export function effectiveTone("],
     [signal, "export function gateStaleVitals("],
   ];

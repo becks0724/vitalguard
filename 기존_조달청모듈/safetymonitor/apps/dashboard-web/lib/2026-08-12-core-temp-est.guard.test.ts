@@ -51,9 +51,12 @@ test("★ 라이브 체온 판정은 칼만 추정으로 한다 — 오염된 �
   // ①-2 ★ **종합 판정이 인자를 흘려보내는가.** ① 은 파일 어디든 한 곳만 맞으면 통과라,
   //      `overallStatus` 안에서만 `undefined` 로 바꿔 체온을 통째로 죽여도 초록이었다
   //      (2026-08-26 변이 시험에서 실측으로 잡힘 · [[L-104]]). 그 자리를 따로 못 박는다.
-  const overallBody = dash.slice(
-    dash.indexOf("function overallStatus("),
-    dash.indexOf("function overallStatus(") + 900,
+  // 2026-09-03 에 worker-signal 로 옮겼다(관리자 앱이 같은 판정을 써야 해서다).
+  // 가드는 함수를 따라간다 — 파일만 바뀌었고 지키는 성질은 그대로다.
+  const signal = readFileSync(join(ROOT, "lib", "worker-signal.ts"), "utf8");
+  const overallBody = signal.slice(
+    signal.indexOf("function overallStatus("),
+    signal.indexOf("function overallStatus(") + 900,
   );
   assert.ok(overallBody, "overallStatus 를 못 찾았다 — 가드 재작성 필요");
   assert.match(

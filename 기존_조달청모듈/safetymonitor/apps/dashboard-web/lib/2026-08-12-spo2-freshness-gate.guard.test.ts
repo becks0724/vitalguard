@@ -31,9 +31,12 @@ test("낡은 값 직결 패턴 금지 — spo2Status 에 원시 샘플 필드를
 });
 
 test("overallStatus — nowMs 를 받아 SpO₂ 를 신선도로 거른다(행 신호등·지도 마커 공용)", () => {
-  const fn = src.slice(
-    src.indexOf("function overallStatus"),
-    src.indexOf("function", src.indexOf("function overallStatus") + 10),
+  // 2026-09-03 에 worker-signal 로 옮겼다(관리자 앱이 같은 판정을 써야 해서다).
+  // 가드는 함수를 따라간다 — 파일만 바뀌었고 지키는 성질은 그대로다.
+  const signal = readFileSync(join(ROOT, "lib", "worker-signal.ts"), "utf8");
+  const fn = signal.slice(
+    signal.indexOf("function overallStatus"),
+    signal.indexOf("\n}\n", signal.indexOf("function overallStatus")),
   );
   assert.match(fn, /nowMs\?: number/, "overallStatus 에 nowMs 파라미터가 없다");
   assert.match(fn, /freshSpo2\(sample, nowMs\)/, "overallStatus 가 freshSpo2 를 쓰지 않는다");
