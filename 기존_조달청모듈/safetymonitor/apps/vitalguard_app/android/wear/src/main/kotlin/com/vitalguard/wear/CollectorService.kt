@@ -118,6 +118,15 @@ class CollectorService : Service() {
             batteryChargeUah = {
                 battery.getLongProperty(BatteryManager.BATTERY_PROPERTY_CHARGE_COUNTER).takeIf { it > 0L }
             },
+            // 충전 상태 — **원시 정수 그대로** 올린다(1 모름 2 충전 3 방전 4 미충전 5 만충).
+            // ⚠ 워치가 "충전 중인가" 를 판정하지 않는다 — 단말은 최소 분석, 판정은 서버라는
+            //   레포 대원칙이고 여기선 실익도 있다. 이 워치는 배터리 보호 모드 상한이 90% 라
+            //   **독 위에서 4(미충전)로 앉을 수 있다.** 불리언으로 접으면 그 구간이 사라지는데,
+            //   해석이 바뀔 때마다 워치를 재설치하는 것은 비싸다(재서명 창에 묶인다).
+            // 09-03 실기(SM-L355N) `dumpsys battery` = status 3. 범위 밖 값은 null = "모름".
+            batteryStatus = {
+                battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS).takeIf { it in 1..5 }
+            },
             hrLastReviveAtMs = { hrLastReviveAtMs },
             latestFix = { now -> gps.currentFix(now) },
         )

@@ -53,6 +53,15 @@ class SampleBuilder {
          */
         batteryChargeUah: Long? = null,
         /**
+         * 충전 상태 **원시값** — Android `BATTERY_STATUS_*`(1 모름 2 충전 3 방전 4 미충전 5 만충).
+         *
+         * ★ 불리언으로 접지 않는 이유. 이 워치는 배터리 보호 모드 상한이 90% 라(`dumpsys` 실측
+         *   `mMaximumProtectionThreshold: 90`) **독 위에서 4(미충전)로 앉을 수 있다.**
+         *   `charging=true/false` 로 접으면 "충전기에 올려둔 구간" 이 그 순간 사라진다.
+         *   정수를 그대로 올리면 해석이 바뀌어도 **서버만 고치면 된다** — 워치는 재설치가 비싸다.
+         */
+        batteryStatus: Int? = null,
+        /**
          * 심박 트래커를 마지막으로 재구독한 시각(epoch ms). 한 번도 없었으면 null —
          * **없음도 지문이다**(서비스 시작 이래 워치독이 안 돌았다는 뜻).
          *
@@ -85,11 +94,13 @@ class SampleBuilder {
             variabilityMg?.let { v["motionVariabilityMg"] = it }
             batteryPct?.let { v["batteryPct"] = it }
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
+            batteryStatus?.let { v["batteryStatus"] = it }
             hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
         } else if (stillSec != null) {
             v["motionStillSec"] = stillSec        // 단독 전송 — iOS flush 의 그 규칙
             batteryPct?.let { v["batteryPct"] = it }
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
+            batteryStatus?.let { v["batteryStatus"] = it }
             hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
         } else {
             reset()

@@ -340,3 +340,37 @@
 - [ ] 실기 확인 — `VgGps` 에 `위성 fix 실패 N회 — 300s/600s/900s 뒤 재시도` 가 실제로 찍히는가
       (지금은 `0s` 만 반복되어야 정상 = 버그 상태)
 - [ ] 1시간 %/h 재측정 — **같은 잔량 구간(90→70%)** 에서 수리 전후 비교
+
+## 배터리 관제 노출 (2026-09-03) — 열 + 차트 + 충전 구간
+
+사용자 결정 = **충전상태 포함 · 차트는 (다) 잔량 % 선 + 충전 구간 음영.**
+근거·실측은 `context-notes.md` 의 같은 날 "워치 배터리 필드 전수 확인" 항목.
+
+### ① 워치 — 원시값만 올린다 (판정은 서버)
+- [ ] `CollectorService` 배터리 람다에 `batteryStatus` 추가 (`BATTERY_PROPERTY_STATUS` · 1~5 범위 가드)
+- [ ] `CollectorEngine` 생성자 인자 + `buildAndReset` 전달
+- [ ] `SampleBuilder` 두 갈래 모두에 `v["batteryStatus"]`
+- [ ] 가드 — 트리오(워치 수집·전달·적재)가 무음으로 끊기지 않는가
+
+### ② 서버 — 스키마 트리오 + 병합
+- [ ] 스키마 `batteryStatus: z.number().int().min(1).max(5).optional()`
+- [ ] DB 컬럼 `battery_status SMALLINT` + insert 매핑
+- [ ] `mergeLatestByWorker` 에 `batteryStatus` · **`batteryChargeUah`**(종전 누락분) 두 줄
+- [ ] 가드 — 08-26 충전카운터 가드와 동형
+
+### ③ 이력 API — 차트 재료
+- [ ] `HistoryMetric` 에 `"battery"` (data.ts · DemoDashboard 양쪽)
+- [ ] `ALLOWED_METRICS` · `REAL_METRICS` 등재
+- [ ] `db.ts` `batteryBucketAverages` (skinTemp 동형 · `battery_pct`)
+- [ ] 충전 구간 = 같은 버킷의 `battery_status` 최빈값을 점에 실어 보낸다
+
+### ④ 화면
+- [ ] 13열 → 14열 · 배터리를 **신호와 상태 사이**
+- [ ] 열 폭은 **헤드리스 실측**으로 정한다(스트레스 8rem 선례 — 눈대중 금지)
+- [ ] `metricCell("battery", …)` — 클릭 시 기존 생체 차트 경로 그대로
+- [ ] 차트에 충전 구간 음영
+
+### ⑤ 검증
+- [ ] 워치 빌드 + 설치(현재 창) · GPS 수리 `3d1514b` 도 함께 올라감
+- [ ] 실기 — 독에 올려 `batteryStatus` 가 3→2/4/5 로 바뀌는지
+- [ ] 관제 화면 눈 확인 — 열 위치·간격·차트 음영

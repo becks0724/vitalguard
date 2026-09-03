@@ -24,6 +24,8 @@ class CollectorEngine(
     private val batteryPct: () -> Int?,
     /** 배터리 충전카운터(µAh) — 퍼센트보다 약 100배 촘촘하다. 못 읽는 기기면 null. */
     private val batteryChargeUah: () -> Long? = { null },
+    /** 충전 상태 원시값(1~5). **판정은 서버가 한다** — 여기선 그대로 옮기기만 한다. */
+    private val batteryStatus: () -> Int? = { null },
     /** 심박 트래커 마지막 재구독 시각(epoch ms). 한 번도 없었으면 null — 없음도 지문이다. */
     private val hrLastReviveAtMs: () -> Long? = { null },
     private val latestFix: (nowMs: Long) -> LocationFix? = { null },   // 배치당 1회 조회(iOS 규칙)
@@ -284,6 +286,7 @@ class CollectorEngine(
             variabilityMg = motion.variabilityMg(),
             batteryPct = batteryPct(),
             batteryChargeUah = batteryChargeUah(),
+            batteryStatus = batteryStatus(),
             hrLastReviveAtMs = hrLastReviveAtMs(),
             fix = latestFix(nowMs),
         ) ?: return false
