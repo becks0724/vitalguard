@@ -1516,3 +1516,58 @@ GNSS 연속 전력을 09-01 실측에서 역산한다 — `87.8 − 51 = 36.8 mA
 `maxAgeMs` 가 120초라 위상이 어긋나는 순간 폴백 fix 가 `pickFix` 의 신선도 필터에 걸려 버려지고,
 그러면 **실내 좌표가 통째로 사라진다**(08-26 에 겪은 그 고장이다). 경로 A 는 GNSS 를 안 쓰므로
 이득도 작다. 손대지 않는다.
+
+---
+
+## 2026-09-03 · 워치 배터리 필드 전수 확인 — `current now` 는 µA 가 아니라 mA 다
+
+관제웹에 배터리 상태·잔여량·충전상태를 띄울 수 있는지 확인하려고 실기를 그대로 떴다.
+기기 = `SM-L355N`(워치9 · Android 17 · API 37) · 무선 adb.
+
+```
+adb -s <워치> shell dumpsys battery
+  status: 3          방전 중 (2=충전 3=방전 4=미충전 5=만충)
+  health: 2          양호
+  level: 88 / scale: 100
+  Charge counter: 412787 µAh          ← 이미 수집 중
+  voltage: 4298 mV
+  temperature: 333   → 33.3℃          ← 배터리 온도
+  technology: Li-ion
+  current now: -61                     ← ⚠ 단위 함정
+  AC / USB / Wireless / Dock powered   ← 워치엔 Dock 이 있다
+  Capacity level: -1                   ← 미지원. 안 쓴다
+  mMaximumProtectionThreshold: 90      ← 배터리 보호 모드 상한
+```
+
+### ⚠⚠ `current now` 의 단위는 mA 다 — AOSP 규약(µA)과 다르다
+
+13표본 · 184초 교정.
+```
+충전량  412,408 → 409,239 µAh (감소 3,169) → 실측 62.1 mAh/h
+current now 평균 -65.9 · 중앙 -59 · 범위 -99~-39
+
+  mA 로 읽으면  오차 6%      ✅
+  µA 로 읽으면  942배 틀림   ❌
+```
+부호는 **방전이 음수**다. `BATTERY_PROPERTY_CURRENT_NOW` 를 문서대로 µA 로 읽으면 1,000배 가까이
+틀린 값이 조용히 화면에 뜬다 — 크래시도 경고도 없다. 쓸 거면 이 실측을 주석에 박는다.
+
+### `Charge counter` 는 30초마다 갱신된다
+
+15초 간격으로 찍으면 값이 두 번에 한 번만 바뀐다(실측). 즉 **2분 전송 주기에는 4번 갱신된 값이
+실린다.** 표본 하나로 소모율을 내려면 `current now` 가 필요하고, 충전량 차분으로 내려면 최소
+30초 간격이 있어야 한다.
+
+### 관제웹 쪽 현황 — 보내고는 있는데 화면에 없다
+
+```
+워치 → 스키마 → DB   batteryPct · batteryChargeUah  ✅ 살아 있음(오늘 배터리 분석의 재료)
+merge               batteryPct 만 옮긴다 — batteryChargeUah 는 store.ts:865 옆에 줄이 없다
+화면                DemoDashboard 에 batteryPct 참조 0건 — CSV·XLSX 로만 볼 수 있다
+충전상태·health·온도  워치가 아예 안 읽는다(잔량 두 종만)
+```
+⚠ 08-18 가드(`2026-08-18-battery-pct-collection`)는 **워치가 보내는가**까지만 지킨다.
+**관제가 보는가**는 아직 아무도 안 지키고 있다.
+
+⚠ 위 62.1 mAh/h 는 **정상 운용값이 아니다** — adb 무선 디버깅이 붙어 있고 화면이 깨어 있었다.
+같은 날 DB 실측 만충 구간 39.2 mAh/h 와 나란히 놓지 말 것.
