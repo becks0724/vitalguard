@@ -14,7 +14,7 @@
       있음 → 면제 경로도 거부됐다(ⓑ · R-03 위험 상향). 없음 → 리시버가 안 돌았다(ⓐ/ⓒ). 버퍼 없으면 3단계 재현에서 함께 본다.
 - [ ] **대조군 1회** — 현 빌드 워치8, 시계 화면 맨 앞, `adb shell am crash com.vitalguard.vitalguard_app` → 10분 관찰 → DB vitals 미재개 확인.
       ⚠ 수집을 실제로 끊는다. **사용자 승인 뒤 · 미착용 시간에.** `force-stop` 금지(알람까지 취소 · R-07).
-- [ ] `parseResilientVitalSample` 에 미등재 키(`fgsRevivedAt`)를 넣으면 스트립인가 거부인가 — 배포 순서의 근거(R-06). 결과를 노트에 적는다.
+- [x] `parseResilientVitalSample` 에 미등재 키를 넣으면 — **무음 strip**(거부 아님). 서버 선배포의 이유는 관측 손실 방지(R-09b). 가드로 고정.
 
 ## 1단계 — 워치 코드 (기기 영향 없음 · 단위 테스트로 닫는다)
 
@@ -46,11 +46,12 @@
 
 ## 2단계 — 서버 (워치 설치보다 먼저 배포 · R-06)
 
-- [ ] `packages/schemas/src/vital-stream.ts` — `fgsRevivedAt: z.string().datetime().optional()` (주석 = 시각인 이유 · 없음도 지문 · 판정 무유입)
-- [ ] 스트립 허용목록에 `"fgsRevivedAt"` 등재(안 하면 생체 샘플 전체 거부)
-- [ ] 가드 `apps/dashboard-web/lib/2026-09-05-fgs-revived-at.guard.test.ts` — ⓐ 정상값 파싱 생존 ⓑ 깨진 값 스트립·샘플 생존 ⓒ `ExportRow` 미포함 ⓓ 판정/경보/화면 소스 무유입 ⓔ 워치 `SampleBuilder` 가 같은 키를 두 갈래로 싣는가(L-115 양 끝)
-- [ ] 음성 대조 — 허용목록에서 빼면 ⓑ 만 빨개지는가
-- [ ] `/verify` 3종(typecheck·lint·test) → 커밋 → **담당 세션에 push·/deploy 요청**(직접 push 안 함 · L-125)
+- [x] `packages/schemas/src/vital-stream.ts` — `fgsRevivedAt: z.string().datetime().optional()` (주석 = 시각인 이유 · 없음도 지문 · 판정 무유입)
+- [x] 스트립 허용목록에 `"fgsRevivedAt"` 등재(안 하면 생체 샘플 전체 거부)
+- [x] 가드 `apps/dashboard-web/lib/2026-09-05-fgs-revived-at.guard.test.ts` — ⓐ 정상값 파싱 생존 ⓑ 깨진 값 스트립·샘플 생존 ⓒ `ExportRow` 미포함 ⓓ 판정/경보/화면 소스 무유입 ⓔ 워치 `SampleBuilder` 가 같은 키를 두 갈래로 싣는가(L-115 양 끝)
+- [x] 음성 대조 — 허용목록 제거 → fail 1 · 스키마 키 개명 → fail 2(러너 대상 = `dist/vital-stream.js` · R-09b)
+- [x] `/verify` 4종(typecheck·lint·graph·test) 초록 → 커밋 `feat(schemas): fgsRevivedAt`
+- [ ] **담당 세션에 push·/deploy 요청**(직접 push 안 함 · L-125) — 커밋 3건 `37f5026`·`51059e2`·`f884068` + 서버 1건 + 문서 1건
 - [ ] 라이브 확인 — 서빙 digest 대조(L-33) · `fgsRevivedAt` 포함 표본 curl 1건이 200 + 스트립 통지 없음
 
 ## 3단계 — 실기 검증 (R-03 판정 · R-07 절차)

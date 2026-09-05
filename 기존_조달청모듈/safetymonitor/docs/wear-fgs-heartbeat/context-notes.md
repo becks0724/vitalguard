@@ -108,6 +108,18 @@ PendingIntent 는 명시 컴포넌트 + `FLAG_IMMUTABLE` 로 만들어 우리 �
 - 변이(L-113) — `onStartCommand` 의 `armHeartbeat(this)` 삭제 → `HeartbeatAlarmTest` 11건 중 **정확히 1건**(`승격에 성공한 시작만 하트비트를 건다`) 빨감. 복원 후 340/340.
 - JUnit XML 은 `wear/build/` 가 아니라 **`apps/vitalguard_app/build/wear/test-results/testDebugUnitTest/`** 에 쓰인다(Flutter 루트가 buildDir 을 위로 올린다). `-q` 성공 로그만 보면 "0 tests" 로 오독한다 — 리포트로 건수를 센다.
 
+## R-09b · 2단계 실행 기록 (09-05) — 변이 러너는 `packages/*/src` 에 눈이 멀다
+
+- **0단계 ③ 답.** `VitalSampleSchema` 는 `z.object` 기본(미등재 키 strip). 워치가 서버보다 먼저 `fgsRevivedAt` 을 보내면
+  **거부가 아니라 무음 손실**이다 — 생체는 살고 표식만 사라진다. 서버 먼저 배포하는 이유는 사고 방지가 아니라 **관측 손실 방지**다.
+  가드 `배포 순서의 근거` 가 이 동작을 고정한다(동작이 strict 로 바뀌면 그 가드가 먼저 빨개진다).
+- **★ `scripts/mutate-guard.sh` 를 `packages/schemas/src/vital-stream.ts` 에 걸면 두 변이가 전부 "검출 실패 · 약한 단언(L-104)" 으로 나온다 — 거짓이다.**
+  dashboard-web 테스트는 `@safetymonitor/schemas` 를 **`dist/`** 로 읽는다(`package.json` exports → `./dist/index.js`). 러너는 src 를 바꾸고
+  재빌드하지 않으므로 변이가 테스트 바이너리에 **닿지 않는다.** 러너의 ② 검사("sed 가 파일을 바꿨나")는 통과하니 화면에는 ③ 검출 실패로만 보인다 —
+  **미적용과 약한 단언이 같은 관측**을 낸다([[L-108]]① 의 형태). 판별은 대상을 `dist/vital-stream.js` 로 바꿔 다시 걸면 된다 — 그러자 두 변이 모두 검출(fail 1 · fail 2).
+  ⚠ `dist/index.js` 는 re-export 뿐이라 거기 걸면 ② 미적용으로 나온다(이것은 러너가 옳게 잡는다). 검출 후 `pnpm run prepare:packages` 로 dist 를 다시 만든다.
+  → 러너 자체에 "대상이 `packages/*/src` 면 경고 + dist 안내" 를 넣을 자리다. **이 트랙에서 고치지 않았다**(범위 밖) — `/retro` 후보로 남긴다.
+
 ## R-10 · 운용 규율
 
 - 커밋은 이 세션이 각자 하고 **push·/deploy 는 담당([WATCH.APP]) 세션**에 요청한다([[L-125]]). 서버 배포(2단계)가 워치 설치(3단계)에 선행한다(R-06).
