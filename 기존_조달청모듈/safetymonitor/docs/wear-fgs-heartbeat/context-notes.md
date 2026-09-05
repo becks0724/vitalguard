@@ -120,6 +120,49 @@ PendingIntent 는 명시 컴포넌트 + `FLAG_IMMUTABLE` 로 만들어 우리 �
   ⚠ `dist/index.js` 는 re-export 뿐이라 거기 걸면 ② 미적용으로 나온다(이것은 러너가 옳게 잡는다). 검출 후 `pnpm run prepare:packages` 로 dist 를 다시 만든다.
   → 러너 자체에 "대상이 `packages/*/src` 면 경고 + dist 안내" 를 넣을 자리다. **이 트랙에서 고치지 않았다**(범위 밖) — `/retro` 후보로 남긴다.
 
+## R-11 · 3단계 실기 종합 — 워치9 (09-05 21:3x~21:4x · SM-L355N · 충전기 100% · 미착용)
+
+**접속 런북.** 워치 Wi-Fi 는 화면이 꺼지면 잠들어 adb 가 끊긴다. 순서 = 무선 디버깅 토글 off→on(리스너 재바인드·mDNS 재광고)
+→ `adb pair [fe80::…%en0]:<페어링포트> <코드>` → `adb mdns services` 의 `_adb-tls-connect` 포트로 `adb connect`
+→ **즉시** `svc power stayon true` + `settings put global wifi_sleep_policy 2`(충전 중이라 화면 유지가 곧 Wi-Fi 유지).
+⚠ 페어링 창의 `192.0.0.4` 는 464XLAT CLAT 내부 주소라 링크 너머에서 안 닿는다 — 경로는 **IPv6 링크로컬만** 유효.
+광고된 포트가 RST 면 광고가 낡은 것 → 스캔(128병렬)하지 말고 토글한다(스캔은 판정을 오염시킨다).
+
+**관측 ① — `am crash` 는 이 기기에서 정지를 재현하지 못한다.** 21:34:06 크래시 → `Scheduling restart … in 1000ms` → 21:34:33
+새 pid 로 `수집 시작`·`isForeground=true`. **크래시된 FGS 의 OS sticky 재기동이 백그라운드여도 승격에 성공했다.**
+R-07 의 "am crash = 09-02 경로 그대로" 는 이 기기에서 **틀렸다** — 재현은 패키지 교체·프로세스 완전 사망 쪽이다.
+
+**관측 ② — ★ Q-1 판정 완료.** 패키지 교체 경로에서 리시버는 **돌고**, 결정은 token 에 정확히 따른다.
+```
+21:36:55 (token 없음) VgRestart: MY_PACKAGE_REPLACED — 자동 시작 안 함 (자격=false 권한=true)   ← DROP
+21:43:53 (token 있음) VgRestart: MY_PACKAGE_REPLACED — 수집 서비스 자동 시작 → pid 22474 · isForeground=true   ← START 성공
+```
+즉 **token 있는 교체 경로가 콜드 스타트에서 FGS 승격에 성공한다 — 거부(mAllowStartForeground false)가 안 난다.**
+따라서 09-03 워치8 의 7분 정지는 이 기기족에서 "교체 경로 FGS 거부(ⓑ)" 가 **아니다.** 워치8 고유이거나 sticky 레이스(ⓒ)다 — 워치8 2차 표본에서 가른다.
+
+**관측 ③ — 라이브 REARM.** 리시버에 HEARTBEAT 직접 브로드캐스트(`am broadcast -n …/RestartReceiver`) →
+`21:46:10 VgRestart: 하트비트 — REARM (running=true 자격=true 권한=true)`. 결정 로직·배선이 기기에서 실제로 돈다. 서비스는 REARM 에 안 흔들린다.
+
+**관측 ④ — ★ R-03 구조 증거 + 알람 위생.** `dumpsys alarm` 의 우리 알람 =
+`tag=*walarm*:com.vitalguard.wear.HEARTBEAT · ELAPSED_WAKEUP · window=0 · exactAllowReason=policy_permission(USE_EXACT_ALARM) · F=9(STANDALONE|ALLOW_WHILE_IDLE)`
+그리고 **`idle-options: temporaryAppAllowlistType=0(FOREGROUND_SERVICE_ALLOWED) · ReasonCode=302(ALARM_MANAGER_WHILE_IDLE) · Duration=10000ms`.**
+OS 가 배달에 FGS 시작 임시 허용 10초를 붙인다는 것을 OS 자신이 적었다. **중복 없음** — 단일 PendingIntent(`PI:f1d8575`),
+[Add] 세 줄(21:37→21:43→21:44)은 재무장 교체(FLAG_UPDATE_CURRENT 정상), 대기 1개.
+
+**★ R-03 행위 결론(종합).** 진짜 알람이 "서비스가 죽은 순간" 에 발화하는 장면은 이 기기에서 **강제로 못 만든다**
+(sticky 가 늘 되살리고, FG 프로세스는 force-stop 없이 못 죽이는데 force-stop 은 알람을 취소한다). 대신 두 증거가 그 경로를 닫는다 —
+ⓐ **행위** = 교체 경로의 콜드 스타트 FGS 승격이 실제로 성공한다(관측 ②, START 분기와 **동일 코드**). ⓑ **구조** = 하트비트 알람이
+같은 FGS 허용 목록을 배달에 달고 온다(관측 ④). START 분기의 결정·DROP 은 단위 시험이 덮는다. force-stop+수동 브로드캐스트는
+**허용 목록이 없는** 경로라 실패해도 반증이 못 되므로(L-108 — 판별 못 하는 시험) 쓰지 않았다.
+
+**관측 ⑤ — 파이프라인·표식 (프로덕션 00352-zvn · vital_samples EMP-6861).** 새 빌드 표본이 실제 적재된다 —
+21:34~21:46 사이 미착용 배터리 행(100%·status 5)과 착용 전이 표식. **`fgsRevivedAt` 은 전부 null(키 없음)** —
+아직 하트비트 소생이 없었으니 옳다(실제 소생 시 채워진다). **HRV 잔여물(237.94/146) 행 0건** — 24ac667 수리가 유지된다
+(worn:true 전이 표식들의 hrv·mvar 모두 null = 깨끗한 전이, 벗음-얼어붙은-창 아님).
+
+**남은 것.** ⓐ **자연 관측** — 하트비트 armed 상태로 두고 24h `vital_samples` 에서 `fgsRevivedAt` 등장 = 실제 사망→소생 횟수(관제 첫 가시 숫자).
+ⓑ 워치8 2차 표본 — 09-03 정지가 ⓑ(교체 거부)인지 ⓒ(sticky 레이스)인지. ⓒ HRV 수리 실착용 확인 — IBI 쌓은 뒤 벗어 237.94 재발 0 (단위 시험은 이미 통과).
+
 ## R-10 · 운용 규율
 
 - 커밋은 이 세션이 각자 하고 **push·/deploy 는 담당([WATCH.APP]) 세션**에 요청한다([[L-125]]). 서버 배포(2단계)가 워치 설치(3단계)에 선행한다(R-06).
