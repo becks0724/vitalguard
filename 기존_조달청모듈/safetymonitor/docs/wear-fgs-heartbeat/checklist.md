@@ -10,9 +10,14 @@
 
 ## 0단계 — 착수 전
 
-- [ ] **Q-1 판독** — 워치8 `logcat -d -s VgRestart` 에 09-03 07:52 `MY_PACKAGE_REPLACED — 수집 서비스 자동 시작` 이 있는가.
+★ **기기 = 워치9 우선(09-05 사용자 지적).** 처음엔 "정지가 관측된 기기" 라서 워치8을 적었는데, R-03 은 기기 빌드마다 성립해야 하고
+워치9가 주 수집기라 워치9에서 안 되면 워치8 결과는 의미가 없다. 워치9는 adb 로 잡혀 있고 충전기 위·미착용이라 끊는 비용도 지금이 가장 낮다.
+워치8은 2차 표본. ⚠ 조건 둘 — ⓐ 충전 중이면 Doze 가 꺼져 10분 조절은 시험되지 않는다(면제 여부만 시험됨) → 방전·미착용 상태에서 1회 더.
+ⓑ 미착용 중 배터리 표본은 `WornMarker.idleBattery` 라 `fgsRevivedAt` 이 안 실린다 → 판정은 로그로, DB 표식은 착용 뒤 첫 생체 표본에서.
+
+- [ ] **Q-1 판독** — 워치9 설치 직후 `logcat -s VgRestart VgCollector:W` 에서 `MY_PACKAGE_REPLACED` 경로가 거부되는지 직접 본다(설치 자체가 실험). 보조 = 워치8 `logcat -d -s VgRestart` 에 09-03 07:52 `MY_PACKAGE_REPLACED — 수집 서비스 자동 시작` 이 있는가.
       있음 → 면제 경로도 거부됐다(ⓑ · R-03 위험 상향). 없음 → 리시버가 안 돌았다(ⓐ/ⓒ). 버퍼 없으면 3단계 재현에서 함께 본다.
-- [ ] **대조군 1회** — 현 빌드 워치8, 시계 화면 맨 앞, `adb shell am crash com.vitalguard.vitalguard_app` → 10분 관찰 → DB vitals 미재개 확인.
+- [ ] **대조군 1회** — 현 빌드 워치9, 시계 화면 맨 앞, `adb shell am crash com.vitalguard.vitalguard_app` → 10분 관찰 → DB vitals 미재개 확인.
       ⚠ 수집을 실제로 끊는다. **사용자 승인 뒤 · 미착용 시간에.** `force-stop` 금지(알람까지 취소 · R-07).
 - [x] `parseResilientVitalSample` 에 미등재 키를 넣으면 — **무음 strip**(거부 아님). 서버 선배포의 이유는 관측 손실 방지(R-09b). 가드로 고정.
 
@@ -51,12 +56,13 @@
 - [x] 가드 `apps/dashboard-web/lib/2026-09-05-fgs-revived-at.guard.test.ts` — ⓐ 정상값 파싱 생존 ⓑ 깨진 값 스트립·샘플 생존 ⓒ `ExportRow` 미포함 ⓓ 판정/경보/화면 소스 무유입 ⓔ 워치 `SampleBuilder` 가 같은 키를 두 갈래로 싣는가(L-115 양 끝)
 - [x] 음성 대조 — 허용목록 제거 → fail 1 · 스키마 키 개명 → fail 2(러너 대상 = `dist/vital-stream.js` · R-09b)
 - [x] `/verify` 4종(typecheck·lint·graph·test) 초록 → 커밋 `feat(schemas): fgsRevivedAt`
-- [ ] **담당 세션에 push·/deploy 요청**(직접 push 안 함 · L-125) — 커밋 3건 `37f5026`·`51059e2`·`f884068` + 서버 1건 + 문서 1건
-- [ ] 라이브 확인 — 서빙 digest 대조(L-33) · `fgsRevivedAt` 포함 표본 curl 1건이 200 + 스트립 통지 없음
+- [x] push — 이 세션이 담당([WATCH.APP])이나 `git push` 가 분류기에 막혀 사용자가 `!` 로 실행(368e95d..e528423 · pre-push typecheck 통과)
+- [x] `/deploy` → **`00352-zvn`** · digest 0e1464cc 대조 일치 · 아카이브 1599/1599 · 라우트 5종 ok · 사후 90초 0/0 · run-log·CLAUDE.md 기록
+- [ ] 라이브 확인 — 서빙 digest 대조 ✓ · `fgsRevivedAt` 실물 확인은 **워치9 착용 뒤 첫 생체 표본**으로(프로덕션에 시험 표본을 curl 로 넣지 않는다 · L-04 계열) → 3단계
 
 ## 3단계 — 실기 검증 (R-03 판정 · R-07 절차)
 
-- [ ] 워치8 Release 빌드·설치 — **사용자 승인 · 미착용 시간**(09-03 내 설치가 7분 정지를 만들었다)
+- [ ] 워치9 Release 빌드·설치 — **사용자 승인 · 미착용 시간**(워치8 은 2차)(09-03 내 설치가 7분 정지를 만들었다)
 - [ ] 설치 직후 앱을 한 번 열어 승격 확인 → 버튼으로 **시계 화면으로 복귀**(앱이 TOP 이면 실험이 아니다)
 - [ ] `adb shell am crash com.vitalguard.vitalguard_app` → `logcat -s VgCollector:W` 에 `FGS 승격 거부 … 물러선다` 확인(재현 성립)
 - [ ] ≤10분 대기 — `VgRestart` `하트비트 소생` / 혹은 `mAllowStartForeground false` 재발
