@@ -24,6 +24,10 @@ class RestartReceiver : BroadcastReceiver() {
         val action = intent.action
         val hasToken = ConfigStore(context).token != null
         val canStartFgs = CollectorService.canStartHealthFgs(context)
+        if (action == CollectorService.ACTION_HEARTBEAT) {
+            onHeartbeat(context, hasToken, canStartFgs)
+            return
+        }
         if (!shouldRestart(action, hasToken, canStartFgs)) {
             Log.i(TAG, "$action — 자동 시작 안 함 (자격=$hasToken 권한=$canStartFgs)")
             return
@@ -32,8 +36,45 @@ class RestartReceiver : BroadcastReceiver() {
         Log.i(TAG, "$action — 수집 서비스 자동 시작")
     }
 
+    /**
+     * 하트비트(10분 · [CollectorService.armHeartbeat]) — 서비스가 없으면 올리고, 있으면 다음 박동만 건다.
+     *
+     * ★ 순서 = **먼저 재무장, 그 다음 시작.** 시작이 백그라운드 거부로 물러서도([CollectorService.giveUpForeground])
+     *   다음 박동은 와야 한다. 반대로 하면 거부 한 번이 사슬을 끊는다.
+     * ⚠ 이 액션은 시스템 액션이 아니라 자체 액션이고, 면제는 액션이 아니라 배달 방식(allow-while-idle)에서 온다 —
+     *   그래서 아래 [shouldRestart] 의 "액션을 넓히지 말 것" 과 충돌하지 않는다(docs/wear-fgs-heartbeat R-05).
+     */
+    private fun onHeartbeat(context: Context, hasToken: Boolean, canStartFgs: Boolean) {
+        val running = CollectorService.running
+        val decision = heartbeat(running, hasToken, canStartFgs)
+        Log.i(TAG, "하트비트 — $decision (running=$running 자격=$hasToken 권한=$canStartFgs)")
+        if (decision == Heartbeat.DROP) return
+        CollectorService.armHeartbeat(context)
+        if (decision == Heartbeat.START) {
+            context.startForegroundService(
+                Intent(context, CollectorService::class.java)
+                    .putExtra(CollectorService.EXTRA_FROM_HEARTBEAT, true),
+            )
+            Log.i(TAG, "하트비트 소생 — 수집 서비스 재시작")
+        }
+    }
+
+    internal enum class Heartbeat { REARM, START, DROP }
+
     internal companion object {
         const val TAG = "VgRestart"
+
+        /**
+         * 하트비트 판정 — 순수 함수(단위 시험).
+         * running → REARM(살아 있다, 다음 박동만) · token 없음 → DROP(로그아웃 상태 · 사슬을 끊는다 — 올릴 곳 없는
+         * 표본만 쌓인다) · 자격+권한 → START · 자격은 있는데 권한이 없음 → REARM(사람이 열면 액티비티가 묻는다).
+         */
+        internal fun heartbeat(running: Boolean, hasToken: Boolean, canStartFgs: Boolean): Heartbeat = when {
+            running -> Heartbeat.REARM
+            !hasToken -> Heartbeat.DROP
+            canStartFgs -> Heartbeat.START
+            else -> Heartbeat.REARM
+        }
 
         /**
          * 되살릴 조건 — 셋을 모두 만족해야 한다.

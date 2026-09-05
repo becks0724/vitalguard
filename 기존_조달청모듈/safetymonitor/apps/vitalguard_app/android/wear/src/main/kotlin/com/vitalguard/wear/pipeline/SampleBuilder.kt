@@ -70,6 +70,11 @@ class SampleBuilder {
          * **그 사이에 재구독이 있었는지**를 낸다.
          */
         hrLastReviveAtMs: Long? = null,
+        /**
+         * 하트비트 알람이 수집 서비스를 되살린 시각(epoch ms). 시각인 이유·없음의 뜻은 위와 같다.
+         * 두 갈래(측정 있음 / 무동작 단독) 모두에 싣는다 — 한쪽만 실으면 미착용 구간의 소생이 안 보인다.
+         */
+        fgsRevivedAtMs: Long? = null,
         fix: LocationFix? = null,
     ): Map<String, Any>? {
         val v = LinkedHashMap<String, Any>()
@@ -96,12 +101,14 @@ class SampleBuilder {
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
             batteryStatus?.let { v["batteryStatus"] = it }
             hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
+            fgsRevivedAtMs?.let { v["fgsRevivedAt"] = IsoMs.format(it) }
         } else if (stillSec != null) {
             v["motionStillSec"] = stillSec        // 단독 전송 — iOS flush 의 그 규칙
             batteryPct?.let { v["batteryPct"] = it }
             batteryChargeUah?.let { v["batteryChargeUah"] = it }
             batteryStatus?.let { v["batteryStatus"] = it }
             hrLastReviveAtMs?.let { v["hrLastReviveAt"] = IsoMs.format(it) }
+            fgsRevivedAtMs?.let { v["fgsRevivedAt"] = IsoMs.format(it) }
         } else {
             reset()
             return null

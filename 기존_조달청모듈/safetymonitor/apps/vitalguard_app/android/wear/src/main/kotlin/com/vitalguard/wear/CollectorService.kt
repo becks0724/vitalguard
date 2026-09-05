@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -98,6 +99,14 @@ class CollectorService : Service() {
      */
     @Volatile private var hrLastReviveAtMs: Long? = null
 
+    /**
+     * 하트비트 알람이 이 서비스를 되살린 시각(epoch ms) — 표본에 `fgsRevivedAt` 으로 실린다.
+     * 액티비티·부팅·재설치 시작은 찍지 않는다 — **"뒤에서 죽었다가 스스로 살아났다"** 만 세는 값이다.
+     * null 이면 그런 일이 없었다는 뜻이고 그 없음도 지문이다(위 hrLastReviveAtMs 와 같은 규칙).
+     * docs/wear-fgs-heartbeat R-06.
+     */
+    @Volatile private var fgsRevivedAtMs: Long? = null
+
     override fun onCreate() {
         super.onCreate()
         worker = HandlerThread("vg-collector").apply { start() }
@@ -139,6 +148,7 @@ class CollectorService : Service() {
             // 09-03 실기(SM-L355N) = 방전 3 · 무선 독 충전 2(보호 상한 90% 위인 93% 에서도 2).
             batteryStatus = { batteryStatusNow() },
             hrLastReviveAtMs = { hrLastReviveAtMs },
+            fgsRevivedAtMs = { fgsRevivedAtMs },
             latestFix = { now -> gps.currentFix(now) },
         )
         pipeline = UploadPipeline(queue, HttpTransport(config.baseUrl))
@@ -264,6 +274,12 @@ class CollectorService : Service() {
             //   OS 가 START_STICKY 로 서비스를 되살릴 때 앱이 백그라운드면 여기 걸린다.
             return giveUpForeground(e)
         }
+        // 하트비트 경로로 올라왔나 — 그 사실만 표식으로 남긴다(docs/wear-fgs-heartbeat R-06).
+        //   승격에 성공한 뒤에 본다 — 거부돼 물러선 시작을 "소생" 으로 세면 표식이 거짓이 된다.
+        if (intent?.getBooleanExtra(EXTRA_FROM_HEARTBEAT, false) == true) {
+            fgsRevivedAtMs = System.currentTimeMillis()
+            Log.i(TAG, "하트비트 소생으로 시작됨")
+        }
         // ★ 착용 상태가 수집을 켜고 끈다 — 시작 버튼이 없는 운용의 핵심.
         //   서비스 자체는 계속 산다(벗었다 다시 차면 사람 개입 없이 재개된다).
         // ★ 자동 로그아웃(미착용 90분) 정산 — 서비스가 죽어 있던 사이의 경과를 먼저 본다.
@@ -285,6 +301,8 @@ class CollectorService : Service() {
         running = true
         liveEngine = engine
         Log.i(TAG, "수집 시작 (flush ${FLUSH_INTERVAL_MS / 1000}s · 서버 ${config.baseUrl})")
+        // 승격 성공 뒤에만 건다 — giveUpForeground 갈래는 여기 오지 않는다(그쪽은 리시버가 이어 건다).
+        armHeartbeat(this)
         return START_STICKY
     }
 
@@ -635,6 +653,46 @@ class CollectorService : Service() {
             offSinceMs != 0L && nowMs - offSinceMs >= AUTO_LOGOUT_OFF_BODY_MS
 
         const val TAG = "VgCollector"
+
+        /**
+         * 하트비트 — 프로세스 **밖**(AlarmManagerService)에 사는 알람. 뒤에서 죽은 서비스를 되살린다.
+         *
+         * tick 의 `OnAlarmListener` 는 프로세스 안 콜백이라 프로세스와 함께 죽는다(09-03 워치8 로그
+         * `Unrecognized alarm listener`). 이쪽은 PendingIntent 브로드캐스트라 프로세스가 없어도 시각이 오면
+         * OS 가 [RestartReceiver] 를 위해 프로세스를 띄운다. 10분 = allow-while-idle 조절 한계(앱당 약 9분에
+         * 1회)이자 서버 부재 알림 문턱(`ABSENCE_THRESHOLD_MS` 10분)과 같은 시간 축(docs/wear-fgs-heartbeat R-04).
+         * ⚠ allow-while-idle 배달에 FGS 시작 면제가 붙는다는 전제(R-03)는 실기 판정 전이다.
+         */
+        const val HEARTBEAT_MS = 10 * 60_000L
+        const val ACTION_HEARTBEAT = "com.vitalguard.wear.HEARTBEAT"
+        const val EXTRA_FROM_HEARTBEAT = "fromHeartbeat"
+
+        /** 명시 컴포넌트 + IMMUTABLE — 매니페스트 intent-filter 없이 우리 리시버만 받는다(R-05). */
+        private fun heartbeatIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(context, RestartReceiver::class.java).setAction(ACTION_HEARTBEAT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        /**
+         * 다음 하트비트를 건다. 서비스 시작 성공 시와 리시버가 받을 때마다 — **같은 함수**를 부른다
+         * (`canStartHealthFgs` 와 같은 이유 · 두 벌이면 한쪽만 바뀐다). 같은 PendingIntent 라 재호출은 교체다.
+         * ⚠ 어디서도 cancel 하지 않는다 — 죽음을 넘어 살아야 하는 알람이다. 로그아웃 뒤 남은 한 발은
+         *   리시버가 token 없음을 보고 재무장하지 않아 자연 소멸한다(R-06).
+         */
+        internal fun armHeartbeat(context: Context) {
+            val alarms = context.getSystemService(AlarmManager::class.java)
+            val at = SystemClock.elapsedRealtime() + HEARTBEAT_MS
+            val pi = heartbeatIntent(context)
+            val exact = Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()
+            if (exact) {
+                alarms.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
+            } else {
+                // 부정확이어도 allow-while-idle 성질(면제)은 남는다 — tick 의 setWindow 후퇴와 같은 이유.
+                alarms.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pi)
+            }
+        }
         /**
          * 전송 주기 — 60초 → **120초**(08-25 발열 실측 후 조정).
          *

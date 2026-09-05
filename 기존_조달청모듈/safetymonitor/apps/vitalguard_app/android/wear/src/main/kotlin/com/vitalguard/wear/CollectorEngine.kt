@@ -28,6 +28,8 @@ class CollectorEngine(
     private val batteryStatus: () -> Int? = { null },
     /** 심박 트래커 마지막 재구독 시각(epoch ms). 한 번도 없었으면 null — 없음도 지문이다. */
     private val hrLastReviveAtMs: () -> Long? = { null },
+    /** 하트비트 알람이 서비스를 되살린 시각(epoch ms). 없었으면 null — 없음도 지문이다. */
+    private val fgsRevivedAtMs: () -> Long? = { null },
     private val latestFix: (nowMs: Long) -> LocationFix? = { null },   // 배치당 1회 조회(iOS 규칙)
 ) : TrackerListener {
 
@@ -288,6 +290,7 @@ class CollectorEngine(
             batteryChargeUah = batteryChargeUah(),
             batteryStatus = batteryStatus(),
             hrLastReviveAtMs = hrLastReviveAtMs(),
+            fgsRevivedAtMs = fgsRevivedAtMs(),
             fix = latestFix(nowMs),
         ) ?: return false
         // 스트레스 이력 — 활동 재료가 모이는 flush 시점에 계산해 담는다.
