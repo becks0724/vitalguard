@@ -101,7 +101,14 @@ PendingIntent 는 명시 컴포넌트 + `FLAG_IMMUTABLE` 로 만들어 우리 �
 측정은 여전히 한다(FGS 단독으로 수집이 버티는지의 실측이라 이 트랙 3단계와 겹친다). 다만 **배터리 개선의 큰 레버는 아니다** — 그쪽은 별도 트랙(시스템 바닥·LTE 배치·센서 듀티).
 모델 6.6%/h(29.3 mA) 는 08-31 에 이미 2배 어긋나 있었다. 오늘이 처음 밝힌 것이 아니다.
 
-## R-09 · 운용 규율
+## R-09 · 1단계 실행 기록 (09-05)
+
+- 기준선을 별도 worktree 에서 돌리려 했으나 `gradlew` 가 **미추적 파일**이라 worktree 에 없다 — 기준선 없이 편집본으로만 판정했다(340/340 초록이라 선행 실패가 있었다면 보였을 것).
+- `git commit -- <경로>` 관용구는 **추적 파일만** 받는다 — 새 파일은 `git add <그 파일>` 뒤 같은 명령에서 pathspec 커밋. `-m` 은 `--` 앞에 와야 한다.
+- 변이(L-113) — `onStartCommand` 의 `armHeartbeat(this)` 삭제 → `HeartbeatAlarmTest` 11건 중 **정확히 1건**(`승격에 성공한 시작만 하트비트를 건다`) 빨감. 복원 후 340/340.
+- JUnit XML 은 `wear/build/` 가 아니라 **`apps/vitalguard_app/build/wear/test-results/testDebugUnitTest/`** 에 쓰인다(Flutter 루트가 buildDir 을 위로 올린다). `-q` 성공 로그만 보면 "0 tests" 로 오독한다 — 리포트로 건수를 센다.
+
+## R-10 · 운용 규율
 
 - 커밋은 이 세션이 각자 하고 **push·/deploy 는 담당([WATCH.APP]) 세션**에 요청한다([[L-125]]). 서버 배포(2단계)가 워치 설치(3단계)에 선행한다(R-06).
 - `git commit -- <경로>` 관용구로 공유 index 를 우회한다([[L-87]]⑤). 워킹트리의 남의 미커밋 2건(`settings.gradle.kts` · `ProbeScreenPreview.kt`)은 건드리지 않는다.

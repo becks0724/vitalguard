@@ -19,30 +19,30 @@
 ## 1단계 — 워치 코드 (기기 영향 없음 · 단위 테스트로 닫는다)
 
 `CollectorService.kt`
-- [ ] `HEARTBEAT_MS = 10 * 60_000L` · `ACTION_HEARTBEAT` · `EXTRA_FROM_HEARTBEAT` 상수(companion · 숫자는 상수 한 곳에만)
-- [ ] `heartbeatIntent(ctx)` — `PendingIntent.getBroadcast(ctx, 요청코드, Intent(ctx, RestartReceiver::class.java).setAction(ACTION_HEARTBEAT), FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)`
+- [x] `HEARTBEAT_MS = 10 * 60_000L` · `ACTION_HEARTBEAT` · `EXTRA_FROM_HEARTBEAT` 상수(companion · 숫자는 상수 한 곳에만)
+- [x] `heartbeatIntent(ctx)` — `PendingIntent.getBroadcast(ctx, 요청코드, Intent(ctx, RestartReceiver::class.java).setAction(ACTION_HEARTBEAT), FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)`
       명시 컴포넌트 · 매니페스트 intent-filter **추가 안 함**(R-05)
-- [ ] `armHeartbeat(ctx)` — `canScheduleExactAlarms()` → `setExactAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP, now+HEARTBEAT_MS, pi)` · 없으면 `setAndAllowWhileIdle`(R-04)
+- [x] `armHeartbeat(ctx)` — `canScheduleExactAlarms()` → `setExactAndAllowWhileIdle(ELAPSED_REALTIME_WAKEUP, now+HEARTBEAT_MS, pi)` · 없으면 `setAndAllowWhileIdle`(R-04)
       companion 에 둔다 — 서비스와 리시버가 **같은 함수**를 부른다(`canStartHealthFgs` 와 같은 이유)
-- [ ] `onStartCommand` 승격 **성공** 경로 끝에서 `armHeartbeat` · `giveUpForeground` 에서는 **건드리지 않는다**(살아 있어야 소생이 온다)
-- [ ] `onDestroy` 에서 **cancel 하지 않는다** — 죽음을 넘어 살아야 하는 알람이다. 로그아웃 뒤 남은 알람은 리시버가 token 없음을 보고 재무장 안 해 자연 소멸(R-06)
-- [ ] `@Volatile fgsRevivedAtMs: Long?` — `intent.getBooleanExtra(EXTRA_FROM_HEARTBEAT)` 일 때만 `= now` · `CollectorEngine` 람다 · `SampleBuilder` 두 갈래(측정 있음/stillSec 단독) 모두 `v["fgsRevivedAt"] = IsoMs.format(it)`
+- [x] `onStartCommand` 승격 **성공** 경로 끝에서 `armHeartbeat` · `giveUpForeground` 에서는 **건드리지 않는다**(살아 있어야 소생이 온다)
+- [x] `onDestroy` 에서 **cancel 하지 않는다** — 죽음을 넘어 살아야 하는 알람이다. 로그아웃 뒤 남은 알람은 리시버가 token 없음을 보고 재무장 안 해 자연 소멸(R-06)
+- [x] `@Volatile fgsRevivedAtMs: Long?` — `intent.getBooleanExtra(EXTRA_FROM_HEARTBEAT)` 일 때만 `= now` · `CollectorEngine` 람다 · `SampleBuilder` 두 갈래(측정 있음/stillSec 단독) 모두 `v["fgsRevivedAt"] = IsoMs.format(it)`
 
 `RestartReceiver.kt`
-- [ ] 순수 판정 함수 `heartbeat(running, hasToken, canStartFgs): REARM | START | DROP`
+- [x] 순수 판정 함수 `heartbeat(running, hasToken, canStartFgs): REARM | START | DROP`
       running → REARM · !hasToken → DROP(재무장 안 함) · hasToken && canStartFgs → START(+재무장) · hasToken && !canStartFgs → REARM(사람이 열면 권한을 묻는다)
-- [ ] `onReceive` — `ACTION_HEARTBEAT` 분기 · START 시 `startForegroundService(intent.putExtra(EXTRA_FROM_HEARTBEAT, true))` · 로그 한 줄 `하트비트 소생`
-- [ ] 기존 `shouldRestart` 는 그대로(부팅·재설치 경로 불변)
+- [x] `onReceive` — `ACTION_HEARTBEAT` 분기 · START 시 `startForegroundService(intent.putExtra(EXTRA_FROM_HEARTBEAT, true))` · 로그 한 줄 `하트비트 소생`
+- [x] 기존 `shouldRestart` 는 그대로(부팅·재설치 경로 불변)
 
 테스트 (`src/test/kotlin/com/vitalguard/wear/`)
-- [ ] `RestartReceiverTest.부팅과 앱교체에서만 되살린다` → 하트비트 액션 포함으로 갱신 · `SCREEN_ON`·`LOCKED_BOOT_COMPLETED`·null 부정 단언 **유지**(R-05)
-- [ ] `heartbeat()` 표 4행 단언(REARM/START/DROP/REARM)
-- [ ] 새 `HeartbeatAlarmTest` — 소스 판독 가드(`TickAlarmTest` 수법 · 주석 걷어낸 본문):
+- [x] `RestartReceiverTest.부팅과 앱교체에서만 되살린다` → 하트비트 액션 포함으로 갱신 · `SCREEN_ON`·`LOCKED_BOOT_COMPLETED`·null 부정 단언 **유지**(R-05)
+- [x] `heartbeat()` 표 4행 단언(REARM/START/DROP/REARM)
+- [x] 새 `HeartbeatAlarmTest`(11건) — 소스 판독 가드(`TickAlarmTest` 수법 · 주석 걷어낸 본문):
       ① `getBroadcast` 로 예약(리스너형 아님) ② `AllowWhileIdle` 두 갈래 모두 존재 ③ `ELAPSED_REALTIME_WAKEUP`
       ④ `onDestroy` 본문에 하트비트 cancel 없음 ⑤ **배선** — `onStartCommand` 의 `return START_STICKY` 앞에 `armHeartbeat(` 호출(등장 횟수 아님 · L-123④)
-- [ ] `SampleBuilder` — `fgsRevivedAt` 두 갈래 실림(`HrReviveTimestampTest` 병렬) · null 이면 키 없음
-- [ ] `./gradlew :wear:testDebugUnitTest` 전부 초록 · **변이 1회** — `armHeartbeat(` 호출 삭제 → ⑤ 빨감 확인 → 복원(L-113)
-- [ ] `git commit -- apps/vitalguard_app/android/wear` (공유 index 우회 · 남의 미커밋 2건 제외)
+- [x] `SampleBuilder` — `fgsRevivedAt` 두 갈래 실림(`HrReviveTimestampTest` 병렬) · null 이면 키 없음
+- [x] `./gradlew :wear:testDebugUnitTest` **340/340 초록**(JAVA_HOME=Android Studio jbr · 리포트는 `apps/vitalguard_app/build/wear/test-results/`) · **변이 1회** — `armHeartbeat(` 호출 삭제 → ⑤ 빨감 확인 → 복원(L-113)
+- [x] 커밋 `feat(wear): 하트비트 알람` — 새 테스트는 `git add` 뒤 pathspec 커밋(`git commit -- <경로>` 는 추적 파일만 받는다) (공유 index 우회 · 남의 미커밋 2건 제외)
 
 ## 2단계 — 서버 (워치 설치보다 먼저 배포 · R-06)
 
