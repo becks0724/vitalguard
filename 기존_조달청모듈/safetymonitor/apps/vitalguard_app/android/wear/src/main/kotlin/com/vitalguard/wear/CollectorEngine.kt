@@ -146,10 +146,18 @@ class CollectorEngine(
      * ⚠ **[stop] 안에 넣으면 안 된다.** 심박 워치독(`reviveHrIfStalled`)도 `stop() → start()` 로
      * 재구독하므로, 거기 넣으면 착용 중인데도 재구독마다 정상 측정값을 버리게 된다.
      * 부르는 곳은 `CollectorService.endSensing()` 하나뿐이다.
+     *
+     * ★ IBI 창도 함께 버린다(09-05 · WATCH.DESIGN 제보 · EMP-6861 실측). 벗으면 IBI 유입이 끊겨 창이
+     *   **얼어붙는데**, [flush] 는 300초마다 그 창으로 SDNN 을 다시 계산해 빌더에 재주입한다. 그리고
+     *   [stop] 이 lastBpm 을 null 로 만들어 [Sdnn.hrConsistent] 의 심박 정합 필터가 통째로 꺼지므로,
+     *   착용 중엔 거부되던 창이 벗은 뒤 "측정값" 으로 승격됐다 — 6분마다 worn:true 행 3건(HRV 237.94 동일).
+     *   [start] 가 어차피 창을 비우므로 재착용·워치독 재구독에는 영향이 없다.
      */
     @Synchronized
     fun discardPendingSample() {
         builder.discard()
+        ibiWindow.clear()
+        ibiStatusWindow.clear()
     }
 
     /**
@@ -285,7 +293,8 @@ class CollectorEngine(
             //   벗음 표식을 5.22초 만에 되돌렸다. 이제 벗음 경로가 [discardPendingSample] 로
             //   버려 주므로 null 이 난다 — 이 함수가 아니라 **그쪽**이 근거다.
             stillSec = stillSecNow(nowMs),
-            variabilityMg = motion.variabilityMg(),
+            // ★ 게이트판 — 벗으면 null. raw 를 쓰면 얼어붙은 창의 값(09-05 실측 146)이 행마다 반복된다.
+            variabilityMg = motionVarNow(),
             batteryPct = batteryPct(),
             batteryChargeUah = batteryChargeUah(),
             batteryStatus = batteryStatus(),
