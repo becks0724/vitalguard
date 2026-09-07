@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 
 import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
 import { AED_DEVICES, normalizeAedItems, type AedDevice, type AedItem } from "../../lib/aed-devices";
-import { vbatToPercent } from "../../lib/gaspod-battery";
+import { type GaspodPower, gaspodPowerState } from "../../lib/gaspod-power";
 import {
   AED_SWAP_DUE_SOON_DAYS,
   aedCycleSev,
@@ -185,6 +185,38 @@ const GAS_ROWS: GasSample[] = [
   { loc: "지하 전기실", gas: "CO 일산화탄소", val: "12", unit: "ppm", thr: "≥30 ppm", sev: "normal", recv: "5초 전" },
 ];
 
+// 전원 상태 셀 — 충전/USB단독/만충이면 링 대신 배지(그때 %는 과대·무의미), 방전이면 실측 보정 % 링 + 남은 시간.
+// 36px 링과 같은 높이(h-9)라 행 높이(h-12) 불변. 2026-09-07 실측 근거는 lib/gaspod-power.ts 머리말.
+function PowerCell({ power }: { power: GaspodPower }) {
+  if (power.state === "charging" || power.state === "usb_only" || power.state === "full_on_power") {
+    const tone =
+      power.state === "charging"
+        ? "bg-semantic-up/15 text-semantic-up"
+        : "bg-zinc-200 text-zinc-700 dark:bg-white/10 dark:text-on-dark-soft";
+    const text = power.state === "charging" ? "⚡ 충전 중" : power.state === "usb_only" ? "USB 전원" : "충전 완료";
+    return (
+      <span className={`inline-flex h-9 items-center rounded-full px-2 text-[11px] font-semibold ${tone}`} aria-label={power.label}>
+        {text}
+      </span>
+    );
+  }
+  if (power.state === "unknown" || power.percent == null) {
+    return <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>;
+  }
+  return (
+    <span className="inline-flex flex-col items-center leading-none" aria-label={power.label}>
+      <BatteryGauge pct={power.percent} />
+      {power.state === "critical" ? (
+        <span className="mt-0.5 text-[10px] font-semibold text-semantic-down">곧 꺼짐</span>
+      ) : power.remainingMin != null ? (
+        <span className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+          약 {power.remainingMin >= 60 ? `${Math.floor(power.remainingMin / 60)}h` : `${power.remainingMin}m`}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 // 실기기(gaspod) 텔레메트리 1건 — GET /api/gaspod/telemetry latest.
 type GaspodLatest = {
   device_id: string;
@@ -285,7 +317,7 @@ function gasMetric(r: GasSample): SiteMetric {
 }
 
 // 실기기 상세 팝업 — O₂·CO·H₂S 실측 + 온습도·기압·배터리·종합상태·최근수신. 실기기 행 측정값 클릭 시.
-function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose: () => void }) {
+function GaspodDetailModal({ latest, power, onClose }: { latest: GaspodLatest; power: GaspodPower; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -305,7 +337,8 @@ function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose:
     { label: "온도", val: `${l.temp.toFixed(1)} ℃` },
     { label: "습도", val: `${Math.round(l.humidity)} %` },
     { label: "기압", val: `${l.pressure.toFixed(1)} hPa` },
-    { label: "단말 배터리", val: `${l.vbat.toFixed(2)} V` },
+    // 전압 옆에 판정을 붙인다 — 충전 중엔 %가 과대라 상태가 먼저다(2026-09-07 실측).
+    { label: "단말 배터리", val: `${l.vbat.toFixed(2)} V · ${power.label}` },
   ];
   return createPortal(
     <div
@@ -503,6 +536,9 @@ export function GasDetectorTable({
   canManage?: boolean;
 }) {
   const [latest, setLatest] = useState<GaspodLatest | null>(null);
+  // 최근 15분 표본(5초×180) — 전원 상태(충전/방전/USB단독/임박)는 5분 중앙값·10분 기울기로 판정한다.
+  // 단일 최신값으로는 못 가른다(2026-09-07 실측: 죽기 직전이 63%로, 충전 중이 96%로 보였다).
+  const [recent, setRecent] = useState<GaspodLatest[]>([]);
   const [count, setCount] = useState(0); // DB 영속 누적 수집 건수.
   const [overrides, setOverrides] = useState<Record<string, GasConfigOverride>>({});
   const [detail, setDetail] = useState<GaspodLatest | null>(null);
@@ -515,13 +551,14 @@ export function GasDetectorTable({
     const load = () => {
       // 세션 토큰 동봉 — GET 이 2026-08-21 봉인(P1-3)으로 세션 인증 뒤로 갔다.
       const t = getSessionToken();
-      fetch("/api/gaspod/telemetry?n=1", {
+      fetch("/api/gaspod/telemetry?n=180", {
         headers: t ? { Authorization: `Bearer ${t}` } : undefined,
       })
         .then((r) => r.json())
-        .then((j: { ok?: boolean; latest?: GaspodLatest | null; count?: number }) => {
+        .then((j: { ok?: boolean; latest?: GaspodLatest | null; rows?: GaspodLatest[]; count?: number }) => {
           if (!alive) return;
           setLatest(j.ok && j.latest ? j.latest : null);
+          setRecent(j.ok && Array.isArray(j.rows) ? j.rows : []);
           if (typeof j.count === "number") setCount(j.count);
         })
         .catch(() => {});
@@ -561,6 +598,7 @@ export function GasDetectorTable({
     return () => clearInterval(id);
   }, []);
 
+  const power: GaspodPower = gaspodPowerState(recent);
   const rows: GasRow[] = [...(latest ? realGasRows(latest, overrides) : []), ...demoGasRows(overrides)];
   const realCount = latest ? 3 : 0;
 
@@ -644,17 +682,16 @@ export function GasDetectorTable({
           <div className={`text-center font-semibold ${TONE[r.sev]}`}>
             {r.sev === "normal" ? "정상" : r.sev === "caution" ? "주의" : "위험"}
           </div>
-          <div className="flex justify-center" title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V` : undefined}>
-            {r.latest ? (
-              <BatteryGauge pct={vbatToPercent(r.latest.vbat)} />
-            ) : (
-              <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>
-            )}
+          <div
+            className="flex justify-center"
+            title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V · ${power.label}` : undefined}
+          >
+            {r.latest ? <PowerCell power={power} /> : <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>}
           </div>
           <div className="text-center text-[11px] text-muted dark:text-on-dark-soft">{r.recv}</div>
         </div>
       ))}
-      {detail && <GaspodDetailModal latest={detail} onClose={() => setDetail(null)} />}
+      {detail && <GaspodDetailModal latest={detail} power={power} onClose={() => setDetail(null)} />}
       {editRow && (
         <GasConfigEditModal
           row={editRow}

@@ -16,6 +16,9 @@ const VBAT_CURVE: readonly (readonly [number, number])[] = [
 ];
 
 // 검산: vbatToPercent(3.75) === 53.
+// ⚠ 2026-09-07 실측: 실기기는 **3.70V 에서 죽는다**(POST 중단). 이 곡선은 0% 를 3.0V 에 두어 죽는 순간
+//   약 63% 로 보였다. 화면 잔량은 gaspod-power.ts 의 vbatToPercentMeasured(3.70=0%)를 쓴다 —
+//   이 함수는 곡선 모양의 출처로만 남긴다(검산·기존 테스트 유지).
 export function vbatToPercent(v: number): number {
   if (!Number.isFinite(v)) return 0;
   const top = VBAT_CURVE[0]!;
