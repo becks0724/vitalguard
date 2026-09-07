@@ -11,6 +11,8 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import android.view.WindowManager
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -402,6 +404,19 @@ class MainActivity : ComponentActivity() {
                     }
                     delay(if (ambient) AMBIENT_POLL_MS else ACTIVE_POLL_MS)
                 }
+            }
+
+            // ★ QR 로그인 동안만 화면을 깨워 둔다(09-07 사용자 승인 · C안).
+            //   화면이 꺼지면 onStop 이 폴링 코루틴을 끊어(`onStop` 참조) 승인이 도착하기 전에
+            //   QR 이 EXPIRED 가 된다 — 워치8 실측 6/6 실패. 승인 소요 16~25초 vs 화면 타임아웃 15초.
+            // ⚠ 위 앰비언트 주석의 금지(08-25)는 **상시 KEEP_SCREEN_ON** 을 막는 것이다.
+            //   여기서는 QR 화면을 벗어나는 즉시 플래그를 걷으므로 수집 화면의 앰비언트는 그대로 산다.
+            val qrAwake = showLogin && login.mode == LoginMode.QR &&
+                (login.qr.phase == QrPhase.LOADING || login.qr.phase == QrPhase.WAITING)
+            DisposableEffect(qrAwake) {
+                if (qrAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             }
 
             if (showLogin) {

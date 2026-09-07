@@ -67,10 +67,8 @@ class OngoingActivityTest {
         // 앰비언트 = 화면을 어둡게 유지. 진행중활동 = 시계로 안 내려가기. 하나만으로는 부족하다.
         val activity = uncommented(File("src/main/kotlin/com/vitalguard/wear/MainActivity.kt").readText())
         assertTrue("앰비언트 관찰자가 사라졌다", activity.contains("lifecycle.addObserver(ambientObserver)"))
-        assertFalse(
-            "화면 유지 플래그가 앰비언트 진입을 막는다",
-            activity.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
-        )
+        // 09-07 부터 QR 로그인 화면 동안만 예외로 허용한다 — 규칙 본문은 한 자리(QrLoginWiringTest.kt).
+        assertKeepScreenOnScopedToQr(activity)
     }
 
     @Test

@@ -9,6 +9,39 @@ import org.junit.Test
 import java.io.File
 
 /**
+ * KEEP_SCREEN_ON 규칙이 사는 한 자리(09-07 · 사용자 승인 C안). AmbientTest·OngoingActivityTest 가
+ * 이 함수를 부른다 — 같은 룰이 두 곳에 흩어지면 어느 것도 안 읽힌다.
+ *
+ * 계약 = **QR 로그인 화면 동안만** 화면을 깨워 둔다.
+ *   ⓐ 화면이 꺼지면 onStop 이 폴링을 끊어 승인 전에 QR 이 만료된다
+ *      (09-07 워치8 실측 6/6 실패 · 승인 16~25초 vs 화면 타임아웃 15초).
+ *   ⓑ 그렇다고 상시로 걸면 앰비언트 진입이 사라진다
+ *      (08-25 실측: 100초를 기다려도 mWakefulness=Awake · 앰비언트 콜백 0건).
+ * 그래서 거는 자리는 **한 곳뿐**이고, 그 자리는 QR 게이트 안이며, 해제가 반드시 있어야 한다.
+ */
+internal fun assertKeepScreenOnScopedToQr(rawActivity: String) {
+    val c = uncommented(rawActivity)
+    val add = Regex("""addFlags\(WindowManager\.LayoutParams\.FLAG_KEEP_SCREEN_ON\)""")
+    assertEquals(
+        "화면 유지 플래그를 거는 자리는 QR 게이트 한 곳뿐이어야 한다 — 상시로 걸면 앰비언트가 죽는다",
+        1,
+        add.findAll(c).count(),
+    )
+    assertTrue(
+        "화면 유지 플래그가 QR 게이트 밖에서 걸린다",
+        c.contains("if (qrAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
+    )
+    assertTrue(
+        "QR 게이트가 QR 로그인 화면에 묶여 있지 않다",
+        c.contains("val qrAwake = showLogin && login.mode == LoginMode.QR"),
+    )
+    assertTrue(
+        "화면 유지 플래그 해제가 없다 — QR 을 벗어나도 앰비언트가 안 살아난다",
+        c.contains("clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
+    )
+}
+
+/**
  * 한 문장 보장 = **QR 승인은 직접 로그인과 같은 성공 경로로 들어가고, secret 은 코루틴 밖으로 안 나간다.**
  * 되돌아가는 방식이 배선(호출이 빠지거나 다른 경로로 저장)이라 소스를 읽어 못 박는다(HrWatchdogTest 수법).
  */
@@ -46,5 +79,11 @@ class QrLoginWiringTest {
         assertFalse("secret 을 로그에 싣는다", Regex("Log\\.[iwed]\\([^\\n]*secret").containsMatchIn(c))
         val stop = c.substringAfter("override fun onStop()").substringBefore("\n    }")
         assertTrue("onStop 이 QR 폴링을 안 끊는다", stop.contains("qrJob?.cancel()"))
+    }
+
+    /** 화면이 꺼지면 폴링이 죽는다 — QR 이 떠 있는 동안만 화면을 깨워 둔다(09-07 사용자 승인 C안). */
+    @Test
+    fun `QR 화면 동안만 화면을 깨워 둔다`() {
+        assertKeepScreenOnScopedToQr(src())
     }
 }

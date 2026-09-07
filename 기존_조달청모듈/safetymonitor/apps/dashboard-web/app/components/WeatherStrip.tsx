@@ -346,6 +346,7 @@ export function WeatherStrip({
     const hr = data.hourly;
     const hourly: ForecastHour[] | undefined = hr
       ? hr.time.map((t, i) => ({
+          time: t, // 모달 x축이 날짜 경계를 판정하는 데 쓴다
           label: formatHourLabel(t),
           temp: hr.temperatureC[i] ?? 0,
         }))

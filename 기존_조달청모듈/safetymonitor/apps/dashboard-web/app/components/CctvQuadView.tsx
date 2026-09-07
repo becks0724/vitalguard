@@ -569,6 +569,19 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
     { label: "안전모", ok: stats?.hardhat_count, no: stats?.no_hardhat_count, scoped: true },
     { label: "안전조끼", scoped: false },
   ];
+  // ★ 우리 모델은 준수 확인기가 아니라 위반 검출기다 — 표시를 증거 수준에 맞춘다.
+  //   CAM-03 실측(2026-09-01): 맨머리 59프레임 head 100%(conf 0.94) · 안전모 착용
+  //   356프레임 head 0%·helmet 0%. 미착용은 완전히 갈리는데 **안전모 자체는 한 번도
+  //   못 본다**. 그래서 "안전모를 봤다(준수율)" 는 말은 못 하고 "미착용이 없다" 는
+  //   말은 할 수 있다. 엣지의 compliance_rate 기본값 100(gopro_ppe_edge.py:117)은
+  //   "전원 착용" 이 아니라 "하나도 못 봄" 이라 그대로 쓰면 거짓이 된다 —
+  //   조끼 "미착용 0" 오독과 같은 자리다.
+  //   근거 = ml/ppe-detection/context-notes.md 트랙 H-2·H-3.
+  //   ⚠️ 머리가 프레임 밖이면 head=0 이라 "위반 없음" 으로 샌다. 막으려면 사람 박스
+  //      좌표가 필요해 엣지까지 가야 하므로 2단계로 미룬다(착용 356프레임 실측
+  //      person 박스 상단 y 최소 88 · 상단 닿음 0% 라 당장 급하지 않다).
+  const persons = stats?.person_count ?? 0;
+  const ppeState = !stats ? "unknown" : violations > 0 ? "violation" : persons > 0 ? "clear" : "empty";
 
   return (
     <div className="border-t border-white/10 bg-black/50 px-4 py-3 text-zinc-100">
@@ -576,7 +589,11 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         <span className="flex items-center gap-1.5 text-xs font-semibold">
           <span
             className={`inline-block h-1.5 w-1.5 rounded-full ${
-              !stats ? "bg-zinc-500" : violations > 0 ? "bg-red-500" : "bg-emerald-400"
+              ppeState === "violation"
+                ? "bg-red-500"
+                : ppeState === "clear"
+                  ? "bg-emerald-400"
+                  : "bg-zinc-500"
             }`}
           />
           PPE 안전모 감지
@@ -584,23 +601,28 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              {AI_MODEL_LABEL.ppe} · 작업자 {stats.person_count}명 · 준수율{" "}
-              <span
-                className={
-                  stats.compliance_rate >= 100
-                    ? "text-emerald-300"
-                    : stats.compliance_rate >= 50
-                      ? "text-amber-300"
-                      : "text-red-300"
-                }
-              >
-                {Math.round(stats.compliance_rate)}%
-              </span>
-              {violations > 0 && <span className="ml-1.5 font-bold text-red-300">· 위반 {violations}건</span>}
+              {AI_MODEL_LABEL.ppe} · 작업자 {persons}명 ·{" "}
+              {ppeState === "violation" ? (
+                <span className="font-bold text-red-300">위반 {violations}건</span>
+              ) : ppeState === "clear" ? (
+                <span
+                  className="text-emerald-300"
+                  title={`작업자 ${persons}명에서 안전모 미착용이 검출되지 않았습니다. 안전모 자체를 확인한 것은 아닙니다.`}
+                >
+                  위반 없음
+                </span>
+              ) : (
+                <span className="text-zinc-400" title="화면에 작업자가 없어 판정 대상이 없습니다.">
+                  대상 없음
+                </span>
+              )}
+              {(stats.hardhat_count ?? 0) > 0 && (
+                <span className="ml-1.5 text-zinc-400">· 준수율 {Math.round(stats.compliance_rate)}%</span>
+              )}
             </>
           ) : (
             <>
-              {AI_MODEL_LABEL.ppe} · <span className="font-semibold text-zinc-300">{label}</span> · 준수율{" "}
+              {AI_MODEL_LABEL.ppe} · <span className="font-semibold text-zinc-300">{label}</span> · 판정{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
