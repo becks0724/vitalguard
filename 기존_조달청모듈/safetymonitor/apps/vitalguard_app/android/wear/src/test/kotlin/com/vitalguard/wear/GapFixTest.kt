@@ -288,12 +288,10 @@ class AmbientTest {
     fun `앰비언트를 등록한다 - 화면 유지 플래그만으로는 시계로 돌아간다`() {
         assertTrue("앰비언트 옵저버가 없다", activity.contains("AmbientLifecycleObserver"))
         assertTrue("생명주기에 안 붙였다", activity.contains("lifecycle.addObserver(ambientObserver)"))
-        // ⚠ KEEP_SCREEN_ON 을 **함께 걸면 안 된다.** 화면이 아예 안 꺼져 앰비언트 진입이
+        // ⚠ KEEP_SCREEN_ON 을 **상시로 걸면 안 된다.** 화면이 아예 안 꺼져 앰비언트 진입이
         //   일어나지 않는다(08-25 실측: 100초 대기에도 mWakefulness=Awake · 콜백 0건).
-        assertFalse(
-            "화면 유지 플래그가 앰비언트 진입을 막는다",
-            activity.contains("addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
-        )
+        //   09-07 부터 QR 로그인 화면 동안만 예외로 허용한다 — 규칙 본문은 아래 한 자리에 있다.
+        assertKeepScreenOnScopedToQr(activity)
     }
 
     /**
