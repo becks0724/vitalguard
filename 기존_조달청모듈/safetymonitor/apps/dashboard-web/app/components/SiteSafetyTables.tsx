@@ -193,9 +193,16 @@ function PowerCell({ power }: { power: GaspodPower }) {
       power.state === "charging"
         ? "bg-semantic-up/15 text-semantic-up"
         : "bg-zinc-200 text-zinc-700 dark:bg-white/10 dark:text-on-dark-soft";
-    const text = power.state === "charging" ? "⚡ 충전 중" : power.state === "usb_only" ? "USB 전원" : "충전 완료";
+    // ⚠ 문구가 짧은 이유 — 이 열(`단말`)은 그리드 고정 폭 **3.5rem(56px)** 이고 px-2 를 빼면 글자에
+    //   쓸 수 있는 폭이 40px 뿐이다. 11px 한글은 자당 약 11px 이라 4자(44px)부터 두 줄로 접힌다
+    //   (2026-09-07 라이브 실측: "충전 완료" 가 "충전 완 / 료" 로 깨졌다). 전체 문장은 title·aria-label 로 준다.
+    const text = power.state === "charging" ? "⚡충전" : power.state === "usb_only" ? "USB" : "완충";
     return (
-      <span className={`inline-flex h-9 items-center rounded-full px-2 text-[11px] font-semibold ${tone}`} aria-label={power.label}>
+      <span
+        className={`inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full px-2 text-[11px] font-semibold ${tone}`}
+        aria-label={power.label}
+        title={power.label}
+      >
         {text}
       </span>
     );
