@@ -10,9 +10,17 @@
 //     단일 표본으로 판정하면 안 되고 5분 중앙값 + 10분 회귀 기울기로 본다.
 //   · 4.25V 이상 = 배터리 스위치 OFF·USB 단독 급전(2026-08-03 실측 판별법).
 //
-// 문턱값 출처: 실측 4개(USB_ONLY_V·DEAD_V·CONNECT_JUMP_V·DISCHARGE_SLOPE)는 위 측정에서 직접,
-// 잠정 2개(CHARGE_SLOPE·CV_V)는 16:00 구간(+0.009V/min)과 리튬이온 CC/CV 특성에서 — 만충 플래토
-// 관측 뒤 실측값으로 바꾼다. 신 DB 가 서면 같은 규칙을 gas_reading.vbat_v 위 SQL 함수로 옮긴다(062 파생).
+// 문턱값 출처: 실측 5개(USB_ONLY_V·DEAD_V·CONNECT_JUMP_V·DISCHARGE_SLOPE·CV_V)는 측정에서 직접,
+// 잠정 1개(CHARGE_SLOPE)는 16:00 구간(+0.009V/min)의 절반. 신 DB 가 서면 같은 규칙을
+// gas_reading.vbat_v 위 SQL 함수로 옮긴다(062 파생).
+//
+// ★ 2026-09-07 17:27 라이브 오판과 그 수리 — 45W 어댑터에 물린 채로 화면이 **"100% · 약 9h"(방전)**
+//   를 띄웠다. 표본 4,000건(400h) 재측정으로 원인이 둘로 갈렸다:
+//     ① CV 평탄값이 실측 **4.130~4.140V** 인데 CV_V 를 4.15 로 잡아 두어 만충 가지에 **영영 못 들어갔다**.
+//     ② 저전압 스파이크(분중앙 대비 −0.05V↓)가 **5.92%**(237/4,000) 섞이고, 최소제곱(OLS)은 이상치에
+//        끌려간다 — 같은 10분에서 OLS −0.00105 vs 1분중앙 OLS +0.00030 vs Theil–Sen **0.00000**.
+//        OLS 만 방전 문턱(−0.001)을 넘었다. 그래서 기울기를 **1분 중앙값 다운샘플 + Theil–Sen**
+//        (쌍별 기울기의 중앙값 — 표본 절반이 오염돼도 버틴다)으로 바꿨다.
 //
 // 순수 함수 · 의존성 0 · 서버/클라이언트 어디서나. 상태 간 히스테리시스는 창(5분/10분) 자체가 준다 —
 // 접속 점프만 즉시 반응(1분 중앙값 차이).
@@ -44,7 +52,7 @@ export const GASPOD_POWER_THRESHOLDS = {
   CRITICAL_V: 3.78, // 실측(09-07): 여기서 사망까지 약 25분
   CONNECT_JUMP_V: 0.15, // 실측(09-07): 접속 순간 +0.34V — 절반이면 충분
   CHARGE_SLOPE_VPM: 0.004, // 잠정: 16:00 구간 +0.009V/min 의 절반
-  CV_V: 4.15, // 잠정: CC→CV 전환 근처
+  CV_V: 4.12, // 실측(09-07): 45W 어댑터 만충 플래토 4.130~4.140V(60분 분중앙값) 바로 아래
   FLAT_SLOPE_VPM: 0.001, // |slope| 이 이 아래면 평탄
   DISCHARGE_SLOPE_VPM: -0.001, // 실측 평균 −0.0019V/min 의 절반
   MEDIAN_WINDOW_MS: 5 * 60_000,
@@ -62,25 +70,38 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
-// 최소제곱 기울기 (V/min). x = 분, y = V.
+// 기울기 (V/min) — **1분 중앙값으로 다운샘플한 뒤 Theil–Sen**.
+//
+// 왜 최소제곱이 아닌가: 이 기기의 5초 표본에는 히터·WiFi 부하 스파이크가 5.92% 섞이고(2026-09-07
+// 실측 237/4,000), OLS 는 제곱오차라 그 이상치 쪽으로 끌려간다 — 평탄한 만충 구간을 방전으로 읽었다.
+// 1분 버킷 중앙값이 먼저 스파이크를 죽이고, Theil–Sen(모든 쌍의 기울기 중앙값)이 남은 이상치까지
+// 버틴다(붕괴점 ~29%). 버킷이 10개 안팎이라 쌍은 45개 남짓 — 폴링마다 계산해도 무시할 만하다.
 function slopePerMin(pts: { tMs: number; v: number }[]): number | null {
   if (pts.length < T.MIN_SLOPE_SAMPLES) return null;
-  const t0 = pts[0]!.tMs;
-  let sx = 0;
-  let sy = 0;
-  let sxx = 0;
-  let sxy = 0;
+
+  // 1분 버킷 중앙값.
+  const buckets = new Map<number, number[]>();
   for (const p of pts) {
-    const x = (p.tMs - t0) / 60_000;
-    sx += x;
-    sy += p.v;
-    sxx += x * x;
-    sxy += x * p.v;
+    const k = Math.floor(p.tMs / 60_000);
+    const b = buckets.get(k);
+    if (b) b.push(p.v);
+    else buckets.set(k, [p.v]);
   }
-  const n = pts.length;
-  const den = n * sxx - sx * sx;
-  if (den <= 0) return null;
-  return (n * sxy - sx * sy) / den;
+  const xs = [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([k, vs]) => ({ x: k, y: median(vs)! }));
+  // 두 점으로는 중앙값이 곧 그 쌍이라 이상치 내성이 없다 — 최소 3버킷.
+  if (xs.length < 3) return null;
+
+  // Theil–Sen: 모든 쌍 기울기의 중앙값. x 가 분 단위(버킷 인덱스)라 그대로 V/min.
+  const slopes: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    for (let j = i + 1; j < xs.length; j++) {
+      const dx = xs[j]!.x - xs[i]!.x;
+      if (dx !== 0) slopes.push((xs[j]!.y - xs[i]!.y) / dx);
+    }
+  }
+  return median(slopes);
 }
 
 export function gaspodPowerState(rows: GaspodPowerSample[], nowMs: number = Date.now()): GaspodPower {

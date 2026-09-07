@@ -80,3 +80,41 @@ test("실측 2점 보정 — 3.70=0 · 4.10=100 · 4.05≈90 · 3.78≈24", () =
   assert.equal(vbatToPercentMeasured(3.78), 24);
   assert.equal(vbatToPercentMeasured(3.5), 0); // 사망선 아래는 0 으로 고정
 });
+
+// ★★ 2026-09-07 17:27 라이브 오판의 재현 — 45W 어댑터에 물린 채 화면이 "100% · 약 9h"(방전)를 띄웠다.
+//    표본 4,000건 재측정: 만충 플래토 4.130~4.140V · 저전압 스파이크 5.92%(분중앙 대비 -0.05V 이하).
+//    OLS 는 이 스파이크에 끌려 -0.00105V/min(방전 문턱 -0.001 초과)을 냈고, Theil-Sen 은 0.00000 이었다.
+function withSpikes(minutes: number, flatV: number, everyNth: number): { vbat: number; ts: string }[] {
+  const out: { vbat: number; ts: string }[] = [];
+  let i = 0;
+  for (let sec = minutes * 60; sec >= 0; sec -= 5) {
+    // everyNth 표본마다 저전압 스파이크(실측은 4.14 평탄에 3.95~4.02 가 섞였다 = 약 17건마다 1건).
+    out.push({ vbat: i % everyNth === 0 ? flatV - 0.19 : flatV, ts: new Date(NOW - sec * 1000).toISOString() });
+    i++;
+  }
+  return out;
+}
+
+test("★ 라이브 오판 재현 — 4.135V 평탄에 스파이크 5.9% 가 섞여도 full_on_power (OLS 는 방전으로 읽었다)", () => {
+  const r = gaspodPowerState(withSpikes(15, 4.135, 17), NOW);
+  assert.equal(r.state, "full_on_power");
+  assert.equal(r.percent, null); // 충전 중엔 % 를 보이지 않는다
+  assert.ok(Math.abs(r.slopeVpm!) < T.FLAT_SLOPE_VPM, `slope=${r.slopeVpm} - 스파이크가 기울기를 오염시켰다`);
+});
+
+test("CV 문턱 - 실측 만충 플래토 4.13V 가 만충 가지에 든다 (4.15 로 잡으면 영영 못 들어간다)", () => {
+  assert.ok(T.CV_V <= 4.13, `CV_V=${T.CV_V} 가 실측 플래토(4.130~4.140) 위다 - 만충을 영영 못 잡는다`);
+  assert.equal(gaspodPowerState(series(15, () => 4.13), NOW).state, "full_on_power");
+});
+
+test("로버스트해도 진짜 방전은 방전이다 - 스파이크 5.9% + 실측 방전율", () => {
+  const base = withSpikes(15, 4.0, 17);
+  const rows = base.map((s) => ({
+    ...s,
+    // 과거일수록 높게 = 실측 -0.114V/h 하강
+    vbat: Number((s.vbat + ((NOW - Date.parse(s.ts)) / 60000) * (0.114 / 60)).toFixed(3)),
+  }));
+  const r = gaspodPowerState(rows, NOW);
+  assert.equal(r.state, "discharging");
+  assert.ok(r.slopeVpm! < T.DISCHARGE_SLOPE_VPM, `slope=${r.slopeVpm}`);
+});
