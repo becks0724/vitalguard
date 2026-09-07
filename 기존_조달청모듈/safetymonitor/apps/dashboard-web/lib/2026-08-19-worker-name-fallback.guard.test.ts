@@ -40,11 +40,16 @@ test("화면 이름과 알림 이름이 같은 규칙을 쓴다 — 최빈·명�
   }
 });
 
+// ⚠ 창의 표기가 둘이다(2026-09-07) — 옛 `now() - $1::interval` 캐스트와, 인덱스를 타는
+//   새 문자열 하한 `tsSinceLiteral("$1")`. 이 가드가 지키는 것은 **표기가 아니라 창의 유무**이므로
+//   양쪽을 다 인정한다. 한쪽만 보면 캐스트를 걷어낸 수리가 이 가드를 거짓으로 빨갛게 만든다.
+const TIME_WINDOW = /now\(\) - \$1::interval|tsSinceLiteral\("\$1"\)/;
+
 test("화면용 이름에는 시간 창이 없다 — 41일 꺼진 작업자도 이름은 떠야 한다", () => {
   const body = bodyOf(db, "rosterWorkerNames");
-  assert.doesNotMatch(body, /now\(\) - \$1::interval/, "시간 창이 생겼다 — 오래 끊긴 작업자가 다시 사번으로 뜬다");
+  assert.doesNotMatch(body, TIME_WINDOW, "시간 창이 생겼다 — 오래 끊긴 작업자가 다시 사번으로 뜬다");
   // 반대로 부재 판정 쪽은 창이 있어야 한다(사건이 아니라 상태인 기기를 매일 밀지 않기 위해).
-  assert.match(bodyOf(db, "lastSeenByWorker"), /now\(\) - \$1::interval/, "부재 판정의 공백 상한이 사라졌다");
+  assert.match(bodyOf(db, "lastSeenByWorker"), TIME_WINDOW, "부재 판정의 공백 상한이 사라졌다");
 });
 
 test("캐시가 있다 — 없으면 폴링마다 Seq Scan 1초를 문다", () => {
