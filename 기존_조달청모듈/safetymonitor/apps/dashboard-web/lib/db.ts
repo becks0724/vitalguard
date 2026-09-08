@@ -1918,6 +1918,107 @@ export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRo
   return rows;
 }
 
+// ── 워치 단말 등록(A-4) ────────────────────────────────────────────────────────
+//
+// 팀원 판정(2026-09-08): "poll 응답에 문자열만 넣으면 durable 이 아님" — 맞다. 그래서
+// **별도 등록 호출 + 확정 응답**으로 만든다. 폴링 응답에 얹지 않는다. 이 레포는 같은 함정을
+// 이미 겪었다 — ConfigStore.saveSession 주석의 "셋을 따로 쓰면 사번만 남는 반쪽 상태" 가 그것이다.
+//
+// 사용자 특정은 **username(JWT sub)** 으로 한다. 사번(employee_no)은 `UNIQUE (company_id,
+// employee_no)` 라 회사를 모르면 유일하지 않지만, `username` 은 전역 UNIQUE 다.
+//
+// 멱등 규칙 — 앱은 "받은 id 를 저장하고 다음에 그대로 보낸다" 만 하면 되고, 판단은 서버가 한다.
+//   ① 보낸 id 가 살아 있고 주인이 같다  → 그 id 를 그대로 준다(모델·앱버전만 갱신).
+//   ② 보낸 id 의 주인이 다르다          → 옛 행을 decommission 하고 **새 id** 를 준다.
+//      (같은 워치를 다른 사람이 쓰기 시작한 것. 과거 측정의 출처를 바꾸지 않는다.)
+//   ③ id 가 없거나 못 찾겠다            → 아직 한 번도 안 쓰인 행(last_seen_at IS NULL)이
+//      같은 주인·기종으로 있으면 **재사용**, 없으면 새로 만든다.
+//      재사용이 없으면, 앱이 응답 저장에 실패해 재등록을 반복할 때 고아 행이 계속 쌓인다.
+//
+// ⚠ `last_seen_at` 은 등록이 아니라 **실제 측정 적재**가 찍는다. 등록 때 찍으면 ③의
+//   "아직 안 쓰인 행" 식별이 무너진다.
+export type WearableRegisterInput = {
+  username: string;
+  platform: "wearos" | "watchos";
+  model: string | null;
+  appVersion: string | null;
+  wearableId: string | null;
+};
+export type WearableRegisterResult =
+  | { ok: true; wearableId: string; created: boolean }
+  | { ok: false; reason: "no_table" | "no_user" };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function registerWearable(input: WearableRegisterInput): Promise<WearableRegisterResult> {
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+
+    const u = await client.query<{ id: string }>("SELECT id FROM app_user WHERE username = $1", [input.username]);
+    const userId = u.rows[0]?.id;
+    if (!userId) {
+      await client.query("ROLLBACK");
+      return { ok: false, reason: "no_user" };
+    }
+
+    // 잘못된 형식은 조회 자체를 하지 않는다(uuid 캐스트 오류로 트랜잭션이 죽는다).
+    const sent = input.wearableId && UUID_RE.test(input.wearableId) ? input.wearableId : null;
+    if (sent) {
+      const cur = await client.query<{ user_id: string; decommissioned_at: string | null }>(
+        "SELECT user_id, decommissioned_at FROM wearable WHERE id = $1",
+        [sent],
+      );
+      const row = cur.rows[0];
+      if (row && row.user_id === userId && row.decommissioned_at === null) {
+        // ① 그대로 쓴다.
+        await client.query(
+          `UPDATE wearable SET model = COALESCE($2, model), app_version = COALESCE($3, app_version)
+            WHERE id = $1`,
+          [sent, input.model, input.appVersion],
+        );
+        await client.query("COMMIT");
+        return { ok: true, wearableId: sent, created: false };
+      }
+      if (row && row.user_id !== userId) {
+        // ② 주인이 바뀌었다 — 옛 행은 닫고 새로 발급한다.
+        await client.query("UPDATE wearable SET decommissioned_at = now() WHERE id = $1 AND decommissioned_at IS NULL", [sent]);
+      }
+    }
+
+    // ③ 아직 안 쓰인 같은 기종 행이 있으면 재사용.
+    const reuse = await client.query<{ id: string }>(
+      `SELECT id FROM wearable
+        WHERE user_id = $1 AND platform = $2 AND model IS NOT DISTINCT FROM $3
+          AND last_seen_at IS NULL AND decommissioned_at IS NULL
+        ORDER BY first_seen_at
+        LIMIT 1`,
+      [userId, input.platform, input.model],
+    );
+    const reused = reuse.rows[0]?.id;
+    if (reused) {
+      await client.query("UPDATE wearable SET app_version = COALESCE($2, app_version) WHERE id = $1", [reused, input.appVersion]);
+      await client.query("COMMIT");
+      return { ok: true, wearableId: reused, created: false };
+    }
+
+    const ins = await client.query<{ id: string }>(
+      `INSERT INTO wearable (user_id, platform, model, app_version) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [userId, input.platform, input.model, input.appVersion],
+    );
+    await client.query("COMMIT");
+    return { ok: true, wearableId: ins.rows[0]!.id, created: true };
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    // 42P01 = undefined_table — 신 스키마가 아직 안 선 서버다(라이브는 2026-09-08 기준 구 스키마).
+    if ((e as { code?: string }).code === "42P01") return { ok: false, reason: "no_table" };
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 // 전원 판정용 vbat 시계열 — **1분 중앙값으로 접어서** 가져온다.
 //
 // 왜 원본이 아닌가(2026-09-08): 외부 전원 판별은 "평탄이 120분 이상 이어지는가" 로 하는데,
