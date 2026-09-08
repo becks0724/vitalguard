@@ -52,7 +52,6 @@ const EVENT_LABEL: Record<string, string> = {
   fall: "낙상",
   vital: "생체 이상",
   geofence: "구역 이탈",
-  danger_zone: "위험구역 진입",
 };
 
 // KST 시:분 — 조사 창이 하루 안팎이라 시각 축은 시:분이 읽기 단위.

@@ -940,15 +940,13 @@ function AlertAckPanel({
         ? "생체 위험"
         : t === "geofence"
           ? "구획 이탈"
-          : t === "danger_zone"
-            ? "위험구역 진입"
-            : "SOS";
+          : "SOS";
   const typeCls = (t: string) =>
     t === "fall"
       ? "border-amber-500/40 bg-amber-50 text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300"
       : t === "vital"
         ? "border-rose-500/40 bg-rose-50 text-rose-700 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-300"
-        : t === "geofence" || t === "danger_zone"
+        : t === "geofence"
           ? "border-orange-500/40 bg-orange-50 text-orange-700 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-300"
           : "border-red-500/40 bg-red-50 text-red-700 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-300";
 

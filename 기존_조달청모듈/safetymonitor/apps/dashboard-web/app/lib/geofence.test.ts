@@ -5,14 +5,10 @@ import { test } from "node:test";
 import {
   GEOFENCE_EXIT_STREAK,
   GEOFENCE_INITIAL,
-  ZONE_ENTRY_INITIAL,
   geofenceDistanceM,
   stepGeofence,
-  stepZoneEntry,
   type GeofenceEvent,
   type GeofenceState,
-  type ZoneEntryEvent,
-  type ZoneEntryState,
 } from "./geofence";
 
 const R = 100; // 현장 구획 반경(SITE_CIRCLE_RADIUS_M 과 동일 값)
@@ -96,69 +92,3 @@ test("거리(m) — 동일 좌표 = 0", () => {
   assert.equal(geofenceDistanceM(35.15, 126.92, 35.15, 126.92), 0);
 });
 
-// ── 위험구역 진입(stepZoneEntry) — 이탈 판정의 미러 ──
-
-function runZone(dists: number[], initial: ZoneEntryState = ZONE_ENTRY_INITIAL) {
-  let state = initial;
-  const events: ZoneEntryEvent[] = [];
-  for (const d of dists) {
-    const r = stepZoneEntry(state, d, ZR);
-    state = r.state;
-    if (r.event) events.push(r.event);
-  }
-  return { state, events };
-}
-
-const ZR = 20; // 위험구역 기본 반경 예시
-
-test("위험구역 밖 이동은 무이벤트", () => {
-  const { state, events } = runZone([100, 60, 35, 25, 40]);
-  assert.equal(state.inside, false);
-  assert.deepEqual(events, []);
-});
-
-test("경계 스침(단발 진입 후 이탈)은 발화하지 않는다", () => {
-  const { state, events } = runZone([25, 8, 26, 7, 28, 25]);
-  assert.equal(state.inside, false);
-  assert.deepEqual(events, []);
-});
-
-test("연속 3회 반경−마진 미만이면 진입 확정 1회 발화", () => {
-  const { state, events } = runZone([40, 8, 7, 6]);
-  assert.equal(state.inside, true);
-  assert.deepEqual(events, ["enter"]);
-});
-
-test("진입 확정 후 구역 내 체류는 재발화하지 않는다", () => {
-  const { events } = runZone([8, 7, 6, 5, 9, 4]);
-  assert.deepEqual(events, ["enter"]);
-});
-
-test("반경+마진 초과 시 leave, 재진입 시 재발화", () => {
-  const { state, events } = runZone([8, 7, 6, 45, 8, 7, 6]);
-  assert.equal(state.inside, true);
-  assert.deepEqual(events, ["enter", "leave", "enter"]);
-});
-
-test("진입 streak 는 후보 중단 시 리셋된다", () => {
-  const { state, events } = runZone([8, 7, 40, 8, 7, 40]);
-  assert.equal(state.inside, false);
-  assert.equal(state.entryStreak, 0);
-  assert.deepEqual(events, []);
-});
-
-test("회색지대(반경±마진 사이)는 현 상태 유지", () => {
-  // 반경 20, 마진 10 — 거리 15 는 진입 후보도 이탈도 아님.
-  const inside: ZoneEntryState = { inside: true, entryStreak: 0 };
-  assert.deepEqual(stepZoneEntry(inside, 25, ZR), { state: inside, event: null });
-  assert.deepEqual(stepZoneEntry(ZONE_ENTRY_INITIAL, 15, ZR), {
-    state: ZONE_ENTRY_INITIAL,
-    event: null,
-  });
-});
-
-test("위험구역 비정상 입력(NaN·0 반경)은 no-op", () => {
-  const inside: ZoneEntryState = { inside: true, entryStreak: 0 };
-  assert.deepEqual(stepZoneEntry(inside, Number.NaN, ZR), { state: inside, event: null });
-  assert.deepEqual(stepZoneEntry(inside, 5, 0), { state: inside, event: null });
-});

@@ -5,7 +5,7 @@ import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import type { AlertType } from "../../../../lib/alert-type";
 import { ackAlert, ackAlertByKey } from "../../../../lib/db";
 
-const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital", "geofence", "danger_zone"];
+const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital", "geofence"];
 
 export async function POST(request: Request) {
   if (!verifyBasicAuth(request)) {

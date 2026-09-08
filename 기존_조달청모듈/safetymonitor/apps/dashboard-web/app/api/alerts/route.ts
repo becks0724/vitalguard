@@ -1,4 +1,4 @@
-// 알림 이력 조회 + 구획 이탈·위험구역 진입 기록 — 로그인 세션 토큰 필수(작업자명 포함).
+// 알림 이력 조회 + 구획 이탈 기록 — 로그인 세션 토큰 필수(작업자명 포함).
 import { NextResponse } from "next/server";
 import { readOr503 } from "../../../lib/route-read";
 
@@ -14,8 +14,8 @@ export async function GET(request: Request) {
   );
 }
 
-// 구획 이탈·위험구역 진입 기록 — 관제 웹이 확정 전이 시 호출(전이당 1건, ts 자연키 dedup).
-// SOS/낙상/생체는 서버(addSample)가 기록하므로 클라이언트 기록은 이 2종만 허용(위조 삽입 차단).
+// 구획 이탈 기록 — 관제 웹이 확정 전이 시 호출(전이당 1건, ts 자연키 dedup).
+// SOS/낙상/생체는 서버(addSample)가 기록하므로 클라이언트 기록은 이 1종만 허용(위조 삽입 차단).
 export async function POST(request: Request) {
   if (!verifyBasicAuth(request)) {
     return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
   }
 
   const obj = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : {};
-  if (obj.type !== "geofence" && obj.type !== "danger_zone") {
+  if (obj.type !== "geofence") {
     return NextResponse.json(
-      { ok: false, error: "type must be geofence or danger_zone" },
+      { ok: false, error: "type must be geofence" },
       { status: 400 },
     );
   }

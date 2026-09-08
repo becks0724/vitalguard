@@ -26,6 +26,8 @@
 
 ## ④ 위험구역 진입 경보
 
+> **2026-09-08 제거(팀 결정).** 담당자가 지도에 지정하는 위험구역 기능은 없애기로 했다 — `danger_zone` 표·`/api/danger-zones`·`danger_zone` 경보 종류·지도 배치 UI·진입 판정·팝업 전부 코드에서 삭제. 아래는 당시 구현 기록이다. 라이브 구 DB 의 `danger_zone` 표(0행)는 신 DB 전환 전 구 DB 정리 계획에서 함께 정리한다.
+
 - [x] `geofence.ts` `stepZoneEntry`(진입 히스테리시스 미러) + 단위테스트
 - [x] db `danger_zone` 테이블(멱등) + list/create/delete
 - [x] `/api/danger-zones` — GET 세션 / POST·DELETE 권한있음(hasAdminMenuAccess) 서버 강제

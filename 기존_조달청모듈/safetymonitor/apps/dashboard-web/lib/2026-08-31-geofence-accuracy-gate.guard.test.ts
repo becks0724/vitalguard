@@ -1,4 +1,4 @@
-// 판정 정확도 게이트 가드 — 부정확 좌표가 구획·위험구역 상태머신을 움직이지 않는가
+// 판정 정확도 게이트 가드 — 부정확 좌표가 구획 상태머신을 움직이지 않는가
 //
 // ★ 왜 필요한가(2026-08-31 실사고). 작업자가 현장 실내에 있는데 "구획 이탈 +140m" 경보가
 //   떴다. 워치가 위성 신호를 못 잡아 셀/와이파이 폴백 좌표(acc=100m 등급 · 양자화 지점
@@ -8,7 +8,7 @@
 //
 // ★ 이 가드가 초록일 때 보장하는 것(한 문장) —
 //   **게이트 술어는 한 곳(fixUsableForJudgment)이고 문턱은 트레일과 같은 상수이며, 화면의
-//   구획·위험구역 두 판정과 서버 리플레이가 모두 그것을 통과한 좌표만 쓰고, 부정확 좌표는
+//   구획 판정과 서버 리플레이가 모두 그것을 통과한 좌표만 쓰고, 부정확 좌표는
 //   에피소드 근거(lastInsideTs)로도 안 쓰인다.** 보장하지 않는 것 = 실외 fix 포착 지연의 크기.
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
@@ -82,9 +82,9 @@ test("★ 미보고(accM 없음) 표본은 종전대로 판정된다 — 구 경
 });
 
 // ── ③ 배선 — 화면 두 판정·DB 조회 ──────────────────────────────────────────
-test("★★ 화면의 구획·위험구역 두 판정 루프가 같은 게이트를 지난다", () => {
+test("★★ 화면의 구획 판정 루프가 게이트를 지난다(위험구역 판정은 2026-09-08 팀 결정으로 제거)", () => {
   const hits = board.split("if (!fixUsableForJudgment(pt.accM)) continue;").length - 1;
-  assert.equal(hits, 2, `화면 게이트가 ${hits}곳 — 구획·위험구역 두 곳이어야 한다`);
+  assert.equal(hits, 1, `화면 게이트가 ${hits}곳 — 구획 한 곳이어야 한다`);
   const gateAt = board.indexOf("if (!fixUsableForJudgment(pt.accM)) continue;");
   const stepAt = board.indexOf("stepGeofence(");
   assert.ok(gateAt !== -1 && stepAt !== -1 && gateAt < stepAt, "게이트가 판정 호출 앞에 있지 않다");

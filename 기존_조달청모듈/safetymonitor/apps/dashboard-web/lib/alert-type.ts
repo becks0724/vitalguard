@@ -9,4 +9,4 @@
 
 // ★ `absence` 만 성격이 다르다 — 나머지는 **샘플이 들어올 때** 발화하는데 이것은 **안 들어와서**
 //   발화한다. 그래서 수신 경로가 아니라 크론(`/api/cron/absence-check`)이 넣는다.
-export type AlertType = "sos" | "fall" | "vital" | "geofence" | "danger_zone" | "absence";
+export type AlertType = "sos" | "fall" | "vital" | "geofence" | "absence";

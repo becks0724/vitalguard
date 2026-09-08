@@ -368,6 +368,8 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 - 의료기기 인증 (MFDS) — 산업 안전 보조 정보 범주로 한정. 진단·치료 주장 절대 금지
 - iOS·Android 외 OS — 1차는 두 OS만
 - 자체 단말 OEM — 기존 Apple·Samsung 단말 활용
+- **담당자 지정 위험구역(지도에 원을 그려 진입 경보)** — 2026-09-08 팀 결정으로 **제거**. `danger_zone` 표·`/api/danger-zones`·
+  `danger_zone` 경보 종류·지도 배치 UI 전부 삭제(신 DB 도 069 로 표·kind 제거). 영상 기반 위험구역 침입(vision-ppe-plan)은 별개 개념이다.
 
 ## Flutter 앱 관례 (`apps/vitalguard_app`)
 

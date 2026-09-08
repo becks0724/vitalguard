@@ -311,7 +311,6 @@ const ALERT_TYPE_LABEL: Record<string, string> = {
   fall: "낙상",
   vital: "생체 이상",
   geofence: "구획 이탈",
-  danger_zone: "위험구역 진입",
   absence: "장기 미수신",
 };
 

@@ -27,13 +27,12 @@ test("포맷 — 작업자명 미제공이어도 동일하게 사번만", () => 
   assert.ok(msg.includes("EMP-1024"));
 });
 
-test("포맷 — 5종 라벨 매핑", () => {
+test("포맷 — 4종 라벨 매핑", () => {
   const labels = {
     sos: "SOS",
     fall: "낙상",
     vital: "생체",
     geofence: "구획 이탈",
-    danger_zone: "위험구역 진입",
   } as const;
   for (const [type, needle] of Object.entries(labels)) {
     const msg = formatAlertMessage({

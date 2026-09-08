@@ -1,4 +1,4 @@
-// 관제 알림(SOS/낙상/생체/구획이탈/위험구역진입)을 텔레그램 봇으로 전송하는 클라이언트(의존성 0 — fetch만).
+// 관제 알림(SOS/낙상/생체/구획이탈)을 텔레그램 봇으로 전송하는 클라이언트(의존성 0 — fetch만).
 // TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID 미설정 시: no-op(로컬·미배선 환경에서 안전). 전송 실패는 삼켜 alert 기록을 막지 않는다.
 
 import type { AlertType } from "./alert-type";
@@ -17,7 +17,6 @@ const ALERT_LABEL: Record<AlertType, string> = {
   fall: "🚨 낙상 감지",
   vital: "❤️ 생체 위험",
   geofence: "📍 현장 구획 이탈",
-  danger_zone: "⛔ 위험구역 진입",
   // 감시 공백은 경과 시간·사후 판정이 들어가야 해서 본문을 `lib/absence-watch.ts` 가 따로 만든다.
   // 이 라벨은 공용 포맷으로 흘렀을 때의 안전망이다(그 경로로는 안 보내는 것이 정상).
   absence: "📵 생체 수신 없음",
@@ -96,7 +95,7 @@ export async function sendTelegramMessage(text: string): Promise<TelegramSendRes
   }
 }
 
-// 작업자 알림(SOS/낙상/생체/구획이탈/위험구역진입) 전송. `extraLine` 은 본문 끝에 한 줄
+// 작업자 알림(SOS/낙상/생체/구획이탈) 전송. `extraLine` 은 본문 끝에 한 줄
 // 덧붙인다(구획이탈 상한 도달 예고용) — formatAlertMessage 는 순수하게 두고 여기서만 조립한다.
 export async function notifyAlertTelegram(input: AlertNotifyInput, extraLine?: string): Promise<void> {
   const body = formatAlertMessage(input);

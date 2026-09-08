@@ -59,5 +59,5 @@
 
 ## 7. 후속 구현 2차 (2026-07-23) — worker-map-plus 5기능
 
-- **①연결끊김 고스트 마커 ②알림→지도 포커스 ③이동 경로 트레일 ④위험구역 진입 경보 ⑤필지 경계 폴리곤** 전부 구현·배포(라이브 `00119-kv8`). §5 확장 후보 중 **필지 폴리곤은 시각 레드라인으로 착수**(판정은 원 유지·point-in-polygon 전환은 후속), 모드 영속화·역지오코딩은 여전히 미착수.
+- **①연결끊김 고스트 마커 ②알림→지도 포커스 ③이동 경로 트레일 ④위험구역 진입 경보 ⑤필지 경계 폴리곤** 전부 구현·배포(라이브 `00119-kv8`). **④ 위험구역 진입 경보는 2026-09-08 팀 결정으로 제거**(worker-map-plus/checklist.md ④ 참조). §5 확장 후보 중 **필지 폴리곤은 시각 레드라인으로 착수**(판정은 원 유지·point-in-polygon 전환은 후속), 모드 영속화·역지오코딩은 여전히 미착수.
 - 상세·결정·검증 = [worker-map-plus/checklist.md](worker-map-plus/checklist.md)·[worker-map-plus/context-notes.md](worker-map-plus/context-notes.md).

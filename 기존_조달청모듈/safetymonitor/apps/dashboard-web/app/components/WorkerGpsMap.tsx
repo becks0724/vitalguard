@@ -67,9 +67,6 @@ export type WorkerTrail = {
   seq?: { lat: number; lon: number }[];
 };
 
-// 위험구역(진입 금지 존) — 서버 등록분 표시 + 권한있음 계정의 배치/삭제 편집.
-export type MapZone = { id: number; name: string; lat: number; lon: number; radiusM: number };
-
 // ── 웹 메르카토르 픽셀 좌표 변환(타일 256px 기준) ──
 const TILE = 256;
 const D2R = Math.PI / 180;
@@ -144,10 +141,6 @@ export function WorkerGpsMap({
   focus,
   trail,
   onToggleTrail,
-  zones,
-  canManage,
-  onCreateZone,
-  onDeleteZone,
 }: {
   points: WorkerMapPoint[];
   excluded: WorkerMapExcluded[];
@@ -157,11 +150,6 @@ export function WorkerGpsMap({
   focus?: MapFocus;
   trail?: WorkerTrail;
   onToggleTrail?: (workerId: string) => void;
-  zones?: MapZone[];
-  // 위험구역 편집(배치·삭제) 노출 게이트 — 서버(hasAdminMenuAccess)와 이중.
-  canManage?: boolean;
-  onCreateZone?: (zone: { name: string; lat: number; lon: number; radiusM: number }) => void;
-  onDeleteZone?: (id: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -173,17 +161,8 @@ export function WorkerGpsMap({
   // 베이스맵 모드 — air: VWorld 항공사진(**기본** · 국내 고해상·z19 · 2026-08-31 사용자 결정) /
   // sat: Esri 위성(전세계 — VWORLD_KEY 미설정 환경은 이 버튼으로 수동 전환) / cad: VWorld 베이스 + 연속지적도.
   const [baseMode, setBaseMode] = useState<"sat" | "air" | "cad">("air");
-  // 위험구역 배치 모드 — "＋ 위험구역" 클릭 → 지도 클릭으로 중심 지정 → 이름·반경 폼.
-  const [placingZone, setPlacingZone] = useState(false);
-  const [zoneDraft, setZoneDraft] = useState<{ lat: number; lon: number } | null>(null);
-  const [zoneDraftName, setZoneDraftName] = useState("");
-  const [zoneDraftRadius, setZoneDraftRadius] = useState("20");
-  // 존 라벨 클릭 팝오버(상세·삭제) 대상 id.
-  const [zoneMenuId, setZoneMenuId] = useState<number | null>(null);
   const fittedRef = useRef(false);
   const drag = useRef<{ px: number; py: number; cwx: number; cwy: number } | null>(null);
-  // 드래그 팬 직후의 click 을 배치로 오인하지 않기 위한 이동 플래그.
-  const dragMovedRef = useRef(false);
 
   // 최신 view/size 를 native wheel 핸들러에서 읽기 위한 ref 미러.
   const viewRef = useRef<View | null>(null);
@@ -307,10 +286,8 @@ export function WorkerGpsMap({
 
   const onPointerDown = (e: React.PointerEvent) => {
     setStatusOpen(false);
-    setZoneMenuId(null);
     if (!view) return;
     (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
-    dragMovedRef.current = false;
     drag.current = {
       px: e.clientX,
       py: e.clientY,
@@ -321,34 +298,12 @@ export function WorkerGpsMap({
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current || !view) return;
-    if (
-      Math.abs(e.clientX - drag.current.px) > 4 ||
-      Math.abs(e.clientY - drag.current.py) > 4
-    ) {
-      dragMovedRef.current = true;
-    }
     const z = view.zoom;
     const ncx = drag.current.cwx - (e.clientX - drag.current.px);
     const ncy = drag.current.cwy - (e.clientY - drag.current.py);
     commit({ lon: worldXToLon(ncx, z), lat: worldYToLat(ncy, z) }, z);
   };
 
-  // 위험구역 배치 — 배치 모드에서 지도 클릭 시 화면 좌표 → 위경도 역산해 중심 지정.
-  const onMapClick = (e: React.MouseEvent) => {
-    if (!placingZone || dragMovedRef.current) return;
-    const el = ref.current;
-    const v = viewRef.current;
-    const s = sizeRef.current;
-    if (!el || !v || s.w === 0) return;
-    const r = el.getBoundingClientRect();
-    const sx = e.clientX - r.left;
-    const sy = e.clientY - r.top;
-    const z = v.zoom;
-    const tlx = lonToWorldX(v.center.lon, z) - s.w / 2;
-    const tly = latToWorldY(v.center.lat, z) - s.h / 2;
-    setZoneDraft({ lat: worldYToLat(tly + sy, z), lon: worldXToLon(tlx + sx, z) });
-    setPlacingZone(false);
-  };
   const endDrag = () => {
     drag.current = null;
     setGrabbing(false);
@@ -395,30 +350,12 @@ export function WorkerGpsMap({
   let trailPts: { x: number; y: number }[] | null = null;
   let coarsePts: { x: number; y: number; r: number }[] | null = null;
   let seqPts: { x: number; y: number }[] | null = null;
-  const zoneCircles: { zone: MapZone; x: number; y: number; r: number }[] = [];
-  let draftPt: { x: number; y: number; r: number } | null = null;
   let polyPts: { x: number; y: number }[] | null = null;
   if (view && size.w > 0) {
     const z = view.zoom;
     const tlx = lonToWorldX(view.center.lon, z) - size.w / 2;
     const tly = latToWorldY(view.center.lat, z) - size.h / 2;
     const metersPerPx = (lat: number) => (156543.03392 * Math.cos(lat * D2R)) / 2 ** z;
-    for (const zone of zones ?? []) {
-      zoneCircles.push({
-        zone,
-        x: lonToWorldX(zone.lon, z) - tlx,
-        y: latToWorldY(zone.lat, z) - tly,
-        r: zone.radiusM / metersPerPx(zone.lat),
-      });
-    }
-    if (zoneDraft) {
-      const radius = Math.min(500, Math.max(5, Number(zoneDraftRadius) || 20));
-      draftPt = {
-        x: lonToWorldX(zoneDraft.lon, z) - tlx,
-        y: latToWorldY(zoneDraft.lat, z) - tly,
-        r: radius / metersPerPx(zoneDraft.lat),
-      };
-    }
     if (focus) {
       focusPt = { x: lonToWorldX(focus.lon, z) - tlx, y: latToWorldY(focus.lat, z) - tly };
     }
@@ -497,9 +434,8 @@ export function WorkerGpsMap({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onClick={onMapClick}
         className={`relative h-full w-full touch-none select-none overflow-hidden rounded-lg bg-[#0b1420] ${
-          placingZone ? "cursor-crosshair" : grabbing ? "cursor-grabbing" : "cursor-grab"
+          grabbing ? "cursor-grabbing" : "cursor-grab"
         }`}
       >
         {tiles.map((t) => {
@@ -583,133 +519,6 @@ export function WorkerGpsMap({
                 ? `구획 판정 원 · 반경 ${siteCircle.radiusM}m`
                 : `현장 구획(근사) · 반경 ${siteCircle.radiusM}m`}
             </span>
-          </>
-        )}
-
-        {/* 위험구역(진입 금지 존) — 오렌지 원 + 이름 라벨. 라벨 클릭 시 상세·삭제 팝오버. */}
-        {zoneCircles.map(({ zone, x, y, r }) => (
-          <span key={`zone-${zone.id}`}>
-            <span
-              aria-hidden
-              className="pointer-events-none absolute rounded-full border-2 border-orange-500/90 bg-orange-500/15"
-              style={{ left: x - r, top: y - r, width: r * 2, height: r * 2 }}
-            />
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoneMenuId((cur) => (cur === zone.id ? null : zone.id));
-              }}
-              title="위험구역 상세(권한있음 계정은 삭제 가능)"
-              className="absolute -translate-x-1/2 whitespace-nowrap rounded-pill bg-orange-600/90 px-1.5 py-0.5 text-[9px] font-semibold text-white hover:bg-orange-500"
-              style={{ left: x, top: y - r - 16 }}
-            >
-              ⚠ {zone.name}
-            </button>
-            {zoneMenuId === zone.id && (
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                className="absolute z-30 w-44 -translate-x-1/2 rounded-xl border border-white/15 bg-[#0d1117]/95 p-2.5 text-left shadow-xl backdrop-blur"
-                style={{ left: x, top: y - r + 4 }}
-              >
-                <p className="truncate text-[12px] font-semibold text-white">⚠ {zone.name}</p>
-                <p className="mt-0.5 text-[10px] text-zinc-400">
-                  진입 금지 반경 {zone.radiusM}m — 진입 확정 시 경보
-                </p>
-                <div className="mt-1.5 flex justify-end gap-1.5">
-                  {canManage && onDeleteZone && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onDeleteZone(zone.id);
-                        setZoneMenuId(null);
-                      }}
-                      className="rounded-lg bg-red-600/85 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-500"
-                    >
-                      삭제
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setZoneMenuId(null)}
-                    className="rounded-lg bg-white/10 px-2 py-0.5 text-[10px] text-zinc-200 hover:bg-white/20"
-                  >
-                    닫기
-                  </button>
-                </div>
-              </div>
-            )}
-          </span>
-        ))}
-
-        {/* 위험구역 배치 드래프트 — 클릭 지정 중심 + 반경 미리보기 + 이름·반경 폼. */}
-        {draftPt && zoneDraft && (
-          <>
-            <span
-              aria-hidden
-              className="pointer-events-none absolute rounded-full border-2 border-dashed border-orange-400/90 bg-orange-400/10"
-              style={{
-                left: draftPt.x - draftPt.r,
-                top: draftPt.y - draftPt.r,
-                width: draftPt.r * 2,
-                height: draftPt.r * 2,
-              }}
-            />
-            <div
-              onPointerDown={(e) => e.stopPropagation()}
-              data-testid="zone-draft-form"
-              className="absolute z-30 w-52 -translate-x-1/2 rounded-xl border border-orange-400/40 bg-[#0d1117]/95 p-2.5 shadow-xl backdrop-blur"
-              style={{ left: draftPt.x, top: draftPt.y + draftPt.r + 8 }}
-            >
-              <p className="text-[11px] font-semibold text-orange-300">위험구역 등록</p>
-              <input
-                type="text"
-                value={zoneDraftName}
-                onChange={(e) => setZoneDraftName(e.target.value)}
-                placeholder="구역 이름 (예: 크레인 선회 반경)"
-                maxLength={40}
-                className="mt-1.5 w-full rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white placeholder:text-zinc-500 focus:outline-none"
-              />
-              <label className="mt-1.5 flex items-center gap-1.5 text-[10px] text-zinc-300">
-                반경(m)
-                <input
-                  type="number"
-                  value={zoneDraftRadius}
-                  onChange={(e) => setZoneDraftRadius(e.target.value)}
-                  min={5}
-                  max={500}
-                  className="w-16 rounded-lg border border-white/15 bg-white/5 px-2 py-1 text-[11px] text-white focus:outline-none"
-                />
-              </label>
-              <div className="mt-2 flex justify-end gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const radiusM = Math.min(500, Math.max(5, Number(zoneDraftRadius) || 20));
-                    const name = zoneDraftName.trim();
-                    if (!name) return;
-                    onCreateZone?.({ name, lat: zoneDraft.lat, lon: zoneDraft.lon, radiusM });
-                    setZoneDraft(null);
-                    setZoneDraftName("");
-                  }}
-                  disabled={!zoneDraftName.trim()}
-                  className="rounded-lg bg-orange-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  등록
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setZoneDraft(null);
-                    setZoneDraftName("");
-                  }}
-                  className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] text-zinc-200 hover:bg-white/20"
-                >
-                  취소
-                </button>
-              </div>
-            </div>
           </>
         )}
 
@@ -857,14 +666,8 @@ export function WorkerGpsMap({
             onMouseEnter={() => setHoveredId(p.workerId)}
             onMouseLeave={() => setHoveredId((cur) => (cur === p.workerId ? null : cur))}
             // 컨테이너 pointer capture(드래그 팬)가 클릭을 삼키지 않게 전파 차단(줌 버튼과 동일 함정).
-            // 배치 모드에선 차단하지 않고 컨테이너 클릭(중심 지정)에 양보한다.
-            onPointerDown={(e) => {
-              if (!placingZone) e.stopPropagation();
-            }}
-            onClick={() => {
-              if (placingZone) return;
-              onToggleTrail?.(p.workerId);
-            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => onToggleTrail?.(p.workerId)}
             title={onToggleTrail ? "클릭하면 최근 이동 경로를 표시/해제합니다" : undefined}
           >
             <span
@@ -950,7 +753,7 @@ export function WorkerGpsMap({
           </div>
         ))}
 
-        {/* 좌상단 컨트롤 컬럼 — 베이스맵 토글 / (권한있음) 위험구역 배치 / 트레일 칩. 전파 차단 필수(드래그 캡처). */}
+        {/* 좌상단 컨트롤 컬럼 — 베이스맵 토글 / 트레일 칩. 전파 차단 필수(드래그 캡처). */}
         <div
           onPointerDown={(e) => e.stopPropagation()}
           className="absolute left-2 top-2 z-20 flex flex-col items-start gap-1.5"
@@ -974,25 +777,6 @@ export function WorkerGpsMap({
               </button>
             ))}
           </div>
-
-          {canManage && onCreateZone && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setZoneDraft(null);
-                setPlacingZone((v) => !v);
-              }}
-              title="위험구역(진입 금지 존) 등록 — 클릭 후 지도에서 중심 위치를 클릭하세요"
-              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold backdrop-blur ${
-                placingZone
-                  ? "bg-orange-600 text-white"
-                  : "bg-black/55 text-orange-300 hover:bg-black/75"
-              }`}
-            >
-              {placingZone ? "지도를 클릭해 중심 지정 · 취소" : "＋ 위험구역"}
-            </button>
-          )}
 
           {trail && (
             <div className="flex items-center gap-1.5 rounded-pill bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur">
