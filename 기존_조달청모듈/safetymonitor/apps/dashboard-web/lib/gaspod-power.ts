@@ -41,6 +41,7 @@ export type GaspodPower = {
   vMed: number | null; // 5분 중앙값(V)
   slopeVpm: number | null; // 10분 회귀 기울기(V/min), 표본 부족이면 null
   jumpV: number | null; // 최근 1분 중앙값 − 그 이전 1분 중앙값
+  flatRunMin: number | null; // 전압이 ±FLAT_TOL_V 안에 머문 연속 시간(분) — 외부 전원 판별의 주 신호
   percent: number | null; // 방전·임박일 때만. 실측 2점 보정(3.70=0%)
   remainingMin: number | null; // 방전 기울기 기준 사망까지 분. 기울기 없으면 null
   sampleCount: number;
@@ -52,13 +53,23 @@ export const GASPOD_POWER_THRESHOLDS = {
   CRITICAL_V: 3.78, // 실측(09-07): 여기서 사망까지 약 25분
   CONNECT_JUMP_V: 0.15, // 실측(09-07): 접속 순간 +0.34V — 절반이면 충분
   CHARGE_SLOPE_VPM: 0.004, // 잠정: 16:00 구간 +0.009V/min 의 절반
-  CV_V: 4.12, // 실측(09-07): 45W 어댑터 만충 플래토 4.130~4.140V(60분 분중앙값) 바로 아래
   FLAT_SLOPE_VPM: 0.001, // |slope| 이 이 아래면 평탄
   DISCHARGE_SLOPE_VPM: -0.001, // 실측 평균 −0.0019V/min 의 절반
+
+  // ★ 외부 전원 판별 = **평탄이 얼마나 오래 지속되는가** (2026-09-08 실측)
+  //   전압 높이로는 못 가른다 — 배터리 최대 4.08V vs 어댑터 4.03~4.14V 로 겹친다.
+  //   60분 창 기울기 하나로도 못 가른다 — 평탄 판정의 28.8% 가 4.05V 미만(3.55V 에서도 평탄).
+  //   갈리는 것은 **지속 시간**이다. 같은 ±0.03V 허용폭에서 최장 연속 평탄이
+  //     배터리 단독 **46분** vs 어댑터 **910분(15.2h)** — 약 20배.
+  //   7/8~9/8 전체 이력(분버킷 4,533개)에서 180분 이상 평탄은 어댑터 구간 **단 1건**뿐이었다.
+  FLAT_TOL_V: 0.03, // 이 폭 안에 머물면 "평탄이 이어진다"
+  FLAT_RUN_EXTERNAL_MIN: 120, // 실측 배터리 최장 평탄 46분의 약 2.6배 — 이 이상이면 외부 전원
+  //   ⚠ 46분은 **방전 표본 1건**(2026-09-07)에서 나온 값이다. 방전 사례가 더 쌓이면 재검토할 것.
+
   MEDIAN_WINDOW_MS: 5 * 60_000,
-  SLOPE_WINDOW_MS: 10 * 60_000,
-  MIN_SAMPLES: 12, // 5초 표본 1분치
-  MIN_SLOPE_SAMPLES: 24, // 2분치는 있어야 기울기를 믿는다
+  SLOPE_WINDOW_MS: 60 * 60_000, // 10분→60분: 10분창은 배터리에서도 32.8% 가 평탄으로 나와 못 가른다(60분창 13.9%)
+  MIN_SPAN_MS: 5 * 60_000, // 표본이 이 시간만큼은 걸쳐 있어야 판정한다(표본 "개수"로 재면 5초/1분 입력이 갈린다)
+  MIN_SLOPE_SPAN_MS: 55 * 60_000, // 기울기는 60분 창이 사실상 찼을 때만 신뢰(실측이 60분 창으로 갈렸다)
 } as const;
 
 const T = GASPOD_POWER_THRESHOLDS;
@@ -70,16 +81,8 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
-// 기울기 (V/min) — **1분 중앙값으로 다운샘플한 뒤 Theil–Sen**.
-//
-// 왜 최소제곱이 아닌가: 이 기기의 5초 표본에는 히터·WiFi 부하 스파이크가 5.92% 섞이고(2026-09-07
-// 실측 237/4,000), OLS 는 제곱오차라 그 이상치 쪽으로 끌려간다 — 평탄한 만충 구간을 방전으로 읽었다.
-// 1분 버킷 중앙값이 먼저 스파이크를 죽이고, Theil–Sen(모든 쌍의 기울기 중앙값)이 남은 이상치까지
-// 버틴다(붕괴점 ~29%). 버킷이 10개 안팎이라 쌍은 45개 남짓 — 폴링마다 계산해도 무시할 만하다.
-function slopePerMin(pts: { tMs: number; v: number }[]): number | null {
-  if (pts.length < T.MIN_SLOPE_SAMPLES) return null;
-
-  // 1분 버킷 중앙값.
+// 1분 중앙값 버킷 — 기울기·평탄 지속이 같은 재료를 본다.
+function minuteMedians(pts: { tMs: number; v: number }[]): { k: number; m: number }[] {
   const buckets = new Map<number, number[]>();
   for (const p of pts) {
     const k = Math.floor(p.tMs / 60_000);
@@ -87,18 +90,46 @@ function slopePerMin(pts: { tMs: number; v: number }[]): number | null {
     if (b) b.push(p.v);
     else buckets.set(k, [p.v]);
   }
-  const xs = [...buckets.entries()]
-    .sort((a, b) => a[0] - b[0])
-    .map(([k, vs]) => ({ x: k, y: median(vs)! }));
-  // 두 점으로는 중앙값이 곧 그 쌍이라 이상치 내성이 없다 — 최소 3버킷.
-  if (xs.length < 3) return null;
+  return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([k, vs]) => ({ k, m: median(vs)! }));
+}
 
-  // Theil–Sen: 모든 쌍 기울기의 중앙값. x 가 분 단위(버킷 인덱스)라 그대로 V/min.
+// 최근 시점부터 거꾸로, 전압이 FLAT_TOL_V 안에 머무는 구간의 길이(분).
+// 이것이 외부 전원 판별의 주 신호다 — 배터리는 실측 −0.114V/h 라 오래 평탄할 수 없다.
+function flatRunMinutes(mins: { k: number; m: number }[]): number {
+  if (mins.length < 2) return 0;
+  let lo = mins[mins.length - 1]!.m;
+  let hi = lo;
+  for (let i = mins.length - 2; i >= 0; i--) {
+    const v = mins[i]!.m;
+    const nlo = Math.min(lo, v);
+    const nhi = Math.max(hi, v);
+    if (nhi - nlo > T.FLAT_TOL_V) return mins[mins.length - 1]!.k - mins[i + 1]!.k;
+    // 수신이 끊긴 구간은 이어졌다고 볼 수 없다 — 5분 넘게 비면 거기서 끊는다.
+    if (mins[i + 1]!.k - mins[i]!.k > 5) return mins[mins.length - 1]!.k - mins[i + 1]!.k;
+    lo = nlo;
+    hi = nhi;
+  }
+  return mins[mins.length - 1]!.k - mins[0]!.k;
+}
+
+// 기울기 (V/min) — **1분 중앙값으로 다운샘플한 뒤 Theil–Sen**.
+//
+// 왜 최소제곱이 아닌가: 이 기기의 5초 표본에는 히터·WiFi 부하 스파이크가 5.92% 섞이고(2026-09-07
+// 실측 237/4,000), OLS 는 제곱오차라 그 이상치 쪽으로 끌려간다 — 평탄한 만충 구간을 방전으로 읽었다.
+// 1분 버킷 중앙값이 먼저 스파이크를 죽이고, Theil–Sen(모든 쌍의 기울기 중앙값)이 남은 이상치까지
+// 버틴다(붕괴점 ~29%). 버킷이 10개 안팎이라 쌍은 45개 남짓 — 폴링마다 계산해도 무시할 만하다.
+function slopePerMin(mins: { k: number; m: number }[]): number | null {
+  // 두 점으로는 중앙값이 곧 그 쌍이라 이상치 내성이 없다 — 최소 3버킷.
+  if (mins.length < 3) return null;
+  // 창이 사실상 차야 신뢰한다(실측이 60분 창으로 갈렸다).
+  if ((mins[mins.length - 1]!.k - mins[0]!.k) * 60_000 < T.MIN_SLOPE_SPAN_MS) return null;
+
+  // Theil–Sen: 모든 쌍 기울기의 중앙값. k 가 분 단위 버킷 인덱스라 그대로 V/min.
   const slopes: number[] = [];
-  for (let i = 0; i < xs.length; i++) {
-    for (let j = i + 1; j < xs.length; j++) {
-      const dx = xs[j]!.x - xs[i]!.x;
-      if (dx !== 0) slopes.push((xs[j]!.y - xs[i]!.y) / dx);
+  for (let i = 0; i < mins.length; i++) {
+    for (let j = i + 1; j < mins.length; j++) {
+      const dk = mins[j]!.k - mins[i]!.k;
+      if (dk !== 0) slopes.push((mins[j]!.m - mins[i]!.m) / dk);
     }
   }
   return median(slopes);
@@ -112,45 +143,67 @@ export function gaspodPowerState(rows: GaspodPowerSample[], nowMs: number = Date
 
   const inWindow = (ms: number) => pts.filter((p) => nowMs - p.tMs <= ms);
   const med5 = inWindow(T.MEDIAN_WINDOW_MS).map((p) => p.v);
-  const base = { vMed: null, slopeVpm: null, jumpV: null, percent: null, remainingMin: null, sampleCount: pts.length };
+  const base = {
+    vMed: null,
+    slopeVpm: null,
+    jumpV: null,
+    flatRunMin: null,
+    percent: null,
+    remainingMin: null,
+    sampleCount: pts.length,
+  };
 
-  if (med5.length < T.MIN_SAMPLES) {
+  // 표본을 **개수**로 재면 입력 밀도(5초 원본 / 1분 중앙값)에 따라 판정이 갈린다 — 시간 범위로 잰다.
+  const spanMs = pts.length >= 2 ? pts[pts.length - 1]!.tMs - pts[0]!.tMs : 0;
+  if (med5.length === 0 || spanMs < T.MIN_SPAN_MS) {
     return { ...base, state: "unknown", label: "수신 부족" };
   }
 
   const vMed = median(med5)!;
-  const slopeVpm = slopePerMin(inWindow(T.SLOPE_WINDOW_MS));
-  const last1 = median(pts.filter((p) => nowMs - p.tMs <= 60_000).map((p) => p.v));
-  const prev1 = median(pts.filter((p) => nowMs - p.tMs > 60_000 && nowMs - p.tMs <= 120_000).map((p) => p.v));
-  const jumpV = last1 != null && prev1 != null ? last1 - prev1 : null;
+  const mins = minuteMedians(pts);
+  const slopeVpm = slopePerMin(minuteMedians(inWindow(T.SLOPE_WINDOW_MS)));
+  const flatRunMin = flatRunMinutes(mins);
+  // 접속 점프 — **두 방식을 같이 본다.** 어느 하나로만 재면 입력 형태에 따라 놓친다:
+  //   ㉠ 시각 창(0~60초 vs 60~120초) — 5초 원본에 강하지만, 입력이 이미 분 중앙값이면
+  //      버킷 경계와 어긋나 자주 null 이 된다(2026-09-08 서버 실측에서 null 이었다).
+  //   ㉡ 마지막 분버킷 − 그 앞 분버킷 — 분 중앙값 입력에 강하지만, 마지막 버킷에 표본이
+  //      1개뿐일 때는 해상도가 거칠어 같은 값끼리 비교하게 된다(가드 테스트가 이걸 잡았다).
+  // 놓치면 어댑터를 꽂아도 화면이 "충전 시작" 으로 안 바뀐다. 거짓 양성은 +0.15V 문턱이 막는다.
+  const winLast = median(pts.filter((p) => nowMs - p.tMs <= 60_000).map((p) => p.v));
+  const winPrev = median(pts.filter((p) => nowMs - p.tMs > 60_000 && nowMs - p.tMs <= 120_000).map((p) => p.v));
+  const lastB = mins[mins.length - 1];
+  const prevB = mins[mins.length - 2];
+  const last1 = winLast ?? lastB?.m ?? null;
+  const jumps = [
+    winLast != null && winPrev != null ? winLast - winPrev : null,
+    lastB && prevB && lastB.k - prevB.k <= 2 ? lastB.m - prevB.m : null,
+  ].filter((x): x is number => x != null);
+  const jumpV = jumps.length ? Math.max(...jumps) : null;
 
-  const common = { vMed, slopeVpm, jumpV, sampleCount: pts.length };
+  const common = { vMed, slopeVpm, jumpV, flatRunMin, sampleCount: pts.length };
 
   // 1. USB 단독 — 배터리 스위치 OFF. 어떤 %도 의미 없다.
   if (vMed >= T.USB_ONLY_V || (last1 != null && last1 >= T.USB_ONLY_V)) {
     return { ...common, state: "usb_only", label: "USB 전원 (배터리 분리)", percent: null, remainingMin: null };
   }
-  // 2. 접속 점프 — 5분 중앙값이 따라오기 전에 1분 단위로 먼저 잡는다.
+  // 2. 접속 점프 — 창이 따라오기 전에 1분 단위로 먼저 잡는다(꽂자마자 화면이 바뀌어야 한다).
   if (jumpV != null && jumpV >= T.CONNECT_JUMP_V) {
     return { ...common, state: "charging", label: "충전 시작", percent: null, remainingMin: null };
   }
-  // 3. 상승 기울기 또는 CV 구간(만충 근접에서 기울기는 거의 0 이 된다).
+  // 3. 상승 중.
   if (slopeVpm != null && slopeVpm >= T.CHARGE_SLOPE_VPM) {
     return { ...common, state: "charging", label: "충전 중", percent: null, remainingMin: null };
   }
-  if (vMed >= T.CV_V && slopeVpm != null) {
-    return slopeVpm > -T.FLAT_SLOPE_VPM && slopeVpm < T.FLAT_SLOPE_VPM
-      ? { ...common, state: "full_on_power", label: "충전 완료 · 상시 전원", percent: null, remainingMin: null }
-      : slopeVpm >= -T.FLAT_SLOPE_VPM
-        ? { ...common, state: "charging", label: "충전 중", percent: null, remainingMin: null }
-        : discharging(common, vMed, slopeVpm);
+  // 4. ★ 외부 전원 — **평탄이 오래 이어졌는가**로 가른다. 전압 높이로는 못 가른다(문턱 주석 참조).
+  if (flatRunMin >= T.FLAT_RUN_EXTERNAL_MIN) {
+    return { ...common, state: "full_on_power", label: "충전 완료 · 상시 전원", percent: null, remainingMin: null };
   }
-  // 4·5. 방전(평탄 포함) — 임박은 방전의 특수 경우.
+  // 5·6. 방전 — 임박은 방전의 특수 경우. 하강이 확인되지 않으면 남은 시간을 말하지 않는다.
   return discharging(common, vMed, slopeVpm);
 }
 
 function discharging(
-  common: { vMed: number; slopeVpm: number | null; jumpV: number | null; sampleCount: number },
+  common: { vMed: number; slopeVpm: number | null; jumpV: number | null; flatRunMin: number; sampleCount: number },
   vMed: number,
   slopeVpm: number | null,
 ): GaspodPower {

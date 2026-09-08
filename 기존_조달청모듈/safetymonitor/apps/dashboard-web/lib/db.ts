@@ -1918,6 +1918,31 @@ export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRo
   return rows;
 }
 
+// 전원 판정용 vbat 시계열 — **1분 중앙값으로 접어서** 가져온다.
+//
+// 왜 원본이 아닌가(2026-09-08): 외부 전원 판별은 "평탄이 120분 이상 이어지는가" 로 하는데,
+// 5초 표본이면 150분치가 1,800행이고 화면은 8초마다 폴링한다. 분 중앙값이면 150행이라
+// 12배 가볍고, 판정 함수가 어차피 첫 단계에서 같은 버킷 중앙값을 만든다 — 결과가 같다
+// (`gaspod-power.test.ts` 의 "입력 밀도가 달라도 같은 판정" 이 이것을 못 박는다).
+//
+// ⚠ `received_at` 은 text 다. 범위는 **문자열 하한**으로 좁혀 `idx_gaspod_recv` 를 타게 하고
+//   (2026-09-07 사고의 그 교훈), 캐스트는 좁혀진 행에만 걸리는 SELECT 쪽에서만 쓴다.
+export async function gaspodVbatMinuteMedians(minutes = 150): Promise<{ vbat: number; ts: string }[]> {
+  const m = Math.min(24 * 60, Math.max(5, Math.floor(minutes)));
+  const { rows } = await q<{ vbat: string; ts: string }>(
+    `SELECT to_char(date_trunc('minute', received_at::timestamptz) AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS ts,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY vbat) AS vbat
+       FROM gaspod_telemetry
+      WHERE received_at > ${tsSinceLiteral("$1")}
+        AND vbat IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1`,
+    [`${m} minutes`],
+  );
+  return rows.map((r) => ({ vbat: Number(r.vbat), ts: r.ts }));
+}
+
 // 누적 수집 건수(DB 영속 총계).
 export async function countGaspodTelemetry(): Promise<number> {
   const { rows } = await q<{ n: number }>("SELECT COUNT(*) AS n FROM gaspod_telemetry");

@@ -6,7 +6,8 @@ import { verifyBasicAuth } from "../../../../lib/admin-auth";
 import { clientIpFromRequest } from "../../../../lib/client-ip";
 import { consumeToken } from "../../../../lib/rate-limit";
 import { ingestAuthStatus } from "../../../../lib/ingest-auth";
-import { countGaspodTelemetry, insertGaspodTelemetry, listGaspodTelemetry } from "../../../../lib/db";
+import { countGaspodTelemetry, gaspodVbatMinuteMedians, insertGaspodTelemetry, listGaspodTelemetry } from "../../../../lib/db";
+import { type GaspodPower, gaspodPowerState } from "../../../../lib/gaspod-power";
 
 type GaspodTelemetry = {
   device_id: string; o2: number; temp: number; humidity: number; pressure: number;
@@ -62,6 +63,17 @@ export async function POST(request: Request) {
 }
 
 // 최근 텔레메트리 조회 (?n=20) + 누적 수집 건수 — 대시보드 실시간 수집 표시/검증용.
+// 전원 판정. DB 가 흔들려도 GET 전체를 500 으로 만들지 않는다 — 판정만 null 로 빠진다
+// (화면은 그때 "—" 를 그린다. 틀린 상태를 그리는 것보다 낫다).
+async function readPower(): Promise<GaspodPower | null> {
+  try {
+    const mins = await gaspodVbatMinuteMedians(150);
+    return mins.length ? gaspodPowerState(mins) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function GET(request: Request) {
   // 2026-08-21 봉인(안정화 P1-3) — 이 GET 이 무인증 200 이었다(센서 원시값·기기 ID ·
   // 32,228행 · 최대 720행/회 · 통제군 aed/devices 는 401). mock/history(08-13)와 같은 형태 —
@@ -73,20 +85,27 @@ export async function GET(request: Request) {
   }
   const n = Math.min(720, Math.max(1, Number(new URL(request.url).searchParams.get("n") ?? 20)));
   try {
-    const [desc, count] = await Promise.all([listGaspodTelemetry(n), countGaspodTelemetry()]);
+    const [desc, count, power] = await Promise.all([
+      listGaspodTelemetry(n),
+      countGaspodTelemetry(),
+      // ★ 전원 판정은 **서버가 한다**(2026-09-08, 태곤 님 결정 ㉯). 외부 전원 판별에는 120분
+      //   평탄 이력이 필요한데 화면 폴링(n=180 = 15분)으로는 그 창을 못 채워, 브라우저가 판정하면
+      //   어댑터에 물린 기기를 방전으로 읽었다. 분 중앙값이라 150행이고 전송량은 안 늘어난다.
+      readPower(),
+    ]);
     // DB=최신 먼저(DESC) → 표시용 오름차순 + received_at을 ts로 매핑(기존 클라이언트 호환).
     const rows = desc
       .slice()
       .reverse()
       .map(({ received_at, ...rest }) => ({ ...rest, ts: received_at }));
     return NextResponse.json(
-      { ok: true, latest: rows[rows.length - 1] ?? null, rows, count, persisted: true },
+      { ok: true, latest: rows[rows.length - 1] ?? null, rows, count, persisted: true, power },
       { headers: { "cache-control": "no-store" } },
     );
   } catch {
     // DB 장애 — 메모리 폴백.
     return NextResponse.json(
-      { ok: true, latest: recent[recent.length - 1] ?? null, rows: recent.slice(-n), count: recent.length, persisted: false },
+      { ok: true, latest: recent[recent.length - 1] ?? null, rows: recent.slice(-n), count: recent.length, persisted: false, power: null },
       { headers: { "cache-control": "no-store" } },
     );
   }
