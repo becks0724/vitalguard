@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 
 import { BarChart, LineChart, SummaryCell } from "./VitalHistoryPanel";
 import { AED_DEVICES, normalizeAedItems, type AedDevice, type AedItem } from "../../lib/aed-devices";
-import { vbatToPercent } from "../../lib/gaspod-battery";
+import type { GaspodPower } from "../../lib/gaspod-power";
 import {
   AED_SWAP_DUE_SOON_DAYS,
   aedCycleSev,
@@ -185,6 +185,47 @@ const GAS_ROWS: GasSample[] = [
   { loc: "지하 전기실", gas: "CO 일산화탄소", val: "12", unit: "ppm", thr: "≥30 ppm", sev: "normal", recv: "5초 전" },
 ];
 
+// 전원 상태 셀 — 충전/USB단독/만충이면 링 대신 배지(그때 %는 과대·무의미), 방전이면 실측 보정 % 링 + 남은 시간.
+// 36px 링과 같은 높이(h-9)라 행 높이(h-12) 불변. 2026-09-07 실측 근거는 lib/gaspod-power.ts 머리말.
+function PowerCell({ power }: { power: GaspodPower | null }) {
+  // 서버 판정이 없으면(DB 장애·이력 부족) 틀린 상태를 그리지 않는다.
+  if (!power) return <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>;
+  if (power.state === "charging" || power.state === "usb_only" || power.state === "full_on_power") {
+    const tone =
+      power.state === "charging"
+        ? "bg-semantic-up/15 text-semantic-up"
+        : "bg-zinc-200 text-zinc-700 dark:bg-white/10 dark:text-on-dark-soft";
+    // ⚠ 문구가 짧은 이유 — 이 열(`단말`)은 그리드 고정 폭 **3.5rem(56px)** 이고 px-2 를 빼면 글자에
+    //   쓸 수 있는 폭이 40px 뿐이다. 11px 한글은 자당 약 11px 이라 4자(44px)부터 두 줄로 접힌다
+    //   (2026-09-07 라이브 실측: "충전 완료" 가 "충전 완 / 료" 로 깨졌다). 전체 문장은 title·aria-label 로 준다.
+    const text = power.state === "charging" ? "⚡충전" : power.state === "usb_only" ? "USB" : "완충";
+    return (
+      <span
+        className={`inline-flex h-9 items-center justify-center whitespace-nowrap rounded-full px-2 text-[11px] font-semibold ${tone}`}
+        aria-label={power.label}
+        title={power.label}
+      >
+        {text}
+      </span>
+    );
+  }
+  if (power.state === "unknown" || power.percent == null) {
+    return <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>;
+  }
+  return (
+    <span className="inline-flex flex-col items-center leading-none" aria-label={power.label}>
+      <BatteryGauge pct={power.percent} />
+      {power.state === "critical" ? (
+        <span className="mt-0.5 text-[10px] font-semibold text-semantic-down">곧 꺼짐</span>
+      ) : power.remainingMin != null ? (
+        <span className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+          약 {power.remainingMin >= 60 ? `${Math.floor(power.remainingMin / 60)}h` : `${power.remainingMin}m`}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 // 실기기(gaspod) 텔레메트리 1건 — GET /api/gaspod/telemetry latest.
 type GaspodLatest = {
   device_id: string;
@@ -285,7 +326,7 @@ function gasMetric(r: GasSample): SiteMetric {
 }
 
 // 실기기 상세 팝업 — O₂·CO·H₂S 실측 + 온습도·기압·배터리·종합상태·최근수신. 실기기 행 측정값 클릭 시.
-function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose: () => void }) {
+function GaspodDetailModal({ latest, power, onClose }: { latest: GaspodLatest; power: GaspodPower | null; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -305,7 +346,9 @@ function GaspodDetailModal({ latest, onClose }: { latest: GaspodLatest; onClose:
     { label: "온도", val: `${l.temp.toFixed(1)} ℃` },
     { label: "습도", val: `${Math.round(l.humidity)} %` },
     { label: "기압", val: `${l.pressure.toFixed(1)} hPa` },
-    { label: "단말 배터리", val: `${l.vbat.toFixed(2)} V` },
+    // 전압 옆에 판정을 붙인다 — 충전 중엔 %가 과대라 상태가 먼저다(2026-09-07 실측).
+    // 판정이 없으면(서버 판정 실패·이력 부족) 전압만 — 없는 상태를 지어내지 않는다.
+    { label: "단말 배터리", val: `${l.vbat.toFixed(2)} V${power ? ` · ${power.label}` : ""}` },
   ];
   return createPortal(
     <div
@@ -503,13 +546,19 @@ export function GasDetectorTable({
   canManage?: boolean;
 }) {
   const [latest, setLatest] = useState<GaspodLatest | null>(null);
+  // 최근 15분 표본(5초×180) — 전원 상태(충전/방전/USB단독/임박)는 5분 중앙값·10분 기울기로 판정한다.
+  // 단일 최신값으로는 못 가른다(2026-09-07 실측: 죽기 직전이 63%로, 충전 중이 96%로 보였다).
   const [count, setCount] = useState(0); // DB 영속 누적 수집 건수.
   const [overrides, setOverrides] = useState<Record<string, GasConfigOverride>>({});
   const [detail, setDetail] = useState<GaspodLatest | null>(null);
+  // 전원 판정은 서버가 준 것을 그대로 쓴다 — 브라우저는 120분 평탄 이력을 갖고 있지 않다(2026-09-08).
+  const [power, setPower] = useState<GaspodPower | null>(null);
   const [editRow, setEditRow] = useState<GasRow | null>(null);
   const [, setTick] = useState(0); // recvAgo 표시 갱신용.
 
-  // 실기기 텔레메트리 폴링(8초) — 최신 1건 + DB 누적 수집 건수. 없으면(미수신) 데모만 표시.
+  // 실기기 텔레메트리 폴링(8초) — 최신 1건 + 누적 건수 + **서버가 낸 전원 판정**.
+  // n=1 인 이유: 종전 180건(15분)은 브라우저가 전원을 판정하려고 받던 것인데, 그 창으로는
+  // 외부 전원(120분 평탄)을 못 가려 오판했다. 판정을 서버로 옮기면서 전송량도 함께 줄었다.
   useEffect(() => {
     let alive = true;
     const load = () => {
@@ -519,9 +568,10 @@ export function GasDetectorTable({
         headers: t ? { Authorization: `Bearer ${t}` } : undefined,
       })
         .then((r) => r.json())
-        .then((j: { ok?: boolean; latest?: GaspodLatest | null; count?: number }) => {
+        .then((j: { ok?: boolean; latest?: GaspodLatest | null; rows?: GaspodLatest[]; count?: number; power?: GaspodPower | null }) => {
           if (!alive) return;
           setLatest(j.ok && j.latest ? j.latest : null);
+          setPower(j.ok && j.power ? j.power : null);
           if (typeof j.count === "number") setCount(j.count);
         })
         .catch(() => {});
@@ -644,17 +694,16 @@ export function GasDetectorTable({
           <div className={`text-center font-semibold ${TONE[r.sev]}`}>
             {r.sev === "normal" ? "정상" : r.sev === "caution" ? "주의" : "위험"}
           </div>
-          <div className="flex justify-center" title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V` : undefined}>
-            {r.latest ? (
-              <BatteryGauge pct={vbatToPercent(r.latest.vbat)} />
-            ) : (
-              <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>
-            )}
+          <div
+            className="flex justify-center"
+            title={r.latest ? `단말 배터리 ${r.latest.vbat.toFixed(2)} V${power ? ` · ${power.label}` : ""}` : undefined}
+          >
+            {r.latest ? <PowerCell power={power} /> : <span className="text-[11px] text-muted dark:text-on-dark-soft">—</span>}
           </div>
           <div className="text-center text-[11px] text-muted dark:text-on-dark-soft">{r.recv}</div>
         </div>
       ))}
-      {detail && <GaspodDetailModal latest={detail} onClose={() => setDetail(null)} />}
+      {detail && <GaspodDetailModal latest={detail} power={power} onClose={() => setDetail(null)} />}
       {editRow && (
         <GasConfigEditModal
           row={editRow}

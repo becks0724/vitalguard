@@ -1178,6 +1178,24 @@ function vitalSampleColumns(sample: VitalSample): Record<string, unknown> {
 // 종전엔 유니크 위반이 23505 예외로 터져 호출측 catch 에서 실제 장애와 같은 신호가 됐다(DB-POOL-02).
 const VITAL_UPSERT_SUFFIX = "ON CONFLICT (worker_id, ts) DO NOTHING";
 
+// ── 시간 창 필터 — `ts` 가 text 이므로 캐스트하지 않는다 (2026-09-07) ────────────
+//
+// ★ `WHERE ts::timestamptz > now() - interval` 은 **행마다 캐스트**가 붙어 `idx_vs_ts` 를
+//   무력화한다. 42만 행 Seq Scan 이 되어 890MB 를 읽고 몇 행을 낸다.
+//   실사고(2026-09-07): 이 패턴 6곳이 동시에 37건 실행되며 11초씩 걸려 커넥션 풀이 고갈됐고,
+//   무관한 `/api/alerts`·`/api/aed/*` 까지 503 으로 떨어졌다. api/monitor 는 32초.
+//
+// 대신 **하한을 같은 형식의 문자열로 만들어 비교**한다. `ts` 는 ISO-8601 UTC 밀리초 3자리
+// (`canonicalIsoMs` 가 적재 시 정규화)라 **사전순 = 시간순**이고, 비교가 상수 대 컬럼이므로
+// `idx_vs_ts`(ts) · `idx_vs_worker_ts`(worker_id, ts) 를 그대로 탄다.
+//
+// ⚠ 전제 = 창 안의 ts 가 전부 밀리초 3자리. 실측(2026-09-07): 최근 8일 8,818행 위반 0건.
+//   과거에 밀리초 없는 행이 섞여 있어도(2026-07-31 이전 8.2%) 날짜 부분이 먼저 갈리므로
+//   최근 창 필터에는 닿지 않는다. **창을 과거로 넓히는 호출을 새로 만들 때는 형식을 재확인할 것.**
+// ⚠ `now()` 는 서버 타임존이라 반드시 UTC 로 접어서 문자열을 만든다.
+const tsSinceLiteral = (intervalParam: string) =>
+  `to_char((now() - ${intervalParam}::interval) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
 // 단건 insert — sample 은 zod 검증 통과한 정상 값
 export async function persistSample(sample: VitalSample): Promise<void> {
   assertRealDeviceOrigin(sample);
@@ -1474,7 +1492,7 @@ export async function recentHeartRates(
   const { rows } = await q<{ worker_id: string; ts: string; heart_rate: number }>(
     `SELECT worker_id, ts, heart_rate FROM vital_samples
       WHERE heart_rate IS NOT NULL
-        AND ts::timestamptz > (now() - $1::interval)
+        AND ts > ${tsSinceLiteral("$1")}
       ORDER BY ts`,
     [`${windowMinutes} minutes`],
   );
@@ -1495,7 +1513,7 @@ export async function recentHrEnergy(
   }>(
     `SELECT worker_id, ts, heart_rate, active_energy_kcal FROM vital_samples
       WHERE (heart_rate IS NOT NULL OR active_energy_kcal IS NOT NULL)
-        AND ts::timestamptz > (now() - $1::interval)
+        AND ts > ${tsSinceLiteral("$1")}
       ORDER BY ts`,
     [`${windowMinutes} minutes`],
   );
@@ -1545,7 +1563,7 @@ export async function recentSamplesForWorkers(
   const { rows } = await q<{ raw_json: unknown }>(
     `SELECT raw_json FROM vital_samples
       WHERE worker_id = ANY($1::text[])
-        AND ts::timestamptz > (now() - $2::interval)
+        AND ts > ${tsSinceLiteral("$2")}
       ORDER BY ts DESC, id DESC LIMIT $3`,
     [workerIds, `${windowMinutes} minutes`, Math.min(Math.max(limit, 1), 1000)],
   );
@@ -1615,7 +1633,7 @@ export async function latestRestingHeartRate(
     `SELECT resting_heart_rate, ts FROM vital_samples
       WHERE worker_id = ANY($1::text[])
         AND resting_heart_rate IS NOT NULL
-        AND ts::timestamptz > (now() - $2::interval)
+        AND ts > ${tsSinceLiteral("$2")}
       ORDER BY ts DESC LIMIT 1`,
     [workerIds, `${days} days`],
   );
@@ -1630,7 +1648,7 @@ export async function latestSpo2ByWorker(
     `SELECT DISTINCT ON (worker_id) worker_id, spo2, spo2_measured_at, ts
        FROM vital_samples
       WHERE spo2 IS NOT NULL
-        AND ts::timestamptz > (now() - $1::interval)
+        AND ts > ${tsSinceLiteral("$1")}
       ORDER BY worker_id, ts DESC`,
     [`${windowMinutes} minutes`],
   );
@@ -1898,6 +1916,31 @@ export async function listGaspodTelemetry(limit = 20): Promise<GaspodTelemetryRo
     [lim],
   );
   return rows;
+}
+
+// 전원 판정용 vbat 시계열 — **1분 중앙값으로 접어서** 가져온다.
+//
+// 왜 원본이 아닌가(2026-09-08): 외부 전원 판별은 "평탄이 120분 이상 이어지는가" 로 하는데,
+// 5초 표본이면 150분치가 1,800행이고 화면은 8초마다 폴링한다. 분 중앙값이면 150행이라
+// 12배 가볍고, 판정 함수가 어차피 첫 단계에서 같은 버킷 중앙값을 만든다 — 결과가 같다
+// (`gaspod-power.test.ts` 의 "입력 밀도가 달라도 같은 판정" 이 이것을 못 박는다).
+//
+// ⚠ `received_at` 은 text 다. 범위는 **문자열 하한**으로 좁혀 `idx_gaspod_recv` 를 타게 하고
+//   (2026-09-07 사고의 그 교훈), 캐스트는 좁혀진 행에만 걸리는 SELECT 쪽에서만 쓴다.
+export async function gaspodVbatMinuteMedians(minutes = 150): Promise<{ vbat: number; ts: string }[]> {
+  const m = Math.min(24 * 60, Math.max(5, Math.floor(minutes)));
+  const { rows } = await q<{ vbat: string; ts: string }>(
+    `SELECT to_char(date_trunc('minute', received_at::timestamptz) AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS ts,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY vbat) AS vbat
+       FROM gaspod_telemetry
+      WHERE received_at > ${tsSinceLiteral("$1")}
+        AND vbat IS NOT NULL
+      GROUP BY 1
+      ORDER BY 1`,
+    [`${m} minutes`],
+  );
+  return rows.map((r) => ({ vbat: Number(r.vbat), ts: r.ts }));
 }
 
 // 누적 수집 건수(DB 영속 총계).
@@ -2520,7 +2563,7 @@ export async function lastSeenByWorker(maxGapHours = 24): Promise<LastSeenRow[]>
             MODE() WITHIN GROUP (ORDER BY v.worker_name) AS worker_name
        FROM ids i
        JOIN vital_samples v ON v.worker_id = i.wid
-      WHERE v.ts::timestamptz > (now() - $1::interval)
+      WHERE v.ts > ${tsSinceLiteral("$1")}
       GROUP BY i.canon`,
     [`${maxGapHours} hours`],
   );
