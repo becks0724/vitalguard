@@ -10,6 +10,8 @@ import { TRACK_LINE_ACC_MAX_M } from "../../../lib/track";
 import {
   estimateCoreTemp,
   estimateCoreTempSeries,
+  coreTempWarmupBuckets,
+  CORE_TEMP_MIN_MINUTES,
   type HrPoint,
 } from "@safetymonitor/analyzers";
 
@@ -462,6 +464,16 @@ const CORE_TEMP_CACHE_MS = 60_000;
 export type CoreTempEstMap = Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
 let _coreTempCache: { at: number; map: CoreTempEstMap } | null = null;
 
+// 워밍업 진행률(표시 전용) — 값이 **아직** 없는 워커만 담는다. 화면이 "미수신"(센서가 없다)과
+// "누적 중"(오고 있는데 아직 모자라다)을 가르는 데만 쓴다. 판정·경보에는 넣지 않는다.
+//
+// 왜 CoreTempEstMap 에 합치지 않는가 — 그 맵의 `tempC: number` 를 nullable 로 바꾸면
+// `freshCoreTemp`·`coreTempStatusC` 등 값 소비처 전부가 null 을 다뤄야 하고, 그중 하나만
+// 놓치면 워밍업 중인 워커가 판정에 섞인다. 별도 맵이면 기존 소비처는 한 줄도 안 바뀐다.
+export type CoreTempWarmupMap = Record<string, { buckets: number; needed: number }>;
+// 추정과 같은 계산·같은 캐시에서 함께 채워진다(추가 DB 조회 없음).
+let _coreTempWarmup: CoreTempWarmupMap = {};
+
 export async function coreTempEstimates(aliasMap: Record<string, string>): Promise<CoreTempEstMap> {
   const now = Date.now();
   if (_coreTempCache && now - _coreTempCache.at < CORE_TEMP_CACHE_MS) return _coreTempCache.map;
@@ -478,9 +490,16 @@ export async function coreTempEstimates(aliasMap: Record<string, string>): Promi
       byPrimary.set(key, arr);
     }
     const map: CoreTempEstMap = {};
+    const warmup: CoreTempWarmupMap = {};
     for (const [workerId, points] of byPrimary) {
       const est = estimateCoreTemp(points);
-      if (!est) continue; // 워밍업(유효 30분) 미달 — 표시하지 않는 것이 정직
+      if (!est) {
+        // 워밍업(유효 30분) 미달 — 값은 여전히 안 낸다(표시하지 않는 것이 정직).
+        // 다만 **얼마나 남았는지**는 남긴다. 이게 없으면 화면이 워밍업 중과 센서 미수신을
+        // 같은 빈칸으로 그리고, 그 빈칸이 "고장" 으로 읽힌다.
+        warmup[workerId] = { buckets: coreTempWarmupBuckets(points), needed: CORE_TEMP_MIN_MINUTES };
+        continue;
+      }
       map[workerId] = {
         tempC: Math.round(est.tempC * 10) / 10,
         basisMinutes: est.basisMinutes,
@@ -488,11 +507,21 @@ export async function coreTempEstimates(aliasMap: Record<string, string>): Promi
       };
     }
     _coreTempCache = { at: now, map };
+    _coreTempWarmup = warmup;
     return map;
   } catch (e) {
     console.warn("[vital] 심부체온 추정 실패 — 표시 생략", e);
     return _coreTempCache?.map ?? {};
   }
+}
+
+/**
+ * 워밍업 진행률 맵. 추정과 **같은 60초 캐시**를 공유한다 — 여기서 DB 를 다시 읽지 않는다.
+ * 추정이 실패하면 진행률도 직전 것이 남는다(라벨만 잠깐 낡을 뿐 값 경로와 무관).
+ */
+export async function coreTempWarmups(aliasMap: Record<string, string>): Promise<CoreTempWarmupMap> {
+  await coreTempEstimates(aliasMap);
+  return _coreTempWarmup;
 }
 
 // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — 워커별 최근 시계열을 별칭 접기 후 순수 함수로

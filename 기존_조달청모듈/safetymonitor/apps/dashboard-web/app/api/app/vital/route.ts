@@ -11,6 +11,7 @@ import {
   persistSamples,
   countsByWorker,
   coreTempEstimates,
+  coreTempWarmups,
   heatPatterns,
   workRates,
   heatStages,
@@ -99,6 +100,9 @@ export async function GET(request: Request) {
     countsByWorker: await softly("워커별 누적", () => countsByWorker(aliasMap), null, degraded),
     // 심박 기반 심부체온 추정(표시 전용·판정 미주입) — PII 아님(파생 지표).
     coreTempEst: await coreTempEstimates(aliasMap),
+    // 워밍업 진행률(표시 전용) — 값이 아직 없는 워커만. 화면이 "미수신"과 "누적 중"을 가른다.
+    // 추정과 같은 캐시를 공유하므로 DB 조회가 늘지 않는다.
+    coreTempWarmup: await coreTempWarmups(aliasMap),
     // 저활동·고심박 패턴(온열 ②·표시 주석 전용·판정 미주입) — flagged 워커만 실린다.
     heatPattern: await heatPatterns(aliasMap),
     // 작업대사율(kcal/hr) — KOSHA <표 1> 작업강도 분류 입력. 참고 권고용이라 판정·알림에 안 들어간다.

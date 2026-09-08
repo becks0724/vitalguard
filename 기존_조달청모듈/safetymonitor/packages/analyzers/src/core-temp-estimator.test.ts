@@ -2,7 +2,13 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { estimateCoreTemp, estimateCoreTempSeries, CORE_TEMP_MIN_MINUTES, type HrPoint } from "./core-temp-estimator.js";
+import {
+  estimateCoreTemp,
+  estimateCoreTempSeries,
+  coreTempWarmupBuckets,
+  CORE_TEMP_MIN_MINUTES,
+  type HrPoint,
+} from "./core-temp-estimator.js";
 
 const T0 = Date.parse("2026-08-12T00:00:00.000Z");
 
@@ -85,4 +91,34 @@ test("궤적 마지막 점 == estimateCoreTemp — 카드와 차트 숫자가 �
   const est = estimateCoreTemp(pts);
   assert.ok(est);
   assert.equal(est.tempC, s[s.length - 1].tempC);
+});
+
+// ── 워밍업 진행률(표시 전용) ────────────────────────────────────────────────
+// 이 수는 화면 라벨(N/30)이 되므로, 값이 나오는 경계와 어긋나면 "30/30 인데 값이 없다"가 된다.
+
+test("★ 진행률과 값 경계가 같다 — 29버킷은 null·30버킷부터 값(같은 표본으로 함께 고정)", () => {
+  const short = series(CORE_TEMP_MIN_MINUTES - 1, 83);
+  assert.equal(coreTempWarmupBuckets(short), CORE_TEMP_MIN_MINUTES - 1);
+  assert.equal(estimateCoreTemp(short), null, "진행률이 미달인데 값이 나온다");
+
+  const exact = series(CORE_TEMP_MIN_MINUTES, 83);
+  assert.equal(coreTempWarmupBuckets(exact), CORE_TEMP_MIN_MINUTES);
+  assert.ok(estimateCoreTemp(exact), "진행률이 도달인데 값이 없다");
+});
+
+test("★ 세션 경계 규칙이 추정기와 같다 — 60분 초과 공백이면 진행률도 0부터 다시 센다", () => {
+  // 60분 수집 → 90분 공백(>60) → 12분 수집. 추정기는 두 번째 세션을 재워밍업으로 보고 점을 안 낸다.
+  const reset = [...series(60, 83), ...series(12, 83, 150)];
+  assert.equal(coreTempWarmupBuckets(reset), 12, "리셋 후 마지막 세션만 세야 한다");
+  assert.equal(estimateCoreTempSeries(reset).length, 31, "추정기 쪽 세션 분리가 바뀌었다");
+
+  // 30분 공백(≤60)은 같은 세션 — 진행률도 이어진다.
+  const keep = [...series(20, 83), ...series(12, 83, 50)];
+  assert.equal(coreTempWarmupBuckets(keep), 32, "이내 공백에서 진행률이 끊겼다");
+  assert.ok(estimateCoreTemp(keep), "이내 공백인데 값이 없다");
+});
+
+test("진행률 — 오측 bpm 은 버킷으로 세지 않는다(값 경로와 같은 가드)", () => {
+  const noisy = [...series(10, 83), ...series(10, 250, 10)];
+  assert.equal(coreTempWarmupBuckets(noisy), 10);
 });

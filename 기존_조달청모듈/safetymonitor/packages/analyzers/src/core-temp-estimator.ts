@@ -105,6 +105,27 @@ export function estimateCoreTempSeries(points: HrPoint[]): CoreTempSeriesPoint[]
 }
 
 /**
+ * 마지막 세션의 누적 버킷 수 — **워밍업 진행률 표시 전용**이다.
+ *
+ * 왜 필요한가 — `estimateCoreTemp` 가 null 을 내면 호출부는 "얼마나 남았는지"를 알 수 없어
+ * 화면이 워밍업 중과 센서 미수신을 같은 빈칸으로 그린다. 그 빈칸이 고장으로 읽혔다.
+ * 값 판정은 여전히 `estimateCoreTemp` 만 한다 — 여기서 나온 수는 라벨(N/30)에만 쓴다.
+ *
+ * ⚠ 세션 경계(60분 공백) 규칙이 `estimateCoreTempSeries` 와 갈리면 진행률이 거짓말을 한다.
+ *   단위 테스트가 두 함수의 경계를 같은 표본으로 함께 고정한다.
+ */
+export function coreTempWarmupBuckets(points: HrPoint[]): number {
+  let segMinutes = 0;
+  let prevMinute: number | null = null;
+  for (const { minute } of minuteBuckets(points)) {
+    if (prevMinute !== null && minute - prevMinute > CORE_TEMP_SESSION_GAP_MINUTES) segMinutes = 0;
+    segMinutes += 1;
+    prevMinute = minute;
+  }
+  return segMinutes;
+}
+
+/**
  * 심박 시계열 → 현재 심부체온 추정(궤적의 마지막 점). 마지막 세션이 워밍업(30분) 미달이면
  * null — 표시하지 않는 것이 정직. basisMinutes 는 궤적에 기여한 유효 분(전 세션 합).
  */

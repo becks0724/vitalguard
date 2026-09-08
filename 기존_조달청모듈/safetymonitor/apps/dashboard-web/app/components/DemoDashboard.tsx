@@ -175,6 +175,8 @@ type MockVitalResponse = {
   degraded?: string[];
   // 심박 기반 심부체온 추정(서버 칼만필터·표시 전용) — workerId(주 ID) → 추정.
   coreTempEst?: Record<string, { tempC: number; basisMinutes: number; lastHrTs: string }>;
+  /** 워밍업 진행률(표시 전용) — 값이 아직 없는 워커만. "미수신"과 "심박 누적 중"을 가른다. */
+  coreTempWarmup?: Record<string, { buckets: number; needed: number }>;
   // 저활동·고심박 패턴(온열 ②·표시 주석 전용) — flagged 워커만 실린다. 판정 미주입.
   heatPattern?: Record<string, { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number }>;
   /** 작업대사율(kcal/hr) — KOSHA 작업강도 분류 입력. 참고 권고 전용. */
@@ -290,6 +292,12 @@ function formatInt(value?: number | null) {
 // 체온 미수신(기기 미전송) 안내 — 애플워치 등 일부 기기는 작업 중 체온을 전송하지 않음.
 // store sticky-carry 로 한번이라도 값이 오면 유지되므로, 남아있는 null/undefined ≈ "미수신".
 const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데이터가 들어오지 않습니다";
+// 워밍업 중 — 미수신과 정반대 상태다. 심박은 오고 있고 칼만이 아직 30버킷을 못 채운 것뿐이라
+// 조치가 "기기 확인" 이 아니라 "계속 착용" 이다. 진행률을 함께 적어 멈춘 것과 구분되게 한다.
+// ★ 갤럭시는 심박 보고가 2분 간격이라 30버킷이 실제로는 연속 착용 60~90분이다(2026-09-08 실측).
+const CORE_TEMP_WARMUP_LABEL = "심박 누적 중";
+const coreTempWarmupTitle = (w: { buckets: number; needed: number }) =>
+  `심부체온 추정 준비 중 — 심박 ${w.buckets}/${w.needed}분 누적. 계속 착용하면 값이 뜹니다(갤럭시는 심박 보고가 2분 간격이라 보통 60~90분). 심박 공백이 60분을 넘으면 처음부터 다시 셉니다`;
 // 연결끊김일 때는 "센서 없음" 이 아니라 "수신 중단" 이므로 사유를 구분해 표시한다.
 // ★ 종전 문구는 "60초 초과" 고정이라 12시간 끊김도 1분처럼 읽혔다 — 실제 경과를 적는다.
 // ★ 종류에 따라 조치가 정반대다(2026-08-28) — 샘플이 도착 중이면 기기가 아니라 착용을 봐야 한다.
@@ -7484,6 +7492,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
                           coreTempEstC={freshCoreTemp(entry.workerId)}
+                          coreTempWarmup={data.coreTempWarmup?.[entry.workerId]}
                           heatPattern={data.heatPattern?.[entry.workerId]}
                           offWrist={data.offWrist?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
@@ -7526,6 +7535,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                           signal={signalLevel(latestMap.get(entry.workerId), now)}
                           nowMs={now}
                           coreTempEstC={freshCoreTemp(entry.workerId)}
+                          coreTempWarmup={data.coreTempWarmup?.[entry.workerId]}
                           heatPattern={data.heatPattern?.[entry.workerId]}
                           offWrist={data.offWrist?.[entry.workerId]}
                           stress={stressFor(entry.workerId)}
@@ -8066,6 +8076,8 @@ type WorkerTableRowProps = {
   coreTempEstC?: number;
   // 저활동·고심박 패턴(온열 ②) — 있으면 flagged 상태. 체온 추정 셀의 주석(툴팁·라벨)에만 쓴다.
   heatPattern?: { hrAvg: number; aeKcalPerMin: number; coveredMinutes: number };
+  // 워밍업 진행률 — 칼만이 아직 값을 못 낼 때 사유·진행률 라벨에만 쓴다. 판정 미주입.
+  coreTempWarmup?: { buckets: number; needed: number };
   offWrist?: OffWristSuspect;
   /** hrvBacked = 이 지수에 HRV 가 실제로 들어갔는가(칩 문구를 산출 근거에 맞추는 데 쓴다). */
   stress: { result: StressResult; hrvBacked: boolean };
@@ -8104,6 +8116,7 @@ function WorkerTableRow({
   signal,
   nowMs,
   coreTempEstC,
+  coreTempWarmup,
   heatPattern,
   offWrist,
   stress,
@@ -8396,14 +8409,23 @@ function WorkerTableRow({
               title={
                 stale && kind !== undefined
                   ? tempStaleTitle(vitalAgeMs(sample, nowMs), kind)
-                  : TEMP_UNAVAILABLE_TITLE
+                  : // ★ 워밍업 중을 "미수신" 으로 적지 않는다(2026-09-08). 심박은 오고 있는데
+                    //   칼만이 아직 30버킷을 못 채운 것이라 조치가 정반대다 — 기기를 보는 게
+                    //   아니라 계속 차고 있으면 된다. 종전 문구는 센서 고장으로 읽혔다.
+                    !stale && coreTempWarmup !== undefined
+                    ? coreTempWarmupTitle(coreTempWarmup)
+                    : TEMP_UNAVAILABLE_TITLE
               }
             >
               <span className="font-mono text-sm tabular-nums text-muted">
                 --<span className="ml-0.5 text-[10px]">℃</span>
               </span>
               <span className="block text-[9px] leading-none text-muted">
-                {stale ? staleLabel : "미수신"}
+                {stale
+                  ? staleLabel
+                  : coreTempWarmup !== undefined
+                    ? `${CORE_TEMP_WARMUP_LABEL} ${coreTempWarmup.buckets}/${coreTempWarmup.needed}`
+                    : "미수신"}
               </span>
             </span>
           )
@@ -8425,7 +8447,12 @@ function WorkerTableRow({
             <span className="block text-[9px] leading-none">
               <span className="text-muted">체온 </span>
               {coreTempEstC == null ? (
-                <span className="text-muted">심박 누적 중</span>
+                // 같은 사유를 두 분기가 **같은 문구**로 말한다(라벨은 CORE_TEMP_WARMUP_LABEL 한 곳).
+                // 진행률이 붙어야 "누적 중" 과 "멈춤" 이 구분된다 — 숫자가 안 늘면 착용이 끊긴 것이다.
+                <span className="text-muted" title={coreTempWarmup ? coreTempWarmupTitle(coreTempWarmup) : undefined}>
+                  {CORE_TEMP_WARMUP_LABEL}
+                  {coreTempWarmup ? ` ${coreTempWarmup.buckets}/${coreTempWarmup.needed}` : ""}
+                </span>
               ) : (
                 <span className={STATUS_CLASS[coreTempStatusC(coreTempEstC)]}>
                   {formatTemp(coreTempEstC)}℃
