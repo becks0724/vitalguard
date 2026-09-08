@@ -295,7 +295,12 @@ const TEMP_UNAVAILABLE_TITLE = "체온 미수신 — 이 기기에서 체온 데
 // 워밍업 중 — 미수신과 정반대 상태다. 심박은 오고 있고 칼만이 아직 30버킷을 못 채운 것뿐이라
 // 조치가 "기기 확인" 이 아니라 "계속 착용" 이다. 진행률을 함께 적어 멈춘 것과 구분되게 한다.
 // ★ 갤럭시는 심박 보고가 2분 간격이라 30버킷이 실제로는 연속 착용 60~90분이다(2026-09-08 실측).
-const CORE_TEMP_WARMUP_LABEL = "심박 누적 중";
+// ⚠ 문구가 짧은 이유 — 이 칸(`손목온도`)은 그리드 `minmax(6rem,1fr)` 이라 **최소 96px** 이고
+//   metricCell 의 `px-1` 을 빼면 글자 가용 폭이 88px 뿐이다. 9px 한글은 자당 약 9px 이라
+//   부값 줄의 `체온 ` 접두(약 20px)까지 세면 "체온 심박 누적 중 12/30"(약 98px)이 넘친다
+//   — 2026-09-08 라이브 실측에서 실제로 두 줄로 접혔다. "체온 누적 12/30" 은 약 66px 로 들어간다.
+//   전체 문장은 title 로 그대로 준다(아래 coreTempWarmupTitle).
+const CORE_TEMP_WARMUP_LABEL = "누적";
 const coreTempWarmupTitle = (w: { buckets: number; needed: number }) =>
   `심부체온 추정 준비 중 — 심박 ${w.buckets}/${w.needed}분 누적. 계속 착용하면 값이 뜹니다(갤럭시는 심박 보고가 2분 간격이라 보통 60~90분). 심박 공백이 60분을 넘으면 처음부터 다시 셉니다`;
 // 연결끊김일 때는 "센서 없음" 이 아니라 "수신 중단" 이므로 사유를 구분해 표시한다.
@@ -8420,7 +8425,7 @@ function WorkerTableRow({
               <span className="font-mono text-sm tabular-nums text-muted">
                 --<span className="ml-0.5 text-[10px]">℃</span>
               </span>
-              <span className="block text-[9px] leading-none text-muted">
+              <span className="block whitespace-nowrap text-[9px] leading-none text-muted">
                 {stale
                   ? staleLabel
                   : coreTempWarmup !== undefined
@@ -8444,7 +8449,7 @@ function WorkerTableRow({
                 종전엔 이 자리에 `손목+0.5` 를 "추정" 으로 적었는데, 그건 차트의
                 '체온(심박 추정)' 탭과 **다른 값**이라 같은 이름이 두 값을 가리켰다.
                 ⚠ 워밍업 전(칼만 없음)에는 빈칸 대신 사유를 적는다 — 빈칸은 "센서 고장" 으로 읽힌다. */}
-            <span className="block text-[9px] leading-none">
+            <span className="block whitespace-nowrap text-[9px] leading-none">
               <span className="text-muted">체온 </span>
               {coreTempEstC == null ? (
                 // 같은 사유를 두 분기가 **같은 문구**로 말한다(라벨은 CORE_TEMP_WARMUP_LABEL 한 곳).

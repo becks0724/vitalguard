@@ -86,3 +86,47 @@ test("⑥ 진행률은 표시 전용 — 판정·경보 경로에 유입되지 �
     assert.doesNotMatch(src, /coreTempWarmup|warmupBuckets/, `${name} 에 워밍업 진행률이 유입됨`);
   }
 });
+
+// ── 폭 ────────────────────────────────────────────────────────────────────────
+// 2026-09-08 라이브 실측 — 부값 줄이 "체온 심박 누적 중 12/30" 으로 두 줄에 접혔다.
+// 이 칸은 `minmax(6rem,1fr)`(최소 96px)이고 metricCell 의 px-1 을 빼면 88px 뿐이다.
+// 선례 = 75acb81(단말 전원 배지) — **문구 축약 + nowrap + 전문은 title**.
+
+test("★ ⑦ 진행률 줄이 접히지 않는다 — 두 분기 모두 nowrap", () => {
+  const at = dash.indexOf('{/* 6 체온');
+  const cell = dash.slice(at, at + 6000);
+  // 진행률을 그리는 **두 줄만** 겨냥한다 — 같은 셀의 "끊김 전 값" 줄은 이 변경의 범위가 아니다
+  //   (그쪽도 길면 접힐 수 있으나 종전 동작이라 여기서 건드리지 않는다).
+  //   ① 손목온 없는 분기 = `"미수신"` 폴백을 든 줄 · ② 손목온 있는 분기 = `체온 ` 접두를 든 줄.
+  const spanOf = (needle: string) => {
+    const at = cell.indexOf(needle);
+    assert.notEqual(at, -1, `앵커를 못 찾았다: ${needle} — 셀 구조가 바뀌었다`);
+    // 감싸는 **줄 컨테이너**(`<span className="block …">`)를 잡는다 — 바로 앞 `<span>` 을 잡으면
+    //   손목온 있는 분기에서 `체온 ` 접두 span(자식)을 집어 부모의 nowrap 을 못 본다.
+    const open = cell.lastIndexOf('<span className="block', at);
+    assert.notEqual(open, -1, `줄 컨테이너를 못 찾았다: ${needle}`);
+    return cell.slice(open, at);
+  };
+  for (const [name, needle] of [
+    // ⚠ 그냥 `"미수신"` 으로 찾으면 **주석 안의 인용**이 먼저 걸린다(같은 title 식 안에 있다).
+    //   렌더 폴백 형태(`: "미수신"}`)로 좁힌다.
+    ["손목온 없는 분기", ': "미수신"}'],
+    ["손목온 있는 분기", '"text-muted">체온 '],
+  ] as const) {
+    assert.match(
+      spanOf(needle),
+      /whitespace-nowrap/,
+      `${name} 진행률 줄에 nowrap 이 없다 — 좁은 칸에서 두 줄로 접힌다`,
+    );
+  }
+});
+
+test("⑧ 짧은 라벨의 뜻은 title 이 진다 — 축약이 정보를 지우지 않았다", () => {
+  // 라벨만 "누적" 으로 줄었으므로, 무엇이 누적되는지는 툴팁이 말해야 한다.
+  // ⚠ `;` 로 끊으면 인자 타입(`{ buckets: number; ... }`)의 세미콜론에서 먼저 멈춘다.
+  //   템플릿 리터럴 본문을 백틱으로 잡는다.
+  const t = dash.match(/const coreTempWarmupTitle[\s\S]*?`([\s\S]*?)`/)?.[1] ?? "";
+  assert.match(t, /심부체온/, "툴팁이 무엇을 준비하는지 말하지 않는다");
+  assert.match(t, /심박 \$\{w\.buckets\}\/\$\{w\.needed\}분 누적/, "툴팁에 진행률이 없다");
+  assert.match(t, /60분/, "툴팁이 세션 리셋 조건을 말하지 않는다");
+});
