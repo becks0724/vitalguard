@@ -1,0 +1,444 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "VitAlGuard 관제웹 아키텍처 (main)",
+    "output": "gwanje-main.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/becks0724/vitalguard",
+      "revision": "272f5a9a796975a11140ceb2c5d2428229777d6e"
+    },
+    "views": [
+      {
+        "id": "apple-path",
+        "label": "애플 경로",
+        "focus": [
+          "apple",
+          "api",
+          "analyzers",
+          "db"
+        ],
+        "note": "워치가 폰으로 넘기고 폰이 큐에 쌓아 JWT 로 올린다."
+      },
+      {
+        "id": "galaxy-path",
+        "label": "갤럭시 경로",
+        "focus": [
+          "galaxy",
+          "deviceauth",
+          "api",
+          "db"
+        ],
+        "note": "폰 없이 워치가 직접 올린다. QR 기기 로그인으로 토큰을 받는다."
+      },
+      {
+        "id": "cctv-path",
+        "label": "영상 경로",
+        "focus": [
+          "edge",
+          "cctvai",
+          "api"
+        ],
+        "note": "젯슨이 추론한 프레임을 cctv-ai 가 받고 서버는 통계만 폴링한다."
+      },
+      {
+        "id": "alert-path",
+        "label": "경보 전파",
+        "focus": [
+          "api",
+          "db",
+          "telegram",
+          "web"
+        ],
+        "note": "alerts 기록 관문이 텔레그램 전송을 겸한다."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "deviceauth",
+      "type": "security",
+      "label": "기기 로그인·토큰",
+      "sublabel": "QR 페어링 · wearableId 발급",
+      "tag": "app-auth/device · wearable/register",
+      "pos": [
+        330,
+        40
+      ],
+      "size": [
+        200,
+        76
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/api/app-auth/device/start/route.ts",
+          "line": 1,
+          "label": "QR 로그인 시작"
+        },
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/api/app/wearable/register/route.ts",
+          "line": 1,
+          "label": "단말 등록 A-4"
+        }
+      ]
+    },
+    {
+      "id": "analyzers",
+      "type": "backend",
+      "label": "위험 분석기",
+      "sublabel": "@safetymonitor/analyzers",
+      "tag": "순수 함수 · I/O 금지",
+      "pos": [
+        620,
+        40
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/packages/analyzers/src/index.ts",
+          "line": 1,
+          "label": "낙상·심박·SpO₂·온열·융합"
+        }
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "관제 대시보드 화면",
+      "sublabel": "React 19 브라우저",
+      "tag": "폴링 2초 · WebSocket 없음",
+      "pos": [
+        920,
+        55
+      ],
+      "size": [
+        200,
+        74
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/components/DemoDashboard.tsx",
+          "line": 5639,
+          "label": "setInterval 2000"
+        }
+      ]
+    },
+    {
+      "id": "apple",
+      "type": "external",
+      "label": "애플 워치 + 아이폰",
+      "sublabel": "워치 센서 → 폰이 큐 적재·업로드",
+      "tag": "source VitAlGuard-iPhone",
+      "pos": [
+        40,
+        115
+      ],
+      "size": [
+        210,
+        78
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/vitalguard_app/ios/Runner/VitalPipeline.swift",
+          "line": 308,
+          "label": "POST /api/app/vital"
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "관제 서버",
+      "sublabel": "Next.js 15 · 라우트 108개",
+      "tag": "Cloud Run vitalguard-dashboard",
+      "pos": [
+        620,
+        235
+      ],
+      "size": [
+        200,
+        82
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/api/app/vital/store.ts",
+          "line": 76,
+          "label": "source 화이트리스트"
+        },
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/api/app/vital/route.ts",
+          "line": 1,
+          "label": "생체 수신"
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "vital_samples · alerts 등 38개 테이블",
+      "tag": "pg Pool · DATABASE_URL",
+      "pos": [
+        920,
+        235
+      ],
+      "size": [
+        230,
+        80
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/db.ts",
+          "line": 191,
+          "label": "단일 Pool"
+        }
+      ]
+    },
+    {
+      "id": "galaxy",
+      "type": "external",
+      "label": "갤럭시 워치 (단독)",
+      "sublabel": "Samsung Health Sensor + 낙상 ONNX",
+      "tag": "source VitAlGuard-GalaxyWatch",
+      "pos": [
+        40,
+        285
+      ],
+      "size": [
+        230,
+        78
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/vitalguard_app/android/wear/src/main/kotlin/com/vitalguard/wear/pipeline/UploadPipeline.kt",
+          "line": 39,
+          "label": "source 태그"
+        },
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/vitalguard_app/android/wear/src/main/kotlin/com/vitalguard/wear/pipeline/HttpTransport.kt",
+          "line": 9,
+          "label": "POST /api/app/vital"
+        }
+      ]
+    },
+    {
+      "id": "telegram",
+      "type": "external",
+      "label": "텔레그램 경보",
+      "sublabel": "sendMessage",
+      "pos": [
+        920,
+        395
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/telegram.ts",
+          "line": 72,
+          "label": "sendTelegramMessage"
+        }
+      ]
+    },
+    {
+      "id": "gaspod",
+      "type": "external",
+      "label": "GasPod 센서",
+      "sublabel": "ESP32 · 5초 주기 전송",
+      "pos": [
+        40,
+        425
+      ],
+      "size": [
+        190,
+        74
+      ],
+      "sources": [
+        {
+          "path": "Final_GasPod/firmware/gaspod_v5/gaspod_v5.ino",
+          "line": 29,
+          "label": "SERVER_URL"
+        }
+      ]
+    },
+    {
+      "id": "publicapi",
+      "type": "external",
+      "label": "공공·외부 API",
+      "sublabel": "data.go.kr · Open-Meteo · E-Gen",
+      "pos": [
+        900,
+        540
+      ],
+      "size": [
+        220,
+        74
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/apps/dashboard-web/app/lib/g2b.ts",
+          "line": 29,
+          "label": "나라장터 입찰·계약"
+        }
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "external",
+      "label": "젯슨 엣지",
+      "sublabel": "GoPro + TensorRT PPE 추론",
+      "pos": [
+        40,
+        545
+      ],
+      "size": [
+        190,
+        74
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/cctv-ai/edge/gopro_ppe_edge.py",
+          "line": 33,
+          "label": "CCTV_BASE 로 중계"
+        }
+      ]
+    },
+    {
+      "id": "cctvai",
+      "type": "cloud",
+      "label": "cctv-ai",
+      "sublabel": "FastAPI · YOLO 3채널",
+      "tag": "Cloud Run",
+      "pos": [
+        370,
+        545
+      ],
+      "size": [
+        180,
+        74
+      ],
+      "sources": [
+        {
+          "path": "기존_조달청모듈/safetymonitor/cctv-ai/main.py",
+          "line": 823,
+          "label": "POST /cctv/ingest3"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Google Cloud Run · asia-northeast3",
+      "wraps": [
+        "api",
+        "cctvai"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "apple-post",
+      "from": "apple",
+      "to": "api",
+      "label": "POST /api/app/vital",
+      "variant": "emphasis"
+    },
+    {
+      "id": "galaxy-post",
+      "from": "galaxy",
+      "to": "api",
+      "label": "LTE 직송 POST",
+      "variant": "emphasis",
+      "labelDx": -80
+    },
+    {
+      "id": "gas-post",
+      "from": "gaspod",
+      "to": "api",
+      "label": "POST /api/gaspod/telemetry"
+    },
+    {
+      "id": "edge-push",
+      "from": "edge",
+      "to": "cctvai",
+      "label": "POST /cctv/ingest3"
+    },
+    {
+      "id": "fall-poll",
+      "from": "cctvai",
+      "to": "api",
+      "label": "낙상 통계 폴링 1.5초"
+    },
+    {
+      "id": "device-login",
+      "from": "deviceauth",
+      "to": "api",
+      "label": "기기 토큰 검증",
+      "variant": "security"
+    },
+    {
+      "id": "analyze-call",
+      "from": "api",
+      "to": "analyzers",
+      "label": "위험 판정 호출",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "persist",
+      "from": "api",
+      "to": "db",
+      "label": "표본·경보 적재",
+      "labelDy": 54
+    },
+    {
+      "id": "dashboard-poll",
+      "from": "api",
+      "to": "web",
+      "label": "2초 폴링 응답",
+      "variant": "emphasis"
+    },
+    {
+      "id": "alert-notify",
+      "from": "db",
+      "to": "telegram",
+      "label": "alerts 기록 시 전송",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "proxy-fetch",
+      "from": "api",
+      "to": "publicapi",
+      "label": "서버 프록시 조회",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "두 워치가 다른 길로 온다",
+      "items": [
+        "애플 = 워치 센서 → 아이폰 큐 → 업로드. 갤럭시 = 폰 없이 워치가 직접 업로드",
+        "서버는 source 화이트리스트로만 받는다 — 목록 밖은 저장 없이 버려진다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "확인한 사실",
+      "items": [
+        "실시간 갱신은 브라우저 폴링 — WebSocket·SSE 경로 없음",
+        "Cloud Scheduler 크론 3종과 NCP Object Storage 는 지면상 생략"
+      ]
+    }
+  ]
+}
