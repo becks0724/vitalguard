@@ -7135,6 +7135,8 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                     <span className="ml-1">명</span>
                   </span>
                   <div className="flex items-center gap-2">
+            {/* 등록 버튼은 표 보기에서만 — 지도 모드에는 슬롯(등록 대상)이 안 보여 눌러도 결과가 화면에 없다(2026-09-09 사용자 지시). */}
+            {workerView === "table" && (
             <button
               type="button"
               onClick={() => canAdminMenu && firstEmptySlot >= 0 && setQueueModalSlot(firstEmptySlot)}
@@ -7153,6 +7155,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                 <span className="ml-1 rounded-full bg-white/25 px-1.5 text-[10px]">대기 {pendingWorkers.length}</span>
               )}
             </button>
+            )}
             {workerView === "table" && (
               <button
                 type="button"
