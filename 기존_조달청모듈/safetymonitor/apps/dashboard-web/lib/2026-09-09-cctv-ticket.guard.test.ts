@@ -40,7 +40,10 @@ async function loadSigner(env: Record<string, string | undefined>) {
 
 // 게이트가 하는 검증과 같은 순서 — payload 원본 바이트에 대한 서명을 공개키로 확인한다.
 function verifyLikeGate(ticket: string, publicRaw: Buffer) {
-  const [body, sig] = ticket.split(".");
+  const dot = ticket.indexOf(".");
+  assert.ok(dot > 0, "티켓은 payload.signature 형식이어야 한다");
+  const body = ticket.slice(0, dot);
+  const sig = ticket.slice(dot + 1);
   const raw = Buffer.from(body, "base64url");
   const key = crypto.createPublicKey({
     key: Buffer.concat([SPKI_ED25519_PREFIX, publicRaw]),

@@ -6,11 +6,16 @@
 import { useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { GateLiveScreen, useGateTicket } from "./CctvGateStream";
 import { CarouselPageVisibleContext } from "./WidgetCarousel";
 
 // AI 감지 백엔드(YOLOv8 MJPEG 스트림 + 감지 통계/연결 API) 주소.
 // 빌드타임 주입(Dockerfile build-arg). 미주입/빈값이면 로컬 데모 기본값으로 폴백(|| — 빈 문자열도 폴백).
 const AI_CCTV_API = process.env.NEXT_PUBLIC_AI_CCTV_API || "http://localhost:8000";
+// CAM-03 젯슨 직결 게이트 — 표(티켓)를 검사하는 별도 주소. 미설정이면 종전 cctv-ai 경로 그대로다.
+// ★ AI_CCTV_API 를 통째로 바꾸면 CAM-01·02 와 서버 낙상 폴러까지 젯슨을 보게 되어 함께 멈춘다.
+//    그래서 CAM-03 만 자기 주소를 갖는다.
+const CAM03_GATE_API = process.env.NEXT_PUBLIC_CAM03_GATE_API || "";
 // 카메라 이름 오버라이드 로컬 저장 키.
 const NAMES_KEY = "safetymonitor.cctv.names.v1";
 
@@ -23,13 +28,16 @@ type Cam = {
   aiApi?: string;
   aiKind?: AiKind;
   aiSuffix?: string;
+  // 설정되면 이 카메라만 젯슨 게이트로 직결한다(표 검사 · 영상이 클라우드를 안 지난다).
+  gateApi?: string;
 };
 
 // 현장 주요 위치 8개소 — 1·2·3번째 타일이 AI 실시간 라이브(객체감지·낙상감지·GoPro PPE 안전모 감지).
 const CAMERAS: Cam[] = [
   { id: "CAM-01", location: "정문 출입구", aiApi: AI_CCTV_API, aiKind: "object", aiSuffix: "" },
   { id: "CAM-02", location: "지하 기계실", aiApi: AI_CCTV_API, aiKind: "fall", aiSuffix: "2" },
-  { id: "CAM-03", location: "현장 작업구역(GoPro)", aiApi: AI_CCTV_API, aiKind: "ppe", aiSuffix: "3" },
+  { id: "CAM-03", location: "현장 작업구역(GoPro)", aiApi: AI_CCTV_API, aiKind: "ppe", aiSuffix: "3",
+    gateApi: CAM03_GATE_API || undefined },
   { id: "CAM-04", location: "자재 야적장" },
   { id: "CAM-05", location: "동측 비계" },
   { id: "CAM-06", location: "콘크리트 타설구역" },
@@ -197,8 +205,32 @@ function AiLiveScreen({
   );
 }
 
+// 게이트 직결 영상 — 가시성(탭 숨김·캐러셀 다른 페이지) 판정만 여기서 하고 렌더는 GateLiveScreen 이 한다.
+// 안 보일 때 연결을 끊는 이유는 AiLiveScreen 과 같다 — 대역폭과 젯슨 부하를 아낀다.
+function GateCameraScreen({ cam, enabled, large }: { cam: Cam; enabled?: boolean | null; large?: boolean }) {
+  const pageVisible = useContext(CarouselPageVisibleContext);
+  const [tabVisible, setTabVisible] = useState(true);
+  useEffect(() => {
+    const onVisibility = () => setTabVisible(!document.hidden);
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+  return (
+    <GateLiveScreen
+      gateApi={cam.gateApi ?? ""}
+      cameraId={cam.id}
+      suffix={cam.aiSuffix ?? ""}
+      enabled={enabled}
+      visible={pageVisible && tabVisible}
+      large={large}
+    />
+  );
+}
+
 // 카메라 영상 영역 — AI 라이브 / 실 stream / 샘플 placeholder.
 function CameraScreen({ cam, enabled, large }: { cam: Cam; enabled?: boolean | null; large?: boolean }) {
+  if (cam.gateApi) return <GateCameraScreen cam={cam} enabled={enabled} large={large} />;
   if (cam.aiApi) {
     return (
       <AiLiveScreen
@@ -381,17 +413,36 @@ function CameraTile({
 const AI_POLL_MS = 8_000;
 const AI_STALE_MS = 30_000;
 
-function useAiStats<T>(aiApi: string, suffix: string) {
+// gateApi 가 주어지면 젯슨 게이트로 직결한다 — 요청마다 표를 받아 Authorization 헤더로 붙인다.
+// 훅은 조건부로 못 부르므로 컴포넌트를 가르지 않고 이 훅 안에서 경로를 나눈다.
+function useAiStats<T>(aiApi: string, suffix: string, gateApi = "", cameraId = "") {
+  const getTicket = useGateTicket(cameraId);
   const [rx, setRx] = useState<{ data: T; at: number } | null>(null);
   // 폴이 실패하면 setRx 가 안 일어나 리렌더도 없다 → 신선도 표시가 갱신되지 않는다.
   // 성패와 무관하게 갱신해 stale 판정이 화면에 반영되게 한다.
   const [probedAt, setProbedAt] = useState(0);
+  const [denied, setDenied] = useState(false);
 
   useEffect(() => {
     let active = true;
     const poll = async () => {
+      let url = `${aiApi}/cctv/stats${suffix}`;
+      let init: RequestInit | undefined;
+      if (gateApi) {
+        const t = await getTicket("read");
+        if (!active) return;
+        if (!t) {
+          // 로그인이 없거나 이 현장 권한이 없다 — 값을 지우지 않고 사유만 바꾼다.
+          setDenied(true);
+          setProbedAt(Date.now());
+          return;
+        }
+        setDenied(false);
+        url = `${gateApi}/cctv/stats${suffix}`;
+        init = { headers: { Authorization: `Bearer ${t.ticket}` }, cache: "no-store" };
+      }
       try {
-        const res = await fetch(`${aiApi}/cctv/stats${suffix}`);
+        const res = await fetch(url, init);
         if (res.ok) {
           const r = (await res.json()) as T;
           if (active) setRx({ data: r, at: Date.now() });
@@ -401,19 +452,19 @@ function useAiStats<T>(aiApi: string, suffix: string) {
       }
       if (active) setProbedAt(Date.now());
     };
-    poll();
-    const id = setInterval(poll, AI_POLL_MS);
+    void poll();
+    const id = setInterval(() => void poll(), AI_POLL_MS);
     return () => {
       active = false;
       clearInterval(id);
     };
-  }, [aiApi, suffix]);
+  }, [aiApi, suffix, gateApi, cameraId, getTicket]);
 
   const fresh = rx !== null && probedAt - rx.at <= AI_STALE_MS;
   return {
     data: fresh ? rx.data : null,
-    // 미수신 사유 — 한 번도 못 받았는가, 받다가 끊겼는가
-    label: rx === null ? "수신 대기" : "연결끊김",
+    // 미수신 사유 — 권한이 없는가, 한 번도 못 받았는가, 받다가 끊겼는가
+    label: denied ? "로그인 필요" : rx === null ? "수신 대기" : "연결끊김",
   };
 }
 
@@ -548,7 +599,8 @@ function FallDetectionStrip({ aiApi, suffix = "2" }: { aiApi: string; suffix?: s
 }
 
 // PPE(안전모) 감지 스트립(CAM-03) — 준수율·안전모/조끼 착용 현황.
-function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: string }) {
+function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
+  { aiApi: string; suffix?: string; gateApi?: string; cameraId?: string }) {
   const { data: stats, label } = useAiStats<{
     violation_count: number;
     compliance_rate: number;
@@ -557,7 +609,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3" }: { aiApi: string; suffix?: st
     hardhat_count: number;
     vest_count: number;
     person_count: number;
-  }>(aiApi, suffix);
+  }>(aiApi, suffix, gateApi, cameraId);
 
   const violations = stats?.violation_count ?? 0;
   // ★ 안전조끼는 과업 범위 외(2026-07-30 결정) — 착용 판정을 하지 않는다.
@@ -761,7 +813,8 @@ function CctvModal({
           <FallDetectionStrip aiApi={cam.aiApi} suffix={cam.aiSuffix ?? "2"} />
         )}
         {cam.aiApi && enabled !== false && cam.aiKind === "ppe" && (
-          <PpeDetectionStrip aiApi={cam.aiApi} suffix={cam.aiSuffix ?? "3"} />
+          <PpeDetectionStrip aiApi={cam.aiApi} suffix={cam.aiSuffix ?? "3"}
+            gateApi={cam.gateApi ?? ""} cameraId={cam.id} />
         )}
         {cam.aiApi && enabled !== false && cam.aiKind !== "fall" && cam.aiKind !== "ppe" && (
           <DetectionStrip aiApi={cam.aiApi} suffix={cam.aiSuffix ?? ""} />
