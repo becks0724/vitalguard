@@ -18,6 +18,10 @@ RUN pnpm install --frozen-lockfile
 # 미주입(빈값) 시 코드가 http://localhost:8000 로 폴백(현행 동작 유지).
 ARG NEXT_PUBLIC_AI_CCTV_API=""
 ENV NEXT_PUBLIC_AI_CCTV_API=$NEXT_PUBLIC_AI_CCTV_API
+# CAM-03 젯슨 직결 게이트 주소. 미지정이면 빈값 → 코드가 gateApi 를 두지 않아 기존 경로 그대로다.
+# ⚠ NEXT_PUBLIC_* 는 빌드 시 번들에 인라인된다 — 런타임 env 로는 바꿀 수 없다(재빌드 필요).
+ARG NEXT_PUBLIC_CAM03_GATE_API=""
+ENV NEXT_PUBLIC_CAM03_GATE_API=$NEXT_PUBLIC_CAM03_GATE_API
 
 # dashboard 가 import 하는 워크스페이스 패키지 먼저 빌드 → 대시보드 standalone 빌드.
 RUN pnpm --filter "@safetymonitor/schemas" --filter "@safetymonitor/analyzers" build \

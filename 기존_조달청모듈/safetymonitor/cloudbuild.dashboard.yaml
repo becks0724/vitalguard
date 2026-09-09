@@ -1,14 +1,19 @@
 # 대시보드 Cloud Build — AI CCTV 서버 URL 을 빌드타임 주입(NEXT_PUBLIC_*=빌드 시 인라인).
-# 사용: gcloud builds submit --config cloudbuild.dashboard.yaml --substitutions=_AI_URL=https://cctv-ai-xxxxx.run.app .
+# 사용: gcloud builds submit --config cloudbuild.dashboard.yaml \
+#         --substitutions=_AI_URL=https://cctv-ai-xxxxx.run.app,_CAM03_GATE=https://cctv-gate.example.invalid:8443 .
 # _AI_URL 미지정 시 빈값 → 코드가 http://localhost:8000 로 폴백(현행 동작).
 substitutions:
   _AI_URL: ""
+  # CAM-03 게이트(젯슨 직결) 주소. 미지정이면 빈값 → CAM-03 도 _AI_URL 경로를 쓴다.
+  _CAM03_GATE: ""
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
       - build
       - --build-arg
       - NEXT_PUBLIC_AI_CCTV_API=${_AI_URL}
+      - --build-arg
+      - NEXT_PUBLIC_CAM03_GATE_API=${_CAM03_GATE}
       - -t
       - asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard:latest
       - .
