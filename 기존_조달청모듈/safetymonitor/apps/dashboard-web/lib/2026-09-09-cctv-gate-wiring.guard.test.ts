@@ -79,3 +79,34 @@ test("로그인이 없으면 표를 요청하지 않는다", () => {
     "세션 토큰이 없으면 발급 요청 자체를 하지 않아야 한다",
   );
 });
+
+const db = readFileSync(join(ROOT, "lib", "db.ts"), "utf8");
+
+test("승인자 공개(open_to_approved)로는 control 을 주지 않는다", () => {
+  // 이 경로는 「승인된 전원」에게 열리는 넓은 규칙이다. 여기서 조작 권한까지 나가면
+  // 보기 권한이 곧 카메라를 끌 권한이 된다. control 은 cctv_site_role 명시 행에서만 나와야 한다.
+  const fn = db.match(/export async function cctvPermissionFor[\s\S]*?\n}/)?.[0] ?? "";
+  assert.ok(fn.length > 0, "cctvPermissionFor 를 찾지 못했다");
+  assert.ok(
+    fn.includes("return { siteId, canView: true, canControl: false };"),
+    "승인자 공개 경로는 canControl:false 로 돌려줘야 한다",
+  );
+  // canControl 을 참으로 못박은 자리는 owner 하나뿐이어야 한다.
+  // (명시 행 경로는 row.can_control 을 그대로 쓰므로 리터럴이 아니다.)
+  const hardTrue = fn.match(/canControl: true/g) ?? [];
+  assert.equal(
+    hardTrue.length, 1,
+    `canControl 을 참으로 하드코딩한 자리가 ${hardTrue.length}곳이다 — owner 하나여야 한다`,
+  );
+  assert.ok(
+    /if \(role === "owner"\) return \{ siteId, canView: true, canControl: true \};/.test(fn),
+    "그 하나는 owner 경로여야 한다",
+  );
+});
+
+test("현장 공개는 기본이 잠김 — 켜는 것이 명시적이어야 한다", () => {
+  assert.ok(
+    /open_to_approved BOOLEAN NOT NULL DEFAULT FALSE/.test(db),
+    "새 현장은 기본으로 닫혀 있어야 한다 — 기본 공개면 실 현장이 실수로 열린다",
+  );
+});
