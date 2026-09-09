@@ -18,6 +18,8 @@
 #                     승인 이후 쌓인 커밋은 출력에는 보이되 이미지에는 안 실린다.
 #                     검증도 그 트리(아카이브)에서 한다 — 워킹트리는 배포될 트리가 아니게 되므로.
 #   AI_URL=…          _AI_URL 치환 재정의(기본 cctv-ai 프로덕션)
+#   CAM03_GATE=…      CAM-03 젯슨 직결 게이트 주소. 빈값이면 CAM-03 도 종전 _AI_URL 경로를 쓴다.
+#                     ⚠ NEXT_PUBLIC_* 라 빌드타임에 번들로 들어간다 — 런타임 env 로는 못 바꾼다.
 set -euo pipefail
 
 REGION=asia-northeast3
@@ -25,6 +27,8 @@ SERVICE=vitalguard-dashboard
 IMAGE_REPO=asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard
 LIVE_URL="https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
 AI_URL="${AI_URL:-https://cctv-ai-569797426568.asia-northeast3.run.app}"
+# 기본 빈값 — 지정하지 않으면 CAM-03 배선이 꺼진 채(기존 동작) 나간다.
+CAM03_GATE="${CAM03_GATE:-}"
 SUBTREE="기존_조달청모듈/safetymonitor"
 
 export PATH="~/Documents/google-cloud-sdk/bin:$PATH"
@@ -206,14 +210,14 @@ else
   rm -f "$VLOG"
 fi
 
-say "3/5 빌드 (Cloud Build · _AI_URL=$AI_URL)"
+say "3/5 빌드 (Cloud Build · _AI_URL=$AI_URL · _CAM03_GATE=${CAM03_GATE:-<없음>})"
 if [ "${DRY_RUN:-}" = 1 ]; then
-  echo "DRY_RUN> gcloud builds submit --config $TMP/cloudbuild.dashboard.yaml --substitutions=_AI_URL=$AI_URL $TMP"
+  echo "DRY_RUN> gcloud builds submit --config $TMP/cloudbuild.dashboard.yaml --substitutions=_AI_URL=$AI_URL,_CAM03_GATE=$CAM03_GATE $TMP"
   DIGEST="sha256:0000000000000000000000000000000000000000000000000000000000000000"
 else
   BLOG=$(mktemp)
   gcloud builds submit --config "$TMP/cloudbuild.dashboard.yaml" \
-    --substitutions=_AI_URL="$AI_URL" "$TMP" >"$BLOG" 2>&1 \
+    --substitutions=_AI_URL="$AI_URL",_CAM03_GATE="$CAM03_GATE" "$TMP" >"$BLOG" 2>&1 \
     || { tail -40 "$BLOG"; die "빌드 실패"; }
   grep -q "SUCCESS" "$BLOG" || { tail -40 "$BLOG"; die "빌드 로그에 SUCCESS 없음"; }
   DIGEST=$(grep -oE 'digest: sha256:[0-9a-f]{64}' "$BLOG" | tail -1 | awk '{print $2}')

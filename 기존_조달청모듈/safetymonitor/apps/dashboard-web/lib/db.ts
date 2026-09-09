@@ -1007,6 +1007,56 @@ async function initSchema(): Promise<void> {
       slots TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
+
+    -- CCTV 현장 — 카메라가 속한 단위이자 권한의 단위.
+    -- ⚠ open_to_approved = 승인된 가입자 전원에게 '보기'를 준다. 시연·테스트 현장 전용이고
+    --    실 현장은 반드시 false 여야 한다. true 이면 「해당 현장의 인가받은 관리자만」이
+    --    「승인된 전원」으로 넓어진다. 현장마다 명시적으로 켜야 실수로 넓어지지 않는다.
+    --    ★ 이 플래그로도 control(연결 토글)은 절대 주지 않는다 — 명시 행에서만 나온다.
+    CREATE TABLE IF NOT EXISTS cctv_site (
+      site_id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      open_to_approved BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
+    -- CCTV 카메라 대장 — 지금까지 카메라는 프런트 상수 배열이라 서버가 존재를 몰랐다.
+    -- 티켓 발급이 "어느 현장의 어느 카메라인가"를 서버에서 판정하려면 서버가 알아야 한다.
+    -- ★ 클라이언트가 보낸 site 는 믿지 않는다. camera_id 로 여기서 현장을 되찾는다.
+    CREATE TABLE IF NOT EXISTS cctv_camera (
+      camera_id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
+    -- 사용자↔현장 CCTV 권한 — 「해당 현장의 인가받은 관리자만」(조건 ⑤)의 근거.
+    -- can_view(영상·통계)와 can_control(연결 토글)을 나눈다. 나누지 않으면 보기 권한만 준
+    -- 사람이 카메라를 끌 수 있다. 게이트도 read/control 티켓을 따로 검사한다.
+    -- ⚠ role=owner(부트스트랩 계정)는 행이 없어도 전 현장 허용이다 — 아무도 못 보는 상태를
+    --    피하기 위한 것이며, 발급은 cctv_ticket_audit 에 그대로 남는다.
+    CREATE TABLE IF NOT EXISTS cctv_site_role (
+      username TEXT NOT NULL,
+      site_id TEXT NOT NULL,
+      can_view BOOLEAN NOT NULL DEFAULT TRUE,
+      can_control BOOLEAN NOT NULL DEFAULT FALSE,
+      granted_by TEXT,
+      granted_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      PRIMARY KEY (username, site_id)
+    );
+
+    -- 티켓 발급 감사 — 누가 언제 어느 카메라 티켓을 받았고, 거절됐다면 왜인지.
+    -- 영상 접근은 사후에 "누가 봤나"를 답할 수 있어야 한다.
+    CREATE TABLE IF NOT EXISTS cctv_ticket_audit (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      camera_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      granted BOOLEAN NOT NULL,
+      reason TEXT,
+      issued_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_cctv_audit_user ON cctv_ticket_audit(username, issued_at);
   `);
   } finally {
     // 커넥션을 풀에 돌려주기 전 세션 설정 복구 — 남기면 일반 쿼리도 3초에 잠금 포기하게 된다.
@@ -5009,4 +5059,115 @@ export async function consumeDeviceLogin(
   const r = rows[0];
   if (!r || !r.token) return null;
   return { token: r.token, workerId: r.worker_id, workerName: r.worker_name };
+}
+
+// ── CCTV 카메라 권한 (직결 게이트 티켓 발급용) ──────────────────────────────
+
+export type CctvPermission = { siteId: string; canView: boolean; canControl: boolean };
+
+/** 카메라가 속한 현장. 없으면 null — 클라이언트가 보낸 site 를 신뢰하지 않기 위한 조회다. */
+export async function cctvCameraSite(cameraId: string): Promise<string | null> {
+  const r = await q<{ site_id: string }>(
+    "SELECT site_id FROM cctv_camera WHERE camera_id = $1",
+    [cameraId],
+  );
+  return r.rows[0]?.site_id ?? null;
+}
+
+/**
+ * (사용자, 카메라) 에 대한 실제 권한. 카메라를 모르면 null.
+ *
+ * 판정 순서 — 앞에서 정해지면 뒤는 보지 않는다.
+ *   1) owner(env 부트스트랩 계정) → 전부 허용. 아무도 못 보는 상태를 피하기 위한 것이며 감사에 남는다
+ *   2) cctv_site_role 에 행이 있으면 그 행이 정본
+ *   3) 현장이 open_to_approved 이고 가입 승인된 사용자면 → 보기만
+ *   4) 그 밖에는 거부
+ * ★ control 은 2) 에서만 나온다. 3) 으로는 절대 주지 않는다 — 보기 권한이 곧 조작 권한이 되면 안 된다.
+ */
+export async function cctvPermissionFor(
+  username: string,
+  role: "owner" | "admin",
+  cameraId: string,
+): Promise<CctvPermission | null> {
+  const siteId = await cctvCameraSite(cameraId);
+  if (!siteId) return null;
+  if (role === "owner") return { siteId, canView: true, canControl: true };
+
+  const r = await q<{ can_view: boolean; can_control: boolean }>(
+    "SELECT can_view, can_control FROM cctv_site_role WHERE username = $1 AND site_id = $2",
+    [username, siteId],
+  );
+  const row = r.rows[0];
+  if (row) return { siteId, canView: row.can_view, canControl: row.can_control };
+
+  // 명시 행이 없다 — 이 현장이 승인자에게 열려 있고 그 사용자가 승인 상태일 때만 보기를 준다.
+  const open = await q<{ ok: boolean }>(
+    `SELECT (s.open_to_approved AND u.status = 'approved') AS ok
+       FROM cctv_site s JOIN users u ON u.username = $1
+      WHERE s.site_id = $2`,
+    [username, siteId],
+  );
+  if (open.rows[0]?.ok) return { siteId, canView: true, canControl: false };
+  return { siteId, canView: false, canControl: false };
+}
+
+/** 현장 등록(멱등). open_to_approved 는 시연·테스트 현장에서만 켠다. */
+export async function upsertCctvSite(
+  siteId: string,
+  label: string,
+  openToApproved: boolean,
+): Promise<void> {
+  await q(
+    `INSERT INTO cctv_site (site_id, label, open_to_approved) VALUES ($1, $2, $3)
+     ON CONFLICT (site_id) DO UPDATE
+       SET label = EXCLUDED.label, open_to_approved = EXCLUDED.open_to_approved`,
+    [siteId, label, openToApproved],
+  );
+}
+
+/** 티켓 발급·거절 기록. 거절도 남긴다 — 시도 자체가 감사 대상이다. */
+export async function recordCctvTicketAudit(input: {
+  username: string;
+  cameraId: string;
+  scope: string;
+  granted: boolean;
+  reason?: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO cctv_ticket_audit (username, camera_id, scope, granted, reason)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.username, input.cameraId, input.scope, input.granted, input.reason ?? null],
+  );
+}
+
+/** 카메라 등록(멱등). 현장·이름이 바뀌면 갱신한다. */
+export async function upsertCctvCamera(
+  cameraId: string,
+  siteId: string,
+  label: string,
+): Promise<void> {
+  await q(
+    `INSERT INTO cctv_camera (camera_id, site_id, label) VALUES ($1, $2, $3)
+     ON CONFLICT (camera_id) DO UPDATE SET site_id = EXCLUDED.site_id, label = EXCLUDED.label`,
+    [cameraId, siteId, label],
+  );
+}
+
+/** 현장 권한 부여(멱등). */
+export async function grantCctvSiteRole(input: {
+  username: string;
+  siteId: string;
+  canView: boolean;
+  canControl: boolean;
+  grantedBy: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO cctv_site_role (username, site_id, can_view, can_control, granted_by)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (username, site_id) DO UPDATE
+       SET can_view = EXCLUDED.can_view,
+           can_control = EXCLUDED.can_control,
+           granted_by = EXCLUDED.granted_by`,
+    [input.username, input.siteId, input.canView, input.canControl, input.grantedBy],
+  );
 }

@@ -1,0 +1,138 @@
+// 구조적 재발 방지 — CCTV 게이트 티켓의 서명·클레임 불변식 가드.
+//
+// 배경 — 젯슨 직결에서 「로그인한, 그 현장의 인가받은 관리자만 영상을 본다」가 성립하는 지점은
+// 티켓 발급 하나뿐이다. 서명이 없거나 클레임이 비면 게이트는 통과시킬 근거를 잃는데,
+// 그 실패는 화면에서 "영상이 안 나온다"로만 보여 원인이 티켓인지 회선인지 구별되지 않는다.
+//
+// 왜 가드 테스트인가 — 검증은 젯슨의 Python 게이트가 하므로 이 저장소의 tsc·lint·기존 테스트가
+// 전부 통과하는 채로 서명이 깨질 수 있다(예: raw 키를 PKCS#8 로 감싸는 접두사가 틀려도
+// createPrivateKey 가 던지면 null 을 돌려주고 API 는 503 을 낼 뿐이다).
+// 여기서는 게이트가 하는 검증을 같은 방식으로 재현해 고정한다.
+import { strict as assert } from "node:assert";
+import crypto from "node:crypto";
+import { test } from "node:test";
+
+import { signTicket, ticketSigningReady } from "./cctv-ticket";
+
+// 게이트(cctv_gate.py)가 공개키를 raw 32바이트로 읽으므로 여기서도 raw 로 다룬다.
+const SPKI_ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+function freshKey(): { hex: string; publicRaw: Buffer } {
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ed25519");
+  const rawPriv = privateKey
+    .export({ format: "der", type: "pkcs8" })
+    .subarray(-32);
+  const rawPub = publicKey.export({ format: "der", type: "spki" }).subarray(-32);
+  return { hex: rawPriv.toString("hex"), publicRaw: rawPub };
+}
+
+// ★ 모듈을 다시 적재하지 않는다.
+//   전에는 import("./cctv-ticket.ts?k=<uuid>") 로 캐시를 비켜 가려 했는데, 그 수법이 통하는지는
+//   "어떻게 실행하느냐"에 달려 있었다 — dashboard-web 단독 실행에서는 새 인스턴스가 만들어져 통과하고,
+//   워크스페이스 전체 실행에서는 캐시가 살아 앞 테스트의 키를 그대로 들고 통과해 버렸다.
+//   즉 초록불이 코드가 아니라 실행 방식을 증명하고 있었다(2026-09-09 배포 게이트 차단).
+//   이제 모듈이 호출 시점에 env 를 읽으므로 값만 갈아 끼우면 된다.
+function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const k of Object.keys(env)) saved[k] = process.env[k];
+  for (const [k, v] of Object.entries(env)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+// 게이트가 하는 검증과 같은 순서 — payload 원본 바이트에 대한 서명을 공개키로 확인한다.
+function verifyLikeGate(ticket: string, publicRaw: Buffer) {
+  const dot = ticket.indexOf(".");
+  assert.ok(dot > 0, "티켓은 payload.signature 형식이어야 한다");
+  const body = ticket.slice(0, dot);
+  const sig = ticket.slice(dot + 1);
+  const raw = Buffer.from(body, "base64url");
+  const key = crypto.createPublicKey({
+    key: Buffer.concat([SPKI_ED25519_PREFIX, publicRaw]),
+    format: "der",
+    type: "spki",
+  });
+  const ok = crypto.verify(null, raw, key, Buffer.from(sig, "base64url"));
+  return { ok, payload: JSON.parse(raw.toString("utf8")) as Record<string, unknown> };
+}
+
+test("서명한 티켓을 게이트와 같은 방식으로 검증하면 통과한다", () => {
+  const k = freshKey();
+  const signed = withEnv({ CCTV_TICKET_KEY: k.hex, CCTV_TICKET_KID: "v1" }, () => signTicket({
+    cameraId: "CAM-03", siteId: "SITE-01", scope: "read", subject: "admin6861",
+  }));
+  assert.ok(signed, "서명키가 있으면 티켓이 나와야 한다");
+  const { ok } = verifyLikeGate(signed.ticket, k.publicRaw);
+  assert.equal(ok, true, "게이트가 검증할 수 있는 서명이어야 한다");
+});
+
+test("클레임에 카메라·현장·권한·주체가 전부 들어간다", () => {
+  const k = freshKey();
+  const signed = withEnv({ CCTV_TICKET_KEY: k.hex, CCTV_TICKET_KID: "v2" }, () => signTicket({
+    cameraId: "CAM-03", siteId: "SITE-07", scope: "control", subject: "admin6861",
+  }))!;
+  const { payload } = verifyLikeGate(signed.ticket, k.publicRaw);
+  // 게이트는 이 이름들을 그대로 읽는다 — 하나라도 바뀌면 조용히 401/403 이 된다.
+  assert.equal(payload.aud, "CAM-03");
+  assert.equal(payload.sid, "SITE-07");
+  assert.equal(payload.scp, "control");
+  assert.equal(payload.sub, "admin6861");
+  assert.equal(payload.kid, "v2");
+  assert.equal(typeof payload.jti, "string", "1회 소비를 위해 jti 가 있어야 한다");
+  assert.ok(Number(payload.exp) > Number(payload.nbf), "exp 는 nbf 보다 뒤여야 한다");
+});
+
+test("수명은 상한을 넘지 않는다 — 긴 티켓은 탈취 시 그만큼 오래 쓰인다", () => {
+  const k = freshKey();
+  const signed = withEnv({ CCTV_TICKET_KEY: k.hex, CCTV_TICKET_TTL_SEC: "99999" }, () => signTicket({
+    cameraId: "CAM-03", siteId: "SITE-01", scope: "read", subject: "u",
+  }))!;
+  assert.ok(signed.ttlSec <= 300, `수명 상한 300초를 넘었다: ${signed.ttlSec}`);
+});
+
+test("서명키가 없으면 티켓을 만들지 않는다", () => {
+  // ★ 앞 테스트에서 유효 키를 썼으므로, 여기서 거부가 나오려면 모듈이 지금 값을 다시 읽어야 한다.
+  //   이 테스트가 곧 "캐시가 낡은 키를 붙들고 있지 않다"는 증명이다.
+  for (const bad of [undefined, "", "not-hex", "ab".repeat(10)]) {
+    withEnv({ CCTV_TICKET_KEY: bad }, () => {
+      assert.equal(ticketSigningReady(), false, `키 "${bad}" 는 거부되어야 한다`);
+      assert.equal(
+        signTicket({ cameraId: "CAM-03", siteId: "SITE-01", scope: "read", subject: "u" }),
+        null,
+        "서명 없는 티켓을 흘리면 게이트가 통과시킬 근거가 없다",
+      );
+    });
+  }
+});
+
+test("jti 는 발급마다 달라야 한다 — 같으면 두 번째가 재사용으로 거부된다", () => {
+  const k = freshKey();
+  const seen = new Set<string>();
+  withEnv({ CCTV_TICKET_KEY: k.hex }, () => {
+    for (let i = 0; i < 20; i += 1) {
+      const s = signTicket({
+        cameraId: "CAM-03", siteId: "SITE-01", scope: "read", subject: "u",
+      })!;
+      seen.add(String(verifyLikeGate(s.ticket, k.publicRaw).payload.jti));
+    }
+  });
+  assert.equal(seen.size, 20, "jti 가 겹치면 정상 재연결이 재사용으로 막힌다");
+});
+
+test("다른 키로는 검증되지 않는다 — 게이트가 공개키만 갖는 의미", () => {
+  const k = freshKey();
+  const other = freshKey();
+  const signed = withEnv({ CCTV_TICKET_KEY: k.hex }, () => signTicket({
+    cameraId: "CAM-03", siteId: "SITE-01", scope: "read", subject: "u",
+  }))!;
+  assert.equal(verifyLikeGate(signed.ticket, other.publicRaw).ok, false);
+});
