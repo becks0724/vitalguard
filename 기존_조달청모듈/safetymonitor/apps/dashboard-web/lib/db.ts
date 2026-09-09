@@ -1007,6 +1007,44 @@ async function initSchema(): Promise<void> {
       slots TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
+
+    -- CCTV 카메라 대장 — 지금까지 카메라는 프런트 상수 배열이라 서버가 존재를 몰랐다.
+    -- 티켓 발급이 "어느 현장의 어느 카메라인가"를 서버에서 판정하려면 서버가 알아야 한다.
+    -- ★ 클라이언트가 보낸 site 는 믿지 않는다. camera_id 로 여기서 현장을 되찾는다.
+    CREATE TABLE IF NOT EXISTS cctv_camera (
+      camera_id TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
+    -- 사용자↔현장 CCTV 권한 — 「해당 현장의 인가받은 관리자만」(조건 ⑤)의 근거.
+    -- can_view(영상·통계)와 can_control(연결 토글)을 나눈다. 나누지 않으면 보기 권한만 준
+    -- 사람이 카메라를 끌 수 있다. 게이트도 read/control 티켓을 따로 검사한다.
+    -- ⚠ role=owner(부트스트랩 계정)는 행이 없어도 전 현장 허용이다 — 아무도 못 보는 상태를
+    --    피하기 위한 것이며, 발급은 cctv_ticket_audit 에 그대로 남는다.
+    CREATE TABLE IF NOT EXISTS cctv_site_role (
+      username TEXT NOT NULL,
+      site_id TEXT NOT NULL,
+      can_view BOOLEAN NOT NULL DEFAULT TRUE,
+      can_control BOOLEAN NOT NULL DEFAULT FALSE,
+      granted_by TEXT,
+      granted_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      PRIMARY KEY (username, site_id)
+    );
+
+    -- 티켓 발급 감사 — 누가 언제 어느 카메라 티켓을 받았고, 거절됐다면 왜인지.
+    -- 영상 접근은 사후에 "누가 봤나"를 답할 수 있어야 한다.
+    CREATE TABLE IF NOT EXISTS cctv_ticket_audit (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      camera_id TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      granted BOOLEAN NOT NULL,
+      reason TEXT,
+      issued_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_cctv_audit_user ON cctv_ticket_audit(username, issued_at);
   `);
   } finally {
     // 커넥션을 풀에 돌려주기 전 세션 설정 복구 — 남기면 일반 쿼리도 3초에 잠금 포기하게 된다.
@@ -5009,4 +5047,83 @@ export async function consumeDeviceLogin(
   const r = rows[0];
   if (!r || !r.token) return null;
   return { token: r.token, workerId: r.worker_id, workerName: r.worker_name };
+// ── CCTV 카메라 권한 (직결 게이트 티켓 발급용) ──────────────────────────────
+
+export type CctvPermission = { siteId: string; canView: boolean; canControl: boolean };
+
+/** 카메라가 속한 현장. 없으면 null — 클라이언트가 보낸 site 를 신뢰하지 않기 위한 조회다. */
+export async function cctvCameraSite(cameraId: string): Promise<string | null> {
+  const r = await q<{ site_id: string }>(
+    "SELECT site_id FROM cctv_camera WHERE camera_id = $1",
+    [cameraId],
+  );
+  return r.rows[0]?.site_id ?? null;
+}
+
+/**
+ * (사용자, 카메라) 에 대한 실제 권한. 카메라를 모르면 null.
+ * owner 는 행이 없어도 전 현장 허용 — 부트스트랩용이며 발급은 감사에 남는다.
+ */
+export async function cctvPermissionFor(
+  username: string,
+  role: "owner" | "admin",
+  cameraId: string,
+): Promise<CctvPermission | null> {
+  const siteId = await cctvCameraSite(cameraId);
+  if (!siteId) return null;
+  if (role === "owner") return { siteId, canView: true, canControl: true };
+  const r = await q<{ can_view: boolean; can_control: boolean }>(
+    "SELECT can_view, can_control FROM cctv_site_role WHERE username = $1 AND site_id = $2",
+    [username, siteId],
+  );
+  const row = r.rows[0];
+  if (!row) return { siteId, canView: false, canControl: false };
+  return { siteId, canView: row.can_view, canControl: row.can_control };
+}
+
+/** 티켓 발급·거절 기록. 거절도 남긴다 — 시도 자체가 감사 대상이다. */
+export async function recordCctvTicketAudit(input: {
+  username: string;
+  cameraId: string;
+  scope: string;
+  granted: boolean;
+  reason?: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO cctv_ticket_audit (username, camera_id, scope, granted, reason)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [input.username, input.cameraId, input.scope, input.granted, input.reason ?? null],
+  );
+}
+
+/** 카메라 등록(멱등). 현장·이름이 바뀌면 갱신한다. */
+export async function upsertCctvCamera(
+  cameraId: string,
+  siteId: string,
+  label: string,
+): Promise<void> {
+  await q(
+    `INSERT INTO cctv_camera (camera_id, site_id, label) VALUES ($1, $2, $3)
+     ON CONFLICT (camera_id) DO UPDATE SET site_id = EXCLUDED.site_id, label = EXCLUDED.label`,
+    [cameraId, siteId, label],
+  );
+}
+
+/** 현장 권한 부여(멱등). */
+export async function grantCctvSiteRole(input: {
+  username: string;
+  siteId: string;
+  canView: boolean;
+  canControl: boolean;
+  grantedBy: string;
+}): Promise<void> {
+  await q(
+    `INSERT INTO cctv_site_role (username, site_id, can_view, can_control, granted_by)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (username, site_id) DO UPDATE
+       SET can_view = EXCLUDED.can_view,
+           can_control = EXCLUDED.can_control,
+           granted_by = EXCLUDED.granted_by`,
+    [input.username, input.siteId, input.canView, input.canControl, input.grantedBy],
+  );
 }
