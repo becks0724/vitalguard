@@ -11,8 +11,13 @@
 // ⚠ SITE-01 은 시험 현장이라 open_to_approved=true 다 — 가입 승인된 사용자면 볼 수 있다.
 //    실 현장을 추가할 때는 반드시 false 로 두고 cctv_site_role 에 사람을 명시한다.
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
-import pg from "pg";
+
+// pg 는 워크스페이스 패키지(apps/dashboard-web)에 있다 — 저장소 루트에서 실행해도 찾도록 한다.
+const pg = createRequire(
+  path.join(process.cwd(), "apps", "dashboard-web", "package.json"),
+)("pg");
 
 const COMMIT = process.argv.includes("--commit");
 
@@ -22,6 +27,26 @@ const SITES = [
 const CAMERAS = [
   { cameraId: "CAM-03", siteId: "SITE-01", label: "현장 작업구역(GoPro)" },
 ];
+
+// ★ 표를 만드는 코드(ensureSchema)가 아직 배포되지 않았을 수 있다. 그래서 여기서 먼저 만든다.
+//   문장을 손으로 옮겨 적지 않고 lib/db.ts 에서 그대로 뽑는다 — 두 벌이 되면 반드시 어긋난다.
+//   전부 CREATE TABLE IF NOT EXISTS 라 배포 뒤 ensureSchema 가 다시 돌아도 아무 일도 하지 않는다.
+const CCTV_TABLES = ["cctv_site", "cctv_camera", "cctv_site_role", "cctv_ticket_audit"];
+
+function cctvDdl() {
+  const src = fs.readFileSync(
+    path.join(process.cwd(), "apps", "dashboard-web", "lib", "db.ts"), "utf8");
+  const nowIso = `to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+  const out = CCTV_TABLES.map((t) => {
+    const m = src.match(new RegExp(`CREATE TABLE IF NOT EXISTS ${t} \\([\\s\\S]*?\\n    \\);`));
+    if (!m) throw new Error(`${t} 의 DDL 을 lib/db.ts 에서 찾지 못했다 — 형식이 바뀌었는지 확인할 것`);
+    return m[0].replaceAll("${NOW_ISO}", nowIso);
+  });
+  const idx = src.match(/CREATE INDEX IF NOT EXISTS idx_cctv_audit_user[^;]*;/);
+  if (!idx) throw new Error("감사 인덱스 DDL 을 찾지 못했다");
+  out.push(idx[0]);
+  return out;
+}
 
 function databaseUrl() {
   if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
@@ -38,6 +63,14 @@ await client.connect();
 try {
   await client.query("BEGIN");
   await client.query("SET LOCAL lock_timeout = '3s'");
+
+  const before = await client.query(
+    `SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tablename = ANY($1)`,
+    [CCTV_TABLES],
+  );
+  const ddl = cctvDdl();
+  for (const s of ddl) await client.query(s);
+  console.log(`표 ${before.rows[0].n}/${CCTV_TABLES.length}개가 이미 있었고, DDL ${ddl.length}문장을 적용했다`);
 
   for (const s of SITES) {
     await client.query(
