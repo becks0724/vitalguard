@@ -188,18 +188,23 @@ class PasswordHandlingTest {
     }
 }
 
-/** 로그아웃·설정 페이지 배치 가드. */
+/** 로그아웃·로그인 페이지 배치 가드. */
 class SettingsPlacementTest {
     private val pages = File("src/main/kotlin/com/vitalguard/wear/ui/DetailPages.kt").readText()
     private val activity = File("src/main/kotlin/com/vitalguard/wear/MainActivity.kt").readText()
     private val cfg = File("src/main/kotlin/com/vitalguard/wear/pipeline/ConfigStore.kt").readText()
 
+    /**
+     * 09-09 사용자 지시 — 맨 끝 로그인/로그아웃 면을 **0번으로 옮겼다**(08-26 "맨 아래" 지시를 대체).
+     * ⚠ 더한 것이 아니라 **옮긴** 것이다. 두 곳에 그리면 화면 깨우기 조건(currentPage == 0)이 깨진다.
+     */
     @Test
-    fun `설정이 스와이프 맨 끝에 있다`() {
-        assertTrue("페이지 수가 7이 아니다", pages.contains("val DETAIL_PAGE_COUNT = 7"))
-        // when 의 마지막 분기(else)가 설정이어야 '맨 끝' 이다.
-        val tail = activity.substringAfter("5 -> StepsDetailPage(vitals)")
-        assertTrue("맨 끝 페이지가 설정이 아니다", tail.trimStart().startsWith("else -> SettingsPage"))
+    fun `로그인·로그아웃이 스와이프 맨 앞에 있고 한 곳뿐이다`() {
+        assertTrue("페이지 수가 7이 아니다 — 옮긴 것이지 더한 게 아니다", pages.contains("val DETAIL_PAGE_COUNT = 7"))
+        val head = activity.substringAfter("when (page)").substringBefore("1 -> VitalScreen")
+        assertTrue("0번이 로그인/로그아웃이 아니다", head.contains("0 -> LoginPage"))
+        assertEquals("로그인/로그아웃 면이 두 곳에 배선됐다", 1, Regex("-> LoginPage").findAll(activity).count())
+        assertFalse("설정 면이 페이저에 남아 있다 — 옮기지 않고 복제했다", activity.contains("-> SettingsPage"))
     }
 
     @Test

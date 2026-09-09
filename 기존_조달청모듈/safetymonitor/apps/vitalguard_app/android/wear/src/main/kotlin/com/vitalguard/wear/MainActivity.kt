@@ -41,9 +41,9 @@ import com.vitalguard.wear.ui.TempDetailPage
 import com.vitalguard.wear.ui.TimelinePoint
 import com.vitalguard.wear.ui.VitalScreen
 import com.vitalguard.wear.ui.VitalUiState
+import com.vitalguard.wear.ui.LoginPage
 import com.vitalguard.wear.ui.LoginScreen
 import com.vitalguard.wear.ui.LoginUiState
-import com.vitalguard.wear.ui.SettingsPage
 import com.vitalguard.wear.pipeline.AuthClient
 import com.vitalguard.wear.pipeline.LoginResult
 import androidx.lifecycle.lifecycleScope
@@ -406,12 +406,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            // ★ 페이저 상태를 분기 **밖**에 둔다(09-09) — 아래 화면 깨우기·폴링 중단·자동 이동이
+            //   모두 현재 페이지를 봐야 하고, 직접 입력 전체화면을 다녀와도 페이지가 살아 있어야 한다.
+            //   로그인돼 있으면 요약(1번)에서 시작한다 — 매번 로그인 면을 밀어 내리지 않게(사용자 선택).
+            val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
+                initialPage = if (workerId.isNullOrBlank()) 0 else 1,
+            ) { DETAIL_PAGE_COUNT }
+
             // ★ QR 로그인 동안만 화면을 깨워 둔다(09-07 사용자 승인 · C안).
-            //   화면이 꺼지면 onStop 이 폴링 코루틴을 끊어(`onStop` 참조) 승인이 도착하기 전에
+            //   화면이 꺼지면 폴링 코루틴이 끊겨(아래 페이지 이탈 처리·`onStop` 참조) 승인이 도착하기 전에
             //   QR 이 EXPIRED 가 된다 — 워치8 실측 6/6 실패. 승인 소요 16~25초 vs 화면 타임아웃 15초.
+            // ⚠ 판정 축이 `showLogin` 에서 **현재 페이지**로 옮겨졌다(09-09 로그인이 0번 면이 되면서).
+            //   `IDLE` 을 빼는 것이 핵심이다 — 로그인을 마치고 0번 면에 머물 때도 참이 되면
+            //   화면이 영영 안 꺼진다. QR 이 **실제로 보이는 동안만** 건다.
             // ⚠ 위 앰비언트 주석의 금지(08-25)는 **상시 KEEP_SCREEN_ON** 을 막는 것이다.
             //   여기서는 QR 화면을 벗어나는 즉시 플래그를 걷으므로 수집 화면의 앰비언트는 그대로 산다.
-            val qrAwake = showLogin && login.mode == LoginMode.QR &&
+            val qrAwake = !showLogin && !showDiagnostics && pagerState.currentPage == 0 &&
+                login.mode == LoginMode.QR &&
                 (login.qr.phase == QrPhase.LOADING || login.qr.phase == QrPhase.WAITING)
             DisposableEffect(qrAwake) {
                 if (qrAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -419,7 +430,27 @@ class MainActivity : ComponentActivity() {
                 onDispose { window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
             }
 
+            // ★ 로그인 면을 벗어나면 폴링을 끊는다 — 종전엔 `onStop` 이 그 역할이었는데
+            //   로그인이 **페이지**가 된 뒤로 페이지를 넘겨도 onStop 이 오지 않는다(액티비티가 산다).
+            //   백그라운드 폴링 없음 계약을 이 자리에서 다시 세운다.
+            LaunchedEffect(pagerState.currentPage) {
+                if (pagerState.currentPage != 0 && qrJob?.isActive == true) {
+                    qrJob?.cancel()
+                    login = login.copy(qr = login.qr.copy(phase = QrPhase.EXPIRED, secondsLeft = 0))
+                }
+            }
+
+            // ★ 로그인이 끝나면 요약(1번)으로 내려간다(09-09 사용자 지시).
+            //   QR 승인·직접 입력이 같은 경로다 — 둘 다 신원이 생기는 것으로 끝나기 때문이다.
+            LaunchedEffect(workerId) {
+                if (!workerId.isNullOrBlank() && pagerState.currentPage == 0) {
+                    pagerState.animateScrollToPage(1)
+                }
+            }
+
             if (showLogin) {
+                // ★ 전체화면으로 남는 것은 **직접 입력뿐**이다(09-09) — `ManualLoginPane` 이
+                //   세로 스크롤 목록이라 세로 페이저 안에 넣으면 제스처가 싸운다. QR 은 0번 면이 그린다.
                 LoginScreen(
                     state = login,
                     onEditId = { askText(idInputLauncher, KEY_ID, "아이디") },
@@ -442,42 +473,51 @@ class MainActivity : ComponentActivity() {
                 )
             } else {
                 // ★ 세로 페이저 — 가로는 워치 표준 '뒤로가기' 와 충돌해 앱이 닫힌다.
-                //   0=요약(한눈) · 1~4=상세(차트·통계). 순서를 바꾸면 익힌 위치가 흐트러진다.
-                val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState {
-                    DETAIL_PAGE_COUNT
-                }
+                //   0=로그인/로그아웃 · 1=요약(한눈) · 2~6=상세(차트·통계).
+                //   순서를 바꾸면 익힌 위치가 흐트러진다 — 늘릴 때는 상세 뒤에만 더한다.
+                //   (상태 선언은 위로 올라갔다 — 화면 깨우기·폴링 중단이 현재 페이지를 봐야 한다.)
                 // 앰비언트에서는 전체를 어둡게 — 밝은 면적을 줄이라는 Wear 지침.
                 androidx.compose.foundation.layout.Box(
                     androidx.compose.ui.Modifier.alpha(if (ambient) com.vitalguard.wear.ui.AMBIENT_ALPHA else 1f),
                 ) {
                 androidx.wear.compose.material3.VerticalPagerScaffold(
                     pagerState = pagerState,
-                    // ★ 요약면에서는 페이지 점을 안 그린다 — 우측 걸음 눈금과 같은 자리라
+                    // ★ 요약면(1번)에서는 페이지 점을 안 그린다 — 우측 걸음 눈금과 같은 자리라
                     //   겹쳐서 둘 다 못 읽는다(08-25 사용자 보고). 상세면에서는 그대로 둔다.
+                    // ⚠ 요약이 0→1번으로 밀렸으므로 조건도 함께 옮긴다 — 번호만 밀면 그 버그가 되살아난다.
+                    //   로그인면(0번)도 QR 카드가 화면을 꽉 채워 함께 뺀다.
                     pageIndicator = {
-                        if (pagerState.currentPage != 0) {
+                        if (pagerState.currentPage > 1) {
                             androidx.wear.compose.material3.VerticalPageIndicator(pagerState)
                         }
                     },
                 ) {
                     androidx.wear.compose.foundation.pager.VerticalPager(state = pagerState) { page ->
                         when (page) {
-                            0 -> VitalScreen(
+                            0 -> LoginPage(
+                                state = login,
+                                workerName = workerName,
+                                workerId = workerId,
+                                onStart = { login = LoginUiState(); startQrLogin() },
+                                onLogout = { logout() },
+                                // 직접 입력은 전체화면으로 — 스크롤 목록이라 페이저 안에 못 둔다.
+                                onManual = {
+                                    qrJob?.cancel()
+                                    login = login.copy(mode = LoginMode.MANUAL, busy = false, error = null)
+                                    showLogin = true
+                                },
+                                onCancel = { qrJob?.cancel(); login = LoginUiState() },
+                            )
+                            1 -> VitalScreen(
                                 state = vitals,
                                 onOpenDiagnostics = { showDiagnostics = true },
                                 onTap = { holdScreen() },
                             )
-                            1 -> HeartDetailPage(vitals)
-                            2 -> Spo2DetailPage(vitals)
-                            3 -> TempDetailPage(vitals)
-                            4 -> ActivityDetailPage(vitals)
-                            5 -> StepsDetailPage(vitals)
-                            else -> SettingsPage(
-                                workerName = workerName,
-                                workerId = workerId,
-                                onLogin = { login = LoginUiState(); showLogin = true; startQrLogin() },
-                                onLogout = { logout() },
-                            )
+                            2 -> HeartDetailPage(vitals)
+                            3 -> Spo2DetailPage(vitals)
+                            4 -> TempDetailPage(vitals)
+                            5 -> ActivityDetailPage(vitals)
+                            else -> StepsDetailPage(vitals)
                         }
                     }
                 }

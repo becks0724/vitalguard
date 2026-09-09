@@ -32,8 +32,14 @@ internal fun assertKeepScreenOnScopedToQr(rawActivity: String) {
         c.contains("if (qrAwake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)"),
     )
     assertTrue(
-        "QR 게이트가 QR 로그인 화면에 묶여 있지 않다",
-        c.contains("val qrAwake = showLogin && login.mode == LoginMode.QR"),
+        "QR 게이트가 로그인 면(페이저 0번)에 묶여 있지 않다",
+        c.contains("val qrAwake = !showLogin && !showDiagnostics && pagerState.currentPage == 0 &&"),
+    )
+    // ★ IDLE 을 빼는 것이 이 게이트의 핵심이다(09-09). 로그인이 0번 **면**이 되면서
+    //   그 면은 앱을 열면 늘 보인다 — 단계를 안 가리면 로그인을 마친 뒤에도 참이라 화면이 영영 안 꺼진다.
+    assertTrue(
+        "QR 게이트가 진행 단계를 안 가린다 — IDLE 까지 참이면 화면이 안 꺼진다",
+        c.contains("(login.qr.phase == QrPhase.LOADING || login.qr.phase == QrPhase.WAITING)"),
     )
     assertTrue(
         "화면 유지 플래그 해제가 없다 — QR 을 벗어나도 앰비언트가 안 살아난다",
@@ -55,7 +61,10 @@ class QrLoginWiringTest {
     @Test
     fun `배선 — 진입·재발급·모드전환·취소가 startQrLogin 과 Job 취소로 이어진다`() {
         val c = src()
-        assertTrue("로그인 진입이 QR 을 시작하지 않는다", c.contains("onLogin = { login = LoginUiState(); showLogin = true; startQrLogin() }"))
+        // 로그인 진입은 0번 면 한 곳뿐이다 — QR 이 그려지는 자리가 하나여야
+        // 화면 깨우기 조건(currentPage == 0)이 성립한다(09-09).
+        assertTrue("0번 면의 [로그인]이 QR 을 시작하지 않는다", c.contains("onStart = { login = LoginUiState(); startQrLogin() }"))
+        assertTrue("0번 면에서 로그아웃을 못 한다", c.contains("onLogout = { logout() }"))
         assertTrue("[재발급]이 안 이어졌다", c.contains("onQrRefresh = { startQrLogin() }"))
         assertTrue("모드 전환이 폴링을 안 끊는다", Regex("onSwitchMode = \\{ qrJob\\?\\.cancel\\(\\); login = login\\.copy\\(mode = LoginMode\\.MANUAL").containsMatchIn(c))
         assertTrue("취소가 폴링을 안 끊는다", c.contains("onCancel = { qrJob?.cancel(); showLogin = false; login = LoginUiState() }"))
@@ -79,6 +88,30 @@ class QrLoginWiringTest {
         assertFalse("secret 을 로그에 싣는다", Regex("Log\\.[iwed]\\([^\\n]*secret").containsMatchIn(c))
         val stop = c.substringAfter("override fun onStop()").substringBefore("\n    }")
         assertTrue("onStop 이 QR 폴링을 안 끊는다", stop.contains("qrJob?.cancel()"))
+    }
+
+    /**
+     * ★ 09-09 — 로그인이 페이저 0번 면이 되면서 **onStop 만으로는 부족해졌다.**
+     * 페이지를 넘겨도 액티비티는 살아 있어 onStop 이 오지 않는다 → 폴링이 뒤에서 계속 돈다.
+     * "백그라운드 폴링 없음" 계약을 페이지 이탈에서 다시 세운다.
+     */
+    @Test
+    fun `로그인 면을 벗어나면 폴링이 끊긴다 - 페이지 넘김에는 onStop 이 안 온다`() {
+        val c = src()
+        assertTrue(
+            "페이지 이탈이 폴링을 안 끊는다",
+            Regex("LaunchedEffect\\(pagerState\\.currentPage\\)[\\s\\S]{0,200}?qrJob\\?\\.cancel\\(\\)").containsMatchIn(c),
+        )
+    }
+
+    /** 로그인이 끝나면 요약(1번)으로 내려간다 — QR 승인·직접 입력 모두 신원이 생기는 것으로 끝난다(09-09 사용자 지시). */
+    @Test
+    fun `로그인 완료가 요약 페이지로 데려간다`() {
+        val c = src()
+        assertTrue(
+            "로그인 뒤 요약으로 안 내려간다",
+            Regex("LaunchedEffect\\(workerId\\)[\\s\\S]{0,220}?animateScrollToPage\\(1\\)").containsMatchIn(c),
+        )
     }
 
     /** 화면이 꺼지면 폴링이 죽는다 — QR 이 떠 있는 동안만 화면을 깨워 둔다(09-07 사용자 승인 C안). */
