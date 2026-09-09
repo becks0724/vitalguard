@@ -103,8 +103,9 @@ fun LoginScreen(
 }
 
 /**
- * 페이저 0번이 그리는 로그인 면(2026-09-09 사용자 지시 — 로그인 화면을 맨 첫 페이지로).
- * QR 이 아직 안 돌면(IDLE) 시작 버튼만 두고, 시작하면 기존 QR 면을 그대로 그린다.
+ * 페이저 0번 — **로그인/로그아웃 면**(2026-09-09 사용자 지시). 종전에 맨 끝 설정 면이던 것을
+ * 여기로 **옮겨 왔다**(맨 끝에 남기지 않는다 — 08-26 의 "설정은 맨 아래" 지시를 09-09 지시가 대체한다).
+ * QR 이 도는 동안만 QR 면으로 갈아 끼운다.
  *
  * ⚠ 여기서 QR 을 **자동으로 시작하지 않는다.** 0번은 앱을 열면 늘 보이는 면이라 자동 시작하면
  *   QR 수명(≈5분) 내내 `FLAG_KEEP_SCREEN_ON` 이 걸린다 — R-16 의 화면 깨우기가 이 면에 붙어 있다.
@@ -118,6 +119,7 @@ fun LoginPage(
     workerName: String?,
     workerId: String?,
     onStart: () -> Unit,
+    onLogout: () -> Unit,
     onManual: () -> Unit,
     onCancel: () -> Unit,
 ) {
@@ -125,46 +127,7 @@ fun LoginPage(
         QrLoginPane(state.qr, onRefresh = onStart, onManual = onManual, onCancel = onCancel)
         return
     }
-    Column(
-        modifier = Modifier.fillMaxSize().background(VgColors.Background).padding(horizontal = 18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("VitAlGuard", color = VgColors.Secondary, fontSize = 12.sp)
-        if (!workerId.isNullOrBlank()) {
-            Text(
-                workerName ?: "이름 없음",
-                color = VgColors.Primary,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Text(workerId, color = VgColors.Secondary, fontSize = 13.sp)
-            // 로그인돼 있으면 이 면은 지나가는 자리다 — 어디로 가면 되는지만 말한다.
-            Text(
-                "로그인됨 · 아래로 밀면 요약",
-                color = VgColors.Normal,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 10.dp),
-            )
-        } else {
-            // ★ 로그인 안 된 상태를 숨기지 않는다 — 수집은 돌아도 업로드가 안 되는 상태다.
-            Text(
-                "로그인해야 서버로 전송됩니다",
-                color = VgColors.Caution,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Button(
-                onClick = onStart,
-                label = { Text("로그인", fontSize = 14.sp, color = Color.Black) },
-                colors = ButtonDefaults.buttonColors(containerColor = VgColors.Normal),
-                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            )
-        }
-    }
+    SettingsPage(workerName = workerName, workerId = workerId, onLogin = onStart, onLogout = onLogout)
 }
 
 // ── QR 모드 ───────────────────────────────────────────────────────────────────

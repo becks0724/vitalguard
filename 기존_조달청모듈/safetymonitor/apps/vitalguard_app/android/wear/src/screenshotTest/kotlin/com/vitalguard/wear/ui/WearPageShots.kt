@@ -1,4 +1,4 @@
-// 세로 페이저 0번(로그인)·2~7번 페이지 — 요약 화면 뒤에 숨어 있어 프리뷰가 없던 화면들을 PNG 로 뽑는다
+// 세로 페이저 0번(로그인·로그아웃)·2~6번 페이지 — 요약 화면 뒤에 숨어 있어 프리뷰가 없던 화면들을 PNG 로 뽑는다
 package com.vitalguard.wear.ui
 
 import androidx.compose.runtime.Composable
@@ -54,19 +54,11 @@ private val working = VitalUiState(
 @PreviewTest @Preview(name = "p5 오늘 걸음", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSteps() = StepsDetailPage(working)
 
-@PreviewTest @Preview(name = "p7 설정 로그인됨", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인·로그아웃(로그인됨)", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSettingsIn() = SettingsPage(workerName = "장우진", workerId = "EMP-6861", onLogin = {}, onLogout = {})
 
-@PreviewTest @Preview(name = "p7 설정 로그아웃", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인·로그아웃(로그아웃)", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSettingsOut() = SettingsPage(workerName = null, workerId = null, onLogin = {}, onLogout = {})
-
-@PreviewTest @Preview(name = "p0 로그인 시작전", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
-@Composable fun ShotPageLoginIdleOut() =
-    LoginPage(LoginUiState(), workerName = null, workerId = null, onStart = {}, onManual = {}, onCancel = {})
-
-@PreviewTest @Preview(name = "p0 로그인 완료", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
-@Composable fun ShotPageLoginIdleIn() =
-    LoginPage(LoginUiState(), workerName = "김태곤", workerId = "EMP-admin3470", onStart = {}, onManual = {}, onCancel = {})
 
 @PreviewTest @Preview(name = "p0 로그인 QR", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageLoginQr() = LoginScreen(state = LoginUiState(qr = sampleQrWaiting), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})

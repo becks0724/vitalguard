@@ -18,7 +18,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import com.vitalguard.wear.pipeline.ConfigStore
 import com.vitalguard.wear.pipeline.DeviceLoginClient
@@ -45,7 +44,6 @@ import com.vitalguard.wear.ui.VitalUiState
 import com.vitalguard.wear.ui.LoginPage
 import com.vitalguard.wear.ui.LoginScreen
 import com.vitalguard.wear.ui.LoginUiState
-import com.vitalguard.wear.ui.SettingsPage
 import com.vitalguard.wear.pipeline.AuthClient
 import com.vitalguard.wear.pipeline.LoginResult
 import androidx.lifecycle.lifecycleScope
@@ -414,7 +412,6 @@ class MainActivity : ComponentActivity() {
             val pagerState = androidx.wear.compose.foundation.pager.rememberPagerState(
                 initialPage = if (workerId.isNullOrBlank()) 0 else 1,
             ) { DETAIL_PAGE_COUNT }
-            val uiScope = rememberCoroutineScope()
 
             // ★ QR 로그인 동안만 화면을 깨워 둔다(09-07 사용자 승인 · C안).
             //   화면이 꺼지면 폴링 코루틴이 끊겨(아래 페이지 이탈 처리·`onStop` 참조) 승인이 도착하기 전에
@@ -476,7 +473,7 @@ class MainActivity : ComponentActivity() {
                 )
             } else {
                 // ★ 세로 페이저 — 가로는 워치 표준 '뒤로가기' 와 충돌해 앱이 닫힌다.
-                //   0=로그인 · 1=요약(한눈) · 2~6=상세(차트·통계) · 7=설정.
+                //   0=로그인/로그아웃 · 1=요약(한눈) · 2~6=상세(차트·통계).
                 //   순서를 바꾸면 익힌 위치가 흐트러진다 — 늘릴 때는 상세 뒤에만 더한다.
                 //   (상태 선언은 위로 올라갔다 — 화면 깨우기·폴링 중단이 현재 페이지를 봐야 한다.)
                 // 앰비언트에서는 전체를 어둡게 — 밝은 면적을 줄이라는 Wear 지침.
@@ -502,6 +499,7 @@ class MainActivity : ComponentActivity() {
                                 workerName = workerName,
                                 workerId = workerId,
                                 onStart = { login = LoginUiState(); startQrLogin() },
+                                onLogout = { logout() },
                                 // 직접 입력은 전체화면으로 — 스크롤 목록이라 페이저 안에 못 둔다.
                                 onManual = {
                                     qrJob?.cancel()
@@ -519,19 +517,7 @@ class MainActivity : ComponentActivity() {
                             3 -> Spo2DetailPage(vitals)
                             4 -> TempDetailPage(vitals)
                             5 -> ActivityDetailPage(vitals)
-                            6 -> StepsDetailPage(vitals)
-                            else -> SettingsPage(
-                                workerName = workerName,
-                                workerId = workerId,
-                                // 설정의 [로그인]도 0번 면으로 데려간다 — QR 이 그려지는 자리가 하나여야
-                                // 화면 깨우기 조건(currentPage == 0)이 성립한다.
-                                onLogin = {
-                                    login = LoginUiState()
-                                    uiScope.launch { pagerState.animateScrollToPage(0) }
-                                    startQrLogin()
-                                },
-                                onLogout = { logout() },
-                            )
+                            else -> StepsDetailPage(vitals)
                         }
                     }
                 }

@@ -61,13 +61,10 @@ class QrLoginWiringTest {
     @Test
     fun `배선 — 진입·재발급·모드전환·취소가 startQrLogin 과 Job 취소로 이어진다`() {
         val c = src()
-        // 설정의 [로그인]은 0번 면으로 데려간 뒤 시작한다 — QR 이 그려지는 자리가 하나여야
+        // 로그인 진입은 0번 면 한 곳뿐이다 — QR 이 그려지는 자리가 하나여야
         // 화면 깨우기 조건(currentPage == 0)이 성립한다(09-09).
-        assertTrue(
-            "설정의 로그인 진입이 0번 면으로 안 데려간다",
-            Regex("onLogin = \\{\\s*login = LoginUiState\\(\\)\\s*uiScope\\.launch \\{ pagerState\\.animateScrollToPage\\(0\\) \\}\\s*startQrLogin\\(\\)").containsMatchIn(c),
-        )
         assertTrue("0번 면의 [로그인]이 QR 을 시작하지 않는다", c.contains("onStart = { login = LoginUiState(); startQrLogin() }"))
+        assertTrue("0번 면에서 로그아웃을 못 한다", c.contains("onLogout = { logout() }"))
         assertTrue("[재발급]이 안 이어졌다", c.contains("onQrRefresh = { startQrLogin() }"))
         assertTrue("모드 전환이 폴링을 안 끊는다", Regex("onSwitchMode = \\{ qrJob\\?\\.cancel\\(\\); login = login\\.copy\\(mode = LoginMode\\.MANUAL").containsMatchIn(c))
         assertTrue("취소가 폴링을 안 끊는다", c.contains("onCancel = { qrJob?.cancel(); showLogin = false; login = LoginUiState() }"))
