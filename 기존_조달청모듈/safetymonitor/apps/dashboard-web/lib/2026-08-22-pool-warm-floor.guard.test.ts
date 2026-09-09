@@ -30,7 +30,15 @@ test("★ 웜업은 배경 타이머에서 돈다 — 요청 경로에서 접속
 test("★ 웜업 실패를 삼킨다 — 배경에서 throw 하면 unhandled rejection 으로 프로세스가 죽는다", () => {
   const fn = db.slice(db.indexOf("async function warmPool"), db.indexOf("function startPoolWarmer"));
   assert.ok(fn.length > 0, "warmPool 을 못 찾았다 — 앵커가 낡았다");
-  assert.match(fn, /\}\s*catch\s*\{/, "catch 가 사라졌다");
+  // 2026-09-09: `catch {` 만 받던 것을 `catch (e) {` 도 받도록 넓혔다.
+  //   워머가 삼킨 실패를 로그로 남기려면 오류 바인딩이 필요한데, 종전 정규식이 그것을 막았다.
+  //   ★ 넓히되 약화시키지 않는다 — 아래 "다시 던지지 않는다"를 새로 못박는다.
+  assert.match(fn, /\}\s*catch\s*(\([A-Za-z_$][\w$]*\)\s*)?\{/, "catch 가 사라졌다");
+  assert.doesNotMatch(
+    fn,
+    /catch[\s\S]*?\bthrow\b[\s\S]*?finally/,
+    "catch 안에서 다시 던지면 배경 작업이 unhandled rejection 으로 프로세스를 죽인다",
+  );
   assert.match(fn, /finally\s*\{/, "finally 가 사라졌다");
   assert.match(fn, /\.release\(\)/, "잡은 커넥션을 놓지 않는다 — 풀 누수");
 });

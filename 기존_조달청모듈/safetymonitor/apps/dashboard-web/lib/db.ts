@@ -140,6 +140,7 @@ const globalForDb = globalThis as typeof globalThis & {
 // ⚠ 이건 원인 제거가 아니라 **노출 감소**다. 그리고 핵심은 횟수만이 아니라 **위치**다 —
 //   접속 생성을 배경으로 옮기면 거기서 멎어도 **사용자 요청은 죽지 않는다**.
 const WARM_FLOOR = 8; // 매분 버스트 동시 6~8 실측(aed 3종·gaspod·monitor/vital·calendar/media)
+let warmFail = 0; // 워머가 삼킨 실패 횟수 — 로그에 누적 번호를 붙여 산발/연속을 구별한다
 const WARM_INTERVAL_MS = 30_000; // 폴링 60초보다 짧게 — 버스트가 오기 전에 바닥이 차 있어야 한다
 
 // 유휴가 있으면 그것을 잡고, 없으면 새로 만든다. 전부 붙잡고 있어야 실제로 생성이 일어난다
@@ -161,16 +162,23 @@ async function warmPool(pool: Pool): Promise<void> {
     while (held.length < WARM_FLOOR) {
       held.push(await pool.connect());
     }
-  } catch {
+  } catch (e) {
     // 멎거나 실패해도 삼킨다 — 요청 경로가 아니므로 사용자에게 전파되지 않는다.
     // (여기서 throw 하면 unhandled rejection 으로 프로세스가 죽는다.)
+    // ★ 2026-09-09: 다만 **삼켰다는 사실은 남긴다.** 종전에는 완전히 조용해서, 워머가 실패한 것과
+    //   애초에 돌지 않은 것이 같은 관측(로그 0건)이 됐다.
+    warmFail += 1;
+    console.warn(`[db] 웜 실패#${warmFail} held=${held.length}/${WARM_FLOOR} ${(e as Error)?.message ?? e}`);
   } finally {
     for (const c of held) c.release();
   }
   const created = pool.totalCount - before;
-  if (created > 0) {
-    console.log(`[db] 웜 바닥 +${created} → total=${pool.totalCount} idle=${pool.idleCount}`);
-  }
+  // ★ 2026-09-09: created > 0 조건 제거. 그 조건 때문에 "안 돌았다"와 "돌았는데 만들 게 없었다"를
+  //   구별할 수 없었고, 그 구별이 안 되어 원인 규명이 하루 늦어졌다(00366 21분 로그 0건).
+  //   waitingCount 도 함께 찍는다 — 풀 고갈(대기)과 새 접속 실패는 다른 병이고 문구도 다르다.
+  console.log(
+    `[db] 웜 +${created} total=${pool.totalCount} idle=${pool.idleCount} wait=${pool.waitingCount}`,
+  );
 }
 
 // ⚠ Cloud Run 은 요청 처리 중에만 CPU 를 준다(cpu-throttling 기본). 트래픽이 없으면 이 타이머는
@@ -233,7 +241,23 @@ function getPool(): Pool {
       // 90초면 60초 폴링 사이에 정리가 안 걸려 버스트가 웜 커넥션을 재사용한다.
       // ⚠ DB 서버 자체는 결백(동시 8 콜드 커넥트 35~48ms 실측) — 5초+ 구간은 미해명이고,
       //   이 값은 그 구간을 밟는 횟수를 줄이는 것이지 그 구간을 고치는 것이 아니다.
-      idleTimeoutMillis: 90000,
+      // ★ 2026-09-09: 90초 → 0(회수하지 않음). 90초로도 부족했다.
+      //   실측 — 00366 재현 창(21분·A 5건)에서 **실패 순간의 동시 진행 요청이 4~5건**이었다.
+      //   웜 바닥 8보다 아래인데도 새 물리 접속이 필요했다는 것은, 그 순간 **유휴가 0** 이었다는 뜻이다
+      //   (pg-pool 은 유휴가 하나라도 있으면 그것을 주고 5초 타이머를 붙이지 않는다 · index.js:276).
+      //   즉 바닥 8 이 실제로는 유지되지 않았다. 원인은 아래 warmPool 이 도는 것을 전제로 한 설계인데
+      //   Cloud Run 이 요청 사이에 CPU 를 회수해 그 타이머가 제때 못 돌기 때문이다.
+      //   ⟹ 타이머를 고치는 대신 **타이머가 없어도 되게** 만든다. 회수를 끄면 만져줄 이유가 사라진다.
+      //   여유 근거 = 서버 max_connections 200 중 전 DB 합계 25 사용 · 최악 maxScale 4 × 16 = 64.
+      //   ⚠ 회수를 끄면 keepAlive 가 **필수**다 — 영구 유휴 접속이 중간 장비(NAT·방화벽)의 매핑
+      //     만료로 조용히 끊기면 좀비가 되어 다음 쿼리에서 터진다.
+      idleTimeoutMillis: 0,
+      // ★ 2026-09-09 신설. node-postgres 기본값은 false 라 지금까지 TCP keepalive 가 없었다.
+      //   30초마다 keepalive 를 보내 중간 장비가 유휴 세션을 버리지 않게 한다.
+      //   ⚠ 이번 사고의 주원인은 아니다 — pool.on("error") 로그가 전 리비전 0건이라
+      //     "밖에서 끊겨 죽은" 흔적이 없었다. 위 idleTimeoutMillis:0 의 안전장치로 함께 넣는다.
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 30_000,
       statement_timeout: 30000, // 세션 statement_timeout(ms) — 느린 쿼리의 풀 점유 방지
     });
     // 유휴 커넥션 error 를 잡아 프로세스 크래시 방지(핸들러 부재 시 미처리 'error'로 전체 다운).
@@ -1066,13 +1090,48 @@ async function initSchema(): Promise<void> {
 }
 
 // 쿼리 헬퍼 — 스키마 보장 후 실행. rows + rowCount 반환.
+// ── 새 물리 접속 실패 1회 재시도 (2026-09-09) ────────────────────────────
+// ★ 이 문구 하나만 재시도한다. pg-pool 은 두 상황에 **다른 문구**를 쓴다 —
+//     index.js:224  `timeout exceeded when trying to connect`          풀 슬롯 고갈(대기열 timeout)
+//     index.js:276  `Connection terminated due to connection timeout`  새 물리 client.connect() 5초 초과
+//   관측된 실패는 전부 후자였다(00365 18건 · 00366 5건 · 전자는 0건).
+//
+// ★ 재시도가 안전한 근거 = pg-pool index.js:265-283. 이 오류는 `client.connect()` 콜백에서
+//   만들어지고, 그 시점에는 아직 `client.query()` 가 호출되지 않았다. 즉 **DB 에서 아무 일도
+//   일어나지 않았다.** 그래서 같은 쿼리를 다시 보내도 중복 실행이 되지 않는다(INSERT 포함).
+// ⚠ 다른 오류에는 절대 붙이지 않는다 — statement_timeout 은 서버에서 이미 실행 중이었을 수 있고,
+//   풀 고갈 재시도는 고갈을 악화시킨다.
+// ⚠ 이건 원인 제거가 아니라 **사용자 노출 감소**다. 근본은 새 접속을 만드는 횟수이고
+//   그쪽은 위 idleTimeoutMillis:0 이 담당한다.
+const CONNECT_STALL = "Connection terminated due to connection timeout";
+let connectRetry = 0;
+
+function isConnectStall(e: unknown): boolean {
+  return e instanceof Error && e.message === CONNECT_STALL;
+}
+
 async function q<T = Record<string, unknown>>(
   text: string,
   params?: unknown[],
 ): Promise<{ rows: T[]; rowCount: number }> {
   await ensureSchema();
-  const res = await getPool().query(text, params as unknown[] | undefined);
-  return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+  const pool = getPool();
+  try {
+    const res = await pool.query(text, params as unknown[] | undefined);
+    return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+  } catch (e) {
+    if (!isConnectStall(e)) throw e;
+    // 곧바로 다시 밀면 같은 순간을 밟는다. 짧은 지터를 두고 한 번만 재시도한다.
+    connectRetry += 1;
+    const waitMs = 120 + Math.floor(Math.random() * 180);
+    console.warn(
+      `[db] 새 접속 멎음 — ${waitMs}ms 뒤 1회 재시도#${connectRetry} · ${text.slice(0, 60)}`,
+    );
+    await new Promise((r) => setTimeout(r, waitMs));
+    const res = await pool.query(text, params as unknown[] | undefined);
+    console.log(`[db] 재시도#${connectRetry} 성공`);
+    return { rows: res.rows as T[], rowCount: res.rowCount ?? 0 };
+  }
 }
 
 // DB 헬스 왕복(/api/health/db 전용) — 데이터 접근 없는 SELECT 1. q 는 비공개를 유지한다
