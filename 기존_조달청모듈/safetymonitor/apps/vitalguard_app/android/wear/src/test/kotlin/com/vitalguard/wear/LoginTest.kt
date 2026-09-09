@@ -196,9 +196,10 @@ class SettingsPlacementTest {
 
     @Test
     fun `설정이 스와이프 맨 끝에 있다`() {
-        assertTrue("페이지 수가 7이 아니다", pages.contains("val DETAIL_PAGE_COUNT = 7"))
+        // 09-09 로그인이 0번으로 들어와 8이 됐다 — 설정은 여전히 맨 끝이다.
+        assertTrue("페이지 수가 8이 아니다", pages.contains("val DETAIL_PAGE_COUNT = 8"))
         // when 의 마지막 분기(else)가 설정이어야 '맨 끝' 이다.
-        val tail = activity.substringAfter("5 -> StepsDetailPage(vitals)")
+        val tail = activity.substringAfter("6 -> StepsDetailPage(vitals)")
         assertTrue("맨 끝 페이지가 설정이 아니다", tail.trimStart().startsWith("else -> SettingsPage"))
     }
 

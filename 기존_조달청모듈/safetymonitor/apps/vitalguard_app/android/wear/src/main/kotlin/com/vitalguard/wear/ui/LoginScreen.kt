@@ -40,8 +40,13 @@ import kotlin.math.min
 /** 로그인 수단. 기본 = QR(08-29 사용자 지시 "로그인 방법을 QR 로 변경") · 직접 입력은 폰이 없을 때의 예비 경로. */
 enum class LoginMode { QR, MANUAL }
 
-/** QR 흐름 단계 — 서버 start/poll 결과를 MainActivity 가 여기로 옮긴다(화면은 서버를 모른다). */
-enum class QrPhase { LOADING, WAITING, APPROVED, EXPIRED, ERROR }
+/**
+ * QR 흐름 단계 — 서버 start/poll 결과를 MainActivity 가 여기로 옮긴다(화면은 서버를 모른다).
+ * ★ `IDLE` = 아직 시작 안 함(2026-09-09). 로그인이 페이저 0번 면이 되면서 **QR 이 도는 중인지**를
+ *   화면이 알아야 한다 — 이 구분이 없으면 로그인을 마친 뒤 0번 면에 머물 때
+ *   `LOADING` 으로 읽혀 화면 깨우기(R-16)가 영영 안 풀린다.
+ */
+enum class QrPhase { IDLE, LOADING, WAITING, APPROVED, EXPIRED, ERROR }
 
 /**
  * QR 모드가 그리는 데 필요한 전부.
@@ -49,7 +54,7 @@ enum class QrPhase { LOADING, WAITING, APPROVED, EXPIRED, ERROR }
  * `secondsLeft` 는 상태값이다. 화면이 시계를 읽으면 스크린샷 검증이 비결정이 된다(TimeText 전례).
  */
 data class QrLoginUiState(
-    val phase: QrPhase = QrPhase.LOADING,
+    val phase: QrPhase = QrPhase.IDLE,
     val code: String = "",
     val qrSize: Int = 0,
     val qrRows: List<String> = emptyList(),
@@ -97,6 +102,71 @@ fun LoginScreen(
     }
 }
 
+/**
+ * 페이저 0번이 그리는 로그인 면(2026-09-09 사용자 지시 — 로그인 화면을 맨 첫 페이지로).
+ * QR 이 아직 안 돌면(IDLE) 시작 버튼만 두고, 시작하면 기존 QR 면을 그대로 그린다.
+ *
+ * ⚠ 여기서 QR 을 **자동으로 시작하지 않는다.** 0번은 앱을 열면 늘 보이는 면이라 자동 시작하면
+ *   QR 수명(≈5분) 내내 `FLAG_KEEP_SCREEN_ON` 이 걸린다 — R-16 의 화면 깨우기가 이 면에 붙어 있다.
+ * ⚠ **직접 입력은 이 면에 두지 않는다.** `ManualLoginPane` 은 세로 스크롤 목록이라
+ *   세로 페이저 안에서 스크롤과 페이지 넘김이 같은 제스처를 다툰다 — 전체화면으로 띄운다.
+ *   (페이저 안 나머지 면은 전부 비스크롤 고정 레이아웃이라 지금까지 이 충돌이 없었다.)
+ */
+@Composable
+fun LoginPage(
+    state: LoginUiState,
+    workerName: String?,
+    workerId: String?,
+    onStart: () -> Unit,
+    onManual: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    if (state.qr.phase != QrPhase.IDLE) {
+        QrLoginPane(state.qr, onRefresh = onStart, onManual = onManual, onCancel = onCancel)
+        return
+    }
+    Column(
+        modifier = Modifier.fillMaxSize().background(VgColors.Background).padding(horizontal = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("VitAlGuard", color = VgColors.Secondary, fontSize = 12.sp)
+        if (!workerId.isNullOrBlank()) {
+            Text(
+                workerName ?: "이름 없음",
+                color = VgColors.Primary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(workerId, color = VgColors.Secondary, fontSize = 13.sp)
+            // 로그인돼 있으면 이 면은 지나가는 자리다 — 어디로 가면 되는지만 말한다.
+            Text(
+                "로그인됨 · 아래로 밀면 요약",
+                color = VgColors.Normal,
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 10.dp),
+            )
+        } else {
+            // ★ 로그인 안 된 상태를 숨기지 않는다 — 수집은 돌아도 업로드가 안 되는 상태다.
+            Text(
+                "로그인해야 서버로 전송됩니다",
+                color = VgColors.Caution,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Button(
+                onClick = onStart,
+                label = { Text("로그인", fontSize = 14.sp, color = Color.Black) },
+                colors = ButtonDefaults.buttonColors(containerColor = VgColors.Normal),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            )
+        }
+    }
+}
+
 // ── QR 모드 ───────────────────────────────────────────────────────────────────
 
 /**
@@ -124,6 +194,7 @@ private fun QrLoginPane(qr: QrLoginUiState, onRefresh: () -> Unit, onManual: () 
         // 위 안내줄은 원의 상단 현(弦)이라 폭이 ~119dp 뿐이다 — 짧은 문구만 둔다.
         //   긴 오류 문구는 카드 자리(140dp · 줄바꿈 가능)에 넣는다(08-29 프리뷰에서 상단 잘림 실측).
         val (hint, hintColor) = when (qr.phase) {
+            QrPhase.IDLE -> "로그인" to VgColors.Secondary
             QrPhase.LOADING -> "잠시만요" to VgColors.Secondary
             QrPhase.WAITING -> "폰으로 스캔 · ${countdownText(qr.secondsLeft)}" to VgColors.Secondary
             QrPhase.APPROVED -> "승인됨 · 로그인 중…" to VgColors.Normal

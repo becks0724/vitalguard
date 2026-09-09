@@ -503,12 +503,12 @@ class ChartTest {
             5,
             Regex("TrendChart\\(").findAll(detail).count(),
         )
-        // 페이지 수 = 요약 1 + 지표 상세 5 + 설정 1. 늘려 놓고 배선을 빠뜨리면 빈 화면이 생긴다.
+        // 페이지 수 = 로그인 1 + 요약 1 + 지표 상세 5 + 설정 1. 늘려 놓고 배선을 빠뜨리면 빈 화면이 생긴다.
         // 차트 수(5)에서 계산해 세운다 — 숫자를 손으로 적으면 지표를 늘렸을 때 여기만 낡는다.
         val chartPages = Regex("TrendChart\\(").findAll(detail).count()
         org.junit.Assert.assertEquals(
-            "페이지 수가 (요약 1 + 차트 $chartPages + 설정 1) 과 안 맞는다",
-            1 + chartPages + 1,
+            "페이지 수가 (로그인 1 + 요약 1 + 차트 $chartPages + 설정 1) 과 안 맞는다",
+            1 + 1 + chartPages + 1,
             com.vitalguard.wear.ui.DETAIL_PAGE_COUNT,
         )
         // 체온은 주변온을 **같은 축에 겹쳐야** 기기 발열과 진짜 체온이 갈린다(R-25).

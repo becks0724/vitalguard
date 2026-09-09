@@ -1,4 +1,4 @@
-// 세로 페이저 1~6번 페이지 + 로그인 — 요약 화면 뒤에 숨어 있어 프리뷰가 없던 화면들을 PNG 로 뽑는다
+// 세로 페이저 0번(로그인)·2~7번 페이지 — 요약 화면 뒤에 숨어 있어 프리뷰가 없던 화면들을 PNG 로 뽑는다
 package com.vitalguard.wear.ui
 
 import androidx.compose.runtime.Composable
@@ -54,25 +54,33 @@ private val working = VitalUiState(
 @PreviewTest @Preview(name = "p5 오늘 걸음", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSteps() = StepsDetailPage(working)
 
-@PreviewTest @Preview(name = "p6 설정 로그인됨", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p7 설정 로그인됨", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSettingsIn() = SettingsPage(workerName = "장우진", workerId = "EMP-6861", onLogin = {}, onLogout = {})
 
-@PreviewTest @Preview(name = "p6 설정 로그아웃", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p7 설정 로그아웃", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageSettingsOut() = SettingsPage(workerName = null, workerId = null, onLogin = {}, onLogout = {})
 
-@PreviewTest @Preview(name = "p7 로그인 QR", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인 시작전", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginIdleOut() =
+    LoginPage(LoginUiState(), workerName = null, workerId = null, onStart = {}, onManual = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p0 로그인 완료", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginIdleIn() =
+    LoginPage(LoginUiState(), workerName = "김태곤", workerId = "EMP-admin3470", onStart = {}, onManual = {}, onCancel = {})
+
+@PreviewTest @Preview(name = "p0 로그인 QR", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageLoginQr() = LoginScreen(state = LoginUiState(qr = sampleQrWaiting), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
-@PreviewTest @Preview(name = "p7 로그인 QR 받는중", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
-@Composable fun ShotPageLoginQrLoading() = LoginScreen(state = LoginUiState(), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
+@PreviewTest @Preview(name = "p0 로그인 QR 받는중", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@Composable fun ShotPageLoginQrLoading() = LoginScreen(state = LoginUiState(qr = QrLoginUiState(phase = QrPhase.LOADING)), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
-@PreviewTest @Preview(name = "p7 로그인 QR 만료", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인 QR 만료", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageLoginQrExpired() = LoginScreen(state = LoginUiState(qr = sampleQrWaiting.copy(phase = QrPhase.EXPIRED, secondsLeft = 0)), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
-@PreviewTest @Preview(name = "p7 로그인 QR 오류", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인 QR 오류", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageLoginQrError() = LoginScreen(state = LoginUiState(qr = QrLoginUiState(phase = QrPhase.ERROR, error = "서버에 연결하지 못했습니다.")), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
-@PreviewTest @Preview(name = "p7 로그인 직접입력", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
+@PreviewTest @Preview(name = "p0 로그인 직접입력", device = ROUND, showSystemUi = true, backgroundColor = 0xff000000, showBackground = true)
 @Composable fun ShotPageLogin() = LoginScreen(state = LoginUiState(mode = LoginMode.MANUAL), onEditId = {}, onEditPassword = {}, onSubmit = {}, onCancel = {})
 
 // 워밍업 전 상세 — 값이 없을 때 "측정 대기"·"착용 N회분 더" 가 어떻게 보이나

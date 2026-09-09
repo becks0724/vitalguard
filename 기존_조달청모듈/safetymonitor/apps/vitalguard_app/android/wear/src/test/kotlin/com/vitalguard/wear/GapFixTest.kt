@@ -486,20 +486,24 @@ class VerticalPagerTest {
     /**
      * ★ 08-25 사용자 보고 — 요약면에서 페이지 점이 **우측 걸음 눈금과 겹쳐** 둘 다 못 읽었다.
      * 요약에서는 감추고 상세면에서만 그린다.
+     * ⚠ 09-09 로그인이 0번으로 들어오며 요약이 1번으로 밀렸다 — **조건도 함께 옮겨야 한다.**
+     *   번호만 밀고 `!= 0` 을 두면 이 버그가 조용히 되살아난다(그래서 여기서 못 박는다).
      */
     @Test
     fun `요약면에서는 페이지 점을 감춘다 - 걸음 눈금과 자리가 겹친다`() {
         assertTrue(
-            "페이지 인디케이터 조건이 없다",
-            activity.contains("pagerState.currentPage != 0") &&
+            "페이지 인디케이터 조건이 요약(1번)을 안 가린다",
+            activity.contains("pagerState.currentPage > 1") &&
                 activity.contains("VerticalPageIndicator"),
         )
     }
 
+    /** 09-09 사용자 지시 — 0번이 로그인, 1번이 요약. QR 승인도 1번으로 데려간다. */
     @Test
-    fun `요약이 0번이다 - 앱을 열면 한눈 화면이 먼저다`() {
-        val body = activity.substringAfter("when (page)").substringBefore("}")
-        assertTrue("0번이 요약이 아니다", body.contains("0 -> VitalScreen"))
+    fun `로그인이 0번이고 요약이 1번이다`() {
+        val body = activity.substringAfter("when (page)").substringBefore("2 -> HeartDetailPage")
+        assertTrue("0번이 로그인이 아니다", body.contains("0 -> LoginPage"))
+        assertTrue("1번이 요약이 아니다", body.contains("1 -> VitalScreen"))
     }
 
     @Test
