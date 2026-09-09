@@ -46,6 +46,8 @@ SITE = os.environ.get("GATE_SITE", "SITE-01")
 SKEW = int(os.environ.get("GATE_SKEW", "30"))
 MAX_STREAMS = int(os.environ.get("GATE_MAX_STREAMS", "8"))
 RATE_PER_MIN = int(os.environ.get("GATE_RATE_PER_MIN", "120"))
+# 응답을 읽어도 되는 화면의 주소. 쉼표로 여럿. 비면 CORS 헤더를 아예 안 붙인다.
+ALLOW_ORIGINS = [o.strip() for o in os.environ.get("GATE_ALLOW_ORIGINS", "").split(",") if o.strip()]
 TLS_CERT = os.environ.get("GATE_TLS_CERT", "")
 TLS_KEY = os.environ.get("GATE_TLS_KEY", "")
 
@@ -152,6 +154,27 @@ def _guard():
     if not _rate_ok():
         return jsonify({"error": "too many requests"}), 429
     return None
+
+
+@app.after_request
+def _cors(resp):
+    """관제웹이 다른 주소에서 열리므로 브라우저가 응답을 읽으려면 이 헤더가 필요하다.
+
+    ★ CORS 는 인가가 아니다. 다른 오리진의 스크립트가 '응답을 읽는 것'만 제어할 뿐,
+      요청이 도달하는 것도 서버 상태가 바뀌는 것도 막지 못한다(적대검증 red-1 HIGH).
+      인가는 오직 티켓 검증이 한다. 이 헤더는 정상 화면이 값을 읽게 해 주는 배관일 뿐이다.
+    ⚠ Authorization 헤더를 쓰면 브라우저가 먼저 OPTIONS(사전요청)를 보낸다.
+      그 응답에 아래 헤더가 없으면 본 요청이 아예 나가지 않는다 — 화면은 그냥 비어 보인다.
+    """
+    origin = request.headers.get("Origin", "")
+    if origin and origin in ALLOW_ORIGINS:
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Vary"] = "Origin"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        resp.headers["Access-Control-Max-Age"] = "600"
+        # 쿠키는 쓰지 않는다(표만 본다) → Allow-Credentials 를 켜지 않는다.
+    return resp
 
 
 @app.get("/cctv/stream3")
