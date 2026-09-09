@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getSessionToken } from "./LoginGate";
+import { getSessionToken } from "./session-token";
 
 // 게이트가 보내는 multipart 경계 — cctv_gate.py 의 boundary=frame 과 같아야 한다.
 const BOUNDARY = new TextEncoder().encode("--frame");

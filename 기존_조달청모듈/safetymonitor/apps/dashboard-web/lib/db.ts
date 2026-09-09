@@ -5059,6 +5059,8 @@ export async function consumeDeviceLogin(
   const r = rows[0];
   if (!r || !r.token) return null;
   return { token: r.token, workerId: r.worker_id, workerName: r.worker_name };
+}
+
 // ── CCTV 카메라 권한 (직결 게이트 티켓 발급용) ──────────────────────────────
 
 export type CctvPermission = { siteId: string; canView: boolean; canControl: boolean };
