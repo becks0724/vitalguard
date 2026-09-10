@@ -30,6 +30,7 @@ GoPro HERO9 --USB-net UDP 8554--> Jetson(이 스크립트) --HTTP--> cctv-ai(/cc
   · fps 를 바꾸려고 재기동하면 GoPro 웹캠이 STOP/START 를 반복하다 굳는다(11:51 사고) → /config 로 런타임 조정.
 """
 
+import base64
 import fcntl
 import http.client
 import json
@@ -94,6 +95,17 @@ HEADER_H = 22
 
 # E63 학습 분포 — 검출 가능 범위 판정 기준
 TRAIN_MED, TRAIN_LO, TRAIN_HI, TRAIN_MAX = 0.051, 0.033, 0.086, 0.141
+# 조끼 학습 분포 — 아직 값이 없다(safety_vest 는 2026-07-30 과업 제외 · 재개 검토 중).
+#   ★ 값이 없다고 계측을 미루지 않는다. 지금 관측 분포를 쌓아 두어야 나중에 대조할 것이 있다.
+#   기준이 정해지면 /config?vest_ref=lo,med,hi,max 로 재기동 없이 꽂는다 — 학습 트랙이
+#   상수를 소유하고 이 화면은 계측만 하므로, 상수 변경에 배포가 끼어들지 않게 한다.
+#   ★ 기준값에는 반드시 근거(basis)를 함께 단다 — 어느 데이터셋의 분포인지 화면에 보이지 않으면
+#     "학습 범위 안 74.8%" 가 무엇 대비 74.8% 인지 아무도 모른다(2026-09-10 [M/L] 지적).
+# ⚠ 2026-09-10 철회 — SH17 로컬값(중앙 0.1248)을 잠정으로 넣었다가 걷어냈다. 6차 실제 학습 로그상
+#   조끼는 903개이고 **유일 출처가 CSS** 다(E63·507 라벨엔 조끼 0개). SH17 조끼는 학습에 안 들어갔다.
+#   틀린 기준선으로 "범위 밖"을 칠하는 것보다 기준 없이 분포만 쌓는 게 낫다.
+#   CSS 확보 후 /config?vest_ref=lo,med,hi,max,근거 로 꽂는다.
+_vest_ref = None
 
 NAMES = ["person", "head", "helmet", "safety_vest", "foot", "shoes", "hands", "gloves"]
 KO = {"person": "작업자", "head": "안전모 미착용", "helmet": "안전모", "safety_vest": "안전조끼",
@@ -106,9 +118,23 @@ app = Flask(__name__)
 _model = None
 _pose = None          # PoseFall 인스턴스 — POSE_FALL=1 일 때만 만든다
 _lock = threading.Lock()
-_state = {"jpg": b"", "raw": None, "stats": None, "ts": 0.0, "frames": 0, "infers": 0,
+_state = {"jpg": b"", "raw": None, "stats": None, "dets": None, "ts": 0.0, "frames": 0, "infers": 0,
           "infer_ms": 0.0, "stream_fps": 0.0, "reconnects": 0, "pushed": 0}
 _head_sizes = deque(maxlen=4000)      # 정규화 높이 누적 — 화각 조건 판정용
+_vest_sizes = deque(maxlen=4000)      # 조끼 정규화 높이
+# ★ 2026-09-10 결함 수정 — 종전엔 head 와 helmet 을 한 통(_head_sizes)에 담고 head 기준으로 쟀다.
+#   E63 전수 실측에서 두 분포가 31% 어긋난다(head 중앙 0.0593 · helmet 0.0776 · [M/L] 측정).
+#   섞어 담으면 안전모가 잡히기 시작하는 순간 그 수치가 무엇 대비인지 알 수 없게 된다.
+#   지금 안전모 검출률이 0% 라 우연히 문제가 안 보였을 뿐이다 — 보이기 전에 가른다.
+_helmet_sizes = deque(maxlen=4000)
+# 종횡비(가로/세로) — 구부리거나 돌아서면 크기는 그대로인데 모양이 바뀐다.
+#   크기만 재면 "자세를 다양하게 찍었는가"를 못 잰다(2026-09-10 사용자 지적).
+_vest_aspects = deque(maxlen=4000)
+# helmet 누적 감시 — 순간값(착용 0)만으로는 "현장에서 안전모를 잡기 시작했는가"를 못 잰다.
+#   2026-09-10 [M/L] 실측: 현장 35장에서 131명 중 helmet **0개**(문턱·해상도를 풀어도 0).
+#   배포 전후를 같은 자로 비교하려면 순간값이 아니라 누적이 필요하다.
+_helmet_seen = deque(maxlen=4000)     # 추론 프레임마다 helmet 검출 여부 0/1
+_helmet_last_ts = 0.0                 # 마지막으로 helmet 을 본 시각 (0 = 기동 후 한 번도 없음)
 _font = _fs = None
 
 
@@ -182,8 +208,20 @@ def infer(frame):
              "no_vest_count": 0, "vest_count": cnt.get("safety_vest", 0)}
     # ★ 머리류 박스 정규화 높이 기록 — 학습 범위 대조용 (추론 입력 높이 기준)
     for name, (x1, y1, x2, y2), _c in dets:
-        if name in ("head", "helmet"):
+        if name == "head":
             _head_sizes.append((y2 - y1) / IH)
+        elif name == "helmet":
+            _helmet_sizes.append((y2 - y1) / IH)
+        elif name == "safety_vest":
+            h_ = y2 - y1
+            _vest_sizes.append(h_ / IH)
+            if h_ > 1:
+                _vest_aspects.append((x2 - x1) / h_)
+    global _helmet_last_ts
+    hit = 1 if stats["hardhat_count"] > 0 else 0
+    _helmet_seen.append(hit)
+    if hit:
+        _helmet_last_ts = time.time()
     return dets, stats, ms
 
 
@@ -346,7 +384,8 @@ def _reader():
             jpg = draw(disp, dets, ms, fps, people)
             with _lock:
                 _state.update(jpg=jpg, stats=stats, ts=now, infer_ms=ms,
-                              raw=inf_frame)   # 주석 없는 추론 입력 — 미탐지 원인 진단용
+                              raw=inf_frame,   # 주석 없는 추론 입력 — 미탐지 원인 진단용
+                              dets=dets)       # /capture 가 프레임과 같은 락에서 함께 낸다
                 _state["infers"] += 1
                 _state["pose"] = _pose.summary(people) if _pose is not None else None
                 _state["pose_people"] = [
@@ -429,11 +468,44 @@ def _pusher():
         threading.Thread(target=_push_worker, args=(i,), daemon=True).start()
 
 
+# ⚠ 이 기준은 **E63 한 셋**의 분포다. 6차는 E63·507·SH17 을 섞어 학습했으므로
+#   여기에 대한 "범위 안 %" 는 모델 전체 학습 분포 대비가 아니다(507 head 중앙 0.0617·max 0.4941).
+#   합산 분포가 확정되면 /config?head_ref= 로 갈아끼운다 — 상수를 코드에 굳히지 않는다.
+#   근거 문구가 「E63 단독」이 아니라 「E63 학습 분할」인 이유 — E63_FRACTION 0.4 + 홀드아웃
+#   시퀀스 30% 제외를 거친 뒤의 분포다. E63 전수(중앙 0.0593)보다 이쪽이 학습 실제에 가깝다.
+_head_ref = {"median": TRAIN_MED, "lo": TRAIN_LO, "hi": TRAIN_HI, "max": TRAIN_MAX,
+             "basis": "E63 학습 분할"}
+# helmet 은 대응하는 분할값이 없어 전수값을 쓴다 — 자가 다르다는 것을 근거 문구가 말하게 둔다.
+#   helmet 중앙(0.0776)이 head(0.0593)보다 31% 커야 정상이다. 둘이 비슷해지면 오검출 신호다.
+_helmet_ref = {"lo": 0.0309, "median": 0.0776, "hi": 0.1184, "max": 0.2011,
+               "basis": "E63 전수(train) n=15698"}
+
+
+def _size_summary(sizes, ref):
+    """정규화 높이 분포 요약. ★ 머리와 조끼가 **같은 함수**를 쓰게 해서 두 수치를 그대로 비교한다
+    (2026-09-08 · 양쪽 계산식이 다른 채로 개선폭을 말한 사고를 되풀이하지 않는다).
+    ref 가 None 이면 학습 분포가 아직 없다는 뜻 — 범위 비율을 0 으로 꾸미지 않고 None 으로 낸다."""
+    if not sizes:
+        return None
+    v = sorted(sizes)
+    q = lambda p: v[min(len(v) - 1, int(len(v) * p))]
+    out = {"n": len(v), "median": round(statistics.median(v), 4),
+           "p5": round(q(.05), 4), "p95": round(q(.95), 4),
+           "min": round(v[0], 4), "max": round(v[-1], 4),
+           "in_train_range_pct": None, "train_ref": ref}
+    if ref:
+        inrange = sum(1 for x in v if ref["lo"] <= x <= ref["hi"])
+        out["in_train_range_pct"] = round(100 * inrange / len(v), 1)
+    return out
+
+
 @app.get("/health")
 def health():
     with _lock:
         s = dict(_state)
         sizes = list(_head_sizes)
+        hmsizes = list(_helmet_sizes)
+        vsizes = list(_vest_sizes)
     s.pop("jpg", None)
     s.pop("raw", None)          # 넘파이 배열이라 JSON 으로 못 나간다
     s["age"] = round(time.time() - s["ts"], 2) if s["ts"] else None
@@ -445,19 +517,16 @@ def health():
     s["gopro"] = {"ip": GOPRO_IP, "res": GOPRO_RES, "fov": GOPRO_FOV}
     s["pose_detail"] = _pose.health() if _pose is not None else None
     s["pose_log"] = _pose.log.health() if (_pose is not None and _pose.log is not None) else None
-    if sizes:
-        v = sorted(sizes)
-        q = lambda p: v[min(len(v) - 1, int(len(v) * p))]
-        inrange = sum(1 for x in v if TRAIN_LO <= x <= TRAIN_HI)
-        s["head_size"] = {
-            "n": len(v), "median": round(statistics.median(v), 4),
-            "p5": round(q(.05), 4), "p95": round(q(.95), 4),
-            "min": round(v[0], 4), "max": round(v[-1], 4),
-            "in_train_range_pct": round(100 * inrange / len(v), 1),
-            "train_ref": {"median": TRAIN_MED, "lo": TRAIN_LO, "hi": TRAIN_HI, "max": TRAIN_MAX},
-        }
-    else:
-        s["head_size"] = None
+    s["head_size"] = _size_summary(sizes, _head_ref)
+    s["helmet_size"] = _size_summary(hmsizes, _helmet_ref)
+    s["vest_size"] = _size_summary(vsizes, _vest_ref)
+    s["vest_aspect"] = _size_summary(list(_vest_aspects), None)
+    hv = list(_helmet_seen)
+    s["helmet_watch"] = {
+        "frames": len(hv), "seen_frames": sum(hv),
+        "seen_pct": round(100 * sum(hv) / len(hv), 2) if hv else None,
+        "last_seen_ago_s": round(time.time() - _helmet_last_ts, 1) if _helmet_last_ts else None,
+    } if hv else None
     return jsonify(s)
 
 
@@ -475,6 +544,38 @@ def snapshot():
     if not jpg:
         return jsonify({"ok": False, "error": "no frame"}), 404
     return Response(jpg, mimetype="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/capture")
+def capture():
+    """학습 수집용 — 프레임과 그때의 검출·라벨을 **한 락 안에서** 함께 돌려준다.
+    ★ /snapshot 과 /health 를 따로 부르면 그 사이 프레임이 바뀌어 박스가 어긋난다.
+      라벨 오염은 에러를 안 내고 조용히 학습을 망치므로 원자성이 필요하다.
+    ?draw=1 이면 표시본(박스 그려진 것), 기본은 추론 입력 그대로."""
+    want_draw = request.args.get("draw") == "1"
+    with _lock:
+        raw = _state.get("raw")
+        jpg = _state["jpg"]
+        dets = _state.get("dets")
+        stats = _state.get("stats")
+        ts = _state["ts"]
+    if want_draw or raw is None:
+        buf = jpg
+    else:
+        ok, enc = cv2.imencode(".jpg", raw, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        buf = enc.tobytes() if ok else jpg
+    if not buf:
+        return jsonify({"ok": False, "error": "no frame"}), 404
+    pl = _pose.log.health() if (_pose is not None and _pose.log is not None) else {}
+    return jsonify({
+        "ok": True, "ts": ts, "age": round(time.time() - ts, 3) if ts else None,
+        "wh": [IW, IH] if not want_draw else [OW, OH],
+        "label": pl.get("label"), "note": pl.get("note"),
+        "dets": [{"cls": n, "box": [round(v, 1) for v in b], "conf": round(c, 3)}
+                 for n, b, c in (dets or [])],
+        "stats": stats,
+        "jpg_b64": base64.b64encode(buf).decode(),
+    })
 
 
 @app.get("/config")
@@ -504,6 +605,24 @@ def config():
             JPEG_Q = min(95, max(30, int(q)))
         except ValueError:
             return jsonify({"ok": False, "error": "jpeg_q 는 30~95 정수"}), 400
+    for key, arg in (("_vest_ref", "vest_ref"), ("_head_ref", "head_ref"),
+                     ("_helmet_ref", "helmet_ref")):
+        raw = request.args.get(arg)
+        if raw is None:
+            continue
+        if raw in ("off", "none", ""):
+            globals()[key] = None
+            continue
+        try:
+            parts = raw.split(",")
+            lo, med, hi, mx = (float(x) for x in parts[:4])
+            if not 0 < lo <= med <= hi <= mx <= 1:
+                raise ValueError
+            basis = parts[4] if len(parts) > 4 else "런타임 지정"
+            globals()[key] = {"lo": lo, "median": med, "hi": hi, "max": mx, "basis": basis}
+        except (ValueError, IndexError):
+            return jsonify({"ok": False, "error":
+                            f"{arg} 는 lo,med,hi,max[,근거] (0<lo<=med<=hi<=max<=1) 또는 off"}), 400
     z = request.args.get("zone")
     if z is not None:
         if z in ("off", "none", ""):
@@ -521,7 +640,8 @@ def config():
         _zone["label"] = request.args.get("zone_label")[:20]
     return jsonify({"ok": True, **_cfg, "push_workers": PUSH_WORKERS, "zone": _zone["box"],
                     "zone_label": _zone["label"], "label_px": LABEL_PX,
-                    "jpeg_q": JPEG_Q})
+                    "jpeg_q": JPEG_Q, "vest_ref": _vest_ref, "head_ref": _head_ref,
+                    "helmet_ref": _helmet_ref})
 
 
 # ── 네트워크 상태 ─────────────────────────────────────────────────────────────
@@ -693,6 +813,10 @@ def reset():
     """거리별 측정 구간을 나눌 때 머리 크기 누적을 비운다."""
     with _lock:
         _head_sizes.clear()
+        _helmet_sizes.clear()
+        _vest_sizes.clear()
+        _vest_aspects.clear()
+        _helmet_seen.clear()
     return jsonify({"ok": True, "cleared": True})
 
 
@@ -771,6 +895,9 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
     <div class="cell"><div class="k">추론 주기</div><div class="v" id="ifps">-<small> fps</small></div></div>
     <div class="cell"><div class="k">머리 크기 중앙값</div><div class="v" id="hm">-</div></div>
     <div class="cell"><div class="k">학습 범위 안</div><div class="v" id="hr">-<small> %</small></div></div>
+    <div class="cell"><div class="k">안전모 크기 중앙값</div><div class="v" id="hmm">-</div></div>
+    <div class="cell"><div class="k">조끼 크기 중앙값</div><div class="v" id="vm">-</div></div>
+    <div class="cell"><div class="k">안전모 검출률</div><div class="v" id="hw">-</div></div>
     <div class="cell"><div class="k">작업자</div><div class="v" id="pc">-</div></div>
     <div class="cell"><div class="k">안전모 미착용</div><div class="v" id="nh">-</div></div>
     <div class="cell"><div class="k">서버 전송</div><div class="v" id="px">-</div></div>
@@ -795,6 +922,7 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
     <button data-q="72">72</button><button data-q="85">85</button>
     <span class="lab" id="qnow"></span>
    </div>
+   <div class="lab" id="hbasis" style="margin-top:7px">-</div>
   </main>
  </div>
 </div>
@@ -815,6 +943,17 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
    const hs=h.head_size||{};
    $('hm').textContent=hs.median!=null?hs.median.toFixed(3):'-';
    $('hr').innerHTML=(hs.in_train_range_pct??0)+'<small> %</small>';
+   const vs=h.vest_size;
+   $('vm').innerHTML=!vs?'<small>\uad00\uce21 \uc5c6\uc74c</small>'
+     :vs.median.toFixed(3)+'<small> n'+vs.n+(vs.in_train_range_pct==null
+       ?' \u00b7 \uae30\uc900 \ubbf8\uc815':' \u00b7 '+vs.in_train_range_pct+'%')+'</small>';
+   const hm=h.helmet_size;
+   $('hmm').innerHTML=!hm?'<small>%s</small>'
+     :hm.median.toFixed(3)+'<small> n'+hm.n+' \u00b7 '+(hm.in_train_range_pct==null?'-':hm.in_train_range_pct+'%%')+'</small>';
+   const hw=h.helmet_watch;
+   $('hw').innerHTML=!hw?'<small>\uad00\uce21 \uc5c6\uc74c</small>'
+     :(hw.seen_pct>0?'':'<span class="warn">')+hw.seen_pct+'<small> % \u00b7 '+hw.frames+'\ud504\ub808\uc784</small>'+(hw.seen_pct>0?'':'</span>');
+   $('hbasis').textContent='\uba38\ub9ac '+((hs.train_ref||{}).basis||'-')+' \u00b7 \uc548\uc804\ubaa8 '+((hm&&hm.train_ref||{}).basis||'-')+' \u00b7 \uc870\ub07c '+((vs&&vs.train_ref||{}).basis||'\uae30\uc900 \ubbf8\uc815');
    const st=h.stats||{};
    $('pc').textContent=st.person_count??'-';
    $('nh').innerHTML=(st.no_hardhat_count??0)>0
