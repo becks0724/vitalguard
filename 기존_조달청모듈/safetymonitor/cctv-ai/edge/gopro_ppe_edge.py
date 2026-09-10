@@ -85,6 +85,11 @@ _cfg = {"infer_fps": float(os.environ.get("INFER_FPS", "12")),   # 추론 cadenc
 _mv = re.search(r"_(v\d+)_", os.path.basename(ENGINE))
 ENGINE_TAG = _mv.group(1) if _mv else os.path.basename(ENGINE).replace(".engine", "")
 OW, OH = 640, 360                                       # 표시용(푸시 JPEG) 크기 — 관제웹·대역폭 불변
+# 표시 JPEG 품질 — /config?jpeg_q= 로 런타임 조정한다.
+#   왜 fps 보다 이걸 먼저 내리는가 (2026-09-10): 끊김의 호소는 "부드럽지 않다"인데
+#   fps 를 내리면 그 호소가 더 나빠진다. 품질은 부드러움을 지킨 채 바이트만 깎는다.
+#   ★ MJPEG 은 연결마다 전체 스트림을 따로 보내므로, 한 장을 깎으면 시청자 수만큼 곱해서 준다.
+JPEG_Q = int(os.environ.get("JPEG_Q", "72"))
 HEADER_H = 22
 
 # E63 학습 분포 — 검출 가능 범위 판정 기준
@@ -279,7 +284,7 @@ def draw(frame, dets, ms, fps, people=()):
             d.rectangle((cx, cy, cx + tw + 8, cy + lh), fill=col)
             d.text((cx + 3, cy + 1), lab, font=fs, fill=(255, 255, 255))
     ok, buf = cv2.imencode(".jpg", cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR),
-                           [int(cv2.IMWRITE_JPEG_QUALITY), 72])
+                           [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_Q])
     return buf.tobytes() if ok else b""
 
 
@@ -436,7 +441,7 @@ def health():
     s["conf"] = CONF
     s["imgsz"] = IMGSZ
     s["infer_size"] = f"{IW}x{IH}"
-    s["cfg"] = dict(_cfg)
+    s["cfg"] = dict(_cfg, jpeg_q=JPEG_Q)
     s["gopro"] = {"ip": GOPRO_IP, "res": GOPRO_RES, "fov": GOPRO_FOV}
     s["pose_detail"] = _pose.health() if _pose is not None else None
     s["pose_log"] = _pose.log.health() if (_pose is not None and _pose.log is not None) else None
@@ -492,6 +497,13 @@ def config():
         except ValueError:
             return jsonify({"ok": False, "error": "label_px 는 7~20 정수"}), 400
         _font = _fs = None                  # 폰트 캐시를 비워 다음 프레임부터 새 크기로 그린다
+    q = request.args.get("jpeg_q")
+    if q is not None:
+        global JPEG_Q
+        try:
+            JPEG_Q = min(95, max(30, int(q)))
+        except ValueError:
+            return jsonify({"ok": False, "error": "jpeg_q 는 30~95 정수"}), 400
     z = request.args.get("zone")
     if z is not None:
         if z in ("off", "none", ""):
@@ -508,7 +520,8 @@ def config():
     if request.args.get("zone_label"):
         _zone["label"] = request.args.get("zone_label")[:20]
     return jsonify({"ok": True, **_cfg, "push_workers": PUSH_WORKERS, "zone": _zone["box"],
-                    "zone_label": _zone["label"], "label_px": LABEL_PX})
+                    "zone_label": _zone["label"], "label_px": LABEL_PX,
+                    "jpeg_q": JPEG_Q})
 
 
 # ── 네트워크 상태 ─────────────────────────────────────────────────────────────
@@ -766,6 +779,12 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
     <button data-f="12">12</button><button data-f="15">15</button>
     <span class="lab" id="engine"></span>
    </div>
+   <div class="row">
+    <span class="lab">화질</span>
+    <button data-q="45">45</button><button data-q="55">55</button>
+    <button data-q="72">72</button><button data-q="85">85</button>
+    <span class="lab" id="qnow"></span>
+   </div>
   </main>
  </div>
 </div>
@@ -792,6 +811,7 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
      ?'<span class="warn">'+st.no_hardhat_count+'</span>':(st.no_hardhat_count??'-');
    $('px').textContent=h.pushed?h.pushed.toLocaleString():'0 (\ub85c\uceec \uc804\uc6a9)';
    $('engine').textContent=(h.engine||'')+' @'+(h.infer_size||'');
+   $('qnow').textContent='\ud604\uc7ac '+(h.cfg?.jpeg_q??h.jpeg_q??'-');
 
    const pd=h.pose_detail;
    if(!pd){ $('posewrap').hidden=true; return; }
@@ -824,6 +844,9 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
  }
  document.querySelectorAll('button[data-f]').forEach(b=>b.onclick=async()=>{
    await fetch('/config?infer_fps='+b.dataset.f); tick();
+ });
+ document.querySelectorAll('button[data-q]').forEach(b=>b.onclick=async()=>{
+   await fetch('/config?jpeg_q='+b.dataset.q); tick();
  });
  tick(); setInterval(tick,1000);
 
