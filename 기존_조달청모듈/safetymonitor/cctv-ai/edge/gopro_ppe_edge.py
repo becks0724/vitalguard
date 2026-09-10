@@ -30,11 +30,14 @@ GoPro HERO9 --USB-net UDP 8554--> Jetson(이 스크립트) --HTTP--> cctv-ai(/cc
   · fps 를 바꾸려고 재기동하면 GoPro 웹캠이 STOP/START 를 반복하다 굳는다(11:51 사고) → /config 로 런타임 조정.
 """
 
+import fcntl
 import http.client
 import json
 import os
 import re
+import socket
 import statistics
+import struct
 import threading
 import time
 import urllib.parse
@@ -51,6 +54,9 @@ IMGSZ = int(os.environ.get("PPE_IMGSZ", "960"))        # 엔진을 구운 imgsz 
 IW, IH = map(int, os.environ.get("INFER_SIZE", "960x540").split("x"))  # 추론 입력 크기(원본 1080p 에서 리사이즈)
 CCTV_BASE = os.environ.get("CCTV_BASE", "").rstrip("/")
 GOPRO_IP = os.environ.get("GOPRO_IP", "172.23.102.51")
+# 관제망 유선 NIC — duckdns_update.sh 의 DUCKDNS_IFACE 와 같은 기준을 쓴다(둘이 어긋나면 진단이 엇갈린다).
+WIRE_IFACE = os.environ.get("WIRE_IFACE", "enP8p1s0")
+NET_HOST = os.environ.get("NET_HOST", "cctv-gate.example.invalid")   # 관제웹이 젯슨을 찾아오는 이름
 GOPRO_RES = os.environ.get("GOPRO_RES", "1080")
 GOPRO_FOV = os.environ.get("GOPRO_FOV", "4")          # 0=Wide 4=Narrow 6=Linear
 UDP_URL = os.environ.get("UDP_URL", "udp://0.0.0.0:8554?overrun_nonfatal=1&fifo_size=5000000")
@@ -505,6 +511,124 @@ def config():
                     "zone_label": _zone["label"], "label_px": LABEL_PX})
 
 
+# ── 네트워크 상태 ─────────────────────────────────────────────────────────────
+# 왜 이걸 화면에 박는가 (2026-09-10)
+#   영상이 끊겨 원인을 찾는 데 오래 걸렸다. 실제로는 유선이 빠져 무선(2.4GHz)으로 넘어간 것이었는데
+#   화면 어디에도 그 사실이 없었다. 관제웹은 티켓을 계속 200 으로 내주고 있어 서버 로그로도 안 잡혔다.
+#   ⟹ "지금 어느 길로 나가는가"와 "관제 이름이 나를 가리키는가"를 눈에 보이게 만든다.
+_net_prev = {}                       # 인터페이스별 (시각, 카운터) — 초당 증가분 계산용
+_net_dns = {"t": 0.0, "ip": None}    # DNS 조회는 30초 캐시(화면은 3초마다 물어본다)
+
+
+def _sysnet(iface, key, default=""):
+    try:
+        with open(f"/sys/class/net/{iface}/{key}") as f:
+            return f.read().strip()
+    except OSError:
+        return default
+
+
+def _iface_ip(iface):
+    """인터페이스의 IPv4 — ip 명령을 띄우지 않고 ioctl 로 직접 읽는다."""
+    if not iface:
+        return None
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        return socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(), 0x8915, struct.pack("256s", iface[:15].encode()))[20:24])
+    except OSError:
+        return None
+    finally:
+        s.close()
+
+
+def _default_iface():
+    """기본 경로가 나가는 인터페이스 = 지금 영상이 타고 있는 길."""
+    try:
+        with open("/proc/net/route") as f:
+            for ln in f.read().splitlines()[1:]:
+                c = ln.split()
+                if len(c) > 2 and c[1] == "00000000":
+                    return c[0]
+    except OSError:
+        pass
+    return None
+
+
+def _wifi_signal(iface):
+    """무선 신호 세기(dBm) — iw 를 부르지 않고 /proc 에서 읽는다. 유선이면 None."""
+    try:
+        with open("/proc/net/wireless") as f:
+            for ln in f:
+                if ln.strip().startswith(iface + ":"):
+                    return int(float(ln.split()[3].rstrip(".")))
+    except (OSError, ValueError, IndexError):
+        pass
+    return None
+
+
+def _net_rate(iface):
+    """직전 호출 이후의 초당 증가분. 첫 호출과 오래 쉰 뒤는 None — 0 으로 속이지 않는다."""
+    if not iface:
+        return None
+    now = time.time()
+    cur = tuple(int(_sysnet(iface, "statistics/" + k, "0") or 0)
+                for k in ("tx_bytes", "rx_packets", "rx_dropped"))
+    t0, prev = _net_prev.get(iface, (0.0, None))
+    _net_prev[iface] = (now, cur)
+    dt = now - t0
+    if prev is None or dt <= 0 or dt > 30:
+        return None
+    return {"tx_mbps": round((cur[0] - prev[0]) * 8 / dt / 1e6, 2),
+            "rx_pps": round((cur[1] - prev[1]) / dt, 1),
+            "drop_ps": round((cur[2] - prev[2]) / dt, 1)}
+
+
+def _local_ips():
+    """이 젯슨이 가진 모든 IPv4 — DNS 가 나를 가리키는지 대조할 때 쓴다."""
+    out = set()
+    try:
+        for i in os.listdir("/sys/class/net"):
+            ip = _iface_ip(i)
+            if ip and not ip.startswith("127."):
+                out.add(ip)
+    except OSError:
+        pass
+    return out
+
+
+@app.get("/netstat")
+def netstat():
+    """지금 나가는 길 + 관제 이름이 나를 가리키는지. 화면이 3초마다 부른다.
+    /health(1초)와 나눈 것은 DNS 조회가 비싸서다."""
+    d = _default_iface()
+    ip = _iface_ip(d)
+    now = time.time()
+    if now - _net_dns["t"] > 30:
+        try:
+            _net_dns["ip"] = socket.gethostbyname(NET_HOST)
+        except OSError:
+            _net_dns["ip"] = None
+        _net_dns["t"] = now
+    dns_ip = _net_dns["ip"]
+
+    # 유선 — carrier 는 1 인데 수신 패킷이 0 이면 "꽂혔지만 그 너머에 아무도 없다"는 뜻이다.
+    #   살아 있는 스위치 포트라면 브로드캐스트만으로도 몇 개는 들어온다(2026-09-10 실측: 5초에 0개).
+    w = None
+    if os.path.isdir(f"/sys/class/net/{WIRE_IFACE}"):
+        w = {"iface": WIRE_IFACE, "carrier": _sysnet(WIRE_IFACE, "carrier") == "1",
+             "speed": _sysnet(WIRE_IFACE, "speed"), "ip": _iface_ip(WIRE_IFACE),
+             "rate": _net_rate(WIRE_IFACE)}
+    return jsonify({
+        "host": NET_HOST, "iface": d, "ip": ip,
+        "kind": ("무선" if _wifi_signal(d) is not None else "유선") if d else None,
+        "signal_dbm": _wifi_signal(d) if d else None,
+        "rate": _net_rate(d),
+        "dns_ip": dns_ip, "dns_match": bool(dns_ip and dns_ip in _local_ips()),
+        "wire_iface": WIRE_IFACE, "wire": w,
+    })
+
+
 @app.get("/stream")
 def stream():
     """로컬 확인용 MJPEG — cctv-ai 없이 브라우저에서 바로 본다(과금 0).
@@ -628,6 +752,14 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
     <div class="cell"><div class="k">안전모 미착용</div><div class="v" id="nh">-</div></div>
     <div class="cell"><div class="k">서버 전송</div><div class="v" id="px">-</div></div>
    </div>
+   <div class="k" style="margin-top:14px">네트워크</div>
+   <div class="grid" style="margin-top:4px">
+    <div class="cell"><div class="k">지금 나가는 길</div><div class="v" id="nrt">-</div></div>
+    <div class="cell"><div class="k">송신</div><div class="v" id="ntx">-<small> Mbps</small></div></div>
+    <div class="cell"><div class="k">무선 신호</div><div class="v" id="nsg">-</div></div>
+    <div class="cell"><div class="k">관제 이름</div><div class="v" id="ndn">-</div></div>
+   </div>
+   <div class="lab" id="nwire" style="margin-top:7px">-</div>
    <div class="row">
     <span class="lab">추론 fps</span>
     <button data-f="5">5</button><button data-f="10">10</button>
@@ -694,6 +826,32 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
    await fetch('/config?infer_fps='+b.dataset.f); tick();
  });
  tick(); setInterval(tick,1000);
+
+ const nwarn=(t,bad)=>bad?'<span class="warn">'+t+'</span>':t;
+ async function ntick(){
+  try{
+   const n=await (await fetch('/netstat',{cache:'no-store'})).json();
+   const r=n.rate||{};
+   $('nrt').innerHTML=n.iface
+     ?nwarn((n.kind||'')+'<small> '+(n.ip||'\uc8fc\uc18c \uc5c6\uc74c')+'</small>',n.kind==='\ubb34\uc120'||!n.ip)
+     :nwarn('\uacbd\ub85c \uc5c6\uc74c',true);
+   $('ntx').innerHTML=(r.tx_mbps==null?'-':r.tx_mbps.toFixed(2))+'<small> Mbps</small>'
+     +((r.drop_ps>0)?' '+nwarn('\ub4dc\ub86d +'+r.drop_ps,true):'');
+   $('nsg').innerHTML=n.signal_dbm!=null
+     ?nwarn(n.signal_dbm+'<small> dBm</small>',n.signal_dbm<=-60)
+     :'<small>\uc720\uc120 \u00b7 \ud574\ub2f9 \uc5c6\uc74c</small>';
+   $('ndn').innerHTML=n.dns_ip
+     ?nwarn(n.dns_match?'\uc77c\uce58':'\ubd88\uc77c\uce58<small> '+n.dns_ip+'</small>',!n.dns_match)
+     :nwarn('\uc870\ud68c \uc2e4\ud328',true);
+   const w=n.wire, wr=(w&&w.rate)||{};
+   $('nwire').innerHTML=!w?nwarn('\uc720\uc120 '+n.wire_iface+' \u2014 \uc7a5\uce58 \uc5c6\uc74c',true)
+     :!w.carrier?nwarn('\uc720\uc120 '+w.iface+' \u2014 \ucf00\uc774\ube14 \uc5c6\uc74c',true)
+     :w.ip?'\uc720\uc120 '+w.iface+' \u2014 '+w.ip+' \u00b7 '+w.speed+' Mbps'
+     :nwarn('\uc720\uc120 '+w.iface+' \u2014 \ub9c1\ud06c\ub9cc \uc788\uace0 \ub124\ud2b8\uc6cc\ud06c \uc5c6\uc74c ('+w.speed+' Mbps) \u00b7 \uc218\uc2e0 '
+            +(wr.rx_pps==null?'-':wr.rx_pps)+'/s',true);
+  }catch(e){}
+ }
+ ntick(); setInterval(ntick,3000);
 </script>
 </html>"""
 
