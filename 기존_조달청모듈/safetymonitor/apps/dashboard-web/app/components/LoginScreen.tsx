@@ -1587,9 +1587,10 @@ export function LoginScreen({
             )}
             {/* 2단계 인증 미등록 안내 — 고권한 계정인데 아직 안 켠 경우.
                 ⚠ 입장을 막지 않는다. 등록 화면이 로그인 뒤(내 정보)에 있어서, 여기서 막으면
-                  등록할 방법 자체가 사라져 계정이 잠긴다. */}
+                  등록할 방법 자체가 사라져 계정이 잠긴다.
+                위치 — 로고와 "현장 선택" 제목 사이 가운데(위아래 같은 여백 my-6) · 글은 가운데 정렬(2026-09-10 사용자 지시). */}
             {twoFactorPendingNotice && (
-              <p className="mt-4 w-full max-w-sm rounded-xl border border-sky-300/50 bg-sky-500/25 px-3 py-2 text-xs text-sky-50 backdrop-blur-md">
+              <p className="my-6 w-full max-w-sm rounded-xl border border-sky-300/50 bg-sky-500/25 px-3 py-2 text-center text-xs text-sky-50 backdrop-blur-md">
                 {t.twoFactorPendingNotice}
               </p>
             )}
