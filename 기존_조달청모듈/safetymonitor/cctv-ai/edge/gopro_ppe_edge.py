@@ -614,6 +614,16 @@ def _local_ips():
 def netstat():
     """지금 나가는 길 + 관제 이름이 나를 가리키는지. 화면이 3초마다 부른다.
     /health(1초)와 나눈 것은 DNS 조회가 비싸서다."""
+    # ★ 한 요청 안에서 같은 인터페이스의 증가율을 두 번 재면 안 된다 —
+    #   두 번째 호출은 시간차가 0 에 가까워 0 Mbps 가 나온다(2026-09-10 실측: 유선 17.39 vs 기본경로 0.0).
+    #   기본 경로가 곧 유선인 정상 상태에서 항상 걸리므로, 요청 단위로 한 번만 재고 나눠 쓴다.
+    _rates = {}
+
+    def rate_of(i):
+        if i and i not in _rates:
+            _rates[i] = _net_rate(i)
+        return _rates.get(i)
+
     d = _default_iface()
     ip = _iface_ip(d)
     now = time.time()
@@ -631,12 +641,12 @@ def netstat():
     if os.path.isdir(f"/sys/class/net/{WIRE_IFACE}"):
         w = {"iface": WIRE_IFACE, "carrier": _sysnet(WIRE_IFACE, "carrier") == "1",
              "speed": _sysnet(WIRE_IFACE, "speed"), "ip": _iface_ip(WIRE_IFACE),
-             "rate": _net_rate(WIRE_IFACE)}
+             "rate": rate_of(WIRE_IFACE)}
     return jsonify({
         "host": NET_HOST, "iface": d, "ip": ip,
         "kind": ("무선" if _wifi_signal(d) is not None else "유선") if d else None,
         "signal_dbm": _wifi_signal(d) if d else None,
-        "rate": _net_rate(d),
+        "rate": rate_of(d),
         "dns_ip": dns_ip, "dns_match": bool(dns_ip and dns_ip in _local_ips()),
         "wire_iface": WIRE_IFACE, "wire": w,
     })
