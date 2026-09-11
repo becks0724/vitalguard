@@ -97,3 +97,42 @@ WHERE ts::timestamptz > (now() - $1::interval)
 
 **가설** 보조배터리의 저부하 자동 차단. 45W 벽 어댑터에는 그 동작이 없다. `[추정]`
 **검증 방법** 번인 3일 동안 벽 어댑터로 두면 자연히 갈린다 — 꺼짐이 없으면 원인은 보조배터리로 확정.
+
+---
+
+## 2026-09-11 · 위험작업 태깅을 CLOVA 로 전환 — 라이브 태그는 여전히 0건, 원인은 LLM 이 아니라 입력
+
+`00370-9rv`(6c523eb) → **`00371-w2x`**(`dbf1199`). 사후 90초 5xx 0건 · DB 타임아웃 0건.
+롤백 `gcloud run services update-traffic vitalguard-dashboard --region asia-northeast3 --to-revisions vitalguard-dashboard-00370-9rv=100`
+(고정으로 되돌아가므로 수습 후 `--to-latest` 를 한 번 더.)
+
+**전환 전 라이브는 LLM 을 쓴 적이 없다.** Cloud Run env 이름 조회 결과 `ANTHROPIC_API_KEY` 가
+애초에 **주입돼 있지 않았다** — 즉 종전 라이브 태깅은 100% 룰이었다. `CLOVA_API_KEY` 는 주입돼
+있어(폴백 체인 2번째) 전환만으로 AI 경로가 켜졌다. `CLOVA_MODEL` 은 없고 코드 기본값 `HCX-005`.
+
+**CLOVA 호출은 성공한다.** 신 리비전 로그 300줄 집계 — `clova HTTP <code>` **0건**.
+실패는 전부 응답 **후처리** 단계였다.
+
+| 로그 | 건수 |
+|---|---|
+| `AI fallback to rules: Error: no valid AI tags after verification` | 8 |
+| `AI fallback to rules: Error: no JSON array in response` | 1 |
+| `clova HTTP …`(호출 실패) | **0** |
+
+**그런데 라이브 태그는 0건이다.** 공고 40건 + 표본 8건 전수에서 `tags: []`.
+원인은 입력이다 — `taskText` 에 **과업 내용이 없다**.
+
+- 실측 8건의 `taskText` 길이 **102~183자**.
+- 구성은 `제목 · 업종 · 첨부파일명… · 참조번호` 뿐이다(`app/lib/g2b.ts:123`).
+  첨부파일명은 제목을 그대로 반복한다:
+  `2026년도 강릉국토 관내 염수분사시설 유지관리공사 · 기계설비ㆍ가스공사업 · 강릉국토 공고 제2026-183호[같은 제목].pdf · …hwpx`
+- 같은 8건에 **룰 정규식 12개 전수 대조 → 매칭 0건.** 룰도 못 잡는다.
+
+그래서 근거 검증(`taskText.includes(evidence)`)이 AI 태그를 전부 떨어뜨린 것은 **오작동이 아니라
+설계대로**다. 본문에 없는 근거를 지어내면 떨어뜨리는 게 맞다.
+
+**회귀는 없다** — 전환 전(룰 0건)과 전환 후(AI 탈락 → 룰 0건)의 라이브 출력이 동일하다.
+
+**미해결** 실제 과업 내용은 PDF·HWPX 첨부 안에 있고 파싱되지 않는다. `specDocs[].url` 에
+원문 URL 이 이미 실려 있으니(`app/lib/g2b.ts:117~121`) 경로는 있다. 첨부 파싱 없이는
+LLM 을 무엇으로 바꾸든 태깅 값이 나오지 않는다.
