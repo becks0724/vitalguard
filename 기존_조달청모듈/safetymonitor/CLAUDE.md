@@ -16,6 +16,23 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
+- **라이브** = `vitalguard-dashboard-00372-r9t` (커밋 `4595afcd` · 09-11 16:45 · 서빙 digest
+  `sha256:dc0455c4…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **아카이브(4595afc 고정) · 루트 pnpm test 1658/1658**(`ARCHIVE_SKIP` 1파일 10건 제외 — 워킹트리 기준값은 1668) ·
+  commit-sha 라벨 = APPROVED_AT · ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
+  **의존성 보안 상향만 — 애플리케이션 코드 0줄.** `next 15.5.21→15.5.25`(critical 2: 인증 없는 RCE·이미지 최적화 RCE) ·
+  `js-yaml 4.3.1→4.3.2` · `sharp 0.34.5→0.35.4`(각 high 1). `ignoreGhsas` 는 안 건드림 — 이 레포 방침이 "덮지 않고 올린다".
+  ⚠ **원인은 CI 가 22시간 죽어 있던 것**이다 — `Verify safetymonitor` 가 2단계 `pnpm audit` 에서 exit 1 나면서
+  빌드·타입·린트·그래프·테스트 **4단계가 통째로 안 돌았다**. 09-10 이후 main 커밋은 검증을 통과한 적이 없다.
+  배포 후 CI 7단계 전부 초록(run 34573849805 @ `4595afc`). 그동안 깨진 건 없었지만 **그건 운이지 검증이 아니다.**
+  라이브 실측(화면) = HTML 렌더 정상(title·스크립트 21개·에러 문구 0 · 404 통제군 정상). 고권한 로그인 뒤 눈 확인은 여전히 미완.
+  ⚠ **표기가 3리비전 낡아 있었다** — 이 줄이 `00369-gsw` 인 동안 실서빙은 `00371-w2x`(팀원 `dbf1199`, CLOVA 전환)였다.
+  `00370`·`00371` 은 표기가 갱신되지 않았다([[L-129]]④ 재발 — 라이브는 `describe` 로 읽는다).
+  직전 라이브 = `00371-w2x`(dbf1199).
+  ⚠ **`Secret scan` 은 여전히 실패 중이다**(이 배포와 무관) — gitleaks `generic-api-key` 오탐 2건,
+  둘 다 `.test.ts` 안의 `test-` 접두 더미(`newdb/actor.test.ts:56` · `2026-09-03-mobile-two-factor.guard.test.ts:33`).
+  `.gitleaksignore` 는 모든 브랜치 스캔에 걸리는 설정이라 한 세션이 정하지 않는다 — 사용자 판단 대기.
+
 - **라이브** = `vitalguard-dashboard-00369-gsw` (커밋 `6c523ebb` · 09-10 11:4x · 서빙 digest
   `sha256:fb47ca9b…` **대조 일치** · env 29 유지 · HTTP 200 · 사후 90초 5xx 0건·DB타임아웃 1건(기존 간헐 기저 범위) ·
   검증 **tsc·test 워킹트리(= 6c523ebb · 1668/1668 · SKIP_VERIFY)** · commit-sha 라벨 = HEAD · clean 진입 · 세션에서 스크립트 직접 실행(이번엔 분류기 차단 없음)).
