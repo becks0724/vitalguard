@@ -121,30 +121,47 @@ export function procureRuleTags(taskText: string): RiskTag[] {
   return out;
 }
 
-/** AI 태깅(Claude) — 사전과 같은 태그 목록만 허용. 실패 시 throw → 룰 폴백.
- *  ⚠ 개인정보 주의: 공개 조달 공고 텍스트에 한정해 외부 LLM 으로 전송한다(risk-tagging.ts 와 동일 경계). */
+function clovaKey(): string {
+  return (
+    process.env.CLOVASTUDIO_API_KEY ??
+    process.env.CLOVA_API_KEY ??
+    process.env.HYPERCLOVA_API_KEY ??
+    ""
+  ).trim();
+}
+
+/** AI 태깅(CLOVA Studio) — 사전과 같은 태그 목록만 허용. 실패 시 throw → 룰 폴백.
+ *  ⚠ 개인정보 주의: 국외 LLM 전송은 없지만 공개 조달 공고 텍스트를 외부 서비스로 전송한다
+ *     (risk-tagging.ts 와 동일 경계). */
 async function aiTags(taskText: string): Promise<RiskTag[]> {
-  const key = process.env.ANTHROPIC_API_KEY as string;
+  const key = clovaKey();
+  const model = process.env.CLOVA_MODEL ?? "HCX-005";
   const system =
     "당신은 건설 안전 전문가다. 입력된 공사 공고 과업텍스트에서 위험작업을 식별한다. " +
     `다음 태그만 사용: ${TAG_NAMES.join(", ")}. ` +
     '오직 JSON 배열만 출력: [{"tag":string,"severity":1|2|3,"evidence":string}]. ' +
     "evidence 는 반드시 원문에 그대로 등장하는 문구(부분 인용)여야 한다. 원문에 없으면 그 태그를 넣지 마라.";
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model: "claude-haiku-4-5",
-      max_tokens: 1024,
-      system,
-      messages: [{ role: "user", content: `<공고과업>\n${taskText}\n</공고과업>` }],
-    }),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`anthropic HTTP ${res.status}`);
-  const json = (await res.json()) as { content?: { text?: string }[] };
-  const text = json.content?.[0]?.text ?? "";
+  const res = await fetch(
+    `https://clovastudio.stream.ntruss.com/v3/chat-completions/${model}`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: `<공고과업>\n${taskText}\n</공고과업>` },
+        ],
+        temperature: 0.1,
+        topP: 0.8,
+        maxTokens: 1024,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    },
+  );
+  if (!res.ok) throw new Error(`clova HTTP ${res.status}`);
+  const json = (await res.json()) as { result?: { message?: { content?: string } } };
+  const text = json.result?.message?.content ?? "";
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
   if (start < 0 || end < 0) throw new Error("no JSON array in response");
@@ -169,7 +186,7 @@ async function aiTags(taskText: string): Promise<RiskTag[]> {
 
 /** 공개 진입점(안전조달 전용): AI 우선, 실패 시 룰 폴백. */
 export async function extractProcureRiskTags(taskText: string): Promise<RiskTag[]> {
-  const hasKey = typeof process.env.ANTHROPIC_API_KEY === "string" && process.env.ANTHROPIC_API_KEY.length > 0;
+  const hasKey = clovaKey().length > 0;
   if (hasKey) {
     try {
       return await aiTags(taskText);
