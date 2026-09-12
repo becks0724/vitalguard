@@ -16,7 +16,19 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00372-r9t` (커밋 `4595afcd` · 09-11 16:45 · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00373-hm8` (커밋 `9f46a9c0` · 09-12 23:2x · 서빙 digest
+  `sha256:31455442…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **아카이브(9f46a9c 고정) · 루트 pnpm test 1658/1658** · commit-sha 라벨 = APPROVED_AT ·
+  ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
+  **CCTV CAM-03 게이트 주소 복구 — 애플리케이션 코드 0줄.** 09-11 `00371` 빌드부터 빌드 치환 `_CAM03_GATE` 가 빠져
+  CAM-03 이 옛 cctv-ai 폴백(=OFF·404)으로 떨어져 있었다. `NEXT_PUBLIC_*` 은 **빌드타임**이라 이미지 재빌드로만 복구된다.
+  ⚠ **소스 가드(`2026-09-09-cctv-gate-wiring.guard.test.ts`)로는 안 잡힌다** — 가드가 보는 것은 배선(소스)이고 빠진 것은 치환(빌드 산출물)이라,
+  1658/1658 초록인 채 기능만 죽어 있었다. 판정은 **라이브 번들 검색**으로만 된다.
+  라이브 실측 = 청크 17개 중 `app/page-86bacf8cf0d3c286.js` 에 `gateApi:"https://cctv-gate.example.invalid:8443"` **적중 1**
+  (통제군 「심부체온」 1 적중 · 없는 문자열 0 적중). 게이트 쪽 = preflight 200 · 표 없이 `stream3` **401** · 인증서 12-08 · 푸셔 29.9fps.
+  ⚠ **DuckDNS 가 사설 IP(192.168.219.47)를 가리키므로 시청은 같은 LAN 안으로 한정**(09-09 사용자 승인). 외부 시청은 별도 결정 사항.
+
+- (직전) **라이브** = `vitalguard-dashboard-00372-r9t` (커밋 `4595afcd` · 09-11 16:45 · 서빙 digest
   `sha256:dc0455c4…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **아카이브(4595afc 고정) · 루트 pnpm test 1658/1658**(`ARCHIVE_SKIP` 1파일 10건 제외 — 워킹트리 기준값은 1668) ·
   commit-sha 라벨 = APPROVED_AT · ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
