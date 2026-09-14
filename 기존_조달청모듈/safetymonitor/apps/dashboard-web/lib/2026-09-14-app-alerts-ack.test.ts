@@ -9,6 +9,7 @@ import { NextResponse } from "next/server";
 import ts from "typescript";
 
 import type { AppAdminGate } from "./app-admin-auth";
+import * as alertTypes from "./alert-type";
 import * as appJwt from "./app-jwt";
 import type { ackAlert, ackAlertByKey } from "./db";
 
@@ -79,6 +80,7 @@ function harness() {
   const route = loadModule<{ POST: (request: Request) => Promise<Response> }>("app/api/app/admin/alerts/ack/route.ts", {
     "next/server": { NextResponse },
     "../../../../../../lib/app-admin-auth": gate,
+    "../../../../../../lib/alert-type": alertTypes,
     "../../../../../../lib/db": {
       ackAlert: async (...args: Parameters<typeof ackAlert>) => {
         state.byId.push(args);
@@ -142,7 +144,7 @@ test("id는 ackAlert만 호출하고 게이트 username으로 기록한다", asy
   assert.deepEqual(h.state.byKey, []);
 });
 
-for (const type of ["sos", "fall", "vital", "geofence"]) {
+for (const type of alertTypes.ALERT_TYPES) {
   test(`workerId + ${type}은 ackAlertByKey만 호출한다`, async () => {
     const h = harness();
     const response = await h.POST(request({ workerId: "worker-1", type }));
@@ -152,6 +154,16 @@ for (const type of ["sos", "fall", "vital", "geofence"]) {
     assert.deepEqual(h.state.byId, []);
   });
 }
+
+test("장기 미수신(absence)은 이미 처리되어 변경 0건이어도 200과 acked:false다", async () => {
+  const h = harness();
+  h.state.changed = 0;
+  const response = await h.POST(request({ workerId: "worker-1", type: "absence" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, acked: false });
+  assert.deepEqual(h.state.byKey, [["worker-1", "absence", "fixture-admin"]]);
+  assert.deepEqual(h.state.byId, []);
+});
 
 for (const [branch, body] of [
   ["id", { id: 42 }],
@@ -202,7 +214,7 @@ for (const [label, bodies] of [
   ["객체 아님·식별자 없음", [null, [], [{ id: 42 }], "42", 42, true, {}, { ackBy: "다른 관리자" }]],
   ["잘못된 id", [null, "42", true, [], [42], {}, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1].map((id) => ({ id }))],
   ["잘못된 작업자", [null, 42, true, [], ["worker-1"], {}, "", "  "].map((workerId) => ({ workerId, type: "sos" }))],
-  ["잘못된 종류", [null, 42, true, [], ["sos"], {}, "", "SOS", "absence", "danger_zone"].map((type) => ({ workerId: "worker-1", type }))],
+  ["잘못된 종류", [null, 42, true, [], ["sos"], {}, "", "SOS", "danger_zone"].map((type) => ({ workerId: "worker-1", type }))],
   ["자연키 한쪽 누락", [{ workerId: "worker-1" }, { type: "sos" }]],
   ["식별 방식 혼합", [{ id: 42, workerId: "worker-1", type: "sos" }, { id: 42, workerId: "worker-1" }, { id: 42, type: "sos" }, { id: null, workerId: "worker-1", type: "sos" }]],
 ] as const) {

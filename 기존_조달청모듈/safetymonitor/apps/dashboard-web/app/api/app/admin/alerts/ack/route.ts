@@ -2,11 +2,8 @@
 import { NextResponse } from "next/server";
 
 import { requireAppAdmin } from "../../../../../../lib/app-admin-auth";
-import type { AlertType } from "../../../../../../lib/alert-type";
+import { ALERT_TYPES, type AlertType } from "../../../../../../lib/alert-type";
 import { ackAlert, ackAlertByKey } from "../../../../../../lib/db";
-
-// D-4 §②의 네 종류 — 기존 알림 대응 확인 라우트와 같은 범위다.
-const ALERT_TYPES: AlertType[] = ["sos", "fall", "vital", "geofence"];
 
 export async function POST(request: Request) {
   const gate = await requireAppAdmin(request);

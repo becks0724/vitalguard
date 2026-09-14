@@ -1,4 +1,4 @@
-// 관제 알림 종류 — 저장(db)·전송(telegram) 양쪽이 함께 쓰는 유니온.
+// 관제 알림 종류 — 저장(db)·전송(telegram)·입력 검증이 함께 쓰는 단일 소스.
 //
 // ★ db.ts 에서 떼어낸 이유 = **순환 의존**(2026-08-22).
 //   db 가 알림을 기록하며 telegram 으로 보내는데, telegram 이 이 타입을 쓰려고 다시 db 를 불렀다.
@@ -9,4 +9,5 @@
 
 // ★ `absence` 만 성격이 다르다 — 나머지는 **샘플이 들어올 때** 발화하는데 이것은 **안 들어와서**
 //   발화한다. 그래서 수신 경로가 아니라 크론(`/api/cron/absence-check`)이 넣는다.
-export type AlertType = "sos" | "fall" | "vital" | "geofence" | "absence";
+export const ALERT_TYPES = ["sos", "fall", "vital", "geofence", "absence"] as const;
+export type AlertType = (typeof ALERT_TYPES)[number];
