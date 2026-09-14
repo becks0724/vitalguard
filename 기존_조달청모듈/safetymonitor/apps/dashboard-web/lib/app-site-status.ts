@@ -122,9 +122,9 @@ export async function readGasStatus() {
     return { ok: true as const, level: "idle" as const, summary: "가스 수신 대기", power, gases: [] };
   }
   const gases = [
-    { key: "o2", gas: "O₂ 산소", severity: o2Sev(sample.o2) },
-    { key: "co", gas: "CO 일산화탄소", severity: mq7Sev(sample.mq7_raw) },
-    { key: "h2s", gas: "H₂S 황화수소", severity: mq136Sev(sample.mq136_raw) },
+    { key: "o2", gas: "O₂ 산소", value: sample.o2, unit: "%" as const, severity: o2Sev(sample.o2) },
+    { key: "co", gas: "CO 일산화탄소", value: sample.mq7_raw, unit: "raw" as const, severity: mq7Sev(sample.mq7_raw) },
+    { key: "h2s", gas: "H₂S 황화수소", value: sample.mq136_raw, unit: "raw" as const, severity: mq136Sev(sample.mq136_raw) },
   ].map((g) => {
     const config = configs[`${sample.device_id}:${g.key}`];
     return { ...g, gas: config?.gas || g.gas, loc: config?.loc || "현장 가스 감지기" };
@@ -136,8 +136,11 @@ export async function readGasStatus() {
     ok: true as const, level: levelOf(severity),
     summary: `${headline.gas} ${labels[severity]} · ${headline.loc}`,
     deviceId: sample.device_id, lastSeenAt: sample.received_at, power,
-    // 최신 판정만 선별한다. 센서 원시값·이력·펌웨어 state는 응답에 싣지 않는다.
-    gases: gases.map(({ key, gas, loc, severity: sev }) => ({ key, gas, loc, level: levelOf(sev) })),
+    // 2026-09-14 SPEC-d4-app-admin-routes 정정: 워치 생체 원시값은 개인정보·민감정보 보호를 위해 계속 금지한다.
+    // 가스포드 측정값은 개인정보·민감정보가 아니므로 최신 1건의 값·단위를 허용한다.
+    // O₂는 %, CO·H₂S는 raw ADC 그대로이며 ppm 환산은 가스 임계 v2 과제다.
+    // 가스 이력(720행)·펌웨어 state는 응답에 싣지 않는다.
+    gases: gases.map(({ key, gas, loc, value, unit, severity: sev }) => ({ key, gas, loc, level: levelOf(sev), value, unit })),
   };
 }
 

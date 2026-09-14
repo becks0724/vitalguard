@@ -215,17 +215,65 @@ test("권한 회수 403·권한 DB 실패 503을 게이트 응답 그대로 보�
   assert.equal(h.state.calls.length, 0);
 });
 
-test("가스는 최신 1건의 관제 판정만 반환한다 — 원시값·720행 이력 제외", async () => {
+test("가스 세 종류는 최신 측정값·단위를 기존 표시 필드·판정과 함께 반환한다", async () => {
   const h = harness();
-  h.state.gas.push(...Array.from({ length: 719 }, () => ({ ...h.state.gas[0]!, mq7_raw: 9999 })));
+  const data = await (await h.GET(request())).json();
+  assert.deepEqual(data.gas.gases, [
+    { key: "o2", gas: "O₂ 산소", loc: "현장 가스 감지기", level: "normal", value: 20.9, unit: "%" },
+    { key: "co", gas: "CO 일산화탄소", loc: "탱크 야드", level: "warn", value: 151, unit: "raw" },
+    { key: "h2s", gas: "H₂S 황화수소", loc: "현장 가스 감지기", level: "normal", value: 10, unit: "raw" },
+  ]);
+});
+
+test("측정값 0도 보존하며 단위는 O₂만 %, CO·H₂S는 ppm 환산 없이 raw다", async () => {
+  const h = harness();
+  Object.assign(h.state.gas[0]!, { o2: 0, mq7_raw: 0, mq136_raw: 0 });
+  const data = await (await h.GET(request())).json();
+  assert.deepEqual(data.gas.gases.map((g: { key: string; value: number; unit: string }) => [g.key, g.value, g.unit]), [
+    ["o2", 0, "%"], ["co", 0, "raw"], ["h2s", 0, "raw"],
+  ]);
+});
+
+test("가스는 최신 1건만 반환한다 — 720행 이력·펌웨어 state 제외", async () => {
+  const h = harness();
+  h.state.gas.push(...Array.from({ length: 719 }, () => ({ ...h.state.gas[0]!,
+    device_id: "old-gaspod", received_at: new Date(NOW - 60_000).toISOString(),
+    o2: 9999, mq7_raw: 9999, mq136_raw: 9999,
+  })));
   const data = await (await h.GET(request())).json();
   assert.equal(data.gas.level, "warn"); // 최신 CLEAR라도 관제 CO 151은 주의, 과거 9999는 무시
   assert.equal(data.gas.summary, "CO 일산화탄소 주의 · 탱크 야드");
+  assert.equal(data.gas.deviceId, "gaspod-01");
+  assert.equal(data.gas.lastSeenAt, new FixtureDate().toISOString());
+  assert.deepEqual(Object.keys(data.gas).sort(), ["deviceId", "gases", "lastSeenAt", "level", "ok", "power", "summary"]);
+  assert.equal(data.gas.gases.length, 3);
+  for (const gas of data.gas.gases) {
+    assert.deepEqual(Object.keys(gas).sort(), ["gas", "key", "level", "loc", "unit", "value"]);
+  }
+  assert.deepEqual(data.gas.gases.map((g: { value: number }) => g.value), [20.9, 151, 10]);
   assert.deepEqual(h.state.calls.find((c) => c.name === "gas")?.args, [1]);
   assert.deepEqual(h.state.calls.find((c) => c.name === "power")?.args, [150]);
-  assert.doesNotMatch(JSON.stringify(data.gas), /mq7_raw|mq136_raw|vbat|humidity|pressure|"o2":|"temp":|"rows":|"latest":|9999/);
+  assert.doesNotMatch(JSON.stringify(data.gas), /mq7_raw|mq136_raw|vbat|humidity|pressure|"o2":|"temp":|"rows":|"latest":|"history":|acked|CLEAR|old-gaspod|9999/);
   assert.deepEqual(data.gas.power, power.gaspodPowerState(h.state.mins, NOW));
   assert.equal(data.gas.power.state, "full_on_power");
+});
+
+test("가스 임계 경계값·0값 판정과 전체 최악 단계는 그대로다", async () => {
+  const cases = [
+    { key: "o2", field: "o2", values: [[0, "normal"], [18.49, "danger"], [18.5, "warn"], [19.19, "warn"], [19.2, "normal"]] },
+    { key: "co", field: "mq7_raw", values: [[0, "normal"], [150, "normal"], [151, "warn"], [350, "warn"], [351, "danger"]] },
+    { key: "h2s", field: "mq136_raw", values: [[0, "normal"], [1800, "normal"], [1801, "warn"], [2200, "warn"], [2201, "danger"]] },
+  ] as const;
+  const h = harness();
+  for (const { key, field, values } of cases) {
+    for (const [value, level] of values) {
+      Object.assign(h.state.gas[0]!, { o2: 20.9, mq7_raw: 0, mq136_raw: 0, [field]: value });
+      const data = await (await h.GET(request())).json();
+      assert.equal(data.gas.level, level, `${key}=${value}`);
+      assert.deepEqual(data.gas.gases.map((g: { key: string; level: string }) => [g.key, g.level]),
+        ["o2", "co", "h2s"].map((k) => [k, k === key ? level : "normal"]), `${key}=${value}`);
+    }
+  }
 });
 
 test("전원 조회 실패·표본 없음은 기존 readPower와 같이 null만 반환한다", async () => {
