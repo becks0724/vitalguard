@@ -978,6 +978,8 @@ async function initSchema(): Promise<void> {
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS road_address TEXT;
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS annotation_of TEXT;
+    CREATE INDEX IF NOT EXISTS idx_calmedia_annotation_of ON calendar_media(annotation_of);
     CREATE INDEX IF NOT EXISTS idx_calmedia_date ON calendar_media(date_key);
 
     -- 미디어 댓글(작성자 이름·식별자·시각) — 관리자/작업자 코멘트 스레드.
@@ -993,6 +995,9 @@ async function initSchema(): Promise<void> {
       updated_at TEXT
     );
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS author_title TEXT;
+    ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_storage_key TEXT;
+    ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_url TEXT;
+    ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_ms INTEGER;
     CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
 
     -- 일정 캘린더 일정/라벨 — 브라우저 localStorage 영속을 서버로 승격(관리자 간 공유·기기 무관).
@@ -4546,8 +4551,12 @@ export async function createGoogleUser(input: {
 }
 
 // ─── 클라우드 브릿지: 캘린더 미디어(앱 OCR 이미지/영상) ───
+export const MEDIA_DELETE_WINDOW_MIN = 10; // 신규 DB trg_media_delete_window와 같은 값.
+
 export type CalendarMediaRow = {
   id: string;
+  /** 잉크본이 가리키는 원본 사진 ID. 원본은 null. */
+  annotation_of: string | null;
   date_key: string;
   captured_at: string | null;
   media_type: string;
@@ -4581,6 +4590,13 @@ export type CalendarMediaRow = {
   coord_ref_accuracy_m: number | null;
 };
 
+export type CalendarMediaListRow = CalendarMediaRow & {
+  /** 원본에 연결된 최신 잉크본 ID. 잉크본이 없으면 null. */
+  annotationId: string | null;
+  /** DB 시각으로 계산한 원본 삭제 유예 경과 여부. */
+  deleteWindowExpired: boolean;
+};
+
 export type CalendarMediaCommentRow = {
   id: string;
   media_id: string;
@@ -4589,23 +4605,33 @@ export type CalendarMediaCommentRow = {
   author_role: string | null;
   author_title: string | null;
   body: string;
+  /** 값이 있으면 음성 댓글. body는 빈 문자열을 유지한다. */
+  audio_storage_key: string | null;
+  audio_url: string | null;
+  audio_ms: number | null;
   created_at: string;
   updated_at: string | null;
 };
 
-// 날짜 범위(YYYY-MM-DD, 포함)로 미디어 조회 — 캘린더 월 단위 표시용.
+// 날짜 범위(YYYY-MM-DD, 포함)로 원본만 조회 — 잉크본은 annotationId로 연결한다.
 export async function listCalendarMedia(
   fromKey: string,
   toKey: string,
-): Promise<CalendarMediaRow[]> {
+): Promise<CalendarMediaListRow[]> {
   // 각인 좌표 ↔ 같은 시각 생체 좌표 대조를 **조회 시점에** 붙인다(§ CalendarMediaRow.coord_gap_m).
   // ⚠ `ts` 는 ISO-UTC TEXT 라 문자열 비교 = 시간 비교다. 그래서 경계를 **ts 와 같은 형식**
   //   (밀리초 포함)으로 만들어 문자열 범위로 훑는다 — `::timestamptz` 로 캐스팅하면
   //   `uq_vs_worker_ts` 인덱스를 못 쓰고 39만 행을 미디어마다 훑게 된다.
   //   `captured_at` 은 밀리초가 없어 두 형식이 다르다는 점도 여기서 흡수된다.
   //   실측 = Index Scan · 미디어 7건 × 34행 · 총 1.9ms.
-  const { rows } = await q<CalendarMediaRow>(
-    `SELECT m.*, r.gap_m AS coord_gap_m, r.ref_acc AS coord_ref_accuracy_m
+  const { rows } = await q<CalendarMediaListRow>(
+    `SELECT m.*, r.gap_m AS coord_gap_m, r.ref_acc AS coord_ref_accuracy_m,
+            (m.created_at::timestamptz < statement_timestamp() - interval '${MEDIA_DELETE_WINDOW_MIN} minutes')
+              AS "deleteWindowExpired",
+            (SELECT a.id FROM calendar_media a
+              WHERE a.annotation_of = m.id
+              ORDER BY a.created_at::timestamptz DESC, a.id DESC
+              LIMIT 1) AS "annotationId"
        FROM calendar_media m
        LEFT JOIN LATERAL (
          SELECT v.location_accuracy_m AS ref_acc,
@@ -4623,7 +4649,8 @@ export async function listCalendarMedia(
           ORDER BY abs(extract(epoch from (v.ts::timestamptz - m.captured_at::timestamptz)))
           LIMIT 1
        ) r ON TRUE
-      WHERE m.date_key >= $1 AND m.date_key <= $2
+      WHERE m.annotation_of IS NULL
+        AND m.date_key >= $1 AND m.date_key <= $2
       ORDER BY m.date_key ASC, m.captured_at ASC NULLS LAST, m.created_at ASC`,
     [fromKey, toKey],
   );
@@ -4641,6 +4668,7 @@ export async function getCalendarMediaById(id: string): Promise<CalendarMediaRow
 
 export async function insertCalendarMedia(input: {
   id: string;
+  annotationOf?: string;
   dateKey: string;
   capturedAt?: string | null;
   mediaType?: string;
@@ -4662,6 +4690,7 @@ export async function insertCalendarMedia(input: {
     "calendar_media",
     {
       id: input.id,
+      annotation_of: input.annotationOf ?? null,
       date_key: input.dateKey,
       captured_at: input.capturedAt ?? null,
       media_type: input.mediaType ?? "image",
@@ -4707,6 +4736,9 @@ export async function insertCalendarMediaComment(input: {
   authorRole?: string | null;
   authorTitle?: string | null;
   body: string;
+  audioStorageKey?: string | null;
+  audioUrl?: string | null;
+  audioMs?: number | null;
 }): Promise<CalendarMediaCommentRow> {
   const { text, values } = buildInsert(
     "calendar_media_comment",
@@ -4718,6 +4750,9 @@ export async function insertCalendarMediaComment(input: {
       author_role: input.authorRole ?? null,
       author_title: input.authorTitle ?? null,
       body: input.body,
+      audio_storage_key: input.audioStorageKey ?? null,
+      audio_url: input.audioUrl ?? null,
+      audio_ms: input.audioMs ?? null,
     },
     "*",
   );
@@ -4742,14 +4777,15 @@ export async function updateCalendarMediaComment(
 export async function deleteCalendarMediaComment(
   id: string,
   scope: CommentScope,
-): Promise<boolean> {
+): Promise<{ audioStorageKey: string | null } | null> {
   const params: unknown[] = [id];
   const clause = commentScopeClause(scope, params);
-  const { rowCount } = await q(
-    `DELETE FROM calendar_media_comment WHERE id = $1${clause}`,
+  // 권한을 통과해 실제 삭제한 행의 키만 반환한다. 별도 SELECT로 파일 키를 얻지 않는다.
+  const { rows } = await q<{ audio_storage_key: string | null }>(
+    `DELETE FROM calendar_media_comment WHERE id = $1${clause} RETURNING audio_storage_key`,
     params,
   );
-  return rowCount > 0;
+  return rows[0] ? { audioStorageKey: rows[0].audio_storage_key } : null;
 }
 
 // 설명 메모 수정 — 삭제와 같은 소유권 규칙(올린 작업자 본인 또는 owner).
@@ -4767,24 +4803,77 @@ export async function updateCalendarMediaDescription(
   return rowCount > 0;
 }
 
-// 삭제된 행의 저장 키를 함께 돌려준다 — 호출부가 버킷 객체까지 지우기 위한 것이다.
-// ★ `RETURNING` 이라 **권한을 통과해 실제로 지워진 경우에만** 키가 나온다. 별도 조회로 키를
-//   먼저 얻으면 남의 사진 키를 읽어 지우는 경로가 열린다.
-// 못 지웠으면(없음·남의 것) `null` — 호출부는 그때 아무 파일도 건드리지 않는다.
+export type DeleteCalendarMediaResult =
+  | { status: "deleted"; files: { storageProvider: string | null; storageKey: string | null }[] }
+  | { status: "not_found" }
+  | { status: "delete_window_expired" };
+
+// 소유권 확인·원본의 10분 유예 판정·전체 잉크본·댓글 삭제를 한 트랜잭션으로 묶는다.
+// 키는 DELETE RETURNING으로 얻고 COMMIT 뒤에만 반환한다. 거부·롤백이면 버킷에 손대지 않는다.
+// 없음·남의 것은 같은 not_found로 감추되, 본인 원본의 유예 경과는 별도로 알려준다.
 export async function deleteCalendarMedia(
   id: string,
   scope: MediaScope,
-): Promise<{ storageProvider: string | null; storageKey: string | null } | null> {
+): Promise<DeleteCalendarMediaResult> {
   const params: unknown[] = [id];
   const clause = mediaScopeClause(scope, params);
-  const { rows } = await q<{ storage_provider: string | null; storage_key: string | null }>(
-    `DELETE FROM calendar_media WHERE id = $1${clause}
-       RETURNING storage_provider, storage_key`,
-    params,
-  );
-  const row = rows[0];
-  if (!row) return null;
-  return { storageProvider: row.storage_provider, storageKey: row.storage_key };
+  await ensureSchema();
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: targets } = await client.query<{ annotation_of: string | null }>(
+      `SELECT annotation_of FROM calendar_media WHERE id = $1${clause} FOR UPDATE`,
+      params,
+    );
+    const target = targets[0];
+    if (!target) {
+      await client.query("ROLLBACK");
+      return { status: "not_found" };
+    }
+    // 잠금을 얻은 뒤 DB 현재 시각으로 판정한다. 잉크본 단독 호출에는 유예를 적용하지 않는다.
+    if (target.annotation_of === null) {
+      const { rows } = await client.query<{ expired: boolean }>(
+        `SELECT created_at::timestamptz < statement_timestamp() - interval '${MEDIA_DELETE_WINDOW_MIN} minutes'
+                  AS expired
+           FROM calendar_media WHERE id = $1`,
+        [id],
+      );
+      if (rows[0]!.expired) {
+        await client.query("ROLLBACK");
+        return { status: "delete_window_expired" };
+      }
+    }
+    // 원본 삭제 권한이 있으면 그 원본의 잉크본은 작성자·버전 수에 관계없이 함께 지운다.
+    const { rows } = await client.query<{ id: string; storage_provider: string | null; storage_key: string | null }>(
+      `DELETE FROM calendar_media WHERE id = $1${target.annotation_of === null ? " OR annotation_of = $1" : ""}
+         RETURNING storage_provider, storage_key, id`,
+      [id],
+    );
+    const files = rows.map((row) => ({ storageProvider: row.storage_provider, storageKey: row.storage_key }));
+    if (target.annotation_of === null) {
+      // 글 댓글 API는 잉크본 ID도 받는다. 실제 삭제된 원본·잉크본의 댓글을 모두 정리한다.
+      // 잉크본 단독 삭제는 기존대로 댓글에 손대지 않는다. 키는 사전 SELECT로 모으지 않는다.
+      const { rows: comments } = await client.query<{ audio_storage_key: string | null }>(
+        `DELETE FROM calendar_media_comment WHERE media_id = ANY($1::text[])
+           RETURNING audio_storage_key`,
+        [rows.map((row) => row.id)],
+      );
+      for (const comment of comments) {
+        // 음성은 lib/storage.ts의 putObject로 네이버 버킷에 저장된다(댓글에는 제공자 컬럼이 없다).
+        if (comment.audio_storage_key) files.push({ storageProvider: "naver", storageKey: comment.audio_storage_key });
+      }
+    }
+    await client.query("COMMIT");
+    return {
+      status: "deleted",
+      files,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // ── 일정 캘린더 일정/라벨(서버 영속 — localStorage 승격) ──────────────────────

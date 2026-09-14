@@ -73,9 +73,12 @@ test("★ 행을 지운 뒤에 파일을 지운다 — 순서를 뒤집으면 �
   const objAt = h.indexOf("await deleteObject(");
   assert.ok(rowAt !== -1 && objAt !== -1, "두 호출 중 하나가 없다");
   assert.ok(rowAt < objAt, "파일을 먼저 지운다 — 권한이 없어 행이 안 지워져도 파일은 사라진다");
-  // 권한 실패(=null)면 파일에 손대기 전에 빠져나가야 한다.
-  const guardAt = h.indexOf("if (!deleted) return");
-  assert.ok(guardAt !== -1 && guardAt < objAt, "권한 실패 조기 반환이 객체 삭제 뒤에 있다");
+  // 없음·남의 것·삭제 유예 경과 모두 파일에 손대기 전에 빠져나가야 한다.
+  for (const status of ["not_found", "delete_window_expired"]) {
+    const guardAt = h.indexOf(`if (result.status === "${status}")`);
+    assert.ok(guardAt !== -1 && guardAt < objAt, `${status} 조기 반환이 객체 삭제 뒤에 있다`);
+  }
+  assert.match(h, /for \(const deleted of result\.files\)/, "원본·잉크본의 저장 키 전체를 순회하지 않는다");
 });
 
 test("★ 앱은 삭제 권한을 다시 계산하지 않는다 — 서버가 내려준 canDelete 를 쓴다", () => {

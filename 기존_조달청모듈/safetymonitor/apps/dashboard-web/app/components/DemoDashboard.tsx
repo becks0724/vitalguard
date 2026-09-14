@@ -57,6 +57,8 @@ import {
 } from "../lib/calendar-hazard";
 import { INSPECTION_ITEM_LABEL, type InspectionItem } from "../lib/inspection-schedule";
 import { AdminExportModal, type SiteInfo } from "./AdminExportModal";
+import { CalendarInkPhoto } from "./CalendarInkPhoto";
+import { CalendarVoiceComment } from "./CalendarVoiceComment";
 import { ExpandableTabs } from "./ExpandableTabs";
 import { DotMatrix } from "./DotMatrix";
 import { AnimateNumber } from "./AnimateNumber";
@@ -1043,6 +1045,10 @@ const CALENDAR_LABELS_STORAGE_KEY = "safetymonitor.calendar-labels.v1";
 const CALENDAR_EVENTS_STORAGE_KEY = "safetymonitor.calendar-events.v1";
 // localStorage → 서버 1회 마이그레이션 완료 플래그(브라우저별).
 const CALENDAR_MIGRATED_KEY = "safetymonitor.calendar-migrated.v1";
+const CALENDAR_MEDIA_KIND_LABEL: Record<string, string> = {
+  image: "사진",
+  video: "영상",
+};
 
 // 클라우드 브릿지 — 앱 OCR 미디어(서버/DB 영속). 일정과 같은 서버 레이어(테이블 별개).
 /** 미확인 새 현장 사진 — 탭 배지와 미니 달력 아래 미확인 리스트가 공유하는 최소 정보. */
@@ -1065,11 +1071,15 @@ type CalendarMediaComment = {
   authorRole: string | null;
   authorTitle: string | null;
   body: string;
+  audioStorageKey: string | null;
+  audioUrl: string | null;
+  audioMs: number | null;
   createdAt: string;
   updatedAt: string | null;
 };
 type CalendarMedia = {
   id: string;
+  annotationId: string | null;
   dateKey: string;
   capturedAt: string | null;
   mediaType: string;
@@ -2812,7 +2822,7 @@ function WeekGrid({
                   <button
                     type="button"
                     onClick={() => onSelectDate(d)}
-                    title={`촬영 시각을 못 읽은 현장 이미지/스캔 ${n}건 — 우측에서 확인`}
+                    title={`시각을 못 읽은 현장 미디어 ${n}건 — 우측에서 확인`}
                     className="flex w-full min-w-0 items-center gap-1 truncate rounded bg-primary-subtle px-1.5 py-0.5 text-[10px] font-semibold text-primary transition hover:brightness-95 dark:text-on-dark"
                   >
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -2913,8 +2923,8 @@ function WeekGrid({
                     </button>
                   );
                 })}
-                {/* 현장 이미지/스캔 — **촬영 시각 위치**에 놓는다(2026-08-20 사용자 지시).
-                    ⚠ 표기는 **건수로 통일한다** — 1건이어도 `이미지 1건`(사용자 지시 2026-08-20).
+                {/* 현장 미디어 — **촬영 시각 위치**에 놓는다(2026-08-20 사용자 지시).
+                    ⚠ 표기는 종류별 건수로 통일한다 — 1건이어도 `사진 1건`.
                       종전엔 1건일 때 시각을 보여줬는데, 같은 칸이 상황에 따라 다른 것을 말해
                       읽는 규칙이 둘이 됐다. 시각·도로명은 우측 사이드바가 담는다.
                       (실측 = 시간대 최대 4건·같은 분 중복 있음 · 56%가 1건) */}
@@ -2937,6 +2947,14 @@ function WeekGrid({
                     if (top < -WEEK_HOUR_PX || top > bodyH) return null;
                     const many = group.length > 1;
                     const isDoc = !many && head.m.mediaType !== "image";
+                    const kindCounts = new Map<string, number>();
+                    for (const { m } of group) {
+                      const kind = CALENDAR_MEDIA_KIND_LABEL[m.mediaType] ?? "사진";
+                      kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+                    }
+                    const mediaSummary = [...kindCounts]
+                      .map(([kind, count]) => `${kind} ${count}건`)
+                      .join(" · ");
                     return (
                       <button
                         key={`m${hour}`}
@@ -2945,8 +2963,8 @@ function WeekGrid({
                         // 툴팁에는 시각·도로명을 남긴다 — 라벨이 건수로 통일돼 구별 정보가 여기로 온다.
                         title={
                           many
-                            ? `${String(hour).padStart(2, "0")}시 현장 이미지/스캔 ${group.length}건 — 우측에서 확인`
-                            : `${head.m.capturedAt?.slice(11, 16) ?? ""} ${head.m.roadAddress ?? head.m.title ?? "현장 이미지"} — 우측에서 확인`
+                            ? `${String(hour).padStart(2, "0")}시 ${mediaSummary} — 우측에서 확인`
+                            : `${head.m.capturedAt?.slice(11, 16) ?? ""} ${head.m.roadAddress ?? head.m.title ?? ""} · ${mediaSummary} — 우측에서 확인`
                         }
                         className="absolute left-0.5 right-0.5 overflow-hidden rounded px-1 text-left"
                         style={{ top: Math.max(0, top) + 2, height: WEEK_HOUR_PX - 6 }}
@@ -2955,7 +2973,7 @@ function WeekGrid({
                         <span className="relative flex min-w-0 items-center gap-0.5">
                           <span aria-hidden="true" className="shrink-0 text-[9px]">{isDoc ? "📄" : "📷"}</span>
                           <span className="min-w-0 truncate text-[9px] font-semibold text-emerald-700 dark:text-emerald-300">
-                            이미지 {group.length}건
+                            {mediaSummary}
                           </span>
                         </span>
                       </button>
@@ -3098,7 +3116,11 @@ function HeaderCalendarPopup({
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (!res.ok) return;
-      type RawComment = Record<string, string | null>;
+      type RawComment = Partial<Record<
+        "id" | "author_name" | "author_id" | "author_role" | "author_title" |
+        "body" | "created_at" | "updated_at" | "audio_storage_key" | "audio_url",
+        string | null
+      >> & { audio_ms?: number | null };
       type RawMedia = Record<string, string | null> & {
         comments?: RawComment[];
         canDelete?: boolean; // 서버가 계산한 항목별 삭제 권한
@@ -3111,6 +3133,7 @@ function HeaderCalendarPopup({
         if (!dateKey) continue;
         (map[dateKey] ??= []).push({
           id: r.id ?? "",
+          annotationId: r.annotationId ?? null,
           dateKey,
           capturedAt: r.captured_at ?? null,
           mediaType: r.media_type ?? "image",
@@ -3137,6 +3160,9 @@ function HeaderCalendarPopup({
             authorRole: c.author_role ?? null,
             authorTitle: c.author_title ?? null,
             body: c.body ?? "",
+            audioStorageKey: c.audio_storage_key ?? null,
+            audioUrl: c.audio_url ?? null,
+            audioMs: c.audio_ms ?? null,
             createdAt: c.created_at ?? "",
             updatedAt: c.updated_at ?? null,
           })),
@@ -3144,6 +3170,13 @@ function HeaderCalendarPopup({
       }
       if (seq !== mediaFetchSeqRef.current) return; // 더 새 조회(월 이동·폴링) 진행 중 — 옛 달 응답 무시
       setMediaByDate(map);
+      // 열린 사진에도 최신 잉크 포인터를 반영한다. 변화 없는 사진의 상태는 그대로 둔다.
+      setLightbox((current) => {
+        if (!current) return current;
+        const latest = map[current.dateKey]?.find((m) => m.id === current.id);
+        return latest && latest.annotationId !== current.annotationId
+          ? { ...current, annotationId: latest.annotationId } : current;
+      });
     } catch {
       // 미디어 조회 실패는 조용히 무시 — 캘린더 본기능 유지
     } finally {
@@ -3836,8 +3869,8 @@ function HeaderCalendarPopup({
             type="button"
             onClick={refreshMedia}
             disabled={mediaRefreshing}
-            aria-label="현장 사진 새로고침"
-            title="현장 사진 새로고침"
+            aria-label="현장 미디어 새로고침"
+            title="현장 미디어 새로고침"
             className="grid h-8 w-8 place-items-center rounded-lg text-muted transition hover:bg-surface-strong hover:text-ink disabled:opacity-50 dark:hover:bg-white/10 dark:hover:text-on-dark"
           >
             <svg
@@ -4029,7 +4062,7 @@ function HeaderCalendarPopup({
                   <div className="rounded-xl border border-hairline bg-surface-soft p-2 dark:border-white/10 dark:bg-surface-dark-elevated">
                     <div className="mb-1 flex items-center justify-between px-1">
                       <p className="text-[11px] font-bold text-ink dark:text-on-dark">
-                        미확인 사진 <span className="tabular-nums text-primary">{unseenMedia.length}</span>
+                        미확인 미디어 <span className="tabular-nums text-primary">{unseenMedia.length}</span>
                       </p>
                       {unseenMedia.length > 0 && (
                         <button
@@ -4045,7 +4078,7 @@ function HeaderCalendarPopup({
                         (2026-08-26 실측: 구 로직이 전부 봄 처리해 둔 상태에서 "리스트가 없다"로 읽힘). */}
                     {unseenMedia.length === 0 && (
                       <p className="px-1 pb-1 text-[10px] text-muted dark:text-on-dark-soft">
-                        새 현장 사진이 도착하면 여기에 쌓입니다.
+                        새 현장 미디어가 도착하면 여기에 쌓입니다.
                       </p>
                     )}
                     <ul className="flex max-h-52 flex-col gap-0.5 overflow-y-auto">
@@ -4078,10 +4111,10 @@ function HeaderCalendarPopup({
                             )}
                             <span className="min-w-0">
                               <span className="block truncate text-[11px] font-semibold text-ink dark:text-on-dark">
-                                {m.title ?? "현장 사진"}
+                                {m.title ?? `현장 ${CALENDAR_MEDIA_KIND_LABEL[m.mediaType] ?? "사진"}`}
                               </span>
                               <span className="block truncate text-[10px] tabular-nums text-muted dark:text-on-dark-soft">
-                                {m.dateKey.slice(5).replace("-", "/")}
+                                {CALENDAR_MEDIA_KIND_LABEL[m.mediaType] ?? "사진"} · {m.dateKey.slice(5).replace("-", "/")}
                                 {m.uploader ? ` · ${m.uploader}` : ""}
                               </span>
                             </span>
@@ -4244,7 +4277,7 @@ function HeaderCalendarPopup({
                         "pointer-events-none absolute bottom-0.5 right-0.5 z-10 inline-flex items-center gap-0.5 rounded px-1 text-[8px] font-bold leading-none",
                         "bg-primary-subtle text-primary dark:text-on-dark",
                       ].join(" ")}
-                      title={`현장 이미지/미디어 ${dayMedia.length}건`}
+                      title={`현장 미디어 ${dayMedia.length}건`}
                     >
                       <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
@@ -4623,7 +4656,7 @@ function HeaderCalendarPopup({
                     <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
                     <circle cx="12" cy="13" r="4" />
                   </svg>
-                  현장 이미지/미디어 {selectedMedia.length}건
+                  현장 미디어 {selectedMedia.length}건
                 </p>
                 {lightbox &&
                   createPortal(
@@ -4645,7 +4678,7 @@ function HeaderCalendarPopup({
                                 (lightbox.mediaType === "video" ? "현장 영상" : "현장 이미지")}
                             </p>
                             <p className="text-[11px] text-white/70">
-                              {lightbox.dateKey}
+                              {CALENDAR_MEDIA_KIND_LABEL[lightbox.mediaType] ?? "사진"} · {lightbox.dateKey}
                               {lightbox.capturedAt
                                 ? ` ${formatKoreanTime(lightbox.capturedAt.slice(11, 16))}`
                                 : ""}
@@ -4678,6 +4711,13 @@ function HeaderCalendarPopup({
                             src={lightbox.mediaUrl ?? ""}
                             controls
                             className="max-h-[80vh] w-full rounded-lg bg-black"
+                          />
+                        ) : lightbox.mediaType === "image" && lightbox.annotationId ? (
+                          <CalendarInkPhoto
+                            key={`${lightbox.id}:${lightbox.annotationId}`}
+                            src={lightbox.mediaUrl ?? ""}
+                            alt={lightbox.title ?? "현장 이미지"}
+                            annotationId={lightbox.annotationId}
                           />
                         ) : (
                           <img
@@ -4732,19 +4772,18 @@ function HeaderCalendarPopup({
                           </button>
                         ) : (
                           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-md bg-surface-strong text-[9px] text-muted dark:bg-white/10 dark:text-on-dark-soft">
-                            {m.mediaType === "video" ? "영상" : "이미지"}
+                            {m.mediaType === "video" ? "영상" : "사진"}
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-[12px] font-bold text-ink dark:text-on-dark">
                             {m.title ?? (m.mediaType === "video" ? "현장 영상" : "현장 이미지")}
                           </p>
-                          {m.capturedAt && (
-                            <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
-                              {formatKoreanTime(m.capturedAt.slice(11, 16))}
-                              {m.uploader ? ` · ${m.uploader}` : ""}
-                            </p>
-                          )}
+                          <p className="mt-0.5 text-[10px] text-muted dark:text-on-dark-soft">
+                            {CALENDAR_MEDIA_KIND_LABEL[m.mediaType] ?? "사진"}
+                            {m.capturedAt ? ` · ${formatKoreanTime(m.capturedAt.slice(11, 16))}` : ""}
+                            {m.uploader ? ` · ${m.uploader}` : ""}
+                          </p>
                         </div>
                         {/* 삭제 불가 사유를 구분해 보여준다 — 버튼이 그냥 사라지면 고장으로 읽힌다.
                             다만 "남의 사진"일 때는 아무것도 띄우지 않는다(설명할 일이 아니다).
@@ -4816,18 +4855,20 @@ function HeaderCalendarPopup({
                               </p>
                               {editingComment?.id !== c.id && (
                                 <span className="flex shrink-0 items-center gap-0.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => setEditingComment({ id: c.id, body: c.body })}
-                                    title="수정"
-                                    aria-label="댓글 수정"
-                                    className="grid h-6 w-6 place-items-center rounded text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
-                                  >
-                                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                      <path d="M12 20h9" />
-                                      <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                                    </svg>
-                                  </button>
+                                  {!c.audioStorageKey && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setEditingComment({ id: c.id, body: c.body })}
+                                      title="수정"
+                                      aria-label="댓글 수정"
+                                      className="grid h-6 w-6 place-items-center rounded text-muted transition hover:bg-surface-strong hover:text-ink dark:hover:bg-white/10 dark:hover:text-on-dark"
+                                    >
+                                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                        <path d="M12 20h9" />
+                                        <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                                      </svg>
+                                    </button>
+                                  )}
                                   <button
                                     type="button"
                                     onClick={() => removeComment(c.id)}
@@ -4843,7 +4884,13 @@ function HeaderCalendarPopup({
                                 </span>
                               )}
                             </div>
-                            {editingComment?.id === c.id ? (
+                            {c.audioStorageKey ? (
+                              <CalendarVoiceComment
+                                key={c.audioStorageKey}
+                                src={c.audioUrl}
+                                audioMs={c.audioMs}
+                              />
+                            ) : editingComment?.id === c.id ? (
                               <div className="mt-1 flex items-end gap-1.5">
                                 <textarea
                                   value={editingComment.body}
@@ -7574,7 +7621,7 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-semibold text-ink dark:text-on-dark">
-              새 현장 사진 {calendarToast.count}건
+              새 현장 미디어 {calendarToast.count}건
             </span>
             <span className="block text-xs text-muted dark:text-on-dark-soft">
               캘린더에서 확인하기

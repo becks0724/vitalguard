@@ -1,14 +1,24 @@
-// 앱(현장 단말) 단일 업로드 — OCR 이미지+메타를 한 번에 받아 서버가 Object Storage 업로드 + 캘린더 DB 등록.
+// 앱(현장 단말) 단일 업로드 — 사진/영상/녹음/잉크+메타를 받아 서버가 Object Storage 업로드 + 캘린더 DB 등록.
 import { NextResponse } from "next/server";
 
 import { appUploadTokenMatches, verifyAppUploadToken } from "../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../lib/app-jwt";
-import { insertCalendarMedia } from "../../../lib/db";
+import {
+  findUserByUsername,
+  getCalendarMediaById,
+  getOwnerProfile,
+  getWorkerAliasMap,
+  insertCalendarMedia,
+  insertCalendarMediaComment,
+} from "../../../lib/db";
+import { mediaMatchesScope, workerIdGroup, type MediaScope } from "../../../lib/media-scope";
 import { isStorageConfigured, putObject } from "../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_INK_BYTES = 2 * 1024 * 1024; // 기존 미디어 업로드 상한 없음 — 실측 후 조정할 2MB.
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const EXT_BY_TYPE: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -16,6 +26,9 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/heic": "heic",
   "video/mp4": "mp4",
   "video/quicktime": "mov",
+  "audio/mp4": "m4a",
+  "audio/aac": "aac",
+  "application/json": "json",
 };
 const TYPE_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
@@ -25,6 +38,9 @@ const TYPE_BY_EXT: Record<string, string> = {
   heic: "image/heic",
   mp4: "video/mp4",
   mov: "video/quicktime",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  json: "application/json",
 };
 
 // 흔한 필드명 변형 중 첫 비어있지 않은 값.
@@ -61,7 +77,7 @@ export async function POST(request: Request) {
     // 진단 — 앱이 multipart 가 아니면 어떤 형식인지 로그로 남긴다.
     console.warn(`[app-media] formData 파싱 실패 content-type=${ctype}`);
     return NextResponse.json(
-      { ok: false, error: "multipart/form-data 로 이미지 파일을 첨부하세요", contentType: ctype },
+      { ok: false, error: "multipart/form-data 로 사진/영상/녹음/잉크 파일을 첨부하세요", contentType: ctype },
       { status: 400 },
     );
   }
@@ -92,7 +108,7 @@ export async function POST(request: Request) {
 
   if (!fileEntry) {
     return NextResponse.json(
-      { ok: false, error: "이미지/영상 파일이 없습니다", receivedFields: fieldNames },
+      { ok: false, error: "사진/영상/녹음/잉크 파일이 없습니다", receivedFields: fieldNames },
       { status: 400 },
     );
   }
@@ -110,9 +126,69 @@ export async function POST(request: Request) {
   }
   if (!ext) {
     return NextResponse.json(
-      { ok: false, error: `지원하지 않는 형식(jpg/png/webp/heic/mp4/mov만): type=${file.type} name=${file.name}` },
+      { ok: false, error: `지원하지 않는 형식(jpg/png/webp/heic/mp4/mov/m4a/aac/json만): type=${file.type} name=${file.name}` },
       { status: 400 },
     );
+  }
+
+  const commentOf = pick(form, ["commentOf", "comment_of", "commentOfId", "comment_of_id"]);
+  const declaredType = file.type.split(";")[0]?.trim().toLowerCase() ?? "";
+  // 확장자 추론이 명시된 이미지/영상 타입을 음성으로 바꾸거나, 음성을 독립 사진으로 숨기지 못하게 한다.
+  const isAudio = contentType.startsWith("audio/") &&
+    (!declaredType || declaredType === "application/octet-stream" || declaredType.startsWith("audio/"));
+  if (commentOf && !isAudio) {
+    return NextResponse.json({ ok: false, error: "댓글에는 오디오 파일만 첨부할 수 있습니다" }, { status: 400 });
+  }
+  if (!commentOf && (contentType.startsWith("audio/") || declaredType.startsWith("audio/"))) {
+    return NextResponse.json({ ok: false, error: "오디오는 commentOf(원본 사진 ID)가 있는 댓글로만 올릴 수 있습니다" }, { status: 400 });
+  }
+  if (commentOf) {
+    // 공유 토큰에는 작성자 신원이 없다. 댓글은 앱 JWT의 로그인 ID로만 귀속한다.
+    if (typeof jwtClaims?.sub !== "string" || !jwtClaims.sub.trim()) {
+      return NextResponse.json({ ok: false, error: "음성 댓글에는 앱 로그인 인증이 필요합니다" }, { status: 401 });
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      return NextResponse.json({ ok: false, error: "음성 댓글은 최대 10MB까지 허용됩니다" }, { status: 413 });
+    }
+    const original = await getCalendarMediaById(commentOf);
+    if (!original) {
+      return NextResponse.json({ ok: false, error: "댓글을 남길 원본 사진을 찾을 수 없습니다" }, { status: 404 });
+    }
+    if (original.annotation_of !== null) {
+      return NextResponse.json({ ok: false, error: "잉크본에는 음성 댓글을 남길 수 없습니다" }, { status: 400 });
+    }
+
+    // calendar/media/comment의 resolveAuthor와 동일: JWT sub=username, 표시정보는 DB 프로필.
+    // 댓글은 소통 수단이므로 원본의 작성자·사번과 일치할 필요가 없다.
+    const username = jwtClaims.sub;
+    const role = jwtClaims.role;
+    const owner = role === "owner" ? await getOwnerProfile(username).catch(() => null) : null;
+    const user = role !== "owner" ? await findUserByUsername(username).catch(() => null) : null;
+    const duration = toNum(pick(form, ["audioMs", "audio_ms"]));
+    // 선택 메타데이터: PostgreSQL INTEGER 범위의 0 이상 정수만 보관한다.
+    const audioMs = duration !== null && Number.isInteger(duration) && duration >= 0 && duration <= 2_147_483_647
+      ? duration : null;
+    const key = `calendar-media/${original.date_key}/${crypto.randomUUID()}.${ext}`;
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await putObject(key, bytes, contentType);
+    } catch (e) {
+      console.error("[app-media] 음성 댓글 putObject 실패", e);
+      return NextResponse.json({ ok: false, error: "스토리지 업로드 실패" }, { status: 502 });
+    }
+    const comment = await insertCalendarMediaComment({
+      id: crypto.randomUUID(),
+      mediaId: commentOf,
+      body: "",
+      authorId: username,
+      authorRole: role,
+      authorName: role === "owner" ? owner?.name ?? "관리자" : user?.name ?? username,
+      authorTitle: role === "owner" ? owner?.job_title ?? "시스템 관리자" : user?.job_title ?? null,
+      audioStorageKey: key,
+      audioUrl: null,
+      audioMs,
+    });
+    return NextResponse.json({ ok: true, comment });
   }
 
   // 메타 — 앱이 보내면 사용, 없으면 KST 현재로 폴백.
@@ -133,7 +209,52 @@ export async function POST(request: Request) {
   const roadAddress = pick(form, ["roadAddress", "road_address", "address", "addr", "roadAddr"]);
   const latitude = toNum(pick(form, ["latitude", "lat", "gpsLat"]));
   const longitude = toNum(pick(form, ["longitude", "lng", "lon", "gpsLng", "gpsLon"]));
-  const mediaType = contentType.startsWith("video/") ? "video" : "image";
+  const annotationOf = pick(form, ["annotationOf", "annotation_of", "annotationOfId", "annotation_of_id"]);
+  const mediaType = contentType.startsWith("video/")
+    ? "video"
+    : contentType === "application/json"
+      ? "ink"
+      : "image";
+
+  if (mediaType === "ink") {
+    // JSON 파싱·스토리지 업로드 전에 바이트 크기를 확인한다.
+    if (file.size > MAX_INK_BYTES) {
+      return NextResponse.json({ ok: false, error: "잉크 JSON은 최대 2MB까지 허용됩니다" }, { status: 413 });
+    }
+    if (!annotationOf) {
+      return NextResponse.json({ ok: false, error: "잉크본에는 annotationOf(원본 ID)가 필요합니다" }, { status: 400 });
+    }
+    let ink: unknown;
+    try {
+      ink = JSON.parse(await file.text());
+    } catch {
+      return NextResponse.json({ ok: false, error: "잉크 파일은 유효한 JSON이어야 합니다" }, { status: 400 });
+    }
+    // 획·도구·렌더 규칙은 앱 계약이다. 서버는 최상위 정수 버전만 확인하고 원문을 보관한다.
+    if (typeof ink !== "object" || ink === null || Array.isArray(ink) ||
+        !Number.isInteger((ink as { v?: unknown }).v)) {
+      return NextResponse.json({ ok: false, error: "잉크 JSON 최상위에 정수 v(형식 버전)가 필요합니다" }, { status: 400 });
+    }
+
+    const original = await getCalendarMediaById(annotationOf);
+    if (!original) {
+      return NextResponse.json({ ok: false, error: "잉크본을 연결할 원본을 찾을 수 없습니다" }, { status: 404 });
+    }
+    if (original.annotation_of !== null) {
+      return NextResponse.json({ ok: false, error: "잉크본을 원본으로 지정할 수 없습니다" }, { status: 400 });
+    }
+    // 기존 미디어 수정·삭제 규칙: owner는 moderator, 나머지는 JWT 사번의 병합 그룹.
+    // 공유 업로드 토큰·폼 사번은 작성자 증명이 아니므로 권한 범위에 사용하지 않는다.
+    const jwtWorkerId = jwtClaims?.workerId?.trim();
+    const scope: MediaScope | null = jwtClaims?.role === "owner"
+      ? "moderator"
+      : jwtWorkerId
+        ? { workerIds: workerIdGroup(jwtWorkerId, await getWorkerAliasMap()) }
+        : null;
+    if (!scope || !mediaMatchesScope(original.worker_id, scope)) {
+      return NextResponse.json({ ok: false, error: "본인이 올린 원본에만 잉크본을 추가할 수 있습니다" }, { status: 403 });
+    }
+  }
 
   // Object Storage 업로드(서버측 PUT).
   const key = `calendar-media/${dateKey}/${crypto.randomUUID()}.${ext}`;
@@ -148,6 +269,7 @@ export async function POST(request: Request) {
   // 캘린더 DB 등록.
   const row = await insertCalendarMedia({
     id: crypto.randomUUID(),
+    annotationOf: annotationOf ?? undefined,
     dateKey,
     capturedAt,
     mediaType,

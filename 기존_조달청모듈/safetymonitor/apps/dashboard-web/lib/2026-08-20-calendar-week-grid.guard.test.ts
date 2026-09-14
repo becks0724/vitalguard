@@ -7,6 +7,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
+import * as React from "react";
+import ts from "typescript";
 
 const ROOT = join(import.meta.dirname, "..");
 const dash = readFileSync(join(ROOT, "app/components/DemoDashboard.tsx"), "utf8");
@@ -62,13 +65,48 @@ test("사진은 촬영 시각 위치에 놓는다 — 종일 띠로 밀지 않�
   assert.match(dash, /hhmmToMinutes\(m\.capturedAt\?\.slice\(11, 16\)\)/, "촬영 시각 파싱 관례가 바뀌었다");
 });
 
-test("사진 블록은 건수로 표기한다 — 1건이어도 `이미지 1건`", () => {
+test("미디어 블록은 사진/영상별 건수로 표기한다 — 단건과 혼합 묶음 모두", () => {
   const body = weekGridBody();
-  assert.match(body, /const many = group\.length > 1;/, "묶음 판정이 사라졌다");
-  // ⚠ 표기는 **건수로 통일**한다 — 1건이어도 `이미지 1건`(사용자 지시 2026-08-20).
-  //   종전엔 1건일 때 시각을 보여줬는데, 같은 칸이 상황에 따라 다른 것을 말해 규칙이 둘이 됐다.
-  assert.match(body, /이미지 \{group\.length\}건/, "건수 표기가 사라졌다");
-  assert.doesNotMatch(body, /many \? `이미지/, "1건일 때 다른 것을 말하는 분기가 되살아났다");
+  // 실제 격자의 미디어 렌더를 실행한다. 제목 속 문구만 남고 화면 라벨이 사라져도 실패해야 한다.
+  const source = ts.createSourceFile("dashboard.tsx", dash, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let render = "";
+  let kindLabels = "";
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableStatement(node) && node.declarationList.declarations.some(
+      (d) => d.name.getText(source) === "CALENDAR_MEDIA_KIND_LABEL",
+    )) kindLabels = node.getText(source);
+    if (ts.isJsxExpression(node) && node.expression &&
+        node.expression.getText(source).startsWith("(() => {\n                  const timed =")) {
+      render = node.expression.getText(source);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.ok(render && kindLabels, "실제 미디어 렌더와 종류 라벨을 찾지 못했다");
+  const code = ts.transpileModule(`${kindLabels}\nresult = ${render};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.React },
+  }).outputText;
+  const visibleText = (node: React.ReactNode): string => {
+    if (typeof node === "string" || typeof node === "number") return String(node);
+    if (Array.isArray(node)) return node.map(visibleText).join("");
+    return React.isValidElement<{ children?: React.ReactNode }>(node)
+      ? visibleText(node.props.children) : "";
+  };
+  for (const [types, expected] of [
+    [["image"], "사진 1건"],
+    [["video"], "영상 1건"],
+    [["image", "image"], "사진 2건"],
+    [["image", "video", "video"], "사진 1건 · 영상 2건"],
+  ] as const) {
+    const context = {
+      React, result: null as React.ReactNode, key: "2026-09-13",
+      mediaByDate: { "2026-09-13": types.map((mediaType, i) => ({ id: String(i), mediaType })) },
+      mediaMinutes: () => 540, WEEK_START_HOUR: 0, WEEK_HOUR_PX: 44, bodyH: 1056,
+      onOpenMedia: () => {},
+    };
+    runInNewContext(code, context);
+    assert.ok(visibleText(context.result).endsWith(expected), `${types.join("/")}: ${visibleText(context.result)}`);
+  }
   // 구별 정보(시각·도로명)는 툴팁과 우측 사이드바가 담는다 — 라벨에서 뺐다고 잃으면 안 된다.
   assert.match(body, /head\.m\.roadAddress \?\? head\.m\.title/, "툴팁의 구별 정보가 사라졌다");
 });

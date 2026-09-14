@@ -1,0 +1,70 @@
+.photo {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  perspective: 1200px;
+  cursor: pointer;
+}
+
+.photo:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 4px;
+  border-radius: 0.5rem;
+}
+
+.rotator {
+  position: relative;
+  display: block;
+  transform: rotateY(0deg);
+  transform-style: preserve-3d;
+  transition: transform 480ms ease-in-out;
+}
+
+.flipped {
+  transform: rotateY(180deg);
+}
+
+.front,
+.back {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.image {
+  display: block;
+  width: 100%;
+  max-height: 80vh;
+  border-radius: 0.5rem;
+  object-fit: contain;
+  object-position: center;
+}
+
+.back {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform: rotateY(180deg);
+}
+
+.back .image {
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rotator,
+  .back {
+    transform: none;
+    transition: none;
+  }
+
+  .back,
+  .flipped .front {
+    visibility: hidden;
+  }
+
+  .flipped .back {
+    visibility: visible;
+  }
+}

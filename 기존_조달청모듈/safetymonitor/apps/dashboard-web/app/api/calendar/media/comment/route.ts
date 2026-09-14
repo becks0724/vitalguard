@@ -20,6 +20,7 @@ import {
   getOwnerProfile,
   type CommentScope,
 } from "../../../../../lib/db";
+import { deleteObject, isStorageConfigured } from "../../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -147,6 +148,17 @@ export async function DELETE(request: Request) {
   if (!id) {
     return NextResponse.json({ ok: false, error: "id 필요" }, { status: 400 });
   }
-  const ok = await deleteCalendarMediaComment(id, scope);
-  return NextResponse.json({ ok }, { status: ok ? 200 : 404 });
+  const deleted = await deleteCalendarMediaComment(id, scope);
+  if (!deleted) return NextResponse.json({ ok: false }, { status: 404 });
+  // 사진 삭제와 동일하게 DB 삭제 뒤에만 파일을 지운다. 실패는 고아 로그로 남긴다.
+  if (deleted.audioStorageKey && isStorageConfigured()) {
+    try {
+      await deleteObject(deleted.audioStorageKey);
+    } catch (e) {
+      console.warn(
+        `[calendar/media/comment] 버킷 객체 삭제 실패 — 고아로 남는다 key=${deleted.audioStorageKey} ${String(e)}`,
+      );
+    }
+  }
+  return NextResponse.json({ ok: true });
 }

@@ -13,6 +13,7 @@ import {
   listCommentsForMedia,
   updateCalendarMediaDescription,
   deleteCalendarMedia,
+  MEDIA_DELETE_WINDOW_MIN,
   findUserByUsername,
   getWorkerAliasMap,
   type CalendarMediaCommentRow,
@@ -61,6 +62,15 @@ export async function GET(request: Request) {
   // 비공개 Object Storage 저장분(storage_provider=naver + storage_key)은 표시 시점에 만료형 GET URL 발급.
   // 발급 실패 시 기존 media_url 유지(렌더 깨짐 방지). 리터럴 media_url(더미/시드)은 그대로.
   const storageOn = isStorageConfigured();
+  // 음성도 비공개 객체이므로 조회할 때 URL을 발급한다. 글 댓글·시간순 목록은 그대로다.
+  await Promise.all(comments.map(async (c) => {
+    if (!storageOn || !c.audio_storage_key) return;
+    try {
+      c.audio_url = await presignDownload(c.audio_storage_key);
+    } catch {
+      /* 발급 실패 — 기존 audio_url 유지 */
+    }
+  }));
   const withComments = await Promise.all(
     media.map(async (m) => {
       let mediaUrl = m.media_url;
@@ -75,7 +85,7 @@ export async function GET(request: Request) {
         ...m,
         media_url: mediaUrl,
         comments: byMedia.get(m.id) ?? [],
-        canDelete: scope !== null && mediaMatchesScope(m.worker_id, scope),
+        canDelete: !m.deleteWindowExpired && scope !== null && mediaMatchesScope(m.worker_id, scope),
       };
     }),
   );
@@ -158,17 +168,25 @@ export async function DELETE(request: Request) {
   if (!id) {
     return NextResponse.json({ ok: false, error: "id 필요" }, { status: 400 });
   }
-  // 남의 사진이면 rowCount 0 → 404. "없음"과 "권한 없음"을 같은 응답으로 묶어
+  // 남의 사진이면 not_found → 404. "없음"과 "권한 없음"을 같은 응답으로 묶어
   // 사진 id 존재 여부가 새어나가지 않게 한다.
-  const deleted = await deleteCalendarMedia(id, scope);
-  if (!deleted) return NextResponse.json({ ok: false }, { status: 404 });
+  const result = await deleteCalendarMedia(id, scope);
+  if (result.status === "not_found") return NextResponse.json({ ok: false }, { status: 404 });
+  if (result.status === "delete_window_expired") {
+    return NextResponse.json(
+      { ok: false, code: "MEDIA_DELETE_WINDOW_EXPIRED", error: `삭제 유예 시간(${MEDIA_DELETE_WINDOW_MIN}분)이 지났습니다` },
+      { status: 403 },
+    );
+  }
 
   // ★ 행을 지운 **뒤에** 파일을 지운다. 순서를 뒤집으면 권한이 없어 행이 안 지워진 경우에도
   //   파일만 사라진다 — 남의 증빙을 파괴한다.
   // ⚠ 파일 삭제 실패는 삭제 자체의 실패가 아니다. 여기서 500 을 내면 사용자는 "안 지워졌다" 로
   //   읽고 다시 누르는데 행은 이미 없어 404 를 받는다. 남는 파일은 고아이므로 로그로 남긴다.
   //   (실측 2026-08-20 — 이 삭제가 파일을 안 지워 고아 4개·21.2MB 가 이미 쌓여 있었다.)
-  if (deleted.storageProvider === "naver" && deleted.storageKey && isStorageConfigured()) {
+  const storageOn = isStorageConfigured();
+  for (const deleted of result.files) {
+    if (deleted.storageProvider !== "naver" || !deleted.storageKey || !storageOn) continue;
     try {
       await deleteObject(deleted.storageKey);
     } catch (e) {
