@@ -980,6 +980,9 @@ async function initSchema(): Promise<void> {
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS road_address TEXT;
     ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS annotation_of TEXT;
     CREATE INDEX IF NOT EXISTS idx_calmedia_annotation_of ON calendar_media(annotation_of);
+    ALTER TABLE calendar_media ADD COLUMN IF NOT EXISTS client_operation_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_calmedia_client_operation_id
+      ON calendar_media(client_operation_id) WHERE client_operation_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_calmedia_date ON calendar_media(date_key);
 
     -- 미디어 댓글(작성자 이름·식별자·시각) — 관리자/작업자 코멘트 스레드.
@@ -998,6 +1001,9 @@ async function initSchema(): Promise<void> {
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_storage_key TEXT;
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_url TEXT;
     ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS audio_ms INTEGER;
+    ALTER TABLE calendar_media_comment ADD COLUMN IF NOT EXISTS client_operation_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_calmedia_comment_client_operation_id
+      ON calendar_media_comment(client_operation_id) WHERE client_operation_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_calmedia_comment_media ON calendar_media_comment(media_id);
 
     -- 일정 캘린더 일정/라벨 — 브라우저 localStorage 영속을 서버로 승격(관리자 간 공유·기기 무관).
@@ -4555,6 +4561,7 @@ export const MEDIA_DELETE_WINDOW_MIN = 10; // 신규 DB trg_media_delete_window�
 
 export type CalendarMediaRow = {
   id: string;
+  client_operation_id: string | null;
   /** 잉크본이 가리키는 원본 사진 ID. 원본은 null. */
   annotation_of: string | null;
   date_key: string;
@@ -4599,6 +4606,7 @@ export type CalendarMediaListRow = CalendarMediaRow & {
 
 export type CalendarMediaCommentRow = {
   id: string;
+  client_operation_id: string | null;
   media_id: string;
   author_name: string | null;
   author_id: string | null;
@@ -4666,8 +4674,51 @@ export async function getCalendarMediaById(id: string): Promise<CalendarMediaRow
   return rows[0] ?? null;
 }
 
+// N-3: INSERT가 유일키를 확보한 요청만 PUT한다. 경쟁 요청은 PostgreSQL에서 대기한 뒤
+// 23505로 빠지므로 고아 중복 객체를 만들지 않는다. PUT 실패는 행까지 롤백한다.
+// 테이블명은 내부 리터럴만 허용하며, 기본 READ COMMITTED의 새 조회로 승자의 커밋을 읽는다.
+async function insertAppMediaWithUpload<T extends pg.QueryResultRow>(
+  table: "calendar_media" | "calendar_media_comment",
+  operationId: string,
+  text: string,
+  values: unknown[],
+  upload: () => Promise<void>,
+): Promise<T> {
+  const lookup = async () => (await q<T>(
+    `SELECT * FROM ${table} WHERE client_operation_id = $1`, [operationId],
+  )).rows[0];
+  const existing = await lookup();
+  if (existing) return existing;
+
+  const constraint = table === "calendar_media"
+    ? "idx_calmedia_client_operation_id" : "idx_calmedia_comment_client_operation_id";
+  const client = await getPool().connect();
+  let conflict: unknown;
+  let inserted = false;
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<T>(text, values);
+    inserted = true;
+    await upload();
+    await client.query("COMMIT");
+    return rows[0]!;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    const error = e as { code?: string; constraint?: string } | null;
+    if (inserted || error?.code !== "23505" || error.constraint !== constraint) throw e;
+    conflict = e;
+  } finally {
+    client.release();
+  }
+  // 실패한 트랜잭션 밖에서 조회한다. PK 등 다른 유일키 오류를 성공으로 숨기지 않는다.
+  const winner = await lookup();
+  if (winner) return winner;
+  throw conflict;
+}
+
 export async function insertCalendarMedia(input: {
   id: string;
+  clientOperationId?: string | null;
   annotationOf?: string;
   dateKey: string;
   capturedAt?: string | null;
@@ -4685,11 +4736,12 @@ export async function insertCalendarMedia(input: {
   latitude?: number | null;
   longitude?: number | null;
   roadAddress?: string | null;
-}): Promise<CalendarMediaRow> {
+}, upload?: () => Promise<void>): Promise<CalendarMediaRow> {
   const { text, values } = buildInsert(
     "calendar_media",
     {
       id: input.id,
+      client_operation_id: input.clientOperationId ?? null,
       annotation_of: input.annotationOf ?? null,
       date_key: input.dateKey,
       captured_at: input.capturedAt ?? null,
@@ -4710,6 +4762,11 @@ export async function insertCalendarMedia(input: {
     },
     "*",
   );
+  if (input.clientOperationId && upload) {
+    return insertAppMediaWithUpload<CalendarMediaRow>(
+      "calendar_media", input.clientOperationId, text, values, upload,
+    );
+  }
   const { rows } = await q<CalendarMediaRow>(text, values);
   return rows[0]!;
 }
@@ -4730,6 +4787,7 @@ export async function listCommentsForMedia(
 
 export async function insertCalendarMediaComment(input: {
   id: string;
+  clientOperationId?: string | null;
   mediaId: string;
   authorName?: string | null;
   authorId?: string | null;
@@ -4739,11 +4797,12 @@ export async function insertCalendarMediaComment(input: {
   audioStorageKey?: string | null;
   audioUrl?: string | null;
   audioMs?: number | null;
-}): Promise<CalendarMediaCommentRow> {
+}, upload?: () => Promise<void>): Promise<CalendarMediaCommentRow> {
   const { text, values } = buildInsert(
     "calendar_media_comment",
     {
       id: input.id,
+      client_operation_id: input.clientOperationId ?? null,
       media_id: input.mediaId,
       author_name: input.authorName ?? null,
       author_id: input.authorId ?? null,
@@ -4756,6 +4815,11 @@ export async function insertCalendarMediaComment(input: {
     },
     "*",
   );
+  if (input.clientOperationId && upload) {
+    return insertAppMediaWithUpload<CalendarMediaCommentRow>(
+      "calendar_media_comment", input.clientOperationId, text, values, upload,
+    );
+  }
   const { rows } = await q<CalendarMediaCommentRow>(text, values);
   return rows[0]!;
 }
