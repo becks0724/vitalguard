@@ -558,11 +558,12 @@ export function WeatherStrip({
       icon: "wind",
       label: "풍속",
       // 판정 기준(순간풍속)을 헤드라인으로 — 평균만 보여주면 "돌풍 초과인데 정상 표시" 혼동 재발.
-      value: c.windGustKmh !== undefined ? `${(c.windGustKmh / 3.6).toFixed(1)}` : `${c.windKmh.toFixed(1)}`,
+      // 순간풍속 미제공 시 평균도 m/s로 통일하고 대체 사실 명시(과소경보 가능).
+      value: `${((c.windGustKmh ?? c.windKmh) / 3.6).toFixed(1)} m/s`,
       sub:
         c.windGustKmh !== undefined
-          ? `m/s·순간 (평균 ${(c.windKmh / 3.6).toFixed(1)} m/s)`
-          : `km/h (${(c.windKmh / 3.6).toFixed(1)} m/s)`,
+          ? `순간 (평균 ${(c.windKmh / 3.6).toFixed(1)} m/s)`
+          : "평균 대체 (순간풍속 없음)",
       evaluation: evaluations.wind,
     },
     { icon: "uv", label: "자외선", value: c.uvIndex.toFixed(1), sub: uvLabel(c.uvIndex), evaluation: evaluations.uv },
