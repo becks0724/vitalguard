@@ -39,7 +39,10 @@ const forbidden = { ok: false as const, status: 403, body: { ok: false, error: "
  * 401 에는 `action` 을 실어 만료(refresh 로 회복)와 재로그인 필요를 구분한다(앱은 `reauth` 를
  * 받으면 refresh 토큰까지 지운다 · `session/me` 와 같은 규칙).
  */
-export async function requireAppAdmin(request: Request): Promise<AppAdminGate> {
+export async function requireAppAdmin(
+  request: Request,
+  options: { readOnly?: boolean } = {},
+): Promise<AppAdminGate> {
   const token = bearerToken(request);
   const claims = verifyMobileAccessJwt(token);
   if (!claims) {
@@ -52,7 +55,10 @@ export async function requireAppAdmin(request: Request): Promise<AppAdminGate> {
 
   let user: Awaited<ReturnType<typeof findUserByUsername>>;
   try {
-    user = await findUserByUsername(claims.sub);
+    // 조회 전용 GET은 권한 조회에서도 최초 접근의 스키마 초기화(DDL)를 유발하지 않는다.
+    user = options.readOnly
+      ? await findUserByUsername(claims.sub, { readOnly: true })
+      : await findUserByUsername(claims.sub);
   } catch (e) {
     // ⚠ 조회 실패는 "권한 없음" 이 아니라 **판정 불가**다. 여기서 통과시키면 DB 장애가 곧
     //   인가 우회가 된다. 503 으로 닫고 앱이 재시도하게 한다(403 이면 앱이 로그아웃해 버린다).

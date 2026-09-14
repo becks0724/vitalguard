@@ -3996,10 +3996,15 @@ export async function createUser(input: {
   return rows[0] ?? null;
 }
 
-export async function findUserByUsername(username: string): Promise<UserRow | null> {
-  const { rows } = await q<UserRow>("SELECT * FROM users WHERE username = $1", [
-    username,
-  ]);
+export async function findUserByUsername(
+  username: string,
+  options: { readOnly?: boolean } = {},
+): Promise<UserRow | null> {
+  const sql = "SELECT * FROM users WHERE username = $1";
+  // N-4 상태 GET: 이미 있는 스키마만 읽는다. 일반 호출의 초기화 동작은 유지한다.
+  const { rows } = options.readOnly
+    ? await getPool().query<UserRow>(sql, [username])
+    : await q<UserRow>(sql, [username]);
   return rows[0] ?? null;
 }
 
@@ -4672,6 +4677,25 @@ export async function getCalendarMediaById(id: string): Promise<CalendarMediaRow
     [id],
   );
   return rows[0] ?? null;
+}
+
+// N-4: 작업 ID 존재 여부는 업로드 당시의 귀속과 함께 조회한다.
+// 사진·잉크는 JWT workerId, 음성 댓글은 JWT sub(username)가 저장된다.
+// owner도 본인 행만 허용한다. NULL 사번은 누구의 미디어 소유권도 증명하지 않는다.
+// q()는 ensureSchema()를 호출하므로 쓰지 않는다. 이 조회는 DDL·업로드도 유발하지 않는다.
+export async function listOwnedAppMediaOperationIds(
+  operationIds: string[],
+  owner: { workerId: string | null; username: string },
+): Promise<string[]> {
+  const { rows } = await getPool().query<{ client_operation_id: string }>(
+    `SELECT client_operation_id FROM calendar_media
+      WHERE client_operation_id = ANY($1::text[]) AND worker_id = $2
+     UNION ALL
+     SELECT client_operation_id FROM calendar_media_comment
+      WHERE client_operation_id = ANY($1::text[]) AND author_id = $3`,
+    [operationIds, owner.workerId || null, owner.username],
+  );
+  return rows.map((row) => row.client_operation_id);
 }
 
 // N-3: INSERT가 유일키를 확보한 요청만 PUT한다. 경쟁 요청은 PostgreSQL에서 대기한 뒤
