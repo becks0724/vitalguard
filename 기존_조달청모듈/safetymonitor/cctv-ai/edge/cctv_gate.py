@@ -226,9 +226,14 @@ def stats3():
         return jsonify({"error": "upstream unreachable"}), 503
     s = h.get("stats") or {}
     # 관제웹이 읽는 이름 그대로만 내보낸다 — 그 밖의 진단 정보는 공개하지 않는다.
-    return jsonify({k: s.get(k, 0) for k in (
+    out = {k: s.get(k, 0) for k in (
         "person_count", "violation_count", "compliance_rate",
-        "hardhat_count", "no_hardhat_count")})
+        "hardhat_count", "no_hardhat_count")}
+    # ★ 09-15 엔진 태그는 문자열이라 위 숫자 화이트리스트와 기본값이 다르다(0 이 아니라 "").
+    #   관제웹이 하드코딩("YOLO26s v5") 대신 이 값을 쓴다 — 엔진을 바꿔도 화면이 따라온다.
+    #   ⚠ 화이트리스트 원칙은 지킨다 — 이 한 키만 명시적으로 더한다(진단 정보는 여전히 비공개).
+    out["engine"] = str(s.get("engine") or "")[:24]
+    return jsonify(out)
 
 
 @app.get("/cctv/connection3")
