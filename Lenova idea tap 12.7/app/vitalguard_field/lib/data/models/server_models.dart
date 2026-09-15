@@ -53,6 +53,7 @@ class CctvTicket extends ServerRow {
 class SiteInfo extends ServerRow {
   SiteInfo(super.json);
   // id는 일별 스냅숏 ID다. 현장 배정 ID로 사용하지 않는다.
+  String? get site_id => text('site_id');
   String? get site_name => text('site_name');
   String? get company_name => text('company_name');
   String? get address => text('address');

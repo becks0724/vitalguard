@@ -247,6 +247,13 @@ class DeviceCaptureLauncher implements CaptureLauncher {
   final MlKitCaptureText text;
 
   String? get _siteId {
+    final siteId = controller.site?.site_id;
+    if (siteId?.isNotEmpty == true) return siteId;
+    // ⚠ 2026-09-15 확인: 서버는 아직 site_id 를 주지 않는다.
+    // `GET /api/admin/site-info` 는 site_info_daily 를 SELECT * 로 돌려주는데
+    // 그 테이블에 site_id 컬럼이 없다(db.ts:491). 그래서 위 분기는 지금 항상 건너뛴다.
+    // 담당관 배정 현장 ID 를 주는 경로가 생기면 그때부터 동작한다.
+    // 그전까지는 이 폴백이 유일한 출처이고, 그 날짜 첫 사진에는 현장이 안 붙는다.
     for (final media in controller.media) {
       if (media.site_id?.isNotEmpty == true) return media.site_id;
     }
