@@ -3,18 +3,26 @@ package com.vitalguard.wear.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,11 +30,31 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.ButtonDefaults
 import androidx.wear.compose.material3.Text
+import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
 
 /** 톱니 개수 — 8개면 40dp 에서도 톱니가 뭉치지 않고 "설정" 으로 읽힌다. */
 internal const val GEAR_TEETH = 8
+
+/** 개발자(진단) 화면에 들어가는 톱니 연속 탭 수 — 안드로이드 설정의 빌드번호 연타와 같은 방식. */
+private const val DEV_TAP_COUNT = 10
+
+/**
+ * 연타로 인정하는 탭 간격 상한. 이보다 뜸하면 처음부터 다시 센다.
+ * ⚠ 안드로이드 원본에는 이 제한이 없다(화면을 벗어나야 초기화). 여기는 로그인·로그아웃 때문에
+ *   평소에도 들르는 면이라, 제한이 없으면 며칠에 걸친 탭이 쌓여 우발 진입한다.
+ */
+private const val DEV_TAP_WINDOW_MS = 1_500L
+
+/** 남은 횟수를 보여 주기 시작하는 지점 — 안드로이드 토스트와 같은 역할(성공·실패를 눈으로 가른다). */
+private const val DEV_TAP_HINT_FROM = 5
+
+/**
+ * 톱니 표적의 가로 폭. 그리는 톱니는 30dp 그대로 두고 **가로만** 넓힌다 —
+ * 30dp 를 정확히 열 번 노리는 건 워치에서 무리이고, 세로를 키우면 40mm(206dp) 에서 아래가 밀린다.
+ */
+private val GEAR_TAP_WIDTH = 96.dp
 
 /**
  * 톱니바퀴. 아이콘 라이브러리를 새로 들이지 않으려고 직접 그린다
@@ -65,15 +93,54 @@ fun SettingsPage(
     workerId: String?,
     onLogin: () -> Unit,
     onLogout: () -> Unit,
+    /** 진단 화면 진입 — 톱니바퀴를 [DEV_TAP_COUNT] 번 연타한다(09-15 사용자 지시). */
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val loggedIn = !workerId.isNullOrBlank()
+
+    // 연타 카운터. 창은 타임스탬프가 아니라 이 효과 자체다 — 탭마다 키가 바뀌어 대기가 처음부터
+    // 다시 걸리고, 다음 탭이 늦으면 그 대기가 끝나 0 으로 돌아간다.
+    var devTaps by remember { mutableIntStateOf(0) }
+    LaunchedEffect(devTaps) {
+        if (devTaps > 0) {
+            delay(DEV_TAP_WINDOW_MS)
+            devTaps = 0
+        }
+    }
     Column(
         modifier = Modifier.fillMaxSize().background(VgColors.Background).padding(horizontal = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        GearIcon(VgColors.Secondary, Modifier.size(30.dp))
-        Text("설정", color = VgColors.Secondary, fontSize = 12.sp, modifier = Modifier.padding(top = 2.dp))
+        Column(
+            modifier = Modifier
+                .width(GEAR_TAP_WIDTH)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            val n = devTaps + 1
+                            if (n >= DEV_TAP_COUNT) {
+                                devTaps = 0
+                                onOpenDiagnostics()
+                            } else {
+                                devTaps = n
+                            }
+                        },
+                    )
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            GearIcon(VgColors.Secondary, Modifier.size(30.dp))
+            // 남은 횟수가 라벨 자리를 잠시 빌린다 — 안드로이드 토스트 자리다. 겹쳐 그리지 않으므로
+            // 배치가 안 흔들리고, 원형 가장자리에 별도 줄을 두는 것과 달리 잘릴 일도 없다.
+            val counting = devTaps >= DEV_TAP_HINT_FROM
+            Text(
+                if (counting) "개발자 ${DEV_TAP_COUNT - devTaps}번 남음" else "설정",
+                color = if (counting) VgColors.Accent else VgColors.Secondary,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
 
         if (loggedIn) {
             Text(

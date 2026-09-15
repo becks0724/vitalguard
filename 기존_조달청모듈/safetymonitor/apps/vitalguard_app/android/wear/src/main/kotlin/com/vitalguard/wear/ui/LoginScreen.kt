@@ -122,12 +122,19 @@ fun LoginPage(
     onLogout: () -> Unit,
     onManual: () -> Unit,
     onCancel: () -> Unit,
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     if (state.qr.phase != QrPhase.IDLE) {
         QrLoginPane(state.qr, onRefresh = onStart, onManual = onManual, onCancel = onCancel)
         return
     }
-    SettingsPage(workerName = workerName, workerId = workerId, onLogin = onStart, onLogout = onLogout)
+    SettingsPage(
+        workerName = workerName,
+        workerId = workerId,
+        onLogin = onStart,
+        onLogout = onLogout,
+        onOpenDiagnostics = onOpenDiagnostics,
+    )
 }
 
 // ── QR 모드 ───────────────────────────────────────────────────────────────────
