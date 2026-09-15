@@ -16,7 +16,30 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00373-hm8` (커밋 `9f46a9c0` · 09-12 23:2x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00389-mcd` (커밋 `9e30a726` · 09-15 19:0x · 서빙 digest
+  `sha256:ca32cc8e…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
+  검증 **아카이브(9e30a72 고정) · 루트 pnpm test 1992/1992** · commit-sha 라벨 = APPROVED_AT ·
+  ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
+  ⚠ 표기가 **00373 → 00389 로 여러 리비전 낡아 있었다** — [[L-129]]④ 재발. 라이브는 `describe` 로 읽는다.
+  **화면 PPE 모델명을 엣지가 보낸 값으로 — `YOLO26s v5` 하드코딩 → `YOLO26s v7d`.**
+  라이브 번들 실측(청크 17개 · 1,986,989 B) —
+  ```
+  x=(null==d?void 0:d.engine)?"YOLO26s ".concat(d.engine):lu.ppe     ← 새 경로가 실렸다
+  lu={object:"YOLOv8",ppe:"YOLO26s v5"}                              ← 폴백 보존(Hexmon 클립 경로용)
+  'YOLO26s' 총 2건 = 템플릿 1 + 폴백 1
+  ⚠ 계수는 `grep -o | wc -l` 로 — 번들은 한 줄이라 `grep -c` 는 전부 1 로 보인다(09-15 실제로 오판)
+  ```
+  **CAM-03 게이트 치환은 이제 기본값이 낸다(`6e33c79c`).** 아무도 안 넘겼는데 빌드 3/5 줄에
+  `_CAM03_GATE=https://cctv-gate.example.invalid:8443` 이 찍혔고, 번들 `duckdns 적중 1`
+  (통제군 「심부체온」 1 · 없는 문자열 0). 09-11 에 이틀 죽었던 인자다.
+  체인 실측(배포 후) — 티켓 200(ttl 60초) → 게이트 `/cctv/stats3` 200 `{"engine":"v7d",...}` ·
+  통제군 `person_count` 2 · `violation_count` 2(0 이 아니므로 업스트림을 읽고 있다) ·
+  CORS preflight 200 `Access-Control-Allow-Origin` = 대시보드 Origin, `Authorization` 허용
+  (통제군 — 허용목록 밖 Origin 에는 그 헤더가 안 붙는다).
+  ⛔ **브라우저 렌더 육안 확인은 미완** — 변경 주인([CCTV/ML])이 본다. 위는 전부 체인 증거지 화면이 아니다.
+  ⚠ **DuckDNS 가 사설 IP(192.168.219.47)를 가리키므로 시청은 같은 LAN 안으로 한정**(09-09 사용자 승인). 외부 시청은 별도 결정 사항.
+
+- (직전) **라이브** = `vitalguard-dashboard-00373-hm8` (커밋 `9f46a9c0` · 09-12 23:2x · 서빙 digest
   `sha256:31455442…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **아카이브(9f46a9c 고정) · 루트 pnpm test 1658/1658** · commit-sha 라벨 = APPROVED_AT ·
   ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
