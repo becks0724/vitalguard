@@ -37,6 +37,7 @@
 #   09-10 실측: 안 달았더니 nohup 로그가 0 바이트라 실패 원인을 못 봤다.
 import argparse
 import base64
+import re
 import io
 import json
 import os
@@ -48,11 +49,49 @@ import urllib.request
 HASH_SIDE = 16          # 지각 해시 격자 — 16×16 = 256비트
 
 
-def phash(raw_jpg):
-    """평균 밝기 기준 이진 해시. PIL 만 쓰고 모델은 안 부른다."""
+ROI_PAD = 0.08          # 박스 둘레 여유 — 경계에 걸친 옷·팔을 포함시킨다
+
+
+def _subject_box(dets, size):
+    """중복 판정에 쓸 **대상 한 명**의 영역.
+
+    ★ 2026-09-10 재수정 — 처음엔 모든 사람 박스의 합집합을 썼는데, 사무실에 6명이 있으니
+      합집합이 화면 대부분을 덮고 **누가 움직이든** 해시가 바뀌어 초당 1장씩 폭주했다
+      (실측: 8초에 8장). 군중이 아니라 **찍고 있는 대상**을 재야 한다.
+      우선순위 = 조끼 박스 > 가장 큰 사람 박스 > 화면 전체.
+    """
+    if not dets:
+        return None
+    W, H = size
+    vest = [d["box"] for d in dets if d.get("cls") == "safety_vest"]
+    if vest:
+        b = max(vest, key=lambda x: (x[2] - x[0]) * (x[3] - x[1]))
+    else:
+        ppl = [d["box"] for d in dets if d.get("cls") == "person"]
+        if not ppl:
+            return None
+        b = max(ppl, key=lambda x: (x[2] - x[0]) * (x[3] - x[1]))
+    pw, ph_ = (b[2] - b[0]) * ROI_PAD, (b[3] - b[1]) * ROI_PAD
+    box = (max(0, int(b[0] - pw)), max(0, int(b[1] - ph_)),
+           min(W, int(b[2] + pw)), min(H, int(b[3] + ph_)))
+    return box if box[2] - box[0] > 8 and box[3] - box[1] > 8 else None
+
+
+def phash(raw_jpg, dets=None):
+    """평균 밝기 기준 이진 해시. PIL 만 쓰고 모델은 안 부른다.
+
+    ★ 2026-09-10 수정 — 화면 전체로 재던 것을 **사람·PPE 영역만** 재도록 바꿨다.
+      실측: 사용자가 의자를 돌려 뒤돌아 앉았는데 전체 해밍거리가 6(문턱 12) 이라
+      "중복" 으로 걷혔다. 960×540 사무실 화면에서 사람 한 명은 몇 % 밖에 안 되니
+      전체 해시는 배경을 재는 셈이었다. 배경은 안 변하는 게 정상이고, 우리가 알고
+      싶은 것은 **사람이 바뀌었는가** 다.
+    """
     from PIL import Image
-    im = Image.open(io.BytesIO(raw_jpg)).convert("L").resize(
-        (HASH_SIDE, HASH_SIDE), Image.BILINEAR)
+    im = Image.open(io.BytesIO(raw_jpg)).convert("L")
+    box = _subject_box(dets, im.size)
+    if box:
+        im = im.crop(box)
+    im = im.resize((HASH_SIDE, HASH_SIDE), Image.BILINEAR)
     px = list(im.getdata())
     avg = sum(px) / len(px)
     return [1 if v > avg else 0 for v in px]
@@ -65,6 +104,27 @@ def hamming(a, b):
 def get(url, timeout=8):
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return json.loads(r.read())
+
+
+def parse_target(note):
+    """창 목표 장수를 note 에서 읽는다 — 예: "흰안전모_뒤돌아 목표35".
+
+    ★ 2026-09-10 추가 — 1인 촬영이라 자세를 잡는 동안 터미널을 볼 수 없다.
+      목표를 채우면 수집기가 스스로 라벨을 해제해 그 창을 닫는다.
+      목표가 없으면 종전대로 사람이 해제할 때까지 계속 모은다.
+    """
+    m = re.search(r"목표\s*(\d+)", note or "")
+    return int(m.group(1)) if m else 0
+
+
+def release(base):
+    """창을 닫는다 — 푸셔의 라벨을 비우면 이후 프레임은 저장되지 않는다."""
+    try:
+        urllib.request.urlopen(base + "/mark", timeout=5).read()
+        return True
+    except (urllib.error.URLError, OSError) as e:
+        print(f"[수집] ★ 라벨 자동 해제 실패 ({e}) — 손으로 해제해야 한다", flush=True)
+        return False
 
 
 def safe_name(s):
@@ -84,11 +144,17 @@ def main():
                     help="직전 저장분과 이 거리 이하면 중복으로 보고 건너뛴다")
     ap.add_argument("--max-age", type=float, default=2.0,
                     help="프레임이 이보다 오래됐으면 건너뛴다(정지 화면 방지)")
+    ap.add_argument("--min-gap", type=float, default=3.0,
+                    help="이보다 자주 저장하지 않는다 — 해시가 예민해도 폭주를 막는 안전장치")
+    ap.add_argument("--max-gap", type=float, default=20.0,
+                    help="선언 중인데 이 시간 넘게 한 장도 안 남았으면 중복이어도 저장한다")
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
     manifest = os.path.join(a.out, "manifest.jsonl")
     last_hash, last_label, label_since = None, None, 0.0
+    last_saved_at = 0.0
+    win_saved, win_target, win_since = 0, 0, 0.0
     saved = skipped_dup = skipped_nolabel = skipped_settle = 0
     t0 = time.time()
     print(f"[수집] 시작 · out={a.out} · 주기 {a.interval}s · settle {a.settle}s", flush=True)
@@ -112,8 +178,12 @@ def main():
                 continue
             if label != last_label:                     # 창이 바뀌었다
                 last_label, label_since = label, time.time()
+                last_saved_at = 0.0
                 last_hash = None                        # 창마다 중복 판정을 새로 시작
-                print(f"[수집] 창 시작 — {label} ({c.get('note') or ''})", flush=True)
+                win_saved, win_since = 0, time.time()
+                win_target = parse_target(c.get("note"))
+                tgt = f" · 목표 {win_target}장 (채우면 자동 종료)" if win_target else " · 목표 없음"
+                print(f"[수집] 창 시작 — {label} ({c.get('note') or ''}){tgt}", flush=True)
             if time.time() - label_since < a.settle:    # 경계는 버린다
                 skipped_settle += 1
                 continue
@@ -121,8 +191,13 @@ def main():
                 continue
 
             jpg = base64.b64decode(c["jpg_b64"])
-            h = phash(jpg)
-            if last_hash is not None and hamming(h, last_hash) <= a.hash_dist:
+            h = phash(jpg, c.get("dets"))
+            if time.time() - last_saved_at < a.min_gap:   # 폭주 방지
+                skipped_dup += 1
+                continue
+            dup = last_hash is not None and hamming(h, last_hash) <= a.hash_dist
+            # 중복이어도 오래 굶었으면 한 장 남긴다 — 가만히 있는 자세도 표본이 필요하다.
+            if dup and time.time() - last_saved_at < a.max_gap:
                 skipped_dup += 1
                 continue
             last_hash = h
@@ -145,8 +220,20 @@ def main():
                 f.write(json.dumps({**meta, "dir": safe_name(label)},
                                    ensure_ascii=False) + "\n")
             saved += 1
+            win_saved += 1
+            last_saved_at = time.time()
             nd = len(c.get("dets") or [])
-            print(f"[수집] +{saved:<4d} {label:<22s} 박스 {nd:2d}개  {stamp}", flush=True)
+            prog = f" [{win_saved}/{win_target}]" if win_target else ""
+            print(f"[수집] +{saved:<4d} {label:<22s} 박스 {nd:2d}개  {stamp}{prog}"
+                  f"{'  (간격보충)' if dup else ''}", flush=True)
+
+            # ★ 목표를 채우면 스스로 창을 닫는다 — 1인 촬영이라 사람이 화면을 못 본다.
+            if win_target and win_saved >= win_target:
+                dt = time.time() - win_since
+                ok = release(a.base)
+                print(f"[수집] ══ 창 완료 — {label} · {win_saved}장 · {dt/60:.1f}분"
+                      f"{'' if ok else ' (해제 실패)'}", flush=True)
+                last_label, win_target, win_saved = None, 0, 0
     except KeyboardInterrupt:
         pass
     finally:
