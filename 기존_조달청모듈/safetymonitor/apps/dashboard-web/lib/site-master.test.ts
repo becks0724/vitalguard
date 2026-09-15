@@ -144,7 +144,7 @@ function harness() {
       if (name === "./db") return {
         findUserByUsername: async (username: string) => {
           state.userLookups.push(username);
-          return { username, admin_access: state.adminAccess };
+          return { username, role: "admin", status: "approved", admin_access: state.adminAccess };
         },
       };
       return authGlobals.require(name);
@@ -257,13 +257,18 @@ test("로그인 선택: 다른 현장을 거쳐 재선택해도 수동 수정값
   assert.equal((await h.db.getLatestSiteInfo(CONTRACT))?.address, "마스터 주소");
 });
 
-test("일반 로그인 사용자는 현장을 선택할 수 있고 공용 정보 편집은 거부된다", async () => {
+test("일반 로그인 사용자는 같은 세션으로 현장 목록을 조회·선택할 수 있고 공용 정보 편집은 거부된다", async () => {
   const h = harness();
   h.state.adminAccess = false;
-  assert.equal((await h.route.POST(request("POST", { ...input(), selectOnly: true }))).status, 200);
+  const token = h.auth.createSession("admin", "test.jodal", "jodal");
+  const response = await h.sitesRoute.GET(sitesRequest(token));
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).sites, await h.db.listSites());
+  assert.equal((await h.route.POST(request("POST", { ...input(), selectOnly: true }, token))).status, 200);
+  assert.equal((await h.db.getCurrentSite("test.jodal"))?.site_id, MAIN);
   assert.equal((await h.db.getLatestSiteInfo(MAIN))?.address, "마스터 주소");
-  assert.equal((await h.route.POST(request("POST", input()))).status, 401);
-  assert.equal((await h.route.PUT(request("PUT", { ...input(), selectOnly: true }))).status, 401);
+  assert.equal((await h.route.POST(request("POST", input(), token))).status, 401);
+  assert.equal((await h.route.PUT(request("PUT", { ...input(), selectOnly: true }, token))).status, 401);
 });
 
 test("기존 PUT: siteId가 빠져도 사용자의 현재 현장을 편집하고 다른 현장은 보존한다", async () => {
@@ -310,7 +315,7 @@ for (const role of ["owner", "admin"] as const) {
     const body = await response.json();
     assert.equal(body.ok, true);
     assert.deepEqual(body.sites, await h.db.listSites());
-    assert.deepEqual(h.state.userLookups, role === "owner" ? [] : ["alice"]);
+    assert.deepEqual(h.state.userLookups, []);
   });
 }
 
@@ -339,24 +344,45 @@ test("GET sites: 웹 세션과 앱 JWT가 모두 없거나 유효하지 않으�
   assert.equal(h.state.queries.length + h.state.userLookups.length, 0);
 });
 
-test("GET sites: 관리자 메뉴 권한이 없는 웹 세션은 401이고 현장 목록을 조회하지 않는다", async () => {
+test("GET sites: admin_access=false인 승인된 관제웹 세션은 200과 DB 목록을 반환한다", async () => {
   const h = harness();
   h.state.adminAccess = false;
-  const req = sitesRequest(h.auth.createSession("admin", "alice", "vitalguard"));
-  assert.equal((await h.sitesRoute.GET(req)).status, 401);
-  assert.deepEqual(h.state.userLookups, ["alice"]);
-  assert.equal(h.state.queries.length, 0);
+  const req = sitesRequest(h.auth.createSession("admin", "test.jodal", "jodal"));
+  assert.equal(h.auth.getSession(req)?.role, "admin");
+  assert.equal(appJwt.verifyAppJwt(appJwt.bearerToken(req)), null);
+  const response = await h.sitesRoute.GET(req);
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.sites, await h.db.listSites());
+  assert.deepEqual(h.state.userLookups, []);
+  assert.ok(h.state.queries.every(({ sql }) => sql.startsWith("SELECT ")), "목록 조회는 쓰기를 하지 않는다");
 });
 
-test("GET sites: 기본 관제 게이트가 거부한 세션도 메뉴 권한이 있으면 site-info GET과 동일하게 허용한다", async () => {
+test("GET sites: orgType이 없는 기존 관제웹 세션도 200과 DB 목록을 반환한다", async () => {
   const h = harness();
-  const req = sitesRequest(h.auth.createSession("admin", "alice", "contractor"));
-  assert.equal(h.auth.verifyBasicAuth(req), false);
-  assert.equal(appJwt.verifyAppJwt(appJwt.bearerToken(req)), null);
-  assert.equal((await h.route.GET(new Request("http://fixture.test/api/admin/site-info", { headers: req.headers }))).status, 200);
+  h.state.adminAccess = false;
+  const req = sitesRequest(h.auth.createSession("admin", "alice"));
+  assert.equal(h.auth.getSession(req)?.orgType, undefined);
   const response = await h.sitesRoute.GET(req);
   assert.equal(response.status, 200);
   assert.deepEqual((await response.json()).sites, await h.db.listSites());
+  assert.deepEqual(h.state.userLookups, []);
+});
+
+test("GET sites: contractor 세션은 관리자 메뉴 권한과 무관하게 401이고 DB를 조회하지 않는다", async () => {
+  for (const adminAccess of [false, true]) {
+    const h = harness();
+    h.state.adminAccess = adminAccess;
+    const req = sitesRequest(h.auth.createSession("admin", "alice", "contractor"));
+    assert.equal(h.auth.getSession(req)?.orgType, "contractor");
+    assert.equal(h.auth.verifyBasicAuth(req), false);
+    assert.equal(appJwt.verifyAppJwt(appJwt.bearerToken(req)), null);
+    const response = await h.sitesRoute.GET(req);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await response.json(), { ok: false, error: "인증 필요" });
+    assert.equal(h.state.queries.length + h.state.userLookups.length, 0);
+  }
 });
 
 test("GET sites: 기존 Basic 세션과 직접 관리자 자격도 getSession으로 호환된다", async () => {
