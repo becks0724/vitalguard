@@ -93,8 +93,24 @@ test("현장 목록: 로그인 토큰을 보내고 DB의 새 현장·kind·필�
     siteName: "DB 현장명", constructionType: "토목", address: "DB 주소", startDate: "2026-09-01", completionDate: "2027-09-01" });
 });
 
+test("현장 목록 HTTP 200: 같은 ui_key라도 폴백 라벨 대신 DB 라벨과 정보를 표시·선택한다", async () => {
+  const dbSite = { ...master("SITE-BUSAN-RESI", "demo-busan", "demo"), label: "부산 해운대 마린시티 주상복합" };
+  const selections: SiteInfo[] = [];
+  const h = selector(async () => response([dbSite]), async (info) => { selections.push(info); });
+  const label = () => elements(h.render()).find((node) => node.type === ListBox.Item && node.props.id === "demo-busan")?.props.textValue;
+  assert.equal(label(), "부산 해운대 주상복합 신축");
+  h.load();
+  await tick();
+  assert.deepEqual(itemIds(h.render()), ["demo-busan"]);
+  assert.equal(label(), dbSite.label);
+  await press(h.render());
+  assert.equal(selections[0]?.noticeId, dbSite.site_id);
+  assert.equal(selections[0]?.address, dbSite.address);
+});
+
 for (const [label, fetcher] of [
   ["네트워크 실패", async () => { throw new Error("통신 실패"); }],
+  ["HTTP 401", async () => new Response(JSON.stringify({ ok: false, error: "인증 필요" }), { status: 401 })],
   ["HTTP 503", async () => response([], 503)],
   ["깨진 JSON", async () => new Response("{")],
   ["잘못된 목록", async () => response([null])],

@@ -199,6 +199,7 @@ export function LoginSiteSelect({
     async function load() {
       try {
         const response = await fetch("/api/sites", {
+          // /api/admin/login의 createSession() 발급 토큰 — getSession()이 이 헤더를 검증한다.
           headers: { authorization: `Bearer ${token}` },
           cache: "no-store",
           signal: controller.signal,
