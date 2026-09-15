@@ -1,0 +1,596 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'contracts/field_contracts.dart';
+
+class FieldCoordinator extends FieldController {
+  FieldCoordinator(
+    this.gateway,
+    this.local,
+    this.speech, {
+    this.recorder = const UnavailableVoiceRecorder(),
+  });
+  final FieldGateway gateway;
+  @override
+  final LocalStore local;
+  @override
+  final SpeechInput speech;
+  @override
+  final VoiceRecorder recorder;
+  @override
+  AuthStage authStage = AuthStage.restoring;
+  @override
+  bool busy = false;
+  @override
+  bool offline = false;
+  @override
+  String? message;
+  @override
+  ApiFailure? loginFailure;
+  @override
+  DateTime? lockedUntil;
+  @override
+  AppUser? user;
+  @override
+  SiteInfo? site;
+  @override
+  DateTime? fetchedAt;
+  @override
+  SiteStatus? siteStatusSnapshot;
+  @override
+  bool siteStatusForbidden = false;
+  @override
+  List<CalendarMedia> media = [];
+  @override
+  List<CalendarEvent> calendarEvents = [];
+  @override
+  List<CalendarLabel> calendarLabels = [];
+  @override
+  bool get isMock => gateway.isMock;
+  MobileSession? _session;
+  DateTime? _accessExpiresAt;
+  Future<void>? _refreshing;
+  int _epoch = 0;
+  int _period = 0;
+  bool _remember = true;
+  String? _challengeId;
+  String? _challengePassword;
+  bool _disposed = false;
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
+
+  void _clearView() {
+    user = null;
+    site = null;
+    fetchedAt = null;
+    siteStatusSnapshot = null;
+    siteStatusForbidden = false;
+    media = [];
+    calendarEvents = [];
+    calendarLabels = [];
+  }
+
+  // 2026-09-14 태곤 님 결정: 실제 운영 계정인 admin도 허용한다.
+  // 2026-09-12에는 실제 계정 구조를 모른 채 platform_admin·site_manager만 허용했다.
+  // 라이브 DB users에는 role='admin' 계정 5개
+  // (admin0740·admin3470·admin6861·test.jodal·test.mois, 모두 status=approved)뿐이고,
+  // site_manager·platform_admin은 없어 기존 규칙으로는 현장 담당관이 아무도 앱을 못 쓴다.
+  // 서버 lib/app-login.ts에는 역할 검사가 없으며 거부 조건은
+  // invalid_credentials·not_approved뿐이다.
+  // worker는 워치 앱 대상이므로 이 태블릿 앱에서는 계속 거부한다.
+  bool _allowed(AppUser user) =>
+      const {'platform_admin', 'site_manager', 'admin'}.contains(user.role);
+
+  Future<void> _accept(
+    MobileSession session,
+    int epoch, {
+    DateTime? expiresAt,
+  }) async {
+    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    if (!_allowed(session.user)) {
+      _session = null;
+      _clearView();
+      await local.writeTokenBundle(null);
+      authStage = AuthStage.denied;
+      throw const ApiFailure(
+        '이 앱을 사용할 수 없는 계정입니다. 현장 관리자 계정을 확인해 주세요',
+        status: 403,
+      );
+    }
+    _session = session;
+    user = session.user;
+    _accessExpiresAt =
+        expiresAt ??
+        DateTime.now().add(Duration(seconds: session.accessExpiresInSec));
+    if (_remember) {
+      await local.writeTokenBundle(
+        jsonEncode({
+          'session': session.json,
+          'localAccessExpiresAt': _accessExpiresAt!.toIso8601String(),
+        }),
+      );
+    } else {
+      await local.writeTokenBundle(null);
+    }
+  }
+
+  @override
+  Future<void> initialize() async {
+    final epoch = ++_epoch;
+    try {
+      final raw = await local.readTokenBundle();
+      if (raw == null) {
+        authStage = AuthStage.login;
+        return;
+      }
+      final stored = jsonDecode(raw) as Map;
+      await _accept(
+        MobileSession(Map<String, dynamic>.from(stored['session'] as Map)),
+        epoch,
+        expiresAt: DateTime.parse(stored['localAccessExpiresAt'] as String),
+      );
+      final current = await _authorized(gateway.me);
+      if (!_allowed(current)) {
+        throw const ApiFailure(
+          '이 앱을 사용할 수 없는 계정입니다',
+          status: 403,
+          action: 'reauth',
+        );
+      }
+      user = current;
+      site = await _authorized(gateway.siteInfo);
+      authStage = AuthStage.ready;
+    } catch (_) {
+      if (authStage != AuthStage.denied) authStage = AuthStage.login;
+      _clearView();
+      message = '저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
+    } finally {
+      _notify();
+    }
+  }
+
+  @override
+  Future<void> signIn(
+    String id,
+    String password, {
+    bool remember = true,
+  }) async {
+    if (busy || (lockedUntil?.isAfter(DateTime.now()) ?? false)) return;
+    final epoch = ++_epoch;
+    _clearView();
+    _session = null;
+    _refreshing = null;
+    _remember = remember;
+    _challengeId = id.trim();
+    _challengePassword = password;
+    await _login(epoch);
+  }
+
+  Future<void> _login(int epoch, {String? code}) async {
+    busy = true;
+    message = null;
+    loginFailure = null;
+    _notify();
+    try {
+      final session = await gateway.login(
+        _challengeId!,
+        _challengePassword!,
+        totpCode: code,
+      );
+      if (epoch != _epoch) return;
+      await _accept(session, epoch);
+      _challengePassword = null;
+      _challengeId = null;
+      site = await _authorized(gateway.siteInfo);
+      if (epoch != _epoch) return;
+      // 배정·첫 비밀번호 변경 상태는 서버가 주지 않는다(login/me 응답에 없음).
+      // 2026-09-12 결정: 서버 확장 대신 A-06·A-12 를 앱에서 제외한다.
+      //   A-06 — site_info_daily 최신 1행이 전역 단일 현장이라 "배정 1개면 건너뛴다" 규칙이 발동.
+      //   A-12 — 관제웹 담당. ⚠ 첫 비밀번호 미변경 계정도 앱에 들어온다(잔여 리스크).
+      authStage = AuthStage.ready;
+      offline = false;
+    } on ApiFailure catch (error) {
+      if (epoch != _epoch) return;
+      message = error.message;
+      loginFailure = error;
+      if (error.retryAfterSec != null) {
+        lockedUntil = DateTime.now().add(
+          Duration(seconds: error.retryAfterSec!),
+        );
+      }
+      if (error.twoFactorRequired) {
+        authStage = AuthStage.totp;
+      } else if (authStage != AuthStage.denied &&
+          authStage != AuthStage.reauthenticate) {
+        authStage = AuthStage.login;
+      }
+      if (authStage != AuthStage.totp) {
+        _challengePassword = null;
+        _challengeId = null;
+      }
+    } catch (_) {
+      message = '로그인 응답 또는 기기 저장 상태를 확인할 수 없습니다';
+      _challengePassword = null;
+      _challengeId = null;
+      authStage = AuthStage.login;
+    } finally {
+      busy = false;
+      _notify();
+    }
+  }
+
+  @override
+  Future<void> submitTotp(String code) async {
+    if (busy || (lockedUntil?.isAfter(DateTime.now()) ?? false)) return;
+    if (_challengePassword == null) {
+      authStage = AuthStage.login;
+      _notify();
+      return;
+    }
+    await _login(_epoch, code: code);
+  }
+
+  @override
+  Future<void> cancelSignIn() async {
+    ++_epoch;
+    _challengePassword = null;
+    _challengeId = null;
+    _session = null;
+    _clearView();
+    authStage = AuthStage.login;
+    busy = false;
+    message = null;
+    loginFailure = null;
+    _notify();
+  }
+
+  Future<void> _lock() async {
+    try {
+      await beforeLock?.call();
+    } catch (_) {
+      message = '초안 저장 상태를 확인해 주세요. 다시 로그인해야 합니다.';
+    }
+    ++_epoch;
+    _session = null;
+    _clearView();
+    authStage = AuthStage.reauthenticate;
+    try {
+      await local.writeTokenBundle(null);
+    } catch (_) {}
+    _notify();
+  }
+
+  Future<void> _refresh() {
+    if (_refreshing != null) return _refreshing!;
+    final epoch = _epoch;
+    final session = _session;
+    if (session == null) {
+      return Future.error(const ApiFailure('다시 로그인해 주세요', action: 'reauth'));
+    }
+    final work = () async {
+      try {
+        final refreshed = await gateway.refresh(session.refreshToken);
+        await _accept(refreshed, epoch);
+      } on ApiFailure catch (e) {
+        if (epoch == _epoch &&
+            (e.action == 'reauth' || e.status == 401 || e.status == 403)) {
+          await _lock();
+        }
+        rethrow;
+      }
+    }();
+    _refreshing = work;
+    return work.whenComplete(() {
+      if (identical(_refreshing, work)) _refreshing = null;
+    });
+  }
+
+  Future<T> _authorized<T>(
+    Future<T> Function(String token) action, {
+    bool writing = false,
+    bool retryUnauthorized = true,
+  }) async {
+    final epoch = _epoch;
+    if (_session == null) {
+      throw const ApiFailure('다시 로그인해 주세요', action: 'reauth');
+    }
+    if (_accessExpiresAt?.isBefore(DateTime.now()) ?? true) await _refresh();
+    if (epoch != _epoch || _session == null) {
+      throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    }
+    final token = _session!.accessToken;
+    try {
+      final result = await action(token);
+      if (epoch != _epoch) {
+        throw ApiFailure(
+          '다른 계정으로 전환됐습니다. 처리 결과를 확인해 주세요',
+          uncertainWrite: writing,
+        );
+      }
+      offline = false;
+      return result;
+    } on ApiFailure catch (error) {
+      if (epoch != _epoch) rethrow;
+      if (retryUnauthorized &&
+          error.status == 401 &&
+          error.action != 'none' &&
+          error.action != 'reauth') {
+        if (_session?.accessToken == token) await _refresh();
+        if (epoch != _epoch || _session == null) rethrow;
+        try {
+          final result = await action(
+            _session!.accessToken,
+          ); // 명시적 401에 한해 한 번. 결과 불명은 재전송하지 않는다.
+          if (epoch != _epoch) {
+            throw ApiFailure(
+              '다른 계정으로 전환됐습니다. 처리 결과를 확인해 주세요',
+              uncertainWrite: writing,
+            );
+          }
+          offline = false;
+          return result;
+        } on ApiFailure catch (retryError) {
+          if (epoch == _epoch &&
+              (retryError.status == 401 || retryError.action == 'reauth')) {
+            await _lock();
+          }
+          if (epoch == _epoch && retryError.status == null) {
+            offline = true;
+            _notify();
+          }
+          rethrow;
+        }
+      }
+      if (error.action == 'reauth') await _lock();
+      if (error.status == null) offline = true;
+      _notify();
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> signOut() async {
+    await beforeLock?.call();
+    final token = _session?.accessToken;
+    ++_epoch;
+    _session = null;
+    _refreshing = null;
+    _clearView();
+    _challengePassword = null;
+    _challengeId = null;
+    await local.writeTokenBundle(null);
+    authStage = AuthStage.login;
+    message = null;
+    _notify();
+    if (token != null) {
+      try {
+        await gateway.logout(token);
+      } catch (_) {
+        message = '기기에서는 로그아웃했습니다. 서버 세션 종료는 확인하지 못했습니다.';
+        _notify();
+      }
+    }
+  }
+
+  @override
+  Future<CctvTicket> cctvTicket(String cameraId) =>
+      _authorized((token) => gateway.cctvTicket(token, cameraId));
+
+  @override
+  Future<SiteStatus> siteStatus() async {
+    final epoch = _epoch;
+    try {
+      final result = await _authorized(gateway.siteStatus);
+      if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+      siteStatusSnapshot = result;
+      siteStatusForbidden = false;
+      _notify();
+      return result;
+    } on ApiFailure catch (error) {
+      if (epoch == _epoch && (error.status == 403 || error.status == 401)) {
+        siteStatusSnapshot = null;
+        siteStatusForbidden = error.status == 403;
+        _notify();
+      }
+      rethrow;
+    }
+  }
+
+  // N-2: 온라인 직접 실행만 허용한다. 로컬 저장·전송 큐가 없다.
+  // N-4: 인증 오류에도 POST를 재실행하지 않는다. 다음 조회에서 인증을 갱신한다.
+  @override
+  Future<bool> ackAlert(String id) async {
+    if (offline) throw const ApiFailure('연결 후 가능', action: 'none');
+    if (id.trim().isEmpty) {
+      throw const ApiFailure('경보 ID를 확인해 주세요', status: 400);
+    }
+    return _authorized(
+      (token) {
+        if (offline) throw const ApiFailure('연결 후 가능', action: 'none');
+        return gateway.ackAlert(token, id);
+      },
+      writing: true,
+      retryUnauthorized: false,
+    );
+  }
+
+  @override
+  Future<void> loadPeriod(String from, String to) async {
+    final epoch = _epoch, period = ++_period;
+    final account = user?.id;
+    if (account == null) return;
+    busy = true;
+    message = null;
+    _notify();
+    final key = 'calendar:$from:$to';
+    try {
+      final results = await Future.wait([
+        _authorized((t) => gateway.media(t, from, to)),
+        _authorized((t) => gateway.events(t, from, to)),
+        _authorized(gateway.labels),
+      ]);
+      if (epoch != _epoch || period != _period) return;
+      media = results[0] as List<CalendarMedia>;
+      calendarEvents = results[1] as List<CalendarEvent>;
+      calendarLabels = results[2] as List<CalendarLabel>;
+      fetchedAt = DateTime.now();
+      await local.write(
+        account,
+        key,
+        jsonEncode({
+          'receivedAt': fetchedAt!.toIso8601String(),
+          'media': media
+              .map((m) => {...m.json, 'media_url': null, 'thumbnail_url': null})
+              .toList(),
+          'events': calendarEvents.map((e) => e.json).toList(),
+          'labels': calendarLabels.map((e) => e.json).toList(),
+        }),
+      );
+    } catch (error) {
+      if (epoch != _epoch || period != _period) return;
+      message = error is ApiFailure ? error.message : '기록을 불러오지 못했습니다';
+      // 인가 거부에 캐시를 보여 주지 않는다. 통신 실패인 경우만 이미 받은 자료를 표시한다.
+      media = [];
+      calendarEvents = [];
+      calendarLabels = [];
+      fetchedAt = null;
+      if (error is ApiFailure && error.status == null) {
+        try {
+          final cached = await local.read(account, key);
+          if (epoch != _epoch || period != _period) return;
+          if (cached != null) {
+            final data = jsonDecode(cached) as Map;
+            media = (data['media'] as List)
+                .map((m) => CalendarMedia(Map<String, dynamic>.from(m as Map)))
+                .toList();
+            calendarEvents = (data['events'] as List)
+                .map((m) => CalendarEvent(Map<String, dynamic>.from(m as Map)))
+                .toList();
+            calendarLabels = (data['labels'] as List)
+                .map((m) => CalendarLabel(Map<String, dynamic>.from(m as Map)))
+                .toList();
+            fetchedAt = DateTime.parse(data['receivedAt'] as String);
+            offline = true;
+          }
+        } catch (_) {
+          if (epoch == _epoch && period == _period) {
+            media = [];
+            calendarEvents = [];
+            calendarLabels = [];
+            fetchedAt = null;
+            message = '서버와 기기 캐시에서 기록을 읽지 못했습니다. 기존 파일은 보존됩니다.';
+          }
+        }
+      }
+    } finally {
+      if (epoch == _epoch && period == _period) {
+        busy = false;
+        _notify();
+      }
+    }
+  }
+
+  @override
+  Future<Uint8List> photoBytes(CalendarMedia item) async {
+    final account = user?.id;
+    if (account == null) throw const ApiFailure('다시 로그인해 주세요');
+    final epoch = _epoch;
+    final key = 'photo:${item.id}';
+    final cached = await local.readBytes(account, key);
+    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    if (cached != null) return cached;
+    Uint8List bytes;
+    try {
+      if (item.media_url == null) {
+        throw const ApiFailure('사진 주소를 다시 받아야 합니다', status: 403);
+      }
+      bytes = await gateway.image(item.media_url!);
+    } on ApiFailure catch (e) {
+      if (e.status != 403 && e.status != 404) rethrow;
+      final rows = await _authorized(
+        (t) => gateway.media(t, item.date_key, item.date_key),
+      );
+      final fresh = rows
+          .where((m) => m.id == item.id && m.media_url != null)
+          .firstOrNull;
+      if (fresh == null) {
+        throw const ApiFailure('원본이 삭제됐거나 접근할 수 없습니다', status: 404);
+      }
+      bytes = await gateway.image(fresh.media_url!);
+    }
+    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    await local.writeBytes(account, key, bytes);
+    return bytes;
+  }
+
+  @override
+  Future<CalendarMedia> publish(Uint8List bytes, Map<String, String> fields) =>
+      _authorized((t) => gateway.upload(t, bytes, fields), writing: true);
+
+  @override
+  Future<String?> captureAddress({
+    required double latitude,
+    required double longitude,
+  }) {
+    if (gateway is! CaptureAddressGateway) return Future<String?>.value();
+    final addressGateway = gateway as CaptureAddressGateway;
+    return _authorized(
+      (token) => addressGateway.captureAddress(
+        token,
+        latitude: latitude,
+        longitude: longitude,
+      ),
+    );
+  }
+
+  @override
+  Future<MediaComment> comment(String mediaId, String text) =>
+      _authorized((t) => gateway.addComment(t, mediaId, text), writing: true);
+  @override
+  Future<MediaComment> voiceComment(
+    String mediaId,
+    Uint8List audio, {
+    int? durationMs,
+    String? clientOperationId,
+    String? siteId,
+  }) => _authorized(
+    (t) => gateway.voiceComment(
+      t,
+      mediaId,
+      audio,
+      durationMs: durationMs,
+      clientOperationId: clientOperationId,
+      siteId: siteId,
+    ),
+    writing: true,
+  );
+  @override
+  bool get operationLookupAvailable => gateway is OperationLookupGateway;
+  @override
+  Future<Map<String, OperationCheck>> lookupOperations(List<String> ids) =>
+      gateway is OperationLookupGateway
+      ? _authorized(
+          (token) =>
+              (gateway as OperationLookupGateway).lookupOperations(token, ids),
+        )
+      : super.lookupOperations(ids);
+
+  @override
+  Future<void> editComment(String id, String text) =>
+      _authorized((t) => gateway.updateComment(t, id, text), writing: true);
+  @override
+  Future<void> removeComment(String id) =>
+      _authorized((t) => gateway.deleteComment(t, id), writing: true);
+
+  @override
+  void dispose() {
+    _disposed = true;
+    unawaited(recorder.close().catchError((_) {}));
+    ++_epoch;
+    _challengePassword = null;
+    super.dispose();
+  }
+}
