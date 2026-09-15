@@ -466,6 +466,7 @@ function ExportPanel({
         const siteJson = await siteRes.json();
         if (active && siteJson.ok && siteJson.siteInfo) {
           onSiteInfoSave({
+            noticeId: siteJson.siteInfo.site_id,
             companyName: siteJson.siteInfo.company_name ?? "",
             siteName: siteJson.siteInfo.site_name ?? "",
             constructionType: siteJson.siteInfo.construction_type ?? "",
@@ -1255,7 +1256,7 @@ function SiteInfoPanel({
           authorization: `Basic ${token}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(draft),
+        body: JSON.stringify({ ...draft, siteId: draft.noticeId }),
       });
       const json = await res.json();
       if (!res.ok || !json.ok) {

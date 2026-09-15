@@ -83,6 +83,7 @@ export type WeatherLogRow = {
 };
 
 export type SiteInfoInput = {
+  siteId: string;
   companyName: string;
   siteName: string;
   constructionType: string;
@@ -93,6 +94,7 @@ export type SiteInfoInput = {
 
 export type SiteInfoRow = {
   id: number;
+  site_id: string;
   snapshot_date: string;
   company_name: string | null;
   site_name: string | null;
@@ -101,6 +103,28 @@ export type SiteInfoRow = {
   start_date: string | null;
   completion_date: string | null;
   recorded_at: string;
+};
+
+export type SiteRow = {
+  site_id: string;
+  ui_key: string;
+  kind: "main" | "demo" | "contract";
+  label: string;
+  company_name: string | null;
+  site_name: string | null;
+  construction_type: string | null;
+  address: string | null;
+  start_date: string | null;
+  completion_date: string | null;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+};
+
+export type CurrentSiteRow = {
+  username: string;
+  site_id: string;
+  selected_at: string;
 };
 
 // 모바일 단말의 갱신 토큰은 평문을 저장하지 않는다. 이 테이블은 사용자별 기기 세션 폐기와
@@ -500,6 +524,70 @@ async function initSchema(): Promise<void> {
       recorded_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_sid_snapshot ON site_info_daily(snapshot_date);
+
+    -- 현장 마스터 — 로그인 화면의 프리셋을 DB로 옮긴다. 기존 TEXT 현장 ID 체계를 유지한다.
+    CREATE TABLE IF NOT EXISTS site (
+      site_id TEXT PRIMARY KEY,
+      ui_key TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL CHECK (kind IN ('main','demo','contract')),
+      label TEXT NOT NULL,
+      company_name TEXT,
+      site_name TEXT,
+      construction_type TEXT,
+      address TEXT,
+      start_date TEXT,
+      completion_date TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE TABLE IF NOT EXISTS user_current_site (
+      username TEXT PRIMARY KEY,
+      site_id TEXT NOT NULL REFERENCES site(site_id),
+      selected_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+    CREATE INDEX IF NOT EXISTS idx_ucs_site ON user_current_site(site_id);
+    ALTER TABLE site_info_daily ADD COLUMN IF NOT EXISTS site_id TEXT;
+
+    -- LoginSiteSelect의 원래 값 그대로. 재배포 시 사람이 수정한 마스터 값은 보존한다.
+    INSERT INTO site (
+      site_id, ui_key, kind, label, company_name, site_name, construction_type,
+      address, start_date, completion_date, sort_order
+    ) VALUES
+      ('SITE-SMARTHRD-2026', 'main', 'main', '광주 스마트인재개발원 신축 공사',
+       '스마트인재개발원', '스마트인재개발원 신축 공사', '건축 (신축)',
+       '광주광역시 광산구 임방울대로', '2026-01-02', '2027-06-30', 0),
+      ('SITE-GWANGJU-LOGI', 'demo-gwangju', 'demo', '광주 첨단3지구 물류센터 신축',
+       '(주)스마트건설', '광주 첨단3지구 물류센터 신축공사', '건축 (물류창고)',
+       '광주광역시 광산구 첨단과기로 123', '2026-03-02', '2027-02-26', 10),
+      ('SITE-PYEONGTAEK-FAB', 'demo-pyeongtaek', 'demo', '평택 반도체 FAB 증설',
+       '(주)대성플랜트', '평택 반도체 P4 FAB 증설공사', '플랜트 (반도체)',
+       '경기도 평택시 고덕면 삼성로 1', '2026-01-06', '2027-09-30', 11),
+      ('SITE-BUSAN-RESI', 'demo-busan', 'demo', '부산 해운대 주상복합 신축',
+       '(주)해성건설', '부산 해운대 마린시티 주상복합 신축공사', '건축 (주상복합)',
+       '부산광역시 해운대구 우동 1408', '2026-04-01', '2028-03-31', 12),
+      ('SITE-INCHEON-OFFICE', 'demo-incheon', 'demo', '인천 송도 오피스타워 신축',
+       '(주)대륙건설', '인천 송도 국제업무지구 오피스타워 신축공사', '건축 (업무시설)',
+       '인천광역시 연수구 송도동 24', '2026-02-16', '2028-01-31', 13),
+      ('SITE-SEJONG-APT', 'demo-sejong', 'demo', '세종 행복도시 공동주택 신축',
+       '(주)한울종합건설', '세종 행복도시 6-3생활권 공동주택 신축공사', '건축 (공동주택)',
+       '세종특별자치시 한누리대로 2130', '2026-05-04', '2028-06-30', 14),
+      ('R26TE13895124', 'real-asan', 'contract', '아산 시민문화복지센터 내진보강공사',
+       '주식회사 백산건설', '시민문화복지센터 내진성능 보강공사', '건축 (내진보강)',
+       '충청남도 아산시', '2026-04-20', '2026-09-16', 20),
+      ('R26TE13894834', 'real-gwangju', 'contract', '광주 사직동 코워킹스페이스 리모델링',
+       '현대도건 주식회사', '사직동 코워킹스페이스(녹성상회) 리모델링공사', '건축 (리모델링)',
+       '광주광역시 남구 사직동', '2025-11-27', '2026-09-16', 21),
+      ('R26TE13877355', 'real-bonghwa', 'contract', '봉화 삼계2교 교량보수공사',
+       '성광종합건설(주)', '삼계2교 외 2개소 교량보수공사', '토목 (교량보수)',
+       '경상북도 봉화군', '2026-04-15', '2026-08-12', 22)
+    ON CONFLICT (site_id) DO NOTHING;
+
+    -- 기존 행의 주소·회사명 등 수동 수정값은 건드리지 않고 현장 ID만 보충한다.
+    UPDATE site_info_daily SET site_id = 'SITE-SMARTHRD-2026' WHERE site_id IS NULL;
+    ALTER TABLE site_info_daily ALTER COLUMN site_id SET NOT NULL;
+    ALTER TABLE site_info_daily DROP CONSTRAINT IF EXISTS site_info_daily_snapshot_date_key;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sid_date_site ON site_info_daily(snapshot_date, site_id);
 
     -- 현장 좌표 일별 캐시 — 작업자 GPS 평균(현장 좌표)을 하루 1행 보관.
     -- 하루 최초 라이브 좌표를 자동 캡처 → 연결 끊겨도 이 좌표로 기상 유지, 수동 새로고침 시 재캡처.
@@ -3555,10 +3643,10 @@ export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteIn
   const snapshotDate = ymdInKst();
   const { rows } = await q<SiteInfoRow>(
     `INSERT INTO site_info_daily (
-       snapshot_date, company_name, site_name, construction_type,
+       snapshot_date, site_id, company_name, site_name, construction_type,
        address, start_date, completion_date, recorded_at
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, ${NOW_ISO})
-     ON CONFLICT (snapshot_date) DO UPDATE SET
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${NOW_ISO})
+     ON CONFLICT (snapshot_date, site_id) DO UPDATE SET
        company_name = excluded.company_name,
        site_name = excluded.site_name,
        construction_type = excluded.construction_type,
@@ -3569,6 +3657,7 @@ export async function persistSiteInfoDaily(input: SiteInfoInput): Promise<SiteIn
      RETURNING *`,
     [
       snapshotDate,
+      input.siteId,
       input.companyName || null,
       input.siteName || null,
       input.constructionType || null,
@@ -3634,11 +3723,47 @@ export async function lastGeofenceAlertTsByWorker(
   return out;
 }
 
-export async function getLatestSiteInfo(): Promise<SiteInfoRow | null> {
+export async function getLatestSiteInfo(siteId?: string): Promise<SiteInfoRow | null> {
   const { rows } = await q<SiteInfoRow>(
-    "SELECT * FROM site_info_daily ORDER BY snapshot_date DESC, recorded_at DESC LIMIT 1",
+    `SELECT * FROM site_info_daily ${siteId === undefined ? "" : "WHERE site_id = $1"}
+     ORDER BY snapshot_date DESC, recorded_at DESC, id DESC LIMIT 1`,
+    siteId === undefined ? [] : [siteId],
   );
   return rows[0] ?? null;
+}
+
+export async function listSites(): Promise<SiteRow[]> {
+  const { rows } = await q<SiteRow>(
+    "SELECT * FROM site WHERE active = TRUE ORDER BY sort_order, site_id",
+  );
+  return rows;
+}
+
+export async function getSite(siteId: string): Promise<SiteRow | null> {
+  const { rows } = await q<SiteRow>("SELECT * FROM site WHERE site_id = $1", [siteId]);
+  return rows[0] ?? null;
+}
+
+export async function getCurrentSite(username: string): Promise<CurrentSiteRow | null> {
+  const { rows } = await q<CurrentSiteRow>(
+    "SELECT * FROM user_current_site WHERE username = $1",
+    [username],
+  );
+  return rows[0] ?? null;
+}
+
+export async function setCurrentSite(username: string, siteId: string): Promise<CurrentSiteRow> {
+  const { rows } = await q<CurrentSiteRow>(
+    `INSERT INTO user_current_site (username, site_id, selected_at)
+     VALUES ($1, $2, ${NOW_ISO})
+     ON CONFLICT (username) DO UPDATE SET
+       site_id = excluded.site_id, selected_at = excluded.selected_at
+     RETURNING *`,
+    [username, siteId],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("현재 현장 저장 직후 조회 실패");
+  return row;
 }
 
 // ── 현장 좌표 일별 캐시(site_coord_daily) ─────────────────────────────────────
