@@ -657,6 +657,9 @@ class _RecordEditorState extends State<RecordEditor>
   @override
   Widget build(BuildContext context) {
     final g = MediaQuery.of(context).systemGestureInsets;
+    // 전체 지우기로 비운 주석은 dirty이므로 저장할 수 있다.
+    // N-4: 결과 불명 초안은 같은 작업 ID 재시도 경로를 유지해야 하므로 예외다.
+    final untouched = strokes.isEmpty && !dirty && status != 'uncertain';
     return PopScope(
       canPop: canPop,
       onPopInvokedWithResult: (didPop, _) {
@@ -864,21 +867,33 @@ class _RecordEditorState extends State<RecordEditor>
                   spacing: 16,
                   runSpacing: vgGapTap,
                   children: [
-                    TextButton(
-                      onPressed: busy ? null : () => save(localOnly: true),
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(130, vgTapPrimary),
+                    Tooltip(
+                      message: untouched ? '표시할 내용이 없습니다' : '',
+                      child: TextButton(
+                        onPressed: busy || untouched
+                            ? null
+                            : () => save(localOnly: true),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(130, vgTapPrimary),
+                        ),
+                        child: const Text('기기에 저장'),
                       ),
-                      child: const Text('기기에 저장'),
                     ),
-                    FilledButton(
-                      onPressed: busy || image == null || active.isNotEmpty
-                          ? null
-                          : save,
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(180, 64),
+                    Tooltip(
+                      message: untouched ? '표시할 내용이 없습니다' : '',
+                      child: FilledButton(
+                        onPressed:
+                            busy ||
+                                image == null ||
+                                active.isNotEmpty ||
+                                untouched
+                            ? null
+                            : save,
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(180, 64),
+                        ),
+                        child: Text(busy ? '저장 중' : '주석 저장'),
                       ),
-                      child: Text(busy ? '저장 중' : '주석 저장'),
                     ),
                   ],
                 ),

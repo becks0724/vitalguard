@@ -261,6 +261,18 @@ Future<void> reopen(WidgetTester tester) async {
   await until(tester, find.byKey(const Key('ink-canvas')));
 }
 
+void expectSaveButtonsEnabled(WidgetTester tester, bool enabled) {
+  for (final button in [
+    find.widgetWithText(TextButton, '기기에 저장'),
+    find.widgetWithText(FilledButton, '주석 저장'),
+  ]) {
+    expect(
+      tester.widget<ButtonStyleButton>(button).onPressed,
+      enabled ? isNotNull : isNull,
+    );
+  }
+}
+
 Future<void> seed(
   MemoryStore store,
   List<InkStroke> strokes, {
@@ -1219,6 +1231,168 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('아무 작업도 하지 않으면 두 저장 버튼이 비활성이고 이유를 안내한다', (tester) async {
+    final gateway = _Gateway(), store = MemoryStore();
+    final controller = await _controllerFor(gateway, store);
+    await open(tester, controller);
+    expect((await draft(store))['strokes'], isEmpty);
+    expect((await draft(store))['dirty'], isFalse);
+    expectSaveButtonsEnabled(tester, false);
+    for (final label in ['기기에 저장', '주석 저장']) {
+      final button = find.text(label);
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(find.byType(SaveResult), findsNothing);
+      expect(controller.outbox.items, isEmpty);
+      expect(gateway.uploads, isEmpty);
+      await tester.longPress(button);
+      await tester.pumpAndSettle();
+      expect(find.text('표시할 내용이 없습니다'), findsOneWidget);
+      Tooltip.dismissAllToolTips();
+      await tester.pumpAndSettle();
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('획을 하나 그리면 두 저장 버튼이 활성화된다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    expectSaveButtonsEnabled(tester, false);
+    await draw(tester, 0.4);
+    expect((await draft(store))['strokes'], hasLength(1));
+    expect((await draft(store))['dirty'], isTrue);
+    expectSaveButtonsEnabled(tester, true);
+    expect(find.byTooltip('표시할 내용이 없습니다'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('게시한 주석을 전체 지운 뒤에도 두 저장 방식으로 저장할 수 있다', (tester) async {
+    for (final localOnly in [true, false]) {
+      final gateway = _Gateway(), store = MemoryStore();
+      final controller = await _controllerFor(gateway, store);
+      await open(tester, controller);
+      await draw(tester, 0.4);
+      await save(tester);
+      expect((await draft(store))['dirty'], isFalse);
+      await reopen(tester);
+      await tester.tap(find.byKey(const Key('editor-clear-all')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '전체 지우기'));
+      await tester.pumpAndSettle();
+      expect(paintedStrokes(tester), isEmpty);
+      expect((await draft(store))['strokes'], isEmpty);
+      expect((await draft(store))['dirty'], isTrue);
+      expectSaveButtonsEnabled(tester, true);
+      expect(find.byTooltip('표시할 내용이 없습니다'), findsNothing);
+      await save(tester, localOnly: localOnly);
+      expect(controller.outbox.items, hasLength(2));
+      expect(gateway.uploads, hasLength(localOnly ? 1 : 2));
+      expect(
+        tester.widget<SaveResult>(find.byType(SaveResult)).sent,
+        !localOnly,
+      );
+      if (!localOnly) {
+        expect(jsonDecode(utf8.decode(gateway.uploads.last.bytes)), {
+          'v': 1,
+          'strokes': [],
+        });
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+    }
+  });
+
+  testWidgets('게시 완료된 빈 초안은 dirty가 false이면 두 저장 버튼이 비활성이다', (tester) async {
+    final gateway = _Gateway(), store = MemoryStore();
+    final controller = await _controllerFor(gateway, store);
+    await open(tester, controller);
+    await draw(tester, 0.4);
+    await tester.tap(find.byKey(const Key('editor-clear-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '전체 지우기'));
+    await tester.pumpAndSettle();
+    await save(tester);
+    final saved = await draft(store);
+    expect(saved['status'], 'sent');
+    expect(saved['strokes'], isEmpty);
+    expect(saved['dirty'], isFalse);
+    expect(gateway.uploads, hasLength(1));
+    await reopen(tester);
+    expect(paintedStrokes(tester), isEmpty);
+    expect((await draft(store))['status'], 'sent');
+    expect((await draft(store))['dirty'], isFalse);
+    // 게시 완료 후 변경이 없으면 save()도 새 전송을 만들지 않는다.
+    expectSaveButtonsEnabled(tester, false);
+    for (final label in ['기기에 저장', '주석 저장']) {
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      expect(find.byType(SaveResult), findsNothing);
+      expect(controller.outbox.items, hasLength(1));
+      expect(gateway.uploads, hasLength(1));
+      expect(
+        (await draft(store))['clientOperationId'],
+        saved['clientOperationId'],
+      );
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('기기에 저장한 초안은 dirty가 false여도 획이 있으면 다시 저장할 수 있다', (tester) async {
+    final gateway = _Gateway(), store = MemoryStore();
+    final controller = await _controllerFor(gateway, store);
+    await open(tester, controller);
+    await draw(tester, 0.4);
+    await save(tester, localOnly: true);
+    final saved = await draft(store);
+    expect(saved['dirty'], isFalse);
+    expect(gateway.uploads, isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    final resumed = await _controllerFor(gateway, store);
+    await open(tester, resumed);
+    expect(paintedStrokes(tester), saved['strokes']);
+    expect((await draft(store))['dirty'], isFalse);
+    expectSaveButtonsEnabled(tester, true);
+    await save(tester);
+    expect(gateway.uploads, hasLength(1));
+    expect(
+      gateway.uploads.single.fields['clientOperationId'],
+      saved['clientOperationId'],
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    resumed.dispose();
+  });
+
+  testWidgets('전체 지우기 초안을 복원하면 획이 없어도 dirty가 유지되어 저장할 수 있다', (tester) async {
+    final gateway = _Gateway(), store = MemoryStore();
+    final controller = await _controllerFor(gateway, store);
+    await open(tester, controller);
+    await draw(tester, 0.4);
+    await tester.tap(find.byKey(const Key('editor-clear-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '전체 지우기'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    final resumed = await _controllerFor(gateway, store);
+    await open(tester, resumed);
+    expect(paintedStrokes(tester), isEmpty);
+    expect((await draft(store))['dirty'], isTrue);
+    expectSaveButtonsEnabled(tester, true);
+    await save(tester);
+    expect(jsonDecode(utf8.decode(gateway.uploads.single.bytes)), {
+      'v': 1,
+      'strokes': [],
+    });
+    await tester.pumpWidget(const SizedBox.shrink());
+    resumed.dispose();
+  });
+
   testWidgets('게시·재편집은 JSON 새 버전만 추가하며 삭제한 획과 지우개는 전송되지 않는다', (tester) async {
     final gateway = _Gateway(), store = MemoryStore();
     final controller = await _controllerFor(gateway, store);
@@ -1365,7 +1539,14 @@ void main() {
     await save(tester);
     expect((await draft(store))['status'], 'uncertain');
     await reopen(tester);
+    expectSaveButtonsEnabled(tester, true);
+    await save(tester, localOnly: true);
+    expect(gateway.uploads, hasLength(1));
+    await reopen(tester);
     await erase(tester);
+    expect((await draft(store))['strokes'], isEmpty);
+    expect((await draft(store))['dirty'], isTrue);
+    expectSaveButtonsEnabled(tester, true);
     await save(tester);
     expect(gateway.uploads, hasLength(1));
     expect((await draft(store))['status'], 'uncertain');
@@ -1377,12 +1558,63 @@ void main() {
     controller.dispose();
   });
 
+  testWidgets('전체 지운 뒤 결과 불명이 된 초안은 획이 없어도 재저장할 수 있다', (tester) async {
+    final gateway = _Gateway(), store = MemoryStore();
+    final controller = await _controllerFor(gateway, store);
+    await open(tester, controller);
+    await draw(tester, 0.4);
+    await tester.tap(find.byKey(const Key('editor-clear-all')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '전체 지우기'));
+    await tester.pumpAndSettle();
+    gateway.failure = const ApiFailure('응답 유실', uncertainWrite: true);
+    await save(tester);
+    final saved = await draft(store);
+    expect(saved['status'], 'uncertain');
+    expect(saved['strokes'], isEmpty);
+    expect(saved['dirty'], isFalse);
+    expect(gateway.uploads, hasLength(1));
+    expect(
+      saved['clientOperationId'],
+      gateway.uploads.single.fields['clientOperationId'],
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+    final resumed = await _controllerFor(gateway, store);
+    await open(tester, resumed);
+    expect(paintedStrokes(tester), isEmpty);
+    expect((await draft(store))['status'], 'uncertain');
+    expect((await draft(store))['dirty'], isFalse);
+    // N-4: 결과 불명은 같은 작업 ID로 재시도해야 하므로 빈 초안도 재저장한다.
+    for (final localOnly in [true, false]) {
+      expectSaveButtonsEnabled(tester, true);
+      expect(find.byTooltip('표시할 내용이 없습니다'), findsNothing);
+      await save(tester, localOnly: localOnly);
+      final resaved = await draft(store);
+      expect(resaved['status'], 'uncertain');
+      expect(resaved['strokes'], isEmpty);
+      expect(resaved['dirty'], isFalse);
+      expect(resaved['clientOperationId'], saved['clientOperationId']);
+      expect(resumed.outbox.items.single.id, saved['clientOperationId']);
+      expect(gateway.uploads, hasLength(1));
+      expect(
+        tester.widget<SaveResult>(find.byType(SaveResult)).uncertain,
+        isTrue,
+      );
+      if (localOnly) await reopen(tester);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    resumed.dispose();
+  });
+
   testWidgets('전송 도중 종료한 sending 초안은 uncertain으로 복구한다', (tester) async {
     final gateway = _Gateway(), store = MemoryStore();
+    // 전송 중 종료한 빈 초안도 결과 불명으로 복구되면 재저장할 수 있다.
     await seed(store, [], status: 'sending');
     final controller = await _controllerFor(gateway, store);
     await open(tester, controller);
     expect((await draft(store))['status'], 'uncertain');
+    expectSaveButtonsEnabled(tester, true);
     await save(tester);
     expect(gateway.uploads, isEmpty);
     await tester.pumpWidget(const SizedBox.shrink());

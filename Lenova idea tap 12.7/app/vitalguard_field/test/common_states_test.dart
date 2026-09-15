@@ -577,7 +577,8 @@ void main() {
         matching: find.byWidgetPredicate((w) => w is ButtonStyleButton),
       );
       await _reveal(tester, button, dock);
-      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNotNull);
+      // 아무 작업도 하지 않은 편집기에서는 저장 사유를 안내하며 비활성이다.
+      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
       expect(button.hitTestable(), findsOneWidget);
       final viewport = tester.getRect(scroll).inflate(.01);
       final bounds = tester.getRect(button);
