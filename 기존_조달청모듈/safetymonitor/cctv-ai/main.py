@@ -31,6 +31,9 @@ app.add_middleware(
 
 W, H = 640, 360
 FPS = 12
+# CAM-03 송출 상한(fps). 같은 프레임은 다시 보내지 않으므로 실제 송출은 min(이 값, 엣지 푸시율)을 따른다.
+STREAM3_FPS = float(os.environ.get("STREAM3_FPS", str(FPS)))
+STREAM3_KEEPALIVE_S = 1.0   # 새 프레임이 없어도 이 간격마다 마지막 프레임을 재송출(브라우저 연결 유지)
 
 # ── CAM-01 객체+속도 설정 ────────────────────────────────────────────────────────────────
 MODEL_PATH = os.environ.get("YOLO_MODEL", "yolov8n.pt")
@@ -537,11 +540,16 @@ async def mjpeg_object():
 
 
 async def mjpeg_ppe():
+    # 새 프레임(객체가 바뀐 경우)만 내보낸다 — 엣지가 5fps 로 밀면 5fps, 10fps 면 10fps 로 따라간다.
+    # 라이브가 아닐 때(합성)는 _ppe_current_frame 이 매번 새 객체라 종전처럼 STREAM3_FPS 로 돈다.
+    last, last_sent = None, 0.0
     while True:
         frame = _ppe_current_frame()
-        if frame:
+        now = time.time()
+        if frame and (frame is not last or now - last_sent >= STREAM3_KEEPALIVE_S):
             yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
-        await asyncio.sleep(1.0 / FPS)
+            last, last_sent = frame, now
+        await asyncio.sleep(1.0 / STREAM3_FPS)
 
 
 def _cam2_current_frame():
@@ -841,7 +849,11 @@ async def ingest_ppe(request: Request):
               "violation_count": _qint(q, "violations"),
               "compliance_rate": _qint(q, "compliance", 100),
               "no_hardhat_count": _qint(q, "no_hardhat"), "hardhat_count": _qint(q, "hardhat"),
-              "no_vest_count": _qint(q, "no_vest"), "vest_count": _qint(q, "vest")}
+              "no_vest_count": _qint(q, "no_vest"), "vest_count": _qint(q, "vest"),
+              # ★ 09-15 엣지가 실제로 로드한 PPE 엔진 태그. 관제웹이 하드코딩 대신 이걸 쓴다.
+              #   길이 상한 24 — 엣지가 이상한 값을 보내도 화면이 안 깨진다. 없으면 "" 라
+              #   관제웹이 폴백(AI_MODEL_LABEL)으로 떨어진다(빈 문자열은 falsy).
+              "engine": (q.get("engine") or "")[:24]}
         with _ppe_live_lock:
             _ppe_live["frame"] = data
             _ppe_live["stats"] = st
