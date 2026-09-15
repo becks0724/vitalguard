@@ -94,6 +94,9 @@ class _RecordEditorState extends State<RecordEditor>
   int color = 0xFFDC2626;
   double zoom = 1;
   Offset pan = Offset.zero;
+  // 화면 변환은 zoom/pan만 사용하고, 접촉 좌표와 핀치 기준 거리만 추적한다.
+  final _touchPositions = <int, Offset>{};
+  double? _touchSpanPerZoom;
   bool originalOnly = false,
       fitWidth = false,
       busy = false,
@@ -127,6 +130,7 @@ class _RecordEditorState extends State<RecordEditor>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      clearTouches();
       finishActive();
       autosave();
     }
@@ -136,6 +140,7 @@ class _RecordEditorState extends State<RecordEditor>
   void didChangeMetrics() {
     // 회전/분할창 변경 전 좌표로 받은 점까지만 확정한다. 새 창의 좌표를
     // 같은 획에 이어 붙이지 않으며, 뒤늦은 PointerCancel도 획을 지우지 않는다.
+    clearTouches();
     finishActive();
     autosave();
   }
@@ -272,7 +277,7 @@ class _RecordEditorState extends State<RecordEditor>
   Rect rectFor(Size size) {
     final source = Size(image!.width.toDouble(), image!.height.toDouble());
     // 기본은 원본 전체를 먼저 보여 주어 화면 밖 위험 요소를 놓치지 않게 한다.
-    // 필요한 구역은 `폭 맞춤`으로 키운 뒤 확대·축소·이동 버튼으로 조작한다.
+    // 필요한 구역은 손가락으로 확대·이동하고, `폭 맞춤`으로 보기 위치를 복귀한다.
     final fitted = applyBoxFit(
       fitWidth ? BoxFit.fitWidth : BoxFit.contain,
       source,
@@ -374,6 +379,66 @@ class _RecordEditorState extends State<RecordEditor>
   void cancel(PointerCancelEvent e) {
     finishPointer(e.pointer, cancelled: true);
     autosave();
+  }
+
+  void clearTouches() {
+    _touchPositions.clear();
+    _touchSpanPerZoom = null;
+  }
+
+  void rebaseTouchSpan() {
+    final positions = _touchPositions.values.toList();
+    final span = positions.length == 2
+        ? (positions.last - positions.first).distance
+        : 0.0;
+    _touchSpanPerZoom = span > 0 ? span / zoom : null;
+  }
+
+  void touchDown(PointerDownEvent e) {
+    // 펜이 먼저/나중에 닿는 두 경우 모두, 남아 있는 손바닥 접촉은 떼기까지 무시한다.
+    if (active.isNotEmpty) {
+      clearTouches();
+      return;
+    }
+    if (e.kind != PointerDeviceKind.touch ||
+        busy ||
+        _touchPositions.length >= 2) {
+      return;
+    }
+    _touchPositions[e.pointer] = e.localPosition;
+    rebaseTouchSpan();
+  }
+
+  void touchMove(PointerMoveEvent e, Size size) {
+    if (e.kind != PointerDeviceKind.touch ||
+        !_touchPositions.containsKey(e.pointer)) {
+      return;
+    }
+    if (active.isNotEmpty || busy) {
+      clearTouches();
+      return;
+    }
+    final before = _touchPositions.values.toList();
+    _touchPositions[e.pointer] = e.localPosition;
+    final after = _touchPositions.values.toList();
+    final previousFocal = (before.first + before.last) / 2;
+    final focal = (after.first + after.last) / 2;
+    final span = (after.last - after.first).distance;
+    // 이벤트마다 배율을 누적 clamp하면, 한계에서 두 손가락을 함께 옮겨도
+    // 먼저 움직인 손가락 때문에 배율이 틀어진다. 접촉 구성이 바뀔 때만 기준을 잡는다.
+    final nextZoom = _touchSpanPerZoom == null
+        ? zoom
+        : (span / _touchSpanPerZoom!).clamp(1.0, 4.0).toDouble();
+    final center = size.center(Offset.zero);
+    setState(() {
+      pan = focal + (center + pan - previousFocal) * (nextZoom / zoom) - center;
+      zoom = nextZoom;
+    });
+    if (_touchSpanPerZoom == null) rebaseTouchSpan();
+  }
+
+  void touchEnd(PointerEvent e) {
+    if (_touchPositions.remove(e.pointer) != null) rebaseTouchSpan();
   }
 
   Future<void> clearAll() async {
@@ -778,78 +843,15 @@ class _RecordEditorState extends State<RecordEditor>
                           ? null
                           : () => setState(() => originalOnly = !originalOnly),
                     ),
-                  ],
-                ),
-                const SizedBox(height: vgGapTap),
-                Wrap(
-                  key: const Key('editor-view-actions'),
-                  spacing: 8,
-                  runSpacing: vgGapTap,
-                  children: [
-                    editorButton(
-                      id: 'zoom-in',
-                      label: '확대',
-                      icon: Icons.zoom_in,
-                      onPressed: active.isEmpty
-                          ? () => setState(
-                              () => zoom = (zoom + 0.25)
-                                  .clamp(1.0, 4.0)
-                                  .toDouble(),
-                            )
-                          : null,
-                    ),
-                    editorButton(
-                      id: 'zoom-out',
-                      label: '축소',
-                      icon: Icons.zoom_out,
-                      onPressed: active.isEmpty
-                          ? () => setState(
-                              () => zoom = (zoom - 0.25)
-                                  .clamp(1.0, 4.0)
-                                  .toDouble(),
-                            )
-                          : null,
-                    ),
-                    for (final direction in const [
-                      (
-                        id: 'left',
-                        label: '왼쪽으로 이동',
-                        icon: Icons.arrow_left,
-                        offset: Offset(60, 0),
-                      ),
-                      (
-                        id: 'right',
-                        label: '오른쪽으로 이동',
-                        icon: Icons.arrow_right,
-                        offset: Offset(-60, 0),
-                      ),
-                      (
-                        id: 'up',
-                        label: '위로 이동',
-                        icon: Icons.arrow_upward,
-                        offset: Offset(0, 60),
-                      ),
-                      (
-                        id: 'down',
-                        label: '아래로 이동',
-                        icon: Icons.arrow_downward,
-                        offset: Offset(0, -60),
-                      ),
-                    ])
-                      editorButton(
-                        id: 'pan-${direction.id}',
-                        label: direction.label,
-                        icon: direction.icon,
-                        onPressed: active.isEmpty
-                            ? () => setState(() => pan += direction.offset)
-                            : null,
-                      ),
                     editorButton(
                       id: 'fit-width',
-                      label: fitWidth ? '전체 보기' : '폭 맞춤',
+                      label: fitWidth
+                          ? '전체 보기 · 확대·이동 초기화'
+                          : '폭 맞춤 · 확대·이동 초기화',
                       icon: Icons.fit_screen,
                       selected: fitWidth,
                       onPressed: () => setState(() {
+                        clearTouches();
                         fitWidth = !fitWidth;
                         zoom = 1;
                         pan = Offset.zero;
@@ -921,10 +923,24 @@ class _RecordEditorState extends State<RecordEditor>
                             child: _InkPointerListener(
                               key: const Key('ink-canvas'),
                               behavior: HitTestBehavior.opaque,
-                              onPointerDown: (e) => down(e, rect),
-                              onPointerMove: (e) => move(e, rect),
-                              onPointerUp: up,
-                              onPointerCancel: cancel,
+                              // 기존 펜 콜백을 즉시 호출한다. 손가락도 raw Listener로
+                              // 받아 제스처 인식 대기나 arena 경쟁을 추가하지 않는다.
+                              onPointerDown: (e) {
+                                down(e, rect);
+                                touchDown(e);
+                              },
+                              onPointerMove: (e) {
+                                move(e, rect);
+                                touchMove(e, size);
+                              },
+                              onPointerUp: (e) {
+                                up(e);
+                                touchEnd(e);
+                              },
+                              onPointerCancel: (e) {
+                                cancel(e);
+                                touchEnd(e);
+                              },
                               child: CustomPaint(
                                 size: size,
                                 painter: _InkPainter(

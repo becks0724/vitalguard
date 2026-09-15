@@ -126,10 +126,10 @@ for (const [audioMs, duration] of [
   test(`길이 표기: ${audioMs} → ${duration ?? "생략"}`, () => {
     const markup = html(fixture([voiceComment({ audio_ms: audioMs })]).rows);
     if (duration === null) {
-      assert.match(markup, /<p>음성 댓글<\/p>/);
-      assert.doesNotMatch(markup, /0:00/);
+      assert.doesNotMatch(markup, /aria-label="음성 길이 /);
     } else {
-      assert.ok(markup.includes(`<span> · ${duration}</span>`));
+      assert.ok(markup.includes(`aria-label="음성 길이 ${duration}"`));
+      assert.ok(markup.includes(`>${duration}</span>`));
     }
   });
 }
@@ -167,7 +167,10 @@ type Effect = { deps: unknown[]; cleanup?: () => void };
 function playerHarness() {
   type Instance = {
     slots: unknown[]; effects: Map<number, Effect>; pending: (() => void)[]; cursor: number;
-    props: VoiceProps; tree?: Element; audio: { paused: boolean; pauses: number; pause: () => void };
+    props: VoiceProps; tree?: Element; audio: {
+      paused: boolean; pauses: number; plays: number; currentTime: number; duration: number;
+      pause: () => void; play: () => Promise<void>;
+    };
   };
   let current: Instance;
   const hooks = {
@@ -209,7 +212,11 @@ function playerHarness() {
   function create(src: string | null) {
     const instance: Instance = {
       slots: [], effects: new Map(), pending: [], cursor: 0, props: { src, audioMs: 7000 },
-      audio: { paused: true, pauses: 0, pause() { this.paused = true; this.pauses++; } },
+      audio: {
+        paused: true, pauses: 0, plays: 0, currentTime: 0, duration: 20,
+        pause() { this.paused = true; this.pauses++; },
+        play() { this.paused = false; this.plays++; return Promise.resolve(); },
+      },
     };
     render(instance);
     return instance;
@@ -224,6 +231,81 @@ function playerHarness() {
     unmount(instance: Instance) { instance.effects.forEach((effect) => effect.cleanup?.()); },
   };
 }
+
+test("재생 제어는 진짜 button이고 상태에 따라 aria-label과 아이콘을 바꾼다", () => {
+  const h = playerHarness();
+  const a = h.create("fixture-a");
+  const playButton = button(a.tree, "음성 재생");
+  assert.ok(playButton);
+  assert.equal(playButton.type, "button");
+  assert.equal(playButton.props.type, "button");
+  (playButton.props.onClick as () => void)();
+  assert.equal(a.audio.plays, 1);
+  h.event(a, "onPlay");
+  const pauseButton = button(a.tree, "일시정지");
+  assert.ok(pauseButton);
+  (pauseButton.props.onClick as () => void)();
+  h.event(a, "onPause");
+  assert.ok(button(a.tree, "음성 재생"));
+  h.unmount(a);
+});
+
+test("파형의 투명 range를 클릭하면 currentTime과 진행 오버레이가 바뀐다", () => {
+  const h = playerHarness();
+  const a = h.create("fixture-a");
+  const sliders = elements(a.tree).filter((element) => element.type === "input" && element.props.type === "range");
+  assert.equal(sliders.length, 1);
+  assert.equal(sliders[0]!.props["aria-label"], "음성 재생 위치");
+  (sliders[0]!.props.onChange as (event: unknown) => void)({ currentTarget: { value: "25" } });
+  assert.equal(a.audio.currentTime, 5);
+  h.render(a);
+  const slider = elements(a.tree).find((element) => element.type === "input" && element.props.type === "range")!;
+  assert.equal(slider.props.value, 25);
+  const waveformBars = elements(a.tree).filter((element) =>
+    element.type === "span" && String(element.props.className).includes("w-[2px]"),
+  );
+  assert.equal(waveformBars.length, 30);
+  const progressOverlay = elements(a.tree).find((element) =>
+    element.type === "div" && String(element.props.className).includes("pointer-events-none"),
+  )!;
+  assert.equal((progressOverlay.props.style as { width: string }).width, "25%");
+  h.unmount(a);
+});
+
+test("timeupdate로 진행률이 바뀌어 리렌더되어도 파형 막대 30개의 높이는 같다", (t) => {
+  const h = playerHarness();
+  const a = h.create("fixture-a");
+  t.after(() => h.unmount(a));
+  h.play(a);
+  const heights = () => elements(a.tree)
+    .filter((element) => element.type === "span" && String(element.props.className).includes("w-[2px]"))
+    .map((element) => (element.props.style as { height: number }).height);
+  const initialHeights = heights();
+  assert.equal(initialHeights.length, 30);
+  assert.ok(initialHeights.every((height) => Number.isFinite(height) && height > 0));
+
+  for (const currentTime of [5, 10, 15]) {
+    a.audio.currentTime = currentTime;
+    h.event(a, "onTimeUpdate");
+    const progress = currentTime / a.audio.duration * 100;
+    const slider = elements(a.tree).find((element) =>
+      element.type === "input" && element.props["aria-label"] === "음성 재생 위치",
+    )!;
+    const overlay = elements(a.tree).find((element) =>
+      element.type === "div" && String(element.props.className).includes("pointer-events-none"),
+    )!;
+    assert.equal(slider.props.value, progress, "timeupdate가 실제로 진행률을 갱신해야 한다");
+    assert.equal((overlay.props.style as { width: string }).width, `${progress}%`);
+    assert.deepEqual(heights(), initialHeights, `${progress}% 진행 후에도 30개 막대 높이가 같아야 한다`);
+  }
+});
+
+test("audioMs가 없으면 한 줄 버블에서 길이 표기만 빠진다", () => {
+  const markup = html(fixture([voiceComment({ audio_ms: null })]).rows);
+  assert.doesNotMatch(markup, /aria-label="음성 길이 /);
+  assert.match(markup, /<button[^>]+aria-label="음성 재생"/);
+  assert.match(markup, /<input type="range"/);
+});
 
 test("A→B→C 재생: 다른 댓글을 멈추고 늦은 pause·ended 이벤트에도 하나만 재생한다", () => {
   const h = playerHarness();
@@ -270,7 +352,7 @@ test("빠른 재개 뒤 도착한 옛 pause/ended 이벤트도 동시 재생 방
 test("만료·네트워크/형식 오류는 안내하고 반복 오류로 조회·자동 재생을 하지 않는다", () => {
   const h = playerHarness();
   const a = h.create("expired-url");
-  assert.equal(audioElement(a.tree).props.controls, true);
+  assert.equal(audioElement(a.tree).props.controls, undefined);
   assert.equal(audioElement(a.tree).props.preload, "none");
   assert.equal(audioElement(a.tree).props.autoPlay, undefined);
   h.play(a); // 로드 실패가 paused=false 상태에서 발생해도 갱신할 수 있어야 한다.

@@ -67,6 +67,43 @@ function todayKst(): string {
   return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
+// 작업 ID가 있으면 DB가 INSERT로 키를 확보한 뒤 upload를 호출한다.
+// 없으면 기존 PUT → INSERT 순서와 응답 계약을 유지한다.
+async function saveUpload<T extends { id: string }>(
+  operationId: string | null,
+  file: File,
+  key: string,
+  contentType: string,
+  resultField: "media" | "comment",
+  insert: (id: string, upload?: () => Promise<void>) => Promise<T>,
+) {
+  const id = crypto.randomUUID();
+  let uploadFailed = false;
+  const upload = async () => {
+    try {
+      await putObject(key, new Uint8Array(await file.arrayBuffer()), contentType);
+    } catch (e) {
+      uploadFailed = true;
+      console.error("[app-media] putObject 실패", e);
+      throw e;
+    }
+  };
+  try {
+    if (!operationId) await upload();
+    const row = await insert(id, operationId ? upload : undefined);
+    return NextResponse.json({
+      ok: true,
+      [resultField]: row,
+      ...(operationId ? { clientOperationId: operationId, deduplicated: row.id !== id } : {}),
+    });
+  } catch (e) {
+    if (uploadFailed) {
+      return NextResponse.json({ ok: false, error: "스토리지 업로드 실패" }, { status: 502 });
+    }
+    throw e;
+  }
+}
+
 export async function POST(request: Request) {
   const ctype = request.headers.get("content-type") ?? "";
 
@@ -101,6 +138,19 @@ export async function POST(request: Request) {
   if (!authed) {
     return NextResponse.json({ ok: false, error: "인증 필요(APP_UPLOAD_TOKEN)" }, { status: 401 });
   }
+
+  const operationIds = form.getAll("clientOperationId");
+  const operationId = operationIds[0];
+  // 잘못 보낸 키를 미전송으로 취급하면 재시도 때 조용히 중복이 생긴다.
+  if (operationIds.length > 1 || (operationId !== undefined &&
+      (typeof operationId !== "string" || !operationId.trim() ||
+       operationId !== operationId.trim() || operationId.length > 128))) {
+    return NextResponse.json(
+      { ok: false, error: "clientOperationId는 앞뒤 공백 없는 1~128자 문자열 하나여야 합니다" },
+      { status: 400 },
+    );
+  }
+  const clientOperationId = typeof operationId === "string" ? operationId : null;
 
   if (!isStorageConfigured()) {
     return NextResponse.json({ ok: false, error: "스토리지(Object Storage) 미설정" }, { status: 503 });
@@ -169,15 +219,9 @@ export async function POST(request: Request) {
     const audioMs = duration !== null && Number.isInteger(duration) && duration >= 0 && duration <= 2_147_483_647
       ? duration : null;
     const key = `calendar-media/${original.date_key}/${crypto.randomUUID()}.${ext}`;
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      await putObject(key, bytes, contentType);
-    } catch (e) {
-      console.error("[app-media] 음성 댓글 putObject 실패", e);
-      return NextResponse.json({ ok: false, error: "스토리지 업로드 실패" }, { status: 502 });
-    }
-    const comment = await insertCalendarMediaComment({
-      id: crypto.randomUUID(),
+    return saveUpload(clientOperationId, file, key, contentType, "comment", (id, upload) => insertCalendarMediaComment({
+      id,
+      clientOperationId,
       mediaId: commentOf,
       body: "",
       authorId: username,
@@ -187,8 +231,7 @@ export async function POST(request: Request) {
       audioStorageKey: key,
       audioUrl: null,
       audioMs,
-    });
-    return NextResponse.json({ ok: true, comment });
+    }, upload));
   }
 
   // 메타 — 앱이 보내면 사용, 없으면 KST 현재로 폴백.
@@ -256,19 +299,11 @@ export async function POST(request: Request) {
     }
   }
 
-  // Object Storage 업로드(서버측 PUT).
+  // Object Storage 업로드 + 캘린더 DB 등록.
   const key = `calendar-media/${dateKey}/${crypto.randomUUID()}.${ext}`;
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    await putObject(key, bytes, contentType);
-  } catch (e) {
-    console.error("[app-media] putObject 실패", e);
-    return NextResponse.json({ ok: false, error: "스토리지 업로드 실패" }, { status: 502 });
-  }
-
-  // 캘린더 DB 등록.
-  const row = await insertCalendarMedia({
-    id: crypto.randomUUID(),
+  return saveUpload(clientOperationId, file, key, contentType, "media", (id, upload) => insertCalendarMedia({
+    id,
+    clientOperationId,
     annotationOf: annotationOf ?? undefined,
     dateKey,
     capturedAt,
@@ -286,7 +321,5 @@ export async function POST(request: Request) {
     latitude,
     longitude,
     roadAddress,
-  });
-
-  return NextResponse.json({ ok: true, media: row });
+  }, upload));
 }

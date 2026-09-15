@@ -1,13 +1,15 @@
-// 로그인 직후 현장 선택 단계 — 메인 현장(스마트인재개발원 신축 공사) + 데모 현장 5개를 콤보박스로 고르고 입장. 선택값은 LoginScreen 이 site-info 로 저장.
+// 로그인 직후 DB 현장 목록을 선택한다. 기존 프리셋 9개는 목록 API 실패 시 폴백으로 유지한다.
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import type { SiteRow } from "../../lib/db";
 import type { SiteInfo } from "./AdminExportModal";
 import { ComboBox, Input, ListBox, Header, Separator } from "./heroui-combo-box";
 
 type Lang = "ko" | "en";
-type SiteOption = { id: string; label: string; info: SiteInfo };
+type SiteOption = { id: string; label: string; info: SiteInfo & { noticeId: string } };
+type SelectableSite = SiteOption & { kind: SiteRow["kind"] };
 
 // 메인 현장 — 스마트인재개발원 신축 공사(데모 아님, 항상 노출). 라벨은 데모와 동일하게 "지역 현장이름" 순.
 const MAIN_SITE: SiteOption = {
@@ -145,7 +147,11 @@ const SORTED_REAL_SITES: SiteOption[] = [...REAL_SITES].sort((a, b) =>
   a.label.localeCompare(b.label, "ko"),
 );
 
-const ALL_SITES: SiteOption[] = [MAIN_SITE, ...DEMO_SITES, ...REAL_SITES];
+const FALLBACK_SITES: SelectableSite[] = [
+  { ...MAIN_SITE, kind: "main" },
+  ...SORTED_DEMO_SITES.map((site) => ({ ...site, kind: "demo" as const })),
+  ...SORTED_REAL_SITES.map((site) => ({ ...site, kind: "contract" as const })),
+];
 
 const TX: Record<Lang, Record<string, string>> = {
   ko: {
@@ -172,17 +178,70 @@ const TX: Record<Lang, Record<string, string>> = {
 
 export function LoginSiteSelect({
   lang,
+  token,
   onConfirm,
   onBack,
 }: {
   lang: Lang;
-  onConfirm: (info: SiteInfo, siteId: string) => void;
+  token: string;
+  onConfirm: (info: SiteInfo, siteId: string) => Promise<void>;
   onBack: () => void;
 }) {
   const t = TX[lang];
+  const [sites, setSites] = useState<SelectableSite[]>(FALLBACK_SITES);
   const [selectedId, setSelectedId] = useState<string | null>(MAIN_SITE.id);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const chosen = ALL_SITES.find((s) => s.id === selectedId);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    async function load() {
+      try {
+        const response = await fetch("/api/sites", {
+          // /api/admin/login의 createSession() 발급 토큰 — getSession()이 이 헤더를 검증한다.
+          headers: { authorization: `Bearer ${token}` },
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = (await response.json()) as { ok?: boolean; sites?: SiteRow[] };
+        if (!response.ok || !json.ok || !Array.isArray(json.sites)) return;
+        const loaded = json.sites.map((site): SelectableSite => {
+          if (!site || typeof site.site_id !== "string" || !site.site_id ||
+              typeof site.ui_key !== "string" || !site.ui_key || typeof site.label !== "string" ||
+              !["main", "demo", "contract"].includes(site.kind)) {
+            throw new Error("현장 목록 형식 오류");
+          }
+          return {
+            id: site.ui_key,
+            kind: site.kind,
+            label: site.label,
+            info: {
+              noticeId: site.site_id,
+              companyName: site.company_name ?? "",
+              siteName: site.site_name ?? "",
+              constructionType: site.construction_type ?? "",
+              address: site.address ?? "",
+              startDate: site.start_date ?? "",
+              completionDate: site.completion_date ?? "",
+            },
+          };
+        });
+        if (controller.signal.aborted) return;
+        setSites(loaded);
+        setSelectedId((current) => loaded.some((site) => site.id === current)
+          ? current : loaded[0]?.id ?? null);
+      } catch {
+        // 네트워크·JSON 오류·시간 초과에도 기존 상수 목록으로 선택할 수 있다.
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    void load();
+    return () => { controller.abort(); clearTimeout(timeout); };
+  }, [token]);
+
+  const chosen = sites.find((s) => s.id === selectedId);
 
   return (
     <div className="flex w-full max-w-sm flex-col items-center">
@@ -196,8 +255,10 @@ export function LoginSiteSelect({
 
       <div className="mt-6 w-full">
         <ComboBox
+          key={sites === FALLBACK_SITES ? "fallback" : "server"}
           fullWidth
-          defaultSelectedKey={MAIN_SITE.id}
+          defaultSelectedKey={selectedId ?? undefined}
+          isDisabled={saving}
           menuTrigger="focus"
           onSelectionChange={(key) => setSelectedId(key == null ? null : String(key))}
         >
@@ -209,15 +270,17 @@ export function LoginSiteSelect({
             <ListBox>
               <ListBox.Section>
                 <Header>{t.main}</Header>
-                <ListBox.Item id={MAIN_SITE.id} textValue={MAIN_SITE.label}>
-                  {MAIN_SITE.label}
-                  <ListBox.ItemIndicator />
-                </ListBox.Item>
+                {sites.filter((site) => site.kind === "main").map((s) => (
+                  <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
+                    {s.label}
+                    <ListBox.ItemIndicator />
+                  </ListBox.Item>
+                ))}
               </ListBox.Section>
               <Separator />
               <ListBox.Section>
                 <Header>{t.demo}</Header>
-                {SORTED_DEMO_SITES.map((s) => (
+                {sites.filter((site) => site.kind === "demo").map((s) => (
                   <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
                     {s.label}
                     <ListBox.ItemIndicator />
@@ -227,7 +290,7 @@ export function LoginSiteSelect({
               <Separator />
               <ListBox.Section>
                 <Header>{t.real}</Header>
-                {SORTED_REAL_SITES.map((s) => (
+                {sites.filter((site) => site.kind === "contract").map((s) => (
                   <ListBox.Item key={s.id} id={s.id} textValue={s.label}>
                     {s.label}
                     <ListBox.ItemIndicator />
@@ -239,19 +302,30 @@ export function LoginSiteSelect({
         </ComboBox>
       </div>
 
+      {saveError && <p role="alert" className="mt-4 text-sm text-red-100">{saveError}</p>}
       <button
         type="button"
-        disabled={!chosen}
-        onClick={() => {
-          if (chosen) onConfirm(chosen.info, chosen.id);
+        disabled={!chosen || saving}
+        onClick={async () => {
+          if (!chosen || saving) return;
+          setSaving(true);
+          setSaveError(null);
+          try {
+            await onConfirm(chosen.info, chosen.id);
+          } catch (error) {
+            setSaveError(error instanceof Error ? error.message : "현장 선택 저장에 실패했습니다. 다시 시도해 주세요.");
+          } finally {
+            setSaving(false);
+          }
         }}
         className="mt-7 w-full rounded-pill bg-white px-4 py-3 text-sm font-semibold text-primary shadow-lg transition hover:bg-white/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:bg-white/40 disabled:text-white/70"
       >
-        {t.enter}
+        {saving ? "현장 저장 중…" : t.enter}
       </button>
 
       <button
         type="button"
+        disabled={saving}
         onClick={onBack}
         className="mt-4 text-xs text-white/75 underline-offset-2 transition hover:text-white hover:underline"
       >
