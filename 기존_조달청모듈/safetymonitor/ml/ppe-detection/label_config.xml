@@ -1,0 +1,46 @@
+<!-- 현장 35장 라벨링 화면 구성. head·helmet 박스 + 박스마다 방향·색 태그.
+     ★ 태그를 박스마다 붙이는 것이 YOLO txt 로는 안 되는 유일한 일이다(txt 는 다섯 칸뿐). -->
+<View>
+  <Image name="image" value="$image" zoom="true" zoomControl="true"/>
+
+  <RectangleLabels name="label" toName="image">
+    <Label value="head" background="#DC2828"/>
+    <Label value="helmet" background="#7B3FF2"/>
+    <Label value="safety_vest" background="#0EA5E9"/>
+    <Label value="shoes" background="#14B8A6"/>
+  </RectangleLabels>
+
+  <View visibleWhen="region-selected">
+    <Header value="이 박스의 태그"/>
+    <Choices name="face" toName="image" perRegion="true">
+      <Choice value="정면"/>
+      <Choice value="뒷면"/>
+      <Choice value="불명"/>
+    </Choices>
+    <Choices name="color" toName="image" perRegion="true"
+             whenTagName="label" whenLabelValue="helmet">
+      <Choice value="초록"/>
+      <Choice value="흰색"/>
+      <Choice value="노랑"/>
+      <Choice value="파랑"/>
+      <Choice value="기타"/>
+    </Choices>
+
+    <!-- 판정이 흔들리는 박스는 빼지 말고 「불확실」로 단다.
+         빼면 학습에서 그 자리가 배경이 되어 「이 맨머리는 배경」을 가르친다. -->
+    <!-- 안전화 여부는 별도 클래스가 아니라 태그로 단다.
+         no_safety_shoes 는 507 에서 「하반신 영역」이라 shoes(신발 외곽선)와 박스 정의가
+         충돌한다. 같은 화소에 정반대 지도가 들어가는 사고를 피한다. -->
+    <Choices name="shoetype" toName="image" perRegion="true"
+             whenTagName="label" whenLabelValue="shoes">
+      <Choice value="안전화"/>
+      <Choice value="일반화"/>
+      <Choice value="불명"/>
+    </Choices>
+
+    <Choices name="certainty" toName="image" perRegion="true">
+      <Choice value="확실"/>
+      <Choice value="불확실"/>
+    </Choices>
+  </View>
+</View>

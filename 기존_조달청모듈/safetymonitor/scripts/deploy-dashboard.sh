@@ -18,7 +18,8 @@
 #                     승인 이후 쌓인 커밋은 출력에는 보이되 이미지에는 안 실린다.
 #                     검증도 그 트리(아카이브)에서 한다 — 워킹트리는 배포될 트리가 아니게 되므로.
 #   AI_URL=…          _AI_URL 치환 재정의(기본 cctv-ai 프로덕션)
-#   CAM03_GATE=…      CAM-03 젯슨 직결 게이트 주소. 빈값이면 CAM-03 도 종전 _AI_URL 경로를 쓴다.
+#   CAM03_GATE=…      CAM-03 젯슨 직결 게이트 주소. **기본값이 채워져 있다**(아래 참조).
+#                     끄려면 CAM03_GATE= 로 **빈값을 명시**한다 — 그러면 종전 _AI_URL 경로를 쓴다.
 #                     ⚠ NEXT_PUBLIC_* 라 빌드타임에 번들로 들어간다 — 런타임 env 로는 못 바꾼다.
 set -euo pipefail
 
@@ -27,8 +28,15 @@ SERVICE=vitalguard-dashboard
 IMAGE_REPO=asia-northeast3-docker.pkg.dev/safetymonitor-498508/vitalguard/dashboard
 LIVE_URL="https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"
 AI_URL="${AI_URL:-https://cctv-ai-569797426568.asia-northeast3.run.app}"
-# 기본 빈값 — 지정하지 않으면 CAM-03 배선이 꺼진 채(기존 동작) 나간다.
-CAM03_GATE="${CAM03_GATE:-}"
+# ★ 2026-09-15 기본값을 채웠다. 종전엔 빈값이라 **매 배포마다 사람이 넘겨야** 했고,
+#   09-11 에 실제로 두 번 연속 빠져 CAM-03 이 이틀 죽었다(00371·00372).
+#   ⚠ 그 고장은 아무 경보도 안 낸다 — 배포 성공·테스트 1658/1658·소스 가드 전부 초록이었다.
+#   가드는 "코드 배선"을 보는데 빠진 것은 "빌드 치환"이라 단위가 다르다.
+#   판정은 라이브 번들 검색으로만 된다(청크에서 duckdns 적중 · 통제군 함께).
+#   ⚠ 콜론 없는 ${VAR-기본값} 이다(:- 아님) — 그래야 `CAM03_GATE= ...` 로 **끌 수 있다**.
+#     :- 를 쓰면 빈값을 명시해도 기본값이 살아나 cctv-ai 폴백으로 못 되돌린다.
+#   되돌리기 = CAM03_GATE= 를 앞에 붙여 실행. 시연 등으로 cctv-ai 경로가 필요할 때 쓴다.
+CAM03_GATE="${CAM03_GATE-https://cctv-gate.example.invalid:8443}"
 SUBTREE="기존_조달청모듈/safetymonitor"
 
 export PATH="~/Documents/google-cloud-sdk/bin:$PATH"
