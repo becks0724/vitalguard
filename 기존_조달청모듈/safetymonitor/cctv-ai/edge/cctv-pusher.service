@@ -1,0 +1,41 @@
+# CAM-03 엣지 푸셔를 재부팅 후 자동으로 올린다 — 게이트(cctv-gate.service)와 짝이다.
+#
+# ★ 왜 필요한가 (2026-09-15)
+#   게이트만 systemd 였고 푸셔는 수동 기동(PPID 1)이라, 재부팅하면 게이트는 올라오고
+#   푸셔는 안 왔다. 그리고 POSE_FALL 기본값이 "0" 이라 손으로 올리며 env 를 빠뜨리면
+#   화면은 정상인데 낙상만 조용히 죽는다. 그 두 가지를 이 파일이 막는다.
+#
+# ★ Restart=no 인 이유 — 사용자 결정(09-15)
+#   GoPro 가 웨지되면 프로세스를 되살려도 안 듣는다(물리 재연결이 필요하다). 자동 재시작은
+#   그 상황에서 죽고 살아나기를 반복해 상태만 악화시킨다. 재부팅만 커버하고, 장애 때는
+#   사람이 올린다(지금과 같다).
+#
+# ★ CCTV_BASE 를 일부러 넣지 않았다
+#   빼면 클라우드로 아무것도 보내지 않아 과금이 0 이다. 관제웹은 이 푸셔를 게이트를 거쳐
+#   읽으므로 CCTV_BASE 없이도 화면이 뜬다. 넣으려면 Environment= 를 한 줄 더한다.
+#
+# 설치      sudo cp cctv-pusher.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#           sudo systemctl enable cctv-pusher.service          ← --now 는 붙이지 않는다
+# 되돌리기  sudo systemctl disable --now cctv-pusher.service
+#
+# ⚠ 수동 푸셔가 이미 떠 있는 동안 systemctl start 를 하면 8444 포트가 겹쳐 새 쪽이 죽는다.
+#   Restart=no 라 조용히 실패하고 끝난다. 바꿔 띄우려면 수동분을 먼저 내린다.
+
+[Unit]
+Description=CAM-03 edge pusher (GoPro PPE + pose)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/vg_edge_poc
+Environment=POSE_FALL=1
+Environment=POSE_LOG=1
+ExecStart=/usr/bin/python3 -u gopro_ppe_edge.py
+StandardOutput=append:/home/jetson/vg_edge_poc/gopro_edge.log
+StandardError=append:/home/jetson/vg_edge_poc/gopro_edge.log
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
