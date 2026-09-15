@@ -1,5 +1,7 @@
 # CCTV 관제 최적 설정 — 리서치 리포트
 
+> **2026-09-07 젯슨 4GB → 8GB 교체 이후의 영상 최적화 조사는 [cctv-8GB-영상최적화-리서치.md](cctv-8GB-영상최적화-리서치.md) 에 있다.** 아래 §2 의 "메모리 때문에 못 한다" 항목은 그 문서 §4 에서 대조했다.
+
 > 관제웹 CCTV의 **최적 영상 구현 + 엣지(Jetson Orin Nano) AI + 낙상/PPE 모델 선택 + FPS/해상도**를 최신 근거로 정리하고,
 > 이 프로젝트에 맞는 **종합 최적 조합**을 제시한다. 작성 2026-07-25. 근거 = 4축 웹 리서치(2024~2026 소스) + 레포 맥락.
 > 구현 절차는 [cctv-설정변경-계획.md](cctv-설정변경-계획.md), 코드는 [main.py](main.py) 참조.
@@ -32,7 +34,7 @@
 
 1. **DETR 계열이 실시간으로 부활** — Orin Nano에선 "실측 FPS 없음·부적합"이었으나, RTX 2060에선 **RT-DETR-R50·RF-DETR-L·D-FINE-L 모두 30fps 여유로 초과**. R18로 내려갈 필요 없음.
 2. **NVENC 해금** — Orin Nano엔 없던 하드웨어 영상 인코더가 RTX 2060엔 있음 → **H.264/H.265 + WebRTC 다카메라 스트리밍**이 저CPU로 가능. MJPEG 강제 해소.
-3. **동시구동 여유** — 6GB 전용 VRAM + 별도 NVENC + 6코어 CPU. Orin Nano 8GB 공유·열 스로틀 제약에서 벗어남.
+3. **동시구동 여유** — 6GB 전용 VRAM + 별도 NVENC + 6코어 CPU. Orin Nano 8GB(2026-09-07 교체 · 종전 4GB) 공유메모리·열 스로틀 제약에서 벗어남.
 4. **새 리스크** — 게이밍 노트북의 **24/7 산업 신뢰성**(열·먼지·팬·IP등급 없음).
 
 ### A.1 하드웨어 (확인됨)
@@ -241,7 +243,7 @@ COCO 스펙(정확도/크기)과 Orin Nano 실측 FPS.
 [현장 카메라] GoPro(USB)·Aqara(RTSP)
       │  캡처
       ▼
-[엣지 · Jetson Orin Nano 8GB]  ── DeepStream nvstreammux 배칭 + 1모델 DLA 오프로드
+[엣지 · Jetson Orin Nano 8GB]  ── DeepStream nvstreammux 배칭 (DLA 없음 — 오프로드 불가)
    ├─ CAM-01 객체 : YOLO11n/s  (TensorRT INT8)      탐지 5~10Hz
    ├─ CAM-02 낙상 : YOLO11n-pose (FP16) + 무동작/시간 게이트  ← bd6fc2a
    └─ CAM-03 PPE  : YOLO PPE 파인튠 (INT8) + NO-* 위반

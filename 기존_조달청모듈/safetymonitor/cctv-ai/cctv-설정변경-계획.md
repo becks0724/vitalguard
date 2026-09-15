@@ -24,7 +24,7 @@
 
 - 관제 CCTV에 객체를 연결하면 영상이 버벅인다. 부드러운 재생이 목표.
 - 향후 추론을 엣지(Jetson Orin Nano)로 옮길 계획 — GPU가 있으므로 DETR 계열 적용 가능성을 함께 검토.
-- 제약 = Cloud Run은 CPU 단일 인스턴스(`--cpu 4 --memory 4Gi --min-instances 1 --max-instances 1`), 엣지는 Orin Nano 8GB 공유메모리.
+- 제약 = Cloud Run은 CPU 단일 인스턴스(`--cpu 4 --memory 4Gi --min-instances 1 --max-instances 1`), 엣지는 Orin Nano 8GB 공유메모리(2026-09-07 교체).
 
 ---
 

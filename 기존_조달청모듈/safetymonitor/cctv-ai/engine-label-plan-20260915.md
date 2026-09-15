@@ -407,3 +407,145 @@ d23dd070  267줄  ← 그쪽이 잰 시각      83cacf81  336줄  ← 지금
 - [x] 줄 수 불일치 원인 규명 (자가 아니라 시각)
 - [x] Ⓑ 함정을 문서에 박음 (비옵셔널 타입 + 미전송 키)
 - [ ] 브라우저 화면 확인 — 배포 후, 내가 본다
+
+---
+
+## 14. ★★ 젯슨 전수 대조 — 낙상 판정 정본이 main 에 없다 (09-15)
+
+[WATCH.APP] 이 *"09-14 되반영 가드(README 84줄)가 main 에 없다"* 를 짚었다. 그 김에 젯슨을
+전수로 훑었더니 **README 보다 등급이 높은 것**이 나왔다.
+
+### pose_fall.py — 기동 차단
+
+```
+젯슨 실물      f7d73985dd29059d5ed462471828ce43   566줄
+tmp-507e      f7d73985dd29059d5ed462471828ce43   566줄   ← 바이트 동일
+origin/main   파일 자체가 없음
+```
+```python
+gopro_ppe_edge.py:444    if people:
+                             import pose_fall as _pf      ← 사람이 잡힐 때마다
+```
+
+⛔ **`main` 으로 엣지를 되살리면 사람이 잡히는 순간 `ImportError` 로 죽는다.**
+오늘 닫은 다른 것들은 「기능이 조용히 되돌아간다」였다. 이건 **기동이 안 된다.** 등급이 다르다.
+
+### 올릴 목록 — 등급별로 커밋을 쪼갠다 ([WATCH.APP] 요청)
+
+| 등급 | 파일 | 근거 |
+|---|---|---|
+| **1 · 기동 차단** | `edge/pose_fall.py` | 젯슨 실물과 동일 · 푸셔가 import |
+| **2 · 실물 동기화** | `gopro_ppe_push.py` `orbbec_cctv_push.py` `cam03_view_server.py` `pose_log_stat.py` `nvdec_probe.py` `bench_ppe_pose.py` | 전부 md5 = 젯슨 실물 |
+| **3 · 저장소측 도구** | `deploy_edge.sh` `lagwatch.sh` `mjpeg_lag.py` | 젯슨엔 없음 · README 가 가리킴 |
+| **4 · 문서** | `rule-plan-20260913/deploy-yolo11s-20260914.md` | 09-14 배포 기록 · 1등급과 짝 |
+
+⚠ **올리되 재배포·재기동은 하지 않는다.** 젯슨은 이미 이 코드를 돌고 있다.
+
+### 안 올리는 것
+
+젯슨에만 있는 일회성 분석 스크립트 20개(`check_distance.py` · `conf_gradient.py` ·
+`scene_clusters.py` 류). 브랜치에도 없고 재현 가치가 없다 — 필요하면 젯슨에서 다시 만든다.
+
+### 남는 것 — 손대지 않는다
+
+`main` 의 README 가 **가리키는데 어디에도 없는 파일 8개**가 있다
+(`dash_push.py` `detector.py` `docker.sh` `download.py` `j.py` `r.py` `ros2_orbslam2.sh`
+`run_docker.sh`). 오늘 작업이 만든 것이 아니라 이전부터 있던 문서 드리프트다. 기록만 한다.
+
+### ⛔ 내 측정이 한 번 거짓 초록이었다 — 1개 vs 27개
+
+처음엔 `while read` 안에서 `ssh` 를 돌렸다.
+```
+while read -r f; do ... ssh jetson "md5sum ..." ... done < 목록.txt
+```
+**안쪽 `ssh` 가 stdin 을 먹어** 목록이 두 번째 줄에서 끊겼다. 출력은 멀쩡해 보였고
+「main 에 없는 건 1개」라고 나왔다. 실제는 **27개**였다.
+
+```
+고침    젯슨 해시를 ssh 한 번으로 먼저 받아 두고, 순회는 로컬에서만 한다
+        (ssh -n 도 같은 효과)
+통제군  젯슨 31개 중 main 에 있는 것 4개 — 0 이 아니므로 경로는 맞다
+```
+★ **눈으로는 못 잡는다.** 1도 27도 그럴듯한 수다. 같은 함정이 `adb shell` 에도 있다
+([[watch-adb-wifi-mediator]]). [[output-exists-but-nothing-was-measured]] 그대로다.
+
+### 교훈 — 「배포했다」와 「저장소에 있다」를 따로 묻는다
+
+`pose_fall.py` 를 나는 **「젯슨에 배포했다」로만 기억**하고 있었다. 「main 에 있나」를 한 번도
+안 물었다. [WATCH.APP] 이 자기 메모리에서 찾은 것과 같은 병이다 — 메모리에 *"근본 대응 =
+README 에 신설"* 이라고만 적으면 다음 세션이 **「있다」고 믿는다.**
+⟹ **배선을 적을 때 `ref` 까지 적는다.**
+
+### 체크리스트
+
+- [x] 젯슨 31파일 전수 대조 (ssh 함정 수정 후 · 통제군 4/31)
+- [x] `pose_fall.py` 가 런타임 import 임을 코드로 확인 (`:444` · `if people:` 안)
+- [x] 올릴 목록 4등급으로 확정 · [WATCH.APP] 에 전달
+- [ ] 사용자 승인 후 push (등급별 커밋 분리)
+- [ ] 관제웹 배포 후 화면 v7d 확인 ⬅ 내 몫
+
+---
+
+## 15. 푸셔 systemd 유닛 — 09-15 사용자 결정
+
+오늘 나온 것 중 **유일하게 안 닫혀 있던 구멍**이다.
+
+```
+cctv-gate.service   systemd · enabled          ✅ 재부팅 생존
+푸셔                PPID 1 (수동 기동)          ⛔ 유닛 없음 · cron 없음
+POSE_FALL 기본값 "0" (:98)                      → env 빠뜨리면 낙상만 조용히 죽는다
+```
+
+### 결정 = `Restart=no` (사용자)
+
+GoPro 가 웨지되면 프로세스를 되살려도 안 듣는다(물리 재연결이 필요하다). 자동 재시작은 그
+상황에서 죽고 살아나기를 반복해 상태만 악화시킨다. **재부팅만 커버하고 장애 때는 사람이 올린다.**
+
+정본 = `cctv-ai/edge/cctv-pusher.service` (저장소에 있다 — 젯슨에만 두면 오늘 다섯 번 본 얼굴이
+여섯 번째가 된다).
+
+### 설치 — 구동 중인 푸셔를 건드리지 않았다
+
+```
+sudo cp cctv-pusher.service /etc/systemd/system/ && sudo systemctl daemon-reload
+sudo systemctl enable cctv-pusher.service          ← --now 를 붙이지 않는다
+```
+```
+설치 전 PID 322586  →  설치 후 PID 322586        ✅ 무중단
+cctv-pusher.service  enabled · inactive          ← inactive 가 정상(수동분이 돌고 있다)
+cctv-gate.service    enabled · active
+유닛이 현재 구동값을 재현하나   cwd·env(POSE_FALL=1 POSE_LOG=1)·명령 전부 일치
+```
+
+### ⛔ 내 첫 검증이 거짓 초록이었다
+
+`systemd-analyze verify` 를 돌리고 **「출력 없음 = 문제 없음」이라고 찍었는데 출력이 있었다.**
+다른 유닛(`yahboom_oled` · `snapd` · `nvargus-daemon` …)에 대한 경고였고 내 유닛 것은 아니었지만,
+내 판정 로직은 그것을 가르지 않고 무조건 초록을 냈다.
+
+```
+고침    systemd-analyze verify … | grep -i "cctv-pusher"      → 0건이어야 통과
+통제군  일부러 깨진 유닛(ZZZBadKey)을 넣어 잡히는지 확인      → 잡혔다
+```
+★ **검사기가 다른 것을 지적한 출력을 「내 것이 깨끗하다」로 읽지 않는다.**
+
+### ⚠ 아직 확인 못 한 것 — 실제 부팅
+
+`enable` 은 됐고 문법도 통과했지만 **재부팅해서 실제로 뜨는지는 못 봤다.** 재부팅할 수 없고,
+수동분을 내리고 `systemctl start` 로 바꿔 띄우는 시험은 CCTV 가 잠시 끊긴다
+([[measure-the-undo-when-you-add-it]] — 09-15 에 내려놓고 못 올린 전례가 있다).
+
+⟹ **다음 재부팅이 첫 시험이다.** 그때 볼 것.
+```
+systemctl status cctv-pusher.service       active (running) 인가
+curl -s localhost:8444/health              stats.engine = v7d 인가
+journalctl -u cctv-pusher -n 30            기동 실패면 여기 이유가 남는다
+```
+
+### 체크리스트
+
+- [x] 유닛 설계 — `Restart=no` · env 포함 · `CCTV_BASE` 제외(과금 0 유지)
+- [x] 저장소에 정본 작성 (`cctv-ai/edge/cctv-pusher.service`)
+- [x] 젯슨 설치 + `enable` — 구동 중 푸셔 PID 불변 확인
+- [x] 문법 검증 + 통제군(깨진 유닛이 잡히는지)
+- [ ] **다음 재부팅에서 실제 기동 확인** ⬅ 미검증으로 남는다
