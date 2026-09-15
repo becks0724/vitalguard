@@ -19,11 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -53,29 +48,13 @@ import com.vitalguard.wear.core.Severity
 import com.vitalguard.wear.core.Thresholds
 import com.vitalguard.wear.core.skinTempSeverity
 import com.vitalguard.wear.core.spo2Severity
-import kotlinx.coroutines.delay
 
 /** 큰 화면 분기 — Wear OS 공식 브레이크포인트. 40mm 와 44mm 가 여기서 갈린다. */
 private const val LARGE_DISPLAY_BREAKPOINT = 225
 
-/** 개발자(진단) 화면에 들어가는 연속 탭 수 — 안드로이드 설정의 빌드번호 연타와 같은 방식. */
-private const val DEV_TAP_COUNT = 10
-
-/**
- * 연타로 인정하는 탭 간격 상한. 이보다 뜸하면 처음부터 다시 센다.
- * ⚠ 안드로이드 원본에는 이 제한이 없다(화면을 벗어나야 초기화). 여기는 작업자가 온종일 머무는
- *   면이라 제한이 없으면 교대 내내 띄엄띄엄 누른 탭이 쌓여 우발 진입한다.
- */
-private const val DEV_TAP_WINDOW_MS = 1_500L
-
-/** 남은 횟수를 보여 주기 시작하는 지점 — 안드로이드 토스트와 같은 역할(성공·실패를 눈으로 가른다). */
-private const val DEV_TAP_HINT_FROM = 5
-
 @Composable
 fun VitalScreen(
     state: VitalUiState,
-    /** 진단 화면 진입 — 화면 아무 곳이나 [DEV_TAP_COUNT] 번 연타한다(작업자 화면에 버튼을 두지 않는다). */
-    onOpenDiagnostics: () -> Unit = {},
     /** 탭 — 화면을 잠시 붙잡는다(상시 유지는 발열을 만든다 · 08-25 실측). */
     onTap: () -> Unit = {},
 ) {
@@ -85,33 +64,12 @@ fun VitalScreen(
     val sideMargin = (widthDp * 0.155f).dp   // 베젤 눈금과 본문이 겹치지 않는 하한
     val bubble = (widthDp * (if (large) 0.20f else 0.21f)).dp
 
-    // 연타 카운터. 창(窓)은 타임스탬프가 아니라 이 효과 자체다 — 탭마다 키가 바뀌어 대기가 처음부터
-    // 다시 걸리고, 다음 탭이 늦으면 그 대기가 끝나 0 으로 돌아간다.
-    var devTaps by remember { mutableIntStateOf(0) }
-    LaunchedEffect(devTaps) {
-        if (devTaps > 0) {
-            delay(DEV_TAP_WINDOW_MS)
-            devTaps = 0
-        }
-    }
-
     Box(
         Modifier
             .fillMaxSize()
             .background(VgColors.Background)
             .pointerInput(Unit) {
-                detectTapGestures(
-                    onTap = {
-                        onTap()
-                        val n = devTaps + 1
-                        if (n >= DEV_TAP_COUNT) {
-                            devTaps = 0
-                            onOpenDiagnostics()
-                        } else {
-                            devTaps = n
-                        }
-                    },
-                )
+                detectTapGestures(onTap = { onTap() })
             },
     ) {
         // 베젤 눈금 — 본문을 밀지 않고 가장자리에 겹쳐 그린다(원형에서 유일하게 남는 공간).
@@ -136,17 +94,6 @@ fun VitalScreen(
             FooterLine(state)
             // 아래로 스와이프하면 상세 — 발견성을 위해 힌트를 남긴다(지침: 작업의 명확성).
             SwipeHint()
-        }
-        // 연타 진행 표시 — 안드로이드 토스트 자리. 열 안이 아니라 겹쳐 그린다(본문 배치를 흔들지 않게).
-        if (devTaps >= DEV_TAP_HINT_FROM) {
-            Text(
-                "개발자 ${DEV_TAP_COUNT - devTaps}번 남음",
-                color = VgColors.Accent,
-                fontSize = 10.sp,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = (widthDp * 0.13f).dp),
-            )
         }
     }
 }

@@ -507,10 +507,11 @@ class MainActivity : ComponentActivity() {
                                     showLogin = true
                                 },
                                 onCancel = { qrJob?.cancel(); login = LoginUiState() },
+                                // 진단 화면은 여기(톱니 연타)로만 들어간다 — 09-15 사용자 지시.
+                                onOpenDiagnostics = { showDiagnostics = true },
                             )
                             1 -> VitalScreen(
                                 state = vitals,
-                                onOpenDiagnostics = { showDiagnostics = true },
                                 onTap = { holdScreen() },
                             )
                             2 -> HeartDetailPage(vitals)
