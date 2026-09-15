@@ -800,24 +800,39 @@ export function LoginScreen({
     [gOrgType, gCompany, gPhone, submitting, t],
   );
 
-  // 현장 선택 완료 → 대시보드 입장. 현장정보 프리셋은 "다른 현장으로 전환할 때만" 적용한다.
-  // 같은 현장(특히 메인) 재선택 시 프리셋으로 덮어쓰지 않아, 관리자 메뉴에서 저장한 값이
-  // 다음 로그인에 원복되지 않는다(진실 소스=서버 DB, 대시보드가 mount 시 우선 로드).
+  // 서버가 사용자별 선택을 저장한 다음 입장한다. 브라우저의 기존 ui_key는 캐시로 유지한다.
   const handleSiteConfirm = useCallback(
-    (info: SiteInfo, siteId: string) => {
+    async (info: SiteInfo, siteId: string) => {
+      if (!pendingToken || !info.noticeId) throw new Error("현장 선택 정보를 확인해 주세요.");
+      const response = await fetch("/api/admin/site-info", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${pendingToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ ...info, siteId: info.noticeId, selectOnly: true }),
+        signal: AbortSignal.timeout(15000),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok || json.siteInfo?.site_id !== info.noticeId) {
+        throw new Error(json.error ?? "현장 선택 저장에 실패했습니다. 다시 시도해 주세요.");
+      }
+      const saved: SiteInfo = {
+        noticeId: json.siteInfo.site_id,
+        companyName: json.siteInfo.company_name ?? "",
+        siteName: json.siteInfo.site_name ?? "",
+        constructionType: json.siteInfo.construction_type ?? "",
+        address: json.siteInfo.address ?? "",
+        startDate: json.siteInfo.start_date ?? "",
+        completionDate: json.siteInfo.completion_date ?? "",
+      };
       try {
-        const prevId = window.localStorage.getItem("safetymonitor.site-id.v1");
-        if (prevId !== siteId) {
-          window.localStorage.setItem(
-            "safetymonitor.site-info.v1",
-            JSON.stringify(info),
-          );
-        }
+        window.localStorage.setItem("safetymonitor.site-info.v1", JSON.stringify(saved));
         window.localStorage.setItem("safetymonitor.site-id.v1", siteId);
       } catch {
         // localStorage 불가 환경은 저장 생략(대시보드 기본/서버 현장정보 유지)
       }
-      if (pendingToken) onLogin(pendingToken, pendingRole ?? undefined);
+      onLogin(pendingToken, pendingRole ?? undefined);
     },
     [pendingToken, pendingRole, onLogin],
   );
@@ -1596,6 +1611,7 @@ export function LoginScreen({
             )}
             <LoginSiteSelect
               lang={lang}
+              token={pendingToken}
               onConfirm={handleSiteConfirm}
               onBack={() => setPendingToken(null)}
             />

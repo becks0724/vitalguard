@@ -34,6 +34,7 @@ const BASE_ROW: Omit<
 const SITE_ROWS: SiteInfoRow[] = [
   {
     id: 1,
+    site_id: "SITE-SMARTHRD-2026",
     snapshot_date: "2026-07-01",
     recorded_at: "2026-07-01T00:00:00.000Z",
     company_name: "(주)VitAlGuard",

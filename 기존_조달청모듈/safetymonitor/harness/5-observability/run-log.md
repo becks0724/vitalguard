@@ -136,3 +136,77 @@ WHERE ts::timestamptz > (now() - $1::interval)
 **미해결** 실제 과업 내용은 PDF·HWPX 첨부 안에 있고 파싱되지 않는다. `specDocs[].url` 에
 원문 URL 이 이미 실려 있으니(`app/lib/g2b.ts:117~121`) 경로는 있다. 첨부 파싱 없이는
 LLM 을 무엇으로 바꾸든 태깅 값이 나오지 않는다.
+
+---
+
+## 2026-09-15 · 현장 식별자가 DB 밖에 있었다 — 사진 96%가 현장 미상
+
+**리비전** `vitalguard-dashboard-00386-lp8` · digest `sha256:cea7b573…` (서빙 대조 일치)
+· HTTP 200 · 사후 90초 5xx 0건 · DB 타임아웃 0건 · env 30개(직전과 같음)
+
+### 무엇이 문제였나
+
+담당관 태블릿 앱이 찍은 사진에 현장이 안 붙었다. 라이브 실측:
+**`calendar_media` 51행 중 49행(96%)이 `site_id` NULL.**
+
+원인을 따라가 보니 현장 식별자가 **DB 밖에** 있었다.
+
+| 무엇 | 있던 곳 |
+|---|---|
+| 현장 목록 9개 | 코드 상수 `LoginSiteSelect.tsx` |
+| 담당관이 고른 현장 ID | 브라우저 localStorage `safetymonitor.site-id.v1` (`LoginScreen.tsx:816`) |
+| 현장 이름·주소 | `site_info_daily` — 하루 1행, **site_id 컬럼 없음** |
+| 현장 마스터 `t_site` | **0행 · 코드에서 아무도 안 씀** |
+
+관제웹은 localStorage 로 알지만 **서버 어디에도 "이 담당관의 현재 현장"이 없어** 앱이 받을 방법이 없었다.
+`use_plan` 의 `SITE-SMARTHRD-2026`·`R26TE13895124` 가 코드 상수의 `noticeId` 와 같은 값이었다 —
+**이미 실질적 site_id 였는데 마스터가 없어 코드에만 박혀 있었다.**
+
+DB 안의 site_id 도 체계가 제각각이었다: `SITE-01`(cctv_site) · `DEMO-SEED`(calendar_media)
+· `R26TE13895124`·`SITE-SMARTHRD-2026`(use_plan).
+
+### 무엇을 바꿨나
+
+스키마는 전부 `ensureSchema` 에 멱등 문장으로 넣었다(이 프로젝트의 정본). 라이브에 직접 SQL 을 쏘지 않았다.
+
+- `site` 마스터 신설 + 코드 상수 9개 시드 → **9행(main 1·demo 5·contract 3)**
+- `user_current_site` 신설 — localStorage 에만 있던 선택을 서버가 기억
+- `site_info_daily.site_id` 추가 → 기존 8행 백필 → `NOT NULL` →
+  `UNIQUE(snapshot_date)` 를 **`UNIQUE(snapshot_date, site_id)`** 로 교체
+  (지금까지 하루 1행이라 담당관 여럿이 다른 현장을 고르면 서로 덮어썼다)
+- `GET /api/sites` 신설 · `GET /api/admin/site-info` 응답에 `site_id`
+  (출처: `user_current_site` → 최신 스냅숏 → 마스터)
+- `LoginSiteSelect` 가 DB 를 읽고 기존 상수는 `FALLBACK_SITES` 로 남김
+
+### 라이브 검증
+
+배포 후 조회: `site` 9행 · `user_current_site` 생성 · `site_info_daily` site_id NULL **0행** ·
+`site_info_daily_snapshot_date_key` **사라짐** · `idx_sid_date_site UNIQUE(snapshot_date, site_id)` 생성.
+
+태블릿에서 1분 간격으로 두 장을 찍어 갈렸다:
+
+```
+07cb52f0… | 2026-09-15 | SITE-SMARTHRD-2026 | 17:16:46   ← 새 APK
+9015a259… | 2026-09-15 | (null)             | 17:15:30   ← 옛 APK
+```
+
+서버·DB 는 같은 상태였고 APK 만 달랐다. **앱–서버–DB 경로 전체가 이어진 것이 확인됐다.**
+
+### 배포 과정에서 드러난 것
+
+배포 스크립트의 상태 검사가 세 번 막았고 **셋 다 실질적인 문제였다.**
+
+1. `origin/main 보다 3커밋 뒤짐` — 앱 소스를 main 에 올려 생긴 격차. 병합으로 해소.
+2. `미push 커밋 8개` — **`feat/app-admin-alerts` 브랜치가 원격에 아예 없었다.**
+   9/14 에 라이브로 나간 서버 작업 6건(`00380`~`00385`)이 **로컬 맥에만** 있었다. 원격에 push 해 해소.
+3. `lint 실패` — 실제 lint 오류가 아니라 **pnpm 11 의 자동 deps 동기화**가 TTY 없이
+   `node_modules` 를 지우려다 중단(`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`).
+   `package.json`·lockfile 은 안 바뀌었고 pnpm 버전도 일치(11.1.3). **원인 미확정.**
+   3종(tsc·eslint·test 1993/1993)을 `./node_modules/.bin/` 직접 호출로 통과시킨 뒤 `SKIP_VERIFY=1` 로 배포.
+
+### 미해결
+
+- **라이브에 돌아가는 서버 코드가 `main` 에 없다.** `feat/app-admin-alerts` 브랜치에만 있다.
+- 기존 `calendar_media` 49행은 **소급하지 않았다.**
+- `pnpm` 명령이 이 트리에서 막힌다(위 3번). 원인 규명 필요.
+- site_id 체계가 기능마다 제각각인 것은 그대로다(`SITE-01`·`DEMO-SEED`·`R26TE…`).
