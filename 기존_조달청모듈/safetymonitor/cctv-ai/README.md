@@ -22,6 +22,89 @@ MJPEG 실시간 영상 + 감지 통계를 제공하는 서버. Cloud Run 배포�
   `source` 없는 구버전 서버가 서빙되면 푸터는 `판정 소스 미상` 이 된다 — 이 서버를 재배포하면 해소된다.
 - 영상·모델·의존성이 없으면 해당 카메라는 **합성으로 자동 폴백**(배포 견고성).
 
+## ⛔ 엣지 스크립트를 고쳤으면 **같은 턴에 저장소로 되반영한다** (2026-09-14 신설)
+
+현장 튜닝은 **젯슨에서 일어나고**, 저장소로 돌아오는 경로가 **수동**이다.
+그래서 조용히 갈라지고, **갈라진 것을 알아채는 장치가 없다.**
+CI 는 젯슨에 닿을 수 없으니 가드로 막을 수도 없다.
+
+**09-14 실제로 벌어진 일** — `gopro_ppe_edge.py` 가 저장소 1,157줄 / 젯슨 1,203줄로
+**50줄 갈라져 있었다.** 09-12 수리(직사각 엔진·`HEAD_CONF 0.30`·head 전용 문턱)가
+젯슨에만 있었고, **저장소본으로 되살렸다면 착용자 오경보가 .048 → .128 (2.7배)** 로 돌아갔다.
+발견 경위는 점검이 아니라 **다른 일을 하다 우연히**였다. 그 전까지 한 달 가까이 아무도 몰랐다.
+
+### 규칙 — 순서를 바꾼다
+
+```
+젯슨에서 고친다  →  같은 턴에 저장소로 되반영한다  →  커밋한다
+                    (배포가 끝나야 끝이 아니다)
+```
+
+### ★ 대조 목록을 **손으로 적지 않는다** (2026-09-14 추가 · [WATCH.APP] 실사고)
+
+[WATCH.APP] 이 손으로 적은 5개 목록으로 대조하다 `pose_fall.py` 가 빠진 것을 발견했고,
+그 처방(「자료에서 열거한다」)을 적용하자 **두 층이 더 나왔다.**
+
+```
+손 목록                      5개
+저장소에서 열거(ls-tree)     24개   ← 19개를 빠뜨리고 있었다
+젯슨 쪽 경로도 하드코딩       duckdns_update.sh 를 「없음」으로 읽었다(실제는 ~/ 에 있었다)
+젯슨 쪽도 열거               저장소에 없는 스크립트 26개
+```
+
+⟹ **같은 오류가 층마다 반복된다.** 목록 → 경로 → 반대편 목록.
+양쪽을 **전부 자료에서 열거**해야 한다.
+
+```bash
+# 저장소 쪽
+git -c core.quotepath=false ls-tree -r --name-only HEAD -- 기존_조달청모듈/safetymonitor/cctv-ai/edge
+# 젯슨 쪽
+ssh jetson@yahboom-1 'ls ~/vg_edge_poc/*.py ~/*.sh'
+```
+
+### 세 칸으로 가른다 — **예상된 차이**와 진짜 격차 (2026-09-14 · 양쪽 열거 실측)
+
+⛔ 내가 처음 「젯슨 로컬 25개」라 적었다가 **[WATCH.APP] 실측으로 23 으로 정정**했다.
+`.sh` 를 안 셌고, 이미 저장소에 있던 3개를 뺀 계산이었다.
+**기준값이 틀리면 다음 대조에서 2개 차이가 「정상」으로 흡수된다** — 진짜 새 파일이 들어와도 안 걸린다.
+
+```bash
+ssh jetson@yahboom-1 'ls ~/vg_edge_poc/*.py ~/vg_edge_poc/*.sh ~/*.sh' | xargs -n1 basename | sort > /tmp/j
+git -c core.quotepath=false ls-tree -r --name-only HEAD -- 기존_조달청모듈/safetymonitor/cctv-ai/edge \
+  | xargs -n1 basename | sort > /tmp/r
+comm -12 /tmp/j /tmp/r | wc -l   # 양쪽    = 12
+comm -23 /tmp/j /tmp/r | wc -l   # 젯슨에만 = 23
+comm -13 /tmp/j /tmp/r | wc -l   # 저장소에만 = 15
+```
+
+| 칸 | 수 | 내용 | 이 수가 바뀌면 |
+|---|---:|---|---|
+| **양쪽** | **12** | 운영 본체 5(`gopro_ppe_edge`·`pose_fall`·`cctv_gate`·`cam03_collect`·`gate_ticket`) · `cam03_view_server`(돌고 있다) · 원형 2(`gopro_ppe_push`·`orbbec_cctv_push`) · 도구 3(`bench_ppe_pose`·`nvdec_probe`·`pose_log_stat`) · `duckdns_update.sh` | **md5 가 갈리면 진짜 격차다** |
+| **젯슨에만** | **23** | 09-11 일회성 분석 **20**(`check_*` 8 · `subject_*` · `scene_clusters` · `torso_gradient` · `conf_gradient` · `factor_decomp` · `fall_fp_who` · `make_*` · `shoulder_dir` · `sit_dist` · `bare_head_subject` · `build_subject_map`) + **벤더/환경 3**(`get-docker.sh` · `ros2_orbslam2.sh` · `run_docker.sh`) | **늘면 분류하거나 올린다** |
+| **저장소에만** | **15** | 문서 4 + 맥에서 돌리는 분석·측정 11(`mjpeg_lag.py`·`lagwatch.sh` 등) | 젯슨에 없어도 정상 |
+
+⚠ 「젯슨에만 23」을 **09-11 분석으로 뭉뚱그리지 않는다** — 벤더/환경 3개는 성격이 달라
+다음에 「왜 이게 여기 있지」가 생긴다(이것도 [WATCH.APP] 지적).
+
+### 점검 한 줄 (보조 — 이것만으로는 부족하다)
+
+```bash
+scp jetson@yahboom-1:~/vg_edge_poc/gopro_ppe_edge.py /tmp/j.py
+git show origin/tmp-507e:기존_조달청모듈/safetymonitor/cctv-ai/edge/gopro_ppe_edge.py > /tmp/r.py
+diff /tmp/r.py /tmp/j.py | grep -c '^[<>]'        # 0 이어야 한다
+diff /tmp/j.py /tmp/j.py | grep -c '^[<>]'        # 통제군 — 0 이 아니면 검사가 고장난 것
+```
+
+⚠ **이 점검만 두면 안 된다.** 「적어는 뒀는데 절차가 안 바뀐」 자리가 된다.
+막는 것은 **되반영을 배포 절차의 한 단계로 넣는 것**이고, 위 명령은 그게 빠졌을 때 알아채는 보조다.
+
+⚠ 되반영·동기화 때 `ENGINE` 과 `IMGSZ` 는 **반드시 같이** 바꾼다 — 고정형상 엔진이라
+형상이 어긋나면 첫 추론에서 `assert` 로 죽는다.
+
+⚠ **방향은 늘 젯슨 → 저장소다.** 반대로 덮으면 운영 수리가 사라진다.
+덮기 전에 `diff` 의 `d` 훅(저장소에만 있는 줄)이 **0 인지** 확인하고, 통제군으로
+「d 훅이 잡히긴 하는가」를 같이 본다.
+
 ## ⚠️ 현재 상태 (2026-08-01 00:42 기준)
 
 ```
@@ -172,6 +255,7 @@ gcloud run deploy cctv-ai --image $IMG --region $REGION \
 - `--min-instances 1` — 콜드스타트(첫 연결 지연·모델 로드) 방지. MJPEG 는 장시간 연결이라 타임아웃 3600s.
 - **`OMP_NUM_THREADS=1` `MKL_NUM_THREADS=1` — ★ 429 핵심 해결**. CAM-01+CAM-03 두 모델이 각자 모든 코어로 추론하면 4코어가 통째로 점유돼 **uvicorn 이벤트 루프(HTTP)가 굶어 429/타임아웃**(검은 화면). torch 스레드를 op당 1개로 묶으면 **추론 2코어(워커 2×1) + HTTP 2코어 보장** → 단일 인스턴스가 대시보드 MJPEG 3종을 안정 서빙. 추론은 느려지나(슬로모) PLAYBACK_FPS=6 과 맞아 데모엔 충분.
 - `PLAYBACK_FPS=6` — 워커 추론 cadence(낮춰 사이 sleep 확보 + 워커 루프 최소 20ms yield). 스레드 제한과 함께 CPU 여유 이중 확보.
+- `STREAM3_FPS`(기본 12) — CAM-03 MJPEG 송출 **상한**. 2026-09-07 부터 `mjpeg_ppe` 가 같은 프레임을 재송출하지 않으므로 실제 송출은 **엣지 푸시율**(젯슨 `PUSH_FPS`)을 따라간다 — 젯슨이 5fps 로 밀면 5, 10 이면 10. 새 프레임이 1초 없으면 마지막 프레임을 한 번 더 보내 브라우저 연결을 유지한다. 종전(상수 12 · 무조건 재송출)에는 5fps 푸시가 같은 장면 2~3회 반복으로 보였다.
 - `--max-instances 1 --concurrency 200` — **단일 인스턴스**. 스레드 제한으로 1대가 대시보드+폰을 다 처리하므로 다중 인스턴스 불필요. **이게 핵심** — max 1 이면 CAM-03 폰 라이브 override 상태(`_ppe_live`)가 한 인스턴스 메모리에 모여 **MJPEG 대시보드와 폰 override 가 동시에** 된다(다중 인스턴스면 폰 POST·대시보드 조회가 갈려 클립만 보임).
 
 > (이전 시행착오) 스레드 무제한 + max-instances↑ 는 **각 인스턴스가 CPU 포화 + 콜드스타트 처닝**으로 더 불안정했다(000/429). 근본은 인스턴스 수가 아니라 **스레드 제한으로 HTTP 에 코어를 보장**하는 것. 더 견고히 하려면 대시보드를 스냅샷 폴링(`/cctv/snapshot*`)으로 — 단발 요청이라 장기연결 부담 자체가 사라짐(선택).
