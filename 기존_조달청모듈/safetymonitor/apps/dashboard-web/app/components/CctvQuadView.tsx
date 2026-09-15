@@ -55,6 +55,8 @@ const CAMERAS: Cam[] = [
 // 낙상(fall)은 여기 없다 — 아래 FALL_SOURCE_LABEL 참조.
 const AI_MODEL_LABEL: Record<Exclude<AiKind, "fall">, string> = {
   object: "YOLOv8",
+  // ⚠ 09-15 이제 **폴백 전용**이다. 정상 경로는 엣지가 보낸 stats.engine 을 쓴다(ppeModel).
+  //   이 값이 쓰이는 때 = 엣지 미수신으로 cctv-ai 가 번들 클립을 Hexmon 으로 추론하는 경우.
   ppe: "YOLO26s v5",
 };
 
@@ -609,9 +611,14 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
     hardhat_count: number;
     vest_count: number;
     person_count: number;
+    engine?: string;   // ★ 09-15 엣지가 실제로 로드한 PPE 엔진 태그(구버전 서버면 없음)
   }>(aiApi, suffix, gateApi, cameraId);
 
   const violations = stats?.violation_count ?? 0;
+  // ★ 09-15 엣지가 보낸 값을 쓰고, 없으면 하드코딩으로 떨어진다.
+  //   ⚠ 폴백을 지우면 안 된다 — cctv-ai 가 번들 클립을 Hexmon 으로 추론하는 경로에는
+  //     엣지 값이 없다. 그때도 화면에 무언가는 적혀야 한다.
+  const ppeModel = stats?.engine ? `YOLO26s ${stats.engine}` : AI_MODEL_LABEL.ppe;
   // ★ 안전조끼는 과업 범위 외(2026-07-30 결정) — 착용 판정을 하지 않는다.
   //   엣지의 no_vest_count 는 하드코딩 0(판정 미구현)이라 "미착용 0" 이 화면에서는
   //   판정 결과로 읽혔다. 수치를 내보내는 대신 범위 외임을 명시한다.
@@ -653,7 +660,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
         <span className="text-[11px] text-zinc-400">
           {stats ? (
             <>
-              {AI_MODEL_LABEL.ppe} · 작업자 {persons}명 ·{" "}
+              {ppeModel} · 작업자 {persons}명 ·{" "}
               {ppeState === "violation" ? (
                 <span className="font-bold text-red-300">위반 {violations}건</span>
               ) : ppeState === "clear" ? (
@@ -674,7 +681,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
             </>
           ) : (
             <>
-              {AI_MODEL_LABEL.ppe} · <span className="font-semibold text-zinc-300">{label}</span> · 판정{" "}
+              {ppeModel} · <span className="font-semibold text-zinc-300">{label}</span> · 판정{" "}
               <span className="text-zinc-400">—</span>
             </>
           )}
