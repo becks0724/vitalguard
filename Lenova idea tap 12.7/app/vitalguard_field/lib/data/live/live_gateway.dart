@@ -156,7 +156,11 @@ class LiveGateway
       }
       return reply.body;
     } on SocketException {
-      throw ApiFailure('서버에 연결할 수 없습니다', uncertainWrite: method != 'GET');
+      throw ApiFailure(
+        '서버에 연결할 수 없습니다',
+        uncertainWrite: method != 'GET',
+        networkUnreachable: true,
+      );
     } on TimeoutException {
       throw ApiFailure(
         '서버 응답을 기다리는 시간이 지났습니다',

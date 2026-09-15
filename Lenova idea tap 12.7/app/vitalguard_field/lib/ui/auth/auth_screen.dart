@@ -40,16 +40,63 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> submit() async {
+    if (widget.controller.busy ||
+        (widget.controller.lockedUntil?.isAfter(DateTime.now()) ?? false)) {
+      return;
+    }
     if (widget.controller.authStage == AuthStage.totp) {
-      if (code.text.length == 6) await widget.controller.submitTotp(code.text);
+      if (code.text.length != 6) return;
+      await widget.controller.submitTotp(code.text);
     } else if (id.text.trim().isNotEmpty && password.text.isNotEmpty) {
       await widget.controller.signIn(
         id.text.trim(),
         password.text,
         remember: remember,
       );
+      if (!mounted) return;
       password.clear();
+    } else {
+      return;
     }
+    if (!mounted) return;
+    final failure = widget.controller.loginFailure;
+    if (failure?.networkUnreachable != true) return;
+    bool? hasInternet;
+    try {
+      hasInternet = await const MethodChannel('vitalguard/network')
+          .invokeMethod<bool>('hasInternet');
+    } catch (_) {
+      // 채널이 없거나 확인에 실패해도 인터넷 연결 여부를 단정하지 않는다.
+    }
+    if (!mounted || widget.controller.loginFailure != failure) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(
+          hasInternet == false
+              ? '인터넷에 연결되어 있지 않습니다'
+              : '서버에 연결할 수 없습니다',
+        ),
+        content: Text(switch (hasInternet) {
+          false =>
+            '기기의 Wi-Fi 가 꺼져 있거나 연결이 끊겼습니다. Wi-Fi 를 켜고 연결한 뒤 다시 로그인해 주세요.',
+          true =>
+            '인터넷은 연결되어 있습니다. 서버가 응답하지 않으니 잠시 후 다시 시도해 주세요. 계속되면 관리자에게 문의해 주세요.',
+          null =>
+            '인터넷 연결을 확인한 뒤 다시 로그인해 주세요. 계속되면 관리자에게 문의해 주세요.',
+        }),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(vgTapMin, vgTapMin),
+            ),
+            child: const Text('확인'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

@@ -19,6 +19,7 @@ class ApiFailure implements Exception {
     this.retryAfterSec,
     this.twoFactorRequired = false,
     this.uncertainWrite = false,
+    this.networkUnreachable = false,
   });
   final String message;
   final int? status;
@@ -29,6 +30,8 @@ class ApiFailure implements Exception {
   final bool twoFactorRequired;
   // 요청 전송 후 응답을 못 받았으면 자동 재전송할 수 없다.
   final bool uncertainWrite;
+  // SocketException을 표시한다. 인터넷 연결 여부는 로그인 화면에서 확인한다.
+  final bool networkUnreachable;
   @override
   String toString() => message;
 }
@@ -118,6 +121,7 @@ abstract class FieldController extends ChangeNotifier {
   bool get busy;
   bool get offline;
   String? get message;
+  ApiFailure? get loginFailure => null;
   DateTime? get lockedUntil;
   AppUser? get user;
   SiteInfo? get site;

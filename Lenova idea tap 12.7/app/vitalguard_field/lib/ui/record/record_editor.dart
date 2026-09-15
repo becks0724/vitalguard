@@ -90,6 +90,7 @@ class _RecordEditorState extends State<RecordEditor>
   final active = <int, InkStroke>{};
   final undoHistory = <void Function()>[];
   InkTool tool = InkTool.pen;
+  double widthMultiplier = 1.0;
   int color = 0xFFDC2626;
   double zoom = 1;
   Offset pan = Offset.zero;
@@ -301,16 +302,18 @@ class _RecordEditorState extends State<RecordEditor>
     if (e.kind != PointerDeviceKind.stylus || busy || originalOnly) return;
     final p = point(e, rect);
     if (p == null) return;
+    final baseWidth = tool == InkTool.eraser
+        ? 28
+        : tool == InkTool.marker
+        ? 18
+        : 4;
+    // 공통 배수를 써야 형광펜과 펜의 기본 굵기 차이를 유지한다.
+    // 도구마다 선택 단계의 절대값을 따로 두면 두 도구의 성격이 뒤섞인다.
     setState(
       () => active[e.pointer] = InkStroke(
         tool,
         color,
-        (tool == InkTool.eraser
-                ? 28
-                : tool == InkTool.marker
-                ? 18
-                : 4) /
-            rect.width,
+        baseWidth * widthMultiplier / rect.width,
         [p],
       ),
     );
@@ -561,6 +564,31 @@ class _RecordEditorState extends State<RecordEditor>
     }
   }
 
+  Widget editorButton({
+    required String id,
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool? selected,
+    double iconSize = 24,
+    ButtonStyle? style,
+  }) => IconButton(
+    key: Key('editor-$id'),
+    tooltip: label,
+    isSelected: selected,
+    onPressed: onPressed,
+    icon: Icon(icon, semanticLabel: label),
+    iconSize: iconSize,
+    style: (style ?? const ButtonStyle()).merge(
+      IconButton.styleFrom(
+        minimumSize: const Size.square(vgTapMin),
+        visualDensity: VisualDensity.standard,
+        foregroundColor: selected == true ? Colors.white : null,
+        backgroundColor: selected == true ? VgColors.primary : null,
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final g = MediaQuery.of(context).systemGestureInsets;
@@ -589,7 +617,9 @@ class _RecordEditorState extends State<RecordEditor>
           child: Theme(
             data: Theme.of(context).copyWith(
               iconButtonTheme: IconButtonThemeData(
-                style: IconButton.styleFrom(minimumSize: const Size(56, 56)),
+                style: IconButton.styleFrom(
+                  minimumSize: const Size.square(vgTapMin),
+                ),
               ),
               textButtonTheme: TextButtonThemeData(
                 style: TextButton.styleFrom(minimumSize: const Size(56, 56)),
@@ -606,30 +636,109 @@ class _RecordEditorState extends State<RecordEditor>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Wrap(
-                  spacing: 16,
+                  key: const Key('editor-drawing-tools'),
+                  spacing: 8,
                   runSpacing: vgGapTap,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    for (final item in <InkTool, String>{
-                      InkTool.pen: '펜',
-                      InkTool.marker: '형광펜',
-                      InkTool.rectangle: '사각형',
-                      InkTool.eraser: '지우개',
-                    }.entries)
-                      OutlinedButton(
+                    for (final item in const [
+                      (
+                        tool: InkTool.pen,
+                        label: '펜',
+                        icon: Icons.edit_outlined,
+                      ),
+                      (
+                        tool: InkTool.marker,
+                        label: '형광펜',
+                        icon: Icons.border_color_outlined,
+                      ),
+                      (
+                        tool: InkTool.rectangle,
+                        label: '사각형',
+                        icon: Icons.crop_square,
+                      ),
+                      (
+                        tool: InkTool.eraser,
+                        label: '지우개',
+                        icon: Icons.backspace_outlined,
+                      ),
+                    ])
+                      editorButton(
+                        id: 'tool-${item.tool.name}',
+                        label: item.label,
+                        icon: item.icon,
+                        selected: tool == item.tool,
                         onPressed: busy
                             ? null
-                            : () => setState(() => tool = item.key),
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size(72, 56),
-                          backgroundColor: tool == item.key
-                              ? Theme.of(context).colorScheme.primaryContainer
-                              : null,
-                        ),
-                        child: Text(item.value),
+                            : () => setState(() => tool = item.tool),
                       ),
-                    IconButton(
-                      tooltip: '마지막 획 되돌리기',
+                    for (final width in const [
+                      (id: 'thin', label: '가늘게', multiplier: 0.5, size: 8.0),
+                      (id: 'normal', label: '보통', multiplier: 1.0, size: 14.0),
+                      (id: 'thick', label: '굵게', multiplier: 2.0, size: 22.0),
+                    ])
+                      editorButton(
+                        id: 'width-${width.id}',
+                        label: width.label,
+                        icon: Icons.circle,
+                        iconSize: width.size,
+                        selected: widthMultiplier == width.multiplier,
+                        // 점은 굵기만 나타내고 선택은 사각 테두리로 구분한다.
+                        style: IconButton.styleFrom(
+                          foregroundColor: VgColors.ink,
+                          backgroundColor: Colors.transparent,
+                          side: BorderSide(
+                            color: widthMultiplier == width.multiplier
+                                ? VgColors.primary
+                                : Colors.transparent,
+                            width: 2,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: busy
+                            ? null
+                            : () => setState(
+                                () => widthMultiplier = width.multiplier,
+                              ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: vgGapTap),
+                Wrap(
+                  key: const Key('editor-edit-actions'),
+                  spacing: 8,
+                  runSpacing: vgGapTap,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    for (final swatch in const [
+                      (id: 'red', label: '빨간 펜', color: 0xFFDC2626),
+                      (id: 'black', label: '검정 펜', color: 0xFF171717),
+                      (id: 'blue', label: '파란 펜', color: 0xFF0D74CE),
+                    ])
+                      IconButton(
+                        key: Key('editor-color-${swatch.id}'),
+                        tooltip: swatch.label,
+                        isSelected: color == swatch.color,
+                        onPressed: () => setState(() => color = swatch.color),
+                        icon: Icon(
+                          color == swatch.color
+                              ? Icons.radio_button_checked
+                              : Icons.circle_outlined,
+                          color: Color(swatch.color),
+                          semanticLabel: swatch.label,
+                        ),
+                        iconSize: 40,
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size.square(vgTapMin),
+                          visualDensity: VisualDensity.standard,
+                        ),
+                      ),
+                    editorButton(
+                      id: 'undo',
+                      label: '마지막 획 되돌리기',
+                      icon: Icons.undo,
                       onPressed:
                           (strokes.isEmpty && undoHistory.isEmpty) ||
                               active.isNotEmpty ||
@@ -651,45 +760,100 @@ class _RecordEditorState extends State<RecordEditor>
                                 if (mounted) setState(() => error = '초안 저장 실패');
                               });
                             },
-                      icon: const Icon(Icons.undo),
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(56, 56),
-                      ),
                     ),
-                    OutlinedButton(
-                      onPressed: busy
-                          ? null
-                          : () => setState(() => originalOnly = !originalOnly),
-                      child: Text(originalOnly ? '주석 함께 보기' : '원본만 보기'),
-                    ),
-                    for (final c in [0xFFDC2626, 0xFF171717, 0xFF0D74CE])
-                      IconButton(
-                        tooltip: c == 0xFFDC2626
-                            ? '빨간 펜'
-                            : c == 0xFF171717
-                            ? '검정 펜'
-                            : '파란 펜',
-                        onPressed: () => setState(() => color = c),
-                        icon: Icon(
-                          color == c
-                              ? Icons.radio_button_checked
-                              : Icons.circle_outlined,
-                          color: Color(c),
-                        ),
-                        iconSize: 40,
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(56, 56),
-                        ),
-                      ),
-                    OutlinedButton.icon(
+                    editorButton(
+                      id: 'clear-all',
+                      label: '전체 지우기',
+                      icon: Icons.delete_sweep_outlined,
                       onPressed: strokes.isEmpty || active.isNotEmpty || busy
                           ? null
                           : clearAll,
-                      icon: const Icon(Icons.delete_sweep_outlined),
-                      label: const Text('전체 지우기'),
-                      style: OutlinedButton.styleFrom(
-                        minimumSize: const Size(120, vgTapMin),
+                    ),
+                    editorButton(
+                      id: 'original-only',
+                      label: '원본만 보기',
+                      icon: Icons.image_outlined,
+                      selected: originalOnly,
+                      onPressed: busy
+                          ? null
+                          : () => setState(() => originalOnly = !originalOnly),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: vgGapTap),
+                Wrap(
+                  key: const Key('editor-view-actions'),
+                  spacing: 8,
+                  runSpacing: vgGapTap,
+                  children: [
+                    editorButton(
+                      id: 'zoom-in',
+                      label: '확대',
+                      icon: Icons.zoom_in,
+                      onPressed: active.isEmpty
+                          ? () => setState(
+                              () => zoom = (zoom + 0.25)
+                                  .clamp(1.0, 4.0)
+                                  .toDouble(),
+                            )
+                          : null,
+                    ),
+                    editorButton(
+                      id: 'zoom-out',
+                      label: '축소',
+                      icon: Icons.zoom_out,
+                      onPressed: active.isEmpty
+                          ? () => setState(
+                              () => zoom = (zoom - 0.25)
+                                  .clamp(1.0, 4.0)
+                                  .toDouble(),
+                            )
+                          : null,
+                    ),
+                    for (final direction in const [
+                      (
+                        id: 'left',
+                        label: '왼쪽으로 이동',
+                        icon: Icons.arrow_left,
+                        offset: Offset(60, 0),
                       ),
+                      (
+                        id: 'right',
+                        label: '오른쪽으로 이동',
+                        icon: Icons.arrow_right,
+                        offset: Offset(-60, 0),
+                      ),
+                      (
+                        id: 'up',
+                        label: '위로 이동',
+                        icon: Icons.arrow_upward,
+                        offset: Offset(0, 60),
+                      ),
+                      (
+                        id: 'down',
+                        label: '아래로 이동',
+                        icon: Icons.arrow_downward,
+                        offset: Offset(0, -60),
+                      ),
+                    ])
+                      editorButton(
+                        id: 'pan-${direction.id}',
+                        label: direction.label,
+                        icon: direction.icon,
+                        onPressed: active.isEmpty
+                            ? () => setState(() => pan += direction.offset)
+                            : null,
+                      ),
+                    editorButton(
+                      id: 'fit-width',
+                      label: fitWidth ? '전체 보기' : '폭 맞춤',
+                      icon: Icons.fit_screen,
+                      selected: fitWidth,
+                      onPressed: () => setState(() {
+                        fitWidth = !fitWidth;
+                        zoom = 1;
+                        pan = Offset.zero;
+                      }),
                     ),
                   ],
                 ),
@@ -698,49 +862,6 @@ class _RecordEditorState extends State<RecordEditor>
                   spacing: 16,
                   runSpacing: vgGapTap,
                   children: [
-                    IconButton(
-                      tooltip: '확대',
-                      onPressed: active.isEmpty
-                          ? () => setState(
-                              () => zoom = (zoom + 0.25)
-                                  .clamp(1.0, 4.0)
-                                  .toDouble(),
-                            )
-                          : null,
-                      icon: const Icon(Icons.zoom_in),
-                    ),
-                    IconButton(
-                      tooltip: '축소',
-                      onPressed: active.isEmpty
-                          ? () => setState(
-                              () => zoom = (zoom - 0.25)
-                                  .clamp(1.0, 4.0)
-                                  .toDouble(),
-                            )
-                          : null,
-                      icon: const Icon(Icons.zoom_out),
-                    ),
-                    for (final direction in <IconData, Offset>{
-                      Icons.arrow_left: const Offset(60, 0),
-                      Icons.arrow_right: const Offset(-60, 0),
-                      Icons.arrow_upward: const Offset(0, 60),
-                      Icons.arrow_downward: const Offset(0, -60),
-                    }.entries)
-                      IconButton(
-                        tooltip: '확대한 사진 이동',
-                        onPressed: active.isEmpty
-                            ? () => setState(() => pan += direction.value)
-                            : null,
-                        icon: Icon(direction.key),
-                      ),
-                    TextButton(
-                      onPressed: () => setState(() {
-                        fitWidth = !fitWidth;
-                        zoom = 1;
-                        pan = Offset.zero;
-                      }),
-                      child: Text(fitWidth ? '전체 보기' : '폭 맞춤'),
-                    ),
                     TextButton(
                       onPressed: busy ? null : () => save(localOnly: true),
                       style: TextButton.styleFrom(

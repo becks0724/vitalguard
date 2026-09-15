@@ -554,12 +554,23 @@ void main() {
     final before = tester.getRect(canvas);
     final dock = find.byType(ActionDock);
     final scroll = find.descendant(of: dock, matching: find.byType(Scrollable));
-    expect(
-      tester.state<ScrollableState>(scroll).position.maxScrollExtent,
-      greaterThan(0),
-    );
+    // 텍스트 칩을 아이콘으로 바꾼 뒤로는 글자 3배에서도 도크가 다 들어가 스크롤이 필요 없다.
+    // V-5 가 요구하는 것은 스크롤 자체가 아니라 압축 없이 전부 닿는 것이므로 아래에서 확인한다.
     expect(before.overlaps(tester.getRect(dock)), isFalse);
-    for (final label in ['펜', '원본만 보기', '기기에 저장', '주석 저장']) {
+    for (final key in ['editor-tool-pen', 'editor-original-only']) {
+      final button = find.byKey(Key(key));
+      await _reveal(tester, button, dock);
+      expect(tester.widget<IconButton>(button).onPressed, isNotNull);
+      expect(button.hitTestable(), findsOneWidget);
+      final viewport = tester.getRect(scroll).inflate(.01);
+      final bounds = tester.getRect(button);
+      expect(viewport.contains(bounds.topLeft), isTrue);
+      expect(viewport.contains(bounds.bottomRight), isTrue);
+      expect(bounds.width, greaterThanOrEqualTo(vgTapMin));
+      expect(bounds.height, greaterThanOrEqualTo(vgTapMin));
+      expect(tester.getRect(canvas), before);
+    }
+    for (final label in ['기기에 저장', '주석 저장']) {
       final target = find.text(label);
       final button = find.ancestor(
         of: target,

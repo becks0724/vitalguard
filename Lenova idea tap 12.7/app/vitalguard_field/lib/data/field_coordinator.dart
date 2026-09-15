@@ -27,6 +27,8 @@ class FieldCoordinator extends FieldController {
   @override
   String? message;
   @override
+  ApiFailure? loginFailure;
+  @override
   DateTime? lockedUntil;
   @override
   AppUser? user;
@@ -170,6 +172,7 @@ class FieldCoordinator extends FieldController {
   Future<void> _login(int epoch, {String? code}) async {
     busy = true;
     message = null;
+    loginFailure = null;
     _notify();
     try {
       final session = await gateway.login(
@@ -192,6 +195,7 @@ class FieldCoordinator extends FieldController {
     } on ApiFailure catch (error) {
       if (epoch != _epoch) return;
       message = error.message;
+      loginFailure = error;
       if (error.retryAfterSec != null) {
         lockedUntil = DateTime.now().add(
           Duration(seconds: error.retryAfterSec!),
@@ -239,6 +243,7 @@ class FieldCoordinator extends FieldController {
     authStage = AuthStage.login;
     busy = false;
     message = null;
+    loginFailure = null;
     _notify();
   }
 

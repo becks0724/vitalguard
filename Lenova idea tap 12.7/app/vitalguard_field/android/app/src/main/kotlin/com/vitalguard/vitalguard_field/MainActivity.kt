@@ -28,6 +28,7 @@ import java.io.File
 
 class MainActivity : FlutterActivity() {
     private var fieldStorage: FieldStorage? = null
+    private var networkNative: NetworkNative? = null
     private var captureNative: CaptureNative? = null
     private var recorderNative: RecorderNative? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -72,6 +73,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         fieldStorage = FieldStorage(this, flutterEngine.dartExecutor.binaryMessenger)
+        networkNative = NetworkNative(this, flutterEngine.dartExecutor.binaryMessenger)
         captureNative = CaptureNative(this, flutterEngine.dartExecutor.binaryMessenger)
         recorderNative = RecorderNative(this, flutterEngine.dartExecutor.binaryMessenger) {
             active != null || pendingPermission != null
@@ -359,6 +361,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        networkNative?.close()
+        networkNative = null
         recorderNative?.close()
         recorderNative = null
         captureNative?.close()

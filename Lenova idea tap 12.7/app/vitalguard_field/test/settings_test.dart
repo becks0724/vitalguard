@@ -372,17 +372,19 @@ void main() {
       final canvasBefore = tester.getRect(find.byKey(const Key('ink-canvas')));
       final tools = find.byKey(const Key('editor-actions'));
       final editorButtons = [
-        for (final label in [
-          '펜',
-          '형광펜',
-          '사각형',
-          '지우개',
-          '원본만 보기',
-          '전체 지우기',
-          '기기에 저장',
-          '주석 저장',
+        for (final id in [
+          'tool-pen',
+          'tool-marker',
+          'tool-rectangle',
+          'tool-eraser',
+          'width-thin',
+          'width-normal',
+          'width-thick',
+          'original-only',
+          'clear-all',
         ])
-          _button(label),
+          find.byKey(Key('editor-$id')),
+        for (final label in ['기기에 저장', '주석 저장']) _button(label),
         for (final tooltip in [
           '마지막 획 되돌리기',
           '빨간 펜',
@@ -416,7 +418,7 @@ void main() {
         );
         expect(tester.state(find.byType(RecordEditor)), same(editor));
       }
-      await tester.tap(_button('형광펜'));
+      await tester.tap(find.byKey(const Key('editor-tool-marker')));
       await tester.pump();
       final stroke = await tester.startGesture(
         canvasBefore.center,
