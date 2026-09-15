@@ -33,13 +33,7 @@ const _editorLabels = {
   'undo': '마지막 획 되돌리기',
   'clear-all': '전체 지우기',
   'original-only': '원본만 보기',
-  'zoom-in': '확대',
-  'zoom-out': '축소',
-  'pan-left': '왼쪽으로 이동',
-  'pan-right': '오른쪽으로 이동',
-  'pan-up': '위로 이동',
-  'pan-down': '아래로 이동',
-  'fit-width': '폭 맞춤',
+  'fit-width': '폭 맞춤 · 확대·이동 초기화',
 };
 
 class _Gateway extends MockGateway {
@@ -178,18 +172,39 @@ Future<void> openOnTablet(
 );
 
 Offset at(WidgetTester tester, double x, double y) {
-  final canvas = tester.getRect(find.byKey(const Key('ink-canvas')));
-  final fitted = applyBoxFit(
-    BoxFit.contain,
-    const Size(1000, 650),
-    canvas.size,
-  ).destination;
-  final rect = Rect.fromCenter(
-    center: canvas.center,
-    width: fitted.width,
-    height: fitted.height,
-  );
+  final rect = paintedRect(tester);
   return Offset(rect.left + x * rect.width, rect.top + y * rect.height);
+}
+
+Rect paintedRect(WidgetTester tester) {
+  final canvas = find.byKey(const Key('ink-canvas'));
+  final painter =
+      tester
+              .widget<CustomPaint>(
+                find.descendant(of: canvas, matching: find.byType(CustomPaint)),
+              )
+              .painter
+          as dynamic;
+  return (painter.rect as Rect).shift(tester.getTopLeft(canvas));
+}
+
+Future<void> pinch(WidgetTester tester, {required double scale}) async {
+  final center = tester.getCenter(find.byKey(const Key('ink-canvas')));
+  final first = await tester.startGesture(
+    center - const Offset(40, 0),
+    pointer: 10,
+    kind: PointerDeviceKind.touch,
+  );
+  final second = await tester.startGesture(
+    center + const Offset(40, 0),
+    pointer: 11,
+    kind: PointerDeviceKind.touch,
+  );
+  await first.moveTo(center - Offset(40 * scale, 0));
+  await second.moveTo(center + Offset(40 * scale, 0));
+  await first.up();
+  await second.up();
+  await tester.pump();
 }
 
 Future<void> draw(
@@ -262,6 +277,342 @@ Future<void> seed(
 );
 
 void main() {
+  testWidgets('한 손가락 이동은 pan만 바꾸고 획을 만들지 않는다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    final before = paintedRect(tester);
+    final finger = await tester.startGesture(
+      before.center,
+      kind: PointerDeviceKind.touch,
+    );
+    const delta = Offset(90, 45);
+    await finger.moveBy(delta);
+    await tester.pump();
+    expect(paintedRect(tester), rectMoreOrLessEquals(before.shift(delta)));
+    expect(paintedStrokes(tester), isEmpty);
+    await finger.up();
+    await tester.pump();
+    await controller.beforeLock!();
+    expect((await draft(store))['strokes'], isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('두 손가락 핀치는 접촉 중심을 유지하고 1~4배로 제한된다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    final state = tester.state(find.byType(RecordEditor)) as dynamic;
+    final before = paintedRect(tester);
+    final focal = before.center + const Offset(50, -35);
+    final first = await tester.startGesture(
+      focal - const Offset(40, 0),
+      pointer: 10,
+      kind: PointerDeviceKind.touch,
+    );
+    final second = await tester.startGesture(
+      focal + const Offset(40, 0),
+      pointer: 11,
+      kind: PointerDeviceKind.touch,
+    );
+    for (final step in [
+      (halfSpan: 80.0, zoom: 2.0),
+      (halfSpan: 400.0, zoom: 4.0),
+      (halfSpan: 5.0, zoom: 1.0),
+    ]) {
+      await first.moveTo(focal - Offset(step.halfSpan, 0));
+      await tester.pump();
+      expect(state.zoom, inInclusiveRange(1.0, 4.0));
+      await second.moveTo(focal + Offset(step.halfSpan, 0));
+      await tester.pump();
+      expect(state.zoom, step.zoom);
+      final after = paintedRect(tester);
+      expect(after.width / before.width, closeTo(step.zoom, 1e-9));
+      expect(
+        after,
+        rectMoreOrLessEquals(
+          Rect.fromCenter(
+            center: focal + (before.center - focal) * step.zoom,
+            width: before.width * step.zoom,
+            height: before.height * step.zoom,
+          ),
+        ),
+      );
+    }
+    await first.up();
+    await second.up();
+    await tester.pump();
+    expect(paintedStrokes(tester), isEmpty);
+    expect((await draft(store))['strokes'], isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('두 손가락 이동은 1·4배를 유지하고 up·cancel 전환도 튀지 않는다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    final initialWidth = paintedRect(tester).width;
+    for (final zoom in [1.0, 4.0]) {
+      if (zoom == 4) await pinch(tester, scale: 4);
+      final before = paintedRect(tester);
+      expect(before.width / initialWidth, closeTo(zoom, 1e-9));
+      final center = tester.getCenter(find.byKey(const Key('ink-canvas')));
+      final first = await tester.startGesture(
+        center - const Offset(40, 0),
+        pointer: 10,
+        kind: PointerDeviceKind.touch,
+      );
+      final second = await tester.startGesture(
+        center + const Offset(40, 0),
+        pointer: 11,
+        kind: PointerDeviceKind.touch,
+      );
+      await tester.pump();
+      expect(paintedRect(tester), rectMoreOrLessEquals(before));
+      const delta = Offset(30, 25);
+      await first.moveBy(delta);
+      await second.moveBy(delta);
+      await tester.pump();
+      expect(paintedRect(tester), rectMoreOrLessEquals(before.shift(delta)));
+      if (zoom == 1) {
+        await second.up();
+      } else {
+        await second.cancel();
+      }
+      await tester.pump();
+      expect(paintedRect(tester), rectMoreOrLessEquals(before.shift(delta)));
+      const singleDelta = Offset(-12, 18);
+      await first.moveBy(singleDelta);
+      await tester.pump();
+      final after = before.shift(delta + singleDelta);
+      expect(paintedRect(tester), rectMoreOrLessEquals(after));
+      if (zoom == 1) {
+        await first.cancel();
+      } else {
+        await first.up();
+      }
+      await tester.pump();
+      final next = await tester.startGesture(
+        center,
+        pointer: 12,
+        kind: PointerDeviceKind.touch,
+      );
+      const nextDelta = Offset(-20, 8);
+      await next.moveBy(nextDelta);
+      await next.up();
+      await tester.pump();
+      expect(paintedRect(tester), rectMoreOrLessEquals(after.shift(nextDelta)));
+    }
+    expect(paintedStrokes(tester), isEmpty);
+    expect((await draft(store))['strokes'], isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('확대·이동 후 스타일러스는 원본 좌표로 그린다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    await pinch(tester, scale: 2);
+    final finger = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('ink-canvas'))),
+      pointer: 10,
+      kind: PointerDeviceKind.touch,
+    );
+    await finger.moveBy(const Offset(35, 20));
+    await finger.up();
+    await tester.pump();
+    final before = paintedRect(tester);
+    final pen = await tester.startGesture(
+      at(tester, 0.4, 0.4),
+      pointer: 20,
+      kind: PointerDeviceKind.stylus,
+    );
+    await pen.moveTo(at(tester, 0.6, 0.6));
+    await tester.pump();
+    expect(paintedStrokes(tester), hasLength(1));
+    await pen.up();
+    await tester.pump();
+    final saved = (await draft(store))['strokes'] as List;
+    expect(saved, hasLength(1));
+    expect(saved.single['points'], [
+      [0.4, 0.4, 1.0],
+      [0.6, 0.6, 1.0],
+    ]);
+    expect(saved.single['width'] * before.width, closeTo(4.0, 1e-9));
+    expect(paintedStrokes(tester), saved);
+    expect(paintedRect(tester), rectMoreOrLessEquals(before));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('펜을 그리는 중 두 손가락이 닿아도 획과 화면이 유지된다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    final before = paintedRect(tester);
+    final pen = await tester.startGesture(
+      at(tester, 0.2, 0.4),
+      pointer: 20,
+      kind: PointerDeviceKind.stylus,
+    );
+    await pen.moveTo(at(tester, 0.4, 0.4));
+    await tester.pump();
+    final first = await tester.startGesture(
+      at(tester, 0.4, 0.7),
+      pointer: 10,
+      kind: PointerDeviceKind.touch,
+    );
+    final second = await tester.startGesture(
+      at(tester, 0.6, 0.7),
+      pointer: 11,
+      kind: PointerDeviceKind.touch,
+    );
+    await first.moveBy(const Offset(-70, 30));
+    await second.moveBy(const Offset(70, 30));
+    await tester.pump();
+    expect(paintedRect(tester), rectMoreOrLessEquals(before));
+    expect(paintedStrokes(tester).single['points'], hasLength(2));
+    await pen.moveTo(at(tester, 0.6, 0.4));
+    await first.up();
+    await second.cancel();
+    await tester.pump();
+    await pen.moveTo(at(tester, 0.8, 0.4));
+    await pen.up();
+    await tester.pump();
+    final saved = (await draft(store))['strokes'] as List;
+    expect(saved, hasLength(1));
+    expect(saved.single['points'], [
+      [0.2, 0.4, 1.0],
+      [0.4, 0.4, 1.0],
+      [0.6, 0.4, 1.0],
+      [0.8, 0.4, 1.0],
+    ]);
+    expect(paintedStrokes(tester), saved);
+    expect(paintedRect(tester), rectMoreOrLessEquals(before));
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('손가락 이동 중 펜이 닿으면 남은 접촉을 무시한다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    final center = tester.getCenter(find.byKey(const Key('ink-canvas')));
+    final finger = await tester.startGesture(
+      center,
+      pointer: 10,
+      kind: PointerDeviceKind.touch,
+    );
+    await finger.moveBy(const Offset(30, 20));
+    await tester.pump();
+    final before = paintedRect(tester);
+    final pen = await tester.startGesture(
+      at(tester, 0.4, 0.4),
+      pointer: 20,
+      kind: PointerDeviceKind.stylus,
+    );
+    await finger.moveBy(const Offset(30, 40));
+    await tester.pump();
+    expect(paintedRect(tester), rectMoreOrLessEquals(before));
+    await pen.moveTo(at(tester, 0.6, 0.4));
+    await pen.up();
+    await finger.moveBy(const Offset(20, 10));
+    await tester.pump();
+    expect(paintedRect(tester), rectMoreOrLessEquals(before));
+    await finger.up();
+    await tester.pump();
+    final next = await tester.startGesture(
+      center,
+      pointer: 11,
+      kind: PointerDeviceKind.touch,
+    );
+    const delta = Offset(-40, 10);
+    await next.moveBy(delta);
+    await next.up();
+    await tester.pump();
+    expect(paintedRect(tester), rectMoreOrLessEquals(before.shift(delta)));
+    final saved = (await draft(store))['strokes'] as List;
+    expect(saved, hasLength(1));
+    expect(saved.single['points'], [
+      [0.4, 0.4, 1.0],
+      [0.6, 0.4, 1.0],
+    ]);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('폭 맞춤·전체 보기는 확대·이동을 초기화하고 획을 보존한다', (tester) async {
+    final store = MemoryStore();
+    final controller = await _controllerFor(_Gateway(), store);
+    await open(tester, controller);
+    await draw(tester, 0.4);
+    final saved = (await draft(store))['strokes'];
+    final canvas = tester.getRect(find.byKey(const Key('ink-canvas')));
+    final fit = find.byKey(const Key('editor-fit-width'));
+    for (final fitWidth in [true, false]) {
+      final before = paintedRect(tester);
+      await pinch(tester, scale: 2);
+      final finger = await tester.startGesture(
+        canvas.center,
+        pointer: 10,
+        kind: PointerDeviceKind.touch,
+      );
+      await finger.moveBy(const Offset(60, -30));
+      await tester.pump();
+      expect(paintedRect(tester).width / before.width, closeTo(2.0, 1e-9));
+      expect(paintedRect(tester).center, isNot(canvas.center));
+      await tester.tap(fit, pointer: 30);
+      await tester.pumpAndSettle();
+      final fitted = applyBoxFit(
+        fitWidth ? BoxFit.fitWidth : BoxFit.contain,
+        const Size(1000, 650),
+        canvas.size,
+      ).destination;
+      final reset = Rect.fromCenter(
+        center: canvas.center,
+        width: fitted.width,
+        height: fitted.height,
+      );
+      expect(paintedRect(tester), rectMoreOrLessEquals(reset));
+      expect(tester.widget<IconButton>(fit).isSelected, fitWidth);
+      expect(
+        tester.widget<IconButton>(fit).tooltip,
+        fitWidth ? '전체 보기 · 확대·이동 초기화' : '폭 맞춤 · 확대·이동 초기화',
+      );
+      // 복귀 전에 누르고 있던 접촉이 다음 이벤트에서 다시 화면을 밀지 않는다.
+      await finger.moveBy(const Offset(20, 10));
+      await finger.up();
+      await tester.pump();
+      expect(paintedRect(tester), rectMoreOrLessEquals(reset));
+      expect(paintedStrokes(tester), saved);
+      expect((await draft(store))['strokes'], saved);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
+  testWidgets('확대·축소·방향 이동 버튼 6개와 보기 조작 줄이 없다', (tester) async {
+    final controller = await _controllerFor(_Gateway(), MemoryStore());
+    await openOnTablet(tester, controller);
+    for (final id in [
+      'zoom-in',
+      'zoom-out',
+      'pan-left',
+      'pan-right',
+      'pan-up',
+      'pan-down',
+    ]) {
+      expect(find.byKey(Key('editor-$id')), findsNothing);
+    }
+    expect(find.byKey(const Key('editor-view-actions')), findsNothing);
+    expect(find.byKey(const Key('editor-fit-width')), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    controller.dispose();
+  });
+
   testWidgets('굵기 기본값은 보통이고 펜의 다음 획은 2·4·8dp로 저장된다', (tester) async {
     final store = MemoryStore();
     final controller = await _controllerFor(_Gateway(), store);
@@ -382,9 +733,7 @@ void main() {
     });
   }
 
-  testWidgets('866dp 화면(80dp 레일 포함)에서 도구·굵기 7개, 색·편집 6개, 보기 조작 7개가 세 줄에 놓인다', (
-    tester,
-  ) async {
+  testWidgets('866dp·80dp 레일에서 도구 7개와 편집 7개가 두 줄에 놓인다', (tester) async {
     final controller = await _controllerFor(_Gateway(), MemoryStore());
     await openOnTablet(tester, controller);
     final screenWidth =
@@ -399,8 +748,7 @@ void main() {
     final rowTops = <double>{};
     for (final row in [
       (key: 'editor-drawing-tools', ids: _editorLabels.keys.take(7)),
-      (key: 'editor-edit-actions', ids: _editorLabels.keys.skip(7).take(6)),
-      (key: 'editor-view-actions', ids: _editorLabels.keys.skip(13)),
+      (key: 'editor-edit-actions', ids: _editorLabels.keys.skip(7)),
     ]) {
       final wrap = find.byKey(Key(row.key));
       expect(tester.widget<Wrap>(wrap).children, hasLength(row.ids.length));
@@ -417,25 +765,20 @@ void main() {
         previousRight = bounds.right;
       }
     }
-    expect(rowTops, hasLength(3));
+    expect(rowTops, hasLength(2));
     final drawing = tester.getRect(
       find.byKey(const Key('editor-drawing-tools')),
     );
     final editing = tester.getRect(
       find.byKey(const Key('editor-edit-actions')),
     );
-    final actions = tester.getRect(
-      find.byKey(const Key('editor-view-actions')),
-    );
     expect(drawing.height, vgTapMin);
     expect(editing.height, vgTapMin);
-    expect(actions.height, vgTapMin);
     expect(editing.top - drawing.bottom, vgGapTap);
-    expect(actions.top - editing.bottom, vgGapTap);
     final localSave = find.widgetWithText(TextButton, '기기에 저장');
     final save = find.widgetWithText(FilledButton, '주석 저장');
     expect(tester.getRect(localSave).top, tester.getRect(save).top);
-    expect(tester.getRect(localSave).top, greaterThan(actions.bottom));
+    expect(tester.getRect(localSave).top, greaterThan(editing.bottom));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();

@@ -385,13 +385,12 @@ void main() {
         ])
           find.byKey(Key('editor-$id')),
         for (final label in ['기기에 저장', '주석 저장']) _button(label),
+        // 확대·축소·방향 이동은 손가락 제스처로 옮겼다(2026-09-15) — 버튼이 없다.
         for (final tooltip in [
           '마지막 획 되돌리기',
           '빨간 펜',
           '검정 펜',
           '파란 펜',
-          '확대',
-          '축소',
         ])
           find.byTooltip(tooltip),
       ];
