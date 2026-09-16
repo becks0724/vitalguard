@@ -611,6 +611,9 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
     hardhat_count: number;
     vest_count: number;
     person_count: number;
+    // ★ 09-16 구역 규칙(2단계)이 만든 두 키. 옛 게이트는 안 보내므로 옵셔널이다.
+    worker_count?: number;    // 구역 안이라 판정 대상인 사람
+    unknown_count?: number;   // 사람에게 안 붙은 head 등 판정불가
     engine?: string;   // ★ 09-15 엣지가 실제로 로드한 PPE 엔진 태그(구버전 서버면 없음)
   }>(aiApi, suffix, gateApi, cameraId);
 
@@ -639,7 +642,16 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
   //   ⚠️ 머리가 프레임 밖이면 head=0 이라 "위반 없음" 으로 샌다. 막으려면 사람 박스
   //      좌표가 필요해 엣지까지 가야 하므로 2단계로 미룬다(착용 356프레임 실측
   //      person 박스 상단 y 최소 88 · 상단 닿음 0% 라 당장 급하지 않다).
-  const persons = stats?.person_count ?? 0;
+  // ★ 09-16 「작업자」를 person_count 가 아니라 worker_count 로 센다.
+  //   person_count 는 화면에 잡힌 사람을 전부 센다 — 09-16 11:23 실측에서 프로젝터 영상 속
+  //   인물이 person 0.66 · head 0.89 로 잡혔고, 그것이 「작업자 3명」으로 화면에 나가고 있었다.
+  //   행인·포스터·현수막·차량 래핑이 같은 자리다. 셋 다 바닥에 발이 닿아 있지 않다.
+  //   worker_count 는 엣지가 판정 구역 안에 발이 있는 사람만 센 값이다.
+  //   ⚠ ?? 폴백은 **옛 게이트**(worker_count 를 화이트리스트에서 거르는 버전) 때문이다.
+  //     게이트를 올리기 전에 이 화면을 먼저 배포하면 화면이 조용히 옛 수로 떨어진다 —
+  //     「바꿨는데 안 바뀐다」가 여기서 난다. 배포 순서는 게이트 먼저다.
+  //     worker_count 가 0 일 때는 폴백이 안 걸린다(?? 는 undefined·null 만 받는다).
+  const persons = stats?.worker_count ?? stats?.person_count ?? 0;
   const ppeState = !stats ? "unknown" : violations > 0 ? "violation" : persons > 0 ? "clear" : "empty";
 
   return (
@@ -666,7 +678,7 @@ function PpeDetectionStrip({ aiApi, suffix = "3", gateApi = "", cameraId = "" }:
               ) : ppeState === "clear" ? (
                 <span
                   className="text-emerald-300"
-                  title={`작업자 ${persons}명에서 안전모 미착용이 검출되지 않았습니다. 안전모 자체를 확인한 것은 아닙니다.`}
+                  title={`판정 구역 안 작업자 ${persons}명에서 안전모 미착용이 검출되지 않았습니다. 구역 밖 사람과 화면·포스터 속 인물은 세지 않습니다. 안전모 자체를 확인한 것은 아닙니다.`}
                 >
                   위반 없음
                 </span>
