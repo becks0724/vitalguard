@@ -1,7 +1,23 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    // Properties.load(InputStream) 은 ISO-8859-1 로 읽어 보관 폴더명의 한글이 깨진다. Reader 로 UTF-8 을 준다.
+    keystorePropertiesFile.reader(Charsets.UTF_8).use { keystoreProperties.load(it) }
+}
+val hasReleaseSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword").all {
+    !keystoreProperties.getProperty(it).isNullOrBlank()
+}
+if (!hasReleaseSigning) {
+    // CI 와 다른 개발자 환경에서도 빌드할 수 있도록 디버그 서명으로 폴백한다.
+    logger.warn("key.properties 가 없거나 서명 값이 누락되어 release 를 디버그 키로 서명한다. 배포본으로 쓰지 마라.")
 }
 
 android {
@@ -31,11 +47,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                // 상대경로는 android/ 기준으로 풀고, 절대경로는 그대로 사용한다.
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // 같은 키로 서명해야 태블릿에서 앱을 지우지 않고 덮어쓰기 업데이트할 수 있어
+            // 초안과 로그인 상태가 보존된다.
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigning) "release" else "debug")
             // R8 이 안 쓰는 ML Kit 인식기를 '없는 클래스' 로 보고 빌드를 세운다. proguard-rules.pro 참조.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
