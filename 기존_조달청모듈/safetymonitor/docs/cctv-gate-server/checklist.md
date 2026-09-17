@@ -31,7 +31,18 @@
 - [x] tsc 새 오류 0(기준선 18줄 = framer-motion·uqr 미설치, 링크된 node_modules 한계) · lint 0 errors · test 2,013 중 실패 2 = 기준선 그대로 · 내 20건 통과
 - [ ] 로컬 E2E — ⛔ 이 맥에 DB 가 없다(.env.local DATABASE_URL 없음 · 프로덕션 DB 쓰기는 L-04 위반). 배포 뒤 라이브에서 실측한다
 
-## 5. 배포·젯슨 (사용자 지시 후) — 실행하지 않았다
+## 5. 배포·젯슨 — 사용자 결정 09-17 「① 내 것 먼저 · 오늘 배포·태블릿 실측」
+
+```
+합치는 순서   내 브랜치 먼저 main 에. 팀원 feat/newdb-cutover(ensureSchema 삭제 · DDL 파일)가 들어오면
+             cctv_frame 은 SQL 파일로, jti 는 recordCctvTicket 기록의 used_at 도장으로 옮긴다 — 제가 한다(1~2시간)
+astra        = 팀원(rlaxorhs77) 세션. 원격 브랜치 전수에 cctv-gate 흔적 0 — 팀원 쪽이 같은 걸 만든 흔적은 없다
+역할          push·배포 = [WATCH.APP](/deploy 는 그 세션에서 승인) · 젯슨 = [M/L](오늘 gopro_ppe_edge.py 를 쥐고 있음 ·
+             worker/unknown 1줄 포함) · 토큰 생성·검증 = [CCTV/ML]
+토큰 경로     젯슨 ~/.cctv_ingest_token(600 · 개행 없음) → 파이프로 Secret Manager CCTV_INGEST_TOKEN — 채팅을 거치지 않는다
+1차 범위      서버 배포 + Cloud Run env(앱이 서버 경로로) + 젯슨 push. 웹 빌드 인자는 duckdns 그대로(웹은 폴링만 바뀜)
+             → 태블릿 실측 통과 뒤 웹 빌드 인자 전환(2차)
+```
 
 ```
 Cloud Run env (배포 때 함께)
@@ -43,8 +54,8 @@ Cloud Run env (배포 때 함께)
            + 쿼리에 worker·unknown 추가 (없으면 관제웹 작업자 수가 person_count 로 떨어진다)
 ⚠ 순서 = 서버 배포(라우트가 먼저 있어야 젯슨 POST 가 404 가 아니다) → Cloud Run env → 젯슨
 ```
-- [ ] `CAM03_GATE=` 를 서버 자신으로 · Cloud Run env `CCTV_INGEST_TOKEN` 등록 — `/deploy` 필요
-- [ ] 젯슨 유닛 env 3줄 + 푸셔 헤더 1줄 → 재기동 (팀원/사용자 지시)
+- [ ] 서버 배포([WATCH.APP] · /deploy) + env `CAM03_GATE_API`·`CCTV_INGEST_TOKEN`(secret)·`CCTV_FRAME_STALE_SEC` — 웹 빌드 인자는 1차엔 duckdns 유지
+- [ ] 젯슨([M/L]) — drop-in `ingest.conf`(EnvironmentFile=~/.cctv_ingest.env · CCTV_BASE · PUSH_FPS=0.2) + 푸셔 Authorization 헤더 + 쿼리 worker·unknown → restart 한 번
 - [ ] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거
 
 ## 하지 말 것 (설계 §8)
