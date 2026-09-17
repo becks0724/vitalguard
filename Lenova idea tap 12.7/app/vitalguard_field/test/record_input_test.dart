@@ -15,10 +15,16 @@ class CapturingGateway extends MockGateway {
   Future<MediaComment> addComment(
     String token,
     String mediaId,
-    String body,
-  ) async {
+    String body, {
+    String? clientOperationId,
+  }) async {
     sent = body;
-    return super.addComment(token, mediaId, body);
+    return super.addComment(
+      token,
+      mediaId,
+      body,
+      clientOperationId: clientOperationId,
+    );
   }
 }
 

@@ -647,8 +647,19 @@ class FieldCoordinator extends FieldController {
   }
 
   @override
-  Future<MediaComment> comment(String mediaId, String text) =>
-      _authorized((t) => gateway.addComment(t, mediaId, text), writing: true);
+  Future<MediaComment> comment(
+    String mediaId,
+    String text, {
+    String? clientOperationId,
+  }) => _authorized(
+    (t) => gateway.addComment(
+      t,
+      mediaId,
+      text,
+      clientOperationId: clientOperationId,
+    ),
+    writing: true,
+  );
   @override
   Future<MediaComment> voiceComment(
     String mediaId,

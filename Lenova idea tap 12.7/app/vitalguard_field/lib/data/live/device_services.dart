@@ -5,31 +5,27 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 
 import '../contracts/field_contracts.dart';
+import 'local_store_paths.dart';
 
 class DeviceLocalStore implements LocalStore {
   static const channel = MethodChannel('vitalguard/local');
   Future<Directory>? _directory;
   Future<void> _pending = Future.value();
 
-  Future<File> _file(String account, String key) async {
-    if (account.isEmpty || key.isEmpty) throw ArgumentError('저장 소유자·키가 필요합니다');
+  Future<Directory> _entries(String account) async {
+    if (account.isEmpty) throw ArgumentError('저장 소유자가 필요합니다');
     final root = await (_directory ??= channel
         .invokeMethod<String>('dataPath')
         .then((p) => Directory(p!)));
-    String segments(String s) {
-      final encoded = base64Url.encode(utf8.encode(s));
-      return [
-        for (var i = 0; i < encoded.length; i += 80)
-          encoded.substring(
-            i,
-            i + 80 < encoded.length ? i + 80 : encoded.length,
-          ),
-      ].join('/');
-    }
-
-    return File(
-      '${root.path}/accounts/${segments(account)}/entries/${segments(key)}/value',
+    return Directory(
+      '${root.path}/accounts/${localStorePathSegments(account).join('/')}/entries',
     );
+  }
+
+  Future<File> _file(String account, String key) async {
+    final segments = localStorePathSegments(key);
+    final entries = await _entries(account);
+    return File('${entries.path}/${segments.join('/')}/value');
   }
 
   @override
@@ -64,6 +60,52 @@ class DeviceLocalStore implements LocalStore {
       await pending.rename(file.path);
     });
     _pending = operation;
+    return operation;
+  }
+
+  @override
+  Future<void> remove(String accountId, String key) {
+    final operation = _pending.catchError((_) {}).then<void>((_) async {
+      final entries = await _entries(accountId);
+      final file = await _file(accountId, key);
+      if (await file.exists()) await file.delete();
+      var parent = file.parent;
+      while (parent.path != entries.path && await parent.exists()) {
+        if (!await parent.list(followLinks: false).isEmpty) break;
+        await parent.delete();
+        parent = parent.parent;
+      }
+    });
+    _pending = operation;
+    return operation;
+  }
+
+  @override
+  Future<List<String>> keys(String accountId) {
+    final operation = _pending.catchError((_) {}).then<List<String>>((_) async {
+      final entries = await _entries(accountId);
+      if (!await entries.exists()) return [];
+      final result = <String>[];
+      await for (final entity in entries.list(
+        recursive: true,
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        final parts = entity.path
+            .substring(entries.path.length + 1)
+            .split(Platform.pathSeparator);
+        if (parts.last != 'value') continue;
+        final key = localStoreKeyFromSegments(
+          parts.sublist(0, parts.length - 1),
+        );
+        if (key != null) result.add(key);
+      }
+      return result..sort();
+    });
+    _pending = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
     return operation;
   }
 }

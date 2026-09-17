@@ -70,11 +70,18 @@ class LiveGateway
         if (!ids.contains(id) || results.containsKey(id)) {
           throw const FormatException('작업 조회 ID 불일치');
         }
-        results[id] = OperationCheck(switch (row['status']) {
+        final presence = switch (row['status']) {
           'registered' => OperationPresence.confirmed,
           'not_registered' => OperationPresence.absent,
           _ => throw const FormatException('알 수 없는 작업 상태'),
-        });
+        };
+        results[id] = OperationCheck(
+          presence,
+          receipt:
+              presence == OperationPresence.confirmed && row['id'] is String
+              ? {'id': row['id']}
+              : null,
+        );
       }
       return results;
     } on ApiFailure catch (error) {
@@ -578,18 +585,26 @@ class LiveGateway
   Future<MediaComment> addComment(
     String token,
     String mediaId,
-    String body,
-  ) async => MediaComment(
-    Map<String, dynamic>.from(
-      (await _json(
-            'POST',
-            '/api/calendar/media/comment',
-            token: token,
-            body: {'mediaId': mediaId, 'body': body},
-          ))['comment']
-          as Map,
-    ),
-  );
+    String body, {
+    String? clientOperationId,
+  }) async {
+    final json = await _json(
+      'POST',
+      '/api/calendar/media/comment',
+      token: token,
+      body: {
+        'mediaId': mediaId,
+        'body': body,
+        'clientOperationId': ?clientOperationId,
+      },
+    );
+    return MediaComment(
+      Map<String, dynamic>.from(json['comment'] as Map),
+      clientOperationId: json['clientOperationId'] as String?,
+      deduplicated: json['deduplicated'] == true,
+    );
+  }
+
   @override
   Future<MediaComment> voiceComment(
     String token,

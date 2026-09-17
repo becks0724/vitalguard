@@ -302,8 +302,19 @@ class MockGateway implements FieldGateway {
   Future<MediaComment> addComment(
     String token,
     String mediaId,
-    String body,
-  ) async {
+    String body, {
+    String? clientOperationId,
+  }) async {
+    final stored = clientOperationId == null
+        ? null
+        : _operationComments['$_user:$clientOperationId'];
+    if (stored != null) {
+      return MediaComment(
+        stored,
+        clientOperationId: clientOperationId,
+        deduplicated: true,
+      );
+    }
     final row = {
       'id': 'mock-comment-${++_id}',
       'media_id': mediaId,
@@ -316,7 +327,10 @@ class MockGateway implements FieldGateway {
       'updated_at': null,
     };
     _comments.add(row);
-    return MediaComment(row);
+    if (clientOperationId != null) {
+      _operationComments['$_user:$clientOperationId'] = row;
+    }
+    return MediaComment(row, clientOperationId: clientOperationId);
   }
 
   @override
@@ -385,6 +399,25 @@ class MockGateway implements FieldGateway {
     if (row?['audio_url'] != null) _images.remove(row!['audio_url']);
     _comments.removeWhere((c) => c['id'] == id);
   }
+}
+
+/// 기존 모의 화면의 수동 미등록 확인은 유지하고, 조회 기능은 명시적으로 선택한다.
+class MockLookupGateway extends MockGateway implements OperationLookupGateway {
+  @override
+  Future<Map<String, OperationCheck>> lookupOperations(
+    String token,
+    List<String> clientOperationIds,
+  ) async => {
+    for (final id in clientOperationIds)
+      id: switch (_operationMedia['$_user:$id'] ??
+          _operationComments['$_user:$id']) {
+        final row? => OperationCheck(
+          OperationPresence.confirmed,
+          receipt: {'id': row['id']},
+        ),
+        null => const OperationCheck(OperationPresence.absent),
+      },
+  };
 }
 
 class MockSpeechInput implements SpeechInput {

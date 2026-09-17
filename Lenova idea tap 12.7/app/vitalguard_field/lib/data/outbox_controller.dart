@@ -11,7 +11,7 @@ const localSavedLabel = '로컬 저장됨 · 서버 미전송';
 const serverCompletedLabel = '전송 완료 · 서버 확인됨';
 const mockCompletedLabel = '모의 전송 완료 — 실제 서버로 보내지 않았습니다';
 
-enum OutboxKind { photo, ink, voice }
+enum OutboxKind { photo, ink, voice, text }
 
 enum OutboxPhase {
   waiting,
@@ -56,6 +56,9 @@ class OutboxEntry {
     required this.mock,
     this.sourceKey,
     this.annotationDraftId,
+    this.dependsOn,
+    this.completedAt,
+    this.draftKeys = const [],
     this.phase = OutboxPhase.waiting,
     this.message,
     this.receipt,
@@ -69,6 +72,9 @@ class OutboxEntry {
   final DateTime createdAt;
   final bool mock;
   final String? sourceKey, annotationDraftId;
+  final String? dependsOn;
+  DateTime? completedAt;
+  final List<String> draftKeys;
   OutboxPhase phase;
   String? message;
   Map<String, dynamic>? receipt;
@@ -81,6 +87,7 @@ class OutboxEntry {
     OutboxKind.photo => '사진',
     OutboxKind.ink => '잉크본',
     OutboxKind.voice => '음성 댓글',
+    OutboxKind.text => '메모',
   };
   String get statusLabel => switch (phase) {
     OutboxPhase.waiting => '$localSavedLabel · 대기',
@@ -101,6 +108,9 @@ class OutboxEntry {
     'mock': mock,
     'sourceKey': sourceKey,
     'annotationDraftId': annotationDraftId,
+    'dependsOn': dependsOn,
+    'completedAt': completedAt?.toIso8601String(),
+    'draftKeys': draftKeys,
     'phase': phase.name,
     'message': message,
     'receipt': receipt,
@@ -118,6 +128,13 @@ class OutboxEntry {
     mock: json['mock'] as bool,
     sourceKey: json['sourceKey'] as String?,
     annotationDraftId: json['annotationDraftId'] as String?,
+    dependsOn: json['dependsOn'] as String?,
+    completedAt: json['completedAt'] == null
+        ? null
+        : DateTime.parse(json['completedAt'] as String),
+    draftKeys: List.unmodifiable(
+      List<String>.from(json['draftKeys'] as List? ?? const []),
+    ),
     phase: OutboxPhase.values.byName(json['phase'] as String),
     message: json['message'] as String?,
     receipt: json['receipt'] == null
@@ -137,6 +154,7 @@ class OutboxController extends ChangeNotifier {
   final FieldController field;
   final _accounts = <String, List<OutboxEntry>>{};
   final _inflight = <String>{};
+  final _bundleSends = <String, Future<void>>{};
   // 미등록 관측은 재전송 허가가 아니다. 명시적 retry에서만 한 번 소비한다.
   // 재시작·새 조회 뒤에는 다시 확인하도록 디스크에는 저장하지 않는다.
   final _retryableUncertain = <String>{};
@@ -207,6 +225,7 @@ class OutboxController extends ChangeNotifier {
     if (owner == null) return;
     try {
       await _serial(() => _load(owner));
+      if (owner == account) await purgeExpired();
       loadError = null;
     } catch (_) {
       loadError = '전송 원장을 읽지 못했습니다. 기기 파일은 보존됩니다. 다시 열어 주세요.';
@@ -241,10 +260,21 @@ class OutboxController extends ChangeNotifier {
     String? owner,
     String? sourceKey,
     String? annotationDraftId,
+    String? dependsOn,
+    List<String> draftKeys = const [],
     Uint8List? previewBytes,
   }) {
+    if (dependsOn != null &&
+        const [
+          'annotationOf',
+          'commentOf',
+          'mediaId',
+        ].any(fields.containsKey)) {
+      throw ArgumentError('딸린 항목의 서버 참조는 전송 시 원본 사진에서 채웁니다');
+    }
     final author = owner ?? account;
     final payload = Uint8List.fromList(bytes);
+    final drafts = List<String>.unmodifiable(draftKeys);
     final metadata = Map<String, String>.from(fields)
       ..remove('clientOperationId');
     return _serial(() async {
@@ -256,11 +286,26 @@ class OutboxController extends ChangeNotifier {
         throw const ApiFailure('로그인 상태가 바뀌었습니다', action: 'reauth');
       }
       final entries = _accounts[author]!;
+      if (dependsOn != null) {
+        final parent = entries
+            .where((e) => e.id == dependsOn && e.kind == OutboxKind.photo)
+            .firstOrNull;
+        if (parent != null) {
+          metadata.remove('siteId');
+          if (parent.siteId != null) metadata['siteId'] = parent.siteId!;
+        }
+      }
       // 편집기 링크 저장 직전 앱이 종료돼도 마지막 동일 스냅숏을 재사용한다.
       final previous = sourceKey == null
           ? null
           : entries
-                .where((e) => e.sourceKey == sourceKey && e.kind == kind)
+                .where(
+                  (e) =>
+                      e.sourceKey == sourceKey &&
+                      e.kind == kind &&
+                      e.dependsOn == dependsOn &&
+                      listEquals(e.draftKeys, drafts),
+                )
                 .lastOrNull;
       if (previous != null) {
         final oldFields = Map<String, String>.from(previous.fields)
@@ -284,6 +329,8 @@ class OutboxController extends ChangeNotifier {
         mock: field.isMock,
         sourceKey: sourceKey,
         annotationDraftId: annotationDraftId,
+        dependsOn: dependsOn,
+        draftKeys: drafts,
       );
       await field.local.writeBytes(author, entry.bytesKey, payload);
       if (previewBytes != null) {
@@ -302,6 +349,30 @@ class OutboxController extends ChangeNotifier {
   }
 
   OutboxEntry? entry(String? id) => items.where((e) => e.id == id).firstOrNull;
+
+  List<OutboxEntry> dependents(String photoId) {
+    final ordered =
+        items.indexed.where((e) => e.$2.dependsOn == photoId).toList()
+          ..sort((a, b) {
+            final time = a.$2.createdAt.compareTo(b.$2.createdAt);
+            return time == 0 ? a.$1.compareTo(b.$1) : time;
+          });
+    return List.unmodifiable(ordered.map((e) => e.$2));
+  }
+
+  OutboxEntry? parentOf(OutboxEntry item) {
+    final parent = entry(item.dependsOn);
+    return parent?.kind == OutboxKind.photo && parent?.owner == item.owner
+        ? parent
+        : null;
+  }
+
+  bool bundleCompleted(String photoId) {
+    final photo = entry(photoId);
+    return photo?.kind == OutboxKind.photo &&
+        photo?.phase == OutboxPhase.completed &&
+        dependents(photoId).every((e) => e.phase == OutboxPhase.completed);
+  }
 
   Future<void> _save(OutboxEntry entry) => _serial(() async {
     await _write(entry.owner, _accounts[entry.owner]!);
@@ -324,6 +395,25 @@ class OutboxController extends ChangeNotifier {
             !explicitUncertainRetry)) {
       return;
     }
+    final parent = parentOf(item);
+    if (item.dependsOn != null) {
+      if (parent == null) {
+        item.phase = OutboxPhase.failed;
+        item.message = '원본 사진 항목이 없습니다';
+        await _save(item);
+        return;
+      }
+      if (parent.phase != OutboxPhase.completed) {
+        await sendBundle(parent.id, retry: retry);
+        return;
+      }
+      if (parent.receipt?['id'] is! String) {
+        item.phase = OutboxPhase.waiting;
+        item.message = '원본 사진 결과 확인 후 전송됩니다';
+        await _save(item);
+        return;
+      }
+    }
     if (field.offline && !retry) {
       item.message = '오프라인입니다. 연결 후 전송 상태에서 전송/재시도를 눌러 주세요.';
       await _save(item);
@@ -339,6 +429,23 @@ class OutboxController extends ChangeNotifier {
         throw const ApiFailure('보관 파일을 읽을 수 없습니다', status: 400);
       }
       if (!_owned(item)) return;
+      final fields = item.kind == OutboxKind.ink && parent != null
+          ? <String, String>{
+              // 조회 영수증은 id만 올 수 있으므로 촬영 메타는 로컬 원본으로 보완한다.
+              ...annotationFields(
+                CalendarMedia({...fromOutbox(parent).json, ...parent.receipt!}),
+              ),
+              ...item.fields,
+              'clientOperationId': item.id,
+            }
+          : item.fields;
+      final mediaId =
+          parent?.receipt?['id'] as String? ??
+          item.fields[item.kind == OutboxKind.text ? 'mediaId' : 'commentOf'];
+      final text = item.kind == OutboxKind.text ? utf8.decode(bytes) : null;
+      if (item.kind == OutboxKind.text && mediaId == null) {
+        throw const ApiFailure('원본 사진 항목이 없습니다', status: 400);
+      }
       item.phase = OutboxPhase.sending;
       item.message = null;
       await _save(item); // sending을 저장하지 못하면 HTTP를 열지 않는다.
@@ -349,7 +456,7 @@ class OutboxController extends ChangeNotifier {
       submitted = true;
       if (item.kind == OutboxKind.voice) {
         final result = await field.voiceComment(
-          item.fields['commentOf']!,
+          mediaId!,
           bytes,
           durationMs: int.tryParse(item.fields['audioMs'] ?? ''),
           clientOperationId: item.id,
@@ -357,12 +464,21 @@ class OutboxController extends ChangeNotifier {
         );
         item.receipt = result.json;
         item.deduplicated = result.deduplicated;
+      } else if (item.kind == OutboxKind.text) {
+        final result = await field.comment(
+          mediaId!,
+          text!,
+          clientOperationId: item.id,
+        );
+        item.receipt = result.json;
+        item.deduplicated = result.deduplicated;
       } else {
-        final result = await field.publish(bytes, item.fields);
+        final result = await field.publish(bytes, fields);
         item.receipt = result.json;
         item.deduplicated = result.deduplicated;
       }
       item.phase = OutboxPhase.completed;
+      item.completedAt = DateTime.now();
       item.needsVerification = false;
       item.message = item.deduplicated ? '같은 작업이 이미 서버에 있습니다. 서버 확인됨.' : null;
     } catch (error) {
@@ -387,8 +503,9 @@ class OutboxController extends ChangeNotifier {
           : api?.message ?? '전송 상태를 확인하지 못했습니다. 서버 반영 여부를 먼저 확인해 주세요.';
     } finally {
       try {
-        await _cacheInkReceipt(item);
+        if (item.dependsOn == null) await _cacheInkReceipt(item);
         await _save(item);
+        await _cleanupCompletedItem(item);
       } catch (_) {
         item.message = '전송 상태의 기기 저장 실패 · 서버 반영 여부를 확인해 주세요.';
       }
@@ -396,6 +513,152 @@ class OutboxController extends ChangeNotifier {
       _notify();
     }
     // 자동 GET은 활성 O 화면이 전경에서만 시작한다. 여기서는 POST를 반복하지 않는다.
+  }
+
+  Future<void> sendBundle(String photoId, {bool retry = false}) {
+    final photo = entry(photoId);
+    if (photo == null || photo.kind != OutboxKind.photo || !_owned(photo)) {
+      return Future.value();
+    }
+    final key = '${photo.owner}:$photoId';
+    return _bundleSends[key] ??= _sendBundle(photo, retry: retry).whenComplete(
+      () {
+        _bundleSends.remove(key);
+      },
+    );
+  }
+
+  Future<void> _sendBundle(OutboxEntry photo, {required bool retry}) async {
+    if (photo.phase != OutboxPhase.completed) await send(photo, retry: retry);
+    if (photo.phase != OutboxPhase.completed) {
+      // 재로그인으로 화면 계정이 사라져도 원래 원장에 대기 이유는 남긴다.
+      await _serial(() async {
+        final entries = _accounts[photo.owner]!;
+        for (final item in entries.where((e) => e.dependsOn == photo.id)) {
+          if (item.phase != OutboxPhase.completed) {
+            item.message = '원본 사진 결과 확인 후 전송됩니다';
+          }
+        }
+        await _write(photo.owner, entries);
+        _notify();
+      });
+      return;
+    }
+    if (!_owned(photo)) return;
+    for (final item in dependents(photo.id)) {
+      if (!_owned(photo)) return;
+      if (item.phase != OutboxPhase.completed) await send(item, retry: retry);
+    }
+    await _cleanupBundle(photo.id);
+  }
+
+  Future<void> _removeFiles(OutboxEntry item) async {
+    for (final key in {
+      item.bytesKey,
+      'outbox-preview:${item.id}',
+      ...item.draftKeys,
+      if (item.receipt?['id'] is String) ...[
+        'photo:${item.receipt!['id']}',
+        'published:${item.receipt!['id']}',
+      ],
+    }) {
+      await field.local.remove(item.owner, key);
+    }
+  }
+
+  Future<void> _cleanupBundle(String photoId) {
+    final owner = account;
+    return _serial(() async {
+      if (owner == null || owner != account || !bundleCompleted(photoId)) {
+        return;
+      }
+      // 직전 완료 저장이 실패했어도 영수증을 영속화하기 전에는 파일을 지우지 않는다.
+      await _write(owner, _accounts[owner]!);
+      for (final item in [entry(photoId)!, ...dependents(photoId)]) {
+        await _removeFiles(item);
+      }
+    });
+  }
+
+  Future<void> _cleanupCompletedItem(OutboxEntry item) async {
+    if (!_owned(item) || item.phase != OutboxPhase.completed) return;
+    if (item.dependsOn != null) {
+      await _cleanupBundle(item.dependsOn!);
+    } else if (item.kind == OutboxKind.photo &&
+        dependents(item.id).isNotEmpty) {
+      await _cleanupBundle(item.id);
+    }
+    // 기존 단독 send(photo)는 유지한다. 사진만의 정리는 sendBundle로 선택한다.
+  }
+
+  Future<void> discard(String id) {
+    final owner = account;
+    return _serial(() async {
+      if (owner == null || owner != account) throw StateError('작성 계정이 필요합니다');
+      await _load(owner);
+      if (owner != account) throw StateError('로그인 상태가 바뀌었습니다');
+      final item = entry(id);
+      if (item == null) throw StateError('전송함 항목이 없습니다');
+      final targets = [
+        item,
+        if (item.kind == OutboxKind.photo) ...dependents(id),
+      ];
+      if (targets.any(
+        (e) =>
+            !_owned(e) ||
+            isBusy(e) ||
+            (e.phase != OutboxPhase.waiting && e.phase != OutboxPhase.failed),
+      )) {
+        throw StateError('대기 또는 실패한 항목만 삭제할 수 있습니다');
+      }
+      final busyKeys = targets.map((e) => '${e.owner}:${e.id}').toSet();
+      _inflight.addAll(busyKeys);
+      try {
+        for (final target in targets) {
+          await _removeFiles(target);
+        }
+        final next = _accounts[owner]!
+            .where((e) => !targets.contains(e))
+            .toList();
+        await _write(owner, next);
+        _accounts[owner] = next;
+        _retryableUncertain.removeAll(busyKeys);
+      } finally {
+        _inflight.removeAll(busyKeys);
+        _notify();
+      }
+    });
+  }
+
+  Future<int> purgeExpired({
+    Duration keep = const Duration(days: 7),
+    DateTime? now,
+  }) {
+    final owner = account;
+    final cutoff = now ?? DateTime.now();
+    return _serial(() async {
+      if (owner == null || owner != account) return 0;
+      await _load(owner);
+      if (owner != account) return 0;
+      final entries = _accounts[owner]!;
+      final expired = entries
+          .where(
+            (e) =>
+                e.phase == OutboxPhase.completed &&
+                !isBusy(e) &&
+                (e.completedAt ?? e.createdAt).add(keep).isBefore(cutoff),
+          )
+          .toList();
+      if (expired.isEmpty) return 0;
+      for (final item in expired) {
+        await _removeFiles(item);
+      }
+      final next = entries.where((e) => !expired.contains(e)).toList();
+      await _write(owner, next);
+      _accounts[owner] = next;
+      _notify();
+      return expired.length;
+    });
   }
 
   bool _checkable(OutboxEntry item) =>
@@ -485,7 +748,8 @@ class OutboxController extends ChangeNotifier {
             switch (result.presence) {
               case OperationPresence.confirmed:
                 item.phase = OutboxPhase.completed;
-                item.receipt = result.receipt;
+                item.completedAt = DateTime.now();
+                item.receipt ??= result.receipt;
                 item.deduplicated = result.deduplicated;
                 item.needsVerification = false;
                 item.message = '서버 재조회로 확인했습니다.';
@@ -524,9 +788,12 @@ class OutboxController extends ChangeNotifier {
         } finally {
           try {
             for (final item in batch) {
-              await _cacheInkReceipt(item);
+              if (item.dependsOn == null) await _cacheInkReceipt(item);
             }
             await _serial(() => _write(owner, _accounts[owner]!));
+            for (final item in batch) {
+              await _cleanupCompletedItem(item);
+            }
           } catch (_) {
             failed = true;
             _lookupMessage = '조회 상태의 기기 저장 실패 · 서버 상태를 다시 조회해 주세요.';

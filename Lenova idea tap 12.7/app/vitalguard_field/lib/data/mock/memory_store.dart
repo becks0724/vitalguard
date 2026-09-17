@@ -29,4 +29,13 @@ class MemoryStore implements LocalStore {
   Future<void> writeBytes(String accountId, String key, Uint8List bytes) async {
     (_data[accountId] ??= {})[key] = Uint8List.fromList(bytes);
   }
+
+  @override
+  Future<void> remove(String accountId, String key) async {
+    _data[accountId]?.remove(key);
+  }
+
+  @override
+  Future<List<String>> keys(String accountId) async =>
+      List.of(_data[accountId]?.keys ?? const <String>[]);
 }

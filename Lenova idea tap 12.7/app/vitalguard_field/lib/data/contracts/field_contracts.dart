@@ -55,7 +55,12 @@ abstract interface class FieldGateway {
     Uint8List bytes,
     Map<String, String> fields,
   );
-  Future<MediaComment> addComment(String token, String mediaId, String body);
+  Future<MediaComment> addComment(
+    String token,
+    String mediaId,
+    String body, {
+    String? clientOperationId,
+  });
   Future<MediaComment> voiceComment(
     String token,
     String mediaId,
@@ -85,6 +90,8 @@ abstract interface class LocalStore {
   Future<void> write(String accountId, String key, String value);
   Future<Uint8List?> readBytes(String accountId, String key);
   Future<void> writeBytes(String accountId, String key, Uint8List bytes);
+  Future<void> remove(String accountId, String key);
+  Future<List<String>> keys(String accountId);
 }
 
 abstract interface class SpeechInput {
@@ -140,7 +147,11 @@ abstract class FieldController extends ChangeNotifier {
   Future<void> loadPeriod(String from, String to);
   Future<Uint8List> photoBytes(CalendarMedia media);
   Future<CalendarMedia> publish(Uint8List bytes, Map<String, String> fields);
-  Future<MediaComment> comment(String mediaId, String text);
+  Future<MediaComment> comment(
+    String mediaId,
+    String text, {
+    String? clientOperationId,
+  });
   Future<MediaComment> voiceComment(
     String mediaId,
     Uint8List audio, {

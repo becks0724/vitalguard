@@ -1,4 +1,24 @@
+import '../outbox_controller.dart';
 import 'server_models.dart';
+
+CalendarMedia fromOutbox(OutboxEntry photo) {
+  if (photo.kind != OutboxKind.photo) throw ArgumentError('사진 항목이 필요합니다');
+  final fields = photo.fields;
+  return CalendarMedia({
+    'id': photo.id,
+    'date_key': fields['dateKey'],
+    'captured_at': fields['capturedAt'],
+    'title': fields['title'],
+    'site_id': fields['siteId'],
+    'ocr_text': fields['ocrText'],
+    'road_address': fields['roadAddress'],
+    'latitude': double.tryParse(fields['latitude'] ?? ''),
+    'longitude': double.tryParse(fields['longitude'] ?? ''),
+    'media_url': null,
+    'thumbnail_url': null,
+    'local': true,
+  });
+}
 
 const int maxInkUploadBytes = 2097152;
 
