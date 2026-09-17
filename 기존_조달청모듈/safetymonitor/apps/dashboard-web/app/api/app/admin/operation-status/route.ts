@@ -27,15 +27,18 @@ export async function GET(request: Request) {
 
   const operationIds = [...new Set(ids)];
   try {
-    const registered = new Set(await listOwnedAppMediaOperationIds(operationIds, gate.principal));
+    const registered = new Map((await listOwnedAppMediaOperationIds(operationIds, gate.principal))
+      .map((row) => [row.clientOperationId, row.id]));
     return NextResponse.json({
       ok: true,
-      operations: operationIds.map((clientOperationId) => ({
-        clientOperationId,
+      operations: operationIds.map((clientOperationId) => {
+        const id = registered.get(clientOperationId);
         // 미존재·타인 소유는 SQL에서 모두 빠져 동일한 응답이 된다.
         // 아직 POST가 미커밋인 경우도 not_registered다. 재전송 허가를 뜻하지 않는다.
-        status: registered.has(clientOperationId) ? "registered" : "not_registered",
-      })),
+        return id !== undefined
+          ? { clientOperationId, status: "registered", id }
+          : { clientOperationId, status: "not_registered" };
+      }),
     }, { headers });
   } catch {
     console.warn("[app-admin/operation-status] 작업 상태 조회 실패");

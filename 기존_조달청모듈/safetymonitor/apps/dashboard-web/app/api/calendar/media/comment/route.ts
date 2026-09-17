@@ -14,6 +14,7 @@ import { verifyBasicAuth, getSession } from "../../../../../lib/admin-auth";
 import { bearerToken, verifyAppJwt } from "../../../../../lib/app-jwt";
 import {
   insertCalendarMediaComment,
+  insertCalendarMediaCommentIdempotent,
   updateCalendarMediaComment,
   deleteCalendarMediaComment,
   findUserByUsername,
@@ -77,9 +78,9 @@ export async function POST(request: Request) {
   if (!authed(request)) {
     return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
   }
-  let body: { mediaId?: unknown; body?: unknown };
+  let body: { mediaId?: unknown; body?: unknown; clientOperationId?: unknown };
   try {
-    body = (await request.json()) as { mediaId?: unknown; body?: unknown };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ ok: false, error: "invalid JSON" }, { status: 400 });
   }
@@ -88,13 +89,30 @@ export async function POST(request: Request) {
   if (!mediaId || !text) {
     return NextResponse.json({ ok: false, error: "mediaId, body 필요" }, { status: 400 });
   }
+  const clientOperationId = body.clientOperationId;
+  // app-media와 동일하게 잘못 보낸 키를 누락으로 취급하거나 trim해서 저장하지 않는다.
+  if (clientOperationId !== undefined &&
+      (typeof clientOperationId !== "string" || !clientOperationId.trim() ||
+       clientOperationId !== clientOperationId.trim() || clientOperationId.length > 128)) {
+    return NextResponse.json({
+      ok: false, error: "clientOperationId는 앞뒤 공백 없는 1~128자 문자열 하나여야 합니다",
+    }, { status: 400 });
+  }
   const author = await resolveAuthor(request);
-  const comment = await insertCalendarMediaComment({
+  const input = {
     id: crypto.randomUUID(),
     mediaId,
     body: text,
     ...author,
-  });
+  };
+  if (clientOperationId !== undefined) {
+    const comment = await insertCalendarMediaCommentIdempotent({ ...input, clientOperationId });
+    if (!comment) {
+      return NextResponse.json({ ok: false, error: "다른 작성자의 작업 ID입니다" }, { status: 409 });
+    }
+    return NextResponse.json({ ok: true, comment, clientOperationId, deduplicated: comment.id !== input.id });
+  }
+  const comment = await insertCalendarMediaComment(input);
   return NextResponse.json({ ok: true, comment });
 }
 

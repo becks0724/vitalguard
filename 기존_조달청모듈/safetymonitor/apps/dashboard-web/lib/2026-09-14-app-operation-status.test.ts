@@ -57,13 +57,13 @@ function request(ids: string[], jwt: string | null = token(), extra: Record<stri
   });
 }
 
-type Kind = "photo" | "ink" | "voice";
+type Kind = "photo" | "ink" | "voice" | "text";
 type Media = {
-  client_operation_id: string; worker_id: string | null; media_type: string;
+  id: string; client_operation_id: string; worker_id: string | null; media_type: string;
   annotation_of: string | null; storage_key: string;
 };
 type Comment = {
-  client_operation_id: string; author_id: string | null; media_id: string; audio_storage_key: string;
+  id: string; client_operation_id: string; author_id: string | null; media_id: string; audio_storage_key: string | null;
 };
 type User = { username: string; role: string; status: string; admin_access: boolean };
 const internalError = "postgres://private-db:5432 calendar-media/private/key.m4a /private/server/path";
@@ -84,15 +84,15 @@ function harness() {
       return { rows: state.user?.username === params[0] ? [structuredClone(state.user)] : [] };
     }
     assert.equal(sql,
-      "SELECT client_operation_id FROM calendar_media WHERE client_operation_id = ANY($1::text[]) AND worker_id = $2 " +
-      "UNION ALL SELECT client_operation_id FROM calendar_media_comment WHERE client_operation_id = ANY($1::text[]) AND author_id = $3",
+      "SELECT client_operation_id, id FROM calendar_media WHERE client_operation_id = ANY($1::text[]) AND worker_id = $2 " +
+      "UNION ALL SELECT client_operation_id, id FROM calendar_media_comment WHERE client_operation_id = ANY($1::text[]) AND author_id = $3",
       "허용된 소유자 범위 SELECT만 실행한다");
     if (state.fail === "operations") throw new Error(internalError);
     const [ids, workerId, username] = params as [string[], string | null, string];
     const media = state.media.filter((row) => ids.includes(row.client_operation_id) &&
       workerId !== null && row.worker_id === workerId);
     const comments = state.comments.filter((row) => ids.includes(row.client_operation_id) && row.author_id === username);
-    return { rows: [...media, ...comments].map(({ client_operation_id }) => ({ client_operation_id })) };
+    return { rows: [...media, ...comments].map(({ client_operation_id, id }) => ({ client_operation_id, id })) };
   };
   const db = execute<{
     findUserByUsername: typeof findUserByUsername;
@@ -110,11 +110,11 @@ function harness() {
       "../../../../../lib/app-admin-auth": gate, "../../../../../lib/db": db,
     });
   function seed(kind: Kind, id: string, own = true) {
-    if (kind === "voice") {
-      state.comments.push({ client_operation_id: id, author_id: own ? "fixture-login" : "other-login",
-        media_id: "original-photo", audio_storage_key: "calendar-media/private/key.m4a" });
+    if (kind === "voice" || kind === "text") {
+      state.comments.push({ id: `server-${id}`, client_operation_id: id, author_id: own ? "fixture-login" : "other-login",
+        media_id: "original-photo", audio_storage_key: kind === "voice" ? "calendar-media/private/key.m4a" : null });
     } else {
-      state.media.push({ client_operation_id: id, worker_id: own ? "EMP-fixture" : "EMP-other",
+      state.media.push({ id: `server-${id}`, client_operation_id: id, worker_id: own ? "EMP-fixture" : "EMP-other",
         media_type: kind === "ink" ? "ink" : "image", annotation_of: kind === "ink" ? "original-photo" : null,
         storage_key: "calendar-media/private/key.jpg" });
     }
@@ -122,9 +122,9 @@ function harness() {
   return { ...route, state, seed, db };
 }
 function body(ids: string[], registered: string[] = []) {
-  return { ok: true, operations: ids.map((clientOperationId) => ({
-    clientOperationId, status: registered.includes(clientOperationId) ? "registered" : "not_registered",
-  })) };
+  return { ok: true, operations: ids.map((clientOperationId) => registered.includes(clientOperationId)
+    ? { clientOperationId, status: "registered", id: `server-${clientOperationId}` }
+    : { clientOperationId, status: "not_registered" }) };
 }
 
 test("인증 없으면 질의 검증보다 먼저 401, 권한·작업 DB 조회도 0회다", async () => {
@@ -160,8 +160,8 @@ for (const change of ["revoked", "rejected", "missing"] as const) {
   });
 }
 
-for (const kind of ["photo", "ink", "voice"] as const) {
-  test(`${kind}: 내 작업은 등록됨이고 저장 키·경로·전체 행은 반환하지 않는다`, async () => {
+for (const kind of ["photo", "ink", "voice", "text"] as const) {
+  test(`${kind}: 내 작업은 등록됨·행 ID만 반환하고 저장 키·경로·전체 행은 반환하지 않는다`, async () => {
     const h = harness();
     h.seed(kind, "own-operation");
     const response = await h.GET(request(["own-operation"]));
@@ -223,9 +223,40 @@ test("동일 ID가 양쪽 테이블에 있어도 자기 행만으로 판정하�
   const h = harness();
   h.seed("photo", "shared-id", false);
   h.seed("voice", "shared-id");
-  assert.deepEqual(await (await h.GET(request(["shared-id"]))).json(), body(["shared-id"], ["shared-id"]));
+  h.state.media[0]!.id = "hidden-photo-row";
+  h.state.comments[0]!.id = "owned-comment-row";
+  assert.deepEqual(await (await h.GET(request(["shared-id"]))).json(), {
+    ok: true, operations: [{ clientOperationId: "shared-id", status: "registered", id: "owned-comment-row" }],
+  });
   h.state.comments[0]!.author_id = "other-login";
   assert.deepEqual(await (await h.GET(request(["shared-id"]))).json(), body(["shared-id"]));
+});
+
+test("등록된 사진·잉크·음성·텍스트는 실제 행 ID와 일치하고 미등록·타인 작업에는 ID가 없다", async () => {
+  const h = harness();
+  h.seed("photo", "photo-operation"); h.seed("ink", "ink-operation");
+  h.seed("voice", "voice-operation"); h.seed("text", "text-operation");
+  h.seed("text", "hidden-operation", false);
+  h.state.media[0]!.id = "actual-photo-row";
+  h.state.media[1]!.id = "actual-ink-row";
+  h.state.comments[0]!.id = "actual-voice-row";
+  h.state.comments[1]!.id = "actual-text-row";
+  const response = await h.GET(request([
+    "photo-operation", "ink-operation", "voice-operation", "text-operation", "missing", "hidden-operation",
+  ]));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ok: true,
+    operations: [
+      { clientOperationId: "photo-operation", status: "registered", id: h.state.media[0]!.id },
+      { clientOperationId: "ink-operation", status: "registered", id: h.state.media[1]!.id },
+      { clientOperationId: "voice-operation", status: "registered", id: h.state.comments[0]!.id },
+      { clientOperationId: "text-operation", status: "registered", id: h.state.comments[1]!.id },
+      { clientOperationId: "missing", status: "not_registered" },
+      { clientOperationId: "hidden-operation", status: "not_registered" },
+    ],
+  });
+  assert.equal(h.state.schemaAttempts, 0);
 });
 
 test("사번 없는 계정은 NULL·다른 사번 미디어를 못 보지만 자기 음성은 조회한다", async () => {

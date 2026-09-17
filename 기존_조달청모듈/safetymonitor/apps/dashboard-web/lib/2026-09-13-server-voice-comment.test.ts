@@ -13,6 +13,7 @@ import * as mediaScope from "./media-scope";
 import type {
   CalendarMediaCommentRow, CalendarMediaListRow,
   deleteCalendarMediaComment, insertCalendarMediaComment, listCommentsForMedia, updateCalendarMediaComment,
+  insertCalendarMediaCommentIdempotent,
 } from "./db";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -20,6 +21,7 @@ const dbSource = readFileSync(join(ROOT, "lib/db.ts"), "utf8");
 const ast = ts.createSourceFile("db.ts", dbSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
 const names = new Set([
   "buildInsert", "insertCalendarMediaComment", "listCommentsForMedia",
+  "insertCalendarMediaCommentIdempotent",
   "deleteCalendarMediaComment", "updateCalendarMediaComment",
 ]);
 const selected = ast.statements.filter((node) =>
@@ -42,6 +44,7 @@ function execute<T>(source: string, globals: Record<string, unknown>): T {
 
 type CommentDb = {
   insertCalendarMediaComment: typeof insertCalendarMediaComment;
+  insertCalendarMediaCommentIdempotent: typeof insertCalendarMediaCommentIdempotent;
   listCommentsForMedia: typeof listCommentsForMedia;
   deleteCalendarMediaComment: typeof deleteCalendarMediaComment;
   updateCalendarMediaComment: typeof updateCalendarMediaComment;
@@ -76,6 +79,7 @@ function harness() {
     deleteFailure: false,
     signFailures: new Set<string>(),
     dbFailure: null as "insert" | "delete" | null,
+    insertFailure: null as Error | null,
     warnings: [] as string[],
     clock: 0,
   };
@@ -84,6 +88,7 @@ function harness() {
     const insert = sql.match(/^INSERT INTO calendar_media_comment \(([^)]+)\)/);
     if (insert) {
       if (state.dbFailure === "insert") throw new Error("검증용 DB 등록 실패");
+      if (state.insertFailure) throw state.insertFailure;
       assert.match(sql, /RETURNING \*$/);
       const columns = insert[1]!.split(", ");
       assert.equal(columns.length, params.length);
@@ -92,9 +97,18 @@ function harness() {
         ...Object.fromEntries(columns.map((column, i) => [column, params[i]])),
         created_at: new Date(Date.UTC(2026, 8, 13, 0, 0, state.clock++)).toISOString(), updated_at: null,
       } as CalendarMediaCommentRow;
+      if (row.client_operation_id !== null && state.comments.some((c) => c.client_operation_id === row.client_operation_id)) {
+        throw Object.assign(new Error("검증용 작업 키 중복"), {
+          code: "23505", constraint: "idx_calmedia_comment_client_operation_id",
+        });
+      }
       state.comments.push(row);
       state.events.push("댓글 등록");
       return { rows: [structuredClone(row)], rowCount: 1 };
+    }
+    if (sql === "SELECT * FROM calendar_media_comment WHERE client_operation_id = $1") {
+      const rows = state.comments.filter((c) => c.client_operation_id === params[0]);
+      return { rows: structuredClone(rows), rowCount: rows.length };
     }
     if (sql.startsWith("SELECT * FROM calendar_media_comment")) {
       assert.match(sql, /WHERE media_id = ANY\(\$1\)\s+ORDER BY created_at ASC/);
@@ -202,9 +216,9 @@ function audioRequest(options: {
   for (const [key, value] of Object.entries(options.fields ?? {})) form.set(key, value);
   return new Request("https://fixture.test/api/app-media", { method: "POST", body: form });
 }
-function textRequest(body = " 사진 확인했습니다 ") {
+function textRequest(body = " 사진 확인했습니다 ", extra: Record<string, unknown> = {}) {
   return new Request("https://fixture.test/api/calendar/media/comment", { method: "POST",
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mediaId: "photo-id", body }) });
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mediaId: "photo-id", body, ...extra }) });
 }
 function deletion(id: string) {
   return new Request(`https://fixture.test/api/calendar/media/comment?id=${id}`, { method: "DELETE" });
@@ -444,6 +458,156 @@ test("글 댓글 등록·조회·수정은 JWT·관제 세션·Basic에서 기�
     assert.deepEqual(await patch.json(), { ok: true });
     assert.equal(h.state.comments[0]?.body, "수정된 글");
   }
+});
+
+for (const auth of ["jwt", "session", "basic"] as const) {
+  test(`글 댓글 ${auth}: 같은 작업 키 재전송은 200·같은 행을 반환하고 덮어쓰지 않는다`, async () => {
+    const h = harness();
+    h.state.auth = auth;
+    const first = await h.comment.POST(textRequest(" 첫 글 ", { clientOperationId: "text-operation" }));
+    const second = await h.comment.POST(textRequest("바꾸면 안 됨", {
+      clientOperationId: "text-operation", mediaId: "other-photo",
+    }));
+    assert.deepEqual([first.status, second.status], [200, 200]);
+    const a = await first.json();
+    const b = await second.json();
+    const stored = h.state.comments[0];
+    assert.ok(stored);
+    assert.deepEqual(a, { ok: true, comment: stored, clientOperationId: "text-operation", deduplicated: false });
+    assert.deepEqual(b, { ...a, deduplicated: true });
+    assert.equal(a.comment.id, b.comment.id);
+    assert.equal(a.comment.body, "첫 글");
+    assert.equal(a.comment.media_id, "photo-id");
+    assert.equal(a.comment.client_operation_id, "text-operation");
+    assert.equal(a.comment.author_id, auth === "basic" ? "admin" : "officer-login");
+    assert.equal(h.state.comments.length, 1);
+    assert.equal(h.state.queries.filter(({ sql }) => sql.startsWith("INSERT")).length, 2);
+    assert.equal(h.state.queries.filter(({ sql }) => sql.startsWith("SELECT")).length, 1);
+    assert.deepEqual(h.state.puts, []);
+  });
+}
+
+test("글 댓글: 동시에 같은 키를 보내도 한 행과 같은 댓글 ID로 응답한다", async () => {
+  const h = harness();
+  const responses = await Promise.all([
+    h.comment.POST(textRequest("첫 요청", { clientOperationId: "concurrent-text" })),
+    h.comment.POST(textRequest("경쟁 요청", { clientOperationId: "concurrent-text" })),
+  ]);
+  assert.deepEqual(responses.map((r) => r.status), [200, 200]);
+  const bodies = await Promise.all(responses.map((r) => r.json()));
+  assert.equal(bodies[0].comment.id, bodies[1].comment.id);
+  assert.deepEqual(bodies.map((b) => b.deduplicated).sort(), [false, true]);
+  assert.equal(h.state.comments.length, 1);
+});
+
+test("글 댓글: 키 없이 두 번 보내면 기존 응답 형태로 서로 다른 두 행을 만든다", async () => {
+  for (const auth of ["jwt", "session", "basic"] as const) {
+    const h = harness();
+    h.state.auth = auth;
+    for (let i = 0; i < 2; i++) {
+      const response = await h.comment.POST(textRequest());
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { ok: true, comment: h.state.comments[i] });
+    }
+    assert.equal(h.state.comments.length, 2);
+    assert.notEqual(h.state.comments[0]!.id, h.state.comments[1]!.id);
+    assert.ok(h.state.comments.every((c) => c.client_operation_id === null));
+    assert.equal(h.state.queries.length, 2);
+    assert.ok(h.state.queries.every(({ sql }) => sql.startsWith("INSERT")));
+  }
+});
+
+for (const [label, clientOperationId] of [
+  ["빈 문자열", ""], ["공백만", " "], ["앞 공백", " id"], ["뒤 공백", "id "], ["탭·개행", "\tid\n"],
+  ["129자", "x".repeat(129)], ["null", null], ["숫자", 1], ["불리언", true], ["배열", ["id"]], ["객체", { id: "id" }],
+] as const) {
+  test(`글 댓글 작업 키 형식(${label}): 400이며 작성자 조회·삽입을 하지 않는다`, async () => {
+    const h = harness();
+    const response = await h.comment.POST(textRequest("내용", { clientOperationId }));
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      ok: false, error: "clientOperationId는 앞뒤 공백 없는 1~128자 문자열 하나여야 합니다",
+    });
+    assert.equal(h.state.comments.length, 0);
+    assert.deepEqual(h.state.queries, []);
+    assert.deepEqual(h.state.profiles, []);
+  });
+}
+
+test("글 댓글: 1자·128자·UUID·내부 공백·예약 문자를 키 변환 없이 저장·회신한다", async () => {
+  const h = harness();
+  for (const clientOperationId of ["x", "x".repeat(128), crypto.randomUUID(), "internal space", "한글/+?&=%,id", "x' OR 1=1 --"]) {
+    const response = await h.comment.POST(textRequest("내용", { clientOperationId }));
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.clientOperationId, clientOperationId);
+    assert.equal(body.comment.client_operation_id, clientOperationId);
+    assert.equal(body.deduplicated, false);
+  }
+  assert.equal(h.state.comments.length, 6);
+});
+
+for (const [auth, role] of [
+  ["jwt", "worker"], ["jwt", "admin"], ["jwt", "owner"],
+  ["session", "admin"], ["session", "owner"], ["basic", "owner"],
+] as const) {
+  test(`글 댓글 ${auth}·${role}: 타인 키는 신원을 위조해도 409이며 기존 행을 노출하지 않는다`, async () => {
+    const h = harness();
+    h.state.auth = auth;
+    h.state.role = role;
+    await h.db.insertCalendarMediaComment({ id: "private-comment", mediaId: "private-photo", body: "비공개 내용",
+      clientOperationId: "taken-operation", authorId: "other-login" });
+    const beforeRows = structuredClone(h.state.comments);
+    const response = await h.comment.POST(textRequest("내용", {
+      clientOperationId: "taken-operation", authorId: "other-login", author_id: "other-login", role: "owner",
+    }));
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: "다른 작성자의 작업 ID입니다" });
+    assert.deepEqual(h.state.comments, beforeRows);
+  });
+}
+
+test("글 댓글: 사번·NULL·공백 다른 작성자는 로그인 username 소유로 인정하지 않는다", async () => {
+  for (const authorId of ["EMP-officer-login", null, " officer-login", "officer-login "]) {
+    const h = harness();
+    await h.db.insertCalendarMediaComment({ id: "existing", mediaId: "photo-id", body: "기존 내용",
+      clientOperationId: "taken-operation", authorId });
+    assert.equal((await h.comment.POST(textRequest("내용", { clientOperationId: "taken-operation" }))).status, 409);
+    assert.equal(h.state.comments.length, 1);
+  }
+});
+
+test("글 댓글: 무인증 요청은 키 검증보다 먼저 401로 거부한다", async () => {
+  const h = harness();
+  h.state.auth = "none";
+  assert.equal((await h.comment.POST(textRequest("내용", { clientOperationId: "" }))).status, 401);
+  assert.deepEqual(h.state.queries, []);
+});
+
+test("글 댓글: PK 중복·일반 DB 오류는 같은 작업 행이 있어도 성공으로 숨기지 않는다", async () => {
+  for (const extra of [{ code: "23505", constraint: "calendar_media_comment_pkey" }, { code: "08006" }]) {
+    const h = harness();
+    await h.comment.POST(textRequest("기존 내용", { clientOperationId: "operation" }));
+    const failure = Object.assign(new Error("검증용 DB 오류"), extra);
+    h.state.insertFailure = failure;
+    await assert.rejects(h.comment.POST(textRequest("내용", { clientOperationId: "operation" })), (error) => error === failure);
+    assert.equal(h.state.comments.length, 1);
+    assert.equal(h.state.queries.filter(({ sql }) => sql.startsWith("SELECT")).length, 0);
+  }
+});
+
+test("글 댓글: 충돌 행이 사라졌으면 원래 오류를 전달하고 중복 성공·409로 숨기지 않는다", async () => {
+  const h = harness();
+  const failure = Object.assign(new Error("검증용 삭제 경쟁"), {
+    code: "23505", constraint: "idx_calmedia_comment_client_operation_id",
+  });
+  h.state.insertFailure = failure;
+  await assert.rejects(h.comment.POST(textRequest("내용", { clientOperationId: "gone" })), (error) => error === failure);
+  assert.equal(h.state.comments.length, 0);
+  assert.equal(h.state.queries.length, 2);
+  // 키가 없으면 23505 복구 조회도 추가하지 않는다.
+  await assert.rejects(h.comment.POST(textRequest()), (error) => error === failure);
+  assert.equal(h.state.queries.length, 3);
 });
 
 test("글 댓글의 빈 글·잘못된 JSON·무인증 거부는 그대로다", async () => {

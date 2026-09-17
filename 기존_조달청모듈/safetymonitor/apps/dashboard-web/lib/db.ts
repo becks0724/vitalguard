@@ -4871,22 +4871,22 @@ export async function getCalendarMediaById(id: string): Promise<CalendarMediaRow
 }
 
 // N-4: 작업 ID 존재 여부는 업로드 당시의 귀속과 함께 조회한다.
-// 사진·잉크는 JWT workerId, 음성 댓글은 JWT sub(username)가 저장된다.
+// 사진·잉크는 JWT workerId, 텍스트·음성 댓글은 JWT sub(username)가 저장된다.
 // owner도 본인 행만 허용한다. NULL 사번은 누구의 미디어 소유권도 증명하지 않는다.
 // q()는 ensureSchema()를 호출하므로 쓰지 않는다. 이 조회는 DDL·업로드도 유발하지 않는다.
 export async function listOwnedAppMediaOperationIds(
   operationIds: string[],
   owner: { workerId: string | null; username: string },
-): Promise<string[]> {
-  const { rows } = await getPool().query<{ client_operation_id: string }>(
-    `SELECT client_operation_id FROM calendar_media
+): Promise<{ clientOperationId: string; id: string }[]> {
+  const { rows } = await getPool().query<{ client_operation_id: string; id: string }>(
+    `SELECT client_operation_id, id FROM calendar_media
       WHERE client_operation_id = ANY($1::text[]) AND worker_id = $2
      UNION ALL
-     SELECT client_operation_id FROM calendar_media_comment
+     SELECT client_operation_id, id FROM calendar_media_comment
       WHERE client_operation_id = ANY($1::text[]) AND author_id = $3`,
     [operationIds, owner.workerId || null, owner.username],
   );
-  return rows.map((row) => row.client_operation_id);
+  return rows.map((row) => ({ clientOperationId: row.client_operation_id, id: row.id }));
 }
 
 // N-3: INSERT가 유일키를 확보한 요청만 PUT한다. 경쟁 요청은 PostgreSQL에서 대기한 뒤
@@ -5037,6 +5037,27 @@ export async function insertCalendarMediaComment(input: {
   }
   const { rows } = await q<CalendarMediaCommentRow>(text, values);
   return rows[0]!;
+}
+
+// 텍스트 댓글은 업로드 트랜잭션 없이 INSERT하며, 작업 키 충돌만 기존 행으로 복구한다.
+// listOwnedAppMediaOperationIds와 같은 author_id=username 기준이다. owner도 예외가 없다.
+// 타인 소유면 null을 돌려 라우트가 행을 노출하지 않고 409로 거부하게 한다.
+export async function insertCalendarMediaCommentIdempotent(
+  input: Parameters<typeof insertCalendarMediaComment>[0] & { clientOperationId: string; authorId: string },
+): Promise<CalendarMediaCommentRow | null> {
+  try {
+    return await insertCalendarMediaComment(input);
+  } catch (e) {
+    const error = e as { code?: string; constraint?: string } | null;
+    if (error?.code !== "23505" || error.constraint !== "idx_calmedia_comment_client_operation_id") throw e;
+    const { rows } = await q<CalendarMediaCommentRow>(
+      "SELECT * FROM calendar_media_comment WHERE client_operation_id = $1", [input.clientOperationId],
+    );
+    const existing = rows[0];
+    // 삭제 경쟁 등으로 기존 행을 못 찾으면 성공이나 소유 충돌로 숨기지 않는다.
+    if (!existing) throw e;
+    return existing.author_id === input.authorId ? existing : null;
+  }
 }
 
 export async function updateCalendarMediaComment(
