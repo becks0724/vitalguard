@@ -56,7 +56,8 @@ Cloud Run env (배포 때 함께)
 ```
 - [x] 서버 배포([WATCH.APP] · /deploy) + env `CAM03_GATE_API`·`CCTV_INGEST_TOKEN`(secret)·`CCTV_FRAME_STALE_SEC` — 웹 빌드 인자는 1차엔 duckdns 유지 → **00390-hfj(이미지 127b880e) → 00391-5q8(env 33) · 아카이브 2012/2012**
 - [x] 젯슨([CCTV/ML] 실행 · [M/L] 점검) — drop-in `ingest.conf`(EnvironmentFile=~/.cctv_ingest.env · CCTV_BASE · PUSH_FPS=0.2) + 푸셔 Authorization 헤더 + 쿼리 worker·unknown·zone → restart ①(코드 · `code_sha 12c1413e9728` · 통제군 pushed 0) → ②(env · pushed 8/45초 · push error 0) · 커밋 `1f3987d2`
-- [ ] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거 — **사용자 차례**(09-17 10:20 부터 가능)
+- [x] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거 — **09-17 11:30 통과**(사용자 육안 · 서버 stream3 200 ×20 · jti 0→20 · 게이트에 태블릿 요청 0)
+- [ ] **관제웹 회귀 수리 배포 `12024ba8`** — 09-16 폴링 전환이 게이트 경로까지 5초 1장으로 만듦(사용자 보고 「멈춤 화면」) · content-type 으로 SNAPSHOT/STREAM 분기 · 배포 전까지 웹은 5초 1장
 - [ ] 서버가 `zone` 을 받는 커밋(`zone_on`) 다음 배포에 싣기 — 그 전까지 DB stats 에 zone 없음(젯슨은 이미 보냄)
 - [ ] 09-18 `pg_stat_user_tables` 로 `cctv_frame` n_dead_tup·autovacuum 확인(§7-1)
 
