@@ -1175,6 +1175,17 @@ async function initSchema(): Promise<void> {
       PRIMARY KEY (username, site_id)
     );
 
+    -- 기본 현장·카메라 등록(멱등) — 서버가 카메라의 존재를 알아야 티켓을 발급한다.
+    -- 프런트 상수 배열에만 있고 여기 없으면 cctvPermissionFor 가 "unknown camera" 로 거부한다.
+    -- ★ 09-17 CAM-01 추가(TP-Link VIGI C340S · 이더넷). CAM-03 은 09-09 에 수동으로 들어가 있었고,
+    --   여기 함께 적어 재현 가능하게 한다(ON CONFLICT DO NOTHING 이라 기존 행은 안 건드린다).
+    INSERT INTO cctv_site (site_id, label, open_to_approved) VALUES ('SITE-01', '시험 현장', TRUE)
+      ON CONFLICT (site_id) DO NOTHING;
+    INSERT INTO cctv_camera (camera_id, site_id, label) VALUES
+      ('CAM-01', 'SITE-01', '사무실(IP캠 · TP-Link VIGI)'),
+      ('CAM-03', 'SITE-01', '현장 작업구역(GoPro)')
+      ON CONFLICT (camera_id) DO NOTHING;
+
     -- 티켓 발급 감사 — 누가 언제 어느 카메라 티켓을 받았고, 거절됐다면 왜인지.
     -- 영상 접근은 사후에 "누가 봤나"를 답할 수 있어야 한다.
     CREATE TABLE IF NOT EXISTS cctv_ticket_audit (

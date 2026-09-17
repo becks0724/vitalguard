@@ -52,9 +52,13 @@ test("게이트 주소는 CAM-03 만 쓴다 — 전역 주소를 덮지 않는�
   const cam01 = quad.match(/\{ id: "CAM-01",[^}]*\}/)?.[0] ?? "";
   const cam02 = quad.match(/\{ id: "CAM-02",[^}]*\}/)?.[0] ?? "";
   for (const [name, line] of [["CAM-01", cam01], ["CAM-02", cam02]] as const) {
-    assert.ok(line.includes("aiApi: AI_CCTV_API"), `${name} 은 기존 주소를 유지해야 한다`);
-    assert.ok(!line.includes("gateApi"), `${name} 에 게이트를 붙이면 젯슨에 없는 경로를 부른다`);
+    assert.ok(line.includes("aiApi: AI_CCTV_API"), `${name} 은 기존 주소를 폴백으로 유지해야 한다`);
   }
+  // ★ 09-17 전제가 바뀌었다 — 이 단언의 원래 이유는 「젯슨에 그 경로가 없다」였는데,
+  //   그날 게이트에 stream1·stats1·connection1 을 냈다(cctv-ai/edge/cctv_gate.py 의 CAMS · GATE_UPSTREAM_1).
+  //   CAM-01 은 이제 게이트를 쓰고, CAM-02(낙상)는 여전히 젯슨에 경로가 없어 금지 그대로다.
+  assert.ok(cam01.includes("gateApi"), "CAM-01 은 게이트를 쓴다 — 09-17 젯슨에 stream1·stats1 을 냈다");
+  assert.ok(!cam02.includes("gateApi"), "CAM-02 에 게이트를 붙이면 젯슨에 없는 /cctv/stream2 를 부른다");
 });
 
 test("게이트 미설정이면 종전 경로 그대로 — 배선만으로 지금이 깨지지 않는다", () => {
