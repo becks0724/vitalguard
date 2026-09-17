@@ -49,13 +49,17 @@ test("stats3 — 게이트와 같은 화이트리스트(publicStats)로만 내�
   assert.doesNotMatch(src, /json\(frame\.stats/, "stats 를 통째로 내보내지 않는다 — publicStats 를 거치지 않은 직접 반환 금지");
 });
 
-test("CctvGateStream — 장시간 MJPEG 가 아니라 5초 스냅샷 폴링이고, multipart 는 첫 프레임만 읽는다", () => {
+test("CctvGateStream — 응답 형식으로 두 상류를 가른다: image/jpeg 는 5초 스냅샷 폴링, multipart(젯슨 게이트)는 표 만료까지 흘려 받는다", () => {
   const src = read("app/components/CctvGateStream.tsx");
-  assert.match(src, /const POLL_MS = 5000/);
-  assert.match(src, /FIRST_FRAME_ONLY/);
-  assert.match(src, /reader\.cancel\(\)/, "첫 프레임 뒤 스트림을 닫는다");
-  assert.doesNotMatch(src, /RENEW_MARGIN_MS/, "표 만료까지 연결을 붙들던 옛 방식이 남아 있으면 안 된다");
+  assert.match(src, /const POLL_MS = 5000/, "서버 중계는 5초 폴링(설계 §5-2)");
+  assert.match(src, /const RENEW_MARGIN_MS/, "게이트 경로는 표 만료 직전까지 연결을 유지한다 — 09-17 회귀(5초에 한 장) 재발 방지");
+  assert.match(src, /SNAPSHOT_MODE/);
+  assert.match(src, /STREAM_MODE/);
+  assert.match(src, /startsWith\("image\/jpeg"\)/, "형식 판정은 content-type 으로 한다");
+  assert.match(src, /drainMultipart\(/, "multipart 는 끝까지 읽는다");
+  assert.doesNotMatch(src, /FIRST_FRAME_ONLY|readFirstJpeg/, "첫 프레임만 읽고 끊는 방식이 남으면 게이트 영상이 다시 5초에 한 장이 된다");
   assert.match(src, /res\.status === 503/, "stale 을 별도 상태로 그린다");
+  assert.match(src, /reader\.cancel\(\)/, "끝나면 스트림을 닫는다");
 });
 
 test("db — cctv_frame · cctv_ticket_jti 가 ensureSchema(initSchema) 안에 있다 (정본은 ensureSchema · DDL 파일 아님)", () => {
