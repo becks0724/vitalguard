@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 
 import { getSession, verifyUserAdmin } from "../../../../lib/admin-auth";
 import {
+  assignSite,
   deleteUser,
+  getSite,
+  listAssignedSites,
   listUsers,
   setUserStatus,
   setUserAdminAccess,
@@ -11,6 +14,7 @@ import {
   setUserSiteOfficer,
   setUserOrgType,
   disableTotp,
+  unassignSite,
   type UserRow,
 } from "../../../../lib/db";
 import { isOrgType } from "../../../../lib/org-type";
@@ -68,10 +72,10 @@ export async function POST(request: Request) {
   }
   const { id, action } = (body ?? {}) as { id?: unknown; action?: unknown };
 
-  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "set_profile", "set_org_type", "reset_totp"];
+  const ACTIONS = ["approve", "reject", "delete", "grant_admin", "revoke_admin", "grant_officer", "revoke_officer", "assign_site", "unassign_site", "set_profile", "set_org_type", "reset_totp"];
   if (typeof id !== "number" || typeof action !== "string" || !ACTIONS.includes(action)) {
     return NextResponse.json(
-      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|set_profile|set_org_type|reset_totp) 이 필요합니다." },
+      { ok: false, error: "id(number) 와 action(approve|reject|delete|grant_admin|revoke_admin|grant_officer|revoke_officer|assign_site|unassign_site|set_profile|set_org_type|reset_totp) 이 필요합니다." },
       { status: 400 },
     );
   }
@@ -136,6 +140,30 @@ export async function POST(request: Request) {
       );
     }
     return NextResponse.json({ ok: true, user: publicUser(updated) });
+  }
+
+  // 현장 배정·해제 — 담당관 부여와 같은 관리 권한 게이트를 거친다(자가취득 불가).
+  if (action === "assign_site" || action === "unassign_site") {
+    const { siteId } = (body ?? {}) as { siteId?: unknown };
+    if (typeof siteId !== "string" || !siteId.trim()) {
+      return NextResponse.json({ ok: false, error: "siteId(string)가 필요합니다." }, { status: 400 });
+    }
+    const updated = (await listUsers()).find((user) => user.id === id);
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "사용자를 찾을 수 없습니다." }, { status: 404 });
+    }
+    const targetSiteId = siteId.trim();
+    if (action === "assign_site") {
+      if (!(await assignSite(updated.username, targetSiteId, session.username))) {
+        return NextResponse.json({ ok: false, error: "현장을 찾을 수 없거나 비활성 현장입니다." }, { status: 404 });
+      }
+    } else {
+      if (!(await getSite(targetSiteId))) {
+        return NextResponse.json({ ok: false, error: "현장을 찾을 수 없습니다." }, { status: 404 });
+      }
+      await unassignSite(updated.username, targetSiteId);
+    }
+    return NextResponse.json({ ok: true, user: publicUser(updated), assignedSites: await listAssignedSites(updated.username) });
   }
 
   // 관리자 메뉴 접근 권한 부여/회수 — owner 전용(자가취득 불가).

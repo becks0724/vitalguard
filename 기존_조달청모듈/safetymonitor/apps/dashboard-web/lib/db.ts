@@ -541,6 +541,13 @@ async function initSchema(): Promise<void> {
       active BOOLEAN NOT NULL DEFAULT TRUE,
       created_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
+    CREATE TABLE IF NOT EXISTS user_site_assignment (
+      username TEXT NOT NULL,
+      site_id TEXT NOT NULL REFERENCES site(site_id),
+      assigned_at TEXT NOT NULL DEFAULT (${NOW_ISO}),
+      assigned_by TEXT,
+      PRIMARY KEY (username, site_id)
+    );
     CREATE TABLE IF NOT EXISTS user_current_site (
       username TEXT PRIMARY KEY,
       site_id TEXT NOT NULL REFERENCES site(site_id),
@@ -3762,6 +3769,45 @@ export async function listSites(): Promise<SiteRow[]> {
 export async function getSite(siteId: string): Promise<SiteRow | null> {
   const { rows } = await q<SiteRow>("SELECT * FROM site WHERE site_id = $1", [siteId]);
   return rows[0] ?? null;
+}
+
+export async function listAssignedSites(username: string): Promise<SiteRow[]> {
+  const { rows } = await q<SiteRow>(
+    `SELECT s.* FROM site s
+     JOIN user_site_assignment a ON a.site_id = s.site_id
+     WHERE a.username = $1 AND s.active = TRUE
+     ORDER BY s.sort_order, s.site_id`,
+    [username],
+  );
+  return rows;
+}
+
+export async function assignSite(username: string, siteId: string, assignedBy: string): Promise<boolean> {
+  const site = await getSite(siteId);
+  if (!site?.active) return false;
+  await q(
+    `INSERT INTO user_site_assignment (username, site_id, assigned_by)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (username, site_id) DO NOTHING`,
+    [username, siteId, assignedBy],
+  );
+  return true;
+}
+
+export async function unassignSite(username: string, siteId: string): Promise<boolean> {
+  const result = await q(
+    "DELETE FROM user_site_assignment WHERE username = $1 AND site_id = $2",
+    [username, siteId],
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+export async function getUserOrgType(username: string): Promise<string | null> {
+  const { rows } = await q<{ org_type: string }>(
+    "SELECT org_type FROM users WHERE username = $1",
+    [username],
+  );
+  return rows[0]?.org_type ?? null;
 }
 
 export async function getCurrentSite(username: string): Promise<CurrentSiteRow | null> {

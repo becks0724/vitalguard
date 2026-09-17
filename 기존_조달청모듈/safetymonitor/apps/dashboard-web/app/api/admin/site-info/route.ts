@@ -7,6 +7,8 @@ import {
   getCurrentSite,
   getLatestSiteInfo,
   getSite,
+  getUserOrgType,
+  listAssignedSites,
   persistSiteInfoDaily,
   setCurrentSite,
   type SiteInfoInput,
@@ -31,27 +33,43 @@ function normalize(body: unknown): SiteInfoInput | null {
 }
 
 export async function GET(request: Request) {
-  // 조회(GET) = 대시보드 관리자 세션 또는 앱 로그인 JWT(owner/admin/worker) 수용 — 현장 앱이 현장정보 표시.
-  // 저장(PUT)은 관리자 전용 유지. 앱 JWT 를 먼저 확인해 불필요한 DB 조회(hasAdminMenuAccess)를 피한다.
+  // contractor는 DB 배정 현장을 조회한다. 직원 웹 세션의 관리자 메뉴 권한 검사는 유지한다.
+  // 앱 JWT에는 orgType이 없으므로 조직 유형은 DB에서 확인한다.
   const appClaims = verifyAppJwt(bearerToken(request));
   const username = appClaims?.sub ?? getSession(request)?.username;
-  if (!username || (!appClaims && !(await hasAdminMenuAccess(request)))) {
+  if (!username) {
     return NextResponse.json(
       { ok: false, error: "인증 필요" },
       { status: 401 },
     );
   }
 
-  const current = await getCurrentSite(username);
+  const isContractor = (await getUserOrgType(username)) === "contractor";
+  if (!appClaims && !isContractor && !(await hasAdminMenuAccess(request))) {
+    return NextResponse.json({ ok: false, error: "인증 필요" }, { status: 401 });
+  }
+  let current = await getCurrentSite(username);
+  const assignedSites = isContractor ? await listAssignedSites(username) : [];
+  if (isContractor) {
+    const first = assignedSites[0];
+    if (!first) {
+      return NextResponse.json({ ok: true, siteInfo: null, assignedSiteCount: 0 });
+    }
+    // 배정 해제·비활성화 뒤 남은 선택도 현재 배정 목록으로 다시 맞춘다.
+    const currentSiteId = current?.site_id;
+    if (!assignedSites.some((site) => site.site_id === currentSiteId)) {
+      current = await setCurrentSite(username, first.site_id);
+    }
+  }
   const siteInfo = current
     ? (await getLatestSiteInfo(current.site_id)) ?? (await getSite(current.site_id))
     : await getLatestSiteInfo();
-  return NextResponse.json({ ok: true, siteInfo });
+  return NextResponse.json({ ok: true, siteInfo, assignedSiteCount: assignedSites.length });
 }
 
 async function saveSiteInfo(request: Request, allowLegacySiteId: boolean) {
   const session = getSession(request);
-  if (!session || !verifyBasicAuth(request)) {
+  if (!session || !verifyBasicAuth(request, { allowContractor: true })) {
     return NextResponse.json(
       { ok: false, error: "관리자 인증 필요" },
       { status: 401 },
@@ -78,7 +96,7 @@ async function saveSiteInfo(request: Request, allowLegacySiteId: boolean) {
 
   // 로그인은 기존 현장 선택만 허용한다. 공용 현장정보를 편집하는 요청은 관리자 권한을 확인한다.
   const selectOnly = !allowLegacySiteId && (body as { selectOnly?: unknown }).selectOnly === true;
-  if (!selectOnly && !(await hasAdminMenuAccess(request))) {
+  if (!selectOnly && (!verifyBasicAuth(request) || !(await hasAdminMenuAccess(request)))) {
     return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
   }
 
@@ -89,6 +107,12 @@ async function saveSiteInfo(request: Request, allowLegacySiteId: boolean) {
   }
   if (!siteInfo.siteId) {
     return NextResponse.json({ ok: false, error: "siteId가 필요합니다." }, { status: 400 });
+  }
+  if (selectOnly && (await getUserOrgType(session.username)) === "contractor") {
+    const assignedSites = await listAssignedSites(session.username);
+    if (!assignedSites.some((site) => site.site_id === siteInfo.siteId)) {
+      return NextResponse.json({ ok: false, error: "배정되지 않은 현장입니다" }, { status: 403 });
+    }
   }
   const site = await getSite(siteInfo.siteId);
   if (!site?.active) {
