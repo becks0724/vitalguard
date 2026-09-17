@@ -74,3 +74,15 @@ Cloud Run env (배포 때 함께)
 - [ ] B-2 DuckDNS 갱신 스크립트 공인 IP 화 (합의 뒤 · [CCTV/ML])
 - [ ] B-4 게이트 하드닝 점검(실패도 제한에 세나 · ufw · 인증서 갱신 경로)
 
+## 09-17 16:0x CAM-01 새 IP캠 (cam01-ipcam-20260917.md)
+- [x] 새 CCTV 인식 — TP-Link VIGI C340S · 192.168.219.48 · RTSP 인증 통과(VIGI 앱 카메라 계정)
+- [x] 푸셔 일반화 — CAM_SUFFIX·CAM_SOURCE env (기본값 CAM-03·gopro 라 종전 그대로)
+- [x] 구역 파일 분리 zone{N}.json ([M/L] 지적 · 기존 구역 zone3.json 보존)
+- [x] 게이트 다중 카메라 — CAMS · GATE_UPSTREAM_1 · stream1/stats1/connection1
+- [x] CAM-01 푸셔 systemd 등록(cctv-pusher-cam1.service · Restart=on-failure — IP캠은 재시작이 안전)
+- [x] 낙상 켬 · POSE 로그 디렉터리 분리
+- [x] DB 시드 + 관제웹 CAM-01 게이트 연결 → 배포 00397-cmd · 사용자 육안 통과
+- [x] 게이트 로그 stream1 200 · 오류 0 · DB CAM-01 행 확인
+- [ ] 서버 중계(ingest1·stream1·stats1) — 앱에서 CAM-01 보려면 필요. 지금은 관제웹 전용
+- [ ] CAM-01 구역(zone1.json) 지정 — 안 찍으면 화면 전체가 판정 대상
+
