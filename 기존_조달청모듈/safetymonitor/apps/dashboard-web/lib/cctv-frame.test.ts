@@ -41,10 +41,13 @@ test("parseIngestStats — 푸셔 쿼리 키를 게이트 응답 키로 옮긴�
     hardhat_count: 1, no_hardhat_count: 1, engine: "v7e",
   });
   assert.equal("worker_count" in s, false, "푸셔가 안 보낸 키는 만들지 않는다 — 0 으로 채우면 화면이 0명으로 그린다");
-  const p2 = new URLSearchParams("persons=3&worker=1&unknown=0&engine=" + "x".repeat(40));
+  assert.equal("zone_on" in s, false, "옛 푸셔(zone 안 보냄)는 zone_on 도 없다 — false 로 채우면 「구역 꺼짐」으로 읽힌다");
+  const p2 = new URLSearchParams("persons=3&worker=1&unknown=0&zone=1&engine=" + "x".repeat(40));
   const s2 = parseIngestStats(p2);
   assert.equal(s2.worker_count, 1);
   assert.equal(s2.unknown_count, 0);
+  assert.equal(s2.zone_on, true);
+  assert.equal(parseIngestStats(new URLSearchParams("zone=0")).zone_on, false, "구역 꺼짐이면 false — worker_count 가 person_count 값이라는 표식");
   assert.equal(s2.engine.length, 24, "engine 은 게이트와 같이 24자에서 자른다");
   // 통제군 — 숫자가 아닌 값은 기본값으로
   const s3 = parseIngestStats(new URLSearchParams("persons=abc&compliance="));

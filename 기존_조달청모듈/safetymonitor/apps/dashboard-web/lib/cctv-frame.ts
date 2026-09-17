@@ -52,6 +52,7 @@ export type IngestStats = {
   no_hardhat_count: number;
   worker_count?: number;
   unknown_count?: number;
+  zone_on?: boolean; // 푸셔 구역 켜짐 여부 — 꺼지면 worker_count 가 person_count 값이다(키는 그대로). 옛 푸셔는 안 보낸다
   engine: string;
 };
 
@@ -77,6 +78,8 @@ export function parseIngestStats(params: URLSearchParams): IngestStats {
   };
   if (params.get("worker") !== null) s.worker_count = num(params.get("worker"), 0);
   if (params.get("unknown") !== null) s.unknown_count = num(params.get("unknown"), 0);
+  // 구역이 꺼지면 젯슨 _zone_stats 가 worker_count 에 person_count 를 넣는다. 표에 「worker 이름으로 person 값」이 남지 않게 구역 상태를 같이 적는다.
+  if (params.get("zone") !== null) s.zone_on = params.get("zone") === "1";
   return s;
 }
 
