@@ -16,7 +16,25 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00389-mcd` (커밋 `9e30a726` · 09-15 19:0x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00391-5q8` (커밋 `127b880e` · 09-17 01:1x · 서빙 digest
+  `sha256:7c729072…` **대조 일치** · env **33**(직전 30 → CAM-03 서버 중계 3종 추가) · HTTP 200 ·
+  라우트 5종 ok · 검증 **아카이브(127b880 고정) · 2012/2012** · 트래픽 자동 추종(보정 없음) ·
+  ALLOW_DIRTY 강행(손대지 않는 2파일)).
+  **CAM-03 을 젯슨 직결에서 서버 중계로 — 시청 경로에서 Tailscale·DuckDNS·포트포워딩이 빠진다.**
+  이미지 배포 = `00390-hfj`, env 3종 갱신 = `00391-5q8`(같은 digest, env 만 다름).
+  ```
+  신규 라우트  /api/cctv-gate/cctv/{ingest3,stream3,stats3,connection3}
+  신규 표      cctv_frame(카메라당 최신 1행) · cctv_ticket_jti(표 1회 소비) — 운영 DB 에 생성됨
+  env 3종      CAM03_GATE_API=…7r2vb5q5qa-du.a.run.app/api/cctv-gate · CCTV_FRAME_STALE_SEC=15
+               CCTV_INGEST_TOKEN=<시크릿 v1>
+  라이브 실측  ingest3 토큰없음 401 · 틀린토큰 401 · stream3·stats3 표없음 401 "ticket required"
+               통제군 없는 라우트 zzz9 → 404 (401 이 진짜 판정이라는 뜻)
+  ⚠ env 얹기 전 ingest3 는 503 이었다 — 「503 = env 안 먹음」이 설계된 신호다(사후관찰 5xx 3건의 정체)
+  ⚠ 1차에서 웹 화면은 아직 젯슨 게이트를 본다(CAM03_GATE 는 duckdns 기본값 그대로). 서버 경로는 앱만.
+  ⏳ cctv_frame 행 0 — 젯슨 push 전환은 [M/L] 담당, 아직 안 켜짐
+  ```
+
+- (직전) **라이브** = `vitalguard-dashboard-00389-mcd` (커밋 `9e30a726` · 09-15 19:0x · 서빙 digest
   `sha256:ca32cc8e…` **대조 일치** · env 30 유지(직전 30) · HTTP 200 · 라우트 5종 ok · 사후 90초 5xx 0건·DB타임아웃 0건 ·
   검증 **아카이브(9e30a72 고정) · 루트 pnpm test 1992/1992** · commit-sha 라벨 = APPROVED_AT ·
   ALLOW_DIRTY 강행(손대지 않는 2파일) · 트래픽 자동 추종이라 보정 없음).
