@@ -1,0 +1,25 @@
+# CAM-03 서버 중계 — 컨텍스트 노트 (결정과 근거)
+
+```
+09-16 18:0x  착수. 설계 = 사용자 문서(design-20260916.md). 앱 코드 0 변경이 설계의 핵심 제약이다.
+09-16 18:0x  이 설계는 같은 날 codex 3차가 §13 에서 짚은 「외부 공유 저장소면 다중 인스턴스가 된다」 그 대안이다 —
+             7월 cctv-ai 가 프레임을 프로세스 메모리에 둬서 단일 상시 인스턴스·과금이 됐고, 이번엔 DB 한 행에 둔다.
+09-16 18:1x  ⛔ 이 워크트리(tmp-507e)에서 만들지 않는다 — db.ts 가 origin/main 과 2,071줄 갈려 ensureSchema 를 건드리면 충돌한다.
+             origin/main 에서 feat/cctv-gate-server 브랜치 + 새 워크트리. node_modules 는 abalone 것을 심볼릭 링크(pnpm install 금지).
+             기준선(내 변경 전 tsc·test)을 먼저 떠 둔다 — 링크 때문에 깨지는 게 있으면 내 탓이 아님을 가른다
+09-16 18:1x  설계에 없는 라우트 둘을 더 만든다 — 웹이 gateApi 에 stats3(PPE 줄)·connection3(연결 토글)도 부른다.
+             stats3 없으면 PPE 줄이 「수신 대기」로 죽는다. connection3 은 서버가 젯슨을 못 부르니 GET {enabled:true} · POST 501
+09-16 18:1x  설계의 PUSH_FPS=0.2(5초 1장)와 PPE_LIVE_TTL 3초는 서로 어긋난다 — 5초마다 오는데 3초 지나면 stale 이면 늘 stale.
+             서버 TTL 기본을 15초(push 간격 3배)로 둔다. env CCTV_FRAME_STALE_SEC 로 조정
+09-16 18:1x  푸셔 쿼리에 worker·unknown 이 없다 — 오늘 낮에 고친 worker_count 가 서버 중계에서는 person_count 로 떨어진다.
+             서버는 있으면 받도록 만들고, 젯슨 1줄(쿼리에 worker·unknown 추가)을 §5 에 적는다
+09-16 18:1x  로컬 E2E 의 한계 — .env.local 에 DATABASE_URL 이 없어 데모 모드이고, 프로덕션 DB 로 쓰기 시험은 L-04 위반.
+             DB 경로는 단위 테스트(순수 함수) + 소스 가드로 덮고, 실 E2E 는 배포 뒤 실측으로 넘긴다
+09-16 18:3x  기준선을 초록으로 만들려고 @safetymonitor/* 링크만 새 워크트리 패키지로 돌리고 dist 를 빌드했다.
+             남은 tsc 18줄은 framer-motion·uqr 미설치(abalone 에 없는 새 의존성) — 내 범위 밖. 합격선 = 「새 오류 0」
+09-16 18:4x  내 테스트가 두 번 틀렸다 — ① 서명 뒤집기가 원문을 그대로 돌려놓았다(slice 산수) → 「안 바꾼 표가 통과함」을
+             통제군으로 먼저 확인하도록 고침 ② stats3 음성 가드 정규식이 정답 코드에 걸렸다 → json(frame.stats 로 좁힘.
+             둘 다 「초록이어야 할 것이 빨강」이 아니라 「빨강이어야 할 것이 초록」이 될 뻔한 쪽이었다
+09-16 18:4x  connection3 은 501 — 서버는 젯슨을 못 부른다. 그게 이 설계의 요점이라 숨기지 않고 말한다
+09-16 18:4x  E2E 는 배포 뒤로 — DB 없는 맥에서 라우트를 돌릴 수 없고 프로덕션 DB 쓰기는 금지
+```
