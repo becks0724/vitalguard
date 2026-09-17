@@ -302,7 +302,8 @@ class LiveGateway
 
   @override
   Future<bool> ackAlert(String accessToken, String id) async {
-    if (id.trim().isEmpty) {
+    final numericId = int.tryParse(id.trim());
+    if (numericId == null || numericId <= 0) {
       throw const ApiFailure('경보 ID를 확인해 주세요', status: 400);
     }
     try {
@@ -311,7 +312,7 @@ class LiveGateway
         '/api/app/admin/alerts/ack',
         token: accessToken,
         // 한 경보만 확인한다. workerId/type과 섞거나 폴백하지 않는다.
-        body: {'id': id},
+        body: {'id': numericId},
       );
       if (reply['acked'] is! bool) {
         throw const ApiFailure('대응 확인 결과 불명', uncertainWrite: true);

@@ -9,18 +9,42 @@ import 'support/alerts_fixture.dart';
 
 void main() {
   for (final acked in [true, false]) {
-    test('ack $acked는 JWT와 id 하나만 POST하고 bool을 보존한다', () async {
+    test('ack $acked는 JWT와 숫자 id 하나만 POST하고 bool을 보존한다', () async {
       final gateway = LiveGateway(
         transport: (method, path, token, body) async {
           expect(method, 'POST');
           expect(path, '/api/app/admin/alerts/ack');
           expect(token, 'synthetic-access');
-          expect(body, {'id': 'a1'});
+          expect(body, {'id': 11410});
+          expect(body!['id'], isA<int>());
           return ApiReply(200, {'ok': true, 'acked': acked});
         },
       );
       addTearDown(() => gateway.client.close(force: true));
-      expect(await gateway.ackAlert('synthetic-access', 'a1'), acked);
+      expect(await gateway.ackAlert('synthetic-access', '11410'), acked);
+      expect(await gateway.ackAlert('synthetic-access', ' 11410 '), acked);
+    });
+  }
+
+  for (final id in ['a1', '', '0', '-3']) {
+    test('ack 잘못된 id "$id"는 서버 호출 없이 400으로 거부한다', () async {
+      var calls = 0;
+      final gateway = LiveGateway(
+        transport: (_, _, _, _) async {
+          calls++;
+          return const ApiReply(200, {'ok': true, 'acked': true});
+        },
+      );
+      addTearDown(() => gateway.client.close(force: true));
+      await expectLater(
+        gateway.ackAlert('access', id),
+        throwsA(
+          isA<ApiFailure>()
+              .having((e) => e.status, 'status', 400)
+              .having((e) => e.message, 'message', '경보 ID를 확인해 주세요'),
+        ),
+      );
+      expect(calls, 0);
     });
   }
 
@@ -32,7 +56,7 @@ void main() {
       );
       addTearDown(() => gateway.client.close(force: true));
       await expectLater(
-        gateway.ackAlert('access', 'a1'),
+        gateway.ackAlert('access', '11410'),
         throwsA(
           isA<ApiFailure>()
               .having((e) => e.status, 'status', status)
@@ -58,7 +82,7 @@ void main() {
       );
       addTearDown(() => gateway.client.close(force: true));
       await expectLater(
-        gateway.ackAlert('access', 'a1'),
+        gateway.ackAlert('access', '11410'),
         throwsA(
           isA<ApiFailure>().having(
             (e) => e.uncertainWrite,
@@ -73,7 +97,7 @@ void main() {
     );
     addTearDown(() => gateway.client.close(force: true));
     await expectLater(
-      gateway.ackAlert('access', 'a1'),
+      gateway.ackAlert('access', '11410'),
       throwsA(
         isA<ApiFailure>().having((e) => e.uncertainWrite, 'uncertain', isTrue),
       ),
