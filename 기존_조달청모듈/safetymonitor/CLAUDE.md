@@ -16,7 +16,29 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00391-5q8` (커밋 `127b880e` · 09-17 01:1x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00394-jt4` (커밋 `3e825f28` · 09-17 12:5x · 서빙 digest
+  `sha256:0645edf0…` **대조 일치** · env 33(이름 그대로, `CAM03_GATE_API` 값만 바뀜) · HTTP 200 ·
+  라우트 5종 ok · 검증 **아카이브(3e825f2 고정) · 2057/2057** · 사후 90초 5xx 0·DB타임아웃 0 ·
+  트래픽 자동 추종 · ALLOW_DIRTY 강행(손대지 않는 2파일)).
+  **사용자 결정 09-17 — 지금은 Tailscale 방식으로 되돌린다.** 서버 중계는 지우지 않고 폴백으로 남긴다.
+  이미지 배포 = `00393-tg9`, env 되돌림 = `00394-jt4`(같은 digest).
+  ```
+  왜        서버 중계는 설계상 5초 1장(요청 단위 과금) · 젯슨 게이트 직결은 초당 ~10장
+  ⚠ 회귀   09-16 폴링 전환(6cd3fe3e)이 게이트 경로까지 5초 1장으로 만들었다 — 00390~00392 에 실려 있었다
+  수리      12852cdb — content-type 으로 가름. image/jpeg=5초 폴링 / multipart=표 만료까지 흘려 받음
+  웹        CAM03_GATE 기본값(duckdns) — 빌드 인자 안 넘김
+  앱        CAM03_GATE_API=https://cctv-gate.example.invalid:8443 (서버 경로에서 되돌림)
+  라이브 번들 실측(청크 17개 · 1,987,933 B) —
+    duckdns.org:8443   적중 1      /api/cctv-gate     적중 0
+    "malformed stream" 적중 1      ← 수리본에만 있는 문자열(옛 판 소스 0 · 배포본 소스 1)
+    통제군 「심부체온」 10 · ZZZNOTPRESENT 0 · "no frame" 1 · "--frame" 1
+  ⚠ 표지가 주석에만 있으면 minify 에서 사라진다 — `multipart` 적중 0 은 「수리 없음」이 아니다.
+    판정은 **동작 코드의 문자열 리터럴**로 한다.
+  ⚠ 팀원이 우리 조율 밖에서 배포한다(00392-6dq = 279881795+rlaxorhs77-eng@users.noreply.github.com 02:45:29Z).
+    `--ongoing` 0건만으로 부족 — **착수 직전에 라이브 리비전을 한 번 더 읽는다.**
+  ```
+
+- (직전) **라이브** = `vitalguard-dashboard-00391-5q8` (커밋 `127b880e` · 09-17 01:1x · 서빙 digest
   `sha256:7c729072…` **대조 일치** · env **33**(직전 30 → CAM-03 서버 중계 3종 추가) · HTTP 200 ·
   라우트 5종 ok · 검증 **아카이브(127b880 고정) · 2012/2012** · 트래픽 자동 추종(보정 없음) ·
   ALLOW_DIRTY 강행(손대지 않는 2파일)).
