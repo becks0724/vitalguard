@@ -16,7 +16,22 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00396-6qz` (커밋 `3e825f28` · 09-17 15:2x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00397-cmd` (커밋 `dd481446` · 09-17 16:0x · 서빙 digest
+  `sha256:56d35856…` **대조 일치** · env 33 · 검증 **아카이브(dd48144 고정) · 2057/2057** ·
+  사후 90초 5xx 0·DB타임아웃 0 · 트래픽 자동 추종 · ALLOW_DIRTY 강행(손대지 않는 2파일)).
+  **CAM-01 을 새 IP캠으로 — 젯슨 게이트 직결.** 화면 확인 완료(사용자).
+  ```
+  CAM-01   「정문 출입구」 객체감지(cctv-ai) → 「사무실(IP캠)」 PPE(젯슨 게이트 :8443 → :8445)
+           카메라 TP-Link VIGI C340S · 192.168.219.48 · RTSP · 젯슨이 추론까지 하고 게이트로 냄
+  DB       ensureSchema 가 cctv_site·cctv_camera 시드(멱등 · ON CONFLICT DO NOTHING)
+           ★ 배포 전 롤백 시험으로 실측 — 실제로 늘어나는 것은 **cctv_camera 1행(CAM-01)** 뿐.
+             cctv_site 는 SITE-01 이 이미 있어 0행. 기존 행은 안 건드린다.
+  가드      CAM-01 의 gateApi 금지 해제(젯슨에 stream1 이 생겼으므로) · CAM-02 금지는 유지
+  라이브 번들  「사무실(IP캠)」 1 · 「정문 출입구」 0 · duckdns 1
+             통제군 심부체온 10 · ZZZNOTPRESENT 0
+  ```
+
+- (직전) **라이브** = `vitalguard-dashboard-00396-6qz` (커밋 `3e825f28` · 09-17 15:2x · 서빙 digest
   `sha256:0645edf0…` **대조 일치** · env 33 · 트래픽 자동 추종).
   **09-17 오후에 env `CAM03_GATE_API` 만 네 번 움직였다 — 이미지는 00393-tg9 하나로 계속 같다.**
   ```
