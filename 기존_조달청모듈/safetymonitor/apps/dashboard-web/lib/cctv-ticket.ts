@@ -85,3 +85,89 @@ export function signTicket(input: {
     ttlSec,
   };
 }
+
+// ── 검증 — 서버 중계(docs/cctv-gate-server)에서는 서버 자신이 젯슨 게이트 역할을 한다 ─────────
+//
+// 규칙은 cctv-ai/edge/cctv_gate.py `_verify` 와 같다 — kid → 공개키 → 서명 → nbf(+skew) → exp → aud → scp.
+// 순서와 상태 코드까지 맞춘다. 게이트와 여기가 다르게 판정하면 같은 표가 한 곳에서는 통하고 한 곳에서는
+// 막혀 원인을 못 찾는다. sid 와 jti 는 여기서 돌려주고 호출부가 검사·소비한다(DB 가 필요해서).
+
+export type TicketPayload = {
+  kid: string; aud: string; sid: string; scp: TicketScope; sub: string;
+  nbf: number; exp: number; jti: string;
+};
+
+export type VerifyResult =
+  | { ok: true; payload: TicketPayload }
+  | { ok: false; status: 401 | 403; error: string };
+
+// 게이트의 SKEW 와 같은 기본값 30초 — 젯슨과 서버 시계가 조금 어긋나도 nbf 에서 튕기지 않게.
+function skewSec(): number {
+  const n = Number(process.env.CCTV_TICKET_SKEW_SEC ?? "30");
+  return Number.isFinite(n) && n >= 0 ? n : 30;
+}
+
+// 공개키는 개인키에서 유도한다 — 젯슨엔 공개키 파일을 따로 뒀지만 서버는 개인키를 이미 갖고 있다.
+// 캐시 열쇠는 hex 값 자체(privateKey 와 같은 이유 — 값이 바뀌면 자동으로 빗나간다).
+let pubCache: { hex: string; key: crypto.KeyObject | null } | null = null;
+
+function publicKey(hex: string): crypto.KeyObject | null {
+  if (pubCache && pubCache.hex === hex) return pubCache.key;
+  const priv = privateKey(hex);
+  const key = priv ? crypto.createPublicKey(priv) : null;
+  pubCache = { hex, key };
+  return key;
+}
+
+function b64urlDecode(s: string): Buffer {
+  return Buffer.from(s, "base64url");
+}
+
+/**
+ * 표 하나를 검증한다. 통과하면 클레임을 돌려준다 — 호출부는 sid 를 카메라 대장과 대조하고 jti 를 소비해야 한다.
+ * `nowSec` 은 시험에서 시계를 옮기기 위한 것이다.
+ */
+export function verifyTicket(
+  ticket: string,
+  want: { cameraId: string; scope: TicketScope },
+  nowSec: number = Math.floor(Date.now() / 1000),
+): VerifyResult {
+  const { keyHex, kid } = readConfig();
+  const dot = ticket.indexOf(".");
+  if (dot <= 0) return { ok: false, status: 401, error: "bad ticket" };
+  const body = ticket.slice(0, dot);
+  const sigPart = ticket.slice(dot + 1);
+  let raw: Buffer;
+  let p: Partial<TicketPayload>;
+  try {
+    raw = b64urlDecode(body);
+    p = JSON.parse(raw.toString("utf8")) as Partial<TicketPayload>;
+  } catch {
+    return { ok: false, status: 401, error: "bad ticket" };
+  }
+  if (typeof p !== "object" || p === null) return { ok: false, status: 401, error: "bad ticket" };
+  if (p.kid !== kid) return { ok: false, status: 401, error: "unknown key" };
+  const key = publicKey(keyHex);
+  if (!key) return { ok: false, status: 401, error: "unknown key" };
+  let sigOk = false;
+  try {
+    sigOk = crypto.verify(null, raw, key, b64urlDecode(sigPart));
+  } catch {
+    sigOk = false;
+  }
+  if (!sigOk) return { ok: false, status: 401, error: "bad ticket" };
+
+  const nbf = Number(p.nbf ?? 0);
+  const exp = Number(p.exp ?? 0);
+  if (nbf > nowSec + skewSec()) return { ok: false, status: 401, error: "not yet valid" };
+  if (!(exp > nowSec)) return { ok: false, status: 401, error: "expired" }; // 여유 없음 — 게이트와 같다
+  if (p.aud !== want.cameraId) return { ok: false, status: 403, error: "wrong camera" };
+  if (p.scp !== want.scope) return { ok: false, status: 403, error: `scope ${want.scope} required` };
+  if (typeof p.jti !== "string" || p.jti.length === 0) return { ok: false, status: 401, error: "bad ticket" };
+  if (typeof p.sid !== "string" || typeof p.sub !== "string") return { ok: false, status: 401, error: "bad ticket" };
+
+  return {
+    ok: true,
+    payload: { kid, aud: p.aud, sid: p.sid, scp: p.scp, sub: p.sub, nbf, exp, jti: p.jti },
+  };
+}

@@ -1180,6 +1180,26 @@ async function initSchema(): Promise<void> {
       issued_at TEXT NOT NULL DEFAULT (${NOW_ISO})
     );
     CREATE INDEX IF NOT EXISTS idx_cctv_audit_user ON cctv_ticket_audit(username, issued_at);
+
+    -- CAM-03 서버 중계(09-16 설계 · docs/cctv-gate-server) — 젯슨 푸셔가 올린 **최신 프레임 1장**을 카메라당 한 행에.
+    -- 화면은 젯슨이 아니라 여기서 가져간다 → 시청 경로에서 Tailscale·DuckDNS·포트포워딩이 빠진다.
+    -- ★ 7월 cctv-ai 는 이것을 프로세스 메모리(_ppe_live)에 둬서 인스턴스 1대 상시 과금이 됐다.
+    --   DB 한 행이면 인스턴스가 몇이든 같은 프레임을 본다. 5초마다 UPDATE 되는 한 행이라 bloat 는
+    --   autovacuum 실측 항목이다(설계 §7-1).
+    CREATE TABLE IF NOT EXISTS cctv_frame (
+      camera_id TEXT PRIMARY KEY REFERENCES cctv_camera(camera_id),
+      jpg BYTEA NOT NULL,
+      captured_at TEXT NOT NULL,
+      stats JSONB,
+      updated_at TEXT NOT NULL DEFAULT (${NOW_ISO})
+    );
+
+    -- 티켓 jti 1회 소비 — 젯슨 게이트는 sqlite 파일로 했다. 서버는 인스턴스가 여럿이라 메모리로는 못 지킨다.
+    -- INSERT 충돌 = 재사용 → 401. 만료분은 소비 때 확률적으로 지운다(consumeCctvTicketJti).
+    CREATE TABLE IF NOT EXISTS cctv_ticket_jti (
+      jti TEXT PRIMARY KEY,
+      exp BIGINT NOT NULL
+    );
   `);
   } finally {
     // 커넥션을 풀에 돌려주기 전 세션 설정 복구 — 남기면 일반 쿼리도 3초에 잠금 포기하게 된다.
@@ -5512,6 +5532,59 @@ export async function upsertCctvCamera(
      ON CONFLICT (camera_id) DO UPDATE SET site_id = EXCLUDED.site_id, label = EXCLUDED.label`,
     [cameraId, siteId, label],
   );
+}
+
+// ── CAM-03 서버 중계 — 최신 프레임 한 행 + 티켓 jti 소비 (docs/cctv-gate-server) ─────────
+
+export type CctvFrameRow = {
+  camera_id: string;
+  jpg: Buffer;
+  captured_at: string;
+  stats: Record<string, unknown> | null;
+  updated_at: string;
+};
+
+/** 젯슨 푸셔가 올린 프레임으로 카메라 행을 덮어쓴다. 이전 프레임은 남기지 않는다 — 이력이 아니라 화면이다. */
+export async function upsertCctvFrame(input: {
+  cameraId: string;
+  jpg: Buffer;
+  capturedAt: string;
+  stats: Record<string, unknown>;
+}): Promise<void> {
+  await q(
+    `INSERT INTO cctv_frame (camera_id, jpg, captured_at, stats, updated_at)
+     VALUES ($1, $2, $3, $4::jsonb, $5)
+     ON CONFLICT (camera_id) DO UPDATE
+       SET jpg = EXCLUDED.jpg, captured_at = EXCLUDED.captured_at,
+           stats = EXCLUDED.stats, updated_at = EXCLUDED.updated_at`,
+    [input.cameraId, input.jpg, input.capturedAt, JSON.stringify(input.stats), input.capturedAt],
+  );
+}
+
+/** 카메라의 최신 프레임. 한 번도 안 올라왔으면 null — 「없음」과 「오래됨」은 호출부가 가른다. */
+export async function getCctvFrame(cameraId: string): Promise<CctvFrameRow | null> {
+  const r = await q<CctvFrameRow>(
+    "SELECT camera_id, jpg, captured_at, stats, updated_at FROM cctv_frame WHERE camera_id = $1",
+    [cameraId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * 티켓 jti 를 소비한다. 처음이면 true, 이미 쓰였으면 false — 같은 표를 두 번 쓰지 못한다.
+ * 젯슨 게이트의 sqlite 소비와 같은 의미를 DB 로 옮긴 것이다(서버는 인스턴스가 여럿이라 메모리로는 못 지킨다).
+ * 만료된 jti 는 여기서 확률적으로 지운다 — 별도 크론을 두면 그 크론이 죽었을 때 표가 무한히 쌓인다.
+ */
+export async function consumeCctvTicketJti(jti: string, expSec: number): Promise<boolean> {
+  const r = await q<{ jti: string }>(
+    "INSERT INTO cctv_ticket_jti (jti, exp) VALUES ($1, $2) ON CONFLICT (jti) DO NOTHING RETURNING jti",
+    [jti, expSec],
+  );
+  if (Math.random() < 0.02) {
+    // 만료 뒤 60초 여유 — 시계가 조금 어긋난 늦은 재사용 시도도 아직 잡히도록.
+    await q("DELETE FROM cctv_ticket_jti WHERE exp < $1", [Math.floor(Date.now() / 1000) - 60]);
+  }
+  return r.rowCount === 1;
 }
 
 /** 현장 권한 부여(멱등). */
