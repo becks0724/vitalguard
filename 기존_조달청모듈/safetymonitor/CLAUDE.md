@@ -29,6 +29,13 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   가드      CAM-01 의 gateApi 금지 해제(젯슨에 stream1 이 생겼으므로) · CAM-02 금지는 유지
   라이브 번들  「사무실(IP캠)」 1 · 「정문 출입구」 0 · duckdns 1
              통제군 심부체온 10 · ZZZNOTPRESENT 0
+  젯슨 게이트 로그(10분 · [CCTV/ML] 실측) —
+    192.168.219.44  stream1 8건 200 · stats1 28건 200      ← 관제웹이 CAM-01 을 실제로 받는다
+    192.168.219.44  stream3 5건 · 간격 중앙 52초            ← STREAM_MODE 정상(표 만료마다 재연결)
+    100.64.0.3   stream3 137건                          ← 태블릿(Tailscale)이 CAM-03 시청 중
+    401·403·404 0건                                        ← unknown camera 없음 = DB 시드 통과
+  운영 DB 사후 — cctv_camera 에 CAM-01 1행 신규(06:57:58Z) · CAM-03 은 09-09 행 그대로.
+    배포 전 롤백 시험의 「새 행 1」과 수가 일치.
   ```
 
 - (직전) **라이브** = `vitalguard-dashboard-00396-6qz` (커밋 `3e825f28` · 09-17 15:2x · 서빙 digest
