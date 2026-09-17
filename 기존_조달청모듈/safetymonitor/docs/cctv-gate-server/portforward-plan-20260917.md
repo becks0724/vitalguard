@@ -13,13 +13,23 @@
 
 | # | 할 일 | 누가 | 상태 |
 |---|---|---|---|
-| A-1 | 관제웹 회귀 수리 배포(`12852cdb` · 게이트 경로 STREAM_MODE 복귀) | [WATCH.APP] · 사용자 /deploy | ⏳ |
-| A-2 | 서버 env `CAM03_GATE_API` → `https://cctv-gate.example.invalid:8443` (앱 전체가 게이트로) | [WATCH.APP] · 승인 | ⏳ |
-| A-3 | 태블릿에 Tailscale 설치·로그인·서브넷 경로 사용 | 사용자 | ⏳ |
-| A-4 | 태블릿(AICAM_301A+Tailscale)에서 CAM-03 초당 ~10장 실측 · 게이트 로그에 `100.x` 주소 | 사용자 + [CCTV/ML] | ⏳ |
+| A-1 | 관제웹 회귀 수리 배포(게이트 경로 STREAM_MODE 복귀) | [WATCH.APP] · 사용자 /deploy | ✅ 09-17 14:0x · 00393-tg9(commit 3e825f28 · digest 0645edf0) → **00394-jt4** · 아카이브 2057/2057 · 사후 5xx 0 |
+| A-2 | 서버 env `CAM03_GATE_API` → `https://cctv-gate.example.invalid:8443` (앱 전체가 게이트로) | [WATCH.APP] · 승인 | ✅ 00394-jt4 · env 33 유지(값만 교체) · **서버 쪽 증거 = `cctv_ticket_jti` 가 44행에서 멈춤**(앱이 서버 stream3 를 더는 안 부른다) |
+| A-3 | 태블릿에 Tailscale 설치·로그인·서브넷 경로 사용 | 사용자 | ✅ **설치는 이미 돼 있다** — 젯슨 피어 목록에 `Lenovo Idea Tab Pro 100.64.0.3`(android). 남은 것은 **켜기**뿐 |
+| A-4 | 태블릿(AICAM_301A+Tailscale)에서 CAM-03 초당 ~10장 실측 · 게이트 로그에 `100.x` 주소 | 사용자 + [CCTV/ML] | ⏳ **지금 가능** · 09-17 14:3x 기준 게이트 20분 감시에 접속 0건(아무도 안 봄) |
 | A-5 | 서버 중계는 그대로 둔다(젯슨 push 5초 1장 · 월 ≈$3.7) — 공유기 못 만지는 현장의 기본값 | — | 유지 |
 
 되돌리기 = A-2 를 서버 주소로 다시.
+
+### A 실행 기록(09-17)
+```
+11:45  00392-6dq  팀원(279881795+rlaxorhs77-eng@users.noreply.github.com)이 직접 배포 — 현장 배정 1차. 우리 조율 밖에서 일어났다.
+       ⟹ 배포 착수 직전에 라이브 리비전을 한 번 더 본다(`--ongoing` 0건 확인만으로는 부족). [WATCH.APP] 절차에 반영됨.
+14:0x  00393-tg9 → 00394-jt4   회귀 수리 + env 되돌림. 배포 범위는 우리 4커밋뿐(00392 가 5d4b2458 에서 나왔으므로).
+판정   라이브 번들에 `"malformed stream"` 적중 1 · `duckdns.org:8443` 적중 1 · `/api/cctv-gate` 적중 0
+       ⚠ 처음 쓴 표지(`multipart`·`STREAM_MODE`·`FIRST_FRAME_ONLY`)는 **주석에만 있어 minify 에서 사라진다** — 적중 0 이 「수리 없음」이 아니었다.
+       ⟹ 이 파일의 판정 표지는 동작 코드의 문자열 리터럴 `"malformed stream"` 으로 한다(옛 판 소스 0건 · 수리본 1건).
+```
 
 ## B. 현장 포트포워딩 — 설정 절차
 

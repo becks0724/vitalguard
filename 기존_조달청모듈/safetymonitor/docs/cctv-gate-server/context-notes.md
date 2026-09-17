@@ -55,4 +55,13 @@
              수리 12024ba8 = content-type 으로 가른다. image/jpeg → SNAPSHOT_MODE(5초) · multipart → STREAM_MODE(표 만료 8초 전까지 · 만료 abort 는 실패 아님).
              교훈 = 「서버로 간다」는 설계를 코드에 먼저 넣으면서 「아직 게이트를 보는 1차 기간」을 잊었다. 상류가 둘이면 코드가 둘을 다 알아야 한다.
              ★ 2차(웹 → 서버) 뒤에는 웹도 설계상 5초 1장이다(PUSH_FPS 0.2 · 한 행 DB). 매끄러운 영상을 웹에서 원하면 2차를 안 하거나 PUSH_FPS 를 올려야 한다 — 사용자 결정.
+09-17 11:45  ⚠ 팀원이 우리 조율 밖에서 배포했다(00392-6dq · 279881795+rlaxorhs77-eng@users.noreply.github.com · 감사 로그). 제가 00391 로 알고 있다가 만났다.
+             ⟹ 배포 착수 직전 라이브 리비전 재확인을 절차에 넣었다([WATCH.APP] 반영).
+09-17 14:0x  회귀 수리 + env 되돌림 배포(00393-tg9 → 00394-jt4). 사용자 결정 「지금은 Tailscale, 현장은 포트포워딩」의 A 단계 완료.
+             ★ 판정 표지를 잘못 골랐다 — `multipart`·`STREAM_MODE`·`FIRST_FRAME_ONLY` 는 **주석에만** 있어 minify 에서 사라진다.
+             [WATCH.APP] 이 처음 `multipart` 로 재서 적중 0 을 봤고, 그것은 「수리 없음」이 아니었다. 동작 코드의 문자열 리터럴
+             `"malformed stream"`(옛 판 0건 · 수리본 1건)으로 다시 재서 확정했다. 앞으로 이 파일의 표지는 그것으로 한다.
+09-17 14:1x  태블릿 Tailscale 은 이미 설치돼 있었다(`Lenovo Idea Tab Pro 100.64.0.3`). 11:30 실측 판정이 더 강해졌다 —
+             LastSeen 11:30(그때 껐다) · **LastWrite 09-14**(젯슨과 주고받은 것은 사흘 전이 마지막) ⟹ 영상이 Tailscale 로 온 것이 아니다.
+09-17 14:2x  cctv_frame bloat 중간 관찰 — 갱신 1,694회 · 죽은 행 5 · 544KB · autovacuum 아직 없음. 부풀지 않는다(정식 판정은 09-18).
 
