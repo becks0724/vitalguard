@@ -29,7 +29,7 @@
 
 ## 4. 검증
 - [x] tsc 새 오류 0(기준선 18줄 = framer-motion·uqr 미설치, 링크된 node_modules 한계) · lint 0 errors · test 2,013 중 실패 2 = 기준선 그대로 · 내 20건 통과
-- [ ] 로컬 E2E — ⛔ 이 맥에 DB 가 없다(.env.local DATABASE_URL 없음 · 프로덕션 DB 쓰기는 L-04 위반). 배포 뒤 라이브에서 실측한다
+- [x] 로컬 E2E — ⛔ 이 맥에 DB 가 없다(.env.local DATABASE_URL 없음 · 프로덕션 DB 쓰기는 L-04 위반) → **라이브 실측으로 대체 완료**(09-17 10:20 · Cloud Run 201 ×12/55초 · DB `captured_at` 전진 · 401 세 가지)
 
 ## 5. 배포·젯슨 — 사용자 결정 09-17 「① 내 것 먼저 · 오늘 배포·태블릿 실측」
 
@@ -54,9 +54,11 @@ Cloud Run env (배포 때 함께)
            + 쿼리에 worker·unknown 추가 (없으면 관제웹 작업자 수가 person_count 로 떨어진다)
 ⚠ 순서 = 서버 배포(라우트가 먼저 있어야 젯슨 POST 가 404 가 아니다) → Cloud Run env → 젯슨
 ```
-- [ ] 서버 배포([WATCH.APP] · /deploy) + env `CAM03_GATE_API`·`CCTV_INGEST_TOKEN`(secret)·`CCTV_FRAME_STALE_SEC` — 웹 빌드 인자는 1차엔 duckdns 유지
-- [ ] 젯슨([M/L]) — drop-in `ingest.conf`(EnvironmentFile=~/.cctv_ingest.env · CCTV_BASE · PUSH_FPS=0.2) + 푸셔 Authorization 헤더 + 쿼리 worker·unknown → restart 한 번
-- [ ] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거
+- [x] 서버 배포([WATCH.APP] · /deploy) + env `CAM03_GATE_API`·`CCTV_INGEST_TOKEN`(secret)·`CCTV_FRAME_STALE_SEC` — 웹 빌드 인자는 1차엔 duckdns 유지 → **00390-hfj(이미지 127b880e) → 00391-5q8(env 33) · 아카이브 2012/2012**
+- [x] 젯슨([CCTV/ML] 실행 · [M/L] 점검) — drop-in `ingest.conf`(EnvironmentFile=~/.cctv_ingest.env · CCTV_BASE · PUSH_FPS=0.2) + 푸셔 Authorization 헤더 + 쿼리 worker·unknown·zone → restart ①(코드 · `code_sha 12c1413e9728` · 통제군 pushed 0) → ②(env · pushed 8/45초 · push error 0) · 커밋 `1f3987d2`
+- [ ] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거 — **사용자 차례**(09-17 10:20 부터 가능)
+- [ ] 서버가 `zone` 을 받는 커밋(`zone_on`) 다음 배포에 싣기 — 그 전까지 DB stats 에 zone 없음(젯슨은 이미 보냄)
+- [ ] 09-18 `pg_stat_user_tables` 로 `cctv_frame` n_dead_tup·autovacuum 확인(§7-1)
 
 ## 하지 말 것 (설계 §8)
 - `cctv-ai` 를 다시 켜지 않는다 · 게이트 `:8443` 을 바깥에 여는 방향으로 돌아가지 않는다 · 스키마는 `ensureSchema` 로만

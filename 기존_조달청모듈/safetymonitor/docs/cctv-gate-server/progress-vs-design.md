@@ -5,19 +5,19 @@
 ✅ 끝남 · 🔄 진행 중 · ⏳ 대기(선행 조건 있음) · ⛔ 막힘 · ⚠ 설계와 다르게 한 곳
 ```
 
-## §5-1 젯슨 (팀원 영역 · 변경 3줄) — 담당 [M/L] · 그 세션 승인 대기
+## §5-1 젯슨 (팀원 영역 · 변경 3줄) — 담당 [CCTV/ML](사용자 지시 09-17 「젯슨 진행해줘」) · ✅ 09-17 10:20 완료 · [M/L] 점검 통과
 
 | 항목 | 상태 | 근거 |
 |---|---|---|
-| `Environment=CCTV_BASE=…/api/cctv-gate` | ⏳ | restart ② 에서 · 서버 env 완료 알림 뒤 |
-| `Environment=PUSH_FPS=0.2` (5초 1장) | ⏳ | 같은 drop-in · PUSH_WORKERS 기본 2 → 합산 5초 계산 확인됨 |
-| `Environment=CCTV_INGEST_TOKEN` | 🔄 | 토큰은 젯슨 `~/.cctv_ingest_token` 에 생성됨(600 · 64자 · sha256 앞 a53d83c8) · drop-in 은 `EnvironmentFile` 로 (유닛 파일에 값 직접 안 적음) |
-| 푸셔 `conn.request` 에 `Authorization: Bearer` 1줄 | ⏳ | restart ① 에서 · 서버와 무관하게 먼저 가능(CCTV_BASE 없으면 안 보냄) |
+| `Environment=CCTV_BASE=…/api/cctv-gate` | ✅ | restart ② 10:19:58 · drop-in `/etc/systemd/system/cctv-pusher.service.d/ingest.conf` · 프로세스 `/proc/PID/environ` 에 3종 실측 |
+| `Environment=PUSH_FPS=0.2` (5초 1장) | ✅ | 45초에 `pushed 8` · Cloud Run ingest3 201 ×12 / 55초 = 정확히 5초 간격 · 지연 ≈30ms · 본문 ≈37KB |
+| `Environment=CCTV_INGEST_TOKEN` | ✅ | `~/.cctv_ingest.env`(600 · 83B) → `EnvironmentFile=` · 유닛·drop-in 에 값 없음 · 서버 401→201 로 토큰 일치 실증 |
+| 푸셔 `conn.request` 에 `Authorization: Bearer` 1줄 | ✅ | 커밋 `1f3987d2`(tmp-507e 38번째 · [M/L] 점검 통과) · restart ① 10:18:42 `code_sha 12c1413e9728` · 통제군 `pushed 0` · 백업 `.bak-0917-b1c824d771b0` |
 | 기존 push 워커·경로 `/cctv/ingest3`·쿼리 그대로 | ✅ | 라이브 파일 816-826행 확인 — `drawn·persons·violations·compliance·hardhat·no_hardhat·engine` |
-| ⚠ 쿼리에 `worker`·`unknown` 추가 | ⏳ | **설계에 없음.** 없으면 관제웹 「작업자 N명」이 서버 경로에서 person_count 로 떨어진다 · [M/L] 이 restart ① 에 같이 |
+| ⚠ 쿼리에 `worker`·`unknown` 추가 | ✅ | **설계에 없음.** 같은 커밋 · 운영 DB `cctv_frame.stats` 에 `worker_count`·`unknown_count` 실측 · **+ `zone` 키**([M/L] 지적 — 구역 꺼지면 worker=person 값) · 서버 수용(`zone_on`)은 다음 배포 |
 | 게이트 `:8443` 랜용으로 남기거나 끔 | ⏳ | 1차는 남긴다 — 웹이 아직 게이트를 본다. 2차(웹 전환) 뒤 결정 |
 
-## §5-2 서버 (dashboard-web · astra 작업) — 담당 [CCTV/ML] · 코드 ✅ · 배포 🔄
+## §5-2 서버 (dashboard-web · astra 작업) — 담당 [CCTV/ML] · 코드 ✅ · 배포 ✅ 00390-hfj(이미지 127b880e) → 00391-5q8(env 33)
 
 | 항목 | 상태 | 근거 |
 |---|---|---|
@@ -25,9 +25,9 @@
 | 라우트 ② `GET /api/cctv-gate/cctv/stream3` | ✅ | 게이트 `_verify` 와 같은 순서(kid→서명→nbf→exp→aud→scp) · jti 는 DB 소비 · 단발 `image/jpeg` + `X-Captured-At` · TTL 초과 503 `stale` |
 | ⚠ 라우트 `GET stats3` | ✅ | **설계에 없음.** 관제웹 PPE 줄이 `${gateApi}/cctv/stats3` 를 부른다 · 게이트 화이트리스트와 같은 형태 |
 | ⚠ 라우트 `POST connection3` | ✅ | **설계에 없음.** 서버는 젯슨을 못 부르므로 501 (조용한 200 금지) |
-| 티켓 응답 `gateApi` → env `CAM03_GATE_API` · 코드 변경 0 | ✅ 코드 / ⏳ env | `app/api/app/admin/cctv-ticket/route.ts:82` 가 런타임 env 우선 — 확인 · env 등록은 배포 뒤 [WATCH.APP] |
-| 테이블 `cctv_frame` (ensureSchema 멱등) | ✅ 코드 / 🔄 DB | `lib/db.ts` initSchema · `updated_at DEFAULT NOW_ISO`(설계의 `now_iso` 자리) · 운영 DB 생성은 새 리비전 첫 쿼리 때 — [WATCH.APP] 이 CREATE 실행-ROLLBACK 으로 사전 검사 완료 |
-| 테이블 `cctv_ticket_jti` | ✅ 코드 / 🔄 DB | 같음 · INSERT 충돌 = 재사용 · 2% 확률 만료분 정리 |
+| 티켓 응답 `gateApi` → env `CAM03_GATE_API` · 코드 변경 0 | ✅ | `app/api/app/admin/cctv-ticket/route.ts:82` 가 런타임 env 우선 · `CAM03_GATE_API` 00391-5q8 에 실림(plain) |
+| 테이블 `cctv_frame` (ensureSchema 멱등) | ✅ | `lib/db.ts` initSchema · `updated_at DEFAULT NOW_ISO`(설계의 `now_iso` 자리) · 운영 DB 생성은 새 리비전 첫 쿼리 때 — [WATCH.APP] 이 CREATE 실행-ROLLBACK 으로 사전 검사 완료 |
+| 테이블 `cctv_ticket_jti` | ✅ | 같음 · INSERT 충돌 = 재사용 · 2% 확률 만료분 정리 |
 | 관제웹 MJPEG → 5초 스냅샷 폴링 | ✅ | `6cd3fe3e` · ⚠ 파일은 `CctvQuadView.tsx:195` 가 아니라 **`CctvGateStream.tsx`**(게이트 렌더러가 분리돼 있음) · 단발 JPEG 와 게이트 multipart 첫 프레임 둘 다 받음 |
 | ⚠ stale TTL | ✅ | 설계의 `PPE_LIVE_TTL` 3초는 5초 push 와 어긋나 늘 stale → 기본 15초(`CCTV_FRAME_STALE_SEC`) |
 | 테스트 | ✅ | 20건(티켓 검증 7 · 헬퍼 7 · 배선 가드 6) · tsc 새 오류 0 · lint 0 errors · 전체 2,013 중 실패 2 = 기준선(의존성 미설치) |
@@ -49,11 +49,11 @@
 
 | # | 항목 | 상태 | 근거 |
 |---|---|---|---|
-| 1 | 한 행 5초 UPDATE 의 bloat | ⏳ | 배포 뒤 하루 두고 `pg_stat_user_tables` 의 n_dead_tup·autovacuum 시각으로 |
+| 1 | 한 행 5초 UPDATE 의 bloat | ⏳ | push 시작 09-17 01:20Z · 09-18 같은 시각에 `pg_stat_user_tables` 의 n_dead_tup·autovacuum 시각으로 |
 | 2 | jti 소비를 DB 로 · 만료 정리 | ✅ | 구현됨(소비 때 2% 확률 `DELETE … WHERE exp < now-60`) |
 | 3 | Cloud Run 콜드스타트 (설계: 「dashboard 는 min 0」) | ✅ 해당 없음 | ⚠ **설계 전제가 틀림** — 실측 `minScale=1`. 콜드스타트 없음 |
 | 4 | 관제웹 MJPEG 제거 | ✅ | 가드 테스트가 `RENEW_MARGIN_MS` 부재·`POLL_MS=5000` 를 고정 |
-| 5 | `PUSH_FPS=0.2` 동작 (워커 2 · 위상) | ⏳ | restart ② 뒤 `pushed` 증가율(분당 ≈12)로 |
+| 5 | `PUSH_FPS=0.2` 동작 (워커 2 · 위상) | ✅ | 실측 12건/55초 · 간격 5.00초(01:20:41 → :46 → :51 → :56 → 01:21:01) · 워커 둘이 겹쳐 쏘지 않음 |
 | 6 | 업로드 본문 상한 | ✅ | 256KB 서버 차단 · Cloud Run 32MB 안 |
 
 ## §8 변경 범위·순서
@@ -61,11 +61,11 @@
 | 순서 | 담당(설계) | 실제 담당 | 무엇 | 상태 |
 |---|---|---|---|---|
 | 1 | astra | [CCTV/ML] | `verifyTicket` · 표 2개 · 라우트(2→4) · 테스트 | ✅ `b7ce7b73` |
-| 2 | claude | — | 재현본 curl E2E | ⛔ **못 함** — 이 맥에 DB 없음 · 운영 DB 쓰기는 금지 → 배포 뒤 라이브 실측으로 대체 |
+| 2 | claude | — | 재현본 curl E2E | ✅ **라이브로 대체**(재현본은 ⛔ — 이 맥에 DB 없음 · 운영 DB 쓰기 금지) · 09-17 01:20~01:21Z Cloud Run 201 ×12 + DB `captured_at` 전진 + 무토큰 401 · 틀린토큰 401 · 표 없는 stream3 401 |
 | 3 | astra | [CCTV/ML] | MJPEG → 스냅샷 폴링 | ✅ `6cd3fe3e` |
-| 4 | 태곤 님 승인 후 claude | [WATCH.APP] | main 배포 + Cloud Run env | 🔄 **빌드 중** `b67371dc`(10:04~) · 시크릿 `CCTV_INGEST_TOKEN` v1 등록·바인딩 ✅ · `CAM03_GATE` 는 1차에서 duckdns 유지(웹은 게이트 그대로 · 앱만 서버 경로) |
-| 5 | 팀원 | [M/L] | 젯슨 env 3줄 + 헤더 1줄 → 재기동 | ⏳ [M/L] 세션 승인 3건(과금·역할·시점) 대기 · restart ①(코드) → ②(env) 로 분리 |
-| 6 | claude | 사용자 | 태블릿(AICAM_301A)에서 CCTV — Tailscale 없이 보이는 첫 증거 | ⏳ 5 뒤 |
+| 4 | 태곤 님 승인 후 claude | [WATCH.APP] | main 배포 + Cloud Run env | ✅ 00390-hfj(digest 7c729072 · 127b880e) → 00391-5q8(env 3종) · 아카이브 2012/2012 · 시크릿 `CCTV_INGEST_TOKEN` v1 등록·바인딩 ✅ · `CAM03_GATE` 는 1차에서 duckdns 유지(웹은 게이트 그대로 · 앱만 서버 경로) |
+| 5 | 팀원 | [CCTV/ML] | 젯슨 env 3줄 + 헤더 1줄 → 재기동 | ✅ 사용자 지시로 이 세션이 실행 · restart ①(코드 · 통제군 pushed 0) → ②(env · pushed 8/45초) · [M/L] 은 코드 점검 |
+| 6 | claude | 사용자 | 태블릿(AICAM_301A)에서 CCTV — Tailscale 없이 보이는 첫 증거 | ⏳ **이제 사용자 차례** — 젯슨·서버·DB 전부 09-17 10:20 완료 · 앱은 티켓 응답의 `gateApi` 가 서버라 코드 변경 0 |
 
 ## §8 하지 말 것
 
@@ -80,7 +80,11 @@
 ## 합계
 
 ```
-설계 항목 26   ✅ 15 · 🔄 3 · ⏳ 7 · ⛔ 1
+09-16 집계  설계 항목 26   ✅ 15 · 🔄 3 · ⏳ 7 · ⛔ 1
+09-17 10:2x 이 문서의 모든 표 행 35  ✅ 32 · 🔄 0 · ⏳ 3 · ⛔ 0   ← 세는 범위가 09-16(26)과 다르다(그때는 §5·§7·§8 일부만). 두 줄을 빼기로 읽지 말 것.
+            남은 ⏳ 3 = 태블릿 실측(사용자) · 게이트 8443 처분(2차 뒤) · bloat(09-18) — 젯슨·서버·DB 는 전부 닫힘
 ⚠ 설계와 다르게 한 곳 6  — stats3·connection3 추가 · stale 15초 · worker/unknown 쿼리 · 폴링 파일 위치 · minScale 전제 · 비용 근거
 설계 밖에서 한 것       — 토큰을 채팅 없이 생성(젯슨 파일 → 파이프 → Secret Manager) · worker_count 회귀 방지 체리픽(09fa0b49)
+                        · 푸셔 `zone` 키 + 서버 `zone_on`(구역 꺼짐 = worker 값이 person 값 · [M/L] 지적) · 젯슨 `.build` 표식 갱신(다음 재기동부터 반영)
+젯슨 실행 주체 변경     — 설계는 팀원([M/L]) · 사용자 지시(09-17 「env 반영되면 [M/L]에 알리고 젯슨 진행해줘」)로 [CCTV/ML] 이 실행 · [M/L] 은 커밋 점검
 ```
