@@ -51,6 +51,7 @@ class FieldCoordinator extends FieldController {
   MobileSession? _session;
   DateTime? _accessExpiresAt;
   Future<void>? _refreshing;
+  bool _revalidateOnReconnect = false;
   int _epoch = 0;
   int _period = 0;
   bool _remember = true;
@@ -63,6 +64,7 @@ class FieldCoordinator extends FieldController {
   }
 
   void _clearView() {
+    _revalidateOnReconnect = false;
     user = null;
     site = null;
     fetchedAt = null;
@@ -83,6 +85,10 @@ class FieldCoordinator extends FieldController {
   // worker는 워치 앱 대상이므로 이 태블릿 앱에서는 계속 거부한다.
   bool _allowed(AppUser user) =>
       const {'platform_admin', 'site_manager', 'admin'}.contains(user.role);
+
+  bool _authenticationRejected(Object error) =>
+      error is ApiFailure &&
+      (error.status == 401 || error.status == 403 || error.action == 'reauth');
 
   Future<void> _accept(
     MobileSession session,
@@ -120,18 +126,28 @@ class FieldCoordinator extends FieldController {
   @override
   Future<void> initialize() async {
     final epoch = ++_epoch;
+    MobileSession? savedSession;
+    _revalidateOnReconnect = false;
+    message = null;
     try {
       final raw = await local.readTokenBundle();
+      if (epoch != _epoch) return;
       if (raw == null) {
         authStage = AuthStage.login;
         return;
       }
       final stored = jsonDecode(raw) as Map;
+      final session = MobileSession(
+        Map<String, dynamic>.from(stored['session'] as Map),
+      );
       await _accept(
-        MobileSession(Map<String, dynamic>.from(stored['session'] as Map)),
+        session,
         epoch,
         expiresAt: DateTime.parse(stored['localAccessExpiresAt'] as String),
       );
+      if (epoch != _epoch) return;
+      // _accept의 저장 사용자 역할 검사를 통과한 세션만 오프라인 복원한다.
+      savedSession = session;
       final current = await _authorized(gateway.me);
       if (!_allowed(current)) {
         throw const ApiFailure(
@@ -141,14 +157,98 @@ class FieldCoordinator extends FieldController {
         );
       }
       user = current;
-      site = await _authorized(gateway.siteInfo);
+      site = await _loadSite();
+      if (epoch != _epoch) return;
       authStage = AuthStage.ready;
-    } catch (_) {
+    } catch (error) {
+      // _authorized가 이 복원 중 _lock한 경우에는 기존 로그인 안내를 유지한다.
+      if (epoch != _epoch && authStage != AuthStage.reauthenticate) return;
+      DateTime? refreshExpiresAt;
+      final session = savedSession;
+      if (!_authenticationRejected(error) && session != null && epoch == _epoch) {
+        try {
+          refreshExpiresAt = DateTime.tryParse(session.refreshExpiresAt);
+        } catch (_) {
+          // 손상된 저장 만료 시각으로는 오프라인 진입을 허용하지 않는다.
+        }
+        if (refreshExpiresAt?.isAfter(DateTime.now()) ?? false) {
+          final cachedSite = await _readCachedSite(session.user.id);
+          if (epoch != _epoch) return;
+          user = session.user;
+          site = cachedSite;
+          authStage = AuthStage.ready;
+          offline = true;
+          message = null;
+          _revalidateOnReconnect = true;
+          return;
+        }
+      }
       if (authStage != AuthStage.denied) authStage = AuthStage.login;
       _clearView();
-      message = '저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
+      message = refreshExpiresAt != null
+          ? '저장된 로그인의 유효 기간이 지났습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.'
+          : '저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
     } finally {
       _notify();
+    }
+  }
+
+  Future<SiteInfo?> _loadSite() async {
+    final epoch = _epoch;
+    final account = user?.id;
+    final result = await _authorized(gateway.siteInfo);
+    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    if (account != null) {
+      // null 응답도 기록하여 이전 현장이 다음 오프라인 실행에 남지 않게 한다.
+      await local.write(account, 'site:info', jsonEncode(result?.json));
+    }
+    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
+    return result;
+  }
+
+  Future<SiteInfo?> _readCachedSite(String account) async {
+    try {
+      final raw = await local.read(account, 'site:info');
+      final data = raw == null ? null : jsonDecode(raw);
+      return data is Map ? SiteInfo(Map<String, dynamic>.from(data)) : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _markOnline() {
+    final wasOffline = offline;
+    offline = false;
+    if (!wasOffline) return;
+    if (_revalidateOnReconnect) {
+      // 시작 전에 소비하여 병렬 요청과 me 자체의 성공이 중복 확인하지 않게 한다.
+      _revalidateOnReconnect = false;
+      unawaited(_revalidateSession(_epoch));
+    }
+    _notify();
+  }
+
+  Future<void> _revalidateSession(int epoch) async {
+    try {
+      final current = await _authorized(gateway.me, retryUnauthorized: false);
+      if (epoch != _epoch) return;
+      if (!_allowed(current)) {
+        throw const ApiFailure(
+          '이 앱을 사용할 수 없는 계정입니다',
+          status: 403,
+          action: 'reauth',
+        );
+      }
+      user = current;
+      try {
+        site = await _loadSite();
+      } catch (_) {
+        // 현장 조회 실패는 me 재확인 성공과 기존 현장 정보를 되돌리지 않는다.
+      }
+      if (epoch != _epoch) return;
+      _notify();
+    } catch (error) {
+      if (epoch == _epoch && _authenticationRejected(error)) await _lock();
     }
   }
 
@@ -184,7 +284,7 @@ class FieldCoordinator extends FieldController {
       await _accept(session, epoch);
       _challengePassword = null;
       _challengeId = null;
-      site = await _authorized(gateway.siteInfo);
+      site = await _loadSite();
       if (epoch != _epoch) return;
       // 배정·첫 비밀번호 변경 상태는 서버가 주지 않는다(login/me 응답에 없음).
       // 2026-09-12 결정: 서버 확장 대신 A-06·A-12 를 앱에서 제외한다.
@@ -310,7 +410,7 @@ class FieldCoordinator extends FieldController {
           uncertainWrite: writing,
         );
       }
-      offline = false;
+      _markOnline();
       return result;
     } on ApiFailure catch (error) {
       if (epoch != _epoch) rethrow;
@@ -330,7 +430,7 @@ class FieldCoordinator extends FieldController {
               uncertainWrite: writing,
             );
           }
-          offline = false;
+          _markOnline();
           return result;
         } on ApiFailure catch (retryError) {
           if (epoch == _epoch &&

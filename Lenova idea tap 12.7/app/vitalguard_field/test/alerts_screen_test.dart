@@ -453,6 +453,8 @@ class _Fixture {
     addTearDown(tester.view.resetPhysicalSize);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await field.signIn('demo', 'mock');
+    // 로그인 현장 캐시는 준비 단계다. 이후 경보 동작의 저장만 검사한다.
+    store.writes = 0;
     await tester.pumpWidget(
       MaterialApp(
         theme: vgLightTheme(),

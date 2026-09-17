@@ -309,6 +309,8 @@ class _Fixture {
   static Future<_Fixture> create() async {
     final f = _Fixture();
     await f.field.signIn('demo', 'mock');
+    // 로그인 현장 캐시는 준비 단계다. 이후 경보 동작의 저장만 검사한다.
+    f.store.writes = 0;
     f.alerts = AlertsController(f.field);
     addTearDown(() {
       f.alerts.dispose();
