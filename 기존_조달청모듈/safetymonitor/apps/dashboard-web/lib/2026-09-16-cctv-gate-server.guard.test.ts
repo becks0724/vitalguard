@@ -85,17 +85,34 @@ test("ingest1 — CAM-01 전용이고 ingest3 와 같은 문을 지난다", () =
   assert.match(src, /upsertCctvFrame\(/, "DB 한 행에 덮어쓴다 — 메모리 보관 없음");
 });
 
-test("ingest1·ingest3 — 경로마다 카메라가 하나로 고정된다", () => {
-  // ★ 이것이 이 가드의 핵심이다. ingest1 은 ingest3 를 베껴 만들었고,
-  //   접미사를 안 바꾸면 **CAM-01 영상이 CAM-03 자리를 덮는다.** tsc·lint 는 이것을 못 본다.
-  const one = read("app/api/cctv-gate/cctv/ingest1/route.ts");
-  const three = read("app/api/cctv-gate/cctv/ingest3/route.ts");
-  assert.match(one, /cameraIdForSuffix\("1"\)/, "ingest1 은 CAM-01 을 가리킨다");
-  assert.doesNotMatch(one, /cameraIdForSuffix\("3"\)/, "ingest1 에 CAM-03 이 남아 있으면 베끼기 사고다");
-  assert.match(three, /cameraIdForSuffix\("3"\)/, "ingest3 은 CAM-03 을 가리킨다");
-  assert.doesNotMatch(three, /cameraIdForSuffix\("1"\)/, "ingest3 에 CAM-01 이 들어가면 반대 방향 사고다");
-  // 접미사는 상수여야 한다 — 요청에서 받으면 아무 카메라나 덮어쓸 수 있다
-  for (const [name, src] of [["ingest1", one], ["ingest3", three]] as const) {
-    assert.doesNotMatch(src, /cameraIdForSuffix\([^"]/, `${name} 이 접미사를 상수가 아닌 값으로 받으면 안 된다`);
+test("경로마다 카메라가 하나로 고정된다 — 8개 전부", () => {
+  // ★ 이것이 이 가드의 핵심이다. 1번 넷은 3번 넷을 베껴 만들었고,
+  //   접미사를 안 바꾸면 **CAM-01 자리와 CAM-03 자리가 섞인다.** tsc·lint 는 이것을 못 본다.
+  //   넣는 문(ingest)에서 틀리면 영상이 남의 자리를 덮고, 꺼내는 문(stream·stats)에서 틀리면
+  //   화면이 남의 카메라를 보여준다. 방향만 다르고 둘 다 조용히 일어난다.
+  for (const kind of ["ingest", "stream", "stats", "connection"]) {
+    for (const [suffix, other] of [["1", "3"], ["3", "1"]] as const) {
+      const path = `app/api/cctv-gate/cctv/${kind}${suffix}/route.ts`;
+      const src = read(path);
+      assert.match(src, new RegExp(`cameraIdForSuffix\\("${suffix}"\\)`), `${kind}${suffix} 는 CAM-0${suffix} 를 가리킨다`);
+      assert.doesNotMatch(src, new RegExp(`cameraIdForSuffix\\("${other}"\\)`), `${kind}${suffix} 에 CAM-0${other} 가 있으면 베끼기 사고다`);
+      // 접미사는 상수여야 한다 — 요청에서 받으면 아무 카메라나 지목할 수 있다
+      assert.doesNotMatch(src, /cameraIdForSuffix\([^"]/, `${kind}${suffix} 가 접미사를 상수가 아닌 값으로 받으면 안 된다`);
+    }
   }
+});
+
+test("stream1·stats1·connection1 — 셋 다 같은 문(authorizeGate)을 지난다", () => {
+  // stream3 짝과 같은 불변식. 베끼면서 문을 빠뜨리면 표 없이 남의 영상이 나간다.
+  for (const r of ["stream1", "stats1", "connection1"]) {
+    const src = read(`app/api/cctv-gate/cctv/${r}/route.ts`);
+    assert.match(src, /authorizeGate\(request/, `${r} 가 표 검증·소비 문을 지난다`);
+    assert.doesNotMatch(src, /verifyTicket\(/, `${r} 가 검증을 직접 하지 않는다 — 문은 하나여야 한다`);
+  }
+  // 꺼내는 문 둘은 오래된 프레임을 살아 있는 척 주지 않는다
+  for (const r of ["stream1", "stats1"]) {
+    assert.match(read(`app/api/cctv-gate/cctv/${r}/route.ts`), /isStale\(/, `${r} 가 stale 을 본다`);
+  }
+  // 토글은 할 수 없다고 말한다 — 조용한 200 금지
+  assert.match(read("app/api/cctv-gate/cctv/connection1/route.ts"), /501/, "connection1 은 501 로 답한다");
 });
