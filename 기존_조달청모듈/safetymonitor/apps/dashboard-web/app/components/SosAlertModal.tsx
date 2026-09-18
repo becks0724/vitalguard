@@ -81,9 +81,16 @@ function buildSmsBody(sample: VitalSample, audience: "guardian" | "119", reason:
   if (sample.spo2 !== undefined) {
     vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Status(sample.spo2))}`);
   }
+  // ⚠ **문자에는 「체온추정」이라 적지 않는다**(2026-09-18). 이 값은 `피부온 + 0.5` 이고
+  //    그 오프셋은 근거가 확인된 적이 없다(`thresholds.ts` wristToCoreOffsetC 주석).
+  //    실측 — 최근 30일 피부온 6,168행에 이 계산을 걸면 **35℃ 미만 1,111행(18.0%) ·
+  //    32℃ 미만 51행 · 최저 25.98℃** 가 나온다. 정상 작업자의 문자에 「체온추정 26.0℃」가
+  //    실리면 119 는 중증 저체온 응급으로 읽는다 — 수신자가 되돌릴 수 없는 오독이다.
+  //    ⟹ 실측 피부온을 실측 피부온이라 적고, 심부라는 이름을 뗀다. 심부 추정은 심박 칼만
+  //      (`coreTempStatusC`) 이 따로 있으나 그 값은 이 모달에 들어오지 않는다.
+  //    ⚠ 화면 표시(`체온 추정` 카드·경보 사유)는 이 변경 범위 밖이다 — 문자만 고쳤다.
   if (sample.skinTempC !== undefined) {
-    const core = estimateCoreTempC(sample.skinTempC).toFixed(1);
-    vitals.push(`체온추정 ${core}℃${labelSeverity(coreSeverity(sample.skinTempC))}`);
+    vitals.push(`피부온 ${sample.skinTempC.toFixed(1)}℃ (심부체온 아님)`);
   }
   if (vitals.length > 0) {
     lines.push(`생체: ${vitals.join(", ")}`);
