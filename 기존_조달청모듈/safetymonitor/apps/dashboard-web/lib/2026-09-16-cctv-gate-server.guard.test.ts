@@ -71,3 +71,31 @@ test("db — cctv_frame · cctv_ticket_jti 가 ensureSchema(initSchema) 안에 �
   assert.match(src, /REFERENCES cctv_camera\(camera_id\)/, "프레임 행은 카메라 대장에 묶인다");
   assert.match(src, /ON CONFLICT \(jti\) DO NOTHING RETURNING jti/, "jti 소비는 INSERT 충돌로 판정한다");
 });
+
+// ★ 2026-09-18 추가 — CAM-01 이 다른 장소·다른 공유기로 옮겨가 게이트 경로가 끊겼다.
+//   2호기 젯슨이 인터넷으로 직접 밀도록 ingest1 을 신설했다. ingest3 를 베껴 만든 경로다.
+test("ingest1 — CAM-01 전용이고 ingest3 와 같은 문을 지난다", () => {
+  const src = read("app/api/cctv-gate/cctv/ingest1/route.ts");
+  // ingest3 와 같은 불변식 — 베끼면서 빠지기 쉬운 것들
+  assert.match(src, /ingestTokenMatches\(/, "상수 시간 토큰 비교를 거친다");
+  assert.match(src, /CCTV_INGEST_TOKEN/, "젯슨 전용 env 를 읽는다");
+  assert.doesNotMatch(src, /ingestAuthStatus/, "soft 모드(무토큰 수용)로 풀리면 아무나 프레임을 덮어쓴다");
+  assert.match(src, /503/, "토큰 env 가 없으면 받지 않는다(조용한 200 금지)");
+  assert.match(src, /MAX_JPEG_BYTES/, "본문 상한을 본다");
+  assert.match(src, /upsertCctvFrame\(/, "DB 한 행에 덮어쓴다 — 메모리 보관 없음");
+});
+
+test("ingest1·ingest3 — 경로마다 카메라가 하나로 고정된다", () => {
+  // ★ 이것이 이 가드의 핵심이다. ingest1 은 ingest3 를 베껴 만들었고,
+  //   접미사를 안 바꾸면 **CAM-01 영상이 CAM-03 자리를 덮는다.** tsc·lint 는 이것을 못 본다.
+  const one = read("app/api/cctv-gate/cctv/ingest1/route.ts");
+  const three = read("app/api/cctv-gate/cctv/ingest3/route.ts");
+  assert.match(one, /cameraIdForSuffix\("1"\)/, "ingest1 은 CAM-01 을 가리킨다");
+  assert.doesNotMatch(one, /cameraIdForSuffix\("3"\)/, "ingest1 에 CAM-03 이 남아 있으면 베끼기 사고다");
+  assert.match(three, /cameraIdForSuffix\("3"\)/, "ingest3 은 CAM-03 을 가리킨다");
+  assert.doesNotMatch(three, /cameraIdForSuffix\("1"\)/, "ingest3 에 CAM-01 이 들어가면 반대 방향 사고다");
+  // 접미사는 상수여야 한다 — 요청에서 받으면 아무 카메라나 덮어쓸 수 있다
+  for (const [name, src] of [["ingest1", one], ["ingest3", three]] as const) {
+    assert.doesNotMatch(src, /cameraIdForSuffix\([^"]/, `${name} 이 접미사를 상수가 아닌 값으로 받으면 안 된다`);
+  }
+});
