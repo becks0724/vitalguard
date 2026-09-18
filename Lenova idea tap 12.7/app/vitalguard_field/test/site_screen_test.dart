@@ -313,11 +313,6 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('shell-receipt'))).data,
       '마지막 수신 2026-09-15 00:13:04 KST',
     );
-    expect(
-      fixture.controller.fetchedAt,
-      isNull,
-      reason: '로컬 기록 탭은 서버 기록 수신 시각을 만들지 않는다',
-    );
     await fixture.close(tester);
   });
 }

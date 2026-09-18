@@ -212,11 +212,10 @@ class _FieldShellState extends State<FieldShell> {
           '$reason 경보 대응 확인은 연결 후 가능하며 예약되지 않습니다. '
               '이 화면이 열려 있으면 ${siteStatusRefreshInterval.inSeconds}초마다 조회를 재시도합니다. 연결 후 경보를 다시 확인하고 대응 확인을 눌러 주세요.',
         2 =>
-          '$reason 최신 기록 조회·전송은 할 수 없습니다. 이전에 받은 자료입니다. '
-              '사진·잉크본·음성 댓글은 전송 대기열에, 글 댓글은 기기 초안에 보관합니다. '
-              '연결 후 기록 새로 고침, 사진·음성 댓글은 전송 상태에서 전송/재시도, 글 댓글은 입력 화면에서 확인 후 댓글 저장을 눌러 주세요.',
+          '$reason 촬영한 사진과 주석·메모·음성은 기기에 보관합니다. '
+              '연결 후 사진 상세의 전송이나 전송 상태 탭에서 보내 주세요.',
         3 =>
-          '$reason 사진·잉크본·음성 댓글은 전송 대기열에 보관합니다. '
+          '$reason 사진·주석·메모·음성은 기기에 보관합니다. '
               '연결 후 각 항목의 전송/재시도를 눌러 주세요. 결과 불명 항목은 서버 반영 여부부터 확인해 주세요.',
         _ =>
           '$reason 설정은 기기에 저장할 수 있습니다. '
@@ -229,9 +228,8 @@ class _FieldShellState extends State<FieldShell> {
       }
       return siteStatusReceipt(c.siteStatusSnapshot?.fetchedAt);
     }
-    return c.fetchedAt == null
-        ? '기록을 확인해 주세요'
-        : '마지막 수신 ${c.fetchedAt!.toLocal().toString().substring(0, 19)}';
+    // R-7: 기록은 서버에서 받지 않으므로 수신 시각이 없다.
+    return '전송 전 기록은 기기에 보관 · 전송한 기록은 관제웹에서 봅니다';
   }
 
   @override

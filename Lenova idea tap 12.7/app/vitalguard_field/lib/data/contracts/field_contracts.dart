@@ -126,7 +126,6 @@ abstract class FieldController extends ChangeNotifier {
   DateTime? get lockedUntil;
   AppUser? get user;
   SiteInfo? get site;
-  DateTime? get fetchedAt;
   SpeechInput get speech;
   VoiceRecorder get recorder => const UnavailableVoiceRecorder();
   LocalStore get local;

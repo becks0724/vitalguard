@@ -35,7 +35,6 @@ class FieldCoordinator extends FieldController {
   @override
   SiteInfo? site;
   @override
-  DateTime? fetchedAt;
   @override
   SiteStatus? siteStatusSnapshot;
   @override
@@ -60,7 +59,6 @@ class FieldCoordinator extends FieldController {
     _revalidateOnReconnect = false;
     user = null;
     site = null;
-    fetchedAt = null;
     siteStatusSnapshot = null;
     siteStatusForbidden = false;
   }
