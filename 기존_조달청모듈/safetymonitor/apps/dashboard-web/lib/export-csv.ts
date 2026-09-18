@@ -6,7 +6,7 @@ import { computeStressIndex } from "@safetymonitor/analyzers";
 import type { ExportRow, SiteInfoRow } from "./db";
 import {
   STATUS_LABEL,
-  coreTempStatus,
+  skinTempStatus,
   heartRateStatus,
   overallStatus,
   spo2Status,
@@ -89,7 +89,7 @@ export function withStatuses(row: ExportRow, profiles: Record<string, string>) {
     job_title: profiles[row.worker_id] ?? row.job_title,
     hr_status: STATUS_LABEL[heartRateStatus(row.heart_rate)],
     spo2_status: STATUS_LABEL[spo2Status(row.spo2)],
-    temp_status: STATUS_LABEL[coreTempStatus(row.skin_temp_c)],
+    temp_status: STATUS_LABEL[skinTempStatus(row.skin_temp_c)],
     overall_status: STATUS_LABEL[overallStatus(row)],
     stress_index: stress.calibrating ? null : stress.index,
   };

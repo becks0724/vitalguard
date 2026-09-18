@@ -11,7 +11,7 @@ import {
 } from "../../../../lib/db";
 import {
   SEVERITY_SQL_PARAMS,
-  coreTempStatus,
+  skinTempStatus,
   heartRateStatus,
   overallStatus,
   spo2Status,
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
     ...row,
     hr_status: heartRateStatus(row.heart_rate),
     spo2_status: spo2Status(row.spo2),
-    temp_status: coreTempStatus(row.skin_temp_c),
+    temp_status: skinTempStatus(row.skin_temp_c),
     overall_status: overallStatus(row),
   }));
 
