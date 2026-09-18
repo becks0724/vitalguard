@@ -137,32 +137,18 @@ void main() {
     expect(client.requests.length, 2);
   });
 
-  test('모의 업로드도 원본과 모든 잉크 버전을 보존하고 목록은 최신을 가리킨다', () async {
+  test('모의 잉크 업로드는 원본 참조와 작업 ID를 보존하고 중복을 재사용한다', () async {
     final gateway = MockGateway();
-    final date = calendarDate(kstNow());
-    final photo = (await gateway.media('token', date, date)).single;
-    final before = await gateway.image(photo.media_url!);
-    final first = encodeInk([
-      InkStroke(InkTool.pen, 0xff000000, 0.004, [
-        [0.1, 0.2, 0.5],
-      ]),
-    ]);
-    final one = await gateway.upload('token', first, annotationFields(photo));
-    final two = await gateway.upload(
-      'token',
-      encodeInk([]),
-      annotationFields(photo),
-    );
-    expect(one.id, isNot(two.id));
+    final photo = await gateway.upload('token', Uint8List.fromList([1]), {
+      'dateKey': '2026-09-14',
+    });
+    final fields = {...annotationFields(photo), 'clientOperationId': 'ink-op'};
+    final one = await gateway.upload('token', encodeInk([]), fields);
+    final again = await gateway.upload('token', encodeInk([]), fields);
     expect(one.media_type, 'ink');
-    expect(two.json['annotation_of'], photo.id);
-    expect(await gateway.image(one.media_url!), first);
-    expect(await gateway.image(two.media_url!), encodeInk([]));
-    expect(await gateway.image(photo.media_url!), before);
-    final rows = await gateway.media('token', date, date);
-    expect(rows.length, 1);
-    expect(rows.single.id, photo.id);
-    expect(rows.single.json['annotationId'], two.id);
+    expect(one.json['annotation_of'], photo.id);
+    expect(again.id, one.id);
+    expect(again.deduplicated, isTrue);
   });
 }
 

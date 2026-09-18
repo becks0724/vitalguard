@@ -79,7 +79,7 @@ class _Launcher implements CaptureLauncher {
   @override
   Future<CaptureRunResult?> capturePhoto(BuildContext context) async {
     photoCalls++;
-    return const CaptureRunResult(uploaded: 1, failed: 0);
+    return const CaptureRunResult(uploaded: 0, queued: 1, failed: 0);
   }
 
   @override
@@ -201,7 +201,9 @@ void main() {
       siteId: 'site-1',
     );
 
-    expect(result.uploaded, 1);
+    expect(result.uploaded, 0);
+    expect(result.queued, 1);
+    expect(result.queuedIds, ['capture-1']);
     expect(port.calls, [
       'location',
       'server-address',
@@ -281,7 +283,7 @@ void main() {
     await tester.tap(find.byKey(const Key('photo-capture')));
     await tester.pump();
     expect(launcher.photoCalls, 1);
-    expect(find.text('$mockCompletedLabel · 1건'), findsOneWidget);
+    expect(find.text('기기에 저장됨 · 1건 · 주석·메모를 붙인 뒤 전송'), findsOneWidget);
     expect(reloads, 1);
 
     await tester.pumpWidget(const SizedBox.shrink());

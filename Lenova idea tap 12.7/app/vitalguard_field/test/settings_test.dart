@@ -17,6 +17,8 @@ import 'package:vitalguard_field/ui/settings/settings_screen.dart';
 import 'package:vitalguard_field/ui/shell/field_shell.dart';
 import 'package:vitalguard_field/vg_theme.dart';
 
+import 'support/record_fixture.dart';
+
 class _ControlledStore extends MemoryStore {
   Completer<String?>? pendingRead;
   Completer<void>? pendingWrite;
@@ -131,11 +133,7 @@ void _lowerSide(WidgetTester tester, Finder group, ActionSide side) {
 
 Future<void> _photo(WidgetTester tester, Size size) async {
   await _tab(tester, 2);
-  final pane = find.byKey(
-    ValueKey(
-      size.width > size.height ? 'record-day-pane' : 'record-single-pane',
-    ),
-  );
+  final pane = find.byKey(const Key('record-pending-list'));
   await tester.scrollUntilVisible(
     find.text('모의 현장 사진'),
     240,
@@ -296,11 +294,7 @@ void main() {
       await _mount(tester, controller, size: size);
       await _tab(tester, 2);
       final home = tester.state(find.byType(RecordHome));
-      final pane = find.byKey(
-        ValueKey(
-          orientation == '가로' ? 'record-calendar-pane' : 'record-single-pane',
-        ),
-      );
+      final pane = find.byKey(const Key('record-pending-list'));
       final contentBefore = tester.getRect(pane);
       final group = find.byKey(const Key('record-capture-actions'));
       final scan = find.byKey(const Key('document-scan'));
@@ -336,13 +330,14 @@ void main() {
       tester,
     ) async {
       final controller = await _controller();
+      final photo = await seedPhoto(controller);
       await _mount(tester, controller, size: size);
       await _photo(tester, size);
       final detail = tester.state(find.byType(PhotoDetail));
       final title = tester.getRect(find.text('모의 현장 사진'));
       final photoGroup = find.byKey(const Key('photo-detail-actions'));
-      final pen = _button('펜으로 표시하기');
-      final comment = _button('기록·댓글 남기기');
+      final pen = _button('주석 그리기');
+      final comment = _button('메모·음성 붙이기');
       final right = tester.getRect(photoGroup);
       for (final side in [ActionSide.left, ActionSide.right]) {
         await _choose(tester, side);
@@ -384,14 +379,9 @@ void main() {
           'clear-all',
         ])
           find.byKey(Key('editor-$id')),
-        for (final label in ['기기에 저장', '주석 저장']) _button(label),
+        for (final label in ['주석 저장']) _button(label),
         // 확대·축소·방향 이동은 손가락 제스처로 옮겼다(2026-09-15) — 버튼이 없다.
-        for (final tooltip in [
-          '마지막 획 되돌리기',
-          '빨간 펜',
-          '검정 펜',
-          '파란 펜',
-        ])
+        for (final tooltip in ['마지막 획 되돌리기', '빨간 펜', '검정 펜', '파란 펜'])
           find.byTooltip(tooltip),
       ];
       for (final side in [ActionSide.left, ActionSide.right]) {
@@ -409,7 +399,6 @@ void main() {
         )) {
           _target(tester, find.byWidget(button), vgTapMin);
         }
-        _target(tester, _button('기기에 저장'), vgTapPrimary);
         _target(tester, _button('주석 저장'), vgTapPrimary);
         expect(
           tester.getRect(find.byKey(const Key('ink-canvas'))),
@@ -429,7 +418,7 @@ void main() {
       expect(
         await controller.local.read(
           controller.user!.id,
-          'annotation:mock-original-001',
+          'annotation:${photo.id}',
         ),
         contains('marker'),
       );

@@ -103,9 +103,7 @@ class _RecordEditorState extends State<RecordEditor>
       leaving = false,
       canPop = false,
       dirty = false;
-  String status = 'draft';
   String? error;
-  CalendarMedia? receipt;
   Future<void> Function()? previousFlusher;
   late final Future<void> Function() flusher;
   Future<void> writes = Future.value();
@@ -114,6 +112,9 @@ class _RecordEditorState extends State<RecordEditor>
   @override
   void initState() {
     super.initState();
+    if (widget.original.json['local'] != true) {
+      throw ArgumentError('로컬 사진만 편집할 수 있습니다');
+    }
     owner = widget.controller.user!.id;
     session = RecordSession(widget.controller);
     origin = widget.original;
@@ -159,37 +160,22 @@ class _RecordEditorState extends State<RecordEditor>
     try {
       final savedStrokes = <InkStroke>[];
       final store = widget.controller.local;
-      final alias = await store.read(owner, 'published:${widget.original.id}');
-      draftId = alias ?? widget.original.id;
+      requireEditablePhoto(widget.controller, widget.original.id, owner);
+      draftId = widget.original.id;
       final raw = await store.read(owner, 'annotation:$draftId');
       if (raw != null) {
         final data = jsonDecode(raw) as Map;
-        origin = CalendarMedia(
-          Map<String, dynamic>.from(data['origin'] as Map),
-        );
         savedStrokes.addAll(
           (data['strokes'] as List).map(
             (s) => InkStroke.fromJson(Map<String, dynamic>.from(s as Map)),
           ),
         );
-        status = data['status'] as String? ?? 'draft';
         operationId = data['clientOperationId'] as String?;
         draftSiteName = data['siteName'] as String? ?? '작성 현장명 미기록';
         dirty = data['dirty'] == true;
         revision = data['revision'] as int? ?? 0;
-        if (status == 'sending') status = 'uncertain'; // 종료 중 전송 결과를 받지 못한 경우.
-        if (data['receipt'] is Map) {
-          receipt = CalendarMedia(
-            Map<String, dynamic>.from(data['receipt'] as Map),
-          );
-        }
       }
-      await widget.controller.outbox.load();
-      syncOperation();
-      baseBytes =
-          await store.readBytes(owner, 'annotation-base:$draftId') ??
-          await widget.controller.photoBytes(origin);
-      await store.writeBytes(owner, 'annotation-base:$draftId', baseBytes!);
+      baseBytes = await widget.controller.photoBytes(origin);
       final codec = await ui.instantiateImageCodec(baseBytes!);
       final decoded = (await codec.getNextFrame()).image;
       codec.dispose();
@@ -207,7 +193,6 @@ class _RecordEditorState extends State<RecordEditor>
         if (savedStrokes.any((s) => s.tool == InkTool.eraser)) {
           dirty = true;
           revision++;
-          if (status != 'uncertain') status = 'draft';
         }
         error = null;
       });
@@ -233,8 +218,7 @@ class _RecordEditorState extends State<RecordEditor>
     final snapshot = jsonEncode({
       'origin': rawOrigin,
       'strokes': [...strokes, ...pendingInk].map((s) => s.toJson()).toList(),
-      'status': status,
-      'receipt': receipt?.json,
+      'status': 'draft',
       'schemaVersion': 1,
       'clientOperationId': operationId,
       'siteName': draftSiteName,
@@ -366,7 +350,6 @@ class _RecordEditorState extends State<RecordEditor>
       }
       dirty = true;
       revision++;
-      if (status != 'uncertain') status = 'draft';
     });
   }
 
@@ -470,7 +453,6 @@ class _RecordEditorState extends State<RecordEditor>
       undoHistory.clear(); // 전체 지우기는 기존 확인창의 '되돌릴 수 없음'을 유지한다.
       dirty = true;
       revision++;
-      if (status != 'uncertain') status = 'draft';
     });
     try {
       await persist();
@@ -536,94 +518,63 @@ class _RecordEditorState extends State<RecordEditor>
     return bytes!.buffer.asUint8List();
   }
 
-  void syncOperation() {
-    final item = widget.controller.outbox.entry(operationId);
-    if (item == null) return; // 기존 schemaVersion 1 초안도 그대로 복원한다.
-    if (item.needsVerification || item.phase == OutboxPhase.sending) {
-      status = 'uncertain';
-    } else if (item.phase == OutboxPhase.completed) {
-      status = dirty ? 'draft' : 'sent';
-      if (item.receipt != null) receipt = CalendarMedia(item.receipt!);
-    } else {
-      status = 'draft';
-    }
-  }
-
-  Future<void> save({bool localOnly = false}) async {
+  Future<void> save() async {
     if (busy || image == null || active.isNotEmpty) return;
     setState(() {
       busy = true;
       error = null;
     });
     try {
-      await persist();
-      final png = await render();
-      final ink = encodeInk(strokes);
-      error = inkUploadSizeError(ink.lengthInBytes);
-      syncOperation();
-      if (error == null &&
-          status != 'uncertain' &&
-          (status != 'sent' || dirty)) {
-        // 편집 리비전마다 별도 작업을 만든다. 재시도는 그 리비전의 보관본을 쓰며,
-        // 새 주석도 원본/이전 게시본을 덮어쓰지 않는다.
-        final existing = widget.controller.outbox.entry(operationId);
-        if (!dirty && operationId != null && existing == null) {
-          throw const ApiFailure(
-            '기존 전송 작업을 읽지 못했습니다. 전송 원장을 다시 열어 주세요.',
-            status: 400,
-          );
-        }
-        final item = !dirty && existing != null
-            ? existing
-            : await widget.controller.outbox.enqueue(
-                kind: OutboxKind.ink,
-                bytes: ink,
-                fields: annotationFields(origin),
-                siteName: draftSiteName,
-                owner: owner,
-                sourceKey: 'annotation:$draftId:$revision',
-                annotationDraftId: draftId,
-                previewBytes: png,
-              );
-        operationId = item.id;
-        dirty = false;
-        await persist(); // 큐 링크도 기존 편집 초안에 남긴다.
-        if (!localOnly && !widget.controller.offline) {
-          await widget.controller.outbox.send(item, retry: true);
-        }
-        syncOperation();
-        error = item.message;
-        if (receipt != null && status == 'sent') {
-          await widget.controller.local.write(
-            owner,
-            'published:${receipt!.id}',
-            draftId!,
-          );
-          await widget.controller.local.writeBytes(
-            owner,
-            'photo:${receipt!.id}',
-            png,
-          );
-        }
+      final queue = widget.controller.outbox;
+      final photo = requireEditablePhoto(widget.controller, origin.id, owner);
+      final previous = queue
+          .dependents(origin.id)
+          .where((item) => item.kind == OutboxKind.ink)
+          .toList();
+      if (previous.any(
+        (item) =>
+            item.needsVerification ||
+            queue.isBusy(item) ||
+            (item.phase != OutboxPhase.waiting &&
+                item.phase != OutboxPhase.failed),
+      )) {
+        throw const ApiFailure(
+          '이전 주석의 전송 상태를 먼저 확인해 주세요. 전송 중·결과 불명·완료 주석은 바꿀 수 없습니다.',
+        );
       }
       await persist();
-      if (!mounted) return;
+      final ink = encodeInk(strokes);
+      final sizeError = inkUploadSizeError(ink.lengthInBytes);
+      if (sizeError != null) throw ApiFailure(sizeError);
+      final png = await render();
+      requireEditablePhoto(widget.controller, origin.id, owner);
+      // 기존 리비전의 draftKeys 삭제가 현재 초안까지 지우므로 이후 persist로 복원한다.
+      for (final item in previous) {
+        await queue.discard(item.id);
+      }
+      final item = await queue.enqueue(
+        kind: OutboxKind.ink,
+        bytes: ink,
+        fields: {'siteId': ?origin.site_id},
+        siteName: photo.siteName,
+        owner: owner,
+        dependsOn: origin.id,
+        sourceKey: 'annotation:$draftId:$revision',
+        annotationDraftId: draftId,
+        previewBytes: png,
+        draftKeys: ['annotation:$draftId'],
+      );
+      operationId = item.id;
+      dirty = false;
+      await persist();
       await session.close();
       if (!mounted) return;
-      await Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(
-          builder: (_) => SaveResult(
-            controller: widget.controller,
-            origin: origin,
-            png: png,
-            sent: status == 'sent',
-            uncertain: status == 'uncertain',
-            error: error,
-          ),
-        ),
-      );
+      setState(() => canPop = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) Navigator.of(context).pop();
+      });
     } catch (e) {
-      if (mounted) setState(() => error = '저장 상태를 확인할 수 없습니다: $e');
+      if (mounted) setState(() => error = '주석을 저장하지 못했습니다: $e');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -658,8 +609,7 @@ class _RecordEditorState extends State<RecordEditor>
   Widget build(BuildContext context) {
     final g = MediaQuery.of(context).systemGestureInsets;
     // 전체 지우기로 비운 주석은 dirty이므로 저장할 수 있다.
-    // N-4: 결과 불명 초안은 같은 작업 ID 재시도 경로를 유지해야 하므로 예외다.
-    final untouched = strokes.isEmpty && !dirty && status != 'uncertain';
+    final untouched = strokes.isEmpty && !dirty;
     return PopScope(
       canPop: canPop,
       onPopInvokedWithResult: (didPop, _) {
@@ -822,7 +772,6 @@ class _RecordEditorState extends State<RecordEditor>
                                 }
                                 dirty = true;
                                 revision++;
-                                if (status != 'uncertain') status = 'draft';
                               });
                               persist().catchError((_) {
                                 if (mounted) setState(() => error = '초안 저장 실패');
@@ -869,18 +818,6 @@ class _RecordEditorState extends State<RecordEditor>
                   children: [
                     Tooltip(
                       message: untouched ? '표시할 내용이 없습니다' : '',
-                      child: TextButton(
-                        onPressed: busy || untouched
-                            ? null
-                            : () => save(localOnly: true),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(130, vgTapPrimary),
-                        ),
-                        child: const Text('기기에 저장'),
-                      ),
-                    ),
-                    Tooltip(
-                      message: untouched ? '표시할 내용이 없습니다' : '',
                       child: FilledButton(
                         onPressed:
                             busy ||
@@ -905,11 +842,6 @@ class _RecordEditorState extends State<RecordEditor>
           children: [
             if (error != null)
               Padding(padding: const EdgeInsets.all(12), child: Text(error!)),
-            if (status == 'uncertain')
-              const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('이전 업로드 결과가 불명확합니다. 원본·주석은 보관하며 자동 재전송하지 않습니다.'),
-              ),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.only(left: g.left, right: g.right),
@@ -1028,112 +960,4 @@ class _InkPainter extends CustomPainter {
   );
   @override
   bool shouldRepaint(covariant _InkPainter oldDelegate) => true;
-}
-
-class SaveResult extends StatelessWidget {
-  const SaveResult({
-    super.key,
-    required this.controller,
-    required this.origin,
-    required this.png,
-    required this.sent,
-    required this.uncertain,
-    this.error,
-  });
-  final FieldController controller;
-  final CalendarMedia origin;
-  final Uint8List png;
-  final bool sent, uncertain;
-  final String? error;
-  @override
-  Widget build(BuildContext context) {
-    // N-1의 짝: 필요한 실패를 숨기지 않듯 일어나지 않은 전송도 성공이라고 말하지 않는다.
-    final result = sent
-        ? controller.isMock
-              ? mockCompletedLabel
-              : serverCompletedLabel
-        : uncertain
-        ? '로컬 저장됨 · 서버 결과 불명'
-        : localSavedLabel;
-    final header = <Widget>[
-      Text(
-        result,
-        style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-      ),
-      if (error != null)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          child: Text(error!),
-        ),
-      Text('원본 날짜 ${origin.date_key} · 원본 ID ${origin.id}'),
-    ];
-    final continuation = <Widget>[
-      const SizedBox(height: 16),
-      const Text('원본과 펜 작업본은 이 계정의 기기에 보관됩니다. 주석본 제목에는 원본 ID 전체가 포함됩니다.'),
-      if (!sent)
-        Text(
-          uncertain
-              ? '업로드 결과가 불명확합니다. 관제웹 반영 여부를 먼저 확인해 주세요.'
-              : '전송 상태 탭에서 보관된 작업을 전송하거나, 주석 이어서 편집에서 다시 저장할 수 있습니다.',
-        ),
-      const SizedBox(height: 16),
-      OutlinedButton(
-        onPressed: () => Navigator.of(context).pushReplacement(
-          MaterialPageRoute<void>(
-            settings: const RouteSettings(name: vgRecordEditorRouteName),
-            builder: (_) =>
-                RecordEditor(controller: controller, original: origin),
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size.fromHeight(vgTapMin),
-        ),
-        child: const Text('주석 이어서 편집'),
-      ),
-      const SizedBox(height: vgGapTap),
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        style: TextButton.styleFrom(
-          minimumSize: const Size.fromHeight(vgTapMin),
-        ),
-        child: const Text('사진으로 돌아가기'),
-      ),
-    ];
-    final wideWindow = MediaQuery.sizeOf(context).width >= vgTwoPaneMinWidth;
-    return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: vgToolbarHeight(context),
-        title: VgToolbarTitle(
-          '주석 저장 결과',
-          textScaler: MediaQuery.textScalerOf(context),
-        ),
-      ),
-      body: wideWindow
-          ? Padding(
-              padding: const EdgeInsets.all(24),
-              child: Row(
-                children: [
-                  Expanded(child: Image.memory(png, fit: BoxFit.contain)),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: ListView(
-                      key: const ValueKey('save-result-pane'),
-                      children: [...header, ...continuation],
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                ...header,
-                const SizedBox(height: 16),
-                Image.memory(png, height: 400, fit: BoxFit.contain),
-                const SizedBox(height: 16),
-                ...continuation.skip(1),
-              ],
-            ),
-    );
-  }
 }

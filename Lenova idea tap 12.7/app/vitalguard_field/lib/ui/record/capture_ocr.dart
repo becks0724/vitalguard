@@ -50,18 +50,15 @@ class CaptureRunResult {
     required this.uploaded,
     required this.failed,
     this.queued = 0,
+    this.queuedIds = const [],
     this.lastError,
   });
 
   final int uploaded;
   final int failed;
   final int queued;
+  final List<String> queuedIds;
   final String? lastError;
-}
-
-class CaptureDeferred implements Exception {
-  const CaptureDeferred(this.message);
-  final String message;
 }
 
 class CapturedOriginal {
@@ -205,9 +202,8 @@ class CapturePipeline {
       workerName: workerName,
       workerId: workerId,
     );
-    var uploaded = 0;
     var failed = 0;
-    var queued = 0;
+    final queuedIds = <String>[];
     String? lastError;
     for (var index = 0; index < originalPaths.length; index++) {
       try {
@@ -232,20 +228,18 @@ class CapturePipeline {
           address: address,
           siteId: siteId,
         );
-        await port.upload(jpeg, fields);
-        uploaded++;
-      } on CaptureDeferred catch (error) {
-        queued++;
-        lastError = error.message;
+        final photo = await port.upload(jpeg, fields);
+        queuedIds.add(photo.id);
       } catch (error) {
         failed++;
         lastError = error is CaptureFailure ? error.message : '$error';
       }
     }
     return CaptureRunResult(
-      uploaded: uploaded,
+      uploaded: 0,
       failed: failed,
-      queued: queued,
+      queued: queuedIds.length,
+      queuedIds: List.unmodifiable(queuedIds),
       lastError: lastError,
     );
   }
@@ -437,10 +431,6 @@ class DeviceCapturePipelinePort implements CapturePipelinePort {
       owner: owner,
       siteName: siteName ?? controller.site?.site_name ?? '현장 정보 없음',
     );
-    await controller.outbox.send(item);
-    if (item.phase != OutboxPhase.completed) {
-      throw CaptureDeferred('${item.statusLabel} · 전송 상태 탭에서 확인해 주세요.');
-    }
-    return CalendarMedia(item.receipt!);
+    return fromOutbox(item);
   }
 }

@@ -366,76 +366,6 @@ class LiveGateway
     return value is String && value.trim().isNotEmpty ? value.trim() : null;
   }
 
-  String _range(String path, String from, String to) =>
-      Uri(path: path, queryParameters: {'from': from, 'to': to}).toString();
-
-  @override
-  Future<List<CalendarMedia>> media(
-    String token,
-    String from,
-    String to,
-  ) async =>
-      ((await _json(
-                'GET',
-                _range('/api/calendar/media', from, to),
-                token: token,
-              ))['media']
-              as List)
-          .map((e) => CalendarMedia(Map<String, dynamic>.from(e as Map)))
-          .toList();
-  @override
-  Future<List<CalendarEvent>> events(
-    String token,
-    String from,
-    String to,
-  ) async =>
-      ((await _json(
-                'GET',
-                _range('/api/calendar/events', from, to),
-                token: token,
-              ))['events']
-              as List)
-          .map((e) => CalendarEvent(Map<String, dynamic>.from(e as Map)))
-          .toList();
-  @override
-  Future<List<CalendarLabel>> labels(String token) async =>
-      ((await _json('GET', '/api/calendar/labels', token: token))['labels']
-              as List)
-          .map((e) => CalendarLabel(Map<String, dynamic>.from(e as Map)))
-          .toList();
-
-  @override
-  Future<Uint8List> image(String url) async {
-    final uri = Uri.parse(url);
-    if (uri.scheme != 'https' || uri.userInfo.isNotEmpty) {
-      throw const ApiFailure('허용되지 않는 사진 주소입니다');
-    }
-    try {
-      // 프리사인 스토리지 요청에 앱 Bearer 토큰을 보내지 않는다.
-      final request = await client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 20));
-      final response = await request.close().timeout(
-        const Duration(seconds: 30),
-      );
-      if (response.statusCode != 200) {
-        await response.drain<void>();
-        throw ApiFailure(
-          '사진을 받을 수 없습니다. 목록을 갱신해 주세요',
-          status: response.statusCode,
-        );
-      }
-      final bytes = await response
-          .fold<BytesBuilder>(BytesBuilder(), (b, chunk) => b..add(chunk))
-          .timeout(const Duration(seconds: 30));
-      return bytes.takeBytes();
-    } on SocketException {
-      throw const ApiFailure('사진 서버에 연결할 수 없습니다');
-    } on TimeoutException {
-      throw const ApiFailure('사진 수신이 지연되고 있습니다');
-    }
-  }
-
   @override
   Future<CalendarMedia> upload(
     String token,
@@ -649,24 +579,5 @@ class LiveGateway
     } catch (_) {
       throw const ApiFailure('음성 댓글 등록 결과를 확인할 수 없습니다', uncertainWrite: true);
     }
-  }
-
-  @override
-  Future<void> updateComment(String token, String id, String body) async {
-    await _json(
-      'PATCH',
-      '/api/calendar/media/comment',
-      token: token,
-      body: {'id': id, 'body': body},
-    );
-  }
-
-  @override
-  Future<void> deleteComment(String token, String id) async {
-    await _json(
-      'DELETE',
-      '/api/calendar/media/comment?id=${Uri.encodeQueryComponent(id)}',
-      token: token,
-    );
   }
 }

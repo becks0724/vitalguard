@@ -226,6 +226,18 @@ class OutboxController extends ChangeNotifier {
     try {
       await _serial(() => _load(owner));
       if (owner == account) await purgeExpired();
+      // R-7: 이전 버전의 서버 열람 캐시를 계정마다 한 번 정리한다.
+      const legacyCleanupKey = 'outbox:legacy-cache-cleaned:r7';
+      if (await field.local.read(owner, legacyCleanupKey) == null) {
+        for (final key in await field.local.keys(owner)) {
+          if (key.startsWith('calendar:') ||
+              key.startsWith('photo:') ||
+              key.startsWith('published:')) {
+            await field.local.remove(owner, key);
+          }
+        }
+        await field.local.write(owner, legacyCleanupKey, 'done');
+      }
       loadError = null;
     } catch (_) {
       loadError = '전송 원장을 읽지 못했습니다. 기기 파일은 보존됩니다. 다시 열어 주세요.';

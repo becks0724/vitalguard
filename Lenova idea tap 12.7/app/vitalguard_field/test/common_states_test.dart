@@ -20,6 +20,8 @@ import 'package:vitalguard_field/ui/shell/field_shell.dart';
 import 'package:vitalguard_field/ui/shell/action_dock.dart';
 import 'package:vitalguard_field/vg_theme.dart';
 
+import 'support/record_fixture.dart';
+
 import 'support/alerts_fixture.dart';
 
 // 기존 392개 기준선에 더하는 C-01/C-02/C-04 회귀 검증.
@@ -131,7 +133,7 @@ Future<void> _tab(WidgetTester tester, int index) async {
 }
 
 void main() {
-  testWidgets('C-01 대응 확인 불가·사진/음성 큐·글 초안은 재시도 안내가 다르다', (tester) async {
+  testWidgets('C-01 대응 확인은 오프라인에서 차단하고 사진·주석·메모·음성은 기기에 보관한다', (tester) async {
     final field = await _field();
     await _mount(tester, FieldShell(controller: field));
     field.setOffline(true);
@@ -151,11 +153,7 @@ void main() {
     );
 
     await _tab(tester, 2);
-    expect(receipt(), contains('사진·잉크본·음성 댓글은 전송 대기열에'));
-    expect(receipt(), contains('글 댓글은 기기 초안에'));
-    expect(receipt(), contains('연결 후 기록 새로 고침'));
-    expect(receipt(), contains('전송 상태에서 전송/재시도'));
-    expect(receipt(), contains('입력 화면에서 확인 후 댓글 저장'));
+    expect(find.text('오프라인 · 촬영한 사진과 주석·메모·음성은 기기에 보관합니다.'), findsOneWidget);
     await _tab(tester, 3);
     expect(receipt(), contains('결과 불명 항목은 서버 반영 여부부터'));
     await _tab(tester, 4);
@@ -298,7 +296,7 @@ void main() {
         scale: scale,
       );
       await _tab(tester, 2);
-      final media = field.media.first;
+      final media = fromOutbox(await seedPhoto(field));
       Navigator.of(tester.element(find.byType(RecordHome))).push(
         MaterialPageRoute<void>(
           builder: (_) => RecordInput(controller: field, media: media),
@@ -346,16 +344,25 @@ void main() {
       final save = find.byKey(const Key('save-record'));
       await _reveal(tester, save, form);
       _aboveKeyboard(tester, save, size);
-      if (scale == 3) _uncompressed(tester, find.text('확인 후 댓글 저장'));
+      if (scale == 3) _uncompressed(tester, find.text('메모 저장'));
       await tester.tap(save);
       await tester.pumpAndSettle();
-      final saved = jsonDecode(
-        (await field.local.read('demo', 'comment-draft:${media.id}:new'))!,
-      ) as Map;
-      expect(saved['text'], '${noteController.text}\n${speechController.text}');
-      expect(saved['status'], 'draft');
-      expect(find.textContaining('서버에 연결할 수 없어 전송하지 않았습니다'), findsOneWidget);
-      // C-06: 키보드를 닫은 뒤 Back으로 나가도 저장한 초안으로 다시 열린다.
+      final memo = field.outbox.dependents(media.id).single;
+      expect(memo.kind, OutboxKind.text);
+      expect(memo.phase, OutboxPhase.waiting);
+      expect(
+        utf8.decode((await field.local.readBytes('demo', memo.bytesKey))!),
+        '연결부 점검 중 작성하던 댓글\n직접 수정한 음성 인식 문장',
+      );
+      expect(
+        await field.local.read('demo', 'comment-draft:${media.id}:new'),
+        isNull,
+      );
+      expect(noteController.text, isEmpty);
+      expect(speechController.text, isEmpty);
+      await _reveal(tester, note, form, delta: -160);
+      await tester.enterText(note, '저장 후 새 초안');
+      // C-06: 저장된 메모와 별개로, 저장하지 않은 새 초안은 Back 뒤 복원한다.
       await _keyboard(tester, size, false);
       await tester.tap(find.byTooltip('초안 보존 후 뒤로'));
       await tester.pumpAndSettle();
@@ -365,14 +372,15 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tester.widget<TextField>(note).controller!.text, saved['text']);
+      expect(tester.widget<TextField>(note).controller!.text, '저장 후 새 초안');
       expect(tester.takeException(), isNull);
     });
   }
 
   for (final size in [const Size(1385, 866), const Size(600, 900)]) {
-    testWidgets('C-04 셸 전 목적지·달력·레일 글자 3배 $size', (tester) async {
+    testWidgets('C-04 셸 전 목적지·보낼 기록·레일 글자 3배 $size', (tester) async {
       final field = await _field();
+      await seedPhoto(field);
       await _mount(tester, FieldShell(controller: field), size: size, scale: 3);
       for (final destination in [0, 1, 2, 3, 4]) {
         await _tab(tester, destination);
@@ -380,66 +388,15 @@ void main() {
         expect(tester.takeException(), isNull);
       }
       await _tab(tester, 2);
-      final wide = size.width >= vgTwoPaneMinWidth;
-      final calendarPane = find.byKey(
-        Key(wide ? 'record-calendar-pane' : 'record-single-pane'),
-      );
-      final grid = find.descendant(
-        of: calendarPane,
-        matching: find.byType(GridView),
-      );
-      // 큰 월 제목 아래의 달력은 화면 밖이라 기본 finder에서 제외될 수 있다.
-      // 먼저 본문을 스크롤해 생성·표시한다. 특정 스크롤 조상을 전제하지 않는다.
-      await _reveal(tester, grid, calendarPane);
-      expect(grid, findsOneWidget);
-      final cells = find.descendant(
-        of: grid,
-        matching: find.byType(OutlinedButton),
-      );
-      expect(cells, findsNWidgets(42));
-      final buttons = tester.widgetList<OutlinedButton>(cells).toList();
-      for (final button in buttons) {
-        final cell = find.byWidget(button);
-        await tester.ensureVisible(cell);
-        await tester.pumpAndSettle();
-        final bounds = tester.getRect(cell);
-        final viewport = tester.getRect(calendarPane).inflate(.01);
-        expect(viewport.contains(bounds.topLeft), isTrue);
-        expect(viewport.contains(bounds.bottomRight), isTrue);
-        expect(cell.hitTestable(), findsOneWidget);
-        expect(button.onPressed, isNotNull);
-        for (final text in tester.widgetList<Text>(
-          find.descendant(of: cell, matching: find.byType(Text)),
-        )) {
-          final label = find.byWidget(text);
-          _uncompressed(tester, label);
-          final textBounds = tester.getRect(label);
-          expect(textBounds.left, greaterThanOrEqualTo(bounds.left));
-          expect(textBounds.right, lessThanOrEqualTo(bounds.right));
-          expect(textBounds.top, greaterThanOrEqualTo(bounds.top));
-          expect(textBounds.bottom, lessThanOrEqualTo(bounds.bottom));
-        }
-        expect(tester.takeException(), isNull);
-      }
-      // 마지막 주의 오른쪽 날짜까지 실제 선택하고 기록 날짜가 바뀌는지 확인한다.
-      await tester.tap(find.byWidget(buttons.last));
-      await tester.pumpAndSettle();
-      final today = kstNow();
-      final month = DateTime.utc(today.year, today.month);
-      final lastDate = month.add(Duration(days: 41 - month.weekday % 7));
-      final selected = find.text('${calendarDate(lastDate)} 기록');
-      await _reveal(
-        tester,
-        selected,
-        wide ? find.byKey(const Key('record-day-pane')) : calendarPane,
-      );
-      expect(selected.hitTestable(), findsOneWidget);
-      _uncompressed(tester, selected);
+      final pane = find.byKey(const Key('record-pending-list'));
+      final title = find.text('모의 현장 사진');
+      await _reveal(tester, title, pane);
+      _uncompressed(tester, title);
+      expect(find.byType(GridView), findsNothing);
       final capture = find.byKey(const Key('photo-capture'));
       await tester.ensureVisible(capture);
       expect(capture.hitTestable(), findsOneWidget);
       _uncompressed(tester, find.text('사진 촬영'));
-      // 넓은 창의 펼친 레일도 글자 높이를 56dp로 제한하지 않는다.
       if (size.width >= vgTwoPaneMinWidth) {
         final item = find.byKey(const Key('rail-destination-3'));
         await tester.ensureVisible(item);
@@ -489,30 +446,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('C-04 사진 상세 긴 제목·음성 댓글·하단 작업을 3배로 읽고 스크롤한다', (tester) async {
+  testWidgets('C-04 로컬 사진 상세 긴 제목·음성·하단 작업을 3배로 읽고 스크롤한다', (tester) async {
     final field = await _field();
-    final media = CalendarMedia({
-      'id': 'mock-original-001',
-      'date_key': '2026-09-14',
-      'media_url': 'https://mock.invalid/original.png',
-      'title': '매우 긴 현장 점검 사진 제목 ' * 6,
-      'comments': [
-        {
-          'id': 'voice-1',
-          'body': '',
-          'author_name': '현장 담당관',
-          'audio_storage_key': 'synthetic-voice',
-          'audio_ms': 123456,
-        },
-      ],
-    });
+    final photo = await seedPhoto(field, title: '매우 긴 현장 점검 사진 제목 ' * 6);
+    await field.outbox.enqueue(
+      kind: OutboxKind.voice,
+      bytes: recordPng,
+      fields: {'audioMs': '123456'},
+      siteName: photo.siteName,
+      dependsOn: photo.id,
+    );
     await _mount(
       tester,
-      PhotoDetail(controller: field, media: media),
+      PhotoDetail(controller: field, photoId: photo.id),
       size: const Size(480, 900),
       scale: 3,
     );
-    final title = find.text(media.title!);
+    final title = find.text(photo.fields['title']!);
     _uncompressed(tester, title);
     final titleScroll = find
         .ancestor(of: title, matching: find.byType(Scrollable))
@@ -521,11 +471,10 @@ void main() {
       tester.state<ScrollableState>(titleScroll).position.maxScrollExtent,
       greaterThan(0),
     );
-    final voice = find.textContaining('음성 댓글 ·');
+    final voice = find.text('음성 · 2:03');
     await _reveal(tester, voice, find.byType(ListView));
     _uncompressed(tester, voice);
-    expect(tester.getSize(voice).height, greaterThan(42));
-    final comment = find.text('기록·댓글 남기기');
+    final comment = find.text('메모·음성 붙이기');
     await tester.ensureVisible(comment);
     expect(comment.hitTestable(), findsOneWidget);
     _uncompressed(tester, comment);
@@ -534,11 +483,7 @@ void main() {
 
   testWidgets('C-04 주석 편집기 3배에서 도구·저장을 스크롤하고 캔버스를 남긴다', (tester) async {
     final field = await _field();
-    final media = CalendarMedia({
-      'id': 'mock-original-001',
-      'date_key': '2026-09-14',
-      'media_url': 'https://mock.invalid/original.png',
-    });
+    final media = fromOutbox(await seedPhoto(field));
     final canvas = find.byKey(const Key('ink-canvas'));
     await _mount(
       tester,
@@ -570,7 +515,7 @@ void main() {
       expect(bounds.height, greaterThanOrEqualTo(vgTapMin));
       expect(tester.getRect(canvas), before);
     }
-    for (final label in ['기기에 저장', '주석 저장']) {
+    for (final label in ['주석 저장']) {
       final target = find.text(label);
       final button = find.ancestor(
         of: target,
@@ -592,34 +537,6 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(tester.binding.hasScheduledFrame, isFalse);
     expect(tester.getRect(canvas), before);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('C-04 주석 저장 결과 3배에서 마지막 복귀 버튼까지 읽는다', (tester) async {
-    final field = await _field();
-    final media = CalendarMedia({
-      'id': 'mock-original-001',
-      'date_key': '2026-09-14',
-      'media_url': 'https://mock.invalid/original.png',
-    });
-    final png = await field.photoBytes(media);
-    await _mount(
-      tester,
-      SaveResult(
-        controller: field,
-        origin: media,
-        png: png,
-        sent: false,
-        uncertain: false,
-      ),
-      size: const Size(600, 900),
-      scale: 3,
-    );
-    final last = find.text('사진으로 돌아가기');
-    await _reveal(tester, last, find.byType(ListView));
-    expect(last.hitTestable(), findsOneWidget);
-    _uncompressed(tester, last);
-    _uncompressed(tester, find.text('주석 저장 결과'));
     expect(tester.takeException(), isNull);
   });
 

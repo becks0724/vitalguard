@@ -41,19 +41,12 @@ class FieldCoordinator extends FieldController {
   @override
   bool siteStatusForbidden = false;
   @override
-  List<CalendarMedia> media = [];
-  @override
-  List<CalendarEvent> calendarEvents = [];
-  @override
-  List<CalendarLabel> calendarLabels = [];
-  @override
   bool get isMock => gateway.isMock;
   MobileSession? _session;
   DateTime? _accessExpiresAt;
   Future<void>? _refreshing;
   bool _revalidateOnReconnect = false;
   int _epoch = 0;
-  int _period = 0;
   bool _remember = true;
   String? _challengeId;
   String? _challengePassword;
@@ -70,9 +63,6 @@ class FieldCoordinator extends FieldController {
     fetchedAt = null;
     siteStatusSnapshot = null;
     siteStatusForbidden = false;
-    media = [];
-    calendarEvents = [];
-    calendarLabels = [];
   }
 
   // 2026-09-14 태곤 님 결정: 실제 운영 계정인 admin도 허용한다.
@@ -165,7 +155,9 @@ class FieldCoordinator extends FieldController {
       if (epoch != _epoch && authStage != AuthStage.reauthenticate) return;
       DateTime? refreshExpiresAt;
       final session = savedSession;
-      if (!_authenticationRejected(error) && session != null && epoch == _epoch) {
+      if (!_authenticationRejected(error) &&
+          session != null &&
+          epoch == _epoch) {
         try {
           refreshExpiresAt = DateTime.tryParse(session.refreshExpiresAt);
         } catch (_) {
@@ -518,111 +510,14 @@ class FieldCoordinator extends FieldController {
   }
 
   @override
-  Future<void> loadPeriod(String from, String to) async {
-    final epoch = _epoch, period = ++_period;
-    final account = user?.id;
-    if (account == null) return;
-    busy = true;
-    message = null;
-    _notify();
-    final key = 'calendar:$from:$to';
-    try {
-      final results = await Future.wait([
-        _authorized((t) => gateway.media(t, from, to)),
-        _authorized((t) => gateway.events(t, from, to)),
-        _authorized(gateway.labels),
-      ]);
-      if (epoch != _epoch || period != _period) return;
-      media = results[0] as List<CalendarMedia>;
-      calendarEvents = results[1] as List<CalendarEvent>;
-      calendarLabels = results[2] as List<CalendarLabel>;
-      fetchedAt = DateTime.now();
-      await local.write(
-        account,
-        key,
-        jsonEncode({
-          'receivedAt': fetchedAt!.toIso8601String(),
-          'media': media
-              .map((m) => {...m.json, 'media_url': null, 'thumbnail_url': null})
-              .toList(),
-          'events': calendarEvents.map((e) => e.json).toList(),
-          'labels': calendarLabels.map((e) => e.json).toList(),
-        }),
-      );
-    } catch (error) {
-      if (epoch != _epoch || period != _period) return;
-      message = error is ApiFailure ? error.message : '기록을 불러오지 못했습니다';
-      // 인가 거부에 캐시를 보여 주지 않는다. 통신 실패인 경우만 이미 받은 자료를 표시한다.
-      media = [];
-      calendarEvents = [];
-      calendarLabels = [];
-      fetchedAt = null;
-      if (error is ApiFailure && error.status == null) {
-        try {
-          final cached = await local.read(account, key);
-          if (epoch != _epoch || period != _period) return;
-          if (cached != null) {
-            final data = jsonDecode(cached) as Map;
-            media = (data['media'] as List)
-                .map((m) => CalendarMedia(Map<String, dynamic>.from(m as Map)))
-                .toList();
-            calendarEvents = (data['events'] as List)
-                .map((m) => CalendarEvent(Map<String, dynamic>.from(m as Map)))
-                .toList();
-            calendarLabels = (data['labels'] as List)
-                .map((m) => CalendarLabel(Map<String, dynamic>.from(m as Map)))
-                .toList();
-            fetchedAt = DateTime.parse(data['receivedAt'] as String);
-            offline = true;
-          }
-        } catch (_) {
-          if (epoch == _epoch && period == _period) {
-            media = [];
-            calendarEvents = [];
-            calendarLabels = [];
-            fetchedAt = null;
-            message = '서버와 기기 캐시에서 기록을 읽지 못했습니다. 기존 파일은 보존됩니다.';
-          }
-        }
-      }
-    } finally {
-      if (epoch == _epoch && period == _period) {
-        busy = false;
-        _notify();
-      }
-    }
-  }
-
-  @override
   Future<Uint8List> photoBytes(CalendarMedia item) async {
     final account = user?.id;
     if (account == null) throw const ApiFailure('다시 로그인해 주세요');
     final epoch = _epoch;
-    final key = 'photo:${item.id}';
-    final cached = await local.readBytes(account, key);
+    if (item.json['local'] != true) throw const ApiFailure('원본이 기기에 없습니다');
+    final bytes = await local.readBytes(account, 'outbox-file:${item.id}');
     if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
-    if (cached != null) return cached;
-    Uint8List bytes;
-    try {
-      if (item.media_url == null) {
-        throw const ApiFailure('사진 주소를 다시 받아야 합니다', status: 403);
-      }
-      bytes = await gateway.image(item.media_url!);
-    } on ApiFailure catch (e) {
-      if (e.status != 403 && e.status != 404) rethrow;
-      final rows = await _authorized(
-        (t) => gateway.media(t, item.date_key, item.date_key),
-      );
-      final fresh = rows
-          .where((m) => m.id == item.id && m.media_url != null)
-          .firstOrNull;
-      if (fresh == null) {
-        throw const ApiFailure('원본이 삭제됐거나 접근할 수 없습니다', status: 404);
-      }
-      bytes = await gateway.image(fresh.media_url!);
-    }
-    if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
-    await local.writeBytes(account, key, bytes);
+    if (bytes == null) throw const ApiFailure('원본이 기기에 없습니다');
     return bytes;
   }
 
@@ -688,13 +583,6 @@ class FieldCoordinator extends FieldController {
               (gateway as OperationLookupGateway).lookupOperations(token, ids),
         )
       : super.lookupOperations(ids);
-
-  @override
-  Future<void> editComment(String id, String text) =>
-      _authorized((t) => gateway.updateComment(t, id, text), writing: true);
-  @override
-  Future<void> removeComment(String id) =>
-      _authorized((t) => gateway.deleteComment(t, id), writing: true);
 
   @override
   void dispose() {

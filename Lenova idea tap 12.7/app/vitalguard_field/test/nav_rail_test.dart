@@ -9,6 +9,8 @@ import 'package:vitalguard_field/ui/record/record_screens.dart';
 import 'package:vitalguard_field/ui/shell/field_shell.dart';
 import 'package:vitalguard_field/vg_theme.dart';
 
+import 'support/record_fixture.dart';
+
 Future<FieldCoordinator> readyController({MemoryStore? store}) async {
   final controller = FieldCoordinator(
     MockGateway(),
@@ -105,6 +107,7 @@ void main() {
 
   testWidgets('펜 캔버스에 들어가면 레일이 자동으로 접힌다', (tester) async {
     final controller = await readyController();
+    await seedPhoto(controller);
     await pumpShell(tester, controller, const Size(1385, 866));
     expect(find.byKey(const Key('rail-expanded')), findsOneWidget);
 
@@ -112,7 +115,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('모의 현장 사진'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('펜으로 표시하기'));
+    await tester.tap(find.text('주석 그리기'));
     await tester.pump();
 
     expect(find.byType(RecordEditor), findsOneWidget);

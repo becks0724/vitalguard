@@ -8,6 +8,8 @@ import 'package:vitalguard_field/data/mock/memory_store.dart';
 import 'package:vitalguard_field/data/mock/mock_gateway.dart';
 import 'package:vitalguard_field/ui/record/capture_screen.dart';
 
+import 'support/record_fixture.dart';
+
 class _Gateway extends MockGateway {
   final uploads = <Map<String, String>>[];
 
@@ -21,9 +23,6 @@ class _Gateway extends MockGateway {
     return super.upload(token, bytes, fields);
   }
 }
-
-CalendarMedia _media(String id, String? siteId) =>
-    CalendarMedia({'id': id, 'date_key': '2026-09-14', 'site_id': siteId});
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -79,69 +78,49 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  // 사진과 스캔이 공유하는 현장 선택·파이프라인·원장·업로드를 스캔 진입점에서 확인한다.
+  // 스캔도 촬영과 같은 로컬 보류 파이프라인을 거친다.
   Future<Map<String, String>> scan() async {
-    final count = gateway.uploads.length;
     final result = await launcher.scanDocuments();
     expect(result, isNotNull);
-    expect(result!.uploaded, 1);
+    expect(result!.uploaded, 0);
     expect(result.failed, 0);
-    expect(result.queued, 0);
-    expect(gateway.uploads, hasLength(count + 1));
-    final fields = gateway.uploads.last;
-    final entry = controller.outbox.entry(fields['clientOperationId']);
-    expect(entry, isNotNull);
-    expect(entry!.phase, OutboxPhase.completed);
-    expect(entry.siteId, fields['siteId']);
-    expect(CalendarMedia(entry.receipt!).site_id, fields['siteId']);
-    return fields;
+    expect(result.queued, 1);
+    expect(result.queuedIds, hasLength(1));
+    expect(gateway.uploads, isEmpty);
+    final entry = controller.outbox.entry(result.queuedIds.single)!;
+    expect(entry.kind, OutboxKind.photo);
+    expect(entry.phase, OutboxPhase.waiting);
+    expect(entry.receipt, isNull);
+    expect(await controller.local.readBytes(entry.owner, entry.bytesKey), jpeg);
+    expect(fromOutbox(entry).json['local'], isTrue);
+    return entry.fields;
   }
 
-  test('현재 현장 ID는 첫 캡처와 현장 변경 후 업로드에 우선 적용된다', () async {
+  test('현재 현장 ID는 첫 캡처와 현장 변경 후 보류 사진에 고정된다', () async {
     controller.site = SiteInfo({'id': 101, 'site_id': 'first-site'});
-    controller.media = [];
     expect(await scan(), containsPair('siteId', 'first-site'));
-
     controller.site = SiteInfo({'id': 102, 'site_id': 'current-site'});
-    controller.media = [_media('previous-photo', 'first-site')];
     expect(await scan(), containsPair('siteId', 'current-site'));
+    expect(controller.outbox.items.first.siteId, 'first-site');
   });
 
-  test('현재 현장이나 현장 ID가 없으면 첫 유효한 미디어 현장 ID로 업로드한다', () async {
-    controller.media = [
-      _media('missing-site', null),
-      _media('empty-site', ''),
-      _media('first-valid-site', 'fallback-site'),
-      _media('later-valid-site', 'other-site'),
-    ];
+  test('현재 현장 ID가 없으면 다른 보류 사진의 현장 ID를 빌리지 않는다', () async {
+    await seedPhoto(controller, fields: {'siteId': 'other-site'});
     for (final site in [
       null,
       SiteInfo({'id': 101}),
-      SiteInfo({'id': 101, 'site_id': null}),
-      SiteInfo({'id': 101, 'site_id': ''}),
+      SiteInfo({'site_id': ''}),
     ]) {
       controller.site = site;
-      expect(await scan(), containsPair('siteId', 'fallback-site'));
+      expect(await scan(), isNot(contains('siteId')));
     }
   });
 
-  test('현재 현장과 미디어에 유효한 현장 ID가 없으면 siteId를 전송하지 않는다', () async {
-    for (final site in [
-      null,
-      SiteInfo({'id': 101}),
-      SiteInfo({'id': 101, 'site_id': null}),
-      SiteInfo({'id': 101, 'site_id': ''}),
-    ]) {
-      controller.site = site;
-      for (final media in [
-        <CalendarMedia>[],
-        [_media('missing-site', null), _media('empty-site', '')],
-      ]) {
-        controller.media = media;
-        final fields = await scan();
-        expect(fields, isNot(contains('siteId')));
-        expect(fields['siteId'], isNull);
-      }
-    }
+  test('오프라인 스캔도 사진을 waiting에 보관하고 서버를 호출하지 않는다', () async {
+    controller.offline = true;
+    controller.site = null;
+    expect(await scan(), isNot(contains('siteId')));
+    expect(controller.outbox.items.single.phase, OutboxPhase.waiting);
+    expect(gateway.uploads, isEmpty);
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
@@ -14,11 +15,9 @@ class RecordInput extends StatefulWidget {
     super.key,
     required this.controller,
     required this.media,
-    this.editing,
   });
   final FieldController controller;
   final CalendarMedia media;
-  final MediaComment? editing;
   @override
   State<RecordInput> createState() => _RecordInputState();
 }
@@ -33,9 +32,10 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
   Future<void> Function()? previousFlusher;
   late final VoiceCommentDraft? voice;
   int speechGeneration = 0;
-  bool voiceConfirmedAbsent = false;
+  int revision = DateTime.now().microsecondsSinceEpoch;
+  String? notice;
   String? runId, error;
-  String status = 'draft', speechStatus = '음성 입력 대기';
+  String speechStatus = '음성 입력 대기';
   List<String> candidates = [];
   int? choice;
   bool speaking = false,
@@ -50,18 +50,14 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    if (widget.media.json['local'] != true) {
+      throw ArgumentError('로컬 사진에만 메모를 붙일 수 있습니다');
+    }
     owner = widget.controller.user!.id;
     session = RecordSession(widget.controller);
-    voice = widget.editing == null
-        ? VoiceCommentDraft(
-            widget.controller,
-            widget.media.id,
-            siteId: widget.media.site_id,
-          )
-        : null;
+    voice = VoiceCommentDraft(widget.controller, widget.media.id, siteId: widget.media.site_id);
     voice?.addListener(voiceChanged);
-    key = 'comment-draft:${widget.media.id}:${widget.editing?.id ?? 'new'}';
-    note.text = widget.editing?.body ?? '';
+    key = 'comment-draft:${widget.media.id}:new';
     flusher = flush;
     previousFlusher = widget.controller.beforeLock;
     widget.controller.beforeLock = flusher;
@@ -97,11 +93,7 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
 
   void voiceChanged() {
     if (!mounted) return;
-    setState(() {
-      if (voice?.status != 'uncertain' || voice?.sending == true) {
-        voiceConfirmedAbsent = false;
-      }
-    });
+    setState(() {});
   }
 
   bool get audioBusy =>
@@ -140,15 +132,11 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
       if (!mounted) return;
       if (saved != null) {
         final data = jsonDecode(saved) as Map;
-        if (data['status'] != 'sent') {
-          // 철회된 조치수준 칩 값(assessment)은 이전 초안에서도 복원하지 않는다.
-          note.text = data['text'] as String? ?? '';
-          status = data['status'] == 'sending'
-              ? 'uncertain'
-              : data['status'] as String? ?? 'draft';
-        }
+        // 철회된 조치수준 칩은 복원하지 않는다.
+        note.text = data['text'] as String? ?? '';
+        revision = data['revision'] as int? ?? revision;
       }
-      await session.remember(widget.media, editing: widget.editing);
+      await session.remember(widget.media);
     } catch (_) {
       error = '이전에 저장한 초안을 읽지 못했습니다';
     }
@@ -163,12 +151,15 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
         : note.text;
     final snapshot = jsonEncode({
       'text': text,
-      'status': status,
+      'status': 'draft',
+      'revision': revision,
       'mediaId': widget.media.id,
     });
     final operation = writes
         .catchError((_) {})
-        .then((_) => widget.controller.local.write(owner, key, snapshot));
+        .then((_) => text.isEmpty
+            ? widget.controller.local.remove(owner, key)
+            : widget.controller.local.write(owner, key, snapshot));
     writes = operation;
     return operation;
   }
@@ -305,48 +296,36 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
   }
 
   Future<void> save() async {
-    if (!confirmed ||
-        composed.trim().isEmpty ||
-        saving ||
-        audioBusy ||
-        status == 'uncertain') {
-      return;
-    }
-    setState(() {
-      saving = true;
-      error = null;
-    });
+    if (!confirmed || composed.trim().isEmpty || saving || audioBusy) return;
+    final text = composed;
+    setState(() { saving = true; error = notice = null; });
     try {
+      final photo = requireEditablePhoto(widget.controller, widget.media.id, owner);
+      await stopSpeech();
       await persist();
-      if (widget.controller.offline) {
-        setState(
-          () => error = '글 댓글을 기기 초안에 저장했습니다. 서버에 연결할 수 없어 전송하지 않았습니다. 연결 후 이 화면에서 내용을 확인하고 확인 후 댓글 저장을 눌러 주세요.',
-        );
-        return;
-      }
-      status = 'sending';
+      await widget.controller.outbox.enqueue(
+        kind: OutboxKind.text,
+        bytes: Uint8List.fromList(utf8.encode(text)),
+        fields: {'siteId': ?widget.media.site_id},
+        dependsOn: widget.media.id,
+        siteName: photo.siteName,
+        owner: owner,
+        sourceKey: 'comment-draft:${widget.media.id}:$revision',
+        draftKeys: [key],
+      );
+      revision++;
+      if (!mounted) return;
+      note.clear();
+      speechText.clear();
+      setState(() {
+        choice = null;
+        candidates = [];
+        confirmed = false;
+        notice = '메모를 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.';
+      });
       await persist();
-      try {
-        if (widget.editing == null) {
-          await widget.controller.comment(widget.media.id, composed);
-        } else {
-          await widget.controller.editComment(widget.editing!.id, composed);
-        }
-        status = 'sent';
-        await persist();
-        await session.close();
-        if (!mounted) return;
-        setState(() => canPop = true);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) Navigator.of(context).pop();
-        });
-      } on ApiFailure catch (e) {
-        status = e.uncertainWrite ? 'uncertain' : 'draft';
-        await persist();
-        if (mounted) setState(() => error = e.message);
-      }
-    } catch (_) {
-      if (mounted) setState(() => error = '저장 상태를 확인할 수 없습니다. 초안을 유지해 주세요.');
+    } catch (value) {
+      if (mounted) setState(() => error = '메모를 저장하지 못했습니다: $value');
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -359,11 +338,6 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
       children: [
         if (widget.controller.isMock) const Text('모의 녹음 · 마이크를 사용하지 않습니다'),
         if (draft.starting) const Text('녹음 준비 중'),
-        if (draft.status == 'sent' && draft.clip != null)
-          TextButton(
-            onPressed: draft.busy ? null : draft.discard,
-            child: const Text('전송한 녹음의 기기 파일 정리'),
-          ),
         if (draft.recording || draft.stopping)
           Wrap(
             spacing: 16,
@@ -388,18 +362,6 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
           ),
         if (draft.hasClip && !draft.stopping) ...[
           Text('녹음 ${voiceTime(draft.clip!.durationMs)} · 전송 전 확인'),
-          if (draft.status == 'uncertain') ...[
-            const Text('전송 결과가 불명확합니다. 녹음은 보존됩니다. 관제웹에 이미 등록됐는지 확인해 주세요.'),
-            CheckboxListTile(
-              key: const Key('voice-confirm-absent'),
-              contentPadding: EdgeInsets.zero,
-              value: voiceConfirmedAbsent,
-              onChanged: draft.busy
-                  ? null
-                  : (value) => setState(() => voiceConfirmedAbsent = value!),
-              title: const Text('관제웹에서 이 음성 댓글이 등록되지 않은 것을 확인했습니다'),
-            ),
-          ],
           Wrap(
             spacing: 16,
             runSpacing: vgGapTap,
@@ -414,15 +376,9 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
               ),
               FilledButton.icon(
                 key: const Key('voice-send'),
-                onPressed:
-                    speaking ||
-                        saving ||
-                        draft.busy ||
-                        (draft.status == 'uncertain' && !voiceConfirmedAbsent)
-                    ? null
-                    : () => draft.send(confirmedAbsent: voiceConfirmedAbsent),
-                icon: const Icon(Icons.send),
-                label: Text(draft.sending ? '전송 중' : '음성 댓글 전송'),
+                onPressed: speaking || saving || draft.busy ? null : draft.send,
+                icon: const Icon(Icons.save_outlined),
+                label: Text(draft.sending ? '저장 중' : '음성 저장'),
               ),
               OutlinedButton(
                 key: const Key('voice-rerecord'),
@@ -443,7 +399,7 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
         if (draft.error != null)
           Text(draft.error!, key: const Key('voice-error')),
         if (draft.error != null && draft.hasClip)
-          const Text('녹음을 보존했습니다. 연결과 전송 결과를 확인한 뒤 다시 시도할 수 있습니다.'),
+          const Text('녹음을 보존했습니다. 기기 저장 상태를 확인한 뒤 다시 저장해 주세요.'),
       ],
     ),
   );
@@ -459,7 +415,7 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
       appBar: AppBar(
         toolbarHeight: vgToolbarHeight(context),
         title: VgToolbarTitle(
-          widget.editing == null ? '기록·댓글 남기기' : '댓글 수정',
+          '메모·음성 붙이기',
           textScaler: MediaQuery.textScalerOf(context),
         ),
         leading: IconButton(
@@ -530,7 +486,6 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
                               if (mounted) {
                                 await session.remember(
                                   widget.media,
-                                  editing: widget.editing,
                                 );
                               }
                             },
@@ -624,24 +579,20 @@ class _RecordInputState extends State<RecordInput> with WidgetsBindingObserver {
                         },
                 ),
                 if (error != null) Text(error!),
-                if (status == 'uncertain')
-                  const Text(
-                    '이전 전송 결과가 불명확합니다. 관제웹 반영 여부를 확인하기 전에는 다시 보내지 않습니다.',
-                  ),
+                if (notice != null) Text(notice!),
                 const SizedBox(height: vgGapTap),
                 FilledButton(
                   key: const Key('save-record'),
                   onPressed:
                       confirmed &&
                           !saving &&
-                          !audioBusy &&
-                          status != 'uncertain'
+                          !audioBusy
                       ? save
                       : null,
                   style: FilledButton.styleFrom(
                     minimumSize: const Size.fromHeight(64),
                   ),
-                  child: Text(saving ? '저장 중' : '확인 후 댓글 저장'),
+                  child: Text(saving ? '저장 중' : '메모 저장'),
                 ),
               ],
             ),

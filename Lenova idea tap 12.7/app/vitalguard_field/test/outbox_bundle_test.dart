@@ -740,6 +740,41 @@ void main() {
     expect(await rig.store.readBytes('a', pending.bytesKey), _photoBytes);
   });
 
+  test('legacy 캘린더·사진·게시 캐시는 계정별 첫 load에서 한 번만 지운다', () async {
+    final rig = await _rig();
+    final photo = await _photo(rig);
+    const legacyKeys = [
+      'calendar:2026-09',
+      'photo:server-old',
+      'published:ink-old',
+    ];
+    for (final owner in ['a', 'b']) {
+      for (final key in legacyKeys) {
+        await rig.store.write(owner, key, '$owner 이전 캐시');
+      }
+      await rig.store.write(owner, 'comment-draft:keep:new', '보류 초안');
+    }
+    await rig.box.load();
+    expect(rig.box.loadError, isNull);
+    for (final key in legacyKeys) {
+      expect(await rig.store.read('a', key), isNull);
+      expect(await rig.store.read('b', key), 'b 이전 캐시');
+    }
+    expect(await rig.store.readBytes('a', photo.bytesKey), _photoBytes);
+    expect(await rig.store.read('a', 'comment-draft:keep:new'), '보류 초안');
+    await rig.store.write('a', 'photo:after-migration', '1회 정리 이후');
+    final resumed = await _rig(store: rig.store);
+    await resumed.box.load();
+    expect(await rig.store.read('a', 'photo:after-migration'), '1회 정리 이후');
+    final other = await _rig(store: rig.store, account: 'b');
+    await other.box.load();
+    for (final key in legacyKeys) {
+      expect(await rig.store.read('b', key), isNull);
+    }
+    expect(await rig.store.read('b', 'comment-draft:keep:new'), '보류 초안');
+    expect(rig.gateway.calls, isEmpty);
+  });
+
   test('purgeExpired의 사용자 보관 기간을 적용한다', () async {
     final rig = await _rig();
     final photo = await _photo(rig);

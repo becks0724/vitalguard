@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vitalguard_field/data/contracts/field_contracts.dart';
 import 'package:vitalguard_field/data/field_coordinator.dart';
-import 'package:vitalguard_field/data/live/live_gateway.dart';
 import 'package:vitalguard_field/data/mock/memory_store.dart';
 import 'package:vitalguard_field/data/mock/mock_gateway.dart';
 import 'package:vitalguard_field/ui/record/record_screens.dart';
@@ -56,29 +55,9 @@ class RefreshGateway extends MockGateway {
   }
 
   @override
-  Future<List<CalendarMedia>> media(
-    String token,
-    String from,
-    String to,
-  ) async {
+  Future<SiteStatus> siteStatus(String token) async {
     guard(token);
-    return [];
-  }
-
-  @override
-  Future<List<CalendarEvent>> events(
-    String token,
-    String from,
-    String to,
-  ) async {
-    guard(token);
-    return [];
-  }
-
-  @override
-  Future<List<CalendarLabel>> labels(String token) async {
-    guard(token);
-    return [];
+    return super.siteStatus(token);
   }
 
   @override
@@ -158,33 +137,17 @@ void main() {
     expect(item.coord_ref_accuracy_m, isNull);
   });
 
-  test('라이브 조회는 from/to만 보내며 미지원 현장·페이지 파라미터를 만들지 않는다', () async {
-    String? path;
-    final gateway = LiveGateway(
-      transport: (method, route, token, body) async {
-        path = route;
-        return const ApiReply(200, {'ok': true, 'media': []});
-      },
-    );
-    await gateway.media('token', '2026-09-01', '2026-09-30');
-    expect(Uri.parse(path!).queryParameters, {
-      'from': '2026-09-01',
-      'to': '2026-09-30',
-    });
-    gateway.client.close();
-  });
-
   test('동시에 만료된 조회 셋이 refresh 하나를 공유하고 비밀번호는 저장하지 않는다', () async {
     final gateway = RefreshGateway(), store = MemoryStore();
     final c = FieldCoordinator(gateway, store, MockSpeechInput());
     await c.signIn('a', 'not-stored-password');
-    final work = c.loadPeriod('2026-09-01', '2026-09-30');
+    final work = Future.wait(List.generate(3, (_) => c.siteStatus()));
     await Future<void>.delayed(Duration.zero);
     expect(gateway.refreshCalls, 1);
     gateway.refreshed.complete(session('new'));
     await work;
     expect(c.authStage, AuthStage.ready);
-    expect(c.fetchedAt, isNotNull);
+    expect(c.siteStatusSnapshot, isNotNull);
     expect(store.tokens, isNot(contains('not-stored-password')));
     c.dispose();
   });

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../data/contracts/field_contracts.dart';
 import '../../vg_theme.dart';
+import '../record/record_session.dart';
 
 class OutboxScreen extends StatefulWidget {
   const OutboxScreen({super.key, required this.controller, this.active = true});
@@ -56,12 +57,18 @@ class _OutboxScreenState extends State<OutboxScreen>
       automatic: true,
       shouldContinue: () => _canLookup && generation == _generation,
     );
+    await clearCompletedDrafts();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _generation++;
     setState(() => _foreground = state == AppLifecycleState.resumed);
+    if (_foreground) {
+      unawaited(run(() async {
+        await queue.purgeExpired();
+      }));
+    }
     if (_canLookup) unawaited(_loadAndCheck());
   }
 
@@ -98,6 +105,23 @@ class _OutboxScreenState extends State<OutboxScreen>
     }
   }
 
+  Future<void> clearCompletedDrafts() async {
+    for (final photo in queue.items.where((item) =>
+        item.kind == OutboxKind.photo && queue.bundleCompleted(item.id))) {
+      await clearLocalRecordDrafts(widget.controller, photo.id, owner: photo.owner);
+    }
+  }
+
+  Future<void> send(OutboxEntry item) async {
+    if (widget.controller.offline) return;
+    if (item.kind == OutboxKind.photo) {
+      await queue.sendBundle(item.id, retry: true);
+    } else {
+      await queue.send(item, retry: true);
+    }
+    await clearCompletedDrafts();
+  }
+
   Future<void> confirmAbsent(OutboxEntry item) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -127,7 +151,7 @@ class _OutboxScreenState extends State<OutboxScreen>
     if (confirmed != true || !mounted) return;
     await run(() async {
       await queue.confirmAbsent(item);
-      await queue.send(item, retry: true);
+      await send(item);
     });
   }
 
@@ -159,8 +183,9 @@ class _OutboxScreenState extends State<OutboxScreen>
           ),
           const Text('로컬 저장됨은 기기에 보관한 상태입니다. 전송 완료는 서버에서 받은 사실을 확인한 상태입니다.'),
           const Text('초안은 작성 당시 현장으로 고정됩니다. 연결 후 각 항목의 전송/재시도를 눌러 주세요.'),
+          const Text('전송 완료 항목은 7일 뒤 자동으로 지워집니다. 원본은 관제웹에서 봅니다.'),
           if (widget.controller.offline)
-            const Text('오프라인 · 사진·잉크본·음성 댓글은 기기에 보관합니다.'),
+            const Text('오프라인 · 사진·잉크본·메모·음성은 기기에 보관합니다.'),
           const SizedBox(height: 16),
           if (queue.supportedLookup) ...[
             Align(
@@ -269,6 +294,8 @@ class _OutboxScreenState extends State<OutboxScreen>
 
   Widget card(OutboxEntry item) {
     final busy = queue.isBusy(item);
+    final cannotSend = busy || widget.controller.offline;
+    final parent = queue.parentOf(item);
     final uncertain =
         item.needsVerification || item.phase == OutboxPhase.uncertain;
     return Card(
@@ -283,6 +310,8 @@ class _OutboxScreenState extends State<OutboxScreen>
               '${item.kindLabel} · ${item.fields['title'] ?? item.fields['commentOf'] ?? ''}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
+            if (item.dependsOn != null)
+              Text('원본 사진 ${parent?.fields['title'] ?? '제목 없음'} 에 딸림'),
             const SizedBox(height: 8),
             Text(
               item.statusLabel,
@@ -335,22 +364,22 @@ class _OutboxScreenState extends State<OutboxScreen>
                     ),
                   if (queue.canRetryUncertain(item))
                     FilledButton(
-                      onPressed: busy || queue.checking || !_canLookup
+                      onPressed: cannotSend || queue.checking || !_canLookup
                           ? null
-                          : () => run(() => queue.send(item, retry: true)),
+                          : () => run(() => send(item)),
                       child: const Text('같은 작업 재시도'),
                     ),
                   if (!queue.supportedLookup)
                     OutlinedButton(
-                      onPressed: busy ? null : () => confirmAbsent(item),
+                      onPressed: cannotSend ? null : () => confirmAbsent(item),
                       child: const Text('관제웹 미등록 확인 후 재시도'),
                     ),
                 ] else if (item.phase != OutboxPhase.completed &&
                     item.phase != OutboxPhase.sending)
                   FilledButton(
-                    onPressed: busy
+                    onPressed: cannotSend
                         ? null
-                        : () => run(() => queue.send(item, retry: true)),
+                        : () => run(() => send(item)),
                     child: Text(
                       item.phase == OutboxPhase.waiting ? '전송' : '같은 작업 재시도',
                     ),

@@ -13,10 +13,8 @@ const _me = '/api/mobile/v1/session/me';
 const _refresh = '/api/mobile/v1/session/refresh';
 const _future = '2099-01-01T00:00:00Z';
 const _past = '2000-01-01T00:00:00Z';
-const _restoreFailure =
-    '저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
-const _expiredFailure =
-    '저장된 로그인의 유효 기간이 지났습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
+const _restoreFailure = '저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
+const _expiredFailure = '저장된 로그인의 유효 기간이 지났습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.';
 const _savedUser = {
   'id': 'saved-account',
   'role': 'site_manager',
@@ -53,9 +51,8 @@ MemoryStore _store({
 }) => MemoryStore()
   ..tokens = jsonEncode({
     'session': _session(refreshExpiresAt: refreshExpiresAt, user: user).json,
-    'localAccessExpiresAt': DateTime.parse(
-      expiredAccess ? _past : _future,
-    ).toIso8601String(),
+    'localAccessExpiresAt': DateTime.parse(expiredAccess ? _past : _future)
+        .toIso8601String(),
   });
 
 FieldCoordinator _controller(MemoryStore store, JsonTransport transport) {
@@ -69,12 +66,10 @@ FieldCoordinator _controller(MemoryStore store, JsonTransport transport) {
 ApiReply _success(String path, {Map<String, dynamic>? site = _site}) {
   return switch (Uri.parse(path).path) {
     _me => const ApiReply(200, {'ok': true, 'user': _onlineUser}),
-    _refresh || '/api/mobile/v1/session/login' => ApiReply(200, _session().json),
+    _refresh ||
+    '/api/mobile/v1/session/login' => ApiReply(200, _session().json),
     '/api/mobile/v1/session/logout' => const ApiReply(200, {'ok': true}),
     '/api/admin/site-info' => ApiReply(200, {'ok': true, 'siteInfo': site}),
-    '/api/calendar/media' => const ApiReply(200, {'ok': true, 'media': []}),
-    '/api/calendar/events' => const ApiReply(200, {'ok': true, 'events': []}),
-    '/api/calendar/labels' => const ApiReply(200, {'ok': true, 'labels': []}),
     '/api/app/address' => const ApiReply(200, {'ok': true, 'display': '현장 주소'}),
     _ => throw StateError('예상하지 않은 경로: $path'),
   };
@@ -310,7 +305,10 @@ void main() {
         expect(controller.authStage, AuthStage.ready);
         expect(controller.offline, isFalse);
         expect(controller.site?.json, site);
-        expect(await store.read(_savedUser['id']!, 'site:info'), jsonEncode(site));
+        expect(
+          await store.read(_savedUser['id']!, 'site:info'),
+          jsonEncode(site),
+        );
         expect(await store.read('other-account', 'site:info'), isNull);
 
         final restored = _controller(
@@ -343,7 +341,7 @@ void main() {
     expect(await store.read(_savedUser['id']!, 'site:info'), isNull);
 
     online = true;
-    await controller.loadPeriod('2026-09-01', '2026-09-30');
+    await controller.captureAddress(latitude: 37, longitude: 127);
     await Future<void>.delayed(Duration.zero);
 
     expect(siteCalls, 1);
@@ -365,8 +363,11 @@ void main() {
           if (!online) throw const SocketException('synthetic');
           return pending.future;
         }
-        if (Uri.parse(path).path == '/api/app/address' && addressCalls++ == 0) {
-          return const ApiReply(401, {'ok': false, 'action': 'refresh'});
+        if (Uri.parse(path).path == '/api/app/address') {
+          addressCalls++;
+          if (retry && addressCalls == 1) {
+            return const ApiReply(401, {'ok': false, 'action': 'refresh'});
+          }
         }
         return _success(path);
       });
@@ -379,13 +380,21 @@ void main() {
           '현장 주소',
         );
       } else {
-        await controller.loadPeriod('2026-09-01', '2026-09-30');
+        expect(
+          await Future.wait(
+            List.generate(
+              3,
+              (_) => controller.captureAddress(latitude: 37, longitude: 127),
+            ),
+          ),
+          ['현장 주소', '현장 주소', '현장 주소'],
+        );
       }
-      await controller.loadPeriod('2026-09-01', '2026-09-30');
+      await controller.captureAddress(latitude: 37, longitude: 127);
 
       expect(meCalls, 2);
       expect(pending.isCompleted, isFalse);
-      expect(controller.fetchedAt, isNotNull);
+      expect(addressCalls, retry ? 3 : 4);
       expect(controller.offline, isFalse);
       expect(controller.user?.json, _savedUser);
 
@@ -396,7 +405,7 @@ void main() {
       expect(controller.user?.json, _onlineUser);
       expect(controller.message, isNull);
 
-      await controller.loadPeriod('2026-09-01', '2026-09-30');
+      await controller.captureAddress(latitude: 37, longitude: 127);
       expect(meCalls, 2);
     });
   }
@@ -425,7 +434,7 @@ void main() {
         locks++;
       };
       await controller.initialize();
-      await controller.loadPeriod('2026-09-01', '2026-09-30');
+      await controller.captureAddress(latitude: 37, longitude: 127);
 
       pending.complete(reply);
       await Future<void>.delayed(Duration.zero);
@@ -451,16 +460,19 @@ void main() {
     });
     await controller.initialize();
 
-    await controller.loadPeriod('2026-09-01', '2026-09-30');
+    await controller.captureAddress(latitude: 37, longitude: 127);
     await Future<void>.delayed(Duration.zero);
 
     expect(meCalls, 2);
     expect(controller.authStage, AuthStage.ready);
     expect(controller.user?.json, _savedUser);
-    expect(controller.fetchedAt, isNotNull);
+    expect(
+      await controller.captureAddress(latitude: 37, longitude: 127),
+      '현장 주소',
+    );
     expect(controller.message, isNull);
     expect(store.tokens, isNotNull);
-    await controller.loadPeriod('2026-09-01', '2026-09-30');
+    await controller.captureAddress(latitude: 37, longitude: 127);
     expect(meCalls, 2);
   });
 
@@ -476,7 +488,7 @@ void main() {
       return _success(path);
     });
     await controller.initialize();
-    await controller.loadPeriod('2026-09-01', '2026-09-30');
+    await controller.captureAddress(latitude: 37, longitude: 127);
     await controller.signOut();
 
     pending.complete(_success(_me));

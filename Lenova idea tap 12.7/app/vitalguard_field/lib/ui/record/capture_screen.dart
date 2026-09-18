@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../../data/contracts/field_contracts.dart';
 import '../../vg_theme.dart';
 import 'capture_ocr.dart';
+import 'record_screens.dart';
 
 abstract interface class CaptureCamera {
   Future<void> initialize();
@@ -249,14 +250,7 @@ class DeviceCaptureLauncher implements CaptureLauncher {
   String? get _siteId {
     final siteId = controller.site?.site_id;
     if (siteId?.isNotEmpty == true) return siteId;
-    // ⚠ 2026-09-15 확인: 서버는 아직 site_id 를 주지 않는다.
-    // `GET /api/admin/site-info` 는 site_info_daily 를 SELECT * 로 돌려주는데
-    // 그 테이블에 site_id 컬럼이 없다(db.ts:491). 그래서 위 분기는 지금 항상 건너뛴다.
-    // 담당관 배정 현장 ID 를 주는 경로가 생기면 그때부터 동작한다.
-    // 그전까지는 이 폴백이 유일한 출처이고, 그 날짜 첫 사진에는 현장이 안 붙는다.
-    for (final media in controller.media) {
-      if (media.site_id?.isNotEmpty == true) return media.site_id;
-    }
+    // 배정 ID가 없으면 생략한다. 다른 보류 사진의 현장 ID를 빌리지 않는다.
     return null;
   }
 
@@ -347,12 +341,13 @@ class CaptureActionPanel extends StatefulWidget {
   const CaptureActionPanel({
     super.key,
     required this.controller,
-    required this.onUploaded,
+    this.onUploaded,
     this.launcher,
   });
 
   final FieldController controller;
-  final Future<void> Function() onUploaded;
+  // 로컬 기록 목록의 갱신 알림이다. 서버 업로드를 뜻하지 않는다.
+  final Future<void> Function()? onUploaded;
   final CaptureLauncher? launcher;
 
   @override
@@ -388,7 +383,7 @@ class _CaptureActionPanelState extends State<CaptureActionPanel> {
     if (busy) return;
     setState(() {
       busy = true;
-      operationMessage = '좌표·주소·글자를 확인하고 업로드하는 중입니다.';
+      operationMessage = '좌표·주소·글자를 확인하고 기기에 저장하는 중입니다.';
     });
     try {
       final result = mode == CaptureMode.photo
@@ -399,19 +394,26 @@ class _CaptureActionPanelState extends State<CaptureActionPanel> {
         setState(() => operationMessage = null);
         return;
       }
-      if (result.uploaded > 0) await widget.onUploaded();
+      if (result.queued > 0) await widget.onUploaded?.call();
       if (!mounted) return;
       setState(() {
         operationMessage = [
-          if (result.uploaded > 0)
-            widget.controller.isMock
-                ? '$mockCompletedLabel · ${result.uploaded}건'
-                : '$serverCompletedLabel · ${result.uploaded}건',
-          if (result.queued > 0) '로컬 저장됨 · ${result.queued}건 · 전송 상태 탭에서 확인',
+          if (result.queued > 0)
+            '기기에 저장됨 · ${result.queued}건 · 주석·메모를 붙인 뒤 전송',
           if (result.failed > 0) '${result.failed}건 처리 실패',
           if (result.lastError != null) result.lastError!,
         ].join('\n');
       });
+      if (result.queuedIds.length == 1 && result.failed == 0) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => PhotoDetail(
+              controller: widget.controller,
+              photoId: result.queuedIds.single,
+            ),
+          ),
+        );
+      }
     } on CaptureFailure catch (error) {
       if (mounted) setState(() => operationMessage = error.message);
     } catch (_) {

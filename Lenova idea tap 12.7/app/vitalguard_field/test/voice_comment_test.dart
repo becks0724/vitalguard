@@ -12,6 +12,8 @@ import 'package:vitalguard_field/data/mock/mock_voice_recorder.dart';
 import 'package:vitalguard_field/ui/record/record_input.dart';
 import 'package:vitalguard_field/ui/record/voice_comment_draft.dart';
 
+import 'support/record_fixture.dart';
+
 const _mediaId = 'mock-original-001';
 const _draftKey = 'voice-comment-draft:$_mediaId';
 final _audio = Uint8List.fromList([0, 0, 0, 24, 102, 116, 121, 112, 0xff]);
@@ -199,6 +201,8 @@ Future<void> _open(WidgetTester tester, FieldCoordinator controller) =>
           controller: controller,
           media: CalendarMedia({
             'id': _mediaId,
+            'local': true,
+            'site_id': 'site-a',
             'date_key': calendarDate(kstNow()),
           }),
         ),
@@ -221,6 +225,7 @@ Future<_Rig> _mount(
       stt = speech ?? _Speech();
   final controller = FieldCoordinator(api, local, stt, recorder: recorder);
   await controller.signIn('a', 'mock');
+  await restorePhoto(controller, _mediaId);
   await _open(tester, controller);
   await tester.pumpAndSettle();
   addTearDown(() async {
@@ -314,9 +319,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('녹음→정지→미리듣기→명시적 전송은 voiceComment를 한 번 부르고 타이핑을 유지한다', (
-    tester,
-  ) async {
+  testWidgets('녹음→정지→미리듣기→음성 저장은 dependsOn 항목만 만들고 타이핑을 유지한다', (tester) async {
     final recorder = _Recorder();
     final rig = await _mount(tester, recorder);
     await tester.enterText(find.byType(TextField).first, '별도로 남길 글 댓글');
@@ -334,15 +337,28 @@ void main() {
     expect(_enabled(tester, 'speech-start'), isFalse);
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
-    expect(rig.gateway.calls, hasLength(1));
-    final call = rig.gateway.calls.single;
-    expect(call.mediaId, _mediaId);
-    expect(call.token, 'mock-access-a');
-    expect(call.audio, _audio);
-    expect(call.duration, 7000);
-    expect((await rig.saved())['status'], 'sent');
+    expect(rig.gateway.calls, isEmpty);
+    final item = rig.controller.outbox.dependents(_mediaId).single;
+    expect(item.kind, OutboxKind.voice);
+    expect(item.phase, OutboxPhase.waiting);
+    expect(item.dependsOn, _mediaId);
+    expect(item.fields['audioMs'], '7000');
+    expect(item.fields['siteId'], 'site-a');
+    expect(
+      item.fields.keys,
+      isNot(
+        anyOf(
+          contains('commentOf'),
+          contains('annotationOf'),
+          contains('mediaId'),
+        ),
+      ),
+    );
+    expect(item.draftKeys, [_draftKey, '$_draftKey:audio']);
+    expect(await rig.store.readBytes('a', item.bytesKey), _audio);
+    expect(await rig.store.read('a', _draftKey), isNull);
     expect(recorder.files, isEmpty);
-    expect(await rig.store.readBytes('a', '$_draftKey:audio'), isEmpty);
+    expect(await rig.store.readBytes('a', '$_draftKey:audio'), isNull);
     expect(
       tester.widget<TextField>(find.byType(TextField).first).controller!.text,
       '별도로 남길 글 댓글',
@@ -350,78 +366,46 @@ void main() {
     expect(rig.speech.starts, 0);
   });
 
-  testWidgets('새 음성 댓글은 내용이 같아도 새 UUID이고 원본 commentOf는 유지한다', (tester) async {
+  testWidgets('새 음성 저장은 내용이 같아도 새 UUID로 같은 사진에 쌓인다', (tester) async {
     final rig = await _mount(tester, _Recorder());
     await _record(tester);
+    expect(find.text('음성 저장'), findsOneWidget);
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
-    final first = rig.gateway.calls.single;
+    final first = rig.controller.outbox.dependents(_mediaId).single;
     await _record(tester);
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
-    expect(rig.gateway.calls, hasLength(2));
-    expect(rig.gateway.calls.last.operationId, isNot(first.operationId));
-    expect(rig.gateway.calls.last.operationId, isNotEmpty);
-    expect(rig.gateway.calls.last.mediaId, first.mediaId);
-    expect(rig.gateway.calls.last.audio, first.audio);
-    expect(rig.controller.outbox.items, hasLength(2));
+    final items = rig.controller.outbox.dependents(_mediaId);
+    expect(items, hasLength(2));
+    expect(items.last.id, isNot(first.id));
+    expect(items.last.dependsOn, first.dependsOn);
+    expect(await rig.store.readBytes('a', items.last.bytesKey), _audio);
+    expect(items.every((e) => e.phase == OutboxPhase.waiting), isTrue);
+    expect(rig.gateway.calls, isEmpty);
   });
 
-  testWidgets('연결 실패 시 파일·로컬 사본을 보존하고 화면 복원·캐시 유실 뒤에도 수동 재시도한다', (
-    tester,
-  ) async {
+  testWidgets('오프라인 초안은 재진입·녹음 캐시 유실 뒤에도 미리듣고 로컬 저장한다', (tester) async {
     final recorder = _Recorder();
-    final gateway = _Gateway()..failure = const ApiFailure('현장 Wi-Fi 연결 끊김');
-    final rig = await _mount(tester, recorder, gateway: gateway);
+    final rig = await _mount(tester, recorder);
+    rig.controller.offline = true;
     await _record(tester);
-    final path = recorder.last!.path;
-    await tester.tap(find.byKey(const Key('voice-send')));
-    await tester.pumpAndSettle();
-    expect(find.text('현장 Wi-Fi 연결 끊김'), findsOneWidget);
-    expect(recorder.files[path], _audio);
-    expect(recorder.deleted, isEmpty);
     expect(await rig.store.readBytes('a', '$_draftKey:audio'), _audio);
-    expect((await rig.saved())['status'], 'draft');
-    expect(rig.controller.offline, isTrue);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
-    recorder.files.clear(); // 운영체제가 캐시를 비워도 계정별 로컬 사본은 남아 있다.
+    recorder.files.clear();
     await _open(tester, rig.controller);
     await tester.pumpAndSettle();
-    expect(find.textContaining('전송 전 녹음을 복원했습니다'), findsOneWidget);
+    expect(find.textContaining('저장 전 녹음을 복원했습니다'), findsOneWidget);
     await tester.tap(find.byKey(const Key('voice-preview')));
     await tester.pump();
     expect(recorder.previewed, _audio);
-    gateway.failure = null;
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
-    expect(gateway.calls, hasLength(2));
-    expect(gateway.calls.last.operationId, gateway.calls.first.operationId);
-    expect(gateway.calls.last.operationId, isNotEmpty);
-    expect(gateway.calls.last.audio, _audio);
-    expect((await rig.saved())['status'], 'sent');
-  });
-
-  testWidgets('결과 불명은 자동 재전송하지 않고 미등록 확인을 매번 요구한다', (tester) async {
-    final gateway = _Gateway()
-      ..failure = const ApiFailure('응답 유실', uncertainWrite: true);
-    final rig = await _mount(tester, _Recorder(), gateway: gateway);
-    await _record(tester);
-    await tester.tap(find.byKey(const Key('voice-send')));
-    await tester.pumpAndSettle();
-    expect((await rig.saved())['status'], 'uncertain');
-    expect(_enabled(tester, 'voice-send'), isFalse);
-    expect(await rig.store.readBytes('a', '$_draftKey:audio'), _audio);
-    await tester.pump(const Duration(minutes: 1));
-    expect(gateway.calls, hasLength(1));
-    await tester.tap(find.byKey(const Key('voice-confirm-absent')));
-    await tester.pump();
-    expect(_enabled(tester, 'voice-send'), isTrue);
-    await tester.tap(find.byKey(const Key('voice-send')));
-    await tester.pumpAndSettle();
-    expect(gateway.calls, hasLength(2));
-    expect(gateway.calls.last.operationId, gateway.calls.first.operationId);
-    expect(_enabled(tester, 'voice-send'), isFalse);
+    final item = rig.controller.outbox.dependents(_mediaId).single;
+    expect(await rig.store.readBytes('a', item.bytesKey), _audio);
+    expect(item.phase, OutboxPhase.waiting);
+    expect(rig.gateway.calls, isEmpty);
   });
 
   testWidgets('STT 준비·인식 중 녹음과 녹음 권한 대기·녹음 중 STT를 모두 차단한다', (tester) async {
@@ -472,25 +456,25 @@ void main() {
         expect(recorder.deleted, [path]);
         expect(recorder.files, isEmpty);
         expect(recorder.active, isFalse);
-        expect((await rig.saved())['clip'], isNull);
-        expect(await rig.store.readBytes('a', '$_draftKey:audio'), isEmpty);
+        expect(await rig.store.read('a', _draftKey), isNull);
+        expect(await rig.store.readBytes('a', '$_draftKey:audio'), isNull);
         expect(rig.gateway.calls, isEmpty);
       },
     );
   }
 
-  testWidgets('모의 녹음·댓글 등록은 네이티브 플러그인 없이 완료된다', (tester) async {
+  testWidgets('모의 녹음·로컬 저장은 네이티브 플러그인 없이 완료된다', (tester) async {
     final rig = await _mount(tester, MockVoiceRecorder());
     expect(find.text('모의 녹음 · 마이크를 사용하지 않습니다'), findsOneWidget);
     await _record(tester);
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    final date = calendarDate(kstNow());
-    final photos = await rig.gateway.media('mock-access-a', date, date);
-    expect(photos, hasLength(1));
-    expect(photos.single.comments.single.audio_storage_key, isNotNull);
-    expect(photos.single.comments.single.body, '');
+    final item = rig.controller.outbox.dependents(_mediaId).single;
+    expect(item.kind, OutboxKind.voice);
+    expect(item.phase, OutboxPhase.waiting);
+    expect(await rig.store.readBytes('a', item.bytesKey), isNotEmpty);
+    expect(rig.gateway.calls, isEmpty);
   });
 
   testWidgets('다시 녹음은 이전 파일을 지우고 새 녹음을 시작하며 자동 전송하지 않는다', (tester) async {
@@ -510,7 +494,7 @@ void main() {
     expect((await rig.saved())['clip']['path'], recorder.last!.path);
   });
 
-  testWidgets('전송 전 초안 저장 실패는 업로드를 막고 녹음 파일과 기존 사본을 유지한다', (tester) async {
+  testWidgets('음성 저장 전 초안 쓰기 실패는 항목 생성을 막고 녹음 파일과 기존 사본을 유지한다', (tester) async {
     final store = _FailingStore(), recorder = _Recorder();
     final rig = await _mount(tester, recorder, store: store);
     await _record(tester);
@@ -524,28 +508,29 @@ void main() {
     store.failWrites = false;
     await tester.tap(find.byKey(const Key('voice-send')));
     await tester.pumpAndSettle();
-    expect(rig.gateway.calls, hasLength(1));
+    expect(rig.gateway.calls, isEmpty);
+    expect(rig.controller.outbox.dependents(_mediaId), hasLength(1));
   });
 
   testWidgets('재로그인 전 beforeLock도 녹음을 보존하며 같은 계정에서 복원한다', (tester) async {
     final recorder = _Recorder();
-    final gateway = _Gateway()
-      ..failure = const ApiFailure('세션 만료', status: 401, action: 'reauth');
-    final rig = await _mount(tester, recorder, gateway: gateway);
-    await _record(tester);
-    await tester.tap(find.byKey(const Key('voice-send')));
+    final rig = await _mount(tester, recorder);
+    await tester.tap(find.byKey(const Key('voice-start')));
+    await tester.pump();
+    await rig.controller.beforeLock!();
     await tester.pumpAndSettle();
-    expect(rig.controller.authStage, AuthStage.reauthenticate);
+    expect(recorder.active, isFalse);
     expect(recorder.files, hasLength(1));
     expect((await rig.saved())['status'], 'draft');
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
+    await rig.controller.signOut();
     await rig.controller.signIn('a', 'mock');
     await _open(tester, rig.controller);
     await tester.pumpAndSettle();
-    expect(find.textContaining('전송 전 녹음을 복원했습니다'), findsOneWidget);
+    expect(find.textContaining('저장 전 녹음을 복원했습니다'), findsOneWidget);
     expect(_enabled(tester, 'voice-preview'), isTrue);
-    expect(gateway.calls, hasLength(1));
+    expect(rig.gateway.calls, isEmpty);
   });
 
   testWidgets('3분 자동 정지는 알림·미리듣기 상태로 바뀌며 전송하지 않는다', (tester) async {
@@ -596,31 +581,7 @@ void main() {
     expect(_enabled(tester, 'voice-start'), isTrue);
   });
 
-  for (final entry in {
-    401: '로그인이 만료되었습니다.',
-    403: '권한이 없습니다.',
-    404: '원본 사진을 찾을 수 없습니다.',
-  }.entries) {
-    testWidgets('${entry.key}는 구별된 안내와 함께 녹음을 보존한다', (tester) async {
-      final recorder = _Recorder();
-      final rig = await _mount(
-        tester,
-        recorder,
-        gateway: _Gateway()
-          ..failure = ApiFailure('서버 사유', status: entry.key, action: 'none'),
-      );
-      await _record(tester);
-      await tester.tap(find.byKey(const Key('voice-send')));
-      await tester.pumpAndSettle();
-      expect(find.textContaining(entry.value), findsOneWidget);
-      expect(recorder.files, hasLength(1));
-      expect(await rig.store.readBytes('a', '$_draftKey:audio'), _audio);
-    });
-  }
-
-  testWidgets('전송 중 앱 종료 흔적은 복원 시 uncertain으로 바뀌고 계정이 다른 초안은 읽지 않는다', (
-    tester,
-  ) async {
+  testWidgets('새 화면은 같은 계정의 저장 전 녹음만 복원하고 다른 계정 초안은 읽지 않는다', (tester) async {
     final store = MemoryStore();
     final clip = VoiceRecording(
       path: '/cache/voice-old.m4a',
@@ -639,13 +600,13 @@ void main() {
     await store.write(
       'a',
       _draftKey,
-      jsonEncode({'status': 'sending', 'clip': clip.toJson()}),
+      jsonEncode({'status': 'draft', 'clip': clip.toJson()}),
     );
     await store.writeBytes('a', '$_draftKey:audio', _audio);
     await _open(tester, rig.controller);
     await tester.pumpAndSettle();
-    expect((await rig.saved())['status'], 'uncertain');
-    expect(_enabled(tester, 'voice-send'), isFalse);
+    expect((await rig.saved())['status'], 'draft');
+    expect(_enabled(tester, 'voice-send'), isTrue);
     expect(rig.gateway.calls, isEmpty);
   });
 }

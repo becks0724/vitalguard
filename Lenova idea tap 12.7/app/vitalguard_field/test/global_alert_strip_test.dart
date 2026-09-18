@@ -10,6 +10,8 @@ import 'package:vitalguard_field/ui/record/record_screens.dart';
 import 'package:vitalguard_field/ui/shell/field_shell.dart';
 import 'package:vitalguard_field/vg_theme.dart';
 
+import 'support/record_fixture.dart';
+
 import 'support/alerts_fixture.dart';
 
 final _strip = find.byKey(const Key('global-alert-strip'));
@@ -45,10 +47,11 @@ void main() {
     f.gateway.rows = [alertRow()];
     await f.mount(tester);
     expect(_strip, findsOneWidget);
+    await seedPhoto(f.field);
     await _tab(tester, 2);
     await tester.tap(find.text('모의 현장 사진'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('펜으로 표시하기'));
+    await tester.tap(find.text('주석 그리기'));
     await tester.pump();
     expect(find.byType(RecordEditor), findsOneWidget);
     expect(_strip, findsNothing);

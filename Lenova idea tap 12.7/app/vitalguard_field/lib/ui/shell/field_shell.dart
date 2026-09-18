@@ -65,10 +65,12 @@ class _FieldShellState extends State<FieldShell> {
         Map<String, dynamic>.from(saved['media'] as Map),
       );
       final ink = saved['ink'] == true;
-      final editing = saved['editing'] is Map
-          ? MediaComment(Map<String, dynamic>.from(saved['editing'] as Map))
-          : null;
       setState(() => destination = 2);
+      recordNavigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => PhotoDetail(
+          controller: widget.controller, photoId: media.id,
+        )),
+      );
       // 재로그인한 같은 계정의 기기 초안으로 복귀한다. 복구 자체는 전송하지 않는다.
       recordNavigator.currentState!.push(
         MaterialPageRoute<void>(
@@ -78,7 +80,6 @@ class _FieldShellState extends State<FieldShell> {
               : RecordInput(
                   controller: widget.controller,
                   media: media,
-                  editing: editing,
                 ),
         ),
       );

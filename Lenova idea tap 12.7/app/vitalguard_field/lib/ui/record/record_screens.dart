@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -10,16 +12,33 @@ import 'capture_ocr.dart';
 import 'capture_screen.dart';
 import 'record_editor.dart';
 import 'record_input.dart';
+import 'record_session.dart';
 
 String _recordTime(String? source, {required String missing}) {
   if (source == null || source.trim().isEmpty) return missing;
   try {
-    // 시간대 없는 값도 기존 KST 규칙으로 해석하고 사진 각인과 같은 형식으로 표시한다.
     return captureKstStamp(DateTime.parse(asKstIso(source)));
   } on FormatException {
     return '시각 확인 불가';
   }
 }
+
+// 상세 하단 버튼은 장갑 손가락 기준 64dp 높이를 유지한다.
+final ButtonStyle _actionStyle = ButtonStyle(
+  minimumSize: WidgetStatePropertyAll(Size(160, vgTapPrimary)),
+);
+
+bool _canDiscard(OutboxEntry item) =>
+    item.phase == OutboxPhase.waiting || item.phase == OutboxPhase.failed;
+
+String _attachmentCounts(List<OutboxEntry> items) => [
+  for (final pair in const {
+    OutboxKind.ink: '주석',
+    OutboxKind.text: '메모',
+    OutboxKind.voice: '음성',
+  }.entries)
+    '${pair.value} ${items.where((item) => item.kind == pair.key).length}',
+].join(' · ');
 
 class RecordHome extends StatefulWidget {
   const RecordHome({super.key, required this.controller});
@@ -29,552 +48,345 @@ class RecordHome extends StatefulWidget {
 }
 
 class _RecordHomeState extends State<RecordHome> {
-  late DateTime selected;
-  late DateTime month;
-  bool week = false;
   @override
   void initState() {
     super.initState();
-    final today = kstNow();
-    selected = DateTime.utc(today.year, today.month, today.day);
-    month = DateTime.utc(today.year, today.month);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) reload();
-    });
+    unawaited(widget.controller.outbox.load());
   }
-
-  DateTime get start => month.subtract(Duration(days: month.weekday % 7));
-  Future<void> reload() => widget.controller.loadPeriod(
-    calendarDate(start),
-    calendarDate(start.add(const Duration(days: 41))),
-  );
-  void changeMonth(int delta) {
-    setState(() {
-      month = DateTime.utc(month.year, month.month + delta);
-      selected = month;
-    });
-    reload();
-  }
-
-  Widget _calendar(DateTime first, String selectedKey) => LayoutBuilder(
-    builder: (_, constraints) {
-      final scale = MediaQuery.textScalerOf(context).scale(1);
-      final minimumWidth = 448.0 * (scale < 1 ? 1.0 : scale);
-      final width = constraints.maxWidth < minimumWidth
-          ? minimumWidth
-          : constraints.maxWidth;
-      return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: width,
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  for (final day in ['일', '월', '화', '수', '목', '금', '토'])
-                    Expanded(child: Center(child: Text(day))),
-                ],
-              ),
-              const SizedBox(height: 16),
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: week ? 7 : 42,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 7,
-                  mainAxisExtent: 66 * (scale < 1 ? 1 : scale),
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 8,
-                ),
-                itemBuilder: (_, i) {
-                  final date = first.add(Duration(days: i));
-                  final dayKey = calendarDate(date);
-                  final count = widget.controller.media
-                      .where((m) => m.date_key == dayKey)
-                      .length;
-                  return OutlinedButton(
-                    onPressed: () => setState(() => selected = date),
-                    style: OutlinedButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      backgroundColor: dayKey == selectedKey
-                          ? Theme.of(context).colorScheme.primaryContainer
-                          : null,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          '${date.day}',
-                          style: TextStyle(
-                            color: date.month == month.month
-                                ? null
-                                : const Color(0xFF60646C),
-                          ),
-                        ),
-                        if (count > 0)
-                          Text(
-                            '사진 $count',
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
-        ),
-      );
-    },
-  );
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.controller,
+    animation: widget.controller.outbox,
     builder: (_, _) {
       final c = widget.controller;
+      final photos = c.outbox.items
+          .where((item) => item.kind == OutboxKind.photo &&
+              item.phase != OutboxPhase.completed)
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       final cardSurface = vgBackdropCardSurface(vgBackdropOf(context))
           .withValues(alpha: vgCardSurfaceAlpha);
-      final key = calendarDate(selected);
-      final photos = c.media.where((m) => m.date_key == key).toList();
-      final events = c.calendarEvents
-          .where(
-            (e) =>
-                e.date_key.compareTo(key) <= 0 &&
-                (e.end_date_key ?? e.date_key).compareTo(key) >= 0,
-          )
-          .toList();
-      final first = week
-          ? selected.subtract(Duration(days: selected.weekday % 7))
-          : start;
-      final calendarChildren = <Widget>[
-        Row(
-          children: [
-            IconButton(
-              tooltip: '이전 달',
-              onPressed: () => changeMonth(-1),
-              icon: const Icon(Icons.chevron_left),
-            ),
-            Expanded(
-              child: Text(
-                '${month.year}년 ${month.month}월',
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: '다음 달',
-              onPressed: () => changeMonth(1),
-              icon: const Icon(Icons.chevron_right),
-            ),
-            TextButton(
-              onPressed: () => setState(() => week = !week),
-              child: Text(week ? '월 보기' : '주 보기'),
-            ),
-            IconButton(
-              tooltip: '기록 새로 고침',
-              onPressed: c.busy ? null : reload,
-              icon: const Icon(Icons.refresh),
-            ),
-          ],
-        ),
-        if (c.busy) const LinearProgressIndicator(),
-        if (c.message != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Text(c.message!),
-          ),
-        _calendar(first, key),
-      ];
-      final recordChildren = <Widget>[
-        Text(
-          '$key 기록',
-          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 16),
-        if (!c.busy && c.fetchedAt == null)
-          const Text('아직 이 기간의 기록을 받지 못했습니다.'),
-        if (!c.busy && c.fetchedAt != null && events.isEmpty && photos.isEmpty)
-          const Text('선택한 날짜에 받은 사진·일정이 없습니다.'),
-        ...events.map(
-          (e) => Card(
-            color: cardSurface,
-            elevation: 0,
-            surfaceTintColor: Colors.transparent,
-            child: ListTile(
-              leading: const Icon(Icons.event_outlined),
-              title: Text(e.title),
-              subtitle: Text(
-                [e.start_time ?? '종일', if (e.note != null) e.note!].join(' · '),
-              ),
-            ),
-          ),
-        ),
-        ...photos.map(
-          (photo) => Card(
-            color: cardSurface,
-            elevation: 0,
-            surfaceTintColor: Colors.transparent,
-            child: ListTile(
-              contentPadding: const EdgeInsets.all(16),
-              leading: const Icon(Icons.image_outlined, size: 40),
-              title: Text(photo.title ?? '현장 사진'),
-              subtitle: Text(
-                '${_recordTime(photo.captured_at, missing: '촬영 시각 미기록')}\n${photo.uploader ?? '촬영자 미기록'}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => PhotoDetail(controller: c, media: photo),
-                  ),
-                );
-                if (mounted) await reload();
-              },
-            ),
-          ),
-        ),
-      ];
-      Widget list(String id, List<Widget> children) => RefreshIndicator(
-        key: ValueKey(id),
-        onRefresh: reload,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          children: children,
-        ),
-      );
-
-      // C-3: 좁은 가로 분할창은 1단, 넓은 세로 창은 2단. 선택 날짜는 State에 유지한다.
-      final wideWindow = MediaQuery.sizeOf(context).width >= vgTwoPaneMinWidth;
       return Scaffold(
         backgroundColor: Colors.transparent,
         bottomNavigationBar: ActionDock(
           child: CaptureActionPanel(
             key: const Key('record-capture-actions'),
             controller: c,
-            onUploaded: reload,
           ),
         ),
-        body: wideWindow
-            ? Row(
-                children: [
-                  Expanded(
-                    child: list('record-calendar-pane', calendarChildren),
+        body: ListView(
+          key: const Key('record-pending-list'),
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text('보낼 기록', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 12),
+            const Text('전송이 끝난 기록은 관제웹에서 봅니다.'),
+            if (c.offline) const Text('오프라인 · 촬영한 사진과 주석·메모·음성은 기기에 보관합니다.'),
+            if (c.outbox.loadError != null) ...[
+              Text(c.outbox.loadError!),
+              TextButton(onPressed: c.outbox.load, child: const Text('기록 다시 열기')),
+            ],
+            const SizedBox(height: 20),
+            if (photos.isEmpty && c.outbox.loadError == null)
+              const Text('보낼 기록이 없습니다. 촬영한 사진은 여기 모입니다.'),
+            for (final photo in photos)
+              Card(
+                color: cardSurface,
+                elevation: 0,
+                surfaceTintColor: Colors.transparent,
+                child: ListTile(
+                  key: ValueKey('record-photo-${photo.id}'),
+                  contentPadding: const EdgeInsets.all(16),
+                  minTileHeight: vgTapPrimary,
+                  leading: SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: _StoredImage(
+                      key: ValueKey(photo.bytesKey),
+                      store: c.local,
+                      owner: photo.owner,
+                      storageKey: photo.bytesKey,
+                      cacheWidth: 160,
+                    ),
                   ),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: list('record-day-pane', recordChildren)),
-                ],
-              )
-            : list('record-single-pane', [
-                ...calendarChildren,
-                const SizedBox(height: 24),
-                ...recordChildren,
-              ]),
+                  title: Text(photo.fields['title'] ?? '현장 사진'),
+                  subtitle: Text([
+                    _recordTime(photo.fields['capturedAt'], missing: '촬영 시각 미기록'),
+                    photo.siteName,
+                    _attachmentCounts(c.outbox.dependents(photo.id)),
+                    photo.statusLabel,
+                  ].join('\n')),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => PhotoDetail(controller: c, photoId: photo.id),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       );
     },
   );
 }
 
 class PhotoDetail extends StatefulWidget {
-  const PhotoDetail({super.key, required this.controller, required this.media});
+  const PhotoDetail({super.key, required this.controller, required this.photoId});
   final FieldController controller;
-  final CalendarMedia media;
+  final String photoId;
   @override
   State<PhotoDetail> createState() => _PhotoDetailState();
 }
 
 class _PhotoDetailState extends State<PhotoDetail> {
-  late CalendarMedia media;
-  late Future<Uint8List> bytes;
+  Future<Uint8List>? bytes;
+  bool busy = false, closing = false;
+  String? error;
+  OutboxController get queue => widget.controller.outbox;
+  OutboxEntry? get photo => queue.entry(widget.photoId);
+
   @override
   void initState() {
     super.initState();
-    media = widget.media;
-    bytes = widget.controller.photoBytes(media);
+    final item = photo;
+    // 완료 항목은 새 상세 화면으로 진입할 수 없다.
+    if (item == null || item.kind != OutboxKind.photo ||
+        item.phase == OutboxPhase.completed) {
+      close();
+      return;
+    }
+    bytes = widget.controller.photoBytes(fromOutbox(item));
+    queue.addListener(changed);
   }
 
-  Future<void> refresh() async {
-    await widget.controller.loadPeriod(media.date_key, media.date_key);
-    if (!mounted) return;
-    for (final value in widget.controller.media) {
-      if (value.id == media.id) media = value;
-    }
-    setState(() {
-      bytes = widget.controller.photoBytes(media);
+  void close() {
+    if (closing) return;
+    closing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ModalRoute.of(context)?.isCurrent == true) {
+        Navigator.of(context).pop();
+      } else {
+        closing = false;
+      }
     });
   }
 
-  Future<void> input({MediaComment? comment}) async {
+  void changed() {
+    if (!mounted) return;
+    if (photo == null || queue.bundleCompleted(widget.photoId)) close();
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    queue.removeListener(changed);
+    super.dispose();
+  }
+
+  Future<void> run(Future<void> Function() action) async {
+    if (busy) return;
+    setState(() { busy = true; error = null; });
+    try {
+      await action();
+    } catch (value) {
+      if (mounted) setState(() => error = '$value');
+    } finally {
+      if (mounted) {
+        setState(() => busy = false);
+        changed();
+      }
+    }
+  }
+
+  Future<void> edit({required bool ink}) async {
+    final item = photo;
+    if (item == null) return;
+    final media = fromOutbox(item);
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => RecordInput(
-          controller: widget.controller,
-          media: media,
-          editing: comment,
-        ),
+        settings: RouteSettings(name: ink ? vgRecordEditorRouteName : 'R-06'),
+        builder: (_) => ink
+            ? RecordEditor(controller: widget.controller, original: media)
+            : RecordInput(controller: widget.controller, media: media),
       ),
     );
-    if (mounted) await refresh();
+    if (mounted) changed();
+  }
+
+  Future<void> deletePhoto() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('이 사진을 삭제할까요?'),
+        content: const Text('기기에 보관한 사진과 딸린 주석·메모·음성을 함께 삭제합니다.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('취소')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('삭제')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await run(() async {
+      await queue.discard(widget.photoId);
+      await clearLocalRecordDrafts(widget.controller, widget.photoId);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final item = photo;
+    if (item == null || bytes == null || queue.bundleCompleted(widget.photoId)) {
+      return const Scaffold(body: Center(child: Text('보낼 기록 목록으로 돌아갑니다.')));
+    }
     final c = widget.controller;
-    final backdrop = vgBackdropOf(context);
-    final opaqueSurface = vgBackdropCardSurface(backdrop);
-    final cardSurface = opaqueSurface.withValues(alpha: vgCardSurfaceAlpha);
-    final wideWindow = MediaQuery.sizeOf(context).width >= vgTwoPaneMinWidth;
-    Widget preview({required bool limitHeight}) => FutureBuilder<Uint8List>(
+    final media = fromOutbox(item);
+    final attachments = queue.dependents(item.id);
+    final members = [item, ...attachments];
+    final processing = busy || members.any((e) => queue.isBusy(e) || e.phase == OutboxPhase.sending);
+    final uncertain = members.any((e) => e.needsVerification || e.phase == OutboxPhase.uncertain);
+    final reauthenticate = members.any((e) => e.phase == OutboxPhase.reauthenticate);
+    final editable = _canDiscard(item) && !processing && !uncertain && !reauthenticate;
+    final deletable = editable && members.every(_canDiscard);
+    final wide = MediaQuery.sizeOf(context).width >= vgTwoPaneMinWidth;
+    final preview = FutureBuilder<Uint8List>(
       future: bytes,
-      builder: (_, result) {
-        if (result.hasError) {
-          return Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${result.error}'),
-                TextButton(
-                  onPressed: refresh,
-                  child: const Text('목록을 갱신하고 다시 받기'),
-                ),
-              ],
-            ),
-          );
-        }
-        if (!result.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final image = Image.memory(result.data!, fit: BoxFit.contain);
-        return limitHeight
-            ? ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 440),
-                child: image,
-              )
-            : Center(child: image);
-      },
+      builder: (_, result) => result.hasError
+          ? Center(child: Text('${result.error}'))
+          : !result.hasData
+          ? const Center(child: CircularProgressIndicator())
+          : Image.memory(result.data!, fit: BoxFit.contain),
     );
-    final actions = Wrap(
-      key: const Key('photo-detail-actions'),
-      spacing: 16,
-      runSpacing: vgGapTap,
-      children: [
-        FilledButton.icon(
-          onPressed: () async {
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                settings: const RouteSettings(name: vgRecordEditorRouteName),
-                builder: (_) => RecordEditor(controller: c, original: media),
-              ),
-            );
-            if (mounted) await refresh();
-          },
-          icon: const Icon(Icons.draw),
-          label: const Text('펜으로 표시하기'),
-          style: FilledButton.styleFrom(minimumSize: const Size(200, 64)),
-        ),
-        OutlinedButton.icon(
-          onPressed: input,
-          icon: const Icon(Icons.comment_outlined),
-          label: const Text('기록·댓글 남기기'),
-          style: OutlinedButton.styleFrom(minimumSize: const Size(200, 64)),
-        ),
-      ],
-    );
-    Widget opaquePreview({required bool limitHeight}) => ColoredBox(
-      color: opaqueSurface,
-      child: preview(limitHeight: limitHeight),
-    );
-    final metadata = <Widget>[
-      for (final row in <String, String>{
-        '캘린더 날짜': media.date_key,
-        '촬영 시각': _recordTime(media.captured_at, missing: '미기록'),
-        '촬영자': media.uploader ?? '미기록',
-        '원본 ID': media.id,
-        '도로명': media.road_address ?? '미기록',
-        'GPS': media.latitude == null || media.longitude == null
-            ? '미기록'
-            : '${media.latitude}, ${media.longitude}',
-        '좌표 대조': media.coord_gap_m == null
-            ? '대조 정보 없음'
-            : '${media.coord_gap_m}m · 참조 정확도 ${media.coord_ref_accuracy_m ?? '미기록'}',
-      }.entries)
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SizedBox(width: 110, child: Text(row.key)),
-              Expanded(child: SelectableText(row.value)),
-            ],
-          ),
-        ),
-      if (media.description != null) Text(media.description!),
+    final details = <Widget>[
+      Text(item.statusLabel, key: const Key('photo-bundle-status')),
+      if (processing) const LinearProgressIndicator(),
+      if (item.message != null) Text(item.message!),
+      if (error != null) Text(error!),
+      if (c.offline) const Text('오프라인입니다. 연결 후 전송할 수 있습니다.'),
+      if (uncertain) const Text('전송 상태 탭에서 서버 반영 여부를 조회하거나 미등록 확인 후 재시도해 주세요.'),
+      if (reauthenticate) const Text('작성 계정으로 다시 로그인한 뒤 전송 상태 탭에서 재개해 주세요.'),
+      const SizedBox(height: 16),
+      Text('${_recordTime(media.captured_at, missing: '촬영 시각 미기록')} · ${item.siteName}'),
+      if (media.road_address != null) Text(media.road_address!),
+      if (media.latitude != null && media.longitude != null)
+        Text('${media.latitude}, ${media.longitude}'),
       ExpansionTile(
         title: const Text('원문 OCR 보기'),
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: SelectableText(media.ocr_text ?? 'OCR 원문 없음'),
-          ),
-        ],
+        children: [Padding(padding: const EdgeInsets.all(16), child: SelectableText(media.ocr_text ?? 'OCR 원문 없음'))],
       ),
-    ];
-    final metadataPanel = Card(
-      color: cardSurface,
-      elevation: 0,
-      surfaceTintColor: Colors.transparent,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: metadata,
+      const SizedBox(height: 16),
+      Text(_attachmentCounts(attachments), style: Theme.of(context).textTheme.titleLarge),
+      for (final child in attachments)
+        _Attachment(
+          key: ValueKey(child.id),
+          controller: c,
+          item: child,
+          onDelete: !processing && _canDiscard(child)
+              ? () => run(() => queue.discard(child.id))
+              : null,
         ),
-      ),
-    );
-    final comments = <Widget>[
-      const Text(
-        '댓글',
-        style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-      ),
-      ...media.comments.map(
-        (comment) => Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '${comment.author_name ?? '작성자 미기록'} · ${_recordTime(comment.created_at, missing: '시각 미기록')}',
-                ),
-                const SizedBox(height: 8),
-                if (comment.audio_storage_key != null)
-                  Row(
-                    children: [
-                      const Icon(Icons.mic),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          '음성 댓글${comment.audio_ms == null ? '' : ' · ${voiceTime(comment.audio_ms!)}'}',
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  SelectableText(comment.body),
-                if (comment.author_id == c.user?.id)
-                  Wrap(
-                    spacing: 16,
-                    children: [
-                      if (comment.audio_storage_key == null)
-                        TextButton(
-                          onPressed: () => input(comment: comment),
-                          child: const Text('수정'),
-                        ),
-                      TextButton(
-                        onPressed: () async {
-                          final yes = await showDialog<bool>(
-                            context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('이 댓글을 삭제할까요?'),
-                              content: Text(
-                                comment.audio_storage_key == null
-                                    ? comment.body
-                                    : '음성 녹음도 함께 삭제됩니다.',
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () => Navigator.pop(ctx, false),
-                                  child: const Text('취소'),
-                                ),
-                                FilledButton(
-                                  onPressed: () => Navigator.pop(ctx, true),
-                                  child: const Text('삭제'),
-                                ),
-                              ],
-                            ),
-                          );
-                          if (yes != true) return;
-                          try {
-                            await c.removeComment(comment.id);
-                            if (mounted) await refresh();
-                          } catch (e) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(content: Text('$e')));
-                            }
-                          }
-                        },
-                        child: const Text('삭제'),
-                      ),
-                    ],
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
     ];
     return Scaffold(
       backgroundColor: Colors.transparent,
-      bottomNavigationBar: ActionDock(child: actions),
       appBar: AppBar(
         toolbarHeight: vgToolbarHeight(context),
-        title: VgToolbarTitle(
-          media.title ?? '현장 사진',
-          textScaler: MediaQuery.textScalerOf(context),
-        ),
-        actions: [
-          IconButton(
-            tooltip: '사진 정보 새로 고침',
-            onPressed: refresh,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
+        title: VgToolbarTitle(media.title ?? '현장 사진', textScaler: MediaQuery.textScalerOf(context)),
       ),
-      body: wideWindow
+      bottomNavigationBar: ActionDock(
+        child: Wrap(
+          key: const Key('photo-detail-actions'),
+          spacing: vgGapTap,
+          runSpacing: vgGapTap,
+          children: [
+            OutlinedButton.icon(onPressed: editable ? () => edit(ink: true) : null, icon: const Icon(Icons.draw), label: const Text('주석 그리기'), style: _actionStyle),
+            OutlinedButton.icon(onPressed: editable ? () => edit(ink: false) : null, icon: const Icon(Icons.comment_outlined), label: const Text('메모·음성 붙이기'), style: _actionStyle),
+            FilledButton.icon(
+              key: const Key('send-bundle'),
+              onPressed: processing || c.offline || uncertain || reauthenticate
+                  ? null
+                  : () => run(() async {
+                      await queue.sendBundle(item.id, retry: true);
+                      if (queue.bundleCompleted(item.id)) {
+                        await clearLocalRecordDrafts(c, item.id);
+                      }
+                    }),
+              icon: const Icon(Icons.send), label: const Text('전송'),
+              style: _actionStyle,
+            ),
+            OutlinedButton.icon(key: const Key('delete-bundle'), onPressed: deletable ? deletePhoto : null, icon: const Icon(Icons.delete_outline), label: const Text('삭제'), style: _actionStyle),
+          ],
+        ),
+      ),
+      body: wide
           ? Padding(
               padding: const EdgeInsets.all(20),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    child: Column(
-                      children: [
-                        Expanded(child: opaquePreview(limitHeight: false)),
-                        if (c.isMock) const Text('모의 도면 · 실제 현장 사진이 아닙니다'),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  Expanded(
-                    child: ListView(
-                      key: const ValueKey('photo-detail-pane'),
-                      children: [
-                        metadataPanel,
-                        const SizedBox(height: 24),
-                        ...comments,
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              child: Row(children: [
+                Expanded(child: preview),
+                const SizedBox(width: 24),
+                Expanded(child: ListView(key: const Key('photo-detail-pane'), children: details)),
+              ]),
             )
-          : ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                opaquePreview(limitHeight: true),
-                if (c.isMock)
-                  const Center(child: Text('모의 도면 · 실제 현장 사진이 아닙니다')),
-                const SizedBox(height: 24),
-                metadataPanel,
-                const SizedBox(height: 24),
-                ...comments,
-              ],
-            ),
+          : ListView(padding: const EdgeInsets.all(20), children: [
+              SizedBox(height: 360, child: preview),
+              const SizedBox(height: 20),
+              ...details,
+            ]),
     );
   }
+}
+
+class _Attachment extends StatefulWidget {
+  const _Attachment({super.key, required this.controller, required this.item, this.onDelete});
+  final FieldController controller;
+  final OutboxEntry item;
+  final VoidCallback? onDelete;
+  @override
+  State<_Attachment> createState() => _AttachmentState();
+}
+
+class _AttachmentState extends State<_Attachment> {
+  late final Future<Uint8List?> textBytes = widget.controller.local.readBytes(widget.item.owner, widget.item.bytesKey);
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.item;
+    return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('${item.kindLabel} · ${item.statusLabel}'),
+        if (item.message != null) Text(item.message!),
+        if (item.kind == OutboxKind.ink)
+          SizedBox(height: 180, child: _StoredImage(store: widget.controller.local, owner: item.owner, storageKey: 'outbox-preview:${item.id}', cacheWidth: 720)),
+        if (item.kind == OutboxKind.text)
+          FutureBuilder<Uint8List?>(future: textBytes, builder: (_, result) => SelectableText(
+            result.hasError ? '메모를 읽지 못했습니다' : result.data == null ? '메모를 불러오는 중입니다' : utf8.decode(result.data!, allowMalformed: true),
+          )),
+        if (item.kind == OutboxKind.voice)
+          Text('음성 · ${voiceTime(int.tryParse(item.fields['audioMs'] ?? '') ?? 0)}'),
+        Align(alignment: Alignment.centerRight, child: TextButton(
+          key: ValueKey('discard-${item.id}'), onPressed: widget.onDelete, child: const Text('지우기'),
+        )),
+      ],
+    )));
+  }
+}
+
+class _StoredImage extends StatefulWidget {
+  const _StoredImage({super.key, required this.store, required this.owner, required this.storageKey, required this.cacheWidth});
+  final LocalStore store;
+  final String owner, storageKey;
+  final int cacheWidth;
+  @override
+  State<_StoredImage> createState() => _StoredImageState();
+}
+
+class _StoredImageState extends State<_StoredImage> {
+  late final Future<Uint8List?> bytes = widget.store.readBytes(widget.owner, widget.storageKey);
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Uint8List?>(
+    future: bytes,
+    builder: (_, result) => result.data == null
+        ? const Icon(Icons.image_outlined)
+        : Image.memory(result.data!, cacheWidth: widget.cacheWidth, fit: BoxFit.contain,
+            errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined)),
+  );
 }

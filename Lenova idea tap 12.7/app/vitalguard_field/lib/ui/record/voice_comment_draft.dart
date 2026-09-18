@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../../data/contracts/field_contracts.dart';
+import 'record_session.dart';
 
-// 편집 중 녹음은 기존 초안에, 전송을 누른 녹음은 계정별 영속 큐에도 보관한다.
+// 녹음 중에는 초안으로, 저장한 녹음은 사진에 딸린 전송 대기 항목으로 보관한다.
 class VoiceCommentDraft extends ChangeNotifier {
   VoiceCommentDraft(this.controller, this.mediaId, {this.siteId})
     : owner = controller.user!.id,
@@ -40,18 +41,17 @@ class VoiceCommentDraft extends ChangeNotifier {
   Future<void>? _accepting, _stopping;
   Uint8List? _audio;
   VoiceRecording? clip;
-  String status = 'draft';
   String? error, notice;
   bool loading = true, starting = false, recording = false, stopping = false;
   bool sending = false, playing = false, working = false;
   bool _disposed = false;
   int _generation = 0;
-  int recordingRevision = 0;
+  int recordingRevision = DateTime.now().microsecondsSinceEpoch;
   int _elapsedMs = 0;
 
   bool get microphoneBusy => starting || recording || stopping;
   bool get busy => loading || starting || stopping || sending || working;
-  bool get hasClip => clip != null && status != 'sent';
+  bool get hasClip => clip != null;
   int get elapsedMs => _elapsedMs;
 
   void _notify() {
@@ -84,37 +84,35 @@ class VoiceCommentDraft extends ChangeNotifier {
       if (raw != null) {
         final data = jsonDecode(raw) as Map;
         operationId = data['clientOperationId'] as String?;
-        recordingRevision = data['recordingRevision'] as int? ?? 0;
+        recordingRevision = data['recordingRevision'] as int? ?? recordingRevision;
         siteId = data.containsKey('siteId')
             ? data['siteId'] as String?
             : siteId;
         siteName = data['siteName'] as String? ?? '작성 현장명 미기록';
-        status = data['status'] == 'sending'
-            ? 'uncertain'
-            : data['status'] as String? ?? 'draft';
         if (data['clip'] is Map) {
           clip = VoiceRecording.fromJson(data['clip'] as Map);
-          if (status == 'sent') {
-            notice = '이미 전송한 녹음입니다. 남은 기기 파일을 정리해 주세요.';
-          } else {
-            _audio = await controller.local.readBytes(owner, audioKey);
-            if (_audio == null || _audio!.isEmpty) {
-              _audio = await recorder.read(clip!.path);
-            }
-            notice = '전송 전 녹음을 복원했습니다. 들어본 뒤 전송해 주세요.';
-          }
+          _audio = await controller.local.readBytes(owner, audioKey);
+          if (_audio == null || _audio!.isEmpty) _audio = await recorder.read(clip!.path);
+          notice = '저장 전 녹음을 복원했습니다. 들어본 뒤 저장해 주세요.';
         }
       }
-      await controller.outbox.load();
       final queued = controller.outbox.entry(operationId);
-      if (queued != null) _sync(queued);
+      if (queued != null && queued.dependsOn == mediaId) {
+        await recorder.cancel(path: clip?.path);
+        clip = null;
+        _audio = null;
+        operationId = null;
+        loading = false;
+        await persist();
+        notice = '이미 저장한 녹음은 사진 상세에서 확인할 수 있습니다.';
+      }
       final device = recorder;
       if (clip == null && device is RecoverableVoiceRecorder) {
         final recovered = await device.recoverDraft(recorderKey);
         if (recovered != null) {
           loading = false;
           await _accept(recovered);
-          notice = '중단된 녹음을 복원했습니다. 들어본 뒤 전송해 주세요.';
+          notice = '중단된 녹음을 복원했습니다. 들어본 뒤 저장해 주세요.';
         }
       }
     } catch (e) {
@@ -123,16 +121,15 @@ class VoiceCommentDraft extends ChangeNotifier {
       loading = false;
       _notify();
     }
-    // 앱 종료 당시 sending이면 원격 반영 여부가 불명확하다.
-    if (status == 'uncertain') await persist();
   }
 
   Future<void> persist() {
     if (loading) return Future.value();
     final audio = _audio;
+    final empty = clip == null && !microphoneBusy;
     final metadata = jsonEncode({
       'mediaId': mediaId,
-      'status': status,
+      'status': 'draft',
       'clip': clip?.toJson(),
       'clientOperationId': operationId,
       'recordingRevision': recordingRevision,
@@ -140,6 +137,11 @@ class VoiceCommentDraft extends ChangeNotifier {
       'siteName': siteName,
     });
     final write = _writes.catchError((_) {}).then((_) async {
+      if (empty) {
+        await controller.local.remove(owner, key);
+        await controller.local.remove(owner, audioKey);
+        return;
+      }
       if (audio != null) {
         await controller.local.writeBytes(owner, audioKey, audio);
       }
@@ -154,7 +156,6 @@ class VoiceCommentDraft extends ChangeNotifier {
     final generation = ++_generation;
     starting = true;
     error = notice = null;
-    status = 'draft';
     _notify();
     try {
       // 댓글 소유자/현장 연결을 마이크 시작 전에 영속화한다.
@@ -215,13 +216,12 @@ class VoiceCommentDraft extends ChangeNotifier {
     operationId = null;
     recordingRevision++;
     _audio = null;
-    status = 'draft';
     notice = switch (value.reason) {
       'maxDuration' => '최대 3분까지 녹음됩니다',
       'maxSize' => '녹음 용량 한도에 도달해 정지했습니다',
       'background' => '앱이 백그라운드로 전환되어 녹음을 정지했습니다',
       'recorderError' => '녹음이 중단됐습니다. 저장된 소리를 확인해 주세요.',
-      _ => '들어본 뒤 전송해 주세요.',
+      _ => '들어본 뒤 저장해 주세요.',
     };
     _notify();
     return _accepting = () async {
@@ -307,10 +307,7 @@ class VoiceCommentDraft extends ChangeNotifier {
       clip = null;
       operationId = null;
       _audio = null;
-      status = 'draft';
-      await persist();
-      // LocalStore에 삭제 메서드가 없으므로 기존 저장 방식으로 내용을 비운다.
-      await _clearAudio();
+        await persist();
     } catch (e) {
       error = '녹음 취소를 완료하지 못했습니다. ${_message(e)}';
     } finally {
@@ -324,103 +321,36 @@ class VoiceCommentDraft extends ChangeNotifier {
     if (error == null) await start();
   }
 
-  Future<void> _clearAudio() {
-    final write = _writes
-        .catchError((_) {})
-        .then(
-          (_) => controller.local.writeBytes(owner, audioKey, Uint8List(0)),
-        );
-    _writes = write;
-    return write;
-  }
-
-  void _sync(OutboxEntry item) {
-    status = item.phase == OutboxPhase.completed
-        ? 'sent'
-        : item.needsVerification ||
-              item.phase == OutboxPhase.uncertain ||
-              item.phase == OutboxPhase.sending
-        ? 'uncertain'
-        : 'draft';
-    if (status == 'sent') notice = item.statusLabel;
-  }
-
-  Future<void> send({bool confirmedAbsent = false}) async {
-    if (busy ||
-        recording ||
-        !hasClip ||
-        (status == 'uncertain' && !confirmedAbsent)) {
-      return;
-    }
+  Future<void> send() async {
+    if (busy || recording || !hasClip) return;
     sending = true;
     error = notice = null;
-    var submitted = false, succeeded = false;
     _notify();
     try {
+      final photo = requireEditablePhoto(controller, mediaId, owner);
       await stopPlay();
       _audio ??= await recorder.read(clip!.path);
       await persist();
-      final retry = operationId != null;
-      final existing = controller.outbox.entry(operationId);
-      if (retry && existing == null) {
-        throw const ApiFailure(
-          '기존 전송 작업을 읽지 못했습니다. 전송 원장을 다시 열어 주세요.',
-          status: 400,
-        );
-      }
-      final item =
-          existing ??
-          await controller.outbox.enqueue(
-            kind: OutboxKind.voice,
-            bytes: _audio!,
-            fields: {
-              'commentOf': mediaId,
-              'audioMs': '${clip!.durationMs}',
-              'siteId': ?siteId,
-            },
-            siteName: siteName,
-            owner: owner,
-            sourceKey: '$key:recording:$recordingRevision',
-          );
+      final item = await controller.outbox.enqueue(
+        kind: OutboxKind.voice,
+        bytes: _audio!,
+        fields: {'audioMs': '${clip!.durationMs}', 'siteId': ?siteId},
+        dependsOn: mediaId,
+        siteName: photo.siteName,
+        owner: owner,
+        sourceKey: '$key:recording:$recordingRevision',
+        draftKeys: [key, audioKey],
+      );
       operationId = item.id;
-      await persist();
-      if (confirmedAbsent && item.needsVerification) {
-        await controller.outbox.confirmAbsent(item);
-      }
-      submitted = true;
-      await controller.outbox.send(item, retry: retry);
-      _sync(item);
-      if (item.phase != OutboxPhase.completed) {
-        error = item.message;
-        notice = item.statusLabel;
-        await persist();
-        return;
-      }
-      succeeded = true;
-      status = 'sent';
-      await persist();
+      await persist(); // 저장 직후 중단돼도 같은 녹음을 새 항목으로 중복 저장하지 않는다.
       await recorder.cancel(path: clip!.path);
-      await _clearAudio();
       clip = null;
       _audio = null;
+      operationId = null;
       await persist();
-      notice = controller.isMock ? mockCompletedLabel : serverCompletedLabel;
-    } catch (e) {
-      if (succeeded) {
-        status = 'sent';
-        error =
-            '${controller.isMock ? mockCompletedLabel : serverCompletedLabel}. 기기 파일 정리를 완료하지 못했습니다. ${_message(e)}';
-      } else {
-        status = e is ApiFailure
-            ? (e.uncertainWrite ? 'uncertain' : 'draft')
-            : (submitted ? 'uncertain' : 'draft');
-        error = _message(e);
-      }
-      try {
-        await persist();
-      } catch (storageError) {
-        error = '$error\n기기 초안 저장 실패: ${_message(storageError)}';
-      }
+      notice = '음성을 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.';
+    } catch (value) {
+      error = _message(value);
     } finally {
       sending = false;
       _notify();

@@ -315,8 +315,8 @@ void main() {
     );
     expect(
       fixture.controller.fetchedAt,
-      isNotNull,
-      reason: '숨은 기록 탭의 갱신은 별도 시각을 쓴다',
+      isNull,
+      reason: '로컬 기록 탭은 서버 기록 수신 시각을 만들지 않는다',
     );
     await fixture.close(tester);
   });

@@ -15,6 +15,8 @@ import 'package:vitalguard_field/ui/record/record_session.dart';
 import 'package:vitalguard_field/ui/shell/field_shell.dart';
 import 'package:vitalguard_field/vg_theme.dart';
 
+import 'support/record_fixture.dart';
+
 void view(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -40,54 +42,28 @@ Future<void> waitForCanvas(WidgetTester tester) async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('C-03 달력·사진·저장 결과는 좁은 가로 1단, 넓은 세로 2단이다', (tester) async {
+  testWidgets('C-03 로컬 사진 상세는 좁은 가로 1단, 넓은 세로 2단이다', (tester) async {
     view(tester, const Size(900, 800));
-    final gateway = MockGateway();
     final controller = FieldCoordinator(
-      gateway,
+      MockGateway(),
       MemoryStore(),
       MockSpeechInput(),
     );
     await controller.signIn('width-user', 'mock');
-    final media = CalendarMedia({
-      'id': 'mock-original-001',
-      'date_key': '2026-09-14',
-      'media_url': 'https://mock.invalid/original.png',
-    });
-    final bytes = (await tester.runAsync(
-      () => gateway.image(media.media_url!),
-    ))!;
-    await controller.local.writeBytes('width-user', 'photo:${media.id}', bytes);
-    final screens = <({Widget child, String pane})>[
-      (child: RecordHome(controller: controller), pane: 'record-day-pane'),
-      (
-        child: PhotoDetail(controller: controller, media: media),
-        pane: 'photo-detail-pane',
+    final photo = await seedPhoto(controller);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: vgLightTheme(),
+        home: PhotoDetail(controller: controller, photoId: photo.id),
       ),
-      (
-        child: SaveResult(
-          controller: controller,
-          origin: media,
-          png: bytes,
-          sent: false,
-          uncertain: false,
-        ),
-        pane: 'save-result-pane',
-      ),
-    ];
-    for (final screen in screens) {
-      tester.view.physicalSize = const Size(900, 800);
-      await tester.pumpWidget(
-        MaterialApp(theme: vgLightTheme(), home: screen.child),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byKey(ValueKey(screen.pane)), findsNothing);
-      tester.view.physicalSize = const Size(1200, 1800);
-      await tester.pumpAndSettle();
-      expect(find.byKey(ValueKey(screen.pane)), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    }
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('photo-detail-pane')), findsNothing);
+    tester.view.physicalSize = const Size(1200, 1800);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('photo-detail-pane')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
     controller.dispose();
   });
 
@@ -96,10 +72,7 @@ void main() {
     final store = MemoryStore();
     final first = FieldCoordinator(MockGateway(), store, MockSpeechInput());
     await first.signIn('draft-user', 'mock');
-    final media = CalendarMedia({
-      'id': 'selected-photo',
-      'date_key': '2026-09-14',
-    });
+    final media = fromOutbox(await seedPhoto(first));
     await tester.pumpWidget(
       MaterialApp(
         home: RecordInput(controller: first, media: media),
@@ -151,9 +124,8 @@ void main() {
       MockSpeechInput(),
     );
     await controller.signIn('owner', 'mock');
-    await RecordSession(controller).remember(
-      CalendarMedia({'id': 'private-photo', 'date_key': '2026-09-14'}),
-    );
+    await RecordSession(controller)
+        .remember(fromOutbox(await seedPhoto(controller)));
     await controller.signIn('another-user', 'mock');
     await tester.pumpWidget(
       MaterialApp(
@@ -168,20 +140,15 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('C-05·06 펜 초안 재진입 후 중첩 Navigator의 시스템 Back도 확인한다', (
+  testWidgets('C-05·06 재로그인한 로컬 펜 초안 복구 후 중첩 Navigator의 시스템 Back도 확인한다', (
     tester,
   ) async {
     view(tester, const Size(1385, 1000));
     final store = MemoryStore(), gateway = MockGateway();
     final controller = FieldCoordinator(gateway, store, MockSpeechInput());
     await controller.signIn('ink-owner', 'mock');
-    final media = CalendarMedia({
-      'id': 'selected-photo',
-      'date_key': '2026-09-14',
-    });
-    final bytes = (await tester.runAsync(
-      () => gateway.image('https://mock.invalid/original.png'),
-    ))!;
+    final media = fromOutbox(await seedPhoto(controller));
+    final bytes = recordPng;
     final stroke = InkStroke(InkTool.pen, 0xff000000, .004, [
       [.2, .4, 1],
       [.8, .4, 1],
@@ -198,13 +165,24 @@ void main() {
       }),
     );
     await RecordSession(controller).remember(media, ink: true);
+    await controller.signOut();
+    controller.dispose();
+    final resumed = FieldCoordinator(gateway, store, MockSpeechInput());
+    await resumed.signIn('ink-owner', 'mock');
     await tester.pumpWidget(
       MaterialApp(
         theme: vgLightTheme(),
-        home: FieldShell(controller: controller),
+        home: FieldShell(controller: resumed),
       ),
     );
     await waitForCanvas(tester);
+    expect(
+      tester
+          .widget<RecordEditor>(find.byType(RecordEditor))
+          .original
+          .json['local'],
+      isTrue,
+    );
     expect(
       tester.widget<RecordEditor>(find.byType(RecordEditor)).original.id,
       media.id,
@@ -216,7 +194,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('ink-canvas')), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
-    controller.dispose();
+    resumed.dispose();
   });
 
   test('C-05 기기 저장소를 새로 생성해도 마지막 댓글·잉크와 계정 격리를 유지한다', () async {

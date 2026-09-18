@@ -46,10 +46,6 @@ abstract interface class FieldGateway {
   Future<bool> ackAlert(String accessToken, String id);
   Future<void> logout(String accessToken);
   Future<SiteInfo?> siteInfo(String accessToken);
-  Future<List<CalendarMedia>> media(String token, String from, String to);
-  Future<List<CalendarEvent>> events(String token, String from, String to);
-  Future<List<CalendarLabel>> labels(String token);
-  Future<Uint8List> image(String url);
   Future<CalendarMedia> upload(
     String token,
     Uint8List bytes,
@@ -69,8 +65,6 @@ abstract interface class FieldGateway {
     String? clientOperationId,
     String? siteId,
   });
-  Future<void> updateComment(String token, String id, String body);
-  Future<void> deleteComment(String token, String id);
 }
 
 /// 촬영 주소는 기존 게이트웨이 구현을 깨지 않도록 별도 능력으로 둔다.
@@ -133,9 +127,6 @@ abstract class FieldController extends ChangeNotifier {
   AppUser? get user;
   SiteInfo? get site;
   DateTime? get fetchedAt;
-  List<CalendarMedia> get media;
-  List<CalendarEvent> get calendarEvents;
-  List<CalendarLabel> get calendarLabels;
   SpeechInput get speech;
   VoiceRecorder get recorder => const UnavailableVoiceRecorder();
   LocalStore get local;
@@ -144,7 +135,6 @@ abstract class FieldController extends ChangeNotifier {
   Future<void> submitTotp(String code);
   Future<void> cancelSignIn();
   Future<void> signOut();
-  Future<void> loadPeriod(String from, String to);
   Future<Uint8List> photoBytes(CalendarMedia media);
   Future<CalendarMedia> publish(Uint8List bytes, Map<String, String> fields);
   Future<MediaComment> comment(
@@ -159,8 +149,6 @@ abstract class FieldController extends ChangeNotifier {
     String? clientOperationId,
     String? siteId,
   });
-  Future<void> editComment(String id, String text);
-  Future<void> removeComment(String id);
   Future<CctvTicket> cctvTicket(String cameraId);
   SiteStatus? get siteStatusSnapshot;
   bool get siteStatusForbidden;

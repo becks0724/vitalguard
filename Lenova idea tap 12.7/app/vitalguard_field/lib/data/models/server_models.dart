@@ -109,24 +109,3 @@ class MediaComment extends ServerRow {
   String? get audio_url => text('audio_url');
   int? get audio_ms => (json['audio_ms'] as num?)?.toInt();
 }
-
-class CalendarEvent extends ServerRow {
-  CalendarEvent(super.json);
-  String get id => text('id')!;
-  String get date_key => text('date_key')!;
-  String get title => text('title')!;
-  String? get label_id => text('label_id');
-  String? get start_time => text('start_time');
-  String? get end_time => text('end_time');
-  String? get end_date_key => text('end_date_key');
-  String? get note => text('note');
-  String? get hazard_type => text('hazard_type');
-  bool? get canEdit => flag('canEdit');
-}
-
-class CalendarLabel extends ServerRow {
-  CalendarLabel(super.json);
-  String get id => text('id')!;
-  String get name => text('name')!;
-  String? get color => text('color');
-}

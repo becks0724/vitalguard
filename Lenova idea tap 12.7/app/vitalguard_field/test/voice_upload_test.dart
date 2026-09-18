@@ -189,8 +189,9 @@ void main() {
   test('모의 서버도 남의 사진에 음성 댓글을 허용하고 사진·글 댓글을 그대로 유지한다', () async {
     final gateway = MockGateway();
     await gateway.login('다른 담당자', 'mock');
-    final date = calendarDate(kstNow());
-    final photo = (await gateway.media('jwt', date, date)).single;
+    final photo = await gateway.upload('jwt', Uint8List.fromList([1]), {
+      'dateKey': '2026-09-14',
+    });
     final text = await gateway.addComment('jwt', photo.id, '기존 글 댓글');
     final voice = await gateway.voiceComment(
       'jwt',
@@ -202,13 +203,19 @@ void main() {
     expect(voice.author_id, '다른 담당자');
     expect(voice.body, '');
     expect(voice.audio_storage_key, isNotEmpty);
-    expect(await gateway.image(voice.audio_url!), _audio);
-    final rows = await gateway.media('jwt', date, date);
-    expect(rows, hasLength(1));
-    expect(rows.single.media_type, 'image');
-    expect(rows.single.comments.map((e) => e.id), [text.id, voice.id]);
-    expect(rows.single.comments.first.body, '기존 글 댓글');
-    expect(rows.single.comments.first.audio_storage_key, isNull);
+    expect(voice.media_id, photo.id);
+    expect(voice.audio_ms, 7000);
+    expect(text.body, '기존 글 댓글');
+    expect(text.audio_storage_key, isNull);
+    final again = await gateway.voiceComment(
+      'jwt',
+      photo.id,
+      _audio,
+      durationMs: 7000,
+      clientOperationId: _operationId,
+    );
+    expect(again.id, voice.id);
+    expect(again.deduplicated, isTrue);
     final ink = await gateway.upload(
       'jwt',
       Uint8List.fromList(utf8.encode('{"v":1}')),
@@ -220,11 +227,6 @@ void main() {
         throwsA(isA<ApiFailure>().having((e) => e.status, 'status', entry.$2)),
       );
     }
-    await gateway.deleteComment('jwt', voice.id);
-    expect(
-      (await gateway.media('jwt', date, date)).single.comments.single.body,
-      '기존 글 댓글',
-    );
   });
 
   test('음성 댓글도 coordinator의 명시적 401 갱신을 한 번만 거친다', () async {
