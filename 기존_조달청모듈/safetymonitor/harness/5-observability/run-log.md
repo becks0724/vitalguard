@@ -288,3 +288,79 @@ user_current_site:  admin | SITE-SMARTHRD-2026 | 08:55:28Z
 **현장 목록을 읽는 것은 편집이 아니라 선택이다.** 인증을 그 수준으로 낮추는 중이다.
 astra 가 "라이브 401 의 정확한 계정 조건은 미확인" 이라고 경고했는데도 그대로 배포한 것이
 이 건의 내 잘못이다.
+
+---
+
+## 2026-09-21 · 캘린더 표시본이 안 열렸다 — 프리사인 GET 에는 CORS 헤더가 없다
+
+**리비전** `vitalguard-dashboard-00403-cdd` · digest `sha256:86ac4222…` (서빙 대조 일치)
+· commit `6e8ffe7d` · env 33개(직전과 같음) · HTTP 200 · 사후 90초 5xx 0건 · DB 타임아웃 0건
+· 3종 검증 통과(tsc 0 · lint 에러 0 · test 2101/2101)
+
+### 증상
+
+캘린더 사진의 「표시본 보기」가 언제 눌러도 **표시를 불러오지 못했습니다** 로만 끝났다.
+같은 카드의 사진 자체는 멀쩡히 떴다.
+
+### 진단 — 가설 두 개를 실측으로 버렸다
+
+확장 네트워크 로그에 그 요청만 `503` 으로 찍혀 있었다. 그래서 스토리지 장애나
+`response-content-disposition` 파일명(한글·콜론·플러스)을 의심했다. **둘 다 틀렸다.**
+
+| 확인 | 결과 |
+|---|---|
+| `/api/calendar/media/download-url` | 200 · 프리사인 URL 정상 발급 |
+| 그 URL 을 **서버(node)** 에서 GET | **200 · 24,675B 정상**, 단 `Access-Control-Allow-Origin` **없음** |
+| 파일명 변형 8종(콜론 제거·플러스 제거·ASCII만·짧은 이름 등) | **전부 200** — 파일명은 원인이 아니다 |
+| 같은 URL 을 **브라우저** `fetch` | `TypeError: Failed to fetch` |
+| 같은 URL 을 **브라우저** `XHR` | **`status 0`** — CORS 차단의 전형 |
+| 같은 URL 을 `mode:"no-cors"` | `opaque` 응답 — 요청 자체는 스토리지에 도달한다 |
+
+로그의 `503` 은 스토리지가 낸 상태가 아니었다. **서버에서는 200 인데 브라우저에서만 끊긴다** 가
+사실이고, 그 차이를 내는 것은 CORS 하나뿐이다. `curl` 이 CORS 를 안 보는 것과 같은 함정으로,
+09-18 CCTV 게이트 건과 같은 계열이다.
+
+### 원인
+
+`presignDownloadAttachment` 경로는 **브라우저 네비게이션(다운로드)** 전제로 만들어졌다 —
+`docs/cloud-bridge-context.md` L112 에 "CORS 불필요(네비게이션)" 이라고 적혀 있다.
+그런데 `CalendarInkPhoto` 가 같은 엔드포인트를 **`fetch` 로 JSON 을 읽는 데** 재사용하면서
+그 전제가 깨졌다. 사진이 멀쩡했던 건 `<img>` 태그라 CORS 를 타지 않아서다.
+
+즉 잉크 JSON 은 파일 다운로드가 아니라 **데이터 조회**인데 다운로드 경로를 빌려 쓰고 있었다.
+
+### 처방
+
+버킷 CORS 를 여는 대신 경로를 제자리에 놓았다.
+
+- `app/api/calendar/media/ink/route.ts` (신규) — 관리자 인증 → DB 행 → 서버가 스토리지에서 읽어
+  같은 오리진으로 JSON 반환. 프리사인 URL 이 브라우저로 나가지 않는다.
+- `lib/storage.ts` — `getObjectText(key)` 추가. 전량 메모리라 큰 파일엔 쓰지 말 것(주석에 명시).
+- `lib/calendar-ink.ts` — 2단계(프리사인 → 스토리지)를 1단계로.
+- 다운로드(⬇)는 네비게이션이라 CORS 와 무관하다 — `download-url` 은 **건드리지 않았다**.
+
+### 라이브 확인 (00403-cdd)
+
+| | 결과 |
+|---|---|
+| `/api/calendar/media/ink` | **200 · 24,675B · strokes 43 · v=1** |
+| 화면 | 표시본 렌더 확인 — 빨간 원 「안전모 1」·「안전조끼 1」, 파란 서명 |
+| 상태 문구 | 「표시본 · 사진을 누르면 원본으로 돌아갑니다」 로 전환 |
+
+### 배포에서 따로 챙긴 것 — CAM-03 게이트
+
+`deploy-dashboard.sh` 의 `CAM03_GATE` 기본값은 `cctv-gate.example.invalid:8443` 인데,
+직전 라이브 `00402-t5n` 은 `jetson-1.tailnet.invalid:8443` (Tailscale) 로 나가 있었다.
+CLAUDE.md L31 에 **duckdns 는 09-18 16:41 에 죽어 있었다**(NAT-PMP 갱신 중단)고 기록돼 있다.
+`NEXT_PUBLIC_*` 이라 빌드 타임에 번들로 박히고 런타임 env 로는 못 바꾼다.
+기본값으로 나갔으면 죽은 주소가 구워질 뻔했다 — **Tailscale 주소를 명시해 넘겼다.**
+09-11·09-15 의 CAM-03 사고가 전부 이 값이었다.
+
+### 같이 올라간 것
+
+`origin/main` 이 18커밋(팀원) 앞서 있고 로컬이 4커밋(앱 R-7) 앞선 분기 상태였다.
+병합은 충돌 없이 됐으나 `packages/analyzers` 에 `skinTemp` 임계가 새로 들어와
+**dist 가 낡아 `lib/severity.ts` 에서 tsc 4건**이 났다. `prepare:packages` 로 빌드해 해소.
+워크스페이스 패키지를 dist 로 소비하는 구조라 병합 뒤에는 빌드가 먼저다.
+
+**되돌리기** `--to-revisions 'vitalguard-dashboard-00402-t5n'=100` → 수습 후 `--to-latest` 를 **반드시 한 번 더**.
