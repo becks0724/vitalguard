@@ -90,6 +90,19 @@ export async function presignDownloadAttachment(key: string, filename: string): 
   );
 }
 
+// 서버측 객체 본문 읽기(텍스트) — 브라우저가 직접 읽을 수 없는 작은 JSON(캘린더 표시본)을
+// 라우트가 대신 받아 같은 오리진으로 내려줄 때 쓴다. 프리사인 GET 응답에는
+// Access-Control-Allow-Origin 이 없어 cross-origin fetch/XHR 이 막힌다(2026-09-21 실측).
+// 전량을 메모리에 올리므로 큰 파일(사진·영상)에는 쓰지 않는다 — 그쪽은 프리사인 그대로 둔다.
+export async function getObjectText(key: string): Promise<string> {
+  const env = readEnv();
+  const res = await getClient(env).send(
+    new GetObjectCommand({ Bucket: env.bucket, Key: key }),
+  );
+  if (!res.Body) throw new Error("객체 본문 없음");
+  return res.Body.transformToString("utf-8");
+}
+
 // 객체 삭제 — DB 행을 지운 **뒤에** 부른다. 순서를 뒤집으면 권한이 없어 행이 안 지워졌을 때
 // 파일만 사라진다(남의 증빙을 파괴한다). 없는 키를 지워도 S3 는 성공을 돌려준다.
 export async function deleteObject(key: string): Promise<void> {

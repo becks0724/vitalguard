@@ -10,22 +10,16 @@ export function createCalendarInkLoader(fetcher: typeof fetch = fetch) {
     const cached = cache.get(annotationId);
     if (cached) return cached;
     const request = (async () => {
-      const response = await fetcher(`/api/calendar/media/download-url?id=${encodeURIComponent(annotationId)}`, {
+      // 같은 오리진 라우트가 스토리지에서 읽어 내려준다. 프리사인 URL 을 브라우저가 직접 읽으면
+      // 응답에 Access-Control-Allow-Origin 이 없어 막힌다(2026-09-21 실측 — 서버는 200,
+      // 브라우저 fetch 는 Failed to fetch / XHR status 0).
+      const response = await fetcher(`/api/calendar/media/ink?id=${encodeURIComponent(annotationId)}`, {
         cache: "no-store",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         signal: AbortSignal.timeout(15_000),
       });
-      if (!response.ok) throw new Error("표시 파일 주소를 가져오지 못했습니다.");
-      const link = await response.json() as { ok?: boolean; url?: unknown };
-      if (link?.ok !== true || typeof link.url !== "string" || !link.url) {
-        throw new Error("표시 파일 주소가 없습니다.");
-      }
-      // 프리사인 URL 자체로 인증한다. 대시보드 Bearer/쿠키를 스토리지로 보내지 않는다.
-      const file = await fetcher(link.url, {
-        cache: "no-store", credentials: "omit", signal: AbortSignal.timeout(15_000),
-      });
-      if (!file.ok) throw new Error("표시 파일을 가져오지 못했습니다.");
-      return file.json() as Promise<unknown>;
+      if (!response.ok) throw new Error("표시 파일을 가져오지 못했습니다.");
+      return response.json() as Promise<unknown>;
     })();
     cache.set(annotationId, request);
     void request.catch(() => {
