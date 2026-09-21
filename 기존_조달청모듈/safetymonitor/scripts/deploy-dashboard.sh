@@ -56,7 +56,8 @@ export PATH="$PNPM_HOME:$PNPM_HOME/bin:$PATH"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 die() { printf '\033[31m✖ %s\033[0m\n' "$*" >&2; exit 1; }
 
-REPO=$(git -C "$(cd "$(dirname "$0")" && pwd)" rev-parse --show-toplevel)
+SELFDIR=$(cd "$(dirname "$0")" && pwd)   # ★ cd 전에 절대경로로 굳힌다 — 아래 cd 뒤엔 $0 가 못 쓰인다
+REPO=$(git -C "$SELFDIR" rev-parse --show-toplevel)
 cd "$REPO"
 
 say "0/5 상태 검사"
@@ -323,7 +324,10 @@ done
 # 배포를 되돌리지는 않는다 — 이미 나간 뒤라 판단은 사람이 한다. SKIP_CCTV_CHECK=1 로 건너뛴다.
 CCTV_OUT=""; CCTV_RC=0
 if [ "${SKIP_CCTV_CHECK:-0}" != "1" ]; then
-  CCTV_OUT=$(sh "$(dirname "$0")/verify-cctv-bundle.sh" "$LIVE_URL" 2>&1) || CCTV_RC=$?
+  # ⛔ 2026-09-21 여기서 한 번 깨졌다 — $(dirname "$0") 는 상대경로라 위 `cd "$REPO"` 뒤에는
+  #   레포 루트의 scripts/ 를 가리킨다(없다). 00404 배포에서 「No such file or directory」가
+  #   결과 자리에 찍혔다. 절대경로 $SELFDIR 로 부른다.
+  CCTV_OUT=$(sh "$SELFDIR/verify-cctv-bundle.sh" "$LIVE_URL" 2>&1) || CCTV_RC=$?
 fi
 
 say "완료"
