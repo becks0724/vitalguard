@@ -317,12 +317,29 @@ for p in "radar" "typhoon" "weather?lat=35.16&lon=126.85" "disaster-msg?lat=35.1
 done
 [ -z "$ROUTE_FAIL" ] || echo "⚠ 라우트 검증 실패 항목 있음 — 원인 확인 후 필요 시 아래 롤백"
 
+# CCTV 게이트 주소가 번들에 실렸는지 — 위의 HTTP 200·env 개수·라우트 검증으로는 원리적으로 안 보인다.
+# 이 값은 빌드 때 번들에 박히므로(NEXT_PUBLIC_CAM03_GATE_API) 치환이 빠지면 런타임 env 에도 안 나오고
+# 서버는 계속 200 을 낸다. 화면이 검게 나올 때까지 아무도 모른다(2026-09-18 반나절 · L-133).
+# 배포를 되돌리지는 않는다 — 이미 나간 뒤라 판단은 사람이 한다. SKIP_CCTV_CHECK=1 로 건너뛴다.
+CCTV_OUT=""; CCTV_RC=0
+if [ "${SKIP_CCTV_CHECK:-0}" != "1" ]; then
+  CCTV_OUT=$(sh "$(dirname "$0")/verify-cctv-bundle.sh" "$LIVE_URL" 2>&1) || CCTV_RC=$?
+fi
+
 say "완료"
 echo "리비전   $REV (100%)"
 echo "digest   $DIGEST (서빙 대조 일치)"
 echo "commit   $SHA (라벨 ${LBL:-서비스에만 기록됨})"
 echo "env      ${ENVN}개 (직전 ${PREV_ENVN}개 — 줄었으면 조사)"
 echo "HTTP     200"
+if [ "${SKIP_CCTV_CHECK:-0}" = "1" ]; then
+  echo "CCTV번들 건너뜀 (SKIP_CCTV_CHECK=1)"
+else
+  echo "CCTV번들 $(echo "$CCTV_OUT" | head -1)"
+  if [ "$CCTV_RC" -ne 0 ]; then
+    echo "$CCTV_OUT" | tail -n +2 | sed 's/^/         /'
+  fi
+fi
 # dirty 강행 사실은 0단계에서 한 번 보이지만 긴 빌드 로그에 묻힌다 — 요약에 다시 남긴다.
 if [ -n "$DIRTY" ]; then
   echo "⚠ ALLOW_DIRTY 강행 — 아래 미커밋 변경은 이미지에 없다(검증은 아카이브에서 수행):"
