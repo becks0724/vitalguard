@@ -22,7 +22,7 @@ import {
 } from "../../../../lib/export-guard";
 import {
   STATUS_LABEL,
-  coreTempStatus,
+  skinTempStatus,
   heartRateStatus,
   overallStatus,
   spo2Status,
@@ -85,7 +85,7 @@ function buildVitalSheet(
     { header: "경도", key: "longitude", width: 16 },
     { header: "심박상태", key: "hr_status", width: 9 },
     { header: "SpO₂상태", key: "spo2_status", width: 9 },
-    { header: "체온상태", key: "temp_status", width: 9 },
+    { header: "피부온상태", key: "temp_status", width: 11 },
     { header: "종합상태", key: "overall_status", width: 9 },
   ];
 
@@ -101,7 +101,7 @@ function buildVitalSheet(
   for (const row of rows) {
     const hrS = heartRateStatus(row.heart_rate);
     const spo2S = spo2Status(row.spo2);
-    const tempS = coreTempStatus(row.skin_temp_c);
+    const tempS = skinTempStatus(row.skin_temp_c);
     const overall = overallStatus(row);
 
     const added = ws.addRow({

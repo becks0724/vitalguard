@@ -49,13 +49,17 @@ test("stats3 — 게이트와 같은 화이트리스트(publicStats)로만 내�
   assert.doesNotMatch(src, /json\(frame\.stats/, "stats 를 통째로 내보내지 않는다 — publicStats 를 거치지 않은 직접 반환 금지");
 });
 
-test("CctvGateStream — 장시간 MJPEG 가 아니라 5초 스냅샷 폴링이고, multipart 는 첫 프레임만 읽는다", () => {
+test("CctvGateStream — 응답 형식으로 두 상류를 가른다: image/jpeg 는 5초 스냅샷 폴링, multipart(젯슨 게이트)는 표 만료까지 흘려 받는다", () => {
   const src = read("app/components/CctvGateStream.tsx");
-  assert.match(src, /const POLL_MS = 5000/);
-  assert.match(src, /FIRST_FRAME_ONLY/);
-  assert.match(src, /reader\.cancel\(\)/, "첫 프레임 뒤 스트림을 닫는다");
-  assert.doesNotMatch(src, /RENEW_MARGIN_MS/, "표 만료까지 연결을 붙들던 옛 방식이 남아 있으면 안 된다");
+  assert.match(src, /const POLL_MS = 5000/, "서버 중계는 5초 폴링(설계 §5-2)");
+  assert.match(src, /const RENEW_MARGIN_MS/, "게이트 경로는 표 만료 직전까지 연결을 유지한다 — 09-17 회귀(5초에 한 장) 재발 방지");
+  assert.match(src, /SNAPSHOT_MODE/);
+  assert.match(src, /STREAM_MODE/);
+  assert.match(src, /startsWith\("image\/jpeg"\)/, "형식 판정은 content-type 으로 한다");
+  assert.match(src, /drainMultipart\(/, "multipart 는 끝까지 읽는다");
+  assert.doesNotMatch(src, /FIRST_FRAME_ONLY|readFirstJpeg/, "첫 프레임만 읽고 끊는 방식이 남으면 게이트 영상이 다시 5초에 한 장이 된다");
   assert.match(src, /res\.status === 503/, "stale 을 별도 상태로 그린다");
+  assert.match(src, /reader\.cancel\(\)/, "끝나면 스트림을 닫는다");
 });
 
 test("db — cctv_frame · cctv_ticket_jti 가 ensureSchema(initSchema) 안에 있다 (정본은 ensureSchema · DDL 파일 아님)", () => {
@@ -66,4 +70,49 @@ test("db — cctv_frame · cctv_ticket_jti 가 ensureSchema(initSchema) 안에 �
   assert.ok(schemaStart > 0 && frame > schemaStart && jti > schemaStart, "두 표가 initSchema 안에서 만들어진다");
   assert.match(src, /REFERENCES cctv_camera\(camera_id\)/, "프레임 행은 카메라 대장에 묶인다");
   assert.match(src, /ON CONFLICT \(jti\) DO NOTHING RETURNING jti/, "jti 소비는 INSERT 충돌로 판정한다");
+});
+
+// ★ 2026-09-18 추가 — CAM-01 이 다른 장소·다른 공유기로 옮겨가 게이트 경로가 끊겼다.
+//   2호기 젯슨이 인터넷으로 직접 밀도록 ingest1 을 신설했다. ingest3 를 베껴 만든 경로다.
+test("ingest1 — CAM-01 전용이고 ingest3 와 같은 문을 지난다", () => {
+  const src = read("app/api/cctv-gate/cctv/ingest1/route.ts");
+  // ingest3 와 같은 불변식 — 베끼면서 빠지기 쉬운 것들
+  assert.match(src, /ingestTokenMatches\(/, "상수 시간 토큰 비교를 거친다");
+  assert.match(src, /CCTV_INGEST_TOKEN/, "젯슨 전용 env 를 읽는다");
+  assert.doesNotMatch(src, /ingestAuthStatus/, "soft 모드(무토큰 수용)로 풀리면 아무나 프레임을 덮어쓴다");
+  assert.match(src, /503/, "토큰 env 가 없으면 받지 않는다(조용한 200 금지)");
+  assert.match(src, /MAX_JPEG_BYTES/, "본문 상한을 본다");
+  assert.match(src, /upsertCctvFrame\(/, "DB 한 행에 덮어쓴다 — 메모리 보관 없음");
+});
+
+test("경로마다 카메라가 하나로 고정된다 — 8개 전부", () => {
+  // ★ 이것이 이 가드의 핵심이다. 1번 넷은 3번 넷을 베껴 만들었고,
+  //   접미사를 안 바꾸면 **CAM-01 자리와 CAM-03 자리가 섞인다.** tsc·lint 는 이것을 못 본다.
+  //   넣는 문(ingest)에서 틀리면 영상이 남의 자리를 덮고, 꺼내는 문(stream·stats)에서 틀리면
+  //   화면이 남의 카메라를 보여준다. 방향만 다르고 둘 다 조용히 일어난다.
+  for (const kind of ["ingest", "stream", "stats", "connection"]) {
+    for (const [suffix, other] of [["1", "3"], ["3", "1"]] as const) {
+      const path = `app/api/cctv-gate/cctv/${kind}${suffix}/route.ts`;
+      const src = read(path);
+      assert.match(src, new RegExp(`cameraIdForSuffix\\("${suffix}"\\)`), `${kind}${suffix} 는 CAM-0${suffix} 를 가리킨다`);
+      assert.doesNotMatch(src, new RegExp(`cameraIdForSuffix\\("${other}"\\)`), `${kind}${suffix} 에 CAM-0${other} 가 있으면 베끼기 사고다`);
+      // 접미사는 상수여야 한다 — 요청에서 받으면 아무 카메라나 지목할 수 있다
+      assert.doesNotMatch(src, /cameraIdForSuffix\([^"]/, `${kind}${suffix} 가 접미사를 상수가 아닌 값으로 받으면 안 된다`);
+    }
+  }
+});
+
+test("stream1·stats1·connection1 — 셋 다 같은 문(authorizeGate)을 지난다", () => {
+  // stream3 짝과 같은 불변식. 베끼면서 문을 빠뜨리면 표 없이 남의 영상이 나간다.
+  for (const r of ["stream1", "stats1", "connection1"]) {
+    const src = read(`app/api/cctv-gate/cctv/${r}/route.ts`);
+    assert.match(src, /authorizeGate\(request/, `${r} 가 표 검증·소비 문을 지난다`);
+    assert.doesNotMatch(src, /verifyTicket\(/, `${r} 가 검증을 직접 하지 않는다 — 문은 하나여야 한다`);
+  }
+  // 꺼내는 문 둘은 오래된 프레임을 살아 있는 척 주지 않는다
+  for (const r of ["stream1", "stats1"]) {
+    assert.match(read(`app/api/cctv-gate/cctv/${r}/route.ts`), /isStale\(/, `${r} 가 stale 을 본다`);
+  }
+  // 토글은 할 수 없다고 말한다 — 조용한 200 금지
+  assert.match(read("app/api/cctv-gate/cctv/connection1/route.ts"), /501/, "connection1 은 501 로 답한다");
 });

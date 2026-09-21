@@ -143,6 +143,30 @@ export function coreTempStatus(skinTempC: number | null | undefined): Status {
   return coreTempStatusC(estimateCoreTempC(skinTempC));
 }
 
+/**
+ * ★ **피부온을 변환 없이 그대로 판정한다**(2026-09-18 신설 — 위 `coreTempStatus` 를 대체).
+ *
+ * 왜 바꿨나 — `coreTempStatus` 는 `피부온 + 0.5` 를 「심부 추정」이라 부르고 심부 임계로 쟀다.
+ * 그 오프셋은 출처가 없고(근거 커밋 0건), 값이 틀렸고(실측 1.71 대 코드 0.50),
+ * 형태가 틀렸다(상수 아님 · 38~40℃ 구간에서 부호 반대). 실측으로 가장 큰 증거는
+ * **임계가 없는 아래쪽**에 있었다 — 최근 30일 6,168행 중 그 계산이 35℃ 미만을
+ * 1,111행(18.0%), 최저 25.98℃ 를 낸다. 정상 작업자를 중증 저체온으로 부르는 값이다.
+ *
+ * ⟹ 없는 변환을 지어내지 않는다. **실측 피부온을 피부온 임계로 잰다**(`THRESHOLDS.skinTemp`).
+ *   그 임계는 워치(`wear/core/Severity.kt`)와 같은 값이라, 같은 피부온에 두 기준이 걸리던
+ *   상태도 함께 풀린다.
+ *
+ * ⚠ **판정이 옳아진 것이 아니라 근거 없는 상수가 빠진 것이다.** 38.0/38.5 도 잠정값이다.
+ * ⚠ 라이브 화면 판정은 여전히 심박 칼만(`coreTempStatusC`)이다. 이 함수는 칼만을 만들 수
+ *   없는 자리(행 단위 과거 조회·내보내기·집계)에만 쓴다 — 그 입력에는 기기 발열이 섞인다.
+ */
+export function skinTempStatus(skinTempC: number | null | undefined): Status {
+  if (skinTempC === null || skinTempC === undefined) return "idle";
+  if (skinTempC >= THRESHOLDS.skinTemp.dangerC) return "danger";
+  if (skinTempC >= THRESHOLDS.skinTemp.cautionC) return "caution";
+  return "normal";
+}
+
 // SQL 집계(내보내기 미리보기 카운트)용 임계 파라미터 — 위 판정 함수들과 동일 상수에서 파생(단일 소스).
 // SQL 쪽에 숫자를 하드코딩하지 않기 위해 쿼리 파라미터로 바인딩해 전달한다(과거 감사 M5 임계 중복 재발 방지).
 export const SEVERITY_SQL_PARAMS = {
@@ -152,9 +176,10 @@ export const SEVERITY_SQL_PARAMS = {
   hrCautionLow: HR_CAUTION.lowBpm,
   spo2Danger: THRESHOLDS.spo2.dangerPct,
   spo2Caution: THRESHOLDS.spo2.cautionPct,
-  tempOffset: THRESHOLDS.coreTemp.wristToCoreOffsetC,
-  tempDanger: THRESHOLDS.coreTemp.dangerC,
-  tempCaution: THRESHOLDS.coreTemp.cautionC,
+  // ★ 2026-09-18 — `tempOffset` 을 뺐다. SQL 도 `skin_temp_c + offset >= core임계` 가 아니라
+  //   `skin_temp_c >= 피부온임계` 로 잰다(위 `skinTempStatus` 와 같은 식).
+  skinDanger: THRESHOLDS.skinTemp.dangerC,
+  skinCaution: THRESHOLDS.skinTemp.cautionC,
 } as const;
 
 export type SeveritySqlParams = typeof SEVERITY_SQL_PARAMS;
@@ -174,7 +199,8 @@ export function overallStatus(row: StatusInputs): Status {
   const statuses: Status[] = [
     heartRateStatus(row.heart_rate),
     spo2Status(row.spo2),
-    coreTempStatus(row.skin_temp_c),
+    // ★ 2026-09-18 — `coreTempStatus`(피부온+0.5) → `skinTempStatus`(피부온 그대로).
+    skinTempStatus(row.skin_temp_c),
   ];
   if (statuses.includes("danger")) return "danger";
   if (statuses.includes("caution")) return "caution";

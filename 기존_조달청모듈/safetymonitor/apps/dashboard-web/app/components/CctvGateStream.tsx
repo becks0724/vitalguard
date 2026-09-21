@@ -5,9 +5,11 @@
 // (적대검증 red-2 HIGH). 그래서 fetch 로 multipart 를 직접 읽고 canvas 에 그린다.
 // 대가 = <img> 의 자동 재연결을 잃는다 → 표 만료·끊김 재연결을 여기서 직접 한다.
 //
-// ★ 09-16 서버 중계(docs/cctv-gate-server) — 장시간 MJPEG 대신 **5초 스냅샷 폴링**으로 바꿨다.
-//   gateApi 가 서버면 단발 image/jpeg 가 오고, 젯슨 게이트면 multipart 가 온다. 둘 다 받되
-//   multipart 는 첫 프레임 하나만 읽고 끊는다(FIRST_FRAME_ONLY). 표는 어차피 1회용이라 요청마다 새로 받는다.
+// ★ 상류가 둘이고, 응답 형식(content-type)으로 가른다(09-17).
+//   · 단발 image/jpeg  = 서버 중계(/api/cctv-gate) → SNAPSHOT_MODE  한 장 그리고 5초 뒤 새 표로 다시 받는다(설계 §5-2 · 요청 단위 과금).
+//   · multipart        = 젯슨 게이트(:8443)       → STREAM_MODE    연결 하나를 표 만료 직전까지 열어 두고 오는 프레임을 전부 그린다(초당 ~10장).
+//   09-16 에 서버 중계용으로 둘 다 「첫 프레임만 읽고 5초 폴링」으로 바꿨더니, 아직 게이트를 보는 관제웹이 5초에 한 장이 되어
+//   멈춤 화면처럼 보였다(09-17 사용자 보고 · 게이트 로그 6분에 stream3 60건). 형식을 보고 갈라야 두 상류가 각자 맞는 속도로 돈다.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -19,10 +21,12 @@ const BOUNDARY = new TextEncoder().encode("--frame");
 const HEADER_END = new TextEncoder().encode("\r\n\r\n");
 // 경계를 못 찾은 채 이만큼 쌓이면 형식이 깨진 것이다 — 무한 누적 방지.
 const MAX_BUFFER = 8 * 1024 * 1024;
-// 스냅샷 폴링 간격 — 설계(docs/cctv-gate-server §5-2) 5초. 장시간 연결을 없애야 요청 단위 과금이 유지된다.
+// SNAPSHOT_MODE 폴링 간격 — 설계(docs/cctv-gate-server §5-2) 5초. 서버 중계는 장시간 연결이 없어야 요청 단위 과금이 유지된다.
 const POLL_MS = 5000;
-// 한 번의 스냅샷 요청이 이보다 오래 걸리면 끊는다 — 게이트가 MJPEG 를 계속 흘려도 첫 프레임만 받고 닫는다.
+// 응답 헤더가 이보다 늦으면 끊는다. multipart 로 판정되면 이 시계는 끄고 표 만료 시계로 바꾼다.
 const FETCH_TIMEOUT_MS = 8000;
+// STREAM_MODE — 표 만료 이만큼 전에 우리 쪽에서 끊고 새 표로 잇는다(게이트가 만료에 끊기 전에).
+const RENEW_MARGIN_MS = 8000;
 
 type Ticket = { ticket: string; expiresAt: number };
 
@@ -78,34 +82,36 @@ export function useGateTicket(cameraId: string) {
 type State = "connecting" | "live" | "denied" | "stale" | "error";
 
 /**
- * 응답에서 JPEG 한 장을 꺼낸다. 단발 image/jpeg 면 그대로, multipart(젯슨 게이트)면 첫 프레임만 읽고 스트림을 닫는다.
- * 프레임을 못 만들면 null.
+ * STREAM_MODE — multipart(젯슨 게이트) 본문을 끝(표 만료 abort · 게이트 종료)까지 읽으며 프레임마다 draw 를 부른다.
+ * 디코드가 도착보다 느리면 그 프레임은 버린다 — 밀리면 지연만 쌓인다. 경계 두 개 사이가 한 프레임이다.
  */
-async function readFirstJpeg(res: Response): Promise<Uint8Array<ArrayBuffer> | null> {
-  const ct = res.headers.get("content-type") ?? "";
-  if (ct.startsWith("image/jpeg")) return new Uint8Array(await res.arrayBuffer());
-  if (!res.body) return null;
-  // FIRST_FRAME_ONLY — 경계 두 개 사이가 한 프레임이다. 하나 나오면 즉시 취소한다.
-  const reader = res.body.getReader();
+async function drainMultipart(body: ReadableStream<Uint8Array>, draw: (jpeg: Uint8Array<ArrayBuffer>) => Promise<void>): Promise<void> {
+  const reader = body.getReader();
   let buf: Uint8Array<ArrayBuffer> = new Uint8Array(0);
+  let decoding = false;
   try {
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return null;
+      if (done) return;
       if (!value) continue;
       const next = new Uint8Array(buf.length + value.length);
       next.set(buf);
       next.set(value, buf.length);
       buf = next;
-      if (buf.length > MAX_BUFFER) return null;
-      const b0 = indexOfSeq(buf, BOUNDARY, 0);
-      if (b0 < 0) continue;
-      const b1 = indexOfSeq(buf, BOUNDARY, b0 + BOUNDARY.length);
-      if (b1 < 0) continue;
-      const h = indexOfSeq(buf, HEADER_END, b0);
-      if (h < 0 || h > b1) { buf = buf.slice(b1); continue; }
-      const jpeg = buf.slice(h + HEADER_END.length, Math.max(b1 - 2, h + HEADER_END.length));
-      return jpeg.length > 0 ? jpeg : null;
+      if (buf.length > MAX_BUFFER) throw new Error("malformed stream");
+      for (;;) {
+        const b0 = indexOfSeq(buf, BOUNDARY, 0);
+        if (b0 < 0) break;
+        const b1 = indexOfSeq(buf, BOUNDARY, b0 + BOUNDARY.length);
+        if (b1 < 0) break;
+        const h = indexOfSeq(buf, HEADER_END, b0);
+        if (h < 0 || h > b1) { buf = buf.slice(b1); break; }
+        const jpeg = buf.slice(h + HEADER_END.length, Math.max(b1 - 2, h + HEADER_END.length));
+        buf = buf.slice(b1);
+        if (decoding || jpeg.length === 0) continue;
+        decoding = true;
+        void draw(jpeg).catch(() => {}).finally(() => { decoding = false; });
+      }
     }
   } finally {
     try { await reader.cancel(); } catch { /* 이미 닫힘 */ }
@@ -113,7 +119,7 @@ async function readFirstJpeg(res: Response): Promise<Uint8Array<ArrayBuffer> | n
 }
 
 /**
- * 게이트(또는 서버 중계)에서 스냅샷을 폴링해 canvas 에 그린다. 요청마다 새 표를 받는다(1회용).
+ * 게이트(multipart) 또는 서버 중계(image/jpeg)에서 영상을 받아 canvas 에 그린다. 표는 1회용이라 연결마다 새로 받는다.
  * 503 은 「젯슨이 안 올리고 있다」(stale·upstream unreachable) — 옛 그림을 살아 있는 척 두지 않는다.
  */
 export function GateLiveScreen({
@@ -154,7 +160,7 @@ export function GateLiveScreen({
       bmp.close();
     };
 
-    const pollLoop = async () => {
+    const loop = async () => {
       while (!stopped) {
         const t0 = Date.now();
         const t = await getTicket("read");
@@ -166,7 +172,9 @@ export function GateLiveScreen({
           continue;
         }
         abort = new AbortController();
-        const killer = setTimeout(() => abort?.abort(), FETCH_TIMEOUT_MS);
+        let expired = false; // STREAM_MODE 에서 표 만료로 우리가 끊은 것 — 실패가 아니다
+        let timer: ReturnType<typeof setTimeout> = setTimeout(() => abort?.abort(), FETCH_TIMEOUT_MS);
+        let streamed = false;
         try {
           const res = await fetch(`${gateApi}/cctv/stream${suffix}`, {
             headers: { Authorization: `Bearer ${t.ticket}` },
@@ -176,30 +184,49 @@ export function GateLiveScreen({
           if (res.status === 503) {
             setState("stale"); // 젯슨이 안 올리고 있다 — 서버는 살아 있다
             failStreak = 0;
-          } else if (!res.ok) {
+          } else if (!res.ok || !res.body) {
             throw new Error(String(res.status));
-          } else {
-            const jpeg = await readFirstJpeg(res);
-            if (!jpeg) throw new Error("no frame");
+          } else if ((res.headers.get("content-type") ?? "").startsWith("image/jpeg")) {
+            // SNAPSHOT_MODE — 서버 중계. 한 장 그리고 아래에서 5초 쉰다.
+            const jpeg = new Uint8Array(await res.arrayBuffer());
+            if (jpeg.length === 0) throw new Error("no frame");
             await draw(jpeg);
             setState("live");
             failStreak = 0;
+          } else {
+            // STREAM_MODE — 젯슨 게이트. 헤더 시계를 끄고 표 만료 시계로 바꾼 뒤 끝까지 흘려 받는다.
+            streamed = true;
+            clearTimeout(timer);
+            timer = setTimeout(() => { expired = true; abort?.abort(); }, Math.max(t.expiresAt - Date.now() - RENEW_MARGIN_MS, 1000));
+            await drainMultipart(res.body, async (jpeg) => {
+              await draw(jpeg);
+              setState("live");
+            });
+            failStreak = 0;
           }
         } catch {
-          failStreak += 1;
-          if (!stopped) setState((s) => (s === "denied" ? s : "error"));
+          if (expired && !stopped) {
+            failStreak = 0; // 정상 만료 — 화면을 흔들지 않고 새 표로 잇는다
+          } else {
+            failStreak += 1;
+            if (!stopped) setState((s) => (s === "denied" ? s : "error"));
+          }
         } finally {
-          clearTimeout(killer);
+          clearTimeout(timer);
           abort = null;
         }
         if (stopped) return;
-        // 정상이면 5초 간격을 지키고, 실패가 이어지면 물러선다(상한 30초).
+        if (streamed && failStreak === 0) {
+          await new Promise((r) => setTimeout(r, 150)); // 표만 갈아 끼우고 바로 잇는다
+          continue;
+        }
+        // SNAPSHOT_MODE 는 5초 간격을 지키고, 실패가 이어지면 물러선다(상한 30초).
         const elapsed = Date.now() - t0;
         const backoff = failStreak > 1 ? Math.min(POLL_MS * 2 ** (failStreak - 1), 30000) : POLL_MS;
         await new Promise((r) => setTimeout(r, Math.max(backoff - elapsed, 200)));
       }
     };
-    void pollLoop();
+    void loop();
     return () => {
       stopped = true;
       abort?.abort();

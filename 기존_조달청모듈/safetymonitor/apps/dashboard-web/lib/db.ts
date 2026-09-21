@@ -1175,6 +1175,17 @@ async function initSchema(): Promise<void> {
       PRIMARY KEY (username, site_id)
     );
 
+    -- 기본 현장·카메라 등록(멱등) — 서버가 카메라의 존재를 알아야 티켓을 발급한다.
+    -- 프런트 상수 배열에만 있고 여기 없으면 cctvPermissionFor 가 "unknown camera" 로 거부한다.
+    -- ★ 09-17 CAM-01 추가(TP-Link VIGI C340S · 이더넷). CAM-03 은 09-09 에 수동으로 들어가 있었고,
+    --   여기 함께 적어 재현 가능하게 한다(ON CONFLICT DO NOTHING 이라 기존 행은 안 건드린다).
+    INSERT INTO cctv_site (site_id, label, open_to_approved) VALUES ('SITE-01', '시험 현장', TRUE)
+      ON CONFLICT (site_id) DO NOTHING;
+    INSERT INTO cctv_camera (camera_id, site_id, label) VALUES
+      ('CAM-01', 'SITE-01', '사무실(IP캠 · TP-Link VIGI)'),
+      ('CAM-03', 'SITE-01', '현장 작업구역(GoPro)')
+      ON CONFLICT (camera_id) DO NOTHING;
+
     -- 티켓 발급 감사 — 누가 언제 어느 카메라 티켓을 받았고, 거절됐다면 왜인지.
     -- 영상 접근은 사후에 "누가 봤나"를 답할 수 있어야 한다.
     CREATE TABLE IF NOT EXISTS cctv_ticket_audit (
@@ -3481,9 +3492,8 @@ export type SeverityCountParams = {
   hrCautionLow: number;
   spo2Danger: number;
   spo2Caution: number;
-  tempOffset: number;
-  tempDanger: number;
-  tempCaution: number;
+  skinDanger: number;
+  skinCaution: number;
 };
 
 // 기간 일치 전체/위험/주의 건수 — overallStatus(worst-of + SOS/낙상 즉시 danger)를 SQL 로 동일 재현.
@@ -3496,16 +3506,19 @@ export async function countSamplesBySeverity(
   // 주의: SQL 3치 논리 — fall/sos 가 NULL 이면 `= 1` 이 false 아닌 NULL 이 되고,
   // `NOT (… OR NULL)` 도 NULL 이라 caution FILTER 가 전부 탈락한다(실 DB 실측으로 적발).
   // COALESCE 로 NULL→0 강제해 조건 전체가 항상 확정 boolean 이 되게 한다.
+  // ★ 2026-09-18 — 체온 조건에서 `+ offset` 을 뺐다. 종전 `skin_temp_c + 0.5 >= 38.5` 는
+  //   근거 없는 오프셋으로 만든 값이었다. 이제 `skin_temp_c >= 38.5`(피부온 임계)로 잰다.
+  //   TS `overallStatus` 의 `skinTempStatus` 와 같은 식이고, 그 일치는 severity-sql.test 가 고정한다.
   const dangerCond = `(
     COALESCE(fall_detected, 0) = 1 OR COALESCE(manual_sos, 0) = 1
     OR (heart_rate IS NOT NULL AND (heart_rate >= $3 OR heart_rate <= $4))
     OR (spo2 IS NOT NULL AND spo2 < $5)
-    OR (skin_temp_c IS NOT NULL AND skin_temp_c + $6 >= $7)
+    OR (skin_temp_c IS NOT NULL AND skin_temp_c >= $6)
   )`;
   const cautionCond = `(
-    (heart_rate IS NOT NULL AND (heart_rate >= $8 OR heart_rate <= $9))
-    OR (spo2 IS NOT NULL AND spo2 < $10)
-    OR (skin_temp_c IS NOT NULL AND skin_temp_c + $6 >= $11)
+    (heart_rate IS NOT NULL AND (heart_rate >= $7 OR heart_rate <= $8))
+    OR (spo2 IS NOT NULL AND spo2 < $9)
+    OR (skin_temp_c IS NOT NULL AND skin_temp_c >= $10)
   )`;
   const params: unknown[] = [
     from,
@@ -3513,12 +3526,11 @@ export async function countSamplesBySeverity(
     p.hrDangerHigh,
     p.hrDangerLow,
     p.spo2Danger,
-    p.tempOffset,
-    p.tempDanger,
+    p.skinDanger,
     p.hrCautionHigh,
     p.hrCautionLow,
     p.spo2Caution,
-    p.tempCaution,
+    p.skinCaution,
   ];
   let where = "ts >= $1 AND ts <= $2";
   if (workerId) {

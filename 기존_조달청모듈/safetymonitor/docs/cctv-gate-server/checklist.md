@@ -56,9 +56,33 @@ Cloud Run env (배포 때 함께)
 ```
 - [x] 서버 배포([WATCH.APP] · /deploy) + env `CAM03_GATE_API`·`CCTV_INGEST_TOKEN`(secret)·`CCTV_FRAME_STALE_SEC` — 웹 빌드 인자는 1차엔 duckdns 유지 → **00390-hfj(이미지 127b880e) → 00391-5q8(env 33) · 아카이브 2012/2012**
 - [x] 젯슨([CCTV/ML] 실행 · [M/L] 점검) — drop-in `ingest.conf`(EnvironmentFile=~/.cctv_ingest.env · CCTV_BASE · PUSH_FPS=0.2) + 푸셔 Authorization 헤더 + 쿼리 worker·unknown·zone → restart ①(코드 · `code_sha 12c1413e9728` · 통제군 pushed 0) → ②(env · pushed 8/45초 · push error 0) · 커밋 `1f3987d2`
-- [ ] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거 — **사용자 차례**(09-17 10:20 부터 가능)
+- [x] 다른 망(AICAM_301A)에서 CCTV 뜨는지 실측 = Tailscale 없이 보이는 첫 증거 — **09-17 11:30 통과**(사용자 육안 · 서버 stream3 200 ×20 · jti 0→20 · 게이트에 태블릿 요청 0)
+- [ ] **관제웹 회귀 수리 배포 `12024ba8`** — 09-16 폴링 전환이 게이트 경로까지 5초 1장으로 만듦(사용자 보고 「멈춤 화면」) · content-type 으로 SNAPSHOT/STREAM 분기 · 배포 전까지 웹은 5초 1장
 - [ ] 서버가 `zone` 을 받는 커밋(`zone_on`) 다음 배포에 싣기 — 그 전까지 DB stats 에 zone 없음(젯슨은 이미 보냄)
 - [ ] 09-18 `pg_stat_user_tables` 로 `cctv_frame` n_dead_tup·autovacuum 확인(§7-1)
 
 ## 하지 말 것 (설계 §8)
 - `cctv-ai` 를 다시 켜지 않는다 · 게이트 `:8443` 을 바깥에 여는 방향으로 돌아가지 않는다 · 스키마는 `ensureSchema` 로만
+
+## 09-17 12:2x 사용자 계획 — 「지금은 Tailscale · 현장은 포트포워딩」 (portforward-plan-20260917.md)
+- [ ] A-1 관제웹 회귀 수리 배포 `12852cdb` ([WATCH.APP] · /deploy)
+- [x] A-2 서버 env `CAM03_GATE_API` → DuckDNS 게이트로 되돌림 — 00394-jt4 · jti 44행에서 멈춤이 서버 쪽 증거
+- [x] A-3 태블릿 Tailscale — **설치는 이미 돼 있었다**(`Lenovo Idea Tab Pro 100.64.0.3`) · 켜기만 하면 됨
+- [ ] A-4 태블릿 초당 ~10장 실측 · 게이트 로그 `100.x` — **사용자 차례**
+- [ ] A-1b 관제웹을 열어 초당 ~10장·연결 1건 유지 확인(회귀 수리 동작 판정) — 14:3x 기준 게이트 접속 0건이라 미판정
+- [ ] C 팀원과 설계 §8(8443 외부 개방) 합의 — 합의 전 B 착수 금지
+- [ ] B-2 DuckDNS 갱신 스크립트 공인 IP 화 (합의 뒤 · [CCTV/ML])
+- [ ] B-4 게이트 하드닝 점검(실패도 제한에 세나 · ufw · 인증서 갱신 경로)
+
+## 09-17 16:0x CAM-01 새 IP캠 (cam01-ipcam-20260917.md)
+- [x] 새 CCTV 인식 — TP-Link VIGI C340S · 192.168.219.48 · RTSP 인증 통과(VIGI 앱 카메라 계정)
+- [x] 푸셔 일반화 — CAM_SUFFIX·CAM_SOURCE env (기본값 CAM-03·gopro 라 종전 그대로)
+- [x] 구역 파일 분리 zone{N}.json ([M/L] 지적 · 기존 구역 zone3.json 보존)
+- [x] 게이트 다중 카메라 — CAMS · GATE_UPSTREAM_1 · stream1/stats1/connection1
+- [x] CAM-01 푸셔 systemd 등록(cctv-pusher-cam1.service · Restart=on-failure — IP캠은 재시작이 안전)
+- [x] 낙상 켬 · POSE 로그 디렉터리 분리
+- [x] DB 시드 + 관제웹 CAM-01 게이트 연결 → 배포 00397-cmd · 사용자 육안 통과
+- [x] 게이트 로그 stream1 200 · 오류 0 · DB CAM-01 행 확인
+- [ ] 서버 중계(ingest1·stream1·stats1) — 앱에서 CAM-01 보려면 필요. 지금은 관제웹 전용
+- [ ] CAM-01 구역(zone1.json) 지정 — 안 찍으면 화면 전체가 판정 대상
+

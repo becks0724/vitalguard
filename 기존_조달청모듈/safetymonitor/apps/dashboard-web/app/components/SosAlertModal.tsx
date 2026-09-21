@@ -3,11 +3,10 @@
 
 import { useEffect, useState } from "react";
 import type { VitalSample } from "@safetymonitor/schemas";
-import { THRESHOLDS, estimateCoreTempC } from "@safetymonitor/analyzers";
 
 import FitToViewport from "./FitToViewport";
 import { NearestEmergency } from "./HospitalPanel";
-import { heartRateStatus, spo2Status, type Status } from "../../lib/severity";
+import { heartRateStatus, skinTempStatus, spo2Status, type Status } from "../../lib/severity";
 
 const COMPANY_NAME = "스마트인재개발원";
 
@@ -23,14 +22,17 @@ const DEMO_GUARDIANS: Record<string, { name: string; phone: string }> = {
 // 심박·SpO₂ 판정은 lib/severity 단일 소스(heartRateStatus/spo2Status) 재사용 — 활동 미전달=안정 임계.
 type Severity = Status;
 
-function coreSeverity(skinTempC?: number): Severity {
+/**
+ * ★ 2026-09-18 — **피부온을 그대로 판정한다.** 종전에는 `estimateCoreTempC`(= 피부온 + 0.5)를
+ * 심부 추정이라 부르고 심부 임계로 쟀는데, 그 오프셋은 출처가 없고 값도 형태도 틀렸다.
+ * 실측 — 최근 30일 6,168행에 그 계산을 걸면 35℃ 미만 1,111행(18.0%) · 최저 25.98℃ 가 나온다.
+ * 임계는 `THRESHOLDS.skinTemp`(워치와 같은 값) — 단일 소스는 lib/severity 의 skinTempStatus.
+ */
+function skinSeverity(skinTempC?: number): Severity {
   if (skinTempC === undefined) return "idle";
-  const core = estimateCoreTempC(skinTempC);
-  // 추정 체온이 유한수가 아니면(NaN 등) >= 비교가 모두 false 라 'normal'(녹색)로 오분류 → idle 로 차단
-  if (!Number.isFinite(core)) return "idle";
-  if (core >= THRESHOLDS.coreTemp.dangerC) return "danger";
-  if (core >= THRESHOLDS.coreTemp.cautionC) return "caution";
-  return "normal";
+  // 값이 유한수가 아니면(NaN 등) >= 비교가 모두 false 라 'normal'(녹색)로 오분류 → idle 로 차단
+  if (!Number.isFinite(skinTempC)) return "idle";
+  return skinTempStatus(skinTempC);
 }
 
 const TONE: Record<Severity, string> = {
@@ -81,9 +83,18 @@ function buildSmsBody(sample: VitalSample, audience: "guardian" | "119", reason:
   if (sample.spo2 !== undefined) {
     vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Status(sample.spo2))}`);
   }
+  // ⚠ **문자에는 「체온추정」이라 적지 않는다**(2026-09-18). 이 값은 `피부온 + 0.5` 이고
+  //    그 오프셋은 근거가 확인된 적이 없다(`thresholds.ts` wristToCoreOffsetC 주석).
+  //    실측 — 최근 30일 피부온 6,168행에 이 계산을 걸면 **35℃ 미만 1,111행(18.0%) ·
+  //    32℃ 미만 51행 · 최저 25.98℃** 가 나온다. 정상 작업자의 문자에 「체온추정 26.0℃」가
+  //    실리면 119 는 중증 저체온 응급으로 읽는다 — 수신자가 되돌릴 수 없는 오독이다.
+  //    ⟹ 실측 피부온을 실측 피부온이라 적는다. 심부 추정은 심박 칼만(`coreTempStatusC`)이
+  //      따로 있으나 그 값은 이 모달에 들어오지 않는다.
+  //    ★ 판정 표시 `(위험)`은 **되살렸다**. 1차(dcc36c0c)에서는 그 판정도 `+0.5` 로 만든 값이라
+  //      함께 뺐는데, 이제 피부온 임계로 재므로 119 가 읽을 근거가 생겼다.
   if (sample.skinTempC !== undefined) {
-    const core = estimateCoreTempC(sample.skinTempC).toFixed(1);
-    vitals.push(`체온추정 ${core}℃${labelSeverity(coreSeverity(sample.skinTempC))}`);
+    const skin = sample.skinTempC.toFixed(1);
+    vitals.push(`피부온 ${skin}℃${labelSeverity(skinSeverity(sample.skinTempC))} (심부체온 아님)`);
   }
   if (vitals.length > 0) {
     lines.push(`생체: ${vitals.join(", ")}`);
@@ -163,14 +174,16 @@ export function SosAlertModal({
 
   const hrSev = heartRateStatus(sample.heartRate);
   const spo2Sev = spo2Status(sample.spo2);
-  const coreSev = coreSeverity(sample.skinTempC);
-  const core = sample.skinTempC === undefined ? undefined : estimateCoreTempC(sample.skinTempC);
+  const coreSev = skinSeverity(sample.skinTempC);
+  // ★ 2026-09-18 — 화면도 문자와 같은 값을 보여준다. 종전에는 카드가 `피부온 + 0.5` 를
+  //   심부 추정이라 띄워서 같은 순간에 화면과 문자가 다른 숫자·다른 이름을 썼다.
+  const core = sample.skinTempC;
 
   // reason="vital" 경보용 위험 메트릭 사유 — 헤더 부제에 표시(danger 메트릭만).
   const dangerMetrics = [
     hrSev === "danger" ? "심박" : null,
     spo2Sev === "danger" ? "산소포화도" : null,
-    coreSev === "danger" ? "체온" : null,
+    coreSev === "danger" ? "피부온" : null,
   ].filter(Boolean) as string[];
 
   const guardianSmsBody = buildSmsBody(sample, "guardian", reason);
@@ -271,7 +284,7 @@ export function SosAlertModal({
               <MetricCell label="심박" value={sample.heartRate} unit="bpm" severity={hrSev} decimals={0} />
               <MetricCell label="산소포화도" value={sample.spo2} unit="%" severity={spo2Sev} decimals={0} />
               <MetricCell
-                label={`체온 추정`}
+                label={`피부온`}
                 value={core}
                 unit="℃"
                 severity={coreSev}

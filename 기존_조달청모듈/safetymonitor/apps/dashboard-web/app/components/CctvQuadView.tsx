@@ -34,7 +34,11 @@ type Cam = {
 
 // 현장 주요 위치 8개소 — 1·2·3번째 타일이 AI 실시간 라이브(객체감지·낙상감지·GoPro PPE 안전모 감지).
 const CAMERAS: Cam[] = [
-  { id: "CAM-01", location: "정문 출입구", aiApi: AI_CCTV_API, aiKind: "object", aiSuffix: "" },
+  // ★ 09-17 새 IP캠(TP-Link VIGI C340S · 이더넷)으로 교체. 젯슨이 RTSP 를 읽어 PPE 추론까지 하고
+  //   게이트 /cctv/stream1·stats1 로 낸다(같은 주소·포트·인증서 — cctv_gate.py 의 CAMS).
+  //   aiApi 는 폴백으로 남긴다 — 게이트 주소가 비면 종전 cctv-ai 경로를 탄다.
+  { id: "CAM-01", location: "사무실(IP캠)", aiApi: AI_CCTV_API, aiKind: "ppe", aiSuffix: "1",
+    gateApi: CAM03_GATE_API || undefined },
   { id: "CAM-02", location: "지하 기계실", aiApi: AI_CCTV_API, aiKind: "fall", aiSuffix: "2" },
   { id: "CAM-03", location: "현장 작업구역(GoPro)", aiApi: AI_CCTV_API, aiKind: "ppe", aiSuffix: "3",
     gateApi: CAM03_GATE_API || undefined },
