@@ -16,7 +16,16 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00402-t5n` (커밋 `df2a9fe1` · 09-18 18:2x · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00403-cdd` (커밋 `6e8ffe7d` · 09-21 10:32 · 서빙 digest
+  `sha256:86ac4222…` **대조 일치** · env 33 · 배포·기록 `session_01HnBtBj…`).
+  **캘린더 표시본(잉크)을 같은 오리진으로 읽게 고쳤다** — 프리사인 GET 응답에는
+  `Access-Control-Allow-Origin` 이 없어 서버는 200 인데 브라우저만 끊겼다(확장 로그의 503 은
+  스토리지 상태가 아니었다). 신규 `apps/dashboard-web/app/api/calendar/media/ink/route.ts` 로 서버가 읽어 넘긴다.
+  다운로드(⬇)는 네비게이션이라 무관해 `download-url` 은 안 건드렸다.
+  전문 = `harness/5-observability/run-log.md` 09-21 절.
+  ★ **09-18 CCTV 건과 같은 계열이다** — `curl` 은 CORS 를 안 본다.
+
+- **직전** = `vitalguard-dashboard-00402-t5n` (커밋 `df2a9fe1` · 09-18 18:2x · 서빙 digest
   `sha256:1ce21792…` **대조 일치** · env 33 · 검증 **아카이브(df2a9fe 고정) · 2061/2061** ·
   트래픽 자동 추종 · ALLOW_DIRTY 강행(손대지 않는 2파일)).
   **CAM-01 관제웹 노출 + 체온 판정 정정 + 관제웹→젯슨 Tailscale 직결.** 화면 확인 완료.
