@@ -45,3 +45,15 @@ demo/
 # GitHub 에서까지 지우려면 히스토리 재작성 + GitHub Support purge 요청이 별도로 필요하다.
 기존_조달청모듈/safetymonitor/docs/audit-*
 audit/
+
+# 모델 가중치 — 저장소에 넣지 않는다 (2026-09-21)
+# 왜 여기(루트)인가 — 종전 보호는 cctv-ai/.gitignore 안에만 있어서 그 디렉터리 밖은 무방비였다.
+# 실제로 워크트리 루트에 380MB 가 놓여 있었다(yolov8s-worldv2.pt 25.9MB + weights/clip 354MB).
+# 폐기된 YOLO-World 경로의 잔해이고 ultralytics 가 자동으로 내려받은 것이다 — 규칙은 있었는데
+# 구조가 안 막았다. `git add -A` 한 번이면 히스토리에 영구히 들어간다.
+*.pt
+*.engine
+weights/
+*.bak-*
+# ⚠ *.onnx 는 일부러 안 넣었다 — 워치 앱 자산 6개(impact·recovery·work_veto · 각 180KB)가
+#   의도적으로 추적 중이다. 여기에 넣으면 앞으로 그 모델을 갱신할 때 조용히 빠진다.
