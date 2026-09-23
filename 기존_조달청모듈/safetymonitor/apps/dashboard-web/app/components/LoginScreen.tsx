@@ -886,11 +886,11 @@ export function LoginScreen({
         {/* 우측 — 로그인 폼. 고정된 카드 높이 안에서 세로 중앙, 내용이 넘치면 이 칸만 스크롤한다
             (카드·사진 크기는 그대로 유지 — 넘치는 쪽이 양보한다). */}
         <div
-          className={`no-scrollbar flex w-full flex-col items-center justify-center overflow-y-auto px-6 md:min-w-0 md:flex-1 ${
+          className={`no-scrollbar flex w-full flex-col items-center overflow-y-auto px-6 md:min-w-0 md:flex-1 ${
             compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-6" : "py-10"
           }`}
         >
-          <div className="relative z-10 flex w-full flex-col items-center">
+          <div className="relative z-10 my-auto flex w-full flex-col items-center">
         {/* 중앙 로고 — 로그인 배경은 테마와 무관하게 항상 네이비 셰이더(LoginShaderBackground)라
             화이트 로고 고정. 투명 로고라 라이트 테마의 블루 워드마크(검정 글자)는 네이비에 묻힘. */}
         <div className="logo3d-stage">
