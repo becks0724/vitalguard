@@ -152,6 +152,7 @@ abstract class FieldController extends ChangeNotifier {
   SiteStatus? get siteStatusSnapshot;
   bool get siteStatusForbidden;
   Future<SiteStatus> siteStatus();
+  Future<void> refreshSite();
   Future<bool> ackAlert(String id);
   // 주소 API가 없는 테스트/대체 컨트롤러는 null을 반환해 기기 추정 폴백을 허용한다.
   Future<String?> captureAddress({

@@ -363,7 +363,7 @@ void main() {
     await fixture.close(tester);
   });
 
-  testWidgets('403은 목록·좌표를 지우고 역할·배정 안내 후 자동·수동 재시도를 멈춘다', (tester) async {
+  testWidgets('403은 목록·좌표와 자동 재시도를 숨기고 수동 새로고침으로 복구한다', (tester) async {
     final fixture = _Fixture();
     await fixture.mount(tester);
     fixture.gateway.fetch = () async =>
@@ -371,7 +371,13 @@ void main() {
     await _tap(tester, 'workers-refresh');
     expect(find.textContaining('관리자에게 역할과 현장 배정을'), findsOneWidget);
     expect(find.byKey(const Key('workers-forbidden')), findsOneWidget);
-    expect(find.byKey(const Key('workers-refresh')), findsNothing);
+    expect(find.byKey(const Key('workers-refresh')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('workers-refresh')))
+          .onPressed,
+      isNotNull,
+    );
     expect(find.byKey(const Key('worker-card-w-1')), findsNothing);
     expect(find.textContaining('37.501234', skipOffstage: false), findsNothing);
     final calls = fixture.gateway.calls;
@@ -379,10 +385,15 @@ void main() {
     await fixture.pumpScreen(tester, active: false);
     await fixture.pumpScreen(tester);
     expect(fixture.gateway.calls, calls);
+    fixture.gateway.fetch = null;
+    await _tap(tester, 'workers-refresh');
+    expect(fixture.gateway.calls, calls + 1);
+    expect(find.byKey(const Key('workers-forbidden')), findsNothing);
+    expect(find.byKey(const Key('worker-card-w-1')), findsOneWidget);
     await _tap(tester, 'workers-back');
     expect(
       tester.widget<InkWell>(find.byKey(const Key('site-row-workers'))).onTap,
-      isNull,
+      isNotNull,
     );
     await fixture.close(tester);
   });

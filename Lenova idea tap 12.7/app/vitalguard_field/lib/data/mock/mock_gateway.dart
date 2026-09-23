@@ -13,6 +13,8 @@ class MockGateway implements FieldGateway {
   final _media = <Map<String, dynamic>>[];
   String _user = 'demo';
   int _id = 0;
+  final logoutTokens = <String>[];
+  final siteInfoTokens = <String>[];
 
   MockGateway() {
     final date = calendarDate(kstNow());
@@ -113,19 +115,26 @@ class MockGateway implements FieldGateway {
   }
 
   @override
-  Future<void> logout(String accessToken) async {}
+  Future<void> logout(String accessToken) async {
+    logoutTokens.add(accessToken);
+  }
+
   @override
-  Future<SiteInfo?> siteInfo(String accessToken) async => SiteInfo({
-    'id': 1,
-    'snapshot_date': calendarDate(kstNow()),
-    'site_name': '모의 현장',
-    'company_name': '모의 시공사',
-    'construction_type': null,
-    'address': null,
-    'start_date': null,
-    'completion_date': null,
-    'recorded_at': kstNow().toIso8601String(),
-  });
+  Future<SiteInfo?> siteInfo(String accessToken) async {
+    siteInfoTokens.add(accessToken);
+    return SiteInfo({
+      'id': 1,
+      'snapshot_date': calendarDate(kstNow()),
+      'site_name': '모의 현장',
+      'company_name': '모의 시공사',
+      'construction_type': null,
+      'address': null,
+      'start_date': null,
+      'completion_date': null,
+      'recorded_at': kstNow().toIso8601String(),
+    });
+  }
+
   @override
   Future<CalendarMedia> upload(
     String token,

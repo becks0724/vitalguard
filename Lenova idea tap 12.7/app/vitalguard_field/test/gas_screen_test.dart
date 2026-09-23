@@ -322,7 +322,7 @@ void main() {
     await fixture.close(tester);
   });
 
-  testWidgets('403이면 장비·수치를 제거하고 역할·현장 안내 후 자동·수동 재시도를 멈춘다', (tester) async {
+  testWidgets('403이면 장비·수치와 자동 재시도를 숨기고 수동 새로고침으로 복구한다', (tester) async {
     final fixture = _Fixture();
     await fixture.mount(tester);
     fixture.gateway.fetch = () async =>
@@ -330,7 +330,13 @@ void main() {
     await _tap(tester, 'gas-refresh');
     expect(find.byKey(const Key('gas-forbidden')), findsOneWidget);
     expect(find.textContaining('관리자에게 역할과 현장 배정을'), findsOneWidget);
-    expect(find.byKey(const Key('gas-refresh')), findsNothing);
+    expect(find.byKey(const Key('gas-refresh')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('gas-refresh')))
+          .onPressed,
+      isNotNull,
+    );
     expect(find.byKey(const Key('gas-readings')), findsNothing);
     expect(
       find.textContaining('synthetic-gas-01', skipOffstage: false),
@@ -342,10 +348,15 @@ void main() {
     await fixture.pumpScreen(tester, active: false);
     await fixture.pumpScreen(tester);
     expect(fixture.gateway.calls, calls);
+    fixture.gateway.fetch = null;
+    await _tap(tester, 'gas-refresh');
+    expect(fixture.gateway.calls, calls + 1);
+    expect(find.byKey(const Key('gas-forbidden')), findsNothing);
+    expect(find.byKey(const Key('gas-readings')), findsOneWidget);
     await _tap(tester, 'gas-back');
     expect(
       tester.widget<InkWell>(find.byKey(const Key('site-row-gas'))).onTap,
-      isNull,
+      isNotNull,
     );
     await fixture.close(tester);
   });

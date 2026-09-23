@@ -521,14 +521,18 @@ void main() {
       await f.close(tester);
     });
 
-    testWidgets('$id 403은 수신 자료를 제거하고 자동·수동 재시도를 중지한다', (tester) async {
+    testWidgets('$id 403은 자료·자동 재시도를 숨기고 수동 새로고침으로 복구한다', (tester) async {
       final f = _Fixture();
       await f.mount(tester, id);
       f.gateway.fetch = () async =>
           throw const ApiFailure('private', status: 403);
       await _tap(tester, '$id-refresh');
       expect(await _text(tester, '$id-forbidden'), contains('역할과 현장 배정'));
-      expect(find.byKey(Key('$id-refresh')), findsNothing);
+      expect(find.byKey(Key('$id-refresh')), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(find.byKey(Key('$id-refresh'))).onPressed,
+        isNotNull,
+      );
       expect(
         find.byKey(
           Key(id == 'aed' ? 'aed-devices' : 'weather-coordinates'),
@@ -541,11 +545,19 @@ void main() {
       await f.pumpScreen(tester, active: false);
       await f.pumpScreen(tester);
       expect(f.gateway.calls, calls);
+      f.gateway.fetch = null;
+      await _tap(tester, '$id-refresh');
+      expect(f.gateway.calls, calls + 1);
+      expect(find.byKey(Key('$id-forbidden')), findsNothing);
+      expect(
+        find.byKey(Key(id == 'aed' ? 'aed-devices' : 'weather-coordinates')),
+        findsOneWidget,
+      );
       await _tap(tester, '$id-back');
       await _reveal(tester, 'site-row-$id');
       expect(
         tester.widget<InkWell>(find.byKey(Key('site-row-$id'))).onTap,
-        isNull,
+        isNotNull,
       );
       await f.close(tester);
     });

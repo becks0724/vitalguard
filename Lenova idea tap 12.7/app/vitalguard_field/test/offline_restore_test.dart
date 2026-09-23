@@ -249,22 +249,38 @@ void main() {
     expect(controller.user?.json, _onlineUser);
   });
 
-  test('허용되지 않은 저장 역할은 서버 연결 전에 denied로 거부한다', () async {
-    final store = _store(user: {..._savedUser, 'role': 'worker'});
-    var calls = 0;
-    final controller = _controller(store, (_, _, _, _) async {
-      calls++;
-      throw const SocketException('synthetic');
+  for (final (label, failure) in <(String, Object?)>[
+    ('성공', null),
+    ('401', const ApiReply(401, {'ok': false})),
+    ('오프라인', const SocketException('synthetic')),
+  ]) {
+    test('허용되지 않은 저장 역할도 서버 세션을 폐기하고 denied를 유지한다: $label', () async {
+      final store = _store(user: {..._savedUser, 'role': 'worker'});
+      final storedTokens = store.tokens;
+      final calls = <String>[];
+      final tokens = <String?>[];
+      String? tokensAtLogout;
+      final controller = _controller(store, (method, path, token, _) async {
+        calls.add('$method $path');
+        tokens.add(token);
+        tokensAtLogout = store.tokens;
+        if (failure is ApiReply) return failure;
+        if (failure != null) throw failure;
+        return _success(path);
+      });
+
+      await controller.initialize();
+
+      expect(controller.authStage, AuthStage.denied);
+      expect(controller.user, isNull);
+      expect(controller.site, isNull);
+      expect(controller.message, _restoreFailure);
+      expect(store.tokens, isNull);
+      expect(calls, ['POST /api/mobile/v1/session/logout']);
+      expect(tokens, ['synthetic-access']);
+      expect(tokensAtLogout, storedTokens);
     });
-
-    await controller.initialize();
-
-    expect(controller.authStage, AuthStage.denied);
-    expect(controller.user, isNull);
-    expect(controller.site, isNull);
-    expect(store.tokens, isNull);
-    expect(calls, 0);
-  });
+  }
 
   for (final cached in [null, 'null', 'synthetic-invalid-json', '[]']) {
     test('현장 캐시 $cached는 null로 복원하며 다른 계정 캐시는 읽지 않는다', () async {

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:vitalguard_field/data/contracts/field_contracts.dart';
@@ -140,12 +143,93 @@ void main() {
     expect(controller.siteStatusSnapshot, isNull);
     expect(controller.siteStatusForbidden, isFalse);
   });
+
+  for (final result in [
+    SiteInfo({'site_id': 'new-site', 'site_name': '새 현장'}),
+    null,
+  ]) {
+    test('현장 정보 갱신은 ${result == null ? '배정 해제' : '새 배정'}와 캐시를 알린다', () async {
+      final gateway = _Gateway();
+      final store = MemoryStore();
+      final controller = FieldCoordinator(gateway, store, MockSpeechInput());
+      addTearDown(controller.dispose);
+      await controller.signIn('demo', 'mock');
+      gateway.fetchSite = () async => result;
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+
+      await controller.refreshSite();
+
+      expect(gateway.siteInfoTokens, ['old-access', 'old-access']);
+      expect(controller.site, same(result));
+      expect(
+        jsonDecode((await store.read('demo', 'site:info'))!),
+        result?.json,
+      );
+      expect(notifications, 1);
+    });
+  }
+
+  for (final status in [null, 503]) {
+    test('현장 정보 갱신 실패($status)는 기존 현장·캐시와 원래 예외를 유지한다', () async {
+      final gateway = _Gateway();
+      final store = MemoryStore();
+      final controller = FieldCoordinator(gateway, store, MockSpeechInput());
+      addTearDown(controller.dispose);
+      await controller.signIn('demo', 'mock');
+      final previous = controller.site;
+      final cached = await store.read('demo', 'site:info');
+      final failure = ApiFailure('현장 조회 실패', status: status);
+      gateway.fetchSite = () async => throw failure;
+
+      await expectLater(controller.refreshSite(), throwsA(same(failure)));
+
+      expect(gateway.siteInfoTokens, ['old-access', 'old-access']);
+      expect(controller.site, same(previous));
+      expect(await store.read('demo', 'site:info'), cached);
+      expect(controller.offline, status == null);
+    });
+  }
+
+  test('현장 정보 갱신 중 로그아웃하면 늦은 결과를 현장·캐시에 반영하지 않는다', () async {
+    final gateway = _Gateway();
+    final store = MemoryStore();
+    final controller = FieldCoordinator(gateway, store, MockSpeechInput());
+    addTearDown(controller.dispose);
+    await controller.signIn('demo', 'mock');
+    final cached = await store.read('demo', 'site:info');
+    final pending = Completer<SiteInfo?>();
+    final started = Completer<void>();
+    gateway.fetchSite = () {
+      started.complete();
+      return pending.future;
+    };
+    final refreshing = controller.refreshSite();
+    final rejected = expectLater(refreshing, throwsA(isA<ApiFailure>()));
+    await started.future;
+    await controller.signOut();
+    pending.complete(
+      SiteInfo({'site_id': 'late-site', 'site_name': '이전 계정 현장'}),
+    );
+    await rejected;
+
+    expect(controller.authStage, AuthStage.login);
+    expect(controller.site, isNull);
+    expect(await store.read('demo', 'site:info'), cached);
+  });
 }
 
 class _Gateway extends MockGateway {
   int refreshCalls = 0;
   bool expired = true, forbidden = false;
   final tokens = <String>[];
+  Future<SiteInfo?> Function()? fetchSite;
+
+  @override
+  Future<SiteInfo?> siteInfo(String accessToken) async {
+    final defaultSite = await super.siteInfo(accessToken);
+    return fetchSite == null ? defaultSite : await fetchSite!();
+  }
 
   MobileSession session(String token, {String id = 'demo'}) => MobileSession({
     'ok': true,

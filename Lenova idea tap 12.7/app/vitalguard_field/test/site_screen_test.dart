@@ -147,7 +147,7 @@ void main() {
     await fixture.close(tester);
   });
 
-  testWidgets('S-10 403은 역할·현장 배정 안내이며 버튼·자동·탭 재진입 재시도가 없다', (tester) async {
+  testWidgets('S-10 403은 수동 버튼을 유지하고 자동·탭 재진입 재시도는 멈춘다', (tester) async {
     final fixture = _Fixture();
     await fixture.mount(tester);
     fixture.gateway.fetch = () async =>
@@ -156,9 +156,14 @@ void main() {
     await tester.pump();
     expect(find.textContaining('역할 또는 현장 범위 밖'), findsOneWidget);
     expect(find.textContaining('관리자에게 역할과 현장 배정'), findsOneWidget);
-    expect(find.byKey(const Key('site-refresh')), findsNothing);
-    expect(find.textContaining('재시도'), findsNothing);
-    expect(find.textContaining('새로고침'), findsNothing);
+    expect(find.byKey(const Key('site-refresh')), findsOneWidget);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('site-refresh')))
+          .onPressed,
+      isNotNull,
+    );
+    expect(find.text('권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.'), findsOneWidget);
     for (final id in _contents.keys) {
       expect(_rowText(id, '접근 권한 없음'), findsOneWidget);
       expect(_rowText(id, _contents[id]!), findsNothing);
@@ -169,8 +174,135 @@ void main() {
     await fixture.pumpScreen(tester, active: false);
     await fixture.pumpScreen(tester);
     expect(fixture.gateway.calls, calls);
+    await tester.tap(find.byKey(const Key('site-refresh')));
+    await tester.pumpAndSettle();
+    expect(fixture.gateway.calls, calls + 1);
+    expect(find.byKey(const Key('site-forbidden')), findsOneWidget);
+    await tester.pump(siteStatusRefreshInterval);
+    expect(fixture.gateway.calls, calls + 1);
     await fixture.close(tester);
   });
+
+  testWidgets('403 후 수동 새로고침이 성공하면 자료와 자동 갱신을 복구한다', (tester) async {
+    final fixture = _Fixture();
+    fixture.gateway.fetch = () async =>
+        throw const ApiFailure('private', status: 403);
+    await fixture.mount(tester);
+    expect(find.byKey(const Key('site-forbidden')), findsOneWidget);
+    expect(_rowText('workers', '접근 권한 없음'), findsOneWidget);
+    expect(fixture.controller.siteStatusForbidden, isTrue);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('site-refresh')))
+          .onPressed,
+      isNotNull,
+    );
+
+    fixture.gateway.fetch = null;
+    final calls = fixture.gateway.calls;
+    final siteCalls = fixture.gateway.siteInfoTokens.length;
+    await tester.tap(find.byKey(const Key('site-refresh')));
+    await tester.pumpAndSettle();
+    expect(fixture.gateway.calls, calls + 1, reason: '타이머 재개 때 중복 조회하지 않는다');
+    expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+    expect(fixture.controller.siteStatusForbidden, isFalse);
+    expect(find.byKey(const Key('site-forbidden')), findsNothing);
+    for (final entry in _contents.entries) {
+      expect(_rowText(entry.key, entry.value), findsOneWidget);
+    }
+    await tester.pump(siteStatusRefreshInterval);
+    expect(fixture.gateway.calls, calls + 2);
+    expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+    await fixture.close(tester);
+  });
+
+  testWidgets('수동 새로고침은 현장 정보 후 상태를 한 번씩 받고 헤더를 갱신한다', (tester) async {
+    final fixture = _Fixture();
+    await fixture.mount(tester, shell: true, size: const Size(1385, 866));
+    expect(find.text('현장 · 모의 현장'), findsOneWidget);
+    final calls = fixture.gateway.calls;
+    final siteCalls = fixture.gateway.siteInfoTokens.length;
+    final pending = Completer<SiteInfo?>();
+    fixture.gateway.fetchSite = () => pending.future;
+
+    await tester.tap(find.byKey(const Key('site-refresh')));
+    await tester.pump();
+    expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+    expect(fixture.gateway.calls, calls, reason: '현장 정보 조회 완료 후 상태를 조회한다');
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('site-refresh')))
+          .onPressed,
+      isNull,
+    );
+    pending.complete(
+      SiteInfo({'site_id': 'new-site', 'site_name': '새로 배정된 현장'}),
+    );
+    await tester.pumpAndSettle();
+    expect(fixture.gateway.calls, calls + 1);
+    expect(find.text('현장 · 새로 배정된 현장'), findsOneWidget);
+    expect(fixture.controller.site?.site_id, 'new-site');
+
+    await tester.pump(siteStatusRefreshInterval);
+    expect(fixture.gateway.calls, calls + 2);
+    expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+    await fixture.close(tester);
+  });
+
+  testWidgets('현장 정보 갱신이 실패해도 이전 현장을 유지하고 상태는 조회한다', (tester) async {
+    final fixture = _Fixture();
+    await fixture.mount(tester);
+    final previous = fixture.controller.site;
+    final calls = fixture.gateway.calls;
+    final siteCalls = fixture.gateway.siteInfoTokens.length;
+    fixture.gateway.fetchSite = () async => throw const ApiFailure('연결 실패');
+    fixture.gateway.reply['workers'] = {
+      'ok': true,
+      'level': 'normal',
+      'normal': 3,
+      'waiting': 1,
+    };
+
+    await tester.tap(find.byKey(const Key('site-refresh')));
+    await tester.pumpAndSettle();
+    expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+    expect(fixture.gateway.calls, calls + 1);
+    expect(fixture.controller.site, same(previous));
+    expect(_rowText('workers', '정상 3명 · 대기 1명'), findsOneWidget);
+    expect(find.byKey(const Key('site-refresh-error')), findsNothing);
+    await fixture.close(tester);
+  });
+
+  for (final forbidden in [false, true]) {
+    testWidgets('전경 복귀는 현장 정보를 갱신하고 상태를 조회한다 (403=$forbidden)', (tester) async {
+      final fixture = _Fixture();
+      if (forbidden) {
+        fixture.gateway.fetch = () async =>
+            throw const ApiFailure('private', status: 403);
+      }
+      await fixture.mount(tester);
+      final calls = fixture.gateway.calls;
+      final siteCalls = fixture.gateway.siteInfoTokens.length;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(siteStatusRefreshInterval);
+      expect(fixture.gateway.calls, calls);
+      expect(fixture.gateway.siteInfoTokens.length, siteCalls);
+
+      fixture.gateway.fetch = null;
+      fixture.gateway.fetchSite = () async =>
+          SiteInfo({'site_name': '복귀 후 현장'});
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+      expect(fixture.gateway.calls, calls + 1);
+      expect(fixture.controller.site?.site_name, '복귀 후 현장');
+      expect(find.byKey(const Key('site-forbidden')), findsNothing);
+      await tester.pump(siteStatusRefreshInterval);
+      expect(fixture.gateway.calls, calls + 2);
+      expect(fixture.gateway.siteInfoTokens.length, siteCalls + 1);
+      await fixture.close(tester);
+    });
+  }
 
   for (final entry in {
     '2026-09-14T15:13:04.759Z': '2026-09-15 00:13:04',
@@ -320,7 +452,14 @@ void main() {
 class _Gateway extends MockGateway {
   Map<String, dynamic> reply = siteStatusReply();
   Future<SiteStatus> Function()? fetch;
+  Future<SiteInfo?> Function()? fetchSite;
   int calls = 0, cctvCalls = 0;
+
+  @override
+  Future<SiteInfo?> siteInfo(String accessToken) async {
+    final defaultSite = await super.siteInfo(accessToken);
+    return fetchSite == null ? defaultSite : await fetchSite!();
+  }
 
   @override
   Future<SiteStatus> siteStatus(String accessToken) async {
@@ -376,7 +515,11 @@ class _Fixture {
           child: child!,
         ),
         home: shell
-            ? FieldShell(controller: controller)
+            // 실제 FieldApp과 같이 컨트롤러 알림으로 셸 헤더를 다시 그린다.
+            ? AnimatedBuilder(
+                animation: controller,
+                builder: (_, _) => FieldShell(controller: controller),
+              )
             : Scaffold(
                 body: SiteScreen(
                   controller: controller,

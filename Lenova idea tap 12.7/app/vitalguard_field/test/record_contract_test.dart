@@ -23,7 +23,8 @@ MobileSession session(String token, {String role = 'site_manager'}) =>
 
 class RoleGateway extends MockGateway {
   RoleGateway(this.role);
-  final String role;
+  String role;
+  Future<void> Function()? onLogout;
 
   @override
   Future<MobileSession> login(
@@ -31,6 +32,12 @@ class RoleGateway extends MockGateway {
     String password, {
     String? totpCode,
   }) async => session('role-test', role: role);
+
+  @override
+  Future<void> logout(String accessToken) async {
+    await super.logout(accessToken);
+    await onLogout?.call();
+  }
 }
 
 class RefreshGateway extends MockGateway {
@@ -93,17 +100,61 @@ void main() {
     expect(store.tokens, contains('role-test'));
   });
 
-  test('worker 역할은 거부하고 계정·현장·저장 토큰을 남기지 않는다', () async {
-    final store = MemoryStore()..tokens = 'previous-session';
-    final c = FieldCoordinator(RoleGateway('worker'), store, MockSpeechInput());
+  for (final (label, failure) in <(String, Object?)>[
+    ('성공', null),
+    ('이미 폐기된 세션 401', const ApiFailure('expired', status: 401)),
+    ('예외', StateError('logout failed')),
+  ]) {
+    test('worker 역할은 서버 세션 폐기 $label에도 같은 403으로 거부한다', () async {
+      final store = MemoryStore()..tokens = 'previous-session';
+      String? tokensAtLogout;
+      final gateway = RoleGateway('worker')
+        ..onLogout = () async {
+          tokensAtLogout = store.tokens;
+          if (failure != null) throw failure;
+        };
+      final c = FieldCoordinator(gateway, store, MockSpeechInput());
+      addTearDown(c.dispose);
+
+      await c.signIn('a', 'pw');
+
+      expect(gateway.logoutTokens, ['role-test']);
+      expect(tokensAtLogout, 'previous-session', reason: '로컬 토큰 삭제 전에 폐기한다');
+      expect(c.authStage, AuthStage.denied);
+      expect(c.loginFailure?.status, 403);
+      expect(c.message, '이 앱을 사용할 수 없는 계정입니다. 현장 관리자 계정을 확인해 주세요');
+      expect(c.user, isNull);
+      expect(c.site, isNull);
+      expect(store.tokens, isNull);
+      expect(gateway.siteInfoTokens, isEmpty);
+    });
+  }
+
+  test('거부 세션의 폐기가 늦게 끝나도 새 로그인 상태를 지우지 않는다', () async {
+    final pending = Completer<void>();
+    final logoutStarted = Completer<void>();
+    final gateway = RoleGateway('worker')
+      ..onLogout = () {
+        logoutStarted.complete();
+        return pending.future;
+      };
+    final store = MemoryStore();
+    final c = FieldCoordinator(gateway, store, MockSpeechInput());
     addTearDown(c.dispose);
-
+    final deniedLogin = c.signIn('a', 'pw');
+    await logoutStarted.future;
+    await c.cancelSignIn();
+    gateway.role = 'admin';
     await c.signIn('a', 'pw');
+    pending.complete();
+    await deniedLogin;
 
-    expect(c.authStage, AuthStage.denied);
-    expect(c.user, isNull);
-    expect(c.site, isNull);
-    expect(store.tokens, isNull);
+    expect(gateway.logoutTokens, ['role-test']);
+    expect(c.authStage, AuthStage.ready);
+    expect(c.user?.role, 'admin');
+    expect(c.site, isNotNull);
+    expect(c.message, isNull);
+    expect(store.tokens, contains('role-test'));
   });
 
   test('원본 날짜와 긴 ID를 보존하고 UTC 촬영시각은 KST로 보낸다', () {

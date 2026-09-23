@@ -85,6 +85,12 @@ class FieldCoordinator extends FieldController {
   }) async {
     if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
     if (!_allowed(session.user)) {
+      try {
+        await gateway.logout(session.accessToken);
+      } catch (_) {
+        // 서버 폐기 실패(이미 만료된 401 포함)는 기존 로그인 거부 결과를 바꾸지 않는다.
+      }
+      if (epoch != _epoch) throw const ApiFailure('로그인 상태가 바뀌었습니다');
       _session = null;
       _clearView();
       await local.writeTokenBundle(null);
@@ -468,6 +474,12 @@ class FieldCoordinator extends FieldController {
   @override
   Future<CctvTicket> cctvTicket(String cameraId) =>
       _authorized((token) => gateway.cctvTicket(token, cameraId));
+
+  @override
+  Future<void> refreshSite() async {
+    site = await _loadSite();
+    _notify();
+  }
 
   @override
   Future<SiteStatus> siteStatus() async {

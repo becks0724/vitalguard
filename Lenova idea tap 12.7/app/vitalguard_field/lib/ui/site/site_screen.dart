@@ -87,34 +87,47 @@ class _SiteScreenState extends State<SiteScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _foreground = state == AppLifecycleState.resumed;
-    _sync();
+    _sync(manual: _foreground);
   }
 
-  void _sync() {
+  void _sync({bool manual = false}) {
     _timer?.cancel();
     _timer = null;
-    if (!_active || _forbidden) return;
-    unawaited(_refresh());
+    if (!_active || (_forbidden && !manual)) return;
+    unawaited(_refresh(manual: manual));
+    if (_forbidden) return;
     _timer = Timer.periodic(siteStatusRefreshInterval, (_) {
       unawaited(_refresh());
     });
   }
 
-  Future<void> _refresh() async {
-    if (_loading || !_active || _forbidden) return;
+  Future<void> _refresh({bool manual = false}) async {
+    if (_loading || !_active || (_forbidden && !manual)) return;
     final generation = _generation;
     setState(() => _loading = true);
     try {
+      if (manual) {
+        try {
+          await widget.controller.refreshSite();
+        } catch (_) {
+          // 현장 정보가 실패해도 상태 조회와 권한 복구 확인은 계속한다.
+        }
+        if (!mounted || generation != _generation || !_active) return;
+      }
       final data = await widget.controller.siteStatus();
       if (!mounted || generation != _generation) return;
+      final wasForbidden = _forbidden;
       setState(() {
         _data = data;
         _failed = false;
+        _forbidden = false;
       });
+      // _loading 중에 동기화하여 추가 요청 없이 타이머만 다시 건다.
+      if (wasForbidden) _sync();
     } catch (error) {
       if (!mounted || generation != _generation) return;
       setState(() {
-        _forbidden = error is ApiFailure && error.status == 403;
+        _forbidden = _forbidden || (error is ApiFailure && error.status == 403);
         _failed = true;
         if (_forbidden || (error is ApiFailure && error.status == 401)) {
           _data = null;
@@ -276,9 +289,10 @@ class _SiteScreenState extends State<SiteScreen> with WidgetsBindingObserver {
                 key: Key('$prefix-stale'),
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-            if (_forbidden)
-              Text(_forbiddenMessage, key: Key('$prefix-forbidden'))
-            else ...[
+            if (_forbidden) ...[
+              Text(_forbiddenMessage, key: Key('$prefix-forbidden')),
+              const Text('권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.'),
+            ] else ...[
               if (_failed)
                 Text(
                   fetchedAt == null
@@ -288,17 +302,17 @@ class _SiteScreenState extends State<SiteScreen> with WidgetsBindingObserver {
                 ),
               if (prefix != 'site')
                 const Text('활성 화면에서 1분마다 조회합니다. 아래 버튼으로도 다시 조회할 수 있습니다.'),
-              const SizedBox(height: vgGapTap),
-              FilledButton.icon(
-                key: Key('$prefix-refresh'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(vgTapMin, vgTapPrimary),
-                ),
-                onPressed: _loading ? null : _refresh,
-                icon: const Icon(Icons.refresh),
-                label: const Text('새로고침'),
-              ),
             ],
+            const SizedBox(height: vgGapTap),
+            FilledButton.icon(
+              key: Key('$prefix-refresh'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(vgTapMin, vgTapPrimary),
+              ),
+              onPressed: _loading ? null : () => _refresh(manual: true),
+              icon: const Icon(Icons.refresh),
+              label: const Text('새로고침'),
+            ),
           ],
         ),
       ),
