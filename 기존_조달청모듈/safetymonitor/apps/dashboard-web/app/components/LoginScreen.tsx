@@ -30,7 +30,6 @@ type Lang = "ko" | "en";
 type Strings = {
   slogan: string;
   line1: string;
-  line2: string;
   subtitle: string;
   idLabel: string;
   idPlaceholder: string;
@@ -127,8 +126,6 @@ const T: Record<Lang, Strings> = {
   ko: {
     slogan: "OPEN SAFETY · NEVER ALONE",
     line1: "보이지 않는 위험은 없습니다.\n혼자가 아니기 때문입니다.",
-    line2:
-      "모든 생체 신호와 현장 환경을 투명하게\n이상 징후를 발견하는 즉시 대응합니다.",
     subtitle: "관제 대시보드 로그인",
     idLabel: "관리자 ID",
     idPlaceholder: "관리자 ID",
@@ -212,8 +209,6 @@ const T: Record<Lang, Strings> = {
   en: {
     slogan: "OPEN SAFETY · NEVER ALONE",
     line1: "No risk stays unseen — because you are never alone.",
-    line2:
-      "Every vital sign and site condition, fully transparent — we act the moment an anomaly appears.",
     subtitle: "Sign in to the control dashboard",
     idLabel: "Admin ID",
     idPlaceholder: "Admin ID",
@@ -933,13 +928,6 @@ export function LoginScreen({
         >
           {t.line1}
         </h1>
-        <p
-          className={`mt-2 hidden min-h-[20px] flex-col items-center justify-center whitespace-pre-line text-center leading-5 text-white/85 drop-shadow md:flex ${
-            lang === "en" ? "text-[10px]" : "text-sm"
-          }`}
-        >
-          {t.line2}
-        </p>
           </>
         )}
 
