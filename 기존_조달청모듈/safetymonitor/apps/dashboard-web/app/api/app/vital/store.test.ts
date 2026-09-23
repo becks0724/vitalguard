@@ -246,7 +246,7 @@ test("vitalDanger — 안정 임계로 판정(활동 메트릭 동봉해도 작�
     true,
   );
   assert.equal(vitalDanger(s({ workerId: "EMP-1", ts: TS, spo2: 85 })), true); // dangerPct 88 미만
-  assert.equal(vitalDanger(s({ workerId: "EMP-1", ts: TS, skinTempC: 38.5 })), true); // 추정 심부 39.0℃
+  assert.equal(vitalDanger(s({ workerId: "EMP-1", ts: TS, skinTempC: 38.5 })), true); // 피부온 임계 38.5 (변환 없음 · 09-23)
 });
 
 test("vitalDanger — 정상치/undefined 는 위험 아님", () => {

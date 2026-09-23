@@ -48,7 +48,7 @@ import {
   type HeatStage,
 } from "../../../../lib/heat-alert";
 import { sendTelegramMessage } from "../../../../lib/telegram";
-import { heartRateStatus, spo2Status, coreTempStatus } from "../../../../lib/severity";
+import { heartRateStatus, spo2Status, skinTempStatus } from "../../../../lib/severity";
 import { offWristSuspect, type OffWristSuspect } from "../../../../lib/vital-offwrist";
 
 type Store = {
@@ -112,7 +112,7 @@ export function dangerMetrics(s: VitalSample | undefined): VitalDangerMetric[] {
   const out: VitalDangerMetric[] = [];
   if (heartRateStatus(s.heartRate) === "danger") out.push("hr");
   if (spo2Status(s.spo2) === "danger") out.push("spo2");
-  if (coreTempStatus(s.skinTempC) === "danger") out.push("temp");
+  if (skinTempStatus(s.skinTempC) === "danger") out.push("temp");
   return out;
 }
 

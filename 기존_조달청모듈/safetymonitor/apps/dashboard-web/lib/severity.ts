@@ -134,9 +134,18 @@ export function coreTempStatusFresh(
  *
  * ⚠ **입력이 오염된다.** 워치 온도 센서가 기기 표면 근처라 발열이 섞이고, `wristToCoreOffsetC`
  * 자체도 근거 미확인이다. 그래서 **라이브 판정에는 위 `coreTempStatusC` 를 쓴다.**
- * 이 함수는 **칼만을 만들 수 없는 자리**에만 남아 있다 — 행 단위 과거 조회·내보내기·
- * 수집 시점 경보(`dangerMetrics`)는 단일 행이라 심박 이력이 없어 필터를 돌릴 수 없다.
- * 그 경로들을 칼만으로 옮기는 것은 별건이다(서버가 워커별 심박 창을 들어야 한다).
+ *
+ * ⛔ **2026-09-23 — 프로덕션에서 이 함수를 부르는 곳은 이제 0 이다. 새로 부르지 마라.**
+ *   옛 주석이 이 자리를 "칼만을 만들 수 없는 자리에 남겨 둔 것" 이라며 셋을 열거했는데
+ *   (행 단위 과거 조회·내보내기·수집 시점 경보), 그 전제가 **09-18 에 깨졌다.**
+ *   그날 세 번째 선택지 `skinTempStatus`(변환 없이 피부온 임계로 잰다)가 생겼고
+ *   앞의 둘은 그리로 옮겼는데 **주석은 안 고쳤다.** 그래서 남은 한 줄(`dangerMetrics`)이
+ *   "원래 이런 곳" 으로 읽혀 **닷새 더 살아남았다** — 그동안 텔레그램은 38.0℃ 에 울리고
+ *   화면은 같은 건을 「주의」로 칠했다(26일 표본 78건 어긋남). 09-23 에 정렬했다.
+ *   못 박는 시험 = `lib/2026-09-23-collection-alert-skin-threshold.guard.test.ts`.
+ *
+ * 남겨 두는 이유는 하나 — `lib/severity.test.ts` 가 이 변환의 동작을 기록한다.
+ * 판정에 쓸 곳을 찾고 있다면 아래 `skinTempStatus` 다.
  */
 export function coreTempStatus(skinTempC: number | null | undefined): Status {
   if (skinTempC === null || skinTempC === undefined) return "idle";
