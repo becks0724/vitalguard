@@ -1,0 +1,24 @@
+# gitleaks 설정 — 기본 규칙은 그대로 쓰고 DB 접속 주소 규칙 하나를 더한다(2026-09-24).
+#
+# 왜: 기본 규칙에는 「주소에 박힌 비밀번호」 규칙이 없다. 실측 —
+#   postgres://사용자:비밀번호@호스트 모양을 gitleaks 기본 규칙은 못 잡았다(종료코드 0).
+#   이 저장소의 제일 중요한 비밀값이 바로 DATABASE_URL 이다.
+#   1차 방어는 .gitignore 의 .env.local 이지만 `git add -f` 와 문서에 붙여 넣은 주소는 못 막는다.
+# 무엇을 잡나: postgres·postgresql·mysql·mariadb·mongodb(+srv)·redis(s)·amqp·mssql·sqlserver
+#   주소의 「사용자:비밀번호@」 자리. 사용자 이름이 비어 있어도 잡는다(redis 모양).
+# 무엇을 안 잡나: 비밀번호 자리가 자리표시(****·<…>·${…}·password·pw 등)인 예시.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "db-connection-uri-password"
+description = "DB 접속 주소에 비밀번호가 박혀 있다"
+regex = '''(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|rediss?|amqps?|mssql|sqlserver)://[^\s:/@]*:([^\s/@]+)@'''
+secretGroup = 1
+keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp", "mssql", "sqlserver"]
+
+  [[rules.allowlists]]
+  description = "자리표시는 비밀이 아니다"
+  regexTarget = "secret"
+  regexes = ['''(?i)^(\*+|<[^>]*>|\$\{?[A-Za-z0-9_]*\}?|x+|\.+|pass(word)?|pw|pwd|changeme|your[_-]?pass(word)?|비밀번호)$''']
