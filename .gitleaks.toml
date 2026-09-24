@@ -22,3 +22,18 @@ keywords = ["postgres", "mysql", "mariadb", "mongodb", "redis", "amqp", "mssql",
   description = "자리표시는 비밀이 아니다"
   regexTarget = "secret"
   regexes = ['''(?i)^(\*+|<[^>]*>|\$\{?[A-Za-z0-9_]*\}?|x+|\.+|pass(word)?|pw|pwd|changeme|your[_-]?pass(word)?|비밀번호)$''']
+
+# ★ 2026-09-25 — 카메라·웹 주소에 박힌 계정:비밀번호(CCTV 트랙의 실제 비밀값 모양).
+#   위 DB 규칙은 rtsp·http 를 안 봤다([CCTV/ML] 실측 · 같은 설정에서 rtsp 가짜 비번이 종료코드 0).
+#   https 도 넣어서 git 원격 주소에 박힌 토큰(https://사용자:****@…)을 같이 잡는다.
+[[rules]]
+id = "url-embedded-credentials"
+description = "카메라·웹 주소에 계정:비밀번호가 박혀 있다 (rtsp·http·https)"
+regex = '''(?i)\b(?:rtsps?|https?)://[^\s:/@]*:([^\s/@]+)@'''
+secretGroup = 1
+keywords = ["rtsp", "http"]
+
+  [[rules.allowlists]]
+  description = "자리표시는 비밀이 아니다"
+  regexTarget = "secret"
+  regexes = ['''(?i)^(\*+|<[^>]*>|\$\{?[A-Za-z0-9_]*\}?|x+|\.+|…+|pass(word)?|pw|pwd|changeme|your[_-]?pass(word)?|token|비밀번호|비번|토큰)$''']
