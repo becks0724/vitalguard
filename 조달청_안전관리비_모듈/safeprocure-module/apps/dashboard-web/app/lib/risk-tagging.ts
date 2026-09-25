@@ -45,9 +45,7 @@ async function aiTags(taskText: string): Promise<RiskTag[]> {
   const key = process.env.ANTHROPIC_API_KEY as string;
   const system =
     "당신은 건설 안전 전문가다. 입력된 공사 공고 과업텍스트에서 위험작업을 식별한다. " +
-    "다음 태그만 사용: 고소작업, 굴착/흙막이, 밀폐공간, 전기/감전, 중장비/양중, 해체/철거, 도장/화기. " +
-    '오직 JSON 배열만 출력: [{"tag":string,"severity":1|2|3,"evidence":string}]. ' +
-    "evidence 는 반드시 원문에 그대로 등장하는 문구(부분 인용)여야 한다. 원문에 없으면 그 태그를 넣지 마라.";
+    "evidence 는 원문에 그대로 등장하는 문구(부분 인용)여야 한다. 원문에 근거가 없는 태그는 넣지 않는다.";
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -57,16 +55,40 @@ async function aiTags(taskText: string): Promise<RiskTag[]> {
       max_tokens: 1024,
       system,
       messages: [{ role: "user", content: `<공고과업>\n${taskText}\n</공고과업>` }],
+      // 출력 형식은 프롬프트가 아니라 구조화 출력으로 강제한다. 태그 목록은 룰 사전(KEYWORD_RULES)과 한 곳에서 온다.
+      output_config: {
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: {
+              tags: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    tag: { type: "string", enum: KEYWORD_RULES.map((k) => k.tag) },
+                    severity: { type: "integer", enum: [1, 2, 3] },
+                    evidence: { type: "string" },
+                  },
+                  required: ["tag", "severity", "evidence"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["tags"],
+            additionalProperties: false,
+          },
+        },
+      },
     }),
     signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`anthropic HTTP ${res.status}`);
-  const json = (await res.json()) as { content?: { text?: string }[] };
-  const text = json.content?.[0]?.text ?? "";
-  const start = text.indexOf("[");
-  const end = text.lastIndexOf("]");
-  if (start < 0 || end < 0) throw new Error("no JSON array in response");
-  const parsed = JSON.parse(text.slice(start, end + 1)) as unknown;
+  const json = (await res.json()) as { stop_reason?: string; content?: { text?: string }[] };
+  // max_tokens 에서 끊긴 응답은 스키마를 못 채운다 — 끝까지 쓴 응답만 읽는다.
+  if (json.stop_reason !== "end_turn") throw new Error(`stop_reason ${json.stop_reason}`);
+  const parsed = (JSON.parse(json.content?.[0]?.text ?? "") as { tags?: unknown }).tags;
   if (!Array.isArray(parsed)) throw new Error("not an array");
 
   const tags: RiskTag[] = [];
