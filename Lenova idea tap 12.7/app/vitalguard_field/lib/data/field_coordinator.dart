@@ -71,8 +71,14 @@ class FieldCoordinator extends FieldController {
   // 서버 lib/app-login.ts에는 역할 검사가 없으며 거부 조건은
   // invalid_credentials·not_approved뿐이다.
   // worker는 워치 앱 대상이므로 이 태블릿 앱에서는 계속 거부한다.
-  bool _allowed(AppUser user) =>
-      const {'platform_admin', 'site_manager', 'admin'}.contains(user.role);
+  // 신 DB도 모바일 세션 응답은 legacyRole을 쓴다: platform_admin -> owner.
+  // owner_officer도 admin으로 내려오므로 세부 역할 제한은 서버 앱 게이트가 맡는다.
+  bool _allowed(AppUser user) => const {
+    'platform_admin',
+    'owner',
+    'site_manager',
+    'admin',
+  }.contains(user.role);
 
   bool _authenticationRejected(Object error) =>
       error is ApiFailure &&

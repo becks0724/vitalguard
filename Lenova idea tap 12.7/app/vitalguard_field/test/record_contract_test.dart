@@ -34,6 +34,10 @@ class RoleGateway extends MockGateway {
   }) async => session('role-test', role: role);
 
   @override
+  Future<AppUser> me(String accessToken) async =>
+      session('role-test', role: role).user;
+
+  @override
   Future<void> logout(String accessToken) async {
     await super.logout(accessToken);
     await onLogout?.call();
@@ -87,18 +91,54 @@ class LiveNoSiteGateway extends MockGateway {
 }
 
 void main() {
-  test('admin 역할은 로그인 후 앱 진입을 허용한다', () async {
+  for (final role in ['admin', 'site_manager', 'platform_admin', 'owner']) {
+    test('$role 역할은 로그인 후 앱 진입을 허용한다', () async {
+      final store = MemoryStore();
+      final c = FieldCoordinator(RoleGateway(role), store, MockSpeechInput());
+      addTearDown(c.dispose);
+
+      await c.signIn('a', 'pw');
+
+      expect(c.authStage, AuthStage.ready);
+      expect(c.user?.role, role);
+      expect(c.site, isNotNull);
+      expect(store.tokens, contains('role-test'));
+    });
+  }
+
+  test('최고관리자 legacy owner 세션은 저장 뒤 재시작해도 복원한다', () async {
     final store = MemoryStore();
-    final c = FieldCoordinator(RoleGateway('admin'), store, MockSpeechInput());
-    addTearDown(c.dispose);
+    final gateway = RoleGateway('owner');
+    final first = FieldCoordinator(gateway, store, MockSpeechInput());
+    addTearDown(first.dispose);
+    await first.signIn('a', 'pw');
+    expect(first.authStage, AuthStage.ready);
 
-    await c.signIn('a', 'pw');
+    final restored = FieldCoordinator(gateway, store, MockSpeechInput());
+    addTearDown(restored.dispose);
+    await restored.initialize();
 
-    expect(c.authStage, AuthStage.ready);
-    expect(c.user?.role, 'admin');
-    expect(c.site, isNotNull);
-    expect(store.tokens, contains('role-test'));
+    expect(restored.authStage, AuthStage.ready);
+    expect(restored.user?.role, 'owner');
+    expect(store.tokens, isNotNull);
+    expect(gateway.logoutTokens, isEmpty);
   });
+
+  for (final role in ['owner_officer', 'worker', 'unknown', '']) {
+    test('$role 역할은 로그인 후 토큰을 남기지 않고 거부한다', () async {
+      final store = MemoryStore();
+      final gateway = RoleGateway(role);
+      final c = FieldCoordinator(gateway, store, MockSpeechInput());
+      addTearDown(c.dispose);
+
+      await c.signIn('a', 'pw');
+
+      expect(c.authStage, AuthStage.denied);
+      expect(store.tokens, isNull);
+      expect(gateway.logoutTokens, ['role-test']);
+      expect(gateway.siteInfoTokens, isEmpty);
+    });
+  }
 
   for (final (label, failure) in <(String, Object?)>[
     ('성공', null),
