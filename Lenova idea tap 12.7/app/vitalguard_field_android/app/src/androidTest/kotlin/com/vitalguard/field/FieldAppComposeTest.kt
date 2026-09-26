@@ -41,6 +41,7 @@ class FieldAppComposeTest {
         override fun before() {
             gateway = UiGateway()
             val application = ApplicationProvider.getApplicationContext<FieldApplication>()
+            application.captureEnabledForTests = false
             application.controllerFactoryForTests = { scope ->
                 FieldCoordinator(gateway, MemoryStore(), scope).also { controller = it }
             }
@@ -48,6 +49,7 @@ class FieldAppComposeTest {
         }
         override fun after() {
             val application = ApplicationProvider.getApplicationContext<FieldApplication>()
+            application.captureEnabledForTests = null
             application.controllerFactoryForTests = null
             application.internetProbeForTests = null
         }
@@ -99,8 +101,14 @@ class FieldAppComposeTest {
             .assertWidthIsEqualTo(if (initiallyCollapsed) 256.dp else 80.dp)
         for ((index, title) in listOf(1 to "경보", 2 to "기록", 3 to "전송 상태", 4 to "설정")) {
             select(index)
-            compose.onNodeWithTag("placeholder-$index").assertExists()
-            compose.onNodeWithText("다음 단계에서 옮깁니다").assertExists()
+            when (index) {
+                2 -> compose.onNodeWithTag("record-pending-list").assertExists()
+                3 -> compose.onNodeWithTag("outbox-list").assertExists()
+                else -> {
+                    compose.onNodeWithTag("placeholder-$index").assertExists()
+                    compose.onNodeWithText("다음 단계에서 옮깁니다").assertExists()
+                }
+            }
             compose.onNodeWithTag("rail-destination-$index").assertIsSelected().assertHeightIsAtLeast(56.dp)
             compose.onNodeWithTag("rail-selection-dot", useUnmergedTree = true).assertExists()
             if (index >= 2) compose.onNodeWithTag("shell-receipt")

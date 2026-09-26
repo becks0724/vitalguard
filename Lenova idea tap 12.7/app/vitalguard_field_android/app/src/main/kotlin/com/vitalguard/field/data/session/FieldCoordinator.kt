@@ -374,7 +374,7 @@ class FieldCoordinator(
         val addressGateway = gateway as? CaptureAddressGateway ?: return null
         return authorized { addressGateway.captureAddress(it, latitude, longitude) }
     }
-    // Live의 operation-status는 2단계까지 미구현이므로 가능하다고 표시하지 않는다.
+    // 게이트웨이가 조회 계약을 구현한 환경에서만 조회 버튼을 제공한다.
     override val operationLookupAvailable get() = gateway is OperationLookupGateway
     override suspend fun lookupOperations(ids: List<String>): Map<String, OperationCheck> {
         val lookup = gateway as? OperationLookupGateway ?: return super.lookupOperations(ids)

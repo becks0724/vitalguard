@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 class FieldApplication : Application() {
     // Instrumentation은 Activity 시작 전에 주입한다. Intent/설정으로 이 값을 바꿀 수 없다.
     var controllerFactoryForTests: ((CoroutineScope) -> FieldController)? = null
+    var captureEnabledForTests: Boolean? = null
     var internetProbeForTests: InternetProbe? = null
     fun controller(scope: CoroutineScope): FieldController = controllerFactoryForTests?.invoke(scope)
         ?: FieldCoordinator(if (BuildConfig.VG_MOCK) MockGateway() else LiveGateway(),

@@ -1,11 +1,12 @@
-# VitAlGuard 현장 — Compose/Kotlin 1단계
+# VitAlGuard 현장 — Compose/Kotlin 1·2a단계
 
-지시서: `../../plan-draft/TASK-compose-main-stage1.md`.
+지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`.
 Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 프로젝트다.
 기존 Flutter·촬영 파일럿은 수정하지 않았다.
 
-**Gradle·네트워크 명령·빌드·테스트·설치를 실행하지 않았다. 아래 실행 결과는 모두 미확인이다.**
-테스트 소스가 존재한다는 것이 테스트 성공을 의미하지 않는다.
+**Gradle·네트워크 명령·APK 빌드·설치·Android 계측·스크린샷 실행은 하지 않았다.**
+2a에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 165개와 Android/Compose 소스 API 검사는 통과했다.
+이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 아래 2a 절에 실행 범위를 구분했다.
 
 ## 범위와 구조
 
@@ -19,7 +20,8 @@ Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 �
 - `ui/auth`: 단계별 로그인, 비밀번호 표시, 기억 선택, 잠금 카운트다운, 인터넷 안내 3분기.
 - `ui/shell`: 80/256dp 레일, 계정별 접힘 저장, 목적지별 수신 바, 밝은 벡터 배경, 고정 경보 슬롯.
 - `ui/site`: 마지막 수신·기상·작업자·가스·AED·미대응 경보·CCTV 카드.
-- `ui/placeholder`: 경보·기록·전송 상태·설정의 제목과 “다음 단계에서 옮깁니다”.
+- `ui/placeholder`: 경보·설정의 제목과 “다음 단계에서 옮깁니다”.
+- 2a의 `capture`, `ui/record`, `ui/outbox`, 원장 구조는 아래 2a 절 참조.
 
 상세 행과 “영상 보기”는 “다음 단계” 스낵바를 표시한다.
 탭별 스크롤은 SaveableStateHolder, 선택·로그인 입력·진행 요청·요약 자료는 ViewModel이 유지한다.
@@ -33,7 +35,7 @@ Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 �
 통신 실패 시 이전 자료를 유지하고 마지막 수신 5분 경과를 표시한다.
 
 수신 바 문구는 원본을 그대로 유지한다. 자리 탭에 표시되는 전송·경보·설정 안내는
-최종 앱의 원본 문구이며 해당 기능 자체는 2~4단계 범위다.
+최종 앱의 원본 문구이며 기록·전송 상태는 2a에서 연결했고, 경보·설정 기능은 후속 단계 범위다.
 시스템 바·컷아웃·IME·제스처의 런타임 인셋을 한 계층에서 합집합으로 소비한다.
 창 폭 1000dp 기준은 인셋을 빼기 전이며 회전 방향을 기준으로 삼지 않는다.
 
@@ -55,18 +57,18 @@ Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 �
 본문 쓰기는 fixed-length streaming을 사용하고 결과 불명 쓰기는 재시도하지 않는다.
 게이트웨이 단독으로 인터넷 상태를 단정하지 않으며 로그인 실패 화면만 네이티브 상태를 확인한다.
 
-아래 계약은 선언만 있으며 기본 구현은 `ApiFailure("다음 단계")`다.
+아래 기록 경로는 2a에서 구현했다. CCTV·경보 게이트웨이의 기본 구현은 아직 `ApiFailure("다음 단계")`다.
 
 | 후속 단계 | 계약/예정 경로 |
 | --- | --- |
-| 2단계 | upload·voiceComment — POST /api/app-media |
-| 2단계 | addComment — POST /api/calendar/media/comment |
-| 2단계 | CaptureAddressGateway — GET /api/app/address |
-| 2단계 | OperationLookupGateway — GET /api/app/admin/operation-status |
+| 2a 구현 | upload·voiceComment — POST /api/app-media |
+| 2a 구현 | addComment — POST /api/calendar/media/comment |
+| 2a 구현 | CaptureAddressGateway — GET /api/app/address |
+| 2a 구현 | OperationLookupGateway — GET /api/app/admin/operation-status |
 | 3단계 | cctvTicket — POST /api/app/admin/cctv-ticket |
 | 3단계 | ackAlert — POST /api/app/admin/alerts/ack |
 
-LiveGateway는 주소/작업 조회 능력을 아직 제공하지 않는다. 구현하지 않은 기능을 사용 가능하다고 알리지 않는다.
+LiveGateway는 주소·작업 조회 계약을 구현한다. 기본 MockGateway는 관제웹 미등록 확인 경로를 유지하고, MockLookupGateway를 주입하면 조회를 제공한다.
 경보 확인에는 오프라인 예약이나 쓰기 재전송 경로가 없다.
 
 - 토큰: `noBackupFilesDir/field-session.enc`, AES/GCM, alias/AAD `vitalguard.field.session.v1`.
@@ -187,17 +189,106 @@ cd "$FIELD_SOURCE"
 
 ## 다음 단계와 미확인 사항
 
-- 2단계: 기록·전송함·촬영/OCR 파일럿 이식·기상/작업자/가스/AED 상세·주소/작업 조회·음성/댓글.
+- 2a 구현: 기록·전송함·촬영/OCR·주소/작업 조회·댓글 쓰기 데이터 경계.
+- 2b 예정: 주석 편집기·메모/음성 입력·녹음기·세션 복구. 기상/작업자/가스/AED 상세도 이번 범위 밖이다.
 - 3단계: CCTV 티켓/영상·경보 목록/상세·명시적 대응 확인·전역 경보 스트립.
 - 4단계: 설정·릴리스 서명·기존 Flutter 앱 덮어 설치/데이터 호환·출시 검증.
 
 다음 항목은 모두 **미확인**이다.
 
 - Gradle 의존성 해석, Kotlin/Compose 컴파일, debug APK 생성.
-- JVM 테스트, Android instrumentation, 프리뷰 update/validate의 실행 결과.
+- Gradle testDebugUnitTest, Android instrumentation, 프리뷰 update/validate의 실행 결과(직접 JVM 실행 결과는 2a 절).
 - 설치·기동·기존 앱 공존, JBR/SDK의 이 프로젝트 조합 호환성.
 - 실서버 로그인/TOTP/갱신/로그아웃·실제 승인 역할·현장 범위·오프라인 복원/재연결.
 - Keystore 암복호화·재시작·기기 파일 교체 실패와 복원, release 데이터/서명 호환.
 - TB373FU의 세로↔가로 회전, 분할창, 시스템 제스처/IME 인셋, 큰 글꼴, 터치/펜, 접근성 읽기.
 - 현장 활성 탭 60초 조회, 백그라운드 중단, 5분 stale, 403 수동/전경 복귀 복구의 실기기 동작.
 - 실제 프리뷰 PNG와 모든 화면의 시각적 검수.
+
+
+## 2a — 전송 보류 묶음·촬영·보낼 기록·전송 상태
+
+기준은 `SPEC-r7-hold-until-send.md`와 지정된 Flutter 원문이다. 새 앱 폴더의 코드/테스트/문서만 수정했으며,
+지시서 §3에서 지정한 `../../plan-draft/astra-done.txt`에는 완료 기록만 추가한다.
+Flutter·촬영 파일럿은 읽기 전용으로 사용했다. 작업 중 외부에서 변경된 런처 이미지에는 손대지 않았다.
+
+### 구현 구조와 동작
+
+- `data/OutboxController.kt`: photo/ink/voice/text, 6개 phase, 원본 문구, `items/checking/lookupMessage/loadError` StateFlow.
+  원장은 `outbox:v1`, `schemaVersion: 1`과 Dart의 모든 JSON 키를 유지한다. 가변 Dart 항목은 불변 Kotlin 스냅숏으로 교체한다.
+  Mutex로 저장을 직렬화하고 바이트 → 원장 순으로 저장한다. `sending` 저장 실패 시 HTTP를 열지 않는다.
+  중단된 `sending`은 조회가 필요한 `uncertain`으로 복구한다. 동일 sourceKey/내용은 기존 UUID를 재사용한다.
+- `sendBundle`: 사진의 완료와 receipt id를 확인한 뒤 딸린 항목을 생성 순서로 전송한다. 부모가 불명·실패·재로그인 상태면
+  딸린 항목에 원문의 대기 이유를 남긴다. 서버 참조는 요청 순간에만 합성하며 저장 필드에는 넣지 않는다.
+  동시 묶음 요청은 한 작업을 공유한다. 조회는 50개 배치이며 자동 조회는 계정별 30초 제한이다.
+  absent는 불명을 유지하고 명시적 같은 작업 재시도만 허용한다. 503·통신 실패·응답 누락은 absent가 아니다.
+- 묶음 완료 시 파일·미리보기·등록된 초안·미저장 사진별 초안·해당 active-draft를 정리한다. 완료 메타는 남고 목록에서 사라진다.
+  완료 영수증을 디스크에 쓴 뒤에만 파일을 지운다. UI의 모든 완료 경로는 공통 정리 함수를 사용한다.
+  기존 단독 `send(photo)`의 파일 유지와 단독 잉크의 캐시 계약도 유지하며, 실제 화면은 `sendBundle`을 사용한다.
+  완료 메타는 완료 시각(구형 항목은 생성 시각)에서 **7일 초과**하면 정리하고, legacy 서버 열람 캐시는 계정별 1회 삭제한다.
+- `RecordOrigin.kt`: `fromOutbox`, KST 시각·달력 날짜·잉크 크기 오류·`annotationFields`, 원본 그대로인 사진별 초안 키 목록.
+  `photoBytes`는 `outbox-file:<id>`만 읽는다. 서버 사진 다운로드/댓글 수정·삭제 경로는 추가하지 않았다.
+- `LiveGateway`/`HttpUrlConnectionTransport`: app-media multipart, 텍스트·음성 댓글, operation-status, 주소 display.
+  multipart 본문은 바이트 배열로 한 번 조립해 한 번 쓴다. 연결 20초 / 업로드 요청·응답 60초 / 본문 30초,
+  fixed-length·리다이렉트 금지, 작업 ID/영수증/중복 응답 검증, 잉크 2 MiB·음성 10 MiB 제한을 유지한다.
+- `capture/`: 파일럿 CaptureNative·TaskAwait·원본 OCR → 각인/리사이즈 → 로컬 저장 파이프라인.
+  `DeviceCapturePipelinePort.saveLocal`은 전송함 photo/waiting을 만들고 업로드하지 않는다.
+  주소는 컨트롤러 조회 후 실패하면 기기 추정으로 내려간다. 촬영 시작 시 JWT name/workerId(없으면 `-`)와
+  현재 site.site_id를 고정한다. 현장 ID가 없으면 다른 보류 사진에서 빌리지 않는다. 원본은 finally에서 삭제한다.
+  회전 중 Activity Result와 CameraX 작업은 FieldViewModel 소유 CaptureController에 남긴다.
+- `RecordNavigation`: 기록 탭 전용 NavHost(목록/사진 상세/카메라), 셸의 SaveableStateHolder로 탭 전환·회전 시 스택과 스크롤을 보관한다.
+  저장 1건·실패 0건이면 로컬 상세, 여러 장/부분 실패이면 목록이다.
+- `RecordScreens`: 72dp 미리보기·촬영 KST·현장·딸린 항목 수·상태, 로컬 상세와 1000dp 이상 2단 구성,
+  OCR 펼침, 딸린 항목 카드/지우기, 전송/삭제 확인, 최소 160×64dp 실행 버튼. 완료/삭제 후 목록 복귀.
+- `OutboxScreen`/`OutboxUiController`: 원문의 안내·필터·작성 현장 그룹·상태/작업 ID·재조회·동일 작업 재시도·미등록 확인 대화상자.
+  재로그인 버튼은 signOut을 호출한다. 진입/전경 복귀에서는 GET만 수행하며, 전경 복귀 시 만료도 정리한다.
+  오프라인 전송·재시도는 비활성이다. UI 작업은 ViewModel scope에서 계속되어 탭 이동으로 보내던 요청을 새로 만들지 않는다.
+- `ActionPlacement`/`ActionDock`: 계정별 `settings:action-side` 읽기, 기본 right. 최대 폭 min(480dp, 남은 폭의 90%),
+  런타임 제스처 인셋 반영, 최대 높이 50%와 내부 스크롤. 설정에서 바꾸는 기능은 4단계다.
+- `MockGateway`의 로컬 멱등 전송/댓글과 `MockLookupGateway`의 조회 시나리오를 추가했다.
+  모의 완료 문구는 `모의 전송 완료 — 실제 서버로 보내지 않았습니다`다.
+
+### 2b로 넘긴 것
+
+주석 그리기·메모·음성 입력·녹음기·세션 복구는 구현하지 않았다.
+상세의 두 버튼은 원문의 활성 조건을 그대로 계산하고 누르면 **“다음 단계(2b)에서 옮깁니다”** 스낵바를 표시한다.
+딸린 항목 모델/전송/표시/정리 경계는 2a에 포함되어 있다. 설정 토글·CCTV·경보 대응 HTTP는 이번 범위 밖이다.
+
+### 검증 결과와 후속 실행
+
+Gradle과 네트워크를 실행하지 않고 다음 두 도구를 기존 로컬 캐시로 직접 실행했다.
+두 도구는 필요한 캐시가 없으면 내려받지 않고 중단한다. 출력은 이 프로젝트의 `build/` 아래에만 남긴다.
+
+```sh
+python3 tools/check-jvm-offline.py
+python3 tools/check-android-kotlin-offline.py
+```
+
+- **통과: 순수 JVM 테스트 165개**. Kotlin 2.4.0 직접 컴파일 + JUnit 4.13.2, coroutines 1.10.2, org.json 20240303.
+  기존 순수 JVM 회귀를 포함한다. Android/Compose 배경에 의존하는 기존 BackgroundContrastTest는 이 실행에서 제외했다.
+  결과: `build/offline-jvm/compile.log`, `build/offline-jvm/junit.log`.
+- **통과: main + androidTest + screenshotTest Kotlin/Compose 소스 API 컴파일**.
+  기존 캐시 AAR/JAR, Android 37.0 android.jar, Compose compiler 2.4.0을 사용한다.
+  R/BuildConfig는 소스 이름 검사 스텁이며, 이 검사는 **리소스 링크·manifest merge·Gradle 의존성 해석·APK 생성이 아니다**.
+  이 검사에서 캐시에 있던 Navigation 2.10.2를 사용했으며 Gradle이 앞으로 선택할 버전은 여전히 미확인이다.
+  선택 캐시 목록/로그: `build/offline-android-kotlin/classpath.txt`, `build/offline-android-kotlin/compile.log`.
+- **정적 확인**: 원본 문구/키, 네이티브 복사본, XML·리소스 참조, 순수 경계 Android import 없음, 파일 공백/개행.
+  기존 원본 기준표의 Flutter lib/test·파일럿 Kotlin 114개 해시가 일치했다. 상세는 `plan-draft/stage2a-verification.md`.
+- **미확인**: Gradle assemble/test, 전체 의존성 조합·리소스 링크·manifest merge·APK·설치·실서버.
+- **미확인**: 신규 Android 계측 테스트 15개의 실제 실행(촬영 대신 enqueue 주입, 목록/상세/전송/삭제/스택/필터/조회/카메라 권한 UI).
+- **미확인**: 프리뷰 2개 실제 렌더링·PNG·시각 검수. `PendingRecordsPreview`는 866×1385dp,
+  `LocalPhotoDetailPreview`는 1385×866dp, 둘 다 340dpi다. 위의 ASCII 복사본 screenshot 절차를 그대로 사용한다.
+- **미확인**: 실기기 촬영/다중 스캔/권한/서버 주소 폴백/회전·탭 전환/제스처·큰 글꼴/저장 공간 부족,
+  기존 Flutter 기기 원장 경로·Keystore·서명/덮어 설치·7일 만료의 실시간 동작. JSON 호환은 fixture/JVM 수준에서만 확인했다.
+
+| 원본 Dart 테스트 | 2a Kotlin 대응 |
+| --- | --- |
+| outbox_test.dart | OutboxTest, OutboxLifecycleTest, OutboxComposeTest |
+| outbox_bundle_test.dart | OutboxBundleTest + Flutter v1 JSON fixture |
+| hold_bundle_contract_test.dart | HoldBundleContractTest, MultipartGatewayTest |
+| record_contract_test.dart | RecordContractTest + 기존 FieldCoordinatorTest/OfflineRestoreTest의 인증 공통 경계 |
+| operation_lookup_test.dart | OperationLookupTest |
+| capture_ocr_test.dart | CaptureLogicTest, CapturePipelineTest, CaptureScreensTest |
+| capture_site_id_test.dart | CaptureSiteIdTest, CaptureOutboxTest |
+| capture_time_test.dart | CaptureTimeTest(원본 8개 + compact offset/공백 구분자 2개), HoldBundleComposeTest |
+| hold_bundle_ui_test.dart | RecordContractTest, HoldBundleComposeTest, OutboxComposeTest, Stage2aPreviewTest — 편집기/입력/세션 복구 제외 |

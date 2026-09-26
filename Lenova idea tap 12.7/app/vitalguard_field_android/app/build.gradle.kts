@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1-stage1"
+        versionName = "0.2-stage2a"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VG_MOCK", providers.gradleProperty("vgMock").orNull.equals("true", true).toString())
     }
@@ -62,6 +62,13 @@ dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
     implementation("androidx.navigation:navigation-compose:" + providers.gradleProperty("navigationComposeVersion").getOrElse("latest.release"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // 촬영 파일럿과 동일한 CameraX / 번들 한국어 OCR / Play 서비스 서류 스캔.
+    implementation("androidx.camera:camera-core:1.6.2")
+    implementation("androidx.camera:camera-camera2:1.6.2")
+    implementation("androidx.camera:camera-lifecycle:1.6.2")
+    implementation("androidx.camera:camera-view:1.6.2")
+    implementation("com.google.mlkit:text-recognition-korean:16.0.1")
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     // 런타임 JSON은 Android 내장 org.json. 아래 JVM 구현은 테스트에만 들어간다.
     testImplementation("org.json:json:20240303")
     testImplementation("junit:junit:4.13.2")

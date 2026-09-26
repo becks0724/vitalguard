@@ -28,7 +28,7 @@ interface FieldGateway {
     suspend fun logout(accessToken: String)
     suspend fun siteInfo(accessToken: String): SiteInfo?
     suspend fun siteStatus(accessToken: String): SiteStatus
-    // TODO 2·3단계: 계약만 유지한다. 실제 HTTP/쓰기/예약은 없다.
+    // CCTV·경보 확인 HTTP는 3단계. 기록 쓰기는 2a의 전송함에서만 명시적으로 호출한다.
     suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket = nextStage()
     suspend fun ackAlert(accessToken: String, id: String): Boolean = nextStage()
     suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia = nextStage()
@@ -42,7 +42,7 @@ interface CaptureAddressGateway {
 }
 
 enum class OperationPresence { confirmed, absent, unknown }
-data class OperationCheck(val presence: OperationPresence, val receipt: JsonObject? = null)
+data class OperationCheck(val presence: OperationPresence, val receipt: JsonObject? = null, val deduplicated: Boolean = false)
 interface OperationLookupGateway {
     suspend fun lookupOperations(token: String, clientOperationIds: List<String>): Map<String, OperationCheck> = nextStage()
 }

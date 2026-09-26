@@ -16,10 +16,11 @@ import kotlinx.coroutines.withContext
 class HttpUrlConnectionTransport(
     private val base: URI = URI("https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"),
     private val open: (URI) -> HttpURLConnection = { it.toURL().openConnection() as HttpURLConnection },
-) : JsonTransport {
+) : JsonTransport, MultipartTransport {
     companion object {
         const val CONNECT_TIMEOUT_MS = 20_000
         const val RESPONSE_TIMEOUT_MS = 30_000
+        const val UPLOAD_TIMEOUT_MS = 60_000
         const val BODY_TIMEOUT_MS = 30_000
         private val watchdog = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "field-http-deadline").apply { isDaemon = true }
@@ -27,7 +28,15 @@ class HttpUrlConnectionTransport(
     }
 
     override suspend fun execute(method: String, path: String, token: String?, body: JsonObject?): ApiReply =
-        withContext(Dispatchers.IO) {
+        request(method, path, token, body?.let { Json.encode(it).toByteArray(Charsets.UTF_8) },
+            "application/json; charset=utf-8", RESPONSE_TIMEOUT_MS, "서버 응답 형식을 확인할 수 없습니다")
+
+    override suspend fun executeMultipart(path: String, token: String, bytes: ByteArray, contentType: String,
+        onSubmitted: () -> Unit): ApiReply =
+        request("POST", path, token, bytes, contentType, UPLOAD_TIMEOUT_MS, "업로드 결과를 확인할 수 없습니다", onSubmitted)
+
+    private suspend fun request(method: String, path: String, token: String?, bytes: ByteArray?, contentType: String,
+        responseTimeout: Int, malformedMessage: String, onSubmitted: () -> Unit = {}): ApiReply = withContext(Dispatchers.IO) {
             val target = base.resolve(path)
             require(target.scheme == "https" && target.host == base.host && target.port == base.port) {
                 "서버 주소를 확인할 수 없습니다"
@@ -38,19 +47,21 @@ class HttpUrlConnectionTransport(
                 connection.instanceFollowRedirects = false
                 connection.useCaches = false
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
-                connection.readTimeout = RESPONSE_TIMEOUT_MS
+                connection.readTimeout = responseTimeout
                 connection.setRequestProperty("Accept", "application/json")
                 if (token != null) connection.setRequestProperty("Authorization", "Bearer $token")
-                val bytes = body?.let { Json.encode(it).toByteArray(Charsets.UTF_8) }
                 if (bytes != null) {
                     connection.doOutput = true
-                    connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    connection.setRequestProperty("Content-Type", contentType)
                     // 재전송을 위한 본문 버퍼링/인증·리다이렉트 재시도를 허용하지 않는다.
                     connection.setFixedLengthStreamingMode(bytes.size)
                 }
                 deadline(connection, CONNECT_TIMEOUT_MS) { connection.connect() }
-                val status = deadline(connection, RESPONSE_TIMEOUT_MS) {
-                    if (bytes != null) connection.outputStream.use { it.write(bytes); it.flush() }
+                val status = deadline(connection, responseTimeout) {
+                    if (bytes != null) {
+                        onSubmitted()
+                        connection.outputStream.use { it.write(bytes); it.flush() }
+                    }
                     connection.responseCode
                 }
                 connection.readTimeout = BODY_TIMEOUT_MS
@@ -68,7 +79,7 @@ class HttpUrlConnectionTransport(
                     }
                 }
                 val data = try { Json.decodeObject(text) } catch (_: Exception) {
-                    throw ApiFailure("서버 응답 형식을 확인할 수 없습니다", status = status, uncertainWrite = method != "GET")
+                    throw ApiFailure(malformedMessage, status = status, uncertainWrite = method != "GET")
                 }
                 ApiReply(status, data)
             } finally { connection.disconnect() }

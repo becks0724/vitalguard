@@ -35,6 +35,8 @@ fun FieldShell(
     field: FieldState, shell: ShellState, site: SiteSummaryState, isMock: Boolean, windowWidthDp: Int,
     onWidth: (Int) -> Unit, onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit,
     onRefresh: () -> Unit, onNextStage: () -> Unit,
+    recordContent: @Composable () -> Unit = { PlaceholderScreen("기록", 2) },
+    outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 상태", 3) },
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
     val collapsed = shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth)
@@ -67,8 +69,8 @@ fun FieldShell(
                         when (shell.destination) {
                             0 -> SiteScreen(site, onRefresh, onNextStage)
                             1 -> PlaceholderScreen("경보", 1)
-                            2 -> PlaceholderScreen("기록", 2)
-                            3 -> PlaceholderScreen("전송 상태", 3)
+                            2 -> recordContent()
+                            3 -> outboxContent()
                             4 -> PlaceholderScreen("설정", 4)
                         }
                     }

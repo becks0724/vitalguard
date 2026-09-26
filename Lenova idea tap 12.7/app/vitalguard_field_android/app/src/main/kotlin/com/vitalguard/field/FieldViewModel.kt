@@ -4,6 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vitalguard.field.data.contracts.AuthStage
+import com.vitalguard.field.data.OutboxController
+import com.vitalguard.field.capture.CaptureController
+import com.vitalguard.field.ui.outbox.OutboxUiController
+import com.vitalguard.field.ui.record.RecordActions
 import com.vitalguard.field.ui.auth.AuthUiController
 import com.vitalguard.field.ui.shell.ShellController
 import com.vitalguard.field.ui.site.SiteSummaryController
@@ -15,6 +19,10 @@ import kotlinx.coroutines.launch
 
 class FieldViewModel(application: FieldApplication) : ViewModel() {
     val controller = application.controller(viewModelScope)
+    val outbox = OutboxController(controller, viewModelScope)
+    val recordActions = RecordActions(outbox, viewModelScope)
+    val outboxUi = OutboxUiController(outbox, viewModelScope)
+    val capture = if (application.captureEnabledForTests == false) null else CaptureController(application, controller, outbox, viewModelScope)
     val auth = AuthUiController(controller, application.internetProbe(), viewModelScope)
     private val events = Channel<String>(Channel.BUFFERED)
     val messages = events.receiveAsFlow()
@@ -30,8 +38,11 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                     account = next
                     shell.bindAccount(next)
                     site.reset()
+                    capture?.reset()
+                    if (next != null) viewModelScope.launch { outbox.load() }
                 }
                 site.setVisible(next != null && shell.state.value.destination == 0)
+                outboxUi.setVisible(next != null && shell.state.value.destination == 3)
             }
         }
         viewModelScope.launch { controller.initialize() }
@@ -40,6 +51,9 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     override fun onCleared() {
         auth.close()
         site.close()
+        capture?.close()
+        outboxUi.close()
+        outbox.close()
         controller.close()
         events.close()
     }

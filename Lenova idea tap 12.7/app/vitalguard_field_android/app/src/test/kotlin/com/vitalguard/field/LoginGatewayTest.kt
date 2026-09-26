@@ -112,7 +112,7 @@ class LoginGatewayTest {
         assertEquals(listOf("POST /api/mobile/v1/session/login", "POST $REFRESH", "GET $ME",
             "POST /api/mobile/v1/session/logout", "GET $SITE_INFO", "GET $SITE_STATUS"), calls)
         assertEquals("다음 단계", failure { gateway.cctvTicket("access", "CAM-03") }.message)
-        assertEquals("다음 단계", failure { gateway.upload("access", byteArrayOf(1), emptyMap()) }.message)
+        assertEquals("영속 보관된 작업 ID가 필요합니다", failure { gateway.upload("access", byteArrayOf(1), emptyMap()) }.message)
         assertEquals(6, calls.size)
     }
     @Test fun siteStatusHidesPrivateErrorsAnd403NeverRequestsRefresh() = runTest {

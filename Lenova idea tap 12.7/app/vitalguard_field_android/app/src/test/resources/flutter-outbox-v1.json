@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {"id":"flutter-photo","owner":"a","kind":"photo","fields":{"clientOperationId":"flutter-photo","dateKey":"2026-09-26","capturedAt":"2026-09-26T09:00:00+09:00","title":"기존 Flutter 사진","siteId":"field-101"},"siteName":"원본 현장","createdAt":"2026-09-26T09:00:00.123456","mock":false,"sourceKey":null,"annotationDraftId":null,"phase":"waiting","message":null,"receipt":null,"deduplicated":false,"needsVerification":false},
+    {"id":"flutter-ink","owner":"a","kind":"ink","fields":{"clientOperationId":"flutter-ink","siteId":"field-101"},"siteName":"원본 현장","createdAt":"2026-09-26T00:00:01.000Z","mock":false,"sourceKey":"annotation:one:1","annotationDraftId":"draft-one","dependsOn":"flutter-photo","completedAt":null,"draftKeys":["annotation:flutter-photo"],"phase":"waiting","message":null,"receipt":null,"deduplicated":false,"needsVerification":false},
+    {"id":"flutter-text","owner":"a","kind":"text","fields":{"clientOperationId":"flutter-text","siteId":"field-101"},"siteName":"원본 현장","createdAt":"2026-09-26T09:00:02.000+09:00","mock":false,"sourceKey":null,"annotationDraftId":null,"dependsOn":"flutter-photo","completedAt":null,"draftKeys":["comment-draft:flutter-photo:new"],"phase":"failed","message":"기존 실패","receipt":null,"deduplicated":false,"needsVerification":false},
+    {"id":"flutter-voice","owner":"a","kind":"voice","fields":{"clientOperationId":"flutter-voice","siteId":"field-101","audioMs":"1234"},"siteName":"원본 현장","createdAt":"2026-09-26T09:00:03.000+09:00","mock":false,"sourceKey":null,"annotationDraftId":null,"dependsOn":"flutter-photo","completedAt":null,"draftKeys":[],"phase":"sending","message":null,"receipt":null,"deduplicated":false,"needsVerification":false}
+  ]
+}

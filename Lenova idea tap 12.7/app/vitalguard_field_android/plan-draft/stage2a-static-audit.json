@@ -1,0 +1,18 @@
+{
+  "xml_parsed": 20,
+  "drawable_references_resolved": 15,
+  "pure_kotlin_boundaries": 8,
+  "reference_source_hashes_matched": 114,
+  "native_copies": [
+    "CaptureNative.kt",
+    "TaskAwait.kt",
+    "CapturePipeline.kt"
+  ],
+  "required_keys_and_labels": true,
+  "whitespace_and_newlines": true,
+  "jvm_junit_tests": 165,
+  "gradle_executed": false,
+  "network_executed": false,
+  "android_instrumentation": "미확인",
+  "preview_png": "미확인"
+}

@@ -8,7 +8,11 @@ import java.time.ZoneOffset
 // Port: mock_gateway.dart (세션·현장 샘플). 나머지 메서드는 계약의 "다음 단계".
 open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGateway {
     override val isMock = true
-    private var userId = "demo"
+    protected var userId = "demo"
+    private var sequence = 0
+    private val media = mutableListOf<JsonObject>()
+    protected val operationMedia = mutableMapOf<String, JsonObject>()
+    protected val operationComments = mutableMapOf<String, JsonObject>()
     val logoutTokens = mutableListOf<String>()
     val siteInfoTokens = mutableListOf<String>()
     private fun session() = MobileSession(mapOf(
@@ -36,6 +40,58 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
             "address" to null, "start_date" to null, "completion_date" to null, "recorded_at" to now.toString()))
     }
     override suspend fun siteStatus(accessToken: String) = SiteStatus(mockSiteStatusReply(clock.instant().toString()))
+    override suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia {
+        val operation = fields["clientOperationId"]
+        operationMedia["$userId:$operation"]?.let { return CalendarMedia(it, operation, deduplicated = true) }
+        val ink = fields.containsKey("annotationOf")
+        if (ink) {
+            inkUploadSizeError(bytes.size)?.let { throw ApiFailure(it, status = 413) }
+            if (fields["annotationOf"].isNullOrBlank()) throw ApiFailure("원본 ID가 필요합니다", status = 400)
+            try {
+                val body = Json.decodeObject(bytes.toString(Charsets.UTF_8))
+                check(body["v"] is Int || body["v"] is Long)
+            } catch (_: Exception) { throw ApiFailure("잉크 JSON에 정수 v가 필요합니다", status = 400) }
+        }
+        val jpeg = bytes.size >= 3 && bytes[0] == 0xff.toByte() && bytes[1] == 0xd8.toByte() && bytes[2] == 0xff.toByte()
+        val id = "mock-upload-${++sequence}"
+        val extension = if (ink) "json" else if (jpeg) "jpg" else "png"
+        val row = buildMap<String, Any?> {
+            put("id", id); put("date_key", fields["dateKey"]); put("captured_at", fields["capturedAt"])
+            put("media_type", if (ink) "ink" else "image")
+            if (ink) put("annotation_of", fields["annotationOf"])
+            put("title", fields["title"]); put("media_url", "https://mock.invalid/upload-$sequence.$extension")
+            put("ocr_text", fields["ocrText"]); put("site_id", fields["siteId"])
+            put("uploader", "모의 안전관리자"); put("worker_id", "MOCK-01"); put("description", null)
+            put("created_at", kstNow(clock).toString())
+        }
+        media += row
+        if (operation != null) operationMedia["$userId:$operation"] = row
+        return CalendarMedia(row, operation)
+    }
+    override suspend fun addComment(token: String, mediaId: String, body: String, clientOperationId: String?): MediaComment {
+        operationComments["$userId:$clientOperationId"]?.let { return MediaComment(it, clientOperationId, deduplicated = true) }
+        val row = mapOf("id" to "mock-comment-${++sequence}", "media_id" to mediaId, "body" to body,
+            "author_id" to userId, "author_name" to "모의 안전관리자", "author_role" to "site_manager",
+            "author_title" to null, "created_at" to kstNow(clock).toString(), "updated_at" to null)
+        if (clientOperationId != null) operationComments["$userId:$clientOperationId"] = row
+        return MediaComment(row, clientOperationId)
+    }
+    override suspend fun voiceComment(token: String, mediaId: String, audio: ByteArray, durationMs: Int?,
+        clientOperationId: String?, siteId: String?): MediaComment {
+        operationComments["$userId:$clientOperationId"]?.let { return MediaComment(it, clientOperationId, deduplicated = true) }
+        if (token.isEmpty()) throw ApiFailure("로그인이 필요합니다", status = 401)
+        if (mediaId.isBlank() || audio.isEmpty() || (durationMs ?: 0) < 0) throw ApiFailure("원본 사진과 유효한 녹음이 필요합니다", status = 400)
+        if (audio.size > maxVoiceBytes) throw ApiFailure("녹음 크기가 10 MiB를 넘었습니다", status = 413)
+        val photo = media.firstOrNull { it["id"] == mediaId } ?: throw ApiFailure("원본 사진이 없습니다", status = 404)
+        if (photo["annotation_of"] != null || photo["media_type"] == "ink") throw ApiFailure("잉크본에는 음성 댓글을 달 수 없습니다", status = 400)
+        val id = "mock-voice-${++sequence}"
+        val row = mapOf("id" to id, "media_id" to mediaId, "body" to "", "author_id" to userId,
+            "author_name" to "모의 안전관리자", "author_role" to "site_manager", "created_at" to kstNow(clock).toString(),
+            "audio_storage_key" to id, "audio_url" to "https://mock.invalid/$id.m4a", "audio_ms" to durationMs)
+        if (clientOperationId != null) operationComments["$userId:$clientOperationId"] = row
+        return MediaComment(row, clientOperationId)
+    }
+
 }
 
 fun mockSiteStatusReply(fetchedAt: String): JsonObject = mapOf(
@@ -46,3 +102,12 @@ fun mockSiteStatusReply(fetchedAt: String): JsonObject = mapOf(
     "aed" to mapOf("ok" to true, "level" to "normal", "summary" to "점검 필요 0건", "total" to 0, "devices" to emptyList<Any>()),
     "alerts" to mapOf("ok" to true, "unacked" to 0, "siteScoped" to false, "items" to emptyList<Any>()),
 )
+
+// 원문과 같이 기본 모의는 관제웹 확인 경로, 조회 가능한 모의는 명시적으로 주입한다.
+open class MockLookupGateway(clock: Clock = Clock.systemUTC()) : MockGateway(clock), OperationLookupGateway {
+    override suspend fun lookupOperations(token: String, clientOperationIds: List<String>) = clientOperationIds.associateWith {
+        val row = operationMedia["$userId:$it"] ?: operationComments["$userId:$it"]
+        if (row == null) OperationCheck(OperationPresence.absent)
+        else OperationCheck(OperationPresence.confirmed, mapOf("id" to row["id"]))
+    }
+}
