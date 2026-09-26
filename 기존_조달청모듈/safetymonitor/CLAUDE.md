@@ -10,7 +10,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 상세 [plan](docs/plan.md) · [checklist](docs/checklist.md) · [context-notes](docs/context-notes.md) · [progress](docs/progress.md) · 상용화 갭·로드맵 [gap-analysis](docs/commercialization-gap-analysis.md) · [roadmap](docs/commercialization-roadmap.md)
 
-## 현재 상태 (Status — 새 세션 시작 시 먼저 읽기)
+## 확인된 상태 기록 (최신 기록: 2026-09-23 · 현재 라이브는 조회로 확인)
 
 > **보존 규칙 (2026-08-22).** 이 절의 트랙 전문은 **최근 3건까지**만 둔다. 넘으면 그 자리에서
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
@@ -53,60 +53,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   ```
   ★ 09-09 의 「배포 방식(루트 pnpm test)만 2건 실패」가 사라졌다(1642/2 → 2091/0).
 
-- **직전** = `vitalguard-dashboard-00403-cdd` (커밋 `6e8ffe7d` · 09-21 10:32 · 서빙 digest
-  `sha256:86ac4222…` **대조 일치** · env 33 · 배포·기록 `session_01HnBtBj…`).
-  **캘린더 표시본(잉크)을 같은 오리진으로 읽게 고쳤다** — 프리사인 GET 응답에는
-  `Access-Control-Allow-Origin` 이 없어 서버는 200 인데 브라우저만 끊겼다(확장 로그의 503 은
-  스토리지 상태가 아니었다). 신규 `apps/dashboard-web/app/api/calendar/media/ink/route.ts` 로 서버가 읽어 넘긴다.
-  다운로드(⬇)는 네비게이션이라 무관해 `download-url` 은 안 건드렸다.
-  전문 = `harness/5-observability/run-log.md` 09-21 절.
-  ★ **09-18 CCTV 건과 같은 계열이다** — `curl` 은 CORS 를 안 본다.
-
-- **직전** = `vitalguard-dashboard-00402-t5n` (커밋 `df2a9fe1` · 09-18 18:2x · 서빙 digest
-  `sha256:1ce21792…` **대조 일치** · env 33 · 검증 **아카이브(df2a9fe 고정) · 2061/2061** ·
-  트래픽 자동 추종 · ALLOW_DIRTY 강행(손대지 않는 2파일)).
-  **CAM-01 관제웹 노출 + 체온 판정 정정 + 관제웹→젯슨 Tailscale 직결.** 화면 확인 완료.
-  ```
-  ★ 09-18 은 배포 4회 · push 8회다. 아래 셋이 한 흐름이다.
-  00398-k2z  CAM-01 게이트 라우트 4개(ingest1·stream1·stats1·connection1) + 체온 판정
-             ⛔ 실패 — 번들의 게이트 주소가 **다른 호스트**라 브라우저가 CORS 로 막았다
-                우리 검증은 전부 초록이었다. `curl` 은 CORS 를 안 본다([[L-118]] 계열)
-  00400-j9g  `_CAM03_GATE=/api/cctv-gate` (상대경로) → 같은 출처가 되어 화면이 떴다
-  00402-t5n  `_CAM03_GATE`·`CAM03_GATE_API` 둘 다 `https://jetson-1.tailnet.invalid:8443`
-             ⟹ 서버 중계(5초 1장·과금)를 젯슨 직결(연속·과금 0)로 되돌렸다
-             ★ duckdns 가 16:41 에 죽어 있었다(NAT-PMP 2시간 갱신 중단) — 개선이자 복구다
-
-  체온 판정   `피부온 + 0.5` 를 심부체온이라 부르던 것을 걷어냈다(근거 커밋 0건 · 실측 필요값 1.71)
-             문자  체온추정 26.0℃(위험) → 피부온 25.5℃ (심부체온 아님)(주의)
-             집계  위험 427 → 350 · 주의 8582 → 8461   ← 프로덕션 30일 82,887행 실측
-             ⚠ 임계 38.0/38.5 도 워치에서 가져온 **잠정값**이다. 근거 없는 상수를 뺀 것이지
-               옳은 값을 찾은 것이 아니다. `store.ts:115` 수집 시점 경보는 아직 옛 경로.
-             ⛔ **그 값을 정하려던 09-18 오후 촬영(S2)이 폐기됐다** — 귀 체온 라벨 2/16 에서 중단.
-               작업(사다리·배선) 중에 15분마다 체온계를 꺼내 3회 재는 일정이 현실적으로 불가능했다.
-               앉아서 쟀던 S1 감각으로 짠 설계다. 워치 자료 70행만 남았다(HR 94~134 ·
-               피부온 35.53~40.06 · 착용 false 13건). **임계값은 여전히 미결이다.**
-               다음 설계 = 작업 중 0개 · 작업 전 3개 · 작업 후 9개([WATCH.DESIGN]).
-
-  라우트 8/8  ingest1·stream1·stats1·connection1 · 3번 넷 — 전부 401
-             통제군 ingest9 404  ← **「404 아님」으로 읽지 않는다**. 기대값을 열거해 판정한다
-  라이브 번들  17개 전수([CCTV/ML] · [M/L] 교차 확인 일치) —
-             tailnet 1 · yahboom-1 1 · **/api/cctv-gate 0 · 7r2vb5q5qa 0 · duckdns 0**
-             통제군 CAM-03 1 · CAM-01 1   ← 0 이면 「안 잰 것」으로 본다
-             박힌 값 `ld="https://jetson-1.tailnet.invalid:8443"`
-             ⚠ 루트에서 받으면 로그인 화면 덩어리만 온다(내가 그 0 에 한 번 속았다).
-  게이트      jetson-1.tailnet.invalid:8443 · 인증서 Tailscale 발급(2026-10-27 까지)
-             CORS 정상 Origin 만 허용(통제군 evil.example.com → 헤더 없음)
-             ⚠ **테일넷 기기에서만 보인다** — 공개 DNS 응답 0. 맥·태블릿은 가입돼 있다
-  서버 중계    **꺼짐**(`CCTV_BASE=` 빈 값 · 과금 0). 안전망이 없으니 장애 시 복구가 두 단계다
-             ① 리비전 되돌리기 ② 젯슨 `ingest.conf` 복구([CCTV/ML])
-  젯슨 수치 정본 = `cctv-ai/edge/jetson-etc/README.md` ①~⑨.
-             서버중계 끈 시각  2호기 18:22:00 · 1호기 18:23:38 · 서버 마지막 도착 09:23:36 UTC
-             2호기 fps 원인   `jetson-clocks` 미복제(9.8 → 25 fps) — 엔진 경고는 원인이 아니었다
-             줄의 진범        골격선(`bd1829f8`) · 깜빡임은 오진
-                            ★ 매 프레임 · 45명 중 44개가 테두리 관절이었다(드문 결함이 아니다)
-  젯슨        2호기(`yahboom-ipcctv`) 신설 · 두 대 `03bd7738e022` 동일
-             ⛔ 두 대의 `machine-id` 가 같았다(제조사 동일 이미지) — 신원으로 기계를 가르지 말 것
-  ```
+**운영 기록 읽기** — 아래 아카이브는 과거 상태다. 현재 리비전·env·접속 경로는 라이브 조회로 확인한다. 브라우저 CORS·번들 검증, 같은 LAN/Tailscale 제약, 서버 중계 비용·주기, 인증 키 교체·워치 재서명 절차를 변경할 때는 관련 과거 실측을 먼저 확인한다.
 
 **미해결 — 원인 미확정이거나 대기 중**
 
@@ -138,7 +85,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 - **재서명 — ✅ 완료(08-27 09:10).** 만료 08-27 10:09 → **09-03 09:09 KST**. 폰·워치 둘 다 설치.
   `wdm` 도 함께 실려 닫혔다(`413942c` · 09:19 도착분부터 `watch_device_model=Watch6,18`).
-  ⚠ **다음 만료 09-03 09:09 · 미리 알림 09-01.** 워치 코드 변경은 이 창에 묶는다(재설치가 세션을 끊는다).
+  **이력 당시 만료 2026-09-03 09:09 KST · 당시 알림 09-01. 현재 만료일은 재확인 필요.** 워치 코드 변경은 실제 재서명 일정에 묶는다(재설치가 세션을 끊는다).
   ⚠ **새 함정** — 재발급 프로파일에서 **워치가 빠질 수 있다**(발급 시점에 `disconnected` 면 제외).
   만료일만 보면 통과로 보이고 워치 설치에서만 죽는다. 절차·검증은
   [apps/vitalguard_app/SETUP.md](apps/vitalguard_app/SETUP.md) "재발급 프로파일에서 워치가 빠진다".
@@ -151,6 +98,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
 
 **트랙 기록 아카이브**
+- 09-09 ~ 09-21 배포 기록 12건(00365~00403) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
 - 09-09 ~ 09-17 트랙(00367~00397) → [claude-md-archive-20260925.md](docs/claude-md-archive-20260925.md) (보존 규칙 「최근 3건」 초과분)
 - 08-31 ~ 09-08 트랙(00345~00363) → [claude-md-archive-20260910.md](docs/claude-md-archive-20260910.md) (최근 이동분이 파일 위쪽)
 - 08-26 ~ 08-31 트랙(00322~00344) → [claude-md-archive-20260831.md](docs/claude-md-archive-20260831.md) (최근 이동분이 파일 위쪽)
