@@ -38,8 +38,7 @@ for y in 0..<H { for x in 0..<W {
     var a = (Double(r) - 85.0) / 90.0   // 방패 아래 연한 파랑 광택(R 40~80)은 뺀다
     a = max(0, min(1, a))
     let i = (y * W + x) * 4
-    let v = UInt8(255 * a)
-    m[i] = v; m[i+1] = v; m[i+2] = v; m[i+3] = v   // premultiplied white
+    m[i] = UInt8(Double(r) * a); m[i+1] = UInt8(Double(g) * a); m[i+2] = UInt8(Double(b) * a); m[i+3] = UInt8(255 * a)   // 원본 색 × 알파
 }}
 let shield = maskCtx.makeImage()!
 // 방패 실제 경계 상자
@@ -48,7 +47,8 @@ for y in 0..<H { for x in 0..<W { if m[(y*W+x)*4+3] > 40 { minX = min(minX,x); m
 let box = CGRect(x: minX, y: minY, width: maxX-minX+1, height: maxY-minY+1)
 print("shield box", box)
 // CGImage 는 위가 0, 버퍼는 아래가 0 → 세로를 뒤집어 자른다
-let boxImg = CGRect(x: box.minX, y: Double(H) - box.maxY, width: box.width, height: box.height)
+// 픽셀 실측(9/26): CGBitmapContext 버퍼는 위가 0 → 뒤집지 않는다. 뒤집으면 방패가 41px 밀려 윗부분이 잘린다.
+let boxImg = box
 print("box in image coords", boxImg)
 for band in stride(from: 0, to: H, by: 100) {
     var n = 0
@@ -57,7 +57,33 @@ for band in stride(from: 0, to: H, by: 100) {
 }
 let shieldCrop = shield.cropping(to: boxImg)!
 
+// 배경층 = 원본에서 방패 획만 주변 파랑으로 메운 것(가로 방향 선형 보간, 마스크 3px 팽창)
+let bgCtx = bitmap(W, H); bgCtx.draw(image, in: CGRect(x: 0, y: 0, width: W, height: H))
+let bgp = bgCtx.data!.bindMemory(to: UInt8.self, capacity: W * H * 4)
+var masked = [Bool](repeating: false, count: W * H)
+for y in 0..<H { for x in 0..<W { if m[(y*W+x)*4+3] > 8 { masked[y*W+x] = true } } }
+var dil = masked
+for y in 0..<H { for x in 0..<W { if masked[y*W+x] { for dy in -3...3 { for dx in -3...3 {
+    let yy = y+dy, xx = x+dx; if yy >= 0 && yy < H && xx >= 0 && xx < W { dil[yy*W+xx] = true } } } } } }
+for y in 0..<H {
+    var x = 0
+    while x < W {
+        if !dil[y*W+x] { x += 1; continue }
+        var e = x; while e < W && dil[y*W+e] { e += 1 }   // run [x, e)
+        let li = max(x-1, 0), ri = min(e, W-1)
+        let l = (y*W+li)*4, r = (y*W+ri)*4
+        for k in x..<e {
+            let t = Double(k - x + 1) / Double(e - x + 1)
+            for c in 0..<3 { bgp[(y*W+k)*4+c] = UInt8(Double(bgp[l+c]) * (1-t) + Double(bgp[r+c]) * t) }
+        }
+        x = e
+    }
+}
+let cleanBackground = bgCtx.makeImage()!
 func radial(_ ctx: CGContext, _ size: Int) {
+    ctx.draw(cleanBackground, in: CGRect(x: 0, y: 0, width: size, height: size))
+}
+func radialOld(_ ctx: CGContext, _ size: Int) {
     let colors = [CGColor(red: CGFloat(inner.0)/255, green: CGFloat(inner.1)/255, blue: CGFloat(inner.2)/255, alpha: 1),
                   CGColor(red: CGFloat(edge.0)/255, green: CGFloat(edge.1)/255, blue: CGFloat(edge.2)/255, alpha: 1)] as CFArray
     let grad = CGGradient(colorsSpace: cs, colors: colors, locations: [0, 1])!
@@ -79,9 +105,7 @@ for (name, d) in dens {
     let bg = bitmap(s, s); radial(bg, s)
     save(bg.makeImage()!, "\(outDir)/mipmap-\(name)/ic_launcher_background.png")
     // legacy 48dp: 그라데이션 + 방패 70%
-    let l = Int(48 * d); let lg = bitmap(l, l); radial(lg, l)
-    let lh = Double(l) * 0.62, ls = lh / Double(box.height), lw = Double(box.width) * ls
-    lg.draw(shieldCrop, in: CGRect(x: (Double(l)-lw)/2, y: (Double(l)-lh)/2, width: lw, height: lh))
+    let l = Int(48 * d); let lg = bitmap(l, l); lg.draw(image, in: CGRect(x: 0, y: 0, width: l, height: l))
     let legacy = lg.makeImage()!
     save(legacy, "\(outDir)/mipmap-\(name)/ic_launcher.png")
     // round: 원형 클립
@@ -90,7 +114,11 @@ for (name, d) in dens {
 }
 // 미리보기용 512
 let pv = bitmap(512, 512); radial(pv, 512)
-let ph = 512.0 * 0.62, ps = ph / Double(box.height), pw = Double(box.width) * ps
+let ph = 512.0 * 0.52, ps = ph / Double(box.height), pw = Double(box.width) * ps
 pv.draw(shieldCrop, in: CGRect(x: (512-pw)/2, y: (512-ph)/2, width: pw, height: ph))
+// 런처 원형 마스크(72/108) 미리보기
+let pm = bitmap(512, 512); pm.addEllipse(in: CGRect(x: 0, y: 0, width: 512, height: 512)); pm.clip()
+let full = pv.makeImage()!; pm.draw(full, in: CGRect(x: -512*0.25, y: -512*0.25, width: 512*1.5, height: 512*1.5))
+save(pm.makeImage()!, "\(outDir)/preview-masked-512.png")
 save(pv.makeImage()!, "\(outDir)/preview-512.png")
 print("edge", edge, "inner", inner)
