@@ -34,25 +34,39 @@ fun OutboxScreen(ui: OutboxUiController) {
     val retryableIds by queue.retryableIds.collectAsStateWithLifecycle()
     val error by ui.error.collectAsStateWithLifecycle()
     val canLookup by ui.lookupEnabled.collectAsStateWithLifecycle()
-    var filterName by rememberSaveable(queue.account) { mutableStateOf<String?>(null) }
-    var siteGroup by rememberSaveable(queue.account) { mutableStateOf<String?>(null) }
-    var confirmId by rememberSaveable(queue.account) { mutableStateOf<String?>(null) }
+    OutboxHistoryContent(entries.filter { it.owner == queue.account }, field.user?.name ?: queue.account ?: "로그인 필요", field.offline,
+        checking, lookupMessage, loadError, busyIds, retryableIds, error, queue.supportedLookup, canLookup,
+        onReload = ui::loadAndCheck, onVerify = ui::verify, onSend = { item, absent -> ui.send(item, absent) }, onSignOut = ui::signOut)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun OutboxHistoryContent(
+    allEntries: List<OutboxEntry>, account: String = "현재 계정", offline: Boolean = false,
+    checking: Boolean = false, lookupMessage: String? = null, loadError: String? = null,
+    busyIds: Set<String> = emptySet(), retryableIds: Set<String> = emptySet(), error: String? = null,
+    supportedLookup: Boolean = false, canLookup: Boolean = false, onReload: () -> Unit = {},
+    onVerify: (OutboxEntry?) -> Unit = {}, onSend: (OutboxEntry, Boolean) -> Unit = { _, _ -> }, onSignOut: () -> Unit = {},
+) {
+    val entries = historyEntries(allEntries)
+    var filterName by rememberSaveable(account) { mutableStateOf<String?>(null) }
+    var siteGroup by rememberSaveable(account) { mutableStateOf<String?>(null) }
+    var confirmId by rememberSaveable(account) { mutableStateOf<String?>(null) }
     val filter = filterName?.let(OutboxPhase::valueOf)
     val groups = entries.associate { it.siteGroup to it.siteName }
-    val visible = entries.filter { (siteGroup == null || it.siteGroup == siteGroup) && (filter == null || it.phase == filter) }.reversed()
-    val account = queue.account
+    val visible = entries.filter { (siteGroup == null || it.siteGroup == siteGroup) && (filter == null || historyPhase(it) == filter) }.reversed()
     LazyColumn(Modifier.fillMaxSize().testTag("outbox-list"), state = rememberLazyListState(),
         contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("전송 상태", style = MaterialTheme.typography.headlineMedium)
-                Text("현재 계정 · ${field.user?.name ?: account ?: "로그인 필요"}${if (account == null) "" else " ($account)"}")
-                Text("로컬 저장됨은 기기에 보관한 상태입니다. 전송 완료는 서버에서 받은 사실을 확인한 상태입니다.")
-                Text("초안은 작성 당시 현장으로 고정됩니다. 연결 후 각 항목의 전송/재시도를 눌러 주세요.")
-                Text("전송 완료 항목은 7일 뒤 자동으로 지워집니다. 원본은 관제웹에서 봅니다.")
-                if (field.offline) Text("오프라인 · 사진·잉크본·메모·음성은 기기에 보관합니다.")
-                if (queue.supportedLookup) {
-                    OutlinedButton({ ui.verify() }, Modifier.testTag("outbox-lookup-all"),
+                Text("전송 이력", style = MaterialTheme.typography.headlineMedium)
+                Text("현재 계정 · $account")
+                Text("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.")
+                Text("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
+                Text("기기의 완료 이력은 7일 뒤 정리됩니다. 서버 원본은 기록 탭에서 다시 볼 수 있습니다.")
+                if (offline) Text("오프라인 · 사진·잉크본·메모·음성은 기기에 보관합니다.")
+                if (supportedLookup) {
+                    OutlinedButton({ onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
                         enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain }) { Text("서버 상태 다시 조회") }
                     Text("결과 불명만 조회합니다. 화면 진입·전경 복귀 시 자동 조회하며, 30초 안에는 반복하지 않습니다.")
                     if (checking) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -60,17 +74,17 @@ fun OutboxScreen(ui: OutboxUiController) {
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = filter == null, onClick = { filterName = null }, label = { Text("전체 ${entries.size}") })
-                    for ((phase, label) in listOf(OutboxPhase.waiting to "대기", OutboxPhase.sending to "진행", OutboxPhase.failed to "실패",
-                        OutboxPhase.uncertain to "결과 불명", OutboxPhase.reauthenticate to "재로그인 필요", OutboxPhase.completed to "완료")) {
+                    for ((phase, label) in listOf(OutboxPhase.completed to "완료", OutboxPhase.failed to "실패",
+                        OutboxPhase.uncertain to "결과 불명", OutboxPhase.sending to "전송 중")) {
                         FilterChip(selected = filter == phase, onClick = { filterName = phase.name },
-                            label = { Text("$label ${entries.count { it.phase == phase }}") })
+                            label = { Text("$label ${entries.count { historyPhase(it) == phase }}") })
                     }
                 }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = siteGroup == null, onClick = { siteGroup = null }, label = { Text("모든 작성 현장") })
                     groups.forEach { (group, name) -> FilterChip(selected = siteGroup == group, onClick = { siteGroup = group }, label = { Text(name) }) }
                 }
-                if (loadError != null) { Text(loadError!!); TextButton(ui::loadAndCheck) { Text("전송 원장 다시 열기") } }
+                if (loadError != null) { Text(loadError); TextButton(onReload) { Text("전송 원장 다시 열기") } }
                 error?.let { Text(it) }
                 if (visible.isEmpty() && loadError == null) Text("이 계정에 표시할 전송 항목이 없습니다.", Modifier.padding(vertical = 32.dp))
             }
@@ -81,9 +95,9 @@ fun OutboxScreen(ui: OutboxUiController) {
                 item(key = "group:$group") { Text("작성 당시 현장 · $name", Modifier.padding(top = 24.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge) }
                 items(members, key = { "outbox-${it.id}" }) { item ->
                     val parent = entries.firstOrNull { it.id == item.dependsOn && it.kind == OutboxKind.photo }
-                    OutboxCard(item, parent, item.id in busyIds, field.offline, queue.supportedLookup, checking, canLookup,
-                        item.id in retryableIds, onVerify = { ui.verify(item) }, onSend = { ui.send(item) },
-                        onConfirmAbsent = { confirmId = item.id }, onSignOut = ui::signOut)
+                    OutboxCard(item, parent, item.id in busyIds, offline, supportedLookup, checking, canLookup,
+                        item.id in retryableIds, onVerify = { onVerify(item) }, onSend = { onSend(item, false) },
+                        onConfirmAbsent = { confirmId = item.id }, onSignOut = onSignOut)
                 }
             }
         }
@@ -98,7 +112,7 @@ fun OutboxScreen(ui: OutboxUiController) {
                 "원본 ${confirmItem.fields["annotationOf"] ?: confirmItem.fields["commentOf"] ?: "새 사진"}\n" +
                 "작업 ID ${confirmItem.id}\n\n동일한 작업 ID와 보관 파일로 재시도합니다.", Modifier.verticalScroll(rememberScrollState()))
         }, dismissButton = { TextButton({ confirmId = null }) { Text("아직 확인하지 못함") } },
-        confirmButton = { Button({ confirmId = null; ui.send(confirmItem, confirmAbsent = true) }, enabled = !field.offline) { Text("미등록 확인 · 재시도") } })
+        confirmButton = { Button({ confirmId = null; onSend(confirmItem, true) }, enabled = !offline) { Text("미등록 확인 · 재시도") } })
 }
 private fun localCreatedAt(item: OutboxEntry) = DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm")
     .format(item.createdAt.atZone(ZoneId.systemDefault()))
@@ -120,6 +134,8 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
             item.message?.let { Text(it, Modifier.padding(top = 8.dp)) }
             Text("현장 ID ${item.siteId ?: "미제공"} · ${localCreatedAt(item)}")
             SelectionContainer { Text("작업 ID ${item.id}") }
+            if (item.phase == OutboxPhase.completed) Text("${if (item.mock) "모의 확인 시각" else "서버 확인 시각"} · " +
+                (item.completedAt?.let { DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").format(it.atZone(ZoneId.of("Asia/Seoul"))) } ?: "미기록"))
             item.fields["annotationOf"]?.let { Text("원본 사진 $it") }
             if (uncertain) Text("이미 서버에 등록됐을 수 있습니다. 서버 반영 여부를 먼저 확인해 주세요.")
             if (uncertain && !supportedLookup) Text("서버 반영 여부를 자동으로 확인할 수 없습니다. 관제웹에서 먼저 확인해 주세요. 자동 재전송하지 않습니다.")
@@ -129,8 +145,8 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
                     if (supportedLookup) OutlinedButton(onVerify, enabled = !busy && !checking && canLookup) { Text("서버 상태 재조회") }
                     if (retryable) Button(onSend, enabled = !cannotSend && !checking && canLookup) { Text("같은 작업 재시도") }
                     if (!supportedLookup) OutlinedButton(onConfirmAbsent, enabled = !cannotSend) { Text("관제웹 미등록 확인 후 재시도") }
-                } else if (item.phase != OutboxPhase.completed && item.phase != OutboxPhase.sending) {
-                    Button(onSend, enabled = !cannotSend) { Text(if (item.phase == OutboxPhase.waiting) "전송" else "같은 작업 재시도") }
+                } else if (item.phase == OutboxPhase.failed || item.phase == OutboxPhase.reauthenticate) {
+                    Button(onSend, enabled = !cannotSend) { Text("전송") }
                 }
                 if (item.phase == OutboxPhase.reauthenticate) TextButton(onSignOut, enabled = !busy) { Text("다시 로그인") }
             }

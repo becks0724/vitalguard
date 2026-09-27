@@ -86,7 +86,10 @@ class MultipartGatewayTest {
             val e = failure { gateway.voiceComment("jwt", "photo", byteArrayOf(1), clientOperationId = "id") }
             assertEquals(submitted, e.uncertainWrite)
             val photo = failure { gateway.upload("jwt", PHOTO_BYTES, mapOf("clientOperationId" to "id")) }
-            assertTrue(photo.uncertainWrite); assertEquals("업로드 결과 불명 · 자동 재전송하지 않습니다", photo.message)
+            if (error is SocketException) {
+                assertEquals(submitted, photo.uncertainWrite); assertTrue(photo.networkUnreachable)
+                assertEquals("서버에 연결할 수 없습니다", photo.message)
+            } else { assertTrue(photo.uncertainWrite); assertEquals("업로드 결과 불명 · 자동 재전송하지 않습니다", photo.message) }
         }
     }
     @Test fun httpTransportBuffersOneMultipartBodyAndUsesSeparateSixtySecondDeadline() = runTest {

@@ -20,6 +20,7 @@ class FieldCoordinator(
     override val local: LocalStore,
     private val scope: CoroutineScope,
     private val clock: Clock = Clock.systemUTC(),
+    private val photoCache: CalendarPhotoCache? = null,
 ) : FieldController {
     private val mutable = MutableStateFlow(FieldState())
     override val state = mutable.asStateFlow()
@@ -147,6 +148,10 @@ class FieldCoordinator(
             val expected = epoch
             revalidation = scope.launch { revalidateSession(expected) }
         }
+    }
+
+    override fun connectivityChanged(online: Boolean) {
+        if (online) markOnline() else update { it.copy(offline = true) }
     }
 
     private suspend fun revalidateSession(expected: Int) {
@@ -359,10 +364,25 @@ class FieldCoordinator(
     override suspend fun photoBytes(media: CalendarMedia): ByteArray {
         val account = s.user?.id ?: throw ApiFailure("다시 로그인해 주세요")
         val expected = epoch
-        if (media.json["local"] != true) throw ApiFailure("원본이 기기에 없습니다")
-        val bytes = local.readBytes(account, "outbox-file:${media.id}")
+        if (media.json["local"] == true) {
+            val bytes = local.readBytes(account, "outbox-file:${media.id}")
+            checkEpoch(expected)
+            if (bytes != null) return bytes
+        }
+        val serverId = if (media.json["local"] == true) media.text("serverId") else media.id
+        if (serverId == null) throw ApiFailure("원본이 기기에 없습니다")
+        photoCache?.read(account, serverId)?.let { checkEpoch(expected); return it }
+        val bytes = authorized { gateway.calendarPhoto(it, serverId) }
         checkEpoch(expected)
-        return bytes ?: throw ApiFailure("원본이 기기에 없습니다")
+        photoCache?.write(account, serverId, bytes)
+        checkEpoch(expected)
+        return bytes
+    }
+    override suspend fun calendarMedia(from: String, to: String) = authorized { gateway.calendarMedia(it, from, to) }
+    override suspend fun deleteCalendarMedia(id: String) {
+        val owner = s.user?.id ?: throw ApiFailure("다시 로그인해 주세요")
+        authorized(writing = true) { gateway.deleteCalendarMedia(it, id) }
+        photoCache?.remove(owner, id)
     }
     override suspend fun publish(bytes: ByteArray, fields: Map<String, String>) =
         authorized(writing = true) { gateway.upload(it, bytes, fields) }

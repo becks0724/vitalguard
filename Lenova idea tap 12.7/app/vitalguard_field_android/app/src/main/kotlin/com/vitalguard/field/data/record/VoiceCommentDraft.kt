@@ -195,7 +195,7 @@ class VoiceCommentDraft(
                 photo.siteName, owner, sourceKey = "$key:recording:$recordingRevision", dependsOn = mediaId, draftKeys = listOf(key, audioKey))
             operationId = item.id; persist().await(); recorder.cancel(clip.path)
             audio = null; operationId = null; update { it.copy(clip = null) }; persist().await()
-            update { it.copy(notice = "음성을 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.") }
+            update { it.copy(notice = "음성을 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.") }
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) { update { it.copy(error = message(e)) }
         } finally { update { it.copy(sending = false) } }

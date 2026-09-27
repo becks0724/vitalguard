@@ -2,11 +2,7 @@ package com.vitalguard.field.ui.record
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -28,66 +24,11 @@ import com.vitalguard.field.capture.*
 import com.vitalguard.field.data.*
 import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.models.*
-import com.vitalguard.field.ui.capture.CaptureActionPanel
 import com.vitalguard.field.ui.shell.ActionDock
 import com.vitalguard.field.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-
-// Port: record_screens.dart RecordHome/PhotoDetail/_Attachment.
-@Composable
-fun RecordHome(controller: FieldController, outbox: OutboxController, capture: CaptureUiState,
-    onScan: () -> Unit, onPhoto: () -> Unit, onOpen: (String) -> Unit, onReload: () -> Unit,
-) {
-    val field by controller.state.collectAsStateWithLifecycle()
-    val all by outbox.items.collectAsStateWithLifecycle()
-    val error by outbox.loadError.collectAsStateWithLifecycle()
-    LaunchedEffect(outbox) { outbox.load() }
-    RecordHomeContent(all, field.offline, error, capture, onOpen, onReload, onScan, onPhoto) { item ->
-        StoredImage(controller.local, item.owner, item.bytesKey, 160, Modifier.size(72.dp))
-    }
-}
-
-@Composable
-fun RecordHomeContent(
-    entries: List<OutboxEntry>, offline: Boolean = false, loadError: String? = null,
-    capture: CaptureUiState = CaptureUiState(), onOpen: (String) -> Unit = {}, onReload: () -> Unit = {},
-    onScan: () -> Unit = {}, onPhoto: () -> Unit = {},
-    thumbnail: @Composable (OutboxEntry) -> Unit = { ImagePlaceholder(Modifier.size(72.dp)) },
-) {
-    val photos = pendingPhotos(entries)
-    Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        bottomBar = { ActionDock { CaptureActionPanel(capture, onScan, onPhoto) } }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding).testTag("record-pending-list"),
-            state = rememberLazyListState(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("보낼 기록", style = MaterialTheme.typography.headlineMedium)
-                    Text("전송이 끝난 기록은 관제웹에서 봅니다.")
-                    if (offline) Text("오프라인 · 촬영한 사진과 주석·메모·음성은 기기에 보관합니다.")
-                    if (loadError != null) { Text(loadError); TextButton(onReload) { Text("기록 다시 열기") } }
-                }
-            }
-            if (photos.isEmpty() && loadError == null) item { Text("보낼 기록이 없습니다. 촬영한 사진은 여기 모입니다.") }
-            items(photos, key = { it.id }) { photo ->
-                Card(colors = CardDefaults.cardColors(containerColor = VgColors.canvas.copy(alpha = vgCardSurfaceAlpha)),
-                    modifier = Modifier.fillMaxWidth().testTag("record-photo-${photo.id}").clickable { onOpen(photo.id) }) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Box(Modifier.size(72.dp), contentAlignment = Alignment.Center) { thumbnail(photo) }
-                        Column(Modifier.weight(1f)) {
-                            Text(photo.fields["title"] ?: "현장 사진", style = MaterialTheme.typography.titleMedium)
-                            Text(listOf(captureRecordedTime(photo.fields["capturedAt"]), photo.siteName,
-                                attachmentCounts(entries.filter { it.dependsOn == photo.id }), photo.statusLabel).joinToString("\n"))
-                        }
-                        VgIcon(R.drawable.ic_chevron_right)
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: RecordActions, photoId: String,
@@ -99,23 +40,15 @@ fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: 
     val actionStates by actions.state.collectAsStateWithLifecycle()
     val photo = entries.firstOrNull { it.id == photoId && it.kind == OutboxKind.photo }
     val children = entries.filter { it.dependsOn == photoId }.sortedBy { it.createdAt }
-    var entered by rememberSaveable(photoId) { mutableStateOf(false) }
-    val completed = photo?.phase == OutboxPhase.completed && children.all { it.phase == OutboxPhase.completed }
-    LaunchedEffect(photoId) {
-        if (!entered) {
-            outbox.load()
-            val initial = outbox.entry(photoId)
-            if (initial == null || initial.kind != OutboxKind.photo || initial.phase == OutboxPhase.completed) onBack()
-            else entered = true
-        }
+    LaunchedEffect(photoId, photo == null) {
+        if (photo == null) { outbox.load(); if (outbox.entry(photoId) == null) onBack() }
     }
-    LaunchedEffect(entered, photo == null, completed) { if (entered && (photo == null || completed)) onBack() }
-    if (photo == null || completed) { Text("보낼 기록 목록으로 돌아갑니다."); return }
+    if (photo == null) { Text("달력으로 돌아갑니다."); return }
     val action = actionStates[actions.stateKey(photo)] ?: RecordActionState()
     val availability = photoActions(photo, children, busyIds, field.offline, action.busy)
     PhotoDetailContent(photo, children, availability, field.offline, windowWidthDp >= 1000, action.error,
-        onBack = onBack, onEditor = onEditor, onInput = onInput, onSend = { actions.send(photo) }, onDelete = { actions.discard(photo) },
-        preview = { LocalPhotoPreview(controller, photo, Modifier.fillMaxSize()) },
+        onBack = onBack, onEditor = onEditor, onInput = onInput, onDelete = { actions.discard(photo) },
+        preview = { PhotoPreview(controller, fromOutbox(photo), Modifier.fillMaxSize()) },
         attachment = { child -> Attachment(controller.local, child,
             onDelete = if (!availability.processing && canDiscard(child)) ({ actions.discard(photo, child.id) }) else null) })
 }
@@ -125,7 +58,7 @@ fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: 
 fun PhotoDetailContent(
     photo: OutboxEntry, attachments: List<OutboxEntry>, availability: PhotoActionAvailability = photoActions(photo, attachments, emptySet(), false),
     offline: Boolean = false, wide: Boolean = false, error: String? = null,
-    onBack: () -> Unit = {}, onEditor: () -> Unit = {}, onInput: () -> Unit = {}, onSend: () -> Unit = {}, onDelete: () -> Unit = {},
+    onBack: () -> Unit = {}, onEditor: () -> Unit = {}, onInput: () -> Unit = {}, onDelete: () -> Unit = {},
     preview: @Composable () -> Unit = { ImagePlaceholder(Modifier.fillMaxSize()) },
     attachment: @Composable (OutboxEntry) -> Unit = { Text("${it.kindLabel} · ${it.statusLabel}") },
 ) {
@@ -135,12 +68,14 @@ fun PhotoDetailContent(
     val scroll = rememberScrollState()
     val detailContent: @Composable ColumnScope.() -> Unit = {
         Text(photo.statusLabel, Modifier.testTag("photo-bundle-status"))
+        Text("사진 상세를 닫으면 저장한 기록이 자동으로 전송됩니다.")
+        if (photo.phase == OutboxPhase.completed) Text("서버 원본은 보존되며 새 주석·메모·음성만 추가됩니다.")
         if (availability.processing) LinearProgressIndicator(Modifier.fillMaxWidth())
         photo.message?.let { Text(it) }
         error?.let { Text(it) }
         if (offline) Text("오프라인입니다. 연결 후 전송할 수 있습니다.")
-        if (availability.uncertain) Text("전송 상태 탭에서 서버 반영 여부를 조회하거나 미등록 확인 후 재시도해 주세요.")
-        if (availability.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 전송 상태 탭에서 재개해 주세요.")
+        if (availability.uncertain) Text("전송 이력 탭에서 서버 반영 여부를 조회하거나 미등록 확인 후 재시도해 주세요.")
+        if (availability.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 전송 이력 탭에서 재개해 주세요.")
         Spacer(Modifier.height(16.dp))
         Text("${captureRecordedTime(media.captured_at)} · ${photo.siteName}")
         media.road_address?.let { Text(it) }
@@ -149,18 +84,25 @@ fun PhotoDetailContent(
         if (showOcr) SelectionContainer { Text(media.ocr_text ?: "OCR 원문 없음", Modifier.padding(16.dp)) }
         Spacer(Modifier.height(16.dp))
         Text(attachmentCounts(attachments), style = MaterialTheme.typography.titleLarge)
-        attachments.forEach { child -> key(child.id) { attachment(child) } }
+        media.comments.forEach { comment ->
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
+                Text("${comment.author_name ?: comment.author_id ?: "작성자 미제공"} · ${comment.created_at.orEmpty()}")
+                if (comment.audio_ms != null || comment.audio_storage_key != null || comment.audio_url != null) Text("음성 · ${voiceTime(comment.audio_ms ?: 0)}")
+                else SelectionContainer { Text(comment.body) }
+            } }
+        }
+        attachments.filter { child -> media.comments.none { it.id == child.receipt?.get("id") } }
+            .forEach { child -> key(child.id) { attachment(child) } }
     }
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text(media.title ?: "현장 사진") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
-            windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { VgIconButton(R.drawable.ic_back, "기록으로", onClick = onBack) })
+            windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { VgIconButton(R.drawable.ic_back, "달력으로", onClick = onBack) })
     }, bottomBar = {
         ActionDock {
             FlowRow(Modifier.fillMaxWidth().testTag("photo-detail-actions"), horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 OutlinedButton(onEditor, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-editor"), enabled = availability.editable) { Text("주석 그리기") }
                 OutlinedButton(onInput, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-input"), enabled = availability.editable) { Text("메모·음성 붙이기") }
-                Button(onSend, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("send-bundle"), enabled = availability.sendable) { Text("전송") }
                 OutlinedButton({ confirmDelete = true }, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("delete-bundle"),
                     enabled = availability.deletable) { Text("삭제") }
             }
@@ -178,15 +120,17 @@ fun PhotoDetailContent(
         }
     }
     if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false }, title = { Text("이 사진을 삭제할까요?") },
-        text = { Text("기기에 보관한 사진과 딸린 주석·메모·음성을 함께 삭제합니다.") },
+        text = { Text(if (photo.phase == OutboxPhase.completed) "서버 사진과 딸린 기록을 삭제합니다. 삭제 가능 여부는 서버에서 확인합니다."
+            else "기기에 보관한 사진과 딸린 주석·메모·음성을 함께 삭제합니다.") },
         dismissButton = { TextButton({ confirmDelete = false }) { Text("취소") } },
         confirmButton = { Button({ confirmDelete = false; onDelete() }, Modifier.testTag("confirm-delete-bundle")) { Text("삭제") } })
 }
 
 @Composable
 private fun Attachment(store: LocalStore, item: OutboxEntry, onDelete: (() -> Unit)?) {
-    val text by produceState<String?>(null, item.owner, item.bytesKey) {
-        if (item.kind == OutboxKind.text) try { value = store.readBytes(item.owner, item.bytesKey)?.toString(Charsets.UTF_8)
+    val text by produceState<String?>(item.receipt?.get("body") as? String, item.owner, item.bytesKey, item.receipt) {
+        if (item.kind == OutboxKind.text && value == null) try { value = store.readBytes(item.owner, item.bytesKey)?.toString(Charsets.UTF_8)
+            ?: if (item.phase == OutboxPhase.completed) "서버에 저장된 메모입니다. 달력 기록을 새로 불러와 주세요." else "메모를 읽지 못했습니다"
         } catch (e: CancellationException) { throw e
         } catch (_: Exception) { value = "메모를 읽지 못했습니다" }
     }
@@ -227,11 +171,11 @@ private fun StoredImage(store: LocalStore, owner: String, storageKey: String, ca
     else Image(bitmap!!, "사진 미리보기", modifier, contentScale = ContentScale.Fit)
 }
 @Composable
-private fun LocalPhotoPreview(controller: FieldController, photo: OutboxEntry, modifier: Modifier) {
-    var error by remember(photo.id) { mutableStateOf<String?>(null) }
-    var loaded by remember(photo.id) { mutableStateOf(false) }
-    val bitmap by produceState<ImageBitmap?>(null, controller, photo.owner, photo.id) {
-        try { value = decodeImage(controller.photoBytes(fromOutbox(photo)), 2400)
+fun PhotoPreview(controller: FieldController, media: CalendarMedia, modifier: Modifier, cacheWidth: Int = 2400) {
+    var error by remember(media.id) { mutableStateOf<String?>(null) }
+    var loaded by remember(media.id) { mutableStateOf(false) }
+    val bitmap by produceState<ImageBitmap?>(null, controller, media.id) {
+        try { value = decodeImage(controller.photoBytes(media), cacheWidth)
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) { error = e.message ?: e.toString()
         } finally { loaded = true }

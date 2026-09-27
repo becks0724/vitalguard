@@ -5,6 +5,8 @@ import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.models.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 // ViewModel 수명으로 화면 컨트롤러/복구 요청을 소유한다. NavHost 재생성은 초안을 다시 읽지 않는다.
 class RecordWorkspace(
@@ -16,6 +18,12 @@ class RecordWorkspace(
     var input: RecordInputController? = null; private set
     private val mutableRecovery = MutableStateFlow<RecordRecovery?>(null)
     val recovery = mutableRecovery.asStateFlow()
+    private val mutableDetail = MutableStateFlow<String?>(null)
+    val detail = mutableDetail.asStateFlow()
+    private val mutableClosed = MutableStateFlow(0L)
+    val closedDetail = mutableClosed.asStateFlow()
+    private var batch = emptyList<String>()
+    private val closing = Mutex()
     private var owner: String? = null
     private var epoch = 0
     private var restored = false
@@ -25,6 +33,23 @@ class RecordWorkspace(
         ++epoch; owner = value; restored = false
         loading.forEach { it.cancel() }; loading.clear()
         input?.close(); input = null; editor?.close(); editor = null; mutableRecovery.value = null
+        mutableDetail.value = null; batch = emptyList()
+    }
+    fun openDetail(id: String, batchIds: List<String> = listOf(id)) {
+        mutableDetail.value = id; batch = batchIds
+        batchIds.forEach(queue::beginReview)
+    }
+    suspend fun closeDetail() = closing.withLock {
+        val id = mutableDetail.value ?: return@withLock
+        val account = owner ?: return@withLock
+        flush()
+        if (account != owner || id != mutableDetail.value) return@withLock
+        val sending = batch.toList()
+        // 로컬 저장만 기다린다. 서버 응답을 기다리며 상세/탭을 붙잡지 않는다.
+        sending.forEach { queue.readyBundle(it) }
+        forget(id); RecordSession(field, queue, account).close()
+        mutableDetail.value = null; batch = emptyList(); mutableClosed.value++
+        launch { if (queue.account == account) sending.forEach { queue.sendBundle(it, automatic = true) } }
     }
     suspend fun restoreSession(): Boolean {
         val account = owner ?: return false
@@ -71,7 +96,7 @@ class RecordWorkspace(
         if (queue.account != owner) return
         listOfNotNull(editor?.origin?.id, input?.media?.id).distinct().forEach { id ->
             val photo = queue.entry(id)
-            if (photo == null || photo.phase == com.vitalguard.field.data.OutboxPhase.completed) forget(id)
+            if (photo == null) forget(id)
         }
     }
     fun forget(id: String) {
@@ -94,7 +119,7 @@ class RecordWorkspace(
         val ink = editor?.persist(); val note = input?.persist()
         launch { ink?.await(); note?.await() }
     }
-    fun background() = launch { flush() }
+    fun background() = launch { if (mutableDetail.value != null) closeDetail() else flush() }
     fun launch(action: suspend () -> Unit) {
         scope.launch {
             try { action() } catch (e: CancellationException) { throw e

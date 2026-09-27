@@ -99,11 +99,15 @@ class InkEditorTest {
         assertFalse(e.save()); assertTrue(e.state.value.error!!.contains("2,097,152")); assertEquals(0,renderer.calls)
         assertTrue(rig.box.dependents(photo.id).isEmpty()); assertNotNull(rig.store.read("a",key))
     }
-    @Test fun previousUncertainCompletedOrSendingInkBlocksReplacement() = runTest {
+    @Test fun previousUncertainOrSendingInkBlocksReplacementButCompletedInkAllowsAnAddition() = runTest {
         for (phase in listOf(OutboxPhase.uncertain,OutboxPhase.completed,OutboxPhase.sending)) {
             val rig=outboxRig(); val photo=rig.photo(); val child=rig.box.enqueue(OutboxKind.ink,byteArrayOf(1),emptyMap(),photo.siteName,dependsOn=photo.id)
             rig.restore(listOf(photo,child.copy(phase=phase)))
-            val e=rig.editor(photo); e.stroke(); assertFalse(e.save()); assertTrue(e.state.value.error!!.contains("이전 주석의 전송 상태"))
+            val e=rig.editor(photo); e.stroke()
+            if (phase == OutboxPhase.completed) {
+                assertTrue(e.save()); assertEquals(2, rig.box.dependents(photo.id).size)
+                assertEquals(OutboxPhase.completed, rig.box.entry(child.id)!!.phase)
+            } else { assertFalse(e.save()); assertTrue(e.state.value.error!!.contains("이전 주석의 전송 상태")) }
         }
     }
     @Test fun renderFailureOrAccountChangeKeepsDraftAndPreventsReplacement() = runTest {

@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 import com.vitalguard.field.capture.CaptureUiState
 import com.vitalguard.field.data.*
+import com.vitalguard.field.data.record.mergeCalendarRecords
+import java.time.LocalDate
 import com.vitalguard.field.ui.record.*
 import com.vitalguard.field.ui.shell.VgBackground
 import com.vitalguard.field.ui.theme.VgTheme
@@ -40,14 +42,14 @@ private fun PreviewPhoto(modifier: Modifier) {
     }
 }
 @PreviewTest
-@Preview(name = "PendingRecords866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
+@Preview(name = "LocalRecordsCalendar866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable
-fun PendingRecordsPreview() {
+fun LocalRecordsCalendarPreview() {
     VgTheme {
         Box(Modifier.fillMaxSize()) {
             VgBackground(Modifier.matchParentSize())
-            RecordHomeContent(listOf(previewPhoto, previewText, previewPhoto.copy(id = "second", fields = previewPhoto.fields + mapOf("title" to "서류 스캔 · 페이지 1", "clientOperationId" to "second"),
-                createdAt = previewPhoto.createdAt.minusSeconds(60))), capture = CaptureUiState(scannerReady = false),
+            RecordCalendarContent(LocalDate.parse("2026-09-26"), mergeCalendarRecords(listOf(previewPhoto, previewText, previewPhoto.copy(id = "second", fields = previewPhoto.fields + mapOf("title" to "서류 스캔 · 페이지 1", "clientOperationId" to "second"),
+                createdAt = previewPhoto.createdAt.minusSeconds(60))), emptyList()), capture = CaptureUiState(scannerReady = false),
                 thumbnail = { PreviewPhoto(Modifier.size(72.dp)) })
         }
     }

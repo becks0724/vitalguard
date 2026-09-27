@@ -20,7 +20,7 @@ class RecordRecoveryTest {
         val recovered=session.read()!!; assertTrue(recovered.ink); assertEquals(photo.id,recovered.media.id); assertEquals("작업 사진",recovered.media.title)
         assertTrue(rig.gateway.writes.isEmpty())
     }
-    @Test fun missingOrCompletedBundleClosesOnlyTheSession() = runTest {
+    @Test fun missingPhotoOrCompletedPhotoWithoutServerReceiptClosesOnlyTheSession() = runTest {
         for (completed in listOf(false,true)) {
             val rig=outboxRig(); val photo=rig.photo(); val session=RecordSession(rig.field,rig.box,"a")
             session.remember(fromOutbox(photo)); rig.store.write("a","annotation:${photo.id}","preserve")

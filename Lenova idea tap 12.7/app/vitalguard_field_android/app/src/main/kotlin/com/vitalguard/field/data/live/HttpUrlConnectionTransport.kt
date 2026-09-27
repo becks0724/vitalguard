@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
 class HttpUrlConnectionTransport(
     private val base: URI = URI("https://vitalguard-dashboard-569797426568.asia-northeast3.run.app"),
     private val open: (URI) -> HttpURLConnection = { it.toURL().openConnection() as HttpURLConnection },
-) : JsonTransport, MultipartTransport {
+) : JsonTransport, MultipartTransport, DownloadTransport {
     companion object {
         const val CONNECT_TIMEOUT_MS = 20_000
         const val RESPONSE_TIMEOUT_MS = 30_000
@@ -34,6 +34,36 @@ class HttpUrlConnectionTransport(
     override suspend fun executeMultipart(path: String, token: String, bytes: ByteArray, contentType: String,
         onSubmitted: () -> Unit): ApiReply =
         request("POST", path, token, bytes, contentType, UPLOAD_TIMEOUT_MS, "업로드 결과를 확인할 수 없습니다", onSubmitted)
+
+    override suspend fun download(url: String): ByteArray = withContext(Dispatchers.IO) {
+        val target = URI(url)
+        require(target.scheme == "https" && target.host != null && target.userInfo == null) { "사진 주소를 확인할 수 없습니다" }
+        val connection = open(target)
+        try {
+            connection.requestMethod = "GET"
+            connection.instanceFollowRedirects = false
+            connection.useCaches = false
+            connection.connectTimeout = CONNECT_TIMEOUT_MS
+            connection.readTimeout = BODY_TIMEOUT_MS
+            // 발급받은 스토리지 URL에는 앱 Bearer를 전달하지 않는다.
+            deadline(connection, CONNECT_TIMEOUT_MS) { connection.connect() }
+            val status = deadline(connection, RESPONSE_TIMEOUT_MS) { connection.responseCode }
+            if (status !in 200..299) throw ApiFailure("사진을 내려받지 못했습니다", status = status)
+            deadline(connection, BODY_TIMEOUT_MS) {
+                connection.inputStream.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > 32 * 1024 * 1024) throw ApiFailure("사진 크기가 다운로드 한도를 넘었습니다")
+                        output.write(buffer, 0, count)
+                    }
+                    output.toByteArray()
+                }
+            }
+        } finally { connection.disconnect() }
+    }
 
     private suspend fun request(method: String, path: String, token: String?, bytes: ByteArray?, contentType: String,
         responseTimeout: Int, malformedMessage: String, onSubmitted: () -> Unit = {}): ApiReply = withContext(Dispatchers.IO) {

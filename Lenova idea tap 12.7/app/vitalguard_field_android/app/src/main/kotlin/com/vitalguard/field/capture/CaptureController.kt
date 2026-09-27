@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.*
 // Port: 파일럿 CaptureViewModel. 메인 FieldViewModel의 scope로 회전 중 요청을 유지한다.
 data class CameraUiState(val permissionGranted: Boolean = false, val ready: Boolean = false,
     val taking: Boolean = false, val error: String? = null, val generation: Int = 0)
-data class CaptureNavigation(val serial: Long, val photoId: String? = null)
+data class CaptureNavigation(val serial: Long, val photoId: String? = null, val batchIds: List<String> = emptyList())
 data class CaptureUiState(val scannerReady: Boolean? = null, val busy: Boolean = false,
     val operationMessage: String? = null, val cameraOpen: Boolean = false,
     val camera: CameraUiState = CameraUiState(), val navigation: CaptureNavigation? = null)
@@ -132,7 +132,7 @@ class CaptureController(context: Context, private val field: FieldController, pr
                 captureAuthor.workerName, captureAuthor.workerId, captureAuthor.siteId)
             if (outbox.account != captureAuthor.owner) return
             mutable.update { it.copy(busy = false, operationMessage = result.operationMessage,
-                navigation = CaptureNavigation(++serial, result.detailPhotoId)) }
+                navigation = CaptureNavigation(++serial, result.queuedIds.firstOrNull(), result.queuedIds)) }
         } catch (error: CancellationException) { throw error
         } catch (error: Exception) { mutable.update { it.copy(busy = false, operationMessage = operationError(error)) }
         } finally {

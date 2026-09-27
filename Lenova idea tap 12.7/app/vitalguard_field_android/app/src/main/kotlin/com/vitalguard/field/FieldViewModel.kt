@@ -2,6 +2,8 @@ package com.vitalguard.field
 
 import com.vitalguard.field.audio.*
 import com.vitalguard.field.data.record.RecordWorkspace
+import com.vitalguard.field.data.record.RecordCalendarController
+import com.vitalguard.field.data.live.ConnectivityWatcher
 import com.vitalguard.field.ui.record.AndroidInkRenderer
 import com.vitalguard.field.data.mock.MockVoiceRecorder
 import androidx.lifecycle.ViewModel
@@ -18,13 +20,16 @@ import com.vitalguard.field.ui.site.SiteSummaryController
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 class FieldViewModel(application: FieldApplication) : ViewModel() {
     val controller = application.controller(viewModelScope)
     val outbox = OutboxController(controller, viewModelScope)
-    val recordActions = RecordActions(outbox, viewModelScope)
+    val calendar = RecordCalendarController(controller, outbox, viewModelScope)
+    val recordActions = RecordActions(outbox, viewModelScope, calendar::removed)
     val outboxUi = OutboxUiController(outbox, viewModelScope)
     val capture = if (application.captureEnabledForTests == false) null else CaptureController(application, controller, outbox, viewModelScope)
     val auth = AuthUiController(controller, application.internetProbe(), viewModelScope)
@@ -36,6 +41,8 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     private val speech: com.vitalguard.field.data.contracts.SpeechInput by lazy { application.speech(controller.isMock, microphone) { (recorder as? DeviceVoiceRecorder)?.isBusy == true } }
     private val recorder: com.vitalguard.field.data.contracts.VoiceRecorder by lazy { application.recorder(viewModelScope, controller.isMock, microphone) { (speech as? DeviceSpeechInput)?.isBusy == true } }
     val records = RecordWorkspace(controller, outbox, AndroidInkRenderer(), speech, recorder, viewModelScope, ::snackbar)
+    private val connectivity = if (controller.isMock || application.controllerFactoryForTests != null) null
+        else ConnectivityWatcher(application, viewModelScope, controller::connectivityChanged)
     init {
         val previousFlusher = controller.beforeLock
         controller.beforeLock = {
@@ -49,6 +56,7 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                     site.setVisible(false)
                     account = next
                     records.bindAccount(next)
+                    calendar.bindAccount(next)
                     shell.bindAccount(next)
                     site.reset()
                     capture?.reset()
@@ -56,14 +64,33 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                 }
                 site.setVisible(next != null && shell.state.value.destination == 0)
                 outboxUi.setVisible(next != null && shell.state.value.destination == 3)
+                calendar.setVisible(next != null && shell.state.value.destination == 2)
             }
         }
-        viewModelScope.launch { outbox.items.collect { records.pruneFinished() } }
+        viewModelScope.launch { outbox.items.collect {
+            records.pruneFinished()
+            // 조회로 부모의 완료가 확인된 경우에도 저장된 추가분의 대기가 이어진다.
+            records.launch { outbox.resumeAutomatic() }
+        } }
+        viewModelScope.launch {
+            var wasOffline = false
+            controller.state.map { Triple(it.authStage, it.user?.id, it.offline) }.distinctUntilChanged().collect { (stage, _, offline) ->
+                val restored = wasOffline && !offline
+                wasOffline = offline
+                if (stage == AuthStage.ready && !offline) {
+                    records.launch {
+                        outbox.load()
+                        outbox.resumeAutomatic(networkRestored = restored)
+                    }
+                    if (restored) calendar.refresh()
+                }
+            }
+        }
         viewModelScope.launch { controller.initialize() }
     }
     suspend fun restoreRecord() { if (records.restoreSession()) shell.select(2) }
     fun selectDestination(index: Int) {
-        if (shell.state.value.destination == 2 && index != 2) records.launch { records.flush(); shell.select(index) }
+        if (shell.state.value.destination == 2 && index != 2) records.launch { records.closeDetail(); records.flush(); shell.select(index) }
         else shell.select(index)
     }
     fun stopRecordAudio() {
@@ -74,6 +101,8 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     }
     fun snackbar(message: String) { events.trySend(message) }
     override fun onCleared() {
+        connectivity?.close()
+        calendar.close()
         records.close()
         controller.beforeLock = null
         auth.close()

@@ -51,7 +51,7 @@ class ShellStateTest {
         val ready = FieldState(siteStatusSnapshot = SiteStatus(siteStatusReply()))
         assertEquals("마지막 수신 2026-09-15 00:13:04 KST", shellReceipt(0, ready))
         assertEquals(siteStatusReceipt(null), shellReceipt(0, FieldState()))
-        for (index in 2..4) assertEquals("전송 전 기록은 기기에 보관 · 전송한 기록은 관제웹에서 봅니다", shellReceipt(index, ready))
+        for (index in 2..4) assertEquals("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요", shellReceipt(index, ready))
         val offline = ready.copy(offline = true)
         assertTrue(shellReceipt(0, offline).contains("60초마다 조회를 재시도"))
         assertTrue(shellReceipt(1, offline).contains("경보 대응 확인은 연결 후 가능하며 예약되지 않습니다."))

@@ -44,6 +44,9 @@ data class OutboxEntry(
     val receipt: JsonObject? = null,
     val deduplicated: Boolean = false,
     val needsVerification: Boolean = false,
+    val autoSendReady: Boolean = false,
+    val networkFailure: Boolean = false,
+    val serverReference: Boolean = false,
 ) {
     val bytesKey get() = "outbox-file:$id"
     val siteId get() = fields["siteId"]
@@ -69,6 +72,7 @@ data class OutboxEntry(
         "dependsOn" to dependsOn, "completedAt" to completedAt?.toString(), "draftKeys" to draftKeys,
         "phase" to phase.name, "message" to message, "receipt" to receipt,
         "deduplicated" to deduplicated, "needsVerification" to needsVerification,
+        "autoSendReady" to autoSendReady, "networkFailure" to networkFailure, "serverReference" to serverReference,
     )
     companion object {
         fun fromJson(json: JsonObject) = OutboxEntry(
@@ -83,6 +87,9 @@ data class OutboxEntry(
             phase = OutboxPhase.valueOf(json["phase"] as String), message = json["message"] as String?,
             receipt = json["receipt"].jsonObjectOrNull(), deduplicated = json["deduplicated"] == true,
             needsVerification = json["needsVerification"] == true,
+            autoSendReady = json["autoSendReady"] as? Boolean ?: true, // 기존 v1 대기는 재접속 시 이어 보낸다.
+            networkFailure = json["networkFailure"] == true,
+            serverReference = json["serverReference"] == true,
         )
     }
 }
@@ -96,6 +103,7 @@ class OutboxController(
     private val accounts = ConcurrentHashMap<String, List<OutboxEntry>>()
     private val inflight = ConcurrentHashMap.newKeySet<String>()
     private val bundleSends = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
+    private val reviewing = ConcurrentHashMap.newKeySet<String>()
     // 재시작하면 사라지는 명시적 재시도 자격. 디스크에는 저장하지 않는다.
     private val retryableUncertain = ConcurrentHashMap.newKeySet<String>()
     private val lookupRunning = AtomicBoolean(false)
@@ -224,27 +232,67 @@ class OutboxController(
         write(item.owner, accounts.getValue(item.owner))
         notifyState()
     }
-    suspend fun send(request: OutboxEntry, retry: Boolean = false) {
+    private fun automaticCandidate(item: OutboxEntry, networkRestored: Boolean) = item.autoSendReady &&
+        !item.needsVerification && (item.phase == OutboxPhase.waiting ||
+            (networkRestored && item.phase == OutboxPhase.failed && item.networkFailure)) &&
+        key(item) !in reviewing && "${item.owner}:${item.dependsOn}" !in reviewing
+
+    fun beginReview(id: String) { entry(id)?.let { reviewing.add(key(it)) } }
+
+    /** 저장/검토 중인 묶음은 자동 전송하지 않는다. 닫힘을 먼저 영속화한 뒤 HTTP를 시작한다. */
+    suspend fun releaseBundle(photoId: String) {
+        val owner = account ?: return
+        readyBundle(photoId)
+        if (owner == account) sendBundle(photoId, automatic = true)
+    }
+    suspend fun readyBundle(photoId: String) {
+        val owner = account ?: return
+        writes.withLock {
+            val photo = entry(photoId) ?: return@withLock
+            check(photo.owner == owner)
+            val next = accounts.getValue(owner).map {
+                if (it.id == photoId || it.dependsOn == photoId) it.copy(autoSendReady = true) else it
+            }
+            write(owner, next); accounts[owner] = next
+            reviewing.remove(key(photo)); notifyState()
+        }
+    }
+
+    suspend fun resumeAutomatic(networkRestored: Boolean = false) {
+        if (field.state.value.offline || account == null || loadError.value != null) return
+        val owner = account
+        val roots = items.value.filter { automaticCandidate(it, networkRestored) }
+            .map { it.dependsOn ?: it.id }.distinct()
+        for (id in roots) {
+            if (owner != account || field.state.value.offline) break
+            val root = entry(id) ?: continue
+            if (root.kind == OutboxKind.photo) sendBundle(id, automatic = true, networkRestored = networkRestored)
+            else send(root, automatic = true, networkRestored = networkRestored)
+        }
+    }
+
+    suspend fun send(request: OutboxEntry, retry: Boolean = false, automatic: Boolean = false, networkRestored: Boolean = false) {
         var item = current(request) ?: return
+        if (automatic && !automaticCandidate(item, networkRestored)) return
         val explicitUncertainRetry = retry && canRetryUncertain(item)
         if (!owned(item) || isBusy(item) || item.phase in setOf(OutboxPhase.completed, OutboxPhase.sending) ||
             ((item.needsVerification || item.phase == OutboxPhase.uncertain) && !explicitUncertainRetry)) return
         val parent = parentOf(item)
         if (item.dependsOn != null) {
             if (parent == null) { save(item.copy(phase = OutboxPhase.failed, message = "원본 사진 항목이 없습니다")); return }
-            if (parent.phase != OutboxPhase.completed) { sendBundle(parent.id, retry); return }
+            if (parent.phase != OutboxPhase.completed) { sendBundle(parent.id, retry, automatic, networkRestored); return }
             if (parent.receipt?.get("id") !is String) {
                 save(item.copy(phase = OutboxPhase.waiting, message = "원본 사진 결과 확인 후 전송됩니다")); return
             }
         }
         if (field.state.value.offline && !retry) {
-            save(item.copy(message = "오프라인입니다. 연결 후 전송 상태에서 전송/재시도를 눌러 주세요.")); return
+            save(item.copy(message = "오프라인입니다. 연결되면 자동으로 전송됩니다.")); return
         }
         val itemKey = key(item)
         // discard와 전송 시작의 경쟁도 동일 Mutex로 직렬화한다.
         val claimed = writes.withLock {
             val latest = current(item)
-            if (latest == null || !owned(latest) || latest.phase in setOf(OutboxPhase.completed, OutboxPhase.sending) ||
+            if (latest == null || !owned(latest) || (automatic && !automaticCandidate(latest, networkRestored)) || latest.phase in setOf(OutboxPhase.completed, OutboxPhase.sending) ||
                 ((latest.needsVerification || latest.phase == OutboxPhase.uncertain) && !(retry && canRetryUncertain(latest)))) false
             else { item = latest; inflight.add(itemKey) }
         }
@@ -262,7 +310,7 @@ class OutboxController(
             val body = if (item.kind == OutboxKind.text) Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(bytes)).toString() else null
             if (item.kind == OutboxKind.text && mediaId == null) throw ApiFailure("원본 사진 항목이 없습니다", status = 400)
-            item = item.copy(phase = OutboxPhase.sending, message = null)
+            item = item.copy(phase = OutboxPhase.sending, message = null, networkFailure = false)
             save(item) // sending 영속화에 실패하면 HTTP 금지.
             if (!owned(item)) { item = item.copy(phase = OutboxPhase.reauthenticate); return }
             submitted = true
@@ -290,7 +338,7 @@ class OutboxController(
                 404 -> "원본 사진을 찾을 수 없습니다. 삭제 여부를 확인해 주세요."
                 else -> null
             }
-            item = item.copy(needsVerification = unknown, phase = when {
+            item = item.copy(needsVerification = unknown, networkFailure = !unknown && api?.networkUnreachable == true, phase = when {
                 api?.action == "reauth" || api?.status == 401 -> OutboxPhase.reauthenticate
                 unknown -> OutboxPhase.uncertain
                 else -> OutboxPhase.failed
@@ -314,14 +362,15 @@ class OutboxController(
         }
     }
 
-    suspend fun sendBundle(photoId: String, retry: Boolean = false) {
+    suspend fun sendBundle(photoId: String, retry: Boolean = false, automatic: Boolean = false, networkRestored: Boolean = false) {
         val photo = entry(photoId)?.takeIf { it.kind == OutboxKind.photo && owned(it) } ?: return
+        if (automatic && key(photo) in reviewing) return
         val task = CompletableDeferred<Unit>()
         val taskKey = key(photo)
         val previous = bundleSends.putIfAbsent(taskKey, task)
         if (previous != null) { previous.await(); return }
         try {
-            if (photo.phase != OutboxPhase.completed) send(photo, retry)
+            if (photo.phase != OutboxPhase.completed) send(photo, retry, automatic, networkRestored)
             if (current(photo)?.phase != OutboxPhase.completed) {
                 writes.withLock {
                     val entries = accounts.getValue(photo.owner).map {
@@ -335,7 +384,7 @@ class OutboxController(
             } else if (owned(photo)) {
                 for (child in dependents(photo.id)) {
                     if (!owned(photo)) break
-                    if (child.phase != OutboxPhase.completed) send(child, retry)
+                    if (child.phase != OutboxPhase.completed) send(child, retry, automatic, networkRestored)
                 }
                 cleanupBundle(photo.id)
             }
@@ -343,9 +392,9 @@ class OutboxController(
         } catch (error: Throwable) { task.completeExceptionally(error); throw error
         } finally { bundleSends.remove(taskKey, task) }
     }
-    private suspend fun removeFiles(item: OutboxEntry) {
+    private suspend fun removeFiles(item: OutboxEntry, preserveDrafts: Boolean = false) {
         val keys = linkedSetOf(item.bytesKey, "outbox-preview:${item.id}").apply {
-            addAll(item.draftKeys)
+            if (!preserveDrafts) addAll(item.draftKeys)
             (item.receipt?.get("id") as? String)?.let { add("photo:$it"); add("published:$it") }
         }
         keys.forEach { field.local.remove(item.owner, it) }
@@ -353,10 +402,18 @@ class OutboxController(
     suspend fun cleanupBundle(photoId: String) {
         val owner = account
         writes.withLock {
-            if (owner == null || owner != account || !bundleCompleted(photoId)) return@withLock
+            if (owner == null || owner != account || "$owner:$photoId" in reviewing || !bundleCompleted(photoId)) return@withLock
             write(owner, accounts.getValue(owner)) // 영수증 영속화보다 먼저 바이트를 지우지 않는다.
-            (listOfNotNull(entry(photoId)) + dependents(photoId)).forEach { removeFiles(it) }
-            clearLocalRecordDrafts(field, photoId, owner)
+            (listOfNotNull(entry(photoId)) + dependents(photoId)).forEach { removeFiles(it, preserveDrafts = true) }
+            // 닫힘 시 미확정 STT/저장 전 녹음/새 주석 초안을 완료 묶음과 함께 지우지 않는다.
+            val inkKey = "annotation:$photoId"
+            val draft = field.local.read(owner, inkKey)?.let { runCatching { Json.decodeObject(it) }.getOrNull() }
+            if (draft?.get("dirty") == false && dependents(photoId).any { it.id == draft["clientOperationId"] && it.phase == OutboxPhase.completed })
+                field.local.remove(owner, inkKey)
+            // 이전 v1이 명시한 별도 초안 키도 정리하되 현재 사진의 미확정 초안은 남긴다.
+            val protected = localRecordDraftKeys(photoId).toSet() + recordSessionKey
+            dependents(photoId).flatMap { it.draftKeys }.filterNot { it in protected }.distinct()
+                .forEach { field.local.remove(owner, it) }
         }
     }
     private suspend fun cleanupCompletedItem(item: OutboxEntry) {
@@ -394,6 +451,61 @@ class OutboxController(
             } finally { inflight.removeAll(busyKeys); notifyState() }
         }
     }
+
+    /** 서버 사진은 기존 원장에 완료된 참조로만 붙인다. 사진 재업로드 작업은 만들지 않는다. */
+    suspend fun referenceServerPhoto(media: CalendarMedia): OutboxEntry = writes.withLock {
+        val owner = account ?: throw ApiFailure("다시 로그인해 주세요")
+        loadOwner(owner)
+        check(owner == account)
+        val existing = accounts.getValue(owner).firstOrNull { it.kind == OutboxKind.photo &&
+            (it.receipt?.get("id") == media.id || it.id == media.operationId ||
+                (it.sourceKey != null && it.sourceKey == media.sourceKey)) }
+        if (existing != null) {
+            val updated = existing.copy(receipt = media.json)
+            val next = accounts.getValue(owner).map { if (it.id == updated.id) updated else it }
+            write(owner, next); accounts[owner] = next; notifyState()
+            return@withLock updated
+        }
+        val id = "server:${media.id}"
+        val fields = buildMap {
+            put("clientOperationId", id); put("dateKey", media.date_key)
+            for ((key, value) in listOf("title" to media.title, "capturedAt" to media.captured_at,
+                "siteId" to media.site_id, "ocrText" to media.ocr_text, "roadAddress" to media.road_address,
+                "latitude" to media.latitude?.toString(), "longitude" to media.longitude?.toString()))
+                value?.let { put(key, it) }
+        }
+        val now = clock.instant()
+        val reference = OutboxEntry(id, owner, OutboxKind.photo, fields, media.text("site_name") ?: "서버 기록",
+            now, field.isMock, sourceKey = media.sourceKey, phase = OutboxPhase.completed, receipt = media.json,
+            completedAt = now, autoSendReady = true, serverReference = true)
+        val next = accounts.getValue(owner) + reference
+        write(owner, next); accounts[owner] = next; notifyState()
+        reference
+    }
+
+    suspend fun deletePhoto(id: String) {
+        val photo = entry(id) ?: return
+        if (photo.phase != OutboxPhase.completed) { discard(id); return }
+        val serverId = photo.receipt?.get("id") as? String ?: throw ApiFailure("서버 기록 ID를 확인할 수 없습니다")
+        val targets = writes.withLock {
+            val members = listOf(photo) + dependents(id)
+            check(members.none { !owned(it) || isBusy(it) || it.needsVerification || it.phase in setOf(OutboxPhase.sending, OutboxPhase.uncertain) }) {
+                "전송 결과를 먼저 확인해 주세요"
+            }
+            members.forEach { inflight.add(key(it)) }; notifyState(); members
+        }
+        try {
+            field.deleteCalendarMedia(serverId) // 403/불명 시 아래 로컬 정리 경로로 내려오지 않는다.
+            writes.withLock {
+                val ids = targets.map { it.id }.toSet()
+                val next = accounts.getValue(photo.owner).filterNot { it.id in ids }
+                write(photo.owner, next); accounts[photo.owner] = next
+                targets.forEach { removeFiles(it) }
+                clearLocalRecordDrafts(field, id, photo.owner)
+                reviewing.remove(key(photo))
+            }
+        } finally { targets.forEach { inflight.remove(key(it)) }; notifyState() }
+    }
     suspend fun purgeExpired(keep: Duration = Duration.ofDays(7), now: Instant = clock.instant()): Int {
         val owner = account
         return writes.withLock {
@@ -401,7 +513,8 @@ class OutboxController(
             loadOwner(owner)
             if (owner != account) return@withLock 0
             val entries = accounts.getValue(owner)
-            val expired = entries.filter { it.phase == OutboxPhase.completed && !isBusy(it) &&
+            val expired = entries.filter { it.phase == OutboxPhase.completed && !isBusy(it) && key(it) !in reviewing &&
+                (it.kind != OutboxKind.photo || dependents(it.id).all { child -> child.phase == OutboxPhase.completed }) &&
                 (it.completedAt ?: it.createdAt).plus(keep).isBefore(now) }
             if (expired.isEmpty()) return@withLock 0
             expired.forEach {

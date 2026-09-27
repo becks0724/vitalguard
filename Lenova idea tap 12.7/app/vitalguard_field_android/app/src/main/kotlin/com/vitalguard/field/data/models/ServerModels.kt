@@ -76,6 +76,8 @@ class CalendarMedia(
     val coord_gap_m get() = number("coord_gap_m")
     val coord_ref_accuracy_m get() = number("coord_ref_accuracy_m")
     val canDelete get() = flag("canDelete")
+    val operationId get() = clientOperationId ?: text("client_operation_id") ?: text("clientOperationId")
+    val sourceKey get() = text("source_key") ?: text("sourceKey")
     val comments: List<MediaComment> get() = (json["comments"] as? List<*>).orEmpty()
         .map { MediaComment(requireNotNull(it.jsonObjectOrNull())) }
 }

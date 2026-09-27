@@ -1,6 +1,6 @@
 package com.vitalguard.field
 
-// Port: test/outbox_test.dart (UI는 HoldBundleComposeTest/OutboxComposeTest).
+// Port: test/outbox_test.dart (UI는 RecordCalendarFlowComposeTest/OutboxComposeTest).
 import com.vitalguard.field.data.*
 import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.models.*

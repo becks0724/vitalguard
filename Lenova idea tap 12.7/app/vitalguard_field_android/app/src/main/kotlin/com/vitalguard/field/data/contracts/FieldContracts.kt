@@ -28,7 +28,10 @@ interface FieldGateway {
     suspend fun logout(accessToken: String)
     suspend fun siteInfo(accessToken: String): SiteInfo?
     suspend fun siteStatus(accessToken: String): SiteStatus
-    // CCTV·경보 확인 HTTP는 3단계. 기록 쓰기는 2a의 전송함에서만 명시적으로 호출한다.
+    suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> = nextStage()
+    suspend fun calendarPhoto(token: String, id: String): ByteArray = nextStage()
+    suspend fun deleteCalendarMedia(token: String, id: String): Unit = nextStage()
+    // CCTV·경보 확인 HTTP는 3단계. 기록 쓰기는 동일한 원장을 통해 상세 닫힘/재접속/수동 실패 재시도에서 호출한다.
     suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket = nextStage()
     suspend fun ackAlert(accessToken: String, id: String): Boolean = nextStage()
     suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia = nextStage()
@@ -86,6 +89,9 @@ interface FieldController : AutoCloseable {
     suspend fun signOut()
     suspend fun refreshSite()
     suspend fun siteStatus(): SiteStatus
+    suspend fun calendarMedia(from: String, to: String): List<CalendarMedia> = nextStage()
+    suspend fun deleteCalendarMedia(id: String): Unit = nextStage()
+    fun connectivityChanged(online: Boolean) {}
     suspend fun photoBytes(media: CalendarMedia): ByteArray = nextStage()
     suspend fun publish(bytes: ByteArray, fields: Map<String, String>): CalendarMedia = nextStage()
     suspend fun comment(mediaId: String, text: String, clientOperationId: String? = null): MediaComment = nextStage()
@@ -103,3 +109,9 @@ interface FieldController : AutoCloseable {
 }
 
 fun interface InternetProbe { suspend fun hasInternet(): Boolean? }
+
+interface CalendarPhotoCache {
+    suspend fun read(owner: String, id: String): ByteArray?
+    suspend fun write(owner: String, id: String, bytes: ByteArray)
+    suspend fun remove(owner: String, id: String)
+}

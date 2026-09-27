@@ -36,7 +36,7 @@ fun FieldShell(
     onWidth: (Int) -> Unit, onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit,
     onRefresh: () -> Unit, onNextStage: () -> Unit,
     recordContent: @Composable () -> Unit = { PlaceholderScreen("기록", 2) },
-    outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 상태", 3) },
+    outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 이력", 3) },
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
     val collapsed = shell.recordEditorOpen || (shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth))
@@ -122,7 +122,7 @@ private fun FieldRail(
                 if (!collapsed) RailGroupTitle("기록")
                 RailItem(2, "기록", R.drawable.ic_record, collapsed, shell.destination, onSelect)
                 Spacer(Modifier.height(vgGapTap))
-                RailItem(3, "전송 상태", R.drawable.ic_outbox, collapsed, shell.destination, onSelect)
+                RailItem(3, "전송 이력", R.drawable.ic_outbox, collapsed, shell.destination, onSelect)
                 Spacer(Modifier.height(16.dp))
             }
             Column(Modifier.fillMaxWidth()) {

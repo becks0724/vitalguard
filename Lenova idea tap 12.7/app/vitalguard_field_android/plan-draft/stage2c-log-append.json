@@ -1,0 +1,18 @@
+{
+  "path": "/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/plan-draft/astra-done.txt",
+  "relative_from_app_module": "../../../plan-draft/astra-done.txt",
+  "previous_bytes": 25357,
+  "previous_sha256": "5e9c4c289607153a9696fa0df7d1a39f2f28c442d58192e9a6ac1d43565e6017",
+  "append_bytes": 4716,
+  "prefix_preserved": true,
+  "result_sha256": "26f71434b64aec2e395dc39683f85081e7340b08e0302ba1ea73696fa80b5515",
+  "fix1": {
+    "path": "/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/plan-draft/astra-done.txt",
+    "relative_from_app_module": "../../../plan-draft/astra-done.txt",
+    "previous_bytes": 30073,
+    "previous_sha256": "26f71434b64aec2e395dc39683f85081e7340b08e0302ba1ea73696fa80b5515",
+    "append_bytes": 3548,
+    "prefix_preserved": true,
+    "result_sha256": "84f2d4568477215cc792f329e8f591d8ab4d684ac567092842a15029e385bc45"
+  }
+}

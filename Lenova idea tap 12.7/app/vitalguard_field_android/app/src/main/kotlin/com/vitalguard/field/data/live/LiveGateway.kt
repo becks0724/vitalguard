@@ -25,6 +25,8 @@ fun interface MultipartTransport {
     suspend fun executeMultipart(path: String, token: String, bytes: ByteArray, contentType: String, onSubmitted: () -> Unit): ApiReply
 }
 
+fun interface DownloadTransport { suspend fun download(url: String): ByteArray }
+
 // Port: live_gateway.dart. JSON과 app-media multipart는 같은 전송 경계를 주입한다.
 class LiveGateway(
     private val transport: JsonTransport = HttpUrlConnectionTransport(),
@@ -32,6 +34,7 @@ class LiveGateway(
         Logger.getLogger("vitalguard_field.login").warning("Unknown login error code: $it")
     },
     private val multipartTransport: MultipartTransport? = transport as? MultipartTransport,
+    private val downloadTransport: DownloadTransport? = transport as? DownloadTransport,
 ) : FieldGateway, CaptureAddressGateway, OperationLookupGateway {
     override val isMock = false
 
@@ -42,7 +45,7 @@ class LiveGateway(
                 throw ApiFailure(
                     reply.body["error"]?.toString() ?: "요청이 완료되지 않았습니다",
                     status = reply.status,
-                    code = if (reply.body["ok"] == false && reply.body["error"] == "unknown camera") "unknown camera" else null,
+                    code = reply.body["code"] as? String ?: if (reply.body["ok"] == false && reply.body["error"] == "unknown camera") "unknown camera" else null,
                     action = reply.body["action"] as? String,
                     retryAfterSec = (reply.body["retryAfterSec"] as? Number)?.toInt(),
                     twoFactorRequired = reply.body["twoFactorRequired"] == true,
@@ -115,6 +118,29 @@ class LiveGateway(
         val lat = String.format(Locale.ROOT, "%.6f", latitude)
         val lon = String.format(Locale.ROOT, "%.6f", longitude)
         return (json("GET", "/api/app/address?lat=$lat&lon=$lon", token)["display"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    override suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> {
+        require(java.time.LocalDate.parse(from) <= java.time.LocalDate.parse(to))
+        val rows = json("GET", "/api/calendar/media?from=$from&to=$to", token)["media"] as? List<*>
+            ?: throw ApiFailure("달력 응답 형식을 확인할 수 없습니다")
+        return rows.map { row ->
+            val data = row.jsonObjectOrNull() ?: throw ApiFailure("달력 응답 형식을 확인할 수 없습니다")
+            if ((data["id"] as? String).isNullOrBlank() || data["date_key"] !is String)
+                throw ApiFailure("달력 기록의 날짜와 ID를 확인할 수 없습니다")
+            CalendarMedia(data)
+        }
+    }
+
+    override suspend fun calendarPhoto(token: String, id: String): ByteArray {
+        val url = json("GET", "/api/calendar/media/download-url?id=${URLEncoder.encode(id, "UTF-8")}", token)["url"] as? String
+            ?: throw ApiFailure("사진 다운로드 주소를 확인할 수 없습니다")
+        return (downloadTransport ?: throw ApiFailure("사진 다운로드 구성이 없습니다")).download(url)
+    }
+
+    override suspend fun deleteCalendarMedia(token: String, id: String) {
+        // 오류 문구·code를 그대로 보존한다. 특히 403은 로컬 삭제 성공으로 간주하지 않는다.
+        json("DELETE", "/api/calendar/media?id=${URLEncoder.encode(id, "UTF-8")}", token)
     }
 
     override suspend fun lookupOperations(token: String, clientOperationIds: List<String>): Map<String, OperationCheck> {
@@ -196,11 +222,9 @@ class LiveGateway(
             throw ApiFailure(if (voice) "서버 응답 대기 시간이 지났습니다: ${e.message ?: e}" else "업로드 결과 불명 · 자동 재전송하지 않습니다",
                 uncertainWrite = if (voice) submitted else true)
         } catch (e: UnknownHostException) {
-            throw ApiFailure(if (voice) "서버에 연결할 수 없습니다: ${e.message}" else "업로드 결과 불명 · 자동 재전송하지 않습니다",
-                uncertainWrite = if (voice) submitted else true)
+            throw ApiFailure("서버에 연결할 수 없습니다", uncertainWrite = submitted, networkUnreachable = true)
         } catch (e: SocketException) {
-            throw ApiFailure(if (voice) "서버에 연결할 수 없습니다: ${e.message}" else "업로드 결과 불명 · 자동 재전송하지 않습니다",
-                uncertainWrite = if (voice) submitted else true)
+            throw ApiFailure("서버에 연결할 수 없습니다", uncertainWrite = submitted, networkUnreachable = true)
         } catch (e: IOException) {
             throw ApiFailure(if (voice) "응답 수신이 중단됐습니다: ${e.message}" else "업로드 결과 불명 · 자동 재전송하지 않습니다",
                 uncertainWrite = if (voice) submitted else true)

@@ -25,7 +25,7 @@ classpath = [stdlib, coroutines, annotations, jar('org.json', 'json', '20240303'
     jar('junit', 'junit', '4.13.2'), jar('org.hamcrest', 'hamcrest-core', '1.3'),
     jar('org.jetbrains.kotlinx', 'kotlinx-coroutines-test-jvm', '1.10.2')]
 main = root / 'app/src/main/kotlin/com/vitalguard/field'
-sources = [p for p in (main / 'data').rglob('*.kt') if p.name not in {'DeviceLocalStore.kt', 'NetworkNative.kt'}]
+sources = [p for p in (main / 'data').rglob('*.kt') if p.name not in {'DeviceLocalStore.kt', 'NetworkNative.kt', 'ConnectivityWatcher.kt'}]
 sources += [main / p for p in ['audio/AdtsFrames.kt', 'capture/CaptureModels.kt', 'capture/CapturePipeline.kt', 'capture/CaptureAuthor.kt',
     'ui/record/RecordActions.kt', 'ui/outbox/OutboxUiController.kt', 'ui/shell/ShellController.kt',
     'ui/site/SiteSummaryController.kt', 'ui/auth/AuthUiController.kt']]

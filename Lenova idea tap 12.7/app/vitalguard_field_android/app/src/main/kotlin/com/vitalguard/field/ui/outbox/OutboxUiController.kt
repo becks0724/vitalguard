@@ -4,7 +4,10 @@ import com.vitalguard.field.data.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-// Port: outbox_screen.dart의 lifecycle/generation. GET만 자동이며 POST는 버튼에서만.
+fun historyEntries(items: List<OutboxEntry>) = items.filter { !it.serverReference && it.phase != OutboxPhase.waiting }
+fun historyPhase(item: OutboxEntry) = if (item.phase == OutboxPhase.reauthenticate) OutboxPhase.failed else item.phase
+
+// 전송 이력 진입은 결과 불명 조회만 담당한다. 자동 쓰기는 기록 닫힘/네트워크 복귀가 담당한다.
 class OutboxUiController(val queue: OutboxController, private val scope: CoroutineScope) : AutoCloseable {
     private var foreground = false
     private var visible = false

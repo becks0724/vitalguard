@@ -80,19 +80,32 @@ class OutboxComposeTest {
     @After fun close() {
         if (::scope.isInitialized) compose.runOnIdle { ui.close(); queue.close(); scope.cancel() }
     }
-    @Test fun phaseAndSiteFiltersKeepOriginalLabelsAndShowOnlyMatchingCards() {
-        lateinit var waiting: OutboxEntry; lateinit var failed: OutboxEntry
+    @Test fun historyFiltersExcludeWaitingAndSeparateCompletedAndFailedBySite() {
+        lateinit var waiting: OutboxEntry; lateinit var failed: OutboxEntry; lateinit var completed: OutboxEntry
         setup(false) {
             waiting = photo("대기 사진")
+            completed = photo("완료 사진"); queue.sendBundle(completed.id)
             failed = photo("실패 사진", "현장 B", ApiFailure("실패", status = 400))
         }
-        compose.onNodeWithText("로컬 저장됨은 기기에 보관한 상태입니다. 전송 완료는 서버에서 받은 사실을 확인한 상태입니다.").assertExists()
+        compose.onNodeWithText("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.").assertExists()
         tap("실패 1"); card(failed)
         compose.onNodeWithTag("outbox-status-${failed.id}").assertTextEquals("로컬 저장됨 · 전송 실패")
         compose.onNodeWithTag("outbox-${waiting.id}").assertDoesNotExist()
-        tap("전체 2"); tap("현장 A"); card(waiting)
+        tap("전체 2"); tap("현장 A"); card(completed)
         compose.onNodeWithTag("outbox-${failed.id}").assertDoesNotExist()
         compose.onNodeWithText("작성 당시 현장 · 현장 A").assertExists()
+    }
+    @Test fun failedHistoryHasOnlyManualSendAndOfflineDisablesIt() {
+        lateinit var item: OutboxEntry
+        setup(false) {
+            item = photo("실패 사진", failure = ApiFailure("실패", status = 400))
+            field.mutable.value = field.state.value.copy(offline = true)
+        }
+        card(item); compose.onNodeWithText("전송").assertIsNotEnabled()
+        compose.runOnIdle { field.mutable.value = field.state.value.copy(offline = false) }
+        tap("전송"); compose.waitUntil(5000) { queue.bundleCompleted(item.id) }
+        card(item); compose.onNodeWithText("작업 ID ${item.id}").assertExists()
+        compose.onNodeWithText("모의 확인 시각", substring = true).assertExists()
     }
     @Test fun automaticAbsentLookupKeepsUncertainUntilExplicitSameOperationRetry() {
         lateinit var item: OutboxEntry
@@ -140,14 +153,14 @@ class OutboxComposeTest {
         compose.waitUntil(5_000) { queue.bundleCompleted(item.id) }
         assertEquals(listOf(item.id, item.id), field.operationIds); assertEquals(0, field.lookups)
     }
-    @Test fun reauthenticationButtonCallsSignOutAndOfflineDisablesRetry() {
+    @Test fun reauthenticationFailureOffersLoginAndDisablesOfflineResume() {
         lateinit var item: OutboxEntry
         setup(false) {
             item = photo("재로그인 사진", failure = ApiFailure("만료", status = 401))
             field.mutable.value = field.state.value.copy(offline = true)
         }
-        tap("재로그인 필요 1"); card(item)
-        compose.onNodeWithText("같은 작업 재시도").assertIsNotEnabled()
+        tap("실패 1"); card(item)
+        compose.onNodeWithText("전송").assertIsNotEnabled()
         tap("다시 로그인")
         compose.waitUntil(5_000) { field.signOuts == 1 }
         assertEquals(AuthStage.login, field.state.value.authStage)

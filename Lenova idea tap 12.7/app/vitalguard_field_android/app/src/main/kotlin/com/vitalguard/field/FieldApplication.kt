@@ -10,6 +10,8 @@ import com.vitalguard.field.data.contracts.InternetProbe
 import com.vitalguard.field.data.live.DeviceLocalStore
 import com.vitalguard.field.data.live.LiveGateway
 import com.vitalguard.field.data.live.NetworkNative
+import com.vitalguard.field.data.live.CalendarFileCache
+import java.io.File
 import com.vitalguard.field.data.mock.MemoryStore
 import com.vitalguard.field.data.mock.MockGateway
 import com.vitalguard.field.data.session.FieldCoordinator
@@ -23,7 +25,8 @@ class FieldApplication : Application() {
     var internetProbeForTests: InternetProbe? = null
     fun controller(scope: CoroutineScope): FieldController = controllerFactoryForTests?.invoke(scope)
         ?: FieldCoordinator(if (BuildConfig.VG_MOCK) MockGateway() else LiveGateway(),
-            if (BuildConfig.VG_MOCK) MemoryStore() else DeviceLocalStore(this), scope)
+            if (BuildConfig.VG_MOCK) MemoryStore() else DeviceLocalStore(this), scope,
+            photoCache = CalendarFileCache(File(cacheDir, "calendar-media")))
     var speechFactoryForTests: (() -> SpeechInput)? = null
     var recorderFactoryForTests: ((CoroutineScope) -> VoiceRecorder)? = null
     fun speech(isMock: Boolean, microphone: MicrophoneAccess, busy: () -> Boolean): SpeechInput =

@@ -1,12 +1,12 @@
-# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b단계
+# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c단계
 
-지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`, `../../plan-draft/TASK-compose-main-stage2b.md`.
+지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`, `../../plan-draft/TASK-compose-main-stage2b.md`, `../../plan-draft/TASK-compose-main-stage2c.md`.
 Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 프로젝트다.
 기존 Flutter·촬영 파일럿은 수정하지 않았다.
 
 **Gradle·네트워크 명령·APK 빌드·설치·Android 계측·스크린샷 실행은 하지 않았다.**
-2b에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 215개와 Android/Compose 소스 API 검사는 통과했다.
-이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 아래 2b 절에 실행 범위를 구분했다.
+2c에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 245개와 Android/Compose 소스 API 검사는 통과했다.
+이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 현재 결과는 아래 2c 절과 `plan-draft/stage2c-verification.md`에 구분했다. 2a·2b 절은 각 단계 당시의 기록이다.
 
 ## 범위와 구조
 
@@ -385,3 +385,100 @@ python3 tools/check-android-kotlin-offline.py
 | voice_recorder_test.dart | VoiceDraftTest(ADTS/모의/복구 계약), MicrophoneAccessTest |
 | voice_upload_test.dart | VoiceDraftTest + 기존 MultipartGatewayTest/OutboxBundleTest |
 | hold_bundle_ui_test.dart 편집/입력 부분 | RecordEditingComposeTest, 갱신한 HoldBundleComposeTest, Stage2bPreviewTest |
+
+
+## 2c — 워크 캘린더·자동 전송·전송 이력·singleTask
+
+기준: `../../plan-draft/TASK-compose-main-stage2c.md`(2026-09-27). 코드·테스트·검증 문서는 이 프로젝트 안에서 변경했다.
+§4가 별도로 지정한 완료 로그는 기존 `../../plan-draft/astra-done.txt`에 추가한다
+(`app/` 모듈 기준으로는 지시서의 `../../../plan-draft/astra-done.txt`).
+웹 원본·Flutter·촬영 파일럿은 읽기만 했다. 신규 라이브러리와 Gradle 설정 변경은 없다.
+
+- 기록 탭은 `RecordCalendarScreen`이다. 가용 폭 866dp에서 왼쪽 미니 월간과 오른쪽 주간 격자가 보인다.
+  760dp 미만은 미니 월간을 위에 둔다. 일요일 시작, 미니 월간 6×7 균등 행, 날짜 숫자 원형 선택,
+  오늘의 반투명 원보다 선택 원을 우선한다. 00~24시·시간당 44dp, 격자만 스크롤하고 최초 07시에서 시작한다.
+  큰 창에서도 초기 위치가 유지되도록 시간 격자는 최대 640dp이다. 날짜/시간 블록을 누르면 그 날 목록 시트가 열린다.
+  서류 스캔·사진 촬영은 두 개의 FAB이고 미확인 배지·토스트·헤더 캘린더 진입점은 추가하지 않았다.
+- `data/record/RecordCalendar.kt`는 기존 `CalendarMedia`/`OutboxEntry`의 화면 투영과 주간 조회 상태를 담당한다.
+  GET `/api/calendar/media?from=YYYY-MM-DD&to=YYYY-MM-DD`로 보이는 주를 가져온다.
+  작업 ID(`client_operation_id`/`clientOperationId`), `sourceKey` 또는 서버 영수증 ID가 같으면 서버 행 한 개를 표시한다.
+  같은 날짜·촬영 시간대는 사진/음성 건수로 묶고, 시각을 읽지 못한 사진도 종일 띠에 둔다.
+  불명 → 전송 중 → 실패/재로그인 → 기기 보관 → 완료 순으로 묶음 상태를 표시한다.
+- 사진 상세는 별도 경로다. [전송]은 없으며 주석·메모·음성 추가와 [삭제]를 제공한다.
+  뒤로/달력으로/탭 이탈/실제 `onStop`에서 저장을 기다린 뒤 달력으로 돌아가고 묶음을 자동 전송한다.
+  회전 재생성은 닫힘으로 취급하지 않는다. 여러 장 스캔은 첫 장 상세를 열고 닫을 때 해당 촬영 묶음의 저장된 항목을 전송한다.
+  확인하지 않은 STT·저장 전 녹음·미저장 주석 초안은 전송에 넣지 않고 기기에 보존한다.
+- 완료 사진과 서버에서 읽은 사진에도 새 주석·메모·음성을 붙일 수 있다.
+  서버 사진은 기존 원장에 완료된 참조(`serverReference`)로 연결하며 사진 업로드/가짜 전송 이력을 만들지 않는다.
+  기존 사진과 완료된 첨부는 다시 보내지 않는다. 서버 원본 내용은 수정하지 않는다.
+- `autoSendReady`는 닫힘을 영속화한다. 작성 중 묶음은 재접속해도 보내지 않는다.
+  `ConnectivityWatcher`는 `registerDefaultNetworkCallback`의 기본 네트워크/검증 상태를 관찰하고 종료 시 해제한다.
+  요청 성공의 `markOnline`도 유지한다. 대기와 명확한 전송 전 네트워크 실패만 복귀 시 재시도한다.
+  다른 실패는 [전송], `uncertain`은 서버 조회/사람의 미등록 확인 후 기존 작업 ID 재시도 규칙을 유지한다.
+  부모 완료 후 딸린 항목 순서·동시 묶음 중복 방지·`outbox:v1`/schemaVersion 1을 유지했다.
+  새 선택 필드가 없는 v1 원장도 읽으며 중단된 sending은 계속 uncertain으로 복구한다.
+- 서버 사진은 GET `/api/calendar/media/download-url?id=`의 URL로 내려받고 `cacheDir/calendar-media/`에
+  계정·ID 해시별로 7일 캐시한다. 서명 URL 요청에 앱 토큰을 재전달하지 않는다.
+  전송 완료 이력은 기존처럼 7일 초과 시 정리하되 미전송 추가분의 부모 참조는 보존한다.
+- 완료 사진 삭제는 DELETE `/api/calendar/media?id=` 성공 후에만 로컬 묶음/파일을 지운다.
+  서버의 403 `MEDIA_DELETE_WINDOW_EXPIRED`와 `삭제 유예 시간(10분)이 지났습니다` 문구를 그대로 보존/표시한다.
+- 전송함은 ‘전송 이력’이다. 대기/검토 UI를 제거하고 완료(서버 확인 시각·작업 ID), 실패, 불명, 전송 중만 표시한다.
+  재로그인이 필요한 항목은 실패 그룹에서 재로그인/명시적 재개를 제공한다.
+  `MainActivity`는 `android:launchMode="singleTask"`이며 재실행 뒤 앱 API로 태스크 1개·내부 액티비티 1개를 확인한다.
+
+### 2c 검사와 남은 확인
+
+실행한 검사는 다음과 같다. 모두 기존 로컬 캐시만 사용한다.
+
+```sh
+python3 tools/check-jvm-offline.py
+python3 tools/check-android-kotlin-offline.py
+python3 tools/check-stage2c-static.py
+```
+
+- **통과: 순수 JVM 246개**(2b 215개 + 2c 30개 + 수정 1 회귀 1개). 달력 배치/합치기/건수/상태, 닫힘/재접속/추가분,
+  불명 유지, 삭제 403, 캐시 만료/계정 분리, 주간 조회/늦은 응답, 메모 저장부터 상세 닫힘까지를 확인했다.
+- **통과: main/androidTest/screenshotTest Kotlin/Compose 소스 API 컴파일**. 캐시 AAR/JAR와 R/BuildConfig 스텁을 사용한다.
+  Gradle 의존성 해석·리소스 링크·manifest merge·APK·계측 실행 검증은 아니다.
+- **통과: 구조 검사**, XML 20개·drawable 참조 15개·읽기 전용 원본 120개 해시 일치·신규 의존성 0개.
+- `RecordCalendarFlowComposeTest`(기존 HoldBundle UI 테스트의 의도 갱신), `RecordCalendarLayoutComposeTest`,
+  `SingleTaskComposeTest`와 기존 촬영/편집/이력 계측 테스트를 작성·갱신했다.
+  수정 전 TB373FU·Android 16 결과는 41개 중 3개 실패이며, 아래 수정 1 반영 후 **실기기 재실행은 미확인**이다.
+- `RecordCalendarPreview`(2026-09-27·로컬 2건+서버 1건), `OutboxHistoryPreview`는 각각
+  **866×1385dp·340dpi·ko** 고정 표본이다. 수정 지시서에 이전 스크린샷 8개 통과가 보고됐다.
+  이번 수정에서 PNG 재생성·시각 검수는 실행하지 않았다.
+
+**서버 연동 제약:** 읽기 전용 웹 소스의 `app/api/calendar/media/download-url/route.ts`는
+`verifyBasicAuth()`만 호출하며, 이 검증은 앱 JWT를 직접 수용하지 않는다. 목록 API의 JWT 분기와 다르다.
+지정된 다운로드 API를 앱에 연결했지만, 현재 소스 기준으로 앱 JWT의 사진 다운로드가 거부될 수 있다.
+이 작업의 수정 범위에서 웹을 제외했으므로 서버 인증은 변경하지 않았다. 서버 대응 후 실제 사진 열람/추가 주석을 검증해야 한다.
+
+이번 작업에서 Gradle·네트워크·ADB·APK 설치·실기기 테스트는 실행하지 않았다. TB373FU Wi-Fi 교체 시 띠 해제/전송 재개,
+앱 백그라운드/프로세스 종료, 수정한 런처 재실행 검사, 회전/분할창/큰 글꼴/실제 이미지·음성,
+실서버 삭제 유예와 추가분 전송은 **미확인**이다. 자세한 근거는 `plan-draft/stage2c-verification.md`에 있다.
+
+### 2c 수정 1 — 실기기 계측 실패 3건
+
+기준: `../../plan-draft/TASK-compose-main-stage2c-fix1.md`(2026-09-27).
+운영 코드의 문구·메모 저장·자동 전송·singleTask 설정은 유지하고, 실패한 계측의 전제와 관찰 방법을 수정했다.
+
+- **오프라인 상세:** 안내는 `PhotoDetailContent`의 `if (offline)`에서 실제로 그린다.
+  테스트의 `RecordUiGateway`는 `siteStatus`만 실패시켰고 새 달력 조회는 성공해
+  `FieldCoordinator.authorized → markOnline`이 안내를 숨겼다. 실제 테스트 클래스를 추출한 로컬 재현에서
+  조회 후 `offline=false`를 확인했고, 달력 조회에도 같은 오프라인 실패를 적용한 뒤 `true` 유지가 통과했다.
+  안내 문구 검사를 유지하고, 닫힘 후 waiting·이력 제외·복귀 후 업로드 정확히 1회·완료 이력까지 확인한다.
+- **메모 1건:** 실패 당시 147행은 `dependents(photo.id).size == 1`을 기다렸다.
+  `enqueue`는 첨부를 추가하고 완료 정리는 파일만 지우므로 2c에서도 이 조건이 맞다.
+  신규 `AutomaticSendTest.confirmedMemoStaysOneLocalAttachmentUntilPhotoDetailCloses`가 온라인 저장·원장 재조회·재접속·입력 닫힘 동안
+  로컬 첨부 정확히 1건/원문/전송 0회를, 상세 닫힘 뒤 사진·메모 각각 1회 전송과 원장 1건 유지를 확인했다.
+  실기기 로그에는 메모 입력 직후 IME 표시 전환이 있고 실패 대기 중 Activity onStop은 없다.
+  계측은 키보드 닫힘과 IME 인셋 0을 기다린 뒤 실제 버튼을 누르며, 확인 체크·저장 활성화·오류 없음·kind/phase/원문을 추가 검증한다.
+  기존 5초 제한·첨부 1건·안내 문구·상세 건수 검사는 유지했다.
+  **IME 전환 중 클릭 경합은 추정 원인이며, 로그만으로 누락된 클릭을 확정할 수 없다. 수정 후 실기기 확인이 필요하다.**
+- **singleTask:** 기존 `"Hist #"` 검색은 Android 16의 `"Hist  #0"`를 찾지 못한다.
+  셸 조회를 제거하고 `ActivityManager.getAppTasks()`의 실행 중 태스크 1개·`numActivities == 1`·동일 taskId·base/top Activity,
+  `Activity.isTaskRoot`·동일 Activity 객체·ViewModel 생성 1회를 검사한다.
+  두 재실행 각각의 RESUMED 콜백을 기다리므로 Intent 전달 전 상태로 통과시키지 않는다.
+
+수정 전 보고된 Gradle JVM 246개와 이번 오프라인 JVM 246개는 구성 범위가 다르다.
+오프라인 도구는 Android 의존 `BackgroundContrastTest` 1개를 기존대로 제외하고 신규 회귀 1개를 포함한다.

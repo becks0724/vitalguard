@@ -18,19 +18,28 @@ fun RecordNavigation(model: FieldViewModel, windowWidthDp: Int, nav: NavHostCont
     val backStack by nav.currentBackStackEntryAsState()
     val entries by model.outbox.items.collectAsStateWithLifecycle()
     val recovery by model.records.recovery.collectAsStateWithLifecycle()
+    val closedDetail by model.records.closedDetail.collectAsStateWithLifecycle()
+    val closeDetail: () -> Unit = { model.records.launch { model.records.closeDetail(); nav.popBackStack("record-home", inclusive = false) } }
+    LaunchedEffect(closedDetail) {
+        if (closedDetail > 0 && model.records.detail.value == null) nav.popBackStack("record-home", inclusive = false)
+    }
     val capture = model.capture
     val captureState = capture?.state?.collectAsStateWithLifecycle()?.value ?: CaptureUiState()
     LaunchedEffect(capture) { capture?.prepareScanner() }
     LaunchedEffect(captureState.navigation) {
         captureState.navigation?.let {
             nav.popBackStack("record-home", inclusive = false)
-            if (it.photoId != null) nav.navigate("photo/${it.photoId}")
+            if (it.photoId != null) {
+                model.records.openDetail(it.photoId, it.batchIds.ifEmpty { listOf(it.photoId) })
+                nav.navigate("photo/${it.photoId}")
+            }
             capture?.consumeNavigation(it)
         }
     }
     LaunchedEffect(recovery) {
         recovery?.let { saved ->
             nav.popBackStack("record-home", inclusive = false)
+            model.records.openDetail(saved.media.id)
             nav.navigate("photo/${saved.media.id}")
             if (saved.ink) model.shell.editorOpen(true)
             nav.navigate("${if (saved.ink) "editor" else "input"}/${saved.media.id}")
@@ -41,25 +50,31 @@ fun RecordNavigation(model: FieldViewModel, windowWidthDp: Int, nav: NavHostCont
     val openEditor: (String) -> Unit = { id -> model.shell.editorOpen(true); nav.navigate("editor/$id") { launchSingleTop = true } }
     NavHost(navController = nav, startDestination = "record-home") {
         composable("record-home") {
-            RecordHome(model.controller, model.outbox, captureState,
+            RecordCalendarScreen(model.controller, model.outbox, model.calendar, model.recordActions, captureState,
                 onScan = { capture?.scanDocuments() },
                 onPhoto = { if (capture?.openCamera() == true) nav.navigate("camera") },
-                onOpen = { nav.navigate("photo/$it") }, onReload = model.outboxUi::loadAndCheck)
+                onOpen = { record -> model.records.launch {
+                    val photo = if (record.server) model.outbox.referenceServerPhoto(record.media) else requireNotNull(record.local)
+                    if (photo.owner == model.outbox.account) {
+                        model.records.openDetail(photo.id)
+                        nav.navigate("photo/${photo.id}") { launchSingleTop = true }
+                    }
+                } })
         }
         composable("photo/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             PhotoDetail(model.controller, model.outbox, model.recordActions, requireNotNull(entry.arguments?.getString("id")),
-                windowWidthDp, onBack = { nav.popBackStack("record-home", inclusive = false) },
+                windowWidthDp, onBack = closeDetail,
                 onEditor = { openEditor(requireNotNull(entry.arguments?.getString("id"))) },
                 onInput = { nav.navigate("input/${entry.arguments?.getString("id")}") { launchSingleTop = true } })
         }
         composable("editor/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = requireNotNull(entry.arguments?.getString("id"))
             val photo = entries.firstOrNull { it.id == id }
-            if (photo == null || photo.phase == OutboxPhase.completed) {
+            if (photo == null) {
                 LaunchedEffect(id, photo?.phase) {
                     model.outbox.load()
                     val current = model.outbox.entry(id)
-                    if (current == null || current.phase == OutboxPhase.completed) {
+                    if (current == null) {
                         model.records.forget(id)
                         nav.popBackStack("record-home", inclusive = false)
                     }
@@ -79,11 +94,11 @@ fun RecordNavigation(model: FieldViewModel, windowWidthDp: Int, nav: NavHostCont
         composable("input/{id}", arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = requireNotNull(entry.arguments?.getString("id"))
             val photo = entries.firstOrNull { it.id == id }
-            if (photo == null || photo.phase == OutboxPhase.completed) {
+            if (photo == null) {
                 LaunchedEffect(id, photo?.phase) {
                     model.outbox.load()
                     val current = model.outbox.entry(id)
-                    if (current == null || current.phase == OutboxPhase.completed) {
+                    if (current == null) {
                         model.records.forget(id)
                         nav.popBackStack("record-home", inclusive = false)
                     }
@@ -102,7 +117,7 @@ fun RecordNavigation(model: FieldViewModel, windowWidthDp: Int, nav: NavHostCont
         }
     }
     // 촬영 파일 저장 중 뒤로가기는 원본을 잃지 않도록 기다린다. 그 외에는 기록 스택부터 pop.
-    BackHandler(enabled = backStack?.destination?.route == "photo/{id}") { nav.popBackStack("record-home", inclusive = false) }
+    BackHandler(enabled = backStack?.destination?.route == "photo/{id}", onBack = closeDetail)
     BackHandler(enabled = backStack?.destination?.route == "camera") {
         if (capture?.backToRecord() != false) nav.popBackStack()
     }

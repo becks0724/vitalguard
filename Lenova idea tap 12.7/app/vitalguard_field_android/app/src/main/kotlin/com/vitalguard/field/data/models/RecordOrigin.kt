@@ -11,11 +11,12 @@ import java.util.Locale
 fun fromOutbox(photo: OutboxEntry): CalendarMedia {
     require(photo.kind == OutboxKind.photo) { "사진 항목이 필요합니다" }
     val fields = photo.fields
-    return CalendarMedia(mapOf(
+    return CalendarMedia(photo.receipt.orEmpty() + mapOf(
         "id" to photo.id, "date_key" to fields["dateKey"], "captured_at" to fields["capturedAt"],
         "title" to fields["title"], "site_id" to fields["siteId"], "ocr_text" to fields["ocrText"],
         "road_address" to fields["roadAddress"], "latitude" to fields["latitude"]?.toDoubleOrNull(),
         "longitude" to fields["longitude"]?.toDoubleOrNull(), "media_url" to null, "thumbnail_url" to null, "local" to true,
+        "serverId" to photo.receipt?.get("id"),
     ))
 }
 const val maxInkUploadBytes = 2_097_152

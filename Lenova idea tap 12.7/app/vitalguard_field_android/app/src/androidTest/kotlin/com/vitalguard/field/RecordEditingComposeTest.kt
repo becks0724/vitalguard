@@ -10,6 +10,8 @@ import android.view.MotionEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
@@ -73,7 +75,10 @@ class RecordEditingComposeTest {
     }
     private fun open(photo:OutboxEntry,ink:Boolean) {
         compose.onNodeWithTag("rail-destination-2").performScrollTo().performClick()
-        compose.onNodeWithTag("record-photo-${photo.id}").performScrollTo().performClick()
+        compose.runOnIdle { model.calendar.select(java.time.LocalDate.parse(photo.fields.getValue("dateKey"))) }
+        compose.onNodeWithTag("week-day-${photo.fields["dateKey"]}").performClick()
+        compose.onNodeWithTag("calendar-day-list").performScrollToNode(hasTestTag("record-photo-${photo.id}"))
+        compose.onNodeWithTag("record-photo-${photo.id}").performClick()
         compose.onNodeWithTag(if(ink) "photo-open-editor" else "photo-open-input").performScrollTo().performClick()
         if(ink) compose.waitUntil(5000){compose.onAllNodesWithTag("ink-canvas").fetchSemanticsNodes().isNotEmpty()}
         else compose.onNodeWithTag("record-note").assertExists()
@@ -138,13 +143,34 @@ class RecordEditingComposeTest {
         login(); val photo=photo(); open(photo,false)
         compose.onNodeWithText("관리자 기록").assertExists()
         compose.onNodeWithTag("record-note").performTextInput("보호구 미착용 확인 2층")
+        // 실기기 IME 애니메이션은 Compose idle과 별개다. 버튼 좌표가 바뀌는 동안 누르지 않는다.
+        Espresso.closeSoftKeyboard()
+        compose.waitUntil(5000) {
+            compose.runOnIdle {
+                val insets = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime()) &&
+                    insets.getInsets(WindowInsetsCompat.Type.ime()).bottom == 0
+            }
+        }
+        compose.runOnIdle { assertEquals("보호구 미착용 확인 2층", model.records.input!!.state.value.note) }
         compose.onNodeWithTag("save-record").performScrollTo().assertIsNotEnabled()
-        compose.onNodeWithTag("confirm-record").performScrollTo().performClick()
-        compose.onNodeWithTag("save-record").performScrollTo().assertHeightIsAtLeast(64.dp).performClick()
-        compose.waitUntil(5000){model.outbox.dependents(photo.id).size==1}
-        compose.onNodeWithText("메모를 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.").assertExists()
+        compose.onNodeWithTag("confirm-record").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("save-record").performScrollTo().assertIsEnabled().assertHeightIsAtLeast(64.dp).performClick()
+        compose.waitUntil(5000) {
+            assertNull("메모 저장 오류", model.records.input!!.state.value.error)
+            model.outbox.dependents(photo.id).size == 1
+        }
+        compose.runOnIdle { runBlocking {
+            val memo = model.outbox.dependents(photo.id).single()
+            assertEquals(OutboxKind.text, memo.kind); assertEquals(OutboxPhase.waiting, memo.phase)
+            assertFalse(memo.autoSendReady); assertEquals(photo.id, model.records.detail.value)
+            assertEquals(OutboxPhase.waiting, model.outbox.entry(photo.id)!!.phase)
+            assertEquals("보호구 미착용 확인 2층", store.readBytes("a", memo.bytesKey)!!.toString(Charsets.UTF_8))
+        } }
+        compose.onNodeWithText("메모를 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.").assertExists()
         compose.onNodeWithTag("record-input-back").performClick()
         compose.onNodeWithText("주석 0 · 메모 1 · 음성 0").performScrollTo().assertExists()
+        compose.runOnIdle { assertEquals(1, model.outbox.dependents(photo.id).size); assertEquals(photo.id, model.records.detail.value) }
     }
     @Test fun mockSpeechRequiresSelectionEditingAndExplicitConfirmation() {
         login(); val photo=photo(); open(photo,false)

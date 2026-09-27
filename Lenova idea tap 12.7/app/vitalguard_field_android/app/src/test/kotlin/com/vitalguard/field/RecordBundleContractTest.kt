@@ -1,6 +1,6 @@
 package com.vitalguard.field
 
-// Port: test/hold_bundle_contract_test.dart. HTTP 본문/응답 봉투/모의 멱등성.
+// 기존 묶음 HTTP 본문/응답 봉투/모의 멱등 계약을 자동 전송에서도 유지한다.
 import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.live.*
 import com.vitalguard.field.data.models.*
@@ -10,7 +10,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
 
-class HoldBundleContractTest {
+class RecordBundleContractTest {
     @Test fun controllerCommentOperationIdRoundTripsThroughBodyAndEnvelope() = runTest {
         val live = LiveGateway(JsonTransport { method, path, token, body ->
             assertEquals("POST", method); assertEquals("/api/calendar/media/comment", path); assertEquals("mock-access-a", token)

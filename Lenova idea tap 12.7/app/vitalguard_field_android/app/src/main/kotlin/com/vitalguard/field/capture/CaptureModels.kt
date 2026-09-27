@@ -60,7 +60,7 @@ data class CaptureRunResult(
     val detailPhotoId: String? get() = queuedIds.singleOrNull()?.takeIf { failed == 0 }
     val operationMessage: String
         get() = buildList {
-            if (queued > 0) add("기기에 저장됨 · ${queued}건 · 주석·메모를 붙인 뒤 전송")
+            if (queued > 0) add("기기에 저장됨 · ${queued}건 · 상세를 닫으면 자동 전송됩니다")
             if (failed > 0) add("${failed}건 처리 실패")
             lastError?.let(::add)
         }.joinToString("\n")

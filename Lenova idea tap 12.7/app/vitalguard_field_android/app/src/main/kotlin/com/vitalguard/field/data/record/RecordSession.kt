@@ -19,7 +19,8 @@ class RecordSession(private val field: FieldController, private val outbox: Outb
         if (outbox.account != owner) return null
         val media = requireNotNull(saved["media"].jsonObjectOrNull())
         val photo = outbox.entry(media["id"] as? String)
-        if (media["local"] != true || photo == null || photo.owner != owner || photo.kind != OutboxKind.photo || photo.phase == OutboxPhase.completed) {
+        if (media["local"] != true || photo == null || photo.owner != owner || photo.kind != OutboxKind.photo ||
+            (photo.phase == OutboxPhase.completed && photo.receipt?.get("id") !is String)) {
             close(); return null
         }
         return RecordRecovery(fromOutbox(photo), saved["ink"] == true)
@@ -29,8 +30,9 @@ class RecordSession(private val field: FieldController, private val outbox: Outb
 fun requireEditablePhoto(outbox: OutboxController, id: String, owner: String): OutboxEntry {
     val photo = outbox.entry(id)
     if (outbox.account != owner || photo == null || photo.owner != owner || photo.kind != OutboxKind.photo || photo.needsVerification || outbox.isBusy(photo) ||
-        photo.phase !in setOf(OutboxPhase.waiting, OutboxPhase.failed)) {
-        throw ApiFailure("전송 전 사진만 편집할 수 있습니다. 전송 상태를 확인해 주세요.")
+        photo.phase !in setOf(OutboxPhase.waiting, OutboxPhase.failed, OutboxPhase.completed) ||
+        (photo.phase == OutboxPhase.completed && photo.receipt?.get("id") !is String)) {
+        throw ApiFailure("전송 중이거나 결과가 불명인 사진에는 추가할 수 없습니다. 전송 이력을 확인해 주세요.")
     }
     return photo
 }

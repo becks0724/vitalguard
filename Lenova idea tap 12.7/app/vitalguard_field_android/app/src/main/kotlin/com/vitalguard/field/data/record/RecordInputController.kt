@@ -127,7 +127,7 @@ class RecordInputController(
                 photo.siteName, owner, sourceKey = "comment-draft:${media.id}:$revision", dependsOn = media.id, draftKeys = listOf(key))
             revision++
             update { it.copy(note = "", speechText = "", candidates = emptyList(), choice = null, confirmed = false,
-                notice = "메모를 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.") }
+                notice = "메모를 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.") }
             persist().await()
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) { update { it.copy(error = "메모를 저장하지 못했습니다: ${e.message}") }

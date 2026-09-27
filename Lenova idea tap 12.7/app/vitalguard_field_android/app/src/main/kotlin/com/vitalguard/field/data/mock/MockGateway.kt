@@ -11,6 +11,8 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
     protected var userId = "demo"
     private var sequence = 0
     private val media = mutableListOf<JsonObject>()
+    private val photoFiles = mutableMapOf<String, ByteArray>()
+    private val mediaOwners = mutableMapOf<String, String>()
     protected val operationMedia = mutableMapOf<String, JsonObject>()
     protected val operationComments = mutableMapOf<String, JsonObject>()
     val logoutTokens = mutableListOf<String>()
@@ -40,6 +42,16 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
             "address" to null, "start_date" to null, "completion_date" to null, "recorded_at" to now.toString()))
     }
     override suspend fun siteStatus(accessToken: String) = SiteStatus(mockSiteStatusReply(clock.instant().toString()))
+    override suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> = media
+        .filter { mediaOwners[it["id"]] == userId && it["annotation_of"] == null && (it["date_key"] as String) in from..to }
+        .map { row -> CalendarMedia(row + mapOf("canDelete" to true, "comments" to operationComments.values.filter { it["media_id"] == row["id"] })) }
+    override suspend fun calendarPhoto(token: String, id: String) = photoFiles[id]?.copyOf() ?: throw ApiFailure("사진을 찾을 수 없습니다", status = 404)
+    override suspend fun deleteCalendarMedia(token: String, id: String) {
+        if (mediaOwners[id] != userId) throw ApiFailure("사진을 찾을 수 없습니다", status = 404)
+        media.removeAll { it["id"] == id || it["annotation_of"] == id }
+        photoFiles.remove(id); mediaOwners.remove(id)
+        operationComments.entries.removeAll { it.value["media_id"] == id }
+    }
     override suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia {
         val operation = fields["clientOperationId"]
         operationMedia["$userId:$operation"]?.let { return CalendarMedia(it, operation, deduplicated = true) }
@@ -57,6 +69,7 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
         val extension = if (ink) "json" else if (jpeg) "jpg" else "png"
         val row = buildMap<String, Any?> {
             put("id", id); put("date_key", fields["dateKey"]); put("captured_at", fields["capturedAt"])
+            put("client_operation_id", operation)
             put("media_type", if (ink) "ink" else "image")
             if (ink) put("annotation_of", fields["annotationOf"])
             put("title", fields["title"]); put("media_url", "https://mock.invalid/upload-$sequence.$extension")
@@ -65,6 +78,7 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
             put("created_at", kstNow(clock).toString())
         }
         media += row
+        photoFiles[id] = bytes.copyOf(); mediaOwners[id] = userId
         if (operation != null) operationMedia["$userId:$operation"] = row
         return CalendarMedia(row, operation)
     }

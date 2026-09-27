@@ -4,6 +4,7 @@ package com.vitalguard.field
 // 역할/refresh/계정 epoch 공통 회귀는 기존 FieldCoordinatorTest/OfflineRestoreTest에 있다.
 import com.vitalguard.field.data.*
 import com.vitalguard.field.data.models.*
+import com.vitalguard.field.data.record.mergeCalendarRecords
 import com.vitalguard.field.ui.record.*
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -25,20 +26,22 @@ class RecordContractTest {
         assertNull(inkUploadSizeError(2_097_152))
         assertEquals("잉크 크기 2048.0 KB가 전송 한도 2 MB (2,097,152바이트)를 넘었습니다. 기기에는 저장됩니다. 획을 줄인 뒤 다시 저장해 주세요.", inkUploadSizeError(2_097_153))
     }
-    @Test fun photoBytesOnlyReadsLocalAndRejectsMissingOrServerMedia() = runTest {
+    @Test fun photoBytesReadsLocalAndReportsMissingLocalOrServerSourcesSeparately() = runTest {
         val rig = outboxRig(); val photo = rig.photo()
         assertArrayEquals(PHOTO_BYTES, rig.field.photoBytes(fromOutbox(photo)))
-        assertEquals("원본이 기기에 없습니다", failure { rig.field.photoBytes(CalendarMedia(fromOutbox(photo).json - "local")) }.message)
+        assertEquals("사진을 찾을 수 없습니다", failure { rig.field.photoBytes(CalendarMedia(fromOutbox(photo).json - "local")) }.message)
         rig.store.remove("a", photo.bytesKey)
         assertEquals("원본이 기기에 없습니다", failure { rig.field.photoBytes(fromOutbox(photo)) }.message)
         assertTrue(rig.gateway.writes.isEmpty())
     }
-    @Test fun recordListShowsOnlyIncompletePhotosNewestFirstAndCountsAttachments() = runTest {
+    @Test fun calendarShowsLocalAndCompletedServerPhotosAndCountsAttachments() = runTest {
         val rig = outboxRig(); val bundle = rig.bundle(); rig.clock.advance(1); val newest = rig.photo()
-        assertEquals(listOf(newest, bundle.photo), pendingPhotos(rig.box.items.value))
+        assertEquals(setOf(newest.id, bundle.photo.id), mergeCalendarRecords(rig.box.items.value, emptyList()).map { it.local!!.id }.toSet())
         assertEquals("주석 1 · 메모 1 · 음성 1", attachmentCounts(rig.box.dependents(bundle.photo.id)))
         rig.box.sendBundle(newest.id)
-        assertEquals(listOf(bundle.photo), pendingPhotos(rig.box.items.value))
+        val server = rig.field.calendarMedia("2026-09-01", "2026-09-30")
+        val records = mergeCalendarRecords(rig.box.items.value, server)
+        assertEquals(2, records.size); assertEquals(1, records.count { it.server })
     }
     @Test fun detailActionConditionsMatchWaitingFailedOfflineUncertainAndReauthentication() = runTest {
         val rig = outboxRig(); val bundle = rig.bundle()

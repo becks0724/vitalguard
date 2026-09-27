@@ -28,20 +28,29 @@ import java.io.ByteArrayOutputStream
 private class RecordUiGateway : MockGateway() {
     @Volatile var uploads = 0
     @Volatile var comments = 0
+    @Volatile var calendarRequests = 0
     @Volatile var offline = false
+    private fun requireOnline() {
+        if (offline) throw ApiFailure("연결 불가", networkUnreachable = true)
+    }
     override suspend fun siteStatus(accessToken: String): SiteStatus {
-        if (offline) throw ApiFailure("연결 불가")
+        requireOnline()
         return super.siteStatus(accessToken)
     }
+    override suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> {
+        // 2c는 상세에 들어가기 전에 달력을 조회한다. 여기만 성공하면 markOnline이 호출된다.
+        calendarRequests++; requireOnline()
+        return super.calendarMedia(token, from, to)
+    }
     override suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia {
-        uploads++; return super.upload(token, bytes, fields)
+        uploads++; requireOnline(); return super.upload(token, bytes, fields)
     }
     override suspend fun addComment(token: String, mediaId: String, body: String, clientOperationId: String?): MediaComment {
-        comments++; return super.addComment(token, mediaId, body, clientOperationId)
+        comments++; requireOnline(); return super.addComment(token, mediaId, body, clientOperationId)
     }
 }
 @RunWith(AndroidJUnit4::class)
-class HoldBundleComposeTest {
+class RecordCalendarFlowComposeTest {
     private val compose = createAndroidComposeRule<MainActivity>()
     private lateinit var controller: FieldController
     private lateinit var gateway: RecordUiGateway
@@ -92,13 +101,18 @@ class HoldBundleComposeTest {
     }
     private fun open(photo: OutboxEntry) {
         select(2)
-        compose.onNodeWithTag("record-pending-list").performScrollToNode(hasTestTag("record-photo-${photo.id}"))
+        compose.runOnIdle { model.calendar.select(java.time.LocalDate.parse(photo.fields.getValue("dateKey"))) }
+        compose.onNodeWithTag("week-day-${photo.fields["dateKey"]}").performClick()
+        compose.onNodeWithTag("calendar-day-list").performScrollToNode(hasTestTag("record-photo-${photo.id}"))
         compose.onNodeWithTag("record-photo-${photo.id}").performClick()
         compose.onNodeWithTag("photo-detail-actions").assertExists()
     }
-    @Test fun emptyRecordShowsExactTextAndCaptureActions() {
+    @Test fun emptyCalendarSelectsDateAndHasTwoCaptureFabs() {
         login(); select(2)
-        compose.onNodeWithText("보낼 기록이 없습니다. 촬영한 사진은 여기 모입니다.").assertExists()
+        compose.onNodeWithTag("record-calendar").assertExists()
+        compose.onNodeWithTag("week-day-${model.calendar.state.value.selected}").performClick()
+        compose.onNodeWithText("이 날짜에 저장된 기록이 없습니다.").assertExists()
+        Espresso.pressBack()
         compose.onNodeWithTag("document-scan").assertHeightIsAtLeast(64.dp).assertIsEnabled()
         compose.onNodeWithTag("photo-capture").assertHeightIsAtLeast(64.dp).assertIsEnabled()
         assertEquals(0, gateway.uploads)
@@ -119,15 +133,16 @@ class HoldBundleComposeTest {
         compose.onNodeWithText("음성 · 0:01").performScrollTo().assertExists()
         assertEquals(0, gateway.uploads); assertEquals(0, gateway.comments)
     }
-    @Test fun sendCompletesTheBundleCleansFilesAndReturnsToListWithMockReceipt() {
+    @Test fun closingDetailAutomaticallySendsBundleAndReturnsToCalendarWithMockHistory() {
         login(); val photo = photo(attachments = true); open(photo)
-        compose.onNodeWithTag("send-bundle").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("send-bundle").assertDoesNotExist()
+        Espresso.pressBack()
         compose.waitUntil(5_000) { model.outbox.bundleCompleted(photo.id) }
-        compose.onNodeWithTag("record-pending-list").assertExists()
+        compose.onNodeWithTag("record-calendar").assertExists()
         compose.onNodeWithTag("record-photo-${photo.id}").assertDoesNotExist()
         compose.runOnIdle { runBlocking {
             assertNull(store.readBytes("a", photo.bytesKey))
-            localRecordDraftKeys(photo.id).forEach { assertNull(store.read("a", it)) }
+            localRecordDraftKeys(photo.id).forEach { assertEquals("미저장 초안", store.read("a", it)) }
             assertFalse(store.keys("a").any { it.startsWith("outbox-file:") || it.startsWith("outbox-preview:") })
         } }
         select(3)
@@ -145,7 +160,7 @@ class HoldBundleComposeTest {
         compose.onNodeWithTag("delete-bundle").performClick()
         compose.onNodeWithTag("confirm-delete-bundle").performClick()
         compose.waitUntil(5_000) { model.outbox.entry(photo.id) == null }
-        compose.onNodeWithTag("record-pending-list").assertExists()
+        compose.onNodeWithTag("record-calendar").assertExists()
         compose.runOnIdle { runBlocking {
             assertNotNull(model.outbox.entry(other.id)); assertTrue(model.outbox.dependents(photo.id).isEmpty())
             assertNull(store.readBytes("a", photo.bytesKey)); localRecordDraftKeys(photo.id).forEach { assertNull(store.read("a", it)) }
@@ -160,33 +175,51 @@ class HoldBundleComposeTest {
         compose.onNodeWithText("주석 1 · 메모 0 · 음성 1").performScrollTo().assertExists()
         compose.runOnIdle { assertNotNull(model.outbox.entry(photo.id)); assertEquals(2, model.outbox.dependents(photo.id).size) }
     }
-    @Test fun offlineDisablesSendButAllowsCaptureAndStage2bActions() {
+    @Test fun offlineDetailClosesToCalendarAndWaitsOutsideHistoryUntilReconnect() {
         login(); val photo = photo()
         compose.runOnIdle { runBlocking { gateway.offline = true; try { controller.siteStatus() } catch (_: ApiFailure) { } } }
+        val previousCalendarRequests = gateway.calendarRequests
         open(photo)
-        compose.onNodeWithTag("send-bundle").performScrollTo().assertIsNotEnabled()
+        compose.runOnIdle {
+            assertTrue("달력 조회도 오프라인 모의 응답을 거쳐야 합니다", gateway.calendarRequests > previousCalendarRequests)
+            assertTrue(controller.state.value.offline)
+        }
+        compose.onNodeWithTag("send-bundle").assertDoesNotExist()
         compose.onNodeWithText("주석 그리기").assertIsEnabled(); compose.onNodeWithText("메모·음성 붙이기").assertIsEnabled()
         compose.onNodeWithText("오프라인입니다. 연결 후 전송할 수 있습니다.").performScrollTo().assertExists()
         Espresso.pressBack()
+        compose.waitUntil(5_000) { model.records.detail.value == null && model.outbox.entry(photo.id)?.autoSendReady == true }
+        compose.onNodeWithTag("record-calendar").assertExists()
+        compose.runOnIdle { assertEquals(OutboxPhase.waiting, model.outbox.entry(photo.id)!!.phase) }
         compose.onNodeWithTag("document-scan").assertIsEnabled(); compose.onNodeWithTag("photo-capture").assertIsEnabled()
         select(3)
-        compose.onNodeWithTag("outbox-list").performScrollToNode(hasTestTag("outbox-${photo.id}"))
-        compose.onNodeWithText("전송").assertIsNotEnabled(); assertEquals(0, gateway.uploads)
+        compose.onNodeWithTag("outbox-${photo.id}").assertDoesNotExist()
+        assertEquals(0, gateway.uploads)
+        compose.runOnIdle { gateway.offline = false; controller.connectivityChanged(true) }
+        compose.waitUntil(5_000) { model.outbox.bundleCompleted(photo.id) }
+        assertEquals(1, gateway.uploads)
+        compose.onNodeWithTag("outbox-list").performScrollToNode(hasTestTag("outbox-status-${photo.id}"))
+        compose.onNodeWithTag("outbox-status-${photo.id}").assertTextEquals(mockCompletedLabel)
     }
-    @Test fun detailStackOcrAndListScrollSurviveTabSwitchAndActivityRecreation() {
-        login()
-        val photos = (0 until 16).map { photo("기록 $it") }
-        open(photos.first())
+    @Test fun rotationKeepsDetailButTabSwitchClosesItAndAutoSends() {
+        login(); val photo = photo(); open(photo)
         compose.onNodeWithText("원문 OCR 보기").performScrollTo().performClick()
-        compose.onNodeWithText("페이지 1\n안전난간 점검").performScrollTo()
-        select(4); select(2)
-        compose.onNodeWithTag("photo-detail-actions").assertExists()
-        compose.onNodeWithText("페이지 1\n안전난간 점검").assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("photo-detail-actions").assertExists()
-        compose.onNodeWithText("페이지 1\n안전난간 점검").assertIsDisplayed()
-        Espresso.pressBack()
-        compose.onNodeWithTag("record-photo-${photos.first().id}").assertIsDisplayed()
+        compose.onNodeWithText("페이지 1\n안전난간 점검").performScrollTo().assertExists()
         assertEquals(0, gateway.uploads)
+        select(4); select(2)
+        compose.onNodeWithTag("record-calendar").assertExists()
+        compose.onNodeWithTag("photo-detail-actions").assertDoesNotExist()
+        compose.waitUntil(5_000) { model.outbox.bundleCompleted(photo.id) }
+        assertEquals(1, gateway.uploads)
+    }
+    @Test fun backgroundClosesDetailAndReturnsToCalendarOnForeground() {
+        login(); val photo = photo(); open(photo)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitUntil(5_000) { model.records.detail.value == null && model.outbox.bundleCompleted(photo.id) }
+        compose.onNodeWithTag("record-calendar").assertExists()
+        compose.onNodeWithTag("photo-detail-actions").assertDoesNotExist()
     }
 }

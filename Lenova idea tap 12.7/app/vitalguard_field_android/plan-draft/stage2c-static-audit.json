@@ -1,0 +1,25 @@
+{
+  "xml_parsed": 20,
+  "drawable_references_resolved": 15,
+  "reference_source_hashes_matched": 120,
+  "reference_source_scope": "Flutter lib/test/native Kotlin + capture pilot Kotlin",
+  "new_libraries": 0,
+  "whitespace_files_checked": 136,
+  "single_task_manifest": true,
+  "calendar_capture_fabs": 2,
+  "calendar_vertical_scroll_containers": 1,
+  "old_pending_list_and_review_ui_removed": true,
+  "calendar_media_model_reused": true,
+  "jvm_junit_tests": 246,
+  "android_source_api_compile": "passed",
+  "new_preview_definitions": [
+    "RecordCalendarPreview",
+    "OutboxHistoryPreview"
+  ],
+  "android_instrumentation_execution": "미확인",
+  "single_task_hist_device_execution": "미확인",
+  "preview_png_render_and_visual_review": "미확인",
+  "download_url_app_jwt": "읽기 전용 서버 소스에서 미수용 확인; 실서버 미확인",
+  "gradle_executed": false,
+  "network_executed": false
+}

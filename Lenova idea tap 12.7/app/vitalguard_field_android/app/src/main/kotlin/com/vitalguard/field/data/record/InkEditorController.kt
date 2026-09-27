@@ -169,7 +169,7 @@ class InkEditorController(
         update { it.copy(busy = true, error = null) }
         try {
             val photo = requireEditablePhoto(queue, origin.id, owner)
-            fun previous(): List<OutboxEntry> = queue.dependents(origin.id).filter { it.kind == OutboxKind.ink }.also { items ->
+            fun previous(): List<OutboxEntry> = queue.dependents(origin.id).filter { it.kind == OutboxKind.ink && it.phase != OutboxPhase.completed }.also { items ->
                 if (items.any { it.needsVerification || queue.isBusy(it) || it.phase !in setOf(OutboxPhase.waiting, OutboxPhase.failed) })
                     throw ApiFailure("이전 주석의 전송 상태를 먼저 확인해 주세요. 전송 중·결과 불명·완료 주석은 바꿀 수 없습니다.")
             }

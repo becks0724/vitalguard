@@ -43,7 +43,7 @@ class RecordInputTest {
         input.speechText("미착용 작업 중지 3층"); input.persist().await()
         assertFalse(input.state.value.confirmed); assertEquals("직접 쓴 내용",Json.decodeObject(rig.store.read("a",input.key)!!)["text"])
     }
-    @Test fun memoSaveCreatesOneDependentWithExactKeysAndNeverSendsEvenAfterReconnect() = runTest {
+    @Test fun memoSaveCreatesOneDependentWithExactKeysAndWaitsUntilDetailCloses() = runTest {
         val rig=outboxRig(); val photo=rig.photo(); val input=rig.input(photo); rig.offline()
         input.note("현장 메모"); input.confirm(true); input.save()
         val first=rig.box.dependents(photo.id).single()
@@ -51,7 +51,7 @@ class RecordInputTest {
         assertTrue(first.sourceKey!!.startsWith("comment-draft:${photo.id}:"))
         assertEquals("현장 메모",rig.store.readBytes("a",first.bytesKey)!!.toString(Charsets.UTF_8))
         assertNull(rig.store.read("a",input.key)); assertEquals("",input.state.value.note)
-        assertEquals("메모를 기기에 저장했습니다. 사진 상세에서 함께 전송해 주세요.",input.state.value.notice)
+        assertEquals("메모를 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.",input.state.value.notice)
         rig.offline(false); input.note("현장 메모"); input.confirm(true); input.save()
         assertEquals(2,rig.box.dependents(photo.id).size); assertTrue(rig.gateway.writes.isEmpty())
     }

@@ -83,7 +83,7 @@ class CapturePipelineTest {
         assertTrue(port.savedFields.single().getValue("ocrText").startsWith("페이지 4\n"))
         assertFalse(events.contains("stamp-resize:/original/one.jpg"))
         assertEquals(paths.map { "delete:$it" }, events.takeLast(4))
-        assertEquals("기기에 저장됨 · 1건 · 주석·메모를 붙인 뒤 전송\n3건 처리 실패\n저장 실패", result.operationMessage)
+        assertEquals("기기에 저장됨 · 1건 · 상세를 닫으면 자동 전송됩니다\n3건 처리 실패\n저장 실패", result.operationMessage)
     }
 
     @Test fun optionalLocationFailureStillSavesWithMissingLocation() = runBlocking {

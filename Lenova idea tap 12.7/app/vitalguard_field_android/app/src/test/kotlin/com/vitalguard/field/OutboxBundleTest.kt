@@ -19,7 +19,7 @@ class OutboxBundleTest {
         val old = OutboxEntry.fromJson(bundle.photo.toJson() - setOf("dependsOn", "completedAt", "draftKeys"))
         assertNull(old.dependsOn); assertNull(old.completedAt); assertTrue(old.draftKeys.isEmpty())
     }
-    @Test fun flutterV1FixtureRetainsExactKeysAndRecoversSending() = runTest {
+    @Test fun flutterV1FixtureRetainsExistingKeysAddsOptionalAutomationAndRecoversSending() = runTest {
         val rig = outboxRig()
         val raw = javaClass.getResourceAsStream("/flutter-outbox-v1.json")!!.bufferedReader().use { it.readText() }
         rig.store.write("a", outboxStorageKey, raw)
@@ -32,7 +32,8 @@ class OutboxBundleTest {
         assertTrue(rig.box.entry("flutter-voice")!!.needsVerification)
         assertEquals(setOf("schemaVersion", "items"), Json.decodeObject(rig.store.read("a", outboxStorageKey)!!).keys)
         assertEquals(setOf("id", "owner", "kind", "fields", "siteName", "createdAt", "mock", "sourceKey", "annotationDraftId",
-            "dependsOn", "completedAt", "draftKeys", "phase", "message", "receipt", "deduplicated", "needsVerification"), photo.toJson().keys)
+            "dependsOn", "completedAt", "draftKeys", "phase", "message", "receipt", "deduplicated", "needsVerification", "autoSendReady", "networkFailure", "serverReference"), photo.toJson().keys)
+        assertTrue(photo.autoSendReady); assertFalse(photo.networkFailure); assertFalse(photo.serverReference)
     }
     @Test fun localStubCopiesOnlyOriginalMetadataAndParsesCoordinates() = runTest {
         val rig = outboxRig(); val photo = rig.photo(fields = PHOTO_FIELDS + mapOf("latitude" to "35.1", "longitude" to "127.2"))
@@ -150,7 +151,7 @@ class OutboxBundleTest {
         assertEquals("원본 사진 항목이 없습니다", rig.box.entry(child.id)!!.message)
         assertTrue(rig.gateway.writes.isEmpty())
     }
-    @Test fun completionRemovesBytesPreviewsDraftsAndCacheButRetainsReceipts() = runTest {
+    @Test fun completionRemovesSentBytesAndLegacyCacheButPreservesNewUnconfirmedDrafts() = runTest {
         val rig = outboxRig(); val bundle = rig.bundle()
         for (key in localRecordDraftKeys(bundle.photo.id)) rig.store.write("a", key, "draft")
         rig.store.write("a", recordSessionKey, Json.encode(mapOf("media" to mapOf("id" to bundle.photo.id))))
@@ -160,8 +161,9 @@ class OutboxBundleTest {
         rig.box.sendBundle(bundle.photo.id)
         bundle.all.forEach { assertNull(rig.store.readBytes("a", it.bytesKey)) }
         val remaining = rig.store.keys("a")
-        assertFalse(remaining.any { it.startsWith("outbox-file:") || it.startsWith("outbox-preview:") || it.startsWith("annotation:") || it.startsWith("photo:") || it.startsWith("published:") })
-        assertNull(rig.store.read("a", recordSessionKey)); assertNull(rig.store.read("a", "ink:draft"))
+        assertFalse(remaining.any { it.startsWith("outbox-file:") || it.startsWith("outbox-preview:") || it.startsWith("photo:") || it.startsWith("published:") })
+        assertNotNull(rig.store.read("a", recordSessionKey)); assertNull(rig.store.read("a", "ink:draft"))
+        localRecordDraftKeys(bundle.photo.id).forEach { assertEquals("draft", rig.store.read("a", it)) }
         assertTrue(rig.box.items.value.all { it.phase == OutboxPhase.completed && it.completedAt != null && it.receipt != null })
         assertEquals(4, rig.box.items.value.size)
     }
@@ -239,11 +241,12 @@ class OutboxBundleTest {
             assertEquals(keys, rig.store.keys("a").toSet()); assertEquals(4, rig.box.items.value.size)
         }
     }
-    @Test fun offlineCaptureAndBundleStorageNeverAutoSendOnReconnect() = runTest {
-        val rig = outboxRig(); rig.offline(); val bundle = rig.bundle(); rig.box.sendBundle(bundle.photo.id)
+    @Test fun offlineBundleWaitsUntilClosedThenAutoSendsOnReconnect() = runTest {
+        val rig = outboxRig(); rig.offline(); val bundle = rig.bundle(); rig.box.releaseBundle(bundle.photo.id)
         assertTrue(rig.box.items.value.all { it.phase == OutboxPhase.waiting }); assertTrue(rig.gateway.writes.isEmpty())
-        assertEquals("오프라인입니다. 연결 후 전송 상태에서 전송/재시도를 눌러 주세요.", rig.box.entry(bundle.photo.id)!!.message)
-        rig.offline(false); assertTrue(rig.gateway.writes.isEmpty())
+        assertEquals("오프라인입니다. 연결되면 자동으로 전송됩니다.", rig.box.entry(bundle.photo.id)!!.message)
+        rig.offline(false); rig.box.resumeAutomatic(networkRestored = true)
+        assertTrue(rig.box.bundleCompleted(bundle.photo.id)); assertEquals(4, rig.gateway.writes.size)
     }
     @Test fun legacyStandaloneSendAndInkReceiptCacheStayCompatible() = runTest {
         val rig = outboxRig(); val photo = rig.photo(); rig.box.send(photo)

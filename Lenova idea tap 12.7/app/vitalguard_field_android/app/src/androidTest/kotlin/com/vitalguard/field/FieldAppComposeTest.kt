@@ -99,10 +99,10 @@ class FieldAppComposeTest {
         compose.onNodeWithTag("rail-collapse-toggle").performScrollTo().assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag(if (initiallyCollapsed) "rail-expanded" else "rail-collapsed")
             .assertWidthIsEqualTo(if (initiallyCollapsed) 256.dp else 80.dp)
-        for ((index, title) in listOf(1 to "경보", 2 to "기록", 3 to "전송 상태", 4 to "설정")) {
+        for ((index, title) in listOf(1 to "경보", 2 to "기록", 3 to "전송 이력", 4 to "설정")) {
             select(index)
             when (index) {
-                2 -> compose.onNodeWithTag("record-pending-list").assertExists()
+                2 -> compose.onNodeWithTag("record-calendar").assertExists()
                 3 -> compose.onNodeWithTag("outbox-list").assertExists()
                 else -> {
                     compose.onNodeWithTag("placeholder-$index").assertExists()
@@ -112,7 +112,7 @@ class FieldAppComposeTest {
             compose.onNodeWithTag("rail-destination-$index").assertIsSelected().assertHeightIsAtLeast(56.dp)
             compose.onNodeWithTag("rail-selection-dot", useUnmergedTree = true).assertExists()
             if (index >= 2) compose.onNodeWithTag("shell-receipt")
-                .assertTextEquals("전송 전 기록은 기기에 보관 · 전송한 기록은 관제웹에서 봅니다")
+                .assertTextEquals("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
         }
         select(0)
         compose.onNodeWithTag("shell-receipt").assertTextContains("마지막 수신", substring = true)
