@@ -18,6 +18,9 @@ const KEYWORD_RULES: KeywordRule[] = [
   { tag: "도장/화기", severity: 2, re: /도장|용접|화기|방수/ },
 ];
 
+// 프롬프트의 "다음 태그만 사용"을 코드로도 검증한다(procure-risk-tags.ts 와 같은 형태).
+const TAG_NAMES = KEYWORD_RULES.map((k) => k.tag);
+
 /** 매칭된 키워드를 포함하는 문장을 근거로 추출(없으면 주변 스니펫). */
 function findEvidence(text: string, re: RegExp): string {
   const sentences = text.split(/(?<=다\.)\s*|(?<=[.!?])\s+/).filter((s) => s.trim());
@@ -91,7 +94,8 @@ async function aiTags(taskText: string): Promise<RiskTag[]> {
     const tag = typeof o.tag === "string" ? o.tag : null;
     const sev = Number(o.severity);
     const evidence = typeof o.evidence === "string" ? o.evidence : "";
-    if (!tag || ![1, 2, 3].includes(sev)) continue;
+    // 사전 밖 태그는 버린다 — AI 가 새 이름을 만들면 task-doc 에 영속돼 배치 판정의 검토범위가 오염된다.
+    if (!tag || !TAG_NAMES.includes(tag) || ![1, 2, 3].includes(sev)) continue;
     // 환각 방지: 근거문장이 원문 부분문자열일 때만 채택.
     if (!evidence || !taskText.includes(evidence)) continue;
     tags.push({ tag, severity: sev as 1 | 2 | 3, evidence, source: "ai" });

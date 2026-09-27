@@ -113,7 +113,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   백그라운드 수집 → `WCSession` 5초 배치로 폰에 전달. ⚠ 구 "워치 앱 미작성" 관례는 **구 스택
   (worker-phone) 한정**이고 신규 앱에는 해당하지 않는다(2026-08-11 정정).
 - **인프라 — GCP**. Cloud Run(`vitalguard-dashboard` · region `asia-northeast3`) + Cloud Build +
-  Secret Manager + Cloud Scheduler, DB 는 외부 PostgreSQL(`DATABASE_URL`). 배포 = `/deploy`.
+  Secret Manager + Cloud Scheduler, DB 는 외부 PostgreSQL(`DATABASE_URL`). 배포 = `scripts/deploy-dashboard.sh`.
   ⚠ `backend/infrastructure`(AWS CDK IoT 스택)는 **아무 코드도 참조하지 않는 잔재**다 —
   pnpm 워크스페이스 멤버로만 남아 있고 마지막 커밋이 2026-06-17 이다. 배포·운영과 무관.
 - 외부 의존성 — Flutter 공식 패키지 외 신규 추가 시 사전 합의.
@@ -123,12 +123,12 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 ## 빌드 / 테스트 / 검증
 
 ```bash
-# 전체 모노레포 명령(install·build·test·lint)은 package.json scripts 참조. 검증 일괄 = /verify
+# 전체 모노레포 명령(build·test·lint·typecheck)은 루트 package.json scripts 참조.
 # 패키지 단독
 pnpm --filter @safetymonitor/analyzers test
 pnpm --filter @safetymonitor/dashboard-web dev
 
-# 배포(관제웹) — 원자화 스크립트 한 호출. 상세는 .claude/commands/deploy.md
+# 배포(관제웹) — 원자화 스크립트 한 호출(전제·가드·되돌리기는 스크립트 주석에 있다).
 scripts/deploy-dashboard.sh
 
 # 작업자 폰·워치 앱 (Flutter + iOS/watchOS 네이티브)
@@ -224,8 +224,6 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 
 손대지 말 것. 사용자가 명시적으로 결정함 ([docs/context-notes.md](docs/context-notes.md) 2026-05-21).
 
-> ~~취소선~~ 로 폐기 표시돼 있던 넷(워치 앱 · 알림 미구현 · 머신러닝 금지 · CCTV 통합)은
-> 2026-08-22 에 걷어냈다. 넷 다 **지금은 구현돼 있다.** 이력은 아카이브에 있다.
 
 ### 프로토타입 (현 시점) 비범위 — 발표 후로 이연
 - **멀티 테넌트** — 조직 1개·관제자 1명 유지. `org_type` 은 회사 표기용이지 테넌트 격리가 아니다.
