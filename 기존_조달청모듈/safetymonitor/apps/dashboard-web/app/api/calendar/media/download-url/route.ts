@@ -1,15 +1,19 @@
-// 클라우드 브릿지 — 캘린더 미디어 다운로드 URL 발급(관리자 인증). attachment 프리사인으로 브라우저 저장 강제.
+// 클라우드 브릿지 — 캘린더 미디어 다운로드 URL 발급(관제 세션 또는 앱 로그인 JWT). attachment 프리사인으로 브라우저 저장 강제.
 import { NextResponse } from "next/server";
 
 import { verifyBasicAuth } from "../../../../../lib/admin-auth";
+import { bearerToken, diagnoseAppAuth, verifyAppJwt } from "../../../../../lib/app-jwt";
 import { getCalendarMediaById } from "../../../../../lib/db";
 import { isStorageConfigured, presignDownloadAttachment } from "../../../../../lib/storage";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  if (!verifyBasicAuth(request)) {
-    return NextResponse.json({ ok: false, error: "관리자 인증 필요" }, { status: 401 });
+  // 목록 GET과 같은 조회 권한 — 관제 세션 또는 앱 로그인 JWT를 수용한다.
+  if (!verifyBasicAuth(request) && verifyAppJwt(bearerToken(request)) === null) {
+    const d = diagnoseAppAuth(request);
+    console.warn(`[calendar/media/download-url] ${d.logLine}`);
+    return NextResponse.json({ ok: false, error: "인증 필요", action: d.action }, { status: 401 });
   }
   const id = new URL(request.url).searchParams.get("id") ?? "";
   if (!id) {
