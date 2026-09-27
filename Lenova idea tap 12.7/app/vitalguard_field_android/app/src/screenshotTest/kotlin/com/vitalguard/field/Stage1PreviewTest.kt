@@ -38,10 +38,7 @@ fun LoginPreview() {
 @Composable
 fun SiteSummaryPreview() {
     val time = "2026-09-14T15:13:04.759Z"
-    VgTheme {
-        Box(Modifier.fillMaxSize()) {
-            DashboardBackdrop(Modifier.fillMaxSize())
+    GlassPreviewSurface {
             SiteScreen(SiteSummaryState(SiteStatus(mockSiteStatusReply(time)), now = Instant.parse(time)))
-        }
     }
 }

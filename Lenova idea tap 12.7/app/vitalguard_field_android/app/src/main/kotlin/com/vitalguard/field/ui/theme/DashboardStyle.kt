@@ -2,28 +2,31 @@ package com.vitalguard.field.ui.theme
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.CompositionLocalProvider
+import com.vitalguard.field.R
 
-/** Opaque navigation, translucent content. Fixed neutral backdrop bounds keep text legible. */
+/** Photo → enclosing translucent workspace → glass cards; navigation stays opaque. */
 object DashboardColors {
     val backdrop = Color(0xFF303638)
     val backdropLight = Color(0xFF41484A)
+    val workspace = Color(0xC9303638)
     val sidebar = Color(0xFF303537)
-    val card = Color(0x24FFFFFF)
+    val card = Color(0x18FFFFFF)
     val text = Color(0xFFF8FAFA)
     val secondary = Color(0xFFF4F6F6)
     val muted = Color(0xFFF4F6F6)
@@ -79,29 +82,24 @@ fun GlassPanel(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, ena
         contentColor = DashboardColors.text, border = border, content = inner)
 }
 
-/** Drawn once per size; no backdrop blur, bitmap fetch, timer or decorative network request. */
+/** The supplied wallpaper is bundled locally and is decorative, not a live CCTV image. */
 @Composable
 fun DashboardBackdrop(modifier: Modifier = Modifier) {
-    Canvas(modifier.testTag("dashboard-backdrop")) {
-        drawRect(Brush.linearGradient(listOf(DashboardColors.backdropLight, DashboardColors.backdrop),
-            start = Offset.Zero, end = Offset(size.width * .8f, size.height)))
-        drawRect(Brush.radialGradient(listOf(Color.White.copy(alpha = .04f), Color.Transparent),
-            center = Offset(size.width * .48f, size.height * .2f), radius = size.maxDimension * .58f))
-        // Architectural panes sit behind the glass without looking like live site imagery.
-        val edge = Color.White.copy(alpha = .022f)
-        val x = size.width * .76f
-        drawLine(edge, Offset(x, 0f), Offset(x - size.width * .17f, size.height), 1.dp.toPx())
-        drawLine(edge, Offset(size.width * .07f, 0f), Offset(size.width * .07f, size.height), 1.dp.toPx())
-        drawOval(edge, topLeft = Offset(size.width * .34f, -size.height * .52f),
-            size = Size(size.width * .95f, size.height * 1.7f), style = Stroke(1.dp.toPx()))
-        val grain = Color.White.copy(alpha = .024f)
-        // Deterministic sparse grain; no random recomposition shimmer.
-        val gap = 13.dp.toPx()
-        var y = 0f; var row = 0
-        while (y < size.height) {
-            var xx = if (row % 2 == 0) 0f else gap / 2
-            while (xx < size.width) { drawCircle(grain, .45.dp.toPx(), Offset(xx, y)); xx += gap }
-            y += gap; row++
+    Box(modifier.testTag("dashboard-backdrop")) {
+        Image(painterResource(R.drawable.site_wallpaper), contentDescription = null,
+            modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop, alignment = Alignment.CenterStart)
+        Canvas(Modifier.matchParentSize()) {
+            // Only the edges are shaded for system-bar legibility; the asset itself is unchanged.
+            drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = .32f), .15f to Color.Transparent,
+                .82f to Color.Transparent, 1f to Color.Black.copy(alpha = .32f)))
         }
     }
+}
+
+@Composable
+fun DashboardWorkspace(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Surface(modifier.testTag("dashboard-workspace"), shape = RoundedCornerShape(32.dp),
+        color = DashboardColors.workspace, contentColor = DashboardColors.text, shadowElevation = 18.dp,
+        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f)))),
+        content = content)
 }

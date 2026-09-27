@@ -30,8 +30,10 @@ class DashboardComposeTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 VgTheme { Box(Modifier.width(520.dp).fillMaxHeight()) {
                     DashboardBackdrop(Modifier.matchParentSize())
+                    DashboardWorkspace(Modifier.fillMaxSize()) {
                     SiteScreen(SiteSummaryState(stage3SampleStatus(now.toString()), now = now),
                         onOpenDetail = { detail = it }, onOpenCctv = { videos++ }, onOpenAlerts = { alerts++ })
+                    }
                 } }
             }
         }
@@ -47,7 +49,8 @@ class DashboardComposeTest {
         val state = mutableStateOf(SiteSummaryState(stage3SampleStatus(now.toString()), forbidden = true, now = now))
         compose.setContent {
             VgTheme { Box(Modifier.fillMaxSize()) {
-                DashboardBackdrop(Modifier.matchParentSize()); SiteScreen(state.value)
+                DashboardBackdrop(Modifier.matchParentSize())
+                DashboardWorkspace(Modifier.fillMaxSize()) { SiteScreen(state.value) }
             } }
         }
         compose.onNodeWithText("27.2", useUnmergedTree = true).assertDoesNotExist()

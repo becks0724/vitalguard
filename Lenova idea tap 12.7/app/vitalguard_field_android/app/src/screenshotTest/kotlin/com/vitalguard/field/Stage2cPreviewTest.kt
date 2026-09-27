@@ -30,7 +30,6 @@ fun RecordCalendarPreview() {
         "media_type" to "image", "title" to "작업 전 점검", "comments" to listOf(mapOf("id" to "voice-one", "media_id" to "server-one",
             "body" to "", "audio_storage_key" to "preview/voice.m4a", "audio_ms" to 12000))))
     GlassPreviewSurface { Box(Modifier.fillMaxSize()) {
-        DashboardBackdrop(Modifier.matchParentSize())
         RecordCalendarContent(fixedDay, mergeCalendarRecords(local, listOf(server)), today = fixedDay)
     } }
 }
@@ -46,7 +45,6 @@ fun OutboxHistoryPreview() {
         previewEntry("operation-sending", 11, OutboxPhase.sending),
     )
     GlassPreviewSurface { Box(Modifier.fillMaxSize()) {
-        DashboardBackdrop(Modifier.matchParentSize())
         OutboxHistoryContent(entries.reversed(), account = "태블릿 담당자", busyIds = setOf("operation-sending"))
     } }
 }

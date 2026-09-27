@@ -40,6 +40,7 @@ fun FieldShell(
     alertsContent: @Composable () -> Unit = { PlaceholderScreen("경보", 1) },
     settingsContent: @Composable () -> Unit = { PlaceholderScreen("설정", 4) },
     globalAlertContent: @Composable () -> Unit = {},
+    drawWallpaper: Boolean = true,
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
     val collapsed = shell.recordEditorOpen || (shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth))
@@ -59,9 +60,12 @@ fun FieldShell(
         shell.destination == 4 -> StateKind.info to "기기에 저장"
         else -> StateKind.empty to "기기에 보관 · 자동 전송"
     }
-    Box(Modifier.fillMaxSize()) {
-    DashboardBackdrop(Modifier.matchParentSize())
-    Row(Modifier.fillMaxSize().padding(12.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    if (drawWallpaper) DashboardBackdrop(Modifier.matchParentSize())
+    val horizontalMargin = if (maxWidth >= 1000.dp) 32.dp else 16.dp
+    val verticalMargin = if (maxHeight >= 600.dp) 20.dp else 8.dp
+    DashboardWorkspace(Modifier.fillMaxSize().padding(horizontal = horizontalMargin, vertical = verticalMargin)) {
+    Row(Modifier.fillMaxSize().padding(10.dp)) {
         DashboardTheme { CompositionLocalProvider(LocalContentColor provides DashboardColors.text) {
             FieldRail(collapsed, userName, isMock, shell, onToggle, onSelect, onLogout)
         } }
@@ -112,6 +116,7 @@ fun FieldShell(
                 }
             }
         }
+    }
     }
     }
     if (receiptDetails) DashboardTheme {

@@ -12,6 +12,7 @@ import android.app.Activity
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import com.vitalguard.field.ui.theme.DashboardColors
+import com.vitalguard.field.ui.theme.DashboardBackdrop
 import com.vitalguard.field.ui.theme.VgColors
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.compose.rememberNavController
@@ -69,8 +70,9 @@ fun FieldApp(model: FieldViewModel) {
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
     BoxWithConstraints(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas)) {
         val windowWidthDp = maxWidth.value.toInt()
+        if (field.authStage == AuthStage.ready) DashboardBackdrop(Modifier.matchParentSize())
         Scaffold(
-            containerColor = if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas,
+            containerColor = if (field.authStage == AuthStage.ready) androidx.compose.ui.graphics.Color.Transparent else VgColors.canvas,
             modifier = Modifier.fillMaxSize().windowInsetsPadding(
                 WindowInsets.safeDrawing.union(WindowInsets.ime).union(WindowInsets.systemGestures)),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -89,6 +91,7 @@ fun FieldApp(model: FieldViewModel) {
                         val actionPlacement = accountPlacement?.state?.collectAsStateWithLifecycle()?.value ?: ActionPlacementState()
                         CompositionLocalProvider(LocalActionPlacement provides actionPlacement) {
                         FieldShell(field, shell, site, model.controller.isMock, windowWidthDp,
+                            drawWallpaper = false,
                             onWidth = model.shell::windowWidth, onToggle = model.shell::toggle,
                             onSelect = model::selectDestination, onLogout = model.shell::logout,
                             onRefresh = model.site::manualRefresh, onNextStage = { model.snackbar("다음 단계") },

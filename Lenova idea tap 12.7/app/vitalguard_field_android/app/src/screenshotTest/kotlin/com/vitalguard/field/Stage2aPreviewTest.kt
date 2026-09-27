@@ -47,7 +47,6 @@ private fun PreviewPhoto(modifier: Modifier) {
 fun LocalRecordsCalendarPreview() {
     GlassPreviewSurface {
         Box(Modifier.fillMaxSize()) {
-            DashboardBackdrop(Modifier.matchParentSize())
             RecordCalendarContent(LocalDate.parse("2026-09-26"), mergeCalendarRecords(listOf(previewPhoto, previewText, previewPhoto.copy(id = "second", fields = previewPhoto.fields + mapOf("title" to "서류 스캔 · 페이지 1", "clientOperationId" to "second"),
                 createdAt = previewPhoto.createdAt.minusSeconds(60))), emptyList()), capture = CaptureUiState(scannerReady = false),
                 thumbnail = { PreviewPhoto(Modifier.size(72.dp)) })
@@ -60,7 +59,6 @@ fun LocalRecordsCalendarPreview() {
 fun LocalPhotoDetailPreview() {
     GlassPreviewSurface {
         Box(Modifier.fillMaxSize()) {
-            DashboardBackdrop(Modifier.matchParentSize())
             PhotoDetailContent(previewPhoto, listOf(previewText), wide = true,
                 preview = { PreviewPhoto(Modifier.fillMaxSize()) }, attachment = {
                     com.vitalguard.field.ui.theme.GlassCard(Modifier.fillMaxWidth()) {

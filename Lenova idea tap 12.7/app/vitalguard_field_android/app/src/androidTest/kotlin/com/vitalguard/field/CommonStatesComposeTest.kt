@@ -64,6 +64,11 @@ class CommonStatesComposeTest {
             val before = listOf("shell-content", "global-alert-slot", "shell-receipt-slot").map {
                 compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot
             }
+            val workspace = compose.onNodeWithTag("dashboard-workspace").fetchSemanticsNode().boundsInRoot
+            before.forEach { bounds ->
+                assertTrue(bounds.left >= workspace.left && bounds.right <= workspace.right)
+                assertTrue(bounds.top >= workspace.top && bounds.bottom <= workspace.bottom)
+            }
             compose.runOnIdle { field.value = field.value.copy(offline = true) }
             val after = listOf("shell-content", "global-alert-slot", "shell-receipt-slot").map {
                 compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot
