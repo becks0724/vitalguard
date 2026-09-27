@@ -1,0 +1,20 @@
+{
+  "xml_parsed": 20,
+  "drawable_references_resolved": 15,
+  "pure_kotlin_files": 9,
+  "reference_source_hashes_matched": 120,
+  "reference_source_scope": "Flutter lib/test/native Kotlin + capture pilot Kotlin",
+  "unique_recording_and_draft_declarations": true,
+  "original_labels_and_keys": 29,
+  "new_libraries": 0,
+  "record_audio_permission_and_service_query": true,
+  "whitespace_files_checked": 124,
+  "jvm_junit_tests": 215,
+  "android_source_api_compile": "passed",
+  "android_instrumentation_new_tests": 12,
+  "android_instrumentation_execution": "미확인",
+  "preview_definitions": 2,
+  "preview_png_render_and_visual_review": "미확인",
+  "gradle_executed": false,
+  "network_executed": false
+}

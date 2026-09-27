@@ -1,5 +1,9 @@
 package com.vitalguard.field
 
+import com.vitalguard.field.audio.*
+import com.vitalguard.field.data.record.RecordWorkspace
+import com.vitalguard.field.ui.record.AndroidInkRenderer
+import com.vitalguard.field.data.mock.MockVoiceRecorder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -28,7 +32,15 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     val messages = events.receiveAsFlow()
     val shell = ShellController(controller, viewModelScope, ::snackbar)
     val site = SiteSummaryController(controller, viewModelScope)
+    val microphone = MicrophoneAccess(application)
+    private val speech: com.vitalguard.field.data.contracts.SpeechInput by lazy { application.speech(controller.isMock, microphone) { (recorder as? DeviceVoiceRecorder)?.isBusy == true } }
+    private val recorder: com.vitalguard.field.data.contracts.VoiceRecorder by lazy { application.recorder(viewModelScope, controller.isMock, microphone) { (speech as? DeviceSpeechInput)?.isBusy == true } }
+    val records = RecordWorkspace(controller, outbox, AndroidInkRenderer(), speech, recorder, viewModelScope, ::snackbar)
     init {
+        val previousFlusher = controller.beforeLock
+        controller.beforeLock = {
+            try { records.flush() } finally { previousFlusher?.invoke() }
+        }
         viewModelScope.launch {
             var account: String? = null
             combine(controller.state, shell.state) { field, shell -> field to shell }.collect { (field, _) ->
@@ -36,6 +48,7 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                 if (account != next) {
                     site.setVisible(false)
                     account = next
+                    records.bindAccount(next)
                     shell.bindAccount(next)
                     site.reset()
                     capture?.reset()
@@ -45,10 +58,24 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                 outboxUi.setVisible(next != null && shell.state.value.destination == 3)
             }
         }
+        viewModelScope.launch { outbox.items.collect { records.pruneFinished() } }
         viewModelScope.launch { controller.initialize() }
+    }
+    suspend fun restoreRecord() { if (records.restoreSession()) shell.select(2) }
+    fun selectDestination(index: Int) {
+        if (shell.state.value.destination == 2 && index != 2) records.launch { records.flush(); shell.select(index) }
+        else shell.select(index)
+    }
+    fun stopRecordAudio() {
+        (speech as? DeviceSpeechInput)?.onStop()
+        (recorder as? DeviceVoiceRecorder)?.onStop()
+        (recorder as? MockVoiceRecorder)?.autoStop("background")
+        records.background()
     }
     fun snackbar(message: String) { events.trySend(message) }
     override fun onCleared() {
+        records.close()
+        controller.beforeLock = null
         auth.close()
         site.close()
         capture?.close()

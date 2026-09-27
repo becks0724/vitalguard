@@ -1,6 +1,10 @@
 package com.vitalguard.field
 
 import android.app.Application
+import com.vitalguard.field.audio.*
+import com.vitalguard.field.data.contracts.*
+import com.vitalguard.field.data.mock.MockSpeechInput
+import com.vitalguard.field.data.mock.MockVoiceRecorder
 import com.vitalguard.field.data.contracts.FieldController
 import com.vitalguard.field.data.contracts.InternetProbe
 import com.vitalguard.field.data.live.DeviceLocalStore
@@ -20,5 +24,11 @@ class FieldApplication : Application() {
     fun controller(scope: CoroutineScope): FieldController = controllerFactoryForTests?.invoke(scope)
         ?: FieldCoordinator(if (BuildConfig.VG_MOCK) MockGateway() else LiveGateway(),
             if (BuildConfig.VG_MOCK) MemoryStore() else DeviceLocalStore(this), scope)
+    var speechFactoryForTests: (() -> SpeechInput)? = null
+    var recorderFactoryForTests: ((CoroutineScope) -> VoiceRecorder)? = null
+    fun speech(isMock: Boolean, microphone: MicrophoneAccess, busy: () -> Boolean): SpeechInput =
+        speechFactoryForTests?.invoke() ?: if (isMock) MockSpeechInput() else DeviceSpeechInput(this, microphone, busy)
+    fun recorder(scope: CoroutineScope, isMock: Boolean, microphone: MicrophoneAccess, busy: () -> Boolean): VoiceRecorder =
+        recorderFactoryForTests?.invoke(scope) ?: if (isMock) MockVoiceRecorder(scope) else DeviceVoiceRecorder(this, microphone, busy)
     fun internetProbe(): InternetProbe = internetProbeForTests ?: NetworkNative(this)
 }

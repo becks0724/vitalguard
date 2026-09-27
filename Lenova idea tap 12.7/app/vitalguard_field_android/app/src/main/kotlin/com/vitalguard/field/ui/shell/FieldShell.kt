@@ -39,7 +39,7 @@ fun FieldShell(
     outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 상태", 3) },
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
-    val collapsed = shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth)
+    val collapsed = shell.recordEditorOpen || (shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth))
     val siteName = field.site?.site_name ?: "현장 정보 없음"
     val userName = field.user?.name ?: field.user?.id ?: "사용자 정보 없음"
     val scale = LocalDensity.current.fontScale.coerceAtLeast(1f)
@@ -77,7 +77,7 @@ fun FieldShell(
                 }
                 // Port: global_alert_strip.dart. 내용은 3단계, 슬롯은 상태와 관계없이 항상 예약.
                 Spacer(Modifier.fillMaxWidth().height((max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp)
-                    .testTag("global-alert-slot"))
+                    .testTag("global-alert-slot").semantics { stateDescription = if (shell.recordEditorOpen) "편집 중 경보 표시 지연" else "경보 표시 대기" })
             }
         }
     }
@@ -104,7 +104,7 @@ private fun FieldRail(
                         if (isMock) Box(Modifier.offset(x = (-12).dp, y = 8.dp).size(6.dp, 40.dp)
                             .background(VgColors.primary).testTag("mock-rail-marker").semantics { contentDescription = "모의 데이터" })
                         VgIconButton(R.drawable.ic_chevron_right, "레일 펼치기",
-                            Modifier.align(Alignment.Center).testTag("rail-collapse-toggle"), onClick = onToggle)
+                            Modifier.align(Alignment.Center).testTag("rail-collapse-toggle"), enabled = !shell.recordEditorOpen, onClick = onToggle)
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {

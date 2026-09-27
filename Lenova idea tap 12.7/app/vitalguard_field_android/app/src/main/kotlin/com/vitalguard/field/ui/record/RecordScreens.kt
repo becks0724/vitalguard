@@ -34,9 +34,8 @@ import com.vitalguard.field.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
-// Port: record_screens.dart RecordHome/PhotoDetail/_Attachment. 편집기/입력만 2b 자리.
+// Port: record_screens.dart RecordHome/PhotoDetail/_Attachment.
 @Composable
 fun RecordHome(controller: FieldController, outbox: OutboxController, capture: CaptureUiState,
     onScan: () -> Unit, onPhoto: () -> Unit, onOpen: (String) -> Unit, onReload: () -> Unit,
@@ -92,7 +91,7 @@ fun RecordHomeContent(
 
 @Composable
 fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: RecordActions, photoId: String,
-    windowWidthDp: Int, onBack: () -> Unit, onNextStage: () -> Unit,
+    windowWidthDp: Int, onBack: () -> Unit, onEditor: () -> Unit, onInput: () -> Unit,
 ) {
     val field by controller.state.collectAsStateWithLifecycle()
     val entries by outbox.items.collectAsStateWithLifecycle()
@@ -115,7 +114,7 @@ fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: 
     val action = actionStates[actions.stateKey(photo)] ?: RecordActionState()
     val availability = photoActions(photo, children, busyIds, field.offline, action.busy)
     PhotoDetailContent(photo, children, availability, field.offline, windowWidthDp >= 1000, action.error,
-        onBack, onNextStage, onSend = { actions.send(photo) }, onDelete = { actions.discard(photo) },
+        onBack = onBack, onEditor = onEditor, onInput = onInput, onSend = { actions.send(photo) }, onDelete = { actions.discard(photo) },
         preview = { LocalPhotoPreview(controller, photo, Modifier.fillMaxSize()) },
         attachment = { child -> Attachment(controller.local, child,
             onDelete = if (!availability.processing && canDiscard(child)) ({ actions.discard(photo, child.id) }) else null) })
@@ -126,7 +125,7 @@ fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: 
 fun PhotoDetailContent(
     photo: OutboxEntry, attachments: List<OutboxEntry>, availability: PhotoActionAvailability = photoActions(photo, attachments, emptySet(), false),
     offline: Boolean = false, wide: Boolean = false, error: String? = null,
-    onBack: () -> Unit = {}, onNextStage: () -> Unit = {}, onSend: () -> Unit = {}, onDelete: () -> Unit = {},
+    onBack: () -> Unit = {}, onEditor: () -> Unit = {}, onInput: () -> Unit = {}, onSend: () -> Unit = {}, onDelete: () -> Unit = {},
     preview: @Composable () -> Unit = { ImagePlaceholder(Modifier.fillMaxSize()) },
     attachment: @Composable (OutboxEntry) -> Unit = { Text("${it.kindLabel} · ${it.statusLabel}") },
 ) {
@@ -159,8 +158,8 @@ fun PhotoDetailContent(
         ActionDock {
             FlowRow(Modifier.fillMaxWidth().testTag("photo-detail-actions"), horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onNextStage, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp), enabled = availability.editable) { Text("주석 그리기") }
-                OutlinedButton(onNextStage, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp), enabled = availability.editable) { Text("메모·음성 붙이기") }
+                OutlinedButton(onEditor, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-editor"), enabled = availability.editable) { Text("주석 그리기") }
+                OutlinedButton(onInput, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-input"), enabled = availability.editable) { Text("메모·음성 붙이기") }
                 Button(onSend, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("send-bundle"), enabled = availability.sendable) { Text("전송") }
                 OutlinedButton({ confirmDelete = true }, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("delete-bundle"),
                     enabled = availability.deletable) { Text("삭제") }
@@ -205,7 +204,6 @@ private fun Attachment(store: LocalStore, item: OutboxEntry, onDelete: (() -> Un
         }
     }
 }
-fun voiceTime(ms: Int): String = String.format(Locale.ROOT, "%d:%02d", ms / 60000, (ms / 1000) % 60)
 
 private suspend fun decodeImage(bytes: ByteArray, width: Int): ImageBitmap? = withContext(Dispatchers.IO) {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

@@ -7,6 +7,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
+import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -53,15 +54,21 @@ fun FieldApp(model: FieldViewModel) {
             Box(Modifier.fillMaxSize().padding(padding)) {
                 if (field.authStage == AuthStage.ready && field.user != null) {
                     key(field.user!!.id) {
+                        // 탭을 가린 동안 끝난 저장도 같은 기록 스택에 반영한다.
+                        val recordNav = rememberNavController()
+                        LaunchedEffect(field.user!!.id) {
+                            withFrameNanos { } // 셸의 첫 프레임 뒤 계정별 재진입 지점을 읽는다.
+                            model.restoreRecord()
+                        }
                         val placement = remember(field.user!!.id) { ActionPlacement(model.controller.local, field.user!!.id) }
                         val actionPlacement by placement.state.collectAsStateWithLifecycle()
                         LaunchedEffect(placement) { placement.load() }
                         CompositionLocalProvider(LocalActionPlacement provides actionPlacement) {
                         FieldShell(field, shell, site, model.controller.isMock, windowWidthDp,
                             onWidth = model.shell::windowWidth, onToggle = model.shell::toggle,
-                            onSelect = model.shell::select, onLogout = model.shell::logout,
+                            onSelect = model::selectDestination, onLogout = model.shell::logout,
                             onRefresh = model.site::manualRefresh, onNextStage = { model.snackbar("다음 단계") },
-                            recordContent = { RecordNavigation(model, windowWidthDp) },
+                            recordContent = { RecordNavigation(model, windowWidthDp, recordNav) },
                             outboxContent = { OutboxScreen(model.outboxUi) })
                         }
                     }

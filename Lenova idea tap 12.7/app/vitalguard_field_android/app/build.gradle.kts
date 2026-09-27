@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.2-stage2a"
+        versionName = "0.3-stage2b"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VG_MOCK", providers.gradleProperty("vgMock").orNull.equals("true", true).toString())
     }

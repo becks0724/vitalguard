@@ -1,12 +1,12 @@
-# VitAlGuard 현장 — Compose/Kotlin 1·2a단계
+# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b단계
 
-지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`.
+지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`, `../../plan-draft/TASK-compose-main-stage2b.md`.
 Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 프로젝트다.
 기존 Flutter·촬영 파일럿은 수정하지 않았다.
 
 **Gradle·네트워크 명령·APK 빌드·설치·Android 계측·스크린샷 실행은 하지 않았다.**
-2a에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 165개와 Android/Compose 소스 API 검사는 통과했다.
-이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 아래 2a 절에 실행 범위를 구분했다.
+2b에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 215개와 Android/Compose 소스 API 검사는 통과했다.
+이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 아래 2b 절에 실행 범위를 구분했다.
 
 ## 범위와 구조
 
@@ -190,7 +190,7 @@ cd "$FIELD_SOURCE"
 ## 다음 단계와 미확인 사항
 
 - 2a 구현: 기록·전송함·촬영/OCR·주소/작업 조회·댓글 쓰기 데이터 경계.
-- 2b 예정: 주석 편집기·메모/음성 입력·녹음기·세션 복구. 기상/작업자/가스/AED 상세도 이번 범위 밖이다.
+- 2b 구현: 주석 편집기·메모/음성 입력·녹음기·온디바이스 STT·세션 복구. 기상/작업자/가스/AED 상세는 이번 범위 밖이다.
 - 3단계: CCTV 티켓/영상·경보 목록/상세·명시적 대응 확인·전역 경보 스트립.
 - 4단계: 설정·릴리스 서명·기존 Flutter 앱 덮어 설치/데이터 호환·출시 검증.
 
@@ -248,11 +248,10 @@ Flutter·촬영 파일럿은 읽기 전용으로 사용했다. 작업 중 외부
 - `MockGateway`의 로컬 멱등 전송/댓글과 `MockLookupGateway`의 조회 시나리오를 추가했다.
   모의 완료 문구는 `모의 전송 완료 — 실제 서버로 보내지 않았습니다`다.
 
-### 2b로 넘긴 것
+### 2a 당시 넘긴 범위
 
-주석 그리기·메모·음성 입력·녹음기·세션 복구는 구현하지 않았다.
-상세의 두 버튼은 원문의 활성 조건을 그대로 계산하고 누르면 **“다음 단계(2b)에서 옮깁니다”** 스낵바를 표시한다.
-딸린 항목 모델/전송/표시/정리 경계는 2a에 포함되어 있다. 설정 토글·CCTV·경보 대응 HTTP는 이번 범위 밖이다.
+2a 당시 자리만 있던 주석 그리기·메모·음성 입력·녹음기·세션 복구를 아래 2b에서 실제 화면으로 연결했다.
+딸린 항목 모델/전송/표시/정리 경계는 2a 구현을 사용한다. 설정 토글·CCTV·경보 대응 HTTP는 후속 단계다.
 
 ### 검증 결과와 후속 실행
 
@@ -292,3 +291,97 @@ python3 tools/check-android-kotlin-offline.py
 | capture_site_id_test.dart | CaptureSiteIdTest, CaptureOutboxTest |
 | capture_time_test.dart | CaptureTimeTest(원본 8개 + compact offset/공백 구분자 2개), HoldBundleComposeTest |
 | hold_bundle_ui_test.dart | RecordContractTest, HoldBundleComposeTest, OutboxComposeTest, Stage2aPreviewTest — 편집기/입력/세션 복구 제외 |
+
+
+## 2b — 펜 주석·메모/음성 입력·녹음·STT·작성 세션 복구
+
+2026-09-27, `TASK-compose-main-stage2b.md`에 따라 이전 실행의 `audio/`, `VoiceRecorder.kt`,
+`MockVoiceRecorder.kt`, `data/record/` 파일을 먼저 읽고 같은 파일을 이어서 완성했다.
+코드·테스트·검증 문서는 이 앱 폴더에만 작성했다. §3에서 지정한 `../../plan-draft/astra-done.txt`에는
+기존 바이트를 유지하고 완료 기록만 덧붙였다. Flutter·파일럿·다른 앱은 읽기만 했다.
+
+### 구현과 저장 계약
+
+- `RecordNavigation`은 사진 상세 → `editor/{id}`(R-04), `input/{id}`(R-06)을 연결한다.
+  NavController는 계정 셸에 유지하므로 다른 탭에서 끝난 로컬 저장도 같은 스택에 반영한다.
+  R-06에서 편집기를 열었다 돌아오면 메모와 세션 대상도 R-06으로 돌아온다. 중복 탭은 같은 경로를 중첩하지 않는다.
+- `RecordWorkspace`를 `FieldViewModel`이 소유한다. 회전·탭 왕복에도 동일 컨트롤러를 유지하고,
+  `beforeLock`은 활성 잉크·메모·녹음을 모두 보관한다. 한 보관 작업이 실패해도 다른 보관/마이크 정지는 실행한다.
+  셸 첫 프레임에 계정별 `record:active-draft`를 읽어 기록 탭을 선택하고 사진 상세 → 작성 화면 순서로 복원한다.
+  없는/완료된 사진은 세션만 닫고, 복구 실패는 원문의 스낵바를 표시한다. 복구는 전송하지 않는다.
+- `InkStroke`/`InkEditorController`: 원본 정규화 좌표·압력·너비 비율, `{v:1,strokes:[…]}`를 유지한다.
+  지우개는 사진 종횡비와 선분 거리를 반영해 접촉한 획 전체를 삭제한다. 옛 지우개는 저장 순서대로 적용한다.
+  진행 중 펜 획도 즉시 스냅샷을 쓰며, 미확정 지우개는 복구본에 적용하지 않는다.
+- `InkCanvas`는 raw `awaitPointerEventScope`를 사용한다. `PointerType.Stylus`만 그리며 `pressure`를 사용한다.
+  손가락은 이동/1~4배 핀치만 수행하고, 펜 접촉 중 손바닥 접촉은 떼기까지 무시한다.
+  좌표 4자리·압력 2자리로 반올림하고 1px 미만 이동은 버린다. 일반 up은 확정하고,
+  `ACTION_CANCEL`·`FLAG_CANCELED`·소비된/취소된 포인터는 획과 지우개를 버린다.
+  회전/창 크기 변경/백그라운드는 받은 펜 점까지 확정하여 뒤늦은 cancel로 잃지 않는다.
+- 도구 4개·굵기 3개·색 3개, undo/확인 후 전체 지우기/원본 보기/폭 맞춤, 원문 대화상자와 키를 유지했다.
+  도구는 56dp, 주석 저장은 180×64dp, `ActionDock(maxWidth=960.dp)`다. 오류 표시 슬롯도 고정하여
+  필기 중 레이아웃을 바꾸지 않는다. 편집기 동안 레일은 접히고 펼치기와 경보 표시를 지연한다.
+- `AndroidInkRenderer`: 화면용 원본만 최대 변 1600px 이하로 샘플링하고 저장은 `inSampleSize=1`이다.
+  원본 크기 mutable 비트맵 한 장에 직접 그려 PNG를 만든 뒤 recycle한다. 전체 크기 출력 비트맵을 별도로 만들지 않는다.
+  marker 알파 0.35, 사각형 첫/끝점, 압력 굵기 `0.45+0.9p`, 첫 점 원을 공통 렌더러로 그린다.
+  원본 크기 렌더 메모리가 부족하면 초안을 보존하고 오류를 표시한다. 4160px 실제 기기 메모리 동작은 미확인이다.
+- 주석 저장: `annotation:<id>`의 원문 필드/리비전, 2 MiB 검사, 이전 잉크 전송 중·결과 불명·완료 거부,
+  이전 대기 리비전 discard → `enqueue(ink, dependsOn, annotationDraftId, draftKeys, previewBytes)`를 유지했다.
+  빈 잉크 저장으로 기존 주석을 지울 수 있고, 깨끗한 빈 초안의 저장은 비활성이다. 저장은 HTTP를 열지 않는다.
+- R-06: 관리자 기록 안내와 원문 문구, 3~8줄 직접 입력, 후보 최대 5개·문장 수정·전체 확인·64dp 메모 저장을 구현했다.
+  `comment-draft:<id>:new`에 직접 쓴 글과 명시적으로 확인한 STT 문장만 보관한다.
+  미확인 후보는 로컬 초안·Bundle·진단 로그에 넣지 않는다. 커서/선택 정수만 saved state로 보관하며 IME를 강제하지 않는다.
+  뒤로/탭 이탈/백그라운드/lock은 persist + STT 취소 + 녹음 보관을 수행한다.
+- `VoiceCommentDraft`: 시작/녹음/정지/재생/보관 상태, 1초 경과 표시, 미리듣기/취소/다시 녹음/음성 저장,
+  `voice-comment-draft:<id>`와 `:audio`, `[owner,mediaId]` JSON recorderKey를 유지했다.
+  백그라운드 전환 뒤 늦게 끝난 미리듣기 파일 읽기/다시 녹음은 시작하지 않는다.
+  native 경로 + 로컬 오디오 사본으로 복구하며, enqueue 직후 operationId 저장 전에 중단된 경우에도 sourceKey로 중복을 막는다.
+  음성 저장은 `audioMs`/`siteId`/`dependsOn`/원문 sourceKey와 draftKeys를 가진 로컬 전송 대기 항목만 만든다.
+- `DeviceVoiceRecorder`: 원본 Kotlin RecorderNative의 채널을 Flow/계약으로 바꿨다.
+  AAC ADTS 저널 → 정상 정지/완성 프레임 복구 → M4A, MediaPlayer 재생, 180초·10 MiB 상한,
+  앱 백그라운드 정지, AtomicFile 계정·사진별 초안과 원본 보존을 유지한다. 회전은 같은 ViewModel 녹음기를 유지한다.
+- `DeviceSpeechInput`: API 31 이상 온디바이스 `SpeechRecognizer`만 사용한다. ko-KR·후보 5개,
+  원본 이벤트명/status/partial/final/error/cancelled/diagnostic_error, runId/늦은 콜백 차단·타임아웃을 유지한다.
+  진단 화면/원음/후보 로그/온라인 인식기 fallback은 추가하지 않았다.
+- `MicrophoneAccess`와 Activity Result로 `RECORD_AUDIO` 런타임 권한을 요청한다.
+  Activity는 ViewModel에 보관하지 않고 회전 후 host를 재연결한다. 취소한 요청의 늦은 권한 결과는 새 요청을 시작하지 않는다.
+  Manifest의 마이크 권한/RecognitionService query를 추가했다. 신규 라이브러리는 없다.
+- `MockSpeechInput`/`MockVoiceRecorder`는 마이크·파일·HTTP 없이 고정 후보/모의 오디오를 제공한다.
+  FieldApplication 조립 지점의 live/mock 선택과 instrumentation 주입 경로를 사용한다.
+
+### 2b 검증
+
+Gradle·네트워크·ADB·APK 설치를 실행하지 않았다. 기존 캐시로 다음 두 도구를 직접 실행했다.
+
+```sh
+python3 tools/check-jvm-offline.py
+python3 tools/check-android-kotlin-offline.py
+```
+
+- **통과: 순수 JVM 215개**(기존 165 + 2b 50). 증거: `build/offline-jvm/junit.log`.
+  Kotlin 2.4.0/JUnit 4.13.2/coroutines 1.10.2/org.json 20240303. Android/Compose용 BackgroundContrastTest는 제외했다.
+- **통과: main + androidTest + screenshotTest 소스 API 컴파일**. 증거: `build/offline-android-kotlin/compile.log`와 `classpath.txt`.
+  캐시 Android 37.0·Compose compiler 2.4.0·Navigation 2.10.2로 검사했다. R/BuildConfig 이름 스텁을 쓰므로
+  Gradle 의존성 해석/리소스 링크/manifest merge/APK 빌드 결과는 아니다.
+- **작성·소스 컴파일 확인, 실행 미확인: 신규 Android 계측 12개**.
+  RecordEditingComposeTest 8개(56dp/선택·touch 무획·raw stylus/취소·주석 저장·Back/회전·메모·STT·녹음·재로그인·커서),
+  InkRendererAndroidTest 2개(픽셀 알파/지우기·4160×3120 원본 저장), MicrophoneAccessTest 2개(거절/회전 뒤 늦은 권한 결과).
+  기존 HoldBundleComposeTest의 2b 자리표시자 기대값을 실제 화면 진입으로 갱신했다.
+- **작성·소스 컴파일 확인, 렌더링 미확인: 프리뷰 2개**. `Stage2bPreviewTest`의 `RecordEditorPreview`, `RecordInputPreview`.
+  각각 866×1385dp·340dpi·한국어·고정 데이터. 실제 PNG·시각 검수는 미확인이다.
+  앞 절의 ASCII 복사본 screenshot 절차를 후속 실행 시 사용한다.
+- 정적 확인과 원본 해시/필수 키·문구 점검은 `plan-draft/stage2b-static-audit.json`, 상세는 `plan-draft/stage2b-verification.md`에 기록했다.
+- **미확인**: Gradle 전체 빌드/리소스/계측 실행, 실제 권한창·녹음/재생·한국어 온디바이스 모델·STT 오류,
+  실제 프로세스 강제 종료 중 AAC 복구/저장 공간 부족, TB373FU 팜 리젝션·펜 압력/지연·회전/분할창/IME/큰 글꼴,
+  4160px 메모리, 실제 서버 전송/기존 Flutter 데이터·서명 호환. 서버 판정과 관리자 기록은 분리했고 조치수준 칩은 없다.
+
+| 원본 테스트 | 2b 대응 |
+| --- | --- |
+| ink_stroke_test.dart | InkStrokeTest, InkRendererAndroidTest |
+| record_editor_ink_test.dart | InkEditorTest, RecordEditingComposeTest |
+| ink_upload_test.dart | InkEditorTest + 기존 MultipartGatewayTest/OutboxBundleTest |
+| record_input_test.dart | RecordInputTest, RecordEditingComposeTest |
+| record_recovery_test.dart | RecordRecoveryTest, RecordEditingComposeTest |
+| voice_comment_test.dart | VoiceDraftTest, RecordInputTest, RecordRecoveryTest, RecordEditingComposeTest |
+| voice_recorder_test.dart | VoiceDraftTest(ADTS/모의/복구 계약), MicrophoneAccessTest |
+| voice_upload_test.dart | VoiceDraftTest + 기존 MultipartGatewayTest/OutboxBundleTest |
+| hold_bundle_ui_test.dart 편집/입력 부분 | RecordEditingComposeTest, 갱신한 HoldBundleComposeTest, Stage2bPreviewTest |

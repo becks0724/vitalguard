@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 
 const val vgRailPreferenceKey = "shell:rail-collapsed"
 const val vgTwoPaneMinWidth = 1000
-data class ShellState(val destination: Int = 0, val collapsed: Boolean? = null, val loggingOut: Boolean = false)
+data class ShellState(val destination: Int = 0, val collapsed: Boolean? = null, val loggingOut: Boolean = false, val recordEditorOpen: Boolean = false)
 
 class ShellController(
     private val controller: FieldController,
@@ -49,7 +49,11 @@ class ShellController(
         }
         lastWideWindow = wide
     }
+    fun editorOpen(open: Boolean) {
+        mutable.value = state.value.copy(recordEditorOpen = open)
+    }
     fun toggle() {
+        if (state.value.recordEditorOpen) return
         val owner = account ?: return
         val previous = state.value.collapsed ?: true
         val expected = ++revision

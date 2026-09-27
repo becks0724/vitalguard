@@ -103,14 +103,15 @@ class HoldBundleComposeTest {
         compose.onNodeWithTag("photo-capture").assertHeightIsAtLeast(64.dp).assertIsEnabled()
         assertEquals(0, gateway.uploads)
     }
-    @Test fun localListDetailOcrCountsAndStage2bPlaceholdersUseOriginalConditions() {
+    @Test fun localListDetailOcrCountsAndEditingActionsUseOriginalConditions() {
         login(); val photo = photo(attachments = true); open(photo)
         compose.onNodeWithTag("photo-bundle-status").assertTextEquals("로컬 저장됨 · 서버 미전송 · 대기")
         for (text in listOf("주석 그리기", "메모·음성 붙이기")) {
             compose.onNodeWithText(text).performScrollTo().assertIsEnabled().assertWidthIsAtLeast(160.dp).assertHeightIsAtLeast(64.dp)
         }
         compose.onNodeWithText("주석 그리기").performClick()
-        compose.onNodeWithText("다음 단계(2b)에서 옮깁니다").assertExists()
+        compose.onNodeWithTag("editor-tool-pen").assertExists()
+        compose.onNodeWithTag("editor-back").performClick()
         compose.onNodeWithText("원문 OCR 보기").performScrollTo().performClick()
         compose.onNodeWithText("페이지 1\n안전난간 점검").performScrollTo().assertExists()
         compose.onNodeWithText("주석 1 · 메모 1 · 음성 1").performScrollTo().assertExists()
