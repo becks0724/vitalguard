@@ -83,9 +83,9 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 **대기 중인 창 · 묶어야 할 것**
 
-- **재서명 — ✅ 완료(08-27 09:10).** 만료 08-27 10:09 → **09-03 09:09 KST**. 폰·워치 둘 다 설치.
-  `wdm` 도 함께 실려 닫혔다(`413942c` · 09:19 도착분부터 `watch_device_model=Watch6,18`).
-  **이력 당시 만료 2026-09-03 09:09 KST · 당시 알림 09-01. 현재 만료일은 재확인 필요.** 워치 코드 변경은 실제 재서명 일정에 묶는다(재설치가 세션을 끊는다).
+- **재서명 — 만료일은 문서가 아니라 프로파일에서 확인한다**(마지막 기록은 2026-09-03 만료이고 이미 지났다).
+  워치 코드 변경은 재서명 창에 묶는다 — 워치 재설치가 수집 세션을 끊고 자동 재개되지 않는다.
+  `watch_device_model` 은 `413942c` 부터 수집에 실린다(`Watch6,18`).
   ⚠ **새 함정** — 재발급 프로파일에서 **워치가 빠질 수 있다**(발급 시점에 `disconnected` 면 제외).
   만료일만 보면 통과로 보이고 워치 설치에서만 죽는다. 절차·검증은
   [apps/vitalguard_app/SETUP.md](apps/vitalguard_app/SETUP.md) "재발급 프로파일에서 워치가 빠진다".
@@ -110,8 +110,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 - **작업자 폰 앱 — Flutter (Dart 3.x)** · iOS 빌드용 Xcode 26.4+ · Android 빌드용 Android Studio + JDK 17
 - **워치 — watchOS 앱 있음**(`apps/vitalguard_app/ios/VitalWatch`). `HKWorkoutSession` 상시 세션으로
-  백그라운드 수집 → `WCSession` 5초 배치로 폰에 전달. ⚠ 구 "워치 앱 미작성" 관례는 **구 스택
-  (worker-phone) 한정**이고 신규 앱에는 해당하지 않는다(2026-08-11 정정).
+  백그라운드 수집 → `WCSession` 5초 배치로 폰에 전달.
 - **인프라 — GCP**. Cloud Run(`vitalguard-dashboard` · region `asia-northeast3`) + Cloud Build +
   Secret Manager + Cloud Scheduler, DB 는 외부 PostgreSQL(`DATABASE_URL`). 배포 = `scripts/deploy-dashboard.sh`.
   ⚠ `backend/infrastructure`(AWS CDK IoT 스택)는 **아무 코드도 참조하지 않는 잔재**다 —
@@ -183,7 +182,7 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 - **단말 코드는 최소 분석만 — 본 분석은 서버 사이드**
   - 낙상처럼 즉시성 필수인 것만 단말에서 detection. 나머지는 원시값만 올리고 판정은 서버가 한다
   - 사유. `packages/analyzers` (TS) 가 단일 source — 단말에 복제하면 drift 가 생긴다
-- **★ 워치 앱은 있다(구 관례 폐기)**
+- **★ 워치 앱이 수집의 시작점이다**
   - ⚠ **`HKWorkoutSession` 상시 세션 구조가 폰 생존의 핵심이라 뺄 수 없다** — 다만 부작용이 둘 있다.
     ① 벗어도 PPE 센서가 계속 돌아 **그럴듯한 심박이 이어진다**(미착용 판별 불가 · 2026-08-19 확정)
     ② 활동에너지가 정지 상태에서도 계상돼 "저활동" 판정을 못 쓴다
@@ -246,9 +245,7 @@ HealthPattern 의 코드·정책을 본 프로젝트에 그대로 적용하면 �
 
 ## Flutter 앱 관례 (`apps/vitalguard_app`)
 
-⚠ **종전의 Riverpod + `core/data/domain/presentation` 4계층 규범은 폐기한다(2026-08-19).**
-도입된 적이 없고(`pubspec.yaml` riverpod 0건) 참조 대상이던 `apps/worker-phone/` 도 삭제됐다.
-지키지 않는 규범을 문서에 두면 다음 사람이 그것을 기준으로 판단한다.
+상태관리 프레임워크·계층 디렉터리 규범은 없다 — `pubspec.yaml` 에 riverpod 0건이고 `lib/` 는 평면 구조다.
 
 - **★ 생체 데이터는 Dart 를 거치지 않는다.** 수집·큐·업로드는 전부 Swift(`Runner`)가 전담한다 —
   백그라운드에서 Flutter 엔진은 안 깨어나도 `WCSessionDelegate` 는 깨어나기 때문이다.

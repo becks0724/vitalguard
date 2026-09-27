@@ -58,7 +58,7 @@ async function aiTags(taskText: string): Promise<RiskTag[]> {
   const model = process.env.CLOVA_MODEL ?? "HCX-005";
   const system =
     "당신은 건설 안전 전문가다. 입력된 공사 공고 과업텍스트에서 위험작업을 식별한다. " +
-    "다음 태그만 사용: 고소작업, 굴착/흙막이, 밀폐공간, 전기/감전, 중장비/양중, 해체/철거, 도장/화기. " +
+    `다음 태그만 사용: ${TAG_NAMES.join(", ")}. ` +
     '오직 JSON 배열만 출력: [{"tag":string,"severity":1|2|3,"evidence":string}]. ' +
     "evidence 는 반드시 원문에 그대로 등장하는 문구(부분 인용)여야 한다. 원문에 없으면 그 태그를 넣지 마라.";
 
