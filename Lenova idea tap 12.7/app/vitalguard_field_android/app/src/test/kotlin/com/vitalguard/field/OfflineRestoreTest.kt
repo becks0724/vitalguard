@@ -25,6 +25,15 @@ private fun success(path: String, site: JsonObject? = SAVED_SITE) = when (path) 
 }
 
 class OfflineRestoreTest {
+    @Test fun meDisallowedRoleClearsSavedIdentityBeforeItCanBeRestoredOffline() = runTest {
+        val store = savedStore()
+        val gateway = ScriptedGateway().apply { onMe = { AppUser(SAVED_USER + ("role" to "worker")) } }
+        val c = FieldCoordinator(gateway, store, backgroundScope, MutableClock())
+        var locks = 0; c.beforeLock = { locks++ }
+        c.initialize()
+        assertEquals(AuthStage.reauthenticate, c.state.value.authStage); assertEquals(1, locks)
+        assertNull(store.tokens); assertNull(c.state.value.user); assertFalse(gateway.calls.contains("site"))
+    }
     @Test fun socketFailureRestoresAllowedUserAndOnlyTheirCachedSite() = runTest {
         val store = savedStore()
         val original = store.tokens
@@ -53,14 +62,15 @@ class OfflineRestoreTest {
         }
     }
     @Test fun explicitAuthenticationRejectionDoesNotBypassWithCache() = runTest {
-        listOf(401 to null, 403 to null, 403 to "reauth", 503 to "reauth").forEach { (status, action) ->
+        listOf(401 to null, 401 to "none", 401 to "reauth", 403 to "reauth", 503 to "reauth").forEach { (status, action) ->
             val store = savedStore()
             store.write("saved-account", "site:info", Json.encode(SAVED_SITE))
             val c = FieldCoordinator(LiveGateway(JsonTransport { _, path, _, _ ->
                 if (path == ME) ApiReply(status, mapOf("ok" to false, "action" to action)) else success(path)
             }), store, backgroundScope, MutableClock())
             c.initialize()
-            assertEquals(AuthStage.login, c.state.value.authStage)
+            assertEquals(AuthStage.reauthenticate, c.state.value.authStage)
+            assertNull(store.tokens)
             assertNull(c.state.value.user); assertNull(c.state.value.site); assertEquals(RESTORE_FAILURE, c.state.value.message)
         }
     }
@@ -158,7 +168,12 @@ class OfflineRestoreTest {
                 }
             }), store, backgroundScope, MutableClock())
             c.initialize(); online = true
-            if (retry) c.siteStatus() else {
+            if (retry) {
+                // 2d: 부수 401은 refresh/재전송 없이 항목에만 남고, 다음 성공이 me 재검증을 시작한다.
+                assertEquals(auxiliaryAccessDenied, failure { c.siteStatus() }.message)
+                assertEquals(AuthStage.ready, c.state.value.authStage)
+                c.siteStatus()
+            } else {
                 val requests = List(3) { async { c.siteStatus() } }
                 requests.forEach { it.await() }
             }
@@ -190,7 +205,7 @@ class OfflineRestoreTest {
             if (reply == null) pending.completeExceptionally(SocketException()) else pending.complete(reply)
             runCurrent()
             assertEquals(2, meCalls)
-            if (reply != null) {
+            if (reply != null && (reply.status != 403 || reply.body["action"] == "reauth")) {
                 assertEquals(1, locks); assertEquals(AuthStage.reauthenticate, c.state.value.authStage)
                 assertNull(c.state.value.user); assertNull(store.tokens)
             } else {

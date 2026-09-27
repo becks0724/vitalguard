@@ -1,10 +1,14 @@
-# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c단계
+# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c·2d단계
+
+> **9/27 2d 독립 검증 완료:** Gradle 빌드·JVM **264/264**, 실기기 계측 **43/43**(전체 1회 실행), 기존 프리뷰 **8/8** 통과.
+> 실제 서버 사진에서 댓글 4개·지역 시각·주석본 보기·음성 재생/완료 확인. 개발 앱 `com.vitalguard.field.dev`에 데이터 보존 덮어설치했고 계측 전후 로그인 파일 해시가 일치했다.
+> 아래 각 단계의 “미실행” 문구는 작성자가 소스 작업을 끝낼 당시의 기록이다. 최신 실행 근거는 `plan-draft/stage2d-verification.md` 마지막 절을 본다.
 
 지시서: `../../plan-draft/TASK-compose-main-stage1.md`, `../../plan-draft/TASK-compose-main-stage2a.md`, `../../plan-draft/TASK-compose-main-stage2b.md`, `../../plan-draft/TASK-compose-main-stage2c.md`.
 Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 프로젝트다.
 기존 Flutter·촬영 파일럿은 수정하지 않았다.
 
-**Gradle·네트워크 명령·APK 빌드·설치·Android 계측·스크린샷 실행은 하지 않았다.**
+**작성 단계에서는 Gradle·네트워크·실기기 실행을 하지 않았다. 이후 독립 실행 결과는 위의 2d 검증을 따른다.**
 2c에서 캐시된 Kotlin 컴파일러를 직접 실행한 순수 JVM 테스트 245개와 Android/Compose 소스 API 검사는 통과했다.
 이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 현재 결과는 아래 2c 절과 `plan-draft/stage2c-verification.md`에 구분했다. 2a·2b 절은 각 단계 당시의 기록이다.
 
@@ -448,9 +452,9 @@ python3 tools/check-stage2c-static.py
   **866×1385dp·340dpi·ko** 고정 표본이다. 수정 지시서에 이전 스크린샷 8개 통과가 보고됐다.
   이번 수정에서 PNG 재생성·시각 검수는 실행하지 않았다.
 
-**서버 연동 제약:** 읽기 전용 웹 소스의 `app/api/calendar/media/download-url/route.ts`는
+**2c 작업 당시의 서버 연동 제약(2d 갱신은 아래 참조):** 당시 읽은 웹 소스의 `app/api/calendar/media/download-url/route.ts`는
 `verifyBasicAuth()`만 호출하며, 이 검증은 앱 JWT를 직접 수용하지 않는다. 목록 API의 JWT 분기와 다르다.
-지정된 다운로드 API를 앱에 연결했지만, 현재 소스 기준으로 앱 JWT의 사진 다운로드가 거부될 수 있다.
+지정된 다운로드 API를 앱에 연결했지만, 당시 소스 기준으로 앱 JWT의 사진 다운로드가 거부될 수 있었다.
 이 작업의 수정 범위에서 웹을 제외했으므로 서버 인증은 변경하지 않았다. 서버 대응 후 실제 사진 열람/추가 주석을 검증해야 한다.
 
 이번 작업에서 Gradle·네트워크·ADB·APK 설치·실기기 테스트는 실행하지 않았다. TB373FU Wi-Fi 교체 시 띠 해제/전송 재개,
@@ -482,3 +486,83 @@ python3 tools/check-stage2c-static.py
 
 수정 전 보고된 Gradle JVM 246개와 이번 오프라인 JVM 246개는 구성 범위가 다르다.
 오프라인 도구는 Android 의존 `BackgroundContrastTest` 1개를 기존대로 제외하고 신규 회귀 1개를 포함한다.
+
+## 2d — 서버 첨부·전체 댓글·부수 조회 인증 오류
+
+기준: `../../plan-draft/TASK-compose-main-stage2d.md`(2026-09-27).
+상세를 열면 같은 날짜의 `GET /api/calendar/media?from&to`를 다시 읽는다. 이전 원장 영수증에
+댓글이 1개만 있어도 최신 응답의 댓글 전부를 표시한다. 조회 실패는 상세 안에 표시하고 이전 자료임을 안내한다.
+`RecordAttachments`가 상세와 달력의 음성 건수를 함께 계산한다. 서버 댓글의 `audio_storage_key`가
+있으면 음성, 없으면 메모다. 로컬 첨부와 `client_operation_id`/`clientOperationId` 및 영수증 ID로 중복을 제거한다.
+
+댓글 시각은 사진 상세와 같은 `captureRecordedTime`을 사용한다. 기기 시간대가 Asia/Seoul이면
+`2026-09-27T03:00:02.862Z`는 `2026-09-27 12:00:02`다. 기기 시간대를 바꾸면 표시도 바뀐다.
+촬영 이미지에 각인하는 KST 시각과 업로드 원문은 유지한다.
+
+음성 댓글은 `audio_ms`를 길이로 표시한다(7744 → `0:07`, 미제공이면 `길이 미확인`).
+서버 목록 GET이 `audio_storage_key`로 발급한 `audio_url`을 내려받아 MediaPlayer로 재생한다.
+서명 URL에는 앱 Bearer를 전달하지 않으며, 댓글 ID로 `download-url?id=`를 호출하지 않는다.
+주소가 없거나 유효하지 않으면 재생 버튼을 비활성화하고 `음성 재생 미확인` 사유를 표시한다.
+다운로드 401/403은 해당 댓글의 권한 오류로 남긴다. 한 상세에서 한 음성만 재생하며,
+다른 댓글 선택·상세 종료·백그라운드에서 기존 재생/다운로드를 중단하고 임시 파일을 제거한다.
+
+최신 `annotationId` 또는 로컬 잉크가 있으면 사진 위에 **주석본 보기** 토글을 제공한다.
+로컬 PNG 미리보기를 우선하고, 서버 잉크는 `download-url?id=<annotationId>`로 받는다.
+벡터 JSON은 2b의 `InkStroke`/`AndroidInkRenderer`로 원본 위에 그리며 과거 PNG/JPEG도 표시한다.
+`/api/calendar/media/ink`는 현재 소스에서 관제 인증만 받으므로 앱에서는 호출하지 않는다.
+`download-url`의 앱 JWT 수용은 현재 소스에 있으며, 리비전 00408 배포 실측은 지시서에서 전달받은 사실이다.
+작성 단계에서는 실서버 호출을 하지 않았다. 후속 독립 검증에서 현재 기기 계정으로 사진·잉크·음성 조회 및 재생을 확인했다.
+
+**정확한 서버 주석 수는 미확인이다.** `lib/db.ts:listCalendarMedia`는 `annotation_of IS NULL`인
+원본과 최신 `annotationId` 1개만 반환한다. 연결된 잉크 행·작업 ID·날짜·전체 개수를 내려주는 API는 없다.
+따라서 같은 날 `annotation_of == 사진 id`인 모든 잉크 행을 앱에서 정확히 세거나 전부 중복 제거할 수 없다.
+최신 ID와 기기에 남은 잉크 영수증은 ID로 중복 제거하고 확인된 개수만 `주석 n개 이상`으로 표시한다.
+예시 응답(주석 ID 1개·글 3개·음성 1개)은 `주석 1개 이상 · 메모 3 · 음성 1`과
+전체 주석 수 미확인 사유를 표시한다. **요청한 정확한 주석 총계는 서버의 추가 조회 계약이 있어야 충족된다.**
+서버 코드와 응답 필드는 변경하지 않았다. 댓글은 목록 GET이 전부 제공하며 별도 댓글 GET은 없다.
+
+### 2d 세션 판정 호출 목록
+
+`authorized`는 기본값을 부수 조회로 두고, `me`와 `writing=true`인 호출만 세션 판정으로 취급한다.
+
+| 분류 | 호출 | 인증 거부 처리 |
+|---|---|---|
+| 세션 판정 | GET `/api/mobile/v1/session/me` — 복원·재접속 재확인 | `action=reauth` 또는 최종 401이면 잠금/토큰 삭제. `none`인 401도 포함 |
+| 세션 판정 | POST `/api/mobile/v1/session/refresh` | 기존 401/403/reauth 잠금 규칙 유지. 네트워크·일반 5xx 실패는 잠금 사유가 아님 |
+| 세션 판정/필수 쓰기 | POST `/api/app-media` — 사진·잉크·음성, POST `/api/calendar/media/comment`, DELETE `/api/calendar/media?id=` | reauth 또는 최종 401이면 잠금. 단순 403은 항목 실패(삭제 유예 문구 포함) |
+| 세션 판정/필수 쓰기 | POST `/api/app/admin/alerts/ack` — 3단계 예약 계약 | 401/reauth 잠금, POST 자동 반복 없음. 라이브 구현은 아직 다음 단계 |
+| 부수 조회 | GET `/api/admin/site-info`, `/api/app/admin/site-status` | 현장 자료의 오류/권한 상태만 변경. 로그인·복원 직후 site-info 거부도 세션 유지 |
+| 부수 조회 | GET `/api/calendar/media?from&to` — 달력·상세·댓글 | 해당 달력/상세에 `권한 없음 · 다시 로그인하면 다시 시도합니다` |
+| 부수 조회 | GET `/api/calendar/media/download-url?id=`와 서명 파일 GET — 사진·썸네일·잉크 | 해당 이미지에 같은 권한 문구, 세션 유지 |
+| 부수 조회 | 댓글 `audio_url` GET | 해당 음성 버튼 비활성·권한 문구, 세션 유지 |
+| 부수 조회 | GET `/api/app/address`, `/api/app/admin/operation-status`, POST `/api/app/admin/cctv-ticket`(3단계 예약) | 토큰 갱신/잠금 없이 호출자 항목 오류로 전달 |
+
+로그인/TOTP의 POST `/api/mobile/v1/session/login`은 기존 로그인 단계에서 직접 판정한다.
+로그아웃은 기존처럼 기기 우선이며 서버 오류로 세션을 복구하지 않는다.
+부수 요청의 401/403은 `action=reauth`여도 세션을 잠그거나 그 응답 때문에 refresh를 호출하지 않는다.
+세션 판정 경로의 명확한 401(`action` 미제공/`refresh`)에 대한 기존 refresh 후 1회 재시도는 유지한다.
+`action=none/reauth`에는 이 재시도가 없으며, 결과 불명 쓰기는 자동 재전송하지 않는다.
+요청 전 기기에서 확인한 액세스 토큰 만료에 대한 단일 refresh는 유지한다. 이 refresh 자체가 거부되면 잠근다.
+지시서의 무토큰→reauth/틀린 토큰→none 실측을 반영해 action 값만으로 부수 요청을 세션 판정으로 승격하지 않는다.
+
+### 2d 검증
+
+**후속 실행 완료(9/27):** Gradle JVM 264개(오프라인 작성 검사의 263개 + BackgroundContrastTest 1개),
+실기기 전체 43개, 프리뷰 8개 모두 통과했다. 프리뷰의 음성 표본에 누락돼 있던 `audio_storage_key`를 보완했으며
+기준 이미지는 새 결과로 덮어쓰지 않았다. 검토한 기준 PNG 8개를 `app/src/screenshotTestDebug/reference`에 보관한다.
+Navigation Compose는 검증 명령에서 **2.10.2**로 고정했다. 원본 한글 경로를 이동하지 않고 ASCII 복사본에서 검증했다.
+
+실제 서버 상세는 `주석 1개 이상 · 메모 3 · 음성 1`, 메모 3개·음성 1개, `2026-09-27 12:00:02/04` 표시,
+주석본 토글을 확인했다. 7744ms 음성은 재생 버튼→`재생 정지`→정상 완료 뒤 `음성 재생`으로 돌아왔고 오류가 없었다.
+부수 401/403 및 세션 판정 401의 차이는 모의 JVM/실기기 계측으로 확인했으며 실제 계정의 권한을 변경하지 않았다.
+
+**아래는 작성자가 남긴 선행 검사 기록이다.**
+
+- **통과: 오프라인 JVM 263개**(기존 246개 + 회귀 17개). 기존 잠금 테스트를 지우지 않고
+  필수 쓰기/`me` 기준으로 갱신했다. refresh 실패·초안 보존·결과 불명 재전송 금지를 유지한다.
+- **통과: main/androidTest/screenshotTest Kotlin/Compose 소스 API 컴파일.** 기존 캐시·R/BuildConfig 스텁을 사용했다.
+- **통과:** Flutter/파일럿 원본 120개 해시 일치, Gradle/의존성/Manifest 5개 파일 불변, 공백 검사.
+- `ServerRecordDetailComposeTest` 2개는 전체 댓글·KST 시각·음성 길이/비활성 사유·잉크 토글·사진/잉크 401의 화면 유지 검사를 추가했다.
+  **실제 계측 실행은 미확인**이다.
+- **미확인:** Gradle/APK 빌드·설치·실기기·실서버 음성 재생과 잉크 렌더·스크린샷·정확한 서버 주석 총계.
+  Gradle·네트워크·ADB를 실행하지 않았다. 상세 근거와 재현 명령은 `plan-draft/stage2d-verification.md`에 있다.

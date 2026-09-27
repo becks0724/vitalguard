@@ -16,14 +16,19 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
 import com.vitalguard.field.R
 import com.vitalguard.field.capture.*
 import com.vitalguard.field.data.*
 import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.models.*
+import com.vitalguard.field.data.record.*
+import com.vitalguard.field.audio.DeviceCommentAudioPlayer
 import com.vitalguard.field.ui.shell.ActionDock
 import com.vitalguard.field.ui.theme.*
 import kotlinx.coroutines.CancellationException
@@ -44,11 +49,27 @@ fun PhotoDetail(controller: FieldController, outbox: OutboxController, actions: 
         if (photo == null) { outbox.load(); if (outbox.entry(photoId) == null) onBack() }
     }
     if (photo == null) { Text("달력으로 돌아갑니다."); return }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val detail = remember(controller, photo.owner, photo.id) { RecordDetailController(controller, fromOutbox(photo), scope) }
+    val playback = remember(controller, photo.owner, photo.id) {
+        CommentPlaybackController(controller, DeviceCommentAudioPlayer(context), scope)
+    }
+    val detailState by detail.state.collectAsStateWithLifecycle()
+    val playing by playback.state.collectAsStateWithLifecycle()
+    LaunchedEffect(detail) { detail.refresh() }
+    LaunchedEffect(detailState.media) { playback.clearErrors() }
+    DisposableEffect(detail, playback) { onDispose { detail.close(); playback.close() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { playback.stop() }
     val action = actionStates[actions.stateKey(photo)] ?: RecordActionState()
     val availability = photoActions(photo, children, busyIds, field.offline, action.busy)
     PhotoDetailContent(photo, children, availability, field.offline, windowWidthDp >= 1000, action.error,
         onBack = onBack, onEditor = onEditor, onInput = onInput, onDelete = { actions.discard(photo) },
-        preview = { PhotoPreview(controller, fromOutbox(photo), Modifier.fillMaxSize()) },
+        media = detailState.media, serverLoading = detailState.loading, serverError = detailState.error,
+        onRefresh = if (photo.receipt != null) (detail::refresh) else null,
+        preview = { AnnotatedPhotoPreview(controller, detailState.media, children, Modifier.fillMaxSize()) },
+        commentContent = { comment -> ServerCommentCard(comment, playing.activeId == comment.id,
+            playing.activeId == comment.id && playing.loading, playing.errors[comment.id], { playback.toggle(comment) }) },
         attachment = { child -> Attachment(controller.local, child,
             onDelete = if (!availability.processing && canDiscard(child)) ({ actions.discard(photo, child.id) }) else null) })
 }
@@ -61,8 +82,11 @@ fun PhotoDetailContent(
     onBack: () -> Unit = {}, onEditor: () -> Unit = {}, onInput: () -> Unit = {}, onDelete: () -> Unit = {},
     preview: @Composable () -> Unit = { ImagePlaceholder(Modifier.fillMaxSize()) },
     attachment: @Composable (OutboxEntry) -> Unit = { Text("${it.kindLabel} · ${it.statusLabel}") },
+    media: CalendarMedia = fromOutbox(photo), serverLoading: Boolean = false, serverError: String? = null,
+    onRefresh: (() -> Unit)? = null,
+    commentContent: @Composable (MediaComment) -> Unit = { ServerCommentCard(it) },
 ) {
-    val media = fromOutbox(photo)
+    val combined = RecordAttachments(media, attachments)
     var confirmDelete by rememberSaveable { mutableStateOf(false) }
     var showOcr by rememberSaveable { mutableStateOf(false) }
     val scroll = rememberScrollState()
@@ -83,16 +107,15 @@ fun PhotoDetailContent(
         TextButton({ showOcr = !showOcr }, Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("photo-ocr-toggle")) { Text("원문 OCR 보기") }
         if (showOcr) SelectionContainer { Text(media.ocr_text ?: "OCR 원문 없음", Modifier.padding(16.dp)) }
         Spacer(Modifier.height(16.dp))
-        Text(attachmentCounts(attachments), style = MaterialTheme.typography.titleLarge)
-        media.comments.forEach { comment ->
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) {
-                Text("${comment.author_name ?: comment.author_id ?: "작성자 미제공"} · ${comment.created_at.orEmpty()}")
-                if (comment.audio_ms != null || comment.audio_storage_key != null || comment.audio_url != null) Text("음성 · ${voiceTime(comment.audio_ms ?: 0)}")
-                else SelectionContainer { Text(comment.body) }
-            } }
+        if (serverLoading) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("photo-detail-loading"))
+        serverError?.let { Text(it, Modifier.testTag("photo-detail-load-error")); Text("이전에 받은 기록을 표시합니다.") }
+        if (onRefresh != null) TextButton(onRefresh, Modifier.heightIn(min = 56.dp).testTag("photo-detail-refresh"), enabled = !serverLoading) {
+            Text("기록 새로고침")
         }
-        attachments.filter { child -> media.comments.none { it.id == child.receipt?.get("id") } }
-            .forEach { child -> key(child.id) { attachment(child) } }
+        Text(combined.counts, Modifier.testTag("photo-attachment-counts"), style = MaterialTheme.typography.titleLarge)
+        if (combined.inkCountUnverified) Text("서버가 최신 주석본만 제공하여 같은 날의 전체 주석 수는 미확인입니다.")
+        combined.comments.forEach { comment -> key(comment.id) { commentContent(comment) } }
+        combined.local.forEach { child -> key(child.id) { attachment(child) } }
     }
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text(media.title ?: "현장 사진") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
@@ -124,6 +147,79 @@ fun PhotoDetailContent(
             else "기기에 보관한 사진과 딸린 주석·메모·음성을 함께 삭제합니다.") },
         dismissButton = { TextButton({ confirmDelete = false }) { Text("취소") } },
         confirmButton = { Button({ confirmDelete = false; onDelete() }, Modifier.testTag("confirm-delete-bundle")) { Text("삭제") } })
+}
+
+@Composable
+fun ServerCommentCard(comment: MediaComment, active: Boolean = false, loading: Boolean = false,
+    playbackError: String? = null, onPlay: (() -> Unit)? = null) {
+    Card(Modifier.fillMaxWidth().testTag("server-comment-${comment.id}")) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${comment.author_name ?: comment.author_id ?: "작성자 미제공"} · ${comment.created_at?.let { captureRecordedTime(it) } ?: "시각 미기록"}")
+            if (comment.isVoice) {
+                Text("음성 · ${comment.audio_ms?.takeIf { it >= 0 }?.let(::voiceTime) ?: "길이 미확인"}")
+                val reason = playbackError ?: if (calendarVoiceUrl(comment) == null) voiceUrlUnavailable else null
+                OutlinedButton({ onPlay?.invoke() }, Modifier.heightIn(min = 56.dp).testTag("server-voice-play-${comment.id}"),
+                    enabled = onPlay != null && calendarVoiceUrl(comment) != null && playbackError != auxiliaryAccessDenied) {
+                    Text(if (loading) "불러오기 취소" else if (active) "재생 정지" else "음성 재생")
+                }
+                reason?.let { Text(it, Modifier.testTag("server-voice-error-${comment.id}")) }
+            } else {
+                Text("메모")
+                SelectionContainer { Text(comment.body) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnnotatedPhotoPreview(controller: FieldController, media: CalendarMedia, children: List<OutboxEntry>, modifier: Modifier) {
+    val combined = RecordAttachments(media, children)
+    var showInk by rememberSaveable(media.id) { mutableStateOf(false) }
+    val localInk = combined.localInk.lastOrNull { it.phase != OutboxPhase.completed }
+        ?: combined.localInk.lastOrNull { it.receipt?.get("id") == combined.latestAnnotationId }
+        ?: if (combined.latestAnnotationId == null) combined.localInk.lastOrNull() else null
+    val inkId = combined.latestAnnotationId ?: localInk?.receipt?.get("id") as? String
+    Column(modifier) {
+        if (localInk != null || inkId != null) Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("주석본 보기", Modifier.weight(1f))
+            Switch(showInk, { showInk = it }, Modifier.testTag("photo-annotation-toggle"))
+        }
+        if (showInk && (localInk != null || inkId != null)) key(media.id, inkId, localInk?.id) {
+            var error by remember { mutableStateOf<String?>(null) }
+            var loaded by remember { mutableStateOf(false) }
+            val bitmap by produceState<ImageBitmap?>(null, controller, inkId, localInk?.id) {
+                try {
+                    val preview = localInk?.let { controller.local.readBytes(it.owner, "outbox-preview:${it.id}") }
+                    if (preview != null) value = decodeImage(preview, 2400)
+                    else {
+                        val bytes = if (inkId != null) controller.photoBytes(CalendarMedia(mapOf("id" to inkId)))
+                            else localInk?.let { controller.local.readBytes(it.owner, it.bytesKey) }
+                                ?: throw ApiFailure("주석본이 기기에 없습니다")
+                        // 2b 벡터 JSON과 과거 PNG/JPEG 주석본을 모두 표시한다.
+                        value = decodeImage(bytes, 2400) ?: run {
+                            val json = Json.decodeObject(bytes.toString(Charsets.UTF_8))
+                            require((json["v"] as? Number)?.toInt() == 1) { "주석본 형식을 확인할 수 없습니다" }
+                            val strokes = (json["strokes"] as? List<*>)?.map { InkStroke.fromJson(requireNotNull(it.jsonObjectOrNull())) }
+                                ?: throw ApiFailure("주석본 형식을 확인할 수 없습니다")
+                            val original = controller.photoBytes(media)
+                            val renderer = AndroidInkRenderer()
+                            decodeImage(renderer.render(original, restoreInkStrokes(strokes, renderer.dimensions(original))), 2400)
+                        }
+                    }
+                } catch (e: CancellationException) { throw e
+                } catch (e: Exception) { error = e.message ?: "주석본을 불러오지 못했습니다"
+                } finally { loaded = true }
+            }
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                when {
+                    error != null -> Text(error!!, Modifier.testTag("photo-annotation-error"))
+                    !loaded -> CircularProgressIndicator()
+                    bitmap == null -> Text("주석본을 표시하지 못했습니다")
+                    else -> Image(bitmap!!, "주석본", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                }
+            }
+        } else key(media.id) { PhotoPreview(controller, media, Modifier.fillMaxWidth().weight(1f)) }
+    }
 }
 
 @Composable

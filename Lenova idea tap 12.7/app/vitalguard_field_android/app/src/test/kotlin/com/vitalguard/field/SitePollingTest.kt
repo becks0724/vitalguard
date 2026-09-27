@@ -99,6 +99,7 @@ class SitePollingTest {
         page.manualRefresh(); runCurrent(); assertNotNull(page.state.value.data)
         gateway.onStatus = { throw ApiFailure("private", status = 401, action = "none") }
         page.manualRefresh(); runCurrent()
-        assertNull(page.state.value.data); assertFalse(page.state.value.forbidden); page.close()
+        assertNull(page.state.value.data); assertTrue(page.state.value.forbidden)
+        assertEquals(AuthStage.ready, c.state.value.authStage); page.close()
     }
 }

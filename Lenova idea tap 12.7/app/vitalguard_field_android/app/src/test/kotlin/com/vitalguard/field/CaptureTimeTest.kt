@@ -13,7 +13,7 @@ class CaptureTimeTest(private val source: String?, private val expected: String)
     @Test fun timeDisplayKeepsTheOriginalField() {
         val fields = source?.let { mapOf("capturedAt" to it) }.orEmpty()
         val before = fields.toMap()
-        assertEquals(expected, captureRecordedTime(fields["capturedAt"]))
+        assertEquals(expected, captureRecordedTime(fields["capturedAt"], java.time.ZoneId.of("Asia/Seoul")))
         assertEquals(before, fields)
         assertEquals(source, fields["capturedAt"])
     }

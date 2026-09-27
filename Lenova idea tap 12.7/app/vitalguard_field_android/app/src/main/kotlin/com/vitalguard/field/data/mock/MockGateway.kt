@@ -44,7 +44,9 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
     override suspend fun siteStatus(accessToken: String) = SiteStatus(mockSiteStatusReply(clock.instant().toString()))
     override suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> = media
         .filter { mediaOwners[it["id"]] == userId && it["annotation_of"] == null && (it["date_key"] as String) in from..to }
-        .map { row -> CalendarMedia(row + mapOf("canDelete" to true, "comments" to operationComments.values.filter { it["media_id"] == row["id"] })) }
+        .map { row -> CalendarMedia(row + mapOf("canDelete" to true,
+            "annotationId" to media.lastOrNull { it["annotation_of"] == row["id"] }?.get("id"),
+            "comments" to operationComments.values.filter { it["media_id"] == row["id"] })) }
     override suspend fun calendarPhoto(token: String, id: String) = photoFiles[id]?.copyOf() ?: throw ApiFailure("사진을 찾을 수 없습니다", status = 404)
     override suspend fun deleteCalendarMedia(token: String, id: String) {
         if (mediaOwners[id] != userId) throw ApiFailure("사진을 찾을 수 없습니다", status = 404)
@@ -84,7 +86,7 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
     }
     override suspend fun addComment(token: String, mediaId: String, body: String, clientOperationId: String?): MediaComment {
         operationComments["$userId:$clientOperationId"]?.let { return MediaComment(it, clientOperationId, deduplicated = true) }
-        val row = mapOf("id" to "mock-comment-${++sequence}", "media_id" to mediaId, "body" to body,
+        val row = mapOf("id" to "mock-comment-${++sequence}", "media_id" to mediaId, "body" to body, "client_operation_id" to clientOperationId,
             "author_id" to userId, "author_name" to "모의 안전관리자", "author_role" to "site_manager",
             "author_title" to null, "created_at" to kstNow(clock).toString(), "updated_at" to null)
         if (clientOperationId != null) operationComments["$userId:$clientOperationId"] = row
@@ -99,7 +101,7 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
         val photo = media.firstOrNull { it["id"] == mediaId } ?: throw ApiFailure("원본 사진이 없습니다", status = 404)
         if (photo["annotation_of"] != null || photo["media_type"] == "ink") throw ApiFailure("잉크본에는 음성 댓글을 달 수 없습니다", status = 400)
         val id = "mock-voice-${++sequence}"
-        val row = mapOf("id" to id, "media_id" to mediaId, "body" to "", "author_id" to userId,
+        val row = mapOf("id" to id, "media_id" to mediaId, "body" to "", "author_id" to userId, "client_operation_id" to clientOperationId,
             "author_name" to "모의 안전관리자", "author_role" to "site_manager", "created_at" to kstNow(clock).toString(),
             "audio_storage_key" to id, "audio_url" to "https://mock.invalid/$id.m4a", "audio_ms" to durationMs)
         if (clientOperationId != null) operationComments["$userId:$clientOperationId"] = row

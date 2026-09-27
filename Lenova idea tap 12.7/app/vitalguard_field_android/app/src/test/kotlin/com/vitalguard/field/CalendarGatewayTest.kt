@@ -32,6 +32,17 @@ class CalendarGatewayTest {
         }, downloadTransport = DownloadTransport { url -> assertEquals("https://unit.invalid/signed", url); PHOTO_BYTES })
         assertArrayEquals(PHOTO_BYTES, live.calendarPhoto("jwt", "server/id"))
     }
+    @Test fun `음성은 목록 GET의 audio_url만 사용하고 댓글 ID로 다운로드 API를 만들지 않는다`() = runTest {
+        val live = LiveGateway(JsonTransport { _, _, _, _ -> error("댓글의 download-url API는 없다") },
+            downloadTransport = DownloadTransport { url -> assertEquals("https://unit.invalid/voice-signed", url); byteArrayOf(1, 2) })
+        val comment = MediaComment(mapOf("id" to "comment", "media_id" to "photo", "body" to "",
+            "audio_storage_key" to "private/audio.m4a", "audio_url" to "https://unit.invalid/voice-signed", "audio_ms" to 7744))
+        assertArrayEquals(byteArrayOf(1, 2), live.calendarVoice(comment))
+        for (url in listOf(null, "", "http://unit.invalid/audio", "https://user:secret@unit.invalid/audio", "file:///tmp/audio")) {
+            val missing = MediaComment(comment.json + ("audio_url" to url))
+            assertEquals(voiceUrlUnavailable, failure { live.calendarVoice(missing) }.message)
+        }
+    }
     @Test fun `삭제 유예 403 코드와 문구는 그대로 전달하고 로컬 기록은 유지한다`() = runTest {
         val message = "삭제 유예 시간(10분)이 지났습니다"
         val live = LiveGateway(JsonTransport { method, path, _, _ ->

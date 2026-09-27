@@ -65,6 +65,8 @@ class CalendarMedia(
     val media_type get() = text("media_type")
     val media_url get() = text("media_url")
     val thumbnail_url get() = text("thumbnail_url")
+    val annotation_of get() = text("annotation_of")
+    val annotationId get() = text("annotationId")
     val ocr_text get() = text("ocr_text")
     val road_address get() = text("road_address")
     val latitude get() = number("latitude")
@@ -99,4 +101,6 @@ class MediaComment(
     val audio_storage_key get() = text("audio_storage_key")
     val audio_url get() = text("audio_url")
     val audio_ms get() = (json["audio_ms"] as? Number)?.toInt()
+    val operationId get() = clientOperationId ?: text("client_operation_id") ?: text("clientOperationId")
+    val isVoice get() = !audio_storage_key.isNullOrBlank()
 }

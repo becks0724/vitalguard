@@ -20,6 +20,8 @@ class ApiFailure(
 
 fun nextStage(): Nothing = throw ApiFailure("다음 단계")
 
+const val auxiliaryAccessDenied = "권한 없음 · 다시 로그인하면 다시 시도합니다"
+
 interface FieldGateway {
     val isMock: Boolean
     suspend fun login(id: String, password: String, totpCode: String? = null): MobileSession
@@ -30,6 +32,7 @@ interface FieldGateway {
     suspend fun siteStatus(accessToken: String): SiteStatus
     suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> = nextStage()
     suspend fun calendarPhoto(token: String, id: String): ByteArray = nextStage()
+    suspend fun calendarVoice(comment: MediaComment): ByteArray = nextStage()
     suspend fun deleteCalendarMedia(token: String, id: String): Unit = nextStage()
     // CCTV·경보 확인 HTTP는 3단계. 기록 쓰기는 동일한 원장을 통해 상세 닫힘/재접속/수동 실패 재시도에서 호출한다.
     suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket = nextStage()
@@ -93,6 +96,7 @@ interface FieldController : AutoCloseable {
     suspend fun deleteCalendarMedia(id: String): Unit = nextStage()
     fun connectivityChanged(online: Boolean) {}
     suspend fun photoBytes(media: CalendarMedia): ByteArray = nextStage()
+    suspend fun voiceBytes(comment: MediaComment): ByteArray = nextStage()
     suspend fun publish(bytes: ByteArray, fields: Map<String, String>): CalendarMedia = nextStage()
     suspend fun comment(mediaId: String, text: String, clientOperationId: String? = null): MediaComment = nextStage()
     suspend fun voiceComment(mediaId: String, audio: ByteArray, durationMs: Int? = null,

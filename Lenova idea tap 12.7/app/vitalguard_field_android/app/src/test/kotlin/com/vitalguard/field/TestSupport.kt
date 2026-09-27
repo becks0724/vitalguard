@@ -59,7 +59,7 @@ open class ScriptedGateway : FieldGateway {
     var onSite: suspend (String) -> SiteInfo? = { SiteInfo(SAVED_SITE) }
     var onStatus: suspend (String) -> SiteStatus = { SiteStatus(siteStatusReply()) }
     var onLogout: suspend (String) -> Unit = {}
-    var onUpload: suspend () -> CalendarMedia = { throw ApiFailure("다음 단계") }
+    var onUpload: suspend (String) -> CalendarMedia = { throw ApiFailure("다음 단계") }
     var onAck: suspend () -> Boolean = { throw ApiFailure("다음 단계") }
     override suspend fun login(id: String, password: String, totpCode: String?): MobileSession {
         calls += "login"; return onLogin(id, password, totpCode)
@@ -72,7 +72,7 @@ open class ScriptedGateway : FieldGateway {
     }
     override suspend fun logout(accessToken: String) { calls += "logout"; onLogout(accessToken) }
     override suspend fun upload(token: String, bytes: ByteArray, fields: Map<String, String>): CalendarMedia {
-        calls += "upload"; return onUpload()
+        calls += "upload"; tokens += token; return onUpload(token)
     }
     override suspend fun ackAlert(accessToken: String, id: String): Boolean { calls += "ack"; return onAck() }
 }

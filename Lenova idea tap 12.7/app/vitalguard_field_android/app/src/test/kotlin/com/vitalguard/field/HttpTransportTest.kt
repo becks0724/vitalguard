@@ -28,6 +28,15 @@ private class FakeConnection(var status: Int = 200, var text: String = """{"ok":
 }
 
 class HttpTransportTest {
+    @Test fun signedVoiceDownloadNeverCarriesAppBearerOrFollowsRedirects() = runTest {
+        val connection = FakeConnection(text = "audio")
+        val transport = HttpUrlConnectionTransport(URI("https://api.invalid"), { uri ->
+            assertEquals("https://storage.invalid/signed-audio", uri.toString()); connection
+        })
+        assertArrayEquals("audio".toByteArray(), transport.download("https://storage.invalid/signed-audio"))
+        assertNull(connection.getRequestProperty("Authorization")); assertFalse(connection.instanceFollowRedirects)
+        assertTrue(connection.closed)
+    }
     @Test fun headersTimeoutsStreamingAndRedirectPolicyAreApplied() = runTest {
         val connection = FakeConnection()
         val transport = HttpUrlConnectionTransport(URI("https://unit.invalid"), { uri ->

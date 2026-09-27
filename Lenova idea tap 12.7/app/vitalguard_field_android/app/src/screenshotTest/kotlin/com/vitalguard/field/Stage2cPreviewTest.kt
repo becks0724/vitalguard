@@ -28,7 +28,7 @@ fun RecordCalendarPreview() {
     val local = listOf(previewEntry("local-one", 9), previewEntry("local-two", 11, OutboxPhase.failed).copy(message = "전송하지 못했습니다. 다시 전송해 주세요."))
     val server = CalendarMedia(mapOf("id" to "server-one", "date_key" to "2026-09-28", "captured_at" to "2026-09-28T10:30:00+09:00",
         "media_type" to "image", "title" to "작업 전 점검", "comments" to listOf(mapOf("id" to "voice-one", "media_id" to "server-one",
-            "body" to "", "audio_ms" to 12000))))
+            "body" to "", "audio_storage_key" to "preview/voice.m4a", "audio_ms" to 12000))))
     VgTheme { Box(Modifier.fillMaxSize()) {
         VgBackground(Modifier.matchParentSize())
         RecordCalendarContent(fixedDay, mergeCalendarRecords(local, listOf(server)), today = fixedDay)

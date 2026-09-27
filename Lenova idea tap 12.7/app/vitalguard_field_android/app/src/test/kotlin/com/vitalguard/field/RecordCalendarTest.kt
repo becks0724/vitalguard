@@ -52,10 +52,12 @@ class RecordCalendarTest {
     }
     @Test fun `미디어 블록은 사진과 음성 건수로 표기한다 - 서버 댓글과 딸린 음성은 중복 계산하지 않는다`() {
         val parent = photo(phase = OutboxPhase.completed)
-        val voice = parent.copy(id = "voice", kind = OutboxKind.voice, dependsOn = parent.id, receipt = mapOf("id" to "comment"))
+        val voice = parent.copy(id = "voice", fields = mapOf("clientOperationId" to "voice"), kind = OutboxKind.voice,
+            dependsOn = parent.id, receipt = mapOf("id" to "comment"))
         val remote = media("remote", mapOf("client_operation_id" to parent.id, "comments" to listOf(mapOf(
-            "id" to "comment", "media_id" to "remote", "body" to "", "audio_ms" to 5000))))
-        val rows = mergeCalendarRecords(listOf(parent, voice, voice.copy(id = "voice-new", phase = OutboxPhase.waiting, receipt = null)), listOf(remote))
+            "id" to "comment", "media_id" to "remote", "body" to "", "audio_storage_key" to "voice.m4a", "audio_ms" to 5000))))
+        val rows = mergeCalendarRecords(listOf(parent, voice, voice.copy(id = "voice-new", fields = mapOf("clientOperationId" to "voice-new"),
+            phase = OutboxPhase.waiting, receipt = null)), listOf(remote))
         assertEquals("사진 1 · 음성 2", calendarBlocks(rows, sunday).single().label)
     }
     @Test fun `불명 전송중 실패 대기 완료 순으로 묶음 상태를 표시한다`() {

@@ -5,6 +5,7 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import com.vitalguard.field.data.models.asKstIso
 import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
@@ -74,11 +75,11 @@ fun captureKstStamp(instant: Instant): String = kstStampFormatter.format(instant
 fun captureKstIso(instant: Instant): String = captureKstStamp(instant).replace(' ', 'T') + "+09:00"
 
 /** Flutter record_screens._recordTime: 오프셋 없는 기존 기록은 KST로 읽고 원문은 보존한다. */
-fun captureRecordedTime(source: String?): String {
+fun captureRecordedTime(source: String?, zone: ZoneId = ZoneId.systemDefault()): String {
     if (source.isNullOrBlank()) return "촬영 시각 미기록"
     return try {
         val instant = OffsetDateTime.parse(asKstIso(source)).toInstant()
-        captureKstStamp(instant)
+        kstStampFormatter.withZone(zone).format(instant)
     } catch (_: DateTimeParseException) {
         "시각 확인 불가"
     }

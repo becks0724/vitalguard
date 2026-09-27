@@ -138,6 +138,14 @@ class LiveGateway(
         return (downloadTransport ?: throw ApiFailure("사진 다운로드 구성이 없습니다")).download(url)
     }
 
+    override suspend fun calendarVoice(comment: MediaComment): ByteArray {
+        // 목록 GET이 audio_storage_key로 발급한 audio_url. 댓글 ID로 download-url을 호출하지 않는다.
+        val url = calendarVoiceUrl(comment) ?: throw ApiFailure(voiceUrlUnavailable)
+        val bytes = (downloadTransport ?: throw ApiFailure("음성 다운로드 구성이 없습니다")).download(url)
+        if (bytes.size > maxVoiceBytes) throw ApiFailure("음성 크기가 다운로드 한도를 넘었습니다")
+        return bytes
+    }
+
     override suspend fun deleteCalendarMedia(token: String, id: String) {
         // 오류 문구·code를 그대로 보존한다. 특히 403은 로컬 삭제 성공으로 간주하지 않는다.
         json("DELETE", "/api/calendar/media?id=${URLEncoder.encode(id, "UTF-8")}", token)

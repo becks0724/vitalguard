@@ -14,12 +14,12 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class FieldCoordinatorTest {
-    @Test fun explicit401RefreshesOnceWithNewTokenAndRetry401Locks() = runTest {
+    @Test fun requiredWrite401RefreshesOnceWithNewTokenAndRetry401Locks() = runTest {
         for (rejectRetry in listOf(false, true)) {
             val gateway = ScriptedGateway().apply {
-                onStatus = { token ->
+                onUpload = { token ->
                     if (token == "old-access" || rejectRetry) throw ApiFailure("private", status = 401, action = "refresh")
-                    SiteStatus(siteStatusReply())
+                    CalendarMedia(mapOf("id" to "sent"))
                 }
             }
             val store = MemoryStore()
@@ -28,12 +28,12 @@ class FieldCoordinatorTest {
             var locks = 0
             c.beforeLock = { locks++ }
             if (rejectRetry) {
-                failure { c.siteStatus() }
+                failure { c.publish(PHOTO_BYTES, PHOTO_FIELDS) }
                 assertEquals(1, locks); assertEquals(AuthStage.reauthenticate, c.state.value.authStage)
                 assertNull(store.tokens); assertNull(c.state.value.siteStatusSnapshot)
             } else {
-                val result = c.siteStatus()
-                assertSame(result, c.state.value.siteStatusSnapshot); assertEquals(AuthStage.ready, c.state.value.authStage)
+                assertEquals("sent", c.publish(PHOTO_BYTES, PHOTO_FIELDS).id)
+                assertEquals(AuthStage.ready, c.state.value.authStage)
             }
             assertEquals(1, gateway.calls.count { it == "refresh" }); assertEquals(listOf("old-access", "new-access"), gateway.tokens)
         }
@@ -196,10 +196,13 @@ class FieldCoordinatorTest {
         failure { c.signOut() }; assertEquals(AuthStage.ready, c.state.value.authStage); assertFalse(gateway.calls.contains("logout"))
         c.beforeLock = null
         for (status in listOf(null, 401, 503)) {
+            c.signIn("saved-account", "synthetic")
             gateway.onUpload = { throw ApiFailure("uncertain", status = status, uncertainWrite = true) }
             assertTrue(failure { c.publish(byteArrayOf(1), emptyMap()) }.uncertainWrite)
+            assertEquals(if (status == 401) AuthStage.reauthenticate else AuthStage.ready, c.state.value.authStage)
         }
         assertEquals(3, gateway.calls.count { it == "upload" }); assertFalse(gateway.calls.contains("refresh"))
+        c.connectivityChanged(false)
         val keys = c.local.keys("saved-account")
         assertEquals("연결 후 가능", failure { c.ackAlert("1") }.message)
         assertEquals(keys, c.local.keys("saved-account")); assertFalse(gateway.calls.contains("ack"))
@@ -209,5 +212,6 @@ class FieldCoordinatorTest {
         val c = FieldCoordinator(gateway, MemoryStore(), backgroundScope, MutableClock())
         c.signIn("saved-account", "synthetic"); failure { c.ackAlert("1") }
         assertEquals(1, gateway.calls.count { it == "ack" }); assertFalse(gateway.calls.contains("refresh"))
+        assertEquals(AuthStage.reauthenticate, c.state.value.authStage)
     }
 }

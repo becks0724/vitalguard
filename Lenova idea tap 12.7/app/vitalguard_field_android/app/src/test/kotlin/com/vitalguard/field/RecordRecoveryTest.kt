@@ -52,14 +52,15 @@ class RecordRecoveryTest {
         input.voice.start(); val editor=workspace.editor(photo.id); runCurrent(); editor.viewport(InkSize(1000.0,1000.0),1.0)
         editor.penDown(1,InkOffset(100.0,500.0),.5)
         rig.field.beforeLock={workspace.flush()}
-        rig.gateway.statusFailure=ApiFailure("다시 로그인",status=401,action="reauth")
-        rejects { rig.field.siteStatus() }; assertEquals(AuthStage.reauthenticate,rig.field.state.value.authStage)
+        // 2d: 부수 현장 조회가 아닌 로그인 필수 쓰기에서 잠금/초안 보존을 검증한다.
+        rig.gateway.writeFailure=ApiFailure("다시 로그인",status=401,action="reauth")
+        rejects { rig.field.comment("server-photo", "세션 확인", "recovery-write") }; assertEquals(AuthStage.reauthenticate,rig.field.state.value.authStage)
         assertNotNull(rig.store.readBytes("a",input.voice.audioKey)); assertFalse(fake.recording)
         assertEquals("로그인 전 보관",Json.decodeObject(rig.store.read("a",input.key)!!)["text"])
         assertEquals(1,(Json.decodeObject(rig.store.read("a",editor.draftKey)!!)["strokes"] as List<*>).size)
-        workspace.bindAccount(null); rig.gateway.statusFailure=null; rig.field.signIn("a","mock"); workspace.bindAccount("a")
+        workspace.bindAccount(null); rig.gateway.writeFailure=null; rig.field.signIn("a","mock"); workspace.bindAccount("a")
         assertTrue(workspace.restoreSession()); assertTrue(workspace.recovery.value!!.ink); assertEquals(photo.id,workspace.recovery.value!!.media.id)
-        assertTrue(rig.gateway.writes.isEmpty()); workspace.close()
+        assertEquals(listOf(OutboxKind.text),rig.gateway.writes.map { it.kind }); workspace.close()
     }
     @Test fun editorAboveInputReturnsSessionToInputAndRepeatedOpenRetainsControllers() = runTest {
         val rig=outboxRig(); val photo=rig.photo(); val workspace=RecordWorkspace(rig.field,rig.box,FakeInkRenderer(),FakeSpeech(),FakeVoice(),backgroundScope,{})

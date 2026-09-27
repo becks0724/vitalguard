@@ -45,7 +45,7 @@ class FieldCoordinator(
     }
     private fun allowed(user: AppUser) = user.role in setOf("platform_admin", "owner", "site_manager", "admin")
     private fun authenticationRejected(error: Throwable) = error is ApiFailure &&
-        (error.status == 401 || error.status == 403 || error.action == "reauth")
+        (error.status == 401 || error.action == "reauth")
     private fun checkEpoch(expected: Int) {
         if (expected != epoch || disposed) throw ApiFailure("로그인 상태가 바뀌었습니다")
     }
@@ -92,8 +92,11 @@ class FieldCoordinator(
             accept(saved, expected, parseInstant(stored["localAccessExpiresAt"] as String))
             if (expected != epoch) return
             savedSession = saved
-            val current = authorized(action = gateway::me)
-            if (!allowed(current)) throw ApiFailure("이 앱을 사용할 수 없는 계정입니다", status = 403, action = "reauth")
+            val current = authorized(sessionCheck = true, action = gateway::me)
+            if (!allowed(current)) {
+                lock()
+                throw ApiFailure("이 앱을 사용할 수 없는 계정입니다", status = 403, action = "reauth")
+            }
             checkEpoch(expected)
             update { it.copy(user = current) }
             val site = loadSite()
@@ -116,7 +119,7 @@ class FieldCoordinator(
             }
             clearView()
             update { it.copy(
-                authStage = if (it.authStage == AuthStage.denied) AuthStage.denied else AuthStage.login,
+                authStage = if (it.authStage in setOf(AuthStage.denied, AuthStage.reauthenticate)) it.authStage else AuthStage.login,
                 message = if (refreshExpiresAt != null)
                     "저장된 로그인의 유효 기간이 지났습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다."
                 else "저장된 로그인 상태를 확인하지 못했습니다. 다시 로그인해 주세요. 기기 기록은 보존됩니다.",
@@ -127,7 +130,11 @@ class FieldCoordinator(
     private suspend fun loadSite(): SiteInfo? {
         val expected = epoch
         val account = s.user?.id
-        val result = authorized(action = gateway::siteInfo)
+        val result = try { authorized(action = gateway::siteInfo) } catch (e: ApiFailure) {
+            if (expected != epoch || e.status !in listOf(401, 403)) throw e
+            update { it.copy(message = e.message) }
+            null // 로그인 성공 뒤 현장 조회의 권한 거부가 로그인 화면으로 되돌리지 않는다.
+        }
         checkEpoch(expected)
         if (account != null) local.write(account, "site:info", Json.encode(result?.json))
         checkEpoch(expected)
@@ -156,7 +163,7 @@ class FieldCoordinator(
 
     private suspend fun revalidateSession(expected: Int) {
         try {
-            val current = authorized(retryUnauthorized = false, action = gateway::me)
+            val current = authorized(sessionCheck = true, retryUnauthorized = false, action = gateway::me)
             if (expected != epoch) return
             if (!allowed(current)) throw ApiFailure("이 앱을 사용할 수 없는 계정입니다", status = 403, action = "reauth")
             update { it.copy(user = current) }
@@ -261,7 +268,8 @@ class FieldCoordinator(
             accept(gateway.refresh(current.refreshToken), expected)
             work.complete(Unit)
         } catch (e: Exception) {
-            if (e is ApiFailure && expected == epoch && authenticationRejected(e)) lock()
+            // refresh 자체의 거부(기존 401/403/reauth)는 계속 세션을 잠근다.
+            if (e is ApiFailure && expected == epoch && (authenticationRejected(e) || e.status == 403)) lock()
             work.completeExceptionally(e)
             throw e
         } finally {
@@ -271,6 +279,7 @@ class FieldCoordinator(
 
     private suspend fun <T> authorized(
         writing: Boolean = false,
+        sessionCheck: Boolean = writing,
         retryUnauthorized: Boolean = true,
         action: suspend (String) -> T,
     ): T {
@@ -289,6 +298,11 @@ class FieldCoordinator(
             return result
         } catch (error: ApiFailure) {
             if (expected != epoch) throw error
+            // 리소스의 인증 정책/서명 URL 만료를 앱 세션 만료로 해석하지 않는다.
+            // action=reauth도 이 경계 밖에서는 항목 오류다. refresh 자체 실패는 위에서 처리된다.
+            if (!sessionCheck && (error.status in listOf(401, 403) || error.action == "reauth")) {
+                throw ApiFailure(auxiliaryAccessDenied, status = error.status, code = error.code, action = "none")
+            }
             if (retryUnauthorized && !error.uncertainWrite && error.status == 401 &&
                 error.action != "none" && error.action != "reauth") {
                 if (session?.accessToken == token) refresh()
@@ -304,7 +318,7 @@ class FieldCoordinator(
                     throw retryError
                 }
             }
-            if (error.action == "reauth") lock()
+            if (sessionCheck && authenticationRejected(error)) lock()
             if (error.status == null) update { it.copy(offline = true) }
             throw error
         }
@@ -346,7 +360,7 @@ class FieldCoordinator(
             return result
         } catch (error: ApiFailure) {
             if (expected == epoch && (error.status == 403 || error.status == 401)) {
-                update { it.copy(siteStatusSnapshot = null, siteStatusForbidden = error.status == 403) }
+                update { it.copy(siteStatusSnapshot = null, siteStatusForbidden = true) }
             }
             throw error
         }
@@ -379,6 +393,7 @@ class FieldCoordinator(
         return bytes
     }
     override suspend fun calendarMedia(from: String, to: String) = authorized { gateway.calendarMedia(it, from, to) }
+    override suspend fun voiceBytes(comment: MediaComment) = authorized { gateway.calendarVoice(comment) }
     override suspend fun deleteCalendarMedia(id: String) {
         val owner = s.user?.id ?: throw ApiFailure("다시 로그인해 주세요")
         authorized(writing = true) { gateway.deleteCalendarMedia(it, id) }

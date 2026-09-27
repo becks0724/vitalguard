@@ -35,12 +35,7 @@ data class CalendarRecord(val media: CalendarMedia, val local: OutboxEntry?, val
     val date: LocalDate get() = LocalDate.parse(media.date_key)
     val minute get() = captureMinute(media.captured_at)
     val status get() = calendarStatus(listOfNotNull(local) + attachments)
-    val voiceCount: Int get() {
-        val voices = media.comments.filter { it.audio_ms != null || it.audio_storage_key != null || it.audio_url != null }
-        return voices.size + attachments.count { child -> child.kind == OutboxKind.voice && voices.none {
-            it.id == child.receipt?.get("id") || (it.text("client_operation_id") ?: it.clientOperationId) == child.id
-        } }
-    }
+    val voiceCount: Int get() = RecordAttachments(media, attachments).voiceCount
     val canSend get() = status == CalendarStatus.failed && local != null &&
         (listOf(local) + attachments).any { it.phase == OutboxPhase.failed || it.phase == OutboxPhase.reauthenticate }
     val counts get() = "${if (media.media_type == "video") "영상" else "사진"} 1 · 음성 $voiceCount"

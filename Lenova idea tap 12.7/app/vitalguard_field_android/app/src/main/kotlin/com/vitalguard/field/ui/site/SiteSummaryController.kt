@@ -109,7 +109,7 @@ class SiteSummaryController(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             if (expected != generation) return
-            val forbidden = state.value.forbidden || (e is ApiFailure && e.status == 403)
+            val forbidden = state.value.forbidden || (e is ApiFailure && e.status in listOf(401, 403))
             mutable.value = state.value.copy(failed = true, forbidden = forbidden,
                 data = if (forbidden || (e is ApiFailure && e.status == 401)) null else state.value.data)
             if (forbidden) polling?.cancel()
