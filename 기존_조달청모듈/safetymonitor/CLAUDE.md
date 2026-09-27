@@ -10,13 +10,23 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 상세 [plan](docs/plan.md) · [checklist](docs/checklist.md) · [context-notes](docs/context-notes.md) · [progress](docs/progress.md) · 상용화 갭·로드맵 [gap-analysis](docs/commercialization-gap-analysis.md) · [roadmap](docs/commercialization-roadmap.md)
 
-## 확인된 상태 기록 (최신 기록: 2026-09-23 · 현재 라이브는 조회로 확인)
+## 확인된 상태 기록 (최신 기록: 2026-09-27 · 현재 라이브는 조회로 확인)
 
 > **보존 규칙 (2026-08-22).** 이 절의 트랙 전문은 **최근 3건까지**만 둔다. 넘으면 그 자리에서
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00407-vc6` (커밋 `502059c7` 로그인 폼 정렬 · 09-23 17:11).
+- **라이브** = `vitalguard-dashboard-00408-xh7` (커밋 `45d791d6` · 09-27 14:01 · 팀원 배포 · 서빙 digest
+  `sha256:c4fdfd41…` **대조 일치**(빌드 `0e91af08` 이미지) · env 33 · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음).
+  사후 확인(09-27 15:4x · [WATCH.APP]) — 루트 200 · 라우트 4종 ok · DB타임아웃 0(98분). 검증 수(tsc·lint·test)는 이 줄에 없다.
+  00407 대비 **동작이 바뀐 곳은 둘**이다(나머지는 문서와 이미지 밖 태블릿 앱 폴더).
+  ```
+  ① api/calendar/media/download-url   관제 세션만 → 관제 세션 또는 앱 로그인 JWT(태블릿 앱이 서버 사진을 그리려고)
+                                      받는 범위 = 목록 GET 과 같다 · 수정·삭제는 여전히 올린 본인 또는 owner
+  ② app/lib/risk-tagging.ts           사전 7개 밖의 태그를 버린다 · 프롬프트 태그 목록을 사전에서 가져온다(내용 같음)
+  ```
+
+- (직전) **라이브** = `vitalguard-dashboard-00407-vc6` (커밋 `502059c7` 로그인 폼 정렬 · 09-23 17:11).
   직전 `00406-4l9`(커밋 `2495f21b` 로그인 부제 삭제 · 09-23 16:56). 둘 다 로그인 수리 세션이 배포했다.
   digest·검증 수·사후 관찰은 그 배포 세션이 채운다(이 줄은 트래픽 실측으로만 적었다).
 
@@ -39,19 +49,6 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   위험선 130 에 한 번도 안 닿음). 그래도 「잘 봐서」인지 「못 봐서」인지는 이 자료로 못 가른다.
   ★ **판정을 새로 정한 게 아니라 두 경로를 맞춘 것이다** — 38.0/38.5 자체는 여전히 잠정값이다
     (`Severity.kt:45` 가 직접 「잠정값이고 실측이 쌓이면 재조정한다」고 적고 있다).
-
-- (직전) **라이브** = `vitalguard-dashboard-00404-4d2` (커밋 `35e78a23` · 09-21 14:2x · 서빙 digest
-  `sha256:054f26fd…` **대조 일치** · env 33 · 검증 **2091/2091 @아카이브(35e78a2 고정) · 루트 pnpm test**
-  · 사후 90초 5xx 0 · DB타임아웃 0).
-  **앱 코드는 0줄 바뀌었다** — 문서 2 + 배포 도구 2 뿐이라 화면은 00403 과 같다.
-  목적이 기능이 아니라 **절차 검증**이었다(새 게이트 기본값 · 새 CCTV 번들 가드가 실제 경로에서 도는가).
-  ```
-  얻은 것  _CAM03_GATE 기본값이 아무도 안 넘겨도 치환에 들어간다(09-11 구멍이 닫혔다)
-           라이브 번들 ✅ 1/17 · page-68eb9368a69b79dd.js · 음성 통제 yahboom-2 → 0/17
-  ⛔ 걸린 것 가드 호출이 상대경로라 배포 안에서 깨졌다 — 「No such file or directory」
-           가드 자체는 멀쩡(손으로 돌리면 ✅). 깨진 건 **제자리에서 부르는 것**. 수리 98ff7da8
-  ```
-  ★ 09-09 의 「배포 방식(루트 pnpm test)만 2건 실패」가 사라졌다(1642/2 → 2091/0).
 
 **운영 기록 읽기** — 아래 아카이브는 과거 상태다. 현재 리비전·env·접속 경로는 라이브 조회로 확인한다. 브라우저 CORS·번들 검증, 같은 LAN/Tailscale 제약, 서버 중계 비용·주기, 인증 키 교체·워치 재서명 절차를 변경할 때는 관련 과거 실측을 먼저 확인한다.
 
@@ -98,7 +95,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
 
 **트랙 기록 아카이브**
-- 09-09 ~ 09-21 배포 기록 12건(00365~00403) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
+- 09-09 ~ 09-21 배포 기록 13건(00365~00404 · 00404 는 09-27 에 맨 위로 더함) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
 - 09-09 ~ 09-17 트랙(00367~00397) → [claude-md-archive-20260925.md](docs/claude-md-archive-20260925.md) (보존 규칙 「최근 3건」 초과분)
 - 08-31 ~ 09-08 트랙(00345~00363) → [claude-md-archive-20260910.md](docs/claude-md-archive-20260910.md) (최근 이동분이 파일 위쪽)
 - 08-26 ~ 08-31 트랙(00322~00344) → [claude-md-archive-20260831.md](docs/claude-md-archive-20260831.md) (최근 이동분이 파일 위쪽)
