@@ -16,6 +16,7 @@ import com.vitalguard.field.data.mock.mockSiteStatusReply
 import com.vitalguard.field.ui.auth.AuthFormState
 import com.vitalguard.field.ui.auth.AuthScreen
 import com.vitalguard.field.ui.shell.VgBackground
+import com.vitalguard.field.ui.theme.DashboardBackdrop
 import com.vitalguard.field.ui.site.SiteScreen
 import com.vitalguard.field.ui.site.SiteSummaryState
 import com.vitalguard.field.ui.theme.VgTheme
@@ -39,7 +40,7 @@ fun SiteSummaryPreview() {
     val time = "2026-09-14T15:13:04.759Z"
     VgTheme {
         Box(Modifier.fillMaxSize()) {
-            VgBackground(Modifier.fillMaxSize())
+            DashboardBackdrop(Modifier.fillMaxSize())
             SiteScreen(SiteSummaryState(SiteStatus(mockSiteStatusReply(time)), now = Instant.parse(time)))
         }
     }

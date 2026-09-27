@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.outbox
 
+import com.vitalguard.field.ui.theme.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -52,6 +53,7 @@ fun OutboxHistoryContent(
     var filterName by rememberSaveable(account) { mutableStateOf<String?>(null) }
     var siteGroup by rememberSaveable(account) { mutableStateOf<String?>(null) }
     var confirmId by rememberSaveable(account) { mutableStateOf<String?>(null) }
+    var guideOpen by rememberSaveable(account) { mutableStateOf(false) }
     val filter = filterName?.let(OutboxPhase::valueOf)
     val groups = entries.associate { it.siteGroup to it.siteName }
     val visible = entries.filter { (siteGroup == null || it.siteGroup == siteGroup) && (filter == null || historyPhase(it) == filter) }.reversed()
@@ -61,10 +63,15 @@ fun OutboxHistoryContent(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("전송 이력", style = MaterialTheme.typography.headlineMedium)
                 Text("현재 계정 · $account")
-                Text("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.")
-                Text("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
-                Text("기기의 완료 이력은 7일 뒤 정리됩니다. 서버 원본은 기록 탭에서 다시 볼 수 있습니다.")
-                if (offline) Text("오프라인 · 사진·잉크본·메모·음성은 기기에 보관합니다.")
+                TextButton({ guideOpen = !guideOpen }, Modifier.heightIn(min = 56.dp).testTag("outbox-guide")) {
+                    StateIcon(StateKind.info); Spacer(Modifier.width(8.dp)); Text(if (guideOpen) "전송 안내 접기" else "전송 안내")
+                }
+                if (guideOpen) {
+                    Text("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.")
+                    Text("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
+                    Text("기기의 완료 이력은 7일 뒤 정리됩니다. 서버 원본은 기록 탭에서 다시 볼 수 있습니다.")
+                }
+                if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관합니다.")
                 if (supportedLookup) {
                     OutlinedButton({ onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
                         enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain }) { Text("서버 상태 다시 조회") }
@@ -125,15 +132,22 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
 ) {
     val uncertain = item.needsVerification || item.phase == OutboxPhase.uncertain
     val cannotSend = busy || offline
-    Card(Modifier.fillMaxWidth().testTag("outbox-${item.id}")) {
+    var details by rememberSaveable(item.id) { mutableStateOf(false) }
+    GlassCard(Modifier.fillMaxWidth().testTag("outbox-${item.id}")) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${item.kindLabel} · ${item.fields["title"] ?: item.fields["commentOf"].orEmpty()}", style = MaterialTheme.typography.titleMedium)
             if (item.dependsOn != null) Text("원본 사진 ${parent?.fields?.get("title") ?: "제목 없음"} 에 딸림")
-            Text(item.statusLabel, Modifier.testTag("outbox-status-${item.id}"), fontWeight = FontWeight.Bold)
+            StateLabel(item.phase.visualState(), item.statusLabel, Modifier.testTag("outbox-status-${item.id}"))
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             item.message?.let { Text(it, Modifier.padding(top = 8.dp)) }
-            Text("현장 ID ${item.siteId ?: "미제공"} · ${localCreatedAt(item)}")
-            SelectionContainer { Text("작업 ID ${item.id}") }
+            Text(localCreatedAt(item), style = MaterialTheme.typography.bodySmall)
+            TextButton({ details = !details }, Modifier.heightIn(min = 56.dp).testTag("outbox-details-${item.id}")) {
+                StateIcon(StateKind.info); Spacer(Modifier.width(8.dp)); Text(if (details) "기록 정보 접기" else "기록 정보")
+            }
+            if (details) {
+                Text("현장 ID ${item.siteId ?: "미제공"}")
+                SelectionContainer { Text("작업 ID ${item.id}") }
+            }
             if (item.phase == OutboxPhase.completed) Text("${if (item.mock) "모의 확인 시각" else "서버 확인 시각"} · " +
                 (item.completedAt?.let { DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").format(it.atZone(ZoneId.of("Asia/Seoul"))) } ?: "미기록"))
             item.fields["annotationOf"]?.let { Text("원본 사진 $it") }

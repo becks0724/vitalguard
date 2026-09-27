@@ -64,6 +64,17 @@ class RecordEditingComposeTest {
         compose.waitUntil(5000){field.state.value.authStage==AuthStage.ready}
         compose.runOnIdle { model=ViewModelProvider(compose.activity)[FieldViewModel::class.java] }
     }
+    private fun settleKeyboard() {
+        // Native IME animation does not participate in Compose idleness.
+        Espresso.closeSoftKeyboard()
+        compose.waitUntil(5000) {
+            compose.runOnIdle {
+                val insets = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
+                insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime()) &&
+                    insets.getInsets(WindowInsetsCompat.Type.ime()).bottom == 0
+            }
+        }
+    }
     private fun photo():OutboxEntry {
         lateinit var result:OutboxEntry
         compose.runOnIdle { runBlocking {
@@ -143,15 +154,7 @@ class RecordEditingComposeTest {
         login(); val photo=photo(); open(photo,false)
         compose.onNodeWithText("관리자 기록").assertExists()
         compose.onNodeWithTag("record-note").performTextInput("보호구 미착용 확인 2층")
-        // 실기기 IME 애니메이션은 Compose idle과 별개다. 버튼 좌표가 바뀌는 동안 누르지 않는다.
-        Espresso.closeSoftKeyboard()
-        compose.waitUntil(5000) {
-            compose.runOnIdle {
-                val insets = ViewCompat.getRootWindowInsets(compose.activity.window.decorView)
-                insets != null && !insets.isVisible(WindowInsetsCompat.Type.ime()) &&
-                    insets.getInsets(WindowInsetsCompat.Type.ime()).bottom == 0
-            }
-        }
+        settleKeyboard()
         compose.runOnIdle { assertEquals("보호구 미착용 확인 2층", model.records.input!!.state.value.note) }
         compose.onNodeWithTag("save-record").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("confirm-record").performScrollTo().assertIsOff().performClick().assertIsOn()
@@ -178,8 +181,9 @@ class RecordEditingComposeTest {
         compose.onNodeWithTag("speech-candidate-0").performScrollTo().performClick()
         compose.onNodeWithTag("save-record").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithTag("record-speech-text").performScrollTo().performTextReplacement("작업 중지 2층")
-        compose.onNodeWithTag("confirm-record").performScrollTo().performClick()
-        compose.onNodeWithTag("save-record").performScrollTo().performClick()
+        settleKeyboard()
+        compose.onNodeWithTag("confirm-record").performScrollTo().assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("save-record").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(5000){model.outbox.dependents(photo.id).size==1}
         compose.runOnIdle { runBlocking { assertEquals("작업 중지 2층",store.readBytes("a",model.outbox.dependents(photo.id).single().bytesKey)!!.toString(Charsets.UTF_8)) } }
     }

@@ -18,7 +18,7 @@ import com.vitalguard.field.data.*
 import com.vitalguard.field.data.record.mergeCalendarRecords
 import java.time.LocalDate
 import com.vitalguard.field.ui.record.*
-import com.vitalguard.field.ui.shell.VgBackground
+import com.vitalguard.field.ui.theme.DashboardBackdrop
 import com.vitalguard.field.ui.theme.VgTheme
 import java.time.Instant
 
@@ -45,9 +45,9 @@ private fun PreviewPhoto(modifier: Modifier) {
 @Preview(name = "LocalRecordsCalendar866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable
 fun LocalRecordsCalendarPreview() {
-    VgTheme {
+    GlassPreviewSurface {
         Box(Modifier.fillMaxSize()) {
-            VgBackground(Modifier.matchParentSize())
+            DashboardBackdrop(Modifier.matchParentSize())
             RecordCalendarContent(LocalDate.parse("2026-09-26"), mergeCalendarRecords(listOf(previewPhoto, previewText, previewPhoto.copy(id = "second", fields = previewPhoto.fields + mapOf("title" to "서류 스캔 · 페이지 1", "clientOperationId" to "second"),
                 createdAt = previewPhoto.createdAt.minusSeconds(60))), emptyList()), capture = CaptureUiState(scannerReady = false),
                 thumbnail = { PreviewPhoto(Modifier.size(72.dp)) })
@@ -58,12 +58,12 @@ fun LocalRecordsCalendarPreview() {
 @Preview(name = "LocalPhotoDetail1385", device = "spec:width=1385dp,height=866dp,dpi=340", locale = "ko", showBackground = true)
 @Composable
 fun LocalPhotoDetailPreview() {
-    VgTheme {
+    GlassPreviewSurface {
         Box(Modifier.fillMaxSize()) {
-            VgBackground(Modifier.matchParentSize())
+            DashboardBackdrop(Modifier.matchParentSize())
             PhotoDetailContent(previewPhoto, listOf(previewText), wide = true,
                 preview = { PreviewPhoto(Modifier.fillMaxSize()) }, attachment = {
-                    Card(Modifier.fillMaxWidth()) {
+                    com.vitalguard.field.ui.theme.GlassCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text("메모 · ${it.statusLabel}"); Text("안전난간 고정 상태를 점검했습니다.")
                             TextButton({}) { Text("지우기") }

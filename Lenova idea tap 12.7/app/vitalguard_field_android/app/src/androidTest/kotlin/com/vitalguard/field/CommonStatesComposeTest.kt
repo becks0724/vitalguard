@@ -26,6 +26,20 @@ import java.time.Instant
 @RunWith(AndroidJUnit4::class)
 class CommonStatesComposeTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+    @Test fun compactConnectionStatusKeepsFullGuidanceAvailableOnDemand() {
+        val field = FieldState(authStage = AuthStage.ready, offline = true,
+            site = SiteInfo(mapOf("site_name" to "모의 현장")), user = AppUser(mapOf("id" to "demo", "role" to "site_manager")))
+        compose.setContent {
+            VgTheme { FieldShell(field, ShellState(collapsed = true), SiteSummaryState(), true, 866,
+                onWidth = {}, onToggle = {}, onSelect = {}, onLogout = {}, onRefresh = {}, onNextStage = {}) }
+        }
+        compose.onNodeWithTag("shell-receipt").assertTextEquals("오프라인")
+        compose.onNodeWithText(shellReceipt(0, field)).assertDoesNotExist()
+        compose.onNodeWithTag("shell-receipt-details").performClick()
+        compose.onNodeWithText(shellReceipt(0, field)).assertIsDisplayed()
+        compose.onNodeWithText("확인").performClick()
+        compose.onNodeWithText(shellReceipt(0, field)).assertDoesNotExist()
+    }
     @Test fun offlineBannerAndScrollingNeverMoveContentOrReservedStripAtTripleFontScale() {
         val time = "2026-09-14T15:13:04.759Z"
         val data = SiteStatus(mockSiteStatusReply(time))

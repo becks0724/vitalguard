@@ -94,23 +94,25 @@ fun RecordEditorContent(
     onFit: () -> Unit = {}, onSave: () -> Unit = {}, onReload: () -> Unit = {}, canvas: @Composable BoxScope.() -> Unit,
 ) {
     val available = !state.busy && state.activeCount == 0
-    Scaffold(containerColor = VgColors.canvas, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
+    Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text("펜으로 표시하기") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
             windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = {
                 VgIconButton(R.drawable.ic_back, "초안 저장 후 뒤로", Modifier.testTag("editor-back"), !state.busy, onBack)
             })
     }, bottomBar = {
         ActionDock(maxWidth = 960.dp) {
-            Column(Modifier.fillMaxWidth().testTag("editor-actions"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            GlassCard {
+            Column(Modifier.fillMaxWidth().padding(12.dp).testTag("editor-actions"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 FlowRow(Modifier.testTag("editor-drawing-tools"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     listOf(InkTool.pen to "펜", InkTool.marker to "형광펜", InkTool.rectangle to "사각형", InkTool.eraser to "지우개").forEach { (tool, label) ->
                         EditorButton("tool-${tool.name}", label, available, state.tool == tool, { onTool(tool) }) {
-                            EditorGlyph(tool.name, if (state.tool == tool) Color.White else VgColors.ink)
+                            EditorGlyph(tool.name, if (state.tool == tool) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     listOf(Triple("thin", "가늘게", .5), Triple("normal", "보통", 1.0), Triple("thick", "굵게", 2.0)).forEach { (id, label, width) ->
                         EditorButton("width-$id", label, available, state.widthMultiplier == width, { onWidth(width) }, outline = true) {
-                            Canvas(Modifier.size(28.dp)) { drawCircle(VgColors.ink, (if (width == .5) 4 else if (width == 1.0) 7 else 11).dp.toPx()) }
+                            val widthColor = MaterialTheme.colorScheme.onSurface
+                            Canvas(Modifier.size(28.dp)) { drawCircle(widthColor, (if (width == .5) 4 else if (width == 1.0) 7 else 11).dp.toPx()) }
                         }
                     }
                 }
@@ -118,6 +120,7 @@ fun RecordEditorContent(
                     listOf(Triple("red", "빨간 펜", 0xFFDC2626L), Triple("black", "검정 펜", 0xFF171717L), Triple("blue", "파란 펜", 0xFF0D74CEL)).forEach { (id, label, color) ->
                         EditorButton("color-$id", label, available, state.color == color, { onColor(color) }, outline = true) {
                             Canvas(Modifier.size(40.dp)) {
+                                drawCircle(Color.White, 20.dp.toPx())
                                 drawCircle(Color(color), 18.dp.toPx(), style = Stroke(2.dp.toPx()))
                                 if (state.color == color) drawCircle(Color(color), 12.dp.toPx())
                             }
@@ -125,15 +128,16 @@ fun RecordEditorContent(
                     }
                     EditorButton("undo", "마지막 획 되돌리기", available && state.undoAvailable, onClick = onUndo) { EditorGlyph("undo") }
                     EditorButton("clear-all", "전체 지우기", available && state.strokes.isNotEmpty(), onClick = onClear) { EditorGlyph("clear") }
-                    EditorButton("original-only", "원본만 보기", available, state.originalOnly, onOriginal) { EditorGlyph("image", if (state.originalOnly) Color.White else VgColors.ink) }
+                    EditorButton("original-only", "원본만 보기", available, state.originalOnly, onOriginal) { EditorGlyph("image", if (state.originalOnly) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface) }
                     EditorButton("fit-width", if (state.fitWidth) "전체 보기 · 확대·이동 초기화" else "폭 맞춤 · 확대·이동 초기화", available, state.fitWidth, onFit) {
-                        EditorGlyph("fit", if (state.fitWidth) Color.White else VgColors.ink)
+                        EditorGlyph("fit", if (state.fitWidth) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                     }
                 }
                 TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
                     tooltip = { if (state.untouched) PlainTooltip { Text("표시할 내용이 없습니다") } }, state = rememberTooltipState()) {
                     Button(onSave, Modifier.size(180.dp, 64.dp).testTag("editor-save"), enabled = state.canSave) { Text(if (state.busy) "저장 중" else "주석 저장") }
                 }
+            }
             }
         }
     }) { padding ->
@@ -157,15 +161,15 @@ private fun EditorButton(id: String, label: String, enabled: Boolean, selected: 
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
     Box(Modifier.size(56.dp).testTag("editor-$id")
-        .background(if (selected && !outline) VgColors.primary else Color.Transparent, RoundedCornerShape(8.dp))
-        .border(2.dp, if (selected && outline) VgColors.primary else Color.Transparent, RoundedCornerShape(8.dp))
+        .background(if (selected && !outline) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(8.dp))
+        .border(2.dp, if (selected && outline) MaterialTheme.colorScheme.primary else Color.Transparent, RoundedCornerShape(8.dp))
         .semantics { contentDescription = label }
         .selectable(selected, enabled, Role.Button, onClick = onClick), contentAlignment = Alignment.Center, content = content)
     }
 }
 
 @Composable
-private fun EditorGlyph(name: String, color: Color = VgColors.ink) {
+private fun EditorGlyph(name: String, color: Color = MaterialTheme.colorScheme.onSurface) {
     Canvas(Modifier.size(28.dp)) {
         val w = size.width; val h = size.height; val stroke = 2.dp.toPx()
         fun line(x: Float, y: Float, x2: Float, y2: Float) = drawLine(color, Offset(w*x, h*y), Offset(w*x2, h*y2), stroke, StrokeCap.Round)

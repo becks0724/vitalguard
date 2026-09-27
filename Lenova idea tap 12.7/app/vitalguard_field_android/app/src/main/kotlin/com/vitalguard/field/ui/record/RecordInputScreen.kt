@@ -104,7 +104,7 @@ fun RecordInputContent(
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton({ onChoose(index) }, Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("speech-candidate-$index")
                     .semantics { selected = state.choice == index }, enabled = !state.saving,
-                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.choice == index) Color(0xFFE5E7EB) else Color.Transparent)) {
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = if (state.choice == index) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)) {
                     Text("${index + 1}. $candidate", Modifier.fillMaxWidth())
                 }
             }

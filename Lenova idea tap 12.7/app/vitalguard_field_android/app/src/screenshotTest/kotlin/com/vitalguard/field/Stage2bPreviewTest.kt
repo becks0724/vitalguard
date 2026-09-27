@@ -21,7 +21,7 @@ import com.vitalguard.field.ui.theme.VgTheme
 @Composable
 fun RecordEditorPreview() {
     val stroke=InkStroke(InkTool.rectangle,0xFFDC2626,.004,listOf(InkPoint(.2,.3),InkPoint(.8,.72)))
-    VgTheme {
+    GlassPreviewSurface {
         RecordEditorContent(InkEditorState(loading=false,strokes=listOf(stroke),visibleStrokes=listOf(stroke),
             imageSize=InkSize(1000.0,750.0),dirty=true,revision=1,undoAvailable=true)) {
             Canvas(Modifier.fillMaxSize()) {
@@ -40,7 +40,7 @@ fun RecordEditorPreview() {
 @Preview(name="RecordInput866",device="spec:width=866dp,height=1385dp,dpi=340",locale="ko",showBackground=true)
 @Composable
 fun RecordInputPreview() {
-    VgTheme {
+    GlassPreviewSurface {
         RecordInputContent(RecordInputState(loading=false,note="2층 작업 구역의 보호구 착용 상태를 확인했습니다.",
             candidates=listOf("작업 중지 후 안전난간을 확인했습니다."),choice=0,speechText="작업 중지 후 안전난간을 확인했습니다.",
             speechStatus="맞는 후보를 고르고 문장을 확인하세요",confirmed=true),

@@ -87,7 +87,9 @@ class OutboxComposeTest {
             completed = photo("완료 사진"); queue.sendBundle(completed.id)
             failed = photo("실패 사진", "현장 B", ApiFailure("실패", status = 400))
         }
+        compose.onNodeWithTag("outbox-guide").performScrollTo().performClick()
         compose.onNodeWithText("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.").assertExists()
+        compose.onNodeWithTag("outbox-guide").performScrollTo().performClick()
         tap("실패 1"); card(failed)
         compose.onNodeWithTag("outbox-status-${failed.id}").assertTextEquals("로컬 저장됨 · 전송 실패")
         compose.onNodeWithTag("outbox-${waiting.id}").assertDoesNotExist()
@@ -104,7 +106,7 @@ class OutboxComposeTest {
         card(item); compose.onNodeWithText("전송").assertIsNotEnabled()
         compose.runOnIdle { field.mutable.value = field.state.value.copy(offline = false) }
         tap("전송"); compose.waitUntil(5000) { queue.bundleCompleted(item.id) }
-        card(item); compose.onNodeWithText("작업 ID ${item.id}").assertExists()
+        card(item); compose.onNodeWithTag("outbox-details-${item.id}").performScrollTo().performClick(); compose.onNodeWithText("작업 ID ${item.id}").assertExists()
         compose.onNodeWithText("모의 확인 시각", substring = true).assertExists()
     }
     @Test fun automaticAbsentLookupKeepsUncertainUntilExplicitSameOperationRetry() {

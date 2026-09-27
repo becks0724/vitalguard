@@ -10,7 +10,7 @@ import com.vitalguard.field.data.models.CalendarMedia
 import com.vitalguard.field.data.record.mergeCalendarRecords
 import com.vitalguard.field.ui.record.RecordCalendarContent
 import com.vitalguard.field.ui.outbox.OutboxHistoryContent
-import com.vitalguard.field.ui.shell.VgBackground
+import com.vitalguard.field.ui.theme.DashboardBackdrop
 import com.vitalguard.field.ui.theme.VgTheme
 import java.time.Instant
 import java.time.LocalDate
@@ -29,8 +29,8 @@ fun RecordCalendarPreview() {
     val server = CalendarMedia(mapOf("id" to "server-one", "date_key" to "2026-09-28", "captured_at" to "2026-09-28T10:30:00+09:00",
         "media_type" to "image", "title" to "작업 전 점검", "comments" to listOf(mapOf("id" to "voice-one", "media_id" to "server-one",
             "body" to "", "audio_storage_key" to "preview/voice.m4a", "audio_ms" to 12000))))
-    VgTheme { Box(Modifier.fillMaxSize()) {
-        VgBackground(Modifier.matchParentSize())
+    GlassPreviewSurface { Box(Modifier.fillMaxSize()) {
+        DashboardBackdrop(Modifier.matchParentSize())
         RecordCalendarContent(fixedDay, mergeCalendarRecords(local, listOf(server)), today = fixedDay)
     } }
 }
@@ -45,8 +45,8 @@ fun OutboxHistoryPreview() {
         previewEntry("operation-uncertain", 10, OutboxPhase.uncertain).copy(needsVerification = true, message = "서버 반영 여부를 먼저 확인해 주세요."),
         previewEntry("operation-sending", 11, OutboxPhase.sending),
     )
-    VgTheme { Box(Modifier.fillMaxSize()) {
-        VgBackground(Modifier.matchParentSize())
+    GlassPreviewSurface { Box(Modifier.fillMaxSize()) {
+        DashboardBackdrop(Modifier.matchParentSize())
         OutboxHistoryContent(entries.reversed(), account = "태블릿 담당자", busyIds = setOf("operation-sending"))
     } }
 }

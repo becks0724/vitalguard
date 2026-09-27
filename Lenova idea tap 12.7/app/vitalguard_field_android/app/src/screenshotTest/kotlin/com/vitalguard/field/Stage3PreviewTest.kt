@@ -17,16 +17,16 @@ private val sample = stage3SampleStatus(fixed.toString())
 private val site = SiteSummaryState(data = sample, now = fixed)
 
 @PreviewTest @Preview(name = "Weather866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun WeatherStage3Preview() { VgTheme { SiteDetailScreen("weather", site, {}, {}) } }
+@Composable fun WeatherStage3Preview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }
 @PreviewTest @Preview(name = "Workers866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun WorkersStage3Preview() { VgTheme { SiteDetailScreen("workers", site, {}, {}) } }
+@Composable fun WorkersStage3Preview() { GlassPreviewSurface { SiteDetailScreen("workers", site, {}, {}) } }
 @PreviewTest @Preview(name = "Gas866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun GasStage3Preview() { VgTheme { SiteDetailScreen("gas", site, {}, {}) } }
+@Composable fun GasStage3Preview() { GlassPreviewSurface { SiteDetailScreen("gas", site, {}, {}) } }
 @PreviewTest @Preview(name = "Aed866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun AedStage3Preview() { VgTheme { SiteDetailScreen("aed", site, {}, {}) } }
+@Composable fun AedStage3Preview() { GlassPreviewSurface { SiteDetailScreen("aed", site, {}, {}) } }
 @PreviewTest @Preview(name = "Alerts866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun AlertsStage3Preview() { VgTheme { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed), isMock = true) } }
+@Composable fun AlertsStage3Preview() { GlassPreviewSurface { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed), isMock = true) } }
 @PreviewTest @Preview(name = "AlertDetail866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun AlertDetailStage3Preview() { VgTheme { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed, selected = sample.alerts.items.first()), isMock = true, canAck = { true }) } }
+@Composable fun AlertDetailStage3Preview() { GlassPreviewSurface { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed, selected = sample.alerts.items.first()), isMock = true, canAck = { true }) } }
 @PreviewTest @Preview(name = "CctvUnavailable866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun CctvStage3Preview() { VgTheme { CctvContent(CctvState(active = true, error = "현장에서 카메라를 꺼 두었습니다", failures = 1, now = fixed)) } }
+@Composable fun CctvStage3Preview() { GlassPreviewSurface { CctvContent(CctvState(active = true, error = "현장에서 카메라를 꺼 두었습니다", failures = 1, now = fixed)) } }

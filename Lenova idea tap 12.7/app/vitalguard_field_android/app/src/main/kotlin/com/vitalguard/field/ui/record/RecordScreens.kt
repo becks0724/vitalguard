@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.record
 
+import com.vitalguard.field.ui.theme.*
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -91,13 +92,13 @@ fun PhotoDetailContent(
     var showOcr by rememberSaveable { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val detailContent: @Composable ColumnScope.() -> Unit = {
-        Text(photo.statusLabel, Modifier.testTag("photo-bundle-status"))
+        StateLabel(photo.phase.visualState(), photo.statusLabel, Modifier.testTag("photo-bundle-status"))
         Text("사진 상세를 닫으면 저장한 기록이 자동으로 전송됩니다.")
         if (photo.phase == OutboxPhase.completed) Text("서버 원본은 보존되며 새 주석·메모·음성만 추가됩니다.")
         if (availability.processing) LinearProgressIndicator(Modifier.fillMaxWidth())
         photo.message?.let { Text(it) }
         error?.let { Text(it) }
-        if (offline) Text("오프라인입니다. 연결 후 전송할 수 있습니다.")
+        if (offline) StateLabel(StateKind.offline, "오프라인입니다. 연결 후 전송할 수 있습니다.")
         if (availability.uncertain) Text("전송 이력 탭에서 서버 반영 여부를 조회하거나 미등록 확인 후 재시도해 주세요.")
         if (availability.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 전송 이력 탭에서 재개해 주세요.")
         Spacer(Modifier.height(16.dp))
@@ -152,7 +153,7 @@ fun PhotoDetailContent(
 @Composable
 fun ServerCommentCard(comment: MediaComment, active: Boolean = false, loading: Boolean = false,
     playbackError: String? = null, onPlay: (() -> Unit)? = null) {
-    Card(Modifier.fillMaxWidth().testTag("server-comment-${comment.id}")) {
+    GlassCard(Modifier.fillMaxWidth().testTag("server-comment-${comment.id}")) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${comment.author_name ?: comment.author_id ?: "작성자 미제공"} · ${comment.created_at?.let { captureRecordedTime(it) } ?: "시각 미기록"}")
             if (comment.isVoice) {
@@ -230,7 +231,7 @@ private fun Attachment(store: LocalStore, item: OutboxEntry, onDelete: (() -> Un
         } catch (e: CancellationException) { throw e
         } catch (_: Exception) { value = "메모를 읽지 못했습니다" }
     }
-    Card(Modifier.fillMaxWidth()) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${item.kindLabel} · ${item.statusLabel}")
             item.message?.let { Text(it) }

@@ -1,0 +1,276 @@
+package com.vitalguard.field.ui.site
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.vitalguard.field.R
+import com.vitalguard.field.data.models.*
+import com.vitalguard.field.ui.theme.*
+import java.time.Duration
+import java.util.Locale
+
+fun dashboardColumns(contentWidthDp: Float, fontScale: Float): Int {
+    val readable = (contentWidthDp - 48f) / fontScale.coerceAtLeast(1f)
+    return when { readable >= 960f -> 3; readable >= 570f -> 2; else -> 1 }
+}
+
+@Composable
+fun GlassDashboard(state: SiteSummaryState, onRefresh: () -> Unit, onDetail: (String) -> Unit,
+    onCctv: () -> Unit, onAlerts: () -> Unit) {
+    DashboardTheme {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val columns = dashboardColumns(maxWidth.value, LocalDensity.current.fontScale)
+            val weather: @Composable () -> Unit = { WeatherTile(state) { onDetail("weather") } }
+            val workers: @Composable () -> Unit = { WorkersTile(state) { onDetail("workers") } }
+            val gas: @Composable () -> Unit = { GasTile(state) { onDetail("gas") } }
+            val aed: @Composable () -> Unit = { AedTile(state) { onDetail("aed") } }
+            val alerts: @Composable () -> Unit = { AlertsTile(state, onAlerts) }
+            val cctv: @Composable () -> Unit = { CctvTile(onCctv) }
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("site-summary-scroll")
+                .padding(horizontal = 24.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                DashboardHeading(state, columns == 1, onRefresh)
+                if ((state.loading && state.data == null) || state.stale || state.failed || state.forbidden) ReceptionNotice(state)
+                Column(Modifier.fillMaxWidth().testTag("site-signals"), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                    when (columns) {
+                        3 -> Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) { weather(); aed() }
+                            Column(Modifier.weight(1.13f), verticalArrangement = Arrangement.spacedBy(18.dp)) { workers(); gas() }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) { alerts(); cctv() }
+                        }
+                        2 -> Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) { weather(); gas(); aed() }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(18.dp)) { workers(); alerts(); cctv() }
+                        }
+                        else -> { alerts(); weather(); workers(); gas(); aed(); cctv() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DashboardHeading(state: SiteSummaryState, compact: Boolean, onRefresh: () -> Unit) {
+    val title: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+            Text("현장 대시보드", color = DashboardColors.text, style = MaterialTheme.typography.headlineLarge)
+            Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(state.data?.fetchedAt),
+                Modifier.testTag("site-receipt"), color = DashboardColors.secondary, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    val refresh: @Composable () -> Unit = {
+        OutlinedButton(onRefresh, Modifier.heightIn(min = vgTapPrimary).testTag("site-refresh"), enabled = !state.loading,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = DashboardColors.text)) {
+            VgIcon(R.drawable.ic_refresh); Spacer(Modifier.width(10.dp)); Text(if (state.loading) "갱신 중" else "새로고침")
+        }
+    }
+    if (compact) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { title(); refresh() }
+    else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f)) { title() }; refresh()
+    }
+}
+
+@Composable
+private fun ReceptionNotice(state: SiteSummaryState) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (state.forbidden) {
+                StateNotice(StateKind.locked, "접근 권한 없음", "관리자에게 역할·현장 배정을 확인해 주세요.", Modifier.testTag("site-forbidden"))
+                Text("권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.", style = MaterialTheme.typography.bodySmall)
+            } else if (state.failed) StateNotice(StateKind.failed, "수신 실패",
+                if (state.data == null) "연결 후 새로고침해 주세요." else "이전에 받은 자료를 표시합니다.", Modifier.testTag("site-refresh-error"))
+            else if (state.loading && state.data == null) StateNotice(StateKind.loading, "자료를 불러오는 중", "첫 수신을 기다리고 있습니다.")
+            if (state.stale && !state.forbidden) StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과", Modifier.testTag("site-stale"))
+        }
+}
+
+@Composable
+private fun TileHeading(title: String, icon: Int, section: SiteStatusSection?, forbidden: Boolean) {
+    val level = section?.level.takeIf { !forbidden && section?.ok == true }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        VgIcon(icon, modifier = Modifier.size(21.dp), tint = DashboardColors.secondary)
+        Text(title, Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
+    Row(Modifier.clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = .12f)).padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        StateIcon(when { forbidden -> StateKind.locked; level == "normal" -> StateKind.ready; level == "warn" -> StateKind.warning; level == "danger" -> StateKind.failed; else -> StateKind.empty }, Modifier.size(16.dp))
+        Text(if (forbidden) "접근 권한 없음" else when (level) { "normal" -> "정상"; "warn" -> "주의"; "danger" -> "위험"; "idle" -> "수신 대기"; else -> "상태 미확인" },
+            color = DashboardColors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+        VgIcon(R.drawable.ic_chevron_right, modifier = Modifier.size(18.dp), tint = DashboardColors.secondary)
+    }
+}
+
+@Composable
+private fun Metric(value: String, unit: String = "", color: Color = DashboardColors.text, size: Int = 54) {
+    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(value, color = color, fontSize = size.sp, lineHeight = (size + 4).sp, fontWeight = FontWeight.Medium,
+            letterSpacing = (-2).sp, style = MaterialTheme.typography.displayMedium.copy(fontFeatureSettings = "tnum"))
+        if (unit.isNotEmpty()) Text(unit, Modifier.padding(bottom = 7.dp), color = DashboardColors.secondary, fontSize = 19.sp)
+    }
+}
+
+@Composable
+private fun TileSummary(id: String, title: String, section: SiteStatusSection?, forbidden: Boolean) {
+    Text(if (forbidden) "$title  접근 권한 없음" else "$title  ${signalText(id, section)}", color = DashboardColors.secondary,
+        style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun MiniMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(label, color = DashboardColors.secondary, fontSize = 12.sp)
+        Text(value, color = DashboardColors.text, fontSize = 16.sp, fontWeight = FontWeight.Medium,
+            style = MaterialTheme.typography.bodyLarge.copy(fontFeatureSettings = "tnum"))
+    }
+}
+
+@Composable
+private fun WeatherTile(state: SiteSummaryState, onClick: () -> Unit) {
+    val data = state.data?.weather.takeUnless { state.forbidden }
+    val current = data?.current.takeIf { data?.ok == true && data.level != "idle" }
+    GlassPanel(Modifier.testTag("site-row-weather").heightIn(min = 300.dp), onClick, !state.forbidden) {
+        TileHeading("기상", R.drawable.ic_weather, data, state.forbidden)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Metric(current?.temperatureC?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—", "°C")
+                Text("체감 ${metricValue(current?.apparentTempC, "°C")}", color = DashboardColors.secondary, fontSize = 13.sp)
+            }
+            VgIcon(R.drawable.ic_weather, modifier = Modifier.size(48.dp), tint = DashboardColors.text)
+        }
+        HorizontalDivider(color = DashboardColors.line)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            MiniMetric("습도", metricValue(current?.humidityPct, "%", 0), Modifier.weight(1f))
+            MiniMetric(if (current?.windGustKmh != null) "순간풍속" else "평균풍속",
+                metricValue((current?.windGustKmh ?: current?.windKmh)?.div(3.6), "m/s"), Modifier.weight(1f))
+        }
+        if (data?.stale == true) Text("오래된 기상 값 · 이전 수신 값입니다", color = DashboardColors.text)
+        TileSummary("weather", "기상", data, state.forbidden)
+    }
+}
+
+@Composable
+private fun WorkersTile(state: SiteSummaryState, onClick: () -> Unit) {
+    val data = state.data?.workers.takeUnless { state.forbidden }
+    val total = data?.total.takeIf { data?.ok == true }
+    val normal = data?.normal.takeIf { data?.ok == true }
+    GlassPanel(Modifier.testTag("site-row-workers"), onClick, !state.forbidden) {
+        TileHeading("작업자", R.drawable.ic_person, data, state.forbidden)
+        Box(Modifier.fillMaxWidth().heightIn(min = 148.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(148.dp).clearAndSetSemantics {}) {
+                val stroke = 9.dp.toPx(); val inset = stroke / 2
+                drawArc(DashboardColors.line, 135f, 270f, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
+                if (total != null && total > 0 && normal != null && normal in 0..total)
+                    drawArc(DashboardColors.accent, 135f, 270f * normal / total, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("전체 인원", color = DashboardColors.secondary, fontSize = 12.sp)
+                Metric(total?.toString() ?: "—", "명", size = 44)
+                Text("정상 ${normal?.let { "${it}명" } ?: "미수신"}", color = DashboardColors.secondary, fontSize = 12.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MiniMetric("주의", data?.caution?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
+            MiniMetric("위험", data?.danger?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
+            MiniMetric("대기", data?.waiting?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
+        }
+        TileSummary("workers", "작업자", data, state.forbidden)
+    }
+}
+
+@Composable
+private fun GasTile(state: SiteSummaryState, onClick: () -> Unit) {
+    val data = state.data?.gas.takeUnless { state.forbidden }
+    val old = parseInstantOrNull(data?.lastSeenAt)?.let { Duration.between(it, state.now).seconds >= 300 } == true
+    GlassPanel(Modifier.testTag("site-row-gas"), onClick, !state.forbidden) {
+        TileHeading("가스 감지기", R.drawable.ic_gas, data, state.forbidden)
+        for ((id, title) in listOf("o2" to "O₂ · 산소", "co" to "CO · 일산화탄소", "h2s" to "H₂S · 황화수소")) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), color = DashboardColors.secondary, fontSize = 13.sp)
+                val reading = data?.gases?.firstOrNull { it.key == id }
+                Text(when {
+                    state.forbidden -> "—"
+                    data?.ok != true || reading?.value == null -> "미수신"
+                    data.level == "idle" -> "측정 대기"
+                    reading.unit == null -> "단위 미수신"
+                    else -> gasMeasurement(reading, false)
+                },
+                    Modifier.weight(1f).testTag("dashboard-gas-$id"), color = DashboardColors.text, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+            }
+        }
+        if (old) Text("오래된 측정값 · 마지막 수신 ${alertTime(data?.lastSeenAt)}", color = DashboardColors.text, fontSize = 12.sp)
+        TileSummary("gas", "가스", data, state.forbidden)
+    }
+}
+
+@Composable
+private fun AedTile(state: SiteSummaryState, onClick: () -> Unit) {
+    val data = state.data?.aed.takeUnless { state.forbidden }
+    GlassPanel(Modifier.testTag("site-row-aed"), onClick, !state.forbidden) {
+        TileHeading("AED", R.drawable.ic_aed, data, state.forbidden)
+        Metric(data?.total?.toString() ?: "—", "대", size = 40)
+        TileSummary("aed", "AED", data, state.forbidden)
+    }
+}
+
+@Composable
+private fun AlertsTile(state: SiteSummaryState, onClick: () -> Unit) {
+    val data = state.data?.alerts.takeUnless { state.forbidden }
+    GlassPanel(Modifier.testTag("site-alerts"), onClick, !state.forbidden) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            VgIcon(R.drawable.ic_alert, modifier = Modifier.size(21.dp)); Text("미대응 경보", Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
+            VgIcon(R.drawable.ic_chevron_right, modifier = Modifier.size(18.dp))
+        }
+        Metric(data?.unacked?.toString() ?: "—", "건", if ((data?.unacked ?: 0) > 0) DashboardColors.warning else DashboardColors.text, 64)
+        Text(if (state.forbidden) "접근 권한 없음" else alertsText(data), color = DashboardColors.secondary, fontSize = 13.sp)
+        if (data?.ok == true) Text(when (data.siteScoped) {
+            false -> "전체 현장 기준 · 이 현장만의 경보 수가 아닙니다"
+            true -> "이 현장 기준"
+            null -> "경보 집계 범위 확인 불가"
+        }, color = DashboardColors.secondary, fontSize = 12.sp)
+    }
+}
+
+@Composable
+private fun CctvTile(onOpen: () -> Unit) {
+    GlassPanel {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("현장 CCTV", Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
+            Text("CAM-03", color = DashboardColors.secondary, fontSize = 12.sp)
+        }
+        Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.matchParentSize().clearAndSetSemantics {}) {
+                val line = DashboardColors.secondary.copy(alpha = .28f); val corner = 15.dp.toPx(); val inset = 14.dp.toPx()
+                for ((x, y, dx, dy) in listOf(listOf(inset, inset, 1f, 1f), listOf(size.width-inset, inset, -1f, 1f),
+                    listOf(inset, size.height-inset, 1f, -1f), listOf(size.width-inset, size.height-inset, -1f, -1f))) {
+                    drawLine(line, Offset(x, y), Offset(x+corner*dx, y), 1.dp.toPx())
+                    drawLine(line, Offset(x, y), Offset(x, y+corner*dy), 1.dp.toPx())
+                }
+            }
+            VgIcon(R.drawable.ic_video, modifier = Modifier.size(38.dp), tint = DashboardColors.secondary)
+        }
+        Text("스냅샷 갱신 영상 · 열면 수신을 시작합니다", color = DashboardColors.secondary, fontSize = 12.sp)
+        Button(onOpen, Modifier.fillMaxWidth().heightIn(min = vgTapMin).testTag("site-open-cctv"),
+            colors = ButtonDefaults.buttonColors(containerColor = DashboardColors.accent, contentColor = DashboardColors.accentInk)) {
+            Text("영상 보기", fontWeight = FontWeight.SemiBold); Spacer(Modifier.width(10.dp)); VgIcon(R.drawable.ic_chevron_right)
+        }
+    }
+}

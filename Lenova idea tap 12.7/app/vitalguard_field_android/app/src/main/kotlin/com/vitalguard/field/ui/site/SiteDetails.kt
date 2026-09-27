@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.site
 
+import com.vitalguard.field.ui.theme.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -16,7 +17,7 @@ import java.time.Duration
 
 @Composable
 fun DetailPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    OutlinedCard(modifier.fillMaxWidth()) {
+    GlassCard(modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
     }
 }
@@ -34,10 +35,10 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 DetailPanel {
                     Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(data?.fetchedAt))
-                    if (state.loading) Text("갱신 중 · 수신 완료 전까지 이전 자료를 표시합니다")
-                    if (state.stale) Text("오래된 자료 · 마지막 수신 후 5분 이상 지났습니다")
-                    if (state.forbidden) Text(siteForbiddenMessage)
-                    else if (state.failed) Text("갱신 실패 · 이전에 받은 자료입니다. 연결 상태를 확인해 주세요.")
+                    if (state.loading) StateLabel(StateKind.loading, "갱신 중 · 이전 자료 표시")
+                    if (state.stale) StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과")
+                    if (state.forbidden) StateNotice(StateKind.locked, "접근 권한 없음", siteForbiddenMessage)
+                    else if (state.failed) StateNotice(StateKind.failed, "수신 실패", "이전에 받은 자료를 표시합니다.")
                     Button(onRefresh, Modifier.heightIn(min = 64.dp).testTag("$page-refresh"), enabled = !state.loading) { Text("새로고침") }
                 }
             }
@@ -128,7 +129,7 @@ private fun LazyListScope.workersRows(data: SiteStatusWorkers, filter: WorkerFil
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(if (row.tone == "caution") "warn" else row.tone); Text("${row.name ?: row.workerId} · ${row.label ?: "상태 데이터 없음"}", style = MaterialTheme.typography.titleLarge) }
         Text("직급 ${row.jobTitle ?: "데이터 없음"} · ID ${row.workerId}")
         Text(when (row.worn) { true -> "착용 중"; false -> "미착용"; null -> "착용 여부 데이터 없음" })
-        if (row.stale == true) Text("연결 끊김 · 생체값은 현재값으로 표시하지 않습니다")
+        if (row.stale == true) StateLabel(StateKind.offline, "연결 끊김 · 생체값 표시 보류")
         else {
             Text("심박 ${metricValue(row.heartRate, "bpm", 0)} · 산소포화도 ${metricValue(row.spo2, "%", 0)}")
             Text("피부체온 ${metricValue(row.skinTempC, "℃")} · 심부체온 추정 ${metricValue(row.coreTempC, "℃")}")

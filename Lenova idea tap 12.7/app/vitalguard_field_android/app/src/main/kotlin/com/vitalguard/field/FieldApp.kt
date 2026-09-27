@@ -1,12 +1,18 @@
 package com.vitalguard.field
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import android.app.Activity
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.view.WindowCompat
+import com.vitalguard.field.ui.theme.DashboardColors
+import com.vitalguard.field.ui.theme.VgColors
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.LifecycleEventObserver
@@ -35,6 +41,12 @@ fun FieldApp(model: FieldViewModel) {
     val site by model.site.state.collectAsStateWithLifecycle()
     val sitePage by model.sitePage.collectAsStateWithLifecycle()
     val placement by model.placement.collectAsStateWithLifecycle()
+    val window = (LocalContext.current as? Activity)?.window
+    SideEffect { window?.let {
+        val bars = WindowCompat.getInsetsController(it, it.decorView)
+        bars.isAppearanceLightStatusBars = field.authStage != AuthStage.ready
+        bars.isAppearanceLightNavigationBars = field.authStage != AuthStage.ready
+    } }
     BackHandler(field.authStage == AuthStage.ready && shell.destination == 0 && sitePage != null) { model.openSite(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, lifecycle) {
@@ -55,9 +67,10 @@ fun FieldApp(model: FieldViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas)) {
         val windowWidthDp = maxWidth.value.toInt()
         Scaffold(
+            containerColor = if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas,
             modifier = Modifier.fillMaxSize().windowInsetsPadding(
                 WindowInsets.safeDrawing.union(WindowInsets.ime).union(WindowInsets.systemGestures)),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -84,7 +97,7 @@ fun FieldApp(model: FieldViewModel) {
                             siteContent = {
                                 when (val page = sitePage) {
                                     null -> SiteScreen(site, model.site::manualRefresh,
-                                        onOpenDetail = model::openSite, onOpenCctv = { model.openSite("cctv") })
+                                        onOpenDetail = model::openSite, onOpenCctv = { model.openSite("cctv") }, onOpenAlerts = { model.selectDestination(1) })
                                     "cctv" -> CctvScreen(model.cctv) { model.openSite(null) }
                                     else -> SiteDetailScreen(page, site, { model.openSite(null) }, model.site::manualRefresh)
                                 }

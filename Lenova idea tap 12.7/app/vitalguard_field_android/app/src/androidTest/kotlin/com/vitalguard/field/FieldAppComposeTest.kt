@@ -79,7 +79,7 @@ class FieldAppComposeTest {
         compose.onNodeWithTag("totp-code").performTextInput("456")
         compose.onNodeWithTag("auth-submit").performScrollTo().performClick()
         compose.waitUntil(5_000) { controller.state.value.authStage == AuthStage.ready }
-        compose.onNodeWithText("현장 요약").assertExists()
+        compose.onNodeWithText("현장 대시보드").assertExists()
     }
     @Test fun deniedAccountAndWrongPasswordCanReturnToLogin() {
         credentials("demo", "wrong")
@@ -110,10 +110,10 @@ class FieldAppComposeTest {
             compose.onNodeWithTag("rail-destination-$index").assertIsSelected().assertHeightIsAtLeast(56.dp)
             compose.onNodeWithTag("rail-selection-dot", useUnmergedTree = true).assertExists()
             if (index >= 2) compose.onNodeWithTag("shell-receipt")
-                .assertTextEquals("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
+                .assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요"))
         }
         select(0)
-        compose.onNodeWithTag("shell-receipt").assertTextContains("마지막 수신", substring = true)
+        compose.onNodeWithTag("shell-receipt").assertTextEquals("수신 완료")
     }
     @Test fun summaryShowsIndependentRowsAndOpensDetailsAndCctv() {
         gateway.failSection = "gas"
@@ -137,7 +137,7 @@ class FieldAppComposeTest {
         compose.waitUntil(5_000) { controller.state.value.siteStatusForbidden }
         compose.onNodeWithTag("site-forbidden").assertExists()
         compose.onNodeWithText("권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.").assertExists()
-        compose.onNodeWithTag("shell-receipt").assertTextEquals("마지막 수신 정보 표시 불가 · 접근 권한 없음")
+        compose.onNodeWithTag("shell-receipt").assertTextEquals("접근 권한 없음")
         compose.onNodeWithText("미대응 경보 0건").assertDoesNotExist()
         val calls = gateway.statusCalls
         select(4); select(0)

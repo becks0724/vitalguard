@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.alerts
 
+import com.vitalguard.field.ui.theme.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -43,11 +44,11 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
         Text(alertScope(state.data?.alerts?.siteScoped), Modifier.testTag("alerts-scope"))
         Text(if (!state.authorized || state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음"
             else siteStatusReceipt(state.data?.fetchedAt))
-        if (state.offline) Text("오프라인 · 대응 확인은 연결 후 가능", fontWeight = FontWeight.Bold)
+        if (state.offline) StateLabel(StateKind.offline, "오프라인 · 대응 확인은 연결 후 가능")
         if (state.data?.let { Duration.between(parseInstant(it.fetchedAt), state.now).seconds >= 300 } == true)
             Text("오래된 자료 · 마지막 수신 후 5분 이상 지났습니다")
-        if (state.loading) Text("서버 상태 조회 중 · 수신 완료 전까지 이전 자료를 표시합니다")
-        if (state.readFailed) Text("경보 조회 실패 · 이전에 받은 내용만 표시합니다. 연결 상태를 확인해 주세요.", Modifier.testTag("alerts-read-error"))
+        if (state.loading) StateLabel(StateKind.loading, "서버 상태 조회 중")
+        if (state.readFailed) StateNotice(StateKind.failed, "경보 수신 실패", "이전에 받은 내용을 표시합니다.", Modifier.testTag("alerts-read-error"))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             if (selected != null) OutlinedButton({ onSelect(null) }, Modifier.heightIn(min = 56.dp).testTag("alerts-back")) { Text("목록으로") }
             OutlinedButton({ onRefresh() }, Modifier.heightIn(min = 56.dp).testTag("alerts-refresh"),
@@ -74,11 +75,11 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
             else if (rows.isEmpty()) Text("수신한 목록에 선택한 조건의 경보가 없습니다")
             if ((state.data?.alerts?.omittedItems ?: 0) > 0) Text("식별 정보가 없거나 중복된 경보 ${state.data!!.alerts.omittedItems}건은 표시하지 못했습니다")
             rows.forEach { row ->
-                OutlinedCard(Modifier.fillMaxWidth().testTag("alert-row-${row.id}").clickable { onSelect(row) }) {
+                GlassCard(Modifier.fillMaxWidth().testTag("alert-row-${row.id}").clickable { onSelect(row) }) {
                     Column(Modifier.padding(16.dp).heightIn(min = 72.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("${row.type.label} · ${row.workerName ?: row.workerId ?: "작업자 정보 없음"}", fontWeight = FontWeight.Bold)
                         Text(alertTime(row.ts ?: row.createdAt))
-                        Text(if (row.acknowledged) "대응완료 · 처리자 ${row.ackBy ?: "정보 없음"}" else "미대응")
+                        StateLabel(if (row.acknowledged) StateKind.ready else StateKind.warning, if (row.acknowledged) "대응완료 · 처리자 ${row.ackBy ?: "정보 없음"}" else "미대응")
                     }
                 }
             }
@@ -125,8 +126,9 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
 fun GlobalAlertStrip(controller: AlertsController, deferred: Boolean, onOpen: (AlertItem) -> Unit) {
     val s by controller.state.collectAsStateWithLifecycle()
     val row = s.pending.firstOrNull()?.takeIf { s.authorized && !s.forbidden && !deferred } ?: return
-    OutlinedCard(Modifier.fillMaxWidth().padding(8.dp).testTag("global-alert-strip")) {
+    GlassCard(Modifier.fillMaxWidth().padding(8.dp).testTag("global-alert-strip")) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            StateIcon(StateKind.warning, Modifier.padding(12.dp).size(24.dp))
             Column(Modifier.weight(1f).fillMaxHeight().clickable { onOpen(row) }.padding(8.dp)
                 .verticalScroll(rememberScrollState()).testTag("global-alert-open")) {
                 Text("${row.type.label} · 미대응 (수신 기준)", fontWeight = FontWeight.Bold)

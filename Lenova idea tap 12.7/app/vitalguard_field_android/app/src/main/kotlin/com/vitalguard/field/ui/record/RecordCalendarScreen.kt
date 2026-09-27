@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.record
 
+import com.vitalguard.field.ui.theme.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -87,7 +88,7 @@ fun RecordCalendarContent(
         }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).testTag("record-calendar"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("워크 캘린더", style = MaterialTheme.typography.headlineSmall)
-            if (offline) Text("오프라인 · 기록은 기기에 보관하며 연결되면 자동으로 전송됩니다.", style = MaterialTheme.typography.bodySmall)
+            if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관됩니다.", style = MaterialTheme.typography.bodySmall)
             if (error != null) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 TextButton(onReload) { Text("다시 불러오기") }
@@ -120,7 +121,7 @@ fun RecordCalendarContent(
             item { Text("${selected.monthValue}월 ${selected.dayOfMonth}일 기록 · ${day.size}건", style = MaterialTheme.typography.titleLarge) }
             if (day.isEmpty()) item { Text("이 날짜에 저장된 기록이 없습니다.") }
             items(day, key = { it.key }) { record ->
-                Card(Modifier.fillMaxWidth().testTag("record-photo-${record.local?.id ?: record.media.id}").clickable {
+                GlassCard(Modifier.fillMaxWidth().testTag("record-photo-${record.local?.id ?: record.media.id}").clickable {
                     showDay = false; onOpen(record)
                 }) {
                     Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -164,7 +165,8 @@ private fun CalendarDay(date: LocalDate, selected: LocalDate, today: LocalDate, 
 
 @Composable
 private fun MiniMonth(month: YearMonth, selected: LocalDate, today: LocalDate, onMonth: (YearMonth) -> Unit, onSelect: (LocalDate) -> Unit) {
-    Column(Modifier.fillMaxWidth().testTag("calendar-mini-month")) {
+    GlassCard(Modifier.fillMaxWidth()) {
+    Column(Modifier.fillMaxWidth().padding(8.dp).testTag("calendar-mini-month")) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("${month.year}년 ${month.monthValue}월", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
             VgIconButton(R.drawable.ic_chevron_left, "이전 달", onClick = { onMonth(month.minusMonths(1)) })
@@ -179,6 +181,7 @@ private fun MiniMonth(month: YearMonth, selected: LocalDate, today: LocalDate, o
             } }
         }
     }
+    }
 }
 
 @Composable
@@ -188,7 +191,8 @@ private fun WeekCalendar(selected: LocalDate, today: LocalDate, blocks: List<Cal
     val days = weekDays(selected)
     val density = LocalDensity.current
     val scroll = rememberScrollState(with(density) { (INITIAL_SCROLL_HOUR * WEEK_HOUR_DP).dp.roundToPx() })
-    Column(Modifier.fillMaxSize().testTag("calendar-week")) {
+    GlassCard(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().padding(8.dp).testTag("calendar-week")) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             VgIconButton(R.drawable.ic_chevron_left, "이전 주", onClick = { onShift(-7) })
             Text("${days.first().monthValue}/${days.first().dayOfMonth} – ${days.last().monthValue}/${days.last().dayOfMonth}",
@@ -238,18 +242,24 @@ private fun WeekCalendar(selected: LocalDate, today: LocalDate, blocks: List<Cal
             }
         }
     }
+    }
 }
 
 @Composable
 fun CalendarStatusBadge(status: CalendarStatus) {
-    Text(status.label, color = if (status in setOf(CalendarStatus.failed, CalendarStatus.uncertain)) MaterialTheme.colorScheme.error
-        else MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
+    StateLabel(when (status) {
+        CalendarStatus.completed -> StateKind.ready
+        CalendarStatus.failed -> StateKind.failed
+        CalendarStatus.uncertain -> StateKind.stale
+        CalendarStatus.sending -> StateKind.loading
+        CalendarStatus.stored -> StateKind.empty
+    }, status.label, style = MaterialTheme.typography.labelSmall, iconSize = 14.dp)
 }
 @Composable
 private fun CalendarMediaBlock(block: CalendarBlock, modifier: Modifier, onClick: () -> Unit) {
     Surface(onClick = onClick, modifier = modifier.padding(horizontal = 1.dp).testTag("calendar-block-${block.key}")
         .semantics { contentDescription = "${block.date} ${block.hour?.let { "${it}시" } ?: "종일"} · ${block.label} · ${block.status.label}" },
-        color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.extraSmall) {
+        color = DashboardColors.accent.copy(alpha = .16f), contentColor = MaterialTheme.colorScheme.onSurface, shape = MaterialTheme.shapes.extraSmall) {
         Column(Modifier.padding(3.dp)) {
             Text(block.label, fontSize = 10.sp, lineHeight = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             CalendarStatusBadge(block.status)
