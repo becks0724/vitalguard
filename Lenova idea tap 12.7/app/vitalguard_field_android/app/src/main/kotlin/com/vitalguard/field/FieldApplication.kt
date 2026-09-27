@@ -16,6 +16,8 @@ import com.vitalguard.field.data.mock.MemoryStore
 import com.vitalguard.field.data.mock.MockGateway
 import com.vitalguard.field.data.session.FieldCoordinator
 import kotlinx.coroutines.CoroutineScope
+import android.graphics.BitmapFactory
+import com.vitalguard.field.data.cctv.*
 
 // 구현 선택은 이 조립 지점만 담당한다. 화면은 contracts/화면 상태만 의존한다.
 class FieldApplication : Application() {
@@ -23,6 +25,18 @@ class FieldApplication : Application() {
     var controllerFactoryForTests: ((CoroutineScope) -> FieldController)? = null
     var captureEnabledForTests: Boolean? = null
     var internetProbeForTests: InternetProbe? = null
+    var cctvFramesForTests: CctvFrames? = null
+    fun cctvFrames(isMock: Boolean): CctvFrames = cctvFramesForTests ?: if (isMock) object : CctvFrames {
+        override suspend fun fetch(ticket: com.vitalguard.field.data.models.CctvTicket): ByteArray =
+            throw CctvFailure("모의 데이터에는 CCTV 영상이 없습니다")
+    } else HttpCctvFrames(validateImage = { bytes ->
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth.toLong() * bounds.outHeight > 16_000_000)
+            throw CctvFailure("CCTV 이미지 크기 또는 형식을 확인할 수 없습니다")
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw CctvFailure("CCTV 이미지를 읽지 못했습니다")
+        decoded.recycle()
+    })
     fun controller(scope: CoroutineScope): FieldController = controllerFactoryForTests?.invoke(scope)
         ?: FieldCoordinator(if (BuildConfig.VG_MOCK) MockGateway() else LiveGateway(),
             if (BuildConfig.VG_MOCK) MemoryStore() else DeviceLocalStore(this), scope,

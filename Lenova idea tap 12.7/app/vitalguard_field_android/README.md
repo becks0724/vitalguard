@@ -1,4 +1,8 @@
-# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c·2d단계
+# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c·2d·3단계
+
+> **현재 3단계:** CCTV·경보·기상/작업자/가스/AED 상세 이식. JVM **291/291**, 전체 실기기 **47/47**, 프리뷰 **15/15** 통과.
+> 실계정 상세·경보 조회 및 CAM-03 실영상 연속 수신 확인. 경보 확인 쓰기는 모의 표본으로만 검증했다.
+> 3단계 결과는 `plan-draft/stage3-verification.md`가 정본이며, 아래의 “다음 단계” 문구는 해당 작성 시점의 이력이다.
 
 > **9/27 2d 독립 검증 완료:** Gradle 빌드·JVM **264/264**, 실기기 계측 **43/43**(전체 1회 실행), 기존 프리뷰 **8/8** 통과.
 > 실제 서버 사진에서 댓글 4개·지역 시각·주석본 보기·음성 재생/완료 확인. 개발 앱 `com.vitalguard.field.dev`에 데이터 보존 덮어설치했고 계측 전후 로그인 파일 해시가 일치했다.
@@ -13,6 +17,10 @@ Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 �
 이 검사는 Gradle 빌드·리소스 링크·실기기 검증을 대체하지 않는다. 현재 결과는 아래 2c 절과 `plan-draft/stage2c-verification.md`에 구분했다. 2a·2b 절은 각 단계 당시의 기록이다.
 
 ## 범위와 구조
+
+3단계 추가: `data/alerts`(명시적 ack·GET 대조·경보 띠), `data/cctv`(1회용 티켓/스트림/수명),
+`ui/alerts`, `ui/cctv`, `ui/site/SiteDetails.kt`. 실제 연결은 FieldApplication/FieldViewModel/FieldApp에서 조립한다.
+기상·작업자·가스·AED 상세와 경보·CCTV는 이제 동작하며, **설정·릴리스 교체는 4단계**다.
 
 - 진입: `MainActivity`의 edge-to-edge, 방향 고정 없음, `FieldViewModel`의 회전 중 상태 보존.
 - 조립: `FieldApplication`에서만 live/mock 구현 선택. UI는 계약과 화면 상태를 사용한다.

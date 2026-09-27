@@ -1,6 +1,7 @@
 package com.vitalguard.field
 
 import androidx.compose.foundation.layout.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -18,6 +19,11 @@ import com.vitalguard.field.ui.shell.LocalActionPlacement
 import com.vitalguard.field.data.ActionPlacement
 import com.vitalguard.field.ui.record.RecordNavigation
 import com.vitalguard.field.ui.outbox.OutboxScreen
+import com.vitalguard.field.ui.site.SiteScreen
+import com.vitalguard.field.ui.site.SiteDetailScreen
+import com.vitalguard.field.ui.alerts.AlertsScreen
+import com.vitalguard.field.ui.alerts.GlobalAlertStrip
+import com.vitalguard.field.ui.cctv.CctvScreen
 import kotlinx.coroutines.flow.collect
 
 @Composable
@@ -26,19 +32,23 @@ fun FieldApp(model: FieldViewModel) {
     val auth by model.auth.state.collectAsStateWithLifecycle()
     val shell by model.shell.state.collectAsStateWithLifecycle()
     val site by model.site.state.collectAsStateWithLifecycle()
+    val sitePage by model.sitePage.collectAsStateWithLifecycle()
+    BackHandler(field.authStage == AuthStage.ready && shell.destination == 0 && sitePage != null) { model.openSite(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_RESUME -> { model.site.setForeground(true); model.outboxUi.setForeground(true) }
-                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> { model.site.setForeground(false); model.outboxUi.setForeground(false) }
+                Lifecycle.Event.ON_RESUME -> { model.site.setForeground(true); model.outboxUi.setForeground(true); model.alerts.setForeground(true); model.cctv.setForeground(true) }
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> { model.site.setForeground(false); model.outboxUi.setForeground(false); model.alerts.setForeground(false); model.cctv.setForeground(false) }
                 else -> Unit
             }
         }
         lifecycle.addObserver(observer)
         model.site.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
         model.outboxUi.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-        onDispose { lifecycle.removeObserver(observer); model.site.setForeground(false); model.outboxUi.setForeground(false) }
+        model.alerts.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        model.cctv.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
+        onDispose { lifecycle.removeObserver(observer); model.site.setForeground(false); model.outboxUi.setForeground(false); model.alerts.setForeground(false); model.cctv.setForeground(false) }
     }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
@@ -69,7 +79,19 @@ fun FieldApp(model: FieldViewModel) {
                             onSelect = model::selectDestination, onLogout = model.shell::logout,
                             onRefresh = model.site::manualRefresh, onNextStage = { model.snackbar("다음 단계") },
                             recordContent = { RecordNavigation(model, windowWidthDp, recordNav) },
-                            outboxContent = { OutboxScreen(model.outboxUi) })
+                            outboxContent = { OutboxScreen(model.outboxUi) },
+                            siteContent = {
+                                when (val page = sitePage) {
+                                    null -> SiteScreen(site, model.site::manualRefresh,
+                                        onOpenDetail = model::openSite, onOpenCctv = { model.openSite("cctv") })
+                                    "cctv" -> CctvScreen(model.cctv) { model.openSite(null) }
+                                    else -> SiteDetailScreen(page, site, { model.openSite(null) }, model.site::manualRefresh)
+                                }
+                            },
+                            alertsContent = { AlertsScreen(model.alerts, model.controller.isMock) },
+                            globalAlertContent = { GlobalAlertStrip(model.alerts, shell.recordEditorOpen) { row ->
+                                model.alerts.select(row); model.selectDestination(1)
+                            } })
                         }
                     }
                 } else {

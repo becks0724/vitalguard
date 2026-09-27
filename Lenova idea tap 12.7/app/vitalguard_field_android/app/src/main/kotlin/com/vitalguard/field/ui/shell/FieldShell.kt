@@ -37,6 +37,9 @@ fun FieldShell(
     onRefresh: () -> Unit, onNextStage: () -> Unit,
     recordContent: @Composable () -> Unit = { PlaceholderScreen("기록", 2) },
     outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 이력", 3) },
+    siteContent: @Composable () -> Unit = { SiteScreen(site, onRefresh, onNextStage) },
+    alertsContent: @Composable () -> Unit = { PlaceholderScreen("경보", 1) },
+    globalAlertContent: @Composable () -> Unit = {},
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
     val collapsed = shell.recordEditorOpen || (shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth))
@@ -67,8 +70,8 @@ fun FieldShell(
                     // IndexedStack 대응: 탭별 스크롤/rememberSaveable 보존, 요청/자료는 ViewModel에 유지.
                     pages.SaveableStateProvider(shell.destination) {
                         when (shell.destination) {
-                            0 -> SiteScreen(site, onRefresh, onNextStage)
-                            1 -> PlaceholderScreen("경보", 1)
+                            0 -> siteContent()
+                            1 -> alertsContent()
                             2 -> recordContent()
                             3 -> outboxContent()
                             4 -> PlaceholderScreen("설정", 4)
@@ -76,8 +79,10 @@ fun FieldShell(
                     }
                 }
                 // Port: global_alert_strip.dart. 내용은 3단계, 슬롯은 상태와 관계없이 항상 예약.
-                Spacer(Modifier.fillMaxWidth().height((max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp)
-                    .testTag("global-alert-slot").semantics { stateDescription = if (shell.recordEditorOpen) "편집 중 경보 표시 지연" else "경보 표시 대기" })
+                Box(Modifier.fillMaxWidth().height((max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp)
+                    .testTag("global-alert-slot").semantics { stateDescription = if (shell.recordEditorOpen) "편집 중 경보 표시 지연" else "경보 표시 영역" }) {
+                    globalAlertContent()
+                }
             }
         }
     }

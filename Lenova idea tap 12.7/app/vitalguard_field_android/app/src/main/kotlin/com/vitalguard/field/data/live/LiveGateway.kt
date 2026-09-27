@@ -114,6 +114,36 @@ class LiveGateway(
         throw ApiFailure("현장 요약 응답 형식을 확인할 수 없습니다")
     }
 
+    override suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket {
+        if (cameraId.isBlank()) throw ApiFailure("카메라를 확인해 주세요", status = 400)
+        return try {
+            CctvTicket(json("POST", "/api/app/admin/cctv-ticket", accessToken, mapOf("cameraId" to cameraId)))
+        } catch (e: ApiFailure) { throw e
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            throw ApiFailure("CCTV 티켓 응답 형식이 올바르지 않습니다")
+        }
+    }
+
+    override suspend fun ackAlert(accessToken: String, id: String): Boolean {
+        val normalized = id.trim()
+        val uuid = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE).matches(normalized)
+        val integer = if (uuid) null else normalized.toLongOrNull()
+        if (!uuid && (integer == null || integer !in 1..9007199254740991L)) {
+            throw ApiFailure("경보 ID를 확인해 주세요", status = 400)
+        }
+        val requestId: Any = if (uuid) normalized else integer!!
+        try {
+            val reply = json("POST", "/api/app/admin/alerts/ack", accessToken, mapOf("id" to requestId))
+            return reply["acked"] as? Boolean ?: throw ApiFailure("대응 확인 결과 불명", uncertainWrite = true)
+        } catch (e: ApiFailure) {
+            val rejected = e.status?.let { it in 400..499 } == true
+            throw ApiFailure("대응 확인 요청을 완료하지 못했습니다", status = e.status,
+                action = if (e.status == 403) "none" else e.action,
+                uncertainWrite = e.uncertainWrite || !rejected)
+        }
+    }
+
     override suspend fun captureAddress(token: String, latitude: Double, longitude: Double): String? {
         val lat = String.format(Locale.ROOT, "%.6f", latitude)
         val lon = String.format(Locale.ROOT, "%.6f", longitude)

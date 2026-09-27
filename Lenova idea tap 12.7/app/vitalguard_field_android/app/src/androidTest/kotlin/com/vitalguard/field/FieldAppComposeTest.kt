@@ -102,6 +102,7 @@ class FieldAppComposeTest {
         for ((index, title) in listOf(1 to "경보", 2 to "기록", 3 to "전송 이력", 4 to "설정")) {
             select(index)
             when (index) {
+                1 -> compose.onNodeWithTag("alerts-list-scroll").assertExists()
                 2 -> compose.onNodeWithTag("record-calendar").assertExists()
                 3 -> compose.onNodeWithTag("outbox-list").assertExists()
                 else -> {
@@ -117,7 +118,7 @@ class FieldAppComposeTest {
         select(0)
         compose.onNodeWithTag("shell-receipt").assertTextContains("마지막 수신", substring = true)
     }
-    @Test fun summaryShowsIndependentRowsAndNextStageActions() {
+    @Test fun summaryShowsIndependentRowsAndOpensDetailsAndCctv() {
         gateway.failSection = "gas"
         login()
         for (id in listOf("weather", "workers", "gas", "aed")) {
@@ -127,9 +128,10 @@ class FieldAppComposeTest {
         compose.onNodeWithText("가스  수신 실패 · 이 항목의 상태를 확인할 수 없습니다", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("미대응 경보 0건").assertExists()
         compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
-        compose.onNodeWithText("다음 단계").assertExists()
+        compose.onNodeWithTag("weather-detail-scroll").assertExists()
+        compose.onNodeWithTag("weather-back").performScrollTo().performClick()
         compose.onNodeWithTag("site-open-cctv").performScrollTo().assertHeightIsAtLeast(56.dp).performClick()
-        compose.onNodeWithText("현장 CCTV").assertExists()
+        compose.onNodeWithTag("cctv-screen").assertExists()
     }
     @Test fun forbiddenRemovesPreviousValuesAndManualRefreshRecovers() {
         login()

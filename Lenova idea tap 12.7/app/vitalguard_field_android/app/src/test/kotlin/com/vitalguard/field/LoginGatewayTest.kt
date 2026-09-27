@@ -87,7 +87,7 @@ class LoginGatewayTest {
             assertEquals(200, failure { gateway.refresh("refresh") }.status)
         }
     }
-    @Test fun sixRoutesUseExactFieldsAndSiteInfoEnvelope() = runTest {
+    @Test fun sessionSiteAndTicketRoutesUseExactFieldsAndEnvelopes() = runTest {
         val calls = mutableListOf<String>()
         val gateway = LiveGateway(JsonTransport { method, path, token, body ->
             calls += "$method $path"
@@ -102,6 +102,12 @@ class LoginGatewayTest {
                 ME -> { assertEquals("access", token); assertNull(body); ApiReply(200, mapOf("ok" to true, "user" to SAVED_USER)) }
                 SITE_INFO -> ApiReply(200, mapOf("ok" to true, "siteInfo" to SAVED_SITE))
                 SITE_STATUS -> ApiReply(200, siteStatusReply())
+                "/api/app/admin/cctv-ticket" -> {
+                    assertEquals("POST", method); assertEquals("access", token)
+                    assertEquals(mapOf("cameraId" to "CAM-03"), body)
+                    ApiReply(200, mapOf("ok" to true, "ticket" to "synthetic-ticket", "expiresAt" to 4070908800000L,
+                        "ttlSec" to 60, "gateApi" to "https://camera.example"))
+                }
                 else -> ApiReply(200, mapOf("ok" to true))
             }
         })
@@ -111,9 +117,9 @@ class LoginGatewayTest {
         assertEquals(NOW, gateway.siteStatus("access").fetchedAt)
         assertEquals(listOf("POST /api/mobile/v1/session/login", "POST $REFRESH", "GET $ME",
             "POST /api/mobile/v1/session/logout", "GET $SITE_INFO", "GET $SITE_STATUS"), calls)
-        assertEquals("다음 단계", failure { gateway.cctvTicket("access", "CAM-03") }.message)
+        assertEquals("synthetic-ticket", gateway.cctvTicket("access", "CAM-03").ticket)
         assertEquals("영속 보관된 작업 ID가 필요합니다", failure { gateway.upload("access", byteArrayOf(1), emptyMap()) }.message)
-        assertEquals(6, calls.size)
+        assertEquals(7, calls.size)
     }
     @Test fun siteStatusHidesPrivateErrorsAnd403NeverRequestsRefresh() = runTest {
         listOf(401, 403, 404, 429, 503).forEach { status ->

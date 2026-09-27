@@ -42,6 +42,10 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
             "address" to null, "start_date" to null, "completion_date" to null, "recorded_at" to now.toString()))
     }
     override suspend fun siteStatus(accessToken: String) = SiteStatus(mockSiteStatusReply(clock.instant().toString()))
+    override suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket =
+        throw ApiFailure("모의 모드에는 CCTV 설정이 없습니다", status = 503)
+    override suspend fun ackAlert(accessToken: String, id: String): Boolean =
+        throw ApiFailure("모의 경보 목록에 대상이 없습니다", status = 404)
     override suspend fun calendarMedia(token: String, from: String, to: String): List<CalendarMedia> = media
         .filter { mediaOwners[it["id"]] == userId && it["annotation_of"] == null && (it["date_key"] as String) in from..to }
         .map { row -> CalendarMedia(row + mapOf("canDelete" to true,

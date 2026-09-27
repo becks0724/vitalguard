@@ -29,7 +29,8 @@ import com.vitalguard.field.data.models.*
 import com.vitalguard.field.ui.theme.*
 
 @Composable
-fun SiteScreen(state: SiteSummaryState, onRefresh: () -> Unit = {}, onNextStage: () -> Unit = {}) {
+fun SiteScreen(state: SiteSummaryState, onRefresh: () -> Unit = {}, onNextStage: () -> Unit = {},
+    onOpenDetail: (String) -> Unit = { onNextStage() }, onOpenCctv: () -> Unit = onNextStage) {
     val data = state.data
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
         .testTag("site-summary-scroll").padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -69,7 +70,7 @@ fun SiteScreen(state: SiteSummaryState, onRefresh: () -> Unit = {}, onNextStage:
                 entries.forEachIndexed { index, (id, title, section) ->
                     if (index > 0) HorizontalDivider(color = VgColors.hairlineStrong)
                     Row(Modifier.fillMaxWidth().heightIn(min = 72.dp).testTag("site-row-$id")
-                        .clickable(enabled = !state.forbidden, onClick = onNextStage)
+                        .clickable(enabled = !state.forbidden, onClick = { onOpenDetail(id) })
                         .padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         SignalMark(if (state.forbidden) null else section?.level)
                         Spacer(Modifier.width(16.dp))
@@ -100,7 +101,7 @@ fun SiteScreen(state: SiteSummaryState, onRefresh: () -> Unit = {}, onNextStage:
                 Text("현장 CCTV", fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 Text("CAM-03 · 스냅샷 갱신 영상")
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onNextStage, Modifier.heightIn(min = vgTapMin).testTag("site-open-cctv")) {
+                OutlinedButton(onOpenCctv, Modifier.heightIn(min = vgTapMin).testTag("site-open-cctv")) {
                     VgIcon(R.drawable.ic_video)
                     Spacer(Modifier.width(8.dp))
                     Text("영상 보기")

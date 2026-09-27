@@ -17,6 +17,10 @@ import com.vitalguard.field.ui.record.RecordActions
 import com.vitalguard.field.ui.auth.AuthUiController
 import com.vitalguard.field.ui.shell.ShellController
 import com.vitalguard.field.ui.site.SiteSummaryController
+import com.vitalguard.field.data.alerts.AlertsController
+import com.vitalguard.field.data.cctv.CctvController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
@@ -37,6 +41,10 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     val messages = events.receiveAsFlow()
     val shell = ShellController(controller, viewModelScope, ::snackbar)
     val site = SiteSummaryController(controller, viewModelScope)
+    val alerts = AlertsController(controller, viewModelScope)
+    val cctv = CctvController(controller, application.cctvFrames(controller.isMock), viewModelScope)
+    private val selectedSitePage = MutableStateFlow<String?>(null)
+    val sitePage = selectedSitePage.asStateFlow()
     val microphone = MicrophoneAccess(application)
     private val speech: com.vitalguard.field.data.contracts.SpeechInput by lazy { application.speech(controller.isMock, microphone) { (recorder as? DeviceVoiceRecorder)?.isBusy == true } }
     private val recorder: com.vitalguard.field.data.contracts.VoiceRecorder by lazy { application.recorder(viewModelScope, controller.isMock, microphone) { (speech as? DeviceSpeechInput)?.isBusy == true } }
@@ -50,10 +58,12 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         }
         viewModelScope.launch {
             var account: String? = null
-            combine(controller.state, shell.state) { field, shell -> field to shell }.collect { (field, _) ->
+            combine(controller.state, shell.state, sitePage) { field, shell, page -> Triple(field, shell, page) }.collect { (field, _, page) ->
                 val next = if (field.authStage == AuthStage.ready) field.user?.id else null
                 if (account != next) {
                     site.setVisible(false)
+                    cctv.setVisible(false)
+                    selectedSitePage.value = null
                     account = next
                     records.bindAccount(next)
                     calendar.bindAccount(next)
@@ -62,7 +72,9 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                     capture?.reset()
                     if (next != null) viewModelScope.launch { outbox.load() }
                 }
-                site.setVisible(next != null && shell.state.value.destination == 0)
+                site.setVisible(next != null && shell.state.value.destination == 0 && page != "cctv")
+                alerts.setVisible(next != null && shell.state.value.destination == 1)
+                cctv.setVisible(next != null && shell.state.value.destination == 0 && page == "cctv")
                 outboxUi.setVisible(next != null && shell.state.value.destination == 3)
                 calendar.setVisible(next != null && shell.state.value.destination == 2)
             }
@@ -89,6 +101,10 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         viewModelScope.launch { controller.initialize() }
     }
     suspend fun restoreRecord() { if (records.restoreSession()) shell.select(2) }
+    fun openSite(page: String?) {
+        require(page == null || page in setOf("weather", "workers", "gas", "aed", "cctv"))
+        selectedSitePage.value = page
+    }
     fun selectDestination(index: Int) {
         if (shell.state.value.destination == 2 && index != 2) records.launch { records.closeDetail(); records.flush(); shell.select(index) }
         else shell.select(index)
@@ -107,6 +123,8 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         controller.beforeLock = null
         auth.close()
         site.close()
+        alerts.close()
+        cctv.close()
         capture?.close()
         outboxUi.close()
         outbox.close()
