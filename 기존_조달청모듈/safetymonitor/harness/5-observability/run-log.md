@@ -364,3 +364,32 @@ CLAUDE.md L31 에 **duckdns 는 09-18 16:41 에 죽어 있었다**(NAT-PMP 갱�
 워크스페이스 패키지를 dist 로 소비하는 구조라 병합 뒤에는 빌드가 먼저다.
 
 **되돌리기** `--to-revisions 'vitalguard-dashboard-00402-t5n'=100` → 수습 후 `--to-latest` 를 **반드시 한 번 더**.
+
+## 2026-09-27 · 캘린더 미디어 download-url 에 앱 JWT 허용 — 태블릿 앱이 서버 사진을 그리기 위함
+
+**리비전** `vitalguard-dashboard-00408-xh7` · digest `sha256:c4fdfd41…` (서빙 대조 일치)
+· commit `45d791d6` · env 33개(직전과 같음) · HTTP 200 · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0건 · DB 타임아웃 0건
+· ALLOW_DIRTY 강행(타 세션 미커밋 4파일 — assignment-chat-harness·site-chat-intents — 는 이미지에 없음, 검증은 아카이브에서)
+
+### 왜
+
+태블릿 현장 앱(Compose 재작성 2c)이 기록 탭을 관제웹과 같은 워크 캘린더로 바꾸면서 서버 사진을 그려야 하는데,
+`app/api/calendar/media/download-url/route.ts` 는 `verifyBasicAuth` 만 받아 앱 로그인 JWT 가 401 이었다.
+같은 폴더 목록 GET 은 이미 앱 JWT 를 받고 있었다. 실기기에서 서버 기록 상세를 열자 앱이 그 401 을 토큰 거절로 보고
+세션을 잠갔다("다시 로그인해 주세요") — 배포 전 라우트 탓으로 **추정**, 배포 뒤 재확인.
+
+### 바뀐 것
+
+라우트 인증 판정을 목록 GET 과 같게: 관제 세션 또는 앱 JWT, 실패 시 401 + `diagnoseAppAuth` 의 `action`. 프리사인·파일명 로직 불변.
+현장 범위 규칙은 목록 GET 에도 없어 넓히지 않았다. 가드 3건 추가, tsc 0.
+
+### 라이브 실측
+
+```
+GET /api/calendar/media/download-url?id=…   (무토큰)    → 401 {"ok":false,"error":"인증 필요","action":"reauth"}
+GET …?id=x  Authorization: Bearer <틀린 토큰>            → 401 {"ok":false,"error":"인증 필요","action":"none"}
+```
+앱 JWT 성공 경로는 태블릿에서 재로그인 뒤 확인한다.
+
+**되돌리기** `--to-revisions 'vitalguard-dashboard-00407-vc6'=100` → 수습 후 `--to-latest` 를 **반드시 한 번 더**.
+

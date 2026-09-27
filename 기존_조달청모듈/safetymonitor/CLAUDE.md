@@ -10,13 +10,19 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 상세 [plan](docs/plan.md) · [checklist](docs/checklist.md) · [context-notes](docs/context-notes.md) · [progress](docs/progress.md) · 상용화 갭·로드맵 [gap-analysis](docs/commercialization-gap-analysis.md) · [roadmap](docs/commercialization-roadmap.md)
 
-## 확인된 상태 기록 (최신 기록: 2026-09-23 · 현재 라이브는 조회로 확인)
+## 확인된 상태 기록 (최신 기록: 2026-09-27 · 현재 라이브는 조회로 확인)
 
 > **보존 규칙 (2026-08-22).** 이 절의 트랙 전문은 **최근 3건까지**만 둔다. 넘으면 그 자리에서
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00407-vc6` (커밋 `502059c7` 로그인 폼 정렬 · 09-23 17:11).
+- **라이브** = `vitalguard-dashboard-00408-xh7` (커밋 `45d791d6` · 09-27 14:0x · 서빙 digest `sha256:c4fdfd41…` **대조 일치**
+  · env 33 · HTTP 200 · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB타임아웃 0 · ALLOW_DIRTY 강행=타 세션 미커밋 4파일은 이미지에 없음).
+  **캘린더 미디어 `download-url` 라우트가 앱 로그인 JWT 를 받는다** — 태블릿 현장 앱(Compose 2c 워크 캘린더)이 서버 사진을 그리기 위함.
+  목록 GET 과 같은 판정(관제 세션 또는 앱 JWT · 401 에 `action`). 라이브 실측: 무토큰 401 `action:reauth` · 틀린 토큰 401 `action:none`.
+  가드 `lib/2026-09-27-calendar-download-url-app-jwt.guard.test.ts`. 앱 쪽 실측(태블릿 재로그인 뒤 서버 사진 상세)은 태블릿 세션이 이어서 한다.
+
+- (직전) **라이브** = `vitalguard-dashboard-00407-vc6` (커밋 `502059c7` 로그인 폼 정렬 · 09-23 17:11).
   직전 `00406-4l9`(커밋 `2495f21b` 로그인 부제 삭제 · 09-23 16:56). 둘 다 로그인 수리 세션이 배포했다.
   digest·검증 수·사후 관찰은 그 배포 세션이 채운다(이 줄은 트래픽 실측으로만 적었다).
 
