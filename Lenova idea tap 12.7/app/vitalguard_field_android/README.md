@@ -1,6 +1,10 @@
-# VitAlGuard 현장 — Compose/Kotlin 1·2a·2b·2c·2d·3단계
+# VitAlGuard 현장 — Compose/Kotlin 4단계
 
-> **현재 3단계:** CCTV·경보·기상/작업자/가스/AED 상세 이식. JVM **291/291**, 전체 실기기 **47/47**, 프리뷰 **15/15** 통과.
+> **현재 4단계 완료:** 계정별 왼손/오른손 설정·촬영 버튼 위치, 기존 서명 release **1.1.0 / 2**. JVM **295/295**, 실기기 **49/49**, 프리뷰 **17/17**.
+> 실제 Flutter 토큰·2계정/16키/전송7/초안4 호환 확인 후 기존 앱에 데이터 보존 업데이트했다. 기기 인터넷 연결이 없어 현재 오프라인 복원까지 확인했으며 네트워크 설정은 변경하지 않았다.
+> 최신 정본: [stage4-verification.md](plan-draft/stage4-verification.md). 아래 단계별 기록은 당시 이력이다.
+
+> **3단계 기록:** CCTV·경보·기상/작업자/가스/AED 상세 이식. JVM **291/291**, 전체 실기기 **47/47**, 프리뷰 **15/15** 통과.
 > 실계정 상세·경보 조회 및 CAM-03 실영상 연속 수신 확인. 경보 확인 쓰기는 모의 표본으로만 검증했다.
 > 3단계 결과는 `plan-draft/stage3-verification.md`가 정본이며, 아래의 “다음 단계” 문구는 해당 작성 시점의 이력이다.
 
@@ -20,7 +24,7 @@ Flutter `../vitalguard_field/`의 세션·셸·현장 요약을 옮긴 별도 �
 
 3단계 추가: `data/alerts`(명시적 ack·GET 대조·경보 띠), `data/cctv`(1회용 티켓/스트림/수명),
 `ui/alerts`, `ui/cctv`, `ui/site/SiteDetails.kt`. 실제 연결은 FieldApplication/FieldViewModel/FieldApp에서 조립한다.
-기상·작업자·가스·AED 상세와 경보·CCTV는 이제 동작하며, **설정·릴리스 교체는 4단계**다.
+기상·작업자·가스·AED 상세와 경보·CCTV에 이어 4단계 설정·릴리스 교체까지 완료했다.
 
 - 진입: `MainActivity`의 edge-to-edge, 방향 고정 없음, `FieldViewModel`의 회전 중 상태 보존.
 - 조립: `FieldApplication`에서만 live/mock 구현 선택. UI는 계약과 화면 상태를 사용한다.
@@ -92,8 +96,7 @@ LiveGateway는 주소·작업 조회 계약을 구현한다. 기본 MockGateway�
 - `site:info`는 null 응답도 캐시하고 레일은 `shell:rail-collapsed`에 `true/false`를 쓴다.
 - 저장소 오류에는 자격 증명·원본 응답·암호문·파일 내용을 포함하지 않는다.
 
-Debug의 다른 앱 ID는 별도 앱 샌드박스를 사용한다. release의 기존 Flutter 토큰/파일 호환과
-기존 서명키를 사용한 덮어 설치는 **미확인**이며 4단계에서 검증한다.
+Debug의 다른 앱 ID는 별도 앱 샌드박스를 사용한다. 4단계에서 기존 Flutter 토큰/파일을 실제 읽기 검증하고, 같은 서명 release로 데이터 보존 업데이트했다. 상세 수치와 오프라인 확인 범위는 stage4-verification.md를 따른다.
 
 ## 도구 버전과 의존성
 

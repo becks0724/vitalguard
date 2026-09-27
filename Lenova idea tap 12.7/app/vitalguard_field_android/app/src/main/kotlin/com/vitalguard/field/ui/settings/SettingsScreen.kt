@@ -1,0 +1,57 @@
+package com.vitalguard.field.ui.settings
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.vitalguard.field.BuildConfig
+import com.vitalguard.field.data.*
+import com.vitalguard.field.ui.theme.vgTapMin
+import com.vitalguard.field.ui.theme.VgColors
+import com.vitalguard.field.ui.theme.vgCardSurfaceAlpha
+
+@Composable
+fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> Unit = {}) {
+    Column(Modifier.fillMaxSize().testTag("settings-scroll").verticalScroll(rememberScrollState()).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Text("설정", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+        Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = VgColors.canvas.copy(alpha = vgCardSurfaceAlpha))) {
+            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text("실행 버튼 위치", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("잡는 손에 맞춰 자주 쓰는 버튼을 화면 하단 왼쪽 또는 오른쪽에 놓습니다.")
+                FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    ActionSide.entries.forEach { side ->
+                        val isSelected = placement.side == side
+                        OutlinedButton(onClick = { onSelect(side) },
+                            modifier = Modifier.widthIn(min = 180.dp).heightIn(min = vgTapMin)
+                                .testTag("action-side-${side.name}").semantics { selected = isSelected; role = Role.RadioButton },
+                            enabled = placement.loaded && !placement.saving,
+                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isSelected)
+                                VgColors.primarySubtle else VgColors.canvas, contentColor = VgColors.ink)) {
+                            RadioButton(isSelected, onClick = null, enabled = placement.loaded && !placement.saving)
+                            Spacer(Modifier.width(12.dp))
+                            Text(if (side == ActionSide.left) "왼손" else "오른손")
+                        }
+                    }
+                }
+                Text("기록의 촬영·스캔, 사진의 펜·댓글, 펜 편집의 도구·저장에 적용됩니다.")
+                Text("이 기기에서 현재 계정의 선택을 기억합니다.")
+                if (!placement.loaded || placement.saving) Text(if (placement.saving) "저장 중…" else "선택을 불러오는 중…")
+                placement.error?.let { Text(it, Modifier.testTag("action-side-error"), color = MaterialTheme.colorScheme.error) }
+            }
+        }
+        Text("앱 버전 ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+    }
+}

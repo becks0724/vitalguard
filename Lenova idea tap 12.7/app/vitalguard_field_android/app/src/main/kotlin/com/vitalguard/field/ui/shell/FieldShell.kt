@@ -39,6 +39,7 @@ fun FieldShell(
     outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 이력", 3) },
     siteContent: @Composable () -> Unit = { SiteScreen(site, onRefresh, onNextStage) },
     alertsContent: @Composable () -> Unit = { PlaceholderScreen("경보", 1) },
+    settingsContent: @Composable () -> Unit = { PlaceholderScreen("설정", 4) },
     globalAlertContent: @Composable () -> Unit = {},
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
@@ -74,7 +75,7 @@ fun FieldShell(
                             1 -> alertsContent()
                             2 -> recordContent()
                             3 -> outboxContent()
-                            4 -> PlaceholderScreen("설정", 4)
+                            4 -> settingsContent()
                         }
                     }
                 }

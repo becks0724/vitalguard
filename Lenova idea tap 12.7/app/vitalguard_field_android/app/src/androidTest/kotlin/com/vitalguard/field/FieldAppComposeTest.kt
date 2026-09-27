@@ -1,7 +1,7 @@
 package com.vitalguard.field
 
 // Ports: login_connection_test.dart, common_states_test.dart(인증), nav_rail_test.dart,
-// site_screen_test.dart, settings_test.dart(자리 화면 범위). widget_test.dart는 진단 화면 대신 메인 진입 smoke로 한정.
+// site_screen_test.dart, settings_test.dart. widget_test.dart는 진단 화면 대신 메인 진입 smoke로 한정.
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -105,10 +105,7 @@ class FieldAppComposeTest {
                 1 -> compose.onNodeWithTag("alerts-list-scroll").assertExists()
                 2 -> compose.onNodeWithTag("record-calendar").assertExists()
                 3 -> compose.onNodeWithTag("outbox-list").assertExists()
-                else -> {
-                    compose.onNodeWithTag("placeholder-$index").assertExists()
-                    compose.onNodeWithText("다음 단계에서 옮깁니다").assertExists()
-                }
+                else -> compose.onNodeWithTag("settings-scroll").assertExists()
             }
             compose.onNodeWithTag("rail-destination-$index").assertIsSelected().assertHeightIsAtLeast(56.dp)
             compose.onNodeWithTag("rail-selection-dot", useUnmergedTree = true).assertExists()
@@ -155,7 +152,7 @@ class FieldAppComposeTest {
         compose.onNodeWithTag("site-open-cctv").performScrollTo().assertIsDisplayed()
         select(4)
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithTag("placeholder-4").assertExists()
+        compose.onNodeWithTag("settings-scroll").assertExists()
         select(0)
         compose.onNodeWithTag("site-open-cctv").assertIsDisplayed()
         assertEquals(AuthStage.ready, controller.state.value.authStage)

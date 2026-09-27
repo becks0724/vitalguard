@@ -1,9 +1,36 @@
+import java.util.Properties
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.android.compose.screenshot")
 }
+
+// 기존 Flutter 서명 설정을 읽되 비밀값을 복사하거나 디버그 키로 대체하지 않는다.
+// 다른 checkout/CI에서는 -PreleaseSigningProperties=/secure/key.properties 로 지정한다.
+val signingPropertiesFile = rootProject.file(providers.gradleProperty("releaseSigningProperties")
+    .getOrElse("../vitalguard_field/android/key.properties"))
+val releaseKeys = Properties().apply {
+    if (signingPropertiesFile.isFile) signingPropertiesFile.reader(Charsets.UTF_8).use { load(it) }
+}
+val hasReleaseSigning = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+    .all { !releaseKeys.getProperty(it).isNullOrBlank() }
+val releaseStore = releaseKeys.getProperty("storeFile")?.let {
+    val path = File(it)
+    if (path.isAbsolute) path else File(signingPropertiesFile.parentFile, it)
+}
+val mockRequested = providers.gradleProperty("vgMock").orNull.equals("true", true)
+val verifyReleaseConfiguration = tasks.register("verifyReleaseConfiguration") {
+    doLast {
+        check(hasReleaseSigning && releaseStore?.isFile == true) {
+            "Release requires the existing signing properties and keystore; debug signing is not a fallback."
+        }
+        check(!mockRequested) { "Release cannot be built with vgMock=true." }
+    }
+}
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(verifyReleaseConfiguration) }
 
 android {
     namespace = "com.vitalguard.field"
@@ -12,18 +39,29 @@ android {
         applicationId = "com.vitalguard.field"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.3-stage2b"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("boolean", "VG_MOCK", providers.gradleProperty("vgMock").orNull.equals("true", true).toString())
+        buildConfigField("boolean", "VG_MOCK", "false")
+    }
+    signingConfigs {
+        if (hasReleaseSigning) create("release") {
+            storeFile = releaseStore
+            storePassword = releaseKeys.getProperty("storePassword")
+            keyAlias = releaseKeys.getProperty("keyAlias")
+            keyPassword = releaseKeys.getProperty("keyPassword")
+        }
     }
     buildTypes {
         debug {
             applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("boolean", "VG_MOCK", mockRequested.toString())
             resValue("string", "app_name", "VitAlGuard 현장 (dev)")
         }
         release {
-            // 4단계: 기존 release 키스토어 연결. 이 단계에는 서명 설정을 넣지 않는다.
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
+            isDebuggable = false
         }
     }
     buildFeatures { compose = true; buildConfig = true
@@ -60,7 +98,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
     implementation("androidx.core:core-ktx:1.19.1")
-    implementation("androidx.navigation:navigation-compose:" + providers.gradleProperty("navigationComposeVersion").getOrElse("latest.release"))
+    implementation("androidx.navigation:navigation-compose:" + providers.gradleProperty("navigationComposeVersion").getOrElse("2.10.2"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // 촬영 파일럿과 동일한 CameraX / 번들 한국어 OCR / Play 서비스 서류 스캔.
     implementation("androidx.camera:camera-core:1.6.2")

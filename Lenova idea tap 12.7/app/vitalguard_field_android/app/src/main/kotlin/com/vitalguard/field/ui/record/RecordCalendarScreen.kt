@@ -11,6 +11,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import com.vitalguard.field.data.ActionSide
+import com.vitalguard.field.ui.shell.LocalActionPlacement
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,9 +70,13 @@ fun RecordCalendarContent(
     LaunchedEffect(selected) { monthKey = YearMonth.from(selected).toString() }
     val select: (LocalDate) -> Unit = { onSelect(it); monthKey = YearMonth.from(it).toString(); showDay = true }
     val blocks = remember(records, selected) { calendarBlocks(records, selected) }
+    val placement = LocalActionPlacement.current
+    val physicalLeft = placement.side == ActionSide.left
+    val start = physicalLeft == (LocalLayoutDirection.current == LayoutDirection.Ltr)
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        floatingActionButtonPosition = if (start) FabPosition.Start else FabPosition.End,
         floatingActionButton = {
-            Column(Modifier.testTag("record-capture-actions"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (placement.loaded) Column(Modifier.testTag("record-capture-actions"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ExtendedFloatingActionButton(onClick = { if (!capture.busy) onScan() },
                     modifier = Modifier.heightIn(min = 64.dp).testTag("document-scan").semantics { if (capture.busy) disabled() },
                     icon = { VgIcon(R.drawable.ic_record) }, text = { Text("서류 스캔") })

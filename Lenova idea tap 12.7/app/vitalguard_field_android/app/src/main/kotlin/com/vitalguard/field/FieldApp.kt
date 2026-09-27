@@ -16,7 +16,8 @@ import com.vitalguard.field.data.contracts.AuthStage
 import com.vitalguard.field.ui.auth.AuthScreen
 import com.vitalguard.field.ui.shell.FieldShell
 import com.vitalguard.field.ui.shell.LocalActionPlacement
-import com.vitalguard.field.data.ActionPlacement
+import com.vitalguard.field.data.ActionPlacementState
+import com.vitalguard.field.ui.settings.SettingsContent
 import com.vitalguard.field.ui.record.RecordNavigation
 import com.vitalguard.field.ui.outbox.OutboxScreen
 import com.vitalguard.field.ui.site.SiteScreen
@@ -33,6 +34,7 @@ fun FieldApp(model: FieldViewModel) {
     val shell by model.shell.state.collectAsStateWithLifecycle()
     val site by model.site.state.collectAsStateWithLifecycle()
     val sitePage by model.sitePage.collectAsStateWithLifecycle()
+    val placement by model.placement.collectAsStateWithLifecycle()
     BackHandler(field.authStage == AuthStage.ready && shell.destination == 0 && sitePage != null) { model.openSite(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, lifecycle) {
@@ -70,9 +72,8 @@ fun FieldApp(model: FieldViewModel) {
                             withFrameNanos { } // 셸의 첫 프레임 뒤 계정별 재진입 지점을 읽는다.
                             model.restoreRecord()
                         }
-                        val placement = remember(field.user!!.id) { ActionPlacement(model.controller.local, field.user!!.id) }
-                        val actionPlacement by placement.state.collectAsStateWithLifecycle()
-                        LaunchedEffect(placement) { placement.load() }
+                        val accountPlacement = placement?.takeIf { it.accountId == field.user!!.id }
+                        val actionPlacement = accountPlacement?.state?.collectAsStateWithLifecycle()?.value ?: ActionPlacementState()
                         CompositionLocalProvider(LocalActionPlacement provides actionPlacement) {
                         FieldShell(field, shell, site, model.controller.isMock, windowWidthDp,
                             onWidth = model.shell::windowWidth, onToggle = model.shell::toggle,
@@ -89,6 +90,7 @@ fun FieldApp(model: FieldViewModel) {
                                 }
                             },
                             alertsContent = { AlertsScreen(model.alerts, model.controller.isMock) },
+                            settingsContent = { SettingsContent(actionPlacement, model::selectActionSide) },
                             globalAlertContent = { GlobalAlertStrip(model.alerts, shell.recordEditorOpen) { row ->
                                 model.alerts.select(row); model.selectDestination(1)
                             } })

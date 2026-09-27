@@ -7,3 +7,6 @@ local.properties
 .DS_Store
 /source-baseline.json
 /static-audit.json
+key.properties
+*.jks
+*.keystore

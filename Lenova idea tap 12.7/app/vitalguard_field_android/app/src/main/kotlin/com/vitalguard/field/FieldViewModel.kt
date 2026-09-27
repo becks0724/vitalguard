@@ -11,6 +11,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.vitalguard.field.data.contracts.AuthStage
 import com.vitalguard.field.data.OutboxController
+import com.vitalguard.field.data.ActionPlacement
+import com.vitalguard.field.data.ActionSide
 import com.vitalguard.field.capture.CaptureController
 import com.vitalguard.field.ui.outbox.OutboxUiController
 import com.vitalguard.field.ui.record.RecordActions
@@ -45,6 +47,8 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     val cctv = CctvController(controller, application.cctvFrames(controller.isMock), viewModelScope)
     private val selectedSitePage = MutableStateFlow<String?>(null)
     val sitePage = selectedSitePage.asStateFlow()
+    private val selectedPlacement = MutableStateFlow<ActionPlacement?>(null)
+    val placement = selectedPlacement.asStateFlow()
     val microphone = MicrophoneAccess(application)
     private val speech: com.vitalguard.field.data.contracts.SpeechInput by lazy { application.speech(controller.isMock, microphone) { (recorder as? DeviceVoiceRecorder)?.isBusy == true } }
     private val recorder: com.vitalguard.field.data.contracts.VoiceRecorder by lazy { application.recorder(viewModelScope, controller.isMock, microphone) { (speech as? DeviceSpeechInput)?.isBusy == true } }
@@ -65,6 +69,8 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
                     cctv.setVisible(false)
                     selectedSitePage.value = null
                     account = next
+                    selectedPlacement.value = next?.let { ActionPlacement(controller.local, it) }
+                    selectedPlacement.value?.let { preference -> viewModelScope.launch { preference.load() } }
                     records.bindAccount(next)
                     calendar.bindAccount(next)
                     shell.bindAccount(next)
@@ -101,6 +107,11 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         viewModelScope.launch { controller.initialize() }
     }
     suspend fun restoreRecord() { if (records.restoreSession()) shell.select(2) }
+    fun selectActionSide(side: ActionSide) {
+        val preference = selectedPlacement.value ?: return
+        if (controller.state.value.authStage != AuthStage.ready || controller.state.value.user?.id != preference.accountId) return
+        viewModelScope.launch { preference.select(side) }
+    }
     fun openSite(page: String?) {
         require(page == null || page in setOf("weather", "workers", "gas", "aed", "cctv"))
         selectedSitePage.value = page
