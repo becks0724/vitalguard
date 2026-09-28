@@ -118,11 +118,12 @@ class FieldAppComposeTest {
     @Test fun summaryShowsIndependentRowsAndOpensDetailsAndCctv() {
         gateway.failSection = "gas"
         login()
-        for (id in listOf("weather", "workers", "gas", "aed")) {
+        for (id in listOf("weather", "workers", "gas")) {
             compose.onNodeWithTag("site-row-$id").performScrollTo().assertHeightIsAtLeast(72.dp)
         }
-        compose.onNodeWithText("작업자  정상 12명 · 대기 0명", useUnmergedTree = true).assertExists()
-        compose.onNodeWithText("가스  수신 실패 · 이 항목의 상태를 확인할 수 없습니다", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("12명", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("dashboard-gas-o2", useUnmergedTree = true).assertTextEquals("미수신")
+        compose.onNodeWithTag("aed-alert-pending").assertTextEquals("연동 대기")
         compose.onNodeWithText("미대응 경보 0건").assertExists()
         compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
         compose.onNodeWithTag("weather-detail-scroll").assertExists()

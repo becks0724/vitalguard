@@ -24,8 +24,9 @@ fun DetailPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.
 
 @Composable
 fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, onRefresh: () -> Unit) {
+    require(page in setOf("weather", "workers", "gas"))
     var workerFilter by rememberSaveable { mutableStateOf(WorkerFilter.all.name) }
-    val title = when (page) { "weather" -> "기상 상세"; "workers" -> "작업자 목록"; "gas" -> "가스 감지기 상세"; else -> "AED 상세" }
+    val title = when (page) { "weather" -> "기상 상세"; "workers" -> "작업자 목록"; else -> "가스 감지기 상세" }
     val data = state.data
     LazyColumn(Modifier.fillMaxSize().testTag("$page-detail-scroll"), contentPadding = PaddingValues(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -36,9 +37,10 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
                     Text(title, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
                 }
                 DetailPanel {
-                    Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(data?.fetchedAt))
+                    if (page == "gas" && !state.forbidden) GasReceipt(data?.gas?.lastSeenAt)
+                    else Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(data?.fetchedAt))
                     if (state.loading) StateLabel(StateKind.loading, "갱신 중 · 이전 자료 표시")
-                    if (state.stale) StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과")
+                    if (state.stale && page != "gas") StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과")
                     if (state.forbidden) StateNotice(StateKind.locked, "접근 권한 없음", siteForbiddenMessage)
                     else if (state.failed) StateNotice(StateKind.failed, "수신 실패", "이전에 받은 자료를 표시합니다.")
                     Button(onRefresh, Modifier.heightIn(min = 64.dp).testTag("$page-refresh"), enabled = !state.loading) { Text("새로고침") }
@@ -46,15 +48,14 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
             }
         }
         if (state.forbidden) return@LazyColumn
-        val section = when (page) { "weather" -> data?.weather; "workers" -> data?.workers; "gas" -> data?.gas; else -> data?.aed }
+        val section = when (page) { "weather" -> data?.weather; "workers" -> data?.workers; else -> data?.gas }
         if (section == null) { item { Text("$title 데이터 없음 · 아직 받지 못했습니다") }; return@LazyColumn }
         if (!section.ok) { item { Text("$title 수신 실패 · 상태를 확인할 수 없습니다. 새로고침해 주세요.") }; return@LazyColumn }
-        item { DetailPanel { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(section.level); Text(section.summary ?: "요약 데이터 없음") } } }
+        if (page == "weather") item { DetailPanel { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(section.level); Text(section.summary ?: "요약 데이터 없음") } } }
         when (page) {
             "weather" -> weatherRows(data!!.weather)
             "workers" -> workersRows(data!!.workers, WorkerFilter.valueOf(workerFilter)) { workerFilter = it.name }
             "gas" -> gasRows(data!!.gas, state)
-            "aed" -> aedRows(data!!.aed)
         }
     }
 }
@@ -128,7 +129,8 @@ private fun LazyListScope.workersRows(data: SiteStatusWorkers, filter: WorkerFil
         if (data.omittedItems > 0) Text("식별 정보가 없거나 중복된 작업자 ${data.omittedItems}건은 표시하지 못했습니다")
     } }
     items(rows, key = { it.workerId }) { row -> DetailPanel(Modifier.testTag("worker-card-${row.workerId}")) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(if (row.tone == "caution") "warn" else row.tone); Text("${row.name ?: row.workerId} · ${row.label ?: "상태 데이터 없음"}", style = MaterialTheme.typography.titleLarge) }
+        val label = if (row.tone == "idle") "미수신" else row.label ?: "상태 데이터 없음"
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(if (row.tone == "caution") "warn" else row.tone); Text("${row.name ?: row.workerId} · $label", style = MaterialTheme.typography.titleLarge) }
         Text("직급 ${row.jobTitle ?: "데이터 없음"} · ID ${row.workerId}")
         Text(when (row.worn) { true -> "착용 중"; false -> "미착용"; null -> "착용 여부 데이터 없음" })
         if (row.stale == true) StateLabel(StateKind.offline, "연결 끊김 · 생체값 표시 보류")
@@ -145,44 +147,20 @@ private fun LazyListScope.workersRows(data: SiteStatusWorkers, filter: WorkerFil
 }
 
 private fun LazyListScope.gasRows(data: SiteStatusGas, state: SiteSummaryState) {
-    item { DetailPanel {
-        Text("값 옆의 서버 단위를 확인해 주세요. 판정은 서버가 보낸 상태입니다")
-        Text("감지기 ID ${data.deviceId ?: "데이터 없음"}")
-        Text("감지기 마지막 수신 ${alertTime(data.lastSeenAt)}")
-        Text("전원 상태 ${data.power ?: "데이터 없음"}")
-        if (data.lastSeenAt?.let { Duration.between(parseInstant(it), state.now).seconds >= 300 } == true)
-            Text("감지기 수신 오래됨 · 아래는 이전 수신 값입니다")
+    if (!data.gasesAvailable || data.omittedGases > 0) item { DetailPanel {
         if (!data.gasesAvailable) Text("가스별 데이터 없음 · 목록을 받지 못했습니다")
         if (data.omittedGases > 0) Text("종류 식별이 안 되거나 중복된 가스 ${data.omittedGases}건은 표시하지 못했습니다")
     } }
-    items(listOf("o2" to "O₂ 산소", "co" to "CO 일산화탄소", "h2s" to "H₂S 황화수소")) { (key, name) ->
+    items(listOf("o2", "co", "h2s")) { key ->
         val gas = data.gases.firstOrNull { it.key == key }
         val waiting = data.level == "idle" || gas?.level == "idle"
-        DetailPanel(Modifier.testTag("gas-$key")) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(if (waiting) "idle" else gas?.level); Text(gas?.gas ?: name, style = MaterialTheme.typography.titleLarge) }
-            Text(gasMeasurement(gas, waiting), Modifier.testTag("gas-value-$key"), style = MaterialTheme.typography.headlineSmall)
-            Text("위치 ${gas?.loc ?: "데이터 없음"}")
+        val fresh = parseInstantOrNull(data.lastSeenAt)?.let { Duration.between(it, state.now).seconds < 300 } == true
+        SignalPanel(Modifier.testTag("gas-$key"),
+            signalForLevel(gas?.level.takeUnless { waiting || gas?.value == null }, fresh && !state.stale && !state.failed && gas?.unit != null)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                GasCloudSymbol(key)
+                Text(compactGasValue(gas, waiting), Modifier.weight(1f).testTag("gas-value-$key"), style = MaterialTheme.typography.headlineSmall)
+            }
         }
     }
-}
-
-private fun LazyListScope.aedRows(data: SiteStatusAed) {
-    item {
-        Text("장비 수 ${data.total?.toString() ?: "데이터 없음"}")
-        Text("교환까지 남은 일수는 서버가 보낸 값입니다. 점검 예정일은 제공되지 않았습니다")
-        when {
-            !data.devicesAvailable -> Text("AED 기기 데이터 없음 · 목록을 받지 못했습니다")
-            data.devices.isEmpty() && data.omittedDevices > 0 -> Text("AED 기기 데이터 확인 불가 · 식별 정보를 확인해 주세요")
-            data.devices.isEmpty() && data.total == 0 -> Text("등록된 AED 0대 · 수신한 기기 목록이 비어 있습니다")
-            data.devices.isEmpty() -> Text("AED 기기 데이터 없음 · 등록 수에 해당하는 목록을 확인할 수 없습니다")
-        }
-        if (data.omittedDevices > 0) Text("식별 정보가 없거나 중복된 AED ${data.omittedDevices}건은 표시하지 못했습니다")
-    }
-    items(data.devices, key = { it.deviceId }) { device -> DetailPanel(Modifier.testTag("aed-${device.deviceId}")) {
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(device.level); Text(device.loc ?: "위치 데이터 없음", style = MaterialTheme.typography.titleLarge) }
-        Text("기기 ID ${device.deviceId}")
-        device.summary?.let { Text(it) }
-        Text("배터리 교환 ${aedDueText(device.batteryDueDays)}")
-        Text("전극패드 교환 ${aedDueText(device.padsDueDays)}")
-    } }
 }

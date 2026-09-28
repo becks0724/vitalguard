@@ -113,7 +113,7 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         viewModelScope.launch { preference.select(side) }
     }
     fun openSite(page: String?) {
-        require(page == null || page in setOf("weather", "workers", "gas", "aed", "cctv"))
+        require(page == null || page in setOf("weather", "workers", "gas", "cctv"))
         selectedSitePage.value = page
     }
     fun selectDestination(index: Int) {

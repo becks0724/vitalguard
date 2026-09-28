@@ -23,7 +23,7 @@ private val site = SiteSummaryState(data = sample, now = fixed)
 @PreviewTest @Preview(name = "Gas866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable fun GasStage3Preview() { GlassPreviewSurface { SiteDetailScreen("gas", site, {}, {}) } }
 @PreviewTest @Preview(name = "Aed866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
-@Composable fun AedStage3Preview() { GlassPreviewSurface { SiteDetailScreen("aed", site, {}, {}) } }
+@Composable fun AedStage3Preview() { GlassPreviewSurface { AedAlertCard() } }
 @PreviewTest @Preview(name = "Alerts866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable fun AlertsStage3Preview() { GlassPreviewSurface { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed), isMock = true) } }
 @PreviewTest @Preview(name = "AlertDetail866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)

@@ -69,9 +69,13 @@ class CommonStatesComposeTest {
                 compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot
             }
             val workspace = compose.onNodeWithTag("dashboard-workspace").fetchSemanticsNode().boundsInRoot
-            before.forEach { bounds ->
-                assertTrue(bounds.left >= workspace.left && bounds.right <= workspace.right)
-                assertTrue(bounds.top >= workspace.top && bounds.bottom <= workspace.bottom)
+            before.forEachIndexed { slot, bounds ->
+                // An empty record alert slot has zero semantics bounds, not a visible rectangle.
+                if (index == 2 && slot == 1) assertEquals(0f, bounds.height, .1f)
+                else {
+                    assertTrue("destination=$index bounds=$bounds workspace=$workspace", bounds.left >= workspace.left && bounds.right <= workspace.right)
+                    assertTrue(bounds.top >= workspace.top && bounds.bottom <= workspace.bottom)
+                }
             }
             compose.runOnIdle { field.value = field.value.copy(offline = true) }
             val after = listOf("shell-content", "global-alert-slot", "shell-receipt-slot").map {
@@ -79,7 +83,7 @@ class CommonStatesComposeTest {
             }
             assertEquals(before, after)
             assertTrue(after[2].bottom <= after[0].top)
-            assertTrue(after[0].bottom <= after[1].top)
+            if (after[1].height > 0) assertTrue(after[0].bottom <= after[1].top)
             compose.onNodeWithTag("shell-receipt-scroll").performTouchInput { swipeUp() }
             assertEquals(before[0], compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot)
         }

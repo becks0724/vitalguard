@@ -63,7 +63,7 @@ class Stage3ComposeTest {
         compose.waitUntil(5000) { field.state.value.siteStatusSnapshot != null }
         compose.runOnIdle { model = ViewModelProvider(compose.activity)[FieldViewModel::class.java] }
     }
-    @Test fun allFourDetailsShowServerValuesWithoutInventingMissingUnitsOrLocations() {
+    @Test fun siteDetailsShowServerValuesAndAedAlertDoesNotReuseMaintenanceData() {
         login()
         compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
         compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasText("풍속 10.0 m/s"))
@@ -80,11 +80,12 @@ class Stage3ComposeTest {
         Espresso.pressBack()
         compose.onNodeWithTag("site-row-gas").performScrollTo().performClick()
         compose.onNodeWithTag("gas-detail-scroll").performScrollToNode(hasTestTag("gas-value-co"))
-        compose.onNodeWithTag("gas-value-co").assertTextEquals("측정값 표시 보류 · 단위를 받지 못했습니다")
+        compose.onNodeWithTag("gas-value-co").assertTextEquals("단위 미수신")
         Espresso.pressBack()
-        compose.onNodeWithTag("site-row-aed").performScrollTo().performClick()
-        compose.onNodeWithTag("aed-detail-scroll").performScrollToNode(hasText("배터리 교환 2일 지남"))
-        compose.onNodeWithText("배터리 교환 2일 지남").assertIsDisplayed()
+        compose.onNodeWithTag("site-row-aed-alert").performScrollTo().assertHasNoClickAction()
+        compose.onNodeWithTag("aed-alert-pending").assertTextEquals("연동 대기")
+        compose.onNodeWithTag("site-row-aed").assertDoesNotExist()
+        compose.onNodeWithText("배터리 교환 2일 지남").assertDoesNotExist()
     }
     @Test fun openingAlertDoesNotWriteAndExplicitAckIsOnlyOnce() {
         login(); compose.onNodeWithTag("rail-destination-1").performScrollTo().performClick()

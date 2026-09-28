@@ -21,8 +21,8 @@ import java.time.Instant
 
 private val dashboardTime = Instant.parse("2026-09-27T06:00:00Z")
 @Composable
-private fun DashboardExample(width: Int, empty: Boolean = false, forbidden: Boolean = false) {
-    val data = if (empty || forbidden) null else stage3SampleStatus(dashboardTime.toString())
+private fun DashboardExample(width: Int, empty: Boolean = false, forbidden: Boolean = false, mixedWorkers: Boolean = false) {
+    val data = if (empty || forbidden) null else stage3SampleStatus(dashboardTime.toString(), mixedWorkers = mixedWorkers)
     val site = SiteSummaryState(data, failed = empty, forbidden = forbidden, now = dashboardTime)
     val field = FieldState(authStage = AuthStage.ready, offline = empty, siteStatusSnapshot = data, siteStatusForbidden = forbidden,
         site = SiteInfo(mapOf("site_name" to "한빛 현장 · 미리보기")),
@@ -35,6 +35,8 @@ private fun DashboardExample(width: Int, empty: Boolean = false, forbidden: Bool
 
 @PreviewTest @Preview(name = "DashboardLandscape", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
 @Composable fun DashboardLandscapePreview() = DashboardExample(1385)
+@PreviewTest @Preview(name = "DashboardSignalMix", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun DashboardSignalMixPreview() = DashboardExample(1385, mixedWorkers = true)
 @PreviewTest @Preview(name = "DashboardLeftHand", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
 @Composable fun DashboardLeftHandPreview() {
     CompositionLocalProvider(LocalActionPlacement provides ActionPlacementState(ActionSide.left, loaded = true)) { DashboardExample(1385) }

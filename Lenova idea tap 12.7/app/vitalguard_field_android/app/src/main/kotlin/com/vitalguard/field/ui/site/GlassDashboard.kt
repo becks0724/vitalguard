@@ -45,7 +45,7 @@ fun GlassDashboard(state: SiteSummaryState, onRefresh: () -> Unit, onDetail: (St
             val weather: @Composable () -> Unit = { WeatherTile(state) { onDetail("weather") } }
             val workers: @Composable () -> Unit = { WorkersTile(state) { onDetail("workers") } }
             val gas: @Composable () -> Unit = { GasTile(state) { onDetail("gas") } }
-            val aed: @Composable () -> Unit = { AedTile(state) { onDetail("aed") } }
+            val aed: @Composable () -> Unit = { AedAlertCard() }
             val alerts: @Composable () -> Unit = { AlertsTile(state, onAlerts) }
             val cctv: @Composable () -> Unit = { CctvTile(onCctv) }
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("site-summary-scroll")
@@ -108,19 +108,18 @@ private fun ReceptionNotice(state: SiteSummaryState) {
 }
 
 @Composable
-private fun TileHeading(title: String, icon: Int, section: SiteStatusSection?, forbidden: Boolean) {
-    val level = section?.level.takeIf { !forbidden && section?.ok == true }
+private fun TileHeading(title: String, icon: Int, opensDetail: Boolean = true) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         VgIcon(icon, modifier = Modifier.size(21.dp), tint = DashboardColors.secondary)
         Text(title, Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
-    Row(Modifier.clip(RoundedCornerShape(8.dp)).background(Color.Black.copy(alpha = .12f)).padding(horizontal = 10.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-        StateIcon(when { forbidden -> StateKind.locked; level == "normal" -> StateKind.ready; level == "warn" -> StateKind.warning; level == "danger" -> StateKind.failed; else -> StateKind.empty }, Modifier.size(16.dp))
-        Text(if (forbidden) "접근 권한 없음" else when (level) { "normal" -> "정상"; "warn" -> "주의"; "danger" -> "위험"; "idle" -> "수신 대기"; else -> "상태 미확인" },
-            color = DashboardColors.text, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        if (opensDetail) VgIcon(R.drawable.ic_chevron_right, modifier = Modifier.size(18.dp), tint = DashboardColors.secondary)
     }
-        VgIcon(R.drawable.ic_chevron_right, modifier = Modifier.size(18.dp), tint = DashboardColors.secondary)
-    }
+}
+
+private fun panelSignal(section: SiteStatusSection?, state: SiteSummaryState, oldSample: Boolean = false): PanelSignal {
+    if (state.forbidden) return PanelSignal.locked
+    if (section?.ok != true) return PanelSignal.unknown
+    return signalForLevel(section.level, !state.stale && !state.failed && !oldSample)
 }
 
 @Composable
@@ -151,8 +150,8 @@ private fun MiniMetric(label: String, value: String, modifier: Modifier = Modifi
 private fun WeatherTile(state: SiteSummaryState, onClick: () -> Unit) {
     val data = state.data?.weather.takeUnless { state.forbidden }
     val current = data?.current.takeIf { data?.ok == true && data.level != "idle" }
-    GlassPanel(Modifier.testTag("site-row-weather").heightIn(min = 300.dp), onClick, !state.forbidden) {
-        TileHeading("기상", R.drawable.ic_weather, data, state.forbidden)
+    SignalPanel(Modifier.testTag("site-row-weather").heightIn(min = 300.dp), panelSignal(data, state, data?.stale == true), onClick, !state.forbidden) {
+        TileHeading("기상", R.drawable.ic_weather)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Metric(current?.temperatureC?.let { String.format(Locale.ROOT, "%.1f", it) } ?: "—", "°C")
@@ -174,64 +173,97 @@ private fun WeatherTile(state: SiteSummaryState, onClick: () -> Unit) {
 @Composable
 private fun WorkersTile(state: SiteSummaryState, onClick: () -> Unit) {
     val data = state.data?.workers.takeUnless { state.forbidden }
-    val total = data?.total.takeIf { data?.ok == true }
-    val normal = data?.normal.takeIf { data?.ok == true }
-    GlassPanel(Modifier.testTag("site-row-workers"), onClick, !state.forbidden) {
-        TileHeading("작업자", R.drawable.ic_person, data, state.forbidden)
-        Box(Modifier.fillMaxWidth().heightIn(min = 148.dp), contentAlignment = Alignment.Center) {
+    val distribution = workerDistribution(data)
+    val total = distribution.total
+    val signal = panelSignal(data, state, !distribution.complete || total == 0)
+    val colors = mapOf(WorkerBucket.normal to SignalColors.normal, WorkerBucket.caution to SignalColors.caution,
+        WorkerBucket.danger to SignalColors.danger, WorkerBucket.waiting to SignalColors.waiting)
+    SignalPanel(Modifier.testTag("site-row-workers"), signal, onClick, !state.forbidden) {
+        TileHeading("작업자", R.drawable.ic_person)
+        Box(Modifier.fillMaxWidth().heightIn(min = 164.dp).testTag("worker-distribution").semantics {
+            stateDescription = distribution.shares.joinToString(" · ") {
+                "${it.bucket.label} ${it.count}명 ${String.format(Locale.ROOT, "%.1f", it.fraction * 100)}%"
+            }.ifEmpty { if (total == 0) "등록 인원 0명" else "인원 집계 미확인" }
+        }, contentAlignment = Alignment.Center) {
             Canvas(Modifier.size(148.dp).clearAndSetSemantics {}) {
                 val stroke = 9.dp.toPx(); val inset = stroke / 2
                 drawArc(DashboardColors.line, 135f, 270f, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
-                if (total != null && total > 0 && normal != null && normal in 0..total)
-                    drawArc(DashboardColors.accent, 135f, 270f * normal / total, false, Offset(inset, inset), Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))
+                var start = 135f
+                for (share in distribution.shares) {
+                    val sweep = 270f * share.fraction
+                    drawArc(colors.getValue(share.bucket), start, sweep, false, Offset(inset, inset),
+                        Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Butt))
+                    start += sweep
+                }
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("전체 인원", color = DashboardColors.secondary, fontSize = 12.sp)
                 Metric(total?.toString() ?: "—", "명", size = 44)
-                Text("정상 ${normal?.let { "${it}명" } ?: "미수신"}", color = DashboardColors.secondary, fontSize = 12.sp)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MiniMetric("주의", data?.caution?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
-            MiniMetric("위험", data?.danger?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
-            MiniMetric("대기", data?.waiting?.let { "${it}명" } ?: "미수신", Modifier.weight(1f))
+            for ((bucket, count) in listOf(WorkerBucket.normal to data?.normal, WorkerBucket.caution to data?.caution, WorkerBucket.danger to data?.danger)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(7.dp).background(colors.getValue(bucket), CircleShape))
+                        Text(bucket.label, color = DashboardColors.secondary, fontSize = 12.sp)
+                    }
+                    Text(count?.let { "${it}명" } ?: "—", fontSize = 16.sp, color = DashboardColors.text)
+                }
+            }
         }
-        TileSummary("workers", "작업자", data, state.forbidden)
+        if ((data?.waiting ?: 0) > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            Box(Modifier.size(7.dp).background(SignalColors.waiting, CircleShape))
+            Text("미수신 ${data!!.waiting}명", Modifier.testTag("workers-unreceived"), color = DashboardColors.secondary, fontSize = 12.sp)
+        }
+        if (total != null && !distribution.complete) Text("집계 확인 필요", color = DashboardColors.secondary, fontSize = 12.sp)
     }
 }
 
 @Composable
 private fun GasTile(state: SiteSummaryState, onClick: () -> Unit) {
     val data = state.data?.gas.takeUnless { state.forbidden }
-    val old = parseInstantOrNull(data?.lastSeenAt)?.let { Duration.between(it, state.now).seconds >= 300 } == true
-    GlassPanel(Modifier.testTag("site-row-gas"), onClick, !state.forbidden) {
-        TileHeading("가스 감지기", R.drawable.ic_gas, data, state.forbidden)
-        for ((id, title) in listOf("o2" to "O₂ · 산소", "co" to "CO · 일산화탄소", "h2s" to "H₂S · 황화수소")) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, Modifier.weight(1f), color = DashboardColors.secondary, fontSize = 13.sp)
+    val readingsReady = data?.gasesAvailable == true && data.gases.size == 3 && data.gases.all { it.value != null && it.unit != null }
+    val old = (parseInstantOrNull(data?.lastSeenAt)?.let { Duration.between(it, state.now).seconds >= 300 } ?: true) || !readingsReady
+    SignalPanel(Modifier.testTag("site-row-gas"), panelSignal(data, state, old), onClick, !state.forbidden) {
+        TileHeading("가스 감지기", R.drawable.ic_gas)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val stacked = maxWidth.value / LocalDensity.current.fontScale.coerceAtLeast(1f) < 276f
+            val reading: @Composable (String) -> Unit = { id ->
                 val reading = data?.gases?.firstOrNull { it.key == id }
                 Text(when {
                     state.forbidden -> "—"
-                    data?.ok != true || reading?.value == null -> "미수신"
-                    data.level == "idle" -> "측정 대기"
-                    reading.unit == null -> "단위 미수신"
-                    else -> gasMeasurement(reading, false)
+                    data?.ok != true -> "미수신"
+                    else -> compactGasValue(reading, data.level == "idle" || reading?.level == "idle")
                 },
-                    Modifier.weight(1f).testTag("dashboard-gas-$id"), color = DashboardColors.text, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+                    Modifier.testTag("dashboard-gas-$id"), color = DashboardColors.text, fontWeight = FontWeight.Medium, fontSize = 16.sp)
+            }
+            if (stacked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (id in listOf("o2", "co", "h2s")) Row(Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    GasCloudSymbol(id); Box(Modifier.weight(1f)) { reading(id) }
+                }
+            } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (id in listOf("o2", "co", "h2s")) Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GasCloudSymbol(id); reading(id)
+                }
             }
         }
-        if (old) Text("오래된 측정값 · 마지막 수신 ${alertTime(data?.lastSeenAt)}", color = DashboardColors.text, fontSize = 12.sp)
-        TileSummary("gas", "가스", data, state.forbidden)
+        GasReceipt(data?.lastSeenAt)
     }
 }
 
 @Composable
-private fun AedTile(state: SiteSummaryState, onClick: () -> Unit) {
-    val data = state.data?.aed.takeUnless { state.forbidden }
-    GlassPanel(Modifier.testTag("site-row-aed"), onClick, !state.forbidden) {
-        TileHeading("AED", R.drawable.ic_aed, data, state.forbidden)
-        Metric(data?.total?.toString() ?: "—", "대", size = 40)
-        TileSummary("aed", "AED", data, state.forbidden)
+fun AedAlertCard() {
+    // Existing `aed` payload is defibrillator maintenance, not this terminal's feedback.
+    SignalPanel(Modifier.testTag("site-row-aed-alert"), PanelSignal.pending) {
+        TileHeading("AED-alert", R.drawable.ic_aed_alert, opensDetail = false)
+        Row(Modifier.fillMaxWidth().heightIn(min = 86.dp), verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            VgIcon(R.drawable.ic_aed_alert, modifier = Modifier.size(60.dp), tint = DashboardColors.secondary)
+            Text("연동 대기", Modifier.testTag("aed-alert-pending"), style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 

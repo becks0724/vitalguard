@@ -30,7 +30,7 @@ fun SignalMark(level: String?) {
         "normal" -> Triple("✓", "정상", VgColors.ok)
         "warn" -> Triple("!", "주의", VgColors.warn)
         "danger" -> Triple("!!", "위험", VgColors.danger)
-        "idle" -> Triple("—", "데이터 없음 또는 전원 대기", VgColors.surfaceStrong)
+        "idle" -> Triple("—", "미수신 · 판정 전", VgColors.surfaceStrong)
         else -> Triple("?", "상태 확인 불가", VgColors.surfaceStrong)
     }
     val shape = if (level == "danger") CircleShape else RoundedCornerShape(6.dp)

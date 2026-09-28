@@ -18,7 +18,7 @@ fun workerLocation(item: WorkerItem, redacted: Boolean?): String = when (redacte
         else "마지막 수신 위치 · 위도 ${item.latitude} · 경도 ${item.longitude}\n위치 정확도 ${metricValue(item.locationAccuracyMeters, "m", 0)}"
 }
 enum class WorkerFilter(val label: String) {
-    all("전체"), normal("정상"), caution("주의"), danger("위험"), idle("대기"), stale("끊김");
+    all("전체"), normal("정상"), caution("주의"), danger("위험"), idle("미수신"), stale("끊김");
     fun matches(item: WorkerItem) = when (this) { all -> true; stale -> item.stale == true; else -> item.tone == name }
     fun count(data: SiteStatusWorkers): Int? = when (this) {
         all -> data.total; normal -> data.normal; caution -> data.caution; danger -> data.danger; idle -> data.waiting; stale -> data.stale

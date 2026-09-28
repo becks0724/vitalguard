@@ -36,10 +36,13 @@ class DashboardComposeTest {
                 } }
             }
         }
-        for (page in listOf("weather", "workers", "gas", "aed")) {
+        for (page in listOf("weather", "workers", "gas")) {
             compose.onNodeWithTag("site-row-$page").performScrollTo().assertHeightIsAtLeast(72.dp).performClick()
             compose.runOnIdle { assertEquals(page, detail) }
         }
+        compose.onNodeWithTag("site-row-aed").assertDoesNotExist()
+        compose.onNodeWithTag("site-row-aed-alert").performScrollTo().assertHasNoClickAction()
+        compose.onNodeWithTag("aed-alert-pending").assertTextEquals("연동 대기")
         compose.onNodeWithTag("site-open-cctv").performScrollTo().assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag("site-alerts").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, videos); assertEquals(1, alerts) }
