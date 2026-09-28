@@ -1,0 +1,180 @@
+<!doctype html>
+<!-- CAM-03 판정 구역(폴리곤)을 라이브 영상 위에서 찍어 /config?zone= 으로 거는 로컬 도구 -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>CAM-03 구역 집게</title>
+<style>
+  :root { color-scheme: light dark; --fg:#1a1a1a; --bg:#f2f1ee; --pan:#fff; --line:#d4d2cc; --hi:#c8890a; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#e8e6e1; --bg:#16181c; --pan:#1e2128; --line:#333842; --hi:#ffcc33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg);
+         font:14px/1.6 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo",sans-serif; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  .sub { color:#888; font-size:12px; margin:0 0 14px; }
+  .wrap { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
+  #stage { position:relative; width:min(100%,820px); user-select:none; -webkit-user-select:none;
+           touch-action:none; border:1px solid var(--line); border-radius:6px;
+           overflow:hidden; background:#000; }
+  #stage img { display:block; width:100%; height:auto; }
+  #ov { position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; }
+  #ov .vtx { cursor:grab; }
+  .panel { flex:1; min-width:310px; background:var(--pan); border:1px solid var(--line);
+           border-radius:8px; padding:14px; }
+  code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  pre { background:rgba(128,128,128,.12); padding:9px 11px; border-radius:6px;
+        overflow-x:auto; white-space:pre-wrap; word-break:break-all; margin:6px 0 12px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  button { font:inherit; padding:7px 13px; border-radius:6px; border:1px solid var(--line);
+           background:var(--pan); color:var(--fg); cursor:pointer; }
+  button.p { background:var(--hi); border-color:var(--hi); color:#1a1a1a; font-weight:600; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .warn { border-left:3px solid var(--hi); padding-left:10px; color:#8a7420; font-size:12px; }
+  @media (prefers-color-scheme: dark) { .warn { color:#d8bf6a; } }
+  #msg { font-size:12px; color:#888; min-height:1.6em; }
+  table { border-collapse:collapse; font-size:12px; width:100%; }
+  td { padding:2px 8px 2px 0; vertical-align:top; }
+  td:first-child { color:#888; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<h1>CAM-03 구역 집게 — 폴리곤</h1>
+<p class="sub">영상을 <b>클릭해 꼭짓점을 찍습니다.</b> 점을 끌면 옮겨지고, 점을 더블클릭하면 지워집니다.
+바닥이 원근 때문에 사다리꼴이라 사각형으로는 안 맞습니다.</p>
+
+<div class="wrap">
+  <div id="stage">
+    <img id="cam" alt="CAM-03 라이브">
+    <svg id="ov" viewBox="0 0 640 360" preserveAspectRatio="none">
+      <rect x="0" y="0" width="640" height="22" fill="rgba(0,0,0,.45)"/>
+      <polygon id="poly" points="" fill="rgba(255,204,51,.16)" stroke="#ffcc33"
+               stroke-width="2" stroke-dasharray="9 7"/>
+      <g id="vtx"></g>
+    </svg>
+  </div>
+
+  <div class="panel">
+    <table>
+      <tr><td>꼭짓점</td><td id="np">0개 — 3개부터 구역이 됩니다</td></tr>
+      <tr><td>화면 픽셀</td><td id="px">—</td></tr>
+      <tr><td>정규화</td><td id="nz">—</td></tr>
+    </table>
+
+    <pre id="cmd">영상을 클릭해 꼭짓점을 찍으세요.</pre>
+
+    <div class="row">
+      <button class="p" id="apply" disabled>라이브에 적용</button>
+      <button id="undo">점 하나 취소</button>
+      <button id="clear">전부 지우기</button>
+    </div>
+    <div class="row">
+      <button id="verify">검산 — 스냅숏 받기</button>
+      <button id="off">구역 해제</button>
+      <button id="rect">사각형 되돌리기</button>
+    </div>
+    <div id="msg"></div>
+
+    <p class="warn">
+      <b>검산을 꼭 누르세요.</b> 노란 점선이 찍은 자리에 그대로 오면 좌표가 맞는 것입니다.
+    </p>
+    <p class="warn">
+      <b>「적용」은 폴리곤 코드가 젯슨에 올라간 뒤에만 듣습니다.</b> 지금 라이브는 사각형만 받고
+      좌표계도 헤더 기준이라, 폴리곤을 보내면 400 으로 거절합니다. 그 전까지 이 도구는
+      <b>모양을 설계하고 문자열을 뽑는 용도</b>로 씁니다 — 위 그림은 브라우저가 직접 그리므로
+      배포와 무관하게 정확합니다.
+    </p>
+  </div>
+</div>
+
+<script>
+const HOST = "http://100.64.0.1:8444";
+const NW = 640, NH = 360;                 // 표시 프레임 크기 (OW×OH)
+const cam = document.getElementById("cam");
+const ov  = document.getElementById("ov");
+const msg = document.getElementById("msg");
+let pts = [], dragIx = -1, moved = false;
+
+function live() { cam.src = HOST + "/stream?t=" + Date.now(); }
+live();
+
+// 화면 좌표 → 표시 프레임(640×360) 좌표
+function toNat(ev) {
+  const r = ov.getBoundingClientRect();
+  return [ Math.round(Math.max(0, Math.min(NW, (ev.clientX - r.left) / r.width  * NW))),
+           Math.round(Math.max(0, Math.min(NH, (ev.clientY - r.top)  / r.height * NH))) ];
+}
+// ★ 프레임 기준 정규화 — 09-16 부터 젯슨의 _draw_zone 과 판정이 둘 다 이 자를 쓴다
+function norm() { return pts.map(([x, y]) => [x / NW, y / NH]); }
+function zoneStr() { return norm().flat().map(v => v.toFixed(4)).join(","); }
+
+function paint() {
+  document.getElementById("poly").setAttribute("points", pts.map(p => p.join(",")).join(" "));
+  const g = document.getElementById("vtx");
+  g.textContent = "";
+  pts.forEach(([x, y], i) => {
+    const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", 6);
+    c.setAttribute("fill", "#ffcc33"); c.setAttribute("stroke", "#1a1a1a");
+    c.setAttribute("stroke-width", "1.5"); c.setAttribute("class", "vtx");
+    c.dataset.i = i;
+    g.appendChild(c);
+  });
+  const ok = pts.length >= 3;
+  document.getElementById("apply").disabled = !ok;
+  document.getElementById("np").textContent =
+    pts.length + "개" + (ok ? "" : " — 3개부터 구역이 됩니다");
+  document.getElementById("px").textContent = pts.length ? pts.map(p => `(${p[0]},${p[1]})`).join(" ") : "—";
+  document.getElementById("nz").textContent = ok ? zoneStr() : "—";
+  document.getElementById("cmd").textContent = ok
+    ? `curl -s --get "${HOST}/config" \\\n  --data-urlencode "zone=${zoneStr()}"`
+    : "영상을 클릭해 꼭짓점을 찍으세요.";
+}
+
+ov.addEventListener("pointerdown", e => {
+  const t = e.target.dataset && e.target.dataset.i;
+  moved = false;
+  if (t !== undefined) { dragIx = +t; ov.setPointerCapture(e.pointerId); return; }
+  pts.push(toNat(e)); paint();
+});
+ov.addEventListener("pointermove", e => {
+  if (dragIx < 0) return;
+  moved = true; pts[dragIx] = toNat(e); paint();
+});
+ov.addEventListener("pointerup", () => { dragIx = -1; });
+ov.addEventListener("dblclick", e => {
+  const t = e.target.dataset && e.target.dataset.i;
+  if (t !== undefined) { pts.splice(+t, 1); paint(); }
+});
+
+// CORS 가 없어 응답은 못 읽는다. GET 만 날리고 결과는 검산으로 확인한다.
+function fire(qs, what) {
+  const im = new Image();
+  im.onerror = im.onload = () => {
+    msg.textContent = what + " 보냈습니다 — 검산으로 확인하세요. " + new Date().toLocaleTimeString();
+  };
+  im.src = HOST + "/config?" + qs + "&_=" + Date.now();
+}
+document.getElementById("apply").onclick = () =>
+  fire("zone=" + encodeURIComponent(zoneStr()) +
+       "&zone_label=" + encodeURIComponent("판정 구역"), "적용을");
+document.getElementById("undo").onclick  = () => { pts.pop(); paint(); };
+document.getElementById("clear").onclick = () => { pts = []; paint(); };
+document.getElementById("off").onclick   = () => { pts = []; paint(); fire("zone=off", "해제를"); };
+document.getElementById("rect").onclick  = () => {   // 1단계 채택 사각형 — 비교용
+  pts = [[120, 230], [350, 230], [350, 358], [120, 358]]; paint();
+};
+document.getElementById("verify").onclick = () => {
+  const b = document.getElementById("verify");
+  if (b.dataset.on) { live(); b.dataset.on = ""; b.textContent = "검산 — 스냅숏 받기";
+                      msg.textContent = "라이브로 돌아왔습니다."; return; }
+  cam.src = HOST + "/snapshot?t=" + Date.now();
+  b.dataset.on = "1"; b.textContent = "라이브로 돌아가기";
+  msg.textContent = "정지 화면입니다. 젯슨이 그린 노란 점선과 내 폴리곤이 겹치는지 보세요.";
+};
+paint();
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[Unit]
+# CAM-01 엣지 푸셔 — TP-Link VIGI C340S(192.168.219.48) RTSP 를 읽어 PPE 추론 후 :8445 로 낸다.
+#
+# ★ CAM-03(cctv-pusher.service)과 같은 파일을 쓰고 env 로만 갈린다(CAM_SUFFIX=1 · CAM_SOURCE=rtsp).
+#   구역 파일도 zone1.json 으로 갈린다 — 한 파일을 공유하면 서로 구역을 덮어쓴다([M/L] 지적 09-17).
+#
+# ★ Restart=on-failure 인 이유 — CAM-03 은 GoPro 웨지 때문에 Restart=no 이지만, IP캠은 스스로 송출하고
+#   푸셔를 되살려도 카메라를 건드리지 않는다. RTSP 가 끊기면 되살아나는 편이 낫다.
+#
+# 설치      sudo cp cctv-pusher-cam1.service /etc/systemd/system/ && sudo systemctl daemon-reload
+#           sudo systemctl enable --now cctv-pusher-cam1.service
+# 되돌리기  sudo systemctl disable --now cctv-pusher-cam1.service
+Description=CAM-01 edge pusher (TP-Link VIGI RTSP + PPE)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=jetson
+WorkingDirectory=/home/jetson/vg_edge_poc
+EnvironmentFile=/home/jetson/.cam1_pusher.env
+ExecStart=/usr/bin/python3 -u gopro_ppe_edge.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

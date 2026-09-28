@@ -1,0 +1,7 @@
+[Unit]
+Description=Tailscale 인증서 갱신 (바뀐 날만 cctv-gate 재시작)
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tailscale-cert-renew.sh

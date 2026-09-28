@@ -60,14 +60,52 @@ from PIL import Image, ImageDraw, ImageFont
 #   ⛔ 대가 = 현장 shoes 82→62(안전화 트랙 보류 중이라 감시 항목).
 #   되돌리기 = PPE_ENGINE 에 아래 v5 경로를 주고 재시작. 즉시·무손실.
 #     v5: /home/jetson/ppe_yolo26s_rect544x960_v5_nc.engine
-ENGINE = os.environ.get("PPE_ENGINE", "/home/jetson/ppe_yolo26s_rect544x960_v7d_nc.engine")
+# ★ 09-16 v7d → v7e 영속화. 09-15 22:2x 에 사용자 승인으로 배포했는데 그때는 systemd
+#   drop-in(/etc/systemd/system/cctv-pusher.service.d/engine.conf)이었다. drop-in 은 설정
+#   파일이라 재부팅을 넘기므로 09-15 아침 env 때와 달리 당장 위험하지는 않았다.
+#   그래도 옮기는 이유 = **누가 drop-in 을 지우면 조용히 v7d 로 돌아가고 그 사실이 화면에
+#   안 보인다.** 라이브가 「지운 사람이 기억하는가」에 의존하는 상태였다.
+#   근거 = 현장 35장 세 경성 게이트를 동시에 통과한 첫 모델.
+#     helmet 96/FP1(게이트 94/FP≤2) · person 99/FP7(96/FP≤17) · vest 77/FP2(69/FP≤5)
+#     CAM-03 새 자에서 회귀 없음 · v5 미탐 2건 해소. 라이브 10시간 40분 무사고(재연결 0).
+#   ⛔ 대가 = 현장 shoes 62 → 0. SH17 이 유일 공급원이라 안전화가 통째로 사라졌다.
+#     안전화 트랙은 보류 중이고 주력은 안전모·조끼지만, 「보류」와 「0 이 됐다」는 다른 말이다.
+#   ⚠ CAM-03 새 자는 판별력이 거의 없다(검출 천장·오경보 바닥) — 「나쁘지 않다」까지만 읽는다.
+#   되돌리기 = PPE_ENGINE 에 아래 v7d 경로를 주고 재시작. 즉시·무손실.
+#     v7d: /home/jetson/ppe_yolo26s_rect544x960_v7d_nc.engine
+ENGINE = os.environ.get("PPE_ENGINE", "/home/jetson/ppe_yolo26s_rect544x960_v7e_nc.engine")
 # 엔진을 구운 imgsz 와 반드시 같게. 직사각 엔진은 "544,960"(h,w) 처럼 콤마로 준다 —
 # 숫자 하나만 주면 정사각으로 letterbox 돼 고정형상 엔진이 죽는다(09-12 실제로 겪음).
 _IMGSZ_RAW = os.environ.get("PPE_IMGSZ", "544,960")
 IMGSZ = tuple(int(v) for v in _IMGSZ_RAW.split(",")) if "," in _IMGSZ_RAW else int(_IMGSZ_RAW)
 IMGSZ_TAG = "x".join(map(str, IMGSZ)) if isinstance(IMGSZ, tuple) else str(IMGSZ)  # 헤더 표기용
+# ★ 조끼 전용 엔진은 VEST_ENGINE 을 줄 때만 별도 경로로 돌린다.
+#   기본값은 비어 있어 기존 PPE·자세·그리기 순서와 비용이 그대로다.
+#   켜도 관제웹·게이트로 보내는 stats 는 PPE(v7e) 값만 유지한다.
+#   조끼 엔진은 VEST_EVERY 슬롯마다, PPE 사람이 있을 때만 호출한다.
+#   /health 의 vest_detail 은 이 경로의 실행 횟수와 시간만 보인다.
+#   조끼 상자는 화면에 그리지 않고 PPE 판정에도 섞지 않는다.
+#   되돌리기 = VEST_ENGINE 환경변수를 지우고 재시작한다.
+VEST_ENGINE = os.environ.get("VEST_ENGINE", "")
+_VEST_IMGSZ_RAW = os.environ.get("VEST_IMGSZ", "544,960")
+VEST_IMGSZ = tuple(int(v) for v in _VEST_IMGSZ_RAW.split(",")) if "," in _VEST_IMGSZ_RAW else int(_VEST_IMGSZ_RAW)
+VEST_CONF = float(os.environ.get("VEST_CONF", "0.30"))
+VEST_EVERY = int(os.environ.get("VEST_EVERY", "2"))
+assert VEST_EVERY >= 1, "VEST_EVERY must be at least 1"
 IW, IH = map(int, os.environ.get("INFER_SIZE", "960x540").split("x"))  # 추론 입력 크기(원본 1080p 에서 리사이즈)
 CCTV_BASE = os.environ.get("CCTV_BASE", "").rstrip("/")
+# ★ 09-17 서버 중계(docs/cctv-gate-server) — 젯슨 → 서버 인제스트 토큰. 값은 유닛 drop-in 의 EnvironmentFile
+#   (~/.cctv_ingest.env · 600)에서 온다. 비어 있으면 Authorization 을 안 붙이고, 서버는 그 요청을 401 로 거절한다
+#   — 「안 붙었다」가 로그에 바로 보이게 두기 위해서다(조용히 옛 방식으로 떨어지지 않는다).
+CCTV_INGEST_TOKEN = os.environ.get("CCTV_INGEST_TOKEN", "")
+# ★ 카메라 정체 — 이 파일 하나로 여러 대를 돌린다(2026-09-17). 기본값은 CAM-03(GoPro)이라 종전 동작 그대로다.
+#   CAM_SUFFIX  관제웹·서버가 쓰는 번호. ingest 경로(/cctv/ingest{N})·화면 라벨·로컬 페이지 제목에 들어간다.
+#   CAM_SOURCE  gopro 면 웹캠 START/STOP 을 제어하고, rtsp 면 건드리지 않는다(IP캠은 스스로 송출한다).
+#   두 번째 인스턴스 예 — CAM_SUFFIX=1 CAM_SOURCE=rtsp PORT=8445 UDP_URL=rtsp://…@192.168.219.48:554/stream2
+CAM_SUFFIX = os.environ.get("CAM_SUFFIX", "3")
+CAM_ID = "CAM-%02d" % int(CAM_SUFFIX) if CAM_SUFFIX.isdigit() else "CAM-" + CAM_SUFFIX
+CAM_SOURCE = os.environ.get("CAM_SOURCE", "gopro")
+CAM_SOURCE_LABEL = os.environ.get("CAM_SOURCE_LABEL", "GoPro" if CAM_SOURCE == "gopro" else "IP캠")
 GOPRO_IP = os.environ.get("GOPRO_IP", "172.23.102.51")
 # 관제망 유선 NIC — duckdns_update.sh 의 DUCKDNS_IFACE 와 같은 기준을 쓴다(둘이 어긋나면 진단이 엇갈린다).
 WIRE_IFACE = os.environ.get("WIRE_IFACE", "enP8p1s0")
@@ -83,6 +121,14 @@ UDP_URL = os.environ.get("UDP_URL", "udp://0.0.0.0:8554?overrun_nonfatal=1&fifo_
 #     통과했으나 다른 소스에서는 열기 실패할 수 있다 — env 로 되돌릴 수 있게 두었다.
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS",
                       "fflags;nobuffer|flags;low_delay|probesize;32|analyzeduration;0|max_delay;0")
+# ★ 09-18 디코딩 백엔드. 기본값 ffmpeg 는 h264 를 CPU 로 푼다 — CAM-01(2688×1520)에서는
+#   디코딩만으로 한 코어를 꽉 채웠다(실측 25.94fps · CPU 100.5%). 같은 스레드가 추론까지 하므로
+#   푸셔 실측은 8.4fps 로 떨어졌다. gst 는 젯슨 하드웨어 디코더(nvv4l2decoder)로 넘겨 CPU 47.2% 가 된다.
+#   ⚠ gst 경로는 CAP_PROP_POS_MSEC 조회가 안 돼 input_lag_s 자가측정이 죽는다 — 값이 아예 안 실린다.
+#      「지연이 0」이 아니라 「못 잰다」이므로 health 의 cam.cap 으로 어느 경로인지 먼저 본다.
+#   되돌리기 = 이 env 를 지우고 재시작하면 종전 경로 그대로.
+CAP_BACKEND = os.environ.get("CAP_BACKEND", "ffmpeg").strip().lower()
+GST_LATENCY = os.environ.get("GST_LATENCY", "0")   # rtspsrc 지터버퍼(ms). 끊기면 200 부터 올린다
 PUSH_WORKERS = int(os.environ.get("PUSH_WORKERS", "2"))  # 동시 푸시 워커 수 — keep-alive 로 장당 ~30ms 라 2개면 12fps 넘는다
 PORT = int(os.environ.get("PORT", "8444"))
 FONT_PATH = os.environ.get("FONT", "/home/jetson/NanumGothic-Regular.ttf")
@@ -174,7 +220,13 @@ _cfg = {"infer_fps": float(os.environ.get("INFER_FPS", "12")),   # 추론 cadenc
 #   태그가 되어 헤더가 겹쳤다(v5 는 2자라 안 겹쳤다). 차수에 붙는 접미 문자를 받는다.
 _mv = re.search(r"_(v\d+[a-z]*)_", os.path.basename(ENGINE))
 ENGINE_TAG = _mv.group(1) if _mv else os.path.basename(ENGINE).replace(".engine", "")
-OW, OH = 640, 360                                       # 표시용(푸시 JPEG) 크기 — 관제웹·대역폭 불변
+# 표시용(푸시 JPEG) 크기. ★ 09-18 env 로 뺐다 — 종전 주석의 「대역폭 불변」 전제가 바뀌었다.
+#   그때는 젯슨이 Cloud Run 으로 밀었고 요청마다 과금이 붙어 크기를 묶어 둘 이유가 있었다.
+#   지금은 관제웹이 젯슨 게이트에 직접 붙는다(00402-t5n) — 서버를 안 거치므로 과금이 없고
+#   Tailscale 실측 대역이 약 4MB/s 다(CAM-03 37KB/7.9ms · [M/L] 측정).
+#   ⚠ 올리면 JPEG 인코딩이 무거워져 fps 가 조금 내려간다. 추론·렌더와 같은 스레드다.
+#   되돌리기 = 이 env 를 지우면 640x360.
+OW, OH = map(int, os.environ.get("DISPLAY_SIZE", "640x360").split("x"))
 # 표시 JPEG 품질 — /config?jpeg_q= 로 런타임 조정한다.
 #   왜 fps 보다 이걸 먼저 내리는가 (2026-09-10): 끊김의 호소는 "부드럽지 않다"인데
 #   fps 를 내리면 그 호소가 더 나빠진다. 품질은 부드러움을 지킨 채 바이트만 깎는다.
@@ -202,13 +254,18 @@ KO = {"person": "작업자", "head": "안전모 미착용", "helmet": "안전모
 SHOW = {"person", "head", "helmet", "safety_vest"}
 COLOR = {"head": (220, 40, 40), "helmet": (40, 190, 90), "person": (70, 140, 240),
          "safety_vest": (240, 170, 40)}
+# 사람에게 안 붙어 집계에서 빠진 박스의 색. 평소 색과 확실히 갈려야 한다(2026-09-22).
+EXCLUDED_COLOR = (130, 130, 130)
 
 app = Flask(__name__)
 _model = None
+_vest_model = None
+_vest_dead = False
 _pose = None          # PoseFall 인스턴스 — POSE_FALL=1 일 때만 만든다
 _lock = threading.Lock()
 _state = {"jpg": b"", "raw": None, "stats": None, "dets": None, "ts": 0.0, "frames": 0, "infers": 0,
-          "infer_ms": 0.0, "stream_fps": 0.0, "reconnects": 0, "pushed": 0}
+          "infer_ms": 0.0, "stream_fps": 0.0, "reconnects": 0, "pushed": 0, "vest": None}
+_vest_stat = {"runs": 0, "skipped_every": 0, "skipped_no_person": 0, "ms_sum": 0.0, "ms_max": 0.0}
 _head_sizes = deque(maxlen=4000)      # 정규화 높이 누적 — 화각 조건 판정용
 _vest_sizes = deque(maxlen=4000)      # 조끼 정규화 높이
 # ★ 2026-09-10 결함 수정 — 종전엔 head 와 helmet 을 한 통(_head_sizes)에 담고 head 기준으로 쟀다.
@@ -257,10 +314,21 @@ def _ensure_model():
     return _model
 
 
+def _ensure_vest():
+    global _vest_model
+    if _vest_model is None:
+        from ultralytics import YOLO
+        _vest_model = YOLO(VEST_ENGINE, task="detect")
+        print(f"[gopro] vest engine loaded: {VEST_ENGINE}", flush=True)
+    return _vest_model
+
+
 def webcam_start(force=True):
     """웹캠 모드 재시작 — 스트림이 죽으면 이걸로 되살린다.
     force=False 면 이미 송출 중(status 2)일 때 건드리지 않는다. STOP/START 를 반복하면
     HERO9 웹캠이 굳어 USB 물리 재연결이 필요해진다(2026-09-07 실측 · 25분 4회에서 재현)."""
+    if CAM_SOURCE != "gopro":
+        return          # IP캠은 스스로 송출한다 — 건드릴 것이 없다
     if not force:
         try:
             st = json.loads(urllib.request.urlopen(
@@ -317,12 +385,258 @@ def infer(frame):
     _helmet_seen.append(hit)
     if hit:
         _helmet_last_ts = time.time()
+    # ★ helmet_watch 를 먼저 적고 구역을 건다. 순서를 바꾸면 helmet_watch 가 「엔진이 안전모를 보나」가
+    #   아니라 「구역 안에서 보나」를 재게 된다 — 실명 진단이 구역 설정에 오염된다.
+    _zone_stats(dets, stats)
     return dets, stats, ms
 
 
-# 촬영 구역 — 검증 촬영 때 어디에 설지 화면으로 지시하기 위한 안내선. 판정에 관여하지 않는다.
-# 정규화 (x1, y1, x2, y2) · None 이면 안 그린다. /config?zone=... 로 재기동 없이 옮긴다.
-_zone = {"box": None, "label": "촬영 구역"}
+def infer_vest(frame):
+    m = _ensure_vest()
+    t0 = time.perf_counter()
+    r = m.predict(frame, imgsz=VEST_IMGSZ, conf=VEST_CONF, verbose=False)[0]
+    ms = (time.perf_counter() - t0) * 1000
+    dets = []
+    for b, c, f in zip(r.boxes.xyxy.tolist(), r.boxes.cls.tolist(), r.boxes.conf.tolist()):
+        i = int(c)
+        names = m.names
+        name = names[i] if isinstance(names, list) and i < len(names) else names.get(i, str(i))
+        dets.append((name, tuple(map(float, b)), float(f)))
+    return dets, ms
+
+
+def vest_step(n_infer, dets_ppe, frame):
+    global _vest_dead
+    if not VEST_ENGINE:
+        return None
+    if _vest_dead:
+        return {"ran": False, "why": "dead"}
+    if n_infer % VEST_EVERY:
+        _vest_stat["skipped_every"] += 1
+        return {"ran": False, "why": "every"}
+    persons = [box for name, box, _conf in dets_ppe if name == "person"]
+    if not persons:
+        _vest_stat["skipped_no_person"] += 1
+        return {"ran": False, "why": "no_person"}
+    try:
+        dets, ms = infer_vest(frame)
+    except Exception as e:
+        if _vest_model is None:
+            _vest_dead = True
+            print(f"[gopro] vest disabled: {e}", flush=True)
+        raise
+    cnt = Counter(name for name, _box, _conf in dets)
+    vests = [box for name, box, _conf in dets if name == "safety_vest"]
+    torsos = [box for name, box, _conf in dets if name == "torso"]
+    _vest_stat["runs"] += 1
+    _vest_stat["ms_sum"] += ms
+    _vest_stat["ms_max"] = max(_vest_stat["ms_max"], ms)
+    return {"ran": True, "ms": ms, "vest": len(vests), "torso": len(torsos),
+            "person": cnt.get("person", 0),
+            "vest_on_person": sum(_attached_to_person(box, persons) for box in vests),
+            "torso_on_person": sum(_attached_to_person(box, persons) for box in torsos)}
+
+
+# 판정 구역 — /config?zone=... 로 재기동 없이 옮긴다. 정규화 점 목록 [(x, y), ...].
+# ★ 09-16 부터 안내선이자 판정 범위다(_zone_stats). None 이면 종전대로 화면 전체를 판정한다.
+# ★ 09-16 **폴리곤**이다(사용자 결정). 사각형은 CAM-03 사무실에서만 통했다 — 빼야 할 책상열이
+#   마침 화면 축과 나란했기 때문이고, 실제 현장은 원근 때문에 사다리꼴이라 그럴 이유가 없다.
+#   사각형 입력(x1,y1,x2,y2)도 네 점으로 바꿔 담는다. 담는 모양이 하나면 판정·그리기 경로도 하나다.
+_zone = {"poly": None, "label": "판정 구역"}
+
+
+def _zone_parse(s):
+    """"x1,y1,x2,y2"(사각형) 또는 "x1,y1,x2,y2,x3,y3,..."(폴리곤, 점 3개 이상)을 점 목록으로.
+    못 읽으면 ValueError. 좌표는 0~1 로 자른다."""
+    v = [min(1.0, max(0.0, float(x))) for x in s.split(",")]
+    if len(v) == 4:                      # 사각형 — 시계방향 네 점으로 편다
+        x1, y1, x2, y2 = v
+        if x1 >= x2 or y1 >= y2:
+            raise ValueError
+        return [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+    if len(v) >= 6 and len(v) % 2 == 0:
+        pts = list(zip(v[0::2], v[1::2]))
+        if len({(round(x, 4), round(y, 4)) for x, y in pts}) < 3:
+            raise ValueError             # 한 점에 뭉친 건 넓이가 없다
+        return pts
+    raise ValueError
+
+
+# ⚠ 카메라마다 다른 파일이어야 한다([M/L] 지적 09-17). 한 파일을 공유하면 한쪽이 구역을 저장할 때
+#   다른 카메라의 구역을 덮어쓰고, 그 증상은 조용하다(오류 없이 위반 수만 틀어진다).
+#   ★ CAM-03 의 기존 zone.json 은 zone3.json 으로 옮겨야 한다 — 안 옮기면 재기동하며 구역을 잃는다.
+_ZONE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"zone{CAM_SUFFIX}.json")
+
+
+def _zone_save():
+    """구역을 디스크에 남긴다. 저장 형태는 /config 가 받는 문자열 그대로다 —
+    읽을 때도 같은 파서(_zone_parse)를 타므로 검증 경로가 하나뿐이다.
+
+    ★ 왜 필요한가 (09-16 사용자 지시) — 메모리에만 두면 **재시작 한 번에 사라지고**
+      판정이 조용히 옛 규칙(화면의 맨머리를 전부 센다)으로 돌아간다. 엔진이 사라지면
+      /health 의 engine 이름이 바뀌어 눈에 띄지만, **구역이 사라지면 위반 수가 늘 뿐이라
+      사람이 잘못한 것처럼 보인다.** 관제 담당은 「오늘 위반이 많네」로 읽는다.
+    """
+    z = _zone["poly"]
+    body = {"zone": None if not z else ",".join(f"{c:.4f}" for p in z for c in p),
+            "label": _zone["label"]}
+    try:
+        tmp = _ZONE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(body, f, ensure_ascii=False)
+        os.replace(tmp, _ZONE_FILE)      # 쓰다 죽어도 반쪽 파일이 남지 않는다
+    except Exception as e:                # 저장 실패가 기동·판정을 막을 이유는 없다
+        print(f"[gopro] ⚠ 구역 저장 실패 ({e}) — 메모리에는 걸려 있다", flush=True)
+
+
+def _zone_restore():
+    """기동 때 구역을 되살린다. 파일이 없거나 깨졌으면 구역 없이 간다 —
+    None 이면 화면 전체를 판정하는 종전 동작이라 기동을 막을 일이 아니다."""
+    try:
+        with open(_ZONE_FILE, encoding="utf-8") as f:
+            body = json.load(f)
+    except FileNotFoundError:
+        return
+    except Exception as e:
+        print(f"[gopro] ⚠ 구역 파일을 못 읽었다 ({e}) — 구역 없이 기동한다", flush=True)
+        return
+    if body.get("label"):
+        _zone["label"] = str(body["label"])[:20]
+    s = body.get("zone")
+    if not s:
+        # ★ 「사용자가 off 했다」도 상태다. 여기서 None 을 **적어 넣어야** 복원이
+        #   「파일에 맞춘다」가 된다. 그냥 return 하면 「값이 있을 때만 덮는다」가 되어,
+        #   구역이 걸린 상태에서 다시 부르면 옛 구역이 살아남는다(09-16 시험 ⑩ 이 잡았다).
+        _zone["poly"] = None
+        return
+    try:
+        _zone["poly"] = _zone_parse(s)
+        print(f"[gopro] 구역 복원 — 점 {len(_zone['poly'])}개 ({_ZONE_FILE})", flush=True)
+    except ValueError:
+        print(f"[gopro] ⚠ 구역 파일이 깨졌다 — 구역 없이 기동한다 ({_ZONE_FILE})", flush=True)
+
+
+def _pt_in_poly(pt, poly):
+    """광선 투사(ray casting). 점이 폴리곤 안이면 참.
+    ⚠ 변 위에 정확히 걸린 점의 판정은 구현마다 다르다. 발밑은 매 프레임 흔들리므로 그 차이는
+      실질적 영향이 없지만, 시험에서 경계에 딱 맞춘 점을 쓰지 않는다."""
+    x, y = pt
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+# ── 판정 대상 규칙 (구역 + 추적 지속) — 설계 ml/ppe-detection/scope-rule-20260915.md ──
+# 오경보의 주범은 모델이 아니라 `violation_count = cnt["head"]` 라는 규칙이었다. 화면의 맨머리를
+# 전부 세니 지나가는 행인이 그대로 위반이 된다. 현장 35장의 head 9개는 전수 확인 결과 9개 다 행인이라
+# **모델이 완벽해도** 위반 9건 중 8건이 남는다. 그래서 모델이 아니라 여기를 고친다.
+#
+# ⚠ zone 이 None 이면 이 함수는 stats 를 손대지 않는다 — 기능이 조용히 켜지지도, 판정이 꺼지지도 않게.
+#   즉 구역을 걸기 전까지 이 파일의 동작은 종전과 완전히 같다.
+ZONE_TTL = float(os.environ.get("ZONE_TTL", "3.0"))      # 구역을 벗어나도 작업자로 남는 시간(초)
+ZONE_MATCH = float(os.environ.get("ZONE_MATCH", "0.15"))  # 같은 사람으로 볼 정규화 중심 거리
+_ztracks = {}                        # tid -> {"seen", "in_at", "cx", "cy", "worker"}
+_znext = [1]
+
+
+def _foot(box):
+    """사람이 **어디에 있는가**는 발밑이 답한다(x 중앙 · y 하단).
+    박스 중심을 쓰면 멀리 선 사람이 구역 위로 떠서 잘못 걸린다."""
+    x1, _y1, x2, y2 = box
+    return (x1 + x2) / 2, y2
+
+
+def _mid(box):
+    return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def _inside(pt, box):
+    return box[0] <= pt[0] <= box[2] and box[1] <= pt[1] <= box[3]
+
+
+def _attached_to_person(box, persons):
+    """이 박스가 어느 사람 박스 안에 있나.
+
+    ★ 집계(_zone_stats ③④)와 그리기(draw)가 **같은 함수**를 쓰게 하려고 뺐다.
+      각자 같은 식을 따로 쓰면 한쪽만 고쳐질 때 화면과 수가 조용히 갈린다.
+      2026-09-22 에 그 반대가 실제로 났다 — 세는 쪽을 고쳤는데 그리는 쪽이 그대로라
+      화면은 계속 「의자가 안전모를 썼다」고 말했다.
+    """
+    return any(_inside(_mid(box), p) for p in persons)
+
+
+def _zone_stats(dets, stats, now=None):
+    """구역 안 사람만 판정 대상으로 좁힌 stats 를 돌려준다. dets 는 추론 좌표(IW×IH).
+
+    ① 구역   — person 의 발밑이 zone 안인가
+    ② 지속   — 잠깐 벗어나도 마지막으로 들어온 뒤 ZONE_TTL 동안은 작업자로 남는다
+    ③ 판정   — 그 사람 박스 안의 head 를 센다. helmet 이 이미 있으면 head 는 버린다(배타)
+    ④ 판정불가 — 어느 사람 박스에도 안 들어간 head 는 위반이 아니라 따로 센다
+    """
+    z = _zone["poly"]
+    now = time.time() if now is None else now
+    persons = [b for n, b, _c in dets if n == "person"]
+    heads = [b for n, b, _c in dets if n == "head"]
+    helmets = [b for n, b, _c in dets if n == "helmet"]
+
+    if not z:
+        # ★ 구역이 없으면 화면 전체가 판정 구역이다(사용자 지시 2026-09-22).
+        #   화면에 보이는 사람은 전부 작업자다 — ①② (구역 안인가·추적 지속)만 건너뛴다.
+        #   ③④ 는 그대로 돈다. 안전모와 head 는 여전히 **사람에게 붙여서** 센다.
+        # ⚠ 예전에는 여기서 조기 반환해 원시 계수를 그대로 뒀다(=규칙 전체가 꺼졌다).
+        #   그러면 가구에 붙은 안전모가 착용으로, 사람 밖 유령 head 가 위반으로 들어간다.
+        #   09-22 CAM-03 실측 — 사람 1명·head 2개(1개는 사람 밖)에 위반이 2건으로 찍혔다.
+        #   범위를 넓히는 것과 귀속 규칙을 끄는 것은 다른 일인데 한 조건에 묶여 있었다.
+        workers = persons
+    else:
+        for tid in [k for k, t in _ztracks.items() if now - t["seen"] > ZONE_TTL]:
+            del _ztracks[tid]
+
+        workers, claimed = [], set()
+        for b in persons:
+            fx, fy = _foot(b)
+            now_in = _pt_in_poly((fx / IW, fy / IH), z)
+            cx, cy = _mid(b)
+            cx, cy = cx / IW, cy / IH
+            tid, bd = None, ZONE_MATCH
+            for k, t in _ztracks.items():   # ★ claimed 제외 — 없으면 한 번호가 두 사람을 오간다
+                if k in claimed:
+                    continue
+                d = ((cx - t["cx"]) ** 2 + (cy - t["cy"]) ** 2) ** 0.5
+                if d < bd:
+                    tid, bd = k, d
+            if tid is None:
+                tid = _znext[0]
+                _znext[0] += 1
+                _ztracks[tid] = {"seen": now, "in_at": 0.0, "cx": cx, "cy": cy, "worker": False}
+            claimed.add(tid)
+            t = _ztracks[tid]
+            # ★ in_at(마지막으로 구역에 있던 시각)을 따로 둔다. seen 으로 TTL 을 재면 계속 보이는 사람은
+            #   구역을 나가도 영원히 작업자로 남는다 — TTL 이 아무 일도 안 하게 된다.
+            if now_in:
+                t["in_at"] = now
+            t["seen"], t["cx"], t["cy"] = now, cx, cy
+            t["worker"] = now_in or (now - t["in_at"] < ZONE_TTL)
+            if t["worker"]:
+                workers.append(b)
+
+    worn = bare = 0
+    for b in workers:
+        if any(_inside(_mid(h), b) for h in helmets):
+            worn += 1            # ③ 배타 — 안전모가 그 사람 위에 있으면 head 는 버린다
+        elif any(_inside(_mid(h), b) for h in heads):
+            bare += 1
+    # ④ 어느 사람에게도 안 붙은 head — 유령 박스이거나 사람을 놓친 것이다. 위반으로 세지 않는다.
+    unknown = sum(1 for h in heads if not _attached_to_person(h, persons))
+    tot = bare + worn
+    stats.update(violation_count=bare, no_hardhat_count=bare, hardhat_count=worn,
+                 compliance_rate=int(round(100 * worn / tot)) if tot else 100,
+                 worker_count=len(workers), unknown_count=unknown)
+    return stats
 
 
 def _clip_capture(now, frame, people):
@@ -362,31 +676,51 @@ def _rec_write(now, frame):
             print(f"[rec] 쓰기 실패 {_rec['dropped']}회 ({e})", flush=True)
 
 
+def _dash_line(d, p, q, col, dash=12, width=3):
+    """임의 방향 선분을 점선으로 긋는다. 폴리곤은 변이 기울어 있어 x·y 순회로는 못 그린다."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    if length < 1:
+        return
+    ux, uy = dx / length, dy / length
+    t = 0.0
+    while t < length:
+        e = min(t + dash, length)
+        d.line((p[0] + ux * t, p[1] + uy * t, p[0] + ux * e, p[1] + uy * e), fill=col, width=width)
+        t += dash * 2
+
+
 def _draw_zone(d, ow, oh, header_h, font=None):
     """구역을 점선 테두리 + 모서리 갈고리로 그린다. 사람 박스와 헷갈리지 않게 색과 모양을 달리한다."""
-    z = _zone["box"]
+    z = _zone["poly"]
     if not z:
         return
-    x1, y1 = z[0] * ow, header_h + z[1] * (oh - header_h)
-    x2, y2 = z[2] * ow, header_h + z[3] * (oh - header_h)
+    # ★ 09-16 프레임 기준(y = v·oh)으로 통일했다. 종전엔 y = header_h + v·(oh−header_h) 라 검출
+    #   박스(y = v·oh)와 자가 달라 8.5px 어긋났다([CCTV/ML] 이 스냅숏 픽셀로 독립 검증). 그 틈에
+    #   발밑이 놓인 사람은 **화면엔 구역 밖인데 판정은 작업자**가 된다. 그림과 판정은 같은 자를 쓴다.
+    #   헤더 위로 삐져나간 부분은 뒤이어 그리는 검은 헤더 막대가 덮으므로 따로 자르지 않는다.
     col = (255, 210, 0)
-    dash = 12
-    for x in range(int(x1), int(x2), dash * 2):          # 점선 — 실선은 검출 박스와 혼동된다
-        d.line((x, y1, min(x + dash, x2), y1), fill=col, width=3)
-        d.line((x, y2, min(x + dash, x2), y2), fill=col, width=3)
-    for y in range(int(y1), int(y2), dash * 2):
-        d.line((x1, y, x1, min(y + dash, y2)), fill=col, width=3)
-        d.line((x2, y, x2, min(y + dash, y2)), fill=col, width=3)
-    g = min(28, (x2 - x1) / 3, (y2 - y1) / 3)            # 모서리 갈고리 — 구역임을 분명히
-    for cx, cy, dx, dy in ((x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1)):
-        d.line((cx, cy, cx + g * dx, cy), fill=col, width=5)
-        d.line((cx, cy, cx, cy + g * dy), fill=col, width=5)
+    pts = [(x * ow, y * oh) for x, y in z]
+    n = len(pts)
+    for i in range(n):                                   # 점선 — 실선은 검출 박스와 혼동된다
+        _dash_line(d, pts[i], pts[(i + 1) % n], col)
+    for px, py in pts:                                   # 꼭짓점 — 폴리곤임을 분명히
+        d.ellipse((px - 4, py - 4, px + 4, py + 4), fill=col)
     if font is not None:
         t = _zone["label"]
         tw = d.textlength(t, font=font)
-        ty = max(header_h + 2, y1 - 20)
-        d.rectangle((x1, ty, x1 + tw + 10, ty + 18), fill=col)
-        d.text((x1 + 5, ty + 2), t, font=font, fill=(20, 20, 20))
+        lx = min(max(0, min(p[0] for p in pts)), ow - tw - 11)
+        ty = max(header_h + 2, min(p[1] for p in pts) - 20)
+        d.rectangle((lx, ty, lx + tw + 10, ty + 18), fill=col)
+        d.text((lx + 5, ty + 2), t, font=font, fill=(20, 20, 20))
+
+
+def _kp_seen(kp):
+    """프레임 밖 관절을 지운다 (09-18). ultralytics 는 화면 밖으로 나간 관절을 테두리 좌표(0 또는 W-1)로 잘라
+    두고 신뢰도는 그대로 남긴다. 그것을 신뢰도만 보고 그리면 **몸에서 화면 모서리로 뻗는 선**이 된다 —
+    사용자 사진 18:13·18:29·18:30, 라이브 실측 오른어깨=(960,344)·conf 0.66. 판정·로그는 건드리지 않고
+    그리기용 사본에서 테두리에 붙은 관절의 신뢰도를 0 으로 친다. 추론 입력(IW×IH) 좌표에서 판정한다."""
+    return [(x, y, 0.0 if (x <= 1 or y <= 1 or x >= IW - 1 or y >= IH - 1) else c) for x, y, c in kp]
 
 
 def draw(frame, dets, ms, fps, people=()):
@@ -401,15 +735,15 @@ def draw(frame, dets, ms, fps, people=()):
     ppe = f"PPE yolo26 {ENGINE_TAG}@{IMGSZ_TAG}"
     if _pose is None:
         right = f"{ms:.0f}ms {fps:.0f}fps {time.strftime('%H:%M:%S')}"
-        cands = [f"CAM-03  GoPro (Jetson TensorRT)  {ppe}", f"CAM-03  GoPro  {ppe}", f"CAM-03  {ppe}"]
+        cands = [f"{CAM_ID}  {CAM_SOURCE_LABEL} (Jetson TensorRT)  {ppe}", f"{CAM_ID}  {CAM_SOURCE_LABEL}  {ppe}", f"{CAM_ID}  {ppe}"]
     else:
         pose = f"자세 {POSE_TAG.replace('yolo', '')}@{POSE_IMGSZ}"
         right = f"{ms:.0f}+{_pose.ms:.0f}ms {fps:.0f}fps {time.strftime('%H:%M:%S')}"
-        cands = [f"CAM-03  GoPro (Jetson TensorRT)  {ppe} · {pose}",
-                 f"CAM-03  GoPro  {ppe} · {pose}", f"CAM-03  {ppe} · {pose}",
+        cands = [f"{CAM_ID}  {CAM_SOURCE_LABEL} (Jetson TensorRT)  {ppe} · {pose}",
+                 f"{CAM_ID}  {CAM_SOURCE_LABEL}  {ppe} · {pose}", f"{CAM_ID}  {ppe} · {pose}",
                  # ★ 09-15 사다리 맨 아래를 더 낮춘다 — 종전엔 가장 짧은 후보도 화면을 넘어
                  #   폴백이 폴백 노릇을 못 했다. 라벨을 떼도 어느 엔진인지는 식별된다.
-                 f"CAM-03  {ENGINE_TAG}@{IMGSZ_TAG} · {POSE_TAG.replace('yolo', '')}@{POSE_IMGSZ}"]
+                 f"{CAM_ID}  {ENGINE_TAG}@{IMGSZ_TAG} · {POSE_TAG.replace('yolo', '')}@{POSE_IMGSZ}"]
     rw = d.textlength(right, font=f)
     left = cands[-1]
     for c in cands:                         # 글자가 길어지면 겹치므로 폭을 재서 고른다
@@ -422,16 +756,25 @@ def draw(frame, dets, ms, fps, people=()):
         left = left[:-2] + "…"
     d.text((8, 3), left, font=f, fill=(240, 240, 240))
     d.text((OW - rw - 8, 3), right, font=f, fill=(230, 90, 90))
+    # ★ 집계가 쓰는 것과 같은 사람 박스 목록. 아래에서 「판정 제외」를 가릴 때 쓴다.
+    _persons = [b for n, b, _c in dets if n == "person"]
     for name, (x1, y1, x2, y2), conf in dets:
         if name not in SHOW:
             continue
         hn = (y2 - y1) / IH                     # 정규화 높이는 추론 좌표에서 계산
+        # ★ 사람에게 안 붙은 안전모·머리는 집계가 세지 않는다(_zone_stats ③④).
+        #   그리는 쪽이 평소 색이면 화면이 판정과 다른 말을 한다 — 의자에 「안전모」가 붙는다.
+        #   ⚠ 지우지 않고 회색으로 남긴다. 지우면 **사람을 놓쳐서 밖으로 나온 경우**까지 숨어서
+        #     우리 검출 실패가 화면에서 사라진다. 보이되 판정과 구별되게 두는 쪽을 고른다.
+        excluded = name in ("head", "helmet") and not _attached_to_person((x1, y1, x2, y2), _persons)
         x1, y1, x2, y2 = x1 * sx, y1 * sy, x2 * sx, y2 * sy
-        col = COLOR.get(name, (200, 200, 200))
+        col = EXCLUDED_COLOR if excluded else COLOR.get(name, (200, 200, 200))
         d.rectangle((x1, y1, x2, y2), outline=col, width=2)
         label = f"{KO.get(name, name)} {conf*100:.0f}"
         if name in ("head", "helmet"):          # ★ 머리 크기를 라벨에 함께 표시
             label += f" h{hn:.3f}"
+        if excluded:
+            label += " 판정제외"
         lh = _chip_h()
         tw = d.textlength(label, font=fs)
         ty = y1 - lh
@@ -455,7 +798,7 @@ def draw(frame, dets, ms, fps, people=()):
                 qx1, qy1, qx2, qy2 = [v * (sx if i % 2 == 0 else sy) for i, v in enumerate(q["box"])]
                 qkp = q.get("kp")
                 if qkp:
-                    qp = [(x * sx, y * sy, c) for x, y, c in qkp]
+                    qp = [(x * sx, y * sy, c) for x, y, c in _kp_seen(qkp)]
                     # 몸통은 어깨(5,6)·엉덩이(12,11) 순서로 돌아야 사각형이 꼬이지 않는다
                     quad = [qp[i] for i in (5, 6, 12, 11)]
                     if all(v[2] >= _pf.KP_DRAW for v in quad):
@@ -476,7 +819,7 @@ def draw(frame, dets, ms, fps, people=()):
             lab, col = _pf.label_of(p)
             kp = p.get("kp")
             if kp:                          # ★ 골격을 그려야 칩이 누구 것인지 보인다(박스만으로는 PPE 와 섞인다)
-                pts = [(x * sx, y * sy, c) for x, y, c in kp]
+                pts = [(x * sx, y * sy, c) for x, y, c in _kp_seen(kp)]
                 for a, b in _pf.SKELETON:
                     if pts[a][2] >= _pf.KP_DRAW and pts[b][2] >= _pf.KP_DRAW:
                         d.line((pts[a][0], pts[a][1], pts[b][0], pts[b][1]), fill=col, width=2)
@@ -494,13 +837,28 @@ def draw(frame, dets, ms, fps, people=()):
     return buf.tobytes() if ok else b""
 
 
+def _open_capture():
+    """스트림을 연다. CAP_BACKEND=gst 면 하드웨어 디코더를 거치고, 못 열면 ffmpeg 로 되돌린다."""
+    if CAP_BACKEND == "gst":
+        pipe = ('rtspsrc location="%s" latency=%s protocols=tcp ! '
+                'rtph264depay ! h264parse ! nvv4l2decoder ! '
+                'nvvidconv ! video/x-raw,format=BGRx ! '
+                'videoconvert ! video/x-raw,format=BGR ! '
+                'appsink drop=true max-buffers=1 sync=false') % (UDP_URL, GST_LATENCY)
+        cap = cv2.VideoCapture(pipe, cv2.CAP_GSTREAMER)
+        if cap.isOpened():
+            return cap
+        print("[gopro] gst 열기 실패 — ffmpeg 로 되돌린다", flush=True)
+    return cv2.VideoCapture(UDP_URL, cv2.CAP_FFMPEG)
+
+
 def _reader():
     """UDP 스트림을 읽어 추론·렌더. 매 프레임 grab()(소비만·FIFO 적체 방지)하고
     추론할 프레임만 retrieve()(디코드→numpy 변환)한다.
     ⚠ 캡처를 별도 스레드로 분리하면 안 된다 — cap.read()/grab() 이 GIL 을 쥔 채 블록해
     추론 스레드가 0.5fps 로 굶는다(2026-09-01 py-spy 실측). 한 스레드가 정답."""
     while True:
-        cap = cv2.VideoCapture(UDP_URL, cv2.CAP_FFMPEG)
+        cap = _open_capture()
         if not cap.isOpened():
             print("[gopro] 스트림 열기 실패 — 웹캠 재시작", flush=True)
             webcam_start()
@@ -553,6 +911,11 @@ def _reader():
             except Exception as e:
                 print(f"[gopro] infer error ({e})", flush=True)
                 continue
+            try:
+                vest = vest_step(_state["infers"], dets, inf_frame)
+            except Exception as e:
+                print(f"[gopro] vest error ({e})", flush=True)
+                vest = None
             with _lock:
                 fps = _state["stream_fps"]
             people = []
@@ -569,6 +932,7 @@ def _reader():
                 _state.update(jpg=jpg, stats=stats, ts=now, infer_ms=ms,
                               raw=inf_frame,   # 주석 없는 추론 입력 — 미탐지 원인 진단용
                               dets=dets)       # /capture 가 프레임과 같은 락에서 함께 낸다
+                _state["vest"] = vest
                 _state["infers"] += 1
                 _state["pose"] = _pose.summary(people) if _pose is not None else None
                 _state["pose_people"] = [
@@ -596,7 +960,10 @@ def _push_worker(wid):
     """푸시 워커 — PUSH_WORKERS 개가 병렬로 돈다. 각자 보내는 시점의 최신 프레임을 선점해 전송.
     도착 순서가 뒤바뀔 수 있으나 둘 다 최신 프레임이라 체감 ≤1프레임 (2026-09-01 사용자 수용·A안)."""
     global _push_last
-    path = f"{_cctv.path.rstrip('/')}/cctv/ingest3"
+    path = f"{_cctv.path.rstrip('/')}/cctv/ingest{CAM_SUFFIX}"
+    hdrs = {"Content-Type": "image/jpeg"}
+    if CCTV_INGEST_TOKEN:
+        hdrs["Authorization"] = f"Bearer {CCTV_INGEST_TOKEN}"   # 서버 중계 인제스트 토큰(09-17)
     conn, err_streak = None, 0
     time.sleep(wid / _cfg["push_fps"])          # 위상 어긋내기 — 균등 간격 송신
     while True:
@@ -619,11 +986,19 @@ def _push_worker(wid):
                 #   "YOLO26s v5" 를 하드코딩해 엔진을 바꿔도 안 따라왔다(v7d 로 바꾸자 한 화면에서
                 #   엣지 오버레이와 모순이 됐다). 서버가 이 키를 모르면 그냥 무시하므로 하위 호환된다.
                 "engine": ENGINE_TAG,
+                # ★ 09-17 구역 규칙(2단계)이 만든 두 키. 없으면 서버 중계의 stats3 가 이 둘을 비우고
+                #   관제웹 「작업자 N명」이 person_count 로 떨어진다(프로젝터 속 인물까지 센다 — 09-16 실측).
+                "worker": (s or {}).get("worker_count", 0),
+                "unknown": (s or {}).get("unknown_count", 0),
+                # ★ 구역이 꺼지면 _zone_stats 가 worker_count 를 person_count 로 채운다(키는 그대로).
+                #   서버 표에 「worker 이름으로 person 값」이 쌓이는 것을 가르려면 구역 상태가 같이 가야 한다.
+                #   서버가 이 키를 모르면 무시한다 — 하위 호환. ([M/L] 지적 09-17)
+                "zone": 1 if _zone["poly"] else 0,
             })
             try:
                 if conn is None:
                     conn = _connect()
-                conn.request("POST", f"{path}?{q}", body=jpg, headers={"Content-Type": "image/jpeg"})
+                conn.request("POST", f"{path}?{q}", body=jpg, headers=hdrs)
                 resp = conn.getresponse()
                 resp.read()                     # 본문을 비워야 같은 연결을 다음 요청에 쓸 수 있다
                 if resp.status >= 300:
@@ -703,9 +1078,22 @@ def health():
     s["imgsz"] = IMGSZ
     s["infer_size"] = f"{IW}x{IH}"
     s["cfg"] = dict(_cfg, jpeg_q=JPEG_Q)
-    s["gopro"] = {"ip": GOPRO_IP, "res": GOPRO_RES, "fov": GOPRO_FOV}
+    s["cam"] = {"id": CAM_ID, "source": CAM_SOURCE, "cap": CAP_BACKEND}
+    if CAM_SOURCE == "gopro":
+        s["gopro"] = {"ip": GOPRO_IP, "res": GOPRO_RES, "fov": GOPRO_FOV}
+    else:                                   # ⚠ 입력 URL 에 자격증명이 있다 — 사용자:암호를 지우고 적는다
+        s["source_url"] = re.sub(r"//[^/@]*@", "//***@", UDP_URL)
     s["build"] = BUILD           # ★ 이 관측이 어느 코드에서 나왔나
     s["pose_detail"] = _pose.health() if _pose is not None else None
+    if VEST_ENGINE:
+        vest_stat = dict(_vest_stat)
+        s["vest_detail"] = {"engine": os.path.basename(VEST_ENGINE), "imgsz": VEST_IMGSZ,
+                            "conf": VEST_CONF, "every": VEST_EVERY, "last": s["vest"],
+                            "dead": _vest_dead, **vest_stat,
+                            "ms_avg": vest_stat["ms_sum"] / vest_stat["runs"] if vest_stat["runs"] else None}
+    else:
+        s.pop("vest", None)
+        s["vest_detail"] = None
     s["pose_log"] = _pose.log.health() if (_pose is not None and _pose.log is not None) else None
     s["head_size"] = _size_summary(sizes, _head_ref)
     s["helmet_size"] = _size_summary(hmsizes, _helmet_ref)
@@ -950,22 +1338,27 @@ def config():
     z = request.args.get("zone")
     if z is not None:
         if z in ("off", "none", ""):
-            _zone["box"] = None
-        else:
+            _zone["poly"] = None
+            _ztracks.clear()      # ★ 구역이 바뀌면 추적의 worker 기억도 버린다. 안 그러면 TTL 동안
+        else:                     #   옛 구역 기준으로 작업자였던 사람이 새 구역에서도 작업자로 남는다.
             try:
-                v = [min(1.0, max(0.0, float(x))) for x in z.split(",")]
-                if len(v) != 4 or v[0] >= v[2] or v[1] >= v[3]:
-                    raise ValueError
-                _zone["box"] = v
+                _zone["poly"] = _zone_parse(z)
+                _ztracks.clear()
             except ValueError:
-                return jsonify({"ok": False,
-                                "error": "zone 은 x1,y1,x2,y2 (0~1, x1<x2, y1<y2) 또는 off"}), 400
+                return jsonify({"ok": False, "error":
+                                "zone 은 x1,y1,x2,y2(사각형) 또는 x1,y1,...(점 3개 이상 폴리곤) "
+                                "또는 off · 좌표는 0~1"}), 400
+        _zone_save()              # 거절된 입력은 여기 못 온다 — 깨진 값을 파일에 적지 않는다
     if request.args.get("zone_label"):
         _zone["label"] = request.args.get("zone_label")[:20]
+        _zone_save()
     import pose_fall as _pfm2
     _pf_now = {"torso_down": _pfm2.TORSO_DOWN, "drop_rate": _pfm2.DROP_RATE,
                "fall_hold": _pfm2.FALL_HOLD, "fall_window": _pfm2.FALL_WINDOW}
-    return jsonify({"ok": True, **_cfg, "fall": _pf_now, "push_workers": PUSH_WORKERS, "zone": _zone["box"],
+    _zf = None if not _zone["poly"] else [round(c, 4) for p in _zone["poly"] for c in p]
+    return jsonify({"ok": True, **_cfg, "fall": _pf_now, "push_workers": PUSH_WORKERS, "zone": _zf,
+                    "zone_pts": None if not _zone["poly"] else len(_zone["poly"]),
+                    "zone_ttl": ZONE_TTL,
                     "zone_label": _zone["label"], "label_px": LABEL_PX,
                     "jpeg_q": JPEG_Q, "vest_ref": _vest_ref, "head_ref": _head_ref,
                     "helmet_ref": _helmet_ref})
@@ -1120,7 +1513,7 @@ def stream():
 
 @app.get("/")
 def viewer():
-    return Response(_VIEWER_HTML, mimetype="text/html")
+    return Response(_VIEWER_HTML.replace("__CAM_ID__", CAM_ID), mimetype="text/html")
 
 
 @app.get("/record")
@@ -1190,7 +1583,7 @@ def reset():
 # 로컬 확인 페이지 — 영상 + 핵심 지표 + fps 조절. 클라우드를 켜지 않고 재생 상태를 보기 위한 것이다.
 _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CAM-03 로컬 확인</title>
+<title>__CAM_ID__ 로컬 확인</title>
 <style>
  :root{color-scheme:dark}
  body{margin:0;background:#0d1114;color:#e6edea;font:14px/1.6 -apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
@@ -1239,7 +1632,7 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
  .tier{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
 </style>
 <div class="wrap">
- <h1>CAM-03 로컬 확인</h1>
+ <h1>__CAM_ID__ 로컬 확인</h1>
  <p class="sub">젯슨이 직접 내보내는 화면이다. 관제 서버를 켜지 않으므로 과금이 없다.</p>
  <div class="layout">
   <aside id="posewrap">
@@ -1256,7 +1649,7 @@ _VIEWER_HTML = """<!doctype html><html lang="ko"><meta charset="utf-8">
    </div>
   </aside>
   <main>
-   <img src="/stream" alt="CAM-03 실시간">
+   <img src="/stream" alt="__CAM_ID__ 실시간">
    <div class="grid">
     <div class="cell"><div class="k">추론</div><div class="v" id="ms">-<small> ms</small></div></div>
     <div class="cell"><div class="k">수신 스트림</div><div class="v" id="sfps">-<small> fps</small></div></div>
@@ -1457,6 +1850,8 @@ if __name__ == "__main__":
             print(f"[gopro] 자세 로그 → {_log.path}", flush=True)
         _pose = PoseFall(POSE_ENGINE, imgsz=POSE_IMGSZ, conf=POSE_CONF, log=_log)
         print(f"[gopro] 자세 판정 켜짐 — {POSE_ENGINE.split('/')[-1]} @{POSE_IMGSZ} (경보 없음·계수만)", flush=True)
+    _zone_restore()      # ★ import 가 아니라 기동에서 부른다 — 시험이 이 모듈을 들여올 때
+                         #   디스크 상태가 딸려 들어오면 시험이 기계마다 다른 답을 낸다
     webcam_start(force=False)
     threading.Thread(target=_reader, daemon=True).start()
     threading.Thread(target=_pusher, daemon=True).start()

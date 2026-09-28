@@ -1,0 +1,19 @@
+[Unit]
+Description=CCTV public gate (CAM-03) - ticket-verified proxy in front of the edge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=jetson
+WorkingDirectory=/home/jetson/vg_edge_poc
+Environment=GATE_PUBKEY=/home/jetson/.cctv_gate_pubkey
+Environment=GATE_JTI_DB=/home/jetson/.cctv_gate_jti.db
+Environment=GATE_TLS_CERT=/home/jetson/.cctv_gate/fullchain.pem
+Environment=GATE_TLS_KEY=/home/jetson/.cctv_gate/privkey.pem
+Environment=GATE_ALLOW_ORIGINS=https://vitalguard-dashboard-569797426568.asia-northeast3.run.app,http://localhost:3000,http://127.0.0.1:3111,http://localhost:3111
+ExecStart=/usr/bin/python3 -u /home/jetson/vg_edge_poc/cctv_gate.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

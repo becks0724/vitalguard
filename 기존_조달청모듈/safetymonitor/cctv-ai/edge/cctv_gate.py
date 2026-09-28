@@ -41,6 +41,16 @@ PUBKEY_PATH = os.path.expanduser(os.environ.get("GATE_PUBKEY", "~/.cctv_gate_pub
 JTI_DB = os.path.expanduser(os.environ.get("GATE_JTI_DB", "~/.cctv_gate_jti.db"))
 CAMERA = os.environ.get("GATE_CAMERA", "CAM-03")
 SITE = os.environ.get("GATE_SITE", "SITE-01")
+# ★ 09-17 카메라 여러 대 — 접미사마다 상류가 다르다. 기본은 "3"(GoPro :8444) 하나라 종전과 같다.
+#   늘리는 법  GATE_UPSTREAM_1=http://127.0.0.1:8445   (이름은 GATE_CAMERA_1 로 덮을 수 있다)
+#   주소·포트·인증서를 하나로 두려고 게이트를 나누지 않고 여기서 갈랐다.
+def _cam_name(sfx):
+    return os.environ.get("GATE_CAMERA_" + sfx) or ("CAM-%02d" % int(sfx) if sfx.isdigit() else "CAM-" + sfx)
+CAMS = {"3": (CAMERA, UPSTREAM)}
+for _k, _v in os.environ.items():
+    if _k.startswith("GATE_UPSTREAM_") and _v.strip():
+        _s = _k[len("GATE_UPSTREAM_"):]
+        CAMS[_s] = (_cam_name(_s), _v.rstrip("/"))
 # nbf 에만 여유를 준다. exp 에는 주지 않는다 — 여유를 exp 에도 주면 실효 수명이 명목보다
 # 길어져 "60초 티켓"이 90초가 된다(red-2 지적). 만료는 딱 끊는다.
 SKEW = int(os.environ.get("GATE_SKEW", "30"))
@@ -55,7 +65,7 @@ app = Flask(__name__)
 _lock = threading.Lock()
 _streams = 0                      # 동시 스트림 수 — 회선과 젯슨 CPU 를 지키는 상한
 _rate = {}                        # ip -> [분, 횟수]
-_enabled = True                   # connection3 토글 · 게이트 로컬 상태(엣지를 건드리지 않는다)
+_enabled = {}                     # 접미사 -> bool · connection 토글 · 게이트 로컬 상태(엣지를 건드리지 않는다). 없으면 켜짐
 
 
 def _load_pubkeys():
@@ -101,8 +111,8 @@ def _b64d(s):
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def _verify(scope_needed, consume=True):
-    """티켓을 검증해 (payload, None) 또는 (None, 응답) 을 돌려준다."""
+def _verify(scope_needed, sfx="3", consume=True):
+    """티켓을 검증해 (payload, None) 또는 (None, 응답) 을 돌려준다. sfx 로 어느 카메라의 표인지 가린다."""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         return None, (jsonify({"error": "ticket required"}), 401)
@@ -122,7 +132,7 @@ def _verify(scope_needed, consume=True):
         return None, (jsonify({"error": "not yet valid"}), 401)
     if p.get("exp", 0) <= now:                       # 여유 없음 — 의도된 것이다
         return None, (jsonify({"error": "expired"}), 401)
-    if p.get("aud") != CAMERA:
+    if p.get("aud") != CAMS[sfx][0]:
         return None, (jsonify({"error": "wrong camera"}), 403)
     if p.get("sid") != SITE:
         return None, (jsonify({"error": "wrong site"}), 403)
@@ -177,13 +187,15 @@ def _cors(resp):
     return resp
 
 
-@app.get("/cctv/stream3")
-def stream3():
+@app.get("/cctv/stream<sfx>")
+def stream3(sfx):
     global _streams
-    p, err = _verify("read")
+    if sfx not in CAMS:
+        return jsonify({"error": "unknown camera"}), 404
+    p, err = _verify("read", sfx)
     if err:
         return err
-    if not _enabled:
+    if not _enabled.get(sfx, True):
         return jsonify({"error": "disabled"}), 503
     with _lock:
         if _streams >= MAX_STREAMS:
@@ -195,11 +207,11 @@ def stream3():
     def gen():
         global _streams
         try:
-            with requests.get(f"{UPSTREAM}/stream", stream=True, timeout=(5, 30)) as r:
+            with requests.get(f"{CAMS[sfx][1]}/stream", stream=True, timeout=(5, 30)) as r:
                 for chunk in r.iter_content(chunk_size=16384):
                     # ★ 연결 시점 1회 검사로 끝내면 만료 뒤에도 무한 시청이 된다(red-2).
                     #   청크마다 다시 보고, 만료·중지면 즉시 끊는다.
-                    if time.time() >= exp or not _enabled:
+                    if time.time() >= exp or not _enabled.get(sfx, True):
                         break
                     if chunk:
                         yield chunk
@@ -213,22 +225,30 @@ def stream3():
                     headers={"Cache-Control": "no-store"})
 
 
-@app.get("/cctv/stats3")
-def stats3():
-    _, err = _verify("read")
+@app.get("/cctv/stats<sfx>")
+def stats3(sfx):
+    if sfx not in CAMS:
+        return jsonify({"error": "unknown camera"}), 404
+    _, err = _verify("read", sfx)
     if err:
         return err
-    if not _enabled:
+    if not _enabled.get(sfx, True):
         return jsonify({"error": "disabled"}), 503
     try:
-        h = requests.get(f"{UPSTREAM}/health", timeout=5).json()
+        h = requests.get(f"{CAMS[sfx][1]}/health", timeout=5).json()
     except (requests.RequestException, ValueError):
         return jsonify({"error": "upstream unreachable"}), 503
     s = h.get("stats") or {}
     # 관제웹이 읽는 이름 그대로만 내보낸다 — 그 밖의 진단 정보는 공개하지 않는다.
+    # ★ 09-16 구역 규칙(2단계)이 만든 두 키를 더한다. 푸셔는 이미 내보내는데(:416-417·:466)
+    #   게이트가 걸러서 관제웹까지 안 흘렀다 — 「바꿨다」와 「도착한다」가 갈려 있었다.
+    #     worker_count   구역 안이라 판정 대상인 사람 수
+    #     unknown_count  사람에게 안 붙은 head 등 판정불가 — 위반도 준수도 아니다
+    #   ⚠ 관제웹은 아직 이 둘을 안 그린다. 값이 먼저 도착해야 화면을 만들 수 있어 1층부터 연다.
     out = {k: s.get(k, 0) for k in (
         "person_count", "violation_count", "compliance_rate",
-        "hardhat_count", "no_hardhat_count")}
+        "hardhat_count", "no_hardhat_count",
+        "worker_count", "unknown_count")}
     # ★ 09-15 엔진 태그는 문자열이라 위 숫자 화이트리스트와 기본값이 다르다(0 이 아니라 "").
     #   관제웹이 하드코딩("YOLO26s v5") 대신 이 값을 쓴다 — 엔진을 바꿔도 화면이 따라온다.
     #   ⚠ 화이트리스트 원칙은 지킨다 — 이 한 키만 명시적으로 더한다(진단 정보는 여전히 비공개).
@@ -236,25 +256,28 @@ def stats3():
     return jsonify(out)
 
 
-@app.get("/cctv/connection3")
-def connection_get():
-    _, err = _verify("read")
+@app.get("/cctv/connection<sfx>")
+def connection_get(sfx):
+    if sfx not in CAMS:
+        return jsonify({"error": "unknown camera"}), 404
+    _, err = _verify("read", sfx)
     if err:
         return err
-    return jsonify({"enabled": _enabled})
+    return jsonify({"enabled": _enabled.get(sfx, True)})
 
 
-@app.post("/cctv/connection3")
-def connection_set():
-    global _enabled
-    _, err = _verify("control")
+@app.post("/cctv/connection<sfx>")
+def connection_set(sfx):
+    if sfx not in CAMS:
+        return jsonify({"error": "unknown camera"}), 404
+    _, err = _verify("control", sfx)
     if err:
         return err
     body = request.get_json(silent=True) or {}
     if not isinstance(body.get("enabled"), bool):
         return jsonify({"error": "enabled must be boolean"}), 400
-    _enabled = body["enabled"]
-    return jsonify({"enabled": _enabled})
+    _enabled[sfx] = body["enabled"]
+    return jsonify({"enabled": _enabled[sfx]})
 
 
 @app.errorhandler(404)
@@ -266,6 +289,6 @@ def _not_found(_e):
 
 if __name__ == "__main__":
     ctx = (TLS_CERT, TLS_KEY) if TLS_CERT and TLS_KEY else None
-    print(f"[gate] :{PORT} {'HTTPS' if ctx else 'HTTP'} · upstream {UPSTREAM} · "
+    print(f"[gate] :{PORT} {'HTTPS' if ctx else 'HTTP'} · 카메라 {', '.join(f'{k}->{v[0]}@{v[1]}' for k, v in sorted(CAMS.items()))} · "
           f"{CAMERA}/{SITE} · kid {sorted(PUBKEYS)}", flush=True)
     app.run(host="0.0.0.0", port=PORT, threaded=True, ssl_context=ctx)

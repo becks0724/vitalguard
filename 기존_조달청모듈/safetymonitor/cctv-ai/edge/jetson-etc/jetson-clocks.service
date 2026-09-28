@@ -1,0 +1,9 @@
+[Unit]
+Description=Pin Jetson clocks to max (GPU DVFS 가 추론 지연을 2배로 만드는 것 방지 · 2026-09-07)
+After=nvpmodel.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/jetson_clocks
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

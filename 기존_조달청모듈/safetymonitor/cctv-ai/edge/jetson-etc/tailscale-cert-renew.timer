@@ -1,0 +1,10 @@
+[Unit]
+Description=Tailscale 인증서 갱신을 매일 새벽에 확인한다
+
+[Timer]
+OnCalendar=*-*-* 04:20:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
