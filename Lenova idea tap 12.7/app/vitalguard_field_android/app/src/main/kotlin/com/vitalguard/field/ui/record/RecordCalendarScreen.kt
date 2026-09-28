@@ -72,7 +72,7 @@ fun RecordCalendarContent(
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             // A measured bottom bar reserves space; capture actions never float over calendar cells.
-            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Box(Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)) {
                 Row(Modifier.align(if (physicalLeft) AbsoluteAlignment.CenterLeft else AbsoluteAlignment.CenterRight)
                     .widthIn(max = 480.dp).fillMaxWidth().testTag("record-capture-actions"),
                     horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -89,7 +89,8 @@ fun RecordCalendarContent(
                 }
             }
         }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).testTag("record-calendar"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxSize().padding(padding).padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
+            .testTag("record-calendar"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("워크 캘린더", style = MaterialTheme.typography.headlineSmall)
             if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관됩니다.", style = MaterialTheme.typography.bodySmall)
             if (error != null) Row(verticalAlignment = Alignment.CenterVertically) {

@@ -113,8 +113,10 @@ fun FieldShell(
                         DashboardTheme { page() }
                     }
                 }
-                // Port: global_alert_strip.dart. 내용은 3단계, 슬롯은 상태와 관계없이 항상 예약.
-                Box(Modifier.fillMaxWidth().height((max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp)
+                // Reclaim empty record space; a fixed slot during ink editing prevents canvas movement.
+                val alertHeight = (max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp
+                val reserveAlertSpace = shell.destination != 2 || shell.recordEditorOpen
+                Box(Modifier.fillMaxWidth().heightIn(min = if (reserveAlertSpace) alertHeight else 0.dp, max = alertHeight)
                     .testTag("global-alert-slot").semantics { stateDescription = if (shell.recordEditorOpen) "편집 중 경보 표시 지연" else "경보 표시 영역" }) {
                     DashboardTheme { globalAlertContent() }
                 }

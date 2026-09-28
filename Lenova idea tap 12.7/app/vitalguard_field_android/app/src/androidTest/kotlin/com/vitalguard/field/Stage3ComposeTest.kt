@@ -97,15 +97,22 @@ class Stage3ComposeTest {
     }
     @Test fun stripDefersDuringEditingWithoutMovingTheReservedSlotAndDismissNeverWrites() {
         login()
+        compose.onNodeWithTag("rail-destination-2").performScrollTo().performClick()
         compose.onNodeWithTag("global-alert-strip").assertExists()
         val height = compose.onNodeWithTag("global-alert-slot").fetchSemanticsNode().boundsInRoot.height
+        val contentHeight = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot.height
+        assertTrue(height > 0)
         compose.runOnIdle { model.shell.editorOpen(true) }
         compose.onNodeWithTag("global-alert-strip").assertDoesNotExist()
         assertEquals(height, compose.onNodeWithTag("global-alert-slot").fetchSemanticsNode().boundsInRoot.height, .1f)
         compose.runOnIdle { model.shell.editorOpen(false) }
         compose.onNodeWithTag("global-alert-dismiss").performClick()
         compose.onNodeWithTag("global-alert-strip").assertDoesNotExist()
+        compose.onNodeWithTag("global-alert-slot").assertHeightIsEqualTo(0.dp)
+        assertEquals(contentHeight + height, compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot.height, 1f)
         compose.runOnIdle { assertEquals(0, writes); assertFalse(acknowledged) }
+        compose.runOnIdle { model.shell.editorOpen(true) }
+        assertEquals(height, compose.onNodeWithTag("global-alert-slot").fetchSemanticsNode().boundsInRoot.height, .1f)
     }
     @Test fun cctvShowsFramesRefreshesWithNewTicketsAndStopsAfterBack() {
         login(); compose.onNodeWithTag("site-open-cctv").performScrollTo().performClick()

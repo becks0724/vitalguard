@@ -124,7 +124,7 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
     }
 }
 
-/** The shell reserves its height. This observes snapshots and never owns a timer or POST. */
+/** The shell bounds its height; an absent strip releases idle record space. No timer or POST here. */
 @Composable
 fun GlobalAlertStrip(controller: AlertsController, deferred: Boolean, onOpen: (AlertItem) -> Unit) {
     val s by controller.state.collectAsStateWithLifecycle()
