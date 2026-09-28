@@ -31,8 +31,10 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onBack, Modifier.heightIn(min = 56.dp).testTag("$page-back")) { Text("현장 요약으로") }
-                Text(title, style = MaterialTheme.typography.headlineSmall)
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    VgBackButton(Modifier.testTag("$page-back"), onClick = onBack)
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                }
                 DetailPanel {
                     Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(data?.fetchedAt))
                     if (state.loading) StateLabel(StateKind.loading, "갱신 중 · 이전 자료 표시")

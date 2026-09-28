@@ -1,6 +1,7 @@
 package com.vitalguard.field.ui.theme
 
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -9,6 +10,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
+import com.vitalguard.field.R
 
 object VgColors {
     val primary = Color(0xFF0D74CE)
@@ -64,5 +66,13 @@ fun VgIcon(resource: Int, description: String? = null, modifier: Modifier = Modi
 fun VgIconButton(resource: Int, label: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     IconButton(onClick, modifier.sizeIn(minWidth = vgTapMin, minHeight = vgTapMin), enabled) {
         VgIcon(resource, label)
+    }
+}
+
+/** Shared previous-screen control; keep the full glove-sized hit area around the chevron. */
+@Composable
+fun VgBackButton(modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    IconButton(onClick, modifier.sizeIn(minWidth = vgTapMin, minHeight = vgTapMin), enabled) {
+        VgIcon(R.drawable.ic_previous, "이전", Modifier.size(28.dp))
     }
 }

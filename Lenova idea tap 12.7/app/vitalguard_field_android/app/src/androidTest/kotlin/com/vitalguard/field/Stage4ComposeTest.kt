@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.vitalguard.field.data.*
+import com.vitalguard.field.data.cctv.CCTV_PERIOD_PREFERENCE_KEY
 import com.vitalguard.field.data.contracts.*
 import com.vitalguard.field.data.mock.*
 import com.vitalguard.field.data.session.FieldCoordinator
@@ -45,18 +46,26 @@ class Stage4ComposeTest {
         login("settings-a"); settings()
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-a", vgActionSidePreferenceKey) == "left" } }
+        compose.onNodeWithTag("settings-cctv-period-10").performScrollTo().performClick()
+        compose.waitUntil(5000) { runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) == "10" } }
         compose.activityRule.scenario.recreate()
         settings()
         compose.onNodeWithTag("action-side-left").assertIsSelected()
+        compose.onNodeWithTag("settings-cctv-period-10").assertIsSelected()
         compose.runOnIdle { ViewModelProvider(compose.activity)[FieldViewModel::class.java].shell.logout() }
         login("settings-b"); settings()
         compose.onNodeWithTag("action-side-right").assertIsSelected()
+        compose.onNodeWithTag("settings-cctv-period-5").assertIsSelected()
         assertEquals("left", runBlocking { local.read("settings-a", vgActionSidePreferenceKey) })
         assertNull(runBlocking { local.read("settings-b", vgActionSidePreferenceKey) })
+        assertEquals("10", runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) })
+        assertNull(runBlocking { local.read("settings-b", CCTV_PERIOD_PREFERENCE_KEY) })
     }
     @Test fun selectionWorksWhileOfflineAndMovesTheSharedActionPlacement() {
         login("settings-offline"); settings()
         compose.runOnIdle { runBlocking { field.connectivityChanged(false) } }
+        compose.onNodeWithTag("settings-cctv-period-2").performScrollTo().performClick()
+        compose.waitUntil(5000) { runBlocking { local.read("settings-offline", CCTV_PERIOD_PREFERENCE_KEY) == "2" } }
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-offline", vgActionSidePreferenceKey) == "left" } }
         compose.onNodeWithTag("action-side-left").assertIsSelected()

@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,7 +41,10 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)
         .testTag(if (selected == null) "alerts-list-scroll" else "alerts-detail-scroll"),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(if (selected == null) "경보 목록" else "경보 상세", style = MaterialTheme.typography.headlineSmall)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (selected != null) VgBackButton(Modifier.testTag("alerts-back"), onClick = { onSelect(null) })
+            Text(if (selected == null) "경보 목록" else "경보 상세", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+        }
         Text(alertScope(state.data?.alerts?.siteScoped), Modifier.testTag("alerts-scope"))
         Text(if (!state.authorized || state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음"
             else siteStatusReceipt(state.data?.fetchedAt))
@@ -50,7 +54,6 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
         if (state.loading) StateLabel(StateKind.loading, "서버 상태 조회 중")
         if (state.readFailed) StateNotice(StateKind.failed, "경보 수신 실패", "이전에 받은 내용을 표시합니다.", Modifier.testTag("alerts-read-error"))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (selected != null) OutlinedButton({ onSelect(null) }, Modifier.heightIn(min = 56.dp).testTag("alerts-back")) { Text("목록으로") }
             OutlinedButton({ onRefresh() }, Modifier.heightIn(min = 56.dp).testTag("alerts-refresh"),
                 enabled = state.authorized && !state.loading && !state.sending) { Text("서버 상태 다시 조회") }
         }

@@ -120,7 +120,7 @@ fun PhotoDetailContent(
     }
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text(media.title ?: "현장 사진") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
-            windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { VgIconButton(R.drawable.ic_back, "달력으로", onClick = onBack) })
+            windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { VgBackButton(Modifier.testTag("photo-back"), onClick = onBack) })
     }, bottomBar = {
         ActionDock {
             FlowRow(Modifier.fillMaxWidth().testTag("photo-detail-actions"), horizontalArrangement = Arrangement.spacedBy(16.dp),

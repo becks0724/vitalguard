@@ -60,7 +60,7 @@ fun RecordInputContent(
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text("메모·음성 붙이기") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
             windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = {
-                VgIconButton(R.drawable.ic_back, "초안 보존 후 뒤로", Modifier.testTag("record-input-back"), !state.saving && !voice.sending, onBack)
+                VgBackButton(Modifier.testTag("record-input-back"), !state.saving && !voice.sending, onBack)
             })
     }) { padding ->
         if (state.loading) Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

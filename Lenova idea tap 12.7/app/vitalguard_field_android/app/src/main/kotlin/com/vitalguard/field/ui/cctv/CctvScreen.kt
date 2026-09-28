@@ -15,18 +15,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.vitalguard.field.R
 import com.vitalguard.field.data.cctv.*
 import com.vitalguard.field.data.models.alertTime
 import com.vitalguard.field.ui.theme.*
 
 @Composable
-fun CctvScreen(controller: CctvController, onBack: () -> Unit) {
+fun CctvScreen(controller: CctvController, onBack: () -> Unit, onSettings: () -> Unit) {
     val s by controller.state.collectAsStateWithLifecycle()
-    CctvContent(s, onBack, controller::period, controller::retry)
+    CctvContent(s, onBack = onBack, onRetry = controller::retry, onSettings = onSettings)
 }
 
 @Composable
-fun CctvContent(s: CctvState, onBack: () -> Unit = {}, onPeriod: (Int) -> Unit = {}, onRetry: () -> Unit = {}) {
+fun CctvContent(s: CctvState, onBack: () -> Unit = {}, onRetry: () -> Unit = {}, onSettings: () -> Unit = {}) {
     val bitmap = remember(s.bytes) { s.bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size)?.asImageBitmap() } }
     BoxWithConstraints(Modifier.fillMaxSize().padding(24.dp).testTag("cctv-screen")) {
         val controlsHeight = maxHeight * .65f
@@ -35,13 +36,16 @@ fun CctvContent(s: CctvState, onBack: () -> Unit = {}, onPeriod: (Int) -> Unit =
             GlassCard(Modifier.fillMaxWidth().heightIn(max = controlsHeight)) {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onBack, Modifier.heightIn(min = 56.dp).testTag("cctv-back")) { Text("현장 요약으로") }
-                Text("현장 CCTV · CAM-03", style = MaterialTheme.typography.headlineSmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    VgBackButton(Modifier.testTag("cctv-back"), onClick = onBack)
+                    Text("현장 CCTV · CAM-03", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                }
                 Text("스냅샷 갱신 영상 · 소리 없이 첫 이미지를 받아 표시합니다")
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    for (seconds in listOf(2, 5, 10)) FilterChip(s.periodSeconds == seconds, { onPeriod(seconds) },
-                        label = { Text("${seconds}초") }, modifier = Modifier.heightIn(min = 56.dp).testTag("cctv-period-$seconds"))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onRetry, Modifier.heightIn(min = 56.dp).testTag("cctv-retry"), enabled = !s.loading) { Text("다시 받기") }
+                    OutlinedButton(onSettings, Modifier.heightIn(min = 56.dp).testTag("cctv-open-settings")) {
+                        VgIcon(R.drawable.ic_settings); Spacer(Modifier.width(8.dp)); Text("영상 설정")
+                    }
                 }
                 StateLabel(if (s.receivedAt == null) StateKind.empty else StateKind.ready, if (s.receivedAt == null) "수신 전 · ${s.periodSeconds}초 간격" else
                     "${alertTime(s.receivedAt.toString())} 수신 · ${s.ageSeconds}초 전 · ${s.periodSeconds}초 간격", Modifier.testTag("cctv-receipt"))

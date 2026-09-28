@@ -3,6 +3,7 @@ package com.vitalguard.field
 import android.graphics.Bitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.espresso.Espresso
@@ -67,7 +68,8 @@ class Stage3ComposeTest {
         compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
         compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasText("풍속 10.0 m/s"))
         compose.onNodeWithText("풍속 10.0 m/s").assertIsDisplayed()
-        Espresso.pressBack()
+        compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasTestTag("weather-back"))
+        compose.onNodeWithTag("weather-back").assertContentDescriptionEquals("이전").assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag("site-row-workers").performScrollTo().performClick()
         compose.onNodeWithTag("workers-detail-scroll").performScrollToNode(hasTestTag("workers-filter-stale"))
         compose.onNodeWithTag("workers-filter-stale").performClick()
@@ -113,9 +115,17 @@ class Stage3ComposeTest {
         val viewport = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot
         assertTrue(imageBounds.top >= viewport.top && imageBounds.bottom <= viewport.bottom)
         assertTrue(imageBounds.left >= viewport.left && imageBounds.right <= viewport.right)
-        compose.onNodeWithTag("cctv-period-2").performScrollTo().performClick()
-        compose.waitUntil(5000) { tickets >= 2 }
-        Espresso.pressBack()
+        compose.onNodeWithTag("cctv-period-2").assertDoesNotExist()
+        compose.onNodeWithTag("cctv-open-settings").performScrollTo().performClick()
+        compose.onNodeWithTag("settings-cctv-period-2").performScrollTo().performClick()
+        compose.waitUntil(5000) { model.cctv.state.value.periodSeconds == 2 && !model.cctv.state.value.periodSaving }
+        val whileSettings = tickets
+        android.os.SystemClock.sleep(2500)
+        assertEquals(whileSettings, tickets)
+        compose.onNodeWithTag("rail-destination-0").performScrollTo().performClick()
+        compose.onNodeWithTag("cctv-receipt").assertTextContains("2초 간격", substring = true)
+        compose.waitUntil(5000) { tickets >= whileSettings + 2 }
+        compose.onNodeWithTag("cctv-back").performScrollTo().assertContentDescriptionEquals("이전").assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag("site-signals").assertExists()
         val previous = tickets
         android.os.SystemClock.sleep(2500)

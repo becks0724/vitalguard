@@ -102,12 +102,15 @@ fun FieldApp(model: FieldViewModel) {
                                 when (val page = sitePage) {
                                     null -> SiteScreen(site, model.site::manualRefresh,
                                         onOpenDetail = model::openSite, onOpenCctv = { model.openSite("cctv") }, onOpenAlerts = { model.selectDestination(1) })
-                                    "cctv" -> CctvScreen(model.cctv) { model.openSite(null) }
+                                    "cctv" -> CctvScreen(model.cctv, onBack = { model.openSite(null) }, onSettings = { model.selectDestination(4) })
                                     else -> SiteDetailScreen(page, site, { model.openSite(null) }, model.site::manualRefresh)
                                 }
                             },
                             alertsContent = { AlertsScreen(model.alerts, model.controller.isMock) },
-                            settingsContent = { SettingsContent(actionPlacement, model::selectActionSide) },
+                            settingsContent = {
+                                val cctvSettings by model.cctv.state.collectAsStateWithLifecycle()
+                                SettingsContent(actionPlacement, model::selectActionSide, cctvSettings, model.cctv::period)
+                            },
                             globalAlertContent = { GlobalAlertStrip(model.alerts, shell.recordEditorOpen) { row ->
                                 model.alerts.select(row); model.selectDestination(1)
                             } })

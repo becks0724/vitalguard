@@ -16,7 +16,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Scaffold
@@ -34,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.vitalguard.field.capture.CameraUiState
 import com.vitalguard.field.R
 import com.vitalguard.field.capture.cameraPermissionDeniedMessage
+import com.vitalguard.field.ui.theme.VgBackButton
 
 /** 기기 카메라와 분리해 오류/권한 UI를 실기기 Compose 테스트에서 직접 검증한다. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -51,9 +51,7 @@ fun CameraScreen(
             TopAppBar(
                 title = { Text("사진 촬영") },
                 navigationIcon = {
-                    IconButton(onClick = onBack, enabled = !state.taking, modifier = Modifier.size(64.dp)) {
-                        Icon(painterResource(R.drawable.ic_back), contentDescription = "기록으로")
-                    }
+                    VgBackButton(Modifier.size(64.dp).testTag("camera-back"), enabled = !state.taking, onClick = onBack)
                 },
             )
         },

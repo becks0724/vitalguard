@@ -97,7 +97,7 @@ fun RecordEditorContent(
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text("펜으로 표시하기") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
             windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = {
-                VgIconButton(R.drawable.ic_back, "초안 저장 후 뒤로", Modifier.testTag("editor-back"), !state.busy, onBack)
+                VgBackButton(Modifier.testTag("editor-back"), !state.busy, onBack)
             })
     }, bottomBar = {
         ActionDock(maxWidth = 960.dp) {
