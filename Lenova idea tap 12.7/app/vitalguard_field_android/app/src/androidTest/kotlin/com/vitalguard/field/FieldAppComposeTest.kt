@@ -129,6 +129,7 @@ class FieldAppComposeTest {
         compose.onNodeWithTag("weather-detail-scroll").assertExists()
         compose.onNodeWithTag("weather-back").performScrollTo().performClick()
         compose.onNodeWithTag("site-open-cctv").performScrollTo().assertHeightIsAtLeast(56.dp).performClick()
+        compose.onNodeWithTag("cctv-picker-CAM-03").performClick()
         compose.onNodeWithTag("cctv-screen").assertExists()
     }
     @Test fun forbiddenRemovesPreviousValuesAndManualRefreshRecovers() {

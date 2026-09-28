@@ -7,16 +7,19 @@ import java.time.Instant
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-const val CCTV_CAMERA_ID = "CAM-03"
-const val CCTV_PERIOD_PREFERENCE_KEY = "settings:cctv-period-seconds"
-val CCTV_PERIOD_OPTIONS = listOf(2, 5, 10)
+val CCTV_CAMERAS = listOf("CAM-01", "CAM-03")
+const val CCTV_PERIOD_PREFERENCE_KEY = "settings:cctv-period-ms"
+const val CCTV_LEGACY_PERIOD_KEY = "settings:cctv-period-seconds"
+val CCTV_PERIOD_OPTIONS = listOf(0, 500, 1000, 1500, 2000)
+fun cctvPeriodLabel(millis: Int) = when (millis) { 0 -> "실시간"; 500 -> "0.5초"; 1000 -> "1초"; 1500 -> "1.5초"; else -> "2초" }
 data class CctvState(val bytes: ByteArray? = null, val receivedAt: Instant? = null,
     val now: Instant = Instant.EPOCH, val error: String? = null, val loading: Boolean = false,
-    val active: Boolean = false, val periodSeconds: Int = 5, val failures: Int = 0,
+    val active: Boolean = false, val periodMillis: Int = 2000, val failures: Int = 0,
+    val cameraId: String = "CAM-03",
     val periodLoaded: Boolean = false, val periodSaving: Boolean = false, val periodError: String? = null) {
-    val delaySeconds get() = minOf(60, periodSeconds * (1 shl failures.coerceAtMost(6)))
+    val delaySeconds get() = if (failures == 0) 1 else minOf(60, 2 * (1 shl failures.coerceAtMost(5)))
     val ageSeconds get() = receivedAt?.let { Duration.between(it, now).seconds.coerceAtLeast(0) }
-    val stale get() = ageSeconds?.let { it > periodSeconds * 3 } == true
+    val stale get() = ageSeconds?.let { it > maxOf(5, periodMillis * 3 / 1000) } == true
 }
 
 class CctvController(private val field: FieldController, private val frames: CctvFrames,
@@ -41,7 +44,7 @@ class CctvController(private val field: FieldController, private val frames: Cct
                 try {
                     val saved = field.local.read(owner, CCTV_PERIOD_PREFERENCE_KEY)?.toIntOrNull()
                     if (!currentPreference(owner, expected)) return@collectLatest
-                    mutable.value = state.value.copy(periodSeconds = saved?.takeIf { it in CCTV_PERIOD_OPTIONS } ?: 5, periodLoaded = true)
+                    mutable.value = state.value.copy(periodMillis = saved?.takeIf { it in CCTV_PERIOD_OPTIONS } ?: 2000, periodLoaded = true)
                 } catch (e: CancellationException) { throw e
                 } catch (_: Exception) {
                     if (!currentPreference(owner, expected)) return@collectLatest
@@ -71,21 +74,21 @@ class CctvController(private val field: FieldController, private val frames: Cct
         ticker = scope.launch { while (true) { delay(1000); mutable.value = state.value.copy(now = clock.instant()) } }
         request()
     }
-    fun period(seconds: Int) {
-        require(seconds in CCTV_PERIOD_OPTIONS)
+    fun period(millis: Int) {
+        require(millis in CCTV_PERIOD_OPTIONS)
         val owner = account ?: return
         val expected = preferenceGeneration
         val previous = state.value
         if (!currentPreference(owner, expected) || !previous.periodLoaded || previous.periodSaving ||
-            (previous.periodSeconds == seconds && previous.periodError == null)) return
+            (previous.periodMillis == millis && previous.periodError == null)) return
         mutable.value = previous.copy(periodSaving = true, periodError = null)
         scope.launch {
             try {
                 // Save to the captured owner. Late results never update a different account/session.
-                field.local.write(owner, CCTV_PERIOD_PREFERENCE_KEY, seconds.toString())
+                field.local.write(owner, CCTV_PERIOD_PREFERENCE_KEY, millis.toString())
                 if (currentPreference(owner, expected)) {
-                    mutable.value = state.value.copy(periodSeconds = seconds, periodSaving = false)
-                    if (flight == null) schedule()
+                    mutable.value = state.value.copy(periodMillis = millis, periodSaving = false)
+                    stop(); sync()
                 }
             } catch (e: CancellationException) {
                 if (currentPreference(owner, expected)) mutable.value = state.value.copy(periodSaving = false)
@@ -96,7 +99,13 @@ class CctvController(private val field: FieldController, private val frames: Cct
             }
         }
     }
-    fun retry() { timer?.cancel(); if (flight == null) request() }
+    fun camera(id: String) {
+        require(id in CCTV_CAMERAS)
+        if (state.value.cameraId == id) return
+        stop()
+        mutable.value = state.value.copy(cameraId = id, bytes = null, receivedAt = null, error = null, failures = 0)
+        sync()
+    }
     private fun schedule() {
         timer?.cancel()
         if (state.value.active && !disposed) timer = scope.launch { delay(state.value.delaySeconds * 1000L); request() }
@@ -104,11 +113,13 @@ class CctvController(private val field: FieldController, private val frames: Cct
     private fun request() {
         if (!state.value.active || disposed || flight != null) return
         val expected = generation
+        val camera = state.value.cameraId
+        val interval = state.value.periodMillis
         // LAZY assignment prevents a synchronously completed test gateway from leaving a stale job reference.
         val job = scope.launch(start = CoroutineStart.LAZY) {
             mutable.value = state.value.copy(loading = true)
             try {
-                val ticket = try { field.cctvTicket(CCTV_CAMERA_ID) } catch (e: ApiFailure) {
+                val ticket = try { field.cctvTicket(camera) } catch (e: ApiFailure) {
                     throw CctvFailure(when (e.status) {
                         401, 403 -> "이 현장 CCTV를 볼 권한이 없습니다"
                         404 -> if (e.code == "unknown camera") "등록되지 않은 카메라입니다" else "서버에 CCTV 경로가 없습니다. 관리자에게 서버 배포 확인을 요청해 주세요"
@@ -118,11 +129,11 @@ class CctvController(private val field: FieldController, private val frames: Cct
                     })
                 }
                 if (!current(expected)) return@launch
-                cctvStreamUri(ticket.gateApi)
+                cctvStreamUri(ticket.gateApi, camera)
                 if (ticket.expiresAt <= clock.millis()) throw CctvFailure("CCTV 이용 시간이 만료되었습니다. 다시 시도합니다")
-                val bytes = frames.fetch(ticket)
-                if (!current(expected)) return@launch
-                mutable.value = state.value.copy(bytes = bytes, receivedAt = clock.instant(), now = clock.instant(), error = null, failures = 0)
+                frames.receive(ticket, camera, interval) { bytes ->
+                    if (current(expected)) mutable.value = state.value.copy(bytes = bytes, receivedAt = clock.instant(), now = clock.instant(), error = null, failures = 0, loading = false)
+                }
             } catch (e: CancellationException) { throw e
             } catch (e: Exception) {
                 if (current(expected)) mutable.value = state.value.copy(error = (e as? CctvFailure)?.message ?: cctvUnreachable,

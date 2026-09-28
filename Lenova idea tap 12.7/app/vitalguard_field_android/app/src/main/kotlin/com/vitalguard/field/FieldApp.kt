@@ -92,7 +92,7 @@ fun FieldApp(model: FieldViewModel) {
                         val actionPlacement = accountPlacement?.state?.collectAsStateWithLifecycle()?.value ?: ActionPlacementState()
                         CompositionLocalProvider(LocalActionPlacement provides actionPlacement) {
                         FieldShell(field, shell, site, model.controller.isMock, windowWidthDp,
-                            drawWallpaper = false,
+                            drawWallpaper = false, reclaimEmptyAlertSpace = shell.destination == 0 && sitePage == "cctv",
                             onWidth = model.shell::windowWidth, onToggle = model.shell::toggle,
                             onSelect = model::selectDestination, onLogout = model.shell::logout,
                             onRefresh = model.site::manualRefresh, onNextStage = { model.snackbar("다음 단계") },
@@ -101,7 +101,7 @@ fun FieldApp(model: FieldViewModel) {
                             siteContent = {
                                 when (val page = sitePage) {
                                     null -> SiteScreen(site, model.site::manualRefresh,
-                                        onOpenDetail = model::openSite, onOpenCctv = { model.openSite("cctv") }, onOpenAlerts = { model.selectDestination(1) })
+                                        onOpenDetail = model::openSite, onOpenCctv = { camera -> model.cctv.camera(camera); model.openSite("cctv") }, onOpenAlerts = { model.selectDestination(1) })
                                     "cctv" -> CctvScreen(model.cctv, onBack = { model.openSite(null) }, onSettings = { model.selectDestination(4) })
                                     else -> SiteDetailScreen(page, site, { model.openSite(null) }, model.site::manualRefresh)
                                 }

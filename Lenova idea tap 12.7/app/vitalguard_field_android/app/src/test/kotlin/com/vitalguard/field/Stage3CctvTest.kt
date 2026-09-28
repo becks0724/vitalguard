@@ -96,7 +96,7 @@ class Stage3CctvTest {
         val cctv = CctvController(field, object : CctvFrames { override suspend fun fetch(ticket: CctvTicket): ByteArray { seen += ticket.ticket; return byteArrayOf(1) } }, backgroundScope, MutableClock())
         runCurrent(); cctv.setForeground(true); cctv.setVisible(true); runCurrent()
         assertEquals(1, tickets)
-        advanceTimeBy(5000); runCurrent(); assertEquals(2, tickets); assertEquals(2, seen.distinct().size)
+        advanceTimeBy(1000); runCurrent(); assertEquals(2, tickets); assertEquals(2, seen.distinct().size)
         cctv.setVisible(false); advanceTimeBy(60_000); runCurrent(); assertEquals(2, tickets)
         cctv.setVisible(true); runCurrent(); assertEquals(3, tickets)
         field.signOut(); runCurrent(); assertNull(cctv.state.value.bytes); assertFalse(cctv.state.value.active)
@@ -120,9 +120,9 @@ class Stage3CctvTest {
         val field = FieldCoordinator(gateway, MemoryStore(), backgroundScope, clock); field.signIn("a", "pw")
         val cctv = CctvController(field, object : CctvFrames { override suspend fun fetch(ticket: CctvTicket): ByteArray { fetches++; return byteArrayOf(1) } }, backgroundScope, clock)
         runCurrent(); cctv.setForeground(true); cctv.setVisible(true); runCurrent()
-        assertEquals(10, cctv.state.value.delaySeconds); assertEquals(0, fetches)
-        advanceTimeBy(9999); runCurrent(); assertEquals(1, tickets)
-        advanceTimeBy(1); runCurrent(); assertEquals(2, tickets); assertEquals(20, cctv.state.value.delaySeconds)
+        assertEquals(4, cctv.state.value.delaySeconds); assertEquals(0, fetches)
+        advanceTimeBy(3999); runCurrent(); assertEquals(1, tickets)
+        advanceTimeBy(1); runCurrent(); assertEquals(2, tickets); assertEquals(8, cctv.state.value.delaySeconds)
         cctv.setForeground(false); advanceTimeBy(60_000); runCurrent(); assertEquals(2, tickets)
     }
 }

@@ -43,6 +43,7 @@ fun FieldShell(
     settingsContent: @Composable () -> Unit = { PlaceholderScreen("설정", 4) },
     globalAlertContent: @Composable () -> Unit = {},
     drawWallpaper: Boolean = true,
+    reclaimEmptyAlertSpace: Boolean = false,
 ) {
     LaunchedEffect(windowWidthDp) { onWidth(windowWidthDp) }
     val collapsed = shell.recordEditorOpen || (shell.collapsed ?: (windowWidthDp < vgTwoPaneMinWidth))
@@ -115,7 +116,7 @@ fun FieldShell(
                 }
                 // Reclaim empty record space; a fixed slot during ink editing prevents canvas movement.
                 val alertHeight = (max(56f, 16 * scale * 1.3f * 2 + 24) + 16).dp
-                val reserveAlertSpace = shell.destination != 2 || shell.recordEditorOpen
+                val reserveAlertSpace = (shell.destination != 2 && !reclaimEmptyAlertSpace) || shell.recordEditorOpen
                 Box(Modifier.fillMaxWidth().heightIn(min = if (reserveAlertSpace) alertHeight else 0.dp, max = alertHeight)
                     .testTag("global-alert-slot").semantics { stateDescription = if (shell.recordEditorOpen) "편집 중 경보 표시 지연" else "경보 표시 영역" }) {
                     DashboardTheme { globalAlertContent() }

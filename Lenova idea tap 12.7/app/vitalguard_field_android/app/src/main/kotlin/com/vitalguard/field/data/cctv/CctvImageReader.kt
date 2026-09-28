@@ -2,6 +2,7 @@ package com.vitalguard.field.data.cctv
 
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.PushbackInputStream
 
 const val MAX_CCTV_IMAGE_BYTES = 16 * 1024 * 1024
 private const val MAX_HEADERS = 64 * 1024
@@ -86,6 +87,10 @@ fun readCctvImage(input: InputStream, contentType: String?): ByteArray {
         if (out.size() > MAX_CCTV_IMAGE_BYTES + delimiter.size) throw CctvFailure("이미지가 수신 한도(16MB)를 초과했습니다")
         while (matched > 0 && b != delimiter[matched]) matched = prefix[matched - 1]
         if (b == delimiter[matched]) matched++
-        if (matched == delimiter.size) return finish(out.toByteArray().copyOf(out.size() - delimiter.size))
+        if (matched == delimiter.size) {
+            // Retain the next boundary when a live reader requests another frame on this connection.
+            if (input is PushbackInputStream) input.unread(delimiter)
+            return finish(out.toByteArray().copyOf(out.size() - delimiter.size))
+        }
     }
 }

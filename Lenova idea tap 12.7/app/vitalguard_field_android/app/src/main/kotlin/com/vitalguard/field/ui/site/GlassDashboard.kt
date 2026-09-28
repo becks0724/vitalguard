@@ -8,7 +8,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,7 +38,7 @@ fun dashboardColumns(contentWidthDp: Float, fontScale: Float): Int {
 
 @Composable
 fun GlassDashboard(state: SiteSummaryState, onRefresh: () -> Unit, onDetail: (String) -> Unit,
-    onCctv: () -> Unit, onAlerts: () -> Unit) {
+    onCctv: (String) -> Unit, onAlerts: () -> Unit) {
     DashboardTheme {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val columns = dashboardColumns(maxWidth.value, LocalDensity.current.fontScale)
@@ -286,11 +286,12 @@ private fun AlertsTile(state: SiteSummaryState, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CctvTile(onOpen: () -> Unit) {
+private fun CctvTile(onOpen: (String) -> Unit) {
+    var picker by remember { mutableStateOf(false) }
     GlassPanel {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("현장 CCTV", Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
-            Text("CAM-03", color = DashboardColors.secondary, fontSize = 12.sp)
+            Text("CAM-01 · CAM-03", color = DashboardColors.secondary, fontSize = 12.sp)
         }
         Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
             Canvas(Modifier.matchParentSize().clearAndSetSemantics {}) {
@@ -303,10 +304,28 @@ private fun CctvTile(onOpen: () -> Unit) {
             }
             VgIcon(R.drawable.ic_video, modifier = Modifier.size(38.dp), tint = DashboardColors.secondary)
         }
-        Text("스냅샷 갱신 영상 · 열면 수신을 시작합니다", color = DashboardColors.secondary, fontSize = 12.sp)
-        Button(onOpen, Modifier.fillMaxWidth().heightIn(min = vgTapMin).testTag("site-open-cctv"),
+        Text("카메라를 선택해 영상을 확인합니다", color = DashboardColors.secondary, fontSize = 12.sp)
+        Box {
+        Button({ picker = true }, Modifier.fillMaxWidth().heightIn(min = vgTapMin).testTag("site-open-cctv"),
             colors = ButtonDefaults.buttonColors(containerColor = DashboardColors.accent, contentColor = DashboardColors.accentInk)) {
             Text("영상 보기", fontWeight = FontWeight.SemiBold); Spacer(Modifier.width(10.dp)); VgIcon(R.drawable.ic_chevron_right)
+        }
+        DropdownMenu(expanded = picker, onDismissRequest = { picker = false },
+            modifier = Modifier.width(280.dp).testTag("cctv-picker"), shape = RoundedCornerShape(28.dp),
+            containerColor = Color(0xEB777C80), tonalElevation = 0.dp, shadowElevation = 12.dp,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = .22f))) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                VgIcon(R.drawable.ic_cameras, modifier = Modifier.size(26.dp), tint = Color.White)
+                Text("현장 CCTV", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            }
+            com.vitalguard.field.data.cctv.CCTV_CAMERAS.forEach { camera ->
+                HorizontalDivider(color = Color.White.copy(alpha = .18f))
+                DropdownMenuItem(text = { Text(camera, color = Color.White) },
+                    leadingIcon = { VgIcon(R.drawable.ic_video, tint = Color.White.copy(alpha = .85f)) },
+                    onClick = { picker = false; onOpen(camera) }, modifier = Modifier.heightIn(min = 64.dp).testTag("cctv-picker-$camera"))
+            }
+        }
         }
     }
 }

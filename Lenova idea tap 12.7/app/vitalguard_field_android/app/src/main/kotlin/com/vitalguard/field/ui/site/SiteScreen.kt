@@ -19,7 +19,7 @@ import com.vitalguard.field.ui.theme.*
 
 @Composable
 fun SiteScreen(state: SiteSummaryState, onRefresh: () -> Unit = {}, onNextStage: () -> Unit = {},
-    onOpenDetail: (String) -> Unit = { onNextStage() }, onOpenCctv: () -> Unit = onNextStage,
+    onOpenDetail: (String) -> Unit = { onNextStage() }, onOpenCctv: (String) -> Unit = { onNextStage() },
     onOpenAlerts: () -> Unit = onNextStage) {
     GlassDashboard(state, onRefresh, onOpenDetail, onOpenCctv, onOpenAlerts)
 }

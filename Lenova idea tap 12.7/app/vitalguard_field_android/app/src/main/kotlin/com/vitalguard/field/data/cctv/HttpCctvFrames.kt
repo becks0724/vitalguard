@@ -5,6 +5,8 @@ import com.vitalguard.field.data.models.Json
 import java.net.HttpURLConnection
 import java.net.URI
 import java.io.ByteArrayOutputStream
+import java.io.PushbackInputStream
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -13,15 +15,19 @@ import kotlinx.coroutines.*
 const val cctvUnreachable = "현장 장비에 연결되지 않습니다 (Wi-Fi·장비 전원 확인)"
 interface CctvFrames {
     suspend fun fetch(ticket: CctvTicket): ByteArray
+    suspend fun receive(ticket: CctvTicket, cameraId: String, intervalMillis: Int, onFrame: suspend (ByteArray) -> Unit) {
+        onFrame(fetch(ticket))
+    }
     fun cancel() {}
 }
 
-fun cctvStreamUri(gateApi: String): URI {
+fun cctvStreamUri(gateApi: String, cameraId: String = "CAM-03"): URI {
+    val suffix = when (cameraId) { "CAM-01" -> "1"; "CAM-03" -> "3"; else -> throw CctvFailure("등록되지 않은 카메라입니다") }
     if (gateApi.isBlank()) throw CctvFailure("현장 CCTV 주소가 설정되지 않았습니다")
     val uri = try { URI(gateApi.trim()) } catch (_: Exception) { throw CctvFailure("현장 CCTV 주소 형식이 올바르지 않습니다") }
     if (uri.scheme !in listOf("http", "https") || uri.host.isNullOrEmpty() || uri.userInfo != null || uri.rawQuery != null || uri.rawFragment != null)
         throw CctvFailure("현장 CCTV 주소 형식이 올바르지 않습니다")
-    return URI(uri.scheme, null, uri.host, uri.port, uri.path.trimEnd('/') + "/cctv/stream3", null, null)
+    return URI(uri.scheme, null, uri.host, uri.port, uri.path.trimEnd('/') + "/cctv/stream$suffix", null, null)
 }
 
 class HttpCctvFrames(
@@ -33,13 +39,29 @@ class HttpCctvFrames(
     }
     private val connection = AtomicReference<HttpURLConnection?>()
     override fun cancel() { connection.get()?.disconnect() }
-    override suspend fun fetch(ticket: CctvTicket): ByteArray = withContext(Dispatchers.IO) {
-        val uri = cctvStreamUri(ticket.gateApi)
+    override suspend fun fetch(ticket: CctvTicket): ByteArray {
+        var first: ByteArray? = null
+        read(ticket, "CAM-03", 0, false) { first = it }
+        return first ?: throw CctvFailure("받은 영상이 없습니다")
+    }
+    override suspend fun receive(ticket: CctvTicket, cameraId: String, intervalMillis: Int, onFrame: suspend (ByteArray) -> Unit) =
+        read(ticket, cameraId, intervalMillis, true, onFrame)
+
+    private suspend fun read(ticket: CctvTicket, cameraId: String, intervalMillis: Int, continuous: Boolean,
+        onFrame: suspend (ByteArray) -> Unit) {
+        val callbackContext = currentCoroutineContext()
+        withContext(Dispatchers.IO) {
+        val uri = cctvStreamUri(ticket.gateApi, cameraId)
         // Keep the native app's existing usesCleartextTraffic=false policy.
         if (uri.scheme != "https") throw CctvFailure("현장 CCTV 주소는 HTTPS가 필요합니다")
         val request = open(uri)
         if (!connection.compareAndSet(null, request)) { request.disconnect(); throw CctvFailure("영상 요청이 진행 중입니다") }
-        val alarm = watchdog.schedule({ request.disconnect() }, 15, TimeUnit.SECONDS)
+        val lastFrame = AtomicLong(System.nanoTime())
+        val expires = minOf(ticket.expiresAt, System.currentTimeMillis() + ticket.ttlSec * 1000L)
+        val alarm = watchdog.scheduleAtFixedRate({
+            if (System.nanoTime() - lastFrame.get() > 15_000_000_000L || System.currentTimeMillis() >= expires) request.disconnect()
+        }, 1, 1, TimeUnit.SECONDS)
+        var delivered = false
         try {
             request.requestMethod = "GET"
             request.instanceFollowRedirects = false
@@ -49,10 +71,21 @@ class HttpCctvFrames(
             request.setRequestProperty("Authorization", "Bearer ${ticket.ticket}")
             when (request.responseCode) {
                 200 -> request.inputStream.use { input ->
-                    val bytes = readCctvImage(input.buffered(), request.contentType)
-                    currentCoroutineContext().ensureActive()
-                    validateImage(bytes)
-                    bytes
+                    val stream = PushbackInputStream(input.buffered(), 256)
+                    val multipart = request.contentType.orEmpty().substringBefore(';').trim().equals("multipart/x-mixed-replace", true)
+                    var lastDisplay = 0L
+                    do {
+                        currentCoroutineContext().ensureActive()
+                        val bytes = readCctvImage(stream, request.contentType)
+                        lastFrame.set(System.nanoTime())
+                        val now = System.nanoTime()
+                        if (!delivered || now - lastDisplay >= intervalMillis * 1_000_000L) {
+                            validateImage(bytes)
+                            withContext(callbackContext) { onFrame(bytes) }
+                            delivered = true; lastDisplay = now
+                        }
+                    } while (continuous && multipart && System.currentTimeMillis() < expires - 500)
+                    if (continuous && !multipart) delay(maxOf(1000, intervalMillis).toLong())
                 }
                 401, 403 -> throw CctvFailure("현장 장비의 영상 접근이 거부되었습니다. 다시 시도합니다")
                 404 -> throw CctvFailure("현장 장비에서 CCTV 영상을 찾을 수 없습니다")
@@ -77,10 +110,13 @@ class HttpCctvFrames(
                 else -> throw CctvFailure(cctvUnreachable)
             }
         } catch (e: CancellationException) { throw e
-        } catch (e: CctvFailure) { throw e
-        } catch (_: Exception) { throw CctvFailure(cctvUnreachable)
+        } catch (e: Exception) {
+            // A used ticket is never replayed; a normal expiry asks the controller for a new one.
+            if (!(continuous && delivered && System.currentTimeMillis() >= expires - 1000))
+                throw if (e is CctvFailure) e else CctvFailure(cctvUnreachable)
         } finally {
             alarm.cancel(false); request.disconnect(); connection.compareAndSet(request, null)
+        }
         }
     }
 }

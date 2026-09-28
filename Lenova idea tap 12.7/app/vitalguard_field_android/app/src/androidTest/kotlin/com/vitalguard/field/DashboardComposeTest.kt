@@ -44,6 +44,7 @@ class DashboardComposeTest {
         compose.onNodeWithTag("site-row-aed-alert").performScrollTo().assertHasNoClickAction()
         compose.onNodeWithTag("aed-alert-pending").assertTextEquals("연동 대기")
         compose.onNodeWithTag("site-open-cctv").performScrollTo().assertHeightIsAtLeast(56.dp).performClick()
+        compose.onNodeWithTag("cctv-picker-CAM-03").performClick()
         compose.onNodeWithTag("site-alerts").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(1, videos); assertEquals(1, alerts) }
     }

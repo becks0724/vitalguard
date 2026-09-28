@@ -17,20 +17,20 @@ class CctvSettingsTest {
     }
     @Test fun periodSurvivesControllerRecreationAndStaysWithItsAccountWithoutOpeningCamera() = runTest {
         val store = MemoryStore()
-        store.write("a", CCTV_PERIOD_PREFERENCE_KEY, "10")
+        store.write("a", CCTV_LEGACY_PERIOD_KEY, "10")
         var tickets = 0
         val gateway = object : ScriptedGateway() {
             override suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket { tickets++; return stage3Ticket(tickets) }
         }
         val field = FieldCoordinator(gateway, store, backgroundScope, MutableClock()); field.signIn("a", "pw")
         val first = CctvController(field, frames, backgroundScope, MutableClock()); runCurrent()
-        assertTrue(first.state.value.periodLoaded); assertEquals(10, first.state.value.periodSeconds)
-        first.period(2); runCurrent()
-        assertEquals("2", store.read("a", CCTV_PERIOD_PREFERENCE_KEY)); first.close()
+        assertTrue(first.state.value.periodLoaded); assertEquals(2000, first.state.value.periodMillis)
+        first.period(500); runCurrent()
+        assertEquals("500", store.read("a", CCTV_PERIOD_PREFERENCE_KEY)); first.close()
         val restored = CctvController(field, frames, backgroundScope, MutableClock()); runCurrent()
-        assertEquals(2, restored.state.value.periodSeconds)
+        assertEquals(500, restored.state.value.periodMillis)
         field.signOut(); runCurrent(); field.signIn("b", "pw"); runCurrent()
-        assertEquals(5, restored.state.value.periodSeconds)
+        assertEquals(2000, restored.state.value.periodMillis)
         assertNull(store.read("b", CCTV_PERIOD_PREFERENCE_KEY)); assertEquals(0, tickets)
     }
 
@@ -49,15 +49,15 @@ class CctvSettingsTest {
         val field = FieldCoordinator(ScriptedGateway(), store, backgroundScope, MutableClock()); field.signIn("a", "pw")
         val cctv = CctvController(field, frames, backgroundScope, MutableClock()); runCurrent()
         assertTrue(cctv.state.value.periodLoaded); assertNotNull(cctv.state.value.periodError)
-        cctv.period(10); runCurrent()
-        assertEquals(5, cctv.state.value.periodSeconds); assertFalse(cctv.state.value.periodSaving)
+        cctv.period(0); runCurrent()
+        assertEquals(2000, cctv.state.value.periodMillis); assertFalse(cctv.state.value.periodSaving)
         assertNotNull(cctv.state.value.periodError)
         failRead = false; failWrite = false
-        cctv.period(5); runCurrent()
-        assertNull(cctv.state.value.periodError); assertEquals("5", store.read("a", CCTV_PERIOD_PREFERENCE_KEY))
-        cctv.close(); store.write("a", CCTV_PERIOD_PREFERENCE_KEY, "500")
+        cctv.period(2000); runCurrent()
+        assertNull(cctv.state.value.periodError); assertEquals("2000", store.read("a", CCTV_PERIOD_PREFERENCE_KEY))
+        cctv.close(); store.write("a", CCTV_PERIOD_PREFERENCE_KEY, "9999")
         val repaired = CctvController(field, frames, backgroundScope, MutableClock()); runCurrent()
-        assertEquals(5, repaired.state.value.periodSeconds)
+        assertEquals(2000, repaired.state.value.periodMillis)
     }
 
     @Test fun rapidSelectionAndLateWriteCannotChangeTheNextAccount() = runTest {
@@ -70,12 +70,12 @@ class CctvSettingsTest {
         }
         val field = FieldCoordinator(ScriptedGateway(), store, backgroundScope, MutableClock()); field.signIn("a", "pw")
         val cctv = CctvController(field, frames, backgroundScope, MutableClock()); runCurrent()
-        cctv.period(2); cctv.period(10); runCurrent()
+        cctv.period(500); cctv.period(0); runCurrent()
         assertTrue(cctv.state.value.periodSaving)
         field.signOut(); runCurrent(); field.signIn("b", "pw"); runCurrent()
         gate.complete(Unit); runCurrent()
-        assertEquals(1, writes); assertEquals("2", store.read("a", CCTV_PERIOD_PREFERENCE_KEY))
+        assertEquals(1, writes); assertEquals("500", store.read("a", CCTV_PERIOD_PREFERENCE_KEY))
         assertNull(store.read("b", CCTV_PERIOD_PREFERENCE_KEY))
-        assertEquals(5, cctv.state.value.periodSeconds); assertFalse(cctv.state.value.periodSaving)
+        assertEquals(2000, cctv.state.value.periodMillis); assertFalse(cctv.state.value.periodSaving)
     }
 }

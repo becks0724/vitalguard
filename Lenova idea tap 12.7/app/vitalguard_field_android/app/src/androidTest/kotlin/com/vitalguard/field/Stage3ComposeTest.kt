@@ -39,7 +39,7 @@ class Stage3ComposeTest {
                 override suspend fun siteStatus(accessToken: String) = stage3SampleStatus(eventTime, acknowledged)
                 override suspend fun ackAlert(accessToken: String, id: String): Boolean { assertEquals("42", id); writes++; acknowledged = true; return true }
                 override suspend fun cctvTicket(accessToken: String, cameraId: String): CctvTicket {
-                    assertEquals("CAM-03", cameraId); tickets++
+                    assertTrue(cameraId in CCTV_CAMERAS); tickets++
                     return CctvTicket(mapOf("ok" to true, "ticket" to "synthetic-$tickets", "expiresAt" to System.currentTimeMillis() + 60_000,
                         "ttlSec" to 60, "gateApi" to "https://camera.example"))
                 }
@@ -117,21 +117,41 @@ class Stage3ComposeTest {
     }
     @Test fun cctvShowsFramesRefreshesWithNewTicketsAndStopsAfterBack() {
         login(); compose.onNodeWithTag("site-open-cctv").performScrollTo().performClick()
+        compose.onNodeWithTag("cctv-picker-CAM-03").performClick()
         compose.waitUntil(5000) { model.cctv.state.value.bytes != null }
         compose.onNodeWithTag("cctv-image").assertIsDisplayed()
         val imageBounds = compose.onNodeWithTag("cctv-image").fetchSemanticsNode().boundsInRoot
         val viewport = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot
         assertTrue(imageBounds.top >= viewport.top && imageBounds.bottom <= viewport.bottom)
         assertTrue(imageBounds.left >= viewport.left && imageBounds.right <= viewport.right)
-        compose.onNodeWithTag("cctv-period-2").assertDoesNotExist()
+        compose.onNodeWithTag("cctv-retry").assertDoesNotExist()
+        assertTrue(imageBounds.height > viewport.height * .65f)
+        compose.onNodeWithTag("cctv-image").performClick()
+        compose.onNodeWithTag("cctv-zoom-overlay").assertIsDisplayed()
+        compose.onNodeWithTag("cctv-zoom-gesture").performTouchInput {
+            val y = center.y
+            down(0, androidx.compose.ui.geometry.Offset(center.x - 40f, y))
+            down(1, androidx.compose.ui.geometry.Offset(center.x + 40f, y))
+            moveTo(0, androidx.compose.ui.geometry.Offset(center.x - 160f, y), delayMillis = 100)
+            moveTo(1, androidx.compose.ui.geometry.Offset(center.x + 160f, y), delayMillis = 100)
+            up(0); up(1)
+        }
+        val zoom = compose.onNodeWithTag("cctv-zoom-gesture").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription]
+        assertTrue(zoom.removeSuffix("%").toInt() > 100)
+        compose.onNodeWithTag("cctv-zoom-reset").performClick()
+        compose.onNodeWithTag("cctv-zoom-gesture").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "100%"))
+        compose.onNodeWithTag("cctv-zoom-close").performClick()
+        compose.onNodeWithTag("cctv-camera-CAM-01").performClick()
+        compose.waitUntil(5000) { model.cctv.state.value.cameraId == "CAM-01" && model.cctv.state.value.bytes != null }
+        compose.onNodeWithTag("cctv-image").assertContentDescriptionEquals("CAM-01 영상 · 눌러서 확대")
         compose.onNodeWithTag("cctv-open-settings").performScrollTo().performClick()
-        compose.onNodeWithTag("settings-cctv-period-2").performScrollTo().performClick()
-        compose.waitUntil(5000) { model.cctv.state.value.periodSeconds == 2 && !model.cctv.state.value.periodSaving }
+        compose.onNodeWithTag("cctv-period-slider").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(2000f) }
+        compose.waitUntil(5000) { model.cctv.state.value.periodMillis == 2000 && !model.cctv.state.value.periodSaving }
         val whileSettings = tickets
         android.os.SystemClock.sleep(2500)
         assertEquals(whileSettings, tickets)
         compose.onNodeWithTag("rail-destination-0").performScrollTo().performClick()
-        compose.onNodeWithTag("cctv-receipt").assertTextContains("2초 간격", substring = true)
+        compose.onNodeWithTag("cctv-receipt").assertTextContains("2초", substring = true)
         compose.waitUntil(5000) { tickets >= whileSettings + 2 }
         compose.onNodeWithTag("cctv-back").performScrollTo().assertContentDescriptionEquals("이전").assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag("site-signals").assertExists()

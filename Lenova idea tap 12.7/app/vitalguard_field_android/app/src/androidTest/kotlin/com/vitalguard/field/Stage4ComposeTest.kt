@@ -53,28 +53,28 @@ class Stage4ComposeTest {
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-a", vgActionSidePreferenceKey) == "left" } }
         assertRailSide(onRight = true)
-        compose.onNodeWithTag("settings-cctv-period-10").performScrollTo().performClick()
-        compose.waitUntil(5000) { runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) == "10" } }
+        compose.onNodeWithTag("cctv-period-slider").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(0f) }
+        compose.waitUntil(5000) { runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) == "0" } }
         compose.activityRule.scenario.recreate()
         settings()
         compose.onNodeWithTag("action-side-left").assertIsSelected()
         assertRailSide(onRight = true)
-        compose.onNodeWithTag("settings-cctv-period-10").assertIsSelected()
+        compose.onNodeWithTag("cctv-period-slider").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "실시간"))
         compose.runOnIdle { ViewModelProvider(compose.activity)[FieldViewModel::class.java].shell.logout() }
         login("settings-b"); settings()
         compose.onNodeWithTag("action-side-right").assertIsSelected()
         assertRailSide(onRight = false)
-        compose.onNodeWithTag("settings-cctv-period-5").assertIsSelected()
+        compose.onNodeWithTag("cctv-period-slider").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "2초"))
         assertEquals("left", runBlocking { local.read("settings-a", vgActionSidePreferenceKey) })
         assertNull(runBlocking { local.read("settings-b", vgActionSidePreferenceKey) })
-        assertEquals("10", runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) })
+        assertEquals("0", runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) })
         assertNull(runBlocking { local.read("settings-b", CCTV_PERIOD_PREFERENCE_KEY) })
     }
     @Test fun selectionWorksWhileOfflineAndMovesTheSharedActionPlacement() {
         login("settings-offline"); settings()
         compose.runOnIdle { runBlocking { field.connectivityChanged(false) } }
-        compose.onNodeWithTag("settings-cctv-period-2").performScrollTo().performClick()
-        compose.waitUntil(5000) { runBlocking { local.read("settings-offline", CCTV_PERIOD_PREFERENCE_KEY) == "2" } }
+        compose.onNodeWithTag("cctv-period-slider").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(500f) }
+        compose.waitUntil(5000) { runBlocking { local.read("settings-offline", CCTV_PERIOD_PREFERENCE_KEY) == "500" } }
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-offline", vgActionSidePreferenceKey) == "left" } }
         assertRailSide(onRight = true)
