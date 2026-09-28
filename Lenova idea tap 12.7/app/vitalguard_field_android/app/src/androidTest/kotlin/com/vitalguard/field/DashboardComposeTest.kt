@@ -52,6 +52,8 @@ class DashboardComposeTest {
             } }
         }
         compose.onNodeWithText("27.2", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("site-refresh").assertContentDescriptionEquals("새로고침")
+            .assertWidthIsEqualTo(56.dp).assertHeightIsEqualTo(56.dp)
         compose.onNodeWithTag("site-row-weather").assertIsNotEnabled()
         compose.runOnIdle { state.value = state.value.copy(forbidden = false) }
         compose.onNodeWithTag("site-row-gas").performScrollTo()
@@ -59,6 +61,7 @@ class DashboardComposeTest {
         compose.onNodeWithTag("dashboard-gas-o2", useUnmergedTree = true).assertTextEquals("20.9 %")
         val before = compose.onNodeWithTag("site-row-weather").fetchSemanticsNode().boundsInRoot
         compose.runOnIdle { state.value = state.value.copy(loading = true) }
+        compose.onNodeWithTag("site-refresh").assertIsNotEnabled()
         assertEquals(before, compose.onNodeWithTag("site-row-weather").fetchSemanticsNode().boundsInRoot)
     }
 }

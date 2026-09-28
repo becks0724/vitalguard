@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -79,9 +81,11 @@ private fun DashboardHeading(state: SiteSummaryState, compact: Boolean, onRefres
         }
     }
     val refresh: @Composable () -> Unit = {
-        OutlinedButton(onRefresh, Modifier.heightIn(min = vgTapPrimary).testTag("site-refresh"), enabled = !state.loading,
+        OutlinedButton(onRefresh, Modifier.size(vgTapMin).testTag("site-refresh")
+            .semantics { if (state.loading) stateDescription = "갱신 중" }, enabled = !state.loading,
+            shape = CircleShape, contentPadding = PaddingValues(0.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = DashboardColors.text)) {
-            VgIcon(R.drawable.ic_refresh); Spacer(Modifier.width(10.dp)); Text(if (state.loading) "갱신 중" else "새로고침")
+            VgIcon(R.drawable.ic_refresh, "새로고침", Modifier.size(24.dp))
         }
     }
     if (compact) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { title(); refresh() }
