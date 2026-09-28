@@ -107,7 +107,7 @@ class RecordCalendarFlowComposeTest {
         compose.onNodeWithTag("record-photo-${photo.id}").performClick()
         compose.onNodeWithTag("photo-detail-actions").assertExists()
     }
-    @Test fun emptyCalendarSelectsDateAndHasTwoCaptureFabs() {
+    @Test fun emptyCalendarSelectsDateAndHasTwoCaptureActions() {
         login(); select(2)
         compose.onNodeWithTag("record-calendar").assertExists()
         compose.onNodeWithTag("week-day-${model.calendar.state.value.selected}").performClick()

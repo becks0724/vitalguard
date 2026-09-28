@@ -35,6 +35,11 @@ fun RecordCalendarPreview() {
 }
 
 @PreviewTest
+@Preview(name = "RecordCalendarLandscape", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
+@Composable
+fun RecordCalendarLandscapePreview() = RecordCalendarPreview()
+
+@PreviewTest
 @Preview(name = "OutboxHistory866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable
 fun OutboxHistoryPreview() {

@@ -1,6 +1,9 @@
 package com.vitalguard.field
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import com.vitalguard.field.data.ActionPlacementState
+import com.vitalguard.field.data.ActionSide
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.vitalguard.field.data.contracts.*
@@ -32,6 +35,10 @@ private fun DashboardExample(width: Int, empty: Boolean = false, forbidden: Bool
 
 @PreviewTest @Preview(name = "DashboardLandscape", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
 @Composable fun DashboardLandscapePreview() = DashboardExample(1385)
+@PreviewTest @Preview(name = "DashboardLeftHand", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun DashboardLeftHandPreview() {
+    CompositionLocalProvider(LocalActionPlacement provides ActionPlacementState(ActionSide.left, loaded = true)) { DashboardExample(1385) }
+}
 @PreviewTest @Preview(name = "DashboardPortrait", device = "spec:width=866dp,height=1385dp,dpi=160", locale = "ko", showBackground = true)
 @Composable fun DashboardPortraitPreview() = DashboardExample(866)
 @PreviewTest @Preview(name = "DashboardOffline", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)

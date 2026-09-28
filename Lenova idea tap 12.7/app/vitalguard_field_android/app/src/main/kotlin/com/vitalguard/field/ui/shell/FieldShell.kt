@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -23,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vitalguard.field.R
 import com.vitalguard.field.data.contracts.FieldState
+import com.vitalguard.field.data.ActionSide
 import com.vitalguard.field.ui.placeholder.PlaceholderScreen
 import com.vitalguard.field.ui.site.SiteScreen
 import com.vitalguard.field.ui.site.SiteSummaryState
@@ -47,6 +49,7 @@ fun FieldShell(
     val siteName = field.site?.site_name ?: "현장 정보 없음"
     val userName = field.user?.name ?: field.user?.id ?: "사용자 정보 없음"
     val scale = LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val railOnRight = LocalActionPlacement.current.side == ActionSide.left
     var receiptDetails by rememberSaveable { mutableStateOf(false) }
     val receiptState = when {
         shell.destination <= 1 && field.siteStatusForbidden -> StateKind.locked to "접근 권한 없음"
@@ -65,11 +68,12 @@ fun FieldShell(
     val horizontalMargin = if (maxWidth >= 1000.dp) 32.dp else 16.dp
     val verticalMargin = if (maxHeight >= 600.dp) 20.dp else 8.dp
     DashboardWorkspace(Modifier.fillMaxSize().padding(horizontal = horizontalMargin, vertical = verticalMargin)) {
-    Row(Modifier.fillMaxSize().padding(10.dp)) {
+    // Keep child composition order stable while placing the rail on either physical side.
+    Layout(modifier = Modifier.fillMaxSize().padding(10.dp), content = {
         DashboardTheme { CompositionLocalProvider(LocalContentColor provides DashboardColors.text) {
-            FieldRail(collapsed, userName, isMock, shell, onToggle, onSelect, onLogout)
+            FieldRail(collapsed, railOnRight, userName, isMock, shell, onToggle, onSelect, onLogout)
         } }
-        Box(Modifier.weight(1f).fillMaxHeight()) {
+        Box(Modifier.fillMaxHeight()) {
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().height((64 * scale).dp).testTag("shell-receipt-slot")
                     .padding(horizontal = 24.dp).clip(RoundedCornerShape(14.dp))
@@ -116,6 +120,15 @@ fun FieldShell(
                 }
             }
         }
+    }) { children, constraints ->
+        val rail = children[0].measure(constraints.copy(minWidth = 0, minHeight = constraints.maxHeight))
+        val contentWidth = (constraints.maxWidth - rail.width).coerceAtLeast(0)
+        val page = children[1].measure(constraints.copy(minWidth = contentWidth, maxWidth = contentWidth,
+            minHeight = constraints.maxHeight))
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            rail.place(if (railOnRight) contentWidth else 0, 0)
+            page.place(if (railOnRight) 0 else rail.width, 0)
+        }
     }
     }
     }
@@ -130,7 +143,7 @@ fun FieldShell(
 
 @Composable
 private fun FieldRail(
-    collapsed: Boolean, userName: String, isMock: Boolean, shell: ShellState,
+    collapsed: Boolean, onRight: Boolean, userName: String, isMock: Boolean, shell: ShellState,
     onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.width(if (collapsed) 80.dp else 256.dp).fillMaxHeight()
@@ -144,16 +157,17 @@ private fun FieldRail(
                     Box(Modifier.fillMaxWidth().height(56.dp)) {
                         if (isMock) Box(Modifier.offset(x = (-12).dp, y = 8.dp).size(6.dp, 40.dp)
                             .background(DashboardColors.accent).testTag("mock-rail-marker").semantics { contentDescription = "모의 데이터" })
-                        VgIconButton(R.drawable.ic_chevron_right, "레일 펼치기",
+                        VgIconButton(if (onRight) R.drawable.ic_chevron_left else R.drawable.ic_chevron_right, "레일 펼치기",
                             Modifier.align(Alignment.Center).testTag("rail-collapse-toggle"), enabled = !shell.recordEditorOpen, onClick = onToggle)
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onRight) VgIconButton(R.drawable.ic_chevron_right, "레일 접기", Modifier.testTag("rail-collapse-toggle"), onClick = onToggle)
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("VitAlGuard", color = DashboardColors.text, fontSize = 23.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-.6).sp)
                             Text("현장 관리", color = DashboardColors.secondary, fontSize = 12.sp)
                         }
-                        VgIconButton(R.drawable.ic_chevron_left, "레일 접기", Modifier.testTag("rail-collapse-toggle"), onClick = onToggle)
+                        if (!onRight) VgIconButton(R.drawable.ic_chevron_left, "레일 접기", Modifier.testTag("rail-collapse-toggle"), onClick = onToggle)
                     }
                     if (isMock) Text("모의 데이터", Modifier.padding(start = 12.dp, bottom = 16.dp).testTag("mock-label"), color = DashboardColors.secondary)
                 }

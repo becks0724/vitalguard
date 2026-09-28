@@ -12,12 +12,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.LayoutDirection
 import com.vitalguard.field.data.ActionSide
 import com.vitalguard.field.ui.shell.LocalActionPlacement
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
@@ -36,7 +35,6 @@ import com.vitalguard.field.data.record.*
 import com.vitalguard.field.ui.theme.VgIcon
 import com.vitalguard.field.ui.theme.VgIconButton
 import java.time.LocalDate
-import java.time.YearMonth
 
 @Composable
 fun RecordCalendarScreen(controller: FieldController, outbox: OutboxController, calendar: RecordCalendarController,
@@ -66,24 +64,29 @@ fun RecordCalendarContent(
     onSend: (CalendarRecord) -> Unit = {}, onScan: () -> Unit = {}, onPhoto: () -> Unit = {},
     thumbnail: @Composable (CalendarRecord) -> Unit = { ImagePlaceholder(Modifier.size(64.dp)) },
 ) {
-    var monthKey by rememberSaveable { mutableStateOf(YearMonth.from(selected).toString()) }
     var showDay by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(selected) { monthKey = YearMonth.from(selected).toString() }
-    val select: (LocalDate) -> Unit = { onSelect(it); monthKey = YearMonth.from(it).toString(); showDay = true }
+    val select: (LocalDate) -> Unit = { onSelect(it); showDay = true }
     val blocks = remember(records, selected) { calendarBlocks(records, selected) }
     val placement = LocalActionPlacement.current
     val physicalLeft = placement.side == ActionSide.left
-    val start = physicalLeft == (LocalLayoutDirection.current == LayoutDirection.Ltr)
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        floatingActionButtonPosition = if (start) FabPosition.Start else FabPosition.End,
-        floatingActionButton = {
-            if (placement.loaded) Column(Modifier.testTag("record-capture-actions"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ExtendedFloatingActionButton(onClick = { if (!capture.busy) onScan() },
-                    modifier = Modifier.heightIn(min = 64.dp).testTag("document-scan").semantics { if (capture.busy) disabled() },
-                    icon = { VgIcon(R.drawable.ic_record) }, text = { Text("서류 스캔") })
-                ExtendedFloatingActionButton(onClick = { if (!capture.busy) onPhoto() },
-                    modifier = Modifier.heightIn(min = 64.dp).testTag("photo-capture").semantics { if (capture.busy) disabled() },
-                    icon = { VgIcon(R.drawable.ic_camera) }, text = { Text("사진 촬영") })
+        bottomBar = {
+            // A measured bottom bar reserves space; capture actions never float over calendar cells.
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Row(Modifier.align(if (physicalLeft) AbsoluteAlignment.CenterLeft else AbsoluteAlignment.CenterRight)
+                    .widthIn(max = 480.dp).fillMaxWidth().testTag("record-capture-actions"),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(onClick = { if (!capture.busy) onScan() },
+                        modifier = Modifier.weight(1f).heightIn(min = 64.dp).testTag("document-scan"),
+                        enabled = placement.loaded && !capture.busy) {
+                        VgIcon(R.drawable.ic_record); Spacer(Modifier.width(8.dp)); Text("서류 스캔")
+                    }
+                    FilledTonalButton(onClick = { if (!capture.busy) onPhoto() },
+                        modifier = Modifier.weight(1f).heightIn(min = 64.dp).testTag("photo-capture"),
+                        enabled = placement.loaded && !capture.busy) {
+                        VgIcon(R.drawable.ic_camera); Spacer(Modifier.width(8.dp)); Text("사진 촬영")
+                    }
+                }
             }
         }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).testTag("record-calendar"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -96,21 +99,9 @@ fun RecordCalendarContent(
             if (loading || capture.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (capture.scannerReady == false) Text(scannerPreparationMessage, Modifier.testTag("scanner-not-ready"), style = MaterialTheme.typography.bodySmall)
             capture.operationMessage?.let { Text(it, Modifier.testTag("capture-status"), style = MaterialTheme.typography.bodySmall) }
-            BoxWithConstraints(Modifier.weight(1f)) {
-                val month: @Composable () -> Unit = {
-                    MiniMonth(YearMonth.parse(monthKey), selected, today, onMonth = { monthKey = it.toString() }, onSelect = select)
-                }
-                val week: @Composable () -> Unit = {
-                    WeekCalendar(selected, today, blocks, onSelect = select,
-                        onShift = { onSelect(selected.plusDays(it)); showDay = false }, onToday = { select(today) })
-                }
-                if (maxWidth >= 760.dp) Row(Modifier.fillMaxSize().testTag("calendar-side-by-side"), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(Modifier.width(224.dp)) { month() }
-                    Box(Modifier.weight(1f).fillMaxHeight()) { week() }
-                } else Column(Modifier.fillMaxSize().testTag("calendar-stacked"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    month()
-                    Box(Modifier.weight(1f)) { week() }
-                }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                WeekCalendar(selected, today, blocks, onSelect = select,
+                    onShift = { onSelect(selected.plusDays(it)); showDay = false }, onToday = { select(today) })
             }
         }
     }
@@ -144,10 +135,10 @@ fun RecordCalendarContent(
 
 @Composable
 private fun CalendarDay(date: LocalDate, selected: LocalDate, today: LocalDate, tag: String, onClick: () -> Unit,
-    inMonth: Boolean = true, modifier: Modifier = Modifier,
+    modifier: Modifier = Modifier,
 ) {
     val chosen = date == selected
-    Box(modifier.height(36.dp).testTag(tag).semantics { this.selected = chosen; contentDescription = date.toString() }
+    Box(modifier.height(56.dp).testTag(tag).semantics { this.selected = chosen; contentDescription = date.toString() }
         .clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Box(Modifier.size(30.dp).background(when {
             chosen -> MaterialTheme.colorScheme.primary
@@ -156,31 +147,9 @@ private fun CalendarDay(date: LocalDate, selected: LocalDate, today: LocalDate, 
         }, CircleShape), contentAlignment = Alignment.Center) {
             Text("${date.dayOfMonth}", fontSize = 12.sp, color = when {
                 chosen -> MaterialTheme.colorScheme.onPrimary
-                !inMonth -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .55f)
                 else -> MaterialTheme.colorScheme.onSurface
             })
         }
-    }
-}
-
-@Composable
-private fun MiniMonth(month: YearMonth, selected: LocalDate, today: LocalDate, onMonth: (YearMonth) -> Unit, onSelect: (LocalDate) -> Unit) {
-    GlassCard(Modifier.fillMaxWidth()) {
-    Column(Modifier.fillMaxWidth().padding(8.dp).testTag("calendar-mini-month")) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("${month.year}년 ${month.monthValue}월", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            VgIconButton(R.drawable.ic_chevron_left, "이전 달", onClick = { onMonth(month.minusMonths(1)) })
-            VgIconButton(R.drawable.ic_chevron_right, "다음 달", onClick = { onMonth(month.plusMonths(1)) })
-        }
-        Row(Modifier.fillMaxWidth()) { listOf("일", "월", "화", "수", "목", "금", "토").forEach { day ->
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { Text(day, style = MaterialTheme.typography.labelSmall) }
-        } }
-        monthDays(month).chunked(7).forEach { week ->
-            Row(Modifier.fillMaxWidth()) { week.forEach { date ->
-                CalendarDay(date, selected, today, "mini-day-$date", { onSelect(date) }, YearMonth.from(date) == month, Modifier.weight(1f))
-            } }
-        }
-    }
     }
 }
 
@@ -195,9 +164,11 @@ private fun WeekCalendar(selected: LocalDate, today: LocalDate, blocks: List<Cal
     Column(Modifier.fillMaxSize().padding(8.dp).testTag("calendar-week")) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             VgIconButton(R.drawable.ic_chevron_left, "이전 주", onClick = { onShift(-7) })
-            Text("${days.first().monthValue}/${days.first().dayOfMonth} – ${days.last().monthValue}/${days.last().dayOfMonth}",
+            Text("${days.first().year}년 ${days.first().monthValue}/${days.first().dayOfMonth} – " +
+                (if (days.last().year != days.first().year) "${days.last().year}년 " else "") +
+                "${days.last().monthValue}/${days.last().dayOfMonth}",
                 Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            TextButton(onToday) { Text("오늘") }
+            TextButton(onToday, Modifier.heightIn(min = 56.dp)) { Text("오늘") }
             VgIconButton(R.drawable.ic_chevron_right, "다음 주", onClick = { onShift(7) })
         }
         Row(Modifier.fillMaxWidth()) {
@@ -219,8 +190,8 @@ private fun WeekCalendar(selected: LocalDate, today: LocalDate, blocks: List<Cal
                 }
             }
         }
-        // 본문/미니 월간은 고정하고 이 24시간 격자만 세로 스크롤한다. 새 조회마다 07시로 돌아가지 않는다.
-        Box(Modifier.weight(1f, fill = false).heightIn(max = 640.dp).fillMaxWidth().verticalScroll(scroll).testTag("calendar-hour-scroll")) {
+        // 날짜 머리글은 고정하고 24시간 격자만 세로 스크롤한다. 새 조회마다 07시로 돌아가지 않는다.
+        Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).testTag("calendar-hour-scroll")) {
             Row(Modifier.fillMaxWidth().height((WEEK_END_HOUR * WEEK_HOUR_DP + 20).dp)) {
                 Box(Modifier.width(42.dp).fillMaxHeight()) {
                     (WEEK_START_HOUR..WEEK_END_HOUR).forEach { hour ->

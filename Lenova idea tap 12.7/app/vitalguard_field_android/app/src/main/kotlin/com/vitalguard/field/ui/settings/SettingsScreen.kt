@@ -62,8 +62,8 @@ fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> U
         }
         GlassCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Text("실행 버튼 위치", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("잡는 손에 맞춰 자주 쓰는 버튼을 화면 하단 왼쪽 또는 오른쪽에 놓습니다.")
+                Text("작업 손", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("실행 버튼은 쓰는 손 쪽, 사이드바는 반대쪽에 배치합니다.")
                 FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     ActionSide.entries.forEach { side ->
@@ -80,7 +80,8 @@ fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> U
                         }
                     }
                 }
-                Text("기록의 촬영·스캔, 사진의 펜·댓글, 펜 편집의 도구·저장에 적용됩니다.")
+                Text(if (placement.side == ActionSide.left) "실행 버튼 왼쪽 · 사이드바 오른쪽" else "실행 버튼 오른쪽 · 사이드바 왼쪽",
+                    Modifier.testTag("hand-layout-summary"))
                 Text("이 기기에서 현재 계정의 선택을 기억합니다.")
                 if (!placement.loaded || placement.saving) StateLabel(StateKind.loading, if (placement.saving) "저장 중…" else "선택을 불러오는 중…")
                 placement.error?.let { StateNotice(StateKind.failed, "설정 저장 확인 필요", it, Modifier.testTag("action-side-error")) }

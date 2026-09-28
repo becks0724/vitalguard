@@ -42,19 +42,28 @@ class Stage4ComposeTest {
         compose.waitUntil(5000) { field.state.value.siteStatusSnapshot != null }
     }
     private fun settings() = compose.onNodeWithTag("rail-destination-4").performScrollTo().performClick()
+    private fun assertRailSide(onRight: Boolean) {
+        val rail = compose.onAllNodes(hasTestTag("rail-expanded") or hasTestTag("rail-collapsed"))
+            .fetchSemanticsNodes().single().boundsInRoot
+        val content = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot
+        if (onRight) assertTrue(rail.left >= content.right) else assertTrue(rail.right <= content.left)
+    }
     @Test fun settingsPersistAcrossRecreationAndDoNotLeakToAnotherAccount() {
         login("settings-a"); settings()
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-a", vgActionSidePreferenceKey) == "left" } }
+        assertRailSide(onRight = true)
         compose.onNodeWithTag("settings-cctv-period-10").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-a", CCTV_PERIOD_PREFERENCE_KEY) == "10" } }
         compose.activityRule.scenario.recreate()
         settings()
         compose.onNodeWithTag("action-side-left").assertIsSelected()
+        assertRailSide(onRight = true)
         compose.onNodeWithTag("settings-cctv-period-10").assertIsSelected()
         compose.runOnIdle { ViewModelProvider(compose.activity)[FieldViewModel::class.java].shell.logout() }
         login("settings-b"); settings()
         compose.onNodeWithTag("action-side-right").assertIsSelected()
+        assertRailSide(onRight = false)
         compose.onNodeWithTag("settings-cctv-period-5").assertIsSelected()
         assertEquals("left", runBlocking { local.read("settings-a", vgActionSidePreferenceKey) })
         assertNull(runBlocking { local.read("settings-b", vgActionSidePreferenceKey) })
@@ -68,6 +77,7 @@ class Stage4ComposeTest {
         compose.waitUntil(5000) { runBlocking { local.read("settings-offline", CCTV_PERIOD_PREFERENCE_KEY) == "2" } }
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-offline", vgActionSidePreferenceKey) == "left" } }
+        assertRailSide(onRight = true)
         compose.onNodeWithTag("action-side-left").assertIsSelected()
         compose.runOnIdle {
             val model = ViewModelProvider(compose.activity)[FieldViewModel::class.java]
@@ -82,6 +92,7 @@ class Stage4ComposeTest {
         settings()
         compose.onNodeWithTag("action-side-right").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-offline", vgActionSidePreferenceKey) == "right" } }
+        assertRailSide(onRight = false)
         compose.onNodeWithTag("rail-destination-2").performScrollTo().performClick()
         val right = compose.onNodeWithTag("record-capture-actions").fetchSemanticsNode().boundsInRoot
         assertTrue(right.center.x > content.center.x)

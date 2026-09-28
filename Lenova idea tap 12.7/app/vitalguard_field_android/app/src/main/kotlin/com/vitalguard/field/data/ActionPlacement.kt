@@ -19,7 +19,7 @@ class ActionPlacement(private val local: LocalStore, val accountId: String) {
             mutable.value = ActionPlacementState(side, loaded = true)
         } catch (e: CancellationException) { throw e
         } catch (_: Exception) {
-            mutable.value = mutable.value.copy(loaded = true, error = "실행 위치를 읽지 못했습니다. 사용할 쪽을 선택해 다시 저장해 주세요.")
+            mutable.value = mutable.value.copy(loaded = true, error = "작업 배치를 읽지 못했습니다. 작업 손을 선택해 다시 저장해 주세요.")
         }
     }
     suspend fun select(next: ActionSide) {
@@ -33,7 +33,7 @@ class ActionPlacement(private val local: LocalStore, val accountId: String) {
             mutable.value = previous.copy(saving = false)
             throw e
         } catch (_: Exception) {
-            mutable.value = previous.copy(saving = false, error = "실행 위치를 저장하지 못했습니다. 다시 선택해 주세요.")
+            mutable.value = previous.copy(saving = false, error = "작업 배치를 저장하지 못했습니다. 다시 선택해 주세요.")
         }
     }
 }
