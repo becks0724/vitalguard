@@ -73,9 +73,9 @@ fun FieldShell(
             Column(Modifier.fillMaxSize()) {
                 Row(Modifier.fillMaxWidth().height((64 * scale).dp).testTag("shell-receipt-slot")
                     .padding(horizontal = 24.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (field.offline) Color(0xFF4C4437) else Color.Transparent)
-                    .padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("현장 · $siteName", Modifier.weight(2f).verticalScroll(rememberScrollState()),
+                    .background(if (field.offline) DashboardColors.offlineBar else Color.Transparent)
+                    .padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("현장 · $siteName", Modifier.weight(2f).testTag("shell-site-name").verticalScroll(rememberScrollState()),
                         color = DashboardColors.text, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.width(16.dp))
                     VerticalDivider(Modifier.height(28.dp), color = DashboardColors.line)

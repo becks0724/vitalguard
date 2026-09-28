@@ -26,6 +26,7 @@ object DashboardColors {
     val backdropLight = Color(0xFF41484A)
     val workspace = Color(0xC9303638)
     val sidebar = Color(0xFF303537)
+    val offlineBar = Color(0xB32F444D)
     val card = Color(0x18FFFFFF)
     val text = Color(0xFFF8FAFA)
     val secondary = Color(0xFFF4F6F6)

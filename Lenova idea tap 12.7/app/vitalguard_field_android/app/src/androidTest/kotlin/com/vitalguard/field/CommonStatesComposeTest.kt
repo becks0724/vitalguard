@@ -34,6 +34,10 @@ class CommonStatesComposeTest {
                 onWidth = {}, onToggle = {}, onSelect = {}, onLogout = {}, onRefresh = {}, onNextStage = {}) }
         }
         compose.onNodeWithTag("shell-receipt").assertTextEquals("오프라인")
+        val center = compose.onNodeWithTag("shell-site-name").fetchSemanticsNode().boundsInRoot.center.y
+        for (tag in listOf("state-icon-offline", "shell-receipt", "shell-receipt-details")) {
+            assertEquals(tag, center, compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.center.y, 1f)
+        }
         compose.onNodeWithText(shellReceipt(0, field)).assertDoesNotExist()
         compose.onNodeWithTag("shell-receipt-details").performClick()
         compose.onNodeWithText(shellReceipt(0, field)).assertIsDisplayed()
