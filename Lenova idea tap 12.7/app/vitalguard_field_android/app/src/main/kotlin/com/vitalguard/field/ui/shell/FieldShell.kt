@@ -60,8 +60,8 @@ fun FieldShell(
         shell.destination == 4 -> StateKind.info to "기기에 저장"
         else -> StateKind.empty to "기기에 보관 · 자동 전송"
     }
+    val layout: @Composable () -> Unit = {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-    if (drawWallpaper) DashboardBackdrop(Modifier.matchParentSize())
     val horizontalMargin = if (maxWidth >= 1000.dp) 32.dp else 16.dp
     val verticalMargin = if (maxHeight >= 600.dp) 20.dp else 8.dp
     DashboardWorkspace(Modifier.fillMaxSize().padding(horizontal = horizontalMargin, vertical = verticalMargin)) {
@@ -119,6 +119,8 @@ fun FieldShell(
     }
     }
     }
+    }
+    if (drawWallpaper) DashboardBackdrop(Modifier.fillMaxSize()) { layout() } else layout()
     if (receiptDetails) DashboardTheme {
         AlertDialog(onDismissRequest = { receiptDetails = false }, icon = { StateIcon(receiptState.first, Modifier.size(32.dp)) },
             title = { Text(receiptState.second) }, text = { Text(shellReceipt(shell.destination, field), Modifier.verticalScroll(rememberScrollState())) },

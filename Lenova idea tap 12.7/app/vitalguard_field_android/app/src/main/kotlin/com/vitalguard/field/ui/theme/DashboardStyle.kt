@@ -6,7 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
@@ -14,10 +14,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.CompositionLocalProvider
 import com.vitalguard.field.R
 
 /** Photo → enclosing translucent workspace → glass cards; navigation stays opaque. */
@@ -85,8 +86,12 @@ fun GlassPanel(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, ena
 
 /** The supplied wallpaper is bundled locally and is decorative, not a live CCTV image. */
 @Composable
-fun DashboardBackdrop(modifier: Modifier = Modifier) {
-    Box(modifier.testTag("dashboard-backdrop")) {
+fun DashboardBackdrop(modifier: Modifier = Modifier, showWallpaper: Boolean = true, content: @Composable BoxScope.() -> Unit = {}) {
+    val frame = remember { mutableStateOf(WallpaperFrame()) }
+    Box(modifier.testTag("dashboard-backdrop").onGloballyPositioned {
+        frame.value = WallpaperFrame(it.positionInRoot(), it.size)
+    }) {
+        if (showWallpaper) {
         Image(painterResource(R.drawable.site_wallpaper), contentDescription = null,
             modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop, alignment = Alignment.CenterStart)
         Canvas(Modifier.matchParentSize()) {
@@ -94,13 +99,19 @@ fun DashboardBackdrop(modifier: Modifier = Modifier) {
             drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = .32f), .15f to Color.Transparent,
                 .82f to Color.Transparent, 1f to Color.Black.copy(alpha = .32f)))
         }
+        }
+        CompositionLocalProvider(LocalWallpaperFrame provides frame) { content() }
     }
 }
 
 @Composable
 fun DashboardWorkspace(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Surface(modifier.testTag("dashboard-workspace"), shape = RoundedCornerShape(32.dp),
-        color = DashboardColors.workspace, contentColor = DashboardColors.text, shadowElevation = 18.dp,
-        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f)))),
-        content = content)
+        color = Color.Transparent, contentColor = DashboardColors.text, shadowElevation = 18.dp,
+        border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f))))) {
+        Box {
+            FrostedWallpaper(Modifier.matchParentSize())
+            content()
+        }
+    }
 }

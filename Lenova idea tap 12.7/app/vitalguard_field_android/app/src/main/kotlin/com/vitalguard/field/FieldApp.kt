@@ -68,9 +68,10 @@ fun FieldApp(model: FieldViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
-    BoxWithConstraints(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas)) {
+    DashboardBackdrop(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas),
+        showWallpaper = field.authStage == AuthStage.ready) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         val windowWidthDp = maxWidth.value.toInt()
-        if (field.authStage == AuthStage.ready) DashboardBackdrop(Modifier.matchParentSize())
         Scaffold(
             containerColor = if (field.authStage == AuthStage.ready) androidx.compose.ui.graphics.Color.Transparent else VgColors.canvas,
             modifier = Modifier.fillMaxSize().windowInsetsPadding(
@@ -121,5 +122,6 @@ fun FieldApp(model: FieldViewModel) {
                 }
             }
         }
+    }
     }
 }

@@ -28,8 +28,7 @@ class DashboardComposeTest {
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
-                VgTheme { Box(Modifier.width(520.dp).fillMaxHeight()) {
-                    DashboardBackdrop(Modifier.matchParentSize())
+                VgTheme { DashboardBackdrop(Modifier.width(520.dp).fillMaxHeight()) {
                     DashboardWorkspace(Modifier.fillMaxSize()) {
                     SiteScreen(SiteSummaryState(stage3SampleStatus(now.toString()), now = now),
                         onOpenDetail = { detail = it }, onOpenCctv = { videos++ }, onOpenAlerts = { alerts++ })
@@ -48,8 +47,7 @@ class DashboardComposeTest {
     @Test fun forbiddenHidesCachedMetricsAndUnknownUnitsNeverBecomeNumbers() {
         val state = mutableStateOf(SiteSummaryState(stage3SampleStatus(now.toString()), forbidden = true, now = now))
         compose.setContent {
-            VgTheme { Box(Modifier.fillMaxSize()) {
-                DashboardBackdrop(Modifier.matchParentSize())
+            VgTheme { DashboardBackdrop(Modifier.fillMaxSize()) {
                 DashboardWorkspace(Modifier.fillMaxSize()) { SiteScreen(state.value) }
             } }
         }

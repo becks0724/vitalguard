@@ -8,8 +8,7 @@ import com.vitalguard.field.ui.theme.*
 
 @Composable
 fun GlassPreviewSurface(content: @Composable () -> Unit) {
-    VgTheme { DashboardTheme { Box(Modifier.fillMaxSize()) {
-        DashboardBackdrop(Modifier.matchParentSize())
+    VgTheme { DashboardTheme { DashboardBackdrop(Modifier.fillMaxSize()) {
         DashboardWorkspace(Modifier.fillMaxSize().padding(12.dp)) { content() }
     } } }
 }
