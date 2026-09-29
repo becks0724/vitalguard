@@ -118,4 +118,30 @@ class Stage3AlertsTest {
         alerts.acknowledge(oldRow); runCurrent()
         assertEquals(0, g.calls.count { it == "ack" })
     }
+    @Test fun batchUsesOnlyCapturedVisibleRowsAndBlocksDuplicateTap() = runTest {
+        val wait = CompletableDeferred<Boolean>(); val acked = mutableSetOf<String>(); val sent = mutableListOf<String>()
+        val g = object : ScriptedGateway() {
+            override suspend fun ackAlert(accessToken: String, id: String): Boolean {
+                sent += id; if (id == "42") wait.await(); acked += id; return true
+            }
+        }.apply { onStatus = { stage3Status(listOf("42", "43", "44").map { stage3Alert(it, it in acked) }) } }
+        val (_, alerts) = rig(g); val selected = alerts.state.value.items.take(2)
+        alerts.acknowledgeVisible(selected); alerts.acknowledgeVisible(selected); runCurrent()
+        assertTrue(alerts.state.value.batchRunning); assertEquals(listOf("42"), sent)
+        wait.complete(true); runCurrent()
+        assertEquals(listOf("42", "43"), sent); assertEquals(2, alerts.state.value.batchDone)
+        assertFalse(alerts.state.value.batchRunning); assertFalse(alerts.state.value.items.first { it.id == "44" }.acknowledged)
+    }
+    @Test fun batchStopsOnUnknownResultWithoutRetryingOrSendingRemainingRows() = runTest {
+        val sent = mutableListOf<String>()
+        val g = object : ScriptedGateway() {
+            override suspend fun ackAlert(accessToken: String, id: String): Boolean {
+                sent += id; throw ApiFailure("lost", status = 503, uncertainWrite = true)
+            }
+        }.apply { onStatus = { stage3Status(listOf(stage3Alert("42"), stage3Alert("43"))) } }
+        val (_, alerts) = rig(g); alerts.acknowledgeVisible(alerts.state.value.items); runCurrent()
+        assertEquals(listOf("42"), sent); assertEquals(0, alerts.state.value.batchDone)
+        assertFalse(alerts.state.value.batchRunning); assertNotNull(alerts.state.value.batchError)
+    }
+
 }

@@ -36,3 +36,8 @@ private val site = SiteSummaryState(data = sample, now = fixed)
 
 @PreviewTest @Preview(name = "AlertFiltersCompact", device = "spec:width=440dp,height=640dp,dpi=160", locale = "ko", fontScale = 2f, showBackground = true)
 @Composable fun AlertFiltersCompactPreview() { GlassPreviewSurface { com.vitalguard.field.ui.alerts.AlertFilterPanel(false, null, {}, {}, {}, {}, {}) } }
+
+@PreviewTest @Preview(name = "WeatherLandscape", device = "spec:width=1150dp,height=740dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun WeatherLandscapePreview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }
+@PreviewTest @Preview(name = "WeatherCompactLargeText", device = "spec:width=460dp,height=950dp,dpi=160", locale = "ko", fontScale = 2f, showBackground = true)
+@Composable fun WeatherCompactLargeTextPreview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }

@@ -66,7 +66,6 @@ fun RecordInputContent(
         if (state.loading) Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         else Column(Modifier.fillMaxSize().padding(padding).testTag("record-input-scroll").verticalScroll(rememberScrollState()).padding(20.dp)) {
             Text("관리자 기록", style = MaterialTheme.typography.headlineSmall)
-            Text("직접 확인한 내용을 남깁니다. 센서 판정과 별개입니다.")
             Spacer(Modifier.height(16.dp))
             RecordTextField(state.note, onNote, Modifier.fillMaxWidth().testTag("record-note"), enabled = !state.saving,
                 minLines = 3, maxLines = 8, label = { Text("내용 직접 입력") })
@@ -96,7 +95,7 @@ fun RecordInputContent(
                 }
                 voice.notice?.let { Text(it) }
                 voice.error?.let { Text(it, Modifier.testTag("voice-error")) }
-                if (voice.error != null && voice.clip != null) Text("녹음을 보존했습니다. 기기 저장 상태를 확인한 뒤 다시 저장해 주세요.")
+                if (voice.error != null && voice.clip != null) Text("녹음 보관됨")
             }
             Spacer(Modifier.height(16.dp))
             Text(state.speechStatus)
@@ -111,12 +110,11 @@ fun RecordInputContent(
             if (state.choice != null) {
                 Spacer(Modifier.height(16.dp))
                 RecordTextField(state.speechText, onSpeechText, Modifier.fillMaxWidth().testTag("record-speech-text"), enabled = !state.saving,
-                    minLines = 2, maxLines = 6, label = { Text("선택한 음성 문장 · 필요하면 수정") })
+                    minLines = 2, maxLines = 6, label = { Text("선택한 음성 문장") })
             }
             Spacer(Modifier.height(20.dp))
             Text("저장할 내용 확인", style = MaterialTheme.typography.titleLarge)
             SelectionContainer { Text(state.composed.ifEmpty { "아직 선택하거나 작성한 내용이 없습니다." }) }
-            Text("특히 “미착용”, “중지”, 숫자와 장소가 맞는지 확인해 주세요.")
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("confirm-record")
                 .toggleable(state.confirmed, !state.saving && state.composed.isNotBlank(), Role.Checkbox, onValueChange = onConfirm), verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(state.confirmed, null, enabled = !state.saving && state.composed.isNotBlank())

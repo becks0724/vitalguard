@@ -105,7 +105,14 @@ class OutboxComposeTest {
         card(item); compose.onNodeWithContentDescription("전송").assertIsNotEnabled()
         compose.runOnIdle { field.mutable.value = field.state.value.copy(offline = false) }
         tap("전송"); compose.waitUntil(5000) { queue.bundleCompleted(item.id) }
-        card(item); compose.onNodeWithTag("outbox-details-${item.id}").performScrollTo().performClick(); compose.onNodeWithText("작업 ID ${item.id}").assertExists()
+        card(item)
+        val cardBefore = compose.onNodeWithTag("outbox-${item.id}").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("outbox-details-${item.id}").performScrollTo().performClick()
+        compose.onNodeWithTag("outbox-info-bubble-${item.id}").assertExists()
+        compose.onNodeWithText("작업 ID ${item.id}").assertExists()
+        compose.onNodeWithTag("outbox-details-${item.id}").performClick()
+        compose.onNodeWithTag("outbox-info-bubble-${item.id}").assertDoesNotExist()
+        assertEquals(cardBefore, compose.onNodeWithTag("outbox-${item.id}").fetchSemanticsNode().boundsInRoot)
         compose.onNodeWithText("모의 확인 시각", substring = true).assertExists()
     }
     @Test fun automaticAbsentLookupKeepsUncertainUntilExplicitSameOperationRetry() {

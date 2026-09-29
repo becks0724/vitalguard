@@ -51,7 +51,7 @@ class RecordInputTest {
         assertTrue(first.sourceKey!!.startsWith("comment-draft:${photo.id}:"))
         assertEquals("현장 메모",rig.store.readBytes("a",first.bytesKey)!!.toString(Charsets.UTF_8))
         assertNull(rig.store.read("a",input.key)); assertEquals("",input.state.value.note)
-        assertEquals("메모를 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.",input.state.value.notice)
+        assertEquals("메모 저장됨",input.state.value.notice)
         rig.offline(false); input.note("현장 메모"); input.confirm(true); input.save()
         assertEquals(2,rig.box.dependents(photo.id).size); assertTrue(rig.gateway.writes.isEmpty())
     }

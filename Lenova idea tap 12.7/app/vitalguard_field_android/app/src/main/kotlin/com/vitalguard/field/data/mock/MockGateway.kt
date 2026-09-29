@@ -33,6 +33,8 @@ open class MockGateway(private val clock: Clock = Clock.systemUTC()) : FieldGate
     }
     override suspend fun refresh(refreshToken: String) = session()
     override suspend fun me(accessToken: String) = session().user
+    override suspend fun memberProfile(accessToken: String) = com.vitalguard.field.data.profile.MemberProfile(
+        userId, "모의 안전관리자", "site_manager", "모의 시공사", "현장관리", "안전관리자", "MOCK-01", "010-****-**70", "demo@example.invalid")
     override suspend fun logout(accessToken: String) { logoutTokens.add(accessToken) }
     override suspend fun siteInfo(accessToken: String): SiteInfo? {
         siteInfoTokens.add(accessToken)

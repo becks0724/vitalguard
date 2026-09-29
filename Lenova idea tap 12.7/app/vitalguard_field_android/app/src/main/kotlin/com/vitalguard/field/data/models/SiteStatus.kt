@@ -115,6 +115,7 @@ class SiteStatusWeather private constructor(row: JsonObject?, @Suppress("UNUSED_
     val fetchedAt = zonedTime(row?.get("fetchedAt"))
     val current = row?.get("current").jsonObjectOrNull()?.let(::WeatherCurrent)
     val warning = row?.get("warning").jsonObjectOrNull()?.let(::WeatherWarning)
+    val effects = row?.get("effects").jsonObjectOrNull()?.let(::WeatherEffects) ?: WeatherEffects()
     val headlineBasis: String? get() {
         if (level != "warn" && level != "danger") return null
         return listOf("기상특보" to "발효특보", "예비특보" to "예비특보", "체감온도" to "체감온도",
@@ -124,7 +125,19 @@ class SiteStatusWeather private constructor(row: JsonObject?, @Suppress("UNUSED_
     }
 }
 
+data class WeatherEffects(val precipitation: String = "unknown", val windDanger: Boolean = false) {
+    constructor(row: JsonObject) : this(
+        (row["precipitation"] as? String)?.takeIf { row["precipitationSource"] == "kma-ncst" && it in setOf("none", "rain", "snow", "mixed") } ?: "unknown",
+        row["windDanger"] == true,
+    )
+    val rain get() = precipitation == "rain" || precipitation == "mixed"
+    val snow get() = precipitation == "snow" || precipitation == "mixed"
+    val active get() = rain || snow || windDanger
+}
+
 class WeatherCurrent(row: JsonObject) {
+    val weatherCode = finiteNumber(row["weatherCode"])?.takeIf { it % 1.0 == 0.0 }?.toInt()
+
     val temperatureC = finiteNumber(row["temperatureC"])
     val humidityPct = finiteNumber(row["humidityPct"])
     val apparentTempC = finiteNumber(row["apparentTempC"])

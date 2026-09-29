@@ -77,7 +77,7 @@ data class RecordCalendarState(
     val loaded: Boolean = false, val loading: Boolean = false, val error: String? = null,
 )
 class RecordCalendarController(private val field: FieldController, private val queue: OutboxController,
-    private val scope: CoroutineScope, clock: Clock = Clock.systemUTC()) : AutoCloseable {
+    private val scope: CoroutineScope, private val clock: Clock = Clock.systemUTC()) : AutoCloseable {
     private val mutable = MutableStateFlow(RecordCalendarState(LocalDate.now(clock.withZone(calendarZone))))
     val state = mutable.asStateFlow()
     private var owner: String? = null
@@ -95,6 +95,7 @@ class RecordCalendarController(private val field: FieldController, private val q
         visible = value
         if (value) refresh()
     }
+    fun today() = select(LocalDate.now(clock.withZone(calendarZone)))
     fun select(date: LocalDate) {
         val changedWeek = weekStart(date) != weekStart(mutable.value.selected)
         mutable.value = mutable.value.copy(selected = date, server = if (changedWeek) emptyList() else mutable.value.server,

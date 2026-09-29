@@ -44,6 +44,7 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
     val shell = ShellController(controller, viewModelScope, ::snackbar)
     val site = SiteSummaryController(controller, viewModelScope)
     val alerts = AlertsController(controller, viewModelScope)
+    val memberProfile = com.vitalguard.field.data.profile.MemberProfileController(controller, viewModelScope)
     val cctv = CctvController(controller, application.cctvFrames(controller.isMock), viewModelScope)
     private val selectedSitePage = MutableStateFlow<String?>(null)
     val sitePage = selectedSitePage.asStateFlow()
@@ -116,8 +117,22 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         require(page == null || page in setOf("weather", "workers", "gas", "cctv"))
         selectedSitePage.value = page
     }
+    // 재선택은 사이드바 입력만 처리한다. 알림에서 탭을 여는 동작은 상세를 지우지 않는다.
+    fun selectTab(index: Int) {
+        if (shell.state.value.destination != index) { selectDestination(index); return }
+        when (index) {
+            0 -> { openSite(null); shell.home(index) }
+            1 -> { alerts.select(null); shell.home(index) }
+            2 -> records.launch {
+                if (capture?.backToRecord() == false) return@launch
+                records.closeDetail(); records.flush()
+                calendar.today(); shell.home(index)
+            }
+            else -> shell.home(index)
+        }
+    }
     fun selectDestination(index: Int) {
-        if (shell.state.value.destination == 2 && index != 2) records.launch { records.closeDetail(); records.flush(); shell.select(index) }
+        if (shell.state.value.destination == 2 && index != 2) records.launch { records.inactive(); records.flush(); shell.select(index) }
         else shell.select(index)
     }
     fun stopRecordAudio() {
@@ -136,6 +151,7 @@ class FieldViewModel(application: FieldApplication) : ViewModel() {
         site.close()
         alerts.close()
         cctv.close()
+        memberProfile.close()
         capture?.close()
         outboxUi.close()
         outbox.close()

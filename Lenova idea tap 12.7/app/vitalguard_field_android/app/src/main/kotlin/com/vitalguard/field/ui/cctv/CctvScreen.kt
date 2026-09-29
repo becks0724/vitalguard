@@ -101,11 +101,9 @@ fun CctvContent(s: CctvState, onBack: () -> Unit = {}, onSettings: () -> Unit = 
                             VgBackButton(Modifier.testTag("cctv-back"), onClick = onBack)
                             Text("현장 CCTV", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                             if (wide) CameraTabs(s.cameraId, onCamera)
-                            IconButton(onSettings, Modifier.size(56.dp).testTag("cctv-open-settings").semantics { contentDescription = "영상 설정" }) {
-                                VgIcon(R.drawable.ic_settings)
-                            }
+                            ActionIconButton(R.drawable.ic_settings, "영상 설정", onSettings, Modifier.testTag("cctv-open-settings"))
                         }
-                        if (!wide) CameraTabs(s.cameraId, onCamera)
+                        if (!wide) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) { CameraTabs(s.cameraId, onCamera) }
                         Text(if (s.receivedAt == null) "수신 전 · ${cctvPeriodLabel(s.periodMillis)}" else
                             "${s.ageSeconds ?: 0}초 전 수신 · ${cctvPeriodLabel(s.periodMillis)}", Modifier.testTag("cctv-receipt"),
                             style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)
@@ -133,7 +131,7 @@ fun CctvContent(s: CctvState, onBack: () -> Unit = {}, onSettings: () -> Unit = 
 
 @Composable
 private fun CameraTabs(selected: String, onSelect: (String) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         CCTV_CAMERAS.forEach { camera ->
             FilterChip(selected == camera, { onSelect(camera) }, label = { Text(camera) },
                 modifier = Modifier.heightIn(min = 56.dp).testTag("cctv-camera-$camera"))
@@ -154,7 +152,7 @@ private fun CctvZoomOverlay(bitmap: ImageBitmap, s: CctvState, onClose: () -> Un
                     Text(s.cameraId, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                     ActionIconButton(R.drawable.ic_fit, "원래 크기", { scale = 1f; offset = Offset.Zero }, Modifier.testTag("cctv-zoom-reset"), size = 56.dp)
                 }
-                Text(if (s.stale || s.error != null) "마지막 수신 영상 · ${s.ageSeconds ?: 0}초 전" else "두 손가락으로 확대 · 드래그로 이동",
+                if (s.stale || s.error != null) Text("마지막 수신 · ${s.ageSeconds ?: 0}초 전",
                     style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)
                 Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().testTag("cctv-zoom-gesture")
                     .semantics { stateDescription = "${(scale * 100).roundToInt()}%" }

@@ -93,14 +93,12 @@ fun PhotoDetailContent(
     val scroll = rememberScrollState()
     val detailContent: @Composable ColumnScope.() -> Unit = {
         StateLabel(photo.phase.visualState(), photo.statusLabel, Modifier.testTag("photo-bundle-status"))
-        Text("사진 상세를 닫으면 저장한 기록이 자동으로 전송됩니다.")
-        if (photo.phase == OutboxPhase.completed) Text("서버 원본은 보존되며 새 주석·메모·음성만 추가됩니다.")
         if (availability.processing) LinearProgressIndicator(Modifier.fillMaxWidth())
         photo.message?.let { Text(it) }
         error?.let { Text(it) }
-        if (offline) StateLabel(StateKind.offline, "오프라인입니다. 연결 후 전송할 수 있습니다.")
-        if (availability.uncertain) Text("전송 이력 탭에서 서버 반영 여부를 조회하거나 미등록 확인 후 재시도해 주세요.")
-        if (availability.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 전송 이력 탭에서 재개해 주세요.")
+        if (offline) StateLabel(StateKind.offline, "오프라인", Modifier.testTag("photo-offline"))
+        if (availability.uncertain) Text("서버 반영 확인 필요")
+        if (availability.reauthenticate) Text("다시 로그인 필요")
         Spacer(Modifier.height(16.dp))
         Text("${captureRecordedTime(media.captured_at)} · ${photo.siteName}")
         media.road_address?.let { Text(it) }
@@ -109,10 +107,9 @@ fun PhotoDetailContent(
         if (showOcr) SelectionContainer { Text(media.ocr_text ?: "OCR 원문 없음", Modifier.padding(16.dp)) }
         Spacer(Modifier.height(16.dp))
         if (serverLoading) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("photo-detail-loading"))
-        serverError?.let { Text(it, Modifier.testTag("photo-detail-load-error")); Text("이전에 받은 기록을 표시합니다.") }
-        if (onRefresh != null) ActionIconButton(R.drawable.ic_refresh, "기록 새로고침", onRefresh, Modifier.testTag("photo-detail-refresh"), enabled = !serverLoading, size = 56.dp)
+        serverError?.let { Text(it, Modifier.testTag("photo-detail-load-error")) }
+        if (onRefresh != null) ActionIconButton(R.drawable.ic_refresh, "기록 새로고침", onRefresh, Modifier.testTag("photo-detail-refresh"), enabled = !serverLoading, size = 56.dp, busy = serverLoading)
         Text(combined.counts, Modifier.testTag("photo-attachment-counts"), style = MaterialTheme.typography.titleLarge)
-        if (combined.inkCountUnverified) Text("서버가 최신 주석본만 제공하여 같은 날의 전체 주석 수는 미확인입니다.")
         combined.comments.forEach { comment -> key(comment.id) { commentContent(comment) } }
         combined.local.forEach { child -> key(child.id) { attachment(child) } }
     }

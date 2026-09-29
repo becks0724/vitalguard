@@ -83,7 +83,7 @@ fun CameraScreen(
                     ) {
                         CircularProgressIndicator(color = Color.White)
                         Spacer(Modifier.height(16.dp))
-                        Text("카메라 권한과 장치를 확인하는 중입니다.", color = Color.White, textAlign = TextAlign.Center)
+                        Text("카메라 준비 중", color = Color.White, textAlign = TextAlign.Center)
                     }
                 }
                 if (state.ready || state.taking) {

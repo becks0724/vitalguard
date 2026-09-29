@@ -27,6 +27,7 @@ interface FieldGateway {
     suspend fun login(id: String, password: String, totpCode: String? = null): MobileSession
     suspend fun refresh(refreshToken: String): MobileSession
     suspend fun me(accessToken: String): AppUser
+    suspend fun memberProfile(accessToken: String): com.vitalguard.field.data.profile.MemberProfile = nextStage()
     suspend fun logout(accessToken: String)
     suspend fun siteInfo(accessToken: String): SiteInfo?
     suspend fun siteStatus(accessToken: String): SiteStatus
@@ -92,6 +93,7 @@ interface FieldController : AutoCloseable {
     suspend fun signOut()
     suspend fun refreshSite()
     suspend fun siteStatus(): SiteStatus
+    suspend fun memberProfile(): com.vitalguard.field.data.profile.MemberProfile = nextStage()
     suspend fun calendarMedia(from: String, to: String): List<CalendarMedia> = nextStage()
     suspend fun deleteCalendarMedia(id: String): Unit = nextStage()
     fun connectivityChanged(online: Boolean) {}

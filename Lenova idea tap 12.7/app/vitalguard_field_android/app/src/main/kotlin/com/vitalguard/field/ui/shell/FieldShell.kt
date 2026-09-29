@@ -1,6 +1,7 @@
 package com.vitalguard.field.ui.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -36,6 +37,7 @@ fun FieldShell(
     field: FieldState, shell: ShellState, site: SiteSummaryState, isMock: Boolean, windowWidthDp: Int,
     onWidth: (Int) -> Unit, onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit,
     onRefresh: () -> Unit, onNextStage: () -> Unit,
+    onProfile: () -> Unit = {},
     recordContent: @Composable () -> Unit = { PlaceholderScreen("기록", 2) },
     outboxContent: @Composable () -> Unit = { PlaceholderScreen("전송 이력", 3) },
     siteContent: @Composable () -> Unit = { SiteScreen(site, onRefresh, onNextStage) },
@@ -74,7 +76,7 @@ fun FieldShell(
     // Keep child composition order stable while placing the rail on either physical side.
     Layout(modifier = Modifier.fillMaxSize().padding(10.dp), content = {
         DashboardTheme { CompositionLocalProvider(LocalContentColor provides DashboardColors.text) {
-            FieldRail(collapsed, railOnRight, userName, isMock, shell, onToggle, onSelect, onLogout)
+            FieldRail(collapsed, railOnRight, userName, isMock, shell, onToggle, onSelect, onLogout, onProfile)
         } }
         Box(Modifier.fillMaxHeight()) {
             Column(Modifier.fillMaxSize()) {
@@ -101,9 +103,18 @@ fun FieldShell(
                     }
                 }
                 val pages = rememberSaveableStateHolder()
+                val previousHomes = remember { shell.homeRevisions.toMutableList() }
+                LaunchedEffect(shell.homeRevisions) {
+                    shell.homeRevisions.forEachIndexed { index, revision ->
+                        if (previousHomes[index] != revision) {
+                            pages.removeState("$index:${previousHomes[index]}")
+                            previousHomes[index] = revision
+                        }
+                    }
+                }
                 Box(Modifier.weight(1f).fillMaxWidth().testTag("shell-content")) {
                     // IndexedStack 대응: 탭별 스크롤/rememberSaveable 보존, 요청/자료는 ViewModel에 유지.
-                    pages.SaveableStateProvider(shell.destination) {
+                    pages.SaveableStateProvider("${shell.destination}:${shell.homeRevisions[shell.destination]}") {
                         val page: @Composable () -> Unit = {
                         when (shell.destination) {
                             0 -> siteContent()
@@ -150,7 +161,7 @@ fun FieldShell(
 @Composable
 private fun FieldRail(
     collapsed: Boolean, onRight: Boolean, userName: String, isMock: Boolean, shell: ShellState,
-    onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit,
+    onToggle: () -> Unit, onSelect: (Int) -> Unit, onLogout: () -> Unit, onProfile: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.width(if (collapsed) 80.dp else 256.dp).fillMaxHeight()
         .clip(RoundedCornerShape(24.dp)).background(DashboardColors.sidebar)
@@ -197,12 +208,13 @@ private fun FieldRail(
                 RailItem(5, "사용 방법", R.drawable.ic_book, collapsed, shell.destination, onSelect)
                 Spacer(Modifier.height(vgGapTap))
                 if (collapsed) {
-                    Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(56.dp).testTag("rail-profile").semantics { contentDescription = "회원정보 보기" }.clickable(role = Role.Button, onClick = onProfile), contentAlignment = Alignment.Center) {
                         VgIcon(R.drawable.ic_person, userName, Modifier.size(20.dp), tint = DashboardColors.secondary)
                     }
                     VgIconButton(R.drawable.ic_logout, "로그아웃", enabled = !shell.loggingOut, onClick = onLogout)
                 } else {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("rail-profile")
+                        .semantics { contentDescription = "회원정보 보기" }.clickable(role = Role.Button, onClick = onProfile), verticalAlignment = Alignment.CenterVertically) {
                         VgIcon(R.drawable.ic_person, modifier = Modifier.size(20.dp), tint = DashboardColors.secondary)
                         Spacer(Modifier.width(12.dp))
                         Text(userName, Modifier.weight(1f), color = DashboardColors.text)

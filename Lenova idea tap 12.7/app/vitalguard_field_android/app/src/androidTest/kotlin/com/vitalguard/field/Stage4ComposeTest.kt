@@ -121,4 +121,15 @@ class Stage4ComposeTest {
         compose.onNodeWithTag("guide-section-transfer").assertIsSelected()
     }
 
+    @Test fun profileOpensFromUserAreaAndPhoneContainsOnlyAllowedDigits() {
+        login("profile-a")
+        compose.onNodeWithTag("rail-profile").performScrollTo().performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithText("010-****-**70").fetchSemanticsNodes().size == 1 }
+        compose.onNodeWithTag("profile-아이디").assertTextEquals("profile-a")
+        compose.onNodeWithTag("profile-직급").assertTextEquals("안전관리자")
+        compose.onNodeWithTag("profile-전화번호").assertTextEquals("010-****-**70")
+        compose.onNodeWithTag("member-profile-close").performClick()
+        compose.onNodeWithTag("member-profile").assertDoesNotExist()
+    }
+
 }

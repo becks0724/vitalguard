@@ -95,6 +95,9 @@ class LiveGateway(
     }
     override suspend fun refresh(refreshToken: String) =
         MobileSession(json("POST", "/api/mobile/v1/session/refresh", body = mapOf("refreshToken" to refreshToken)))
+    override suspend fun memberProfile(accessToken: String) = com.vitalguard.field.data.profile.MemberProfile.fromJson(
+        requireNotNull(json("GET", "/api/app/admin/profile", accessToken)["profile"].jsonObjectOrNull()))
+
     override suspend fun me(accessToken: String) = AppUser(requireNotNull(
         json("GET", "/api/mobile/v1/session/me", accessToken)["user"].jsonObjectOrNull()
     ) { "사용자 응답 형식을 확인할 수 없습니다" })

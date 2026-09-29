@@ -13,6 +13,7 @@ data class AlertsState(
     val forbidden: Boolean = false, val authorized: Boolean = false, val offline: Boolean = false,
     val writes: Map<String, AlertWritePhase> = emptyMap(), val failures: Map<String, String> = emptyMap(),
     val reopened: Set<String> = emptySet(), val closed: Set<String> = emptySet(),
+    val batchRunning: Boolean = false, val batchTotal: Int = 0, val batchDone: Int = 0, val batchError: String? = null,
     val pending: List<AlertItem> = emptyList(), val selected: AlertItem? = null, val now: Instant = Instant.EPOCH,
 ) {
     val items get() = data?.alerts?.items.orEmpty()
@@ -49,7 +50,7 @@ class AlertsController(private val field: FieldController, private val scope: Co
                 pending.clear(); dismissed.clear(); observed = null
                 mutable.value = state.value.copy(data = null, writes = emptyMap(), failures = emptyMap(),
                     pending = emptyList(), selected = null, reopened = emptySet(), closed = emptySet())
-            } else if (observed !== f.siteStatusSnapshot && !state.value.loading && !state.value.sending) {
+            } else if (observed !== f.siteStatusSnapshot && !state.value.loading && !state.value.sending && !state.value.batchRunning) {
                 accept(f.siteStatusSnapshot, false)
             }
             observed = f.siteStatusSnapshot
@@ -101,9 +102,9 @@ class AlertsController(private val field: FieldController, private val scope: Co
             reopened = reopened, closed = closed, pending = pending.values.toList(), now = clock.instant())
     }
     fun refresh(manual: Boolean = false) { scope.launch { read(manual) } }
-    private suspend fun read(manual: Boolean) {
+    private suspend fun read(manual: Boolean, insideBatch: Boolean = false) {
         val s = state.value
-        if (disposed || !s.authorized || s.loading || s.sending || (!manual && (s.forbidden || s.offline))) return
+        if (disposed || !s.authorized || s.loading || s.sending || (s.batchRunning && !insideBatch) || (!manual && (s.forbidden || s.offline))) return
         val expected = generation
         mutable.value = s.copy(loading = true)
         try {
@@ -111,6 +112,7 @@ class AlertsController(private val field: FieldController, private val scope: Co
             if (!current(expected)) return
             observed = next
             accept(next, true)
+            if (manual && !insideBatch && !state.value.readFailed) mutable.value = state.value.copy(batchError = null)
         } catch (e: CancellationException) { throw e
         } catch (_: Exception) {
             if (current(expected)) mutable.value = state.value.copy(readFailed = true,
@@ -124,28 +126,30 @@ class AlertsController(private val field: FieldController, private val scope: Co
         dismissed[row.id] = row; pending.remove(row.id)
         mutable.value = state.value.copy(pending = pending.values.toList())
     }
-    fun canAck(displayed: AlertItem): Boolean {
+    fun canAck(displayed: AlertItem): Boolean = canAckInternal(displayed, false)
+    private fun canAckInternal(displayed: AlertItem, insideBatch: Boolean): Boolean {
         val s = state.value
         val current = s.items.firstOrNull { it.id == displayed.id } ?: return false
         return current(generation) && s.authorized && !s.forbidden && !s.offline &&
             !field.state.value.offline && !field.state.value.siteStatusForbidden &&
-            !s.loading && !s.sending && !s.readFailed &&
+            !s.loading && !s.sending && (!s.batchRunning || insideBatch) && !s.readFailed &&
             current.workerId != null && current.ts != null && current.sameOccurrence(displayed) && !current.acknowledged &&
             s.phase(current.id) in setOf(AlertWritePhase.idle, AlertWritePhase.failed, AlertWritePhase.retryReady)
     }
-    fun acknowledge(displayed: AlertItem) { scope.launch {
-        if (!canAck(displayed)) return@launch
+    fun acknowledge(displayed: AlertItem) { scope.launch { acknowledgeOne(displayed, false) } }
+    private suspend fun acknowledgeOne(displayed: AlertItem, insideBatch: Boolean) {
+        if (!canAckInternal(displayed, insideBatch)) return
         val expected = generation
         val id = displayed.id
         mutable.value = state.value.copy(writes = state.value.writes + (id to AlertWritePhase.sending), failures = state.value.failures - id)
         try {
             val changed = field.ackAlert(id)
-            if (!current(expected)) return@launch
+            if (!current(expected)) return
             mutable.value = state.value.copy(writes = state.value.writes + (id to
                 if (changed) AlertWritePhase.confirmed else AlertWritePhase.conflict))
         } catch (e: CancellationException) { throw e
         } catch (e: Exception) {
-            if (!current(expected)) return@launch
+            if (!current(expected)) return
             val rejected = e is ApiFailure && !e.uncertainWrite && e.status?.let { it in 400..499 } == true
             val message = when ((e as? ApiFailure)?.status) {
                 401 -> "로그인을 확인한 뒤 서버 상태를 다시 조회해 주세요"
@@ -157,7 +161,39 @@ class AlertsController(private val field: FieldController, private val scope: Co
             mutable.value = state.value.copy(writes = state.value.writes + (id to
                 if (rejected) AlertWritePhase.failed else AlertWritePhase.uncertain), failures = state.value.failures + (id to message))
         }
-        if (current(expected) && state.value.phase(id) != AlertWritePhase.failed) read(true)
-    } }
+        if (current(expected) && state.value.phase(id) != AlertWritePhase.failed) read(true, insideBatch)
+    }
+    fun acknowledgeVisible(rows: List<AlertItem>) {
+        val targets = rows.distinctBy { it.id }.toList()
+        if (targets.isEmpty() || targets.any { !canAck(it) }) return
+        val expected = generation
+        mutable.value = state.value.copy(batchRunning = true, batchTotal = targets.size, batchDone = 0, batchError = null)
+        scope.launch {
+            try {
+                for (target in targets) {
+                    if (!current(expected)) return@launch
+                    val latest = state.value.items.firstOrNull { it.id == target.id }
+                    if (latest?.sameOccurrence(target) == true && latest.acknowledged) {
+                        mutable.value = state.value.copy(batchDone = state.value.batchDone + 1)
+                        continue
+                    }
+                    if (!canAckInternal(target, true)) {
+                        mutable.value = state.value.copy(batchError = "경보 상태가 바뀌었습니다. 목록을 다시 확인해 주세요.")
+                        break
+                    }
+                    acknowledgeOne(target, true)
+                    if (!current(expected)) return@launch
+                    val confirmed = state.value.items.firstOrNull { it.id == target.id }
+                    if (state.value.readFailed || confirmed?.sameOccurrence(target) != true || !confirmed.acknowledged) {
+                        mutable.value = state.value.copy(batchError = "일부 경보의 처리 결과를 확인하지 못했습니다. 서버 상태를 다시 조회해 주세요.")
+                        break
+                    }
+                    mutable.value = state.value.copy(batchDone = state.value.batchDone + 1)
+                }
+            } finally {
+                if (current(expected)) mutable.value = state.value.copy(batchRunning = false)
+            }
+        }
+    }
     override fun close() { disposed = true; generation++; poll?.cancel(); observer.cancel(); pending.clear(); dismissed.clear() }
 }

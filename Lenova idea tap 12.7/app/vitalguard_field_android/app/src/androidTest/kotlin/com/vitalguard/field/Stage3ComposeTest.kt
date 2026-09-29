@@ -66,8 +66,10 @@ class Stage3ComposeTest {
     @Test fun siteDetailsShowServerValuesAndAedAlertDoesNotReuseMaintenanceData() {
         login()
         compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
-        compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasText("풍속 10.0 m/s"))
-        compose.onNodeWithText("풍속 10.0 m/s").assertIsDisplayed()
+        compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasTestTag("weather-metric-wind"))
+        compose.onNodeWithText("10.0").assertIsDisplayed()
+        compose.onNodeWithText("m/s").assertIsDisplayed()
+        compose.onNodeWithText("캐시에서 받은 기상 값", substring = true).assertDoesNotExist()
         compose.onNodeWithTag("weather-detail-scroll").performScrollToNode(hasTestTag("weather-back"))
         compose.onNodeWithTag("weather-back").assertContentDescriptionEquals("이전").assertHeightIsAtLeast(56.dp).performClick()
         compose.onNodeWithTag("site-row-workers").performScrollTo().performClick()
@@ -156,7 +158,11 @@ class Stage3ComposeTest {
         compose.onNodeWithTag("rail-destination-0").performScrollTo().performClick()
         compose.onNodeWithTag("cctv-receipt").assertTextContains("2초", substring = true)
         compose.waitUntil(5000) { tickets >= whileSettings + 2 }
-        compose.onNodeWithTag("cctv-back").performScrollTo().assertContentDescriptionEquals("이전").assertHeightIsAtLeast(56.dp).performClick()
+        // 왕복은 CCTV 선택을 유지하고, 현재 탭을 다시 눌렀을 때만 현장 홈으로 간다.
+        compose.onNodeWithTag("rail-destination-1").performScrollTo().performClick()
+        compose.onNodeWithTag("rail-destination-0").performScrollTo().performClick()
+        compose.onNodeWithTag("cctv-image").assertContentDescriptionEquals("CAM-01 영상 · 눌러서 확대")
+        compose.onNodeWithTag("rail-destination-0").performScrollTo().performClick()
         compose.onNodeWithTag("site-signals").assertExists()
         val previous = tickets
         android.os.SystemClock.sleep(2500)

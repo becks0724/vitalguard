@@ -26,19 +26,19 @@ import java.time.Duration
 
 fun alertScope(scoped: Boolean?) = when (scoped) {
     true -> "이 현장 기준"
-    false -> "전체 현장 기준 · 현장별로 한정되지 않은 경보입니다"
+    false -> "전체 현장 기준"
     null -> "경보 집계 범위 확인 불가"
 }
 
 @Composable
 fun AlertsScreen(controller: AlertsController, isMock: Boolean) {
     val state by controller.state.collectAsStateWithLifecycle()
-    AlertsContent(state, isMock, controller::select, { controller.refresh(true) }, controller::acknowledge, controller::canAck)
+    AlertsContent(state, isMock, controller::select, { controller.refresh(true) }, controller::acknowledge, controller::canAck, controller::acknowledgeVisible)
 }
 
 @Composable
 fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertItem?) -> Unit = {},
-    onRefresh: () -> Unit = {}, onAcknowledge: (AlertItem) -> Unit = {}, canAck: (AlertItem) -> Boolean = { false }) {
+    onRefresh: () -> Unit = {}, onAcknowledge: (AlertItem) -> Unit = {}, canAck: (AlertItem) -> Boolean = { false }, onAcknowledgeVisible: (List<AlertItem>) -> Unit = {}) {
     var acknowledged by rememberSaveable { mutableStateOf(false) }
     var type by rememberSaveable { mutableStateOf<String?>(null) }
     var filterOpen by remember { mutableStateOf(false) }
@@ -54,18 +54,18 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
             Text(if (selected == null) "경보 목록" else "경보 상세", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
             ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh,
                 Modifier.testTag("alerts-refresh").semantics { if (state.loading) stateDescription = "갱신 중" },
-                enabled = state.authorized && !state.loading && !state.sending, size = 56.dp)
+                enabled = state.authorized && !state.loading && !state.sending && !state.batchRunning, size = 56.dp, busy = state.loading)
         }
         Text(alertScope(state.data?.alerts?.siteScoped), Modifier.testTag("alerts-scope"))
         Text(if (!state.authorized || state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음"
             else siteStatusReceipt(state.data?.fetchedAt))
-        if (state.offline) StateLabel(StateKind.offline, "오프라인 · 대응 확인은 연결 후 가능")
+        if (state.offline) StateLabel(StateKind.offline, "오프라인")
         if (state.data?.let { Duration.between(parseInstant(it.fetchedAt), state.now).seconds >= 300 } == true)
-            Text("오래된 자료 · 마지막 수신 후 5분 이상 지났습니다")
+            Text("오래된 자료")
         if (state.loading) StateLabel(StateKind.loading, "서버 상태 조회 중")
-        if (state.readFailed) StateNotice(StateKind.failed, "경보 수신 실패", "이전에 받은 내용을 표시합니다.", Modifier.testTag("alerts-read-error"))
+        if (state.readFailed) StateLabel(StateKind.failed, "경보 수신 실패", Modifier.testTag("alerts-read-error"))
         if (!state.authorized || state.forbidden) {
-            Text("경보 접근 권한을 확인할 수 없습니다. 관리자에게 문의해 주세요.", Modifier.testTag("alerts-forbidden"))
+            Text("접근 권한 없음", Modifier.testTag("alerts-forbidden"))
         } else if (selected == null) {
             Box {
                 OutlinedButton({ draftAcknowledged = acknowledged; draftType = type; filterOpen = true },
@@ -82,9 +82,17 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
                 }
             }
             val rows = state.items.filter { it.acknowledged == acknowledged && (type == null || it.type.name == type) }
-            Text("${if (acknowledged) "대응완료" else "미대응"} · ${AlertType.entries.firstOrNull { it.name == type }?.label ?: "전체 종류"} · ${rows.size}건", Modifier.testTag("alerts-filter-summary"))
-            if (state.data == null || state.data?.alerts?.itemsAvailable != true) Text("경보 목록을 아직 확인할 수 없습니다")
-            else if (rows.isEmpty()) Text("수신한 목록에 선택한 조건의 경보가 없습니다")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("${if (acknowledged) "대응완료" else "미대응"} · ${AlertType.entries.firstOrNull { it.name == type }?.label ?: "전체 종류"} · ${rows.size}건",
+                    Modifier.weight(1f).testTag("alerts-filter-summary"))
+                if (!acknowledged) ActionIconButton(R.drawable.ic_check,
+                    if (state.batchRunning) "대응 처리 중 ${state.batchDone}/${state.batchTotal}" else "현재 목록의 미대응 ${rows.size}건 대응 확인",
+                    { onAcknowledgeVisible(rows) }, Modifier.testTag("alerts-ack-visible"), size = 56.dp, tint = SignalColors.normal,
+                    enabled = rows.isNotEmpty() && rows.all(canAck) && !state.batchRunning, busy = state.batchRunning)
+            }
+            state.batchError?.let { StateNotice(StateKind.failed, "대응 결과 확인 필요", it, Modifier.testTag("alerts-batch-error")) }
+            if (state.data == null || state.data?.alerts?.itemsAvailable != true) Text("경보 목록 미수신")
+            else if (rows.isEmpty()) Text("선택한 조건의 경보 없음")
             if ((state.data?.alerts?.omittedItems ?: 0) > 0) Text("식별 정보가 없거나 중복된 경보 ${state.data!!.alerts.omittedItems}건은 표시하지 못했습니다")
             rows.forEach { row ->
                 GlassCard(Modifier.fillMaxWidth().testTag("alert-row-${row.id}").clickable { onSelect(row) }) {
@@ -107,10 +115,10 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
                 Text("대응 확인 시각 · ${alertTime(row.ackAt)}")
                 Text("처리자 · ${row.ackBy ?: "정보 없음"}", Modifier.testTag("alert-ack-by"))
             }
-            if (current == null) Text("목록에서 확인할 수 없는 경보 · 종료로 추정하지 않습니다. 다시 조회해 주세요.", Modifier.testTag("alert-missing"))
-            else if (!same) Text("같은 ID의 경보 대상 또는 발생 시각이 바뀌었습니다. 목록에서 다시 선택해 주세요.")
-            else if (row.id in state.reopened) Text("다시 열린 경보 · 대상과 발생 시각을 다시 확인해 주세요.")
-            else if (row.acknowledged) Text("종료된 경보 · 대응 확인이 기록되어 있습니다.")
+            if (current == null) Text("경보 상태 확인 필요", Modifier.testTag("alert-missing"))
+            else if (!same) Text("경보 정보 변경됨 · 다시 선택")
+            else if (row.id in state.reopened) Text("다시 열린 경보")
+            else if (row.acknowledged) Text("대응 확인됨")
             val phase = state.phase(row.id)
             val message = when (phase) {
                 AlertWritePhase.idle -> null
@@ -123,12 +131,11 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
             }
             message?.let { Text(it, Modifier.testTag("alert-write-${phase.name}"), fontWeight = FontWeight.Bold) }
             if (same && !row.acknowledged && phase in setOf(AlertWritePhase.confirmed, AlertWritePhase.conflict))
-                Text("대응 확인 응답과 조회 목록의 상태가 아직 일치하지 않습니다. 서버 상태를 다시 조회해 주세요.")
-            if (row.workerId == null || row.ts == null) Text("대상 또는 발생 시각 정보가 없어 대응 확인을 할 수 없습니다.")
-            Text("위 대상·발생 시각을 확인한 뒤 아래 버튼을 한 번 눌러 주세요. 대응 확인은 위험 해제나 사고 종결을 뜻하지 않습니다.")
+                Text("서버 상태 재조회 필요")
+            if (row.workerId == null || row.ts == null) Text("대상·발생 시각 정보 없음")
             ActionIconButton(R.drawable.ic_check,
                 if (state.offline) "연결 후 가능" else if (phase == AlertWritePhase.sending) "처리 중" else "대응 확인",
-                { onAcknowledge(selected) }, Modifier.testTag("alert-ack"), enabled = canAck(selected), tint = SignalColors.normal)
+                { onAcknowledge(selected) }, Modifier.testTag("alert-ack"), enabled = canAck(selected), tint = SignalColors.normal, busy = phase == AlertWritePhase.sending)
         }
     }
 }
@@ -146,7 +153,7 @@ fun GlobalAlertStrip(controller: AlertsController, deferred: Boolean, onOpen: (A
                 Text("${row.type.label} · 미대응 (수신 기준)", fontWeight = FontWeight.Bold)
                 Text("${row.workerName ?: row.workerId ?: "작업자 정보 없음"} · 상세 보기")
             }
-            ActionIconButton(R.drawable.ic_close, "닫기", { controller.dismiss(row) }, Modifier.testTag("global-alert-dismiss"), size = 56.dp)
+            ActionIconButton(R.drawable.ic_close, "닫기", { controller.dismiss(row) }, Modifier.testTag("global-alert-dismiss"), size = 56.dp, visualScale = .78f)
         }
     }
 }

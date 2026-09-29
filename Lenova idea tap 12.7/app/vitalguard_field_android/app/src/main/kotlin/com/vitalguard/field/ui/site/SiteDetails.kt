@@ -26,6 +26,7 @@ fun DetailPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.
 @Composable
 fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, onRefresh: () -> Unit) {
     require(page in setOf("weather", "workers", "gas"))
+    if (page == "weather") { WeatherDetailScreen(state, onBack, onRefresh); return }
     var workerFilter by rememberSaveable { mutableStateOf(WorkerFilter.all.name) }
     val title = when (page) { "weather" -> "기상 상세"; "workers" -> "작업자 목록"; else -> "가스 감지기 상세" }
     val data = state.data
@@ -40,92 +41,41 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
                 DetailPanel {
                     if (page == "gas" && !state.forbidden) GasReceipt(data?.gas?.lastSeenAt)
                     else Text(if (state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음" else siteStatusReceipt(data?.fetchedAt))
-                    if (state.loading) StateLabel(StateKind.loading, "갱신 중 · 이전 자료 표시")
+                    if (state.loading) StateLabel(StateKind.loading, "갱신 중")
                     if (state.stale && page != "gas") StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과")
-                    if (state.forbidden) StateNotice(StateKind.locked, "접근 권한 없음", siteForbiddenMessage)
-                    else if (state.failed) StateNotice(StateKind.failed, "수신 실패", "이전에 받은 자료를 표시합니다.")
-                    ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh, Modifier.testTag("$page-refresh"), enabled = !state.loading)
+                    if (state.forbidden) StateLabel(StateKind.locked, "접근 권한 없음")
+                    else if (state.failed) StateLabel(StateKind.failed, "수신 실패")
+                    ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh, Modifier.testTag("$page-refresh"), enabled = !state.loading, busy = state.loading)
                 }
             }
         }
         if (state.forbidden) return@LazyColumn
         val section = when (page) { "weather" -> data?.weather; "workers" -> data?.workers; else -> data?.gas }
-        if (section == null) { item { Text("$title 데이터 없음 · 아직 받지 못했습니다") }; return@LazyColumn }
-        if (!section.ok) { item { Text("$title 수신 실패 · 상태를 확인할 수 없습니다. 새로고침해 주세요.") }; return@LazyColumn }
+        if (section == null) { item { Text("$title 미수신") }; return@LazyColumn }
+        if (!section.ok) { item { Text("$title 수신 실패") }; return@LazyColumn }
         if (page == "weather") item { DetailPanel { Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { SignalMark(section.level); Text(section.summary ?: "요약 데이터 없음") } } }
         when (page) {
-            "weather" -> weatherRows(data!!.weather)
             "workers" -> workersRows(data!!.workers, WorkerFilter.valueOf(workerFilter)) { workerFilter = it.name }
             "gas" -> gasRows(data!!.gas, state)
         }
     }
 }
 
-private fun LazyListScope.weatherRows(data: SiteStatusWeather) {
-    val current = data.current
-    item { DetailPanel {
-        Text(when (data.cached) { true -> "캐시에서 받은 기상 값"; false -> "캐시를 사용하지 않은 기상 응답"; null -> "기상 캐시 여부 데이터 없음" })
-        Text(when (data.stale) { true -> "오래된 기상 값 · 이전 수신 값입니다"; false -> "서버 오래됨 표시 없음 · 수신 시각을 함께 확인해 주세요"; null -> "기상 자료의 오래됨 여부 미확인" })
-        if (data.persisted == true) Text("저장된 기상 자료로 대체한 값입니다")
-        Text("현장 기준 좌표 · 위도 ${data.lat ?: "데이터 없음"} · 경도 ${data.lon ?: "데이터 없음"}")
-        Text("담당관의 현재 위치가 아닌 현장에 저장된 좌표의 기상입니다")
-        Text("좌표 출처 ${data.coordSource ?: "데이터 없음"} · 기상 출처 ${data.source ?: "데이터 없음"}")
-        Text("기상 마지막 수신 ${alertTime(data.fetchedAt)}")
-        data.headlineBasis?.let { Text("대표 판정 근거 · $it") }
-        Text("판정은 서버가 보낸 상태입니다. 함께 적용된 모든 판정은 확인할 수 없습니다")
-    } }
-    item { Text("현재 기상 · 마지막 수신 값", style = MaterialTheme.typography.titleLarge)
-        Text("관측 출처 ${current?.obsSource ?: "데이터 없음"} · ${alertTime(current?.obsAt)}") }
-    val wind = current?.windGustKmh ?: current?.windKmh
-    val rows = listOf(
-        Triple("기온", current?.temperatureC, "℃"), Triple("습도", current?.humidityPct, "%"),
-        Triple("체감온도", current?.apparentTempC, "℃"), Triple("풍속", wind?.div(3.6), "m/s"),
-        Triple("강수량", current?.precipitationMm, "mm/h"), Triple("자외선지수", current?.uvIndex, ""),
-        Triple("미세먼지 PM10", current?.pm10, "μg/㎥"), Triple("미세먼지 PM2.5", current?.pm25, "μg/㎥"),
-        Triple("WBGT", current?.wbgt, "℃"),
-    )
-    items(rows) { (name, value, unit) -> DetailPanel {
-        Text("$name ${metricValue(value, unit, if (name in listOf("습도", "미세먼지 PM10", "미세먼지 PM2.5")) 0 else 1)}",
-            style = MaterialTheme.typography.titleLarge)
-        if (name == "풍속") Text(if (current?.windGustKmh != null) "순간풍속 기준 · 평균 ${metricValue(current.windKmh?.div(3.6), "m/s")}" else "평균풍속 기준 · 순간풍속 미수신")
-        if (name == "WBGT") Text("습구흑구 (참고)")
-    } }
-    val warning = data.warning
-    item { Text("특보 지역 ${warning?.sido ?: "데이터 없음"} · 출처 ${warning?.source ?: "데이터 없음"}") }
-    for (preliminary in listOf(false, true)) {
-        val title = if (preliminary) "예비특보" else "발효특보"
-        val available = if (preliminary) warning?.preliminaryAvailable else warning?.warningsAvailable
-        val rowsForKind = if (preliminary) warning?.preliminary.orEmpty() else warning?.warnings.orEmpty()
-        val omitted = if (preliminary) warning?.omittedPreliminary else warning?.omittedWarnings
-        item { Text(title, style = MaterialTheme.typography.titleLarge)
-            Text((if (preliminary) warning?.preliminarySummary else warning?.summary) ?: "$title 요약 데이터 없음")
-            if (available != true) Text("$title 데이터 없음 · 목록을 받지 못했습니다")
-            else if (rowsForKind.isEmpty() && omitted == 0) Text("$title 0건 · 수신한 목록이 비어 있습니다")
-            if ((omitted ?: 0) > 0) Text("$title ${omitted}건의 내용을 확인할 수 없습니다") }
-        items(rowsForKind) { row -> DetailPanel {
-            Text("${row.type} · ${if (preliminary) row.`when` ?: "예상 시각 데이터 없음" else row.level ?: "단계 데이터 없음"}", fontWeight = FontWeight.Bold)
-            Text(row.regions.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "지역 데이터 없음")
-            if ((row.otherRegionCount ?: 0) > 0) Text("그 밖의 지역 ${row.otherRegionCount}곳 (서버 집계)")
-        } }
-    }
-}
-
 private fun LazyListScope.workersRows(data: SiteStatusWorkers, filter: WorkerFilter, onFilter: (WorkerFilter) -> Unit) {
     val rows = data.items.filter(filter::matches)
     item { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(when (data.piiRedacted) { true -> "위치 가림 · 개인정보 보호 설정 적용"; false -> "위치 표시 허용 · 수신된 좌표를 표시합니다"; null -> "위치 표시 보류 · 가림 여부 미수신" })
+        Text(when (data.piiRedacted) { true -> "위치 가림"; false -> "위치 표시"; null -> "위치 미확인" })
         for (group in WorkerFilter.entries.chunked(3)) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             for (candidate in group) FilterChip(filter == candidate, { onFilter(candidate) },
                 label = { Text("${candidate.label} ${candidate.count(data)?.let { "${it}명" } ?: "데이터 없음"}") },
                 modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("workers-filter-${candidate.name}"))
         }
-        Text("서버 집계 기준 · 끊김은 주의·위험과 겹칠 수 있습니다")
         when {
-            !data.itemsAvailable -> Text("작업자 데이터 없음 · 개별 목록을 받지 못했습니다")
-            data.items.isEmpty() && data.omittedItems > 0 -> Text("작업자 데이터 확인 불가 · 식별 정보를 확인해 주세요")
-            data.items.isEmpty() && (data.total ?: 0) > 0 -> Text("작업자 데이터 없음 · 집계 인원에 해당하는 목록이 비어 있습니다")
-            data.items.isEmpty() -> Text("작업자 0명 · 수신한 목록이 비어 있습니다")
-            else -> Text("수신 목록 필터 결과 ${rows.size}명")
+            !data.itemsAvailable -> Text("작업자 목록 미수신")
+            data.items.isEmpty() && data.omittedItems > 0 -> Text("작업자 정보 확인 필요")
+            data.items.isEmpty() && (data.total ?: 0) > 0 -> Text("작업자 목록 미수신")
+            data.items.isEmpty() -> Text("작업자 0명")
+            else -> Text("${rows.size}명")
         }
         if (data.omittedItems > 0) Text("식별 정보가 없거나 중복된 작업자 ${data.omittedItems}건은 표시하지 못했습니다")
     } }

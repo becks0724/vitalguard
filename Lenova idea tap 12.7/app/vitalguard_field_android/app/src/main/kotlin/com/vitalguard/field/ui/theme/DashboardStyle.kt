@@ -111,6 +111,7 @@ fun DashboardWorkspace(modifier: Modifier = Modifier, content: @Composable () ->
         border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f))))) {
         Box {
             FrostedWallpaper(Modifier.matchParentSize())
+            com.vitalguard.field.ui.site.WeatherBackground(Modifier.matchParentSize())
             content()
         }
     }

@@ -110,7 +110,7 @@ class FieldAppComposeTest {
             compose.onNodeWithTag("rail-destination-$index").assertIsSelected().assertHeightIsAtLeast(56.dp)
             compose.onNodeWithTag("rail-selection-dot", useUnmergedTree = true).assertExists()
             if (index >= 2) compose.onNodeWithTag("shell-receipt")
-                .assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요"))
+                .assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, if (index == 4) "기기에 저장" else "전송 상태는 기록별 표시"))
         }
         select(0)
         compose.onNodeWithTag("shell-receipt").assertTextEquals("수신 완료")
@@ -138,7 +138,7 @@ class FieldAppComposeTest {
         compose.onNodeWithTag("site-refresh").performScrollTo().performClick()
         compose.waitUntil(5_000) { controller.state.value.siteStatusForbidden }
         compose.onNodeWithTag("site-forbidden").assertExists()
-        compose.onNodeWithText("권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.").assertExists()
+        compose.onNodeWithText("권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.").assertDoesNotExist()
         compose.onNodeWithTag("shell-receipt").assertTextEquals("접근 권한 없음")
         compose.onNodeWithText("미대응 경보 0건").assertDoesNotExist()
         val calls = gateway.statusCalls

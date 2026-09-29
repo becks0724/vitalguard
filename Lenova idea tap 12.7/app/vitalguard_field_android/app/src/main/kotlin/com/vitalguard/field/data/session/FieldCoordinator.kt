@@ -366,6 +366,8 @@ class FieldCoordinator(
         }
     }
 
+    override suspend fun memberProfile() = authorized { gateway.memberProfile(it) }
+
     override suspend fun cctvTicket(cameraId: String) = authorized { gateway.cctvTicket(it, cameraId) }
     override suspend fun ackAlert(id: String): Boolean {
         if (s.offline) throw ApiFailure("연결 후 가능", action = "none")

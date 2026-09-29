@@ -68,6 +68,9 @@ fun FieldApp(model: FieldViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
+    val weatherEffects = com.vitalguard.field.ui.site.weatherBackgroundEffects(site,
+        field.authStage == AuthStage.ready && shell.destination == 0 && sitePage == "weather", field.offline)
+    CompositionLocalProvider(com.vitalguard.field.ui.site.LocalWeatherEffects provides weatherEffects) {
     DashboardBackdrop(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas),
         showWallpaper = field.authStage == AuthStage.ready) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -84,6 +87,9 @@ fun FieldApp(model: FieldViewModel) {
                     key(field.user!!.id) {
                         // 탭을 가린 동안 끝난 저장도 같은 기록 스택에 반영한다.
                         val recordNav = rememberNavController()
+                        LaunchedEffect(shell.homeRevisions[2]) {
+                            if (shell.homeRevisions[2] > 0) recordNav.popBackStack("record-home", inclusive = false)
+                        }
                         LaunchedEffect(field.user!!.id) {
                             withFrameNanos { } // 셸의 첫 프레임 뒤 계정별 재진입 지점을 읽는다.
                             model.restoreRecord()
@@ -92,9 +98,10 @@ fun FieldApp(model: FieldViewModel) {
                         val actionPlacement = accountPlacement?.state?.collectAsStateWithLifecycle()?.value ?: ActionPlacementState()
                         CompositionLocalProvider(LocalActionPlacement provides actionPlacement) {
                         FieldShell(field, shell, site, model.controller.isMock, windowWidthDp,
+                            onProfile = model.memberProfile::open,
                             drawWallpaper = false, reclaimEmptyAlertSpace = shell.destination == 0 && sitePage == "cctv",
                             onWidth = model.shell::windowWidth, onToggle = model.shell::toggle,
-                            onSelect = model::selectDestination, onLogout = model.shell::logout,
+                            onSelect = model::selectTab, onLogout = model.shell::logout,
                             onRefresh = model.site::manualRefresh, onNextStage = { model.snackbar("다음 단계") },
                             recordContent = { RecordNavigation(model, windowWidthDp, recordNav) },
                             outboxContent = { OutboxScreen(model.outboxUi) },
@@ -114,6 +121,7 @@ fun FieldApp(model: FieldViewModel) {
                             globalAlertContent = { GlobalAlertStrip(model.alerts, shell.recordEditorOpen) { row ->
                                 model.alerts.select(row); model.selectDestination(1)
                             } })
+                        com.vitalguard.field.ui.profile.MemberProfileDialog(model.memberProfile, field.user)
                         }
                     }
                 } else {
@@ -125,6 +133,7 @@ fun FieldApp(model: FieldViewModel) {
                 }
             }
         }
+    }
     }
     }
 }

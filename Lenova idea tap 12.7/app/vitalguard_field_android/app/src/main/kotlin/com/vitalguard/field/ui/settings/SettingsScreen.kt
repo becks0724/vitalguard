@@ -64,7 +64,7 @@ fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> U
 @Composable
 private fun WorkHandSelector(placement: ActionPlacementState, onSelect: (ActionSide) -> Unit) {
     val enabled = placement.loaded && !placement.saving
-    Surface(Modifier.size(152.dp).testTag("work-hand-selector"), shape = CircleShape,
+    Surface(Modifier.size(136.dp).testTag("work-hand-selector"), shape = CircleShape,
         color = Color.Transparent, border = BorderStroke(1.dp, DashboardColors.line)) {
         Row(Modifier.fillMaxSize().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
             ActionSide.entries.forEach { side ->
@@ -80,7 +80,7 @@ private fun WorkHandSelector(placement: ActionPlacementState, onSelect: (ActionS
                     Box(Modifier.fillMaxSize().testTag("action-side-${side.name}")
                         .semantics { contentDescription = label }
                         .selectable(chosen, enabled, Role.RadioButton) { onSelect(side) }, contentAlignment = Alignment.Center) {
-                        VgIcon(icon, modifier = Modifier.size(48.dp),
+                        VgIcon(icon, modifier = Modifier.size(44.dp),
                             tint = (if (chosen) DashboardColors.accent else DashboardColors.secondary).copy(alpha = if (enabled) 1f else .38f))
                     }
                 }

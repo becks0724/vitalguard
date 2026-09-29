@@ -170,7 +170,7 @@ class RecordEditingComposeTest {
             assertEquals(OutboxPhase.waiting, model.outbox.entry(photo.id)!!.phase)
             assertEquals("보호구 미착용 확인 2층", store.readBytes("a", memo.bytesKey)!!.toString(Charsets.UTF_8))
         } }
-        compose.onNodeWithText("메모를 기기에 저장했습니다. 사진 상세를 닫으면 자동으로 전송됩니다.").assertExists()
+        compose.onNodeWithText("메모 저장됨").assertExists()
         compose.onNodeWithTag("record-input-back").performClick()
         compose.onNodeWithText("주석 0 · 메모 1 · 음성 0").performScrollTo().assertExists()
         compose.runOnIdle { assertEquals(1, model.outbox.dependents(photo.id).size); assertEquals(photo.id, model.records.detail.value) }

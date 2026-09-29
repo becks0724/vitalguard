@@ -69,14 +69,14 @@ fun AuthScreen(
             Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold)
             if (field.authStage == AuthStage.restoring) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (field.authStage == AuthStage.reauthenticate) {
-                Text("기기에 저장된 기록은 보존됩니다. 다른 계정의 기록은 해당 계정으로 로그인한 뒤 확인할 수 있습니다.")
+                Text("다시 로그인 필요 · 저장 기록 보존")
             }
             if (field.authStage == AuthStage.denied) {
                 Text("현장 관리자 계정으로 로그인해 주세요.")
                 OutlinedButton(onCancel, Modifier.fillMaxWidth().heightIn(min = vgTapMin)) { Text("다른 계정으로 로그인") }
             } else if (field.authStage != AuthStage.restoring) {
                 if (totp) {
-                    Text("인증 앱에 표시된 6자리 숫자를 입력하세요.")
+                    Text("인증 앱 · 6자리 숫자")
                     OutlinedTextField(codeValue, { codeValue = it; onCode(it.text) },
                         Modifier.fillMaxWidth().heightIn(min = vgTapPrimary).testTag("totp-code"),
                         enabled = !field.busy && !locked, label = { Text("인증번호") }, singleLine = true,
@@ -115,7 +115,6 @@ fun AuthScreen(
                     Text("아이디부터 다시 입력")
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("계정 이용은 관리자에게 문의하세요. 앱은 비밀번호를 저장하지 않습니다.")
             }
         }
     }

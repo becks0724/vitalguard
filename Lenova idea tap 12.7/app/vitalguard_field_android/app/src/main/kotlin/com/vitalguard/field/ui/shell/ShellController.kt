@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 
 const val vgRailPreferenceKey = "shell:rail-collapsed"
 const val vgTwoPaneMinWidth = 1000
-data class ShellState(val destination: Int = 0, val collapsed: Boolean? = null, val loggingOut: Boolean = false, val recordEditorOpen: Boolean = false)
+data class ShellState(val destination: Int = 0, val collapsed: Boolean? = null, val loggingOut: Boolean = false, val recordEditorOpen: Boolean = false, val homeRevisions: List<Int> = List(6) { 0 })
 
 class ShellController(
     private val controller: FieldController,
@@ -68,6 +68,10 @@ class ShellController(
             }
         }
     }
+    fun home(index: Int) {
+        require(index in 0..5)
+        mutable.value = state.value.copy(homeRevisions = state.value.homeRevisions.mapIndexed { i, value -> if (i == index) value + 1 else value })
+    }
     fun select(index: Int) { require(index in 0..5); mutable.value = state.value.copy(destination = index) }
     fun logout() {
         if (state.value.loggingOut) return
@@ -85,25 +89,19 @@ class ShellController(
     }
 }
 
-// Port: field_shell.dart receipt(), 문구/우선순위 그대로.
+// 상태 요약만 표시한다. 조작 안내는 사용 방법 탭에 모은다.
 fun shellReceipt(destination: Int, c: FieldState): String {
-    if (destination == 5) return "사용 방법은 연결 없이도 볼 수 있습니다. 메뉴별 표에서 필요한 조작을 확인하세요."
-    if (destination <= 1 && c.siteStatusForbidden) return "마지막 수신 정보 표시 불가 · 접근 권한 없음"
-    if (c.offline) {
-        val reason = "오프라인 · 서버에 연결할 수 없습니다."
-        return when (destination) {
-            0 -> "$reason 최신 현장 정보는 받을 수 없습니다. 이전 수신 자료입니다. 현장 요약·작업자·가스 화면이 열려 있으면 60초마다 조회를 재시도합니다. 새로 고침으로도 재시도할 수 있습니다."
-            1 -> "$reason 경보 대응 확인은 연결 후 가능하며 예약되지 않습니다. 이 화면이 열려 있으면 60초마다 조회를 재시도합니다. 연결 후 경보를 다시 확인하고 대응 확인을 눌러 주세요."
-            2 -> "$reason 촬영한 사진과 주석·메모·음성은 기기에 보관합니다. 연결되면 자동으로 전송됩니다. 실패한 것만 [전송]을 눌러 주세요."
-            3 -> "$reason 사진·주석·메모·음성은 기기에 보관합니다. 연결되면 대기 중인 기록을 자동으로 전송합니다. 실패한 것만 [전송]을 눌러 주세요. 결과 불명 항목은 서버 반영 여부부터 확인해 주세요."
-            else -> "$reason 설정은 기기에 저장할 수 있습니다. 현장 요약·경보 화면을 열면 조회를 재시도합니다."
-        }
+    if (destination == 5) return "사용 방법"
+    if (destination <= 1 && c.siteStatusForbidden) return "접근 권한 없음"
+    if (c.offline) return when (destination) {
+        0 -> "오프라인 · 마지막 수신 자료"
+        1 -> "오프라인 · 대응 확인 불가"
+        2, 3 -> "오프라인 · 기기에 보관"
+        else -> "오프라인 · 기기에 저장"
     }
     if (destination <= 1) {
-        if (destination == 1 && c.siteStatusSnapshot?.alerts?.ok == false) {
-            return "경보 수신 실패 · 이전 수신 정보는 경보 화면에서 확인해 주세요"
-        }
+        if (destination == 1 && c.siteStatusSnapshot?.alerts?.ok == false) return "경보 수신 실패"
         return siteStatusReceipt(c.siteStatusSnapshot?.fetchedAt)
     }
-    return "기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요"
+    return if (destination == 4) "기기에 저장" else "전송 상태는 기록별 표시"
 }

@@ -89,7 +89,7 @@ fun RecordCalendarContent(
             if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관됩니다.", style = MaterialTheme.typography.bodySmall)
             if (error != null) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                ActionIconButton(R.drawable.ic_refresh, "다시 불러오기", onReload, size = 56.dp)
+                ActionIconButton(R.drawable.ic_refresh, "다시 불러오기", onReload, enabled = !loading, size = 56.dp, busy = loading)
             }
             if (loading || capture.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (capture.scannerReady == false) Text(scannerPreparationMessage, Modifier.testTag("scanner-not-ready"), style = MaterialTheme.typography.bodySmall)

@@ -81,12 +81,9 @@ private fun DashboardHeading(state: SiteSummaryState, compact: Boolean, onRefres
         }
     }
     val refresh: @Composable () -> Unit = {
-        OutlinedButton(onRefresh, Modifier.size(vgTapMin).testTag("site-refresh")
-            .semantics { if (state.loading) stateDescription = "갱신 중" }, enabled = !state.loading,
-            shape = CircleShape, contentPadding = PaddingValues(0.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = DashboardColors.text)) {
-            VgIcon(R.drawable.ic_refresh, "새로고침", Modifier.size(24.dp))
-        }
+        ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh,
+            Modifier.testTag("site-refresh"), enabled = !state.loading, size = vgTapMin, iconSize = 24.dp,
+            tint = DashboardColors.text, busy = state.loading)
     }
     if (compact) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) { title(); refresh() }
     else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -96,15 +93,12 @@ private fun DashboardHeading(state: SiteSummaryState, compact: Boolean, onRefres
 
 @Composable
 private fun ReceptionNotice(state: SiteSummaryState) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (state.forbidden) {
-                StateNotice(StateKind.locked, "접근 권한 없음", "관리자에게 역할·현장 배정을 확인해 주세요.", Modifier.testTag("site-forbidden"))
-                Text("권한이 바뀌었으면 새로고침을 눌러 다시 조회합니다.", style = MaterialTheme.typography.bodySmall)
-            } else if (state.failed) StateNotice(StateKind.failed, "수신 실패",
-                if (state.data == null) "연결 후 새로고침해 주세요." else "이전에 받은 자료를 표시합니다.", Modifier.testTag("site-refresh-error"))
-            else if (state.loading && state.data == null) StateNotice(StateKind.loading, "자료를 불러오는 중", "첫 수신을 기다리고 있습니다.")
-            if (state.stale && !state.forbidden) StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과", Modifier.testTag("site-stale"))
-        }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (state.forbidden) StateLabel(StateKind.locked, "접근 권한 없음", Modifier.testTag("site-forbidden"))
+        else if (state.failed) StateLabel(StateKind.failed, "수신 실패", Modifier.testTag("site-refresh-error"))
+        else if (state.loading && state.data == null) StateLabel(StateKind.loading, "수신 중")
+        if (state.stale && !state.forbidden) StateLabel(StateKind.stale, "오래된 자료", Modifier.testTag("site-stale"))
+    }
 }
 
 @Composable
@@ -278,7 +272,7 @@ private fun AlertsTile(state: SiteSummaryState, onClick: () -> Unit) {
         Metric(data?.unacked?.toString() ?: "—", "건", if ((data?.unacked ?: 0) > 0) DashboardColors.warning else DashboardColors.text, 64)
         Text(if (state.forbidden) "접근 권한 없음" else alertsText(data), color = DashboardColors.secondary, fontSize = 13.sp)
         if (data?.ok == true) Text(when (data.siteScoped) {
-            false -> "전체 현장 기준 · 이 현장만의 경보 수가 아닙니다"
+            false -> "전체 현장 기준"
             true -> "이 현장 기준"
             null -> "경보 집계 범위 확인 불가"
         }, color = DashboardColors.secondary, fontSize = 12.sp)

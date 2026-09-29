@@ -63,10 +63,10 @@ fun OutboxHistoryContent(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("전송 이력", style = MaterialTheme.typography.headlineMedium)
                 Text("현재 계정 · $account")
-                if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관합니다.")
+                if (offline) StateLabel(StateKind.offline, "오프라인")
                 if (supportedLookup) {
                     ActionIconButton(R.drawable.ic_refresh, "서버 상태 다시 조회", { onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
-                        enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain })
+                        enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain }, busy = checking)
                     if (checking) LinearProgressIndicator(Modifier.fillMaxWidth())
                     lookupMessage?.let { Text(it, Modifier.testTag("outbox-lookup-message")) }
                 }
@@ -82,7 +82,7 @@ fun OutboxHistoryContent(
                     FilterChip(selected = siteGroup == null, onClick = { siteGroup = null }, label = { Text("모든 작성 현장") })
                     groups.forEach { (group, name) -> FilterChip(selected = siteGroup == group, onClick = { siteGroup = group }, label = { Text(name) }) }
                 }
-                if (loadError != null) { Text(loadError); ActionIconButton(R.drawable.ic_refresh, "전송 원장 다시 열기", onReload) }
+                if (loadError != null) { Text(loadError); ActionIconButton(R.drawable.ic_refresh, "전송 원장 다시 열기", onReload, enabled = !checking, busy = checking) }
                 error?.let { Text(it) }
                 if (visible.isEmpty() && loadError == null) Text("이 계정에 표시할 전송 항목이 없습니다.", Modifier.padding(vertical = 32.dp))
             }
@@ -123,29 +123,23 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
 ) {
     val uncertain = item.needsVerification || item.phase == OutboxPhase.uncertain
     val cannotSend = busy || offline
-    var details by rememberSaveable(item.id) { mutableStateOf(false) }
     GlassCard(Modifier.fillMaxWidth().testTag("outbox-${item.id}")) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("${item.kindLabel} · ${item.fields["title"] ?: item.fields["commentOf"].orEmpty()}", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("${item.kindLabel} · ${item.fields["title"] ?: item.fields["commentOf"].orEmpty()}", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                OutboxInfoButton(item)
+            }
             if (item.dependsOn != null) Text("원본 사진 ${parent?.fields?.get("title") ?: "제목 없음"} 에 딸림")
             StateLabel(item.phase.visualState(), item.statusLabel, Modifier.testTag("outbox-status-${item.id}"))
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             item.message?.let { Text(it, Modifier.padding(top = 8.dp)) }
             Text(localCreatedAt(item), style = MaterialTheme.typography.bodySmall)
-            ActionIconButton(R.drawable.ic_info, if (details) "기록 정보 접기" else "기록 정보", { details = !details }, Modifier.testTag("outbox-details-${item.id}"), size = 56.dp)
-            if (details) {
-                Text("현장 ID ${item.siteId ?: "미제공"}")
-                SelectionContainer { Text("작업 ID ${item.id}") }
-            }
             if (item.phase == OutboxPhase.completed) Text("${if (item.mock) "모의 확인 시각" else "서버 확인 시각"} · " +
                 (item.completedAt?.let { DateTimeFormatter.ofPattern("uuuu-MM-dd HH:mm:ss").format(it.atZone(ZoneId.of("Asia/Seoul"))) } ?: "미기록"))
             item.fields["annotationOf"]?.let { Text("원본 사진 $it") }
-            if (uncertain) Text("이미 서버에 등록됐을 수 있습니다. 서버 반영 여부를 먼저 확인해 주세요.")
-            if (uncertain && !supportedLookup) Text("서버 반영 여부를 자동으로 확인할 수 없습니다. 관제웹에서 먼저 확인해 주세요. 자동 재전송하지 않습니다.")
-            if (item.phase == OutboxPhase.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 이 항목을 재개해 주세요. 초안은 그대로 보관됩니다.")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (uncertain) {
-                    if (supportedLookup) ActionIconButton(R.drawable.ic_refresh, "서버 상태 재조회", onVerify, enabled = !busy && !checking && canLookup)
+                    if (supportedLookup) ActionIconButton(R.drawable.ic_refresh, "서버 상태 재조회", onVerify, enabled = !busy && !checking && canLookup, busy = checking)
                     if (retryable) Button(onSend, enabled = !cannotSend && !checking && canLookup) { Text("같은 작업 재시도") }
                     if (!supportedLookup) OutlinedButton(onConfirmAbsent, enabled = !cannotSend) { Text("관제웹 미등록 확인 후 재시도") }
                 } else if (item.phase == OutboxPhase.failed || item.phase == OutboxPhase.reauthenticate) {

@@ -47,20 +47,34 @@ class ShellStateTest {
         store.reject = true; shell.toggle(); runCurrent()
         assertEquals(true, shell.state.value.collapsed); assertEquals(listOf("레일 접힘 상태를 저장하지 못했습니다."), messages)
     }
+    @Test fun homeResetsOnlySelectedTabAndDoesNotChangeSettingsOrAccountState() = runTest {
+        val c = FieldCoordinator(ScriptedGateway(), MemoryStore(), backgroundScope, MutableClock())
+        val shell = ShellController(c, backgroundScope) {}
+        shell.bindAccount("a"); shell.windowWidth(866); shell.select(3)
+        shell.home(3)
+        assertEquals(listOf(0, 0, 0, 1, 0, 0), shell.state.value.homeRevisions)
+        assertEquals(3, shell.state.value.destination)
+        assertEquals(true, shell.state.value.collapsed)
+        shell.select(1); shell.select(3)
+        assertEquals(1, shell.state.value.homeRevisions[3])
+        shell.bindAccount("b")
+        assertEquals(List(6) { 0 }, shell.state.value.homeRevisions)
+    }
     @Test fun receiptUsesDestinationOfflineAndForbiddenPriorityExactly() {
         val ready = FieldState(siteStatusSnapshot = SiteStatus(siteStatusReply()))
         assertEquals("마지막 수신 2026-09-15 00:13:04 KST", shellReceipt(0, ready))
         assertEquals(siteStatusReceipt(null), shellReceipt(0, FieldState()))
-        for (index in 2..4) assertEquals("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요", shellReceipt(index, ready))
+        for (index in 2..3) assertEquals("전송 상태는 기록별 표시", shellReceipt(index, ready))
+        assertEquals("기기에 저장", shellReceipt(4, ready))
         val offline = ready.copy(offline = true)
-        assertTrue(shellReceipt(0, offline).contains("60초마다 조회를 재시도"))
-        assertTrue(shellReceipt(1, offline).contains("경보 대응 확인은 연결 후 가능하며 예약되지 않습니다."))
-        assertTrue(shellReceipt(2, offline).contains("촬영한 사진과 주석·메모·음성은 기기에 보관합니다."))
-        assertTrue(shellReceipt(3, offline).contains("결과 불명 항목은 서버 반영 여부부터 확인해 주세요."))
-        assertTrue(shellReceipt(4, offline).contains("설정은 기기에 저장할 수 있습니다."))
-        for (index in 0..1) assertEquals("마지막 수신 정보 표시 불가 · 접근 권한 없음", shellReceipt(index, offline.copy(siteStatusForbidden = true)))
+        assertTrue(shellReceipt(0, offline).contains("오프라인 · 마지막 수신 자료"))
+        assertTrue(shellReceipt(1, offline).contains("오프라인 · 대응 확인 불가"))
+        assertTrue(shellReceipt(2, offline).contains("오프라인 · 기기에 보관"))
+        assertTrue(shellReceipt(3, offline).contains("오프라인 · 기기에 보관"))
+        assertTrue(shellReceipt(4, offline).contains("오프라인 · 기기에 저장"))
+        for (index in 0..1) assertEquals("접근 권한 없음", shellReceipt(index, offline.copy(siteStatusForbidden = true)))
         val badAlerts = ready.copy(siteStatusSnapshot = SiteStatus(siteStatusReply() + ("alerts" to mapOf("ok" to false))))
-        assertEquals("경보 수신 실패 · 이전 수신 정보는 경보 화면에서 확인해 주세요", shellReceipt(1, badAlerts))
+        assertEquals("경보 수신 실패", shellReceipt(1, badAlerts))
         assertEquals("마지막 수신 2026-09-15 00:13:04 KST", shellReceipt(0, badAlerts))
     }
 }
