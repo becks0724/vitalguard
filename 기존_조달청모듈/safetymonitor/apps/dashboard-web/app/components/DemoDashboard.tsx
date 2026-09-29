@@ -50,7 +50,9 @@ import {
 } from "../../lib/spo2-ack-key";
 import { formatElapsed } from "../../lib/absence-watch";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
-import { impactRowView, isImpactSample, type ImpactRowView } from "../../lib/impact-row";
+import { impactRowView, type ImpactRowView } from "../../lib/impact-row";
+import { batteryStatusLabel, buildRecentTableItems, recentTableCounts } from "../../lib/device-status-row";
+import { kstClock } from "../../lib/vital-measured-at";
 import {
   evaluateHazardKmaWarnings,
   evaluateHazardWeather,
@@ -5880,6 +5882,7 @@ export function DemoDashboard() {
 
   // 작업자 관제에는 실측 스트림만 사용한다. 목업은 data_mockup 전용 섹션에만 표시한다.
   const allLatest = useMemo(() => data.latest, [data.latest]);
+  const recentItems = useMemo(() => buildRecentTableItems(data.recent), [data.recent]);
 
   const latestMap = useMemo(() => {
     return new Map(allLatest.map((sample) => [sample.workerId, sample]));
@@ -7743,15 +7746,17 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
             </span>
             건 누적
             {(() => {
-              // 충격 판정 행이 섞이는 날(08-31 실측 3.4배)엔 구성비를 헤더에서 바로 보인다.
-              const impacts = data.recent.filter(isImpactSample).length;
+              // 충격·기기 상태가 섞인 날에도 원본 DB recent 행 구성비를 헤더에서 바로 보인다.
+              const counts = recentTableCounts(data.recent);
               return (
                 <span
                   className="ml-2 text-xs font-normal text-muted dark:text-on-dark-soft"
-                  title="충격 판정 = 워치 낙상 모듈이 기록한 판정 행(생체 측정 아님) — DB 누적에 포함"
+                  title="충격 판정 = 워치 낙상 모듈이 기록한 판정 행(생체 측정 아님) — DB 누적에 포함 · 기기 상태 = 착용 표식·미착용 배터리 기록(생체 측정 아님)"
                 >
                   (화면 표시 최근 {data.recent.length}건
-                  {impacts > 0 ? ` · 생체 ${data.recent.length - impacts} · 충격 판정 ${impacts}` : ""})
+                  {counts.device > 0 || counts.impact > 0 ? ` · 생체 ${counts.vital}` : ""}
+                  {counts.device > 0 ? ` · 기기 상태 ${counts.device}` : ""}
+                  {counts.impact > 0 ? ` · 충격 판정 ${counts.impact}` : ""})
                 </span>
               );
             })()}
@@ -7794,7 +7799,62 @@ const GEOFENCE_STATE_KEEP_MS = 20 * 60_000;
                 </tr>
               </thead>
               <tbody>
-                {data.recent.map((sample, index) => {
+                {recentItems.map((item, index) => {
+                  if (item.kind === "worn") {
+                    const tone = IMPACT_TONE.neutral;
+                    return (
+                      <tr
+                        key={`${item.sample.workerId}-${item.sample.ts}-${index}`}
+                        className="border-t border-hairline dark:border-white/5"
+                        title="워치 착용 표식(생체 측정 아님)"
+                      >
+                        <td className="px-4 py-3 font-mono" title={`출처 ${item.sample.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                          {formatTime(item.sample.ts)}
+                        </td>
+                        <td colSpan={5} className={`px-4 py-3 text-xs ${tone.text}`}>
+                          <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${tone.chip}`}>
+                            {item.worn ? "착용" : "벗음"}
+                          </span>
+                          {workerCell(item.sample)}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  if (item.kind === "battery") {
+                    const tone = IMPACT_TONE[item.low ? "caution" : "neutral"];
+                    const pct = item.pctFrom === item.pctTo ? `${item.pctTo}%` : `${item.pctFrom}→${item.pctTo}%`;
+                    const from = kstClock(item.oldest.ts);
+                    const to = kstClock(item.newest.ts);
+                    const range = item.count > 1 && from && to ? `${from}~${to}` : null;
+                    const text = [
+                      workerCell(item.newest),
+                      `배터리 ${pct}`,
+                      batteryStatusLabel(item.status),
+                      range,
+                      item.count > 1 ? `${item.count}회` : null,
+                      item.low ? "배터리 부족" : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return (
+                      <tr
+                        key={`battery-${item.workerId}-${item.newest.ts}`}
+                        className="border-t border-hairline dark:border-white/5"
+                        title="워치를 벗은 동안 10분마다 오는 배터리 기록(생체 측정 아님) — 벗은 한 번에 최대 9회"
+                      >
+                        <td className="px-4 py-3 font-mono" title={`출처 ${item.newest.dataOrigin ?? "legacy_unclassified_vitalguard"}`}>
+                          {formatTime(item.newest.ts)}
+                        </td>
+                        <td colSpan={5} className={`px-4 py-3 text-xs ${tone.text}`}>
+                          <span className={`mr-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${tone.chip}`}>
+                            미착용
+                          </span>
+                          {text}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  const sample = item.sample;
                   // 충격 판정(낙상 섀도)·낙상 행 — 생체 행이 아니므로 생체 칸(`--` 넷·`≈` 추정)을
                   // 그리지 않고 한 줄 요약으로 가른다(2026-08-31 · 문구 A · 색 ③ · 배치 1).
                   // 서버·링은 그대로 — 후보 행을 링에서 빼면 낙상 "확인 중"(fallPendingByWorker)이 죽는다.

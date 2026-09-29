@@ -29,6 +29,7 @@ const read = (...p: string[]) => stripComments(readFileSync(join(here, ...p), "u
 const board = read("..", "app", "components", "DemoDashboard.tsx");
 const store = read("..", "app", "api", "app", "vital", "store.ts");
 const rowSrc = read("impact-row.ts");
+const deviceRowSrc = read("device-status-row.ts");
 
 /** 인자 목록의 닫는 소괄호 — 대응으로 찾는다(still-label 가드와 같은 이유 · [[L-104]]). */
 function sigEnd(src: string, at: number): number {
@@ -105,7 +106,18 @@ test("★ isImpactSample 과 impactRowView 가 갈리지 않고, 헤더·표가 
   for (const sample of [...Object.values(CASES), vital]) {
     assert.equal(impactRowView(sample, "x") !== null, isImpactSample(sample), "판별 불일치 — 헤더 수와 행 수가 어긋난다");
   }
-  assert.match(board, /data\.recent\.filter\(isImpactSample\)/, "헤더 집계가 분류기 판별을 안 쓴다");
+  // 09-29 — 헤더 집계가 기기 상태(착용 표식·미착용 배터리)와 함께 `recentTableCounts` 로 옮겨 갔다.
+  //   뜻은 같다: 헤더의 충격 수는 분류기 판별(isImpactSample)을 거쳐야 한다. 그래서 두 고리를 다 본다.
+  assert.match(board, /recentTableCounts\(data\.recent\)/, "헤더 집계가 분류 함수를 안 쓴다");
+  // ⚠ bodyOf 는 인자 뒤 첫 `{` 를 본문으로 잡는데 이 함수는 반환 타입이 `{ vital; … }` 다 — 선언부터 다음 export 까지 자른다.
+  const countsAt = deviceRowSrc.indexOf("export function recentTableCounts(");
+  assert.notEqual(countsAt, -1, "recentTableCounts 를 못 찾았다 — 이름이 바뀌었으면 이 가드도 따라가야 한다");
+  const countsEnd = deviceRowSrc.indexOf("\nexport ", countsAt + 1);
+  assert.match(
+    deviceRowSrc.slice(countsAt, countsEnd === -1 ? undefined : countsEnd),
+    /isImpactSample\(sample\)/,
+    "헤더 집계 함수가 충격 판별에 분류기를 안 쓴다 — 헤더 수와 행 수가 어긋난다",
+  );
   assert.match(board, /impactRowView\(sample/, "표가 분류기를 안 부른다 — 충격 행이 생체 행으로 그려진다");
 });
 
