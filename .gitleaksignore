@@ -21,3 +21,9 @@
 # 변수명에 PASSWORD 가 들어간 것도 규칙을 끌어당긴다 — 유출이 아니므로 로테이션 대상이 아니다.
 # (2026-09-11 `feat/newdb-cutover` 유입. fetch-depth: 0 이라 main·tmp-507e 스캔에도 같이 잡힌다.)
 기존_조달청모듈/safetymonitor/apps/dashboard-web/lib/newdb/company-account-access.ts:generic-api-key:10
+
+# 태블릿 앱 단위테스트의 「거부돼야 하는 주소」 입력(실제 자격증명 아님). 계정·비밀번호가 박힌
+# https 주소를 앱이 받지 않는지 보는 음성 시험이다. 계정·비번 자리는 자리표시 단어이고 호스트는
+# 예약 도메인 `unit.invalid`(RFC 2606 · 실재 불가)다. 09-25 에 더한 `url-embedded-credentials` 에 걸렸다.
+# (2026-09-27 690e87b8 유입 → 09-28 부터 main·feat/newdb-cutover Secret scan 빨간불.)
+Lenova idea tap 12.7/app/vitalguard_field_android/app/src/test/kotlin/com/vitalguard/field/CalendarGatewayTest.kt:url-embedded-credentials:41
