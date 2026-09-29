@@ -89,6 +89,40 @@ class Stage3ComposeTest {
         compose.onNodeWithTag("site-row-aed").assertDoesNotExist()
         compose.onNodeWithText("배터리 교환 2일 지남").assertDoesNotExist()
     }
+    @Test fun weatherPreviewCanShowAllEffectsWithoutChangingReadingsAndEndsOnExit() {
+        login()
+        compose.onNodeWithTag("site-row-weather").performScrollTo().performClick()
+        compose.onNodeWithTag("weather-signal-dot").assertContentDescriptionEquals("주의")
+        val before = field.state.value.siteStatusSnapshot!!.weather.current!!.temperatureC
+        for (mode in listOf("rain", "snow", "wind")) {
+            compose.onNodeWithTag("weather-preview-open").performClick()
+            compose.onNodeWithTag("weather-preview-$mode").assertIsDisplayed()
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithTag("weather-preview-$mode").performClick()
+            compose.mainClock.advanceTimeBy(100)
+            compose.onNodeWithTag("weather-preview-banner").assertExists()
+            compose.onNodeWithTag("weather-background-effects").assertExists()
+            assertEquals(before, field.state.value.siteStatusSnapshot!!.weather.current!!.temperatureC)
+            compose.onNodeWithTag("weather-preview-close").performClick()
+            compose.mainClock.advanceTimeBy(100)
+            compose.mainClock.autoAdvance = true
+            compose.onNodeWithTag("weather-preview-banner").assertDoesNotExist()
+            compose.onNodeWithTag("weather-background-effects").assertDoesNotExist()
+        }
+        compose.onNodeWithTag("weather-preview-open").performClick()
+        compose.onNodeWithTag("weather-preview-rain").assertIsDisplayed()
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag("weather-preview-rain").performClick()
+        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithTag("rail-destination-1").performClick()
+        compose.mainClock.advanceTimeBy(100)
+        compose.mainClock.autoAdvance = true
+        compose.onNodeWithTag("weather-background-effects").assertDoesNotExist()
+        compose.onNodeWithTag("rail-destination-0").performClick()
+        compose.onNodeWithTag("weather-preview-banner").assertDoesNotExist()
+        compose.onNodeWithTag("weather-background-effects").assertDoesNotExist()
+        assertEquals(0, writes)
+    }
     @Test fun openingAlertDoesNotWriteAndExplicitAckIsOnlyOnce() {
         login(); compose.onNodeWithTag("rail-destination-1").performScrollTo().performClick()
         compose.onNodeWithTag("alert-row-42").performScrollTo().performClick()

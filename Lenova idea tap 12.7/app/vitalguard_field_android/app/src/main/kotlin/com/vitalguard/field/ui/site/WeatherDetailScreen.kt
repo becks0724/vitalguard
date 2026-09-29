@@ -4,12 +4,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vitalguard.field.R
@@ -35,7 +40,19 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
         WeatherMetric("pm25", "초미세먼지", R.drawable.ic_particles, current?.pm25, "μg/㎥", 0, "PM2.5"),
         WeatherMetric("wbgt", "습구흑구", R.drawable.ic_wbgt, current?.wbgt, "℃", note = "WBGT · 참고"),
     )
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val preview = LocalWeatherPreview.current
+    Column(Modifier.fillMaxSize()) {
+        preview.mode?.let { mode ->
+            Surface(color = DashboardColors.sidebar, modifier = Modifier.fillMaxWidth().testTag("weather-preview-banner")) {
+                Row(Modifier.padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VgIcon(mode.icon, modifier = Modifier.size(24.dp))
+                    Text("효과 미리보기 · ${mode.label}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    ActionIconButton(R.drawable.ic_close, "미리보기 종료", { preview.select(null) }, Modifier.testTag("weather-preview-close"), size = 56.dp)
+                }
+            }
+        }
+    BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
         val effectiveWidth = (maxWidth.value - 48) / LocalDensity.current.fontScale
         val columns = if (effectiveWidth >= 840) 4 else if (effectiveWidth >= 630) 3 else if (effectiveWidth >= 410) 2 else 1
         LazyColumn(Modifier.fillMaxSize().testTag("weather-detail-scroll"), contentPadding = PaddingValues(24.dp),
@@ -44,6 +61,7 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     VgBackButton(Modifier.testTag("weather-back"), onClick = onBack)
                     Text("기상 상세", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+                    WeatherPreviewPicker()
                     ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh, Modifier.testTag("weather-refresh"), enabled = !state.loading, busy = state.loading)
                 }
             }
@@ -69,7 +87,7 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("현재 기상", style = MaterialTheme.typography.titleLarge)
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SignalMark(weather.level)
+                                WeatherSignalDot(weather.level)
                                 Text(weather.summary ?: "미수신", style = MaterialTheme.typography.bodyMedium)
                             }
                             Text(when (current?.obsSource) {
@@ -111,22 +129,54 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
             }
         }
     }
+    }
 }
 
 @Composable
 private fun WeatherMetricCard(metric: WeatherMetric, modifier: Modifier) {
     GlassCard(modifier.heightIn(min = 166.dp).testTag("weather-metric-${metric.id}")) {
-        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                VgIcon(metric.icon, modifier = Modifier.size(38.dp))
-                Text("(${metric.label})", style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)
-            }
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
+            VgIcon(metric.icon, modifier = Modifier.size(38.dp))
+            Text("(${metric.label})", style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)
+        }
+        HorizontalDivider(color = DashboardColors.line)
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                 Text(if (metric.value == null) "—" else metricValue(metric.value, "", metric.digits),
                     style = MaterialTheme.typography.headlineLarge.copy(fontSize = 34.sp), fontWeight = FontWeight.SemiBold)
-                Text(metric.unit, Modifier.padding(bottom = 4.dp), style = MaterialTheme.typography.bodySmall)
+                if (metric.unit.isNotEmpty()) Text(metric.unit, Modifier.padding(bottom = 4.dp), style = MaterialTheme.typography.bodySmall)
             }
-            metric.note?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = DashboardColors.secondary) }
+            metric.note?.let { Text(it, Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.labelSmall, color = DashboardColors.secondary) }
+        }
+    }
+}
+
+@Composable
+private fun WeatherSignalDot(level: String?) {
+    val (label, color) = when (level) {
+        "normal" -> "정상" to SignalColors.normal
+        "warn" -> "주의" to VgColors.warn
+        "danger" -> "위험" to SignalColors.danger
+        else -> "상태 미확인" to DashboardColors.muted.copy(alpha = .45f)
+    }
+    Box(Modifier.size(16.dp).background(color, CircleShape).testTag("weather-signal-dot")
+        .clearAndSetSemantics { contentDescription = label })
+}
+
+@Composable
+private fun WeatherPreviewPicker() {
+    val preview = LocalWeatherPreview.current
+    var open by remember { mutableStateOf(false) }
+    Box {
+        ActionIconButton(R.drawable.ic_eye, "기상 효과 미리보기", { open = !open }, Modifier.testTag("weather-preview-open"), size = 56.dp)
+        DropdownMenu(open, { open = false }, containerColor = DashboardColors.sidebar) {
+            WeatherPreviewMode.entries.forEach { mode ->
+                DropdownMenuItem(text = { Text(mode.label) }, leadingIcon = { VgIcon(mode.icon) },
+                    onClick = { preview.select(mode); open = false }, modifier = Modifier.heightIn(min = 56.dp).testTag("weather-preview-${mode.name}"))
+            }
         }
     }
 }

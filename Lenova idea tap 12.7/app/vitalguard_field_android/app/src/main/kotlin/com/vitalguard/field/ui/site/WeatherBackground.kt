@@ -19,6 +19,14 @@ import com.vitalguard.field.data.models.*
 import java.time.Duration
 import kotlin.math.sin
 
+enum class WeatherPreviewMode(val label: String, val icon: Int, val effects: WeatherEffects) {
+    rain("비", com.vitalguard.field.R.drawable.ic_rain, WeatherEffects("rain")),
+    snow("눈", com.vitalguard.field.R.drawable.ic_snow, WeatherEffects("snow")),
+    wind("강풍", com.vitalguard.field.R.drawable.ic_wind, WeatherEffects(windDanger = true)),
+}
+data class WeatherPreviewControl(val mode: WeatherPreviewMode? = null, val select: (WeatherPreviewMode?) -> Unit = {})
+val LocalWeatherPreview = staticCompositionLocalOf { WeatherPreviewControl() }
+
 val LocalWeatherEffects = staticCompositionLocalOf { WeatherEffects() }
 
 fun weatherBackgroundEffects(state: SiteSummaryState, visible: Boolean, offline: Boolean): WeatherEffects {

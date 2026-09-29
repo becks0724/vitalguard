@@ -42,6 +42,9 @@ fun FieldApp(model: FieldViewModel) {
     val site by model.site.state.collectAsStateWithLifecycle()
     val sitePage by model.sitePage.collectAsStateWithLifecycle()
     val placement by model.placement.collectAsStateWithLifecycle()
+    var weatherPreview by remember(field.user?.id) { mutableStateOf<com.vitalguard.field.ui.site.WeatherPreviewMode?>(null) }
+    val weatherDetailVisible = field.authStage == AuthStage.ready && shell.destination == 0 && sitePage == "weather"
+    LaunchedEffect(weatherDetailVisible) { if (!weatherDetailVisible) weatherPreview = null }
     val window = (LocalContext.current as? Activity)?.window
     SideEffect { window?.let {
         val bars = WindowCompat.getInsetsController(it, it.decorView)
@@ -54,7 +57,7 @@ fun FieldApp(model: FieldViewModel) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> { model.site.setForeground(true); model.outboxUi.setForeground(true); model.alerts.setForeground(true); model.cctv.setForeground(true) }
-                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> { model.site.setForeground(false); model.outboxUi.setForeground(false); model.alerts.setForeground(false); model.cctv.setForeground(false) }
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> { weatherPreview = null; model.site.setForeground(false); model.outboxUi.setForeground(false); model.alerts.setForeground(false); model.cctv.setForeground(false) }
                 else -> Unit
             }
         }
@@ -68,9 +71,10 @@ fun FieldApp(model: FieldViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
-    val weatherEffects = com.vitalguard.field.ui.site.weatherBackgroundEffects(site,
-        field.authStage == AuthStage.ready && shell.destination == 0 && sitePage == "weather", field.offline)
-    CompositionLocalProvider(com.vitalguard.field.ui.site.LocalWeatherEffects provides weatherEffects) {
+    val weatherEffects = if (weatherDetailVisible && weatherPreview != null) weatherPreview!!.effects
+        else com.vitalguard.field.ui.site.weatherBackgroundEffects(site, weatherDetailVisible, field.offline)
+    CompositionLocalProvider(com.vitalguard.field.ui.site.LocalWeatherEffects provides weatherEffects,
+        com.vitalguard.field.ui.site.LocalWeatherPreview provides com.vitalguard.field.ui.site.WeatherPreviewControl(weatherPreview) { weatherPreview = it }) {
     DashboardBackdrop(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas),
         showWallpaper = field.authStage == AuthStage.ready) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
