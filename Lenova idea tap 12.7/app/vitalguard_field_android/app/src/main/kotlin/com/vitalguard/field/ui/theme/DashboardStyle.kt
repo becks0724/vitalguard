@@ -94,6 +94,7 @@ fun DashboardBackdrop(modifier: Modifier = Modifier, showWallpaper: Boolean = tr
         if (showWallpaper) {
         Image(painterResource(R.drawable.site_wallpaper), contentDescription = null,
             modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop, alignment = Alignment.CenterStart)
+        com.vitalguard.field.ui.site.WeatherBackground(Modifier.matchParentSize())
         Canvas(Modifier.matchParentSize()) {
             // Only the edges are shaded for system-bar legibility; the asset itself is unchanged.
             drawRect(Brush.verticalGradient(0f to Color.Black.copy(alpha = .32f), .15f to Color.Transparent,
@@ -111,7 +112,6 @@ fun DashboardWorkspace(modifier: Modifier = Modifier, content: @Composable () ->
         border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f))))) {
         Box {
             FrostedWallpaper(Modifier.matchParentSize())
-            com.vitalguard.field.ui.site.WeatherBackground(Modifier.matchParentSize())
             content()
         }
     }

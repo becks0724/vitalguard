@@ -102,6 +102,13 @@ class Stage3ComposeTest {
             compose.mainClock.advanceTimeBy(100)
             compose.onNodeWithTag("weather-preview-banner").assertExists()
             compose.onNodeWithTag("weather-background-effects").assertExists()
+            val effectBounds = compose.onNodeWithTag("weather-background-effects").fetchSemanticsNode().boundsInRoot
+            val backdrop = compose.onNodeWithTag("dashboard-backdrop").fetchSemanticsNode().boundsInRoot
+            val panel = compose.onNodeWithTag("dashboard-workspace").fetchSemanticsNode().boundsInRoot
+            assertEquals(backdrop.width, effectBounds.width, 1f)
+            assertEquals(backdrop.height, effectBounds.height, 1f)
+            assertTrue(effectBounds.width > panel.width)
+            assertTrue(effectBounds.height > panel.height)
             assertEquals(before, field.state.value.siteStatusSnapshot!!.weather.current!!.temperatureC)
             compose.onNodeWithTag("weather-preview-close").performClick()
             compose.mainClock.advanceTimeBy(100)
