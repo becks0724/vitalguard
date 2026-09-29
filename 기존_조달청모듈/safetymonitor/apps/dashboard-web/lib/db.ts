@@ -4479,13 +4479,13 @@ export type OwnerProfileRow = {
 export type OwnerProfilePatch = Omit<OwnerProfileRow, "username">;
 
 // 한 번도 저장하지 않았으면 행이 없다 — null 을 그대로 돌려주고 호출부가 빈 값으로 채운다.
-export async function getOwnerProfile(username: string): Promise<OwnerProfileRow | null> {
-  const { rows } = await q<OwnerProfileRow>(
-    `SELECT username, name, company, phone, carrier, department, job_title,
+export async function getOwnerProfile(username: string, options: { readOnly?: boolean } = {}): Promise<OwnerProfileRow | null> {
+  const sql = `SELECT username, name, company, phone, carrier, department, job_title,
             employee_id, guardian_name, guardian_phone
-       FROM owner_profile WHERE username = $1`,
-    [username],
-  );
+       FROM owner_profile WHERE username = $1`;
+  const { rows } = options.readOnly
+    ? await getPool().query<OwnerProfileRow>(sql, [username])
+    : await q<OwnerProfileRow>(sql, [username]);
   return rows[0] ?? null;
 }
 
