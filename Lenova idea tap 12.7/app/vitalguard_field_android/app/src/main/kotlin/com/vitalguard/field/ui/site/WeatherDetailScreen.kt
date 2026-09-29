@@ -36,8 +36,6 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
             note = if (current?.windGustKmh != null) "순간 · 평균 ${metricValue(current.windKmh?.div(3.6), "m/s")}" else "평균"),
         WeatherMetric("rain", "강수량", R.drawable.ic_rain, current?.precipitationMm, "mm/h"),
         WeatherMetric("uv", "자외선", R.drawable.ic_sun, current?.uvIndex, ""),
-        WeatherMetric("pm10", "미세먼지", R.drawable.ic_particles, current?.pm10, "μg/㎥", 0, "PM10"),
-        WeatherMetric("pm25", "초미세먼지", R.drawable.ic_particles, current?.pm25, "μg/㎥", 0, "PM2.5"),
         WeatherMetric("wbgt", "습구흑구", R.drawable.ic_wbgt, current?.wbgt, "℃", note = "WBGT · 참고"),
     )
     val preview = LocalWeatherPreview.current
@@ -73,36 +71,35 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
                     if (state.stale || weather?.stale == true) StateLabel(StateKind.stale, "오래된 자료")
                 }
             }
-            if (state.forbidden || weather?.ok != true) return@LazyColumn
+            if (state.forbidden) return@LazyColumn
+            if (weather?.ok == true) {
             item {
-                GlassCard(Modifier.fillMaxWidth().testTag("weather-current")) {
-                    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                        VgIcon(when {
-                            weather.effects.snow -> R.drawable.ic_snow
-                            weather.effects.rain -> R.drawable.ic_rain
-                            weather.effects.windDanger -> R.drawable.ic_wind
-                            current?.weatherCode in setOf(0, 1) -> R.drawable.ic_sun
-                            else -> R.drawable.ic_cloud
-                        }, modifier = Modifier.size(64.dp))
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("현재 기상", style = MaterialTheme.typography.titleLarge)
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                WeatherSignalDot(weather.level)
-                                Text(weather.summary ?: "미수신", style = MaterialTheme.typography.bodyMedium)
-                            }
-                            Text(when (current?.obsSource) {
-                                "kma-ncst" -> "기상청 · ${alertTime(current.obsAt)}"
-                                "open-meteo" -> "오픈메테오 · ${alertTime(weather.fetchedAt)}"
-                                else -> "${current?.obsSource ?: "관측"} · ${alertTime(current?.obsAt)}"
-                            }, style = MaterialTheme.typography.bodySmall, color = DashboardColors.secondary)
-                        }
-                    }
+                if (effectiveWidth >= 860) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    CurrentWeatherCard(weather, Modifier.weight(.36f))
+                    WeatherForecastCard(weather, state.data?.fetchedAt, Modifier.weight(.64f))
+                } else Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    CurrentWeatherCard(weather)
+                    WeatherForecastCard(weather, state.data?.fetchedAt)
                 }
             }
             items(metrics.chunked(columns)) { group ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    group.forEach { metric -> WeatherMetricCard(metric, Modifier.weight(1f)) }
+                    group.forEach { metric -> WeatherMetricCard(metric, weatherMetricSignal(state, metric.id, metric.value), Modifier.weight(1f)) }
                     repeat(columns - group.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    VgIcon(R.drawable.ic_particles, modifier = Modifier.size(28.dp))
+                    Text("대기질", style = MaterialTheme.typography.titleLarge)
+                }
+            }
+            items(listOf(
+                WeatherMetric("pm10", "미세먼지", R.drawable.ic_particles, current?.pm10, "μg/㎥", 0, "PM10"),
+                WeatherMetric("pm25", "초미세먼지", R.drawable.ic_particles, current?.pm25, "μg/㎥", 0, "PM2.5"),
+            ).chunked(columns.coerceAtMost(2))) { group ->
+                Row(Modifier.fillMaxWidth().testTag("weather-air-quality"), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    group.forEach { metric -> WeatherMetricCard(metric, weatherMetricSignal(state, metric.id, metric.value), Modifier.weight(1f)) }
                 }
             }
             val warning = weather.warning
@@ -127,20 +124,49 @@ fun WeatherDetailScreen(state: SiteSummaryState, onBack: () -> Unit, onRefresh: 
                 val omitted = if (preliminary) warning?.omittedPreliminary else warning?.omittedWarnings
                 if ((omitted ?: 0) > 0) item { StateLabel(StateKind.failed, "특보 ${omitted}건 표시 불가") }
             }
+            } else item { Text("실외 환경 · 미수신", style = MaterialTheme.typography.titleLarge) }
+            val gas = state.data?.gas
+            val indoor = gas?.environment
+            val indoorFresh = indoorEnvironmentFresh(state)
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    VgIcon(R.drawable.ic_site, modifier = Modifier.size(28.dp))
+                    Text("실내 환경", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+                    StateLabel(when { gas?.ok == false || state.failed -> StateKind.failed; indoor == null -> StateKind.empty
+                        !indoorFresh -> StateKind.stale; else -> StateKind.ready },
+                        when { gas?.ok == false || state.failed -> "수신 실패"; indoor == null -> "미수신"
+                            !indoorFresh -> "수신 지연"; else -> "수신 완료" })
+                }
+                Text("가스포드${gas?.deviceId?.let { " · $it" } ?: ""} · 마지막 수신 ${alertTime(gas?.lastSeenAt)}",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            val indoorMetrics = listOf(
+                WeatherMetric("indoor-temperature", "온도", R.drawable.ic_temperature, indoor?.temperatureC.takeIf { indoorFresh }, "℃"),
+                WeatherMetric("indoor-humidity", "습도", R.drawable.ic_humidity, indoor?.humidityPct.takeIf { indoorFresh }, "%", 0),
+                WeatherMetric("indoor-pressure", "기압", R.drawable.ic_pressure, indoor?.pressureHpa.takeIf { indoorFresh }, "hPa"),
+            )
+            val indoorColumns = columns.coerceAtMost(3)
+            items(indoorMetrics.chunked(indoorColumns)) { group ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    group.forEach { metric -> WeatherMetricCard(metric, null, Modifier.weight(1f)) }
+                    repeat(indoorColumns - group.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
     }
     }
 }
 
 @Composable
-private fun WeatherMetricCard(metric: WeatherMetric, modifier: Modifier) {
+private fun WeatherMetricCard(metric: WeatherMetric, level: String?, modifier: Modifier) {
     GlassCard(modifier.heightIn(min = 166.dp).testTag("weather-metric-${metric.id}")) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)) {
             VgIcon(metric.icon, modifier = Modifier.size(38.dp))
             Text("(${metric.label})", style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)
         }
-        HorizontalDivider(color = DashboardColors.line)
+        WeatherMetricDivider(level, Modifier.testTag("weather-metric-signal-${metric.id}"))
         Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
@@ -177,6 +203,37 @@ private fun WeatherPreviewPicker() {
                 DropdownMenuItem(text = { Text(mode.label) }, leadingIcon = { VgIcon(mode.icon) },
                     onClick = { preview.select(mode); open = false }, modifier = Modifier.heightIn(min = 56.dp).testTag("weather-preview-${mode.name}"))
             }
+        }
+    }
+}
+
+
+@Composable
+private fun CurrentWeatherCard(weather: SiteStatusWeather, modifier: Modifier = Modifier) {
+    val current = weather.current
+    GlassCard(modifier.fillMaxWidth().testTag("weather-current")) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                VgIcon(when {
+                    weather.effects.snow -> R.drawable.ic_snow
+                    weather.effects.rain -> R.drawable.ic_rain
+                    weather.effects.windDanger -> R.drawable.ic_wind
+                    else -> forecastIcon(current?.weatherCode)
+                }, modifier = Modifier.size(52.dp))
+                Text("실외 환경", style = MaterialTheme.typography.titleLarge)
+            }
+            val airHeadline = weather.headlineBasis == "미세먼지 PM2.5"
+            val level = weather.conditions?.level ?: weather.level.takeUnless { airHeadline }
+            val summary = weather.conditions?.summary ?: weather.summary.takeUnless { airHeadline } ?: "기상 정보"
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                WeatherSignalDot(level)
+                Text(summary, style = MaterialTheme.typography.bodyMedium)
+            }
+            Text(when (current?.obsSource) {
+                "kma-ncst" -> "기상청 · ${alertTime(current.obsAt)}"
+                "open-meteo" -> "오픈메테오 · ${alertTime(weather.fetchedAt)}"
+                else -> "${current?.obsSource ?: "관측"} · ${alertTime(current?.obsAt)}"
+            }, style = MaterialTheme.typography.bodySmall, color = DashboardColors.secondary)
         }
     }
 }

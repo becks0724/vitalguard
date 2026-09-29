@@ -25,6 +25,7 @@ data class SiteSummaryState(
     val failed: Boolean = false,
     val forbidden: Boolean = false,
     val now: Instant = Instant.EPOCH,
+    val receivedAt: Instant? = null,
 ) {
     val stale get() = data?.let { Duration.between(parseInstant(it.fetchedAt), now) >= siteStatusStaleAfter } == true
 }
@@ -104,7 +105,7 @@ class SiteSummaryController(
             val data = controller.siteStatus()
             if (expected != generation) return
             val wasForbidden = state.value.forbidden
-            mutable.value = state.value.copy(data = data, failed = false, forbidden = false, now = clock.instant())
+            mutable.value = state.value.copy(data = data, failed = false, forbidden = false, now = clock.instant(), receivedAt = clock.instant())
             if (wasForbidden) startPolling()
         } catch (e: Exception) {
             if (e is CancellationException) throw e

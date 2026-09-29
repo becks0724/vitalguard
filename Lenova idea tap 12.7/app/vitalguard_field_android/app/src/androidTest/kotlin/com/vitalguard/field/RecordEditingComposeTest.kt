@@ -115,9 +115,19 @@ class RecordEditingComposeTest {
         for(tag in listOf("tool-pen","tool-marker","tool-rectangle","tool-eraser","width-thin","width-normal","width-thick","color-red","color-black","color-blue","undo","clear-all","original-only","fit-width")) {
             compose.onNodeWithTag("editor-$tag").performScrollTo().assertWidthIsAtLeast(56.dp).assertHeightIsAtLeast(56.dp)
         }
-        compose.onNodeWithTag("editor-tool-pen").assertIsSelected()
+        val tools = listOf("tool-pen", "width-normal", "color-blue", "undo", "fit-width", "save")
+        val centers = tools.map { tag ->
+            val node = compose.onNodeWithTag("editor-$tag")
+            if (tag != "save") node.performScrollTo()
+            node.fetchSemanticsNode().boundsInRoot.center.y
+        }
+        assertTrue("도구는 한 줄이어야 한다", centers.max() - centers.min() <= 1f)
+        val canvas = compose.onNodeWithTag("ink-canvas").fetchSemanticsNode().boundsInRoot
+        val content = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot
+        assertTrue("사진 영역이 편집 화면 높이의 절반 이상이어야 한다", canvas.height > content.height * .55f)
+        compose.onNodeWithTag("editor-tool-pen").performScrollTo().assertIsSelected()
         compose.onNodeWithTag("editor-width-normal").assertIsSelected()
-        compose.onNodeWithTag("editor-color-blue").performClick().assertIsSelected()
+        compose.onNodeWithTag("editor-color-blue").performScrollTo().performClick().assertIsSelected()
         compose.onNodeWithTag("ink-canvas").performTouchInput { swipe(center,center+androidx.compose.ui.geometry.Offset(40f,20f)) }
         compose.runOnIdle { assertTrue(model.records.editor!!.state.value.strokes.isEmpty()) }
         compose.onNodeWithTag("editor-save").assertIsNotEnabled().assertWidthIsEqualTo(64.dp).assertHeightIsEqualTo(64.dp)
@@ -129,7 +139,7 @@ class RecordEditingComposeTest {
         stylus(cancel=true); compose.runOnIdle { assertTrue(model.records.editor!!.state.value.strokes.isEmpty()) }
         stylus(flags=0x20); compose.runOnIdle { assertTrue(model.records.editor!!.state.value.strokes.isEmpty()) }
         stylus(); compose.runOnIdle { assertEquals(1,model.records.editor!!.state.value.strokes.size) }
-        compose.onNodeWithTag("editor-save").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("editor-save").assertIsEnabled().performClick()
         compose.waitUntil(5000){model.outbox.dependents(photo.id).size==1}
         compose.onNodeWithTag("photo-detail-actions").assertExists()
         compose.onNodeWithText("주석 1 · 메모 0 · 음성 0").performScrollTo().assertExists()

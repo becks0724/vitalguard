@@ -14,6 +14,7 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeoutException
 import java.util.logging.Logger
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.withLock
 
 data class ApiReply(val status: Int, val body: JsonObject)
 
@@ -37,6 +38,31 @@ class LiveGateway(
     private val downloadTransport: DownloadTransport? = transport as? DownloadTransport,
 ) : FieldGateway, CaptureAddressGateway, OperationLookupGateway {
     override val isMock = false
+    private val forecastMutex = kotlinx.coroutines.sync.Mutex()
+    private var forecastKey: String? = null
+    private var forecastRows: List<JsonObject>? = null
+
+    private suspend fun withLegacyForecast(weather: JsonObject): JsonObject {
+        if (weather["forecast"] is List<*> || weather["ok"] != true || weather["stale"] != false || weather["persisted"] == true) return weather
+        val lat = (weather["lat"] as? Number)?.toDouble()?.takeIf { it.isFinite() && it in -90.0..90.0 } ?: return weather
+        val lon = (weather["lon"] as? Number)?.toDouble()?.takeIf { it.isFinite() && it in -180.0..180.0 } ?: return weather
+        val fetched = weather["fetchedAt"] as? String ?: return weather
+        val key = "$lat,$lon,$fetched"
+        return forecastMutex.withLock {
+            val rows = if (key == forecastKey) forecastRows else try {
+                // Existing public READ endpoint: no token/cookie/cron key, so no history write or alert side effect.
+                val daily = json("GET", "/api/weather?lat=$lat&lon=$lon")["daily7"].jsonObjectOrNull()
+                val dates = daily?.get("time") as? List<*> ?: emptyList<Any>()
+                fun item(name: String, index: Int) = (daily?.get(name) as? List<*>)?.getOrNull(index)
+                dates.take(7).mapIndexedNotNull { index, date ->
+                    (date as? String)?.let { mapOf("date" to it, "weatherCode" to item("weatherCode", index),
+                        "highC" to item("tMax", index), "lowC" to item("tMin", index),
+                        "precipitationProbabilityPct" to item("precipProbMax", index)) }
+                }.also { forecastRows = it; forecastKey = key }
+            } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+            if (rows == null) weather else weather + ("forecast" to rows)
+        }
+    }
 
     private suspend fun json(method: String, path: String, token: String? = null, body: JsonObject? = null): JsonObject {
         try {
@@ -107,7 +133,9 @@ class LiveGateway(
     override suspend fun siteInfo(accessToken: String): SiteInfo? =
         json("GET", "/api/admin/site-info", accessToken)["siteInfo"].jsonObjectOrNull()?.let(::SiteInfo)
     override suspend fun siteStatus(accessToken: String): SiteStatus = try {
-        SiteStatus(json("GET", "/api/app/admin/site-status", accessToken))
+        val response = json("GET", "/api/app/admin/site-status", accessToken)
+        val weather = response["weather"].jsonObjectOrNull()
+        SiteStatus(if (weather == null) response else response + ("weather" to withLegacyForecast(weather)))
     } catch (error: ApiFailure) {
         throw ApiFailure("현장 요약을 받을 수 없습니다", status = error.status,
             action = if (error.status == 403) "none" else error.action?.takeIf { it in setOf("refresh", "reauth", "none") },

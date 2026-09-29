@@ -28,11 +28,30 @@ const val actionIconVisualScale = .86f
 fun ActionIconButton(icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier,
     enabled: Boolean = true, size: Dp = 64.dp, iconSize: Dp = 28.dp, tint: Color = MaterialTheme.colorScheme.primary,
     busy: Boolean = false, visualScale: Float = actionIconVisualScale) {
+    val rotation = remember { Animatable(0f) }
+    val latestBusy by rememberUpdatedState(busy)
+    var rotationRequests by remember { mutableIntStateOf(0) }
+    LaunchedEffect(icon) {
+        if (icon != R.drawable.ic_refresh) return@LaunchedEffect
+        var completedRequest = 0
+        snapshotFlow { latestBusy to rotationRequests }.collect { (working, requested) ->
+            if (working || requested > completedRequest) {
+                do {
+                    completedRequest = rotationRequests
+                    rotation.animateTo(360f, tween(850, easing = LinearEasing))
+                    rotation.snapTo(0f) // identical orientation, after a completed turn
+                } while (latestBusy || rotationRequests > completedRequest)
+            }
+        }
+    }
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
         Box(modifier.size(size).clip(CircleShape)
             .semantics { contentDescription = label; if (busy) stateDescription = "처리 중" }
-            .clickable(enabled = enabled && !busy, role = Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
+            .clickable(enabled = enabled && !busy, role = Role.Button) {
+                if (icon == R.drawable.ic_refresh) rotationRequests++
+                onClick()
+            }, contentAlignment = Alignment.Center) {
             val color = tint.copy(alpha = if (enabled || busy) 1f else .38f)
             Surface(Modifier.size(size * visualScale), shape = CircleShape, color = Color.Transparent,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (enabled || busy) 1f else .38f))) {
@@ -40,12 +59,7 @@ fun ActionIconButton(icon: Int, label: String, onClick: () -> Unit, modifier: Mo
                     if (busy && icon != R.drawable.ic_refresh) {
                         CircularProgressIndicator(Modifier.size(iconSize * visualScale), color = color, strokeWidth = 2.dp)
                     } else {
-                        val rotation = if (busy) {
-                            val transition = rememberInfiniteTransition(label = "조회 중")
-                            val degrees by transition.animateFloat(0f, 360f, infiniteRepeatable(tween(850, easing = LinearEasing)), label = "새로고침 회전")
-                            degrees
-                        } else 0f
-                        VgIcon(icon, modifier = Modifier.size(iconSize * visualScale).graphicsLayer { rotationZ = rotation }, tint = color)
+                        VgIcon(icon, modifier = Modifier.size(iconSize * visualScale).graphicsLayer { rotationZ = rotation.value }, tint = color)
                     }
                 }
             }

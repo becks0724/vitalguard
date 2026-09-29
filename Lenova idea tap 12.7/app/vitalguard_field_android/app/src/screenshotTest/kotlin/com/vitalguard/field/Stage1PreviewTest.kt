@@ -27,7 +27,7 @@ import java.time.Instant
 @Composable
 fun LoginPreview() {
     VgTheme {
-        Surface(Modifier.fillMaxSize()) {
+        DashboardBackdrop(Modifier.fillMaxSize()) {
             AuthScreen(FieldState(authStage = AuthStage.login), AuthFormState(), isMock = true)
         }
     }
@@ -42,3 +42,8 @@ fun SiteSummaryPreview() {
             SiteScreen(SiteSummaryState(SiteStatus(mockSiteStatusReply(time)), now = Instant.parse(time)))
     }
 }
+
+@PreviewTest @Preview(name = "LoginLandscape", device = "spec:width=1385dp,height=866dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun LoginLandscapePreview() { VgTheme { DashboardBackdrop(Modifier.fillMaxSize()) {
+    AuthScreen(FieldState(authStage = AuthStage.login), AuthFormState(), isMock = false)
+} } }

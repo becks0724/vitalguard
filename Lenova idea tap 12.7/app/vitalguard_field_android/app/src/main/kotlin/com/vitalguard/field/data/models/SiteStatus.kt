@@ -114,14 +114,41 @@ class SiteStatusWeather private constructor(row: JsonObject?, @Suppress("UNUSED_
     val persisted = row?.get("persisted") as? Boolean
     val fetchedAt = zonedTime(row?.get("fetchedAt"))
     val current = row?.get("current").jsonObjectOrNull()?.let(::WeatherCurrent)
+    val conditions = row?.get("conditions").jsonObjectOrNull()?.let(::WeatherConditions)
+    val forecast = (row?.get("forecast") as? List<*>).orEmpty().mapNotNull(WeatherForecastDay::parse).distinctBy { it.date }.take(7)
     val warning = row?.get("warning").jsonObjectOrNull()?.let(::WeatherWarning)
     val effects = row?.get("effects").jsonObjectOrNull()?.let(::WeatherEffects) ?: WeatherEffects()
+    // 관제 판정이 있는 다섯 항목만 받는다. 숫자로 임계를 추측하거나 종합 level을 복제하지 않는다.
+    val metricLevels = row?.get("metricLevels").jsonObjectOrNull().let { data ->
+        listOf("apparent", "wind", "rain", "uv", "pm25").associateWith { key ->
+            (data?.get(key) as? String)?.takeIf { it in setOf("normal", "warn", "danger") }
+        }
+    }
     val headlineBasis: String? get() {
         if (level != "warn" && level != "danger") return null
         return listOf("기상특보" to "발효특보", "예비특보" to "예비특보", "체감온도" to "체감온도",
             "불쾌지수" to "불쾌지수", "미세먼지 PM2.5" to "미세먼지 PM2.5", "풍속" to "풍속",
             "자외선지수" to "자외선지수", "강수량" to "강수량")
             .firstOrNull { summary?.startsWith(it.first + " ") == true }?.second
+    }
+}
+
+class WeatherConditions(row: JsonObject) {
+    val level = sectionLevel(row["level"])
+    val summary = text(row["summary"])
+}
+class WeatherForecastDay private constructor(row: JsonObject, val date: java.time.LocalDate) {
+    val weatherCode = finiteNumber(row["weatherCode"])?.takeIf { it % 1.0 == 0.0 }?.toInt()
+    val label = text(row["label"])
+    val highC = finiteNumber(row["highC"])
+    val lowC = finiteNumber(row["lowC"])
+    val precipitationProbabilityPct = finiteNumber(row["precipitationProbabilityPct"])?.takeIf { it in 0.0..100.0 }
+    companion object {
+        fun parse(value: Any?): WeatherForecastDay? {
+            val row = value.jsonObjectOrNull() ?: return null
+            val date = try { java.time.LocalDate.parse(row["date"] as? String ?: return null) } catch (_: Exception) { return null }
+            return WeatherForecastDay(row, date)
+        }
     }
 }
 
@@ -185,12 +212,21 @@ class SiteStatusGas private constructor(row: JsonObject?, rows: List<*>?) : Site
     constructor(value: Any?) : this(sectionRow(value), sectionRow(value)?.get("gases") as? List<*>)
     val deviceId = gasText(row?.get("deviceId"))
     val lastSeenAt = zonedTime(gasText(row?.get("lastSeenAt")))
+    val environment = row?.get("environment").jsonObjectOrNull()?.takeIf { it["source"] == "gaspod" }?.let(::IndoorEnvironment)
     val power = row?.get("power").let {
         if (it is Boolean || finiteNumber(it) != null) it.toString() else gasText(it)
     }
     val gasesAvailable = rows != null
     val gases = uniqueRows(rows.orEmpty(), GasReading::tryParse) { it.key }
     val omittedGases = (rows?.size ?: 0) - gases.size
+}
+
+class IndoorEnvironment(row: JsonObject) {
+    val temperatureC = finiteNumber(row["temperatureC"])
+    val humidityPct = finiteNumber(row["humidityPct"])
+    val pressureHpa = finiteNumber(row["pressureHpa"])
+    val checkedAt = zonedTime(row["checkedAt"])
+    val validForMs = finiteNumber(row["validForMs"])?.takeIf { it >= 0 && it <= 60_000 }?.toLong()
 }
 
 class GasReading private constructor(row: JsonObject, val key: String) {

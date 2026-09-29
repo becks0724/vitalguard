@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,7 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.vitalguard.field.R
 import com.vitalguard.field.data.record.*
-import com.vitalguard.field.ui.shell.ActionDock
+import com.vitalguard.field.data.ActionSide
+import com.vitalguard.field.ui.shell.LocalActionPlacement
 import com.vitalguard.field.ui.theme.*
 import kotlinx.coroutines.CancellationException
 
@@ -94,59 +96,76 @@ fun RecordEditorContent(
     onFit: () -> Unit = {}, onSave: () -> Unit = {}, onReload: () -> Unit = {}, canvas: @Composable BoxScope.() -> Unit,
 ) {
     val available = !state.busy && state.activeCount == 0
+    val leftHand = LocalActionPlacement.current.side == ActionSide.left
+    val saveControl: @Composable () -> Unit = {
+        EditorToolGroup("저장", "editor-save-tools") {
+            ActionIconButton(R.drawable.ic_save, if (state.busy) "저장 중" else if (state.untouched) "주석 저장 · 표시할 내용이 없습니다" else "주석 저장", onSave,
+                Modifier.testTag("editor-save"), enabled = state.canSave)
+        }
+    }
     Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         TopAppBar(title = { Text("펜으로 표시하기") }, expandedHeight = vgToolbarHeight(LocalDensity.current.fontScale),
             windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = {
                 VgBackButton(Modifier.testTag("editor-back"), !state.busy, onBack)
             })
     }, bottomBar = {
-        ActionDock(maxWidth = 960.dp) {
-            GlassCard {
-            Column(Modifier.fillMaxWidth().padding(12.dp).testTag("editor-actions"), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                FlowRow(Modifier.testTag("editor-drawing-tools"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        GlassCard(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("editor-actions"),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (leftHand) { saveControl(); EditorToolDivider() }
+                Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()).testTag("editor-scroll-tools"),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                EditorToolGroup("그리기", "editor-drawing-tools") {
                     listOf(InkTool.pen to "펜", InkTool.marker to "형광펜", InkTool.rectangle to "사각형", InkTool.eraser to "지우개").forEach { (tool, label) ->
                         EditorButton("tool-${tool.name}", label, available, state.tool == tool, { onTool(tool) }) {
                             EditorGlyph(tool.name, if (state.tool == tool) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                         }
                     }
+                }
+                EditorToolDivider()
+                EditorToolGroup("굵기", "editor-width-tools") {
                     listOf(Triple("thin", "가늘게", .5), Triple("normal", "보통", 1.0), Triple("thick", "굵게", 2.0)).forEach { (id, label, width) ->
                         EditorButton("width-$id", label, available, state.widthMultiplier == width, { onWidth(width) }, outline = true) {
-                            val widthColor = MaterialTheme.colorScheme.onSurface
-                            Canvas(Modifier.size(28.dp)) { drawCircle(widthColor, (if (width == .5) 4 else if (width == 1.0) 7 else 11).dp.toPx()) }
+                            val color = MaterialTheme.colorScheme.onSurface
+                            Canvas(Modifier.size(28.dp)) { drawCircle(color, (if (width == .5) 4 else if (width == 1.0) 7 else 11).dp.toPx()) }
                         }
                     }
                 }
-                FlowRow(Modifier.testTag("editor-edit-actions"), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                EditorToolDivider()
+                EditorToolGroup("색상", "editor-color-tools") {
                     listOf(Triple("red", "빨간 펜", 0xFFDC2626L), Triple("black", "검정 펜", 0xFF171717L), Triple("blue", "파란 펜", 0xFF0D74CEL)).forEach { (id, label, color) ->
                         EditorButton("color-$id", label, available, state.color == color, { onColor(color) }, outline = true) {
-                            Canvas(Modifier.size(40.dp)) {
-                                drawCircle(Color.White, 20.dp.toPx())
-                                drawCircle(Color(color), 18.dp.toPx(), style = Stroke(2.dp.toPx()))
-                                if (state.color == color) drawCircle(Color(color), 12.dp.toPx())
+                            Canvas(Modifier.size(32.dp)) {
+                                drawCircle(Color.White, 16.dp.toPx())
+                                drawCircle(Color(color), 14.dp.toPx(), style = Stroke(2.dp.toPx()))
+                                if (state.color == color) drawCircle(Color(color), 10.dp.toPx())
                             }
                         }
                     }
+                }
+                EditorToolDivider()
+                EditorToolGroup("편집", "editor-edit-actions") {
                     EditorButton("undo", "마지막 획 되돌리기", available && state.undoAvailable, onClick = onUndo) { EditorGlyph("undo") }
                     EditorButton("clear-all", "전체 지우기", available && state.strokes.isNotEmpty(), onClick = onClear) { EditorGlyph("clear") }
+                }
+                EditorToolDivider()
+                EditorToolGroup("보기", "editor-view-tools") {
                     EditorButton("original-only", "원본만 보기", available, state.originalOnly, onOriginal) { EditorGlyph("image", if (state.originalOnly) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface) }
                     EditorButton("fit-width", if (state.fitWidth) "전체 보기 · 확대·이동 초기화" else "폭 맞춤 · 확대·이동 초기화", available, state.fitWidth, onFit) {
                         EditorGlyph("fit", if (state.fitWidth) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                ActionIconButton(R.drawable.ic_save, if (state.busy) "저장 중" else if (state.untouched) "주석 저장 · 표시할 내용이 없습니다" else "주석 저장", onSave, Modifier.testTag("editor-save"), enabled = state.canSave)
-            }
+                }
+                if (!leftHand) { EditorToolDivider(); saveControl() }
             }
         }
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            // 저장 오류가 생겨도 펜 아래 캔버스가 이동하지 않는다.
-            Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 12.dp).verticalScroll(rememberScrollState()).testTag("editor-message-slot")) {
-                state.error?.let { Text(it) }
-            }
-            Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
-                canvas()
-                if (state.imageSize == null && !state.loading) ActionIconButton(R.drawable.ic_refresh, "원본 다시 열기", onReload)
-            }
+        Box(Modifier.fillMaxSize().padding(padding).clipToBounds(), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().testTag("editor-photo-viewport"), contentAlignment = Alignment.Center, content = canvas)
+            // Error overlays never shrink or move the pen canvas.
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(44.dp).padding(horizontal = 12.dp)
+                .then(if (state.error != null) Modifier.verticalScroll(rememberScrollState()) else Modifier).testTag("editor-message-slot")) { state.error?.let { Text(it) } }
+            if (state.imageSize == null && !state.loading) ActionIconButton(R.drawable.ic_refresh, "원본 다시 열기", onReload)
         }
     }
 }
@@ -233,3 +252,14 @@ private fun InkCanvas(editor: InkEditorController, state: InkEditorState, bitmap
         }
     }
 }
+
+
+@Composable
+private fun EditorToolGroup(label: String, tag: String, content: @Composable RowScope.() -> Unit) {
+    Column(Modifier.testTag(tag), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = DashboardColors.secondary)
+        Row(Modifier.height(64.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), content = content)
+    }
+}
+@Composable
+private fun EditorToolDivider() { VerticalDivider(Modifier.height(56.dp), color = DashboardColors.line) }

@@ -65,7 +65,7 @@ private fun rememberFrostedWallpaper(): ImageBitmap? {
 
 /** Draw only the enclosing panel's background; its contents never enter the blur. */
 @Composable
-internal fun FrostedWallpaper(modifier: Modifier = Modifier) {
+internal fun FrostedWallpaper(modifier: Modifier = Modifier, overlay: androidx.compose.ui.graphics.Color = DashboardColors.workspace) {
     val bitmap = rememberFrostedWallpaper()
     val frame = LocalWallpaperFrame.current
     val direction = LocalLayoutDirection.current
@@ -83,7 +83,7 @@ internal fun FrostedWallpaper(modifier: Modifier = Modifier) {
                 ((viewport.size.height - height) / 2f - relative.y).roundToInt()),
                 dstSize = IntSize(width.roundToInt(), height.roundToInt()), filterQuality = FilterQuality.Medium)
         }
-        drawRect(DashboardColors.workspace)
+        drawRect(overlay)
     }
 }
 

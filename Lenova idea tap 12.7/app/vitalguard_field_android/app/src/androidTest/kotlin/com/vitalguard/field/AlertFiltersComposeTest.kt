@@ -43,7 +43,9 @@ class AlertFiltersComposeTest {
         compose.setContent { VgTheme { AlertsContent(state.value, onRefresh = { calls++ }) } }
         compose.onNodeWithTag("alerts-refresh").assertContentDescriptionEquals("새로고침")
             .assertWidthIsEqualTo(56.dp).assertHeightIsEqualTo(56.dp).performClick()
+        compose.mainClock.autoAdvance = false
         compose.runOnIdle { assertEquals(1, calls); state.value = state.value.copy(loading = true) }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag("alerts-refresh").assertIsNotEnabled()
         compose.onNodeWithText("서버 상태 다시 조회").assertDoesNotExist()
     }

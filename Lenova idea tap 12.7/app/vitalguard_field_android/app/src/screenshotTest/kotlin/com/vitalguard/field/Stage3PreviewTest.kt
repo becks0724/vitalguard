@@ -14,7 +14,7 @@ import java.time.Instant
 
 private val fixed = Instant.parse("2026-09-27T06:00:00Z")
 private val sample = stage3SampleStatus(fixed.toString())
-private val site = SiteSummaryState(data = sample, now = fixed)
+private val site = SiteSummaryState(data = sample, now = fixed, receivedAt = fixed)
 
 @PreviewTest @Preview(name = "Weather866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable fun WeatherStage3Preview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }
@@ -41,3 +41,13 @@ private val site = SiteSummaryState(data = sample, now = fixed)
 @Composable fun WeatherLandscapePreview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }
 @PreviewTest @Preview(name = "WeatherCompactLargeText", device = "spec:width=460dp,height=950dp,dpi=160", locale = "ko", fontScale = 2f, showBackground = true)
 @Composable fun WeatherCompactLargeTextPreview() { GlassPreviewSurface { SiteDetailScreen("weather", site, {}, {}) } }
+
+@PreviewTest @Preview(name = "WeatherMetricNeon", device = "spec:width=1150dp,height=740dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun WeatherMetricNeonPreview() {
+    val data = com.vitalguard.field.data.models.SiteStatus(mapOf("ok" to true, "fetchedAt" to fixed.toString(),
+        "weather" to mapOf("ok" to true, "level" to "danger", "summary" to "체감온도 위험 · 모의 자료", "stale" to false, "fetchedAt" to fixed.toString(),
+            "metricLevels" to mapOf("apparent" to "danger", "wind" to "warn", "rain" to "normal", "uv" to "normal", "pm25" to "warn"),
+            "current" to mapOf("temperatureC" to 31.0, "humidityPct" to 68, "apparentTempC" to 33.5, "windKmh" to 18, "windGustKmh" to 36,
+                "precipitationMm" to 0, "uvIndex" to 3.2, "pm10" to 44, "pm25" to 42, "wbgt" to 29.0, "obsSource" to "모의 관측", "obsAt" to fixed.toString()))))
+    GlassPreviewSurface { SiteDetailScreen("weather", SiteSummaryState(data = data, now = fixed), {}, {}) }
+}

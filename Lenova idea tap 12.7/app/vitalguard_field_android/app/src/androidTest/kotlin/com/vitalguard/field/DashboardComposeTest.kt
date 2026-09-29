@@ -64,7 +64,9 @@ class DashboardComposeTest {
         compose.onNodeWithTag("dashboard-gas-co", useUnmergedTree = true).assertTextEquals("단위 미수신")
         compose.onNodeWithTag("dashboard-gas-o2", useUnmergedTree = true).assertTextEquals("20.9 %")
         val before = compose.onNodeWithTag("site-row-weather").fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
         compose.runOnIdle { state.value = state.value.copy(loading = true) }
+        compose.mainClock.advanceTimeByFrame()
         compose.onNodeWithTag("site-refresh").assertIsNotEnabled()
         assertEquals(before, compose.onNodeWithTag("site-row-weather").fetchSemanticsNode().boundsInRoot)
     }

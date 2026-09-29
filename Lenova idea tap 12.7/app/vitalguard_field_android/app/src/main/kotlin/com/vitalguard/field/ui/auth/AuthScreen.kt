@@ -57,9 +57,16 @@ fun AuthScreen(
         AuthStage.totp -> "2단계 인증"
         AuthStage.denied -> "이 앱을 사용할 수 없는 계정입니다"
         AuthStage.reauthenticate -> "다시 로그인해 주세요"
-        else -> "VitAlGuard 현장"
+        else -> "VitAlGuard 로그인"
     }
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    DashboardTheme {
+    val inputColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = .32f),
+        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = .32f))
+    Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+        VgIcon(R.drawable.ic_brand_watermark, modifier = Modifier.align(Alignment.BottomEnd).size(40.dp)
+            .testTag("login-brand-watermark"), tint = androidx.compose.ui.graphics.Color.White.copy(alpha = .32f))
+        DashboardWorkspace(Modifier.widthIn(max = 616.dp).fillMaxWidth().testTag("auth-glass-card"), overlay = androidx.compose.ui.graphics.Color(0x70303638)) {
         Column(
             Modifier.widthIn(max = 616.dp).fillMaxWidth().verticalScroll(rememberScrollState())
                 .testTag("auth-scroll").padding(28.dp),
@@ -79,17 +86,17 @@ fun AuthScreen(
                     Text("인증 앱 · 6자리 숫자")
                     OutlinedTextField(codeValue, { codeValue = it; onCode(it.text) },
                         Modifier.fillMaxWidth().heightIn(min = vgTapPrimary).testTag("totp-code"),
-                        enabled = !field.busy && !locked, label = { Text("인증번호") }, singleLine = true,
+                        enabled = !field.busy && !locked, label = { Text("인증번호") }, singleLine = true, colors = inputColors,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { onSubmit() }))
                 } else {
                     OutlinedTextField(idValue, { idValue = it; onId(it.text) },
                         Modifier.fillMaxWidth().heightIn(min = vgTapPrimary).testTag("login-id"),
-                        enabled = !field.busy, label = { Text("아이디") }, singleLine = true,
+                        enabled = !field.busy, label = { Text("아이디") }, singleLine = true, colors = inputColors,
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Next))
                     OutlinedTextField(passwordValue, { passwordValue = it; onPassword(it.text) },
                         Modifier.fillMaxWidth().heightIn(min = vgTapPrimary).testTag("login-password"),
-                        enabled = !field.busy, label = { Text("비밀번호") }, singleLine = true,
+                        enabled = !field.busy, label = { Text("비밀번호") }, singleLine = true, colors = inputColors,
                         visualTransformation = if (form.obscure) PasswordVisualTransformation() else VisualTransformation.None,
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { onSubmit() }),
@@ -118,6 +125,7 @@ fun AuthScreen(
             }
         }
     }
+    }
     form.dialog?.let { dialog ->
         AlertDialog(onDismissRequest = onDismissDialog,
             title = { Text(dialog.title) },
@@ -126,6 +134,7 @@ fun AuthScreen(
                 Button(onDismissDialog, Modifier.heightIn(min = vgTapMin)) { Text("확인") }
             })
     }
+}
 }
 
 @Composable

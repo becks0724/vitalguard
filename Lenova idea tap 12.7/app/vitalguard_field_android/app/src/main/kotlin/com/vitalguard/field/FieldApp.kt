@@ -48,8 +48,8 @@ fun FieldApp(model: FieldViewModel) {
     val window = (LocalContext.current as? Activity)?.window
     SideEffect { window?.let {
         val bars = WindowCompat.getInsetsController(it, it.decorView)
-        bars.isAppearanceLightStatusBars = field.authStage != AuthStage.ready
-        bars.isAppearanceLightNavigationBars = field.authStage != AuthStage.ready
+        bars.isAppearanceLightStatusBars = false
+        bars.isAppearanceLightNavigationBars = false
     } }
     BackHandler(field.authStage == AuthStage.ready && shell.destination == 0 && sitePage != null) { model.openSite(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -71,16 +71,17 @@ fun FieldApp(model: FieldViewModel) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(model) { model.messages.collect { snackbar.showSnackbar(it) } }
     // 창 폭 기준은 인셋을 빼기 전이다. 런타임 safeDrawing·IME·제스처 인셋은 아래 한 계층에서 합집합 소비.
-    val weatherEffects = if (weatherDetailVisible && weatherPreview != null) weatherPreview!!.effects
+    val loginWeatherEffects = com.vitalguard.field.ui.site.rememberLoginWeatherEffects(site, field.authStage == AuthStage.ready, field.offline)
+    val weatherEffects = if (field.authStage != AuthStage.ready) loginWeatherEffects else if (weatherDetailVisible && weatherPreview != null) weatherPreview!!.effects
         else com.vitalguard.field.ui.site.weatherBackgroundEffects(site, weatherDetailVisible, field.offline)
     CompositionLocalProvider(com.vitalguard.field.ui.site.LocalWeatherEffects provides weatherEffects,
         com.vitalguard.field.ui.site.LocalWeatherPreview provides com.vitalguard.field.ui.site.WeatherPreviewControl(weatherPreview) { weatherPreview = it }) {
     DashboardBackdrop(Modifier.fillMaxSize().background(if (field.authStage == AuthStage.ready) DashboardColors.backdrop else VgColors.canvas),
-        showWallpaper = field.authStage == AuthStage.ready) {
+        showWallpaper = true) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val windowWidthDp = maxWidth.value.toInt()
         Scaffold(
-            containerColor = if (field.authStage == AuthStage.ready) androidx.compose.ui.graphics.Color.Transparent else VgColors.canvas,
+            containerColor = androidx.compose.ui.graphics.Color.Transparent,
             modifier = Modifier.fillMaxSize().windowInsetsPadding(
                 WindowInsets.safeDrawing.union(WindowInsets.ime).union(WindowInsets.systemGestures)),
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
