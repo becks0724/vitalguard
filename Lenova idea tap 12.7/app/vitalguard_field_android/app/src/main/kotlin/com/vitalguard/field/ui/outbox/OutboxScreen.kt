@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.outbox
 
+import com.vitalguard.field.R
 import com.vitalguard.field.ui.theme.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -63,9 +64,7 @@ fun OutboxHistoryContent(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("전송 이력", style = MaterialTheme.typography.headlineMedium)
                 Text("현재 계정 · $account")
-                TextButton({ guideOpen = !guideOpen }, Modifier.heightIn(min = 56.dp).testTag("outbox-guide")) {
-                    StateIcon(StateKind.info); Spacer(Modifier.width(8.dp)); Text(if (guideOpen) "전송 안내 접기" else "전송 안내")
-                }
+                ActionIconButton(R.drawable.ic_info, if (guideOpen) "전송 안내 접기" else "전송 안내", { guideOpen = !guideOpen }, Modifier.testTag("outbox-guide"), size = 56.dp)
                 if (guideOpen) {
                     Text("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.")
                     Text("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
@@ -73,8 +72,8 @@ fun OutboxHistoryContent(
                 }
                 if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관합니다.")
                 if (supportedLookup) {
-                    OutlinedButton({ onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
-                        enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain }) { Text("서버 상태 다시 조회") }
+                    ActionIconButton(R.drawable.ic_refresh, "서버 상태 다시 조회", { onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
+                        enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain })
                     Text("결과 불명만 조회합니다. 화면 진입·전경 복귀 시 자동 조회하며, 30초 안에는 반복하지 않습니다.")
                     if (checking) LinearProgressIndicator(Modifier.fillMaxWidth())
                     lookupMessage?.let { Text(it, Modifier.testTag("outbox-lookup-message")) }
@@ -91,7 +90,7 @@ fun OutboxHistoryContent(
                     FilterChip(selected = siteGroup == null, onClick = { siteGroup = null }, label = { Text("모든 작성 현장") })
                     groups.forEach { (group, name) -> FilterChip(selected = siteGroup == group, onClick = { siteGroup = group }, label = { Text(name) }) }
                 }
-                if (loadError != null) { Text(loadError); TextButton(onReload) { Text("전송 원장 다시 열기") } }
+                if (loadError != null) { Text(loadError); ActionIconButton(R.drawable.ic_refresh, "전송 원장 다시 열기", onReload) }
                 error?.let { Text(it) }
                 if (visible.isEmpty() && loadError == null) Text("이 계정에 표시할 전송 항목이 없습니다.", Modifier.padding(vertical = 32.dp))
             }
@@ -141,9 +140,7 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             item.message?.let { Text(it, Modifier.padding(top = 8.dp)) }
             Text(localCreatedAt(item), style = MaterialTheme.typography.bodySmall)
-            TextButton({ details = !details }, Modifier.heightIn(min = 56.dp).testTag("outbox-details-${item.id}")) {
-                StateIcon(StateKind.info); Spacer(Modifier.width(8.dp)); Text(if (details) "기록 정보 접기" else "기록 정보")
-            }
+            ActionIconButton(R.drawable.ic_info, if (details) "기록 정보 접기" else "기록 정보", { details = !details }, Modifier.testTag("outbox-details-${item.id}"), size = 56.dp)
             if (details) {
                 Text("현장 ID ${item.siteId ?: "미제공"}")
                 SelectionContainer { Text("작업 ID ${item.id}") }
@@ -156,11 +153,11 @@ private fun OutboxCard(item: OutboxEntry, parent: OutboxEntry?, busy: Boolean, o
             if (item.phase == OutboxPhase.reauthenticate) Text("작성 계정으로 다시 로그인한 뒤 이 항목을 재개해 주세요. 초안은 그대로 보관됩니다.")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (uncertain) {
-                    if (supportedLookup) OutlinedButton(onVerify, enabled = !busy && !checking && canLookup) { Text("서버 상태 재조회") }
+                    if (supportedLookup) ActionIconButton(R.drawable.ic_refresh, "서버 상태 재조회", onVerify, enabled = !busy && !checking && canLookup)
                     if (retryable) Button(onSend, enabled = !cannotSend && !checking && canLookup) { Text("같은 작업 재시도") }
                     if (!supportedLookup) OutlinedButton(onConfirmAbsent, enabled = !cannotSend) { Text("관제웹 미등록 확인 후 재시도") }
                 } else if (item.phase == OutboxPhase.failed || item.phase == OutboxPhase.reauthenticate) {
-                    Button(onSend, enabled = !cannotSend) { Text("전송") }
+                    ActionIconButton(R.drawable.ic_upload, "전송", onSend, enabled = !cannotSend)
                 }
                 if (item.phase == OutboxPhase.reauthenticate) TextButton(onSignOut, enabled = !busy) { Text("다시 로그인") }
             }

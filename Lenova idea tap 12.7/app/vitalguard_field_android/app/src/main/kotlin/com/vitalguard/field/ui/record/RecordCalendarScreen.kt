@@ -74,18 +74,12 @@ fun RecordCalendarContent(
             // A measured bottom bar reserves space; capture actions never float over calendar cells.
             Box(Modifier.fillMaxWidth().padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 4.dp)) {
                 Row(Modifier.align(if (physicalLeft) AbsoluteAlignment.CenterLeft else AbsoluteAlignment.CenterRight)
-                    .widthIn(max = 480.dp).fillMaxWidth().testTag("record-capture-actions"),
+                    .testTag("record-capture-actions"),
                     horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalButton(onClick = { if (!capture.busy) onScan() },
-                        modifier = Modifier.weight(1f).heightIn(min = 64.dp).testTag("document-scan"),
-                        enabled = placement.loaded && !capture.busy) {
-                        VgIcon(R.drawable.ic_record); Spacer(Modifier.width(8.dp)); Text("서류 스캔")
-                    }
-                    FilledTonalButton(onClick = { if (!capture.busy) onPhoto() },
-                        modifier = Modifier.weight(1f).heightIn(min = 64.dp).testTag("photo-capture"),
-                        enabled = placement.loaded && !capture.busy) {
-                        VgIcon(R.drawable.ic_camera); Spacer(Modifier.width(8.dp)); Text("사진 촬영")
-                    }
+                    ActionIconButton(R.drawable.ic_scan, "서류 스캔", { if (!capture.busy) onScan() },
+                        Modifier.testTag("document-scan"), enabled = placement.loaded && !capture.busy)
+                    ActionIconButton(R.drawable.ic_camera, "사진 촬영", { if (!capture.busy) onPhoto() },
+                        Modifier.testTag("photo-capture"), enabled = placement.loaded && !capture.busy)
                 }
             }
         }) { padding ->
@@ -95,7 +89,7 @@ fun RecordCalendarContent(
             if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관됩니다.", style = MaterialTheme.typography.bodySmall)
             if (error != null) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                TextButton(onReload) { Text("다시 불러오기") }
+                ActionIconButton(R.drawable.ic_refresh, "다시 불러오기", onReload, size = 56.dp)
             }
             if (loading || capture.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (capture.scannerReady == false) Text(scannerPreparationMessage, Modifier.testTag("scanner-not-ready"), style = MaterialTheme.typography.bodySmall)
@@ -125,8 +119,8 @@ fun RecordCalendarContent(
                             CalendarStatusBadge(record.status)
                             record.local?.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         }
-                        if (record.canSend) Button({ onSend(record) }, enabled = !offline,
-                            modifier = Modifier.testTag("calendar-send-${record.local?.id}")) { Text("전송") }
+                        if (record.canSend) ActionIconButton(R.drawable.ic_upload, "전송", { onSend(record) },
+                            Modifier.testTag("calendar-send-${record.local?.id}"), enabled = !offline)
                     }
                 }
             }
@@ -169,7 +163,7 @@ private fun WeekCalendar(selected: LocalDate, today: LocalDate, blocks: List<Cal
                 (if (days.last().year != days.first().year) "${days.last().year}년 " else "") +
                 "${days.last().monthValue}/${days.last().dayOfMonth}",
                 Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            TextButton(onToday, Modifier.heightIn(min = 56.dp)) { Text("오늘") }
+            ActionIconButton(R.drawable.ic_calendar_today, "오늘", onToday, size = 56.dp)
             VgIconButton(R.drawable.ic_chevron_right, "다음 주", onClick = { onShift(7) })
         }
         Row(Modifier.fillMaxWidth()) {

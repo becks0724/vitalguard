@@ -120,7 +120,7 @@ class RecordEditingComposeTest {
         compose.onNodeWithTag("editor-color-blue").performClick().assertIsSelected()
         compose.onNodeWithTag("ink-canvas").performTouchInput { swipe(center,center+androidx.compose.ui.geometry.Offset(40f,20f)) }
         compose.runOnIdle { assertTrue(model.records.editor!!.state.value.strokes.isEmpty()) }
-        compose.onNodeWithTag("editor-save").assertIsNotEnabled().assertWidthIsEqualTo(180.dp).assertHeightIsEqualTo(64.dp)
+        compose.onNodeWithTag("editor-save").assertIsNotEnabled().assertWidthIsEqualTo(64.dp).assertHeightIsEqualTo(64.dp)
         compose.onNodeWithTag("rail-collapsed").assertExists()
         compose.onNodeWithTag("rail-collapse-toggle").assertIsNotEnabled()
     }

@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.site
 
+import com.vitalguard.field.R
 import com.vitalguard.field.ui.theme.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,7 +44,7 @@ fun SiteDetailScreen(page: String, state: SiteSummaryState, onBack: () -> Unit, 
                     if (state.stale && page != "gas") StateLabel(StateKind.stale, "오래된 자료 · 5분 이상 경과")
                     if (state.forbidden) StateNotice(StateKind.locked, "접근 권한 없음", siteForbiddenMessage)
                     else if (state.failed) StateNotice(StateKind.failed, "수신 실패", "이전에 받은 자료를 표시합니다.")
-                    Button(onRefresh, Modifier.heightIn(min = 64.dp).testTag("$page-refresh"), enabled = !state.loading) { Text("새로고침") }
+                    ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh, Modifier.testTag("$page-refresh"), enabled = !state.loading)
                 }
             }
         }

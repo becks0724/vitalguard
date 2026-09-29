@@ -105,14 +105,12 @@ fun PhotoDetailContent(
         Text("${captureRecordedTime(media.captured_at)} · ${photo.siteName}")
         media.road_address?.let { Text(it) }
         if (media.latitude != null && media.longitude != null) Text("${media.latitude}, ${media.longitude}")
-        TextButton({ showOcr = !showOcr }, Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("photo-ocr-toggle")) { Text("원문 OCR 보기") }
+        ActionIconButton(R.drawable.ic_scan, if (showOcr) "원문 OCR 접기" else "원문 OCR 보기", { showOcr = !showOcr }, Modifier.testTag("photo-ocr-toggle"), size = 56.dp)
         if (showOcr) SelectionContainer { Text(media.ocr_text ?: "OCR 원문 없음", Modifier.padding(16.dp)) }
         Spacer(Modifier.height(16.dp))
         if (serverLoading) LinearProgressIndicator(Modifier.fillMaxWidth().testTag("photo-detail-loading"))
         serverError?.let { Text(it, Modifier.testTag("photo-detail-load-error")); Text("이전에 받은 기록을 표시합니다.") }
-        if (onRefresh != null) TextButton(onRefresh, Modifier.heightIn(min = 56.dp).testTag("photo-detail-refresh"), enabled = !serverLoading) {
-            Text("기록 새로고침")
-        }
+        if (onRefresh != null) ActionIconButton(R.drawable.ic_refresh, "기록 새로고침", onRefresh, Modifier.testTag("photo-detail-refresh"), enabled = !serverLoading, size = 56.dp)
         Text(combined.counts, Modifier.testTag("photo-attachment-counts"), style = MaterialTheme.typography.titleLarge)
         if (combined.inkCountUnverified) Text("서버가 최신 주석본만 제공하여 같은 날의 전체 주석 수는 미확인입니다.")
         combined.comments.forEach { comment -> key(comment.id) { commentContent(comment) } }
@@ -125,10 +123,9 @@ fun PhotoDetailContent(
         ActionDock {
             FlowRow(Modifier.fillMaxWidth().testTag("photo-detail-actions"), horizontalArrangement = Arrangement.spacedBy(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                OutlinedButton(onEditor, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-editor"), enabled = availability.editable) { Text("주석 그리기") }
-                OutlinedButton(onInput, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("photo-open-input"), enabled = availability.editable) { Text("메모·음성 붙이기") }
-                OutlinedButton({ confirmDelete = true }, Modifier.sizeIn(minWidth = 160.dp, minHeight = 64.dp).testTag("delete-bundle"),
-                    enabled = availability.deletable) { Text("삭제") }
+                ActionIconButton(R.drawable.ic_record, "주석 그리기", onEditor, Modifier.testTag("photo-open-editor"), enabled = availability.editable)
+                ActionIconButton(R.drawable.ic_note, "메모·음성 붙이기", onInput, Modifier.testTag("photo-open-input"), enabled = availability.editable)
+                ActionIconButton(R.drawable.ic_trash, "사진 삭제", { confirmDelete = true }, Modifier.testTag("delete-bundle"), enabled = availability.deletable)
             }
         }
     }) { padding ->
@@ -159,10 +156,10 @@ fun ServerCommentCard(comment: MediaComment, active: Boolean = false, loading: B
             if (comment.isVoice) {
                 Text("음성 · ${comment.audio_ms?.takeIf { it >= 0 }?.let(::voiceTime) ?: "길이 미확인"}")
                 val reason = playbackError ?: if (calendarVoiceUrl(comment) == null) voiceUrlUnavailable else null
-                OutlinedButton({ onPlay?.invoke() }, Modifier.heightIn(min = 56.dp).testTag("server-voice-play-${comment.id}"),
-                    enabled = onPlay != null && calendarVoiceUrl(comment) != null && playbackError != auxiliaryAccessDenied) {
-                    Text(if (loading) "불러오기 취소" else if (active) "재생 정지" else "음성 재생")
-                }
+                ActionIconButton(if (loading || active) R.drawable.ic_stop else R.drawable.ic_play,
+                    if (loading) "불러오기 취소" else if (active) "재생 정지" else "음성 재생", { onPlay?.invoke() },
+                    Modifier.testTag("server-voice-play-${comment.id}"),
+                    enabled = onPlay != null && calendarVoiceUrl(comment) != null && playbackError != auxiliaryAccessDenied, size = 56.dp)
                 reason?.let { Text(it, Modifier.testTag("server-voice-error-${comment.id}")) }
             } else {
                 Text("메모")
@@ -241,7 +238,7 @@ private fun Attachment(store: LocalStore, item: OutboxEntry, onDelete: (() -> Un
                 OutboxKind.voice -> Text("음성 · ${voiceTime(item.fields["audioMs"]?.toIntOrNull() ?: 0)}")
                 else -> Unit
             }
-            TextButton({ onDelete?.invoke() }, Modifier.align(Alignment.End).testTag("discard-${item.id}"), enabled = onDelete != null) { Text("지우기") }
+            ActionIconButton(R.drawable.ic_trash, "첨부 지우기", { onDelete?.invoke() }, Modifier.testTag("discard-${item.id}"), enabled = onDelete != null, size = 56.dp)
         }
     }
 }

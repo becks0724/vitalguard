@@ -136,9 +136,7 @@ private fun CctvZoomOverlay(bitmap: ImageBitmap, s: CctvState, onClose: () -> Un
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     VgBackButton(Modifier.testTag("cctv-zoom-close"), onClick = onClose)
                     Text(s.cameraId, Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-                    TextButton({ scale = 1f; offset = Offset.Zero }, Modifier.heightIn(min = 56.dp).testTag("cctv-zoom-reset")) {
-                        Text("원래 크기")
-                    }
+                    ActionIconButton(R.drawable.ic_fit, "원래 크기", { scale = 1f; offset = Offset.Zero }, Modifier.testTag("cctv-zoom-reset"), size = 56.dp)
                 }
                 Text(if (s.stale || s.error != null) "마지막 수신 영상 · ${s.ageSeconds ?: 0}초 전" else "두 손가락으로 확대 · 드래그로 이동",
                     style = MaterialTheme.typography.labelMedium, color = DashboardColors.secondary)

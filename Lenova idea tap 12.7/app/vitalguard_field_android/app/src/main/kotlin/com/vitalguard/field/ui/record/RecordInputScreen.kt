@@ -72,26 +72,26 @@ fun RecordInputContent(
                 minLines = 3, maxLines = 8, label = { Text("내용 직접 입력") })
             Spacer(Modifier.height(20.dp))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(onSpeech, Modifier.heightIn(min = 56.dp).testTag("speech-start"), enabled = !state.speaking && !state.saving && !voice.audioBusy) { Text("말로 입력") }
-                OutlinedButton(onEditor, Modifier.heightIn(min = 56.dp).testTag("record-open-editor"), enabled = !state.saving && !voice.audioBusy) { Text("사진에 펜으로 메모하기") }
-                OutlinedButton(onVoiceStart, Modifier.heightIn(min = 56.dp).testTag("voice-start"), enabled = !state.speaking && !state.saving && !voice.audioBusy && voice.clip == null) { Text("녹음") }
-                OutlinedButton(onFinishSpeech, Modifier.heightIn(min = 56.dp).testTag("speech-finish"), enabled = state.speaking) { Text("말하기 끝내기") }
+                ActionIconButton(R.drawable.ic_speech_text, "말로 입력", onSpeech, Modifier.testTag("speech-start"), enabled = !state.speaking && !state.saving && !voice.audioBusy)
+                ActionIconButton(R.drawable.ic_record, "사진에 펜으로 메모하기", onEditor, Modifier.testTag("record-open-editor"), enabled = !state.saving && !voice.audioBusy)
+                ActionIconButton(R.drawable.ic_microphone, "녹음", onVoiceStart, Modifier.testTag("voice-start"), enabled = !state.speaking && !state.saving && !voice.audioBusy && voice.clip == null)
+                ActionIconButton(R.drawable.ic_check, "말하기 끝내기", onFinishSpeech, Modifier.testTag("speech-finish"), enabled = state.speaking)
             }
             Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (isMock) Text("모의 녹음 · 마이크를 사용하지 않습니다")
                 if (voice.starting) Text("녹음 준비 중")
                 if (voice.recording || voice.stopping) FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("녹음 중 ${voiceTime(voice.elapsedMs)}", Modifier.align(Alignment.CenterVertically).testTag("voice-elapsed"))
-                    OutlinedButton(onVoiceStop, Modifier.heightIn(min = 56.dp).testTag("voice-stop"), enabled = !voice.stopping) { Text(if (voice.stopping) "녹음 보존 중" else "녹음 정지") }
-                    TextButton(onVoiceDiscard, Modifier.heightIn(min = 56.dp).testTag("voice-cancel-recording"), enabled = !voice.busy) { Text("녹음 취소") }
+                    ActionIconButton(R.drawable.ic_stop, if (voice.stopping) "녹음 보존 중" else "녹음 정지", onVoiceStop, Modifier.testTag("voice-stop"), enabled = !voice.stopping)
+                    ActionIconButton(R.drawable.ic_close, "녹음 취소", onVoiceDiscard, Modifier.testTag("voice-cancel-recording"), enabled = !voice.busy)
                 }
                 if (voice.clip != null && !voice.stopping) {
                     Text("녹음 ${voiceTime(voice.clip.durationMs)} · 전송 전 확인")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        OutlinedButton(onVoicePreview, Modifier.heightIn(min = 56.dp).testTag("voice-preview"), enabled = !state.speaking && !state.saving && !voice.busy) { Text(if (voice.playing) "미리듣기 정지" else "미리듣기") }
-                        Button(onVoiceSend, Modifier.heightIn(min = 56.dp).testTag("voice-send"), enabled = !state.speaking && !state.saving && !voice.busy) { Text(if (voice.sending) "저장 중" else "음성 저장") }
-                        OutlinedButton(onVoiceRerecord, Modifier.heightIn(min = 56.dp).testTag("voice-rerecord"), enabled = !state.speaking && !state.saving && !voice.busy) { Text("다시 녹음") }
-                        TextButton(onVoiceDiscard, Modifier.heightIn(min = 56.dp).testTag("voice-cancel"), enabled = !state.saving && !voice.busy) { Text("취소") }
+                        ActionIconButton(if (voice.playing) R.drawable.ic_stop else R.drawable.ic_play, if (voice.playing) "미리듣기 정지" else "미리듣기", onVoicePreview, Modifier.testTag("voice-preview"), enabled = !state.speaking && !state.saving && !voice.busy)
+                        ActionIconButton(R.drawable.ic_save, if (voice.sending) "저장 중" else "음성 저장", onVoiceSend, Modifier.testTag("voice-send"), enabled = !state.speaking && !state.saving && !voice.busy)
+                        ActionIconButton(R.drawable.ic_refresh, "다시 녹음", onVoiceRerecord, Modifier.testTag("voice-rerecord"), enabled = !state.speaking && !state.saving && !voice.busy)
+                        ActionIconButton(R.drawable.ic_close, "취소", onVoiceDiscard, Modifier.testTag("voice-cancel"), enabled = !state.saving && !voice.busy)
                     }
                 }
                 voice.notice?.let { Text(it) }
@@ -124,7 +124,7 @@ fun RecordInputContent(
             }
             state.error?.let { Text(it) }; state.notice?.let { Text(it) }
             Spacer(Modifier.height(16.dp))
-            Button(onSave, Modifier.fillMaxWidth().heightIn(min = 64.dp).testTag("save-record"), enabled = state.confirmed && !state.saving && !voice.audioBusy) { Text(if (state.saving) "저장 중" else "메모 저장") }
+            ActionIconButton(R.drawable.ic_save, if (state.saving) "저장 중" else "메모 저장", onSave, Modifier.testTag("save-record"), enabled = state.confirmed && !state.saving && !voice.audioBusy)
         }
     }
 }

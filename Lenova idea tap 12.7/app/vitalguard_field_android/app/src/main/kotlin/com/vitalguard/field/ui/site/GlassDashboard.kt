@@ -289,10 +289,7 @@ private fun AlertsTile(state: SiteSummaryState, onClick: () -> Unit) {
 private fun CctvTile(onOpen: (String) -> Unit) {
     var picker by remember { mutableStateOf(false) }
     GlassPanel {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("현장 CCTV", Modifier.weight(1f), fontSize = 19.sp, fontWeight = FontWeight.Medium)
-            Text("CAM-01 · CAM-03", color = DashboardColors.secondary, fontSize = 12.sp)
-        }
+        Text("현장 CCTV", fontSize = 19.sp, fontWeight = FontWeight.Medium)
         Box(Modifier.fillMaxWidth().height(72.dp).clip(RoundedCornerShape(16.dp)).background(Color.Black.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
             Canvas(Modifier.matchParentSize().clearAndSetSemantics {}) {
                 val line = DashboardColors.secondary.copy(alpha = .28f); val corner = 15.dp.toPx(); val inset = 14.dp.toPx()
@@ -304,7 +301,6 @@ private fun CctvTile(onOpen: (String) -> Unit) {
             }
             VgIcon(R.drawable.ic_video, modifier = Modifier.size(38.dp), tint = DashboardColors.secondary)
         }
-        Text("카메라를 선택해 영상을 확인합니다", color = DashboardColors.secondary, fontSize = 12.sp)
         Box {
         Button({ picker = true }, Modifier.fillMaxWidth().heightIn(min = vgTapMin).testTag("site-open-cctv"),
             colors = ButtonDefaults.buttonColors(containerColor = DashboardColors.accent, contentColor = DashboardColors.accentInk)) {

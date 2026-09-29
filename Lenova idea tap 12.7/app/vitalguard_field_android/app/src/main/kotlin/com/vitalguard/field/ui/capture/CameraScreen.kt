@@ -1,5 +1,6 @@
 package com.vitalguard.field.ui.capture
 
+import com.vitalguard.field.ui.theme.ActionIconButton
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,10 +70,7 @@ fun CameraScreen(
                         color = Color.White, textAlign = TextAlign.Center, fontSize = 18.sp,
                     )
                     if (state.error != cameraPermissionDeniedMessage) {
-                        OutlinedButton(
-                            onClick = onRetry, modifier = Modifier.heightIn(min = 64.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        ) { Text("다시 시도") }
+                        ActionIconButton(R.drawable.ic_refresh, "다시 시도", onRetry, tint = Color.White)
                     }
                 }
             } else {
@@ -89,18 +87,9 @@ fun CameraScreen(
                     }
                 }
                 if (state.ready || state.taking) {
-                    Button(
-                        onClick = onCapture, enabled = state.ready && !state.taking,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)
-                            .width(240.dp).heightIn(min = 64.dp).testTag("take-picture"),
-                    ) {
-                        if (state.taking) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(painterResource(R.drawable.ic_camera), contentDescription = null)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (state.taking) "촬영 중…" else "촬영")
+                    Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp)) {
+                        ActionIconButton(R.drawable.ic_camera, if (state.taking) "촬영 중" else "촬영", onCapture,
+                            Modifier.testTag("take-picture"), enabled = state.ready && !state.taking, size = 80.dp, tint = Color.White)
                     }
                 }
             }

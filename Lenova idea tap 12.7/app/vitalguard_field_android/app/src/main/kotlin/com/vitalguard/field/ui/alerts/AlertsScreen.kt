@@ -1,8 +1,13 @@
 package com.vitalguard.field.ui.alerts
 
+import com.vitalguard.field.R
 import com.vitalguard.field.ui.theme.*
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +41,9 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
     onRefresh: () -> Unit = {}, onAcknowledge: (AlertItem) -> Unit = {}, canAck: (AlertItem) -> Boolean = { false }) {
     var acknowledged by rememberSaveable { mutableStateOf(false) }
     var type by rememberSaveable { mutableStateOf<String?>(null) }
+    var filterOpen by remember { mutableStateOf(false) }
+    var draftAcknowledged by remember { mutableStateOf(false) }
+    var draftType by remember { mutableStateOf<String?>(null) }
     val selected = state.selected
     BackHandler(selected != null) { onSelect(null) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)
@@ -44,6 +52,9 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (selected != null) VgBackButton(Modifier.testTag("alerts-back"), onClick = { onSelect(null) })
             Text(if (selected == null) "경보 목록" else "경보 상세", Modifier.weight(1f), style = MaterialTheme.typography.headlineSmall)
+            ActionIconButton(R.drawable.ic_refresh, "새로고침", onRefresh,
+                Modifier.testTag("alerts-refresh").semantics { if (state.loading) stateDescription = "갱신 중" },
+                enabled = state.authorized && !state.loading && !state.sending, size = 56.dp)
         }
         Text(alertScope(state.data?.alerts?.siteScoped), Modifier.testTag("alerts-scope"))
         Text(if (!state.authorized || state.forbidden) "마지막 수신 정보 표시 불가 · 접근 권한 없음"
@@ -53,27 +64,25 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
             Text("오래된 자료 · 마지막 수신 후 5분 이상 지났습니다")
         if (state.loading) StateLabel(StateKind.loading, "서버 상태 조회 중")
         if (state.readFailed) StateNotice(StateKind.failed, "경보 수신 실패", "이전에 받은 내용을 표시합니다.", Modifier.testTag("alerts-read-error"))
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            OutlinedButton({ onRefresh() }, Modifier.heightIn(min = 56.dp).testTag("alerts-refresh"),
-                enabled = state.authorized && !state.loading && !state.sending) { Text("서버 상태 다시 조회") }
-        }
         if (!state.authorized || state.forbidden) {
             Text("경보 접근 권한을 확인할 수 없습니다. 관리자에게 문의해 주세요.", Modifier.testTag("alerts-forbidden"))
         } else if (selected == null) {
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                for (done in listOf(false, true)) FilterChip(acknowledged == done, { acknowledged = done },
-                    label = { Text(if (done) "대응완료" else "미대응") },
-                    modifier = Modifier.heightIn(min = 56.dp).testTag(if (done) "alerts-filter-acked" else "alerts-filter-unacked"))
-            }
-            // Rows wrap naturally at tablet/split-window widths, without an extra horizontal gesture.
-            val types = listOf<String?>(null) + AlertType.entries.map { it.name }
-            for (group in types.chunked(3)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                for (name in group) FilterChip(type == name, { type = name },
-                    label = { Text(AlertType.entries.firstOrNull { it.name == name }?.label ?: "전체 종류") },
-                    modifier = Modifier.weight(1f).heightIn(min = 56.dp).testTag("alerts-type-${name ?: "all"}"))
+            Box {
+                OutlinedButton({ draftAcknowledged = acknowledged; draftType = type; filterOpen = true },
+                    Modifier.heightIn(min = 56.dp).testTag("alerts-filter-open"), shape = RoundedCornerShape(28.dp)) {
+                    VgIcon(R.drawable.ic_filter); Spacer(Modifier.width(8.dp)); Text("조회 필터")
+                }
+                DropdownMenu(filterOpen, { filterOpen = false },
+                    modifier = Modifier.width((LocalConfiguration.current.screenWidthDp - 48).coerceAtMost(560).dp),
+                    shape = RoundedCornerShape(24.dp), containerColor = DashboardColors.sidebar) {
+                    AlertFilterPanel(draftAcknowledged, draftType, { draftAcknowledged = it }, { draftType = it },
+                        onReset = { draftAcknowledged = false; draftType = null },
+                        onApply = { acknowledged = draftAcknowledged; type = draftType; filterOpen = false },
+                        onClose = { filterOpen = false })
+                }
             }
             val rows = state.items.filter { it.acknowledged == acknowledged && (type == null || it.type.name == type) }
-            Text("마지막 수신 기준 · 미대응 ${state.data?.alerts?.unacked?.toString() ?: "수신 안 됨"} · 수신 목록 필터 결과 ${rows.size}건")
+            Text("${if (acknowledged) "대응완료" else "미대응"} · ${AlertType.entries.firstOrNull { it.name == type }?.label ?: "전체 종류"} · ${rows.size}건", Modifier.testTag("alerts-filter-summary"))
             if (state.data == null || state.data?.alerts?.itemsAvailable != true) Text("경보 목록을 아직 확인할 수 없습니다")
             else if (rows.isEmpty()) Text("수신한 목록에 선택한 조건의 경보가 없습니다")
             if ((state.data?.alerts?.omittedItems ?: 0) > 0) Text("식별 정보가 없거나 중복된 경보 ${state.data!!.alerts.omittedItems}건은 표시하지 못했습니다")
@@ -137,7 +146,7 @@ fun GlobalAlertStrip(controller: AlertsController, deferred: Boolean, onOpen: (A
                 Text("${row.type.label} · 미대응 (수신 기준)", fontWeight = FontWeight.Bold)
                 Text("${row.workerName ?: row.workerId ?: "작업자 정보 없음"} · 상세 보기")
             }
-            TextButton({ controller.dismiss(row) }, Modifier.sizeIn(minWidth = 56.dp, minHeight = 56.dp).testTag("global-alert-dismiss")) { Text("닫기") }
+            ActionIconButton(R.drawable.ic_close, "닫기", { controller.dismiss(row) }, Modifier.testTag("global-alert-dismiss"), size = 56.dp)
         }
     }
 }

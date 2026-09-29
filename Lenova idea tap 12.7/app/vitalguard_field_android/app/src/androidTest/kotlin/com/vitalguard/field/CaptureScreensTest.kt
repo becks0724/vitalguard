@@ -38,9 +38,9 @@ class CaptureScreensTest {
         val state = mutableStateOf(CameraUiState(error = "카메라를 열지 못했습니다."))
         var retries = 0
         compose.setContent { VgTheme { CameraScreen(state.value, onRetry = { retries++ }) } }
-        compose.onNodeWithText("다시 시도").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("다시 시도").assertIsDisplayed().performClick()
         compose.runOnIdle { assertEquals(1, retries); state.value = CameraUiState(error = cameraPermissionDeniedMessage) }
         compose.onNodeWithTag("camera-error").assertTextEquals(cameraPermissionDeniedMessage)
-        compose.onNodeWithText("다시 시도").assertDoesNotExist(); compose.onNodeWithTag("take-picture").assertDoesNotExist()
+        compose.onNodeWithContentDescription("다시 시도").assertDoesNotExist(); compose.onNodeWithTag("take-picture").assertDoesNotExist()
     }
 }

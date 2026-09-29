@@ -121,12 +121,12 @@ class RecordCalendarFlowComposeTest {
         login(); val photo = photo(attachments = true); open(photo)
         compose.onNodeWithTag("photo-bundle-status").assertTextEquals("로컬 저장됨 · 서버 미전송 · 대기")
         for (text in listOf("주석 그리기", "메모·음성 붙이기")) {
-            compose.onNodeWithText(text).performScrollTo().assertIsEnabled().assertWidthIsAtLeast(160.dp).assertHeightIsAtLeast(64.dp)
+            compose.onNodeWithContentDescription(text).performScrollTo().assertIsEnabled().assertWidthIsAtLeast(64.dp).assertHeightIsAtLeast(64.dp)
         }
-        compose.onNodeWithText("주석 그리기").performClick()
+        compose.onNodeWithContentDescription("주석 그리기").performClick()
         compose.onNodeWithTag("editor-tool-pen").assertExists()
         compose.onNodeWithTag("editor-back").performClick()
-        compose.onNodeWithText("원문 OCR 보기").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("원문 OCR 보기").performScrollTo().performClick()
         compose.onNodeWithText("페이지 1\n안전난간 점검").performScrollTo().assertExists()
         compose.onNodeWithText("주석 1 · 메모 1 · 음성 1").performScrollTo().assertExists()
         compose.onNodeWithText("한글 안전 점검 메모").performScrollTo().assertExists()
@@ -185,7 +185,7 @@ class RecordCalendarFlowComposeTest {
             assertTrue(controller.state.value.offline)
         }
         compose.onNodeWithTag("send-bundle").assertDoesNotExist()
-        compose.onNodeWithText("주석 그리기").assertIsEnabled(); compose.onNodeWithText("메모·음성 붙이기").assertIsEnabled()
+        compose.onNodeWithContentDescription("주석 그리기").assertIsEnabled(); compose.onNodeWithContentDescription("메모·음성 붙이기").assertIsEnabled()
         compose.onNodeWithText("오프라인입니다. 연결 후 전송할 수 있습니다.").performScrollTo().assertExists()
         Espresso.pressBack()
         compose.waitUntil(5_000) { model.records.detail.value == null && model.outbox.entry(photo.id)?.autoSendReady == true }
@@ -203,7 +203,7 @@ class RecordCalendarFlowComposeTest {
     }
     @Test fun rotationKeepsDetailButTabSwitchClosesItAndAutoSends() {
         login(); val photo = photo(); open(photo)
-        compose.onNodeWithText("원문 OCR 보기").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("원문 OCR 보기").performScrollTo().performClick()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("photo-detail-actions").assertExists()
         compose.onNodeWithText("페이지 1\n안전난간 점검").performScrollTo().assertExists()

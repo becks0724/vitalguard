@@ -133,10 +133,7 @@ fun RecordEditorContent(
                         EditorGlyph("fit", if (state.fitWidth) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
                     }
                 }
-                TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                    tooltip = { if (state.untouched) PlainTooltip { Text("표시할 내용이 없습니다") } }, state = rememberTooltipState()) {
-                    Button(onSave, Modifier.size(180.dp, 64.dp).testTag("editor-save"), enabled = state.canSave) { Text(if (state.busy) "저장 중" else "주석 저장") }
-                }
+                ActionIconButton(R.drawable.ic_save, if (state.busy) "저장 중" else if (state.untouched) "주석 저장 · 표시할 내용이 없습니다" else "주석 저장", onSave, Modifier.testTag("editor-save"), enabled = state.canSave)
             }
             }
         }
@@ -148,7 +145,7 @@ fun RecordEditorContent(
             }
             Box(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.Center) {
                 canvas()
-                if (state.imageSize == null && !state.loading) TextButton(onReload, Modifier.heightIn(min = 56.dp)) { Text("원본 다시 열기") }
+                if (state.imageSize == null && !state.loading) ActionIconButton(R.drawable.ic_refresh, "원본 다시 열기", onReload)
             }
         }
     }

@@ -71,8 +71,9 @@ class OutboxComposeTest {
         return queue.entry(item.id)!!
     }
     private fun tap(text: String) {
-        compose.onNodeWithTag("outbox-list").performScrollToNode(hasText(text))
-        compose.onNodeWithText(text).performClick()
+        val target = if (text == "전송") hasContentDescription(text) else hasText(text)
+        compose.onNodeWithTag("outbox-list").performScrollToNode(target)
+        compose.onNode(target).performClick()
     }
     private fun card(item: OutboxEntry) {
         compose.onNodeWithTag("outbox-list").performScrollToNode(hasTestTag("outbox-${item.id}"))
@@ -103,7 +104,7 @@ class OutboxComposeTest {
             item = photo("실패 사진", failure = ApiFailure("실패", status = 400))
             field.mutable.value = field.state.value.copy(offline = true)
         }
-        card(item); compose.onNodeWithText("전송").assertIsNotEnabled()
+        card(item); compose.onNodeWithContentDescription("전송").assertIsNotEnabled()
         compose.runOnIdle { field.mutable.value = field.state.value.copy(offline = false) }
         tap("전송"); compose.waitUntil(5000) { queue.bundleCompleted(item.id) }
         card(item); compose.onNodeWithTag("outbox-details-${item.id}").performScrollTo().performClick(); compose.onNodeWithText("작업 ID ${item.id}").assertExists()
@@ -141,7 +142,7 @@ class OutboxComposeTest {
         compose.onNodeWithTag("outbox-lookup-message").assertTextContains("서버 DB 장애", substring = true)
         card(item)
         compose.onNodeWithText("같은 작업 재시도").assertDoesNotExist()
-        compose.onNodeWithText("서버 상태 재조회").assertIsEnabled()
+        compose.onNodeWithContentDescription("서버 상태 재조회").assertIsEnabled()
         assertEquals(1, field.uploads); assertEquals(OutboxPhase.uncertain, queue.entry(item.id)!!.phase)
     }
     @Test fun unavailableLookupRequiresExactWebConfirmationDialogBeforeRetry() {
@@ -162,7 +163,7 @@ class OutboxComposeTest {
             field.mutable.value = field.state.value.copy(offline = true)
         }
         tap("실패 1"); card(item)
-        compose.onNodeWithText("전송").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("전송").assertIsNotEnabled()
         tap("다시 로그인")
         compose.waitUntil(5_000) { field.signOuts == 1 }
         assertEquals(AuthStage.login, field.state.value.authStage)

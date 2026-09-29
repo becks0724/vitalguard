@@ -64,7 +64,7 @@ fun LocalPhotoDetailPreview() {
                     com.vitalguard.field.ui.theme.GlassCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(16.dp)) {
                             Text("메모 · ${it.statusLabel}"); Text("안전난간 고정 상태를 점검했습니다.")
-                            TextButton({}) { Text("지우기") }
+                            com.vitalguard.field.ui.theme.ActionIconButton(com.vitalguard.field.R.drawable.ic_trash, "첨부 지우기", {}, size = 56.dp)
                         }
                     }
                 })

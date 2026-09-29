@@ -39,8 +39,8 @@ android {
         applicationId = "com.vitalguard.field"
         minSdk = 26
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.3.8"
+        versionCode = 14
+        versionName = "1.3.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VG_MOCK", "false")
     }
@@ -57,7 +57,7 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "VG_MOCK", mockRequested.toString())
-            resValue("string", "app_name", "VitAlGuard 현장 (dev)")
+            resValue("string", "app_name", "테스트용 · VG")
         }
         release {
             if (hasReleaseSigning) signingConfig = signingConfigs.getByName("release")
@@ -65,7 +65,7 @@ android {
         }
     }
     buildFeatures { compose = true; buildConfig = true
-        resValues = true   // AGP 9 는 resValue 를 쓰려면 명시해야 한다(debug 앱 이름 (dev))
+        resValues = true   // AGP 9 는 resValue 를 쓰려면 명시해야 한다(debug 앱 이름 테스트용)
     }
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
     compileOptions {

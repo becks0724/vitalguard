@@ -30,3 +30,9 @@ private val site = SiteSummaryState(data = sample, now = fixed)
 @Composable fun AlertDetailStage3Preview() { GlassPreviewSurface { AlertsContent(AlertsState(data = sample, authorized = true, now = fixed, selected = sample.alerts.items.first()), isMock = true, canAck = { true }) } }
 @PreviewTest @Preview(name = "CctvUnavailable866", device = "spec:width=866dp,height=1385dp,dpi=340", locale = "ko", showBackground = true)
 @Composable fun CctvStage3Preview() { GlassPreviewSurface { CctvContent(CctvState(active = true, error = "현장에서 카메라를 꺼 두었습니다", failures = 1, now = fixed)) } }
+
+@PreviewTest @Preview(name = "AlertFilters", device = "spec:width=600dp,height=600dp,dpi=160", locale = "ko", showBackground = true)
+@Composable fun AlertFiltersPreview() { GlassPreviewSurface { com.vitalguard.field.ui.alerts.AlertFilterPanel(false, null, {}, {}, {}, {}, {}) } }
+
+@PreviewTest @Preview(name = "AlertFiltersCompact", device = "spec:width=440dp,height=640dp,dpi=160", locale = "ko", fontScale = 2f, showBackground = true)
+@Composable fun AlertFiltersCompactPreview() { GlassPreviewSurface { com.vitalguard.field.ui.alerts.AlertFilterPanel(false, null, {}, {}, {}, {}, {}) } }
