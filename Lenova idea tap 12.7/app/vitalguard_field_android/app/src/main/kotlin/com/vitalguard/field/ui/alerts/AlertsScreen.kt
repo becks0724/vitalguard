@@ -126,9 +126,9 @@ fun AlertsContent(state: AlertsState, isMock: Boolean = false, onSelect: (AlertI
                 Text("대응 확인 응답과 조회 목록의 상태가 아직 일치하지 않습니다. 서버 상태를 다시 조회해 주세요.")
             if (row.workerId == null || row.ts == null) Text("대상 또는 발생 시각 정보가 없어 대응 확인을 할 수 없습니다.")
             Text("위 대상·발생 시각을 확인한 뒤 아래 버튼을 한 번 눌러 주세요. 대응 확인은 위험 해제나 사고 종결을 뜻하지 않습니다.")
-            Button({ onAcknowledge(selected) }, Modifier.heightIn(min = 64.dp).testTag("alert-ack"), enabled = canAck(selected)) {
-                Text(if (state.offline) "연결 후 가능" else if (phase == AlertWritePhase.sending) "처리 중" else "대응 확인")
-            }
+            ActionIconButton(R.drawable.ic_check,
+                if (state.offline) "연결 후 가능" else if (phase == AlertWritePhase.sending) "처리 중" else "대응 확인",
+                { onAcknowledge(selected) }, Modifier.testTag("alert-ack"), enabled = canAck(selected), tint = SignalColors.normal)
         }
     }
 }
