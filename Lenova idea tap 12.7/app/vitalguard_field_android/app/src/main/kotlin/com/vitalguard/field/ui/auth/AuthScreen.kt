@@ -66,7 +66,7 @@ fun AuthScreen(
     Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
         VgIcon(R.drawable.ic_brand_watermark, modifier = Modifier.align(Alignment.BottomEnd).size(40.dp)
             .testTag("login-brand-watermark"), tint = androidx.compose.ui.graphics.Color.White.copy(alpha = .32f))
-        DashboardWorkspace(Modifier.widthIn(max = 616.dp).fillMaxWidth().testTag("auth-glass-card"), overlay = androidx.compose.ui.graphics.Color(0x70303638)) {
+        DashboardWorkspace(Modifier.widthIn(max = 616.dp).fillMaxWidth().testTag("auth-glass-card"), overlay = androidx.compose.ui.graphics.Color(0x40303638), clearer = true) {
         Column(
             Modifier.widthIn(max = 616.dp).fillMaxWidth().verticalScroll(rememberScrollState())
                 .testTag("auth-scroll").padding(28.dp),

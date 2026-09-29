@@ -39,8 +39,8 @@ android {
         applicationId = "com.vitalguard.field"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "1.3.16"
+        versionCode = 22
+        versionName = "1.3.17"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("boolean", "VG_MOCK", "false")
     }

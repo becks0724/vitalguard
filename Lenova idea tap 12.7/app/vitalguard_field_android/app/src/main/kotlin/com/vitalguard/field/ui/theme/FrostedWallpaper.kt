@@ -27,13 +27,14 @@ import kotlin.math.roundToInt
 internal data class WallpaperFrame(val origin: Offset = Offset.Zero, val size: IntSize = IntSize.Zero)
 internal val LocalWallpaperFrame = staticCompositionLocalOf<State<WallpaperFrame>?> { null }
 
-/** A single, half-resolution bitmap per process, shared across tabs and rotations. */
+/** Two cached half-resolution variants: workspace frost and clearer login glass. */
 private object FrostedWallpaperCache {
     @Volatile private var bitmap: ImageBitmap? = null
-    fun peek(): ImageBitmap? = bitmap
+    @Volatile private var clearerBitmap: ImageBitmap? = null
+    fun peek(clearer: Boolean): ImageBitmap? = if (clearer) clearerBitmap else bitmap
 
-    @Synchronized fun get(resources: Resources): ImageBitmap {
-        bitmap?.let { return it }
+    @Synchronized fun get(resources: Resources, clearer: Boolean): ImageBitmap {
+        peek(clearer)?.let { return it }
         val source = checkNotNull(BitmapFactory.decodeResource(resources, R.drawable.site_wallpaper,
             BitmapFactory.Options().apply {
                 inSampleSize = 2
@@ -46,27 +47,27 @@ private object FrostedWallpaperCache {
         source.getPixels(pixels, 0, width, 0, 0, width, height)
         source.recycle()
         // Three box passes approximate a soft Gaussian. No RenderEffect, GPU blur or frame capture.
-        val result = Bitmap.createBitmap(blurWallpaperPixels(pixels, width, height, 12),
+        val result = Bitmap.createBitmap(blurWallpaperPixels(pixels, width, height, if (clearer) 5 else 12),
             width, height, Bitmap.Config.ARGB_8888).asImageBitmap()
-        bitmap = result
+        if (clearer) clearerBitmap = result else bitmap
         return result
     }
 }
 
 @Composable
-private fun rememberFrostedWallpaper(): ImageBitmap? {
+private fun rememberFrostedWallpaper(clearer: Boolean): ImageBitmap? {
     val resources = LocalContext.current.resources
-    if (LocalInspectionMode.current) return remember(resources) { FrostedWallpaperCache.get(resources) }
-    val bitmap by produceState(FrostedWallpaperCache.peek(), resources) {
-        value = withContext(Dispatchers.Default) { FrostedWallpaperCache.get(resources) }
+    if (LocalInspectionMode.current) return remember(resources, clearer) { FrostedWallpaperCache.get(resources, clearer) }
+    val bitmap by produceState(FrostedWallpaperCache.peek(clearer), resources, clearer) {
+        value = withContext(Dispatchers.Default) { FrostedWallpaperCache.get(resources, clearer) }
     }
     return bitmap
 }
 
 /** Draw only the enclosing panel's background; its contents never enter the blur. */
 @Composable
-internal fun FrostedWallpaper(modifier: Modifier = Modifier, overlay: androidx.compose.ui.graphics.Color = DashboardColors.workspace) {
-    val bitmap = rememberFrostedWallpaper()
+internal fun FrostedWallpaper(modifier: Modifier = Modifier, overlay: androidx.compose.ui.graphics.Color = DashboardColors.workspace, clearer: Boolean = false) {
+    val bitmap = rememberFrostedWallpaper(clearer)
     val frame = LocalWallpaperFrame.current
     val direction = LocalLayoutDirection.current
     var origin by remember { mutableStateOf(Offset.Zero) }

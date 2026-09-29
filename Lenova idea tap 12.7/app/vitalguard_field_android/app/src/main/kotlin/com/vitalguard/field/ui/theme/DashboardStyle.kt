@@ -106,12 +106,12 @@ fun DashboardBackdrop(modifier: Modifier = Modifier, showWallpaper: Boolean = tr
 }
 
 @Composable
-fun DashboardWorkspace(modifier: Modifier = Modifier, overlay: Color = DashboardColors.workspace, content: @Composable () -> Unit) {
+fun DashboardWorkspace(modifier: Modifier = Modifier, overlay: Color = DashboardColors.workspace, clearer: Boolean = false, content: @Composable () -> Unit) {
     Surface(modifier.testTag("dashboard-workspace"), shape = RoundedCornerShape(32.dp),
         color = Color.Transparent, contentColor = DashboardColors.text, shadowElevation = 18.dp,
         border = BorderStroke(1.dp, Brush.linearGradient(listOf(Color.White.copy(alpha = .34f), Color.White.copy(alpha = .10f))))) {
         Box {
-            FrostedWallpaper(Modifier.matchParentSize(), overlay)
+            FrostedWallpaper(Modifier.matchParentSize(), overlay, clearer)
             content()
         }
     }
