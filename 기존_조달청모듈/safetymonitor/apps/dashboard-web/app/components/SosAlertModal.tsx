@@ -7,6 +7,8 @@ import type { VitalSample } from "@safetymonitor/schemas";
 import FitToViewport from "./FitToViewport";
 import { NearestEmergency } from "./HospitalPanel";
 import { heartRateStatus, skinTempStatus, spo2Status, type Status } from "../../lib/severity";
+import { formatSpo2Age, spo2AgeMs } from "../../lib/spo2-freshness";
+import { dangerMeasuredAt, kstClock } from "../../lib/vital-measured-at";
 
 const COMPANY_NAME = "스마트인재개발원";
 
@@ -81,7 +83,10 @@ function buildSmsBody(sample: VitalSample, audience: "guardian" | "119", reason:
     vitals.push(`심박 ${sample.heartRate}bpm${labelSeverity(heartRateStatus(sample.heartRate))}`);
   }
   if (sample.spo2 !== undefined) {
-    vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Status(sample.spo2))}`);
+    // 측정 시각을 붙인다(2026-09-29 경보 14212) — 산소포화도는 최대 30분 전 값이 겹쳐 보인다.
+    //   받는 쪽이 「방금 잰 값」으로 읽지 않게 한다.
+    const at = sample.spo2MeasuredAt ? kstClock(sample.spo2MeasuredAt) : null;
+    vitals.push(`SpO₂ ${sample.spo2}%${labelSeverity(spo2Status(sample.spo2))}${at ? ` ${at} 측정` : ""}`);
   }
   // ⚠ **문자에는 「체온추정」이라 적지 않는다**(2026-09-18). 이 값은 `피부온 + 0.5` 이고
   //    그 오프셋은 근거가 확인된 적이 없다(`thresholds.ts` wristToCoreOffsetC 주석).
@@ -159,6 +164,13 @@ export function SosAlertModal({
     void onAcknowledge?.();
   };
 
+  // 측정 경과(「8분 전」)용 시계 — 팝업이 열려 있는 동안 30초마다 갱신.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // ESC 키로 닫기
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -185,6 +197,20 @@ export function SosAlertModal({
     spo2Sev === "danger" ? "산소포화도" : null,
     coreSev === "danger" ? "피부온" : null,
   ].filter(Boolean) as string[];
+
+  // 위험 값의 측정 시각과 경과 — 표본 도착 시각(ts)은 산소포화도 측정보다 최대 30분 늦다(2026-09-29 경보 14212).
+  const detectedAt =
+    reason === "vital"
+      ? dangerMeasuredAt(sample, { spo2: spo2Sev === "danger", hr: hrSev === "danger" })
+      : sample.ts;
+  const detectedAtMs = Date.parse(detectedAt);
+  const detectedAge = Number.isNaN(detectedAtMs) ? null : Math.max(0, nowMs - detectedAtMs);
+  const spo2Age = spo2AgeMs(sample, nowMs);
+  const spo2Clock = sample.spo2MeasuredAt ? kstClock(sample.spo2MeasuredAt) : null;
+  const spo2Footnote =
+    [spo2Clock && `${spo2Clock} 측정`, spo2Age !== null && formatSpo2Age(spo2Age)]
+      .filter(Boolean)
+      .join(" · ") || undefined;
 
   const guardianSmsBody = buildSmsBody(sample, "guardian", reason);
   const emergencySmsBody = buildSmsBody(sample, "119", reason);
@@ -269,7 +295,10 @@ export function SosAlertModal({
               <span className="text-body dark:text-on-dark-soft">{COMPANY_NAME}</span>
               <span className="mx-2 text-muted-soft">·</span>
               {reason === "fall" ? "낙상 감지 시각" : reason === "vital" ? "위험 감지 시각" : "SOS 발신 시각"}{" "}
-              <span className="font-mono">{formatTime(sample.ts)}</span>
+              <span className="font-mono">{formatTime(detectedAt)}</span>
+              {reason === "vital" && detectedAge !== null && (
+                <span className="ml-1 text-muted-soft">({formatSpo2Age(detectedAge)})</span>
+              )}
             </p>
             {reason === "vital" && dangerMetrics.length > 0 && (
               <p className="mt-1 text-xs font-semibold text-red-600 dark:text-red-300">
@@ -282,7 +311,14 @@ export function SosAlertModal({
             <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted dark:text-on-dark-soft">최신 생체 데이터</h3>
             <dl className="mt-2 grid grid-cols-3 gap-2 rounded-xl border border-hairline bg-surface-soft p-3 text-center dark:border-white/10 dark:bg-canvas/[0.02]">
               <MetricCell label="심박" value={sample.heartRate} unit="bpm" severity={hrSev} decimals={0} />
-              <MetricCell label="산소포화도" value={sample.spo2} unit="%" severity={spo2Sev} decimals={0} />
+              <MetricCell
+                label="산소포화도"
+                value={sample.spo2}
+                unit="%"
+                severity={spo2Sev}
+                decimals={0}
+                footnote={sample.spo2 === undefined ? undefined : spo2Footnote}
+              />
               <MetricCell
                 label={`피부온`}
                 value={core}
