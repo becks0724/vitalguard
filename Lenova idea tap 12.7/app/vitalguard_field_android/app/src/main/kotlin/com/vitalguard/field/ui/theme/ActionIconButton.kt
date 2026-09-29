@@ -13,12 +13,12 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ActionIconButton(icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier,
-    enabled: Boolean = true, size: Dp = 64.dp, tint: Color = MaterialTheme.colorScheme.primary) {
+    enabled: Boolean = true, size: Dp = 64.dp, iconSize: Dp = 28.dp, tint: Color = MaterialTheme.colorScheme.primary) {
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
         OutlinedButton(onClick, modifier.size(size), enabled = enabled, shape = CircleShape,
             contentPadding = PaddingValues(0.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = tint)) {
-            VgIcon(icon, label, Modifier.size(28.dp))
+            VgIcon(icon, label, Modifier.size(iconSize))
         }
     }
 }

@@ -68,7 +68,7 @@ class ShellController(
             }
         }
     }
-    fun select(index: Int) { require(index in 0..4); mutable.value = state.value.copy(destination = index) }
+    fun select(index: Int) { require(index in 0..5); mutable.value = state.value.copy(destination = index) }
     fun logout() {
         if (state.value.loggingOut) return
         mutable.value = state.value.copy(loggingOut = true)
@@ -87,6 +87,7 @@ class ShellController(
 
 // Port: field_shell.dart receipt(), 문구/우선순위 그대로.
 fun shellReceipt(destination: Int, c: FieldState): String {
+    if (destination == 5) return "사용 방법은 연결 없이도 볼 수 있습니다. 메뉴별 표에서 필요한 조작을 확인하세요."
     if (destination <= 1 && c.siteStatusForbidden) return "마지막 수신 정보 표시 불가 · 접근 권한 없음"
     if (c.offline) {
         val reason = "오프라인 · 서버에 연결할 수 없습니다."

@@ -100,6 +100,9 @@ class Stage3ComposeTest {
         login()
         compose.onNodeWithTag("rail-destination-2").performScrollTo().performClick()
         compose.onNodeWithTag("global-alert-strip").assertExists()
+        val messageCenter = compose.onNodeWithTag("global-alert-open").fetchSemanticsNode().boundsInRoot.center.y
+        val closeCenter = compose.onNodeWithTag("global-alert-dismiss").fetchSemanticsNode().boundsInRoot.center.y
+        assertEquals(messageCenter, closeCenter, 1f)
         val height = compose.onNodeWithTag("global-alert-slot").fetchSemanticsNode().boundsInRoot.height
         val contentHeight = compose.onNodeWithTag("shell-content").fetchSemanticsNode().boundsInRoot.height
         assertTrue(height > 0)

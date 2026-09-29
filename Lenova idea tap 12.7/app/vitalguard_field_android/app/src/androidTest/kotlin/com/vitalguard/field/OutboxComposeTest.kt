@@ -88,9 +88,7 @@ class OutboxComposeTest {
             completed = photo("완료 사진"); queue.sendBundle(completed.id)
             failed = photo("실패 사진", "현장 B", ApiFailure("실패", status = 400))
         }
-        compose.onNodeWithTag("outbox-guide").performScrollTo().performClick()
-        compose.onNodeWithText("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.").assertExists()
-        compose.onNodeWithTag("outbox-guide").performScrollTo().performClick()
+        compose.onNodeWithTag("outbox-guide").assertDoesNotExist()
         tap("실패 1"); card(failed)
         compose.onNodeWithTag("outbox-status-${failed.id}").assertTextEquals("로컬 저장됨 · 전송 실패")
         compose.onNodeWithTag("outbox-${waiting.id}").assertDoesNotExist()

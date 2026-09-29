@@ -139,10 +139,10 @@ fun GlobalAlertStrip(controller: AlertsController, deferred: Boolean, onOpen: (A
     val s by controller.state.collectAsStateWithLifecycle()
     val row = s.pending.firstOrNull()?.takeIf { s.authorized && !s.forbidden && !deferred } ?: return
     GlassCard(Modifier.fillMaxWidth().padding(8.dp).testTag("global-alert-strip")) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
             StateIcon(StateKind.warning, Modifier.padding(12.dp).size(24.dp))
             Column(Modifier.weight(1f).fillMaxHeight().clickable { onOpen(row) }.padding(8.dp)
-                .verticalScroll(rememberScrollState()).testTag("global-alert-open")) {
+                .verticalScroll(rememberScrollState()).testTag("global-alert-open"), verticalArrangement = Arrangement.Center) {
                 Text("${row.type.label} · 미대응 (수신 기준)", fontWeight = FontWeight.Bold)
                 Text("${row.workerName ?: row.workerId ?: "작업자 정보 없음"} · 상세 보기")
             }

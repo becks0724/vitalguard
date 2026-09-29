@@ -50,6 +50,12 @@ class Stage4ComposeTest {
     }
     @Test fun settingsPersistAcrossRecreationAndDoNotLeakToAnotherAccount() {
         login("settings-a"); settings()
+        val bothHands = compose.onNodeWithTag("work-hand-selector").fetchSemanticsNode().boundsInRoot
+        val leftHand = compose.onNodeWithTag("action-side-left").fetchSemanticsNode().boundsInRoot
+        val rightHand = compose.onNodeWithTag("action-side-right").fetchSemanticsNode().boundsInRoot
+        assertEquals(bothHands.width, bothHands.height, 1f)
+        assertTrue(leftHand.width > 0 && rightHand.width > 0 && leftHand.right <= rightHand.left)
+        assertTrue(leftHand.left >= bothHands.left && rightHand.right <= bothHands.right)
         compose.onNodeWithTag("action-side-left").performScrollTo().performClick()
         compose.waitUntil(5000) { runBlocking { local.read("settings-a", vgActionSidePreferenceKey) == "left" } }
         assertRailSide(onRight = true)
@@ -97,4 +103,22 @@ class Stage4ComposeTest {
         val right = compose.onNodeWithTag("record-capture-actions").fetchSemanticsNode().boundsInRoot
         assertTrue(right.center.x > content.center.x)
     }
+    @Test fun usageTabIsBelowSettingsAndGuideWorksOfflineWithoutOutboxInfoButton() {
+        login("guide-a"); settings()
+        val settingsBounds = compose.onNodeWithTag("rail-destination-4").fetchSemanticsNode().boundsInRoot
+        val guideBounds = compose.onNodeWithTag("rail-destination-5").fetchSemanticsNode().boundsInRoot
+        assertTrue(guideBounds.top >= settingsBounds.bottom)
+        compose.runOnIdle { runBlocking { field.connectivityChanged(false) } }
+        compose.onNodeWithTag("rail-destination-5").performScrollTo().performClick()
+        compose.onNodeWithTag("usage-guide").assertIsDisplayed()
+        compose.onNodeWithTag("shell-receipt").assertTextEquals("사용 방법")
+        compose.onNodeWithTag("guide-section-transfer").performClick()
+        compose.onNodeWithTag("guide-table").performScrollToNode(hasTestTag("guide-row-결과 불명"))
+        compose.onNodeWithTag("guide-row-결과 불명").assertIsDisplayed()
+        compose.onNodeWithTag("rail-destination-3").performScrollTo().performClick()
+        compose.onNodeWithTag("outbox-guide").assertDoesNotExist()
+        compose.onNodeWithTag("rail-destination-5").performScrollTo().performClick()
+        compose.onNodeWithTag("guide-section-transfer").assertIsSelected()
+    }
+
 }
