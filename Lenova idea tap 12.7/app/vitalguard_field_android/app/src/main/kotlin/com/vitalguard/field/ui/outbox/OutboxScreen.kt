@@ -54,7 +54,6 @@ fun OutboxHistoryContent(
     var filterName by rememberSaveable(account) { mutableStateOf<String?>(null) }
     var siteGroup by rememberSaveable(account) { mutableStateOf<String?>(null) }
     var confirmId by rememberSaveable(account) { mutableStateOf<String?>(null) }
-    var guideOpen by rememberSaveable(account) { mutableStateOf(false) }
     val filter = filterName?.let(OutboxPhase::valueOf)
     val groups = entries.associate { it.siteGroup to it.siteName }
     val visible = entries.filter { (siteGroup == null || it.siteGroup == siteGroup) && (filter == null || historyPhase(it) == filter) }.reversed()
@@ -64,17 +63,10 @@ fun OutboxHistoryContent(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("전송 이력", style = MaterialTheme.typography.headlineMedium)
                 Text("현재 계정 · $account")
-                ActionIconButton(R.drawable.ic_info, if (guideOpen) "전송 안내 접기" else "전송 안내", { guideOpen = !guideOpen }, Modifier.testTag("outbox-guide"), size = 56.dp)
-                if (guideOpen) {
-                    Text("서버에서 확인한 완료 기록과 전송 중·실패·결과 불명 기록을 확인합니다.")
-                    Text("기록은 저장되면 자동으로 전송됩니다 · 실패한 것만 [전송]을 눌러 주세요")
-                    Text("기기의 완료 이력은 7일 뒤 정리됩니다. 서버 원본은 기록 탭에서 다시 볼 수 있습니다.")
-                }
                 if (offline) StateLabel(StateKind.offline, "오프라인 · 기록은 기기에 보관합니다.")
                 if (supportedLookup) {
                     ActionIconButton(R.drawable.ic_refresh, "서버 상태 다시 조회", { onVerify(null) }, Modifier.testTag("outbox-lookup-all"),
                         enabled = canLookup && !checking && entries.any { it.phase == OutboxPhase.uncertain })
-                    Text("결과 불명만 조회합니다. 화면 진입·전경 복귀 시 자동 조회하며, 30초 안에는 반복하지 않습니다.")
                     if (checking) LinearProgressIndicator(Modifier.fillMaxWidth())
                     lookupMessage?.let { Text(it, Modifier.testTag("outbox-lookup-message")) }
                 }

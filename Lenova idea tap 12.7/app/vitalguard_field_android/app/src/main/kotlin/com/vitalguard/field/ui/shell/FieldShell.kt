@@ -41,6 +41,7 @@ fun FieldShell(
     siteContent: @Composable () -> Unit = { SiteScreen(site, onRefresh, onNextStage) },
     alertsContent: @Composable () -> Unit = { PlaceholderScreen("경보", 1) },
     settingsContent: @Composable () -> Unit = { PlaceholderScreen("설정", 4) },
+    usageContent: @Composable () -> Unit = { com.vitalguard.field.ui.help.UsageGuideScreen() },
     globalAlertContent: @Composable () -> Unit = {},
     drawWallpaper: Boolean = true,
     reclaimEmptyAlertSpace: Boolean = false,
@@ -53,6 +54,7 @@ fun FieldShell(
     val railOnRight = LocalActionPlacement.current.side == ActionSide.left
     var receiptDetails by rememberSaveable { mutableStateOf(false) }
     val receiptState = when {
+        shell.destination == 5 -> StateKind.info to "사용 방법"
         shell.destination <= 1 && field.siteStatusForbidden -> StateKind.locked to "접근 권한 없음"
         field.offline -> StateKind.offline to "오프라인"
         shell.destination == 0 && site.failed -> StateKind.failed to "수신 실패"
@@ -109,6 +111,7 @@ fun FieldShell(
                             2 -> recordContent()
                             3 -> outboxContent()
                             4 -> settingsContent()
+                            5 -> usageContent()
                         }
                         }
                         DashboardTheme { page() }
@@ -190,6 +193,8 @@ private fun FieldRail(
                 HorizontalDivider(Modifier.testTag("rail-footer-divider"), color = DashboardColors.line)
                 Spacer(Modifier.height(8.dp))
                 RailItem(4, "설정", R.drawable.ic_settings, collapsed, shell.destination, onSelect)
+                Spacer(Modifier.height(vgGapTap))
+                RailItem(5, "사용 방법", R.drawable.ic_book, collapsed, shell.destination, onSelect)
                 Spacer(Modifier.height(vgGapTap))
                 if (collapsed) {
                     Box(Modifier.fillMaxWidth().height(56.dp), contentAlignment = Alignment.Center) {

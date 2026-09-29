@@ -62,7 +62,7 @@ class CommonStatesComposeTest {
                 }
             }
         }
-        for (index in 0..4) {
+        for (index in 0..5) {
             compose.runOnIdle { field.value = field.value.copy(offline = false) }
             compose.onNodeWithTag("rail-destination-$index").performScrollTo().performClick()
             val before = listOf("shell-content", "global-alert-slot", "shell-receipt-slot").map {

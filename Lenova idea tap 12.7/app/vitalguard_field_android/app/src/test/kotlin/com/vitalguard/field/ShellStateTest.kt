@@ -25,7 +25,7 @@ class ShellStateTest {
         resumed.bindAccount("b"); resumed.windowWidth(1200); runCurrent(); assertEquals(false, resumed.state.value.collapsed)
         resumed.windowWidth(900); assertEquals(true, resumed.state.value.collapsed)
         assertNull(store.read("b", vgRailPreferenceKey))
-        for (index in 0..4) { resumed.select(index); assertEquals(index, resumed.state.value.destination) }
+        for (index in 0..5) { resumed.select(index); assertEquals(index, resumed.state.value.destination) }
     }
     @Test fun latePreferenceCannotOverrideManualToggleAndSaveFailureRollsBack() = runTest {
         val pending = CompletableDeferred<String?>()

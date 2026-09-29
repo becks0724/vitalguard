@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -44,18 +46,32 @@ import kotlin.math.roundToInt
 fun CctvPeriodSlider(s: CctvState, onPeriod: (Int) -> Unit, modifier: Modifier = Modifier) {
     var choice by remember(s.periodMillis) { mutableFloatStateOf(s.periodMillis.toFloat()) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("영상 갱신", style = MaterialTheme.typography.titleSmall)
-            Text(cctvPeriodLabel(choice.roundToInt()), color = MaterialTheme.colorScheme.primary)
-        }
         Slider(choice, onValueChange = { choice = (it / 500).roundToInt() * 500f },
             onValueChangeFinished = { onPeriod(choice.roundToInt()) }, valueRange = 0f..2000f, steps = 3,
             enabled = s.periodLoaded && !s.periodSaving,
             modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("cctv-period-slider")
                 .semantics { contentDescription = "CCTV 영상 갱신 간격"; stateDescription = cctvPeriodLabel(choice.roundToInt()) })
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("실시간", style = MaterialTheme.typography.labelMedium)
-            Text("2초", style = MaterialTheme.typography.labelMedium)
+        Layout(content = {
+            CCTV_PERIOD_OPTIONS.forEach { interval ->
+                Text(cctvPeriodLabel(interval), style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                    color = if (choice.roundToInt() == interval) MaterialTheme.colorScheme.primary else DashboardColors.secondary,
+                    fontWeight = if (choice.roundToInt() == interval) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.testTag("cctv-tick-$interval"))
+            }
+        }, modifier = Modifier.fillMaxWidth()) { measurables, constraints ->
+            val labels = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = constraints.maxWidth / 3)) }
+            val height = labels.maxOf { it.height }
+            val positions = labels.mapIndexed { index, label ->
+                when (index) { 0 -> 0; labels.lastIndex -> constraints.maxWidth - label.width
+                    else -> (constraints.maxWidth * index.toFloat() / labels.lastIndex - label.width / 2f).roundToInt() }
+            }
+            val gap = 4.dp.roundToPx()
+            val staggered = (0 until labels.lastIndex).any { positions[it] + labels[it].width + gap > positions[it + 1] }
+            layout(constraints.maxWidth, if (staggered) height * 2 + gap else height) {
+                labels.forEachIndexed { index, label ->
+                    label.place(positions[index], if (staggered && index % 2 == 1) height + gap else 0)
+                }
+            }
         }
     }
 }

@@ -1,12 +1,18 @@
 package com.vitalguard.field.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -37,8 +43,6 @@ fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> U
                     Text("CCTV 갱신 간격", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                 }
                 CctvPeriodSlider(cctv, onCctvPeriod)
-                Text("실시간은 연속 영상, 나머지는 선택한 간격으로 화면을 갱신합니다.")
-                Text("영상 화면을 나가면 수신을 멈춥니다. 이 기기에서 현재 계정의 선택을 기억합니다.")
                 if (!cctv.periodLoaded || cctv.periodSaving) StateLabel(StateKind.loading,
                     if (cctv.periodSaving) "저장 중…" else "선택을 불러오는 중…")
                 cctv.periodError?.let { StateNotice(StateKind.failed, "설정 저장 확인 필요", it, Modifier.testTag("cctv-setting-error")) }
@@ -47,30 +51,41 @@ fun SettingsContent(placement: ActionPlacementState, onSelect: (ActionSide) -> U
         GlassCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("작업 손", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Text("실행 버튼은 쓰는 손 쪽, 사이드바는 반대쪽에 배치합니다.")
-                FlowRow(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    ActionSide.entries.forEach { side ->
-                        val isSelected = placement.side == side
-                        OutlinedButton(onClick = { onSelect(side) },
-                            modifier = Modifier.widthIn(min = 180.dp).heightIn(min = vgTapMin)
-                                .testTag("action-side-${side.name}").semantics { selected = isSelected; role = Role.RadioButton },
-                            enabled = placement.loaded && !placement.saving,
-                            colors = ButtonDefaults.outlinedButtonColors(containerColor = if (isSelected)
-                                MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface)) {
-                            RadioButton(isSelected, onClick = null, enabled = placement.loaded && !placement.saving)
-                            Spacer(Modifier.width(12.dp))
-                            Text(if (side == ActionSide.left) "왼손" else "오른손")
-                        }
-                    }
-                }
-                Text(if (placement.side == ActionSide.left) "실행 버튼 왼쪽 · 사이드바 오른쪽" else "실행 버튼 오른쪽 · 사이드바 왼쪽",
-                    Modifier.testTag("hand-layout-summary"))
-                Text("이 기기에서 현재 계정의 선택을 기억합니다.")
+                WorkHandSelector(placement, onSelect)
                 if (!placement.loaded || placement.saving) StateLabel(StateKind.loading, if (placement.saving) "저장 중…" else "선택을 불러오는 중…")
                 placement.error?.let { StateNotice(StateKind.failed, "설정 저장 확인 필요", it, Modifier.testTag("action-side-error")) }
             }
         }
         Text("앱 버전 ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkHandSelector(placement: ActionPlacementState, onSelect: (ActionSide) -> Unit) {
+    val enabled = placement.loaded && !placement.saving
+    Surface(Modifier.size(152.dp).testTag("work-hand-selector"), shape = CircleShape,
+        color = Color.Transparent, border = BorderStroke(1.dp, DashboardColors.line)) {
+        Row(Modifier.fillMaxSize().selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+            ActionSide.entries.forEach { side ->
+                val chosen = placement.side == side
+                val label = if (side == ActionSide.left) "왼손" else "오른손"
+                val icon = when (side) {
+                    ActionSide.left -> if (chosen) R.drawable.ic_hand_left_filled else R.drawable.ic_hand_left_outline
+                    ActionSide.right -> if (chosen) R.drawable.ic_hand_right_filled else R.drawable.ic_hand_right_outline
+                }
+                Box(Modifier.weight(1f).fillMaxHeight()) {
+                TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                    tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
+                    Box(Modifier.fillMaxSize().testTag("action-side-${side.name}")
+                        .semantics { contentDescription = label }
+                        .selectable(chosen, enabled, Role.RadioButton) { onSelect(side) }, contentAlignment = Alignment.Center) {
+                        VgIcon(icon, modifier = Modifier.size(48.dp),
+                            tint = (if (chosen) DashboardColors.accent else DashboardColors.secondary).copy(alpha = if (enabled) 1f else .38f))
+                    }
+                }
+                }
+            }
+        }
     }
 }
