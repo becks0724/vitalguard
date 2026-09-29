@@ -42,6 +42,12 @@ import {
 } from "../../lib/severity";
 import { computePsi, psiBand } from "../../lib/psi";
 import { spo2AgeMs, freshSpo2, formatSpo2Age } from "../../lib/spo2-freshness";
+import {
+  SPO2_ACK_KEY_TYPE,
+  isVitalAlertAcked,
+  spo2AckKey,
+  type VitalDangerParts,
+} from "../../lib/spo2-ack-key";
 import { formatElapsed } from "../../lib/absence-watch";
 import { parseOcrStamp } from "../../lib/ocr-stamp";
 import { impactRowView, isImpactSample, type ImpactRowView } from "../../lib/impact-row";
@@ -424,6 +430,7 @@ function saveSiteInfo(siteInfo: SiteInfo) {
 
 // SOS/낙상 팝업 확인(ack) 영속 — 메모리 상태만으론 새로고침 시 이미 확인한 경보가 재팝업.
 // 값 = 확인한 경보 자연키("sos|<workerId>|<ts>" / "fall|<workerId>|<ts>") 배열.
+// + 산소포화도만 위험인 생체 경보는 측정 단위 열쇠("vital-spo2|<workerId>|<spo2MeasuredAt>" · lib/spo2-ack-key · 09-29).
 const ALERT_ACK_STORAGE_KEY = "safetymonitor.alertAck.v1";
 const ALERT_ACK_MAX_KEYS = 200; // 오래된 키부터 밀어내 localStorage 무한 증가 방지
 // 낙상/SOS 긴급 팝업 신선도 — 이 시간보다 오래된 이벤트는 활성 경보로 재팝업하지 않는다.
@@ -5206,6 +5213,9 @@ export function DemoDashboard() {
   // 생체 위험 자동 경보 — 현재 표시 중 워커 + ack(정상복귀 시 해제)된 워커.
   const [activeVitalAlert, setActiveVitalAlert] = useState<VitalSample | null>(null);
   const [ackedVital, setAckedVital] = useState<Set<string>>(() => new Set());
+  // 산소포화도만 위험인 경보의 측정 단위 확인 — 브라우저 저장에서 되살려 새로고침 재팝업을 막는다(09-29).
+  const [ackedSpo2Keys, setAckedSpo2Keys] = useState<Set<string>>(() => new Set());
+  const activeVitalAckKeyRef = useRef<string | null>(null); // 지금 떠 있는 생체 팝업의 열쇠(없으면 null)
   // 구획 이탈 경보 — 현재 표시 중 {sample, distM} + ack(구획 복귀 시 해제)된 워커 + 이탈 확정 워커 집합.
   const [activeGeofenceAlert, setActiveGeofenceAlert] = useState<{
     sample: VitalSample;
@@ -5464,13 +5474,19 @@ export function DemoDashboard() {
     } catch {
       /* localStorage 불가 환경 무시 */
     }
-    // 확인(ack)한 SOS/낙상 경보 키 복원 — 새로고침 시 이미 확인한 팝업 재발화 방지.
+    // 확인(ack)한 SOS/낙상·산소포화도 경보 키 복원 — 새로고침 시 이미 확인한 팝업 재발화 방지.
     // 워커별 최신 ts 만 유지(트리거 판정이 lastSosByWorker/lastFallByWorker 의 최신 ts 와 비교).
+    // 산소포화도 열쇠는 측정 단위라 통째로 둔다(새 측정은 열쇠가 달라 다시 울린다).
     const sosAcks: Record<string, string> = {};
     const fallAcks: Record<string, string> = {};
+    const spo2Acks = new Set<string>();
     for (const key of loadAckedAlertKeys()) {
       const [type, workerId, ts] = key.split("|");
       if (!workerId || !ts) continue;
+      if (type === SPO2_ACK_KEY_TYPE) {
+        spo2Acks.add(key);
+        continue;
+      }
       const target = type === "sos" ? sosAcks : type === "fall" ? fallAcks : null;
       if (!target) continue;
       const cur = target[workerId];
@@ -5479,6 +5495,7 @@ export function DemoDashboard() {
     if (Object.keys(sosAcks).length > 0) setAcknowledgedSosTs((prev) => ({ ...sosAcks, ...prev }));
     if (Object.keys(fallAcks).length > 0)
       setAcknowledgedFallTs((prev) => ({ ...fallAcks, ...prev }));
+    if (spo2Acks.size > 0) setAckedSpo2Keys((prev) => new Set([...spo2Acks, ...prev]));
     // 서버(공유 관제 1벌) 슬롯 로드 — 있으면 로컬보다 우선(다른 기기에서 등록한 것 반영). 실패 시 localStorage 유지.
     (async () => {
       try {
@@ -5760,6 +5777,14 @@ export function DemoDashboard() {
     setActiveFallAlert(null);
   }
 
+  // 산소포화도만 위험인 생체 팝업 — 그 측정의 열쇠를 브라우저에 남긴다(09-29 경보 14212 · 새로고침 재팝업).
+  function rememberSpo2Ack() {
+    const key = activeVitalAckKeyRef.current;
+    if (!key) return;
+    appendAckedAlertKey(key);
+    setAckedSpo2Keys((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+  }
+
   function dismissVitalAlert() {
     if (activeVitalAlert) {
       setAckedVital((prev) => {
@@ -5767,7 +5792,9 @@ export function DemoDashboard() {
         next.add(activeVitalAlert.workerId);
         return next;
       });
+      rememberSpo2Ack();
     }
+    activeVitalAckKeyRef.current = null;
     setActiveVitalAlert(null);
   }
 
@@ -5797,8 +5824,10 @@ export function DemoDashboard() {
   ) {
     // 확인 즉시 자연키 영속 — 닫기 전에 새로고침해도 재팝업 안 함
     // (vital·geofence 는 레벨형이라 복귀 시 ack 해제 → localStorage 영속 제외).
+    // 단 산소포화도만 위험인 생체 경보는 측정 단위 열쇠로 영속한다(09-29) — 새 측정은 열쇠가 달라 다시 울린다.
     if (type !== "vital" && type !== "geofence")
       appendAckedAlertKey(`${type}|${sample.workerId}|${sample.ts}`);
+    if (type === "vital") rememberSpo2Ack();
     const token = getSessionToken();
     try {
       await fetch("/api/alerts/ack", {
@@ -5942,29 +5971,33 @@ export function DemoDashboard() {
     return est.tempC;
   };
 
-  const dangerVitalWorkers = useMemo(() => {
-    const out: VitalSample[] = [];
+  // 위험 워커와 그 경보의 확인 열쇠 — 산소포화도만 위험이면 측정 단위 열쇠, 아니면 null(09-29 · lib/spo2-ack-key).
+  const vitalDangers = useMemo(() => {
+    const out: { sample: VitalSample; ackKey: string | null }[] = [];
     for (const s of data.latest) {
       if (s.manualSos === true || s.fallDetected === true) continue;
-      const danger =
-        heartRateStatus(s.heartRate, workActivity(s)) === "danger" ||
+      const parts: VitalDangerParts = {
+        hr: heartRateStatus(s.heartRate, workActivity(s)) === "danger",
         // SpO₂ 는 신선한 측정(30분 이내)만 — 낡은 저산소 값이 경보를 계속 발화시키는 오탐 방지.
-        spo2Status(freshSpo2(s, now)) === "danger" ||
-        coreTempStatusC(freshCoreTemp(s.workerId)) === "danger";
-      if (danger) out.push(s);
+        spo2: spo2Status(freshSpo2(s, now)) === "danger",
+        core: coreTempStatusC(freshCoreTemp(s.workerId)) === "danger",
+      };
+      if (parts.hr || parts.spo2 || parts.core) out.push({ sample: s, ackKey: spo2AckKey(s, parts) });
     }
     return out;
   }, [data.latest, now]);
+  const dangerVitalWorkers = useMemo(() => vitalDangers.map((d) => d.sample), [vitalDangers]);
 
   // 생체 위험 자동 경보 — SOS 모달 우선, 이미 떠 있으면 skip, ack 안 된 첫 위험 워커 표시.
   useEffect(() => {
     if (activeSos || activeFallAlert || activeVitalAlert) return;
-    for (const s of dangerVitalWorkers) {
-      if (ackedVital.has(s.workerId)) continue;
+    for (const { sample: s, ackKey } of vitalDangers) {
+      if (isVitalAlertAcked(s.workerId, ackKey, ackedVital, ackedSpo2Keys)) continue;
+      activeVitalAckKeyRef.current = ackKey;
       setActiveVitalAlert(s);
       return;
     }
-  }, [dangerVitalWorkers, activeSos, activeFallAlert, activeVitalAlert, ackedVital]);
+  }, [vitalDangers, activeSos, activeFallAlert, activeVitalAlert, ackedVital, ackedSpo2Keys]);
 
   // 정상/주의로 복귀한 워커는 ack 해제 → 다음 위험 진입 시 재경보(WeatherAlertToast 패턴).
   useEffect(() => {
