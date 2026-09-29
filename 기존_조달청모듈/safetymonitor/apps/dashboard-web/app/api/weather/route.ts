@@ -39,6 +39,7 @@ type WeatherPayload = {
     obsSource?: "kma-ncst" | "open-meteo";
     /** 관측 시각(정시 ISO) — 실황은 40분~1시간 40분 지연될 수 있어 값의 나이를 함께 보인다. */
     obsAt?: string;
+    precipitationType?: number;
     /** WBGT(습구흑구온도 ℃) — 국제 표준 참고 지표. 법정 판정은 체감온도가 담당한다. 산출 실패 시 없음. */
     wbgt?: number;
     humidityPct: number;
@@ -362,6 +363,7 @@ async function fetchWeather(lat: number, lon: number): Promise<WeatherPayload> {
       // 판정 입력의 출처와 나이를 숨기지 않는다 — 실황은 40분~1시간 40분 지연될 수 있다.
       obsSource: obs ? "kma-ncst" : "open-meteo",
       obsAt: obs?.observedAt,
+      precipitationType: obs?.precipitationType,
       // WBGT(Liljegren 2008) — **참고 지표**다. 법정 폭염 판정은 체감온도가 담당하고 여기엔
       // 임계를 붙이지 않는다(ACGIH TLV 는 대사율이 필요해 별도 트랙). 산출 실패면 undefined.
       // ⚠ 입력 혼합 — 기온·습도·풍속은 기상청 관측, 일사량만 Open-Meteo(실황에 일사가 없다).

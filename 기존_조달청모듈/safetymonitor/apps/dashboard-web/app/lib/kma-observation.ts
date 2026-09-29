@@ -98,6 +98,8 @@ export type KmaObservation = {
   humidityPct: number;
   /** 풍속 m/s */
   windMs: number;
+  /** 초단기 강수형태 PTY. 미수신·알 수 없는 코드는 없음. */
+  precipitationType?: number;
   /** 관측 시각(정시) */
   observedAt: string;
 };
@@ -159,6 +161,7 @@ export async function fetchKmaObservation(
       humidityPct: humidityPct!,
       windMs: Number.isFinite(windMs) ? windMs! : 0,
       observedAt: observedAt.toISOString(),
+      precipitationType: parsePrecipitationType(items.find((i) => i.category === "PTY")?.obsrValue),
     };
     setCached(cacheKey, out);
     return out;
@@ -166,4 +169,11 @@ export async function fetchKmaObservation(
     // 상류 장애로 관제웹 전체가 멈추면 안 된다 — 폴백은 호출부 책임.
     return null;
   }
+}
+
+// 실황 서비스: https://www.data.go.kr/data/15084084/openapi.do
+// 기상청 초단기 코드: https://data.kma.go.kr/data/rmt/rmtList.do?code=410&pgmNo=571
+export function parsePrecipitationType(value: unknown): number | undefined {
+  if (typeof value !== "string" || !/^[0123567]$/.test(value.trim())) return undefined;
+  return Number(value.trim());
 }

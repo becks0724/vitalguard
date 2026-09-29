@@ -1,3 +1,4 @@
+import { appWeatherEffects } from "./app-weather-effects";
 // S 현장 화면의 읽기 모델. 관제 HTTP/인가를 거치지 않고 기존 조회·판정을 조합한다.
 import { GET as getAppWorkers } from "../app/api/app/admin/workers/route";
 import { warningsForLocation } from "../app/lib/kma";
@@ -57,6 +58,7 @@ export async function readWeatherStatus() {
     summary: `${severity === "normal" ? warning.summary : `${headline.itemLabel} ${headline.currentValue}`} · ${warning.sido}`,
     ...coords, source: weather.source, cached: weather.cached, stale: weather.stale,
     persisted: weather.persisted, fetchedAt: weather.fetchedAt, current: c, warning,
+    effects: appWeatherEffects(c),
   };
 }
 

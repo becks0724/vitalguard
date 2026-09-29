@@ -15,6 +15,7 @@ import * as power from "./gaspod-power";
 import * as vitalAge from "./vital-age";
 import * as workerSignal from "./worker-signal";
 import * as weatherRules from "./weather-rules";
+import * as weatherEffects from "./app-weather-effects";
 import { apparentTempKma } from "./apparent-temp";
 import type * as siteStatus from "./app-site-status";
 import type * as siteWeather from "./app-site-weather";
@@ -135,7 +136,7 @@ function harness(exposePii = false) {
     },
     "./aed-devices": aedDevices, "./aed-status": aedStatus,
     "./gaspod-power": loadModule<typeof power>("lib/gaspod-power.ts", {}),
-    "./worker-signal": workerSignal, "./weather-rules": weatherRules,
+    "./worker-signal": workerSignal, "./weather-rules": weatherRules, "./app-weather-effects": weatherEffects,
     "./app-site-weather": { readSiteWeather: async (...args: unknown[]) => {
       call("weather", args); fail("weather");
       if (state.pendingWeather) await state.pendingWeather;
@@ -358,8 +359,10 @@ test("기상은 관제 체감온도·순간풍속·특보·예비특보 규칙�
   const h = harness();
   h.state.current.apparentTempC = 33;
   let data = await (await h.GET(request())).json(); assert.equal(data.weather.level, "danger");
+  assert.equal(data.weather.effects.windDanger, false);
   h.state.current.apparentTempC = 20; h.state.current.windGustKmh = 110;
   data = await (await h.GET(request())).json(); assert.equal(data.weather.level, "danger");
+  assert.equal(data.weather.effects.windDanger, true);
   h.state.current.windGustKmh = 0; h.state.warning.severity = "danger"; h.state.warning.summary = "호우경보";
   data = await (await h.GET(request())).json(); assert.equal(data.weather.level, "danger");
   h.state.warning.severity = "normal"; h.state.warning.preliminarySeverity = "caution";
@@ -422,7 +425,7 @@ function weatherHarness() {
   const reader = loadModule<typeof siteWeather>("lib/app-site-weather.ts", {
     "./apparent-temp": { apparentTempKma }, "./wbgt": { computeWbgt: () => null },
     "../app/lib/kma-observation": { fetchKmaObservation: async () => ({
-      temperatureC: 24, humidityPct: 50, windMs: 2, observedAt: new FixtureDate().toISOString(),
+      temperatureC: 24, humidityPct: 50, windMs: 2, precipitationType: 3, observedAt: new FixtureDate().toISOString(),
     }) },
     "./db": { getLatestWeatherDaily: async () => { state.dbReads++; return state.daily; } },
   }, {
@@ -460,6 +463,7 @@ test("기상 캐시 5분 만료 시 신규 조회·동일 캐시 저장, 기상�
   assert.equal(weather.cached, false); assert.equal(weather.stale, false);
   assert.equal(weather.current.temperatureC, 24); // Open-Meteo 10℃ 대신 기상청 24℃
   assert.equal(weather.current.obsSource, "kma-ncst");
+  assert.equal(weather.current.precipitationType, 3);
   assert.equal(weather.current.apparentTempC, apparentTempKma(24, 50, 7.2));
   assert.equal(h.state.cache.get("35.10,126.90")?.ts, NOW);
   await h.readSiteWeather(35.1, 126.9);
