@@ -1,3 +1,4 @@
+import { weatherLabel } from "./weather-code-label";
 import { appWeatherEffects } from "./app-weather-effects";
 // S 현장 화면의 읽기 모델. 관제 HTTP/인가를 거치지 않고 기존 조회·판정을 조합한다.
 import { GET as getAppWorkers } from "../app/api/app/admin/workers/route";
@@ -44,21 +45,52 @@ export async function readWeatherStatus() {
     readSiteWeather(coords.lat, coords.lon), warningsForLocation(coords.lat, coords.lon),
   ]);
   const c = weather.current;
-  // WeatherStrip의 정책 6종 + 발효·예비특보. 기온·습도·WBGT는 참고값이다.
+  // 관제의 항목별 판정을 한 번 계산해 종합 요약과 앱 위젯에 함께 사용한다.
+  const metricEvaluations = {
+    apparent: evaluateApparentTemp(c.apparentTempC),
+    pm25: evaluatePM25(c.pm25), wind: evaluateWindKmh(c.windKmh, c.windGustKmh),
+    uv: evaluateUV(c.uvIndex), rain: evaluatePrecipitation(c.precipitationMm),
+  };
   const evaluations = [
     evaluateKmaWarning(warning), evaluateKmaPreliminary(warning),
-    evaluateApparentTemp(c.apparentTempC), evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
-    evaluatePM25(c.pm25), evaluateWindKmh(c.windKmh, c.windGustKmh),
-    evaluateUV(c.uvIndex), evaluatePrecipitation(c.precipitationMm),
+    metricEvaluations.apparent, evaluateDiscomfortIndex(c.temperatureC, c.humidityPct),
+    metricEvaluations.pm25, metricEvaluations.wind, metricEvaluations.uv, metricEvaluations.rain,
   ];
   const severity = worstAedSev(evaluations.map((e) => e.currentSeverity));
   const headline = evaluations.find((e) => e.currentSeverity === severity)!;
+  const conditionEvaluations = evaluations.filter((e) => e.itemKey !== "pm25");
+  const conditionSeverity = worstAedSev(conditionEvaluations.map((e) => e.currentSeverity));
+  const conditionHeadline = conditionEvaluations.find((e) => e.currentSeverity === conditionSeverity)!;
+  const numberOrNull = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : null;
+  const forecast = weather.daily7;
+
   return {
     ok: true as const, level: levelOf(severity),
     summary: `${severity === "normal" ? warning.summary : `${headline.itemLabel} ${headline.currentValue}`} · ${warning.sido}`,
     ...coords, source: weather.source, cached: weather.cached, stale: weather.stale,
     persisted: weather.persisted, fetchedAt: weather.fetchedAt, current: c, warning,
     effects: appWeatherEffects(c),
+    conditions: {
+      level: levelOf(conditionSeverity),
+      summary: `${conditionSeverity === "normal" ? warning.summary : `${conditionHeadline.itemLabel} ${conditionHeadline.currentValue}`} · ${warning.sido}`,
+    },
+    forecast: (forecast?.time ?? []).slice(0, 7).map((date: string, i: number) => {
+      const code = numberOrNull(forecast?.weatherCode?.[i]);
+      const probability = numberOrNull(forecast?.precipProbMax?.[i]);
+      return { date, weatherCode: code, label: code === null ? null : weatherLabel(code),
+        highC: numberOrNull(forecast?.tMax?.[i]), lowC: numberOrNull(forecast?.tMin?.[i]),
+        precipitationProbabilityPct: probability !== null && probability >= 0 && probability <= 100 ? probability : null };
+    }),
+    // null은 판정 없음이다. 참고값·미수신을 정상 또는 종합 danger로 채우지 않는다.
+    metricLevels: {
+      temperature: null, humidity: null, pm10: null, wbgt: null,
+      apparent: Number.isFinite(c.apparentTempC) ? levelOf(metricEvaluations.apparent.currentSeverity) : null,
+      pm25: Number.isFinite(c.pm25) ? levelOf(metricEvaluations.pm25.currentSeverity) : null,
+      wind: Number.isFinite(c.windKmh) && (c.windGustKmh === undefined || Number.isFinite(c.windGustKmh))
+        ? levelOf(metricEvaluations.wind.currentSeverity) : null,
+      uv: Number.isFinite(c.uvIndex) ? levelOf(metricEvaluations.uv.currentSeverity) : null,
+      rain: Number.isFinite(c.precipitationMm) ? levelOf(metricEvaluations.rain.currentSeverity) : null,
+    },
   };
 }
 
@@ -121,7 +153,7 @@ export async function readGasStatus() {
   ]);
   const sample = latest[0];
   if (!sample) {
-    return { ok: true as const, level: "idle" as const, summary: "가스 수신 대기", power, gases: [] };
+    return { ok: true as const, level: "idle" as const, summary: "가스 수신 대기", power, gases: [], environment: null };
   }
   const gases = [
     { key: "o2", gas: "O₂ 산소", value: sample.o2, unit: "%" as const, severity: o2Sev(sample.o2) },
@@ -138,6 +170,18 @@ export async function readGasStatus() {
     ok: true as const, level: levelOf(severity),
     summary: `${headline.gas} ${labels[severity]} · ${headline.loc}`,
     deviceId: sample.device_id, lastSeenAt: sample.received_at, power,
+    environment: {
+      source: "gaspod" as const,
+      temperatureC: Number.isFinite(sample.temp) ? sample.temp : null,
+      humidityPct: Number.isFinite(sample.humidity) ? sample.humidity : null,
+      pressureHpa: Number.isFinite(sample.pressure) ? sample.pressure : null,
+      checkedAt: new Date().toISOString(),
+      // 관제 IndoorEnvRows와 동일한 60초 수신 유효 기간. 앱에 임계/서버 시계를 복제하지 않는다.
+      validForMs: (() => {
+        const age = Date.now() - Date.parse(sample.received_at);
+        return Number.isFinite(age) && age >= 0 ? Math.max(0, 60_000 - age) : 0;
+      })(),
+    },
     // 2026-09-14 SPEC-d4-app-admin-routes 정정: 워치 생체 원시값은 개인정보·민감정보 보호를 위해 계속 금지한다.
     // 가스포드 측정값은 개인정보·민감정보가 아니므로 최신 1건의 값·단위를 허용한다.
     // O₂는 %, CO·H₂S는 raw ADC 그대로이며 ppm 환산은 가스 임계 v2 과제다.

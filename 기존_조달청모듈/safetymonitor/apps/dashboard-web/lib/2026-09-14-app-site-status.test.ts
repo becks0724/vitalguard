@@ -15,6 +15,7 @@ import * as power from "./gaspod-power";
 import * as vitalAge from "./vital-age";
 import * as workerSignal from "./worker-signal";
 import * as weatherRules from "./weather-rules";
+import * as weatherCode from "./weather-code-label";
 import * as weatherEffects from "./app-weather-effects";
 import { apparentTempKma } from "./apparent-temp";
 import type * as siteStatus from "./app-site-status";
@@ -99,6 +100,7 @@ function harness(exposePii = false) {
     address: "",
     geo: { ok: true, lat: 35.2, lon: 126.8 },
     daily: null as WeatherDailyRow | null,
+    forecast: { time: ["2026-09-14", "2026-09-15"], weatherCode: [0, 61], tMax: [27, 21], tMin: [19, 15], precipProbMax: [3, 4] as (number | null)[] },
     current: { weatherCode: 0, temperatureC: 20, apparentTempC: 20, humidityPct: 30,
       windKmh: 0, windGustKmh: 0, precipitationMm: 0, uvIndex: 0, pm25: 0 },
     warning: { source: "live", sido: "광주", warnings: [], severity: "normal", summary: "특보 없음",
@@ -136,12 +138,12 @@ function harness(exposePii = false) {
     },
     "./aed-devices": aedDevices, "./aed-status": aedStatus,
     "./gaspod-power": loadModule<typeof power>("lib/gaspod-power.ts", {}),
-    "./worker-signal": workerSignal, "./weather-rules": weatherRules, "./app-weather-effects": weatherEffects,
+    "./worker-signal": workerSignal, "./weather-rules": weatherRules, "./weather-code-label": weatherCode, "./app-weather-effects": weatherEffects,
     "./app-site-weather": { readSiteWeather: async (...args: unknown[]) => {
       call("weather", args); fail("weather");
       if (state.pendingWeather) await state.pendingWeather;
       return { cached: true, stale: false, persisted: false, source: "open-meteo",
-        fetchedAt: new FixtureDate().toISOString(), current: state.current };
+        fetchedAt: new FixtureDate().toISOString(), current: state.current, daily7: state.forecast };
     } },
     "./db": {
       getLatestSiteInfo: async () => ({ address: state.address }),
@@ -246,7 +248,7 @@ test("가스는 최신 1건만 반환한다 — 720행 이력·펌웨어 state �
   assert.equal(data.gas.summary, "CO 일산화탄소 주의 · 탱크 야드");
   assert.equal(data.gas.deviceId, "gaspod-01");
   assert.equal(data.gas.lastSeenAt, new FixtureDate().toISOString());
-  assert.deepEqual(Object.keys(data.gas).sort(), ["deviceId", "gases", "lastSeenAt", "level", "ok", "power", "summary"]);
+  assert.deepEqual(Object.keys(data.gas).sort(), ["deviceId", "environment", "gases", "lastSeenAt", "level", "ok", "power", "summary"]);
   assert.equal(data.gas.gases.length, 3);
   for (const gas of data.gas.gases) {
     assert.deepEqual(Object.keys(gas).sort(), ["gas", "key", "level", "loc", "unit", "value"]);
@@ -254,7 +256,7 @@ test("가스는 최신 1건만 반환한다 — 720행 이력·펌웨어 state �
   assert.deepEqual(data.gas.gases.map((g: { value: number }) => g.value), [20.9, 151, 10]);
   assert.deepEqual(h.state.calls.find((c) => c.name === "gas")?.args, [1]);
   assert.deepEqual(h.state.calls.find((c) => c.name === "power")?.args, [150]);
-  assert.doesNotMatch(JSON.stringify(data.gas), /mq7_raw|mq136_raw|vbat|humidity|pressure|"o2":|"temp":|"rows":|"latest":|"history":|acked|CLEAR|old-gaspod|9999/);
+  assert.doesNotMatch(JSON.stringify(data.gas), /mq7_raw|mq136_raw|vbat|"humidity":|"pressure":|"o2":|"temp":|"rows":|"latest":|"history":|acked|CLEAR|old-gaspod|9999/);
   assert.deepEqual(data.gas.power, power.gaspodPowerState(h.state.mins, NOW));
   assert.equal(data.gas.power.state, "full_on_power");
 });
@@ -493,4 +495,66 @@ test("기상 외부·캐시·DB 모두 값이 없으면 정상값을 만들지 �
   await assert.rejects(h.readSiteWeather(35.1, 126.9), /검증용 외부 조회 실패/);
   h.state.daily = { temperature_c: null } as WeatherDailyRow;
   await assert.rejects(h.readSiteWeather(35.1, 126.9), /검증용 외부 조회 실패/);
+});
+
+
+test("기상 위젯은 관제 항목별 판정과 동일하며 종합 위험을 다른 항목에 전파하지 않는다", async () => {
+  const h = harness();
+  const level = (severity: string) => severity === "caution" ? "warn" : severity;
+  for (const [temp, gust, uv, rain, pm25] of [
+    [20, 0, 0, 0, 0], [30.9, 35.9, 7.9, .9, 35.9], [31, 36, 8, 1, 36],
+    [33, 54, 11, 5, 76], [35, 108, 12, 10, 150], [-12, 0, 0, 0, 0], [-15, 0, 0, 0, 0],
+  ]) {
+    Object.assign(h.state.current, { apparentTempC: temp, windGustKmh: gust, uvIndex: uv, precipitationMm: rain, pm25 });
+    const data = await (await h.GET(request())).json();
+    assert.deepEqual(data.weather.metricLevels, {
+      temperature: null, humidity: null, pm10: null, wbgt: null,
+      apparent: level(weatherRules.evaluateApparentTemp(temp!).currentSeverity),
+      wind: level(weatherRules.evaluateWindKmh(0, gust).currentSeverity),
+      uv: level(weatherRules.evaluateUV(uv!).currentSeverity),
+      rain: level(weatherRules.evaluatePrecipitation(rain!).currentSeverity),
+      pm25: level(weatherRules.evaluatePM25(pm25).currentSeverity),
+    });
+  }
+  Object.assign(h.state.current, { apparentTempC: 20, windGustKmh: 0, uvIndex: 0, precipitationMm: 0, pm25: 42 });
+  h.state.warning.severity = "danger";
+  const data = await (await h.GET(request())).json();
+  assert.equal(data.weather.level, "danger");
+  assert.equal(data.weather.metricLevels.pm25, "warn");
+  assert.equal(data.weather.metricLevels.wind, "normal");
+  Object.assign(h.state.current, { pm25: undefined });
+  const missing = await (await h.GET(request())).json();
+  assert.equal(missing.weather.metricLevels.pm25, null);
+});
+
+
+test("실내 환경은 동일 가스포드 최신 표본의 온습도·hPa이며 실외 기상 실패와 독립이다", async () => {
+  const h = harness(); h.state.fail = "weather";
+  Object.assign(h.state.gas[0]!, { temp: 0, humidity: 0, pressure: 1008.4, received_at: new Date(NOW - 12_000).toISOString() });
+  let data = await (await h.GET(request())).json();
+  assert.equal(data.weather.ok, false);
+  assert.deepEqual(data.gas.environment, { source: "gaspod", temperatureC: 0, humidityPct: 0, pressureHpa: 1008.4,
+    checkedAt: new FixtureDate().toISOString(), validForMs: 48_000 });
+  Object.assign(h.state.gas[0]!, { received_at: new Date(NOW - 60_001).toISOString() });
+  data = await (await h.GET(request())).json(); assert.equal(data.gas.environment.validForMs, 0);
+  Object.assign(h.state.gas[0]!, { temp: NaN, pressure: Infinity, received_at: "bad" });
+  data = await (await h.GET(request())).json();
+  assert.equal(data.gas.environment.temperatureC, null); assert.equal(data.gas.environment.pressureHpa, null);
+  assert.equal(data.gas.environment.validForMs, 0);
+  h.state.gas = [];
+  data = await (await h.GET(request())).json(); assert.equal(data.gas.environment, null);
+});
+
+
+test("기상 요약에서 대기질을 분리하고 기존 일주일 예보의 실제 값만 전달한다", async () => {
+  const h = harness(); h.state.current.pm25 = 160;
+  h.state.forecast.precipProbMax[1] = null;
+  const data = await (await h.GET(request())).json();
+  assert.equal(data.weather.level, "danger");
+  assert.equal(data.weather.conditions.level, "normal");
+  assert.doesNotMatch(data.weather.conditions.summary, /미세먼지/);
+  assert.deepEqual(data.weather.forecast, [
+    { date: "2026-09-14", weatherCode: 0, label: "맑음", highC: 27, lowC: 19, precipitationProbabilityPct: 3 },
+    { date: "2026-09-15", weatherCode: 61, label: "비", highC: 21, lowC: 15, precipitationProbabilityPct: null },
+  ]);
 });
