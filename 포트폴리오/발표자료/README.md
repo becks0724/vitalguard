@@ -1,6 +1,6 @@
 # VitAlGuard 발표자료
 
-두 번의 심사 발표에 쓴 슬라이드 원본(PDF)과 전 장 미리보기. 편집 가능한 PPTX 는 [Releases](../../releases) 자산으로 첨부한다.
+두 번의 심사 발표에 쓴 슬라이드 원본(PDF)과 전 장 미리보기. 편집 가능한 PPTX 는 [Releases `portfolio-2026-10`](https://github.com/becks0724/vitalguard/releases/tag/portfolio-2026-10) 자산으로 첨부한다.
 
 | 발표 | 일자 | 분량 | 결과 | 파일 |
 |---|---|---|---|---|
