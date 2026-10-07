@@ -1,20 +1,22 @@
 # 의존성 취약점·업데이트 자동 감시 — 감사 SEC-SUPPLY-01 대응(무료 수단 중 유일한 상시 감시)
 version: 2
 updates:
-  # safetymonitor 모노레포(pnpm) — 보안 업데이트 중심, 노이즈 억제를 위해 주 1회.
+  # safetymonitor 모노레포(pnpm) — 보안 업데이트 중심.
+  # 2026-10-07 주 1회 → 월 1회(태곤 님 결정). 취약점 유입은 Verify safetymonitor 의 `pnpm audit --audit-level=high` 가
+  # push 마다 즉시 잡으므로, 여기서는 버전 올림 제안만 한 달에 한 번 묶어 받는다.
   - package-ecosystem: "npm"
     directory: "/기존_조달청모듈/safetymonitor"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 5
     # 메이저 버전 업은 수동 판단(호환성 리스크) — 보안 패치·마이너만 자동 제안.
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # GitHub Actions — SHA 핀 유지·보안 패치 추적.
+  # GitHub Actions — SHA 핀 유지·보안 패치 추적. 2026-10-07 npm 과 같이 월 1회로.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     open-pull-requests-limit: 3
