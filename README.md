@@ -43,6 +43,18 @@
 | 9/30 | 범정부 통합본선 아이디어 부문 **발표(A09)** |
 | 10/2 | 시연 영상 공개 · 포트폴리오 정리 |
 
+## 팀 · 역할
+
+팀 VitAlGuard 3인. 성명은 공개 전환 방침에 따라 표기하지 않는다(팀원 행은 각자 기입).
+
+| 구성원 | 담당 | 주요 산출물 |
+|---|---|---|
+| **김태곤** ([@rlaxorhs77-eng](https://github.com/rlaxorhs77-eng)) · 저장소 관리 | **DB 설계** — 신규 스키마 74표·RLS 149·트리거 146·마이그레이션 101, 법 요건 반영, 외부 감사 대응 · **현장 하드웨어** — GasPod ESP32 펌웨어 v4→v5·배터리 단독 OTA 실증·배터리 곡선 실측·케이스 설계, AED-alert 라즈베리파이 알람 · **담당관 태블릿 앱** — Compose 재작성 요구정의·UI/UX 계획·단계별 검수·실기기 검증(1.0→1.3.18) · **워치 ML 모델링** — 낙상 판정 모델 3종 학습·검증 | [`db/erd-vitalguard2/`](db/erd-vitalguard2/) · [`Final_GasPod/`](Final_GasPod/) · [`hardware/`](hardware/) · [`tablet-app/`](tablet-app/) · [`ML 3종 모듈/`](ML%203종%20모듈/) |
+| 팀원 A | _(담당 기입 — 예: iOS/watchOS 앱, 온디바이스 추론 연동)_ | _(산출물 경로 기입)_ |
+| 팀원 B | _(담당 기입 — 예: 관제 웹·서버, CCTV AI 엣지)_ | _(산출물 경로 기입)_ |
+
+> 팀원 행 작성 방법: 이 표의 자기 행에 담당·산출물 경로를 적고 PR 또는 직접 커밋. 성명 대신 "팀원 A/B" 또는 GitHub 핸들 중 하나로 통일한다.
+
 ## 시스템 구조 — 조달이 기준을 세우고, 현장 실측이 그 기준을 확인한다
 
 ```mermaid
@@ -78,12 +90,15 @@ flowchart TB
 | [`hardware/`](hardware/) | **현장 물리 장치** — AED 알람(라즈베리파이), 가스포드 요약·링크 |
 | [`Final_GasPod/`](Final_GasPod/) | 가스포드 v4.2 확정 문서·펌웨어·서버 연동 가이드 |
 | [`db/`](db/) | DB 스키마·감사·통합 문서 (fall_ml / imu_collect / integrated / audit 등) · **[`erd-vitalguard2/`](db/erd-vitalguard2/) 신규 스키마 ERD(74표·Mermaid)** |
-| [`Lenova idea tap 12.7/`](Lenova%20idea%20tap%2012.7/) | **담당관 태블릿 앱** — Compose/Kotlin `vitalguard_field_android`(현장 대시보드·경보·기록·사진·펜 주석·전송 이력) |
+| [`tablet-app/`](tablet-app/) | **담당관 태블릿 앱** — Compose/Kotlin `vitalguard_field_android`(현장 대시보드·경보·기록·사진·펜 주석·전송 이력) |
 | [`포트폴리오/`](포트폴리오/) | **포트폴리오 묶음** — [서비스 화면 112장](포트폴리오/서비스%20화면/) · [시연 영상](포트폴리오/시연%20영상/) · [발표자료 2종(PDF·슬라이드)](포트폴리오/발표자료/) · [공개 전환 점검표](포트폴리오/공개전환-점검표.md) |
 | [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai, ml/fall-detection, 구 PoC 앱 |
 | [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
 | [`docs/`](docs/) | 운영 인수인계·앱 조율 요청 등 작업 문서 |
+| [`archive/`](archive/) | 대체된 구현 보존본 — Flutter 태블릿 앱 1.0.0 (Compose 재작성 전) |
+
+라이선스: [All rights reserved](LICENSE) — 열람·평가 목적 공개, 재사용·재배포 불허.
 | [`VitAlGuard_logo/`](VitAlGuard_logo/) | 로고 에셋 (라이트/다크) |
 
 ## 기술 스택

@@ -1,0 +1,422 @@
+
+
+===== 2026-09-26 · 담당관 Compose 촬영 파일럿 · 코드 작성 완료 =====
+지시서: TASK-compose-pilot-capture.md
+작성 범위: tablet-app/app/vitalguard_field_android/ 전체 신규 생성.
+그 밖의 쓰기는 지시서 §2-5에서 지정한 이 astra-done.txt 덧붙이기뿐이다.
+Flutter 앱과 기존 워치/다른 저장소 파일은 읽기만 했다.
+Gradle·빌드·테스트·설치·네트워크 명령은 실행하지 않았다. local.properties도 만들지 않았다.
+
+작성 내용:
+- 독립 AGP 9.1.0 / Kotlin·Compose compiler 2.4.0 / Compose BOM 2026.09.00 / SDK 36 프로젝트.
+- Flutter 래퍼 9.3.1의 gradlew·gradlew.bat·jar·properties 그대로 복사, gradlew 실행 비트 지정.
+- applicationId/namespace com.vitalguard.field.pilot, JVM 17, minSdk 26, 기본 debug 서명.
+- 기록/CameraX 후면 촬영/결과 Compose 화면, ViewModel 상태와 회전 후 Activity Result 재연결.
+- 기존 네이티브 스캐너·위치·Geocoder·각인 재사용, OCR은 반드시 원본 경로 먼저.
+- 위치/주소/OCR/각인/저장 ms 계측, 원본 finally 정리, filesDir/outbox/<uuid>.jpg + .json 보관.
+- 파일럿 신원 파일럿/- 및 siteId=null, serverAddress는 항상 null. 서버 호출/로그인/전송 구현 없음.
+- 원본 capture_ocr/capture_time/capture_site_id 회귀 대응: JVM 24개 테스트 메서드, 시간 입력 8개를 확장하면 총 31개 케이스.
+- Compose 실기기 UI 테스트 2개, screenshot alpha15 프리뷰 테스트 1개 작성. 모두 미실행.
+- README-pilot.md에 JAVA_HOME·빌드·테스트·설치 명령, 빈 측정표, 범위 제외와 이유 기록.
+
+직접 확인한 정적 항목(빌드/실행 검증을 뜻하지 않음):
+- XML 5개 파싱, 단일 Activity 및 권한/회전 설정, 필수 문구·버튼 치수 선언 확인.
+- 래퍼 4개 파일 원본과 바이트 일치, 각인 createStampedJpeg는 application cache 참조만 변경한 원본과 일치.
+- Kotlin 순수 모델/파이프라인의 Android import 없음, 서버 주소 포트 null, 프리뷰/테스트 선언 수 확인.
+- 새 파일 개행/공백 및 파일 누락 확인. local.properties, .gradle, build 산출물 없음.
+- Flutter 원본 소스 136개 파일(기존 build/.dart_tool/.gradle/.git/.idea 제외)의 작업 전후 SHA-256 일치:
+  e49be4e7eb4f72da93a573803e0a01e3887e2b6fe44cab9a3ca814a469a9d7ee
+
+미확인 사항:
+- 미확인: Gradle 설정/의존성 해석, 지정 버전 상호 호환, Kotlin·Compose·리소스 컴파일, assembleDebug 성공 여부.
+- 미확인: testDebugUnitTest 실행과 31개 JVM 케이스의 성공 여부.
+- 미확인: connectedDebugAndroidTest의 2개 UI 테스트 성공 여부.
+- 미확인: updateDebugScreenshotTest/validateDebugScreenshotTest 호스트 실행, 참조 PNG·실제 레이아웃·보고서. 기준 이미지는 아직 생성하지 않았다.
+- 미확인: screenshot alpha15의 이 프로젝트 한글 경로 오류 재현 및 ASCII 복사본 우회. 기존 워치에 같은 오류/우회 이력이 있어 README에 근거와 절차를 적었다.
+- 미확인: 실기기 설치·첫 기동·기존 Flutter 앱과 공존, cold/warm 빌드·테스트·설치 기동 시간. 측정표는 빈 칸이다.
+- 미확인: CameraX 장치 준비/촬영·권한 거절·일반 오류, 스캐너 최초 다운로드·여러 페이지·취소·오프라인 동작.
+- 미확인: 위치 권한/정확도·최근 좌표/12초 폴백·Geocoder·한국어 OCR·EXIF 방향·각인/리사이즈 JPEG 실제 결과.
+- 미확인: 실기기 JPEG/JSON 쌍 저장과 읽기, 원본/중간 파일 정리, 공간 부족/부분 실패 처리, 단계별 ms 실제 측정값.
+- 미확인: 카메라/권한 대화상자/스캐너/OCR·저장/결과 표시 중 회전, 866dp·340dpi 세로·가로/큰 글꼴/시스템 바 실제 배치.
+- 범위 제외: 서버 주소·로그인·전송·현장 배정·주석/메모 편집, 프로세스 사망 뒤 작업/기존 outbox 목록 자동 복원. 저장 JPEG/JSON 자체는 유지하도록 작성했다.
+
+생성한 파일 목록(기준: tablet-app/app/vitalguard_field_android/):
+- .gitignore
+- README-pilot.md
+- app/build.gradle.kts
+- app/src/androidTest/kotlin/com/vitalguard/field/pilot/CaptureScreensTest.kt
+- app/src/main/AndroidManifest.xml
+- app/src/main/kotlin/com/vitalguard/field/pilot/CaptureViewModel.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/MainActivity.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/capture/CaptureModels.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/capture/CaptureNative.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/capture/CapturePipeline.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/capture/DeviceCapturePipelinePort.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/capture/TaskAwait.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/ui/CameraRoute.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/ui/CameraScreen.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/ui/PilotTheme.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/ui/RecordScreen.kt
+- app/src/main/kotlin/com/vitalguard/field/pilot/ui/ResultScreen.kt
+- app/src/main/res/drawable/ic_back.xml
+- app/src/main/res/drawable/ic_camera.xml
+- app/src/main/res/drawable/ic_document_scan.xml
+- app/src/main/res/values/styles.xml
+- app/src/screenshotTest/kotlin/com/vitalguard/field/pilot/RecordScreenPreviewTest.kt
+- app/src/test/kotlin/com/vitalguard/field/pilot/capture/CaptureLogicTest.kt
+- app/src/test/kotlin/com/vitalguard/field/pilot/capture/CapturePipelineTest.kt
+- app/src/test/kotlin/com/vitalguard/field/pilot/capture/CaptureSiteIdTest.kt
+- app/src/test/kotlin/com/vitalguard/field/pilot/capture/CaptureTimeTest.kt
+- app/src/test/kotlin/com/vitalguard/field/pilot/capture/FakeCapturePort.kt
+- build.gradle.kts
+- gradle.properties
+- gradle/wrapper/gradle-wrapper.jar
+- gradle/wrapper/gradle-wrapper.properties
+- gradlew
+- gradlew.bat
+- settings.gradle.kts
+추가 기록: tablet-app/plan-draft/astra-done.txt (이 항목을 append, 기존 내용 유지)
+
+
+=== 2026-09-26 TASK-compose-main-stage1.md — 담당관 메인 Compose 1단계 작성 ===
+- 새 프로젝트: tablet-app/app/vitalguard_field_android/ (촬영 파일럿은 별도 경로 그대로 유지).
+- 작성 범위: 앱 진입/테마, 로그인·TOTP·역할 거부·세션 복원/갱신/잠금/로그아웃, Keystore 토큰·계정별 파일 저장, 레일·수신 바·배경·경보 슬롯, 현장 요약·폴링·403·stale, 나머지 탭 자리 화면.
+- HTTP는 원본의 세션 4개 + site-info + site-status만 구현. 나머지 계약은 ApiFailure("다음 단계"). 결과 불명 쓰기 자동 재전송/오프라인 경보 예약 없음.
+- debug 앱 ID com.vitalguard.field.dev / release com.vitalguard.field. release 서명·local.properties는 작성하지 않음.
+- Kotlin 소스 40개, JVM 테스트 메서드 56개, Compose UI 테스트 메서드 8개, 고정 프리뷰 2개(866dp·340dpi) 작성. 모두 실행 미확인.
+- 정적 점검: Flutter·파일럿 참조 원본 171개 SHA-256 일치, 복사한 wrapper/플러그인/속성 원본 일치, XML 15개 파싱 및 drawable 참조/필수 testTag/비보간 한국어 문구 대조. Kotlin/KTS 괄호 짝 점검은 컴파일 결과가 아님.
+- 원본 Flutter·파일럿·기타 저장소 파일을 수정하지 않음. 예외는 지시서가 지정한 이 완료 기록 append뿐이며 기존 바이트를 유지함.
+- README.md: 구조·API/저장 계약·단계 범위·테스트 대응표·JBR/모의 빌드/설치/ASCII 스크린샷 후속 명령 포함.
+- Navigation Compose는 네트워크 확인 없이 최신 안정판만 해석하도록 latest.release + 사전판 제외 규칙을 설정. 실제 선택 버전은 미확인. 후속 실행자가 -PnavigationComposeVersion=<확인한 안정판>으로 고정하도록 README에 명시.
+- 미확인: Gradle 의존성 해석, Navigation 정확한 최신 안정판 버전과 호환성, Kotlin/Compose 컴파일, APK 생성.
+- 미확인: JVM 테스트·Android UI 테스트·스크린샷 update/validate 실행, 참조 PNG/렌더링/시각 검수.
+- 미확인: 실기기 설치·기동·기존 Flutter 앱 공존, 회전·분할창·글꼴 확대·IME/시스템/제스처 인셋·터치/펜/접근성.
+- 미확인: 실서버 인증/TOTP/권한/세션 갱신·오프라인 복원/재연결, 60초 폴링·5분 stale·403 복구의 실기기 동작.
+- 미확인: 기기 Keystore 암복호화·파일 영속화/장애 복구, release 서명·Flutter 데이터/덮어 설치 호환.
+- 지시대로 Gradle·네트워크 명령·빌드·테스트·설치를 실행하지 않음. 실행 결과는 전부 미확인.
+
+생성한 파일 목록 (기준: tablet-app/app/vitalguard_field_android/):
+- .gitignore
+- README.md
+- app/build.gradle.kts
+- app/src/androidTest/kotlin/com/vitalguard/field/CommonStatesComposeTest.kt
+- app/src/androidTest/kotlin/com/vitalguard/field/FieldAppComposeTest.kt
+- app/src/main/AndroidManifest.xml
+- app/src/main/kotlin/com/vitalguard/field/FieldApp.kt
+- app/src/main/kotlin/com/vitalguard/field/FieldApplication.kt
+- app/src/main/kotlin/com/vitalguard/field/FieldViewModel.kt
+- app/src/main/kotlin/com/vitalguard/field/MainActivity.kt
+- app/src/main/kotlin/com/vitalguard/field/data/contracts/FieldContracts.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/DeviceLocalStore.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/HttpUrlConnectionTransport.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/LiveGateway.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/LocalStorePaths.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/NetworkNative.kt
+- app/src/main/kotlin/com/vitalguard/field/data/live/QueuedFileStore.kt
+- app/src/main/kotlin/com/vitalguard/field/data/mock/MemoryStore.kt
+- app/src/main/kotlin/com/vitalguard/field/data/mock/MockGateway.kt
+- app/src/main/kotlin/com/vitalguard/field/data/models/Json.kt
+- app/src/main/kotlin/com/vitalguard/field/data/models/ServerModels.kt
+- app/src/main/kotlin/com/vitalguard/field/data/models/SiteStatus.kt
+- app/src/main/kotlin/com/vitalguard/field/data/session/FieldCoordinator.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/auth/AuthScreen.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/auth/AuthUiController.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/placeholder/PlaceholderScreen.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/shell/FieldShell.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/shell/ShellController.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/shell/VgBackground.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/site/SiteScreen.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/site/SiteSummaryController.kt
+- app/src/main/kotlin/com/vitalguard/field/ui/theme/VgTheme.kt
+- app/src/main/res/drawable/ic_alert.xml
+- app/src/main/res/drawable/ic_chevron_left.xml
+- app/src/main/res/drawable/ic_chevron_right.xml
+- app/src/main/res/drawable/ic_eye.xml
+- app/src/main/res/drawable/ic_eye_off.xml
+- app/src/main/res/drawable/ic_logout.xml
+- app/src/main/res/drawable/ic_outbox.xml
+- app/src/main/res/drawable/ic_person.xml
+- app/src/main/res/drawable/ic_record.xml
+- app/src/main/res/drawable/ic_refresh.xml
+- app/src/main/res/drawable/ic_settings.xml
+- app/src/main/res/drawable/ic_site.xml
+- app/src/main/res/drawable/ic_video.xml
+- app/src/main/res/values/styles.xml
+- app/src/screenshotTest/kotlin/com/vitalguard/field/Stage1PreviewTest.kt
+- app/src/test/kotlin/com/vitalguard/field/AuthUiControllerTest.kt
+- app/src/test/kotlin/com/vitalguard/field/BackgroundContrastTest.kt
+- app/src/test/kotlin/com/vitalguard/field/FieldCoordinatorTest.kt
+- app/src/test/kotlin/com/vitalguard/field/HttpTransportTest.kt
+- app/src/test/kotlin/com/vitalguard/field/LocalStoreTest.kt
+- app/src/test/kotlin/com/vitalguard/field/LoginGatewayTest.kt
+- app/src/test/kotlin/com/vitalguard/field/OfflineRestoreTest.kt
+- app/src/test/kotlin/com/vitalguard/field/ShellStateTest.kt
+- app/src/test/kotlin/com/vitalguard/field/SitePollingTest.kt
+- app/src/test/kotlin/com/vitalguard/field/SiteStatusModelTest.kt
+- app/src/test/kotlin/com/vitalguard/field/TestSupport.kt
+- build.gradle.kts
+- gradle.properties
+- gradle/wrapper/gradle-wrapper.jar
+- gradle/wrapper/gradle-wrapper.properties
+- gradlew
+- gradlew.bat
+- settings.gradle.kts
+- source-baseline.json
+- static-audit.json
+추가 기록: tablet-app/plan-draft/astra-done.txt (기존 내용 유지, 이 항목만 append)
+
+
+=== 2026-09-26 TASK-compose-main-stage1-fix1.md — 메인 Compose 1단계 후속 수정 1 ===
+- 수정 범위: vitalguard_field_android/ 안의 5개 파일과 지시서가 지정한 이 완료 기록 append.
+- 재현 근거: 지시서의 실기기 결과(123 입력 → Activity 재생성 → 456 입력이 456123으로 삽입됨)를 사용했다. 이번 작업에서 실기기 재현/재검증은 하지 않았다.
+- 커서 수정: 지시서 B 방식. AuthScreen의 아이디·비밀번호·인증번호를 공통 rememberSaveable TextFieldValue 상태와 값 오버로드로 연결했다. 최초 값과 외부 form 문자열 변경은 TextRange(text.length)로 끝에 맞추고, 일반 입력의 선택 범위·IME 조합은 유지한다. 재생성 시 ViewModel의 문자열과 저장된 선택 범위로 편집값을 복원하므로 입력 끝의 커서를 유지하도록 했다.
+- Saver에는 선택 범위의 정수 2개만 넣는다. 비밀번호·인증번호 문자열은 Bundle/SavedStateHandle/파일로 저장하지 않는다.
+- AuthUiController와 code()의 ASCII 숫자 6자리 필터는 그대로 유지했다. 취소·실패 뒤 비밀번호 초기화도 외부 문자열 동기화 경로를 사용한다.
+- Manifest에 @mipmap/ic_launcher, @mipmap/ic_launcher_round, @string/app_name을 연결했다. values/strings.xml 기본 이름은 VitAlGuard 현장, buildTypes.debug의 resValue는 VitAlGuard 현장 (dev)이다. release에는 이름 재정의를 넣지 않았다.
+- source-baseline.json과 static-audit.json은 프로젝트 루트 .gitignore에 명시했다. git check-ignore로 두 파일의 제외 적용을 확인했다.
+- 수정 전후 SHA-256 대조: 기존 테스트 14개 파일(문제의 FieldAppComposeTest 포함), 아이콘 PNG/XML 22개 파일, AuthUiController와 기존 LocalStoreTest/QueuedFileStore 보정 모두 바이트 일치. 테스트는 수정하지 않았다.
+- 정적 점검: Manifest/리소스 XML 18개 파싱, 아이콘 5개 density와 적응형 background/foreground/monochrome 참조, debug/release 이름 선언, 세 TextFieldValue 연결과 기존 숫자 필터, 변경 파일 공백/개행 확인. 이는 컴파일/테스트 성공을 뜻하지 않는다.
+- Gradle·빌드·JVM/Compose 테스트·스크린샷·설치·네트워크 명령은 실행하지 않았다.
+- 미확인: 수정 후 Kotlin/Compose/리소스 컴파일, assembleDebug, JVM 56개 및 Compose 8개 테스트 통과 여부. 특히 mainStartsAtLoginAndMockTotpSurvivesActivityRecreation의 최종 ready 도달은 실기기 재검증 필요.
+- 미확인: 세 입력란의 실제 회전/분할창/IME 동작과 커서 표시, 런처의 아이콘·기본/debug 앱 이름 표시.
+
+변경 파일 (기준: tablet-app/app/vitalguard_field_android/):
+- .gitignore
+- app/build.gradle.kts
+- app/src/main/AndroidManifest.xml
+- app/src/main/kotlin/com/vitalguard/field/ui/auth/AuthScreen.kt
+- app/src/main/res/values/strings.xml (추가)
+추가 기록: tablet-app/plan-draft/astra-done.txt (기존 바이트 유지, 이 항목만 append)
+
+
+=== 2026-09-26 TASK-compose-main-stage2a.md — 메인 Compose 2a 작성·로컬 검증 ===
+- 새 Android 앱 내부에 전송함·촬영/스캔·보낼 기록·로컬 사진 상세·전송 상태·ActionDock·기록 NavHost를 구현했다.
+- 수정 범위는 vitalguard_field_android/이며, 지시서 §3에서 지정한 이 파일에는 기존 바이트를 보존하고 이 완료 기록만 추가했다.
+  Flutter·촬영 파일럿·다른 프로젝트는 읽기만 했다. 작업 도중 외부에서 바뀐 런처 PNG는 쓰거나 되돌리지 않았다.
+- OutboxController: StateFlow 스냅숏, Mutex 원장 큐, UUID v4, 같은 sourceKey/내용 재사용, bytes→원장 저장,
+  sending 저장 실패 시 HTTP 금지, sending→uncertain 복구, 원본 JSON 키와 schemaVersion 1/outbox:v1 호환.
+  사진 영수증 확인 후 생성 순서 딸린 전송, 단일 비행, 요청 때만 서버 참조 합성, 401/403/404 원문 문구.
+  조회 50개 배치·자동 30초 제한·조회 우선, absent/오류/계정 전환에서도 자동 POST 없음.
+  묶음 완료 파일/미리보기/초안 정리·메타 유지, 7일 초과 만료·legacy 계정별 1회 정리.
+- LiveGateway/HttpUrlConnectionTransport: app-media JPEG/PNG/잉크 multipart와 음성, 텍스트 댓글, 주소 display,
+  작업 조회 입력/응답 검증, 업로드 60초·본문 30초, 작업 ID·영수증·deduplicated 검증. MockGateway/MockLookupGateway 확장.
+- 촬영: 파일럿 native/OCR/CameraX 이식, saveLocal→enqueue(photo/waiting), controller 주소→기기 추정 폴백,
+  시작 계정·현재 배정 site_id·JWT name/workerId 고정, 원본 finally 삭제. 1장 상세/다중·부분 실패 목록 분기.
+- 화면: 원문 문구·키·필터·작성 현장 그룹·오프라인 버튼 조건·미등록 확인 대화상자·재로그인 signOut,
+  전경 복귀 purge와 활성 탭 GET, 로컬 사진/딸린 항목 상세와 삭제 확인, 완료 목록 복귀.
+  ActionPlacement는 계정별 읽기만, ActionDock 폭/높이·제스처 인셋, NavHost/SaveableStateHolder로 스택·스크롤 보관.
+- 2b 제외: 주석 편집기·메모/음성 입력·녹음기·세션 복구. 진입 버튼은 원문 활성 조건 + “다음 단계(2b)에서 옮깁니다” 스낵바.
+- 실행 확인: Gradle 대신 기존 캐시의 Kotlin 2.4.0 컴파일러/JUnit을 직접 실행하여 순수 JVM 테스트 165개 통과.
+  기존 순수 회귀 포함. Android/Compose 의존 BackgroundContrastTest는 제외. 실제 네트워크/HTTP 서버를 열지 않았다.
+- 실행 확인: main/androidTest/screenshotTest 전체 Kotlin/Compose 소스 API 컴파일 통과.
+  캐시 AAR/JAR·Android 37.0 android.jar·R/BuildConfig 이름 스텁 검사이며 Gradle 빌드/리소스 링크/APK 생성은 아니다.
+  사용 Navigation 캐시는 2.10.2; Gradle이 이후 선택할 버전은 미확인.
+- 정적 확인: XML 20개, drawable 참조 15개, 순수 Kotlin 경계 8개, native 복사 3개, 필수 문구·키·공백/개행.
+  기존 source-baseline.json의 Flutter lib/test·파일럿 Kotlin 114개 SHA-256이 일치했다.
+- 신규 Android 계측 테스트 15개와 프리뷰 2개 소스 작성. 실제 계측 실행·참조 PNG·렌더링·시각 검수는 미확인.
+- 미확인: Gradle 의존성 해석/assemble/test·리소스 링크·manifest merge·APK/설치·실기기 촬영/스캔/OCR/위치,
+  회전·탭 스택/스크롤·제스처/큰 글꼴·실서버·기존 Flutter 경로/Keystore/서명/덮어 설치·장애/용량 부족 실기기 동작.
+- Gradle·네트워크·ADB·설치는 실행하지 않았다. README 2a 절에 구조·2b 경계·검증 범위·미확인을 명시했다.
+- 상세 기록: app/vitalguard_field_android/plan-draft/stage2a-verification.md 및 stage2a-static-audit.json.
+- 재현 도구: tools/check-jvm-offline.py, tools/check-android-kotlin-offline.py. 캐시가 없으면 다운로드 없이 중단한다.
+
+
+=== 2026-09-27 TASK-compose-main-stage2b.md — 메인 Compose 2b 이어서 완성·로컬 검증 ===
+- 이전 실행에서 중단된 audio/·data/contracts/VoiceRecorder.kt·data/mock/MockVoiceRecorder.kt·data/record/ 파일을 먼저 읽었다.
+  같은 파일을 이어서 완성하고 화면/앱 연결을 추가했다. 녹음기/초안 계약·구현 선언을 중복 생성하지 않았다.
+- 코드·테스트·README·검증 파일 수정 범위는 app/vitalguard_field_android/다.
+  지시서 §3에서 지정한 이 완료 로그만 기존 바이트를 보존해 append했다. Flutter·파일럿·다른 앱은 읽기만 했다.
+- R-04: 원본 정규화 잉크 모델/지우개 전체 획 삭제/옛 지우개 복원/v:1 JSON, 4개 도구·3개 굵기·3개 색,
+  56dp 툴바·180×64 저장·960dp ActionDock, undo/전체 지우기 확인/원본 보기/폭 맞춤/Back 보관 확인을 연결했다.
+  Canvas + raw pointerInput에서 stylus만 그리며 touch는 이동·1~4배 핀치다. pressure·좌표 4자리·압력 2자리,
+  1px 미만 이동 버림·펜 접촉 중 손바닥 무시, ACTION_CANCEL/FLAG_CANCELED/포인터 취소 시 진행 획과 지우개 폐기를 처리했다.
+  회전/백그라운드는 받은 점까지 확정하고 즉시 초안 보관한다. 오류 슬롯·레일·경보 슬롯은 필기 중 레이아웃을 바꾸지 않는다.
+- 잉크 저장: annotation:<id> 원문 JSON/키/리비전, 2 MiB 검사, 이전 잉크 전송 중·불명·완료 거부,
+  이전 리비전 discard 후 dependsOn/sourceKey/annotationDraftId/draftKeys/previewBytes로 로컬 enqueue한다.
+  PNG는 원본 크기 mutable 비트맵 한 장에 직접 그린다. 미리보기만 샘플링하며 저장 결과는 원본 해상도다.
+- R-06: 관리자 기록 원문 안내·메모 입력·말로 입력·펜 편집기·녹음, 최대 5개 STT 후보 선택/수정/명시적 전체 확인,
+  메모 저장과 원문 문구를 구현했다. 조치수준 칩은 없다. 미확인 후보는 초안·Bundle·진단 로그에 쓰지 않는다.
+  선택 범위 정수만 saved state에 보관한다. IME 강제 없음. 뒤로/탭 이탈/백그라운드/lock에서 글·음성을 보존하고 STT를 중단한다.
+- 음성: 기존 VoiceCommentDraft의 시작/정지/미리듣기/취소/다시 녹음/저장/자동 정지 문구/1초 표시,
+  voice-comment-draft:<id>(+:audio)·[owner,mediaId] recorderKey·sourceKey를 유지했다.
+  종료 콜백 전 프로세스가 사라진 경우와 native 캐시 유실을 복구하고, enqueue 직후 메타 쓰기 전 중단도 중복 저장하지 않는다.
+  늦게 끝난 파일 읽기/다시 녹음이 백그라운드 pause 뒤 재생·녹음을 다시 시작하지 않게 했다.
+- 네이티브: 원본 Kotlin RecorderNative/STT의 Flutter 채널을 Flow/계약으로 연결했다.
+  AAC ADTS 저널/완성 프레임 복구/M4A·MediaPlayer·180초/10 MiB 상한·백그라운드 정지,
+  API 31+ 온디바이스 SpeechRecognizer·원문 이벤트명/runId/timeout·마이크 권한 요청을 구현했다.
+  RECORD_AUDIO·RecognitionService query 추가. 권한 host만 Activity에 두고 회전 뒤 재연결하며 늦은 결과를 격리한다.
+  모의 녹음/STT는 마이크·HTTP 없이 동작한다. 신규 라이브러리 없음. 진단 화면·온라인 STT fallback 없음.
+- 세션: RecordWorkspace를 FieldViewModel이 소유하고 기존 FieldCoordinator.beforeLock에 전체 보관을 연결했다.
+  셸 첫 프레임에 계정별 record:active-draft를 읽어 사진 상세 → editor/input 순으로 복원한다.
+  없는/완료된 묶음은 세션만 닫고 실패 문구는 원문 그대로다. NavController는 계정 셸에 두어 탭이 가려져도 같은 스택을 유지한다.
+  편집기 동안 레일 접힘·펼치기 금지·경보 표시 지연. 원문 키/문구와 관리자 기록/서버 판정 분리를 유지했다.
+- 실행 확인: 캐시 Kotlin 2.4.0 컴파일러/JUnit 직접 실행, 순수 JVM 215개 통과(기존 165 + 2b 50).
+  InkStrokeTest·InkEditorTest·RecordInputTest·VoiceDraftTest·RecordRecoveryTest를 추가했다.
+  Android/Compose 경계인 기존 BackgroundContrastTest는 이 실행에서 제외했다.
+- 실행 확인: main/androidTest/screenshotTest 전체 Kotlin/Compose 소스 API 컴파일 통과.
+  캐시 AAR/JAR·Android 37.0·Compose compiler 2.4.0·Navigation 2.10.2·R/BuildConfig 이름 스텁 검사다.
+  Gradle 의존성 해석·리소스 링크·manifest merge·APK 생성·기기 실행을 검증한 것은 아니다.
+- 정적 확인: XML 20개, drawable 참조 15개, 순수 Kotlin 경계 9개, 원문 문구/키 29개, 녹음/초안 선언 중복 없음,
+  신규 라이브러리 0개, 원본 Flutter lib/test/native·촬영 파일럿 Kotlin 120개 SHA-256 기준 일치.
+- 신규 Android 계측 12개: RecordEditingComposeTest 8, InkRendererAndroidTest 2, MicrophoneAccessTest 2.
+  프리뷰 각 1개: RecordEditorPreview/RecordInputPreview(866×1385dp·340dpi·ko). 소스 작성·컴파일만 확인했다.
+- 미확인: Gradle 전체 빌드/계측/리소스·APK 설치, 신규 Android 계측 실제 실행, 실제 PNG/시각 검수,
+  TB373FU 펜/팜 리젝션·회전/분할창/IME/큰 글꼴·4160px 메모리, 실제 권한/녹음/재생/온디바이스 한국어 STT,
+  실제 프로세스 강제 종료 ADTS 복구·저장 공간 부족, 실서버/관제웹·Flutter 데이터/서명 호환.
+- Gradle·네트워크·ADB·설치는 실행하지 않았다. README 2b 절과 아래 검증 기록에 구현/검사/미확인을 구분했다.
+- 상세: app/vitalguard_field_android/plan-draft/stage2b-verification.md, stage2b-static-audit.json.
+- 재현: tools/check-jvm-offline.py, tools/check-android-kotlin-offline.py, tools/check-stage2b-static.py.
+
+
+[2026-09-27 · Compose 메인 앱 2c · Codex]
+- 지시서: TASK-compose-main-stage2c.md. 코드/테스트/문서는 app/vitalguard_field_android 안에서만 변경했고,
+  §4가 지정한 이 완료 로그만 예외로 덧붙였다. app 모듈의 ../../../plan-draft 경로가 이 기존 로그를 가리킨다.
+  웹·Flutter·촬영 파일럿은 읽기만 했고 기존 외부 변경 파일은 보존했다. Gradle·네트워크·ADB·설치를 실행하지 않았다.
+- 기록 탭: RecordCalendarScreen/RecordCalendarController. 866dp에서 좌측 미니 월간 + 우측 주간,
+  760dp 미만에서는 위/아래 배치. 일요일 시작·6×7 균등 월간·오늘 반투명 원·선택 채운 원/선택 우선,
+  00~24시·44dp·최초 07시·격자만 스크롤(최대 640dp). 날짜/시간 블록은 날짜별 목록 시트를 연다.
+  서류 스캔/사진 촬영 FAB 두 개, 미확인 배지·토스트·추가 헤더 진입점 없음.
+- 달력 데이터: 기존 CalendarMedia/OutboxEntry를 재사용해 주간 from/to GET과 로컬 기록을 합친다.
+  client_operation_id/clientOperationId·sourceKey·서버 receipt id로 중복 제거, 사진/음성 건수와 상태 우선순위,
+  촬영 시간대 배치·시각 미상 종일 띠를 구현했다. 계정/주간 변경 후 늦은 응답은 격리한다.
+- 자동 전송: 상세 뒤로/달력으로/탭 이탈/onStop에서 초안·진행 저장을 기다린 뒤 autoSendReady를 영속화하고 sendBundle.
+  회전은 상세 닫힘으로 취급하지 않는다. 여러 장 스캔은 첫 장 상세를 열고 닫을 때 해당 촬영 묶음을 전송한다.
+  ConnectivityWatcher의 registerDefaultNetworkCallback/VALIDATED 관찰 + 기존 markOnline으로 오프라인 상태를 갱신한다.
+  waiting와 명확한 전송 전 네트워크 failed만 자동 재시도한다. 일반 failed는 [전송], uncertain은 기존 조회/사람 확인 규칙.
+  사진 다음 딸린 항목 순서·동시 전송 합류·outbox:v1/schemaVersion 1·기존 작업 ID를 유지했다.
+- 완료 사진/서버 사진: 기존 원장의 완료 참조를 사용하고 새 주석/메모/음성만 보낸다. 원본 사진을 재전송/수정하지 않는다.
+  미확정 STT·미저장 주석·저장 전 음성 초안은 완료 정리로 삭제하지 않는다. 미전송 추가분의 부모 영수증은 보존한다.
+  완료 이력 7일 정리 유지. download-url API + 계정/ID별 cacheDir/calendar-media 7일 캐시를 연결했다.
+- 삭제: 서버 DELETE 성공 뒤 로컬 정리. 403 MEDIA_DELETE_WINDOW_EXPIRED와
+  '삭제 유예 시간(10분)이 지났습니다'를 그대로 보존/표시하고 기기 파일을 남긴다.
+- 전송함: '전송 이력', 대기/검토 UI 제거. 완료 확인 시각/작업 ID·실패 전송·불명 사람 확인·전송 중 표시.
+  MainActivity launchMode=singleTask. 명시 실행 뒤 런처 실행, MainActivity Hist 하나를 검사하는 계측을 작성했다.
+- 검사 통과: 순수 JVM 245개(기존 215 + 새 30), 캐시 Kotlin 직접 실행.
+  main/androidTest/screenshotTest 전체 Kotlin/Compose 소스 API 컴파일 통과(R/BuildConfig 스텁).
+  구조 검사: XML 20개, drawable 참조 15개, 원본 Flutter/파일럿 120개 해시 일치, 신규 의존성 0, diff 공백 검사 통과.
+- 테스트 갱신: 기존 HoldBundleComposeTest→RecordCalendarFlowComposeTest, HoldBundleContractTest→RecordBundleContractTest.
+  기존 테스트를 없애지 않고 달력/닫힘/자동 전송 규칙으로 이름과 의도를 갱신했다.
+  RecordCalendarPreview(2026-09-27·로컬 2건+서버 1건)/OutboxHistoryPreview는 866×1385dp·340dpi·ko 고정 표본.
+- 확인된 서버 소스 제약: download-url/route.ts는 verifyBasicAuth만 사용하며 앱 JWT 분기가 없다.
+  목록 API의 verifyAppJwt 분기와 다르다. 범위 밖 서버 코드는 수정하지 않았다. 실제 배포 상태/서버 사진 열람은 미확인이고
+  지정 다운로드 API의 앱 JWT 수용 여부는 서버 작업에서 확인/해결해야 한다.
+- 미확인: Gradle/APK/리소스·manifest 병합·Android 계측 실제 실행·PNG 생성/시각 검수,
+  TB373FU Wi-Fi 전환/백그라운드/프로세스 종료/펜·음성/회전/분할창/큰 글꼴,
+  singleTask 실기기 Hist, 실서버 다운로드/추가분 전송/삭제 유예 E2E. 소스/JVM 통과를 실기기 정상으로 기록하지 않았다.
+- 상세: app/vitalguard_field_android/README.md 2c 절,
+  app/vitalguard_field_android/plan-draft/stage2c-verification.md, stage2c-static-audit.json.
+- 재현(Gradle/네트워크 없음): tools/check-jvm-offline.py, tools/check-android-kotlin-offline.py, tools/check-stage2c-static.py.
+
+
+[2026-09-27 · Compose 메인 앱 2c 수정 1 · 실기기 계측 3건 대응]
+- 지시서: plan-draft/TASK-compose-main-stage2c-fix1.md. 프로젝트 안의 테스트/문서와 지정 완료 로그만 수정.
+  Gradle·네트워크·ADB·APK 설치·실기기 재실행 없음. 기존 다른 작업 변경을 보존했다.
+- 수정 전 증거: 기존 TB373FU·Android 16 결과 XML의 41개/실패 3개와 지시서 이름이 일치.
+  기존 Gradle JVM 결과 246개 통과는 읽기만 했고, 스크린샷 8개 통과는 지시서의 보고다.
+- 오프라인 상세: PhotoDetailContent의 안내는 남아 있다. 테스트 gateway는 siteStatus만 실패시켜
+  새 calendarMedia 조회가 성공하면서 FieldCoordinator.markOnline이 오프라인을 해제했다.
+  실제 테스트 gateway를 추출한 JVM 재현에서 true→false/assertion 실패, 수정 뒤 true→true/통과를 확인.
+  달력 조회도 오프라인 실패를 적용하고 재접속 시 gateway도 복구. 안내/대기/이력 제외를 유지하고
+  달력 요청·상태·정확히 1회 업로드·완료 이력을 추가 검증한다.
+- 메모: 수정 전 147행은 dependents(photo.id).size==1을 기다린다. 이 조건은 2c에서도 맞다.
+  enqueue는 첨부 1건을 만들고, 완료 정리는 파일만 지워 완료 원장은 남는다.
+  신규 AutomaticSendTest.confirmedMemoStaysOneLocalAttachmentUntilPhotoDetailCloses 통과:
+  온라인 확인/저장/재클릭/원장 재조회/재접속/입력 뒤로 동안 정확히 메모 1건·원문 보존·전송 0회,
+  상세 닫힘 뒤 사진·메모 각각 1회 전송·같은 메모 ID 1건 유지·파일 정리.
+  기존 로그에 메모 IME 표시 전환이 있고 실패 대기 중 onStop은 없다. 테스트는 키보드 닫힘/IME 인셋 0을
+  기다린 뒤 실제 버튼을 누르고 확인 체크·저장 enabled·오류 없음·kind/phase/원문을 확인하도록 보강.
+  5초 저장 제한·정확히 1건·성공 문구·상세 건수는 유지. IME 클릭 경합은 추정이며 누락 클릭은 로그로 확정 불가.
+  운영 저장/인셋 코드를 근거 없이 바꾸지 않았으며 실제 기기에서 동기화 수정 효과를 재확인해야 한다.
+- singleTask: 'Hist #'는 Android 16의 'Hist  #0'와 불일치한다. dumpsys를 제거하고 앱 API로 검사:
+  실행 중 MainActivity 태스크 1개/numActivities 1/동일 taskId/base·top MainActivity/isTaskRoot/
+  동일 Activity 객체/ViewModel 생성 1회. 두 재실행 각각 RESUMED 전달을 기다리고 callback은 finally 해제.
+  0개도 실패한다. Manifest singleTask는 유지했다.
+- 이번 검사: 오프라인 JVM 246개(기존 245+회귀 1) 통과, main/androidTest/screenshotTest Kotlin/Compose API 컴파일 통과,
+  XML 20개·drawable 15개·원본 120개 해시·신규 의존성 0·공백 검사 통과. 기존 계측 테스트는 삭제/이름 변경하지 않았다.
+  오프라인 JVM 246개는 BackgroundContrastTest를 기존대로 제외하고 회귀 1개를 더한 구성으로, 이전 Gradle 246개와 다르다.
+- 미확인: 수정한 3건/전체 41개 실기기 재실행, 특히 메모 IME 동기화의 실기기 효과. JVM/소스 컴파일을 실기기 정상으로 기록하지 않았다.
+- 기록: app/vitalguard_field_android/README.md 2c 수정 1,
+  app/vitalguard_field_android/plan-draft/stage2c-verification.md, stage2c-static-audit.json.
+  재현 로그: app/vitalguard_field_android/build/stage2c-fix1/offline-fixture-before.log, offline-fixture-after.log.
+
+
+[2026-09-27 · 관제 서버 캘린더 미디어 다운로드 앱 JWT 허용 · Codex]
+- 지시서: TASK-server-download-url-app-jwt.md. main 브랜치에서 작업했다.
+  코드 변경은 기존_조달청모듈/safetymonitor/apps/dashboard-web 안의 아래 2개 파일이며,
+  지시서 §4가 지정한 이 완료 로그만 예외로 끝에 덧붙였다. 기존 다른 작업 변경은 보존했다.
+- 수정 파일: app/api/calendar/media/download-url/route.ts.
+  목록 app/api/calendar/media/route.ts GET과 동일하게 verifyBasicAuth(request) 또는
+  verifyAppJwt(bearerToken(request)) !== null이면 허용한다. 둘 다 실패하면 diagnoseAppAuth(request)를 호출하고,
+  진단은 서버 로그에 남기며 { ok: false, error: "인증 필요", action: d.action }을 401로 반환한다.
+  id 검사·DB 단건 조회·프리사인·파일명·리터럴 media_url 반환과 나머지 오류 처리는 그대로다.
+- 현장 범위 판단 근거: 목록 GET은 listCalendarMedia(from, to)만 호출하며,
+  lib/db.ts의 목록 쿼리는 원본(annotation_of IS NULL)과 날짜 범위만 제한한다. site_id·작업자 조회 제한은 없다.
+  목록의 mediaWriteScope는 canDelete 계산용이며 조회 행을 걸러내지 않는다.
+  lib/admin-auth.ts의 verifyBasicAuth는 관제 인증과 기존 contractor 제외를 처리하고 현장 범위를 부여하지 않는다.
+  실제 앱 토큰 정의·발급·검증은 lib/app-jwt.ts에 있으며 AppJwtClaims와 발급 입력에 현장 제한 클레임이 없다.
+  따라서 다운로드에도 현장·작업자 조회 제한을 새로 만들지 않고 기존 목록 GET의 조회 규칙을 그대로 적용했다.
+- 추가 파일: lib/2026-09-27-calendar-download-url-app-jwt.guard.test.ts.
+  기존 lib/2026-08-20-calendar-*.guard.test.ts와 같은 readFileSync/import.meta.dirname/assert.match 방식으로
+  앱 JWT 분기·기존 verifyBasicAuth 분기 유지·diagnoseAppAuth의 action을 포함한 401 응답을 검사하는 가드 3개를 작성했다.
+- 검토: 소스와 변경 diff를 대조했고 라우트의 git diff --check는 통과했다.
+  지시대로 node --test 등 테스트 실행·빌드·네트워크·배포는 하지 않았다. 가드 실행과 배포 후 실제 동작 확인은 클로드가 수행한다.
+
+
+[2026-09-27 · Compose 메인 앱 2d · 서버 상세 첨부/댓글과 부수 인증 오류]
+- 지시서: TASK-compose-main-stage2d.md. 프로젝트 안의 코드/검사/문서와 이 지정 완료 로그만 변경했다.
+  Gradle·네트워크·ADB·APK 설치·실기기 실행 없음. 웹·Flutter·파일럿과 기존 외부 변경은 보존했다.
+- 상세 진입 시 같은 날짜의 calendar/media GET을 다시 읽어 오래된 영수증 댓글에 고정되지 않게 했다.
+  전체 글/음성 댓글을 표시하고 audio_storage_key로 분류한다. 로컬 첨부와 작업 ID/영수증 ID로 중복을 제거한다.
+  사진/댓글은 기기 시간대의 공통 포맷터를 사용한다(Asia/Seoul: 2026-09-27T03:00:02.862Z → 2026-09-27 12:00:02).
+- 음성: 목록 GET이 audio_storage_key로 발급한 audio_url만 다운로드한다. 댓글 download-url API는 만들지 않았다.
+  7744ms → 0:07, URL 없음은 비활성+재생 미확인 사유. 재생은 한 번에 하나, 닫힘/백그라운드에서 중단/임시 파일 삭제.
+  서명 URL에 앱 Bearer를 보내지 않는다. 서버 source/JVM 경계 확인과 실제 재생은 구분했다.
+- 주석본: 로컬 미리보기/서버 최신 annotationId에 사진 위 '주석본 보기' 토글. 서버 파일은 JWT download-url로 받아
+  2b InkStroke/AndroidInkRenderer로 표시한다. 관제 인증 전용 /calendar/media/ink는 사용하지 않는다.
+- 미충족 사항을 명시: listCalendarMedia는 원본만 반환하고 최신 annotationId 1개만 준다.
+  연결 잉크의 날짜/작업 ID/전체 목록·개수 API가 없어 정확한 같은 날 주석 총계는 미확인이다.
+  확인된 최신 ID/로컬 잉크 ID만 중복 제거하고 '주석 n개 이상'과 사유를 표시한다.
+  예시: 주석 1개 이상 · 메모 3 · 음성 1. 정확한 총계 구현에는 서버의 추가 조회 계약이 필요하다.
+  댓글 GET은 별도 경로가 없지만 목록 GET은 글/음성 댓글 전부와 음성 서명 URL을 제공한다.
+- 인증: me/refresh/필수 쓰기만 세션 판정. 부수 401/403은 action=reauth여도 항목 권한 오류이며 refresh/잠금 없음.
+  문구: '권한 없음 · 다시 로그인하면 다시 시도합니다'. README에 호출 분류표를 기록했다.
+  me401·필수 쓰기401/reauth 잠금, refresh의 기존 401/403/reauth 거부 규칙, 단일 refresh, beforeLock 초안 보존,
+  쓰기 결과 불명 재전송 금지를 유지했다. me에서 역할 거부가 확인되면 저장 토큰도 삭제한다.
+- 검사: 수정 전 248개 중 부수 인증 회귀 2개 실패를 재현(stage2d-repro-jvm.txt).
+  수정 후 오프라인 JVM 263개 전부 통과(기존 246 + 회귀 17). 기존 잠금 테스트는 삭제하지 않고 의도/트리거 갱신.
+  main/androidTest/screenshotTest Kotlin/Compose 소스 API 컴파일 통과(기존 캐시와 R/BuildConfig 스텁).
+  Flutter/파일럿 120개 해시 일치, Gradle/의존성/Manifest 5개 파일 불변, 신규 의존성 0, 공백 검사 통과.
+- 미확인: 정확한 서버 잉크 총계, Gradle/APK/리소스 링크/설치/실기기/실서버 다운로드·재생·주석 렌더/스크린샷.
+  ServerRecordDetailComposeTest 2개는 작성·소스 컴파일만 통과했고 계측은 실행하지 않았다.
+  리비전 00408과 DB 4행은 지시서에서 전달받은 실측이며 이 작업에서 새로 실측하지 않았다.
+- 문서: README.md 2d, plan-draft/stage2d-verification.md.
+- 변경 파일(기준: app/vitalguard_field_android/):
+  - README.md
+  - app/src/androidTest/kotlin/com/vitalguard/field/ServerRecordDetailComposeTest.kt
+  - app/src/main/kotlin/com/vitalguard/field/audio/DeviceCommentAudioPlayer.kt
+  - app/src/main/kotlin/com/vitalguard/field/capture/CaptureModels.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/contracts/FieldContracts.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/live/LiveGateway.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/mock/MockGateway.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/models/CalendarVoice.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/models/ServerModels.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/record/CommentPlayback.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/record/RecordCalendar.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/record/RecordDetail.kt
+  - app/src/main/kotlin/com/vitalguard/field/data/session/FieldCoordinator.kt
+  - app/src/main/kotlin/com/vitalguard/field/ui/record/RecordScreens.kt
+  - app/src/main/kotlin/com/vitalguard/field/ui/site/SiteSummaryController.kt
+  - app/src/test/kotlin/com/vitalguard/field/AuxiliaryAuthorizationTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/CalendarGatewayTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/CaptureTimeTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/CommentPlaybackTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/FieldCoordinatorTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/HttpTransportTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/OfflineRestoreTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/RecordCalendarTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/RecordDetailTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/RecordRecoveryTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/SitePollingTest.kt
+  - app/src/test/kotlin/com/vitalguard/field/TestSupport.kt
+  - plan-draft/stage2d-repro-jvm.txt
+  - plan-draft/stage2d-verification.md

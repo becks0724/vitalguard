@@ -21,7 +21,7 @@
 <tr><td align="center" width="50%"><a href="태블릿/10_%ED%8E%9C%EC%9C%BC%EB%A1%9C%ED%91%9C%EC%8B%9C%ED%95%98%EA%B8%B0.jpg"><img src="태블릿/10_%ED%8E%9C%EC%9C%BC%EB%A1%9C%ED%91%9C%EC%8B%9C%ED%95%98%EA%B8%B0.jpg" width="360"></a><br><sub><b>10_펜으로표시하기</b><br>펜으로 표시하기 — 그리기·굵기·색·편집·보기·저장 도구바</sub></td><td align="center" width="50%"><a href="태블릿/10b_%ED%8E%9C%ED%8E%B8%EC%A7%91_%EB%92%A4%EB%A1%9C%EA%B0%80%EA%B8%B0%ED%9B%84.jpg"><img src="태블릿/10b_%ED%8E%9C%ED%8E%B8%EC%A7%91_%EB%92%A4%EB%A1%9C%EA%B0%80%EA%B8%B0%ED%9B%84.jpg" width="360"></a><br><sub><b>10b_펜편집_뒤로가기후</b><br>펜 편집 후 뒤로가기 — 기록 뷰어 복귀</sub></td></tr>
 </table>
 
-> 담당관(안전관리자)용 Compose/Kotlin 앱. 패키지 `com.vitalguard.field`, 캡처 시점 버전 1.3.x. 소스: [`Lenova idea tap 12.7/app/vitalguard_field_android`](../../Lenova%20idea%20tap%2012.7/app/vitalguard_field_android/)
+> 담당관(안전관리자)용 Compose/Kotlin 앱. 패키지 `com.vitalguard.field`, 캡처 시점 버전 1.3.x. 소스: [`tablet-app/app/vitalguard_field_android`](../../tablet-app/app/vitalguard_field_android/)
 
 ## 관제 웹 — 실시간 현장 관제
 

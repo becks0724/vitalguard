@@ -65,4 +65,4 @@ canvas bitmap은 DPR에 맞춰 반올림하고 실제 bitmap/CSS 크기 비율�
 
 **TASK-web-ink-render 완료** — 웹 구현과 자동 검증 완료.
 
-지정된 `Lenova idea tap 12.7/astra-done.txt`에 이 문구를 덧붙이려 했으나 작업공간 밖 쓰기가 `Operation not permitted`로 거부됐다. 해당 파일은 변경되지 않았다.
+지정된 `tablet-app/astra-done.txt`에 이 문구를 덧붙이려 했으나 작업공간 밖 쓰기가 `Operation not permitted`로 거부됐다. 해당 파일은 변경되지 않았다.
