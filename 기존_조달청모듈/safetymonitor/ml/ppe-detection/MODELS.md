@@ -81,3 +81,21 @@ SH17   Kaggle    mugheesahmad/sh17-dataset-for-ppe-detection   (v7e 는 쓰지 �
 
 v7e 는 [ppe_yolo26_colab_v7e_260915.ipynb](ppe_yolo26_colab_v7e_260915.ipynb) 를 Colab 에서 드라이브 A 를 붙여 실행한다.
 Roboflow 키는 실행 중에 입력한다(노트북에 적지 않는다). 기록된 조건은 A100 · batch 64 · 30 epoch · imgsz 640 · `yolo26s.pt` 출발 · 32분이다.
+
+## 젯슨 없이 다시 세울 수 있나
+
+있다. 2026-10-07 두 젯슨을 반납하며 기기 안의 자료는 전부 지웠지만, 다시 세우는 데 필요한 것은 저장소와 드라이브에 다 있다. 새 기기 한 대와 카메라만 있으면 된다.
+
+| 필요한 것 | 어디에 | 비고 |
+|---|---|---|
+| 가중치 `.pt` (PPE v7e · 조끼 v2) | 드라이브 A·B `weights/` | sha256 은 위 표 |
+| 자세 가중치 `yolo11s-pose.pt` | ultralytics 공개 배포 | 학습하지 않았다 |
+| 추론·판정 코드 (`gopro_ppe_edge.py` · `pose_fall.py` · `cctv_gate.py` 등 25개) | [../../cctv-ai/edge/](../../cctv-ai/edge/) | 본체 12개는 반납 직전 젯슨 사본과 MD5 일치 확인(10-07) |
+| 서비스 정의 · 덧붙임 · 판정 구역 다각형 | [../../cctv-ai/edge/jetson-etc/](../../cctv-ai/edge/jetson-etc/) | `zone*.json` 은 화면에서 손으로 찍은 것이라 카메라 자리가 바뀌면 다시 찍는다 |
+| 엔진 굽는 절차 | [build-engines-cam01.sh](../../cctv-ai/edge/jetson-etc/build-engines-cam01.sh) | 대상 기기에서 `.pt` 로 굽는다 · 09-18 실측 PPE 541초 · 자세 607초 |
+| 코드 배포 절차 | [deploy_edge.sh](../../cctv-ai/edge/deploy_edge.sh) | `EDGE_HOST` 로 대상 지정 · 올린 뒤 md5 대조 |
+| 반납 직전 구조와 설정값 | [최종-구현-기록-20261007.md](../../cctv-ai/최종-구현-기록-20261007.md) | 포트 · conf · 입력 크기 · 관제웹 연결 |
+
+순서. ① 기기에 JetPack 6 과 ultralytics 를 넣는다(판본은 학습 환경과 맞춘다 · 위 ONNX 문단). ② 드라이브에서 `.pt` 를 받아 `build-engines-cam01.sh` 의 경로를 고쳐 엔진을 굽는다. ③ `deploy_edge.sh` 로 코드를 올리고 `jetson-etc` 의 유닛·덧붙임을 `/etc/systemd/system` 에 둔다. ④ 관제웹은 그대로 두고 게이트 주소(Tailscale 이름)만 새 기기 것으로 바꾼다.
+
+한계. 빈 기기에서 ①~④ 를 처음부터 끝까지 돌려 본 적은 없다. 실측된 것은 2호기 복제(09-18 · `clone-to-spare.sh`)와 2호기 엔진 재굽기(10-07)까지다. 게이트 TLS 인증서와 Tailscale 노드는 새로 발급받아야 한다.
