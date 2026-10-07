@@ -139,7 +139,11 @@ test("작업 배치 문구의 확정적 지시를 감지하고 권고형 교정�
     "ASSIGNMENT_DETERMINISTIC_TONE",
     "ZERO_ALLOWED_EXCLUSION_CONCLUSION",
   ]);
-  assert.match(assignmentOutputPolicyInstruction({ allowedCount: 0 }), /배제해야, 피해야/);
+  // 배치 권한 언어는 계층(system)에서 한 번만 말한다 — 출력 정책에는 중복해 싣지 않는다.
+  assert.match(
+    assignmentSystemInstruction(),
+    /배제해야·피해야·제외되어야·제한됩니다·금지합니다·해야 한다/,
+  );
   assert.match(assignmentOutputPolicyRepairInstruction(violations), /모든 문장에 반드시 권고·검토·관리자 확인/);
   assert.deepEqual(
     findAiReplyPolicyViolations(

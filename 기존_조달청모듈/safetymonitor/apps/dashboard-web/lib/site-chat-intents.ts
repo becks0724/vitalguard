@@ -27,6 +27,8 @@ export type SiteChatIntentDef = {
   label: string;
   /** 결정적 1차 분류 — 사번·이름 미해소 질문에서만 검사한다(배치 흐름이 항상 우선). */
   keywords: RegExp;
+  /** 의도 분류 프롬프트에 실리는 카테고리 설명. 의도를 늘리면 프롬프트도 함께 자란다. */
+  classify: string;
 };
 
 /** 한 질문이 여러 도메인에 걸칠 때의 컨텍스트 상한(토큰·응답 길이 통제). */
@@ -36,6 +38,8 @@ export const SITE_CHAT_INTENTS: readonly SiteChatIntentDef[] = [
   {
     id: "weather",
     label: "현장 기상·체감온도",
+    classify:
+      "현장 날씨·기온·체감온도·폭염·한파·바람·강수·일출일몰·WBGT·양중기/크레인/철골 등 기상 조건부 작업 가부",
     keywords:
       /체감온도|날씨|기온|온도|폭염|한파|더위|추위|무더위|풍속|강풍|바람|강수|호우|대설|미세먼지|초미세|자외선|불쾌지수|습도|온열|우천|장마|일출|일몰|해돋이|해넘이|WBGT|wbgt|습구흑구|양중기|크레인|철골|비(?:가|는|도)?\s*오|눈(?:이|은|도)?\s*오|\d+\s*도(?![가-힣])/,
   },
@@ -43,47 +47,55 @@ export const SITE_CHAT_INTENTS: readonly SiteChatIntentDef[] = [
     id: "kmaWarning",
     label: "기상특보",
     keywords: /특보|주의보|기상 ?경보/,
+    classify: "기상특보·주의보·경보 발효 여부",
   },
-  { id: "typhoon", label: "태풍", keywords: /태풍/ },
+  { id: "typhoon", label: "태풍", keywords: /태풍/, classify: "태풍" },
   {
     id: "disasterMsg",
     label: "재난문자",
     keywords: /재난 ?문자|긴급 ?재난|재난 ?알림/,
+    classify: "재난문자",
   },
   {
     id: "gas",
     label: "가스 감지기",
     keywords: /가스|산소|일산화|황화수소|감지기|밀폐\s*공간|실내\s*(환경|온도|습도)|기압/,
+    classify: "가스·산소·밀폐공간 측정·실내 온습도·기압",
   },
-  { id: "aed", label: "AED", keywords: /AED|aed|제세동기/ },
+  { id: "aed", label: "AED", keywords: /AED|aed|제세동기/, classify: "AED·제세동기" },
   {
     id: "alertsLog",
     label: "경보 이력",
     keywords: /(경보|알림|알람)\s*(이력|내역|현황|목록)|미확인\s*(경보|알림)|최근\s*(경보|알림)|낙상|(경보|알림|알람)[^\n]{0,8}(있었|발생|왔)/,
+    classify: "경보·알림 이력·미확인 경보",
   },
-  { id: "safetyLight", label: "안전 신호등", keywords: /신호등/ },
-  { id: "hospitals", label: "인근 병원", keywords: /병원|응급실|의료기관/ },
+  { id: "safetyLight", label: "안전 신호등", keywords: /신호등/, classify: "안전 신호등" },
+  { id: "hospitals", label: "인근 병원", keywords: /병원|응급실|의료기관/, classify: "병원·응급실" },
   // ── 조달청 도메인(도메인 ② · 구조화 카탈로그 = 서버 검색, RAG 아님) ──────────────
   {
     id: "procurePrice",
     label: "조달 품목 단가",
     keywords: /단가|가격|나라장터|종합 ?쇼핑몰|조달 ?품목/,
+    classify: "조달 품목 단가·가격",
   },
   {
     id: "subsidyAudit",
     label: "공단 보조금 정합 검증",
     keywords: /보조금/,
+    classify: "공단 보조금 검증",
   },
   {
     id: "safetyRate",
     label: "안전관리비 요율 고시",
     keywords: /안전관리비|보건관리비|요율/,
+    classify: "산업안전보건관리비 요율·고시",
   },
   // ── 법령 조문(도메인 ③ · 조문 스냅샷 RAG 1단계) ────────────────────────────────
   {
     id: "lawArticle",
     label: "법령 조문(안전보건규칙)",
     keywords: /안전보건규칙|산업안전보건|조문|법적 ?근거|법령 ?근거|몇 ?조|제\s*\d{1,3}\s*조/,
+    classify: "법령 조문·법적 근거",
   },
 ] as const;
 
@@ -154,23 +166,14 @@ export function parseFollowUpIntents(value: unknown): SiteChatIntentDef[] {
 // 분류만 LLM 에 맡기고 실행은 서버 화이트리스트 검증 후에만 한다(확정 백로그 "의도 분류").
 // 응답에서 아는 id 만 추출 — 목록 밖 id·설명문·주입 시도는 전부 null(현행 경로 유지)로 떨어진다.
 
-export const INTENT_CLASSIFY_INSTRUCTION =
-  "너는 산업현장 관제 챗봇의 질문 분류기다. 감독관의 질문을 아래 카테고리 중 정확히 하나로 분류해 id 한 단어만 출력해라. 설명·문장 금지.\n" +
-  "worker: 특정 작업자·전체 작업자의 컨디션·등급·배치·경보 여부\n" +
-  "weather: 현장 날씨·기온·체감온도·폭염·한파·바람·강수·일출일몰·WBGT·양중기/크레인/철골 등 기상 조건부 작업 가부\n" +
-  "kmaWarning: 기상특보·주의보·경보 발효 여부\n" +
-  "typhoon: 태풍\n" +
-  "disasterMsg: 재난문자\n" +
-  "gas: 가스·산소·밀폐공간 측정·실내 온습도·기압\n" +
-  "aed: AED·제세동기\n" +
-  "alertsLog: 경보·알림 이력·미확인 경보\n" +
-  "safetyLight: 안전 신호등\n" +
-  "hospitals: 병원·응급실\n" +
-  "procurePrice: 조달 품목 단가·가격\n" +
-  "subsidyAudit: 공단 보조금 검증\n" +
-  "safetyRate: 산업안전보건관리비 요율·고시\n" +
-  "lawArticle: 법령 조문·법적 근거\n" +
-  "none: 위 어디에도 해당 없음";
+// 카테고리 줄은 레지스트리에서 조립한다 — 종전에는 13종을 여기 하드코딩해서, 의도를 추가해도
+// 분류기가 그 id 를 낼 수 없었다(파서의 CLASSIFY_IDS 는 자동으로 늘어나는데 프롬프트만 안 늘어났다).
+export const INTENT_CLASSIFY_INSTRUCTION = [
+  "너는 산업현장 관제 챗봇의 질문 분류기다. 감독관의 질문을 아래 카테고리 중 정확히 하나로 분류해 id 한 단어만 출력해라. 설명·문장 금지.",
+  "worker: 특정 작업자·전체 작업자의 컨디션·등급·배치·경보 여부",
+  ...SITE_CHAT_INTENTS.map((intent) => `${intent.id}: ${intent.classify}`),
+  "none: 위 어디에도 해당 없음",
+].join("\n");
 
 const CLASSIFY_IDS = new Set<string>([...SITE_CHAT_INTENTS.map((i) => i.id), "worker", "none"]);
 

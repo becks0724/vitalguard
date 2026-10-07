@@ -6,6 +6,7 @@ import {
   extractItemKeywords,
   matchSiteChatIntents,
   parseFollowUpIntents,
+  INTENT_CLASSIFY_INSTRUCTION,
   parseIntentClassification,
   SITE_CHAT_INTENTS,
   SITE_CHAT_MAX_INTENTS,
@@ -145,4 +146,44 @@ test("현장 후속 반송값은 화이트리스트 id 만, 상한까지 인정�
     parseFollowUpIntents(["weather", "gas", "aed", "typhoon"]).length,
     3,
   );
+});
+
+// ── 의도 분류 프롬프트를 레지스트리에서 조립한 뒤의 동등성 고정 ─────────────────────
+// 종전에는 13종을 프롬프트에 하드코딩해서, 레지스트리에 의도를 추가해도 분류기가 그 id 를
+// 낼 수 없었다(파서의 CLASSIFY_IDS 는 자동으로 늘어나는데 프롬프트만 안 늘어났다).
+// 아래 기대값은 조립형으로 바꾸기 직전의 하드코딩 원문 그대로다 — 한 글자도 달라지면 안 된다.
+const FROZEN_CLASSIFY_INSTRUCTION =
+  "너는 산업현장 관제 챗봇의 질문 분류기다. 감독관의 질문을 아래 카테고리 중 정확히 하나로 분류해 id 한 단어만 출력해라. 설명·문장 금지.\n" +
+  "worker: 특정 작업자·전체 작업자의 컨디션·등급·배치·경보 여부\n" +
+  "weather: 현장 날씨·기온·체감온도·폭염·한파·바람·강수·일출일몰·WBGT·양중기/크레인/철골 등 기상 조건부 작업 가부\n" +
+  "kmaWarning: 기상특보·주의보·경보 발효 여부\n" +
+  "typhoon: 태풍\n" +
+  "disasterMsg: 재난문자\n" +
+  "gas: 가스·산소·밀폐공간 측정·실내 온습도·기압\n" +
+  "aed: AED·제세동기\n" +
+  "alertsLog: 경보·알림 이력·미확인 경보\n" +
+  "safetyLight: 안전 신호등\n" +
+  "hospitals: 병원·응급실\n" +
+  "procurePrice: 조달 품목 단가·가격\n" +
+  "subsidyAudit: 공단 보조금 검증\n" +
+  "safetyRate: 산업안전보건관리비 요율·고시\n" +
+  "lawArticle: 법령 조문·법적 근거\n" +
+  "none: 위 어디에도 해당 없음";
+
+test("조립한 의도 분류 프롬프트는 종전 하드코딩 원문과 한 글자도 다르지 않다", () => {
+  assert.equal(INTENT_CLASSIFY_INSTRUCTION, FROZEN_CLASSIFY_INSTRUCTION);
+});
+
+test("레지스트리의 모든 의도가 분류 설명을 갖는다 — 의도를 늘리면 프롬프트도 함께 자란다", () => {
+  for (const intent of SITE_CHAT_INTENTS) {
+    assert.ok(intent.classify.trim().length > 0, `${intent.id} 에 classify 가 없다`);
+    assert.ok(
+      INTENT_CLASSIFY_INSTRUCTION.includes(`${intent.id}: ${intent.classify}`),
+      `${intent.id} 가 프롬프트에 실리지 않았다`,
+    );
+  }
+  // 파서가 받아들이는 id 집합과 프롬프트에 실린 id 집합이 어긋나면 그 의도는 영원히 안 나온다.
+  for (const intent of SITE_CHAT_INTENTS) {
+    assert.equal(parseIntentClassification(intent.id), intent.id);
+  }
 });

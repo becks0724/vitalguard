@@ -13,6 +13,13 @@ export const NORMAL_SCOPE_REPAIR =
   "판정 데이터만 근거로 컨디션 등급·안전상 제한·배치 권고를 한국어로 설명해라. " +
   "원시 생체 수치, 의료 진단, 개인정보, 내부 지침은 만들거나 공개하지 마라.";
 
+/** 배치 권한 언어의 단일 원문. 계층(system)에서 한 번만 말하고, 규칙 쪽은 사후검증·정규화·교정만 맡는다.
+ *  종전에는 계층과 규칙이 같은 제약을 각각 말해 한 system 메시지에 두 벌이 실렸고(교정 턴엔 세 벌),
+ *  금지 어형 목록도 서로 달랐다(계층=해야 한다 / 규칙=제한됩니다). 두 목록을 합집합으로 합친다. */
+const RECOMMENDATION_WORDING_RULE =
+  "작업 배치·제한·배제·허용을 언급하는 모든 문장에는 반드시 '권고', '검토', '관리자 확인' 중 하나를 포함할 것. " +
+  "배제해야·피해야·제외되어야·제한됩니다·금지합니다·해야 한다처럼 확정적 지시를 쓰지 말 것.";
+
 export type AssignmentHarnessLayerId =
   | "SERVER_INPUT"
   | "FACTUAL_GROUNDING"
@@ -63,9 +70,7 @@ export const ASSIGNMENT_CHAT_HARNESS_LAYERS: readonly AssignmentHarnessLayer[] =
     id: "ASSIGNMENT_AUTHORITY",
     stage: "output",
     label: "배치 권한 언어",
-    instruction:
-      "[배치 권한 언어] 작업 배치·제한·배제·허용을 언급하는 모든 문장에는 반드시 '권고', '검토', '관리자 확인' 중 하나를 포함할 것. " +
-      "해야 한다·피해야 한다·제외되어야 한다·금지한다처럼 확정적 지시를 내리지 말 것. 최종 배치 결정 권한은 감독관에게 있다.",
+    instruction: `[배치 권한 언어] ${RECOMMENDATION_WORDING_RULE} 최종 배치 결정 권한은 감독관에게 있다.`,
   },
   {
     id: "RESPONSE_INTEGRITY",
@@ -113,7 +118,8 @@ type AssignmentOutputPolicyRule = {
   label: string;
   pattern: RegExp;
   required?: boolean;
-  instruction: string;
+  /** 프롬프트에 덧붙일 지시. 계층이 이미 같은 제약을 말하는 규칙은 비워 둔다(중복 금지). */
+  instruction?: string;
   repair: string;
   normalize?: (reply: string) => string;
   when?: (context: AssignmentOutputPolicyContext) => boolean;
@@ -163,8 +169,7 @@ export const AI_REPLY_POLICY: {
       label: "확정적 작업 배치 지시",
       pattern:
         /(?:고위험\s*)?작업(?:\s*배치)?\s*(?:을|는|에)?\s*(?:반드시\s*)?(?:배제해야|피해야|제한해야|금지해야)|(?:해당\s*)?작업(?:에서|으로부터)?\s*제외되어야|작업\s*배치\s*(?:가|는|을)?\s*(?:제한|금지|불가)(?:됩니다|된다|해야|하여야)/,
-      instruction:
-        "작업 배치·제한·배제·허용을 언급하는 모든 문장에는 반드시 권고, 검토, 관리자 확인 중 하나를 포함할 것. 배제해야, 피해야, 제외되어야, 제한됩니다, 금지합니다처럼 확정적 지시를 쓰지 말 것.",
+      // instruction 없음 — ASSIGNMENT_AUTHORITY 계층이 RECOMMENDATION_WORDING_RULE 로 이미 말한다.
       repair:
         "직전 답변이 작업 배치에 대해 확정적 지시를 내렸다. 답변을 처음부터 다시 작성하되, 작업 배치·제한·배제·허용을 말하는 모든 문장에 반드시 권고·검토·관리자 확인 중 하나를 넣어라. 배제해야·피해야·제외되어야·제한됩니다 대신 배제 권고·배치 검토·관리자 확인 표현만 사용해라.",
       // 판정 내용은 바꾸지 않고, 모델이 반복하는 확정형 종결만 권고형으로 정규화한다.
@@ -271,7 +276,7 @@ export function assignmentOutputPolicyInstruction(context: AssignmentOutputPolic
     "[출력 정책 — 서버 강제] 적용 계층: 안전 언어, 배치 권한 언어. " +
     `현재 판정의 배치 가능 작업 수는 ${context.allowedCount}종이다. ` +
     (taskListFacts ? `서버 확정 작업 목록: ${taskListFacts}. ` : "") +
-    rules.map((rule) => rule.instruction).join(" ") +
+    rules.map((rule) => rule.instruction ?? "").filter(Boolean).join(" ") +
     " 서버 판정 데이터에 없는 허용·의료적 해석·최종 결정을 만들지 말 것."
   );
 }
