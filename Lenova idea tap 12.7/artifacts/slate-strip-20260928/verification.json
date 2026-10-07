@@ -1,0 +1,57 @@
+{
+  "version": "1.3.1",
+  "versionCode": 6,
+  "unitTests": {
+    "passed": 296,
+    "failures": 0
+  },
+  "previewTests": {
+    "passed": 22,
+    "failures": 0
+  },
+  "targetedDeviceTests": {
+    "passed": 9,
+    "seconds": 26.174,
+    "classes": [
+      "CommonStatesComposeTest",
+      "FieldAppComposeTest"
+    ]
+  },
+  "releaseInstallation": {
+    "status": "installed with adb install -r",
+    "version": "1.3.1",
+    "versionCode": 6,
+    "lastUpdateTimeKST": "2026-09-28 10:59:16",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "permissionsRetained": [
+      "CAMERA",
+      "ACCESS_FINE_LOCATION"
+    ],
+    "activityColdStartMs": 271,
+    "existingAccountRestored": true,
+    "siteDashboard": "수신 완료",
+    "lastReceiptTimeKST": "2026-09-28 10:59:31",
+    "offlineStripVerifiedBy": "preview and prior instrumented tests; no network settings changed"
+  },
+  "lastConfirmedReleaseVersion": "1.3.1 / code6",
+  "artifacts": {
+    "debug": {
+      "bytes": 65413175,
+      "sha256": "c547bcb56cfeb2da4e79e9ec49477c3f99b5b86b100e24959f02794c365688e5"
+    },
+    "release": {
+      "bytes": 59710136,
+      "sha256": "9a51879b92a46e9182e51e156787c9ea3006747633ad275166548ef37d23debb"
+    }
+  },
+  "git": {
+    "commit": "b538b9881bd3f2869583c270d825cdba31bfac16",
+    "remoteBranch": "origin/main",
+    "pushVerified": true,
+    "ahead": 0,
+    "behind": 0,
+    "unrelatedTrackedFilesPreserved": 7,
+    "installationVerificationCommit": "74349879ce785db27eee662861714a011125b3eb"
+  }
+}

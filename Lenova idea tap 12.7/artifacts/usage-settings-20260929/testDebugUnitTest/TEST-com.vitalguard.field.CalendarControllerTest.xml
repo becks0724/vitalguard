@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CalendarControllerTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-29T09:47:35.325Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.026">
+  <properties/>
+  <testcase name="이전 주나 다른 계정의 늦은 응답은 현재 달력을 덮지 않는다" classname="com.vitalguard.field.CalendarControllerTest" time="0.004"/>
+  <testcase name="완료 사진의 주석을 다시 만들면 기존 주석과 사진을 재전송하지 않는다" classname="com.vitalguard.field.CalendarControllerTest" time="0.016"/>
+  <testcase name="완료 사진에 남긴 새 초안도 같은 계정에서 복구한다" classname="com.vitalguard.field.CalendarControllerTest" time="0.003"/>
+  <testcase name="날짜 이동은 보이는 주를 조회하며 같은 주 날짜 선택은 다시 조회하지 않는다" classname="com.vitalguard.field.CalendarControllerTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

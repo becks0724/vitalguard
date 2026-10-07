@@ -1,0 +1,33 @@
+{
+  "versionName": "1.2.1",
+  "versionCode": 4,
+  "jvm": {
+    "tests": 296,
+    "failures": 0
+  },
+  "previews": {
+    "tests": 22,
+    "failures": 0
+  },
+  "device": {
+    "tests": 52,
+    "failures": 0,
+    "seconds": 151.645
+  },
+  "release": {
+    "bytes": 57064040,
+    "sha256": "089d8a0457e4b0d965a6bdb2b06ce71fd23d81204658534815a9ade07f441e1f",
+    "installedAt": "2026-09-27T23:57:45+09:00",
+    "uid": 10303,
+    "coldStartMs": 223
+  },
+  "currentAccountHistory": {
+    "completed": 6,
+    "failed": 0,
+    "uncertain": 0,
+    "sending": 0
+  },
+  "dataCodeChanged": false,
+  "networkSettingsChanged": false,
+  "commit": "2d310b82"
+}

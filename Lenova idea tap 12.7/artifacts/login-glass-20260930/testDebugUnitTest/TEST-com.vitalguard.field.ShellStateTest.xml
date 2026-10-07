@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.ShellStateTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-29T16:08:20.741Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.004">
+  <properties/>
+  <testcase name="receiptUsesDestinationOfflineAndForbiddenPriorityExactly" classname="com.vitalguard.field.ShellStateTest" time="0.0"/>
+  <testcase name="latePreferenceCannotOverrideManualToggleAndSaveFailureRollsBack" classname="com.vitalguard.field.ShellStateTest" time="0.002"/>
+  <testcase name="homeResetsOnlySelectedTabAndDoesNotChangeSettingsOrAccountState" classname="com.vitalguard.field.ShellStateTest" time="0.001"/>
+  <testcase name="defaultDependsOnWindowWidthAndPreferenceIsAccountLocal" classname="com.vitalguard.field.ShellStateTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

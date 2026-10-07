@@ -1,0 +1,111 @@
+{
+  "source": "battery-20260925.log",
+  "source_rows": 2458,
+  "design_capacity_mah": 10200,
+  "cctv_first_180s": {
+    "window_kst": [
+      "14:25:04",
+      "14:28:04"
+    ],
+    "end_exclusive": true,
+    "samples": 86,
+    "sample_span_seconds": 179,
+    "statuses": [
+      "Discharging"
+    ],
+    "mean_signed_a": -0.7340348837209303,
+    "median_signed_a": -0.7215,
+    "population_sd_a": 0.08964016537380046,
+    "integrated_signed_mah": -36.48152777777778,
+    "displayed_percent": [
+      80,
+      79
+    ],
+    "one_hour_design_capacity_percent": 7.196420428636571
+  },
+  "record_first_180s": {
+    "window_kst": [
+      "14:49:07",
+      "14:52:07"
+    ],
+    "end_exclusive": true,
+    "samples": 85,
+    "sample_span_seconds": 177,
+    "statuses": [
+      "Discharging"
+    ],
+    "mean_signed_a": -0.7712117647058824,
+    "median_signed_a": -0.755,
+    "population_sd_a": 0.04123222443890131,
+    "integrated_signed_mah": -37.93236111111111,
+    "displayed_percent": [
+      78,
+      78
+    ],
+    "one_hour_design_capacity_percent": 7.560899653979239
+  },
+  "gauge_79_to_76": {
+    "window_kst": [
+      "14:27:06",
+      "14:41:11"
+    ],
+    "end_exclusive": true,
+    "samples": 403,
+    "sample_span_seconds": 844,
+    "statuses": [
+      "Discharging"
+    ],
+    "mean_signed_a": -0.7380868486352358,
+    "median_signed_a": -0.729,
+    "population_sd_a": 0.07823696207029958,
+    "integrated_signed_mah": -172.95319444444445,
+    "displayed_percent": [
+      79,
+      76
+    ],
+    "one_hour_design_capacity_percent": 7.236145574855253
+  },
+  "usb_76_to_78": {
+    "window_kst": [
+      "14:42:40",
+      "14:46:49"
+    ],
+    "end_exclusive": true,
+    "samples": 119,
+    "sample_span_seconds": 248,
+    "statuses": [
+      "Charging"
+    ],
+    "mean_signed_a": 1.218436974789916,
+    "median_signed_a": 1.249,
+    "population_sd_a": 0.21797408059064155,
+    "integrated_signed_mah": 84.31597222222221,
+    "displayed_percent": [
+      76,
+      78
+    ],
+    "one_hour_design_capacity_percent": 11.945460537156038
+  },
+  "usb_reconnected_full": {
+    "window_kst": [
+      "14:42:40",
+      "14:49:06"
+    ],
+    "end_exclusive": true,
+    "samples": 184,
+    "sample_span_seconds": 385,
+    "statuses": [
+      "Charging"
+    ],
+    "mean_signed_a": 1.2333423913043478,
+    "median_signed_a": 1.257,
+    "population_sd_a": 0.17750871732035148,
+    "integrated_signed_mah": 132.27930555555554,
+    "displayed_percent": [
+      76,
+      78
+    ],
+    "one_hour_design_capacity_percent": 12.091592071611252
+  },
+  "caveat": "Design capacity conversion and short-window extrapolation; not a measured runtime or independent coulomb-counter calibration."
+}

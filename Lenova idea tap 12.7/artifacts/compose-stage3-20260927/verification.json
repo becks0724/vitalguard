@@ -1,0 +1,36 @@
+{
+  "baseline_commit": "690e87b8",
+  "jvm": {
+    "tests": 291,
+    "failures": 0
+  },
+  "device_full": {
+    "tests": 47,
+    "failures": 0,
+    "seconds": 128.41
+  },
+  "final_cctv_viewport_test": {
+    "tests": 1,
+    "failures": 0
+  },
+  "screenshots": {
+    "tests": 15,
+    "failures": 0,
+    "legacy_8_unchanged": true
+  },
+  "login_file_preserved": true,
+  "apk_sha256": "6bfc7134318f57d494a504a84bdd20f951e200d84c86cdccc494370ca5fc08c1",
+  "apk_bytes": 62429337,
+  "live_checks": [
+    "site details",
+    "alerts read without POST",
+    "CAM-03 received 15:52:47 and 15:53:20 KST",
+    "CCTV received again 16:04:03 before final viewport adjustment"
+  ],
+  "limitations": [
+    "UUID request type is verified with injected transport; production alert state was not changed.",
+    "New DB device-to-server end-to-end checks remain in the separate cutover track.",
+    "Flutter release, server deployment, and network settings unchanged."
+  ],
+  "commit": "99cb6ea2"
+}

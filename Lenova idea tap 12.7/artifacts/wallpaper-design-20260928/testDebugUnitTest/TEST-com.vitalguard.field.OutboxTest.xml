@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.OutboxTest" tests="20" skipped="0" failures="0" errors="0" timestamp="2026-09-27T16:07:12.465Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.098">
+  <properties/>
+  <testcase name="localWriteFailurePreventsEnqueueAndSendingHttpButDoesNotPoisonQueue" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="manualWebConfirmationIsAvailableOnlyWithoutLookupAndDoesNotPost" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="deduplicationIsConfirmedCompletion" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="reloadKeepsOperationOriginalSiteAndFiles" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="authenticationRefreshKeepsOperationAndFile" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="retryUsesTheSameUuidOriginalBytesAndFields" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="lateLookupCannotConfirmPreviousAccountAndBackgroundStopsNextBatch" classname="com.vitalguard.field.OutboxTest" time="0.01"/>
+  <testcase name="absenceIsNotPersistedAndANewFailedLookupRevokesRetry" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="latePostStaysWithTheOriginalAccount" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="sendingRecoversAsUncertainBeforeBeingExposed" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="unknownLookupAndRestartNeverAuthorizeRetry" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="doubleTapProducesOnlyOnePostAndBusyStateIsObservable" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="callerMutationCannotChangeStoredPayloadOrFieldsAndBytesPrecedeLedger" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="batchesAre50_50_1AndAutomaticLookupIsLimitedToThirtySeconds" classname="com.vitalguard.field.OutboxTest" time="0.034"/>
+  <testcase name="uncertainLookupAbsentRequiresExplicitRetryAndNeverPostsAutomatically" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="lookupErrorsNeverBecomeAbsentAndStopRemainingBatches" classname="com.vitalguard.field.OutboxTest" time="0.042"/>
+  <testcase name="registeredLookupCompletesWithoutPostAndPreservesReceipt" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="identicalSourceSnapshotReusesOneIdButNewContentGetsAnother" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <testcase name="reauthenticationAndAccountSwitchKeepTheOriginalLedgerPrivate" classname="com.vitalguard.field.OutboxTest" time="0.0"/>
+  <testcase name="wrongOwnerOrOperationLedgerDoesNotExposeOrOverwriteFiles" classname="com.vitalguard.field.OutboxTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

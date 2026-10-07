@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.BackgroundContrastTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-09-27T16:07:11.885Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.008">
+  <properties/>
+  <testcase name="palettesAndCardForegroundsKeepContrast" classname="com.vitalguard.field.BackgroundContrastTest" time="0.008"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

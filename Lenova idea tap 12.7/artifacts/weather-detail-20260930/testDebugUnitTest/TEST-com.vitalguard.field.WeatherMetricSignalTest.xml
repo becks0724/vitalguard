@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.WeatherMetricSignalTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-29T15:58:19.302Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.001">
+  <properties/>
+  <testcase name="noNeonWhenValueOrJudgmentCannotBeTreatedAsCurrent" classname="com.vitalguard.field.WeatherMetricSignalTest" time="0.001"/>
+  <testcase name="indoorReadingsRemainSeparateAndExpireUsingServerValidityInsteadOfDeviceClock" classname="com.vitalguard.field.WeatherMetricSignalTest" time="0.0"/>
+  <testcase name="forecastDoesNotInventMissingValuesOrInvalidDates" classname="com.vitalguard.field.WeatherMetricSignalTest" time="0.0"/>
+  <testcase name="usesOnlyRecognizedServerMetricLevelsAndNeverInfersFromValueOrOverallDanger" classname="com.vitalguard.field.WeatherMetricSignalTest" time="0.0"/>
+  <testcase name="loginWeatherDisplayExpiresAcrossTimeAndDeviceReboot" classname="com.vitalguard.field.WeatherMetricSignalTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

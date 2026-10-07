@@ -1,0 +1,24 @@
+{
+  "static_checks": {
+    "app/vitalguard_field/pubspec.yaml unchanged": true,
+    "app/vitalguard_field/pubspec.lock unchanged": true,
+    "app/vitalguard_field/android/app/build.gradle.kts unchanged": true,
+    "app/vitalguard_field/android/settings.gradle.kts unchanged": true,
+    "tab_plan.md unchanged": true,
+    "RECORD_AUDIO": true,
+    "RecognitionService query": true,
+    "five phrases unchanged": true,
+    "on-device factory only": true,
+    "ActivityCompat permission": true,
+    "error 12/13 names correct": true,
+    "Lenovo 5-1 preserved": true,
+    "STT recorded unmeasured": true
+  },
+  "dart_analyze": "blocked: Flutter SDK cache writes not permitted",
+  "flutter_test": "not run; SDK access blocked",
+  "flutter_build": "not run; SDK access blocked",
+  "adb": "blocked: smartsocket listener Operation not permitted",
+  "actual_speech_samples": 0,
+  "fallback_decision": "pending actual native STT results",
+  "new_dependencies_added": false
+}

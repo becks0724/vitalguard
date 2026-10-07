@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.AutomaticSendTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-09-28T05:07:15.661Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.068">
+  <properties/>
+  <testcase name="완료 사진에 붙인 추가 메모와 음성만 자동 전송한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.029"/>
+  <testcase name="일곱 날이 지나도 미전송 추가분이 있는 부모 영수증은 남긴다" classname="com.vitalguard.field.AutomaticSendTest" time="0.002"/>
+  <testcase name="동시 닫힘과 재접속에도 한 작업 ID를 한 번만 전송한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.004"/>
+  <testcase name="연결 전에 실패한 네트워크 항목과 대기는 네트워크 복귀 시 재시도한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.003"/>
+  <testcase name="서버 사진 참조는 사진 업로드와 가짜 완료 이력을 만들지 않는다" classname="com.vitalguard.field.AutomaticSendTest" time="0.002"/>
+  <testcase name="일반 실패는 닫힘과 네트워크 복귀로 재전송하지 않고 수동으로 전송한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.003"/>
+  <testcase name="워크스페이스는 탭 이동과 백그라운드 닫힘 뒤 달력으로 돌아가며 미확정 초안을 보존한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.011"/>
+  <testcase name="상세를 닫으면 대기를 영속화하고 전송중에서 완료로 이동한다" classname="com.vitalguard.field.AutomaticSendTest" time="0.006"/>
+  <testcase name="confirmedMemoStaysOneLocalAttachmentUntilPhotoDetailCloses" classname="com.vitalguard.field.AutomaticSendTest" time="0.006"/>
+  <testcase name="결과 불명은 네트워크 복귀나 상세 닫힘으로 바뀌지 않는다" classname="com.vitalguard.field.AutomaticSendTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

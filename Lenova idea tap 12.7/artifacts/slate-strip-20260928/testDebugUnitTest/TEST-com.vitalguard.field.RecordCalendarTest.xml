@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.RecordCalendarTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-27T16:37:23.632Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.005">
+  <properties/>
+  <testcase name="미디어 블록은 사진과 음성 건수로 표기한다 - 서버 댓글과 딸린 음성은 중복 계산하지 않는다" classname="com.vitalguard.field.RecordCalendarTest" time="0.002"/>
+  <testcase name="주는 일요일에 시작하며 달과 해의 경계를 넘는다" classname="com.vitalguard.field.RecordCalendarTest" time="0.0"/>
+  <testcase name="불명 전송중 실패 대기 완료 순으로 묶음 상태를 표시한다" classname="com.vitalguard.field.RecordCalendarTest" time="0.001"/>
+  <testcase name="주 행 높이가 균등하다 - 미니 월간은 여섯 개의 일곱 칸 행이다" classname="com.vitalguard.field.RecordCalendarTest" time="0.0"/>
+  <testcase name="시각을 못 읽은 사진도 버리지 않는다 - 종일 띠에 남는다" classname="com.vitalguard.field.RecordCalendarTest" time="0.0"/>
+  <testcase name="사진은 촬영 시각 위치에 놓는다 - KST로 해석하고 같은 시간대는 묶는다" classname="com.vitalguard.field.RecordCalendarTest" time="0.001"/>
+  <testcase name="성공한 주간 조회에서 사라진 완료 사진은 로컬 영수증으로 되살리지 않는다" classname="com.vitalguard.field.RecordCalendarTest" time="0.0"/>
+  <testcase name="같은 사진은 작업 ID나 sourceKey나 영수증 ID로 합친다" classname="com.vitalguard.field.RecordCalendarTest" time="0.0"/>
+  <testcase name="시간 범위는 24시간이다 - 첫 렌더는 07시다" classname="com.vitalguard.field.RecordCalendarTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

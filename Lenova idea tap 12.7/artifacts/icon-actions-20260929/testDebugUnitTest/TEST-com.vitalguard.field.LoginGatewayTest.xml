@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.LoginGatewayTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-29T01:09:25.197Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.011">
+  <properties/>
+  <testcase name="koreanTotpMessagesArePassedThrough" classname="com.vitalguard.field.LoginGatewayTest" time="0.001"/>
+  <testcase name="knownLoginErrorsKeepKoreanTextAndStatus" classname="com.vitalguard.field.LoginGatewayTest" time="0.002"/>
+  <testcase name="connectionTimeoutAndInterruptedBodyHaveDistinctFlagsForReadAndWrite" classname="com.vitalguard.field.LoginGatewayTest" time="0.001"/>
+  <testcase name="nonLoginErrorsAreUnchangedAndOkMustBeTrueEvenOn200" classname="com.vitalguard.field.LoginGatewayTest" time="0.001"/>
+  <testcase name="serverLockSecondsAreNotRoundedOrInvented" classname="com.vitalguard.field.LoginGatewayTest" time="0.001"/>
+  <testcase name="siteStatusHidesPrivateErrorsAnd403NeverRequestsRefresh" classname="com.vitalguard.field.LoginGatewayTest" time="0.002"/>
+  <testcase name="unknownCodesStayOutOfScreenButKeepAuthenticationMetadata" classname="com.vitalguard.field.LoginGatewayTest" time="0.001"/>
+  <testcase name="sessionSiteAndTicketRoutesUseExactFieldsAndEnvelopes" classname="com.vitalguard.field.LoginGatewayTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

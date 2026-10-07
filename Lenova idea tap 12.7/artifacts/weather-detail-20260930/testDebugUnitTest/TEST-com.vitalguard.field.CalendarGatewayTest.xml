@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CalendarGatewayTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-29T15:58:18.335Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.04">
+  <properties/>
+  <testcase name="사진 캐시는 계정별로 분리되고 읽어도 칠일 만료를 연장하지 않는다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.015"/>
+  <testcase name="사진은 다운로드 URL API가 발급한 주소로만 내려받는다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.002"/>
+  <testcase name="네트워크 복귀 알림만으로 오프라인 표시가 풀린다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.002"/>
+  <testcase name="주간 범위와 JWT로 조회하고 기존 CalendarMedia 행을 읽는다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.001"/>
+  <testcase name="업로드 전 DNS 실패는 재시도 가능하고 제출 뒤 실패는 불명이다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.003"/>
+  <testcase name="삭제 유예 403 코드와 문구는 그대로 전달하고 로컬 기록은 유지한다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.005"/>
+  <testcase name="서버 삭제 성공 뒤에만 부모와 딸린 파일을 지운다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.005"/>
+  <testcase name="음성은 목록 GET의 audio_url만 사용하고 댓글 ID로 다운로드 API를 만들지 않는다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.002"/>
+  <testcase name="완료 사진은 서버에서 받고 두번째 열람은 계정 캐시를 사용한다" classname="com.vitalguard.field.CalendarGatewayTest" time="0.005"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

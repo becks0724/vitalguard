@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D-2 결정 — 펜 주석을 어떻게 저장할 것인가</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+.wrap { max-width: 1420px; margin: 0 auto; padding: 28px 28px 80px; }
+
+.head { margin-bottom: 22px; }
+.head h1 { font-size: 26px; margin: 0 0 8px; letter-spacing: -.02em; }
+.head p { margin: 0; color: var(--body); font-size: var(--fs-body); line-height: 1.7; max-width: 900px; }
+
+.picker { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; margin: 22px 0 20px; }
+.picker .grp { }
+.picker .grp > .lab { font-size: 12px; color: #6A6F76; margin-bottom: 6px; font-weight: 700; letter-spacing: .03em; }
+.seg { display: inline-flex; background: #DDE0E5; border-radius: var(--radius-pill); padding: 3px; }
+.seg button {
+  border: 0; background: transparent; padding: 9px 18px; border-radius: var(--radius-pill);
+  font-size: 14px; font-weight: 700; color: #55595F; cursor: pointer; font-family: inherit;
+}
+.seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+.seg button[aria-pressed="true"].plan-a { color: #0A5FAD; }
+.seg button[aria-pressed="true"].plan-b { color: #0E7C5A; }
+.seg button[aria-pressed="true"].plan-d { color: #8A5A00; }
+
+.board { display: grid; grid-template-columns: 470px 1fr; gap: 24px; align-items: start; }
+
+.device { background: #0F1114; border-radius: 26px; padding: 9px; box-shadow: 0 16px 40px rgba(0,0,0,.26); width: max-content; zoom: .52; }
+.screen { width: 866px; height: 1140px; border-radius: 18px; background: var(--canvas); overflow: hidden; display: flex; flex-direction: column; position: relative; }
+.sc-top { padding: 18px 30px 12px; border-bottom: 1px solid var(--hairline); display: flex; align-items: center; justify-content: space-between; }
+.sc-body { flex: 1; overflow: hidden; padding: 16px 30px; }
+
+.panel { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--radius-card); padding: 20px 22px; }
+.panel + .panel { margin-top: 14px; }
+.panel h2 { font-size: 17px; margin: 0 0 12px; display: flex; align-items: center; gap: 9px; }
+
+.verdict { display: flex; gap: 10px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; margin-bottom: 14px; }
+.verdict.ok   { background: var(--ok-tint);     border: 1px solid rgba(16,185,129,.4); }
+.verdict.warn { background: var(--warn-tint);   border: 1px solid rgba(245,158,11,.45); }
+.verdict.no   { background: var(--danger-tint); border: 1px solid rgba(239,68,68,.4); }
+.verdict .txt { flex: 1; font-size: var(--fs-body); line-height: 1.65; }
+
+.cmp { width: 100%; border-collapse: collapse; font-size: var(--fs-label); }
+.cmp th, .cmp td { padding: 11px 12px; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+.cmp th { color: var(--body); font-weight: 700; width: 190px; }
+.cmp tr:last-child td, .cmp tr:last-child th { border-bottom: 0; }
+.cmp .y { color: #0E7C5A; font-weight: 700; }
+.cmp .n { color: #B42318; font-weight: 700; }
+.cmp .m { color: #8A5A00; font-weight: 700; }
+
+.photo { height: 260px; background: linear-gradient(135deg,#3C4149,#22262B); border-radius: 12px; display: grid; place-items: center; color: #8A9099; font-size: 13px; position: relative; overflow: hidden; }
+.photo .ink { position: absolute; inset: 0; pointer-events: none; }
+.photo .stamp { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #B8BEC6; background: rgba(0,0,0,.45); padding: 3px 8px; border-radius: 6px; }
+
+.meta-grid { display: grid; grid-template-columns: 92px 1fr; gap: 6px 12px; font-size: var(--fs-label); margin-top: 12px; }
+.meta-grid dt { color: var(--body); } .meta-grid dd { margin: 0; }
+
+.note { font-size: 13px; color: var(--body); line-height: 1.75; }
+.note b { color: var(--ink); }
+.warnbox { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--surface-strong); font-size: 13px; line-height: 1.75; }
+.pill { display:inline-block; background: var(--surface-strong); border-radius: var(--radius-pill); padding: 2px 10px; font-size: 12px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="head">
+    <h1>D-2 결정 — 펜 주석을 어떻게 저장할 것인가</h1>
+    <p>
+      저장 방식은 <b>저장하는 순간</b>이 아니라 <b>그 뒤에 무엇을 할 수 있는가</b>에서 갈립니다.
+      아래에서 <b>안(A·B·D)</b>과 <b>상황(4가지)</b>을 바꿔가며 비교하세요.
+      <span class="pill">이 화면은 평가용입니다 — 실제 앱에는 A/B/D 선택이 노출되지 않습니다</span>
+    </p>
+  </div>
+
+  <div class="picker">
+    <div class="grp">
+      <div class="lab">저장 방식</div>
+      <div class="seg" id="plan">
+        <button class="plan-a" data-p="A" aria-pressed="true">A · 합성본 업로드</button>
+        <button class="plan-b" data-p="B" aria-pressed="false">B · 벡터 분리 저장</button>
+        <button class="plan-d" data-p="D" aria-pressed="false">D · A + 원본 연결</button>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="lab">상황</div>
+      <div class="seg" id="case">
+        <button data-c="same" aria-pressed="true">이 기기에서 다시 편집</button>
+        <button data-c="other" aria-pressed="false">다른 기기에서 열기</button>
+        <button data-c="web" aria-pressed="false">관제웹에서 원본 찾기</button>
+        <button data-c="fail" aria-pressed="false">전송 중 끊김</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="device">
+      <div class="screen">
+        <div class="sc-top">
+          <span class="t-title" id="scTitle">주석 결과</span>
+          <span class="t-caption" id="scSub">08-28 14:38 사진</span>
+        </div>
+        <div class="sc-body" id="scBody"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2 id="vTitle">결과</h2>
+        <div id="verdict"></div>
+        <div class="note" id="vNote"></div>
+      </div>
+
+      <div class="panel">
+        <h2>세 안의 차이 — 이 상황에서</h2>
+        <table class="cmp"><tbody id="cmpBody"></tbody></table>
+      </div>
+
+      <div class="panel">
+        <h2>공통 전제</h2>
+        <div class="note">
+          어느 안을 골라도 <b>앱 안에는 펜 선(벡터)을 그대로 보관</b>합니다. 그래야 나중에 A→B 전환이 가능합니다.<br>
+          다만 <b>로컬 보관만으로 전환이 보장되지는 않습니다</b> — 원본 ID·버전·좌표계·작성자·작업 ID·스키마 버전이
+          함께 있어야 전환 경로를 만들 수 있습니다.
+        </div>
+        <div class="warnbox">
+          <b>타인이 올린 사진</b>에 주석을 다는 것은 <b>원본을 고치는 것과 다릅니다.</b>
+          서버가 "내 주석을 덧붙일 권한"을 별도로 검사해야 하며, 현재 <code>mediaWriteScope</code> 는
+          <b>소유자 또는 본인</b>만 수정하도록 되어 있습니다. 세 안 모두 이 검사가 선행됩니다.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const INK = `<svg class="ink" viewBox="0 0 866 260" preserveAspectRatio="none">
+  <ellipse cx="300" cy="120" rx="120" ry="62" fill="none" stroke="#EF4444" stroke-width="7" stroke-linecap="round"/>
+  <path d="M480 90 L620 150" stroke="#EF4444" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M600 132 L620 150 L596 158" stroke="#EF4444" stroke-width="7" stroke-linecap="round" fill="none"/>
+</svg>`;
+
+const PLANS = { A: "A · 합성본 업로드", B: "B · 벡터 분리 저장", D: "D · A + 원본 연결" };
+
+/* 상황 × 안 → 화면 + 판정 + 비교표 */
+const M = {
+same: {
+  label: "이 기기에서 다시 편집",
+  screen: p => `
+    <div class="photo">${INK}<span class="stamp">08-28 14:38 · 장우진</span>원본 + 내 주석</div>
+    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn">↶ 되돌리기</button>
+      <button class="btn">선만 지우기</button>
+      <button class="btn btn--primary">주석 이어서 편집</button>
+    </div>
+    <div class="meta-grid">
+      <dt>게시본</dt><dd>${p === "B" ? "원본 + 주석 레이어(분리)" : "합성 이미지 1장"}</dd>
+      <dt>로컬 작업본</dt><dd><b>있음</b> — 펜 선이 이 기기에 남아 있음</dd>
+    </div>`,
+  verdict: { A: ["ok","이 기기에서는 <b>세 안 모두 다시 편집할 수 있습니다.</b> 로컬에 펜 선을 보관하기로 했기 때문입니다."],
+             B: ["ok","이 기기에서는 <b>세 안 모두 다시 편집할 수 있습니다.</b> 로컬에 펜 선을 보관하기로 했기 때문입니다."],
+             D: ["ok","이 기기에서는 <b>세 안 모두 다시 편집할 수 있습니다.</b> 로컬에 펜 선을 보관하기로 했기 때문입니다."] },
+  note: "여기서는 <b>차이가 없습니다.</b> 그래서 이 상황만 보고 결정하면 안 됩니다 — 다음 세 상황을 보세요.<br>⚠ 단, <b>앱을 지우거나 기기 저장공간을 비우면 로컬 작업본이 사라집니다.</b> 그 뒤부터는 '다른 기기에서 열기'와 같은 상태가 됩니다.",
+  rows: [
+    ["이 기기에서 편집", "<span class='y'>가능</span>", "<span class='y'>가능</span>", "<span class='y'>가능</span>"],
+    ["로컬 작업본을 잃으면", "<span class='n'>편집 불가</span>", "<span class='y'>서버에서 다시 받음</span>", "<span class='n'>편집 불가</span>"]
+  ]
+},
+
+other: {
+  label: "다른 기기에서 열기",
+  screen: p => p === "B" ? `
+    <div class="photo">${INK}<span class="stamp">08-28 14:38 · 장우진</span>원본 + 주석 레이어</div>
+    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn">주석 숨기기</button>
+      <button class="btn btn--primary">이어서 편집</button>
+    </div>
+    <div class="meta-grid">
+      <dt>받은 것</dt><dd><b>원본 + 주석 데이터(벡터)</b></dd>
+      <dt>편집</dt><dd>권한이 있으면 <b>가능</b></dd>
+    </div>` : `
+    <div class="photo">${INK}<span class="stamp">08-28 14:38 · 장우진</span>합성된 이미지 1장</div>
+    <div style="display:flex;gap:12px;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" disabled>주석 숨기기</button>
+      <button class="btn" disabled>이어서 편집</button>
+      <button class="btn btn--primary">새로 주석 달기</button>
+    </div>
+    <div class="meta-grid">
+      <dt>받은 것</dt><dd>합성 이미지 <b>1장</b> — 원본과 선이 이미 합쳐짐</dd>
+      <dt>편집</dt><dd><b>불가</b> — 선만 지우거나 고칠 수 없음</dd>
+    </div>`,
+  verdict: {
+    A: ["no","다른 기기에서는 <b>합성된 사진 한 장</b>만 받습니다. 선만 지우거나 고칠 수 없고, 새로 주석을 달아 또 한 장을 올리는 수밖에 없습니다."],
+    B: ["ok","주석을 <b>데이터로</b> 받으므로 다른 기기에서도 <b>이어서 편집</b>할 수 있습니다. 다만 그 화면·권한·버전 관리를 <b>구현해야</b> 생깁니다 — 저절로 되지 않습니다."],
+    D: ["no","A와 같습니다. 댓글로 원본을 <b>가리킬 뿐</b> 주석 데이터를 넘기지는 않습니다."] },
+  note: "<b>여기가 실질적인 갈림길입니다.</b> 동료가 이어서 고치는 일이 있느냐로 판단하세요.<br>현장 안전관리자는 배정 현장이 1~2개이고 주로 <b>본인 기기 한 대</b>를 씁니다. 그렇다면 이 상황의 빈도가 낮을 수 있습니다 — 그 판단이 D-2 결정의 핵심입니다.",
+  rows: [
+    ["다른 기기에서 편집", "<span class='n'>불가</span>", "<span class='y'>가능(구현 필요)</span>", "<span class='n'>불가</span>"],
+    ["주석만 숨기기", "<span class='n'>불가</span>", "<span class='y'>가능</span>", "<span class='n'>불가</span>"],
+    ["서버 작업", "<span class='y'>없음</span>", "<span class='m'>주석 저장소 신설</span>", "<span class='y'>없음</span>"]
+  ]
+},
+
+web: {
+  label: "관제웹에서 원본 찾기",
+  screen: p => p === "A" ? `
+    <div class="photo">${INK}<span class="stamp">09-12 12:20 · 김태곤</span>새 사진으로 올라감</div>
+    <div class="meta-grid">
+      <dt>웹에서 보임</dt><dd><b>새 사진 1건</b>으로 보임</dd>
+      <dt>원본과 관계</dt><dd><span class="n">표시 없음</span> — 어느 사진의 주석본인지 알 수 없음</dd>
+      <dt>날짜</dt><dd>주석을 단 <b>오늘</b> 칸에 들어감 (원본은 08-28)</dd>
+    </div>` : p === "D" ? `
+    <div class="photo">${INK}<span class="stamp">09-12 12:20 · 김태곤</span>새 사진 + 원본 연결 댓글</div>
+    <div class="meta-grid">
+      <dt>웹에서 보임</dt><dd>새 사진 1건</dd>
+      <dt>원본과 관계</dt><dd><span class="m">댓글로 연결</span> — "원본: 08-28 사진(ID …)"</dd>
+      <dt>깨질 수 있는 때</dt><dd>원본 삭제 · 권한 상실 · 댓글 삭제</dd>
+    </div>` : `
+    <div class="photo">${INK}<span class="stamp">08-28 14:38 · 장우진</span>원본 + 주석(합성 미리보기)</div>
+    <div class="meta-grid">
+      <dt>웹에서 보임</dt><dd><b>원본 그 자리</b>에 주석이 얹혀 보임</dd>
+      <dt>원본과 관계</dt><dd><span class="y">데이터로 연결</span></dd>
+      <dt>웹에서 편집</dt><dd><span class="m">별도 구현 필요</span> — 보기만 제공할 수도 있음</dd>
+    </div>`,
+  verdict: {
+    A: ["no","관제웹에서는 <b>별개의 새 사진</b>으로 보입니다. 어느 사진에 단 주석인지 알 수 없고, <b>날짜도 오늘 칸</b>에 들어가 원본(08-28)과 떨어집니다."],
+    B: ["ok","<b>원본 그 자리에</b> 주석이 얹혀 보입니다. 웹에서 <b>편집</b>까지 하려면 별도 구현이 필요하지만, <b>보기만</b>이라면 합성 미리보기로 충분합니다."],
+    D: ["warn","댓글로 원본을 가리킵니다. 다만 이것은 <b>운영 관례이지 데이터 무결성이 아닙니다</b> — 원본이 삭제되거나 권한을 잃거나 댓글이 지워지면 연결이 끊깁니다."] },
+  note: "관제웹에서 보는 사람(다른 관리자·감독관)에게 <b>이 주석이 어느 사진의 것인지</b>가 보여야 하는지로 판단하세요.<br>⚠ A안의 <b>날짜 문제</b>를 놓치기 쉽습니다 — 주석본이 <b>주석을 단 날</b>로 들어가면 캘린더에서 원본과 멀어집니다.",
+  rows: [
+    ["원본과의 연결", "<span class='n'>없음</span>", "<span class='y'>데이터</span>", "<span class='m'>댓글(관례)</span>"],
+    ["캘린더 날짜", "<span class='n'>주석 단 날</span>", "<span class='y'>원본 날짜</span>", "<span class='m'>주석 단 날 + 링크</span>"],
+    ["웹 편집", "<span class='n'>불가</span>", "<span class='m'>구현하면 가능</span>", "<span class='n'>불가</span>"]
+  ]
+},
+
+fail: {
+  label: "전송 중 끊김",
+  screen: p => `
+    <div class="photo" style="opacity:.55">${INK}<span class="stamp">대기 중</span>아직 서버에 없음</div>
+    <div style="margin-top:14px;padding:14px 16px;border-radius:12px;background:var(--warn-tint);border:1px solid rgba(245,158,11,.45)">
+      <div class="t-body"><b>전송 대기</b> — 연결되면 자동으로 보냅니다</div>
+      <div class="t-caption" style="margin-top:6px">로컬에 저장됨 12:18 · <b>서버에는 아직 없습니다</b></div>
+    </div>
+    <div class="meta-grid">
+      <dt>보낼 것</dt><dd>${p === "B" ? "원본 참조 + 주석 데이터 <b>1건</b>" : "합성 이미지 <b>1장</b>"}${p === "D" ? " + 연결 댓글 <b>1건</b>" : ""}</dd>
+      <dt>중복 위험</dt><dd>${p === "D" ? "<span class='n'>사진은 갔는데 댓글만 실패</span>할 수 있음" : "<span class='m'>응답 유실 시 같은 작업 ID로 결과 조회</span>"}</dd>
+    </div>`,
+  verdict: {
+    A: ["warn","합성 이미지 <b>1건</b>만 보내면 되어 가장 단순합니다. 다만 응답이 유실되면 <b>올라갔는지 알 수 없어</b> 같은 작업 ID로 결과를 조회해야 합니다."],
+    B: ["warn","원본 참조 + 주석 데이터를 보냅니다. 용량이 작아 재전송이 가볍지만, <b>원본이 서버에 없거나 접근 권한을 잃으면</b> 주석만 떠도는 상태가 됩니다."],
+    D: ["no","보낼 것이 <b>둘(사진 + 연결 댓글)</b>이라 <b>사진은 성공하고 댓글만 실패</b>할 수 있습니다. 그러면 원본 연결이 없는 A안과 같아지는데, <b>사용자는 연결됐다고 믿습니다.</b>"] },
+  note: "지연 전송(D-3)을 채택했으므로 이 상황은 <b>예외가 아니라 일상</b>입니다.<br>⚠ 공통 선행 과제 — 현재 <code>app-media</code> 핸들러에 <b>클라이언트 작업 ID 중복방지 계약이 확인되지 않았습니다.</b> 세 안 모두 이걸 먼저 정해야 재시도에서 사진이 중복 등록되지 않습니다.",
+  rows: [
+    ["보낼 항목 수", "1건", "1건(참조+데이터)", "<span class='n'>2건</span>"],
+    ["부분 실패", "<span class='y'>없음</span>", "<span class='m'>원본 부재 시 고아</span>", "<span class='n'>댓글만 실패 가능</span>"],
+    ["재전송 용량", "<span class='m'>이미지 전체</span>", "<span class='y'>작음</span>", "<span class='m'>이미지 전체</span>"]
+  ]
+}
+};
+
+let plan = "A", cse = "same";
+const $ = s => document.querySelector(s);
+
+function render() {
+  const m = M[cse];
+  $("#scTitle").textContent = PLANS[plan];
+  $("#scSub").textContent = m.label;
+  $("#scBody").innerHTML = m.screen(plan);
+
+  const [tone, text] = m.verdict[plan];
+  $("#vTitle").textContent = `${PLANS[plan]} — ${m.label}`;
+  const icon = tone === "ok" ? "badge--ok" : tone === "warn" ? "badge--warn" : "badge--danger";
+  const word = tone === "ok" ? "가능" : tone === "warn" ? "주의" : "제약";
+  $("#verdict").innerHTML = `<div class="verdict ${tone}">
+      <span class="badge ${icon}" style="flex:none">${word}</span>
+      <span class="txt">${text}</span></div>`;
+  $("#vNote").innerHTML = m.note;
+
+  $("#cmpBody").innerHTML = m.rows.map(r => `<tr><th>${r[0]}</th>
+      <td${plan==="A"?' style="background:var(--surface-soft)"':''}>${r[1]}</td>
+      <td${plan==="B"?' style="background:var(--surface-soft)"':''}>${r[2]}</td>
+      <td${plan==="D"?' style="background:var(--surface-soft)"':''}>${r[3]}</td></tr>`).join("")
+    + `<tr><th></th><td class="t-caption">A</td><td class="t-caption">B</td><td class="t-caption">D</td></tr>`;
+}
+
+$("#plan").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  plan = b.dataset.p;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  render();
+});
+$("#case").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  cse = b.dataset.c;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  render();
+});
+
+render();
+</script>
+</body>
+</html>

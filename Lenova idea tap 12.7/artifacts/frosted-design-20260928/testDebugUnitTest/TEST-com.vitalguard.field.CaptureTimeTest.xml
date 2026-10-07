@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CaptureTimeTest" tests="10" skipped="0" failures="0" errors="0" timestamp="2026-09-28T02:09:38.602Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.002">
+  <properties/>
+  <testcase name="timeDisplayKeepsTheOriginalField[0: 2026-09-14T02:13:04.759Z]" classname="com.vitalguard.field.CaptureTimeTest" time="0.001"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[1: 2026-09-14T11:13:04+09:00]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[2: 2026-09-14T11:13:04]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[3: 2026-09-14T15:13:04Z]" classname="com.vitalguard.field.CaptureTimeTest" time="0.001"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[4: 2026-12-31T15:00:00Z]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[5: 2026-09-14T11:13:04+0900]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[6: 2026-09-14 11:13:04]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[7: null]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[8: ]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <testcase name="timeDisplayKeepsTheOriginalField[9: invalid-time]" classname="com.vitalguard.field.CaptureTimeTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

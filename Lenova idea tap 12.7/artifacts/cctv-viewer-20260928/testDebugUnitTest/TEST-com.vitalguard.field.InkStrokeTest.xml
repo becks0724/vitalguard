@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.InkStrokeTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-09-28T07:35:12.658Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.024">
+  <properties/>
+  <testcase name="inputCoordinatesAndPressureUseOriginalPrecision" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <testcase name="eraserRadiusUsesImageWidthInBothAxes" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <testcase name="legacyErasersApplyPressureInTimeOrderAndNeverSerializeAsStrokes" classname="com.vitalguard.field.InkStrokeTest" time="0.001"/>
+  <testcase name="eraseSweepsIntersectionsBetweenSparsePointsAndDeletesWholeStrokes" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <testcase name="versionOneRoundTripAndExactTwoMiBLimit" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <testcase name="roundedHundredStrokesWithFourHundredPointsFitUploadLimit" classname="com.vitalguard.field.InkStrokeTest" time="0.023"/>
+  <testcase name="dotsRepeatedPointsMarkerThicknessAndSegmentEndsAreIncluded" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <testcase name="rectangleHitTestsItsFourEdgesNotItsInterior" classname="com.vitalguard.field.InkStrokeTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,10 @@
+{
+  "version": "1.3.12",
+  "code": 17,
+  "outlineStrokeBefore": 1.5,
+  "outlineStrokeAfter": 1.0,
+  "apk": {
+    "bytes": 59774816,
+    "sha256": "0d5424c346ace677b36fdd61cd9a0aaf9d3a64c9c5bbe11fc6639260978ee85b"
+  }
+}

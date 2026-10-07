@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.HttpTransportTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-09-29T14:50:59.707Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.008">
+  <properties/>
+  <testcase name="malformedPostResponseIsUncertainAndRedirectIsNeverFollowed" classname="com.vitalguard.field.HttpTransportTest" time="0.004"/>
+  <testcase name="headersTimeoutsStreamingAndRedirectPolicyAreApplied" classname="com.vitalguard.field.HttpTransportTest" time="0.002"/>
+  <testcase name="signedVoiceDownloadNeverCarriesAppBearerOrFollowsRedirects" classname="com.vitalguard.field.HttpTransportTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

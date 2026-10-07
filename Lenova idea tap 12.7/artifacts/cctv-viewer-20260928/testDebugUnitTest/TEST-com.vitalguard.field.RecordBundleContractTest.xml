@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.RecordBundleContractTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-28T07:35:12.895Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.005">
+  <properties/>
+  <testcase name="addressUsesSixDecimalsAndTrimmedDisplayOnly" classname="com.vitalguard.field.RecordBundleContractTest" time="0.002"/>
+  <testcase name="controllerCommentOperationIdRoundTripsThroughBodyAndEnvelope" classname="com.vitalguard.field.RecordBundleContractTest" time="0.001"/>
+  <testcase name="lookupMockPreservesPhotoTextVoiceRowIdsAndAccountOwnership" classname="com.vitalguard.field.RecordBundleContractTest" time="0.001"/>
+  <testcase name="mockCommentDeduplicatesWithinAnAccountButNotAcrossAccounts" classname="com.vitalguard.field.RecordBundleContractTest" time="0.0"/>
+  <testcase name="legacyCommentOmitsOptionalIdAndEnvelopeFields" classname="com.vitalguard.field.RecordBundleContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

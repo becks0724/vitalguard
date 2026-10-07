@@ -1,0 +1,45 @@
+{
+  "stage": 4,
+  "date": "2026-09-27",
+  "jvm": {
+    "tests": 295,
+    "failures": 0
+  },
+  "device": {
+    "tests": 49,
+    "failures": 0,
+    "seconds": 135.029
+  },
+  "previews": {
+    "tests": 17,
+    "failures": 0,
+    "previous_references_unchanged": 15
+  },
+  "release": {
+    "package": "com.vitalguard.field",
+    "versionName": "1.1.0",
+    "versionCode": 2,
+    "bytes": 57025152,
+    "sha256": "0f536eb193143061675b341d4a1f537632e41615fdd1de784ff213dccd3579f9",
+    "installedAtKst": "2026-09-27T22:00:02+09:00",
+    "uid": 10303,
+    "firstInstallTime": "2026-09-16T12:50:57+09:00",
+    "coldStartMs": 305
+  },
+  "postUpdateStorage": {
+    "accounts": 2,
+    "keys": 16,
+    "outbox": 7,
+    "drafts": 4,
+    "pending": 0,
+    "invalid": 0,
+    "tokenDecoded": true
+  },
+  "network": {
+    "defaultNetwork": "none",
+    "onlineReleaseVerification": false
+  },
+  "probeRemoved": true,
+  "commit": "93a75a46",
+  "sourceSnapshotMatchingFiles": 197
+}

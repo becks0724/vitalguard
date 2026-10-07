@@ -1,0 +1,50 @@
+{
+  "version": "1.3.2",
+  "versionCode": 7,
+  "implementation": "single CPU-generated bitmap, cached per process, drawn once behind workspace; no per-frame blur",
+  "apk": {
+    "debug": {
+      "bytes": 65245321,
+      "sha256": "00b98973cf08048967a07ead8565c934a79651988becf6f64bee93f27f2aa86e"
+    },
+    "release": {
+      "bytes": 59726520,
+      "sha256": "b9b1d3507c47631477f537e89d1f93c6a5d3fea8d6d7d19482e1cd01f7259613"
+    }
+  },
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 298,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "targetedDeviceTests": {
+      "passed": 11,
+      "seconds": 29.508
+    }
+  },
+  "releaseInstallation": {
+    "version": "1.3.2",
+    "versionCode": 7,
+    "timeKST": "2026-09-28 11:15:48",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "activityColdStartMs": 278,
+    "existingAccountRestored": true,
+    "lastReceiptTimeKST": "2026-09-28 11:16:03",
+    "frostedWorkspaceVisualVerified": true
+  },
+  "wallpaperOriginalSha256": "ddfaff15d43f2b1cf4075421d506989cc437179bd95cfff95bd7f3b413f74d4a",
+  "git": {
+    "commit": "c358ff773fcecdc32ae1cbeddcd112ec4269117d",
+    "remoteBranch": "origin/main",
+    "pushVerified": true
+  }
+}

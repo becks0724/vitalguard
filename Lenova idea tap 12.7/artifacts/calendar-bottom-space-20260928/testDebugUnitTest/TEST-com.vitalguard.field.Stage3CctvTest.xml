@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.Stage3CctvTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-28T03:32:44.493Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.012">
+  <properties/>
+  <testcase name="eachPollGetsAFreshTicketAndHiddenScreenStopsNewRequests" classname="com.vitalguard.field.Stage3CctvTest" time="0.002"/>
+  <testcase name="splitHeadersQuotedBoundaryAndNoLengthFirstPartAreSupported" classname="com.vitalguard.field.Stage3CctvTest" time="0.002"/>
+  <testcase name="imageResponseAndBoundsValidation" classname="com.vitalguard.field.Stage3CctvTest" time="0.002"/>
+  <testcase name="failureBackoffAndExpiryNeverReuseTickets" classname="com.vitalguard.field.Stage3CctvTest" time="0.002"/>
+  <testcase name="gateUsesOnlyReadTicketDisablesRedirectsAndClosesTheStream" classname="com.vitalguard.field.Stage3CctvTest" time="0.001"/>
+  <testcase name="gateUrlsPreservePathAndRejectCredentialsQueriesFragments" classname="com.vitalguard.field.Stage3CctvTest" time="0.0"/>
+  <testcase name="lateTicketNeverOpensHiddenGateAndResumeWaitsForSingleFlight" classname="com.vitalguard.field.Stage3CctvTest" time="0.001"/>
+  <testcase name="firstMultipartFrameStopsAtContentLengthWithoutWaitingForBoundary" classname="com.vitalguard.field.Stage3CctvTest" time="0.001"/>
+  <testcase name="errorsAreSanitizedAndExistingCleartextPolicyIsPreserved" classname="com.vitalguard.field.Stage3CctvTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.Stage3GatewayTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-28T03:12:33.943Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.004">
+  <properties/>
+  <testcase name="malformedAckAnd5xxAreUncertainAndNeverRetry" classname="com.vitalguard.field.Stage3GatewayTest" time="0.001"/>
+  <testcase name="ticketUsesDedicatedRouteAndPreservesUnknownCameraCode" classname="com.vitalguard.field.Stage3GatewayTest" time="0.001"/>
+  <testcase name="ackPreservesIntegerAndUuidWireTypesAndOnlySendsId" classname="com.vitalguard.field.Stage3GatewayTest" time="0.0"/>
+  <testcase name="invalidAckIdsFailBeforeTransport" classname="com.vitalguard.field.Stage3GatewayTest" time="0.001"/>
+  <testcase name="ticketPayloadValidationDoesNotExposeTheToken" classname="com.vitalguard.field.Stage3GatewayTest" time="0.0"/>
+  <testcase name="forbiddenAckPreservesRejectedStatusWithoutUncertainty" classname="com.vitalguard.field.Stage3GatewayTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

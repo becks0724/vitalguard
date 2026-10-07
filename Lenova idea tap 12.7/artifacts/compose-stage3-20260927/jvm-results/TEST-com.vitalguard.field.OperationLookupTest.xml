@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.OperationLookupTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-09-27T07:42:28.261Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.005">
+  <properties/>
+  <testcase name="missingDuplicateForeignUnknownAndMalformedRowsRejectTheWholeBatch" classname="com.vitalguard.field.OperationLookupTest" time="0.001"/>
+  <testcase name="getUsesBearerAndRepeatedEncodedParametersWithoutChangingIds" classname="com.vitalguard.field.OperationLookupTest" time="0.0"/>
+  <testcase name="registeredOptionalIdDoesNotRequireOrCoerceANonStringReceipt" classname="com.vitalguard.field.OperationLookupTest" time="0.001"/>
+  <testcase name="validatesOneToFiftyIdsBeforeDedupAndPreservesOneTo128Characters" classname="com.vitalguard.field.OperationLookupTest" time="0.001"/>
+  <testcase name="communicationsFailuresDoNotBecomeEmptyOrAbsent" classname="com.vitalguard.field.OperationLookupTest" time="0.0"/>
+  <testcase name="httpErrorsKeepTheirStatusAndNeverReturnAbsence" classname="com.vitalguard.field.OperationLookupTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.FieldCoordinatorTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-09-28T07:08:36.310Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.025">
+  <properties/>
+  <testcase name="lateRefreshCannotReplaceNewAccountsTokenBundle" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.001"/>
+  <testcase name="lateSiteOrLoginResultsNeverRestoreSignedOutIdentity" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.003"/>
+  <testcase name="forbiddenClearsSnapshotWithoutRefreshAndAccountSwitchClearsView" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.003"/>
+  <testcase name="roleAliasesAreAcceptedButWorkerAndUnrecognizedRolesAreDeniedAfterLogout" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.002"/>
+  <testcase name="serverLockPreventsLoginAndTotpUntilInjectedClockExpires" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.001"/>
+  <testcase name="requiredWrite401RefreshesOnceWithNewTokenAndRetry401Locks" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.002"/>
+  <testcase name="logoutIsLocalFirstAndServerFailureIsOnlyAMessage" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.001"/>
+  <testcase name="draftSaveFailureStopsLogoutAndUncertainWritesNeverRetry" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.002"/>
+  <testcase name="refreshSiteCachesNullAndFailureKeepsPreviousSite" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.004"/>
+  <testcase name="expiredParallelRequestsShareSingleRefresh" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.002"/>
+  <testcase name="ack401NeverRepeatsPost" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.001"/>
+  <testcase name="mockTotpWrongCorrectCancelAndRememberFalse" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.001"/>
+  <testcase name="refreshReauthAndBeforeLockFailureStillClearTokens" classname="com.vitalguard.field.FieldCoordinatorTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

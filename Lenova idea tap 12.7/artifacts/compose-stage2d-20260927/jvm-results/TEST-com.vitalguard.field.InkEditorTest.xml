@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.InkEditorTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-09-27T05:33:14.497Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.386">
+  <properties/>
+  <testcase name="widthMultipliersArePerToolAndExistingStrokesNeverChange" classname="com.vitalguard.field.InkEditorTest" time="0.003"/>
+  <testcase name="failedBackPreservesStateAndCanRetry" classname="com.vitalguard.field.InkEditorTest" time="0.004"/>
+  <testcase name="unfinishedInkIsRecoverableWithoutLifecycleAndRotationCommitsBeforeLateCancel" classname="com.vitalguard.field.InkEditorTest" time="0.005"/>
+  <testcase name="previousUncertainOrSendingInkBlocksReplacementButCompletedInkAllowsAnAddition" classname="com.vitalguard.field.InkEditorTest" time="0.004"/>
+  <testcase name="samePointAndSubPixelMoveAreDroppedButDotIsSaved" classname="com.vitalguard.field.InkEditorTest" time="0.001"/>
+  <testcase name="leavingDuringImageDecodeCannotRecreateClosedSession" classname="com.vitalguard.field.InkEditorTest" time="0.001"/>
+  <testcase name="cancelledEraserDoesNotDeleteButCompletedEraserIsOneUndoOperation" classname="com.vitalguard.field.InkEditorTest" time="0.002"/>
+  <testcase name="cancelledPenIsRemovedFromMemoryAndImmediateDraftSnapshot" classname="com.vitalguard.field.InkEditorTest" time="0.001"/>
+  <testcase name="touchOnlyPansAndPinchesWithoutInkAndClampsWithoutDrift" classname="com.vitalguard.field.InkEditorTest" time="0.002"/>
+  <testcase name="oversizedInkKeepsDraftAndDoesNotRenderOrEnqueue" classname="com.vitalguard.field.InkEditorTest" time="0.354"/>
+  <testcase name="penTakesPriorityAndIgnoresPalmUntilLifted" classname="com.vitalguard.field.InkEditorTest" time="0.003"/>
+  <testcase name="saveQueuesInkAndOriginalPreviewWithoutHttpAndReplacesOldRevision" classname="com.vitalguard.field.InkEditorTest" time="0.003"/>
+  <testcase name="renderFailureOrAccountChangeKeepsDraftAndPreventsReplacement" classname="com.vitalguard.field.InkEditorTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

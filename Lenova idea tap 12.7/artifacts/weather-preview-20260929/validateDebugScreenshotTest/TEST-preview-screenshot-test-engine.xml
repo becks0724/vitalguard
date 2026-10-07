@@ -1,0 +1,473 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<testsuite name="Preview Screenshot Test Engine" tests="33" skipped="0" failures="0" errors="0" time="13.785" hostname="gimtaegon-ui-MacBookPro.local" timestamp="2026-09-29T23:28:47">
+<properties>
+<property name="deviceId" value="Preview"/>
+<property name="deviceDisplayName" value="Preview"/>
+</properties>
+<testcase name="DashboardSignalMixPreview_DashboardSignalMix" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.053">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardSignalMix"/>
+<property name="PreviewScreenshot.methodName" value="DashboardSignalMixPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardSignalMixPreview_DashboardSignalMix_e08e66a3_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardSignalMixPreview_DashboardSignalMix_e08e66a3_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardSignalMixPreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardSignalMixPreview_DashboardSignalMix_e08e66a3]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardSignalMixPreview_DashboardSignalMix_e08e66a3_0]
+display-name: DashboardSignalMixPreview_DashboardSignalMix
+]]></system-out>
+</testcase>
+<testcase name="RecordCalendarPreview_RecordCalendar866" classname="com.vitalguard.field.Stage2cPreviewTestKt" time="0.222">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="RecordCalendar866"/>
+<property name="PreviewScreenshot.methodName" value="RecordCalendarPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2cPreviewTestKt/RecordCalendarPreview_RecordCalendar866_504c368f_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2cPreviewTestKt/RecordCalendarPreview_RecordCalendar866_504c368f_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2cPreviewTestKt]/[method:RecordCalendarPreview]/[previewAnnotation:com.vitalguard.field.Stage2cPreviewTestKt.RecordCalendarPreview_RecordCalendar866_504c368f]/[previewId:com.vitalguard.field.Stage2cPreviewTestKt.RecordCalendarPreview_RecordCalendar866_504c368f_0]
+display-name: RecordCalendarPreview_RecordCalendar866
+]]></system-out>
+</testcase>
+<testcase name="LocalRecordsCalendarPreview_LocalRecordsCalendar866" classname="com.vitalguard.field.Stage2aPreviewTestKt" time="0.222">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="LocalRecordsCalendar866"/>
+<property name="PreviewScreenshot.methodName" value="LocalRecordsCalendarPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2aPreviewTestKt/LocalRecordsCalendarPreview_LocalRecordsCalendar866_455b1c24_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2aPreviewTestKt/LocalRecordsCalendarPreview_LocalRecordsCalendar866_455b1c24_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2aPreviewTestKt]/[method:LocalRecordsCalendarPreview]/[previewAnnotation:com.vitalguard.field.Stage2aPreviewTestKt.LocalRecordsCalendarPreview_LocalRecordsCalendar866_455b1c24]/[previewId:com.vitalguard.field.Stage2aPreviewTestKt.LocalRecordsCalendarPreview_LocalRecordsCalendar866_455b1c24_0]
+display-name: LocalRecordsCalendarPreview_LocalRecordsCalendar866
+]]></system-out>
+</testcase>
+<testcase name="WeatherLandscapePreview_WeatherLandscape" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.035">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="WeatherLandscape"/>
+<property name="PreviewScreenshot.methodName" value="WeatherLandscapePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/WeatherLandscapePreview_WeatherLandscape_1dadda01_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/WeatherLandscapePreview_WeatherLandscape_1dadda01_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:WeatherLandscapePreview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.WeatherLandscapePreview_WeatherLandscape_1dadda01]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.WeatherLandscapePreview_WeatherLandscape_1dadda01_0]
+display-name: WeatherLandscapePreview_WeatherLandscape
+]]></system-out>
+</testcase>
+<testcase name="CctvStage3Preview_CctvUnavailable866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.224">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="CctvUnavailable866"/>
+<property name="PreviewScreenshot.methodName" value="CctvStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/CctvStage3Preview_CctvUnavailable866_cda7db75_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/CctvStage3Preview_CctvUnavailable866_cda7db75_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:CctvStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.CctvStage3Preview_CctvUnavailable866_cda7db75]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.CctvStage3Preview_CctvUnavailable866_cda7db75_0]
+display-name: CctvStage3Preview_CctvUnavailable866
+]]></system-out>
+</testcase>
+<testcase name="DashboardLandscapePreview_DashboardLandscape" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.055">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardLandscape"/>
+<property name="PreviewScreenshot.methodName" value="DashboardLandscapePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardLandscapePreview_DashboardLandscape_c9fa0198_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardLandscapePreview_DashboardLandscape_c9fa0198_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardLandscapePreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardLandscapePreview_DashboardLandscape_c9fa0198]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardLandscapePreview_DashboardLandscape_c9fa0198_0]
+display-name: DashboardLandscapePreview_DashboardLandscape
+]]></system-out>
+</testcase>
+<testcase name="StatusIconsPreview_StatusIcons" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.028">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="StatusIcons"/>
+<property name="PreviewScreenshot.methodName" value="StatusIconsPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/StatusIconsPreview_StatusIcons_7449d439_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/StatusIconsPreview_StatusIcons_7449d439_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:StatusIconsPreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.StatusIconsPreview_StatusIcons_7449d439]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.StatusIconsPreview_StatusIcons_7449d439_0]
+display-name: StatusIconsPreview_StatusIcons
+]]></system-out>
+</testcase>
+<testcase name="AlertDetailStage3Preview_AlertDetail866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.223">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="AlertDetail866"/>
+<property name="PreviewScreenshot.methodName" value="AlertDetailStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/AlertDetailStage3Preview_AlertDetail866_ee0c7cfe_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/AlertDetailStage3Preview_AlertDetail866_ee0c7cfe_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:AlertDetailStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.AlertDetailStage3Preview_AlertDetail866_ee0c7cfe]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.AlertDetailStage3Preview_AlertDetail866_ee0c7cfe_0]
+display-name: AlertDetailStage3Preview_AlertDetail866
+]]></system-out>
+</testcase>
+<testcase name="WorkersStage3Preview_Workers866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.23">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Workers866"/>
+<property name="PreviewScreenshot.methodName" value="WorkersStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/WorkersStage3Preview_Workers866_1f6d8227_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/WorkersStage3Preview_Workers866_1f6d8227_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:WorkersStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.WorkersStage3Preview_Workers866_1f6d8227]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.WorkersStage3Preview_Workers866_1f6d8227_0]
+display-name: WorkersStage3Preview_Workers866
+]]></system-out>
+</testcase>
+<testcase name="MemberProfilePreview_MemberProfile" classname="com.vitalguard.field.ProfileInfoPreviewTestKt" time="0.02">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="MemberProfile"/>
+<property name="PreviewScreenshot.methodName" value="MemberProfilePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/ProfileInfoPreviewTestKt/MemberProfilePreview_MemberProfile_5605ae6d_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/ProfileInfoPreviewTestKt/MemberProfilePreview_MemberProfile_5605ae6d_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.ProfileInfoPreviewTestKt]/[method:MemberProfilePreview]/[previewAnnotation:com.vitalguard.field.ProfileInfoPreviewTestKt.MemberProfilePreview_MemberProfile_5605ae6d]/[previewId:com.vitalguard.field.ProfileInfoPreviewTestKt.MemberProfilePreview_MemberProfile_5605ae6d_0]
+display-name: MemberProfilePreview_MemberProfile
+]]></system-out>
+</testcase>
+<testcase name="OutboxHistoryPreview_OutboxHistory866" classname="com.vitalguard.field.Stage2cPreviewTestKt" time="0.227">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="OutboxHistory866"/>
+<property name="PreviewScreenshot.methodName" value="OutboxHistoryPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2cPreviewTestKt/OutboxHistoryPreview_OutboxHistory866_58940be4_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2cPreviewTestKt/OutboxHistoryPreview_OutboxHistory866_58940be4_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2cPreviewTestKt]/[method:OutboxHistoryPreview]/[previewAnnotation:com.vitalguard.field.Stage2cPreviewTestKt.OutboxHistoryPreview_OutboxHistory866_58940be4]/[previewId:com.vitalguard.field.Stage2cPreviewTestKt.OutboxHistoryPreview_OutboxHistory866_58940be4_0]
+display-name: OutboxHistoryPreview_OutboxHistory866
+]]></system-out>
+</testcase>
+<testcase name="LoginPreview_Login866" classname="com.vitalguard.field.Stage1PreviewTestKt" time="0.207">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Login866"/>
+<property name="PreviewScreenshot.methodName" value="LoginPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage1PreviewTestKt/LoginPreview_Login866_1a3c7810_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage1PreviewTestKt/LoginPreview_Login866_1a3c7810_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage1PreviewTestKt]/[method:LoginPreview]/[previewAnnotation:com.vitalguard.field.Stage1PreviewTestKt.LoginPreview_Login866_1a3c7810]/[previewId:com.vitalguard.field.Stage1PreviewTestKt.LoginPreview_Login866_1a3c7810_0]
+display-name: LoginPreview_Login866
+]]></system-out>
+</testcase>
+<testcase name="AlertsStage3Preview_Alerts866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.219">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Alerts866"/>
+<property name="PreviewScreenshot.methodName" value="AlertsStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/AlertsStage3Preview_Alerts866_ab315fbd_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/AlertsStage3Preview_Alerts866_ab315fbd_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:AlertsStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.AlertsStage3Preview_Alerts866_ab315fbd]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.AlertsStage3Preview_Alerts866_ab315fbd_0]
+display-name: AlertsStage3Preview_Alerts866
+]]></system-out>
+</testcase>
+<testcase name="UsageGuideCompactPreview_UsageGuideCompact" classname="com.vitalguard.field.UsageGuidePreviewTestKt" time="0.017">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="UsageGuideCompact"/>
+<property name="PreviewScreenshot.methodName" value="UsageGuideCompactPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/UsageGuidePreviewTestKt/UsageGuideCompactPreview_UsageGuideCompact_01ecbd04_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/UsageGuidePreviewTestKt/UsageGuideCompactPreview_UsageGuideCompact_01ecbd04_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.UsageGuidePreviewTestKt]/[method:UsageGuideCompactPreview]/[previewAnnotation:com.vitalguard.field.UsageGuidePreviewTestKt.UsageGuideCompactPreview_UsageGuideCompact_01ecbd04]/[previewId:com.vitalguard.field.UsageGuidePreviewTestKt.UsageGuideCompactPreview_UsageGuideCompact_01ecbd04_0]
+display-name: UsageGuideCompactPreview_UsageGuideCompact
+]]></system-out>
+</testcase>
+<testcase name="OutboxInfoBubblePreview_OutboxInfoBubble" classname="com.vitalguard.field.ProfileInfoPreviewTestKt" time="0.006">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="OutboxInfoBubble"/>
+<property name="PreviewScreenshot.methodName" value="OutboxInfoBubblePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/ProfileInfoPreviewTestKt/OutboxInfoBubblePreview_OutboxInfoBubble_6997d5e3_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/ProfileInfoPreviewTestKt/OutboxInfoBubblePreview_OutboxInfoBubble_6997d5e3_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.ProfileInfoPreviewTestKt]/[method:OutboxInfoBubblePreview]/[previewAnnotation:com.vitalguard.field.ProfileInfoPreviewTestKt.OutboxInfoBubblePreview_OutboxInfoBubble_6997d5e3]/[previewId:com.vitalguard.field.ProfileInfoPreviewTestKt.OutboxInfoBubblePreview_OutboxInfoBubble_6997d5e3_0]
+display-name: OutboxInfoBubblePreview_OutboxInfoBubble
+]]></system-out>
+</testcase>
+<testcase name="GasStage3Preview_Gas866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.227">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Gas866"/>
+<property name="PreviewScreenshot.methodName" value="GasStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/GasStage3Preview_Gas866_2a4a755a_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/GasStage3Preview_Gas866_2a4a755a_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:GasStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.GasStage3Preview_Gas866_2a4a755a]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.GasStage3Preview_Gas866_2a4a755a_0]
+display-name: GasStage3Preview_Gas866
+]]></system-out>
+</testcase>
+<testcase name="RecordEditorPreview_RecordEditor866" classname="com.vitalguard.field.Stage2bPreviewTestKt" time="0.215">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="RecordEditor866"/>
+<property name="PreviewScreenshot.methodName" value="RecordEditorPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2bPreviewTestKt/RecordEditorPreview_RecordEditor866_1629fe1c_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2bPreviewTestKt/RecordEditorPreview_RecordEditor866_1629fe1c_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2bPreviewTestKt]/[method:RecordEditorPreview]/[previewAnnotation:com.vitalguard.field.Stage2bPreviewTestKt.RecordEditorPreview_RecordEditor866_1629fe1c]/[previewId:com.vitalguard.field.Stage2bPreviewTestKt.RecordEditorPreview_RecordEditor866_1629fe1c_0]
+display-name: RecordEditorPreview_RecordEditor866
+]]></system-out>
+</testcase>
+<testcase name="WeatherCompactLargeTextPreview_WeatherCompactLargeText" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.02">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="WeatherCompactLargeText"/>
+<property name="PreviewScreenshot.methodName" value="WeatherCompactLargeTextPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/WeatherCompactLargeTextPreview_WeatherCompactLargeText_23379ba9_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/WeatherCompactLargeTextPreview_WeatherCompactLargeText_23379ba9_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:WeatherCompactLargeTextPreview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.WeatherCompactLargeTextPreview_WeatherCompactLargeText_23379ba9]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.WeatherCompactLargeTextPreview_WeatherCompactLargeText_23379ba9_0]
+display-name: WeatherCompactLargeTextPreview_WeatherCompactLargeText
+]]></system-out>
+</testcase>
+<testcase name="DashboardLargeTextPreview_DashboardLargeText" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.068">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardLargeText"/>
+<property name="PreviewScreenshot.methodName" value="DashboardLargeTextPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardLargeTextPreview_DashboardLargeText_9bb325dc_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardLargeTextPreview_DashboardLargeText_9bb325dc_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardLargeTextPreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardLargeTextPreview_DashboardLargeText_9bb325dc]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardLargeTextPreview_DashboardLargeText_9bb325dc_0]
+display-name: DashboardLargeTextPreview_DashboardLargeText
+]]></system-out>
+</testcase>
+<testcase name="SettingsCompactStage4Preview_SettingsCompactLargeText" classname="com.vitalguard.field.Stage4PreviewTestKt" time="0.014">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="SettingsCompactLargeText"/>
+<property name="PreviewScreenshot.methodName" value="SettingsCompactStage4Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage4PreviewTestKt/SettingsCompactStage4Preview_SettingsCompactLargeText_8ff94b04_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage4PreviewTestKt/SettingsCompactStage4Preview_SettingsCompactLargeText_8ff94b04_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage4PreviewTestKt]/[method:SettingsCompactStage4Preview]/[previewAnnotation:com.vitalguard.field.Stage4PreviewTestKt.SettingsCompactStage4Preview_SettingsCompactLargeText_8ff94b04]/[previewId:com.vitalguard.field.Stage4PreviewTestKt.SettingsCompactStage4Preview_SettingsCompactLargeText_8ff94b04_0]
+display-name: SettingsCompactStage4Preview_SettingsCompactLargeText
+]]></system-out>
+</testcase>
+<testcase name="AedStage3Preview_Aed866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.224">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Aed866"/>
+<property name="PreviewScreenshot.methodName" value="AedStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/AedStage3Preview_Aed866_04f1222c_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/AedStage3Preview_Aed866_04f1222c_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:AedStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.AedStage3Preview_Aed866_04f1222c]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.AedStage3Preview_Aed866_04f1222c_0]
+display-name: AedStage3Preview_Aed866
+]]></system-out>
+</testcase>
+<testcase name="AlertFiltersCompactPreview_AlertFiltersCompact" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.013">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="AlertFiltersCompact"/>
+<property name="PreviewScreenshot.methodName" value="AlertFiltersCompactPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/AlertFiltersCompactPreview_AlertFiltersCompact_0afabddb_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/AlertFiltersCompactPreview_AlertFiltersCompact_0afabddb_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:AlertFiltersCompactPreview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.AlertFiltersCompactPreview_AlertFiltersCompact_0afabddb]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.AlertFiltersCompactPreview_AlertFiltersCompact_0afabddb_0]
+display-name: AlertFiltersCompactPreview_AlertFiltersCompact
+]]></system-out>
+</testcase>
+<testcase name="DashboardLeftHandPreview_DashboardLeftHand" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.058">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardLeftHand"/>
+<property name="PreviewScreenshot.methodName" value="DashboardLeftHandPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardLeftHandPreview_DashboardLeftHand_32969ac6_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardLeftHandPreview_DashboardLeftHand_32969ac6_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardLeftHandPreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardLeftHandPreview_DashboardLeftHand_32969ac6]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardLeftHandPreview_DashboardLeftHand_32969ac6_0]
+display-name: DashboardLeftHandPreview_DashboardLeftHand
+]]></system-out>
+</testcase>
+<testcase name="WeatherStage3Preview_Weather866" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.228">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Weather866"/>
+<property name="PreviewScreenshot.methodName" value="WeatherStage3Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/WeatherStage3Preview_Weather866_a4331779_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/WeatherStage3Preview_Weather866_a4331779_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:WeatherStage3Preview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.WeatherStage3Preview_Weather866_a4331779]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.WeatherStage3Preview_Weather866_a4331779_0]
+display-name: WeatherStage3Preview_Weather866
+]]></system-out>
+</testcase>
+<testcase name="SiteSummaryPreview_SiteSummary866" classname="com.vitalguard.field.Stage1PreviewTestKt" time="0.241">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="SiteSummary866"/>
+<property name="PreviewScreenshot.methodName" value="SiteSummaryPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage1PreviewTestKt/SiteSummaryPreview_SiteSummary866_78241694_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage1PreviewTestKt/SiteSummaryPreview_SiteSummary866_78241694_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage1PreviewTestKt]/[method:SiteSummaryPreview]/[previewAnnotation:com.vitalguard.field.Stage1PreviewTestKt.SiteSummaryPreview_SiteSummary866_78241694]/[previewId:com.vitalguard.field.Stage1PreviewTestKt.SiteSummaryPreview_SiteSummary866_78241694_0]
+display-name: SiteSummaryPreview_SiteSummary866
+]]></system-out>
+</testcase>
+<testcase name="UsageGuideLandscapePreview_UsageGuideLandscape" classname="com.vitalguard.field.UsageGuidePreviewTestKt" time="0.048">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="UsageGuideLandscape"/>
+<property name="PreviewScreenshot.methodName" value="UsageGuideLandscapePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/UsageGuidePreviewTestKt/UsageGuideLandscapePreview_UsageGuideLandscape_ba289674_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/UsageGuidePreviewTestKt/UsageGuideLandscapePreview_UsageGuideLandscape_ba289674_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.UsageGuidePreviewTestKt]/[method:UsageGuideLandscapePreview]/[previewAnnotation:com.vitalguard.field.UsageGuidePreviewTestKt.UsageGuideLandscapePreview_UsageGuideLandscape_ba289674]/[previewId:com.vitalguard.field.UsageGuidePreviewTestKt.UsageGuideLandscapePreview_UsageGuideLandscape_ba289674_0]
+display-name: UsageGuideLandscapePreview_UsageGuideLandscape
+]]></system-out>
+</testcase>
+<testcase name="RecordCalendarLandscapePreview_RecordCalendarLandscape" classname="com.vitalguard.field.Stage2cPreviewTestKt" time="0.05">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="RecordCalendarLandscape"/>
+<property name="PreviewScreenshot.methodName" value="RecordCalendarLandscapePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2cPreviewTestKt/RecordCalendarLandscapePreview_RecordCalendarLandscape_c93113c4_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2cPreviewTestKt/RecordCalendarLandscapePreview_RecordCalendarLandscape_c93113c4_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2cPreviewTestKt]/[method:RecordCalendarLandscapePreview]/[previewAnnotation:com.vitalguard.field.Stage2cPreviewTestKt.RecordCalendarLandscapePreview_RecordCalendarLandscape_c93113c4]/[previewId:com.vitalguard.field.Stage2cPreviewTestKt.RecordCalendarLandscapePreview_RecordCalendarLandscape_c93113c4_0]
+display-name: RecordCalendarLandscapePreview_RecordCalendarLandscape
+]]></system-out>
+</testcase>
+<testcase name="SettingsStage4Preview_Settings866" classname="com.vitalguard.field.Stage4PreviewTestKt" time="0.228">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="Settings866"/>
+<property name="PreviewScreenshot.methodName" value="SettingsStage4Preview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage4PreviewTestKt/SettingsStage4Preview_Settings866_98b88054_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage4PreviewTestKt/SettingsStage4Preview_Settings866_98b88054_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage4PreviewTestKt]/[method:SettingsStage4Preview]/[previewAnnotation:com.vitalguard.field.Stage4PreviewTestKt.SettingsStage4Preview_Settings866_98b88054]/[previewId:com.vitalguard.field.Stage4PreviewTestKt.SettingsStage4Preview_Settings866_98b88054_0]
+display-name: SettingsStage4Preview_Settings866
+]]></system-out>
+</testcase>
+<testcase name="DashboardPortraitPreview_DashboardPortrait" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.064">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardPortrait"/>
+<property name="PreviewScreenshot.methodName" value="DashboardPortraitPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardPortraitPreview_DashboardPortrait_dcbb1659_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardPortraitPreview_DashboardPortrait_dcbb1659_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardPortraitPreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardPortraitPreview_DashboardPortrait_dcbb1659]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardPortraitPreview_DashboardPortrait_dcbb1659_0]
+display-name: DashboardPortraitPreview_DashboardPortrait
+]]></system-out>
+</testcase>
+<testcase name="AlertFiltersPreview_AlertFilters" classname="com.vitalguard.field.Stage3PreviewTestKt" time="0.015">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="AlertFilters"/>
+<property name="PreviewScreenshot.methodName" value="AlertFiltersPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage3PreviewTestKt/AlertFiltersPreview_AlertFilters_8a776ee6_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage3PreviewTestKt/AlertFiltersPreview_AlertFilters_8a776ee6_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage3PreviewTestKt]/[method:AlertFiltersPreview]/[previewAnnotation:com.vitalguard.field.Stage3PreviewTestKt.AlertFiltersPreview_AlertFilters_8a776ee6]/[previewId:com.vitalguard.field.Stage3PreviewTestKt.AlertFiltersPreview_AlertFilters_8a776ee6_0]
+display-name: AlertFiltersPreview_AlertFilters
+]]></system-out>
+</testcase>
+<testcase name="LocalPhotoDetailPreview_LocalPhotoDetail1385" classname="com.vitalguard.field.Stage2aPreviewTestKt" time="0.211">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="LocalPhotoDetail1385"/>
+<property name="PreviewScreenshot.methodName" value="LocalPhotoDetailPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2aPreviewTestKt/LocalPhotoDetailPreview_LocalPhotoDetail1385_eac2511c_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2aPreviewTestKt/LocalPhotoDetailPreview_LocalPhotoDetail1385_eac2511c_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2aPreviewTestKt]/[method:LocalPhotoDetailPreview]/[previewAnnotation:com.vitalguard.field.Stage2aPreviewTestKt.LocalPhotoDetailPreview_LocalPhotoDetail1385_eac2511c]/[previewId:com.vitalguard.field.Stage2aPreviewTestKt.LocalPhotoDetailPreview_LocalPhotoDetail1385_eac2511c_0]
+display-name: LocalPhotoDetailPreview_LocalPhotoDetail1385
+]]></system-out>
+</testcase>
+<testcase name="RecordInputPreview_RecordInput866" classname="com.vitalguard.field.Stage2bPreviewTestKt" time="0.233">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="RecordInput866"/>
+<property name="PreviewScreenshot.methodName" value="RecordInputPreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/Stage2bPreviewTestKt/RecordInputPreview_RecordInput866_196cc127_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/Stage2bPreviewTestKt/RecordInputPreview_RecordInput866_196cc127_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.Stage2bPreviewTestKt]/[method:RecordInputPreview]/[previewAnnotation:com.vitalguard.field.Stage2bPreviewTestKt.RecordInputPreview_RecordInput866_196cc127]/[previewId:com.vitalguard.field.Stage2bPreviewTestKt.RecordInputPreview_RecordInput866_196cc127_0]
+display-name: RecordInputPreview_RecordInput866
+]]></system-out>
+</testcase>
+<testcase name="DashboardOfflinePreview_DashboardOffline" classname="com.vitalguard.field.DashboardPreviewTestKt" time="0.063">
+<properties>
+<property name="PreviewScreenshot.diffPercent" value="0.0"/>
+<property name="PreviewScreenshot.previewName" value="DashboardOffline"/>
+<property name="PreviewScreenshot.methodName" value="DashboardOfflinePreview"/>
+<property name="PreviewScreenshot.refImagePath" value="app/src/screenshotTestDebug/reference/com/vitalguard/field/DashboardPreviewTestKt/DashboardOfflinePreview_DashboardOffline_ab1d0b29_0.png"/>
+<property name="PreviewScreenshot.newImagePath" value="app/build/outputs/screenshotTest-results/preview/debug/rendered/com/vitalguard/field/DashboardPreviewTestKt/DashboardOfflinePreview_DashboardOffline_ab1d0b29_0.png"/>
+</properties>
+
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]/[class:com.vitalguard.field.DashboardPreviewTestKt]/[method:DashboardOfflinePreview]/[previewAnnotation:com.vitalguard.field.DashboardPreviewTestKt.DashboardOfflinePreview_DashboardOffline_ab1d0b29]/[previewId:com.vitalguard.field.DashboardPreviewTestKt.DashboardOfflinePreview_DashboardOffline_ab1d0b29_0]
+display-name: DashboardOfflinePreview_DashboardOffline
+]]></system-out>
+</testcase>
+<system-out><![CDATA[
+unique-id: [engine:preview-screenshot-test-engine]
+display-name: Preview Screenshot Test Engine
+]]></system-out>
+</testsuite>

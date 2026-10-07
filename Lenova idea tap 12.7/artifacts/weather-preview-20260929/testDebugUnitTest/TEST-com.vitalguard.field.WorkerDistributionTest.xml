@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.WorkerDistributionTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-29T14:27:48.492Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.001">
+  <properties/>
+  <testcase name="zeroWorkersAndUnavailablePayloadDoNotBecomeHealthyOrDivideByZero" classname="com.vitalguard.field.WorkerDistributionTest" time="0.001"/>
+  <testcase name="eachPersonOccupiesOneShareOfTheReportedTotal" classname="com.vitalguard.field.WorkerDistributionTest" time="0.0"/>
+  <testcase name="missingCountsRemainUnclassifiedAndAreNotFilledAsNormal" classname="com.vitalguard.field.WorkerDistributionTest" time="0.0"/>
+  <testcase name="contradictoryCountsAndOverflowNeverCreateOverfullGauges" classname="com.vitalguard.field.WorkerDistributionTest" time="0.0"/>
+  <testcase name="aNewDangerWorkerChangesTheDenominatorInsteadOfAddingAnArbitraryArc" classname="com.vitalguard.field.WorkerDistributionTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

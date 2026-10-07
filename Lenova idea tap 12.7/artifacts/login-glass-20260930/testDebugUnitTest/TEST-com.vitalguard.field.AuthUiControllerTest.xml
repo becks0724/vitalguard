@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.AuthUiControllerTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-29T16:08:19.636Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.03">
+  <properties/>
+  <testcase name="later401OrClosedScreenDiscardsOldConnectivityResult" classname="com.vitalguard.field.AuthUiControllerTest" time="0.02"/>
+  <testcase name="timeoutIsInlineAndNeverProbesInternet" classname="com.vitalguard.field.AuthUiControllerTest" time="0.002"/>
+  <testcase name="probeHasThreeMessagesPreservesIdAndClearsPassword" classname="com.vitalguard.field.AuthUiControllerTest" time="0.003"/>
+  <testcase name="codeAcceptsOnlySixAsciiDigitsAndClockDrivesCountdown" classname="com.vitalguard.field.AuthUiControllerTest" time="0.004"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

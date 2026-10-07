@@ -1,0 +1,35 @@
+{
+  "source": "/private/tmp/vg-ink-probe-20260925/synthetic-smoke.jsonl",
+  "provenance": "synthetic-smoke",
+  "summary": {
+    "느린 직선": {
+      "strokes": 1,
+      "input_points": 121,
+      "kept_points": 9,
+      "points_reduction_percent": 92.56198347107438,
+      "unfiltered_json_bytes": 2499,
+      "filtered_json_bytes": 272,
+      "bytes_reduction_percent": 89.1156462585034,
+      "max_centerline_deviation_logical_px": 0.824865882352924
+    }
+  },
+  "strokes": [
+    {
+      "stroke": 1,
+      "label": "느린 직선",
+      "tool": "pen",
+      "input_points": 121,
+      "kept_points": 9,
+      "points_reduction_percent": 92.56198347107438,
+      "unfiltered_json_bytes": 2499,
+      "filtered_json_bytes": 272,
+      "bytes_reduction_percent": 89.1156462585034,
+      "duration_seconds": 1.0,
+      "max_centerline_deviation_logical_px": 0.824865882352924,
+      "max_centerline_deviation_device_px": 1.7528399999999635,
+      "max_dropped_pressure_delta": 0,
+      "filter_replay_matches": true
+    }
+  ],
+  "scope": "Point/JSON size reduction with existing rounding held fixed. No latency or power claim. Centerline deviation excludes pressure-dependent width and is not a visual-equivalence test."
+}

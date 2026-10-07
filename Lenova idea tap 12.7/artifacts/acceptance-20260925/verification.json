@@ -1,0 +1,109 @@
+{
+  "date": "2026-09-25",
+  "source_commit": "8b9a071c6adcbd5cc09dc869346ce4fe4cc396b7",
+  "documents": {
+    "태블릿_최종_인수기록_20260925.md": "e406b807305384af88753b8a68f7efdb27c5bb4decaa444676b804980952039a",
+    "STATUS-2026-09-25.md": "16d3d90f19848e9b2837703f42ce629e3b6e75667410b94391457b772562e401",
+    "STATUS-2026-09-13.md": "5c9a932a04858335052ee96e4cbd56e296ec4cba8a848b5806f23515e7576cd7",
+    "plan-draft/CONTRACT-app-server-newdb.md": "29f9790eecef1f0e9cbdc877012d02a971bfa29ef9bbec5c6bdc0b2099f29894",
+    "plan-draft/p4-touch-reflect-qa/태블릿 앱 제작 기록.updated.md": "cb8cac23ac6a1c25fc77c1c735fd99dce26b529deb024edb2c4fde7658c4e918",
+    "artifacts/screen-inventory.md": "153800cc42a44024ac4641a1a3284edfe1f722d0a654441dcc9103a5385badc4",
+    "artifacts/releases/20260925/README.md": "5903b23c3112fc8f7e6e1c5caf01fd8f68019b43b1e3ff499ae3f13ec986b928"
+  },
+  "local_links": [
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/releases/20260925/vitalguard-field-4ac6f170.apk",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/releases/20260925/SHA256SUMS",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "plan-draft/p4-touch-reflect-qa/태블릿 앱 제작 기록.updated.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "plan-draft/SPEC-r7-hold-until-send.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "plan-draft/CONTRACT-app-server-newdb.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/ink-filter-20260925/README.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/design-constraints.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/battery-20260925-audit.json",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "../../DB재구축/15_라이브_전환_런북_초안_20260916.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "STATUS-2026-09-25.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "plan-draft/p4-touch-reflect-qa/태블릿 앱 제작 기록.updated.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "plan-draft/CONTRACT-app-server-newdb.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/ink-filter-20260925/README.md",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/battery-20260925-audit.json",
+      "exists": true
+    },
+    {
+      "document": "태블릿_최종_인수기록_20260925.md",
+      "target": "artifacts/jetson-tablet-log-20260925.md",
+      "exists": true
+    },
+    {
+      "document": "STATUS-2026-09-25.md",
+      "target": "태블릿_최종_인수기록_20260925.md",
+      "exists": true
+    },
+    {
+      "document": "STATUS-2026-09-25.md",
+      "target": "artifacts/releases/20260925/vitalguard-field-4ac6f170.apk",
+      "exists": true
+    },
+    {
+      "document": "artifacts/releases/20260925/README.md",
+      "target": "../../../태블릿_최종_인수기록_20260925.md",
+      "exists": true
+    }
+  ],
+  "apk_sha256": "6fc8b7556236c19e44a1a982f3edcae5c01d97bdfd5388bc5982cd29577f0fff",
+  "apk_bytes": 86893025,
+  "production_ink_sources_unchanged": true,
+  "note": "Documentation and artifact integrity checks only; app tests were not rerun for this documentation task."
+}

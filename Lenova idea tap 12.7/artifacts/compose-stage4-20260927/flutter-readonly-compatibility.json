@@ -1,0 +1,15 @@
+{
+  "accounts": 2,
+  "keys": 16,
+  "outbox_entries": 7,
+  "drafts": 4,
+  "pending_entries": 0,
+  "legacy_pending_entries": 0,
+  "missing_pending_files": 0,
+  "invalid_records": 0,
+  "token_present": true,
+  "token_decoded_by_compose": true,
+  "refresh_not_expired": true,
+  "files_unchanged": true,
+  "success": true
+}

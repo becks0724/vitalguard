@@ -1,0 +1,69 @@
+{
+  "version": "1.3.3",
+  "versionCode": 8,
+  "apk": {
+    "debug": {
+      "bytes": 66087558,
+      "sha256": "648c9b55a1c3ca4df5c96a5f4b619186cf13102d2c351e5f8218ec080d932d81"
+    },
+    "release": {
+      "bytes": 59727120,
+      "sha256": "d763b462ac8aa5e6ed7bcacefc08c5e0aad62146fc351595a04ea06d9fac59a2"
+    }
+  },
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 301,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 22,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "deviceValidation": {
+    "initialFullRun": {
+      "tests": 52,
+      "passed": 50,
+      "failed": 2,
+      "seconds": 148.602
+    },
+    "testFixes": [
+      "scroll lazy list to header before selecting previous button",
+      "enable substring matching for interval within receipt text"
+    ],
+    "affectedSuiteRerun": {
+      "tests": 4,
+      "passed": 4,
+      "seconds": 19.57
+    },
+    "uniqueTestsVerified": 52,
+    "productionCodeChangedAfterInitialRun": false
+  },
+  "releaseInstallation": {
+    "version": "1.3.3",
+    "versionCode": 8,
+    "timeKST": "2026-09-28 11:46:10",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "activityColdStartMs": 253,
+    "existingAccountRestored": true,
+    "liveCctvReceiptObservedKST": [
+      "11:47:44",
+      "11:48:06",
+      "11:49:51"
+    ],
+    "settingsLinkVerified": true,
+    "defaultPeriodSeconds": 5,
+    "previousButtonReturnsToDashboard": true
+  },
+  "git": {
+    "commit": "3b154501f898f06f8f97fbac25ebd4db0f9b8834",
+    "remoteBranch": "origin/main",
+    "pushVerified": true
+  }
+}

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CctvLiveTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-09-29T01:09:24.634Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.015">
+  <properties/>
+  <testcase name="cameraRoutesAreExplicitAndNoUnknownSuffixIsOpened" classname="com.vitalguard.field.CctvLiveTest" time="0.0"/>
+  <testcase name="consecutiveLiveFramesKeepBoundaryWithOrWithoutContentLength" classname="com.vitalguard.field.CctvLiveTest" time="0.002"/>
+  <testcase name="streamingUsesOneTicketForMultipleFramesAndClosesOnCancellation" classname="com.vitalguard.field.CctvLiveTest" time="0.007"/>
+  <testcase name="cameraSwitchDropsOldImageAndRejectsLateFramesFromOldConnection" classname="com.vitalguard.field.CctvLiveTest" time="0.004"/>
+  <testcase name="realtimeFailureStillBacksOffAndDoesNotCreateZeroDelayLoop" classname="com.vitalguard.field.CctvLiveTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

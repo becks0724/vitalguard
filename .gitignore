@@ -16,6 +16,9 @@ build_device/
 # 런타임·데이터 (생체·GPS·PII — 절대 커밋 금지)
 .runtime/
 
+# 태블릿 앱 빌드 산출물 — APK(55~85MB × 45개 = 2.7GB)는 저장소가 아니라 Release 자산으로 (portfolio-2026-10)
+Lenova idea tap 12.7/artifacts/**/*.apk
+
 # 환경변수·시크릿 (API 키 — 절대 커밋 금지)
 .env
 .env.*

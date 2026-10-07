@@ -1,0 +1,85 @@
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_ocr_test.dart: OCR은 리사이즈 전 원본으로 돌고 업로드 폼에는 신원을 넣지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_ocr_test.dart: 스캐너가 준비되지 않아도 사진 촬영은 그대로 동작한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_site_id_test.dart: 현재 현장 ID는 첫 캡처와 현장 변경 후 업로드에 우선 적용된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_site_id_test.dart: 현재 현장과 미디어에 유효한 현장 ID가 없으면 siteId를 전송하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_site_id_test.dart: 현재 현장이나 현장 ID가 없으면 첫 유효한 미디어 현장 ID로 업로드한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/global_alert_strip_test.dart: L-07 실제 기록 편집기에 들어가면 기존 스트립도 보류한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/nav_rail_test.dart: 펜 캔버스에 들어가면 레일이 자동으로 접힌다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 2MB 초과를 알리고 초안은 보존하며 전송하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 866dp 화면(80dp 레일 포함)에서 색 원 3개가 같은 줄에 놓인다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 866dp 화면에서 도구·굵기 버튼은 글자 1배에서도 56dp 이상이다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 866dp 화면에서 도구·굵기 버튼은 글자 3배에서도 56dp 이상이다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 866dp·80dp 레일에서 도구 7개와 편집 7개가 두 줄에 놓인다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-03 완료한 획은 회전·분할창에서도 원본 좌표 그대로 보인다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-03 펜을 떼기 전 회전과 PointerCancel도 받은 점을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-05 lifecycle 통지 없이 새 컨트롤러로도 진행 중 획을 복원한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-05 그리던 획은 백그라운드 왕복 후에도 남는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-06 Back 보관에 실패하면 편집기와 획을 유지하고 재시도한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-06 빈 편집기 Back은 확인 없이 나간다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: C-06 획이 있으면 시스템 Back 확인·계속 작성·초안 보관 후 나가기
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 같은 자리와 1px 미만 이동은 점을 늘리지 않고 충분한 이동은 추가한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 게시 완료된 빈 초안은 dirty가 false이면 두 저장 버튼이 비활성이다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 게시·재편집은 JSON 새 버전만 추가하며 삭제한 획과 지우개는 전송되지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 게시한 주석을 전체 지운 뒤에도 두 저장 방식으로 저장할 수 있다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 결과 불명은 재편집·재저장해도 자동으로 다시 보내지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 굵기 기본값은 보통이고 펜의 다음 획은 2·4·8dp로 저장된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 굵기 선택은 도구를 바꿔도 유지되고 도구별 기본 굵기에 적용된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 굵기 점은 선택과 무관하게 가늘게 < 보통 < 굵게이고 선택은 테두리로 표시한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 굵기를 바꿔도 이미 그린 획의 화면·저장 굵기는 변하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 기기에 저장한 초안은 dirty가 false여도 획이 있으면 다시 저장할 수 있다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 두 손가락 이동은 1·4배를 유지하고 up·cancel 전환도 튀지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 두 손가락 핀치는 접촉 중심을 유지하고 1~4배로 제한된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 모든 툴바 아이콘에 한국어 tooltip·Semantics와 길게 누르기 안내가 남는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 새 잉크 점의 좌표는 소수 4자리, 압력은 소수 2자리로 반올림한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 손가락 이동 중 펜이 닿으면 남은 접촉을 무시한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 손가락과 취소된 지우개는 완료한 획을 바꾸지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 스타일러스 down 뒤 move 없이 up 해도 첫 점을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 아무 작업도 하지 않으면 두 저장 버튼이 비활성이고 이유를 안내한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 옛 초안의 지운 낙서는 로컬 재저장과 JSON 업로드 모두에서 제거한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 오프라인 저장·재시작 후 같은 초안을 연결 복구 시 전송한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 원본 보기 토글은 주석을 보존하고 전체 지우기는 확인을 거친다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 잉크 명시적 실패 재시도는 같은 ID·JSON·원본 연결로 전송한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 전송 도중 종료한 sending 초안은 uncertain으로 복구한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 전송 상태에서 잉크를 보내도 기존 게시본 별칭·PNG·획 복원이 유지된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 전체 지우기 초안을 복원하면 획이 없어도 dirty가 유지되어 저장할 수 있다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 전체 지운 뒤 결과 불명이 된 초안은 획이 없어도 재저장할 수 있다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 지우개 한 번이 여러 획을 목록에서 지우며 빈 캔버스에서도 한 번에 되돌린다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 펜을 그리는 중 두 손가락이 닿아도 획과 화면이 유지된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 폭 맞춤·전체 보기는 확대·이동을 초기화하고 획을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 한 손가락 이동은 pan만 바꾸고 획을 만들지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 확대·이동 후 스타일러스는 원본 좌표로 그린다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 확대·축소·방향 이동 버튼 6개와 보기 조작 줄이 없다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_editor_ink_test.dart: 획을 하나 그리면 두 저장 버튼이 활성화된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_input_test.dart: C-03 댓글 입력은 회전·좁은 분할창에서 내용과 커서를 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_input_test.dart: C-05 댓글은 백그라운드 왕복과 새 프로세스의 컨트롤러에서 복원된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_input_test.dart: STT 후보 선택만으로 저장하지 않고 명시적 확인을 요구한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/settings_test.dart: 가로 사진의 펜·댓글과 편집 도구·저장 한 벌이 이동하고 기존 실행이 이어진다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/settings_test.dart: 가로 토글은 촬영·스캔 한 벌만 하단 좌우로 옮기고 기록 읽는 순서를 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/settings_test.dart: 세로 사진의 펜·댓글과 편집 도구·저장 한 벌이 이동하고 기존 실행이 이어진다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/settings_test.dart: 세로 토글은 촬영·스캔 한 벌만 하단 좌우로 옮기고 기록 읽는 순서를 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/site_screen_test.dart: 현장이 첫 목적지이며 상단 마지막 수신은 기록 시각과 섞이지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 3분 자동 정지는 알림·미리듣기 상태로 바뀌며 전송하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 401는 구별된 안내와 함께 녹음을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 403는 구별된 안내와 함께 녹음을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 404는 구별된 안내와 함께 녹음을 보존한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: C-03 녹음 중 회전해도 같은 녹음·경과 시간·댓글을 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: C-05 Dart 종료 콜백 없이도 계정·사진별 네이티브 녹음을 새 화면에서 복구한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: STT 준비·인식 중 녹음과 녹음 권한 대기·녹음 중 STT를 모두 차단한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 결과 불명은 자동 재전송하지 않고 미등록 확인을 매번 요구한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 권한 거절을 명확히 표시하고 다른 입력을 다시 사용할 수 있다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 녹음 중 취소하면 녹음기 파일 삭제와 로컬 사본 비우기를 요청한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 녹음→정지→미리듣기→명시적 전송은 voiceComment를 한 번 부르고 타이핑을 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 다시 녹음은 이전 파일을 지우고 새 녹음을 시작하며 자동 전송하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 모의 녹음·댓글 등록은 네이티브 플러그인 없이 완료된다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 백그라운드 전환은 녹음을 정지·보존하고 자동 전송하지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 새 음성 댓글은 내용이 같아도 새 UUID이고 원본 commentOf는 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 연결 실패 시 파일·로컬 사본을 보존하고 화면 복원·캐시 유실 뒤에도 수동 재시도한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 재로그인 전 beforeLock도 녹음을 보존하며 같은 계정에서 복원한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 전송 전 초안 저장 실패는 업로드를 막고 녹음 파일과 기존 사본을 유지한다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 전송 중 앱 종료 흔적은 복원 시 uncertain으로 바뀌고 계정이 다른 초안은 읽지 않는다
+/Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/voice_comment_test.dart: 정지 후 취소하면 녹음기 파일 삭제와 로컬 사본 비우기를 요청한다
+loading /Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/capture_time_test.dart
+loading /Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/comment_time_test.dart
+loading /Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/common_states_test.dart
+loading /Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/offline_restore_test.dart
+loading /Users/rlaxorhs77/Desktop/조달청 프로젝트/조달청_rlaxorhs77eng/Lenova idea tap 12.7/app/vitalguard_field/test/record_recovery_test.dart

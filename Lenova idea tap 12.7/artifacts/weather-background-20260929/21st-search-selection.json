@@ -1,0 +1,26 @@
+[
+  {
+    "id": 5105,
+    "name": "Rain",
+    "description": "The component now creates a complete storm experience with synchronized visual and audio effects that feel natural and immersive!",
+    "url": "https://21st.dev/@designali-in/components/rain"
+  },
+  {
+    "id": 10051,
+    "name": "Animated Weather Icons",
+    "description": "12 continuously animated weather icons — each is a living micro-scene, not a static SVG. Sun rays rotate, rain drops fall, lightning flashes randomly, snowflakes drift sideways, wind paths draw themselves, fog layers breathe, rainbow arcs pulse in sequence. All framer-motion driven, zero CSS keyframes. Import individually or use the full set.\n",
+    "url": "https://21st.dev/@dev.yadhakim/components/animated-weather-icons"
+  },
+  {
+    "id": 5106,
+    "name": "Snow Flakes",
+    "description": "Simply import and use the component anywhere in your app. It will create a full-screen overlay that doesn't interfere with user interactions.",
+    "url": "https://21st.dev/@designali-in/components/snow-flakes"
+  },
+  {
+    "id": 2662,
+    "name": "Turbulent Flow",
+    "description": "animated background component featuring a turbulent gradient flow using a custom written shader",
+    "url": "https://21st.dev/@lovesickfromthe6ix/components/turbulent-flow"
+  }
+]

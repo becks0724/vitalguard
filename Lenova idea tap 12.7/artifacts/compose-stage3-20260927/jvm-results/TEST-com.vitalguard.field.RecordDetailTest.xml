@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.RecordDetailTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-27T07:42:28.426Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.004">
+  <properties/>
+  <testcase name="commentsAndPhotoTimesShareTheDeviceZoneFormatterWithoutChangingCaptureStampContract" classname="com.vitalguard.field.RecordDetailTest" time="0.0"/>
+  <testcase name="lateDetailResponseCannotReplaceClosedDetailOrAnotherAccountsData" classname="com.vitalguard.field.RecordDetailTest" time="0.002"/>
+  <testcase name="openingServerReferenceFetchesEveryCommentInsteadOfKeepingItsOldSingleComment" classname="com.vitalguard.field.RecordDetailTest" time="0.001"/>
+  <testcase name="detailComment401OnlyChangesItsErrorAndNeverErasesEarlierComments" classname="com.vitalguard.field.RecordDetailTest" time="0.0"/>
+  <testcase name="storageKeyAloneDeterminesVoiceAndMissingDurationOrUrlNeverBecomesZero" classname="com.vitalguard.field.RecordDetailTest" time="0.001"/>
+  <testcase name="oneLatestAnnotationIdNeverClaimsToBeTheFullSameDayRevisionCount" classname="com.vitalguard.field.RecordDetailTest" time="0.0"/>
+  <testcase name="fullServerCommentsAndLocalAttachmentsAreMergedByOperationIdAndReceipt" classname="com.vitalguard.field.RecordDetailTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

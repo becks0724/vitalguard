@@ -1,0 +1,137 @@
+/* 디자인 토큰 — 관제웹 app/globals.css 와 같은 값.
+   ⚠ 값은 같게 유지하되 "쓰는 방식"이 다르다(design-constraints.md V-1~V-5).
+   - 상태색 3종은 배경면으로만 쓰고 그 위 글자는 잉크(#171717)
+   - primary 는 반대로 흰 글자만 통과
+*/
+:root {
+  /* 브랜드 */
+  --primary: #0D74CE;          /* 흰 글자 4.77:1 ✓ / 잉크 3.76:1 ✗ */
+  --primary-active: #0A5FAD;
+  --primary-subtle: rgba(13,116,206,.08);
+  --primary-ring: rgba(13,116,206,.28);
+
+  /* 중립 */
+  --canvas: #FFFFFF;
+  --surface-soft: #FAFAFA;
+  --surface-strong: #F0F0F3;
+  --hairline: #F0F0F3;
+  --hairline-strong: #DCDEE0;
+  --ink: #171717;              /* 흰 배경 17.93:1 */
+  --body: #60646C;             /* 흰 배경 5.94:1 */
+  --muted: #999999;            /* 2.85:1 — 본문 텍스트 금지 */
+
+  /* 상태 — 배경면 전용. 그 위 글자는 --ink */
+  --ok: #10B981;               /* 위에 잉크 7.07:1 ✓ / 흰 2.54:1 ✗ */
+  --warn: #F59E0B;             /* 위에 잉크 8.35:1 ✓ / 흰 2.15:1 ✗ */
+  --danger: #EF4444;           /* 위에 잉크 4.76:1 ✓ / 흰 3.76:1 ✗ */
+  --heart: #D32F2F;
+
+  /* 상태 연한 면 — 행 배경용 */
+  --ok-tint: #E7F8F2;
+  --warn-tint: #FEF3DC;
+  --danger-tint: #FDE8E8;
+
+  /* 치수 — dp 를 px 로 1:1 표기(실제 크기감) */
+  --tap-min: 56px;             /* 일반 타깃 (≈11.1mm) */
+  --tap-primary: 64px;         /* 주 실행 — 장갑 비교 대상 */
+  --gap-tap: 12px;             /* 인접 타깃 간격 */
+  --edge-gesture: 30px;        /* 좌우 시스템 제스처 경합 띠 */
+  --radius-card: 16px;
+  --radius-pill: 999px;
+
+  /* 타이포 — WCAG 큰글자 = 일반 24px / bold 20px 이상 */
+  --fs-hero: 28px;
+  --fs-title: 20px;
+  --fs-body: 17px;
+  --fs-label: 15px;
+  --fs-caption: 13px;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+body {
+  margin: 0;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+               "Noto Sans KR", system-ui, sans-serif;
+  color: var(--ink);
+  background: #E9EBEF;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── 상태 표시 — 색 + 모양으로만. 같은 말을 두 번 쓰지 않는다 ──────
+   ⚠ 종전에는 아이콘과 라벨을 함께 넣어(`✓ 정상`) 옆 문장과 의미가 겹쳤다.
+      모양(✓ △ ! –)이 곧 라벨이므로 글자를 덧붙이지 않는다.
+      접근성은 title/aria-label 로 보장한다(화면에는 안 보임).            */
+.dot {
+  flex: none; display: inline-grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 11px;
+  font-size: 17px; font-weight: 900; line-height: 1;
+  color: var(--ink);                 /* 상태면 위에는 항상 잉크 */
+  border: 1px solid rgba(0,0,0,.14); /* 비텍스트 대비 보강 */
+}
+.dot--ok     { background: var(--ok); }
+.dot--warn   { background: var(--warn); }
+.dot--danger { background: var(--danger); }
+.dot--idle   { background: var(--surface-strong); color: var(--muted); }
+/* 색을 못 보는 사람도 갈라야 한다 — 글자와 테두리 모양을 모두 다르게 */
+.dot--ok::before     { content: "✓"; }
+.dot--warn::before   { content: "!"; }
+.dot--danger::before { content: "!!"; letter-spacing: -1px; }
+.dot--idle::before   { content: "–"; }
+.dot--ok    { border-radius: 11px; }
+.dot--warn  { border-radius: 11px; }
+.dot--danger{ border-radius: 50%; }   /* 위험만 원형 */
+
+/* 글자가 꼭 필요한 곳에만 쓰는 라벨형 배지 (경보 종류 등 — 상태가 아닌 정보) */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: var(--radius-pill);
+  font-size: var(--fs-label); font-weight: 700;
+  color: var(--ink); border: 1px solid rgba(0,0,0,.12);
+}
+.badge--ok     { background: var(--ok); }
+.badge--warn   { background: var(--warn); }
+.badge--danger { background: var(--danger); }
+.badge--idle   { background: var(--surface-strong); color: var(--body); }
+
+/* ── 카드·행 ──────────────────────────────────────────────── */
+.card {
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-card);
+}
+
+.row {
+  display: flex; align-items: center; gap: 12px;
+  min-height: 72px;                 /* V-5: 64~72dp 행 */
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.row:last-child { border-bottom: 0; }
+.row--ok     { background: var(--ok-tint); }
+.row--warn   { background: var(--warn-tint); }
+.row--danger { background: var(--danger-tint); }
+
+/* ── 버튼 ─────────────────────────────────────────────────── */
+.btn {
+  min-height: var(--tap-min); min-width: var(--tap-min);
+  padding: 0 20px; border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline-strong); background: var(--canvas);
+  font-size: var(--fs-body); font-weight: 700; color: var(--ink);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  cursor: pointer;
+}
+.btn--primary {
+  min-height: var(--tap-primary);
+  background: var(--primary); color: #fff; border-color: transparent;  /* 흰 글자만 통과 */
+}
+.btn--ghost { background: transparent; border-color: transparent; color: var(--primary); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ── 공통 텍스트 ──────────────────────────────────────────── */
+.t-hero    { font-size: var(--fs-hero); font-weight: 800; letter-spacing: -.02em; }
+.t-title   { font-size: var(--fs-title); font-weight: 700; }
+.t-body    { font-size: var(--fs-body); color: var(--ink); }
+.t-label   { font-size: var(--fs-label); color: var(--body); }
+.t-caption { font-size: var(--fs-caption); color: var(--body); }
+.num       { font-variant-numeric: tabular-nums; }

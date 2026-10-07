@@ -1,0 +1,55 @@
+--- a/lib/ui/record/record_editor.dart
++++ b/lib/ui/record/record_editor.dart
+@@ -11,6 +11,7 @@
+ import '../../vg_theme.dart';
+ import '../shell/action_dock.dart';
+ import 'ink_stroke.dart';
++import '../../ink_filter_audit.dart';
+ import 'record_session.dart';
+ export 'ink_stroke.dart';
+ 
+@@ -306,6 +307,15 @@
+         [p],
+       ),
+     );
++    if (inkAuditEnabled) {
++      InkFilterAudit.begin(
++        e,
++        rect,
++        active[e.pointer]!,
++        MediaQuery.devicePixelRatioOf(context),
++        imageSize,
++      );
++    }
+     autosave();
+   }
+ 
+@@ -314,6 +324,7 @@
+     if (e.kind != PointerDeviceKind.stylus || stroke == null) return;
+     final p = point(e, rect);
+     if (p != null) {
++      if (inkAuditEnabled) InkFilterAudit.sample(e, p, rect);
+       final last = stroke.points.last;
+       final dx = (p[0] - last[0]) * rect.width;
+       final dy = (p[1] - last[1]) * rect.height;
+@@ -333,6 +344,9 @@
+   void finishPointer(int pointer, {bool cancelled = false}) {
+     final stroke = active.remove(pointer);
+     if (stroke == null) return;
++    if (inkAuditEnabled) {
++      InkFilterAudit.finish(pointer, stroke, cancelled: cancelled);
++    }
+     setState(() {
+       if (stroke.tool == InkTool.eraser) {
+         if (cancelled) return;
+--- a/android/app/src/main/kotlin/com/vitalguard/vitalguard_field/MainActivity.kt
++++ b/android/app/src/main/kotlin/com/vitalguard/vitalguard_field/MainActivity.kt
+@@ -72,6 +72,8 @@
+ 
+     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+         super.configureFlutterEngine(flutterEngine)
++        // Temporary probe: ask Android to create this package's scoped external folder.
++        getExternalFilesDir(null)?.mkdirs()
+         fieldStorage = FieldStorage(this, flutterEngine.dartExecutor.binaryMessenger)
+         networkNative = NetworkNative(this, flutterEngine.dartExecutor.binaryMessenger)
+         captureNative = CaptureNative(this, flutterEngine.dartExecutor.binaryMessenger)

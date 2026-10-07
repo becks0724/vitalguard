@@ -1,0 +1,11 @@
+{
+  "app/vitalguard_field/pubspec.yaml": "8c5a67cf05e4adfd94feb037f1007086a8ad0e6675389212a1447ed6b64ffda1",
+  "app/vitalguard_field/pubspec.lock": "29e0540ebb5492419a4670a54f4f39b44869f058a8dc4a804f671b4551c9b255",
+  "app/vitalguard_field/android/app/build.gradle.kts": "b8792b7dd28cf7e11d879c2220d8a349bb4f1ec5604191f12678387d35f6b095",
+  "app/vitalguard_field/android/settings.gradle.kts": "016759283e88ade6eba92910583feeef88b962839b957aa414296afd2952d122",
+  "tab_plan.md": "ed6c817b70b9f29f261885895c4285be9562520c64b2063f4f430330a62683ab",
+  "research/device-facts.md": "0962b358d641ec5eaf75d360543e9eb34fbb7e0207329d802f1b2091041fa332",
+  "app/vitalguard_field/android/app/src/main/kotlin/com/vitalguard/vitalguard_field/MainActivity.kt": "04e94fd682770557117a5c4a7c7b86209995e282b4f8e5afa7d4f05fc9199eb2",
+  "app/vitalguard_field/android/app/src/main/AndroidManifest.xml": "de38ae60beb7d61656ace10d30696bf8d1bec7e3f9d7f20f3edc48a82feb2fdc",
+  "app/vitalguard_field/lib/diag_screen.dart": "9b4c00315dd22179cc06ab92907fac64d3592ecc4206787858f146024f907df2"
+}

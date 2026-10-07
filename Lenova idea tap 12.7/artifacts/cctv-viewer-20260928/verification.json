@@ -1,0 +1,79 @@
+{
+  "version": "1.3.8",
+  "versionCode": 13,
+  "apk": {
+    "release": {
+      "bytes": 59745952,
+      "sha256": "4e0e98aabb04fc08952997e678f516a77f11721080e804d7014e6b42182d1097"
+    },
+    "debug": {
+      "bytes": 65314197,
+      "sha256": "d50d15db203b693190ef3afae6fc300e923f5791c759aba790b66f5acc69e6f4"
+    }
+  },
+  "tests": {
+    "jvm": 311,
+    "previews": 25,
+    "device": {
+      "passed": 52,
+      "failed": 0,
+      "seconds": 152.672
+    }
+  },
+  "installation": {
+    "time": "2026-09-28 16:39:22 KST",
+    "uid": 10303,
+    "firstInstall": "2026-09-16 12:50:57",
+    "coldStartMs": 296,
+    "dataPreserving": true
+  },
+  "sourceFilesMatched": 236,
+  "live": {
+    "cam01": true,
+    "cam03": true,
+    "modes": [
+      "2초",
+      "실시간"
+    ],
+    "realtimeStart": "16:41:38 KST",
+    "freshCam01At": "16:43:14 KST",
+    "freshCam03At": "16:44:42 KST",
+    "normalImageBoundsPx": [
+      365,
+      508,
+      2749,
+      1726
+    ],
+    "overlayImageBoundsPx": [
+      43,
+      281,
+      2901,
+      1765
+    ],
+    "pinchAndReset": "passed instrumentation; actual overlay/reset/close also verified"
+  },
+  "git": {
+    "commit": "60c08b97dbb0ef944c8fbd9ba4976c4b25c12782",
+    "remoteMainVerified": true,
+    "aheadBehind": [
+      0,
+      0
+    ],
+    "unrelatedFilesPreserved": 7
+  },
+  "finalUi": {
+    "screen": "현장 대시보드",
+    "periodMillis": 2000,
+    "hand": "right"
+  },
+  "obsidian": {
+    "note": "태블릿 앱 제작 기록.md",
+    "lines": 732,
+    "sha256": "6455741c4b3b9a5fd4bd5d57b2b7842fe0d3bb1a0c26f191b6a6f6eb8a8d127e",
+    "preservedOriginalExceptSixPlannedReplacements": true,
+    "newSections": [
+      "8-9",
+      "8-10"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.Stage3AlertsTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-28T03:12:33.916Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.012">
+  <properties/>
+  <testcase name="changedOccurrenceAndOfflineNeverPost" classname="com.vitalguard.field.Stage3AlertsTest" time="0.003"/>
+  <testcase name="pollingOnlyRunsForVisibleForegroundAlerts" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="partialReadCannotTurnUnknownIntoConfirmedOrFresh" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="conflictAndResponseListMismatchDoNotEnableDuplicatePost" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="explicitAckIsSingleFlightAndServerGetSuppliesActor" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="accountSwitchRejectsOldRowBeforeTheSnapshotObserverRuns" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="uncertaintyNeedsFreshMatchingRowBeforeAnExplicitRetry" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="forbiddenReadClearsDetailsAndManualRefreshCanRecover" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <testcase name="selectingAndDismissingNeverAcknowledgesAndStripIsFifo" classname="com.vitalguard.field.Stage3AlertsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.RecordContractTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-27T07:42:28.420Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.005">
+  <properties/>
+  <testcase name="calendarShowsLocalAndCompletedServerPhotosAndCountsAttachments" classname="com.vitalguard.field.RecordContractTest" time="0.002"/>
+  <testcase name="originalDateLongIdAndUtcCaptureTimeArePreservedWithoutImpersonatingUploader" classname="com.vitalguard.field.RecordContractTest" time="0.0"/>
+  <testcase name="inkLimitHasTheExactMessageAndBoundary" classname="com.vitalguard.field.RecordContractTest" time="0.0"/>
+  <testcase name="detailActionConditionsMatchWaitingFailedOfflineUncertainAndReauthentication" classname="com.vitalguard.field.RecordContractTest" time="0.001"/>
+  <testcase name="photoBytesReadsLocalAndReportsMissingLocalOrServerSourcesSeparately" classname="com.vitalguard.field.RecordContractTest" time="0.001"/>
+  <testcase name="accountActionPlacementReadsLeftOrDefaultsRightWithoutWriting" classname="com.vitalguard.field.RecordContractTest" time="0.001"/>
+  <testcase name="draftCleanupDoesNotClearAnotherPhotosSession" classname="com.vitalguard.field.RecordContractTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

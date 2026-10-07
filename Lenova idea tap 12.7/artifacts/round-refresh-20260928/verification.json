@@ -1,0 +1,49 @@
+{
+  "version": "1.3.6",
+  "versionCode": 11,
+  "apk": {
+    "debug": {
+      "bytes": 65245983,
+      "sha256": "84cbf06924f1f091327299e56e61927b85d423676632af3ba8836bd3d1959f5b"
+    },
+    "release": {
+      "bytes": 59727124,
+      "sha256": "07d271407b231f59c6b02c502b160a004771de90c99fdf8d1c9dc752523967e4"
+    }
+  },
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 301,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "targetedDeviceTests": {
+      "passed": 8,
+      "seconds": 22.026
+    }
+  },
+  "releaseInstallation": {
+    "version": "1.3.6",
+    "versionCode": 11,
+    "timeKST": "2026-09-28 14:11:01",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "activityColdStartMs": 269,
+    "existingAccountRestored": true,
+    "receiptAfterRefresh": [
+      "마지막 수신 2026-09-28 14:12:20 KST"
+    ]
+  },
+  "git": {
+    "commit": "9d99d7df3ddd04de745d8504af97c80d9ea777d9",
+    "remoteBranch": "origin/main",
+    "pushVerified": true
+  }
+}

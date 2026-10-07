@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.OutboxBundleTest" tests="26" skipped="0" failures="0" errors="0" timestamp="2026-09-28T05:07:16.389Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.04">
+  <properties/>
+  <testcase name="expiresStrictlyAfterSevenDaysAndSupportsLegacyCreatedAt" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="completionRemovesSentBytesAndLegacyCacheButPreservesNewUnconfirmedDrafts" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="customRetentionAndLegacyCacheCleanupAreAccountScopedAndOneTime" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="lookupKeepsAnExistingReceipt" classname="com.vitalguard.field.OutboxBundleTest" time="0.003"/>
+  <testcase name="missingParentFailsWithoutHttp" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="failedPhotoWaitsAndRetryUsesSameId" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="sendsPhotoThenInkTextVoiceAndSynthesizesReferencesOnlyForHttp" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="deletingAChildPreservesTheParentAndOtherChildren" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="offlineBundleWaitsUntilClosedThenAutoSendsOnReconnect" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="reauthenticationPersistsChildWaitingReasonInOriginalAccount" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="localStubCopiesOnlyOriginalMetadataAndParsesCoordinates" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="receiptPersistenceFailurePreservesBytesUntilStorageRecoversWithoutReposting" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="onlyWaitingAndFailedBundlesCanBeDeleted" classname="com.vitalguard.field.OutboxBundleTest" time="0.003"/>
+  <testcase name="dependencyCompletionAndDraftFieldsRoundTripWithLegacyDefaults" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="sendingAChildStartsTheWholeBundleAndIsSingleFlight" classname="com.vitalguard.field.OutboxBundleTest" time="0.003"/>
+  <testcase name="uncertainParentWaitsUntilRegisteredWithIdAndExplicitResumption" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="photoOnlyBundleAlsoCleansImmediately" classname="com.vitalguard.field.OutboxBundleTest" time="0.0"/>
+  <testcase name="sameSourceInDifferentBundlesIsNotReusedAndDraftKeysAreCopied" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="completedPhotoWithoutStringReceiptKeepsChildrenWaiting" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="finalUncertainAttachmentLookupCleansBundleWithoutAnyPost" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="flutterV1FixtureRetainsExistingKeysAddsOptionalAutomationAndRecoversSending" classname="com.vitalguard.field.OutboxBundleTest" time="0.002"/>
+  <testcase name="failedInkDoesNotBlockLaterNotesAndCleanupWaitsForAllMembers" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="deletingPhotoDeletesWaitingAndFailedChildrenAndUnsubmittedDrafts" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="dependentsCopyParentSiteAndPreserveInsertionOrderForEqualTime" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="legacyStandaloneSendAndInkReceiptCacheStayCompatible" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <testcase name="storedReferenceFieldsAreRejectedBeforeCreatingFilesOrLedger" classname="com.vitalguard.field.OutboxBundleTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

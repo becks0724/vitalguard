@@ -1,0 +1,21 @@
+{
+  "version": "1.3.9",
+  "versionCode": 14,
+  "apk": {
+    "bytes": 59745952,
+    "sha256": "965b3d6b20053547613f0cc78d1310394096c8d9c34e09f04ef8bf59652b8eb4"
+  },
+  "change": "remove redundant CAM labels and helper sentence on dashboard CCTV card; picker retained",
+  "obsidian": "MCP unavailable (localhost connection refused); no vault write",
+  "tests": {
+    "previews": {
+      "tests": 25,
+      "failures": 0,
+      "errors": 0
+    },
+    "dashboardDevice": {
+      "passed": 2,
+      "seconds": 4.14
+    }
+  }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.AuxiliaryAuthorizationTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-09-27T14:47:54.056Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.023">
+  <properties/>
+  <testcase name="everyRequiredWriteLocksOn401IncludingActionNoneWithoutRepeatingTheWrite" classname="com.vitalguard.field.AuxiliaryAuthorizationTest" time="0.007"/>
+  <testcase name="calendarUnauthorizedChangesOnlyCalendarErrorAndCanRetryAfterLogin" classname="com.vitalguard.field.AuxiliaryAuthorizationTest" time="0.007"/>
+  <testcase name="photoUnauthorizedNeverRefreshesOrLocksEvenWithReauthAction" classname="com.vitalguard.field.AuxiliaryAuthorizationTest" time="0.006"/>
+  <testcase name="siteInfoDenialAfterLoginOrMeNeverRollsBackAcceptedSession" classname="com.vitalguard.field.AuxiliaryAuthorizationTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

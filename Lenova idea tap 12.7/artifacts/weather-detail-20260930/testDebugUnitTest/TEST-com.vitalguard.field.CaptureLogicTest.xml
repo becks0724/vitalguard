@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CaptureLogicTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-09-29T15:58:18.376Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.006">
+  <properties/>
+  <testcase name="formattingDoesNotDependOnDeviceLocaleOrTimezone" classname="com.vitalguard.field.CaptureLogicTest" time="0.002"/>
+  <testcase name="optionalFieldsAreOmittedInsteadOfSerializedAsNull" classname="com.vitalguard.field.CaptureLogicTest" time="0.001"/>
+  <testcase name="estimatedAddressStaysOnOneLineAndShowsItsSource" classname="com.vitalguard.field.CaptureLogicTest" time="0.001"/>
+  <testcase name="coordinatesOlderThanSixtySecondsCarryTheirAge" classname="com.vitalguard.field.CaptureLogicTest" time="0.001"/>
+  <testcase name="ageBoundariesAndWorkerNewlinesMatchDart" classname="com.vitalguard.field.CaptureLogicTest" time="0.0"/>
+  <testcase name="missingLocationIsAnExplicitLine" classname="com.vitalguard.field.CaptureLogicTest" time="0.0"/>
+  <testcase name="uploadFieldsPreserveCoordinatesAndNeverAddIdentity" classname="com.vitalguard.field.CaptureLogicTest" time="0.001"/>
+  <testcase name="timestampIsKstAndDiscardsSubseconds" classname="com.vitalguard.field.CaptureLogicTest" time="0.0"/>
+  <testcase name="gpsUsesFiveOrSixDigitsAccordingToAccuracy" classname="com.vitalguard.field.CaptureLogicTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

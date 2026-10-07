@@ -1,0 +1,32 @@
+{
+  "settingUi": "펜 → 스타일러스 도구 상자",
+  "secureSetting": "pen_set_show_button",
+  "before": "1",
+  "after": "0",
+  "preserved": {
+    "pen_set_freewrite_on": "1",
+    "pen_set_quick_create_click_notes": "1",
+    "pen_set_quick_create_screenoff_notes": "1",
+    "pen_set_click_pen_button_summary": "show_hide_menu"
+  },
+  "verification": {
+    "FloatingExpandView": {
+      "hasSurface": false,
+      "isVisible": false
+    },
+    "FloatingCollapseView": {
+      "hasSurface": false,
+      "isVisible": false
+    },
+    "settingsUiSwitchChecked": false,
+    "screenshotReviewed": true
+  },
+  "physicalPenStrokeTestPerformed": false,
+  "scannerDecision": "User accepted Google-provided screen; keep existing scanner",
+  "appVersionUnchanged": "1.3.10/code15",
+  "docCommit": "ef03a21e",
+  "obsidian": {
+    "verified": true,
+    "sha256": "19f02446e8a08fcfa2a4f02b5016889ee68f63897eccf21ac8c88f45cb040067"
+  }
+}

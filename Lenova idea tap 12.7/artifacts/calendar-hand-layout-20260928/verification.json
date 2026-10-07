@@ -1,0 +1,64 @@
+{
+  "version": "1.3.4",
+  "versionCode": 9,
+  "apk": {
+    "debug": {
+      "bytes": 65416232,
+      "sha256": "5825bda6a0ad825ca9a4f8085b6692b9c1c244913620e86ea9066e92ced484e5"
+    },
+    "release": {
+      "bytes": 59710740,
+      "sha256": "dd78abda83b322d457f053ad21c451be2e0ec22f2f6a13af2d1f7ddfcf9d0ab3"
+    }
+  },
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 301,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "fullDeviceTests": {
+      "passed": 52,
+      "failed": 0,
+      "seconds": 153.949
+    }
+  },
+  "releaseInstallation": {
+    "version": "1.3.4",
+    "versionCode": 9,
+    "timeKST": "2026-09-28 12:17:34",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "activityColdStartMs": 264,
+    "existingAccountRestored": true,
+    "originalHand": "right",
+    "testedHands": [
+      "right",
+      "left"
+    ],
+    "originalHandRestored": true,
+    "calendarActionsBelowGrid": true,
+    "lastScreen": "work calendar"
+  },
+  "gloveUserReport": {
+    "glove": "yellow rubber-coated work gloves",
+    "tabTaps": {
+      "reportedSuccesses": 10,
+      "attempts": 10
+    },
+    "smallIcons": "user reports working well, count not separately confirmed",
+    "scroll": "user reports working well, count not separately confirmed"
+  },
+  "git": {
+    "commit": "5d546482936fa11c885a1ca98003702081f9b75e",
+    "remoteBranch": "origin/main",
+    "pushVerified": true
+  }
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.VoiceDraftTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-09-29T14:27:48.472Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.019">
+  <properties/>
+  <testcase name="successfulEnqueueBeforeOperationMetadataFailureRestoresWithoutDuplicate" classname="com.vitalguard.field.VoiceDraftTest" time="0.002"/>
+  <testcase name="sequentialRecordingsWithSameBytesCreateDifferentOperations" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="recordStopPreviewSaveKeepsNoteAndQueuesExactVoiceContract" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="recordingMetadataAndElapsedTimeKeepOriginalFormat" classname="com.vitalguard.field.VoiceDraftTest" time="0.0"/>
+  <testcase name="latePreviewReadCannotRestartPlaybackAfterBackgroundPause" classname="com.vitalguard.field.VoiceDraftTest" time="0.002"/>
+  <testcase name="oversizeAudioIsNotEnqueuedAndOriginalFileIsKept" classname="com.vitalguard.field.VoiceDraftTest" time="0.004"/>
+  <testcase name="rerecordAndCancelDeleteOnlyDraftAndNeverUpload" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="mockRecorderHonorsThreeMinuteLimitAndPlaybackEventWithoutMicrophone" classname="com.vitalguard.field.VoiceDraftTest" time="0.002"/>
+  <testcase name="processDeathBeforeStopCallbackRecoversNativeJournal" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="truncatedAdtsTailIsExcludedWithoutThrowingAwayCompletedFrames" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="allAutomaticStopReasonsHaveOriginalMessagesAndNoUpload" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="microphoneDenialAndReadFailureKeepRecoverablePath" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="failureToPersistBeforeSendRetainsClipAndDoesNotCreateOutboxEntry" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <testcase name="recoveryUsesAccountAndMediaKeyAndSurvivesMissingNativeCache" classname="com.vitalguard.field.VoiceDraftTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

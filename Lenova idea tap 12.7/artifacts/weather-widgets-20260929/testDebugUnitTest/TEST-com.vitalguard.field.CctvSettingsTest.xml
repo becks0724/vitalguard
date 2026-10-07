@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.vitalguard.field.CctvSettingsTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-09-29T14:07:15.984Z" hostname="gimtaegon-ui-MacBookPro.local" time="0.006">
+  <properties/>
+  <testcase name="periodSurvivesControllerRecreationAndStaysWithItsAccountWithoutOpeningCamera" classname="com.vitalguard.field.CctvSettingsTest" time="0.001"/>
+  <testcase name="failedWriteKeepsPreviousPeriodAndReadFailureCanBeRepairedWithDefaultChoice" classname="com.vitalguard.field.CctvSettingsTest" time="0.002"/>
+  <testcase name="rapidSelectionAndLateWriteCannotChangeTheNextAccount" classname="com.vitalguard.field.CctvSettingsTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,86 @@
+{
+  "version": "1.3.5",
+  "versionCode": 10,
+  "apk": {
+    "debug": {
+      "bytes": 65245983,
+      "sha256": "a701562b63e4e799a8bbf8f280c5f559750b99ad15b923a3ab115ddc7417ff06"
+    },
+    "release": {
+      "bytes": 59710740,
+      "sha256": "07de4c12e405d4f60bbb0f8cfac3f71c9e0291243e2cf5c3253b2e6cf421985b"
+    }
+  },
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 301,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 24,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "targetedDeviceTests": {
+      "passed": 27,
+      "seconds": 95.211
+    }
+  },
+  "releaseInstallation": {
+    "version": "1.3.5",
+    "versionCode": 10,
+    "timeKST": "2026-09-28 12:37:17",
+    "appId": 10303,
+    "firstInstallTimeKST": "2026-09-16 12:50:57",
+    "activityColdStartMs": 253,
+    "existingAccountRestored": true,
+    "lastScreen": "work calendar"
+  },
+  "deviceLayoutComparison": {
+    "before": {
+      "hours": [
+        203,
+        799,
+        2197,
+        1332
+      ],
+      "서류 스캔": [
+        408,
+        1456,
+        526,
+        1499
+      ],
+      "사진 촬영": [
+        935,
+        1456,
+        1053,
+        1499
+      ]
+    },
+    "after": {
+      "hours": [
+        747,
+        799,
+        2741,
+        1548
+      ],
+      "서류 스캔": [
+        1960,
+        1646,
+        2078,
+        1689
+      ],
+      "사진 촬영": [
+        2487,
+        1646,
+        2605,
+        1689
+      ]
+    },
+    "calendarHeightIncreasePx": 216,
+    "buttonsMovedDownPx": 190
+  }
+}

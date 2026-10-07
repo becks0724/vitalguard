@@ -1,0 +1,964 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VitAlGuard 현장 태블릿 — 서비스화면 시안</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+/* ── 시안 뷰어 셸 (앱 화면이 아님 — 평가용 바깥 UI) ───────────── */
+.shell { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+.side {
+  background: #1B1D21; color: #E7E9EC; padding: 20px 16px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.side h1 { font-size: 16px; margin: 0 0 4px; letter-spacing: -.01em; }
+.side .sub { font-size: 12px; color: #9AA0A8; margin-bottom: 20px; line-height: 1.5; }
+.side .grp { font-size: 11px; color: #7C838C; margin: 18px 0 6px; letter-spacing: .04em; }
+.side button {
+  display: block; width: 100%; text-align: left; background: transparent;
+  border: 0; color: #C9CED5; padding: 9px 10px; border-radius: 8px;
+  font-size: 13px; cursor: pointer; font-family: inherit; line-height: 1.4;
+}
+.side button:hover { background: #26292E; color: #fff; }
+.side button[aria-current="true"] { background: var(--primary); color: #fff; font-weight: 700; }
+.side .note { font-size: 11px; color: #7C838C; margin-top: 20px; line-height: 1.6; border-top: 1px solid #2C3036; padding-top: 14px; }
+
+.stage { padding: 24px 28px 60px; overflow-x: auto; }
+.stage-bar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.seg { display: inline-flex; background: #DDE0E5; border-radius: var(--radius-pill); padding: 3px; }
+.seg button {
+  border: 0; background: transparent; padding: 7px 16px; border-radius: var(--radius-pill);
+  font-size: 13px; font-weight: 700; color: #55595F; cursor: pointer; font-family: inherit;
+}
+.seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.14); }
+.stage-meta { font-size: 12px; color: #6A6F76; }
+.stage-meta code { background: #DDE0E5; padding: 2px 6px; border-radius: 4px; }
+
+/* ── 기기 프레임 — 실제 dp 를 px 로 1:1 ──────────────────────── */
+.device {
+  background: #0F1114; border-radius: 28px; padding: 10px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.28);
+  width: max-content;
+}
+.screen {
+  position: relative; overflow: hidden; border-radius: 20px;
+  background: var(--canvas);
+  display: flex; flex-direction: column;
+}
+/* 세로 866×1385 / 가로 1385×866 (전체 화면 기준) */
+.portrait  .screen { width: 866px;  height: 1385px; }
+.landscape .screen { width: 1385px; height: 866px; }
+
+/* 시스템 인셋 시각화 */
+.inset-status, .inset-nav {
+  position: absolute; left: 0; right: 0; z-index: 40;
+  background: repeating-linear-gradient(45deg, rgba(0,0,0,.05) 0 6px, transparent 6px 12px);
+  pointer-events: none; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #8A9099; letter-spacing: .04em;
+}
+.inset-status { top: 0; height: 39px; }
+.inset-nav    { bottom: 0; height: 15px; }
+.inset-edge {
+  position: absolute; top: 0; bottom: 0; width: 30px; z-index: 40; pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(239,68,68,.07) 0 6px, transparent 6px 12px);
+}
+.inset-edge.l { left: 0; } .inset-edge.r { right: 0; }
+.screen[data-insets="off"] .inset-status,
+.screen[data-insets="off"] .inset-nav,
+.screen[data-insets="off"] .inset-edge { display: none; }
+
+/* ── 앱 공통 크롬 ────────────────────────────────────────── */
+.app { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.app-top {
+  padding: 47px 30px 8px;            /* 상단 39dp 인셋 + 8 */
+  border-bottom: 1px solid var(--hairline); background: var(--canvas);
+}
+.top-line1 { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.site-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: var(--fs-title); font-weight: 800;
+}
+.site-chip .caret { font-size: 13px; color: var(--muted); }
+.top-right { display: flex; align-items: center; gap: 10px; }
+
+/* 비차단 경보 스트립 — 자동 모달 없음. 슬롯은 항상 예약(레이아웃 고정) */
+.alert-strip {
+  margin-top: 8px; min-height: 56px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; border-radius: 12px;
+  background: var(--danger-tint); border: 1px solid rgba(239,68,68,.35);
+}
+.alert-strip[data-empty="true"] { background: var(--surface-soft); border-color: var(--hairline); }
+.alert-strip .grow { flex: 1; min-width: 0; }
+
+.app-body { flex: 1; overflow: hidden; padding: 14px 30px; }
+.app-body.scroll { overflow-y: auto; }
+
+/* 하단 목적지 바 — 네비바 15dp 만큼 더 패딩 */
+.app-tabs {
+  display: flex; border-top: 1px solid var(--hairline); background: var(--canvas);
+  padding-bottom: 15px;
+}
+.app-tabs button {
+  flex: 1; min-height: var(--tap-primary); border: 0; background: transparent;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  font-family: inherit; font-size: var(--fs-caption); font-weight: 700; color: var(--body);
+  cursor: pointer; position: relative;
+}
+.app-tabs button[aria-current="true"] { color: var(--primary); }
+.app-tabs .ic { }
+.tab-badge {
+  position: absolute; top: 6px; left: 50%; margin-left: 8px;
+  background: var(--danger); color: var(--ink);
+  border: 1px solid rgba(0,0,0,.18);
+  border-radius: var(--radius-pill); font-size: 11px; font-weight: 800;
+  padding: 1px 6px;
+}
+
+/* ── 화면별 ─────────────────────────────────────────────── */
+.sec-title { display: flex; align-items: baseline; justify-content: space-between; margin: 2px 0 10px; }
+
+.signal-row { display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+.signal-row:last-child { border-bottom: 0; }
+.signal-row .w-label { width: 92px; flex: none; font-weight: 700; font-size: var(--fs-body); }
+.signal-row .w-text  { flex: 1; min-width: 0; font-size: var(--fs-label); color: var(--body);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.signal-row .w-time  { flex: none; font-size: var(--fs-caption); color: var(--body); }
+.signal-row .w-go    { flex: none; color: var(--muted); }
+
+.stale { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-caption); color: var(--body); }
+
+
+.kpi { display: flex; gap: 10px; margin-bottom: 12px; }
+.kpi .box { flex: 1; padding: 12px 14px; border-radius: 12px; background: var(--surface-soft); border: 1px solid var(--hairline); }
+.kpi .box .k { font-size: var(--fs-caption); color: var(--body); }
+.kpi .box .v { font-size: 22px; font-weight: 800; }
+
+.action-dock {
+  position: absolute; right: 30px; bottom: 95px; z-index: 30;
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+}
+.action-dock[data-side="left"] { right: auto; left: 30px; align-items: flex-start; }
+
+.empty {
+  padding: 28px 20px; text-align: center; border: 1px dashed var(--hairline-strong);
+  border-radius: 12px; background: var(--surface-soft);
+}
+.empty .t { font-weight: 700; margin-bottom: 6px; }
+.empty .d { font-size: var(--fs-label); color: var(--body); line-height: 1.6; }
+
+.alert-card { padding: 14px 16px; border-bottom: 1px solid var(--hairline); display: flex; gap: 12px; align-items: flex-start; }
+.alert-card .body { flex: 1; min-width: 0; }
+.alert-card .meta { font-size: var(--fs-caption); color: var(--body); margin-top: 3px; }
+.alert-card.undone { background: var(--danger-tint); }
+.alert-card.geofence.undone { background: var(--warn-tint); }
+
+.photo-card { border: 1px solid var(--hairline); border-radius: var(--radius-card); overflow: hidden; }
+.photo-thumb { height: 300px; background: linear-gradient(135deg,#3C4149,#22262B); display: grid; place-items: center; color: #8A9099; font-size: 13px; }
+.meta-grid { display: grid; grid-template-columns: 92px 1fr; gap: 7px 12px; padding: 14px 16px; font-size: var(--fs-label); }
+.meta-grid dt { color: var(--body); }
+.meta-grid dd { margin: 0; }
+
+.chips { display: flex; flex-wrap: wrap; gap: var(--gap-tap); }
+.chip {
+  min-height: var(--tap-min); padding: 0 18px; border-radius: var(--radius-pill);
+  border: 1px solid var(--hairline-strong); background: var(--canvas);
+  font-size: var(--fs-body); font-weight: 700; cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center;
+}
+.chip--on { background: var(--primary-subtle); border-color: var(--primary); color: var(--primary); }
+/* 등급 칩 — 색 띠 하나로 등급을 말한다. "정상/주의/위험" 글자를 덧붙이지 않는다 */
+
+.src-tag {
+  font-size: 12px; line-height: 1; padding: 5px 8px; border-radius: 6px;
+  border: 1px solid var(--hairline-strong); color: var(--body); background: var(--surface-soft);
+  font-weight: 600; white-space: nowrap;
+}
+
+.input-bar { display: flex; gap: var(--gap-tap); align-items: center; margin-top: 12px; }
+.input-bar .field {
+  flex: 1; min-height: var(--tap-primary); border: 1px solid var(--hairline-strong);
+  border-radius: 14px; padding: 0 16px; display: flex; align-items: center;
+  color: var(--muted); font-size: var(--fs-body); background: var(--canvas);
+}
+
+.outbox-row { display: flex; align-items: center; gap: 12px; min-height: 72px; padding: 12px 16px; border-bottom: 1px solid var(--hairline); }
+.outbox-row .body { flex: 1; min-width: 0; }
+
+.canvas-area {
+  flex: 1; margin: 0 -30px; background: #2A2E34; position: relative;
+  display: grid; place-items: center; color: #7E858E; font-size: 13px;
+}
+.pen-tools {
+  display: flex; gap: 10px; align-items: center; padding: 12px 0 2px;
+}
+
+.pen-tool {
+  width: var(--tap-primary); height: var(--tap-primary); border-radius: 14px;
+  border: 1px solid var(--hairline-strong); background: var(--canvas);
+  display: grid; place-items: center; font-size: 19px; cursor: pointer;
+}
+.pen-tool--on { background: var(--primary); color: #fff; border-color: transparent; }
+
+.hidden { display: none !important; }
+
+/* 아이콘 — 인라인 SVG 스프라이트. 크기는 font-size 대신 width/height */
+.ic-svg { display: inline-block; vertical-align: middle; flex: none; }
+
+/* 로그인 계열 — 장갑 낀 손 전제로 크게 */
+.field-lg {
+  min-height: 72px; border: 1px solid var(--hairline-strong); border-radius: 14px;
+  padding: 0 18px; display: flex; align-items: center;
+  font-size: var(--fs-title); background: var(--canvas);
+}
+.otp-box {
+  width: 72px; height: 88px; border: 2px solid var(--hairline-strong); border-radius: 14px;
+  display: grid; place-items: center; font-size: 32px; font-weight: 800; background: var(--canvas);
+}
+.otp-box.on { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-ring); }
+.site-opt {
+  display: flex; align-items: center; gap: 16px; width: 100%;
+  min-height: 96px; padding: 16px 20px; cursor: pointer;
+  border: 1px solid var(--hairline-strong); border-radius: var(--radius-card);
+  background: var(--canvas); font-family: inherit;
+}
+.site-opt:hover { border-color: var(--primary); background: var(--primary-subtle); }
+
+.legend { margin-top: 20px; font-size: 12px; color: #55595F; line-height: 1.8; max-width: 880px; }
+.legend b { color: var(--ink); }
+.legend .tag { display: inline-block; background: #DDE0E5; border-radius: 4px; padding: 1px 6px; margin-right: 4px; }
+</style>
+</head>
+<body>
+<!-- 아이콘 스프라이트 — 외부 의존 없음. 24×24 stroke 기반.
+     Flutter 에서는 같은 의미의 Icons.* 로 대응시킨다(이름을 주석에 남김). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <g id="i-site" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12h3.5l2-5 3 10 2.5-7 1.5 2H21"/></g>                        <!-- Icons.monitor_heart -->
+  <g id="i-alert" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 9a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10.5 20a2 2 0 0 0 3 0"/></g>  <!-- Icons.notifications -->
+  <g id="i-note" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 6h10M4 11h7M4 16h5"/><path d="M14.5 16.5 19 12l2.5 2.5-4.5 4.5H14.5z"/></g>          <!-- Icons.edit_note -->
+  <g id="i-outbox" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/><path d="M12 3v11"/><path d="M8 7l4-4 4 4"/></g> <!-- Icons.outbox -->
+  <g id="i-right" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M9 5l7 7-7 7"/></g>                                             <!-- Icons.chevron_right -->
+  <g id="i-pen" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/></g>                <!-- Icons.edit / stylus -->
+  <g id="i-marker" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15 4l5 5-9 9H6v-5z"/><path d="M4 21h16"/></g>                   <!-- 형광펜 -->
+  <g id="i-shape" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/></g>
+  <g id="i-eraser" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 20H20"/><path d="M14 4l6 6-8 8H7l-3-3z"/></g>
+  <g id="i-undo" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 10h10a5 5 0 0 1 0 10h-4"/><path d="M8 6l-4 4 4 4"/></g>       <!-- Icons.undo -->
+  <g id="i-refresh" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 11a8 8 0 1 0-1.5 5.5"/><path d="M20 5v6h-6"/></g>            <!-- Icons.refresh -->
+  <g id="i-mic" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></g> <!-- Icons.mic -->
+  <g id="i-check" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></g>     <!-- Icons.task_alt -->
+  <g id="i-add" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+    <path d="M12 5v14M5 12h14"/></g>                                          <!-- Icons.add -->
+  <g id="i-down" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 9l6 6 6-6"/></g>                                              <!-- Icons.expand_more -->
+  <g id="i-clock" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></g>                <!-- Icons.schedule -->
+</defs></svg>
+<div class="shell">
+
+  <nav class="side">
+    <h1>현장 태블릿 서비스화면 시안</h1>
+    <div class="sub">Lenovo Idea Tab Pro 12.7" · 설계 논리 크기 100%<br>현장 안전관리자(site_manager)</div>
+
+    <div class="grp">진입</div>
+    <button data-screen="login" aria-current="true">A-01 로그인</button>
+    <button data-screen="totp">A-02 2단계 인증</button>
+    <button data-screen="sitepick">A-06 현장 선택</button>
+
+    <div class="grp">주요 화면</div>
+    <button data-screen="site">S-01 현장 요약</button>
+    <button data-screen="alerts">L-01 경보 목록</button>
+    <button data-screen="alert-detail">L-02 경보 상세 · 대응확인</button>
+    <button data-screen="alert-offline">L-03 오프라인 — 대응 불가</button>
+    <button data-screen="photo">R-03 현장 사진 상세</button>
+    <button data-screen="pen">R-04 펜 주석 캔버스</button>
+    <button data-screen="input">R-06 입력 3경로</button>
+    <button data-screen="outbox">O-01 전송 상태</button>
+    <button data-screen="video">V-01 영상</button>
+
+    <div class="grp">빈·실패 상태</div>
+    <button data-screen="nocache">S-07 최초 캐시 없음</button>
+    <button data-screen="offline">C-01 오프라인 배너</button>
+
+    <div class="note">
+      빗금 = 시스템 인셋<br>
+      상단 39dp · 하단 15dp · 좌우 30dp(제스처 경합)<br><br>
+      ⚠ 이 시안은 <b>모의 동작</b>입니다. 실제 데이터가 아닙니다.
+    </div>
+  </nav>
+
+  <main class="stage">
+    <div class="stage-bar">
+      <div class="seg" id="orient">
+        <button data-o="portrait" aria-pressed="true">세로 866×1385</button>
+        <button data-o="landscape" aria-pressed="false">가로 1385×866</button>
+      </div>
+      <div class="seg" id="zoom">
+        <button data-z="0.5" aria-pressed="true">50%</button>
+        <button data-z="0.7" aria-pressed="false">70%</button>
+        <button data-z="1" aria-pressed="false">100%</button>
+      </div>
+      <div class="seg" id="insets">
+        <button data-i="on" aria-pressed="true">인셋 표시</button>
+        <button data-i="off" aria-pressed="false">숨김</button>
+      </div>
+      <div class="seg" id="dock">
+        <button data-d="right" aria-pressed="true">실행 우측</button>
+        <button data-d="left" aria-pressed="false">실행 좌측</button>
+      </div>
+      <div class="stage-meta" id="meta"></div>
+    </div>
+
+    <div class="device portrait" id="device">
+      <div class="screen" id="screen" data-insets="on">
+        <div class="inset-status">상태바 39dp</div>
+        <div class="inset-edge l"></div>
+        <div class="inset-edge r"></div>
+        <div class="inset-nav"></div>
+
+        <div class="app">
+          <!-- 공통 상단 -->
+          <header class="app-top">
+            <div class="top-line1">
+              <span class="site-chip">광주 스마트인재개발원 신축<svg class="ic-svg caret" id="siteCaret" width="18" height="18" viewBox="0 0 24 24" hidden><use href="#i-down"/></svg></span>
+              <span class="top-right">
+                <span class="stale num"><svg class="ic-svg" width="15" height="15" viewBox="0 0 24 24"><use href="#i-clock"/></svg>마지막 수신 12:10</span>
+              </span>
+            </div>
+            <!-- 스트립 슬롯은 항상 예약된다 — 경보가 와도 캔버스 높이가 변하지 않게 -->
+            <div class="alert-strip" id="strip">
+              <span class="dot dot--danger" title="위험"></span>
+              <span class="grow t-body"><b>새 경보 2건</b> · 구획 이탈 장우진 · 생체 위험 1건</span>
+              <button class="btn">경보 보기</button>
+            </div>
+          </header>
+
+          <section class="app-body scroll" id="body"></section>
+
+          <!-- 실행 독 — 한 벌만. 좌/우 배치는 선택 -->
+          <div class="action-dock" id="adock" data-side="right"></div>
+
+          <nav class="app-tabs" id="tabs">
+            <button aria-current="true"><svg class="ic-svg ic" width="24" height="24" viewBox="0 0 24 24"><use href="#i-site"/></svg>현장</button>
+            <button><svg class="ic-svg ic" width="24" height="24" viewBox="0 0 24 24"><use href="#i-alert"/></svg>경보<span class="tab-badge num">2</span></button>
+            <button><svg class="ic-svg ic" width="24" height="24" viewBox="0 0 24 24"><use href="#i-note"/></svg>기록</button>
+            <button><svg class="ic-svg ic" width="24" height="24" viewBox="0 0 24 24"><use href="#i-outbox"/></svg>전송 상태</button>
+          </nav>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend" id="legend"></div>
+  </main>
+</div>
+
+<script>
+/* ── 화면 정의 ────────────────────────────────────────────── */
+const SCREENS = {
+
+login: {
+  title: "A-01 로그인",
+  chrome: false,
+  note: "<b>관제웹과 같은 계정</b>을 쓴다(가입 화면 없음 — 계정은 관리자가 만든다). 현장에서 장갑 낀 손으로 치는 것을 전제로 <b>입력 칸 72dp·버튼 64dp</b>. 비밀번호는 기기에 저장하지 않고 <b>토큰만</b> 보관한다.",
+  dock: ``,
+  body: `
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;max-width:560px;margin:0 auto;width:100%;padding:0 10px">
+      <div style="text-align:center;margin-bottom:36px">
+        <div style="width:64px;height:64px;border-radius:18px;background:var(--primary);display:grid;place-items:center;margin:0 auto 16px;color:#fff;font-size:28px;font-weight:800">V</div>
+        <div class="t-hero">VitAlGuard 현장</div>
+        <div class="t-label" style="margin-top:8px">관제웹과 같은 아이디로 로그인합니다</div>
+      </div>
+
+      <label class="t-label" style="display:block;margin-bottom:8px">아이디</label>
+      <div class="field-lg" style="margin-bottom:18px">worker01</div>
+
+      <label class="t-label" style="display:block;margin-bottom:8px">비밀번호</label>
+      <div class="field-lg" style="margin-bottom:14px;color:var(--muted)">••••••••</div>
+
+      <label style="display:flex;align-items:center;gap:12px;min-height:56px;cursor:pointer;margin-bottom:20px">
+        <span style="width:28px;height:28px;border-radius:8px;border:2px solid var(--primary);background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:900">✓</span>
+        <span class="t-body">이 기기에서 로그인 유지</span>
+      </label>
+
+      <button class="btn btn--primary" style="width:100%;margin-bottom:16px">로그인</button>
+
+      <div style="display:flex;justify-content:center;gap:8px">
+        <button class="btn btn--ghost">아이디 찾기</button>
+        <span class="t-caption" style="align-self:center;color:var(--muted)">·</span>
+        <button class="btn btn--ghost">비밀번호 찾기</button>
+      </div>
+
+      <div class="t-caption" style="margin-top:28px;text-align:center;color:var(--body);line-height:1.7">
+        계정은 <b>관리자가 관제웹에서 생성</b>합니다. 이 앱에는 가입 화면이 없습니다.<br>
+        비밀번호는 기기에 저장되지 않습니다.
+      </div>
+    </div>`
+},
+
+totp: {
+  title: "A-02 2단계 인증",
+  chrome: false,
+  note: "서버가 <code>twoFactorRequired</code> 로 되물으면 <b>비밀번호를 그대로 쥔 채 6자리만 더해</b> 다시 보낸다(중간 토큰을 만들지 않는 관제웹과 같은 구조).<br>⚠ <b>정정(코덱스 지적)</b> — 종전 시안의 \"남은 시도 2회\"는 <b>근거가 없었다.</b> 현재 API 는 남은 횟수를 주지 않고 <b>잠겼을 때 <code>429</code> + <code>retryAfterSec</code></b> 만 준다. <b>서버가 주지 않는 수치를 화면에 만들어내지 않는다.</b>",
+  dock: ``,
+  body: `
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;max-width:560px;margin:0 auto;width:100%;padding:0 10px">
+      <div style="text-align:center;margin-bottom:32px">
+        <div class="t-hero">2단계 인증</div>
+        <div class="t-label" style="margin-top:10px;line-height:1.7">
+          인증 앱에 표시된 <b>6자리 숫자</b>를 입력하세요<br>
+          <span class="t-caption">worker01 · 광주 스마트인재개발원</span>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:center;margin-bottom:26px">
+        <span class="otp-box num">4</span><span class="otp-box num">1</span><span class="otp-box num">9</span>
+        <span class="otp-box num">2</span><span class="otp-box num on"></span><span class="otp-box"></span>
+      </div>
+
+      <button class="btn btn--primary" style="width:100%;margin-bottom:16px" disabled>확인</button>
+      <div style="text-align:center"><button class="btn btn--ghost">다른 방법으로 로그인</button></div>
+
+      <div class="empty" style="margin-top:30px;text-align:left">
+        <div class="d">
+          인증 앱의 <b>시간이 맞는지</b> 확인하세요. 시간이 어긋나면 번호가 맞아도 실패합니다.<br>
+          <span class="t-caption">여러 번 틀리면 일정 시간 잠깁니다 — 잠기면 <b>남은 시간</b>을 알려드립니다.</span>
+        </div>
+      </div>
+    </div>`
+},
+
+sitepick: {
+  title: "A-06 현장 선택",
+  chrome: false,
+  note: "현장 안전관리자는 배정 현장이 <b>1~2개</b>다(ERD 「사용자 4부류」). <b>1개면 이 화면을 건너뛴다</b> — 선택지가 하나뿐인 화면을 보여주지 않는다. 2개일 때만 뜬다.",
+  dock: ``,
+  body: `
+    <div style="flex:1;display:flex;flex-direction:column;justify-content:center;max-width:640px;margin:0 auto;width:100%;padding:0 10px">
+      <div style="margin-bottom:26px">
+        <div class="t-hero">현장 선택</div>
+        <div class="t-label" style="margin-top:8px">김태곤 님 · 배정된 현장 2곳</div>
+      </div>
+
+      <button class="site-opt" style="margin-bottom:14px">
+        <span class="dot dot--danger" title="위험"></span>
+        <span style="flex:1;min-width:0;text-align:left">
+          <span class="t-title" style="display:block">광주 스마트인재개발원 신축</span>
+          <span class="t-caption" style="color:var(--body)">미대응 경보 2건 · 작업 중 1명 · 마지막 수신 12:10</span>
+        </span>
+        <svg class="ic-svg" width="24" height="24" viewBox="0 0 24 24" style="color:var(--muted)"><use href="#i-right"/></svg>
+      </button>
+
+      <button class="site-opt">
+        <span class="dot dot--ok" title="정상"></span>
+        <span style="flex:1;min-width:0;text-align:left">
+          <span class="t-title" style="display:block">B동 리모델링</span>
+          <span class="t-caption" style="color:var(--body)">미대응 경보 없음 · 작업 중 0명 · <b>미전송 기록 1건</b></span>
+        </span>
+        <svg class="ic-svg" width="24" height="24" viewBox="0 0 24 24" style="color:var(--muted)"><use href="#i-right"/></svg>
+      </button>
+
+      <div class="t-caption" style="margin-top:24px;color:var(--body);line-height:1.7">
+        현장을 바꾸면 <b>조회는 새 현장</b>으로 바뀝니다. 다만 <b>아직 보내지 못한 기록은 작성한 현장에 그대로</b> 남아
+        그 현장으로 전송됩니다.
+      </div>
+    </div>`
+},
+
+
+site: {
+  title: "S-01 현장 요약",
+  note: "첫 화면. <b>안전 신호등 4행 + 미대응 경보 요약</b>만으로 '지금 현장이 어떤가'가 끝난다. 각 행은 상세로 진입. 상태는 <b>면+모양+라벨</b> 3중(색 하나로 말하지 않음). 상태색 배경 위 글자는 항상 잉크(<code>#171717</code>).",
+  dock: `<button class="btn btn--primary"><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-note"/></svg>현장 기록 남기기</button>`,
+  body: `
+    <div class="kpi">
+      <div class="box"><div class="k">작업 중</div><div class="v num">1<span class="t-label"> / 4명</span></div></div>
+      <div class="box"><div class="k">미대응 경보</div><div class="v num">2<span class="t-label"> 건</span></div></div>
+      <div class="box"><div class="k">미전송 기록</div><div class="v num">2<span class="t-label"> 건</span></div></div>
+    </div>
+
+    <div class="sec-title"><span class="t-title">현장 상태</span><span class="t-caption">2026.09.12 (토)</span></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="signal-row">
+        <span class="dot dot--ok" title="정상"></span>
+        <span class="w-label">현장 기상</span>
+        <span class="w-text">특보 없음 · 광주</span>
+        <span class="w-time num">12:08</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+      <div class="signal-row">
+        <span class="dot dot--ok" title="정상"></span>
+        <span class="w-label">작업자</span>
+        <span class="w-text">정상 1명 · 대기 3명 — 대기자는 생체 미수신(판정 대상 아님)</span>
+        <span class="w-time num">12:10</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+      <div class="signal-row row--danger">
+        <span class="dot dot--danger" title="위험"></span>
+        <span class="w-label">가스 감지</span>
+        <span class="w-text"><b>CO 52ppm</b> · 탱크 야드 — 즉시 환기·대피</span>
+        <span class="w-time num">12:10</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+      <div class="signal-row row--warn">
+        <span class="dot dot--warn" title="주의"></span>
+        <span class="w-label">AED</span>
+        <span class="w-text">배터리 교환 임박 · 지하 주차장 B1 외 1건</span>
+        <span class="w-time num">09:00</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+    </div>
+
+    <div class="sec-title"><span class="t-title">영상</span><span class="t-caption">현장 Wi-Fi 연결됨</span></div>
+    <div class="card" style="padding:14px 16px">
+      <div class="t-label" style="margin-bottom:10px">영상은 눌러야 켜집니다 — 데이터·배터리 절약</div>
+      <div class="chips">
+        <button class="chip">CAM-03 작업구역</button>
+        <button class="chip">CAM-01 정문</button>
+        <button class="chip">CAM-02 기계실</button>
+      </div>
+    </div>`
+},
+
+alerts: {
+  title: "L-01 경보 목록",
+  note: "<b>목록 행을 탭해도 확인 처리되지 않는다</b> — 상세에서 대상·시각을 본 뒤 명시적 1회. <span class='tag'>첫 시안 제외</span> '미대응 모두 확인'은 오조작 영향이 커서 넣지 않았다. 배지는 <b>이 현장 기준</b>(캐시 전체 집계 금지).",
+  dock: ``,
+  body: `
+    <div class="sec-title"><span class="t-title">경보</span><span class="t-caption">미대응 2 · 전체 12</span></div>
+    <div class="chips" style="margin-bottom:12px">
+      <button class="chip chip--on">미대응 2</button>
+      <button class="chip">전체</button>
+      <button class="chip">대응완료</button>
+    </div>
+    <div class="card">
+      <div class="alert-card geofence undone">
+        <span class="badge badge--warn">이탈</span>
+        <div class="body">
+          <div class="t-body"><b>구획 이탈</b> · 장우진 <span class="t-caption">EMP-6861</span></div>
+          <div class="meta num">발생 09.12 11:36:45 · 12분 전</div>
+        </div>
+        <svg class="ic-svg" width="22" height="22" viewBox="0 0 24 24" style="color:var(--muted)"><use href="#i-right"/></svg>
+      </div>
+      <div class="alert-card undone">
+        <span class="badge badge--danger">생체</span>
+        <div class="body">
+          <div class="t-body"><b>생체 위험</b> · 장우진</div>
+          <div class="meta num">발생 09.11 01:19:31</div>
+        </div>
+        <svg class="ic-svg" width="22" height="22" viewBox="0 0 24 24" style="color:var(--muted)"><use href="#i-right"/></svg>
+      </div>
+      <div class="alert-card">
+        <span class="badge badge--idle">미수신</span>
+        <div class="body">
+          <div class="t-body">absence · 장우진</div>
+          <div class="meta num">발생 09.12 10:20:02 · 대응 11:35:03 (자동해제 — 수신이 멎어 있었음)</div>
+        </div>
+        <span class="t-caption" style="flex:none;color:var(--body)">대응완료</span>
+      </div>
+      <div class="alert-card">
+        <span class="badge badge--idle">생체</span>
+        <div class="body">
+          <div class="t-body">생체 위험 · 장우진</div>
+          <div class="meta num">발생 09.11 02:01:47 · 대응 02:18:06 (관제자)</div>
+        </div>
+        <span class="t-caption" style="flex:none;color:var(--body)">대응완료</span>
+      </div>
+    </div>`
+},
+
+"alert-detail": {
+  title: "L-02 경보 상세 · 대응 확인",
+  note: "대상·시각·위치를 확인한 뒤 <b>명시적 1회</b>. 누른 뒤에는 <code>처리 중</code> → <code>서버 확인됨</code> / <code>실패</code> / <code>결과 불명</code>을 구분해 보여준다(N-4). 결과 불명이면 <b>재전송이 아니라 서버 상태 재조회</b>가 먼저다.",
+  dock: `<button class="btn btn--primary"><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-check"/></svg>대응 확인</button>`,
+  body: `
+    <div class="card" style="padding:18px 20px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <span class="badge badge--warn">이탈</span>
+        <span class="t-hero">구획 이탈</span>
+      </div>
+      <dl class="meta-grid" style="padding:0">
+        <dt>작업자</dt><dd><b>장우진</b> · EMP-6861 · 팀장</dd>
+        <dt>발생 시각</dt><dd class="num">2026-09-12 오전 11:36:45 <span class="t-caption">(12분 전)</span></dd>
+        <dt>위치</dt><dd>현장 경계 북측 — 기준점에서 <span class="num">38m</span> 밖</dd>
+        <dt>생체</dt><dd>심박 <span class="num">88</span>bpm · 손목온도 <span class="num">34.3</span>℃ <span class="t-caption">(12:10 수신)</span></dd>
+        <dt>상태</dt><dd><b style="color:var(--ink)">미대응</b></dd>
+      </dl>
+    </div>
+    <div class="card" style="padding:14px 16px">
+      <div class="t-label" style="margin-bottom:10px">연락</div>
+      <div class="chips">
+        <button class="chip">연락처 복사</button>
+        <button class="chip">보호자 정보 보기</button>
+      </div>
+      <div class="t-caption" style="margin-top:10px;color:var(--body)">
+        ⚠ 이 태블릿은 통화 기능이 없습니다(셀룰러 미탑재). 전화는 단말기로 거세요.
+      </div>
+    </div>`
+},
+
+"alert-offline": {
+  title: "L-03 오프라인 — 대응 확인 불가",
+  note: "끊긴 상태에서 <b>대응 확인을 예약하지 않는다</b>(D-3 결정). 완료/예약 상태를 만들면 감사 시각이 왜곡된다. 대신 <b>경보 내용과 연락 방법</b>은 캐시로 계속 보여준다.",
+  dock: `<button class="btn" disabled><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-check"/></svg>대응 확인</button>`,
+  body: `
+    <div class="card" style="padding:18px 20px;margin-bottom:14px;border-color:rgba(239,68,68,.35)">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+        <span class="badge badge--warn">이탈</span>
+        <span class="t-hero">구획 이탈</span>
+      </div>
+      <dl class="meta-grid" style="padding:0">
+        <dt>작업자</dt><dd><b>장우진</b> · EMP-6861</dd>
+        <dt>발생 시각</dt><dd class="num">2026-09-12 오전 11:36:45</dd>
+        <dt>이 정보는</dt><dd class="t-label">11:41에 받아둔 것입니다 — 이후 변경은 반영되지 않았습니다</dd>
+      </dl>
+    </div>
+    <div class="empty" style="text-align:left;border-color:rgba(239,68,68,.4);background:var(--danger-tint)">
+      <div class="t" style="display:flex;align-items:center;gap:8px">
+        대응 확인은 연결된 뒤에 가능합니다
+      </div>
+      <div class="d">
+        네트워크에 연결되면 <b>자동으로 처리되지 않습니다.</b> 직접 다시 눌러야 합니다 —
+        누가 언제 확인했는지가 안전 기록으로 남기 때문입니다.<br>
+        지금은 아래 연락 방법을 쓰세요.
+      </div>
+      <div class="chips" style="margin-top:14px">
+        <button class="chip">연락처 복사</button>
+        <button class="chip">다시 연결 시도</button>
+      </div>
+    </div>`
+},
+
+photo: {
+  title: "R-03 현장 사진 상세",
+  note: "관제웹의 사진 카드 구조를 승계하되 <b>메타를 먼저 읽고 주석으로 넘어가는 동선</b>. 촬영자가 <b>타인</b>인 경우를 기본으로 그렸다 — 원본 수정권과 '내 주석을 덧붙일 권한'은 다르다(서버가 별도 검사).",
+  dock: `<button class="btn btn--primary"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-pen"/></svg>펜으로 표시하기</button>`,
+  body: `
+    <div class="photo-card" style="margin-bottom:14px">
+      <div class="photo-thumb">현장 이미지 · 08-28 14:38</div>
+      <dl class="meta-grid">
+        <dt>촬영 시각</dt><dd class="num">2026-08-28 오후 2:38</dd>
+        <dt>도로명 주소</dt><dd>전남광주통합특별시 동구 금남로3가 1-10</dd>
+        <dt>GPS 좌표</dt><dd class="num">35.150525, 126.916306</dd>
+        <dt>좌표 대조</dt><dd><span class="dot dot--ok" title="일치" style="width:26px;height:26px;font-size:14px;vertical-align:middle"></span> 생체 좌표와 0m 차이 <span class="t-caption">(정확도 ±8m)</span></dd>
+        <dt>촬영자</dt><dd>장우진 · EMP-6861 <span class="t-caption">(다른 사람이 올린 사진)</span></dd>
+      </dl>
+      <div style="padding:0 16px 14px"><button class="btn btn--ghost">원문 OCR 보기<svg class="ic-svg " width="18" height="18" viewBox="0 0 24 24"><use href="#i-down"/></svg></button></div>
+    </div>
+    <div class="card" style="padding:14px 16px">
+      <div class="t-label" style="margin-bottom:8px">설명·댓글 <span class="t-caption">2건</span></div>
+      <div class="t-body" style="padding:8px 0;border-bottom:1px solid var(--hairline)">
+        <b>김태곤</b> <span class="t-caption num">08-28 15:02</span><br>타설 전 점검 완료
+      </div>
+      <div class="input-bar">
+        <span class="field">칩·펜·음성으로 입력</span>
+        <button class="btn btn--primary" style="min-width:64px"><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-add"/></svg></button>
+      </div>
+    </div>`
+},
+
+pen: {
+  title: "R-04 펜 주석 캔버스",
+  note: "<b>경보 스트립 슬롯은 상단에 항상 예약</b>되어 있어 새 경보가 와도 <b>캔버스 높이가 변하지 않는다</b> — 스트로크 중 좌표·터치 대상이 움직이면 안 된다(코덱스 지적). 도구는 <b>한 벌만</b>, 좌/우 배치는 선택. 손가락=이동·확대, 펜=그리기로 <b>입력 종류별 역할</b>을 나눈다.",
+  dock: ``,
+  body: `
+    <div class="sec-title">
+      <span class="t-title">주석 — 08-28 14:38 사진</span>
+      <span class="t-caption"><span class="badge badge--idle">임시저장됨 12:14</span></span>
+    </div>
+    <div class="canvas-area">펜으로 그리는 영역 · 필압/기울기 반영 · 손가락은 이동·확대만</div>
+    <div class="pen-tools">
+      <button class="pen-tool pen-tool--on" title="펜"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-pen"/></svg></button>
+      <button class="pen-tool" title="형광펜"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-marker"/></svg></button>
+      <button class="pen-tool" title="도형"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-shape"/></svg></button>
+      <button class="pen-tool" title="지우개"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-eraser"/></svg></button>
+      <button class="pen-tool" title="되돌리기"><svg class="ic-svg " width="24" height="24" viewBox="0 0 24 24"><use href="#i-undo"/></svg></button>
+      <div style="flex:1"></div>
+      <button class="btn">원본만 보기</button>
+      <button class="btn btn--primary">저장</button>
+    </div>`
+},
+
+input: {
+  title: "R-06 입력 3경로 (요구사항 14)",
+  note: "<b>①정형 선택지 → ②펜 → ③음성</b> 순. 레노버 OS 손글씨는 실측 기각(<code>네이버 구글</code> → <code>네ㅇ뻐7ㄱㅜ그리</code>)이라 <b>변환 품질에 업무를 걸지 않는다</b>. 키보드는 최후 수단 — 뜨면 안전 높이의 26.5%가 사라진다.<br>⚠ <b>정정(코덱스 지적)</b> — ⓐ <b>기본 선택을 두지 않는다.</b> 미리 골라 두면 확인 없이 저장돼 안전 기록이 왜곡된다. ⓑ 이 평가는 <b>센서 판정이 아니라 관리자가 적는 기록</b>임을 화면이 말한다. ⓒ <b>칩의 등급 색 띠를 없앴다</b> — 4문구를 ok/warn/danger 3색으로 칠하면 서버 <code>severity</code> 3단계로 자동 변환되는 것처럼 보이고, <b>'작업 중지'와 '즉시 조치 요망' 사이에는 순위가 정의된 적이 없는데</b> 같은 빨강이라 같은 등급으로 읽힌다. 게다가 그 빨강은 위쪽 <b>센서 판정 점과 같은 색</b>이었다. 색은 빼고 <b>출처 라벨</b>로 구분한다.",
+  dock: ``,
+  body: `
+    <div class="sec-title"><span class="t-title">기록 남기기</span></div>
+
+    <div class="card" style="padding:16px;margin-bottom:12px">
+      <div class="t-label" style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
+        <b>① 내가 남기는 현장 평가</b>
+        <span class="src-tag">관리자 기록</span>
+      </div>
+      <div class="t-caption" style="margin-bottom:12px;color:var(--body)">
+        센서 판정과는 <b>별개로 남는 기록</b>입니다. 센서 판정을 해제하거나 덮어쓰지 않습니다. 하나를 고르세요.
+      </div>
+      <div class="chips">
+        <button class="chip">이상 없음</button>
+        <button class="chip">재점검 필요</button>
+        <button class="chip">작업 중지</button>
+        <button class="chip">즉시 조치 요망</button>
+      </div>
+      <div class="t-caption" style="margin-top:12px;color:var(--body)">
+        아직 고르지 않았습니다. 구체적인 내용(무엇이·어디가)은 아래 <b>펜</b>이나 <b>음성</b>으로 덧붙입니다.
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px;margin-bottom:12px">
+      <div class="t-label" style="margin-bottom:10px"><b>② 펜으로 쓰기</b> — 글씨 그대로 남기거나 변환</div>
+      <div style="height:150px;border:1px dashed var(--hairline-strong);border-radius:12px;display:grid;place-items:center;color:var(--muted);font-size:13px">
+        여기에 펜으로 쓰세요
+      </div>
+      <div class="chips" style="margin-top:12px">
+        <button class="chip">글씨 그대로 저장</button>
+        <button class="chip">텍스트로 변환</button>
+      </div>
+      <div class="t-caption" style="margin-top:8px;color:var(--body)">
+        변환 결과는 저장 전에 보여주고 <b>고칠 수 있게</b> 합니다.
+      </div>
+    </div>
+
+    <div class="card" style="padding:16px">
+      <div class="t-label" style="margin-bottom:10px"><b>③ 말로 하기</b> — 누르는 동안만 듣습니다</div>
+      <div class="chips">
+        <button class="chip" style="min-width:220px"><svg class="ic-svg " width="22" height="22" viewBox="0 0 24 24"><use href="#i-mic"/></svg> 누르고 말하기</button>
+      </div>
+      <div class="t-caption" style="margin-top:8px;color:var(--body)">
+        ⚠ 현장 소음에서 정확도가 떨어질 수 있습니다. <b>인식 결과를 확인한 뒤 저장</b>합니다.
+      </div>
+    </div>`
+},
+
+outbox: {
+  title: "O-01 전송 상태",
+  note: "지연 전송을 하기로 한 이상 <b>무엇이 실제로 서버에 올라갔는지</b> 볼 곳이 필요하다. <code>로컬 저장됨</code>과 <code>전송 완료</code>는 <b>다른 문구</b>다. <b>결과 불명은 새 작업 ID로 재전송하지 않는다</b> — 같은 ID로 결과를 조회한다.",
+  dock: ``,
+  body: `
+    <div class="sec-title"><span class="t-title">전송 상태</span><span class="t-caption">이 현장 · 대기 2 · 실패 1</span></div>
+    <div class="card">
+      <div class="outbox-row">
+        <span class="badge badge--idle">대기</span>
+        <div class="body">
+          <div class="t-body"><b>현장 사진 + 주석</b></div>
+          <div class="t-caption num">작성 12:14 · 광주 스마트인재개발원 · 로컬 저장됨</div>
+        </div>
+        <button class="btn">취소</button>
+      </div>
+      <div class="outbox-row">
+        <span class="badge badge--warn">부모 대기</span>
+        <div class="body">
+          <div class="t-body">댓글 — <span class="t-label">사진이 올라간 뒤 전송됩니다</span></div>
+          <div class="t-caption num">작성 12:15 · 위 사진에 달림</div>
+        </div>
+        <button class="btn" disabled>취소</button>
+      </div>
+      <div class="outbox-row" style="background:var(--warn-tint)">
+        <span class="badge badge--warn">결과 불명</span>
+        <div class="body">
+          <div class="t-body"><b>현장 사진</b> — 응답을 받지 못했습니다</div>
+          <div class="t-caption">서버에 올라갔을 수도 있습니다. <b>다시 보내지 않고 결과를 조회</b>합니다.</div>
+        </div>
+        <button class="btn">상태 조회</button>
+      </div>
+      <div class="outbox-row">
+        <span class="badge badge--ok">완료</span>
+        <div class="body">
+          <div class="t-body">현장 사진 · 주석</div>
+          <div class="t-caption num">전송 완료 11:58 · 서버 확인됨</div>
+        </div>
+      </div>
+    </div>
+    <div class="empty" style="margin-top:14px;text-align:left">
+      <div class="t">다른 현장의 미전송 1건</div>
+      <div class="d">B동 현장에서 작성한 기록이 있습니다. <b>작성 당시 현장으로 전송</b>됩니다.</div>
+    </div>`
+},
+
+video: {
+  title: "V-01 영상 (스냅샷 갱신)",
+  note: "서버가 <b>단발 JPEG 스냅샷 엔드포인트</b>(<code>/cctv/snapshot</code>)를 제공한다 — MJPEG 장기연결을 대체해 <b>과금을 없앤 구조</b>. 태블릿에는 오히려 유리하다(multipart 파싱 불필요·배터리 절약). <b>실시간 영상처럼 보이게 하지 않는다</b> — 갱신 시각과 간격을 명시.",
+  dock: ``,
+  body: `
+    <div class="sec-title">
+      <span class="t-title">CAM-03 현장 작업구역</span>
+      <span class="t-caption">연결됨</span>
+    </div>
+    <div style="height:400px;background:#15181C;border-radius:var(--radius-card);display:grid;place-items:center;color:#7E858E;font-size:13px;margin-bottom:10px">
+      스냅샷 · 12:16:04
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <span class="t-caption num" style="color:var(--body)">12:16:04 기준 · 2초 전</span>
+      <div style="flex:1"></div>
+      <button class="btn"><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-refresh"/></svg>새로 고침</button>
+    </div>
+    <div class="card" style="padding:14px 16px;margin-bottom:14px">
+      <div class="t-label" style="margin-bottom:10px">갱신 간격 <span class="t-caption">— 짧을수록 데이터·배터리를 더 씁니다</span></div>
+      <div class="chips">
+        <button class="chip">수동</button>
+        <button class="chip chip--on">2초</button>
+        <button class="chip">5초</button>
+        <button class="chip">10초</button>
+      </div>
+      <div class="t-caption" style="margin-top:10px;color:var(--body)">
+        ⚠ 연속 영상이 아니라 <b>사진을 주기적으로 받아오는</b> 방식입니다. 그 사이의 움직임은 보이지 않습니다.
+      </div>
+    </div>
+    <div class="sec-title"><span class="t-title">다른 카메라</span></div>
+    <div class="chips">
+      <button class="chip">CAM-01 정문</button>
+      <button class="chip">CAM-02 기계실</button>
+      <button class="chip" disabled>CAM-04 자재야적장 · 샘플</button>
+      <button class="chip" disabled>CAM-05 동측 비계 · 샘플</button>
+    </div>`
+},
+
+nocache: {
+  title: "S-07 최초 캐시 없음",
+  note: "<b>'조회 0행'을 '정상 0건'으로 표시하지 않는다.</b> 데이터가 없는 것과 이상이 없는 것은 다르다. 무엇이 왜 없는지, 언제 다시 시도되는지를 말한다.",
+  dock: ``,
+  body: `
+    <div class="sec-title"><span class="t-title">현장 상태</span></div>
+    <div class="empty">
+      <div class="t">아직 현장 데이터를 받지 못했습니다</div>
+      <div class="d">
+        이 기기에서 이 현장을 처음 여는 중입니다. <b>이상이 없다는 뜻이 아닙니다.</b><br>
+        네트워크에 연결되면 자동으로 받아옵니다.
+      </div>
+      <div class="chips" style="margin-top:16px;justify-content:center">
+        <button class="chip">지금 다시 시도</button>
+      </div>
+    </div>`
+},
+
+offline: {
+  title: "C-01 오프라인 배너",
+  note: "네트워크가 필요한 기능은 <b>조용히 실패하지 않는다</b>. 무엇이 되고 무엇이 안 되는지를 나눠 말한다. 실측 사례 — 손글씨 언어팩 다운로드 버튼이 Wi-Fi 없이 눌리자 <b>설정 화면으로 튕겼다</b>.",
+  dock: `<button class="btn btn--primary"><svg class="ic-svg " width="20" height="20" viewBox="0 0 24 24"><use href="#i-note"/></svg>현장 기록 남기기</button>`,
+  body: `
+    <div class="empty" style="text-align:left;background:var(--warn-tint);border-color:rgba(245,158,11,.45);margin-bottom:14px">
+      <div class="t" style="display:flex;align-items:center;gap:8px">
+        12:12부터 연결이 끊겨 있습니다
+      </div>
+      <div class="d">
+        <b>지금 할 수 있는 것</b> — 사진 촬영 · 펜 주석 · 메모 작성(기기에 저장됩니다)<br>
+        <b>연결되어야 하는 것</b> — 경보 대응 확인 · 영상 · 어시스턴트 답변 · 최신 현장 상태
+      </div>
+      <div class="chips" style="margin-top:14px">
+        <button class="chip">다시 연결 시도</button>
+        <button class="chip">전송 상태 보기 (2)</button>
+      </div>
+    </div>
+
+    <div class="sec-title"><span class="t-title">현장 상태</span><span class="t-caption">12:10에 받아둔 정보</span></div>
+    <div class="card">
+      <div class="signal-row">
+        <span class="dot dot--danger" title="위험"></span>
+        <span class="w-label">가스 감지</span>
+        <span class="w-text">CO 52ppm · 탱크 야드</span>
+        <span class="w-time num">12:10</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+      <div class="signal-row">
+        <span class="dot dot--idle" title="알 수 없음"></span>
+        <span class="w-label">작업자</span>
+        <span class="w-text">끊긴 뒤 수신 없음 — 현재 상태를 알 수 없습니다</span>
+        <span class="w-time">—</span><svg class="ic-svg w-go" width="22" height="22" viewBox="0 0 24 24"><use href="#i-right"/></svg>
+      </div>
+    </div>`
+}
+};
+
+/* ── 뷰어 동작 ────────────────────────────────────────────── */
+const $ = s => document.querySelector(s);
+const device = $("#device"), screen = $("#screen"), body = $("#body"),
+      adock = $("#adock"), legend = $("#legend"), meta = $("#meta"), strip = $("#strip");
+
+let cur = "login";
+
+function render() {
+  const s = SCREENS[cur];
+  const noChrome = s.chrome === false;
+  document.querySelector(".app-top").classList.toggle("hidden", noChrome);
+  document.querySelector("#tabs").classList.toggle("hidden", noChrome);
+  body.classList.toggle("scroll", !noChrome);
+  body.style.display = noChrome ? "flex" : "";
+  body.style.flexDirection = noChrome ? "column" : "";
+  body.innerHTML = s.body;
+  adock.innerHTML = s.dock || "";
+  legend.innerHTML = `<b>${s.title}</b> — ${s.note}`;
+  body.scrollTop = 0;
+  if (noChrome) { updateMeta(); return; }
+  // 경보 스트립은 오프라인 화면에서 숨기지 않고 상태만 바꾼다(슬롯 예약 유지)
+  const quiet = (cur === "offline" || cur === "nocache" || cur === "alert-offline");
+  strip.dataset.empty = quiet ? "true" : "false";
+  strip.innerHTML = quiet
+    ? `<span class="dot dot--idle" title="보류"></span><span class="grow t-label">연결되면 새 경보를 확인합니다</span>`
+    : `<span class="dot dot--danger" title="위험"></span>
+       <span class="grow t-body"><b>새 경보 2건</b> · 구획 이탈 장우진 · 생체 위험 1건</span>
+       <button class="btn">경보 보기</button>`;
+  updateMeta();
+}
+
+function updateMeta() {
+  const land = device.classList.contains("landscape");
+  const w = land ? 1385 : 866, h = land ? 866 : 1385;
+  meta.innerHTML = `전체 <code>${w}×${h}dp</code> · 안전 <code>${w}×${h - 54}dp</code>`
+    + (land ? "" : ` · IME 뜨면 <code>866×978dp</code>`);
+}
+
+document.querySelectorAll(".side button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".side button").forEach(x => x.removeAttribute("aria-current"));
+    b.setAttribute("aria-current", "true");
+    cur = b.dataset.screen; render();
+  });
+});
+
+$("#orient").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  device.classList.toggle("landscape", b.dataset.o === "landscape");
+  device.classList.toggle("portrait",  b.dataset.o === "portrait");
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+  updateMeta();
+});
+
+$("#zoom").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  device.style.zoom = b.dataset.z;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+});
+
+$("#insets").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  screen.dataset.insets = b.dataset.i;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+});
+
+$("#dock").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  adock.dataset.side = b.dataset.d;
+  [...e.currentTarget.children].forEach(x => x.setAttribute("aria-pressed", x === b));
+});
+
+document.querySelector("#tabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  [...e.currentTarget.children].forEach(x => x.removeAttribute("aria-current"));
+  b.setAttribute("aria-current", "true");
+});
+
+device.style.zoom = "0.5";
+render();
+</script>
+</body>
+</html>

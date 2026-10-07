@@ -1,0 +1,80 @@
+{
+  "version": "1.3.11",
+  "code": 16,
+  "tests": {
+    "testDebugUnitTest": {
+      "tests": 311,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "validateDebugScreenshotTest": {
+      "tests": 29,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "fullDevice": {
+      "passed": 55,
+      "failed": 0,
+      "seconds": 158.65
+    },
+    "afterHandCorrection": {
+      "passed": 3,
+      "failed": 0,
+      "seconds": 11.287,
+      "scope": "Stage4ComposeTest; shared circle geometry, hand setting persistence/offline and usage tab"
+    }
+  },
+  "apk": {
+    "debug": {
+      "bytes": 66153036,
+      "sha256": "91b076aaa1cf556bb1b2bbc61e79c0b5ed5159d72de8918cfde9753fa3599da8"
+    },
+    "release": {
+      "bytes": 59774816,
+      "sha256": "8eab1075a25e56b84e8376913009673b892c6040e804ad6a141ef67daa847d66"
+    }
+  },
+  "sourceFilesMatched": 266,
+  "unrelatedFilesPreserved": 7,
+  "beforeHandCorrectionApk": {
+    "debug": {
+      "bytes": 66153036,
+      "sha256": "82662b271b9f8e7d714d99a0366b6eef63f4a733a80aa08684fec64f78286606"
+    },
+    "release": {
+      "bytes": 59774816,
+      "sha256": "c45b536a89e9bb18044a0f41646737e7012be38c240165331c6e22f36ab60032"
+    }
+  },
+  "installation": {
+    "time": "2026-09-29 19:05:42 KST",
+    "appId": 10303,
+    "firstInstallTime": "2026-09-16 12:50:57",
+    "coldStartMs": 269
+  },
+  "git": {
+    "appCommit": "41e92d2f",
+    "main": "e5a47b8980e6f266d788806d154b222f284d0f6c",
+    "remoteVerified": true
+  },
+  "liveUi": {
+    "settingsHasBothHands": true,
+    "allFiveTicksVisible": true,
+    "usageTabBelowSettings": true,
+    "guideOpened": true,
+    "alertMessageCenterY": 1658,
+    "alertCloseIconCenterY": 1658
+  },
+  "obsidian": {
+    "lines": 845,
+    "sha256": "7b75f81ec75cd0d0b75e11381c2a00f8a0ca87341db451707823129e5a655ce0",
+    "sections": [
+      "11",
+      "12"
+    ],
+    "usageTableRows": 36,
+    "preservedExceptPlannedEdits": true
+  }
+}
