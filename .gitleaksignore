@@ -27,3 +27,37 @@
 # 예약 도메인 `unit.invalid`(RFC 2606 · 실재 불가)다. 09-25 에 더한 `url-embedded-credentials` 에 걸렸다.
 # (2026-09-27 690e87b8 유입 → 09-28 부터 main·feat/newdb-cutover Secret scan 빨간불.)
 tablet-app/app/vitalguard_field_android/app/src/test/kotlin/com/vitalguard/field/CalendarGatewayTest.kt:url-embedded-credentials:41
+
+# ⚠ 경로는 「그 커밋 당시의 경로」로 맞는다 — 폴더 이름을 바꿔도 옛 경로 줄을 지우지 않는다.
+# 10-07 291ed0b5 가 `Lenova idea tap 12.7/` → `tablet-app/` 로 바꾸며 위 줄을 새 경로로 고쳤더니
+# 690e87b8 안의 옛 경로 발견이 다시 잡혔다. 위 새 경로 줄은 앞으로 그 파일을 고칠 때를 위해 둔다.
+Lenova idea tap 12.7/app/vitalguard_field_android/app/src/test/kotlin/com/vitalguard/field/CalendarGatewayTest.kt:url-embedded-credentials:41
+
+# 태블릿 작업 기록의 소스 해시 목록(시크릿 아님). 키가 소스 파일 경로(`…/auth/AuthScreen.kt`,
+# `…/MicrophoneAccess.kt` 처럼 auth·access 가 든 이름)이고 값이 그 파일의 SHA-256(16진 64자)이라
+# `generic-api-key` 에 걸린다. 다섯 묶음 × 다섯 파일 = 25줄. (2026-10-07 b56d43c6 유입 · 그날 10:04 부터 main 빨간불.)
+Lenova idea tap 12.7/artifacts/compose-stage2d-20260927/verification.json:generic-api-key:30
+Lenova idea tap 12.7/artifacts/compose-stage2d-20260927/verification.json:generic-api-key:74
+Lenova idea tap 12.7/artifacts/compose-stage2d-20260927/verification.json:generic-api-key:75
+Lenova idea tap 12.7/artifacts/compose-stage2d-20260927/verification.json:generic-api-key:138
+Lenova idea tap 12.7/artifacts/compose-stage2d-20260927/verification.json:generic-api-key:170
+Lenova idea tap 12.7/artifacts/compose-stage3-20260927/source-sha256.json:generic-api-key:17
+Lenova idea tap 12.7/artifacts/compose-stage3-20260927/source-sha256.json:generic-api-key:68
+Lenova idea tap 12.7/artifacts/compose-stage3-20260927/source-sha256.json:generic-api-key:69
+Lenova idea tap 12.7/artifacts/compose-stage3-20260927/source-sha256.json:generic-api-key:142
+Lenova idea tap 12.7/artifacts/compose-stage3-20260927/source-sha256.json:generic-api-key:177
+Lenova idea tap 12.7/artifacts/compose-stage4-20260927/source-sha256.json:generic-api-key:17
+Lenova idea tap 12.7/artifacts/compose-stage4-20260927/source-sha256.json:generic-api-key:69
+Lenova idea tap 12.7/artifacts/compose-stage4-20260927/source-sha256.json:generic-api-key:70
+Lenova idea tap 12.7/artifacts/compose-stage4-20260927/source-sha256.json:generic-api-key:145
+Lenova idea tap 12.7/artifacts/compose-stage4-20260927/source-sha256.json:generic-api-key:181
+Lenova idea tap 12.7/artifacts/dashboard-design-20260927/source-sha256.json:generic-api-key:16
+Lenova idea tap 12.7/artifacts/dashboard-design-20260927/source-sha256.json:generic-api-key:68
+Lenova idea tap 12.7/artifacts/dashboard-design-20260927/source-sha256.json:generic-api-key:69
+Lenova idea tap 12.7/artifacts/dashboard-design-20260927/source-sha256.json:generic-api-key:90
+Lenova idea tap 12.7/artifacts/dashboard-design-20260927/source-sha256.json:generic-api-key:127
+Lenova idea tap 12.7/artifacts/wallpaper-design-20260928/source-sha256.json:generic-api-key:16
+Lenova idea tap 12.7/artifacts/wallpaper-design-20260928/source-sha256.json:generic-api-key:68
+Lenova idea tap 12.7/artifacts/wallpaper-design-20260928/source-sha256.json:generic-api-key:69
+Lenova idea tap 12.7/artifacts/wallpaper-design-20260928/source-sha256.json:generic-api-key:90
+Lenova idea tap 12.7/artifacts/wallpaper-design-20260928/source-sha256.json:generic-api-key:127
