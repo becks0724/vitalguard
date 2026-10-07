@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://youtu.be/suM9BOJuzj0">
-    <img src="포트폴리오/시연 영상/poster.jpg" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 YouTube 에서 재생" width="720">
+    <img src="포트폴리오/시연 영상/teaser.gif" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 YouTube 에서 재생" width="720">
   </a><br>
   <sub>▶ <a href="https://youtu.be/suM9BOJuzj0">YouTube 에서 보기</a> (3:37 · 1080p) · <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">mp4 원본</a> · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 112장</a></sub>
 </p>
@@ -20,6 +20,28 @@
 
 > **문제의 정식화** — 예산이 부족한 것이 아니라, 계상된 예산이 현장에 도달했는지
 > **확인할 수 없는 것**이 문제다. 현행 구조는 시공사 서류를 시공사 서류로 검증한다.
+
+## 한눈에 보기
+
+| | |
+|---|---|
+| 현장 물증 장치 | Apple Watch 생체·낙상(온디바이스 ML 3종, IMU 88특징) · CCTV AI 보호구 판정(Jetson 엣지) · **GasPod**(ESP32, O₂·CO·H₂S·온습도·기압, 배터리 OTA) · **AED-alert**(라즈베리파이, 빛·소리 위치 알림) |
+| 사람이 쓰는 화면 | 관제 웹(Next.js, Cloud Run) · 담당관 태블릿 앱(Kotlin/Compose, Lenovo Idea Tab 12.7) · 작업자 워치 앱(Galaxy Watch·Apple Watch) · 폰 앱(Flutter·iOS) |
+| 데이터 | PostgreSQL 14 — 표 74 · 외래키 119 · 인덱스 246 · **RLS 정책 149 · 트리거 146** · 마이그레이션 101 · 공공데이터 **12종 실연동** |
+| 검증 | 안전관리비 4축 교차대조 룰엔진(결정적 계산, 부족하면 「검토 필요」 강등) · 태블릿 앱 JVM 테스트 327/327 · DB 외부 감사 후 12건 수정 |
+| 성과 | **대상(조달청장상)** 2026-08-03 · 범정부 통합본선 발표 2026-09-30 · 시연 영상 3:37 · 서비스 화면 112장 |
+
+## 타임라인 (2026)
+
+| 시기 | 일 |
+|---|---|
+| 6월 | 아이디어 플랜 V2.x 제출 · 신규 DB 설계 착수 |
+| 7/13 → 7/16 | 2차 심사 자료 제출 → **5분 대면 발표**(v2.8) |
+| 8/3 | **대상(조달청장상)** 수상 → 조달청 추천으로 범정부 통합본선 진출 |
+| 8월 | DB 외부 감사·보안 보강(RLS·트리거·검사기 10종), GasPod v5 OTA 실증 |
+| 9월 | 담당관 태블릿 앱 Flutter → **Compose 재작성**(1.0 → 1.3.18), 통합본선 발표자료 V3.0 |
+| 9/30 | 범정부 통합본선 아이디어 부문 **발표(A09)** |
+| 10/2 | 시연 영상 공개 · 포트폴리오 정리 |
 
 ## 시스템 구조 — 조달이 기준을 세우고, 현장 실측이 그 기준을 확인한다
 
@@ -61,7 +83,20 @@ flowchart TB
 | [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai, ml/fall-detection, 구 PoC 앱 |
 | [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
+| [`docs/`](docs/) | 운영 인수인계·앱 조율 요청 등 작업 문서 |
 | [`VitAlGuard_logo/`](VitAlGuard_logo/) | 로고 에셋 (라이트/다크) |
+
+## 기술 스택
+
+| 영역 | 기술 |
+|---|---|
+| 관제 웹 | Next.js(React) · TypeScript · Tailwind · Google Cloud Run · GitHub Actions(검증·시크릿 스캔) |
+| DB | PostgreSQL 14 · Row-Level Security · 트리거 기반 서버 강제 · 파티션 · PII 컬럼 암호화(AES-256-GCM) |
+| 태블릿 앱 | Kotlin · Jetpack Compose · Android 16(targetSdk 36) · 스크린샷 테스트 · 앱 JWT |
+| 워치·폰 앱 | Swift(watchOS/iOS) · Core ML 온디바이스 추론 · Flutter(Android/Wear OS) · XcodeGen |
+| 현장 장치 | ESP32-S3(Arduino, WiFi OTA, 배터리 곡선 실측) · Raspberry Pi(systemd 폴링 알람) · Jetson(엣지 PPE 판정, TLS 게이트) |
+| 공공데이터 | 나라장터 G2B(입찰·계약) · 종합쇼핑몰 단가 · 국세청 사업자 진위 · 법제처 요율 · 기상청 · 응급의료(E-gen) 등 12종 |
+| 영상·문서 | Remotion(React) 영상 파이프라인 · 실물 참조 이미지 생성 + 실제 UI 사영 합성 · Fish Audio 나레이션 |
 
 ## AI는 규칙이 실패하는 세 지점에만 쓴다
 
