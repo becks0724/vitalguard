@@ -5,7 +5,14 @@
 
 # VitAlGuard — Industrial Safety OS
 
-> 🏆 **2026 공공조달데이터·AI 활용 창업경진대회 — 대상(조달청장상)** · [수상 이력 →](AWARDS.md)
+> 🏆 **2026 공공조달데이터·AI 활용 창업경진대회 — 대상(조달청장상)** · 제14회 범정부 공공데이터 활용 창업경진대회 **통합본선 발표**(조달청 추천) · [수상·참가 이력 →](AWARDS.md)
+
+<p align="center">
+  <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">
+    <img src="포트폴리오/시연 영상/poster.jpg" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 재생" width="720">
+  </a><br>
+  <sub>▶ 시연 영상 3:37 (1080p · <a href="https://github.com/becks0724/vitalguard/releases/tag/portfolio-2026-10">Release 자산</a>) · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 112장</a></sub>
+</p>
 
 **산업현장 생체·환경 통합 관제 기반, 건설현장 안전관리비 실집행 검증 플랫폼.**
 나라장터 조달데이터와 현장 IoT·AI로 **계상된 안전관리비가 작업자에게 실제 도달했는지** 검증한다.
@@ -50,7 +57,7 @@ flowchart TB
 | [`Final_GasPod/`](Final_GasPod/) | 가스포드 v4.2 확정 문서·펌웨어·서버 연동 가이드 |
 | [`db/`](db/) | DB 스키마·감사·통합 문서 (fall_ml / imu_collect / integrated / audit 등) · **[`erd-vitalguard2/`](db/erd-vitalguard2/) 신규 스키마 ERD(74표·Mermaid)** |
 | [`Lenova idea tap 12.7/`](Lenova%20idea%20tap%2012.7/) | **담당관 태블릿 앱** — Compose/Kotlin `vitalguard_field_android`(현장 대시보드·경보·기록·사진·펜 주석·전송 이력) |
-| [`포트폴리오/서비스 화면/`](포트폴리오/서비스%20화면/) | 실서비스 화면 캡처 112장 — 태블릿·관제 웹·워치·장치 실물 (성명 마스킹) |
+| [`포트폴리오/`](포트폴리오/) | **포트폴리오 묶음** — [서비스 화면 112장](포트폴리오/서비스%20화면/) · [시연 영상](포트폴리오/시연%20영상/) · [발표자료 2종(PDF·슬라이드)](포트폴리오/발표자료/) · [공개 전환 점검표](포트폴리오/공개전환-점검표.md) |
 | [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai, ml/fall-detection, 구 PoC 앱 |
 | [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
