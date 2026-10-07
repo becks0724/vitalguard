@@ -19,6 +19,11 @@ dropins/cctv-pusher--engine.conf ★ 지금 v7e 를 띄우는 것이 이 파일�
 dropins/cctv-pusher--ingest.conf CAM-03 서버 중계 · PUSH_FPS=0.2(5초 1장)
 dropins/cctv-gate--cam1.conf     게이트가 CAM-01(:8445)을 상류로 받는다
 zone.json · zone3.json           판정 구역 다각형 (내용 동일 · md5 d24dbcdc…)
+build-engines-cam01.sh           ★ 10-07 보탬 — 2호기에서 .pt 로 FP16 엔진 둘(PPE 544×960 · yolo11s-pose 640)을 굽는 절차.
+                                   푸셔를 내리고 굽고 trap 으로 반드시 되살린다 · 기존 엔진 백업 · 실패하면 되돌린다.
+                                   09-18 2호기 실측 PPE 541초(22.0MB) · 자세 607초(22.7MB). 다른 기기에서 구운 .engine 을 옮기면 TensorRT 경고가 나와 다시 굽는다.
+                                   ⚠ 스크립트 머리 주석의 「2배 느림」은 당시 추정이고, 재빌드 뒤 경고는 0건이 됐지만 추론은 32→33ms 그대로였다. 2배 느림의 원인은 `jetson_clocks` 누락이었다(아래 ②·③ 절).
+fps-probe.py                     ★ 10-07 보탬 — `/health` 로 30초간 stream_fps 폭 · 추론 실측 fps · GPU 점유(%)를 재는 25줄. `python3 fps-probe.py 8445`
                                  옛 코드는 zone.json, 835efcc8 이후는 zone3.json 을 읽는다
 ```
 
