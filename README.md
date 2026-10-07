@@ -8,10 +8,10 @@
 > 🏆 **2026 공공조달데이터·AI 활용 창업경진대회 — 대상(조달청장상)** · 제14회 범정부 공공데이터 활용 창업경진대회 **통합본선 발표**(조달청 추천) · [수상·참가 이력 →](AWARDS.md)
 
 <p align="center">
-  <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">
-    <img src="포트폴리오/시연 영상/poster.jpg" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 재생" width="720">
+  <a href="https://youtu.be/suM9BOJuzj0">
+    <img src="포트폴리오/시연 영상/poster.jpg" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 YouTube 에서 재생" width="720">
   </a><br>
-  <sub>▶ 시연 영상 3:37 (1080p · <a href="https://github.com/becks0724/vitalguard/releases/tag/portfolio-2026-10">Release 자산</a>) · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 112장</a></sub>
+  <sub>▶ <a href="https://youtu.be/suM9BOJuzj0">YouTube 에서 보기</a> (3:37 · 1080p) · <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">mp4 원본</a> · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 112장</a></sub>
 </p>
 
 **산업현장 생체·환경 통합 관제 기반, 건설현장 안전관리비 실집행 검증 플랫폼.**

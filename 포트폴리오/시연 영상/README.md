@@ -1,13 +1,13 @@
 # VitAlGuard 시연 영상 (3분 37초 · 1080p)
 
 <p align="center">
-  <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">
-    <img src="poster.jpg" alt="VitAlGuard 시연 영상 — 재생(다운로드)" width="800">
+  <a href="https://youtu.be/suM9BOJuzj0">
+    <img src="poster.jpg" alt="VitAlGuard 시연 영상 — YouTube 에서 재생" width="800">
   </a>
 </p>
 
+- **YouTube(일부 공개)**: https://youtu.be/suM9BOJuzj0
 - **원본 mp4(118MB)**: [Releases › portfolio-2026-10](https://github.com/becks0724/vitalguard/releases/tag/portfolio-2026-10) 자산 `VitAlGuard_demo_2026-10.mp4`. GitHub 파일 한도(100MB) 때문에 저장소 본문이 아니라 Release 에 둔다.
-- **유튜브**: 일부 공개 링크는 README 대문에 함께 건다(전환 후 갱신).
 
 ## 구성 — 기승전결 10장면 · 52컷
 
