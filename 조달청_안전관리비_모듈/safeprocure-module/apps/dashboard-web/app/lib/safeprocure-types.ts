@@ -10,7 +10,9 @@ export type ConstructionType =
   | "특수건설공사";
 
 /** 안전관리비 예비검증 판정 — '탐지'가 아닌 '의심/검토' (과장 금지 원칙). */
-export type SafetyCostVerdict = "정상" | "과소계상_의심" | "검토필요";
+// 과다계상_의심 은 위법 판정이 아니다 — 법정 요율은 '최소' 계상 기준이라 초과 계상 자체는 적법하다.
+// 다만 현저한 초과는 대상액 부풀리기·집행 미달의 선행 신호라 실집행(③) 과 함께 볼 대상으로 선별한다.
+export type SafetyCostVerdict = "정상" | "과소계상_의심" | "과다계상_의심" | "검토필요";
 
 /** 대상액 구간. */
 export type CostBracket = "under5" | "mid" | "over50";
@@ -39,6 +41,10 @@ export interface SafetyCostCheck {
   declaredCost: number | null;
   verdict: SafetyCostVerdict;
   rateNote: string; // ⚠ 요율 출처/검증 안내
+  /** 끝수 폭(국고금 관리법 제47조)이 판정을 가른 경우의 안내 — 없으면 표시 안 함.
+   *  ⚠ 2026-08-27 병렬 세션 lost-update 로 두 번 지워진 필드 — 지우면 typecheck 가 깨진다
+   *    (소비처: safety-cost.ts evaluateSafetyCost · ProcureRiskCard.tsx). */
+  verdictNote?: string;
 }
 
 /** 표준화된 조달 공고 요약(목록용). */
@@ -52,13 +58,18 @@ export interface NoticeSummary {
   startDate?: string; // ISO yyyy-mm-dd
   endDate?: string;
   licenses: string[]; // 면허/업종 제한
+  winRate?: number | null; // 낙찰률(%) — 계약 건은 낙찰정보서비스에서 보강
+  /** 시공사(계약업체명, cntrctCorpNm) — 계약 건에만 있다. 시공사 가입 화이트리스트의 출처. */
+  contractor?: string | null;
 }
 
 /** 공고 상세(분석 입력). */
 export interface NoticeDetail extends NoticeSummary {
   taskText: string; // 과업/공고 전문 텍스트
+  /** 공고 첨부문서(시방서·과업내용서·공고규격서) — 파일명+나라장터 다운로드 URL 쌍. */
+  specDocs?: { name: string; url: string }[];
   contractAmount?: number | null;
-  winRate?: number | null; // 낙찰률(%)
+  ntceNo?: string | null; // 입찰공고번호 — 낙찰정보서비스 조회 키(계약 응답 ntceNo)
   declaredSafetyCost?: number | null; // 공고/계약 명시 안전관리비(있으면)
   /** 안전관리비 대상액(원). 계약 단계에서 확보되면 정밀 검증, 없으면 추정가격 근사(→검토필요). */
   targetAmount?: number | null;
