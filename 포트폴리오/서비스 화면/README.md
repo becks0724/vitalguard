@@ -1,4 +1,4 @@
-# VitAlGuard 서비스 화면 (2026-10-01 캡처)
+# VitAlGuard 서비스 화면 (2026-10-01 캡처 · 10-07 워치 현행·CCTV 보강)
 
 실제 동작 중인 서비스 화면을 그대로 캡처한 자료다. **표시되는 성명·식별자는 전부 모자이크 처리**했다. 영상·발표·포트폴리오용 원본.
 
@@ -6,7 +6,9 @@
 |---|---:|---|---|
 | [태블릿 앱](#태블릿-앱--vitalguard-현장-lenovo-idea-tab-pro-127) | 14 | Lenovo Idea Tab Pro 12.7 실기기 `adb exec-out screencap` | 2944×1840 (JPG 변환) |
 | [관제 웹](#관제-웹--실시간-현장-관제) | 15 | Chrome 실서비스 로그인 후 캡처(라이트·다크) | 1511×812 |
-| [워치 앱](#워치-앱--galaxy-watch-9) | 79 | 앱 사양 HTML(V.1.0.26.08.31)에서 화면 추출 | 454×454 |
+| [CCTV](#cctv--관제웹-8칸--태블릿-현장-cctv) | 4 (+관제 웹 2) | 태블릿 실기기 `adb exec-out screencap`(09-28 · 젯슨 반납 전) · 판정 화면은 얼굴·명패 모자이크 | 2944×1840 (JPG 변환) |
+| [워치 앱 — 현행](#워치-앱--galaxy-watch-9) | 19 | 현행 코드(Kotlin·Compose for Wear OS)를 Galaxy Watch 9 해상도로 렌더(10-07) · 이름·사번은 예시 값 | 480×480 |
+| [워치 앱 — 디자인 시안](#디자인-시안--08-31-앱-사양서-79장) | 79 | 앱 사양 HTML(V.1.0.26.08.31)에서 화면 추출 | 454×454 |
 | [장치 실물](#장치-실물--aed-alert--gaspod) | 4 | 실물 사진·발표자료 | — |
 
 ## 태블릿 앱 — VitAlGuard 현장 (Lenovo Idea Tab Pro 12.7)
@@ -38,9 +40,47 @@
 
 > Next.js 관제 대시보드(Cloud Run). 소스: [`기존_조달청모듈/safetymonitor/apps/dashboard-web`](../../기존_조달청모듈/safetymonitor/apps/dashboard-web/)
 
+## CCTV — 관제웹 8칸 · 태블릿 현장 CCTV
+
+> 젯슨 엣지가 현장에서 판정한 영상을 관제 웹과 태블릿이 받아 본다. 태블릿 캡처는 09-28(젯슨 반납 전), 관제 웹은 10-01 이다.
+> 판정 화면의 얼굴·명패는 모자이크했다. 2026-10-07 젯슨 반납 뒤에는 라이브 칸에 영상이 나오지 않는다 —
+> 구조와 복원 방법은 [CCTV 최종 구현 기록](../../기존_조달청모듈/safetymonitor/cctv-ai/%EC%B5%9C%EC%A2%85-%EA%B5%AC%ED%98%84-%EA%B8%B0%EB%A1%9D-20261007.md), 모델 보관은 [MODELS.md](../../기존_조달청모듈/safetymonitor/ml/ppe-detection/MODELS.md).
+
+| 화면 | 구성 |
+|---|---|
+| 관제 웹 「CCTV 관제」 탭 | 8칸 — CAM-01 사무실 IP캠 · CAM-03 현장 작업구역 GoPro 는 보호구 판정 칸, CAM-02 지하 기계실은 낙상 칸, CAM-04~08 은 자리 표본. 칸 머리에 ON·PPE 배지가 붙고, 칸을 누르면 팝업에 작업자 수·위반 건수·준수율이 나온다 |
+| 태블릿 「현장 CCTV」 | 현장 대시보드의 CCTV 카드에서 카메라를 고르면 실시간 화면이 열리고 두 손가락으로 확대한다. 상단 줄에 카메라·엔진·추론 시간이 나온다(예: PPE yolo26 v7e@544×960 · 자세 11s-pose@640 · 14+16ms · 30fps) |
+| 판정 오버레이 | 작업자 상자 · 안전모 미착용 머리 상자(신뢰도) · 자세 골격(앉음·불안정·판정불가). 위반은 안전모 하나로 센다 |
+
+<table>
+<tr><td align="center" width="50%"><a href="%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg"><img src="%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg" width="360"></a><br><sub><b>관제 웹 CCTV 8칸</b><br>캡처 당시 칸 머리·배지 구성(10-01)</sub></td><td align="center" width="50%"><a href="CCTV/01_%ED%83%9C%EB%B8%94%EB%A6%BF_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%84%A0%ED%83%9D.jpg"><img src="CCTV/01_%ED%83%9C%EB%B8%94%EB%A6%BF_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%84%A0%ED%83%9D.jpg" width="360"></a><br><sub><b>01_태블릿_카메라선택</b><br>현장 대시보드 CCTV 카드 — CAM-01·CAM-03 고르기</sub></td></tr>
+<tr><td align="center" width="50%"><a href="CCTV/02_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%EC%8B%A4%EC%8B%9C%EA%B0%84.jpg"><img src="CCTV/02_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%EC%8B%A4%EC%8B%9C%EA%B0%84.jpg" width="360"></a><br><sub><b>02_태블릿_CAM-01_실시간</b><br>IP캠 실시간 — 상단 줄에 엔진·추론 시간</sub></td><td align="center" width="50%"><a href="CCTV/03_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%ED%99%95%EB%8C%80.jpg"><img src="CCTV/03_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%ED%99%95%EB%8C%80.jpg" width="360"></a><br><sub><b>03_태블릿_CAM-01_확대</b><br>두 손가락 확대·드래그 이동</sub></td></tr>
+<tr><td align="center" colspan="2"><a href="CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg"><img src="CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg" width="720"></a><br><sub><b>04_태블릿_CAM-03_판정화면</b><br>보호구 판정 오버레이 — 작업자 상자·안전모 미착용 머리·자세 골격 (얼굴·명패 모자이크)</sub></td></tr>
+</table>
+
+> 판정 모델은 PPE v7e(안전모)·yolo11s-pose(자세)이고 Jetson TensorRT 로 돌았다. 소스: [`기존_조달청모듈/safetymonitor/cctv-ai`](../../기존_조달청모듈/safetymonitor/cctv-ai/)
+
 ## 워치 앱 — Galaxy Watch 9
 
-> 작업자용 생체 신호 요약 화면(심박·SpO₂·피부온·생리적 부담·수집/전송 상태). 게이지 각도·색 체계 변형 시안 포함. 성명 칩은 모자이크.
+> 작업자용 갤럭시워치 앱. 손목에서 심박·SpO₂·피부온·스트레스·걸음을 모아 관제로 보낸다.
+> 화면은 옆으로 넘기며 본다 — **0 로그인·로그아웃 → 1 생체 요약 → 2 심박 · 3 산소포화도 · 4 체온 · 5 스트레스 · 6 오늘 걸음**.
+> 소스: [`기존_조달청모듈/safetymonitor/apps/vitalguard_app/android/wear`](../../기존_조달청모듈/safetymonitor/apps/vitalguard_app/android/wear/)
+
+### 현행 화면 — 넘김 순서대로 (10-07 렌더)
+
+현행 코드(Kotlin·Compose for Wear OS)의 화면을 Galaxy Watch 9 해상도(480×480)로 렌더했다. 이름·사번은 예시 값(홍길동 · EMP-0001)이고 수치는 미리보기용 예시다.
+
+<table>
+<tr><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/01_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/01_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR.png" width="160"></a><br><sub>0 · 로그인 QR</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/02_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR%EB%A7%8C%EB%A3%8C.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/02_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR%EB%A7%8C%EB%A3%8C.png" width="160"></a><br><sub>0 · 로그인 QR 만료</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/03_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%A7%81%EC%A0%91%EC%9E%85%EB%A0%A5.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/03_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%A7%81%EC%A0%91%EC%9E%85%EB%A0%A5.png" width="160"></a><br><sub>0 · 직접 입력(예비)</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/04_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%95%88%EB%82%B4%28%EB%A1%9C%EA%B7%B8%EC%95%84%EC%9B%83%EC%83%81%ED%83%9C%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/04_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%95%88%EB%82%B4%28%EB%A1%9C%EA%B7%B8%EC%95%84%EC%9B%83%EC%83%81%ED%83%9C%29.png" width="160"></a><br><sub>0 · 로그아웃 상태</sub></td></tr>
+<tr><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/05_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%95%84%EC%9B%83%28%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%83%81%ED%83%9C%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/05_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%95%84%EC%9B%83%28%EB%A1%9C%EA%B7%B8%EC%9D%B8%EC%83%81%ED%83%9C%29.png" width="160"></a><br><sub>0 · 로그인 상태</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/06_1%C2%B7%EC%9A%94%EC%95%BD_%EB%8C%80%EA%B8%B0.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/06_1%C2%B7%EC%9A%94%EC%95%BD_%EB%8C%80%EA%B8%B0.png" width="160"></a><br><sub>1 · 요약 — 대기</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/07_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%95%EC%83%81.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/07_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%95%EC%83%81.png" width="160"></a><br><sub>1 · 요약 — 정상</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/08_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A3%BC%EC%9D%98%28%EC%8B%AC%EB%B0%95%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/08_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A3%BC%EC%9D%98%28%EC%8B%AC%EB%B0%95%29.png" width="160"></a><br><sub>1 · 요약 — 주의(심박)</sub></td></tr>
+<tr><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/09_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28%EC%98%A8%EC%97%B4%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/09_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28%EC%98%A8%EC%97%B4%29.png" width="160"></a><br><sub>1 · 요약 — 위험(온열)</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/10_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28SpO2%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/10_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28SpO2%29.png" width="160"></a><br><sub>1 · 요약 — 위험(SpO₂)</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/11_1%C2%B7%EC%9A%94%EC%95%BD_%EB%AC%B4%EB%8F%99%EC%9E%91.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/11_1%C2%B7%EC%9A%94%EC%95%BD_%EB%AC%B4%EB%8F%99%EC%9E%91.png" width="160"></a><br><sub>1 · 요약 — 무동작</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/12_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%84%EC%86%A1%EB%8C%80%EA%B8%B0.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/12_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%84%EC%86%A1%EB%8C%80%EA%B8%B0.png" width="160"></a><br><sub>1 · 요약 — 전송 대기</sub></td></tr>
+<tr><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/13_1%C2%B7%EC%9A%94%EC%95%BD_%ED%81%B0%EA%B8%80%EA%BC%B4.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/13_1%C2%B7%EC%9A%94%EC%95%BD_%ED%81%B0%EA%B8%80%EA%BC%B4.png" width="160"></a><br><sub>1 · 요약 — 큰 글꼴</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/14_2%C2%B7%EC%8B%AC%EB%B0%95%EC%B6%94%EC%9D%B4.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/14_2%C2%B7%EC%8B%AC%EB%B0%95%EC%B6%94%EC%9D%B4.png" width="160"></a><br><sub>2 · 심박 추이</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/15_3%C2%B7%EC%82%B0%EC%86%8C%ED%8F%AC%ED%99%94%EB%8F%84%EC%B6%94%EC%9D%B4.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/15_3%C2%B7%EC%82%B0%EC%86%8C%ED%8F%AC%ED%99%94%EB%8F%84%EC%B6%94%EC%9D%B4.png" width="160"></a><br><sub>3 · 산소포화도 추이</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/16_4%C2%B7%EC%B2%B4%EC%98%A8%EC%B6%94%EC%9D%B4.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/16_4%C2%B7%EC%B2%B4%EC%98%A8%EC%B6%94%EC%9D%B4.png" width="160"></a><br><sub>4 · 체온 추이</sub></td></tr>
+<tr><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/17_4%C2%B7%EC%B2%B4%EC%98%A8%EC%B6%94%EC%9D%B4%28%EC%9B%8C%EB%B0%8D%EC%97%85%29.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/17_4%C2%B7%EC%B2%B4%EC%98%A8%EC%B6%94%EC%9D%B4%28%EC%9B%8C%EB%B0%8D%EC%97%85%29.png" width="160"></a><br><sub>4 · 체온 추이(워밍업)</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/18_5%C2%B7%EC%8A%A4%ED%8A%B8%EB%A0%88%EC%8A%A4%EC%B6%94%EC%9D%B4.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/18_5%C2%B7%EC%8A%A4%ED%8A%B8%EB%A0%88%EC%8A%A4%EC%B6%94%EC%9D%B4.png" width="160"></a><br><sub>5 · 스트레스 추이</sub></td><td align="center" width="25%"><a href="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/19_6%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C.png"><img src="%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/19_6%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C.png" width="160"></a><br><sub>6 · 오늘 걸음</sub></td><td></td></tr>
+</table>
+
+### 디자인 시안 — 08-31 앱 사양서 79장
+
+<details><summary>펼쳐 보기 — 게이지 각도·색 체계 변형, 수정 전 화면 포함 · 성명 칩은 모자이크</summary>
 
 <table>
 <tr><td align="center" width="25%"><a href="워치/w00_70%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89%28%ED%8E%B8%EC%A7%91%EC%A0%84%29_454.png"><img src="워치/w00_70%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89%28%ED%8E%B8%EC%A7%91%EC%A0%84%29_454.png" width="160"></a><br><sub>70° · 칸 단색 (편집 전)</sub></td><td align="center" width="25%"><a href="워치/w01_100%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89_454.png"><img src="워치/w01_100%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89_454.png" width="160"></a><br><sub>100° · 칸 단색</sub></td><td align="center" width="25%"><a href="워치/w02_120%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89_454.png"><img src="워치/w02_120%C2%B0%C2%B7%EC%B9%B8%EB%8B%A8%EC%83%89_454.png" width="160"></a><br><sub>120° · 칸 단색</sub></td><td align="center" width="25%"><a href="워치/w03_120%C2%B0%C2%B7%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98_454.png"><img src="워치/w03_120%C2%B0%C2%B7%EA%B7%B8%EB%9D%BC%EB%8D%B0%EC%9D%B4%EC%85%98_454.png" width="160"></a><br><sub>120° · 그라데이션</sub></td></tr>
@@ -64,6 +104,8 @@
 <tr><td align="center" width="25%"><a href="워치/w72_%ED%94%84%EB%A6%AC%EB%B7%B04%C2%B7%EC%8A%A4%ED%8A%B8%EB%A0%88%EC%8A%A4%EC%B6%94%EC%9D%B4_480.png"><img src="워치/w72_%ED%94%84%EB%A6%AC%EB%B7%B04%C2%B7%EC%8A%A4%ED%8A%B8%EB%A0%88%EC%8A%A4%EC%B6%94%EC%9D%B4_480.png" width="160"></a><br><sub>프리뷰 4 · 스트레스 추이</sub></td><td align="center" width="25%"><a href="워치/w73_%EC%8B%A4%EA%B8%B05%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C_480.png"><img src="워치/w73_%EC%8B%A4%EA%B8%B05%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C_480.png" width="160"></a><br><sub>실기 5 · 오늘 걸음</sub></td><td align="center" width="25%"><a href="워치/w74_%ED%94%84%EB%A6%AC%EB%B7%B05%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C_480.png"><img src="워치/w74_%ED%94%84%EB%A6%AC%EB%B7%B05%C2%B7%EC%98%A4%EB%8A%98%EA%B1%B8%EC%9D%8C_480.png" width="160"></a><br><sub>프리뷰 5 · 오늘 걸음</sub></td><td align="center" width="25%"><a href="워치/w75_%EC%8B%A4%EA%B8%B06%C2%B7%EC%84%A4%EC%A0%95_480.png"><img src="워치/w75_%EC%8B%A4%EA%B8%B06%C2%B7%EC%84%A4%EC%A0%95_480.png" width="160"></a><br><sub>실기 6 · 설정</sub></td></tr>
 <tr><td align="center" width="25%"><a href="워치/w76_%ED%94%84%EB%A6%AC%EB%B7%B06%C2%B7%EC%84%A4%EC%A0%95_480.png"><img src="워치/w76_%ED%94%84%EB%A6%AC%EB%B7%B06%C2%B7%EC%84%A4%EC%A0%95_480.png" width="160"></a><br><sub>프리뷰 6 · 설정</sub></td><td align="center" width="25%"><a href="워치/w77_%EC%8B%A4%EA%B8%B0%EB%A1%9C%EA%B7%B8%EC%9D%B8_480.png"><img src="워치/w77_%EC%8B%A4%EA%B8%B0%EB%A1%9C%EA%B7%B8%EC%9D%B8_480.png" width="160"></a><br><sub>실기 로그인</sub></td><td align="center" width="25%"><a href="워치/w78_%ED%94%84%EB%A6%AC%EB%B7%B0%EB%A1%9C%EA%B7%B8%EC%9D%B8_480.png"><img src="워치/w78_%ED%94%84%EB%A6%AC%EB%B7%B0%EB%A1%9C%EA%B7%B8%EC%9D%B8_480.png" width="160"></a><br><sub>프리뷰 로그인</sub></td></tr>
 </table>
+
+</details>
 
 ## 장치 실물 — AED-alert · GasPod
 

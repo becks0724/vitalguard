@@ -11,7 +11,7 @@
   <a href="https://youtu.be/suM9BOJuzj0">
     <img src="포트폴리오/시연 영상/teaser.gif" alt="VitAlGuard 시연 영상 3분 37초 — 클릭하면 YouTube 에서 재생" width="720">
   </a><br>
-  <sub>▶ <a href="https://youtu.be/suM9BOJuzj0">YouTube 에서 보기</a> (3:37 · 1080p) · <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">mp4 원본</a> · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 112장</a></sub>
+  <sub>▶ <a href="https://youtu.be/suM9BOJuzj0">YouTube 에서 보기</a> (3:37 · 1080p) · <a href="https://github.com/becks0724/vitalguard/releases/download/portfolio-2026-10/VitAlGuard_demo_2026-10.mp4">mp4 원본</a> · <a href="포트폴리오/시연 영상/">장면 구성</a> · <a href="포트폴리오/발표자료/">발표자료</a> · <a href="포트폴리오/서비스 화면/">서비스 화면 135장</a></sub>
 </p>
 
 **산업현장 생체·환경 통합 관제 기반, 건설현장 안전관리비 실집행 검증 플랫폼.**
@@ -29,7 +29,7 @@
 | 사람이 쓰는 화면 | 관제 웹(Next.js, Cloud Run) · 담당관 태블릿 앱(Kotlin/Compose, Lenovo Idea Tab 12.7) · 작업자 워치 앱(Galaxy Watch·Apple Watch) · 폰 앱(Flutter·iOS) |
 | 데이터 | PostgreSQL 14 — 표 74 · 외래키 119 · 인덱스 246 · **RLS 정책 149 · 트리거 146** · 마이그레이션 101 · 공공데이터 **12종 실연동** |
 | 검증 | 안전관리비 4축 교차대조 룰엔진(결정적 계산, 부족하면 「검토 필요」 강등) · 태블릿 앱 JVM 테스트 327/327 · DB 외부 감사 후 12건 수정 |
-| 성과 | **대상(조달청장상)** 2026-08-03 · 범정부 통합본선 발표 2026-09-30 · 시연 영상 3:37 · 서비스 화면 112장 |
+| 성과 | **대상(조달청장상)** 2026-08-03 · 범정부 통합본선 발표 2026-09-30 · 시연 영상 3:37 · 서비스 화면 135장 |
 
 ## 타임라인 (2026)
 
@@ -91,7 +91,7 @@ flowchart TB
 | [`Final_GasPod/`](Final_GasPod/) | 가스포드 v4.2 확정 문서·펌웨어·서버 연동 가이드 |
 | [`db/`](db/) | DB 스키마·감사·통합 문서 (fall_ml / imu_collect / integrated / audit 등) · **[`erd-vitalguard2/`](db/erd-vitalguard2/) 신규 스키마 ERD(74표·Mermaid)** |
 | [`tablet-app/`](tablet-app/) | **담당관 태블릿 앱** — Compose/Kotlin `vitalguard_field_android`(현장 대시보드·경보·기록·사진·펜 주석·전송 이력) |
-| [`포트폴리오/`](포트폴리오/) | **포트폴리오 묶음** — [서비스 화면 112장](포트폴리오/서비스%20화면/) · [시연 영상](포트폴리오/시연%20영상/) · [발표자료 2종(PDF·슬라이드)](포트폴리오/발표자료/) · [공개 전환 점검표](포트폴리오/공개전환-점검표.md) |
+| [`포트폴리오/`](포트폴리오/) | **포트폴리오 묶음** — [서비스 화면 135장](포트폴리오/서비스%20화면/) · [시연 영상](포트폴리오/시연%20영상/) · [발표자료 2종(PDF·슬라이드)](포트폴리오/발표자료/) · [공개 전환 점검표](포트폴리오/공개전환-점검표.md) |
 | [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai(CCTV 엣지), ml/ppe-detection(보호구 판정 모델), ml/fall-detection, apps/vitalguard_app(워치 수집 앱), 구 PoC 앱 |
 | [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
@@ -108,7 +108,7 @@ flowchart TB
 | 관제 웹 | Next.js(React) · TypeScript · Tailwind · Google Cloud Run · GitHub Actions(검증·시크릿 스캔) |
 | DB | PostgreSQL 14 · Row-Level Security · 트리거 기반 서버 강제 · 파티션 · PII 컬럼 암호화(AES-256-GCM) |
 | 태블릿 앱 | Kotlin · Jetpack Compose · Android 16(targetSdk 36) · 스크린샷 테스트 · 앱 JWT |
-| 워치·폰 앱 | Swift(watchOS/iOS) · Core ML 온디바이스 추론 · Flutter(Android/Wear OS) · XcodeGen |
+| 워치·폰 앱 | Swift(watchOS/iOS) · Core ML 온디바이스 추론 · Kotlin·Compose for Wear OS(갤럭시워치) · Flutter(Android) · XcodeGen |
 | 현장 장치 | ESP32-S3(Arduino, WiFi OTA, 배터리 곡선 실측) · Raspberry Pi(systemd 폴링 알람) · Jetson(엣지 PPE 판정, TLS 게이트) |
 | 공공데이터 | 나라장터 G2B(입찰·계약) · 종합쇼핑몰 단가 · 국세청 사업자 진위 · 법제처 요율 · 기상청 · 응급의료(E-gen) 등 12종 |
 | 영상·문서 | Remotion(React) 영상 파이프라인 · 실물 참조 이미지 생성 + 실제 UI 사영 합성 · Fish Audio 나레이션 |
@@ -135,6 +135,28 @@ IMU 88특징 → Core ML 직접 추론 (서버 왕복 없음, event-gated 배터
 ### 3. 공고문 위험작업 추출 — LLM 환각 차단 3단 (부)
 키워드 선별(결정적) → LLM 구조화 추출 → **근거 원문 검증 100%** (불일치 폐기) —
 환각은 담당 공무원에게 도달하지 않는다.
+
+## 서비스 화면 — 갤럭시워치 · CCTV
+
+### 갤럭시워치 9 — 작업자 워치 앱
+
+<table><tr><td align="center" width="25%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/07_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%95%EC%83%81.png"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/07_1%C2%B7%EC%9A%94%EC%95%BD_%EC%A0%95%EC%83%81.png" width="170"></a><br><sub>1 · 생체 요약</sub></td><td align="center" width="25%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/10_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28SpO2%29.png"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/10_1%C2%B7%EC%9A%94%EC%95%BD_%EC%9C%84%ED%97%98%28SpO2%29.png" width="170"></a><br><sub>1 · 위험(SpO₂)</sub></td><td align="center" width="25%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/14_2%C2%B7%EC%8B%AC%EB%B0%95%EC%B6%94%EC%9D%B4.png"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/14_2%C2%B7%EC%8B%AC%EB%B0%95%EC%B6%94%EC%9D%B4.png" width="170"></a><br><sub>2 · 심박 추이</sub></td><td align="center" width="25%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/01_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR.png"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EC%9B%8C%EC%B9%98/%ED%98%84%ED%96%89/01_0%C2%B7%EB%A1%9C%EA%B7%B8%EC%9D%B8QR.png" width="170"></a><br><sub>0 · 로그인 QR</sub></td></tr></table>
+
+화면은 옆으로 넘기며 본다 — **0 로그인·로그아웃 → 1 생체 요약 → 2 심박 · 3 산소포화도 · 4 체온 · 5 스트레스 · 6 오늘 걸음**.
+요약 화면은 심박을 크게, SpO₂·피부온·생리적 부담을 작은 게이지로 보이고 상태(정상·주의·위험·무동작·전송 대기)를 색으로 가른다.
+현행 코드(Kotlin·Compose for Wear OS)를 Galaxy Watch 9 해상도(480×480)로 렌더한 화면이며 이름·사번은 예시 값이다.
+전체 19장과 08-31 디자인 시안 79장 → [서비스 화면 · 워치](%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/#워치-앱--galaxy-watch-9)
+
+### CCTV — 관제 웹 · 태블릿
+
+<table><tr><td align="center" width="50%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg" width="360"></a><br><sub>관제 웹 CCTV 8칸</sub></td><td align="center" width="50%"><a href="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg"><img src="%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg" width="360"></a><br><sub>태블릿 판정 화면 (얼굴·명패 모자이크)</sub></td></tr></table>
+
+- **관제 웹 8칸** — CAM-01 사무실 IP캠·CAM-03 현장 GoPro 는 보호구 판정 칸, CAM-02 는 낙상 칸, CAM-04~08 은 자리 표본. 칸을 누르면 팝업에 작업자 수·위반 건수·준수율.
+- **태블릿 현장 CCTV** — 대시보드 카드에서 카메라를 고르면 실시간 화면, 두 손가락 확대. 상단 줄에 엔진·추론 시간(PPE v7e@544×960 · 자세 11s-pose@640 · 14+16ms · 30fps).
+- **판정 오버레이** — 작업자 상자·안전모 미착용 머리 상자·자세 골격. 판정은 젯슨 두 대가 현장에서 하고, 1호기 게이트가 일회용 서명 티켓으로 영상을 내보냈다.
+- **2026-10-07 젯슨 반납** — 지금 라이브 칸에는 영상이 나오지 않는다. 구조와 복원 방법 → [CCTV 최종 구현 기록](기존_조달청모듈/safetymonitor/cctv-ai/%EC%B5%9C%EC%A2%85-%EA%B5%AC%ED%98%84-%EA%B8%B0%EB%A1%9D-20261007.md) · 모델 보관 → [MODELS.md](기존_조달청모듈/safetymonitor/ml/ppe-detection/MODELS.md)
+
+전체 CCTV 화면 → [서비스 화면 · CCTV](%ED%8F%AC%ED%8A%B8%ED%8F%B4%EB%A6%AC%EC%98%A4/%EC%84%9C%EB%B9%84%EC%8A%A4%20%ED%99%94%EB%A9%B4/#cctv--관제웹-8칸--태블릿-현장-cctv)
 
 ## 현장 하드웨어
 
