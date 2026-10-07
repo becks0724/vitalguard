@@ -6,7 +6,7 @@
 |---|---:|---|---|
 | [태블릿 앱](#태블릿-앱--vitalguard-현장-lenovo-idea-tab-pro-127) | 14 | Lenovo Idea Tab Pro 12.7 실기기 `adb exec-out screencap` | 2944×1840 (JPG 변환) |
 | [관제 웹](#관제-웹--실시간-현장-관제) | 15 | Chrome 실서비스 로그인 후 캡처(라이트·다크) | 1511×812 |
-| [CCTV](#cctv--관제웹-8칸--태블릿-현장-cctv) | 4 (+관제 웹 2) | 태블릿 실기기 `adb exec-out screencap`(09-28 · 젯슨 반납 전) · 판정 화면은 얼굴·명패 모자이크 | 2944×1840 (JPG 변환) |
+| [CCTV](#cctv--관제웹-8칸--태블릿-현장-cctv) | 5 (+관제 웹 2) | 태블릿 실기기 `adb exec-out screencap`(09-28 · 젯슨 반납 전) · 판정 화면은 얼굴·명패 모자이크 | 2944×1840 (JPG 변환) |
 | [워치 앱 — 현행](#워치-앱--galaxy-watch-9) | 19 | 현행 코드(Kotlin·Compose for Wear OS)를 Galaxy Watch 9 해상도로 렌더(10-07) · 이름·사번은 예시 값 | 480×480 |
 | [워치 앱 — 디자인 시안](#디자인-시안--08-31-앱-사양서-79장) | 79 | 앱 사양 HTML(V.1.0.26.08.31)에서 화면 추출 | 454×454 |
 | [장치 실물](#장치-실물--aed-alert--gaspod) | 4 | 실물 사진·발표자료 | — |
@@ -56,6 +56,7 @@
 <tr><td align="center" width="50%"><a href="%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg"><img src="%EA%B4%80%EC%A0%9C%EC%9B%B9/05_CCTV%EA%B4%80%EC%A0%9C_%EB%9D%BC%EC%9D%B4%ED%8A%B8.jpg" width="360"></a><br><sub><b>관제 웹 CCTV 8칸</b><br>캡처 당시 칸 머리·배지 구성(10-01)</sub></td><td align="center" width="50%"><a href="CCTV/01_%ED%83%9C%EB%B8%94%EB%A6%BF_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%84%A0%ED%83%9D.jpg"><img src="CCTV/01_%ED%83%9C%EB%B8%94%EB%A6%BF_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%84%A0%ED%83%9D.jpg" width="360"></a><br><sub><b>01_태블릿_카메라선택</b><br>현장 대시보드 CCTV 카드 — CAM-01·CAM-03 고르기</sub></td></tr>
 <tr><td align="center" width="50%"><a href="CCTV/02_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%EC%8B%A4%EC%8B%9C%EA%B0%84.jpg"><img src="CCTV/02_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%EC%8B%A4%EC%8B%9C%EA%B0%84.jpg" width="360"></a><br><sub><b>02_태블릿_CAM-01_실시간</b><br>IP캠 실시간 — 상단 줄에 엔진·추론 시간</sub></td><td align="center" width="50%"><a href="CCTV/03_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%ED%99%95%EB%8C%80.jpg"><img src="CCTV/03_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-01_%ED%99%95%EB%8C%80.jpg" width="360"></a><br><sub><b>03_태블릿_CAM-01_확대</b><br>두 손가락 확대·드래그 이동</sub></td></tr>
 <tr><td align="center" colspan="2"><a href="CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg"><img src="CCTV/04_%ED%83%9C%EB%B8%94%EB%A6%BF_CAM-03_%ED%8C%90%EC%A0%95%ED%99%94%EB%A9%B4%28%EC%96%BC%EA%B5%B4%EA%B0%80%EB%A6%BC%29.jpg" width="720"></a><br><sub><b>04_태블릿_CAM-03_판정화면</b><br>보호구 판정 오버레이 — 작업자 상자·안전모 미착용 머리·자세 골격 (얼굴·명패 모자이크)</sub></td></tr>
+<tr><td align="center" colspan="2"><a href="CCTV/05_CAM-01_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%9B%90%EB%B3%B8.jpg"><img src="CCTV/05_CAM-01_%EC%B9%B4%EB%A9%94%EB%9D%BC%EC%9B%90%EB%B3%B8.jpg" width="720"></a><br><sub><b>05_CAM-01_카메라원본</b><br>IP캠이 2호기에 넘기던 원본 프레임 960×540 (09-18 · 사람 없는 장면 · 젯슨 반납 전 보관분)</sub></td></tr>
 </table>
 
 > 판정 모델은 PPE v7e(안전모)·yolo11s-pose(자세)이고 Jetson TensorRT 로 돌았다. 소스: [`기존_조달청모듈/safetymonitor/cctv-ai`](../../기존_조달청모듈/safetymonitor/cctv-ai/)
