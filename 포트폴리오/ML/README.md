@@ -164,6 +164,9 @@ CCTV 영상에서 **안전모·조끼 착용**과 **자세(낙상)** 를 가려�
 <td align="center" width="33%"><a href="7차E_학습산출/confusion_matrix_normalized.png"><img src="7차E_학습산출/confusion_matrix_normalized.png" width="300"></a><br><sub>정규화 혼동 행렬</sub></td></tr>
 </table>
 
+> ⚠ 검증셋은 출처마다 라벨이 붙은 클래스가 다르다(부분 라벨 — E63·HHW 에는 person 라벨이 없다). 그래서 PR 곡선의 person 0.012 · safety_vest 0.185 는
+> 모델이 사람을 맞게 잡아도 정답이 없어 거짓으로 세어진 값이 섞여 실제보다 낮다. 클래스별 성능은 현장 35장 게이트(2절)로 본다.
+
 ## 9. 학습 자료와 라이선스
 
 | 자료 | 규모 | 쓴 클래스 | 라이선스 | 쓴 회차 |
