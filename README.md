@@ -162,6 +162,7 @@ IMU 88특징 → Core ML 직접 추론 (서버 왕복 없음, event-gated 배터
 
 - **가스포드** (ESP32-S3): 밀폐공간 O₂·CO·H₂S·온습도 — 현장 즉시 경보 + 5초 주기 서버 전송 → [`hardware/`](hardware/)
 - **AED 알람** (Raspberry Pi): AED 배터리·패드 상태를 서버 판정으로 받아 현장 빛·사이렌 경보 → [`hardware/AED_alarm/`](hardware/AED_alarm/)
+- **CCTV 엣지** (Jetson Orin Nano Super 8GB × 2 · JetPack 6.2): 카메라 두 대의 영상을 현장에서 판정한다. 카메라는 CAM-01 사무실 IP캠(TP-Link VIGI C340S)과 CAM-03 현장 GoPro HERO9 이다. 안전모(PPE v7e)·자세(yolo11s-pose) 모델을 TensorRT 로 돌려 한 장에 약 15ms, 30fps 로 처리했다. 1호기 게이트(HTTPS · 일회용 서명 티켓)가 관제 웹·태블릿에 영상과 통계를 서버 중계 없이 직접 보냈다. 2026-10-07 장비 반납 → [`cctv-ai/`](기존_조달청모듈/safetymonitor/cctv-ai/) · [최종 구현 기록](기존_조달청모듈/safetymonitor/cctv-ai/최종-구현-기록-20261007.md)
 
 ---
 문서 기준일: 2026-08-12 · 내용 기준: 통합본선 발표자료 V2.9
