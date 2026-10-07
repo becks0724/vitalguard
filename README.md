@@ -51,7 +51,7 @@
 |---|---|---|
 | **김태곤** ([@rlaxorhs77-eng](https://github.com/rlaxorhs77-eng)) · 저장소 관리 | **DB 설계** — 신규 스키마 74표·RLS 149·트리거 146·마이그레이션 101, 법 요건 반영, 외부 감사 대응 · **현장 하드웨어** — GasPod ESP32 펌웨어 v4→v5·배터리 단독 OTA 실증·배터리 곡선 실측·케이스 설계, AED-alert 라즈베리파이 알람 · **담당관 태블릿 앱** — Compose 재작성 요구정의·UI/UX 계획·단계별 검수·실기기 검증(1.0→1.3.18) · **워치 ML 모델링** — 낙상 판정 모델 3종 학습·검증 | [`db/erd-vitalguard2/`](db/erd-vitalguard2/) · [`Final_GasPod/`](Final_GasPod/) · [`hardware/`](hardware/) · [`tablet-app/`](tablet-app/) · [`ML 3종 모듈/`](ML%203종%20모듈/) |
 | 팀원 A | _(담당 기입 — 예: iOS/watchOS 앱, 온디바이스 추론 연동)_ | _(산출물 경로 기입)_ |
-| 팀원 B | _(담당 기입 — 예: 관제 웹·서버, CCTV AI 엣지)_ | _(산출물 경로 기입)_ |
+| [@becks0724](https://github.com/becks0724) | **관제 웹·서버** — Next.js 대시보드·API, 기상·태풍·재난문자 연동, Cloud Run 배포·운영, CI 시크릿 스캔 · **CCTV AI 엣지** — 보호구(안전모·조끼) 판정 모델 학습·검증, Jetson TensorRT 엣지 추론 · **웨어러블 수집 앱** — Apple Watch→iPhone→서버 수집 앱, 갤럭시워치(Wear OS) 단독 수집기 | [`dashboard-web/`](기존_조달청모듈/safetymonitor/apps/dashboard-web/) · [`cctv-ai/`](기존_조달청모듈/safetymonitor/cctv-ai/) · [`ml/ppe-detection/`](기존_조달청모듈/safetymonitor/ml/ppe-detection/) · [`vitalguard_app/`](기존_조달청모듈/safetymonitor/apps/vitalguard_app/) |
 
 > 팀원 행 작성 방법: 이 표의 자기 행에 담당·산출물 경로를 적고 PR 또는 직접 커밋. 성명 대신 "팀원 A/B" 또는 GitHub 핸들 중 하나로 통일한다.
 
@@ -92,7 +92,7 @@ flowchart TB
 | [`db/`](db/) | DB 스키마·감사·통합 문서 (fall_ml / imu_collect / integrated / audit 등) · **[`erd-vitalguard2/`](db/erd-vitalguard2/) 신규 스키마 ERD(74표·Mermaid)** |
 | [`tablet-app/`](tablet-app/) | **담당관 태블릿 앱** — Compose/Kotlin `vitalguard_field_android`(현장 대시보드·경보·기록·사진·펜 주석·전송 이력) |
 | [`포트폴리오/`](포트폴리오/) | **포트폴리오 묶음** — [서비스 화면 112장](포트폴리오/서비스%20화면/) · [시연 영상](포트폴리오/시연%20영상/) · [발표자료 2종(PDF·슬라이드)](포트폴리오/발표자료/) · [공개 전환 점검표](포트폴리오/공개전환-점검표.md) |
-| [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai, ml/fall-detection, 구 PoC 앱 |
+| [`기존_조달청모듈/`](기존_조달청모듈/) | safetymonitor — 대시보드(현역), cctv-ai(CCTV 엣지), ml/ppe-detection(보호구 판정 모델), ml/fall-detection, apps/vitalguard_app(워치 수집 앱), 구 PoC 앱 |
 | [`조달청_안전관리비_모듈/`](조달청_안전관리비_모듈/) | 안전관리비 기준액 계산 모듈(safeprocure) |
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
 | [`docs/`](docs/) | 운영 인수인계·앱 조율 요청 등 작업 문서 |
