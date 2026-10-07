@@ -45,7 +45,7 @@
 
 ## 팀 · 역할
 
-팀 VitAlGuard 3인. 성명은 공개 전환 방침에 따라 표기하지 않는다(팀원 행은 각자 기입).
+팀 VitAlGuard 3인. 본인 행의 성명 표기는 각자 결정하며 기본은 GitHub 핸들이다(팀원 행은 각자 기입).
 
 | 구성원 | 담당 | 주요 산출물 |
 |---|---|---|
@@ -53,7 +53,7 @@
 | 팀원 A | _(담당 기입 — 예: iOS/watchOS 앱, 온디바이스 추론 연동)_ | _(산출물 경로 기입)_ |
 | [@becks0724](https://github.com/becks0724) | **관제 웹·서버** — Next.js 대시보드·API, 기상·태풍·재난문자 연동, Cloud Run 배포·운영, CI 시크릿 스캔 · **CCTV AI 엣지** — 보호구(안전모·조끼) 판정 모델 학습·검증, Jetson TensorRT 엣지 추론 · **웨어러블 수집 앱** — Apple Watch→iPhone→서버 수집 앱, 갤럭시워치(Wear OS) 단독 수집기 | [`dashboard-web/`](기존_조달청모듈/safetymonitor/apps/dashboard-web/) · [`cctv-ai/`](기존_조달청모듈/safetymonitor/cctv-ai/) · [`ml/ppe-detection/`](기존_조달청모듈/safetymonitor/ml/ppe-detection/) · [`vitalguard_app/`](기존_조달청모듈/safetymonitor/apps/vitalguard_app/) |
 
-> 팀원 행 작성 방법: 이 표의 자기 행에 담당·산출물 경로를 적고 PR 또는 직접 커밋. 성명 대신 "팀원 A/B" 또는 GitHub 핸들 중 하나로 통일한다.
+> 팀원 행 작성 방법: 이 표의 자기 행에 담당·산출물 경로를 적고 PR 또는 직접 커밋. 구성원 칸은 "팀원 A/B"·GitHub 핸들·실명 중 본인이 고른다.
 
 ## 시스템 구조 — 조달이 기준을 세우고, 현장 실측이 그 기준을 확인한다
 
