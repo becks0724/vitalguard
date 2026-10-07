@@ -8,6 +8,7 @@
 
 - **YouTube(일부 공개)**: https://youtu.be/suM9BOJuzj0
 - **원본 mp4(118MB)**: [Releases › portfolio-2026-10](https://github.com/becks0724/vitalguard/releases/tag/portfolio-2026-10) 자산 `VitAlGuard_demo_2026-10.mp4`. GitHub 파일 한도(100MB) 때문에 저장소 본문이 아니라 Release 에 둔다.
+- **슬로건 카드판(3분 42초)**: 담당관 퇴근 장면과 다섯 가족 컷 사이(3:06)에 「작업자가 가족의 품으로 돌아가는 길, VitAlGuard가 지키겠습니다.」 카드 5.5초를 넣고 내레이션을 카드 위로 옮긴 변형본. YouTube https://youtu.be/BzLAVj-9yo4 · Release 자산 `VitAlGuard_demo_slogan-card_2026-10.mp4`(115MB). 그 외 장면은 원본과 같다.
 
 ## 구성 — 기승전결 10장면 · 52컷
 
