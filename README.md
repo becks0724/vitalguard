@@ -97,9 +97,9 @@ flowchart TB
 | [`조달청 공문/`](조달청%20공문/) | 대회 공고·참가신청 양식 |
 | [`docs/`](docs/) | 운영 인수인계·앱 조율 요청 등 작업 문서 |
 | [`archive/`](archive/) | 대체된 구현 보존본 — Flutter 태블릿 앱 1.0.0 (Compose 재작성 전) |
+| [`VitAlGuard_logo/`](VitAlGuard_logo/) | 로고 에셋 (라이트/다크) |
 
 라이선스: [All rights reserved](LICENSE) — 열람·평가 목적 공개, 재사용·재배포 불허.
-| [`VitAlGuard_logo/`](VitAlGuard_logo/) | 로고 에셋 (라이트/다크) |
 
 ## 기술 스택
 
