@@ -16,10 +16,13 @@ onlyBuiltDependencies:
 # 세 major 대역이 동시에 물려 있는데 전부 **같은 major 안의 패치**로 해소된다(major 점프 없음).
 #   1.1.15 → 1.1.18   2.1.1 → 2.1.4   5.0.6 → 5.0.9
 # ignoreGhsas 로 덮지 않고 실제로 올린다 — 위 예외 목록의 brace-expansion 2건도 같이 해소된다.
+# 2026-09-29 재유입(3차) — GHSA-6j4f-fj2g-mc7p(parseCommaParts 재귀)·GHSA-qhr7-859c-m2p7(중첩 brace 스택 소진)가
+# 취약 범위를 <1.1.20 / <2.1.6 / <5.0.11 로 넓혀 종전 핀 셋이 전부 안에 들어갔다. 역시 같은 major 안의 패치.
+#   1.1.18 → 1.1.20   2.1.4 → 2.1.6   5.0.9 → 5.0.11   (CI 빨간불 10-07 · 코드 변경 없이 advisory DB 가 바뀐 건)
 overrides:
-  brace-expansion@1: 1.1.18
-  brace-expansion@2: 2.1.4
-  brace-expansion@5: 5.0.9
+  brace-expansion@1: 1.1.20
+  brace-expansion@2: 2.1.6
+  brace-expansion@5: 5.0.11
 # js-yaml CPU DoS(CVE-2026-59870)·nanoid 무한루프 2건(2026-08-10 유입 advisory) — 전부 같은 major 안의 패치.
 # eslint 경유(js-yaml)·postcss 경유(nanoid) 전이 의존이라 overrides 로 올린다(직접 의존인 pdfjs-dist 는 package.json 에서 상향).
   # 2026-09-11 재유입 — GHSA-2883-xcg3-v3hh(maxTotalMergeKeys 가 CPU 를 제한 못 함)가 취약 범위를
@@ -36,7 +39,9 @@ overrides:
 # 같은 major 안의 패치로 해소된다. next 경유 전이 의존이라 overrides 로 올린다.
 # ⚠ 위 ignoreGhsas 의 GHSA-f88m-g3jw-g9cj(sharp/libvips)는 "next/image 미사용·미도달" 로 예외 처리했지만,
 #   이 건은 같은 판단을 재사용하지 않고 실제로 올린다 — 이 파일의 방침이 "덮지 않고 올린다" 이다.
-  sharp: 0.35.4
+# 2026-10-06 재유입 — GHSA-wq5f-xc86-pv6w(번들된 librsvg 취약점 CVE-2026-96889) 취약 범위 <0.35.5.
+# 같은 major 안의 패치라 핀만 올린다(0.35.4 → 0.35.5).
+  sharp: 0.35.5
 # CI `pnpm audit --audit-level=high` 게이트의 명시 예외 — 감사(2026-07-29) 시점의 기존 high 8건.
 # 대부분 exceljs 하위 의존(4주차 overrides 정리 대상). 새 취약점 유입만 게이트가 잡는다.
 # 항목을 지우려면 해당 GHSA 가 실제 해소(의존 업데이트/overrides)됐는지 pnpm audit 로 확인할 것.
@@ -49,3 +54,7 @@ auditConfig:
     - GHSA-f88m-g3jw-g9cj # sharp/libvips (next/image 미사용·미도달)
     - GHSA-6g55-p6wh-862q # postcss 파일 읽기 (빌드타임)
     - GHSA-r28c-9q8g-f849 # postcss 경로순회 (빌드타임)
+    # braces 스택 소진 DoS(2026-09-18 공개) — 취약 범위 <=3.0.3 인데 2026-10-07 현재 **패치 버전이 없다**(advisory first_patched 없음).
+    # micromatch 경유 빌드타임 전이 의존(워크스페이스 전체에 3.0.3 한 버전). "덮지 않고 올린다" 방침의 예외 = 올릴 버전 자체가 없는 경우.
+    # 패치가 공개되면 overrides 로 올리고 이 줄을 지운다.
+    - GHSA-vfj7-8cjw-p6xm # braces 스택 소진 (패치 없음 · 빌드타임)
