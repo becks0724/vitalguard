@@ -53,7 +53,6 @@
 |---|---|---|
 | **김태곤** ([@rlaxorhs77-eng](https://github.com/rlaxorhs77-eng)) · 저장소 관리 | **DB 설계** — 신규 스키마 74표·RLS 149·트리거 146·마이그레이션 101, 법 요건 반영, 외부 감사 대응 · **현장 하드웨어** — GasPod ESP32 펌웨어 v4→v5·배터리 단독 OTA 실증·배터리 곡선 실측·케이스 설계, AED-alert 라즈베리파이 알람 · **담당관 태블릿 앱** — Compose 재작성 요구정의·UI/UX 계획·단계별 검수·실기기 검증(1.0→1.3.18) · **워치 ML 모델링** — 낙상 판정 모델 3종 학습·검증 | [`db/erd-vitalguard2/`](db/erd-vitalguard2/) · [`Final_GasPod/`](Final_GasPod/) · [`hardware/`](hardware/) · [`tablet-app/`](tablet-app/) · [`ML 3종 모듈/`](ML%203종%20모듈/) |
 | **장우진** ([@becks0724](https://github.com/becks0724)) · 배포·운영 | **관제 웹·서버** — Next.js 대시보드·API(실시간 현장 관제·작업자 생체 모니터링·부재 감지·SpO₂ 경보·일정 캘린더), 기상·태풍·재난문자 연동, 관리자 2단계 인증·계정 찾기, DB 접속 풀 안정화, Cloud Run 배포·운영, CI 보안(gitleaks 시크릿 스캔·Dependabot·의존성 감사) · **CCTV AI 엣지** — 보호구 판정 모델 1~7차 학습(Colab)·현장 35장 배포 게이트, 조끼 전용 모델, Jetson Orin Nano 2대 TensorRT 추론·HTTPS 게이트, 자세(yolo11s-pose) 낙상 규칙 · **웨어러블 수집 앱** — 갤럭시워치 Wear OS 수집 앱(Kotlin·Compose · 착용 판정·하트비트·QR 로그인), Apple Watch→iPhone→서버 수집 앱 · 커밋 1,387건(2026-06-22 ~ 10-07) | [`dashboard-web/`](기존_조달청모듈/safetymonitor/apps/dashboard-web/) · [`cctv-ai/`](기존_조달청모듈/safetymonitor/cctv-ai/) · [`ml/ppe-detection/`](기존_조달청모듈/safetymonitor/ml/ppe-detection/) · [`ml/fall-detection/`](기존_조달청모듈/safetymonitor/ml/fall-detection/) · [`vitalguard_app/`](기존_조달청모듈/safetymonitor/apps/vitalguard_app/) |
-| 팀원 B | _(담당 기입)_ | _(산출물 경로 기입)_ |
 
 > 팀원 행 작성 방법: 이 표의 자기 행에 담당·산출물 경로를 적고 PR 또는 직접 커밋. 구성원 칸은 "팀원"·GitHub 핸들·실명 중 본인이 고른다.
 
