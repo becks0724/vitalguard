@@ -16,7 +16,21 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00412-98v` (09-29 23:04 · 팀원 설정 재기동 · 서빙 digest `sha256:3e253461…` = 00411 과 같은 이미지 ·
+- **라이브** = `vitalguard-dashboard-00413-xb8` (커밋 `fb820d97` · 10-07 13:3x · [WATCH.APP] 배포 · 서빙 digest
+  `sha256:4e6c2d16…` **대조 일치** · env 33(00412 와 줄마다 같음) · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음 ·
+  검증 **2140/2140 @워킹트리(= fb820d9) · 루트 pnpm test** · 라우트 5종 ok · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB 문구 셋 0).
+  00412 대비 **동작이 바뀐 곳은 팀원 관제웹 5커밋**이다(`45482633..fb820d97` · 관제웹 21파일).
+  ```
+  3cbebb95  GET /api/app/admin/profile 신설 — 현장 앱 본인 프로필(마스킹) · db.ts 읽기 전용 호출 경로 · SQL 문장 같음
+            라이브 실측: 토큰 없이 401 {"action":"reauth"} · 통제(없는 경로) 404
+  b11219dd  기상청 강수·기존 풍속 위험 신호를 태블릿 효과용으로 노출
+  b9ecf44b  기상 신호·가스포드 실내값·예보 노출 (/api/weather ok)
+  6ee2cffb  현장 채팅 의도 목록에 분류 설명(LLM 의도 프롬프트용)
+  2d2269c9  의존성 보안 수정 — 감사 high 5건(brace-expansion·sharp 핀 상향 · source-map-js 패치 · braces 는 패치 없어 예외)
+  ```
+  **변경 기능 화면 확인은 변경 주인(팀원) 몫**이다. 롤백 대상 = 00412-98v. CCTV 칸은 10-07 젯슨 반납으로 영상이 안 나온다(코드 그대로 · 사용자 결정 · `cctv-ai/최종-구현-기록-20261007.md`).
+
+- (직전) **라이브** = `vitalguard-dashboard-00412-98v` (09-29 23:04 · 팀원 설정 재기동 · 서빙 digest `sha256:3e253461…` = 00411 과 같은 이미지 ·
   env 33행 중 `SECRET_ROTATED_AT` 만 다름 · 그 시각 NCP 저장소 비밀 셋 새 버전 · 00410 에 이어 같은 날 두 번째 교체).
   10-07 실측 — 24시간 요청 1,446 · 5xx 0 · ERROR 0 · 트래픽 자동 추종. **도는 코드는 아래 00411 그대로다.**
   코드 배포 = `vitalguard-dashboard-00411-cql` (커밋 `45482633` · 09-29 22:31 · [WATCH.APP] 배포 · 서빙 digest
@@ -52,20 +66,6 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   사후 DB 문구 셋(새 접속 타임아웃 · 풀 고갈 · 웜 바닥) 0.
   번들 확인([DATA] 09-29 10:4x · 00408 기준선 대비 17/17 청크) — `vital-spo2` 0→1 · `Asia/Seoul` 2→3 · 「 측정」 14→16 ·
   통제 「위험 감지 시각」 1→1 · 음성 0→0. **기능 화면 확인은 다음 실제 산소포화도 경보 대기**(운영 DB 에 시험 행을 못 넣는다 · L-04).
-
-- (직전) **라이브** = `vitalguard-dashboard-00408-xh7` (커밋 `45d791d6` · 09-27 14:01 · 팀원 배포 · 서빙 digest
-  `sha256:c4fdfd41…` **대조 일치**(빌드 `0e91af08` 이미지) · env 33 · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음).
-  사후 확인(09-27 15:4x · [WATCH.APP]) — 루트 200 · 라우트 4종 ok · DB타임아웃 0(98분). 검증 수(tsc·lint·test)는 이 줄에 없다.
-  00407 대비 **동작이 바뀐 곳은 둘**이다(나머지는 문서와 이미지 밖 태블릿 앱 폴더).
-  ```
-  ① api/calendar/media/download-url   관제 세션만 → 관제 세션 또는 앱 로그인 JWT(태블릿 앱이 서버 사진을 그리려고)
-                                      받는 범위 = 목록 GET 과 같다 · 수정·삭제는 여전히 올린 본인 또는 owner
-  ② app/lib/risk-tagging.ts           사전 7개 밖의 태그를 버린다 · 프롬프트 태그 목록을 사전에서 가져온다(내용 같음)
-  ```
-  배포 직후 확인([run-log](harness/5-observability/run-log.md)) — HTTP 200 · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB타임아웃 0.
-  당시 ALLOW_DIRTY 대상인 타 세션 미커밋 4파일은 배포 이미지에 없었다.
-  `download-url` 거절 계약 실측: 무토큰 401 `action:reauth` · 틀린 토큰 401 `action:none`.
-  가드 `lib/2026-09-27-calendar-download-url-app-jwt.guard.test.ts`. 앱 JWT 성공 경로 실측은 배포 당시 태블릿 세션의 후속 사항으로 기록했다.
 
 **운영 기록 읽기** — 아래 아카이브는 과거 상태다. 현재 리비전·env·접속 경로는 라이브 조회로 확인한다. 브라우저 CORS·번들 검증, 같은 LAN/Tailscale 제약, 서버 중계 비용·주기, 인증 키 교체·워치 재서명 절차를 변경할 때는 관련 과거 실측을 먼저 확인한다.
 
@@ -112,7 +112,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
 
 **트랙 기록 아카이브**
-- 09-09 ~ 09-23 배포 기록 15건(00365~00407 · 00404 는 09-27, 00405·00407 은 09-29 에 맨 위로 더함) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
+- 09-09 ~ 09-27 배포 기록 16건(00365~00408 · 00404 는 09-27, 00405·00407 은 09-29, 00408 은 10-07 에 맨 위로 더함) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
 - 09-09 ~ 09-17 트랙(00367~00397) → [claude-md-archive-20260925.md](docs/claude-md-archive-20260925.md) (보존 규칙 「최근 3건」 초과분)
 - 08-31 ~ 09-08 트랙(00345~00363) → [claude-md-archive-20260910.md](docs/claude-md-archive-20260910.md) (최근 이동분이 파일 위쪽)
 - 08-26 ~ 08-31 트랙(00322~00344) → [claude-md-archive-20260831.md](docs/claude-md-archive-20260831.md) (최근 이동분이 파일 위쪽)

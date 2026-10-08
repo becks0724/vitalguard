@@ -2,6 +2,20 @@
 
 2026-09-25 prompt-audit 제안에서 이관할 과거 기록. 아래 내용은 해당 기록 시점의 실측이며 현재 운영 상태가 아니다. 원문을 그대로 보존한다.
 
+- (직전) **라이브** = `vitalguard-dashboard-00408-xh7` (커밋 `45d791d6` · 09-27 14:01 · 팀원 배포 · 서빙 digest
+  `sha256:c4fdfd41…` **대조 일치**(빌드 `0e91af08` 이미지) · env 33 · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음).
+  사후 확인(09-27 15:4x · [WATCH.APP]) — 루트 200 · 라우트 4종 ok · DB타임아웃 0(98분). 검증 수(tsc·lint·test)는 이 줄에 없다.
+  00407 대비 **동작이 바뀐 곳은 둘**이다(나머지는 문서와 이미지 밖 태블릿 앱 폴더).
+  ```
+  ① api/calendar/media/download-url   관제 세션만 → 관제 세션 또는 앱 로그인 JWT(태블릿 앱이 서버 사진을 그리려고)
+                                      받는 범위 = 목록 GET 과 같다 · 수정·삭제는 여전히 올린 본인 또는 owner
+  ② app/lib/risk-tagging.ts           사전 7개 밖의 태그를 버린다 · 프롬프트 태그 목록을 사전에서 가져온다(내용 같음)
+  ```
+  배포 직후 확인([run-log](harness/5-observability/run-log.md)) — HTTP 200 · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB타임아웃 0.
+  당시 ALLOW_DIRTY 대상인 타 세션 미커밋 4파일은 배포 이미지에 없었다.
+  `download-url` 거절 계약 실측: 무토큰 401 `action:reauth` · 틀린 토큰 401 `action:none`.
+  가드 `lib/2026-09-27-calendar-download-url-app-jwt.guard.test.ts`. 앱 JWT 성공 경로 실측은 배포 당시 태블릿 세션의 후속 사항으로 기록했다.
+
 - (직전) **라이브** = `vitalguard-dashboard-00407-vc6` (커밋 `502059c7` 로그인 폼 정렬 · 09-23 17:11).
   직전 `00406-4l9`(커밋 `2495f21b` 로그인 부제 삭제 · 09-23 16:56). 둘 다 로그인 수리 세션이 배포했다.
   digest·검증 수·사후 관찰은 그 배포 세션이 채운다(이 줄은 트래픽 실측으로만 적었다).
