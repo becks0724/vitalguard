@@ -294,7 +294,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 내 정보 수정**(`4aba061`, admin '내 정보' 탭) — [MyProfileModal](../apps/dashboard-web/app/components/MyProfileModal.tsx) 이름·회사·연락처·통신사 + 비번변경(현재비번 검증). `/api/admin/profile` GET·POST — **세션 username 기준 본인 행만**(클라 id 불신뢰), 아이디·이메일 읽기전용.
 - **★ dev-browser**(`62e1c02`) — SawyerHood 브라우저 자동화(QuickJS WASM 샌드박스) 로컬 설치(npm 없는 pnpm 전용이라 데몬런타임 직접 구성·`.claude/skills/dev-browser/SKILL.md` 환경노트) + `.claude/settings.json` 자동승인. 라이브 관제웹 검증 도구.
 - **DB** — users `carrier`·`email_verified` 멱등 ALTER(옛 가입분 null/false·신규만 채워짐). (★ UI 교훈) **셀렉트 `appearance-none`+커스텀화살표 없으면 macOS 네이티브 각짐**(headless 미재현, 로그인·내정보 모달 통일) · 전화 3박스 `flex-1`+`min-width:auto` 모달 가로 오버플로→**고정폭**.
-- **팀 작업 pull 통합**(`2ebf34d`·`997cdcf`, rebase) — ① **캘린더**(`2ebf34d`, 김수영) [HeaderCalendarPopup](../apps/dashboard-web/app/components/DemoDashboard.tsx) 헤더 팝업 — 날짜 선택·이전/다음 월 이동·키보드(ESC) 접근성. ② **안전관리비 검증 탭**(`997cdcf`) [SafetyVerificationTabs](../apps/dashboard-web/app/components/SafetyVerificationTabs.tsx) — 주간 검증 보고서·시공사 청구 제출·실집행 검증 3화면을 라우트 이동 없이 탭 전환(전체화면 라우트는 공유용 유지), **시공사 청구 제출 진입 전 관리자 id/pw 재인증 게이트**(ContractorAuthGate→`/api/admin/login` 재검증). 두 커밋 모두 [DemoDashboard](../apps/dashboard-web/app/components/DemoDashboard.tsx) 통합, 내 회원가입/계정관리 작업과 파일 충돌 없음.
+- **팀 작업 pull 통합**(`2ebf34d`·`997cdcf`, rebase) — ① **캘린더**(`2ebf34d`, 김○○) [HeaderCalendarPopup](../apps/dashboard-web/app/components/DemoDashboard.tsx) 헤더 팝업 — 날짜 선택·이전/다음 월 이동·키보드(ESC) 접근성. ② **안전관리비 검증 탭**(`997cdcf`) [SafetyVerificationTabs](../apps/dashboard-web/app/components/SafetyVerificationTabs.tsx) — 주간 검증 보고서·시공사 청구 제출·실집행 검증 3화면을 라우트 이동 없이 탭 전환(전체화면 라우트는 공유용 유지), **시공사 청구 제출 진입 전 관리자 id/pw 재인증 게이트**(ContractorAuthGate→`/api/admin/login` 재검증). 두 커밋 모두 [DemoDashboard](../apps/dashboard-web/app/components/DemoDashboard.tsx) 통합, 내 회원가입/계정관리 작업과 파일 충돌 없음.
 - **★ Cloud Run 라이브 배포**(rev `00007-7n7`, 2026-06-23) — `gcloud builds submit`(Cloud Build 2m58s)+`gcloud run deploy --update-secrets RESEND_API_KEY` 로 **이번 세션 전 기능 라이브 반영**. `RESEND_API_KEY` Secret Manager 신규 등록(런타임 SA secretAccessor 부여) → 시크릿 **9종**(기존 8 + RESEND, Google OAuth 포함) 연결·env 보존. **이메일 = `EMAIL_FROM` onboarding@resend.dev 기본값**(도메인 미보유 → Resend 계정 본인 이메일만 발송, 임의 가입자 실발송은 도메인 인증 후 `services update --update-env-vars`로 전환·재빌드 불필요). 라이브 검증 = HTTP 200·`/api/admin/check-username`(admin→reserved)·로그인 401·**라이브 회원가입 폼 캡처**(중복확인·통신사·인증번호·회사 셀렉트 렌더). (교훈) 코드 변경만 `builds submit` 재빌드 필요, `EMAIL_FROM` 등 env 는 `services update`로 즉시 교체. **(재배포) AED 명칭 통일(`89a6932`) 반영 위해 재빌드·재배포 → 현재 라이브 rev `00007-7n7`**(이전 `00006-sjk`는 RESEND·이메일 인증 최초 반영분).
 - **상태** — origin/main 에 이번 4커밋(`62e1c02`·`7c10ec6`·`ff6887f`·`4aba061`) push 완료 + 팀 5커밋(`2ebf34d`·`997cdcf` 외 머지 포함) **rebase pull 로 통합**(문서 커밋은 맨 위로 재배치). working tree clean. 세션 중 팀원 `47dd027`(db/integrated) 도 pull 병합. **라이브(Cloud Run rev 00007-7n7) 반영 완료.** 증거: tsc 0·테스트 44/44·next lint 에러0·API e2e 다수(미인증403/401·미승인회사400·비번변경 현재비번검증)·dev-browser UI 스크린샷·라이브 배포 검증.
 - **다음** — (선택) **이메일 임의 수신자 실발송** = 도메인 확보→Resend 도메인 인증→`EMAIL_FROM` 갱신(`services update`, 재빌드 불필요). 현재는 onboarding(본인 이메일만) 의도적 유지 · Google 동의 화면 인터랙티브 확인 · **Phase 5(폰·워치 수신 URL→Cloud Run) 여전히 미완**. 상세 [auth-signup/checklist.md](./auth-signup/checklist.md).
@@ -325,7 +325,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **세션 한도 대응** — Tier 2 중간 1am 한도 → 완료분 격리·커밋, 부분편집 stash(복구가능), 리셋 후 재개. **교훈**: 멀티에이전트 fix=파일그룹별 1에이전트(겹침0)+상위 일괄 검증, unbounded는 stall.
 - **검증** — dashboard tsc 0·24/24 · analyzers 재빌드+28/28 · schemas 13/13 · flutter analyze 0 · watchOS BUILD SUCCEEDED.
 - **상태** — **18커밋 origin push 완료**(`main` ahead 0). 미커밋 = 세션32 제외분. 네트워크 세션37 종료 유지(dev/cloudflared/CCTV OFF).
-- **다음** — 디바이스 런타임 확인(#6 워치 flush·#31 폰 initState **재빌드·재설치**) · #2 AED HTTP e2e(dev 재기동) · 상용화 DB PostgreSQL · 기존 블로커(YJH iPhone·Galaxy Watch fresh·Web NFC·배터리·D4 리허설).
+- **다음** — 디바이스 런타임 확인(#6 워치 flush·#31 폰 initState **재빌드·재설치**) · #2 AED HTTP e2e(dev 재기동) · 상용화 DB PostgreSQL · 기존 블로커(전 팀원 iPhone·Galaxy Watch fresh·Web NFC·배터리·D4 리허설).
 
 ### (2026-06-12 세션37 — 관제웹 네트워크 진단·복구 + 워치 수신 URL 갱신·실기기 검증 + 공유 스택 전체 종료, 1커밋)
 
@@ -335,7 +335,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 공유 네트워크 전체 종료** — 사용자 요청 → dev :3000 + cloudflared + CCTV :8000 전부 kill(프로세스 0·포트 해제).
 - **교훈** — 장시간 dev 프로세스는 날짜 변경 후 샌드박스 stale 로 `.next` EPERM 500 → **재기동이 유일 해결**(파일 손상 아님) · cloudflared quick tunnel 세션/수시간마다 만료 → **재기동 시 URL 회전 불가피**(폰·워치·문서 갱신) · 워치 ATS 로 https 터널 전용.
 - **상태** — main **`ahead 2`**(세션37 `c37e6f6` 워치 URL + 세션36 docs `c597625`, push 보류). 미커밋 유지(의도) = `health_vitals_service.dart`·`commercialization-roadmap.md`(세션32 제외분)·`worker-watch-poc.zip`(빌드 산출물). **네트워크 전부 종료**(dev/cloudflared/:8000 OFF), 마지막 URL `channels-respect-absolute-watches`(종료됨).
-- **다음** — 재개 시 dev(`run_dashboard.command`)→cloudflared 재기동→새 URL→폰/워치 반영 · push 결정(2) · CLAUDE.md active URL 7곳 정리 · 데모 리포 본인 터미널 커밋·push · 기존 블로커(YJH iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
+- **다음** — 재개 시 dev(`run_dashboard.command`)→cloudflared 재기동→새 URL→폰/워치 반영 · push 결정(2) · CLAUDE.md active URL 7곳 정리 · 데모 리포 본인 터미널 커밋·push · 기존 블로커(전 팀원 iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-12 세션36 — CCTV 3-AI 확장[CAM-02 낙상·CAM-03 GoPro PPE 안전모] + 팀원 공유 프록시 + 샌드박스 .command 우회, 메인 2커밋 push)
 
@@ -345,7 +345,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 샌드박스 우회 = .command 더블클릭(Terminal.app)** — 날짜 변경 후 OS 샌드박스가 데모 리포 기존 파일(.venv·main.py·fall_detector·detector) 읽기/쓰기 차단(VS Code 통합 터미널·내 Bash·`dangerouslyDisableSandbox` 전부 불가; 새 파일 생성·내가 만든 파일 편집만 허용). Finder 더블클릭 `.command`(Terminal.app=샌드박스 밖)로 패치+기동. `run_cam03.command`(PPE 백엔드 원클릭), `run_ppe_demo.command`(독립 데모), [run_dashboard.command](run_dashboard.command)(dev 분리). main.py 는 패치 스크립트(apply_cam03_ppe.py = main.py.bak[CAM-01/02]에서 멱등 재패치)로만 수정.
 - **검증/교훈** — dashboard `tsc` EXIT=0 · 단위 20/20 · 백엔드 3캠 연결 + PPE stats3(NO-Hardhat) + 프록시/터널 200 + Playwright(CAM-03 PPE 팝업·CAM-02 contain) 실측. **CSS 로 영상 화각(포커싱) 줌아웃 불가**(소스 FOV 한계, scale 은 박스 축소일 뿐 → 되돌림). dev 가 백엔드 churn 중 시그널 종료(`[?25h`) → run_dashboard.command 본인 터미널 분리 실행.
 - **상태** — 메인 리포 **2커밋 push 완료**(`6b0de82` CCTV 프론트 · `5e37e06` 프록시+dev 스크립트, origin 동기화 `ahead 0`). 데모 리포(`ppe_detector.py`·`webcam_stream.py`·패치/.command·patched main.py·fall_detector) **미커밋 = 본인 터미널 커밋 필요**(*.pt·.venv·main.py.bak 제외). 터널 `falling-writing-gui-priority`·dev 0.0.0.0:3000+`/ai-cctv` 프록시·데모 백엔드 :8000(.command 기동)·`.env.local NEXT_PUBLIC_AI_CCTV_API=/ai-cctv`.
-- **다음** — 데모 리포 본인 터미널 커밋·push · 더 넓은 CAM-02 화각 원하면 영상 URL 교체(`YOUTUBE_VIDEO_ID_2`) · CCTV 백엔드는 .command(Terminal.app)로만 기동 · 기존 블로커(YJH iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
+- **다음** — 데모 리포 본인 터미널 커밋·push · 더 넓은 CAM-02 화각 원하면 영상 URL 교체(`YOUTUBE_VIDEO_ID_2`) · CCTV 백엔드는 .command(Terminal.app)로만 기동 · 기존 블로커(전 팀원 iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-11 세션35 — 날씨 502 근본해결 + CCTV 8분할 + 타일 영상 채움 진단, 2커밋)
 
@@ -354,7 +354,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ "분할 타일 영상 안 채워짐/팝업만 채워짐" 진단** — **측정상 fill 정상**(타일 img 294×144=영상영역·gap 0, 팝업 766×431 둘 다 `object-cover`·fills:true) → CSS 버그 없음. **실제 원인 = 백엔드 연결 OFF**(`enabled:false`→"절약 모드" placeholder). 백엔드 `enabled`는 POST `/cctv/connection`으로만 변경(자동 disable 코드 없음)·브라우저 네트워크 GET만(POST 0) → 외부 탭/수동 OFF였음. ON 되돌리니 타일·팝업 모두 라이브 꽉 참. 보강 = AI 타일 자동재연결 4초→1.2초.
 - **검증** — dashboard `tsc` EXIT=0 · 단위 **20/20** · **Playwright 실측**(8분할 4×2 / 타일+팝업 fills:true·gap 0 / 날씨 stale 200 / 연결 ON 라이브 YOLO 박스).
 - **상태** — main **`ahead 11`**(세션35 2커밋 `f012345`·`7101c75`, 세션34 9 누적), push 보류. CCTV AI 연결 **ON 상태로 둠**(데모 ON 유지 권장). 미커밋 = 세션32 잔여 2파일(`health_vitals_service.dart` 기기 미검증·`commercialization-roadmap.md`, 의도적 제외). 터널 `them-registration-alt-matrix`·dev 0.0.0.0:3000+PII ON·AI 백엔드 :8000 기동.
-- **다음** — push 결정(11) · 세션32 잔여 처리 · CCTV 연결 OFF 외부 토글(스테일 탭) 정리 · 원격 CCTV용 :8000 터널 · 기존 블로커(YJH iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
+- **다음** — push 결정(11) · 세션32 잔여 처리 · CCTV 연결 OFF 외부 토글(스테일 탭) 정리 · 원격 CCTV용 :8000 터널 · 기존 블로커(전 팀원 iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-11 세션34 — [신규] CCTV AI 풀스택 데모 + 대시보드 통합 + 영상 끊김 근본해결)
 
@@ -378,7 +378,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ CCTV 관제 4분할 + 클릭 팝업**(`e5affd7`) — 작업자 모니터링 캐러셀 4페이지째. 2×2 4분할(각 상단 위치 라벨+CAM ID+LIVE+타임스탬프) + 타일 클릭→팝업(createPortal·16:9 확대·✕/배경/ESC). `streamUrl` 있으면 `<video>`, 없으면 샘플(가스/AED 동일 표기, 실 영상 발표 후).
 - **검증** — dashboard `tsc` EXIT=0 · 단위 **20/20**(활동 게이트 6 신규) · Playwright 실측(차트 1줄·작업밴드 기준선 "과부하155/고강도135"·SpO₂ 생리 임계 분리 / **실 POST 대조: hr=122+고활동→정상 vs +무활동→주의** 카드·신호등 램프 반영 / CCTV 4분할·클릭 팝업 portal·ESC).
 - **상태** — main **`ahead 7`**(세션32 2 + 세션33 5커밋 `96647d6`·`d03d267`·`7a32bea`·`3d2733c`·`e5affd7`), push 보류. 터널 `them-registration-alt-matrix`·dev 0.0.0.0+PII ON. 미커밋 = 세션32 잔여(CLAUDE.md·progress·roadmap·health_vitals_service.dart 기기 미검증). 검증용 demo_alert_01에 122bpm 주입(DB gitignore, 카드 정리 필요).
-- **다음** — 폰/워치 새 URL(them-registration) 수신 재개 확인 · **실 iOS 워커(활동 데이터)로 활동 게이트 카드 검증·컷오프 튜닝** · demo_alert_01 정리(해제/DB) · push 결정(7) · 세션32 잔여 처리(docs·손목온도 dart 기기검증) · 기존 블로커(YJH iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
+- **다음** — 폰/워치 새 URL(them-registration) 수신 재개 확인 · **실 iOS 워커(활동 데이터)로 활동 게이트 카드 검증·컷오프 튜닝** · demo_alert_01 정리(해제/DB) · push 결정(7) · 세션32 잔여 처리(docs·손목온도 dart 기기검증) · 기존 블로커(전 팀원 iPhone 재install·Galaxy Watch fresh·Web NFC 물리 태그·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-10 세션32 — 자동 트리거(차트 임계선·생체 위험 경보 모달) + 생체 위험 alerts 이력화 + 차트 동시표시 버그 수정, 4커밋·push 완료)
 
@@ -392,7 +392,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ Galaxy Health 권한 블로커 해결 (이어서, 코드 변경 0)** — adb 진단(충전케이블 미인식→무선adb AP 클라이언트 격리→**데이터 USB 연결 성공**) → **SM-S931N(S25)·Android 16**, 권한 3종 **이미 granted=true**("Step 2 데이터 타입별 권한" 추정 폐기) → **진짜 원인 = stale APK**(05-27 설치 후 14일+ 미반영, MainActivity는 이미 `FlutterFragmentActivity`·health 13.3.1=pub.dev 최신). **현재 소스 재빌드**(`flutter build apk --debug` 28초 + `adb install -r`, lastUpdateTime 06-10) → **Health 권한 해결**("5초 폴링 중", `FLUTTER_HEALTH` 생체 조회·debug라 로그 확인). 관제 웹 전송 연결 완료(빈 샘플=경로 정상). 메모리 `galaxy-health-stale-apk` 기록.
 - **★ Galaxy Watch fresh HR 전송 해결 (이어서2, 코드 변경 0)** — 라이브 logcat 진단 = `HEART_RATE stale: measured 16:40 (>5분) → 미전송` 반복(SpO₂·체온은 HC 데이터 자체 없음=Galaxy 스팟). 사용자 "계속 측정" ON 후에도 stale → Samsung Health 포그라운드 띄우자 최근 측정 **16:40→17:03 갱신** = **Samsung Health→HC 동기화 ~8분 지연**(HR 1분 집계 배치, 설정으로 못 줄이는 삼성 플랫폼 특성; 우리 5분 필터는 Apple Watch 직접 기준). **해결 = 착용 유지 + 계속 측정 + 동기화 캐치업** → **17:11:46 첫 fresh(hr=97)→hr=99 연속**(stale 라인 소멸). **코드 0**(5분 필터=M4 안전장치 불변, 삼성 동기화가 라이브 되니 자연 통과). end-to-end = 관제 웹 GET **`EMP-8888 김동현 hr=94 ts=17:15:06 KST`(라이브)** · DB EMP-8888 **최근 2분 65건** HR 94~99 매 ~2.5초 · SpO₂/체온 null 유지(데모 "--"). 교훈 = 착용+계속측정이면 코드 없이 5분 필터 통과(삼성 동기화 라이브 시)·**발표 안정성엔 워치 운동 세션 권장**(연속 동기화 강제)·Galaxy 라이브 메트릭=HR 한정.
 - **★ Galaxy 3메트릭 + Samsung Sensor SDK 실시간 경로 검토 (이어서3 — 손목온도 코드 미커밋·미검증, Wear OS 앱 미구현)** — 사용자 목표 격상: "iOS는 실시간, Galaxy도 동일·최종 실사용." ① **HR** = Samsung→HC 동기화가 **버스트**(17:12 또 멈춤)라 재-stale → nudge로 hr=99~100 복귀하나 **버스트 자체는 미해결**(운동 세션/nudge = 운영 workaround). ② **SpO₂** = 수동 측정 1회 → HC → 30분 윈도 전송(**DB 17:30:58 hr=98+spo2=91 동시 도달**). **연속 실시간 불가**(온디맨드만). ③ **손목온도** = [health_vitals_service.dart](../apps/worker-phone/lib/services/health_vitals_service.dart)에 Android `SKIN_TEMPERATURE` 읽기 추가(현재 `BODY_TEMPERATURE`만 읽어 null이던 갭, best-effort 권한 분리 + `latestSkinTempC()`). `flutter analyze` 통과·APK 재빌드 완료·**⚠️ `adb install` 직전 USB 분리 → 실기기 검증 미완**. SkinTemperatureRecord는 델타+수면-only라 주간 실시간 아님. ④ **★ Samsung Health Sensor SDK 검토(공식 문서)** — Galaxy 진짜 실시간/실사용 = **Wear OS Kotlin 앱**(직접 센서, Apple PoC 대칭): HR 연속1Hz+IBI·**피부온도 연속1Hz(Watch5+)**·SpO₂ 온디맨드·가속도25Hz. **개발/데모=개발자모드(파트너 불필요)·프로덕션=Samsung Partner Program 승인 필수**. 연속 피부온도는 SDK로 가능(HC 수면-only는 데이터 경로 한계). 상세 [roadmap §9.5](commercialization-roadmap.md). **교훈** = 현 Flutter+HC는 실시간 파이프라인 아님(Samsung→HC 1분집계 배치)·SpO₂는 모든 소비자워치 온디맨드(연속 불가)·iOS "실시간 손목온도"도 실은 마지막 수면값·**진짜 실시간/iOS동등/최종실사용 = Samsung Sensor SDK Wear OS 앱**.
-- **다음** — **Galaxy USB 재연결→APK 설치→`SKIN_TEMPERATURE` 실값 검증**(내일) → OK면 손목온도 커밋 · **Wear OS 앱(`worker-watch-wear`) 스캐폴드 착수 결정**(최종 실사용 트랙·개발자모드 시작→파트너 승인) · 관제 웹 빈 슬롯에 김동현(EMP-8888) 등록 시 라이브 카드 · 발표 시 워치 운동 세션 권장 · YJH iPhone release 재install · Web NFC 물리 태그 · 배터리 풀시프트 · D4 리허설.
+- **다음** — **Galaxy USB 재연결→APK 설치→`SKIN_TEMPERATURE` 실값 검증**(내일) → OK면 손목온도 커밋 · **Wear OS 앱(`worker-watch-wear`) 스캐폴드 착수 결정**(최종 실사용 트랙·개발자모드 시작→파트너 승인) · 관제 웹 빈 슬롯에 김동현(EMP-8888) 등록 시 라이브 카드 · 발표 시 워치 운동 세션 권장 · 전 팀원 iPhone release 재install · Web NFC 물리 태그 · 배터리 풀시프트 · D4 리허설.
 
 ### (2026-06-10 세션31 — 세션30 미커밋 git 정리 + KMA NO_DATA 실 결함 수정)
 
@@ -401,7 +401,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ KMA `03 NO_DATA` 실 결함 수정**(`d60151c`, 세션23 발견 해결) — [kma.ts](../apps/dashboard-web/app/lib/kma.ts) `fetchAllActive` 가 `resultCode !== "00"` 을 전부 API 오류로 묶어 **`03 NO_DATA`(발효 특보 없음=정상 무특보)도 MOCK_WARNINGS 폴백** → 전국 무특보 날 서울/경기/강원(강풍주의보)·전남/경남/제주(폭염주의보) **등록 작업자에게 가짜 특보 거짓 점등**(+현장기상 신호등 거짓·세션22 특보영상이 가짜 특보로 YouTube 검색 트리거). 수정 = **`03` → `source:live` + 빈 결과(10분 캐시)** 분리, `00` 외 비정상 코드(99 서버오류·30 키오류)·네트워크 실패만 목업 폴백 유지(데모 무중단 의도 보존). **★ 라이브 검증** = 실 KMA 오늘 `03` 반환 중 → dev 서버 HMR 반영 후 서울/전남 모두 `source:live`·`severity:normal`·"특보 없음"(수정 전이면 mock 강풍/폭염주의보 거짓 점등). 발표일(07-07) 무특보여도 false warning 0.
 - **검증** — dashboard `tsc` EXIT=0 · 단위 analyzers 15/15 + dashboard 14/14(fail 0) · KMA 라우트 라이브(서울 37.5665,126.978 / 전남 34.8161,126.463) 둘 다 live·정상.
 - **상태** — main **`ahead 128`**(세션31 3커밋 `ac95b74`·`57e8505`·`d60151c`), **push 보류**(사용자 결정). working tree **clean**(demo/ 무시됨). 터널 `undertaken-best-communist-release`·dev 0.0.0.0:3000+PII ON.
-- **다음** — push 결정(128) · **물리 단말 필요 항목**(★ Web NFC 물리 태그 시연=Galaxy Chrome+태그 / YJH iPhone 재설치=Xcode 1회 등록→CLI release / Galaxy Health 권한=Step 2 데이터 타입별) · D4 리허설 · 스트레스·낙상 ML 데이터 축적.
+- **다음** — push 결정(128) · **물리 단말 필요 항목**(★ Web NFC 물리 태그 시연=Galaxy Chrome+태그 / 전 팀원 iPhone 재설치=Xcode 1회 등록→CLI release / Galaxy Health 권한=Step 2 데이터 타입별) · D4 리허설 · 스트레스·낙상 ML 데이터 축적.
 
 ### (2026-06-09 세션30 — AED 제세동기 알림 현실화 + NFC 점검 시스템 2커밋)
 
@@ -410,7 +410,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **신규 파일** — `lib/aed-devices.ts`(장비 레지스트리 공유)·`app/aed/inspect/page.tsx`(모바일 점검)·`app/api/aed/{inspect,inspections}/route.ts`. `lib/db.ts` 테이블+record/list. AED 표 = 장비별 **NFC 모달**(origin 기반 URL→터널/LAN 무관 + Web NFC 쓰기 `NDEFReader`, Android Chrome 외 graceful) + 점검 이력(DB 스캔+seed 병합). 통합 신호등 `aedDetail` 공유 캐시 동기화. **의존성 0**(Web NFC, qrcode 미추가).
 - **검증** — tsc 0 · 단위 14/14 · API(201/persist·404·400) · **실UI end-to-end**(자재창고 배터리교체→교환임박→정상 ~48개월, B1 패드교체→D-20→~24개월, 최근 교환 오늘) · NFC 모달(URL·쓰기·폴백·병합 이력). ★ **Web NFC 태그 쓰기 자체는 미검증**(데스크톱 미지원, 폴백만 확인 — 실 쓰기 Android Chrome+물리 태그 필요).
 - **상태** — main **`ahead 124`**(세션30 2커밋), push 보류. working tree = `demo/`·docs(세션29~30)·iOS 부산물 미커밋. 터널 `undertaken-best-communist-release`·dev 0.0.0.0+PII ON.
-- **다음(내일 진행·사용자 보류)** — push(124) · demo/ 커밋 · iOS 락파일/pbxproj 처리 · docs 커밋 · Web NFC 물리 태그 시연(Galaxy Chrome) · 기존 블로커(YJH 재install·Galaxy Health·배터리 풀시프트·세션23 KMA NO_DATA·D4 리허설).
+- **다음(내일 진행·사용자 보류)** — push(124) · demo/ 커밋 · iOS 락파일/pbxproj 처리 · docs 커밋 · Web NFC 물리 태그 시연(Galaxy Chrome) · 기존 블로커(전 팀원 재install·Galaxy Health·배터리 풀시프트·세션23 KMA NO_DATA·D4 리허설).
 
 ### (2026-06-09 세션29 — 관제 웹 디자인 대개편 8종(레퍼런스·의존성 0) + iOS 재설치(BECKS, 무료팀 등록 벽 돌파))
 
@@ -423,7 +423,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **제세동기 배터리 텍스트 → 원형 게이지**(`a4652aa`) — 레퍼런스 Gauge 축약(인라인 SVG dasharray), 중앙 값+임계색(≤20 빨강/≤50 앰버/그외 초록), 36px 고정이라 **행 높이 h-12 불변**.
 - **추세 그래프 range 60일·1년 추가**(`d88960a`) — 작업자/가스/AED. **1년=월별 12점**(일별 365 겹침 회피, 낙상=월 총합, 배터리=단조감소). buildHistory 365 분기 + ALLOWED_RANGES + labelMonthsAgo.
 - **★ iOS 재설치(BECKS)** — `flutter build`+`devicectl install`/`flutter run --release` 둘 다 `provisioning profile cannot be installed`(프로파일 device 0). **원인=무료 Personal Team이 `flutter build`(generic)로 기기 미등록**. **돌파**: ① Xcode `Runner.xcworkspace`→BECKS 선택→Product>Run 1회(debug 설치=기기 등록+신뢰) ② **SPM 비활성화**(`flutter config --no-enable-swift-package-manager`, Xcode Run의 SPM 산출물이 `Cannot create link` 크래시·health 미지원→CocoaPods 정공) ③ `flutter clean && flutter build ios --release`(18.1MB·RELEASE·프로파일 **devices 2·BECKS 포함**) ④ `devicectl install`(debug→release)+launch. **수신 확인** EMP-1234 age 2초(hr:-- 는 잠금/Health 권한 대기).
-- **검증/상태** — 각 디자인 dashboard `tsc` EXIT=0 + Playwright 실브라우저(전 항목) + 단위 14/14. iOS=release 검증+프로파일 devices 2+install/launch+EMP-1234 수신. main **`ahead 122`**(8커밋 `f0541c3`·`4a95a15`·`c576789`·`d676fcf`·`0d6243d`·`5212621`·`a4652aa`·`d88960a`), push 보류. working tree=`demo/` untracked + **iOS 부산물 미커밋**(`Podfile.lock`·`Runner.xcodeproj/project.pbxproj`·`pubspec.lock`). 터널 `undertaken-best-communist-release`(생존)·LAN `192.168.219.221`·dev 0.0.0.0+PII ON. (다음) push 결정(122) · demo/ 커밋 여부 · iOS build 락파일/pbxproj 처리 · YJH 동일 방식 재설치 · BECKS 잠금 해제+Health 시 실측 심박 확인 · 기존 블로커(Galaxy Health·배터리 풀시프트·세션23 KMA NO_DATA·D4 리허설).
+- **검증/상태** — 각 디자인 dashboard `tsc` EXIT=0 + Playwright 실브라우저(전 항목) + 단위 14/14. iOS=release 검증+프로파일 devices 2+install/launch+EMP-1234 수신. main **`ahead 122`**(8커밋 `f0541c3`·`4a95a15`·`c576789`·`d676fcf`·`0d6243d`·`5212621`·`a4652aa`·`d88960a`), push 보류. working tree=`demo/` untracked + **iOS 부산물 미커밋**(`Podfile.lock`·`Runner.xcodeproj/project.pbxproj`·`pubspec.lock`). 터널 `undertaken-best-communist-release`(생존)·LAN `192.168.219.221`·dev 0.0.0.0+PII ON. (다음) push 결정(122) · demo/ 커밋 여부 · iOS build 락파일/pbxproj 처리 · 전 팀원 동일 방식 재설치 · BECKS 잠금 해제+Health 시 실측 심박 확인 · 기존 블로커(Galaxy Health·배터리 풀시프트·세션23 KMA NO_DATA·D4 리허설).
 
 ### (2026-06-09 세션28 — 로그인 사진(mainpic0) + 네트워크 재연결 + 외형 스냅샷 HTML + 현장환경/헤더/알림이력 재디자인 + 자동슬라이딩 선택 수정 + 상태 점검)
 
@@ -436,7 +436,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ SOS·낙상 알림 이력 Alert 카드 재디자인**(`48d99f4`) — 소프트 컬러 카드(미대응 SOS=레드/낙상=앰버, 대응완료=중립+녹색 배지·체크) + 이모지(🆘/🤕)→모노톤 SVG(SOS 옥타곤/낙상 인물). 대응 확인 동작·데이터 불변.
 - **상태 점검(코드 0)** — **EMP-1234(장우진) 실시간 연결**(HR 91·SpO₂ 98·손목 35.7℃·GPS 광주). **GPS 기반 현장 날씨 = Open-Meteo LIVE 정상**(23.7℃ 등+예보), 기상특보 mock 폴백(광주 무특보). **현장 날씨 미표시 = dev 재시작으로 세션 토큰 무효화 → GPS redaction → 로그아웃 후 재로그인**으로 복구(새로고침 X).
 - **핵심 결정** — 레퍼런스(InfiniteSlider/ExpandableTabs/Alert)의 motion/lucide/cva/cn 의존을 **전부 신규 의존성 0으로 동등 구현**(CSS 트랜지션+인라인 SVG+토큰). Tailwind arbitrary JIT 타이밍 + button preflight(color:inherit) 간섭 → **활성 상태는 인라인 스타일(CSS 변수)** 패턴.
-- **검증/상태** — 각 변경 dashboard `tsc` EXIT=0 · Playwright 라이브(전 항목). dev 재시작 1회(Tailwind 클린 재빌드, URL 유지). main **`ahead 113`**(세션28 5커밋 `9cdf09e`·`3d2408d`·`a950ef4`·`9d88d55`·`48d99f4`), push 보류, working tree `demo/`만 untracked. 터널 `undertaken-best-communist-release`·LAN `192.168.219.221`·dev 0.0.0.0+PII ON. (다음) push 결정(113) · demo/ 커밋 여부 · 폰 3대 인앱 URL 갱신 · 재로그인 시 현장 날씨 확인 · 기상특보 KMA NO_DATA 처리 · 기존 블로커(YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
+- **검증/상태** — 각 변경 dashboard `tsc` EXIT=0 · Playwright 라이브(전 항목). dev 재시작 1회(Tailwind 클린 재빌드, URL 유지). main **`ahead 113`**(세션28 5커밋 `9cdf09e`·`3d2408d`·`a950ef4`·`9d88d55`·`48d99f4`), push 보류, working tree `demo/`만 untracked. 터널 `undertaken-best-communist-release`·LAN `192.168.219.221`·dev 0.0.0.0+PII ON. (다음) push 결정(113) · demo/ 커밋 여부 · 폰 3대 인앱 URL 갱신 · 재로그인 시 현장 날씨 확인 · 기상특보 KMA NO_DATA 처리 · 기존 블로커(전 팀원 iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-08 세션27 — 현장 선택 라벨·자동 슬라이딩 중복 수정 + 비전 PoC 계획(보류) + 로그인 사진 교체 + stray 정리)
 
@@ -445,7 +445,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **비전 PoC 계획(보류)**(`cbc7205`, [vision-ppe-plan.md](./vision-ppe-plan.md) 신규) — GoPro+supervision 안전모 착용 검출 + 워치 낙상 오차율 감소(영상 라벨링/융합). **supervision = 후처리 라이브러리(검출 모델 아님 → 별도 YOLO 필요)**. 결정 = 발표 데모 PoC 포함(영상+ML 2차 비범위 PoC 한해 승격) + GoPro **HERO9** 웹캠(USB 0.5s). **★ Colab 은 로컬 USB 웹캠 실시간 추론 불가 → 발표 PC(macOS) 로컬 CPU 실시간**(안전모 가벼워 GPU 불필요). macOS 캡처 = GoPro Webcam→OBS Virtual Camera→OpenCV(폴백 녹화 .mp4). 통합 = Python `apps/vision-ppe/`→`/api/vision-event`→통합 신호등 PPE 램프. **GoPro 장비 미보유 → 보류**, 장비 준비 시 착수.
 - **루트 stray 정리**(`c59aaa5`) — `.claude/skills/` gitignore 추가(로컬 스킬, 파일 보존) + 루트 중복 `mainpic.jpg`·검토용 `dashboard-full.png` 삭제.
 - **로그인 사진 교체 → mainpic4.jpg**(`1c08b97`) — 로그인 좌측 현장 사진을 안전모 VitalGuard 로고 브랜딩 버전(1015×1024)으로 교체. 구도 동일이라 `background-position: 75% 50%` 유지(컬럼 1:1, 안전모·SAFETY 문구 노출). 미사용 구 이미지(`mainpic.jpg`·`mainpic2.jpg`) 삭제 → `public/brand` 엔 `mainpic4.jpg` 만.
-- **검증/상태** — dashboard `tsc` EXIT=0(각 수정) · Playwright(현장선택 콤보 6항목 가나다순+메인 "광주 스마트인재개발원 신축 공사" / 자동 슬라이딩 중복 해소·overflow 복제·슬라이딩 / 로그인 사진 mainpic4 적용·컬럼 1:1). main **`ahead 107`**(세션27 6커밋 `eb242c1`·`afec68e`·`08951a4`·`cbc7205`·`c59aaa5`·`1c08b97`), push 보류, working tree clean. 터널 `sends-paintball-often-carolina`·dev 0.0.0.0+PII ON. (다음) push 결정(107) · 폰 3대 인앱 URL 갱신 · 비전 PoC는 GoPro 장비 준비 시 착수 · 데모 현장 실데이터화(선택) · 기존 블로커(세션23 KMA NO_DATA·YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
+- **검증/상태** — dashboard `tsc` EXIT=0(각 수정) · Playwright(현장선택 콤보 6항목 가나다순+메인 "광주 스마트인재개발원 신축 공사" / 자동 슬라이딩 중복 해소·overflow 복제·슬라이딩 / 로그인 사진 mainpic4 적용·컬럼 1:1). main **`ahead 107`**(세션27 6커밋 `eb242c1`·`afec68e`·`08951a4`·`cbc7205`·`c59aaa5`·`1c08b97`), push 보류, working tree clean. 터널 `sends-paintball-often-carolina`·dev 0.0.0.0+PII ON. (다음) push 결정(107) · 폰 3대 인앱 URL 갱신 · 비전 PoC는 GoPro 장비 준비 시 착수 · 데모 현장 실데이터화(선택) · 기존 블로커(세션23 KMA NO_DATA·전 팀원 iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-08 세션26 — 로그인 화면 풀 개편 커밋 + 로그인 후 현장 선택 단계 신규)
 
@@ -469,14 +469,14 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **수신 URL 재발급**(커밋 `218b96d`) — 이전 터널 `intelligent-funk-pads-supplies` 만료 → 재기동, 새 quick tunnel **`cheers-entire-glass-editorial.trycloudflare.com`**(터널 GET 200/POST 202 검증). 워치 `ConnectionSettings.defaultURLString` 갱신(스탬프 자동 마이그레이션) + CLAUDE.md active URL 3곳. **폰 3대 인앱 URL은 ⚙️ 수동 갱신 필요(미반영)**, 워치는 ATS 평문 차단이라 https 터널 전용.
 - **★ 태풍 진로 "실 위협 없으면 레이더 미가동"**(커밋 `e9567b1`, 사용자 결정 = "지도 숨김·위협 없음 엄격") — 세션22 한국/현장 GPS 게이팅 자체는 정상(검산 950.1km=화면 "한국 950km")이나 **`mock` 샘플 좌표가 한국 반경 안(950km)이라 실 위협 없는데 "추적 중" 거짓 점등**(세션23 KMA NO_DATA 가짜특보와 동일 계열). 수정 = `realThreat = source==="live" && track.length>0` → `mock`·`none`·빈 진로는 지도/추적 숨기고 `IdleNoThreat`("태풍 위협 없음 · 레이더 대기"), `live`+발효 진로일 때만 한국/현장 GPS 게이트(기존 보존). 서비스 승인+실 태풍 발효 시 자동 가동(목업 비캐시).
 - **.gitignore `.playwright-mcp/` 추가**(커밋 `96fdad8`).
-- **검증/상태** — dashboard `tsc` 0 · Playwright 런타임(태풍 패널 위성타일 0=미가동 + idle 텍스트 + "추적 중" DOM 부재). main **`ahead 94`**, push 보류(+`.claude/skills/`·`dashboard-full.png` untracked). 터널 `cheers-entire-glass-editorial`·dev 0.0.0.0+PII ON. (다음) 폰 3대 인앱 URL 갱신 · push 결정(94) · 실 태풍 발효 시 레이더 자동 가동 확인 · 기존 블로커(세션23 KMA NO_DATA·YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
+- **검증/상태** — dashboard `tsc` 0 · Playwright 런타임(태풍 패널 위성타일 0=미가동 + idle 텍스트 + "추적 중" DOM 부재). main **`ahead 94`**, push 보류(+`.claude/skills/`·`dashboard-full.png` untracked). 터널 `cheers-entire-glass-editorial`·dev 0.0.0.0+PII ON. (다음) 폰 3대 인앱 URL 갱신 · push 결정(94) · 실 태풍 발효 시 레이더 자동 가동 확인 · 기존 블로커(세션23 KMA NO_DATA·전 팀원 iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-08 세션23 — 관제 웹 Playwright MCP 런타임 검증)
 
 - **검증 방식** — 사용자 요청으로 dev 서버(`localhost:3000` HTTP 200) 관제 웹을 **Playwright MCP 실브라우저**로 구동·관찰. 스크린샷은 MCP 별도 네임스페이스 저장이라 못 읽어 **접근성 스냅샷·API 응답·`evaluate()` 타일 로드 체크**로 증거 확보. **코드 변경 0**(검증 전용).
 - **PASS** — 로그인 게이트(admin/safety2026) · **현장 통합 안전 신호등**(종합 위험+4램프 worst-of)+가스 상세 팝업(측정/영향/노출기준 TWA·STEL·IDLH/골든타임/위치/면책) · 현황 요약 캐러셀 4페이지 ‹›네비 · **세션22 태풍 게이팅 검산**(샘플 27.5,126.8→한국중심 haversine ≈948km<1000km→"추적 중", 화면 "한국 950km" 일치) · 태풍 지도 확대 슬리피맵(동적 줌 z4·타일 30/30) · **세션22 특보영상 YouTube API 라이브**(`type=태풍`→`ok:true,configured:true,channelLimited:true`+YTN 뉴스사 실영상, UI는 GPS 미등록 시 placeholder) · 지도 타일 CDN 전부 로드(carto 4/4·rainviewer 4/4·esri 8/8+30/30, 깨짐 0) · 작업자 모니터링 3페이지·산업재해 속보 KOSHA 라이브·환경키 4종 설정.
 - **★ 발견 ⚠️** — **KMA `03 NO_DATA`(정상적 무특보)를 API 오류와 동일 취급해 MOCK_WARNINGS 폴백**([kma.ts:161](../apps/dashboard-web/app/lib/kma.ts#L161) `resultCode!=="00"`). 오늘처럼 전국 무특보 날 서울/경기/강원(강풍주의보)·전남/경남/제주(폭염주의보) **등록 작업자에 가짜 특보** + 현장기상 신호등 거짓 점등 + 세션22 특보영상이 가짜 특보로 실 YouTube 검색 트리거. 광주는 mock 지역 외라 우연히 "특보 없음". 라이브 KMA 현재 `03 NO_DATA`(서버 오늘 00:05 기동=stale 아님, 발효 특보 실제 없음). 발표일(07-07) 무특보면 6개 지역 false warning → 상용화 기준 실 결함.
-- **상태/다음** — main `ahead 90`(origin/main), working tree clean(+`.claude/skills/` untracked). 터널 `intelligent-funk-pads-supplies`·dev 0.0.0.0+PII ON. (다음) **KMA NO_DATA 처리 결정**(발표용 폴백 유지 vs `03`=무특보 분리 수정) · push 결정(90) · 기존 블로커(YJH iPhone release 재install·Galaxy Health 권한·배터리 풀시프트·D4 리허설).
+- **상태/다음** — main `ahead 90`(origin/main), working tree clean(+`.claude/skills/` untracked). 터널 `intelligent-funk-pads-supplies`·dev 0.0.0.0+PII ON. (다음) **KMA NO_DATA 처리 결정**(발표용 폴백 유지 vs `03`=무특보 분리 수정) · push 결정(90) · 기존 블로커(전 팀원 iPhone release 재install·Galaxy Health 권한·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-05 세션22 이어서 — 관제 웹: 태풍 게이팅 + 특보 영상)
 
@@ -492,7 +492,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **원인 구조** — 지배 = 워크아웃 세션 연속 광학 HR(~50-65%, **불가피** = 잠금우회 §4 근거) · 부차 = 세션21 deviceMotion 50Hz(가속도 25Hz→융합 50Hz 회귀, 추정) · 음성 후보 배칭이라 미미.
 - **★ 코드 최적화 한계** — axiom-health 확인: 워크아웃 세션 중 광학 HR 스로틀 **공개 코드 API 없음**(1Hz 저전력은 디스플레이 한정). 코드로는 **부차(~35-50%)만** 절감(B1 deviceMotion 33Hz·B2 raw accel+충격후 자이로·B3 accel-only 25Hz), 반감 불가(~9→~7-8%/hr 추정).
 - **★ 상용화 경로(§9.4 추가, 커밋 `9f92cd3`)** — 프로토타입 ~11h는 데모 산물. 상용화는 데이터 소스 전환으로 지배원까지 절감 = 3트랙(Apple Watch 유료 엔타이틀먼트 / Android·Wear OS / 자체 AOSP 다일) + 엔타이틀먼트 표(background-delivery·CMFallDetectionManager·CMBatchedSensorManager).
-- **결정/상태** — 발표는 충전+구간 가동이면 코드 변경 0으로 충분 → B1/B2 보류. main **`ahead 84`**, push 보류, clean. (다음) push · (선택) 배터리 A/B 실측→B1/B2 · 기존 블로커(YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
+- **결정/상태** — 발표는 충전+구간 가동이면 코드 변경 0으로 충분 → B1/B2 보류. main **`ahead 84`**, push 보류, clean. (다음) push · (선택) 배터리 A/B 실측→B1/B2 · 기존 블로커(전 팀원 iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-05 세션22 — 낙상 ML 데이터 수집 파이프라인 + 트랙A 스캐폴드)
 
@@ -501,7 +501,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 워치 재빌드 실기기 가동확인** — 수동 낙상 시연(`simulateFall`)이 신규필드(`fallCandidate`/`fallDecision=fall`/`freefallPreceded`/`peakRotationRadS=7`) 수신 → 새 빌드 배포·수집 파이프라인 라이브 확정. 시연값은 합성상수라 ML 부적합(`미상` 라벨 권장).
 - **현재 = 데이터 축적만, ML 아직 아님** — 낙상감지는 여전히 고정 규칙(임계), 학습·추론·임계 자동최적화 미실행. 한계 = 충격 2.8G 미만 부재(recall 사각지대)·freefallG/stillBandG/postWindow 재튜닝 불가·라벨 노이즈=정확도 천장.
 - **검증** — schemas build·dashboard tsc 0·유닛 14/14·워치 watchOS Sim **BUILD SUCCEEDED**·낙상 로직 standalone **5/5**(양성+음성)·런타임 POST→신규 6컬럼·인증 API+401·`--selftest` 6/6·`--demo` PR곡선 AP 0.916.
-- **상태/다음** — main **`ahead 82`**(이번 4커밋), push 보류, clean. (다음) push 결정 · 실 양성·음성 누적+라벨링 · 데이터 성숙 후 트랙A 실행→권장 임계→shadow 모드(구·신 동시 로깅)→배포 · 기존 블로커(YJH iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
+- **상태/다음** — main **`ahead 82`**(이번 4커밋), push 보류, clean. (다음) push 결정 · 실 양성·음성 누적+라벨링 · 데이터 성숙 후 트랙A 실행→권장 임계→shadow 모드(구·신 동시 로깅)→배포 · 기존 블로커(전 팀원 iPhone 재install·Galaxy Health·배터리 풀시프트·D4 리허설).
 
 ### (2026-06-05 세션21 — 워치 낙상 감지 알고리즘 보완)
 
@@ -510,7 +510,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **스케일 보존** — `totalG=|userAccel+gravity|` 원시 비력 재구성 → 기존 2.8G·0.3밴드 임계 의미 불변. `onFall`·payload·서버 무변경(외부 파급 0, `simulateFall` 수동 트리거 보존).
 - **Apple 낙상 API 정정** — `CMFallDetectionManager`(watchOS 9+) 서드파티 수신 API 존재하나 특수 entitlement(유료+Apple 승인)라 무료 Personal Team 불가 → 상용화 트랙 정공.
 - **검증** — watchOS Sim `xcodebuild` **BUILD SUCCEEDED** + 결정로직 복제 standalone Swift **5/5 PASS**(실낙상·망치질 미발화·벽충돌(회전)·지속운동 미발화·몸부림후정지) + **★ 실기기 잠금 검증 완료**(사용자 보고 — 잠금 상태 낙상 감지 동작 확인, §4 HR-only 한계 보완).
-- **상태/다음** — main **`ahead 77`**(낙상 `f842e59` + 세션20 docs `5d66181`), push 보류, clean. (다음) push 결정 · YJH iPhone 재install · Galaxy Health 권한 · 배터리 풀시프트 · D4 리허설.
+- **상태/다음** — main **`ahead 77`**(낙상 `f842e59` + 세션20 docs `5d66181`), push 보류, clean. (다음) push 결정 · 전 팀원 iPhone 재install · Galaxy Health 권한 · 배터리 풀시프트 · D4 리허설.
 
 ### (2026-06-05 세션20 — LAN 연결 + 직급/직책 기능 + GPS 진단 + 종합 취약점 감사 + 감사조치 구현 + 2단말 재빌드 가동확인)
 
@@ -522,7 +522,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ cloudflared 재기동** — 새 터널 `intelligent-funk-pads-supplies`. **워치는 ATS 평문 차단→https 터널 전용**(폰은 ATS 예외로 LAN). 데모=폰 LAN/워치 터널 혼합.
 - **★ 2단말 재빌드·가동확인** — iPhone BECKS(EMP-1234: HR+GPS+직급) / Apple Watch(EMP-5678: HR+배터리, 터널) 실시간 인입 검증. **폰=Flutter CLI만 / 워치=Xcode 정상**.
 - **검증** — 폰 `flutter analyze` 0 · 웹 `tsc` 0+테스트 14/14 · 워치 watchOS Sim BUILD SUCCEEDED · AF1/AF4 CDP 스크린샷 · AF4 ack·M1 429 런타임.
-- **상태/다음** — main **`ahead 75`**(직급 2 + 감사조치 3커밋), push 보류, clean. (다음) push 결정 · YJH iPhone 재install · Galaxy Health 권한 · 배터리 풀시프트 · D4 리허설.
+- **상태/다음** — main **`ahead 75`**(직급 2 + 감사조치 3커밋), push 보류, clean. (다음) push 결정 · 전 팀원 iPhone 재install · Galaxy Health 권한 · 배터리 풀시프트 · D4 리허설.
 
 ### (2026-06-04 세션19 — 관제 웹 현장 통합 안전 신호등 + API PII 로그인 게이트 + 생체/설비 그래프 개선)
 
@@ -533,7 +533,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **UI 정리**(커밋 `722a92c`) — 히어로 카피 3줄(`OPEN SAFETY` 등) 삭제 + 작업자 표 선택 셀 `h-7→h-9`(2줄 체온 겹침 해소)+선택박스 강한 풀-링→뉴트럴 엘리베이티드 칩(값 상태색 유지, 대안 3종 제시 후 선택).
 - **★ 발견 — Tailwind v3 `colors:var()` opacity 무효** — `bg-primary/10`·`ring-primary/50` 가 알파 주입 불가(투명/기본 blue-500 폴백) → 리터럴 hex `bg-[#0052ff]/10` 로 해결. 기존 `hover:bg-primary/10` 등도 무효 상태(범위 밖 보존).
 - **검증** — dashboard `tsc` EXIT=0 · 단위 테스트 14/14 · 각 기능 CDP 스크린샷(통합 신호등 4램프·가스 상세 팝업·체온 추정 병기·선택박스·태풍 한 줄·라벨 줄바꿈).
-- **상태/다음** — main **`ahead 69`**(이번 6커밋), push 보류, working tree clean. dev 0.0.0.0+PII ON, 터널 `switch-biography-surplus-cold`(팀원 공유 가능). 주의 = 가스/AED 통합 신호등은 가상 샘플(CO 52ppm·B1 18% 위험 점등, 실센서 발표 후), 노출기준/골든타임 참고값(표준 검수 권장), 현장기상 램프는 GPS 작업자 등록 시 점등. 다음 = push 결정(69) · 가스/AED 샘플 sev 데모 조정 여부 · 노출기준/골든타임 표준 최종 검수 · 기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **상태/다음** — main **`ahead 69`**(이번 6커밋), push 보류, working tree clean. dev 0.0.0.0+PII ON, 터널 `switch-biography-surplus-cold`(팀원 공유 가능). 주의 = 가스/AED 통합 신호등은 가상 샘플(CO 52ppm·B1 18% 위험 점등, 실센서 발표 후), 노출기준/골든타임 참고값(표준 검수 권장), 현장기상 램프는 GPS 작업자 등록 시 점등. 다음 = push 결정(69) · 가스/AED 샘플 sev 데모 조정 여부 · 노출기준/골든타임 표준 최종 검수 · 기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-04 세션18 — audit 조치 완료 + LAN/방화벽 + 로그인 게이트·로그아웃·3D 로고 + 현장위치 GPS 표시 + 안전신호등 대안C)
 
@@ -543,14 +543,14 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 대안C — 안전신호등을 기상특보 기반 '현장 기상위험 신호등'으로 교체** — KOSHA 1020(서버 99 오류)을 대체. `WeatherHazardPanel`(현장 GPS→`/api/kma-warning`→경보/주의보/정상 **3색 신호등**+예비특보 t7, 위험/주의 `vital-blink`). `KoshaSafetyLightPanel` 삭제. **미커밋**(잔존 dead code = `/api/kosha/safety-light`·`fetchSafetyLight`).
 - **연결/데이터 갱신** — cloudflared URL `switch-biography-surplus-cold`(GET/POST 202 검증, iOS 인앱 수신 URL은 폰 ⚙️ 갱신). **현장위치 GPS 표시 ON**(`MOCK_VITAL_EXPOSE_PII=true`+dev 재시작 → GET에 GPS·보호자 노출). EMP-1234(장우진) 실시간 5초 gap0·광주 GPS 100% 인입 확인. 태풍 위젯 live지만 제6호 장미 소멸로 06-03 22시가 KMA 마지막 통보(현 상태 유지). KOSHA 1020=mock(서버오류) / 1040·1060·날씨·특보·태풍·레이더 live.
 - **검증** — dashboard `tsc` EXIT=0 · 38/38 테스트 · 로그인/로그아웃 CDP 종단 · 3D 로고 다크/라이트 + 신호등 4상태(정상·주의·위험·대기) 스크린샷.
-- **상태/다음** — main **`ahead 61`**(이번 8커밋 포함), 대안C 미커밋. dev 0.0.0.0+PII ON, 터널 `switch-biography-surplus-cold`. 다음 = 대안C 커밋 + dead code 삭제 결정 · push 결정(61+) · 기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **상태/다음** — main **`ahead 61`**(이번 8커밋 포함), 대안C 미커밋. dev 0.0.0.0+PII ON, 터널 `switch-biography-surplus-cold`. 다음 = 대안C 커밋 + dead code 삭제 결정 · push 결정(61+) · 기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-03 세션17 — 코드베이스 종합 Audit: 9차원 멀티에이전트 + adversarial 검증)
 
 - **★ 종합 Audit 수행(read-only)** — 사용자 요청. 전체 코드베이스(dashboard-web/backend/worker-phone/worker-watch-poc/packages/scripts)를 9차원(타입안전성·보안·정확성·성능·아키텍처·테스트·의존성·dead code·문서일관성) Workflow 멀티에이전트로 병렬 스캔 → 발견사항별 adversarial 검증으로 false positive 제거. **3회 Workflow**로 완주(1차 6/9 verify 실패 → 2차 재실행 → 3차 type-safety/performance/architecture 자체검증 방식으로 공백 메움). 파일 무수정.
 - **결과** — **확정 23건: CRITICAL 0 / HIGH 0 / MEDIUM 5 / LOW 18**, false positive 10건+ 제거. CRIT/HIGH 0 = 프로토타입 스코프(임시 회전 터널·합성 데이터·localhost 바인딩, "실서비스면 HIGH"가 강등). **MEDIUM 5** = ① 미인증 GET `/api/mock/vital` PII(보호자 전화·GPS·이름) 노출 ② 기본 관리자 자격증명 `admin/safety2026`(소스+`.env.example`) ③ 핵심 수신 게이트 `store.ts` 테스트 0 ④ dashboard `tsconfig` base 미상속→`noUncheckedIndexedAccess` 누락 ⑤ **vital 임계 분류 로직이 `DemoDashboard.tsx`에 매직넘버로 중복 → `THRESHOLDS` 단일 source 보장 깨짐**(HR/SpO₂). 양호 = **performance CLEAN**(useEffect cleanup 전수·Flutter dispose·prepared stmt 재사용)·analyzers 순수성 OK·순환참조 0·Swift force-unwrap 0.
 - **증거/산출물** — PDF [audit-report-20260603.pdf](./audit-report-20260603.pdf)(Chrome 헤드리스 변환, AppleSDGothicNeo 한글 폰트 임베드 검증, 6쪽 972KB) + HTML 소스 + 수정 트래커 [audit-findings.md](./audit-findings.md). 코드 변경 0 → main 여전 `ahead 53` + 미커밋 audit 산출물 3파일.
-- **다음** — 그룹 A(공개 터널 전 PII 차단: M1 GET·M2 비번·L3 세션토큰) · 그룹 C(발표 전: M5 임계 단일 source 복구·M4 tsconfig) · 정확성 패치(L2 weather 가드·L1 sticky ts) · 테스트 부채(M3+L4+L5) · 위생(dead code 6·문서 4) · audit 산출물 커밋 여부 · 기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **다음** — 그룹 A(공개 터널 전 PII 차단: M1 GET·M2 비번·L3 세션토큰) · 그룹 C(발표 전: M5 임계 단일 source 복구·M4 tsconfig) · 정확성 패치(L2 weather 가드·L1 sticky ts) · 테스트 부채(M3+L4+L5) · 위생(dead code 6·문서 4) · audit 산출물 커밋 여부 · 기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-02 세션16 — 태풍 LIVE 검증(제6호 장미) + 작업자 모니터링 3페이지 캐러셀 + 설비 추세 그래프)
 
@@ -558,7 +558,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **★ 작업자 모니터링 3페이지 캐러셀** — [작업자 모니터링 | 가스 누출 감지기 | 심장 제세동기 알림] `WidgetCarousel`(`h-[460px]`). `WidgetCarousel`에 `autoRotate` opt-out 추가 → 작업자 캐러셀만 `autoRotate={false}`(**‹ › 수동 전환만**), 다른 캐러셀 자동회전 유지. 가스/AED = 작업자 표와 동일 세로 표(가상 샘플, **수동 스크롤만**). 신규 `SiteSafetyTables.tsx`. 커밋 `4f9b58b`.
 - **★ 설비 추세 그래프(작업자 그래프와 동일 방식)** — 가스 `측정값`/제세동기 `배터리` 셀 클릭 → 하단 추세 그래프. `VitalHistoryPanel`의 `LineChart`/`BarChart`/`SummaryCell`을 export 해 재사용(동일 SVG 차트·24h/1주/30일·라인/막대·요약). 합성 시계열(마지막=현재값). **배터리=외부 충전 없음 가정 → 단조 감소**(상승 구간 0, 검산 통과), 가스=측정값 주변 변동. 커밋 `4f9b58b`.
 - **검증** — `tsc` EXIT=0 · 페이지 200 · `/api/typhoon` 제6호 장미 11점 · 메르카토르 라운드트립 ~1e-14 · 배터리 단조감소(24h/1주/30일 상승구간 0).
-- **상태/다음** — main **`ahead 52`** 미push. 태풍 LIVE. active URL `kay-spatial-manitoba-duty`, dev 127.0.0.1 전용. 다음 = push 결정(52)·기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **상태/다음** — main **`ahead 52`** 미push. 태풍 LIVE. active URL `kay-spatial-manitoba-duty`, dev 127.0.0.1 전용. 다음 = push 결정(52)·기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-02 세션15 — 예비특보(t7) + 태풍 진로 데이터화·Esri 위성 슬리피맵 + KOSHA 신호등/국내재해사례 진단)
 
@@ -568,7 +568,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **KOSHA 안전신호등 1020 = `resultCode 99 UNKNOWN_ERROR` 재확정(라이브)** — 같은 키로 1040/1060은 200 정상, 1020만 99 → KOSHA 서버측 백엔드 오류(우리 수정 불가). 샘플 유지+자동 재시도.
 - **국내 재해사례 빈 화면 = 데이터 아닌 높이** — `/api/kosha/accident-cases` **live 20건 정상**(0건이면 mock 강등이라 배지 'KOSHA 실시간'=데이터 존재 확정). 공유 캐러셀 `h-[112px]`(현장정보 2줄 grid 기준)가 목록형엔 좁아 클리핑 → **`h-[140px]` 상향**(목록 ~3줄). 커밋 `61dad59`.
 - **검증** — dashboard `tsc` EXIT=0 · 페이지/`/api/typhoon`/`/api/kma-warning` 200 · Esri 위성·라벨 타일 z5~z11 200 · 메르카토르 투영 라운드트립 오차 ~1e-14.
-- **상태/다음** — main **`ahead 49`** 미push. 태풍 서비스 승인 전파 대기(풀리면 실응답 필드 검증). active URL `kay-spatial-manitoba-duty`, dev 127.0.0.1 전용. 다음 = 태풍 승인 전파 후 필드 검증·push 결정(49)·기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **상태/다음** — main **`ahead 49`** 미push. 태풍 서비스 승인 전파 대기(풀리면 실응답 필드 검증). active URL `kay-spatial-manitoba-duty`, dev 127.0.0.1 전용. 다음 = 태풍 승인 전파 후 필드 검증·push 결정(49)·기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-02 세션14 — 작업자 모니터링 세로 표 리스트(dnd-kit) + 슬롯100 + 속보/배지 이동 + iOS 재설치 복구 + 현장환경 기상특보 GPS 항목)
 
@@ -582,7 +582,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **네이버 날씨 임베드 불가**(`x-frame-options: DENY`). 기상특보·폭염 iframe 추가 후 **사용자 원복**(기상청은 frameable).
 - **★ 현장환경 '기상특보' GPS 항목** — 기상청 `1360000/WthrWrnInfoService`, 활용신청 후 **KOSHA 키로 통함(403→200)**. `app/lib/kma.ts`(getWthrWrnMsg t6 파싱+GPS→17시도+키게이트 KMA→KOSHA 폴백+캐시+목업)+`/api/kma-warning`+WeatherStrip ⚠️ 항목. LIVE 검증(전남→강풍주의보 caution/서울→특보없음). 미커밋.
 - **폭염영향예보 = 공개 API 없음 확정**(웹 `hwImpactList.do?pgmNo=696`만) → GPS 항목 불가. 폭염특보는 기상특보 항목·폭염 단계는 체감온도 항목에 이미 커버 → 별도 항목 불필요(권장). 자리 결정 대기.
-- **상태/다음** — active URL `kay-spatial-manitoba-duty`(dev 127.0.0.1 전용). iPhone BECKS release 재설치·실행 OK. 워치 install 보류(네트워크). **main `ahead 44` + 기상특보 4파일 미커밋**(`kma.ts`·`kma-warning/`·`WeatherStrip.tsx`·`.env.example`). `KMA_SERVICE_KEY`=`.env.local`(KOSHA와 동일). 다음 = 폭염 자리 결정→기상특보 커밋·워치 install 재시도·push 결정·기존 블로커(Galaxy Health, YJH iPhone 재install, 배터리 풀시프트, D4 리허설).
+- **상태/다음** — active URL `kay-spatial-manitoba-duty`(dev 127.0.0.1 전용). iPhone BECKS release 재설치·실행 OK. 워치 install 보류(네트워크). **main `ahead 44` + 기상특보 4파일 미커밋**(`kma.ts`·`kma-warning/`·`WeatherStrip.tsx`·`.env.example`). `KMA_SERVICE_KEY`=`.env.local`(KOSHA와 동일). 다음 = 폭염 자리 결정→기상특보 커밋·워치 install 재시도·push 결정·기존 블로커(Galaxy Health, 전 팀원 iPhone 재install, 배터리 풀시프트, D4 리허설).
 
 ### (2026-06-01 세션13 — 불쾌지수 + 전국날씨→실시간 레이더 + 우측 그룹 캐러셀 + 레이아웃 축소 + 국내재해사례 자동스크롤 + 워치 URL 자동 마이그레이션)
 
@@ -653,9 +653,9 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 
 ### 2026-05-29 세션7 — 다른 작업자 Apple Watch 추가 설치 시도 → Apple Developer 디바이스 한도 블로커
 
-- **★ 목표·결과** — BECKS 외 YJH Apple Watch 에 워치 PoC 추가 설치(워치 2대 시연 목적) 시도 → **Apple Developer team `F2P5ZFP65Q` 디바이스 한도 벽**(Cyён iPhone 차단과 동일 원인이 워치에도 재현). **코드 변경 없음 — 환경/계정 이슈.**
+- **★ 목표·결과** — BECKS 외 전 팀원 Apple Watch 에 워치 PoC 추가 설치(워치 2대 시연 목적) 시도 → **Apple Developer team `F2P5ZFP65Q` 디바이스 한도 벽**(Cyён iPhone 차단과 동일 원인이 워치에도 재현). **코드 변경 없음 — 환경/계정 이슈.**
 - **★ 워치 탐색 원리** — Apple Watch 는 데이터 포트 없어 **단독 USB 설치 불가**, 페어 iPhone 통해 네트워크로만 Xcode 등장. iPhone 이 `available (paired)` 돼야 워치가 그 하위 nested 로 올라옴. iPhone·워치 **각각** 개발자 모드 ON(워치는 토글→재부팅→확인 다이얼로그).
-- **★ 진단** — `devicectl list devices`: BECKS iPhone+워치만 available(paired), YJH iPhone 은 `connected` 에서 멈춤, YJH 워치 미등장. 워치 재부팅+신뢰 후에도 안 잡힘 → 병목은 **YJH iPhone 이 connected→available(paired) 전환 실패**.
+- **★ 진단** — `devicectl list devices`: BECKS iPhone+워치만 available(paired), 전 팀원 iPhone 은 `connected` 에서 멈춤, 전 팀원 워치 미등장. 워치 재부팅+신뢰 후에도 안 잡힘 → 병목은 **전 팀원 iPhone 이 connected→available(paired) 전환 실패**.
 - **★ 최종 오류 = `DataGatheringNSURLSessionDelegate` HTTP 403 forbidden**(Xcode 26.5) — 앱 네트워킹 아님, **Xcode↔Apple 개발자 서비스 핸드셰이크 거부**(계정/프로비저닝). 새 디바이스 등록 조회 403 → iPhone 준비 막힘 → 워치 미등장.
 - **★ 원인·선택지** — 유력 = **무료 Personal Team 디바이스 한도**(Суён iPhone 막힌 그 팀). 그 외 Apple ID 세션 만료 / Apple 서비스 장애 / VPN·프록시. 선택지 (a) 콘솔 디바이스 정리(연 1회 reset) (b) 다른 Apple ID 팀 교체(기존 재서명 부담) (c) 유료 Developer Program($99). 미결정.
 - **결론** — 무료 팀 유지 시 **발표 워치 시연 = BECKS Apple Watch Ultra 1대** 현실적. 워치 2대 필요하면 (b)/(c) 결정.
@@ -720,7 +720,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **BECKS release 재빌드+install** — `flutter build ios --release` 17.7MB AOT codesigned, `xcrun devicectl device install` 성공(Worker Phone v1.0.0). **bundle ID `kr.indusview.workerPhone`**(스킬 stale 정정). BECKS=iPhone 17 Pro, 실 HRV(11.17ms) 수신 → 스트레스 칩 실값. ⚠ 직후 **IDE Run ▶ 재발**(release→debug 함정) — 경고, 로컬 release 산출물 무사. **BECKS DEBUG 배너 확인 필요**(있으면 CLI 재설치).
 - **발표일 정정** — **최종 2026-07-07** · 중간 데모 2026-06-04(추정). 스트레스 알고리즘 07-07 트랙.
 - **커밋 6건** — `592d2b4`(offset+비-sticky) · `270c514`(dashboard 스트레스/weather/관리자) · `b9eef47`(폰 스트레스 수집+fallback 제거) · `3309cc0`(docs) · `e3593f1`(스트레스 지수+칩) · `dad39a9`(폰 UI 리디자인). push 미실행.
-- **다음** — ① BECKS DEBUG 배너 확인 → 있으면 CLI 재설치 ② YJH/Galaxy 동일 release install ③ Galaxy Health 권한 4단계 ④ 스트레스 baseline 축적(07-07 까지) ⑤ D2 자동 트리거 ⑥ D4 리허설.
+- **다음** — ① BECKS DEBUG 배너 확인 → 있으면 CLI 재설치 ② 전 팀원/Galaxy 동일 release install ③ Galaxy Health 권한 4단계 ④ 스트레스 baseline 축적(07-07 까지) ⑤ D2 자동 트리거 ⑥ D4 리허설.
 
 ### 지금까지 작업 (2026-05-21~2026-05-28)
 
@@ -777,11 +777,11 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 49. **5명 워커 grid + 정렬 fix** — fallbackWorkers 5명 (`demo_mock_03` 추가). grid `xl:grid-cols-5`. mock-publish.mjs + DEMO_GUARDIANS 동기. 카드 정렬: max-w-6xl → `max-w-[1600px]`, ROW_CLASS 상수 + `min-h-[3.25rem]` 모든 row 통일, 상태 배지 `whitespace-nowrap` (대 기 줄바꿈 해결), 카드 헤더 `min-h-[4.5rem]` + 사원번호 미설정 placeholder 항상 표시.
 50. **네트워크 시나리오 확인** — MacBook 코딩 + 발표 PC 사용 시나리오 3종 분석. 권장 = **시나리오 A (MacBook + 발표 PC 같은 망 + cloudflared 그대로 사용)**. 발표 PC 는 브라우저만 있으면 됨 (Chrome/Safari/Edge/Windows 무관). 발표 당일 체크리스트 10분 작성. 백업: 셀룰러 핫스팟 + LAN 직접 접속 사전 검증.
 51. **★ 환경 산소 row 제거 (2026-05-25)** — 사용자 결정. 카드 6 row → 5 row (상태/심박/SpO₂/손목/낙상). `AmbientO2Row` 컴포넌트 + store merge 의 `ambientO2Pct` + `VitalSampleSchema.ambientO2Pct` 필드 모두 제거. 폰은 원래 안 보내고 있어 변경 없음. typecheck pass + analyzers 10/10 + POST 201 검증.
-52. **★ 다중 작업자 분리 버그 fix (2026-05-25)** — 두 폰 (BECKS / YJH iPhone) install 후 두 번째 폰이 첫 번째를 덮어쓰는 현상. 원인 두 겹:
+52. **★ 다중 작업자 분리 버그 fix (2026-05-25)** — 두 폰 (BECKS / 전 팀원 iPhone) install 후 두 번째 폰이 첫 번째를 덮어쓰는 현상. 원인 두 겹:
     - (a) 폰 측 — `_workerId = String.fromEnvironment('WORKER_ID', defaultValue: 'demo_ios_01')` 빌드 상수. 모든 iPhone 이 동일 ID publish. `_effectiveWorkerId` getter 추가 (사원번호 입력 시 자동 workerId, 미입력 시 fallback). `_pollOnce` 1+1 / `_sendSos` / `_sendFall` 4 곳 교체. 단, `VitalPublisher` 의 init workerId 는 metadata 만 사용 (publish 는 sample.workerId) — 영향 없음.
     - (b) dashboard 측 — `workers = Array.from(ids).slice(0, 5)` 가 fallback 5개를 우선 자리잡고 실폰 2대를 잘라냄. fallback 의 placeholder `demo_ios_01 / demo_and_01` 제거 (mock 3개만 남김). `slice(0, 5)` 제거 + 실폰 sort by ts 우선 union (`actual ∪ fallback`).
-    - dev 서버 재기동으로 in-memory store 의 stale `demo_ios_01` 정리. 시뮬레이션 POST 로 `[EMP-1024 양지후, EMP-6861 장우진]` union 검증.
-53. **★ YJH iPhone 15 Pro Max 추가 install (2026-05-25)** — 두 번째 시연 폰. Xcode 직접 빌드 시 SPM 통합 플러그인 4개 (`geolocator_apple/device_info_plus/flutter_secure_storage_darwin/package_info_plus`) `Flutter/Flutter.h` not found 빌드 실패. 원인 = Xcode 가 build/ 폴더 안 산출물을 120MB debug 로 덮어쓰면서 SPM 의존성 못 잡음. 해결 = **flutter CLI 표준 절차** (`flutter clean` → `pub get` → `pod install` → `flutter build ios --release`) → 17.6MB AOT codesigned 복구 → `xcrun devicectl device install + process launch --terminate-existing` 한 번에 install + launch 성공. 사용자에게 "Xcode Play 버튼 금지" 안내.
+    - dev 서버 재기동으로 in-memory store 의 stale `demo_ios_01` 정리. 시뮬레이션 POST 로 `[EMP-1024 전 팀원, EMP-6861 장우진]` union 검증.
+53. **★ 전 팀원 iPhone 15 Pro Max 추가 install (2026-05-25)** — 두 번째 시연 폰. Xcode 직접 빌드 시 SPM 통합 플러그인 4개 (`geolocator_apple/device_info_plus/flutter_secure_storage_darwin/package_info_plus`) `Flutter/Flutter.h` not found 빌드 실패. 원인 = Xcode 가 build/ 폴더 안 산출물을 120MB debug 로 덮어쓰면서 SPM 의존성 못 잡음. 해결 = **flutter CLI 표준 절차** (`flutter clean` → `pub get` → `pod install` → `flutter build ios --release`) → 17.6MB AOT codesigned 복구 → `xcrun devicectl device install + process launch --terminate-existing` 한 번에 install + launch 성공. 사용자에게 "Xcode Play 버튼 금지" 안내.
 54. **시스템 재기동 (2026-05-25)** — dev 서버 + cloudflared 다운 후 재기동. 새 quick tunnel URL `https://researchers-excitement-they-overnight.trycloudflare.com`. 두 iPhone 동일 URL 로 in-app 설정.
 55. **★ 인프라 안정화 — nohup+disown lifecycle 분리 (2026-05-26)** — 이전 백그라운드 task 가 셸 종료/compaction 영향으로 stopped 되던 문제. dev 서버 + cloudflared 를 `nohup ... & disown` 으로 띄워 부모 셸 lifecycle 에서 분리. 새 quick tunnel URL `https://prisoners-hosting-shape-assists.trycloudflare.com`.
 56. **★ IDE Run 버튼 함정 진단 + 학습 (2026-05-26)** — Cyён iPhone 16 install 시도 중 `devicectl launch` 가 dev disk image 마운트에서 hang → 사용자가 IDE (VS Code Flutter plugin) Run ▶ 버튼 누름 → debug 빌드가 release 17.6MB AOT 산출물을 120MB 로 덮어씀 → 홈 아이콘 standalone launch 거부 ("In iOS 14+, debug mode Flutter apps can only be launched..."). flutter clean 사이클로 release 재빌드 + devicectl install + launch 성공. memory feedback 2건 기록 (multi-device scope + IDE Run overwrites release).
@@ -789,7 +789,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 58. **★ 관제 웹 — 위치 기반 현장 환경 패널 (2026-05-26)** — 신규 `/api/weather` route (Open-Meteo forecast + Air Quality proxy, API key 불필요, 무료, 5분 메모리 캐시, lat/lon query). 신규 `WeatherStrip` 컴포넌트 — 가로 10 항목 그리드 (날씨/기온/체감/습도/PM2.5/풍속/UV/강수량/일출/일몰). 위치 기준 = 등록된 작업자 폰 GPS 좌표 평균 (작업자 0명이면 "현장 위치 대기" placeholder).
 59. **★ 관제 웹 — 5칸 슬롯 + 대기 큐 등록 UX (2026-05-26)** — fallback union 폐기. 카드 grid 가 항상 정확히 5칸. 모든 슬롯 빈 placeholder 로 시작 (`EmptySlotCard`, 클릭 시 대기 큐 모달). publish 중인 작업자 중 슬롯에 할당 안 된 워커는 `pendingWorkers` 큐. 빈 슬롯 클릭 → `WorkerQueueModal` (이름·사원번호·HR·SpO₂·마지막 수신 시각 표시) → 작업자 클릭 시 그 슬롯에 할당. 등록된 슬롯 우상단 "해제" 버튼 → 다시 큐로. 슬롯 할당은 `localStorage` (`safetymonitor.slots.v1`) 영속화 — 새로고침에도 유지. mock 3 개 fallback 도 제거 (관리자가 수동 선택만 등록).
 60. **★ 관제 웹 — 기상 정책 임계 + 클릭 모달 (2026-05-26)** — 사용자 제공 정책 문서 (산업안전보건기준에 관한 규칙 2025.7.17 개정 + KOSHA Guide + 환경부 + 기상청) 5종 항목 적용. 신규 `weather-rules.ts` 모듈 — `evaluateApparentTemp` (폭염 31/33/35℃ + 한파 -12/-15/-18℃, 법적/권고 binding), `evaluateWindKmh` (10/15 m/s, km/h 자동 변환), `evaluatePM25` (36/76/150 μg/㎥), `evaluateUV` (8/11), `evaluatePrecipitation` (1/5/10 mm/h). 정상=zinc, 주의=amber 깜빡임 (`vital-blink-caution`), 위험=red 빠른 깜빡임 (`vital-blink-danger`) — 생체 카드와 동일 키프레임 재사용. 신규 `WeatherRuleModal` — 항목 클릭 시 (a) 현재 측정값 + severity 배지 (b) 현재 적용 임계 단계 (법적 강제 / 권고 / 참고 배지) + 권고 조치 + 출처 (c) 전체 임계 단계 리스트 + 현재 단계 강조 (d) 단발성 스파이크 제외 등 운영 주의사항. 정보 항목 (날씨/기온/습도/일출/일몰) 도 클릭 가능 — 안내문만 표시. 19 케이스 sanity check 모두 정책대로 평가 확인.
-61. **★ Cyён iPhone 16 install 차단 + 발표 폰 구성 변경 (2026-05-26 오후)** — `flutter run` 시 `Communication with Apple failed: Your development team has reached the maximum number of registered iPhone devices` + `Provisioning profile "iOS Team Provisioning Profile: kr.indusview.workerPhone" doesn't include the currently selected device "TG i_n" (00008101-001649983AB9003A)`. 원인 = Apple Developer team `F2P5ZFP65Q` 디바이스 한도 도달 (연 100대, 1년 1회 reset). 추가로 출력 `in debug mode` — IDE Run 버튼 또 사용 (정책 위반 3회차). 해결 옵션 3개 분석 (A: Apple 콘솔 device 정리 — annual reset 제약, B: 다른 Apple ID 로 team 교체 — BECKS/YJH 재install 부담, C: Cyён 폰 install 포기). Android 측 device 수 제약 없음 분석 (debug.keystore 자동 생성, debug 빌드도 standalone 실행 OK) → **iPhone 2대 + Galaxy 실기기 1대 구성 채택** (옵션 C). Cyён iPhone install 은 발표 후 보류.
+61. **★ Cyён iPhone 16 install 차단 + 발표 폰 구성 변경 (2026-05-26 오후)** — `flutter run` 시 `Communication with Apple failed: Your development team has reached the maximum number of registered iPhone devices` + `Provisioning profile "iOS Team Provisioning Profile: kr.indusview.workerPhone" doesn't include the currently selected device "TG i_n" (00008101-001649983AB9003A)`. 원인 = Apple Developer team `F2P5ZFP65Q` 디바이스 한도 도달 (연 100대, 1년 1회 reset). 추가로 출력 `in debug mode` — IDE Run 버튼 또 사용 (정책 위반 3회차). 해결 옵션 3개 분석 (A: Apple 콘솔 device 정리 — annual reset 제약, B: 다른 Apple ID 로 team 교체 — BECKS/전 팀원 재install 부담, C: Cyён 폰 install 포기). Android 측 device 수 제약 없음 분석 (debug.keystore 자동 생성, debug 빌드도 standalone 실행 OK) → **iPhone 2대 + Galaxy 실기기 1대 구성 채택** (옵션 C). Cyён iPhone install 은 발표 후 보류.
 62. **★ 관제 웹 — WeatherStrip 텍스트 가독성 개선 (2026-05-26 오후)** — 사용자 스크린샷 빨간 박스로 현장 환경 패널 글씨 어두움 지적. [WeatherStrip.tsx:266-270](../apps/dashboard-web/app/components/WeatherStrip.tsx#L266-L270) `VALUE_CLASS.normal` `text-zinc-200` → **`text-white`**. 라벨/sub `text-zinc-500` → `text-zinc-300`. 헤더 "현장 환경" `text-zinc-300` → `text-zinc-100`. 헤더 GPS 좌표·우측 정보 `text-zinc-500/600` → `text-zinc-400`. 주의/위험 색상 (amber/red 블링크) 은 정책 색이므로 보존. typecheck pass.
 63. **★ Galaxy worker_phone install 완료 + Health Connect 권한 흐름 블로커 진단 (2026-05-27)** — Galaxy 실기기에 Flutter 앱 install 성공. 폰 UI 정상 + 작업자 메타데이터 입력 완료 (김동현 / EMP-2222). in-app URL `https://prisoners-hosting-shape-assists.trycloudflare.com/api/mock/vital` 저장 — Status 의 `prisoners-hosting-shape-assists` 과 다른 URL → active cloudflared URL 재확인 필요. **블로커 = Health 권한 "대기"** + 연결 상태 "Health 권한 필요". Android 앱 권한 화면 "건강, 피트니스, 웰니스" 허용됨 (Health Connect 우산 권한). 단 [health_vitals_service.dart:31](../apps/worker-phone/lib/services/health_vitals_service.dart#L31) `_health.requestAuthorization` 가 false 반환. 가설 4개 (Health Connect 미설치 / 데이터 타입별 권한 미허용 / Samsung Health 동기화 OFF / Galaxy Watch 인입 부재). [AndroidManifest.xml:4-6](../apps/worker-phone/android/app/src/main/AndroidManifest.xml#L4-L6) health 권한 선언 검증 OK + [health_vitals_service.dart:18-23](../apps/worker-phone/lib/services/health_vitals_service.dart#L18-L23) Android iOS 분기 (Android 는 SLEEP_WRIST_TEMPERATURE 제외 + BODY_TEMPERATURE 폴백) 정상. 코드 결함 없음 — 원인은 Health Connect 앱 내부 권한 / 데이터 소스 측. **4단계 검증 절차 표준화** = Health Connect 앱 설치 확인 → Health Connect 내부 worker_phone 데이터 타입별 권한 ON → Samsung Health 동기화 ON + 항목별 ON → Galaxy Watch 페어링 + Samsung Health 측정값 인입 확인 → 앱 강제 종료 + 재시작 + "수집 시작". adb logcat 명령어 `adb logcat -s flutter:V HealthConnectKit:V | grep -iE 'health|permission'` 로 false 사유 직접 추출 가능. 사용자 확인 4건 요청 (모델/Android 버전, Health Connect 설치, 권한 다이얼로그 표시, Watch 인입).
 
@@ -808,8 +808,8 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 
 - **트랙**. 프로토타입 (D0~D4). 발표 후 로드맵 (M0~M9) 은 격하 보관.
 - **★ 발표 마감**. **2026-06-04 (D-7)**. 매일 진척 측정.
-- **현재 마일스톤**. **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행** — iPhone **2대 install 완료** (BECKS + YJH) + **Galaxy install 완료** (김동현/EMP-2222). **Cyён iPhone 16 install 차단** (Apple Developer team device 한도) → 발표 폰 **iPhone 2대 + Galaxy 1대**. 2026-05-28 관제 웹 대폭 확장 + 2026-05-29 **VitAlGuard 브랜딩/관리자 현장정보/레이아웃 폴리싱** 완료. **블로커 = Galaxy Health 권한 "대기"** (Step 2 데이터 타입별 권한 미수행 강력 추정).
-- **★ 시연 구성 (2026-05-26 오후 갱신)**. iPhone **2대** (BECKS 장우진/EMP-6861 + YJH 양지후/EMP-1024) + Apple Watch + **Galaxy 실기기 1대** (3번째 폰 역할, Cyён iPhone 대체) + Galaxy Watch + 발표 PC 1대. **mock fallback 폐지** — 카드는 관리자가 대기 큐에서 등록한 작업자만 등장 (5칸 정원).
+- **현재 마일스톤**. **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행** — iPhone **2대 install 완료** (BECKS + 전 팀원) + **Galaxy install 완료** (김동현/EMP-2222). **Cyён iPhone 16 install 차단** (Apple Developer team device 한도) → 발표 폰 **iPhone 2대 + Galaxy 1대**. 2026-05-28 관제 웹 대폭 확장 + 2026-05-29 **VitAlGuard 브랜딩/관리자 현장정보/레이아웃 폴리싱** 완료. **블로커 = Galaxy Health 권한 "대기"** (Step 2 데이터 타입별 권한 미수행 강력 추정).
+- **★ 시연 구성 (2026-05-26 오후 갱신)**. iPhone **2대** (BECKS 장우진/EMP-6861 + 전 팀원/EMP-1024) + Apple Watch + **Galaxy 실기기 1대** (3번째 폰 역할, Cyён iPhone 대체) + Galaxy Watch + 발표 PC 1대. **mock fallback 폐지** — 카드는 관리자가 대기 큐에서 등록한 작업자만 등장 (5칸 정원).
 - **네트워크 구성**. iPhone → Cloudflare Tunnel (세션마다 새 `https://*.trycloudflare.com`, 현재 `creating-availability-stuck-craps`) → Mac localhost:3000 → mock receiver. 발표 PC 도 동일 URL 로 접근. dev + cloudflared 둘 다 `nohup ... & disown` 으로 셸 lifecycle 분리. **quick tunnel 은 ~24시간/세션 단위 만료** — 만료 시 retry loop → 재기동 + 새 URL 발급.
 - **대시보드 UI**. **VitAlGuard 브랜딩** + 라이트/다크 CI 로고. 상단 히어로는 한줄 메시지 + 관리자 수정 가능한 현장정보 카드(기업명/현장명/공사종류/주소/착수/준공) + 수신요약 카드. 아래에 **WeatherStrip**(10항목, 업데이트 시각, 정책 모달)과 **5칸 슬롯 grid**. 등록된 슬롯은 카드 헤더 `🟢 신호등 · 이름 · ▁▃▅▇ 시그널 바 + 스트레스 칩 + 우상단 상태/해제`. 5 row 메트릭 list — `상태 / 심박 / 산소포화도 / 손목 온도 / 낙상 감지`. 카드 메트릭 클릭 → 누적 차트 패널. **SOS 모달** — 작업자 + 소속 + 생체 + 현장 GPS + 보호자 + 119.
 - **분석기**. analyzers 5종 10/10 통과.
@@ -839,7 +839,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 ## 현재 상태 (Snapshot)
 
 - **트랙**. **프로토타입 (D0~D4)** — 발표용 데모. 발표 마감 **2026-06-04 (D-7)**.
-- **현재 마일스톤**. **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행**. iPhone **2대** (BECKS + YJH) + **Galaxy** (김동현/EMP-2222) install 완료. 2026-05-28 관제 웹 대폭 확장 + 2026-05-29 VitAlGuard 브랜딩/현장정보/레이아웃 폴리싱.
+- **현재 마일스톤**. **D1 ~99% + D2 ~88% + D3 ~68% + D4 UI 폴리싱 진행**. iPhone **2대** (BECKS + 전 팀원) + **Galaxy** (김동현/EMP-2222) install 완료. 2026-05-28 관제 웹 대폭 확장 + 2026-05-29 VitAlGuard 브랜딩/현장정보/레이아웃 폴리싱.
 - **진척률**. D1 ~99%. D2 ~88%. D3 ~68%. D4 UI 폴리싱 진행.
 - **다음 액션**. (1) **★ Galaxy Health Connect 권한 활성화** — Step 2 데이터 타입별 권한 (최우선 추정) (2) 3 폰/워치 endpoint 최신 cloudflared URL 통일 (3) **2 iPhone 재빌드/재install** (자동 재연결 + offset 0.5 반영) (4) 관제 웹 라이트/다크·관리자 현장정보·내보내기 회귀 검증 (5) 슬롯 등록 + SOS/낙상 (6) D2 자동 트리거 (7) D4 폴리싱·리허설.
 - **블로커**. (a) AWS 계정 보류 — local/mock 우회 (b) cloudflared quick tunnel 만료 — 재기동 + 새 URL (현재 `creating-availability-stuck-craps`) (c) **Apple Developer team device 한도** — Galaxy 우회 (d) **Galaxy Health 권한 + 워치 fresh HR 모두 해결**(세션32 — 권한은 stale APK 재빌드, fresh HR은 착용+계속측정→Samsung Health 동기화 라이브로 5분 필터 통과, 관제 웹 hr 연속 수신·코드 변경 0).
@@ -854,7 +854,7 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 | D | 상태 | 진척률 | 시작일 | 완료일 | 비고 |
 |---|---|---|---|---|---|
 | D0 | 완료 | 100% | 2026-05-21 | 2026-05-21 | TS 4 패키지 + Flutter `worker-phone` + analyzers 5종 10/10 |
-| D1 | 진행중 | 99% | 2026-05-22 | 목표 ~2026-05-28 | iPhone **2대** (BECKS + YJH) codesigned release + 사원번호 기반 workerId 자동 분리 + Health + Cloudflare Tunnel + iOS 백그라운드 keepalive + 작업자/보호자 메타데이터 + GPS payload. **Cyён iPhone 16 install 차단** (Apple device 한도). **Galaxy install 완료 (2026-05-27, 김동현/EMP-2222)** — 권한 블로커 **해결**(세션32 stale APK 재빌드 → "5초 폴링 중") + **워치 fresh HR 전송 해결**(착용+계속측정→관제 웹 EMP-8888 hr 94~99 연속 수신). 폰 인앱 URL 갱신·발표용 워치 운동 세션 권장 남음 |
+| D1 | 진행중 | 99% | 2026-05-22 | 목표 ~2026-05-28 | iPhone **2대** (BECKS + 전 팀원) codesigned release + 사원번호 기반 workerId 자동 분리 + Health + Cloudflare Tunnel + iOS 백그라운드 keepalive + 작업자/보호자 메타데이터 + GPS payload. **Cyён iPhone 16 install 차단** (Apple device 한도). **Galaxy install 완료 (2026-05-27, 김동현/EMP-2222)** — 권한 블로커 **해결**(세션32 stale APK 재빌드 → "5초 폴링 중") + **워치 fresh HR 전송 해결**(착용+계속측정→관제 웹 EMP-8888 hr 94~99 연속 수신). 폰 인앱 URL 갱신·발표용 워치 운동 세션 권장 남음 |
 | D2 | 진행중 | 92% | 2026-05-24 | 목표 ~2026-05-29 | 대시보드 카드 + 신호등 + 시그널 바 + 메트릭 블링크 + 낙상 감지 row + 누적 차트 + 테스트 워커 차단 + 5칸 슬롯 + 대기 큐 등록 UX + WeatherStrip 10 항목 + 기상 정책 임계 색상 + 클릭 정책 모달 + **VitAlGuard 브랜딩/관리자 현장정보/레이아웃 폴리싱** + **위험 감지 자동 트리거(생체 위험 경보 모달·차트 임계선·이상치 강조) 완성 (세션32)**. 잔여 = 위험 자동화 마무리 |
 | D3 | 진행중 | 78% | 2026-05-24 | 목표 ~2026-06-01 | SOS 모달 + SMS 자동 작성 + 보호자/119 통화·문자 + 작업자 상태 row + 기상 정책 권고 조치 + 법적 근거 표시 + **생체 위험 alerts 이력화(SOS/낙상/생체 발생→대응 전 경로 완성, 세션32)**. 관리자 현장정보는 사고/보고 컨텍스트 보강 완료 |
 | D4 | 진행중 | 25% | 2026-05-29 | 목표 ~2026-06-04 | 관제 웹 브랜딩/레이아웃 1차 폴리싱 완료. 데모 시나리오·백업 영상·슬라이드·리허설 3회 남음 |
@@ -906,16 +906,16 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
 - **무엇**.
   - (1) **Cyён iPhone 16 install 재시도 실패 진단** — 사용자가 `flutter run` 으로 install 시도 (IDE Run 버튼 추정). 출력 — `The following plugins do not support Swift Package Manager for ios: health` (기존 warning, 무시) + `Launching lib/main.dart on TG i_n in debug mode...` + `Failed to build iOS app` + `Communication with Apple failed: Your development team has reached the maximum number of registered iPhone devices` + `Provisioning profile "iOS Team Provisioning Profile: kr.indusview.workerPhone" doesn't include the currently selected device "TG i_n" (identifier 00008101-001649983AB9003A)`. 같은 에러 1회 더 재발 (사용자가 flutter clean/build 만 반복).
   - (2) **원인 분석 2건** — (a) Apple Developer team `F2P5ZFP65Q` 디바이스 한도 도달 — Apple 정책상 연 100대 / 1년 1회 reset. 이미 등록된 device 가 누적 100개 도달 → 신규 device UDID `00008101-001649983AB9003A` provisioning profile 자동 등록 실패 → 2차 에러 "doesn't include the currently selected device". (b) `in debug mode` 출력 = IDE Run ▶/디버그 🐞 버튼 사용 (정책 위반 3회차). flutter CLI release 빌드 아님.
-  - (3) **해결 옵션 3개 분석** — A) Apple Developer 콘솔 device 정리 — 유료 Apple Developer Program ($99/년) 만 가능. https://developer.apple.com/account/resources/devices/list 에서 device "Disable". annual reset 1년 1회 제약. 무료 Apple ID (Personal Team) 는 console 접근 다름. B) 다른 Apple ID 로 team 교체 — 새 team 의 slot 사용 가능하지만 BECKS/YJH 도 재install 필요 (기존 신뢰 무효화). 발표 D-9 시점에 부담. C) **Cyён 폰 install 포기, 발표 폰 구성 변경** — 가장 안전.
+  - (3) **해결 옵션 3개 분석** — A) Apple Developer 콘솔 device 정리 — 유료 Apple Developer Program ($99/년) 만 가능. https://developer.apple.com/account/resources/devices/list 에서 device "Disable". annual reset 1년 1회 제약. 무료 Apple ID (Personal Team) 는 console 접근 다름. B) 다른 Apple ID 로 team 교체 — 새 team 의 slot 사용 가능하지만 BECKS/전 팀원 도 재install 필요 (기존 신뢰 무효화). 발표 D-9 시점에 부담. C) **Cyён 폰 install 포기, 발표 폰 구성 변경** — 가장 안전.
   - (4) **Android 측 device 제약 분석** — iOS team device 한도 같은 제약 **없음**. Free Apple Developer team 한도 vs Android: Android 는 `debug.keystore` 자동 생성, device 수 제약 0, `adb install` 또는 APK 파일 직접 공유 unlimited. debug 빌드도 standalone 실행 OK (iOS 14+ debug SIGKILL 같은 제약 없음). USB 디버깅 활성화 + Health Connect 권한 + Galaxy Watch 페어링 (Galaxy Wearable → Samsung Health → Health Connect 동기화) 만 필요. AVD 메모리 부족 시 실기기 우선 (CLAUDE.md 명시).
   - (5) **발표 폰 구성 변경 채택 (옵션 C)** — iPhone 3대 → **iPhone 2대 + Galaxy 1대**. Cyён iPhone install 은 발표 후 보류. Apple device 한도는 빠르게 해소 안 됨 (annual reset 정책). Galaxy 실기기로 3번째 폰 확보가 가장 빠름.
   - (6) **관제 웹 — WeatherStrip 텍스트 가독성 개선** — 사용자 스크린샷 빨간 박스 (현장 환경 패널 글씨 어두움) 보고. [WeatherStrip.tsx:266-270](../apps/dashboard-web/app/components/WeatherStrip.tsx#L266-L270) `VALUE_CLASS.normal` `text-zinc-200` → **`text-white`**, [WeatherStrip.tsx:298-302](../apps/dashboard-web/app/components/WeatherStrip.tsx#L298-L302) 라벨/sub `text-zinc-500` → `text-zinc-300`, [WeatherStrip.tsx:176-186](../apps/dashboard-web/app/components/WeatherStrip.tsx#L176-L186) 헤더 "현장 환경" `text-zinc-300` → `text-zinc-100` + GPS 좌표/우측 정보 `text-zinc-500/600` → `text-zinc-400`. 주의/위험 색상 (amber/red 블링크) 은 정책 색이므로 보존.
 
 - **결과**.
   - Cyён iPhone 16 install 차단 원인 명확 + 사용자에게 옵션 3개 제시 → 옵션 C (발표 폰 구성 변경) 채택
-  - 발표 폰 구성 = iPhone 2대 (BECKS + YJH) + Galaxy 실기기 1대 (3번째 폰)
+  - 발표 폰 구성 = iPhone 2대 (BECKS + 전 팀원) + Galaxy 실기기 1대 (3번째 폰)
   - WeatherStrip 텍스트 가독성 개선 — typecheck pass
-  - **기존 폰 영향 0** — Cyён 폰 install 시도가 BECKS/YJH 에 영향 없음
+  - **기존 폰 영향 0** — Cyён 폰 install 시도가 BECKS/전 팀원 에 영향 없음
 
 - **증거**.
   - 수정 파일: [apps/dashboard-web/app/components/WeatherStrip.tsx](../apps/dashboard-web/app/components/WeatherStrip.tsx)
@@ -939,10 +939,10 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
   - dev typecheck pass · analyzers test 10/10 pass · flutter build ios --release 17.6MB AOT (Cyён iPhone install + launch 성공)
   - dev/cloudflared lifecycle 분리 성공 — 새 URL `prisoners-hosting-shape-assists.trycloudflare.com` 안정
   - infra_check POST → HTTP 202 dropped, store latest 에서 사라짐
-  - 정상 worker POST → HTTP 201, store 에 `EMP-1111 김수영 / EMP-6861 장우진` publish 정상 확인
+  - 정상 worker POST → HTTP 201, store 에 `EMP-1111 김○○ / EMP-6861 장우진` publish 정상 확인
   - 5칸 슬롯 + 대기 큐 + WeatherStrip + 기상 정책 모달 모두 typecheck + 광주 좌표 weather 실시간 응답 (체감 25.7℃, 풍속 14.4km/h, PM2.5 9.7, UV 1.25, 강수 0mm, 일출 05:21, 일몰 19:37 — 모두 정상 단계)
   - 정책 평가 sanity check: apparentTemp 36→danger 35°C, 33→danger 33°C, 31→caution 31°C, -20→danger -18°C / wind 60kmh→danger 15m/s, 40kmh→caution 10m/s / pm25 160→danger 150, 80→danger 76, 40→caution 36 / uv 12→danger 11, 9→caution 8 / rain 12→danger 10, 6→caution 5, 2→caution 1 — 모두 정책대로
-  - **기존 폰 영향 분리 보장** — Cyён 폰 UDID `98310275-…` 만 install 명시. BECKS/YJH 안 건드림. EMP-1111 / EMP-6861 publish 정상 유지 확인
+  - **기존 폰 영향 분리 보장** — Cyён 폰 UDID `98310275-…` 만 install 명시. BECKS/전 팀원 안 건드림. EMP-1111 / EMP-6861 publish 정상 유지 확인
 
 - **증거**.
   - 신규 파일: [apps/dashboard-web/app/api/weather/route.ts](../apps/dashboard-web/app/api/weather/route.ts), [apps/dashboard-web/app/components/WeatherStrip.tsx](../apps/dashboard-web/app/components/WeatherStrip.tsx), [apps/dashboard-web/app/components/WorkerQueueModal.tsx](../apps/dashboard-web/app/components/WorkerQueueModal.tsx), [apps/dashboard-web/app/components/WeatherRuleModal.tsx](../apps/dashboard-web/app/components/WeatherRuleModal.tsx), [apps/dashboard-web/lib/weather-rules.ts](../apps/dashboard-web/lib/weather-rules.ts)
@@ -954,30 +954,30 @@ DB 차단(TCP 연결 성공)·연결 지연(NAT 경유 20~99ms)·역방향 DNS(P
   - 사용자: 3 iPhone in-app URL 새 cloudflared 갱신 + Cyён 신규 입력. 대시보드 빈 슬롯 클릭 → 대기 큐에서 등록 → WeatherStrip GPS 평균 활성 검증.
   - 자동: D2 잔여 자동 트리거 + D4 폴리싱·리허설.
 
-### 2026-05-25 — 환경 산소 제거 + 다중 작업자 분리 fix + YJH iPhone 추가 install + Xcode 빌드 금지 정책
+### 2026-05-25 — 환경 산소 제거 + 다중 작업자 분리 fix + 전 팀원 iPhone 추가 install + Xcode 빌드 금지 정책
 
 - **무엇**.
   - (1) **환경 산소 row 제거** — 사용자 결정 (Phase 2 자체 워치 SEN0322 합류 전까지 placeholder 의미 약함). [DemoDashboard.tsx](../apps/dashboard-web/app/components/DemoDashboard.tsx) 의 `<AmbientO2Row .../>` 사용부 + `function AmbientO2Row` 정의 통째 삭제. [store.ts](../apps/dashboard-web/app/api/mock/store.ts) merge 에서 `ambientO2Pct` 라인 삭제. [vital-stream.ts](../packages/schemas/src/vital-stream.ts) Zod 필드 삭제. 폰은 원래 안 보내고 있어 변경 없음. 카드 행 6 → 5 row (`상태/심박/SpO₂/손목/낙상`).
   - (2) **다중 작업자 분리 버그 fix** — 사용자 보고: 두 폰 (EMP-1024, EMP-6861) 모두 publish 중인데 dashboard 에는 EMP-6861 만 표시. 진단으로 store 에는 3 workers (`demo_ios_01` stale + `EMP-1024` + `EMP-6861`) 가 있음을 확인. 원인 두 겹:
     - (a) **폰 측** — [main.dart:44-47](../apps/worker-phone/lib/main.dart#L44) 의 `_workerId = String.fromEnvironment('WORKER_ID', defaultValue: 'demo_ios_01')` 빌드 상수. dart-define 없이 빌드한 모든 iPhone 이 동일 ID. 해결: `_effectiveWorkerId` getter 추가 (사원번호 입력 시 자동 workerId, 미입력 시 fallback). `_pollOnce` (1차 + fallback 분기) / `_sendSos` / `_sendFall` 4 곳 교체. `VitalPublisher.workerId` 는 init metadata 만 사용 (publish 는 sample.workerId) — 변경 영향 없음.
     - (b) **dashboard 측** — [DemoDashboard.tsx](../apps/dashboard-web/app/components/DemoDashboard.tsx) 의 `workers = Array.from(ids).slice(0, 5)` 가 Set 순서에서 fallback 5개 (`demo_ios_01/and_01/mock_01/02/03`) 를 우선 자리잡고 실폰 2대 (`EMP-1024/EMP-6861`) 를 잘라냄. 사용자가 본 "EMP-6861" 카드는 fallback `demo_ios_01` 자리에 매핑된 이전 빌드 잔여 metadata (workerName=장우진, empId=EMP-6861). 해결: `fallbackWorkers` 를 mock 3개로 축소 (`demo_mock_01/02/03`), `slice(0, 5)` 제거, 실폰 ts 최신 순으로 union (`actual ∪ fallback`).
-    - dev 서버 재기동으로 in-memory store 의 stale `demo_ios_01` 정리. 시뮬레이션 POST 로 `[EMP-1024 양지후, EMP-6861 장우진]` union 검증.
-  - (3) **YJH iPhone 15 Pro Max 추가 install** — 두 번째 시연 폰. Xcode 직접 빌드 시 SPM 통합 플러그인 4개 (`geolocator_apple/device_info_plus/flutter_secure_storage_darwin/package_info_plus`) `Flutter/Flutter.h` not found 빌드 실패. 원인 = Xcode 가 build/ 폴더 산출물을 120MB debug 로 덮어쓰면서 SPM 의존성 못 잡음. 해결 = flutter CLI 표준 절차 (`flutter clean` → `pub get` → `pod install` → `flutter build ios --release`) → 17.6MB AOT codesigned 복구 → `xcrun devicectl device install + process launch --terminate-existing` 한 번에 install + launch 성공.
+    - dev 서버 재기동으로 in-memory store 의 stale `demo_ios_01` 정리. 시뮬레이션 POST 로 `[EMP-1024 전 팀원, EMP-6861 장우진]` union 검증.
+  - (3) **전 팀원 iPhone 15 Pro Max 추가 install** — 두 번째 시연 폰. Xcode 직접 빌드 시 SPM 통합 플러그인 4개 (`geolocator_apple/device_info_plus/flutter_secure_storage_darwin/package_info_plus`) `Flutter/Flutter.h` not found 빌드 실패. 원인 = Xcode 가 build/ 폴더 산출물을 120MB debug 로 덮어쓰면서 SPM 의존성 못 잡음. 해결 = flutter CLI 표준 절차 (`flutter clean` → `pub get` → `pod install` → `flutter build ios --release`) → 17.6MB AOT codesigned 복구 → `xcrun devicectl device install + process launch --terminate-existing` 한 번에 install + launch 성공.
   - (4) **시스템 재기동** — dev 서버 + cloudflared 다운 후 재기동. 새 quick tunnel URL `https://researchers-excitement-they-overnight.trycloudflare.com`.
 
 - **결과**.
   - schemas build pass · dashboard typecheck pass (2회) · analyzers test 10/10 pass · flutter analyze (lint 1건 무관) · flutter build ios --release 17.6MB AOT codesigned
   - POST /api/mock/vital → HTTP 201 (ambientO2Pct 없는 payload 정상 처리)
-  - 시뮬레이션 POST EMP-1024 → store 에 `[EMP-1024 양지후, EMP-6861 장우진]` 두 카드 동시 표시 union 검증
-  - YJH iPhone install + launch 성공 (databaseUUID E5EB80B7-005C-4AFE-8292-95DD9F63F6A2)
+  - 시뮬레이션 POST EMP-1024 → store 에 `[EMP-1024 전 팀원, EMP-6861 장우진]` 두 카드 동시 표시 union 검증
+  - 전 팀원 iPhone install + launch 성공 (databaseUUID E5EB80B7-005C-4AFE-8292-95DD9F63F6A2)
   - BECKS install 성공, launch 는 device locked 로 실패 (사용자 잠금 해제 후 홈 아이콘 탭으로 실행)
 
 - **증거**.
   - 수정 파일: [apps/dashboard-web/app/components/DemoDashboard.tsx](../apps/dashboard-web/app/components/DemoDashboard.tsx), [apps/dashboard-web/app/api/mock/store.ts](../apps/dashboard-web/app/api/mock/store.ts), [packages/schemas/src/vital-stream.ts](../packages/schemas/src/vital-stream.ts), [apps/worker-phone/lib/main.dart](../apps/worker-phone/lib/main.dart)
-  - 디바이스: YJH iPhone 15 Pro Max (`19058706-7E6D-50E2-B801-B852FD6B6B1E`), BECKS iPhone 17 Pro (`9845606F-4911-547B-AE75-988FACADB105`)
+  - 디바이스: 전 팀원 iPhone 15 Pro Max (`19058706-7E6D-50E2-B801-B852FD6B6B1E`), BECKS iPhone 17 Pro (`9845606F-4911-547B-AE75-988FACADB105`)
 
 - **다음 액션**.
-  - 사용자: BECKS 잠금 해제 + 홈 아이콘 SafetyMonitor 직접 실행. YJH iPhone 우상단 ⚙️ → 작업자 이름 `양지후` + 사원번호 `EMP-1024` + 보호자 이름·전화 + 수신 서버 URL = 새 cloudflared URL + 위치 권한 "항상 허용". 대시보드에 두 카드 동시 표시 확인. 자동: D2/D3 잔여 트리거 + D4 폴리싱.
+  - 사용자: BECKS 잠금 해제 + 홈 아이콘 SafetyMonitor 직접 실행. 전 팀원 iPhone 우상단 ⚙️ → 작업자 이름 `전 팀원` + 사원번호 `EMP-1024` + 보호자 이름·전화 + 수신 서버 URL = 새 cloudflared URL + 위치 권한 "항상 허용". 대시보드에 두 카드 동시 표시 확인. 자동: D2/D3 잔여 트리거 + D4 폴리싱.
 
 ### 2026-05-24 — iOS 백그라운드 keepalive + SOS 모달 + SMS 자동 작성 + 보호자/GPS payload + 5명 워커 grid + store 이벤트 비-sticky
 

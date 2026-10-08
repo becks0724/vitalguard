@@ -42,7 +42,7 @@
 ### Phase 0 — 발표 전 (~2026-07-07) · "데모 견고화 + 상용화 씨앗"
 - **목표.** 발표 데모 성공 + 상용화로 자연 연결되는 선택만. 큰 인프라 전환은 **금지**(데모 리스크).
 - **항목.**
-  - 기존 블로커 해소 — YJH iPhone release 재install · Galaxy Health 권한 · 워치 배터리 풀시프트 측정 · D4 리허설.
+  - 기존 블로커 해소 — 전 팀원 iPhone release 재install · Galaxy Health 권한 · 워치 배터리 풀시프트 측정 · D4 리허설.
   - 누적 커밋 push 정리(현재 main `ahead 88`).
   - 낙상 ML 데이터 축적·라벨링 시작(파이프라인 이미 라이브).
   - **비용 게이트 사전 결정** — AWS 계정·결제 알람, Apple Developer Program($99). Phase 1·3 의 선행이라 지금 의사결정만이라도.

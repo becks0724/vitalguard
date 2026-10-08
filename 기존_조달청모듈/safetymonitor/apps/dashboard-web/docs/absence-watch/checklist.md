@@ -37,7 +37,7 @@
       (검증 tsc 0 · lint 0err · **984 pass** · 음성 대조 F·G·H)
 - [x] L. **이름 결함 수정** — 최근 라벨 → **최빈 라벨**(`MODE() WITHIN GROUP`).
       최근값을 쓰면 마지막 세션이 폴백이었던 워커를 엉뚱하게 부른다
-      (`EMP-admin7276` 최근 `워치PoC` vs 실제 `양지후`). 배정 4명 전원 사람 이름 확인.
+      (`EMP-admin7276` 최근 `워치PoC` vs 실제 `전 팀원`). 배정 4명 전원 사람 이름 확인.
 - [x] K. **J·L 배포 완료** — `00293-j5j`(커밋 `3a38c20` · `48ba234`·`9c86fe8` 포함) ·
       라이브 `{"roster":4,"checked":2,"absent":1,"fired":0,"resolved":0}` 확인
 
@@ -69,8 +69,8 @@ Cloud Scheduler   absence-check  ENABLED  */5 * * * *  Asia/Seoul
 ```
 EMP-6861       장우진  정상
 EMP-admin3470  김태곤  21시간   ← 알림 나감(정탐)
-EMP-admin7276  양지후  17.8일   ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
-EMP-admin0740  김수영  41일     ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
+EMP-admin7276  전 팀원  17.8일   ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
+EMP-admin0740  김○○  41일     ← 기기 off(사용자 확인) · 상한 밖이라 알림 없음
 ```
 
 ## 검증 기록 (2026-08-19)

@@ -162,8 +162,8 @@ t_worker         스키마만 있고 행 0
 
 ```
                 최근 라벨                    최빈 라벨
-EMP-admin7276   워치PoC                ❌    양지후    ✅ (실제 인물)
-EMP-admin0740   관리자 EMP-admin0740    ❌    김수영    ✅ (실제 인물)
+EMP-admin7276   워치PoC                ❌    전 팀원    ✅ (실제 인물)
+EMP-admin0740   관리자 EMP-admin0740    ❌    김○○    ✅ (실제 인물)
 EMP-admin3470   김태곤                       김태곤
 EMP-6861        장우진                       장우진
 ```

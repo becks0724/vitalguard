@@ -91,12 +91,12 @@ test("이상 있음 — 기존 경보 문구·골든타임 안내가 그대로 �
 // 둘 다 막지 않으면 한쪽만 고쳐 놓고 "반영했다"고 착각한다([[L-115]]③ 양 끝 단언).
 
 test("★ 이상이 있어도 수신 중 인원이 요약에서 침묵하지 않는다", () => {
-  // 제보 당시 실제 배분 — 장우진 연결끊김 / 김태곤 수신 중 / 양지후·김수영 대기.
+  // 제보 당시 실제 배분 — 장우진 연결끊김 / 김태곤 수신 중 / 전 팀원·김○○ 대기.
   const c = workerSignalCopy({
     count: 4,
     evaluated: 2,
     issues: [{ name: "장우진", metrics: "연결끊김" }],
-    waitingNames: ["양지후", "김수영"],
+    waitingNames: ["임시작업자A", "임시작업자B"],
     normalNames: ["김태곤"],
   });
   assert.match(c.summary, /이상 1\b/, `이상이 빠졌다 — ${c.summary}`);
@@ -109,7 +109,7 @@ test("★ 수신 중 작업자를 실명으로 남긴다 — 이상 명단과 �
     count: 4,
     evaluated: 2,
     issues: [{ name: "장우진", metrics: "연결끊김" }],
-    waitingNames: ["양지후", "김수영"],
+    waitingNames: ["임시작업자A", "임시작업자B"],
     normalNames: ["김태곤"],
   });
   const line = c.lines.find((l) => l.label === "수신 중");
@@ -129,7 +129,7 @@ test("★ 이름을 안 넘겨도 수치는 정확하다 — 이름만 생략된
     count: 4,
     evaluated: 2,
     issues: [{ name: "장우진", metrics: "연결끊김" }],
-    waitingNames: ["양지후", "김수영"],
+    waitingNames: ["임시작업자A", "임시작업자B"],
   });
   assert.match(c.summary, /수신 1\b/, `이름 없이도 수신 인원은 나와야 한다 — ${c.summary}`);
   assert.ok(!c.lines.some((l) => l.label === "수신 중"), "이름이 없는데 빈 명단 줄을 만들었다");

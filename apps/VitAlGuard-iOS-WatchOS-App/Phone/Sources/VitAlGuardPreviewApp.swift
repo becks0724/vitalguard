@@ -12624,7 +12624,7 @@ final class VitAlGuardPreviewController: UIViewController,
             ?? ""
         let employee = defaults.string(forKey: PreviewSettingsKey.employeeId)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedName = (name?.isEmpty == false ? name : nil) ?? "양지후"
+        let resolvedName = (name?.isEmpty == false ? name : nil) ?? "작업자"
         let resolvedLogin = login.isEmpty ? (currentMode == .admin ? "admin7276" : "worker7276") : login
         let resolvedEmployee = employee?.isEmpty == false ? employee! : vitalGuardEmployeeIdentifier(for: resolvedLogin)
         return "\(resolvedName), \(resolvedLogin), \(resolvedEmployee)"
@@ -18456,7 +18456,7 @@ final class PreviewSettingsViewController: UIViewController, UITextFieldDelegate
         let employee = defaults.string(forKey: PreviewSettingsKey.employeeId)?.trimmingCharacters(in: .whitespacesAndNewlines)
         let login = defaults.string(forKey: PreviewSettingsKey.loggedInId)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let resolvedLogin = login.isEmpty ? "worker7276" : login
-        return "\((name?.isEmpty == false ? name : nil) ?? "양지후"), \(resolvedLogin), \((employee?.isEmpty == false ? employee : nil) ?? vitalGuardEmployeeIdentifier(for: resolvedLogin))"
+        return "\((name?.isEmpty == false ? name : nil) ?? "작업자"), \(resolvedLogin), \((employee?.isEmpty == false ? employee : nil) ?? vitalGuardEmployeeIdentifier(for: resolvedLogin))"
     }
 
     private func watermarkSwitchRow(title: String, subTitle: String, control: UISwitch) -> UIView {

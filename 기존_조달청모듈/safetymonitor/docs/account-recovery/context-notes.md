@@ -165,6 +165,6 @@ IP 당 토큰버킷을 건다. 3개를 다 아는 상대에게 "그 계정이 �
 
 | 계정 | 판정 |
 |---|---|
-| admin0740(김수영) · admin3470(김태곤) · admin6861(장우진) | 승인 가능 |
+| admin0740(김○○) · admin3470(김태곤) · admin6861(장우진) | 승인 가능 |
 | test.jodal · test.mois | 불가 (`org_type=member`) |
 | env owner(`ADMIN_ID`) | 항상 가능 (`role=owner`) |

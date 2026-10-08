@@ -155,7 +155,7 @@
 
 ## #4. 워커 ID 파편화 (동일 인물 다중 ID)
 
-**현상** — 양지후 1인이 `EMP-7276`·`EMP-worker7276`·`WORKER7276`·`worker7276`·`EMP-admin7276`로 분산. 별칭은 `EMP-6861→EMP-admin6861` 1건뿐. worker-day(51)·고유 작업자(13명) 집계 부풀림.
+**현상** — 전 팀원 1인이 `EMP-7276`·`EMP-worker7276`·`WORKER7276`·`worker7276`·`EMP-admin7276`로 분산. 별칭은 `EMP-6861→EMP-admin6861` 1건뿐. worker-day(51)·고유 작업자(13명) 집계 부풀림.
 
 **동작 방식 정정(중요)** — 별칭은 표시 시점 접기(`store.ts` `mergeLatestByWorker`, 별칭 접기는 186행)뿐 아니라 **수신 시점에도** `resolvePrimaryWorkerId`(`store.ts:50-73`, 15초 캐시)로 접혀 **이후 유입되는 `vital_samples`/`alerts` 행이 primary ID로 저장**됩니다. 즉:
 - 별칭 등록 즉시: 라이브 카드 병합 + **미래 데이터가 primary로 적재**(사실상 비가역 — 잘못 등록하면 히스토리 재작성 없이는 못 되돌림).

@@ -78,7 +78,7 @@
 - [x] `DemoDashboard` — '사용자 관리' 탭 노출을 승인 권한자까지 확대
 - [x] `MyProfileModal` / `POST /api/admin/profile` — 비밀번호 변경에 같은 정책 적용
 - [x] 검증 — tsc 0 · lint 0err(기존 warn4) · test **407** · `next build` SUCCESS · 실 라우트 400 분기 10건 · 폼 UI 캡처
-- [x] (별건) 기존 실가입자 4명 `org_type='vitalguard'` 백필 완료 (2026-07-30) — `admin6861`(장우진)·`admin7276`(양지후)·`admin0740`(김수영)·`admin3470`(김태곤) 4건. 승인 가능(=VG관리자+admin_access+approved) 3명 확보, 장우진은 관리 권한 미보유라 제외
+- [x] (별건) 기존 실가입자 4명 `org_type='vitalguard'` 백필 완료 (2026-07-30) — `admin6861`(장우진)·`admin7276`(전 팀원)·`admin0740`(김○○)·`admin3470`(김태곤) 4건. 승인 가능(=VG관리자+admin_access+approved) 3명 확보, 장우진은 관리 권한 미보유라 제외
 - [x] (별건) 작업자 계정의 관제웹 로그인 차단 (2026-07-31) — `/api/admin/login` 에서 `role='worker'` 403, 승인 상태 검사보다 앞. 앱 로그인(`/api/app-auth/login`)은 별도 라우트라 무영향
 - [x] (별건) 스키마 초기화 DDL 잠금 하드닝 (2026-07-31) — `lock_timeout 3s` + 실패 비치명(60초 유예 후 재시도). 07-30 장애(긴 조회가 DDL 을 막고 FIFO 큐가 전 라우트를 500) 재발 차단
 

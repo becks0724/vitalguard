@@ -2854,8 +2854,8 @@ export async function lastSeenByWorker(maxGapHours = 24): Promise<LastSeenRow[]>
             --   유일한 출처인데, 워커 하나에 시기별로 여러 라벨이 섞여 있다.
             --   최근값을 쓰면 마지막 세션이 폴백 라벨이었던 경우 사람 이름 대신 그것을 부른다 —
             --   ⚠ 아래 예시에 백틱을 쓰지 말 것 — 이 SQL 은 JS 템플릿 리터럴 안이라 문자열이 끊긴다.
-            --   실측 EMP-admin7276 은 최근 '워치PoC' / 최빈 '양지후'(=실제 인물),
-            --   EMP-admin0740 은 최근 '관리자 EMP-admin0740' / 최빈 '김수영'.
+            --   실측 EMP-admin7276 은 최근 '워치PoC' / 최빈 '전 팀원'(=실제 인물),
+            --   EMP-admin0740 은 최근 '관리자 EMP-admin0740' / 최빈 '김○○'.
             --   ⚠ 개명하면 옛 이름이 이길 수 있다. 그래도 사번은 항상 맞으므로 식별은 유지된다.
             MODE() WITHIN GROUP (ORDER BY v.worker_name) AS worker_name
        FROM ids i

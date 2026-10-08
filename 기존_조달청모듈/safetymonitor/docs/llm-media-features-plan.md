@@ -62,7 +62,7 @@ iOS 앱 OCR/촬영 자료(사진대지·현장 사진/영상)를 **클라우드 
 ### 현재 상태
 - 🆕 **(2026-06-26) 캘린더 헤더 아이콘 = 클라우드+캘린더 결합으로 교체** — 미디어 캘린더 방향 신호([DemoDashboard.tsx:2186](../apps/dashboard-web/app/components/DemoDashboard.tsx#L2186), **미커밋**) + 다크모드 팝업 헤더 가독성 수정([:1230](../apps/dashboard-web/app/components/DemoDashboard.tsx#L1230) `dark:bg-*` 누락 보완). **기능(OCR 업로드·미디어 표시·설명 기입)은 아래대로 미착수** — 아이콘은 방향 신호일 뿐.
 - ✅ **iOS 앱 OCR/카메라/미디어** — 독립 개발 완료(GitHub 미반영), **현재 사진첩 저장만 가능**.
-- ✅ **관제웹 캘린더 UI** — `CalendarEvent`(날짜·제목·타입·라벨·시간)·추가/수정/삭제·주간 뷰([DemoDashboard.tsx:502](../apps/dashboard-web/app/components/DemoDashboard.tsx#L502), 김수영 작업).
+- ✅ **관제웹 캘린더 UI** — `CalendarEvent`(날짜·제목·타입·라벨·시간)·추가/수정/삭제·주간 뷰([DemoDashboard.tsx:502](../apps/dashboard-web/app/components/DemoDashboard.tsx#L502), 김○○ 작업).
 - ⚠️ **사진대지 업로드 라우트 존재하나 로컬디스크** — [weekly-report/photos](../apps/dashboard-web/app/api/weekly-report/photos/route.ts) + [photo-store.ts](../apps/dashboard-web/app/lib/photo-store.ts)가 `.runtime/photos/`에 저장 → **Cloud Run에선 재시작마다 휘발**. 영속 저장은 외부 클라우드 필요.
 - ❌ 클라우드 저장(GCS/R2/Naver) · `calendar_media` DB 테이블 · 캘린더 미디어 자동배치·표시.
 
