@@ -10,13 +10,25 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 
 상세 [plan](docs/plan.md) · [checklist](docs/checklist.md) · [context-notes](docs/context-notes.md) · [progress](docs/progress.md) · 상용화 갭·로드맵 [gap-analysis](docs/commercialization-gap-analysis.md) · [roadmap](docs/commercialization-roadmap.md)
 
-## 확인된 상태 기록 (최신 기록: 2026-10-07 · 현재 라이브는 조회로 확인)
+## 확인된 상태 기록 (최신 기록: 2026-10-10 · 현재 라이브는 조회로 확인)
 
 > **보존 규칙 (2026-08-22).** 이 절의 트랙 전문은 **최근 3건까지**만 둔다. 넘으면 그 자리에서
 > `docs/claude-md-archive-<날짜>.md` 로 옮기고 아래 아카이브 목록에 한 줄 더한다.
 > 로그가 파일의 90%를 넘겨 세션 컨텍스트를 잡아먹은 전례가 두 번 있다(08-19 · 08-22).
 
-- **라이브** = `vitalguard-dashboard-00413-xb8` (커밋 `fb820d97` · 10-07 13:3x · [WATCH.APP] 배포 · 서빙 digest
+- **라이브** = `vitalguard-dashboard-00414-tdp` (커밋 `1bb30c6f` · 10-10 22:2x · [WATCH.APP] 배포 · 서빙 digest
+  `sha256:9f58cc55…` **대조 일치** · env 33(00413 과 줄마다 같음) · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음 ·
+  검증 **2145/2145 @워킹트리(= 1bb30c6) · 루트 pnpm test** · 라우트 5종 ok · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB 문구 셋 0).
+  00413 대비 **동작이 바뀐 곳은 로그인 화면 하나**다(`1bb30c6f` · 관제웹 3파일). 팀원 `e414bf88` 는 주석·시험 데이터의 실명 가림뿐이다.
+  ```
+  FitToViewport · LoginScreen   로그인 폼 칸이 카드 높이(min(830px, 100dvh-5rem))보다 길면 스크롤 대신 비율대로 축소(하한 0.6)
+                                FitToViewport 에 boundsRef·minScale 옵션(기본값이면 종전 동작 — 모달 3곳·좌측 패널 무변경)
+  라이브 실측(헤드리스)          1366x768 0.885 · 1280x720 0.819 · 1280x600 0.652(넘침 1px · 스크롤바 숨김) — 통제군(배율 1) 83·131·251px 넘침
+                                1920x1080 · 1440x900 · 폰 390x844 는 1.000(종전과 같음)
+  ```
+  롤백 대상 = 00413-xb8. 가드 `lib/2026-10-10-login-autofit.guard.test.ts`(고치기 전 코드에 5/5 실패 확인).
+
+- (직전) **라이브** = `vitalguard-dashboard-00413-xb8` (커밋 `fb820d97` · 10-07 13:3x · [WATCH.APP] 배포 · 서빙 digest
   `sha256:4e6c2d16…` **대조 일치** · env 33(00412 와 줄마다 같음) · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음 ·
   검증 **2140/2140 @워킹트리(= fb820d9) · 루트 pnpm test** · 라우트 5종 ok · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB 문구 셋 0).
   00412 대비 **동작이 바뀐 곳은 팀원 관제웹 5커밋**이다(`45482633..fb820d97` · 관제웹 21파일).
@@ -51,21 +63,6 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
   ⚠ main 은 이 라이브보다 관제웹 4커밋 앞선다(10-07 실측 · 19파일 +467/−46 · 전부 팀원) — 다음 배포에 실린다.
   `3cbebb95` 현장 앱 본인 프로필 GET `/api/app/admin/profile`(`db.ts` 는 읽기 전용 호출 경로만 추가 · SQL 문장 같음) ·
   `b11219dd` 강수·풍속 위험 신호 · `b9ecf44b` 기상 신호·가스포드 실내값·예보 · `6ee2cffb` 현장 채팅 의도 설명.
-
-- (직전) **라이브** = `vitalguard-dashboard-00409-bs4` (커밋 `132f2bf8` · 09-29 10:28 · [WATCH.APP] 배포 · 서빙 digest
-  `sha256:f4270c38…` **대조 일치**(빌드 `e7732617`) · env 33 · 트래픽 자동 추종 · 치환 `_AI_URL`·`_CAM03_GATE` 있음 ·
-  검증 **2106/2106 @아카이브(132f2bf 고정) · 루트 pnpm test** · 라우트 5종 ok · CCTV번들 ✅ 1/17 · 사후 90초 5xx 0 · DB타임아웃 0).
-  00408 대비 **동작이 바뀐 곳은 생체 경보 화면 둘**이다([DATA] `3bbf8374`·`208895b3` · 관제웹 6파일). 서버·판정 조건은 그대로다.
-  ```
-  ① SosAlertModal · lib/vital-measured-at   팝업 시각 = 표본 도착 시각 → 위험 값을 잰 시각 + 「N분 전」(산소포화도는 최대 30분 벌어진다)
-                                            산소포화도 칸 「HH:mm 측정 · N분 전」 · 119·보호자 문자에도 측정 시각
-  ② DemoDashboard · lib/spo2-ack-key        산소포화도만 위험인 팝업의 「확인」을 측정 한 건 단위로 브라우저에 기억(`vital-spo2|작업자|측정시각`)
-                                            새로고침해도 같은 측정은 다시 안 뜬다 · 새 측정은 열쇠가 달라 다시 운다 · 심박·체온이 함께 위험이면 종전 방식
-  ```
-  나머지 범위(`45d791d6..132f2bf8` 22커밋)는 이미지 동작 밖이다 — 엣지 49파일(`0c7a894b` 젯슨 실물 맞춤) · 문서 · 이미지 밖 태블릿 앱 폴더 · `.gitleaksignore`.
-  사후 DB 문구 셋(새 접속 타임아웃 · 풀 고갈 · 웜 바닥) 0.
-  번들 확인([DATA] 09-29 10:4x · 00408 기준선 대비 17/17 청크) — `vital-spo2` 0→1 · `Asia/Seoul` 2→3 · 「 측정」 14→16 ·
-  통제 「위험 감지 시각」 1→1 · 음성 0→0. **기능 화면 확인은 다음 실제 산소포화도 경보 대기**(운영 DB 에 시험 행을 못 넣는다 · L-04).
 
 **운영 기록 읽기** — 아래 아카이브는 과거 상태다. 현재 리비전·env·접속 경로는 라이브 조회로 확인한다. 브라우저 CORS·번들 검증, 같은 LAN/Tailscale 제약, 서버 중계 비용·주기, 인증 키 교체·워치 재서명 절차를 변경할 때는 관련 과거 실측을 먼저 확인한다.
 
@@ -112,7 +109,7 @@ HealthPattern (개인용 HealthKit 패턴 앱) 의 분석 알고리즘 *로직�
 - **상세** [docs/progress.md "Quick Summary"](docs/progress.md#quick-summary-30초-안에-읽기) 우선 확인.
 
 **트랙 기록 아카이브**
-- 09-09 ~ 09-27 배포 기록 16건(00365~00408 · 00404 는 09-27, 00405·00407 은 09-29, 00408 은 10-07 에 맨 위로 더함) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
+- 09-09 ~ 09-29 배포 기록 17건(00365~00409 · 00404 는 09-27, 00405·00407 은 09-29, 00408 은 10-07, 00409 는 10-10 에 맨 위로 더함) → [claude-md-archive-20260925-prompt-audit.md](docs/claude-md-archive-20260925-prompt-audit.md) · 과거 실측 원문 보존
 - 09-09 ~ 09-17 트랙(00367~00397) → [claude-md-archive-20260925.md](docs/claude-md-archive-20260925.md) (보존 규칙 「최근 3건」 초과분)
 - 08-31 ~ 09-08 트랙(00345~00363) → [claude-md-archive-20260910.md](docs/claude-md-archive-20260910.md) (최근 이동분이 파일 위쪽)
 - 08-26 ~ 08-31 트랙(00322~00344) → [claude-md-archive-20260831.md](docs/claude-md-archive-20260831.md) (최근 이동분이 파일 위쪽)
