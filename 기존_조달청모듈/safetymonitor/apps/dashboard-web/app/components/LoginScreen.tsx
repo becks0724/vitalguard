@@ -1,7 +1,7 @@
 // 관제 대시보드 진입 로그인 화면 — 반투명 글래스 카드(셰이더 배경 비침) 안에 좌측 현장 사진 + 우측 폼 2분할(데스크톱). 브랜드 로고/슬로건 + 토글 + 관리자 로그인 + 구글/스토어 배지.
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import {
   PASSWORD_MAX,
@@ -15,6 +15,7 @@ import { CARRIERS, MVNO_NETS, composeCarrier } from "../../lib/carriers";
 import { VITALGUARD_COMPANY, companiesForOrgType } from "../../lib/companies";
 import { DEFAULT_ORG_TYPE, type SignupOrgType } from "../../lib/org-type";
 import { AccountRecovery } from "./AccountRecovery";
+import FitToViewport from "./FitToViewport";
 import type { SiteInfo } from "./AdminExportModal";
 import { LiquidMetalButton } from "./LiquidMetalButton";
 import { TwoFactorPrompt } from "./TwoFactorPrompt";
@@ -25,6 +26,11 @@ import { StoreBadges } from "./StoreBadges";
 
 import { SlidingSegmented } from "./ui/SlidingSegmented";
 type Lang = "ko" | "en";
+
+// 폼 칸 오토리사이징의 하한 — 창이 낮아 카드(min(830px, 100dvh-5rem))보다 폼이 길면 스크롤 대신
+// 비율대로 줄여 한 화면에 담는다(2026-10-10 사용자 요청). 이 배율 아래로는 줄이지 않고 넘는 만큼만
+// 종전처럼 칸 안에서 스크롤한다 — 아주 긴 회원가입 폼이 읽을 수 없을 만큼 작아지지 않게.
+const LOGIN_FIT_MIN_SCALE = 0.6;
 
 // 명시적 키 타입 — noUncheckedIndexedAccess 하에서 인덱스 접근이 undefined 로 넓어지지 않도록.
 type Strings = {
@@ -839,6 +845,8 @@ export function LoginScreen({
   // 로그인은 데스크톱에선 거의 맞는데 폰에서만 크게 넘친다(SE 카드 919px). md 미만에서만 줄인다 —
   // 데스크톱 로그인 화면은 로고 136·브랜드 문구 3줄·푸터·스토어 배지 전부 그대로다.
   const loginCompact = pendingToken === null && mode === "login";
+  // 폼 칸 — 오토리사이징의 기준 상자(이 칸의 안쪽 높이에 맞춰 줄인다).
+  const formColRef = useRef<HTMLDivElement>(null);
 
   return (
     <div
@@ -883,13 +891,17 @@ export function LoginScreen({
           />
         </div>
 
-        {/* 우측 — 로그인 폼. 고정된 카드 높이 안에서 세로 중앙, 내용이 넘치면 이 칸만 스크롤한다
-            (카드·사진 크기는 그대로 유지 — 넘치는 쪽이 양보한다). */}
+        {/* 우측 — 로그인 폼. 고정된 카드 높이 안에서 세로 중앙. 내용이 넘치면 먼저 칸 높이에 맞춰
+            비율대로 줄이고(FitToViewport · CSS zoom · 2026-10-10), 하한 LOGIN_FIT_MIN_SCALE 에서도
+            넘칠 때만 이 칸이 스크롤한다(카드·사진 크기는 그대로 유지 — 넘치는 쪽이 양보한다).
+            폰에서는 칸 높이가 내용 높이라 넘침이 없어 배율 1 그대로다. */}
         <div
+          ref={formColRef}
           className={`no-scrollbar flex w-full flex-col items-center overflow-y-auto px-6 md:min-w-0 md:flex-1 ${
             compact ? "py-2 md:py-6" : loginCompact ? "py-3 md:py-6" : "py-10"
           }`}
         >
+          <FitToViewport boundsRef={formColRef} minScale={LOGIN_FIT_MIN_SCALE} className="my-auto w-full">
           <div className="relative z-10 my-auto flex w-full flex-col items-center">
         {/* 중앙 로고 — 로그인 배경은 테마와 무관하게 항상 네이비 셰이더(LoginShaderBackground)라
             화이트 로고 고정. 투명 로고라 라이트 테마의 블루 워드마크(검정 글자)는 네이비에 묻힘. */}
@@ -1606,6 +1618,7 @@ export function LoginScreen({
           </>
         )}
           </div>
+          </FitToViewport>
         </div>
 
         {/* 2단계 인증 — 카드 안에 절대배치해 카드 위로 떠오른다(2026-08-28 사용자 지시).

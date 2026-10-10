@@ -2,7 +2,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 // 왜 CSS zoom 인가 —
 //
@@ -30,10 +30,17 @@ export default function FitToViewport({
   className,
   // 오버레이 래퍼의 상하 여백(px). 기본 32 = 바깥 p-4 상하 합.
   gutterPx = 32,
+  // 기준 상자 — 주면 창 높이 대신 이 상자의 안쪽 높이(패딩 제외)에 맞춘다. 높이가 고정된 칸
+  // (로그인 카드의 폼 칸처럼 min(830px, 100dvh-5rem) 으로 갇힌 곳)에 쓴다. 안 주면 종전 그대로 창 기준.
+  boundsRef,
+  // 이 배율 아래로는 줄이지 않는다 — 넘는 만큼은 바깥 스크롤 상자가 받는다. 기본 0 = 종전 그대로.
+  minScale = 0,
 }: {
   children: ReactNode;
   className?: string;
   gutterPx?: number;
+  boundsRef?: RefObject<HTMLElement | null>;
+  minScale?: number;
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -46,7 +53,12 @@ export default function FitToViewport({
     if (!inner) return;
     const rendered = inner.getBoundingClientRect().height;
     if (rendered === 0) return;
-    const available = window.innerHeight - gutterPx;
+    const bounds = boundsRef?.current;
+    let available = window.innerHeight - gutterPx;
+    if (bounds) {
+      const cs = getComputedStyle(bounds);
+      available = bounds.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    }
     const cur = scaleRef.current;
 
     // 배율 1 로 이미 들어가면 손대지 않는다(대다수 화면에서 이 경로 = 기존과 완전히 동일).
@@ -59,7 +71,7 @@ export default function FitToViewport({
     }
     if (passesRef.current >= MAX_PASSES) return;
 
-    const next = Math.min(1, cur * (available / rendered));
+    const next = Math.max(minScale, Math.min(1, cur * (available / rendered)));
     if (Math.abs(next - cur) < MIN_STEP) {
       passesRef.current = 0;
       return;
@@ -67,7 +79,7 @@ export default function FitToViewport({
     passesRef.current += 1;
     scaleRef.current = next;
     setScale(next);
-  }, [gutterPx]);
+  }, [gutterPx, boundsRef, minScale]);
 
   // 첫 페인트 전에 재어 큰 상태가 한 프레임 보이는 깜빡임을 줄인다.
   useLayoutEffect(() => {
@@ -85,12 +97,14 @@ export default function FitToViewport({
     // 모두 이 옵저버가 몰아서 처리한다.
     const ro = new ResizeObserver(measure);
     ro.observe(inner);
+    // 기준 상자가 있으면 그 높이 변화(창 크기에 따라 카드가 줄고 늘 때)도 같은 옵저버로 받는다.
+    if (boundsRef?.current) ro.observe(boundsRef.current);
     window.addEventListener("resize", onResize);
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", onResize);
     };
-  }, [measure]);
+  }, [measure, boundsRef]);
 
   return (
     <div className={className}>
