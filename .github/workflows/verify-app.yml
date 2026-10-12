@@ -49,7 +49,7 @@ jobs:
         working-directory: 기존_조달청모듈/safetymonitor/apps/vitalguard_app
     steps:
       # 액션은 SHA 핀 — 태그는 이동 가능해 공급망 변조 표면이 된다(감사 CI-PIN-01).
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
@@ -75,7 +75,7 @@ jobs:
     # HealthKit·WatchKit 같은 Apple 전용 import 가 있어도 구문 검사가 성립한다(실측).
     container: swift:6.1
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Swift 구문 검사
         working-directory: 기존_조달청모듈/safetymonitor/apps/vitalguard_app/ios
