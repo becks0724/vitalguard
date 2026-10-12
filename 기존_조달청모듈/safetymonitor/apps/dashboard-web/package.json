@@ -29,7 +29,7 @@
     "galmuri": "^2.40.3",
     "next": "^15.5.25",
     "pdfjs-dist": "^6.2.108",
-    "pg": "^8.22.0",
+    "pg": "^8.23.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.0",
@@ -39,7 +39,7 @@
   "devDependencies": {
     "@eslint/js": "^9.16.0",
     "@types/node": "^22.0.0",
-    "@types/pg": "^8.20.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
